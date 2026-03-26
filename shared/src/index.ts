@@ -114,7 +114,7 @@ export {
 // =============================================================================
 
 // Provider enum for multi-CLI support (Claude, Codex, OpenCode, Gemini, etc.)
-export const ProviderSchema = z.enum(['claude', 'codex', 'opencode', 'gemini']);
+export const ProviderSchema = z.enum(['claude', 'codex', 'opencode', 'gemini', 'pi', 'qwen']);
 export type Provider = z.infer<typeof ProviderSchema>;
 
 export interface ProviderMetadata {
@@ -129,6 +129,8 @@ export const PROVIDER_METADATA: Record<Provider, Omit<ProviderMetadata, 'id'>> =
   codex: { label: 'Codex', shortLabel: 'X', cssClass: 'codex' },
   opencode: { label: 'OpenCode', shortLabel: 'O', cssClass: 'opencode' },
   gemini: { label: 'Gemini', shortLabel: 'G', cssClass: 'gemini' },
+  pi: { label: 'Pi', shortLabel: 'π', cssClass: 'pi' },
+  qwen: { label: 'Qwen', shortLabel: 'Q', cssClass: 'qwen' },
 };
 
 export const PROVIDER_OPTIONS: readonly ProviderMetadata[] = [
@@ -136,6 +138,8 @@ export const PROVIDER_OPTIONS: readonly ProviderMetadata[] = [
   { id: 'codex', ...PROVIDER_METADATA.codex },
   { id: 'opencode', ...PROVIDER_METADATA.opencode },
   { id: 'gemini', ...PROVIDER_METADATA.gemini },
+  { id: 'pi', ...PROVIDER_METADATA.pi },
+  { id: 'qwen', ...PROVIDER_METADATA.qwen },
 ];
 
 export const PROVIDER_IDS: readonly Provider[] = PROVIDER_OPTIONS.map((provider) => provider.id);

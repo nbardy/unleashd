@@ -127,6 +127,16 @@
   color: var(--user-bright);
 }
 
+.provider-picker-trigger.pi {
+  background: color-mix(in srgb, var(--accent) 20%, transparent);
+  color: var(--accent);
+}
+
+.provider-picker-trigger.qwen {
+  background: color-mix(in srgb, var(--info) 20%, transparent);
+  color: var(--info);
+}
+
 .provider-picker-caret {
   font-size: 9px;
   opacity: 0.7;

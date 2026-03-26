@@ -3660,7 +3660,7 @@ Requirements:
     };
 
     const turn = executeCommand({
-      harness: providerName as 'claude' | 'codex' | 'gemini' | 'opencode',
+      harness: providerName as 'claude' | 'codex' | 'gemini' | 'opencode' | 'pi' | 'qwen',
       mode: 'single-shot',
       prompt,
       cwd: process.cwd(),
