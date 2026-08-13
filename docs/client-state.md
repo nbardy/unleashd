@@ -41,10 +41,15 @@ const text = useAtomValue(streamingAtomFamily(id));
 // merge with conversation.messages at render time, not in the store
 ```
 
-### Persisted UI state → `uiStore`
+### Persisted UI state → `atoms/ui.ts`
 ```ts
-const pref = useUIStore((s) => s.yourPreference);
+const pref = useAtomValue(yourPreferenceAtom);   // per-field derived atom
+setYourPreference(value);                        // plain exported action fn
 ```
+Local fields persist via `atomWithStorage('unleashd-ui-local')`; shared fields
+debounce-POST to `/api/ui-state` (gated until WS-init hydration). Subscribe to
+the per-field atoms, never the slice atoms; mutate only via the action
+functions (G1: `jotaiStore.set` stays inside `atoms/`).
 
 **Red flag:** if you wrote `useAtomValue(conversationsAtom)` — stop.
 That subscribes to every structural event across all conversations.

@@ -7,7 +7,7 @@ import {
   chatConversationInboxAtom,
   conversationAtomFamily,
 } from '../../atoms/conversations';
-import { useUIStore } from '../../stores/uiStore';
+import { doneConversationsAtom, hasUnseenMessages, lastSeenMessageIndexAtom } from '../../atoms/ui';
 import { formatTimeAgo, getConversationLastActivity } from '../../utils/time';
 import {
   MobileBadge,
@@ -31,17 +31,17 @@ const ConversationListItem = memo(function ConversationListItem({
   id: string;
 }) {
   const conv = useAtomValue(conversationAtomFamily(id));
-  const hasUnseenMessages = useUIStore((s) => s.hasUnseenMessages);
-  const isDone = useUIStore((s) => s.isDone);
+  const lastSeenMessageIndex = useAtomValue(lastSeenMessageIndexAtom);
+  const doneConversations = useAtomValue(doneConversationsAtom);
   const navigate = useNavigate();
-  const done = isDone(id);
+  const done = doneConversations.includes(id);
 
   if (!conv) return null;
 
   const lastTime = getConversationLastActivity(conv);
   const timeAgo = formatTimeAgo(lastTime);
   const totalMessages = conv.messageCount ?? conv.messages.length;
-  const unseen = hasUnseenMessages(id, totalMessages);
+  const unseen = hasUnseenMessages(lastSeenMessageIndex, id, totalMessages);
   const preview =
     conv.messages.length > 0
       ? conv.messages[conv.messages.length - 1].content.substring(0, 120)

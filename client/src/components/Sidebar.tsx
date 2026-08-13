@@ -18,9 +18,21 @@ import {
 import type { PendingConversationCreation } from '../atoms/conversations';
 import { mergeModeAtom, mergeSelectionAtom } from '../atoms/mergeAtoms';
 import { createDefaultDraft } from '../domain/conversation-config-draft';
+import {
+  doneConversationsAtom,
+  galleryCollapsedProjectsAtom,
+  hasUnseenMessages,
+  lastSeenMessageIndexAtom,
+  lastWorkingDirectoryAtom,
+  markDone,
+  promotedWorkersAtom,
+  setLastWorkingDirectory,
+  setSidebarViewMode,
+  sidebarViewModeAtom,
+  toggleGalleryCollapsed,
+} from '../atoms/ui';
 import { useProviderCatalog } from '../hooks/useProviderCatalog';
 import { useSwarmRuntimeSnapshots } from '../hooks/useSwarmRuntimeSnapshots';
-import { useUIStore } from '../stores/uiStore';
 import { getProjectColor } from '../utils/projectColors';
 import { getProjectRoot, isWorktreeDirectory } from '../utils/swarmUtils';
 import { getWorkerVisibilitySummary } from '../utils/swarmWorkerVisibility';
@@ -109,16 +121,12 @@ export function Sidebar() {
   const [mergeMode, setMergeMode] = useAtom(mergeModeAtom);
   const [mergeSelection, setMergeSelection] = useAtom(mergeSelectionAtom);
 
-  const lastWorkingDirectory = useUIStore((s) => s.lastWorkingDirectory);
-  const setLastWorkingDirectory = useUIStore((s) => s.setLastWorkingDirectory);
-  const doneConversations = useUIStore((s) => s.doneConversations);
-  const markDone = useUIStore((s) => s.markDone);
-  const hasUnseenMessages = useUIStore((s) => s.hasUnseenMessages);
-  const promotedWorkers = useUIStore((s) => s.promotedWorkers);
-  const sidebarViewMode = useUIStore((s) => s.sidebarViewMode);
-  const setSidebarViewMode = useUIStore((s) => s.setSidebarViewMode);
-  const galleryCollapsedProjects = useUIStore((s) => s.galleryCollapsedProjects);
-  const toggleGalleryCollapsed = useUIStore((s) => s.toggleGalleryCollapsed);
+  const lastWorkingDirectory = useAtomValue(lastWorkingDirectoryAtom);
+  const doneConversations = useAtomValue(doneConversationsAtom);
+  const lastSeenMessageIndex = useAtomValue(lastSeenMessageIndexAtom);
+  const promotedWorkers = useAtomValue(promotedWorkersAtom);
+  const sidebarViewMode = useAtomValue(sidebarViewModeAtom);
+  const galleryCollapsedProjects = useAtomValue(galleryCollapsedProjectsAtom);
 
   // Tick every 30s to keep time-ago displays current
   const [, setTick] = useState(0);
@@ -387,7 +395,7 @@ export function Sidebar() {
 
   const handleNewConversation = useCallback(() => {
     // Default to the most recently active conversation's working directory,
-    // then uiStore fallback, then server cwd.
+    // then lastWorkingDirectory fallback, then server cwd.
     const latestConv = allConversations[0];
     const lastDir = latestConv?.workingDirectory ?? lastWorkingDirectory ?? defaultCwd ?? '/';
     setDirectory(lastDir);
@@ -438,7 +446,7 @@ export function Sidebar() {
     const newId = createConversation({ workingDirectory: directory, config: configDraft });
     setShowPicker(false);
     navigate(`/chat/${newId}`);
-  }, [directory, configDraft, navigate, setLastWorkingDirectory]);
+  }, [directory, configDraft, navigate]);
 
   const handleCreateNewSwarm = useCallback(async () => {
     if (!directory.trim()) return;
@@ -467,7 +475,7 @@ export function Sidebar() {
     } finally {
       setIsCreatingSwarm(false);
     }
-  }, [directory, configDraft, navigate, setLastWorkingDirectory]);
+  }, [directory, configDraft, navigate]);
 
   const handleCancel = () => {
     if (isCreatingSwarm) return;
@@ -857,6 +865,7 @@ export function Sidebar() {
                     hasUnseen={
                       item.latestConversation
                         ? hasUnseenMessages(
+                            lastSeenMessageIndex,
                             item.latestConversation.id,
                             conversationMessageCount(item.latestConversation)
                           )
@@ -877,7 +886,7 @@ export function Sidebar() {
                 key={conv.id}
                 conv={conv}
                 isActive={conv.id === activeConversationId}
-                hasUnseen={hasUnseenMessages(conv.id, conversationMessageCount(conv))}
+                hasUnseen={hasUnseenMessages(lastSeenMessageIndex, conv.id, conversationMessageCount(conv))}
                 showFolderBadge
                 onSelect={handleSelectConversation}
                 onDone={handleDone}
@@ -968,7 +977,7 @@ export function Sidebar() {
                               key={conv.id}
                               conv={conv}
                               isActive={conv.id === activeConversationId}
-                              hasUnseen={hasUnseenMessages(conv.id, conversationMessageCount(conv))}
+                              hasUnseen={hasUnseenMessages(lastSeenMessageIndex, conv.id, conversationMessageCount(conv))}
                               showFolderBadge={false}
                               onSelect={handleSelectConversation}
                               onDone={handleDone}
@@ -1000,7 +1009,7 @@ export function Sidebar() {
                       key={conv.id}
                       conv={conv}
                       isActive={conv.id === activeConversationId}
-                      hasUnseen={hasUnseenMessages(conv.id, conversationMessageCount(conv))}
+                      hasUnseen={hasUnseenMessages(lastSeenMessageIndex, conv.id, conversationMessageCount(conv))}
                       showFolderBadge
                       onSelect={handleSelectConversation}
                       onDone={handleDone}

@@ -4,7 +4,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { workersByProjectAtom } from '../../atoms/conversations';
 import { usePolledFetch } from '../../hooks/usePolledFetch';
-import { useUIStore } from '../../stores/uiStore';
+import { promotedWorkersAtom } from '../../atoms/ui';
 import { getProjectName, getProjectRoot } from '../../utils/swarmUtils';
 import { getWorkerVisibilitySummary } from '../../utils/swarmWorkerVisibility';
 import { formatTimeAgo, getLastMessageTime } from '../../utils/time';
@@ -34,7 +34,7 @@ interface ProjectCard {
 export function SwarmsMobile() {
   const rawWorkersByProject = useAtomValue(workersByProjectAtom);
   const navigate = useNavigate();
-  const promotedWorkers = useUIStore((s) => s.promotedWorkers);
+  const promotedWorkers = useAtomValue(promotedWorkersAtom);
   const promotedSet = useMemo(() => new Set(promotedWorkers), [promotedWorkers]);
 
   // Discovery via /api/swarm-projects (poll 15s, visibility-aware, reconnect-refetch)

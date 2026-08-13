@@ -4,6 +4,7 @@ import { BrowserRouter, Navigate, Route, Routes, useLocation, useNavigate } from
 import { handleMessage, setSendFn, setWsStatus } from './atoms/actions';
 import { allConversationsAtom, conversationsAtom } from './atoms/conversations';
 import { jotaiStore } from './atoms/store';
+import { savedActiveConversationIdAtom } from './atoms/ui';
 import { BuddiesDashboard } from './components/BuddiesDashboard';
 import { Chat } from './components/Chat';
 import { Gallery } from './components/Gallery';
@@ -16,7 +17,6 @@ import { useWebSocket } from './hooks/useWebSocket';
 import { ShellMobile } from './mobile/components/ShellMobile';
 import { type DeviceKind, useDeviceKind } from './mobile/hooks/useDeviceKind';
 import { initSettings } from './stores/settingsStore';
-import { useUIStore } from './stores/uiStore';
 import './App.css';
 
 // =============================================================================
@@ -54,7 +54,7 @@ function useWebSocketBridge() {
 
 /**
  * DeviceKind-aware restore on load (§5 #1).
- * Desktop: restores "/" → /chat/:id from uiStore.activeConversationId.
+ * Desktop: restores "/" → /chat/:id from the saved active conversation id.
  * Mobile: keeps the Chats inbox at "/" — never auto-opens an old conversation.
  * Must be hoisted above AppRoutes so the nav fires once before the shell mounts.
  */
@@ -62,7 +62,7 @@ function useRestoreOnLoad(device: DeviceKind) {
   const navigate = useNavigate();
   const location = useLocation();
   const allConversations = useAtomValue(allConversationsAtom);
-  const savedActiveId = useUIStore((s) => s.activeConversationId);
+  const savedActiveId = useAtomValue(savedActiveConversationIdAtom);
   const didRestore = useRef(false);
 
   useEffect(() => {

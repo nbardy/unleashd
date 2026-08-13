@@ -32,7 +32,12 @@ import type { BuddyContext } from '../atoms/pending-creations';
 import { useProviderCatalog } from '../hooks/useProviderCatalog';
 import { useSavedPrompts } from '../hooks/useSavedPrompts';
 import { useTurnDiagnostics } from '../hooks/useTurnDiagnostics';
-import { DRAFT_KEY_PREFIX, PENDING_FILES_KEY_PREFIX, useUIStore } from '../stores/uiStore';
+import {
+  DRAFT_KEY_PREFIX,
+  PENDING_FILES_KEY_PREFIX,
+  markMessagesSeen,
+  setSavedActiveConversationId,
+} from '../atoms/ui';
 import { buildUnifiedSubAgents } from '../utils/subAgents';
 import { formatTimeAgo } from '../utils/time';
 import { BuddyConvoHeader } from './BuddyConvoHeader';
@@ -325,9 +330,6 @@ export function Chat() {
     };
   }, []);
 
-  const setUIActiveId = useUIStore((s) => s.setActiveConversationId);
-  const markMessagesSeen = useUIStore((s) => s.markMessagesSeen);
-
   useEffect(() => {
     if (draftTimerRef.current) {
       clearTimeout(draftTimerRef.current);
@@ -335,12 +337,12 @@ export function Chat() {
     }
     if (id) {
       setActiveConversationId(id);
-      setUIActiveId(id);
+      setSavedActiveConversationId(id);
     }
     return () => {
       setActiveConversationId(null);
     };
-  }, [id, setUIActiveId]);
+  }, [id]);
 
   useEffect(() => {
     if (id && !conversation && !pendingCreation && conversationCount > 0) {

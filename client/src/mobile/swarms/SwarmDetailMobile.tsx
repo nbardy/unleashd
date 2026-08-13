@@ -5,7 +5,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { createConversation } from '../../atoms/actions';
 import { conversationAtomFamily, workersByProjectAtom } from '../../atoms/conversations';
 import { usePolledFetch } from '../../hooks/usePolledFetch';
-import { useUIStore } from '../../stores/uiStore';
+import { promotedWorkersAtom } from '../../atoms/ui';
 import { getProjectRoot } from '../../utils/swarmUtils';
 import { getWorkerVisibilitySummary } from '../../utils/swarmWorkerVisibility';
 import { formatTimeAgo, getLastMessageTime } from '../../utils/time';
@@ -154,7 +154,7 @@ export function SwarmDetailMobile() {
   const navigate = useNavigate();
 
   const rawWorkersByProject = useAtomValue(workersByProjectAtom);
-  const promotedWorkers = useUIStore((s) => s.promotedWorkers);
+  const promotedWorkers = useAtomValue(promotedWorkersAtom);
   const promotedSet = useMemo(() => new Set(promotedWorkers), [promotedWorkers]);
 
   // Runtime snapshot polled via usePolledFetch (10s, visibility-aware)

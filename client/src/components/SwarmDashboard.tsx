@@ -4,8 +4,8 @@ import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { workersByProjectAtom } from '../atoms/conversations';
 import { useSwarmProjects } from '../hooks/useSwarmProjects';
+import { promotedWorkersAtom } from '../atoms/ui';
 import { useSwarmRuntimeSnapshots } from '../hooks/useSwarmRuntimeSnapshots';
-import { useUIStore } from '../stores/uiStore';
 import { getProjectColor } from '../utils/projectColors';
 import { getProjectName, getProjectRoot } from '../utils/swarmUtils';
 import { getWorkerVisibilitySummary } from '../utils/swarmWorkerVisibility';
@@ -32,7 +32,7 @@ export function SwarmDashboard() {
   // change, not on every structural event across all conversations.
   const rawWorkersByProject = useAtomValue(workersByProjectAtom);
   const navigate = useNavigate();
-  const promotedWorkers = useUIStore((s) => s.promotedWorkers);
+  const promotedWorkers = useAtomValue(promotedWorkersAtom);
   const promotedSet = useMemo(() => new Set(promotedWorkers), [promotedWorkers]);
 
   // Re-group by project root (workersByProject keys on raw workingDirectory;

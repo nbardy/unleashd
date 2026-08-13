@@ -11,8 +11,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { createConversation } from '../atoms/actions';
 import { conversationAtomFamily, workersByProjectAtom } from '../atoms/conversations';
+import { markMessagesSeen, promotedWorkersAtom } from '../atoms/ui';
 import { useSwarmRuntimeSnapshots } from '../hooks/useSwarmRuntimeSnapshots';
-import { useUIStore } from '../stores/uiStore';
 import { getProjectRoot } from '../utils/swarmUtils';
 import { getWorkerVisibilitySummary } from '../utils/swarmWorkerVisibility';
 import { formatTimeAgo, getLastMessageTime } from '../utils/time';
@@ -218,7 +218,6 @@ function WorkerChatPane({
 
   const lastMessageRef = useRef<HTMLDivElement>(null);
   const scrollToBottomRef = useRef<(() => void) | null>(null);
-  const markMessagesSeen = useUIStore((s) => s.markMessagesSeen);
   const workingDirectory = conversation?.workingDirectory ?? '';
 
   if (!conversationId || !conversation) {
@@ -653,7 +652,7 @@ export function SwarmDetail() {
   // Subscribe to workersByProjectAtom — only re-renders when worker conversations
   // change, not on every structural event across all conversations.
   const rawWorkersByProject = useAtomValue(workersByProjectAtom);
-  const promotedWorkers = useUIStore((s) => s.promotedWorkers);
+  const promotedWorkers = useAtomValue(promotedWorkersAtom);
   const promotedSet = useMemo(() => new Set(promotedWorkers), [promotedWorkers]);
   const runtimeSnapshots = useSwarmRuntimeSnapshots(projectRoot ? [projectRoot] : []);
   const runtimeSnapshot = projectRoot ? (runtimeSnapshots[projectRoot] ?? null) : null;

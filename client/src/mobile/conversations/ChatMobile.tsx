@@ -7,7 +7,7 @@ import {
   conversationDetailsLoadedAtomFamily,
   streamingAtomFamily,
 } from '../../atoms/conversations';
-import { useUIStore } from '../../stores/uiStore';
+import { markMessagesSeen, setSavedActiveConversationId } from '../../atoms/ui';
 import { ComposerMobile } from '../components/ComposerMobile';
 import { MessageRow } from '../components/MessageRow';
 import { ProviderModelPickerMobile } from '../components/ProviderModelPickerMobile';
@@ -21,22 +21,21 @@ export function ChatMobile() {
   const detailsLoaded = useAtomValue(conversationDetailsLoadedAtomFamily(conversationId));
   const streamingText = useAtomValue(streamingAtomFamily(conversationId));
 
-  const setUIActiveId = useUIStore((s) => s.setActiveConversationId);
-  const markMessagesSeen = useUIStore((s) => s.markMessagesSeen);
-
   const [detailError, setDetailError] = useState<string | null>(null);
   const lastMessageRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  // Dual-active-id: jotai + zustand. Cleanup clears only jotai (preserve zustand truth).
+  // Dual-active-id: ephemeral routing atom `activeConversationIdAtom`
+  // (conversations.ts) + persisted `savedActiveConversationIdAtom` (atoms/ui).
+  // Cleanup clears only the ephemeral one (preserve persisted truth).
   useEffect(() => {
     if (!conversationId) return;
     setActiveConversationId(conversationId);
-    setUIActiveId(conversationId);
+    setSavedActiveConversationId(conversationId);
     return () => {
       setActiveConversationId(null);
     };
-  }, [conversationId, setUIActiveId]);
+  }, [conversationId]);
 
   // Load boundary: gate on conversationDetailsLoadedAtomFamily, lazy HTTP fetch
   useEffect(() => {
@@ -82,7 +81,7 @@ export function ChatMobile() {
     );
     observer.observe(el);
     return () => observer.disconnect();
-  }, [conversationId, messages.length, markMessagesSeen]);
+  }, [conversationId, messages.length]);
 
   // Auto-scroll to bottom on new messages (flat list, not virtualized — iOS momentum)
   useEffect(() => {

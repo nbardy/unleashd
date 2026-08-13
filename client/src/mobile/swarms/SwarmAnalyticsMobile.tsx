@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useAtomValue } from 'jotai';
 import { useNavigate } from 'react-router-dom';
 import { workersByProjectAtom } from '../../atoms/conversations';
-import { useUIStore } from '../../stores/uiStore';
+import { promotedWorkersAtom } from '../../atoms/ui';
 import { getProjectColor } from '../../utils/projectColors';
 import { getProjectName, getProjectRoot } from '../../utils/swarmUtils';
 import {
@@ -43,7 +43,7 @@ function shortWorkerId(id: string): string {
 export function SwarmAnalyticsMobile() {
   const navigate = useNavigate();
   const rawWorkersByProject = useAtomValue(workersByProjectAtom);
-  const promotedWorkers = useUIStore((s) => s.promotedWorkers);
+  const promotedWorkers = useAtomValue(promotedWorkersAtom);
   const promotedSet = useMemo(() => new Set(promotedWorkers), [promotedWorkers]);
 
   const projects = useMemo((): SwarmProject[] => {

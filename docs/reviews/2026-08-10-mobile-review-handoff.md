@@ -25,8 +25,13 @@ The muse session read this doc and fixed its own issues (commits `837931d`,
   `.github/workflows/publish.yml`. `tsc --noEmit` exit 0, all 3 gates PASS at
   final verification.
 
-**Still open:** Follow-up 8 — fold uiStore shared/local partition into jotai
-`atomWithStorage` (post-v1 by design, PLANNING_MOBILE.md §4).
+**Follow-up 8 closed (2026-08-13):** uiStore folded into jotai
+`client/src/atoms/ui.ts` — `atomWithStorage` on the same `unleashd-ui-local`
+key/blob (old data loads as-is), per-field derived atoms, plain action
+functions (G1 holds), debounced `/api/ui-state` POST with the hydration gate.
+zustand remains only for `stores/settingsStore.ts` (separate scope).
+Runtime-verified: restore-on-load, localStorage round-trip, POST 200s, no
+console errors. Nothing from this handoff remains open.
 
 ---
 

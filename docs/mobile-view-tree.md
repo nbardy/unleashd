@@ -46,12 +46,19 @@ export const mobileSearchResultsAtom = atom((get) => get(mobileSearchStateAtom).
 
 ### UI state partition
 
-`stores/uiStore.ts` `partitionUiState(state) => { shared, local }` is the v1 fork without a schema change:
+`atoms/ui.ts` holds the shared/local partition (folded from the former
+zustand `stores/uiStore.ts` — the post-v1 `atomWithStorage` migration from
+`PLANNING_MOBILE.md` §4 is done):
 
-- **shared** (POST to `POST /api/ui-state`) — `{ doneConversations, promotedWorkers, lastSeenMessageIndex, lastWorkingDirectory }` (4)
-- **local** (written to `localStorage['unleashd-ui-local']` piggybacking the same 500ms debounce) — `{ activeConversationId, galleryExpandedProjects, galleryCollapsedProjects, showTempSessions, showDoneConversations, showWorkerConversations, sidebarViewMode }` (7)
+- **shared** (debounced POST to `POST /api/ui-state`, gated until WS-init hydration) — `{ doneConversations, promotedWorkers, lastSeenMessageIndex, lastWorkingDirectory }` (4)
+- **local** (`atomWithStorage` under `localStorage['unleashd-ui-local']`, same blob shape as v1 so old data loads as-is) — `{ activeConversationId, galleryExpandedProjects, galleryCollapsedProjects, showTempSessions, showDoneConversations, showWorkerConversations, sidebarViewMode }` (7)
 
-`syncToServer` POSTs only `shared`; the same timer writes `local` to localStorage. Store init reads that blob via `UIStateSchema.partial().safeParse` before `hydrateFromServer` (discard whole blob on failure — no silent half-merge). Phone never mutates desktop-local fields; desktop never mutates mobile search tab. Post-v1: fold into jotai `atomWithStorage` (see `PLANNING_MOBILE.md` §4).
+Storage reads go through `UIStateSchema.partial().safeParse` (discard whole
+blob on failure — no silent half-merge). Subscribe via per-field derived atoms
+(`savedActiveConversationIdAtom`, `promotedWorkersAtom`, ...); mutate only via
+exported action functions. Phone never mutates desktop-local fields. The
+persisted `savedActiveConversationIdAtom` is distinct from the ephemeral
+routing `activeConversationIdAtom` in `conversations.ts` (dual-active-id).
 
 ### Mutation rule
 

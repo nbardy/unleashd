@@ -3,7 +3,7 @@ import { useAtomValue } from 'jotai';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { workersByProjectAtom } from '../atoms/conversations';
-import { useUIStore } from '../stores/uiStore';
+import { promotedWorkersAtom } from '../atoms/ui';
 import { getProjectColor } from '../utils/projectColors';
 import { getProjectName, getProjectRoot } from '../utils/swarmUtils';
 import {
@@ -376,7 +376,7 @@ export function SwarmAnalytics() {
   // Subscribe to workersByProjectAtom — only re-renders when worker conversations
   // change, not on every structural event across all conversations.
   const rawWorkersByProject = useAtomValue(workersByProjectAtom);
-  const promotedWorkers = useUIStore((s) => s.promotedWorkers);
+  const promotedWorkers = useAtomValue(promotedWorkersAtom);
   const promotedSet = useMemo(() => new Set(promotedWorkers), [promotedWorkers]);
 
   // Project selection

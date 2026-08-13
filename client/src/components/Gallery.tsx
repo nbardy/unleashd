@@ -3,9 +3,24 @@ import { useAtomValue } from 'jotai';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { allConversationsAtom } from '../atoms/conversations';
+import {
+  doneConversationsAtom,
+  galleryCollapsedProjectsAtom,
+  galleryExpandedProjectsAtom,
+  promoteWorker,
+  promotedWorkersAtom,
+  setShowDoneConversations,
+  setShowTempSessions,
+  setShowWorkerConversations,
+  showDoneConversationsAtom,
+  showTempSessionsAtom,
+  showWorkerConversationsAtom,
+  toggleGalleryCollapsed,
+  toggleGalleryExpanded,
+  unmarkDone,
+} from '../atoms/ui';
 import { useFolderFilter } from '../hooks/useFolderFilter';
 import { useUrlFolderSelection } from '../hooks/useUrlFolderSelection';
-import { useUIStore } from '../stores/uiStore';
 import { getProjectColor } from '../utils/projectColors';
 import { isWorktreeDirectory } from '../utils/swarmUtils';
 import { formatTimeAgo, getLastMessageTime } from '../utils/time';
@@ -57,21 +72,14 @@ export function Gallery({ filter }: GalleryProps = {}) {
     return () => clearInterval(id);
   }, []);
 
-  // Persisted Gallery UI state via uiStore (Zustand + persist middleware)
-  const galleryExpandedProjects = useUIStore((s) => s.galleryExpandedProjects);
-  const galleryCollapsedProjects = useUIStore((s) => s.galleryCollapsedProjects);
-  const showTempSessions = useUIStore((s) => s.showTempSessions);
-  const setShowTempSessions = useUIStore((s) => s.setShowTempSessions);
-  const toggleExpanded = useUIStore((s) => s.toggleGalleryExpanded);
-  const toggleCollapsed = useUIStore((s) => s.toggleGalleryCollapsed);
-  const showDoneConversations = useUIStore((s) => s.showDoneConversations);
-  const setShowDoneConversations = useUIStore((s) => s.setShowDoneConversations);
-  const doneConversations = useUIStore((s) => s.doneConversations);
-  const unmarkDone = useUIStore((s) => s.unmarkDone);
-  const promotedWorkers = useUIStore((s) => s.promotedWorkers);
-  const promoteWorker = useUIStore((s) => s.promoteWorker);
-  const showWorkerConversations = useUIStore((s) => s.showWorkerConversations);
-  const setShowWorkerConversations = useUIStore((s) => s.setShowWorkerConversations);
+  // Persisted Gallery UI state via atoms/ui
+  const galleryExpandedProjects = useAtomValue(galleryExpandedProjectsAtom);
+  const galleryCollapsedProjects = useAtomValue(galleryCollapsedProjectsAtom);
+  const showTempSessions = useAtomValue(showTempSessionsAtom);
+  const showDoneConversations = useAtomValue(showDoneConversationsAtom);
+  const doneConversations = useAtomValue(doneConversationsAtom);
+  const promotedWorkers = useAtomValue(promotedWorkersAtom);
+  const showWorkerConversations = useAtomValue(showWorkerConversationsAtom);
   const [showDoneBySection, setShowDoneBySection] = useState<Record<string, boolean>>({});
 
   // Derived Sets for O(1) lookup
@@ -363,7 +371,7 @@ export function Gallery({ filter }: GalleryProps = {}) {
         </div>
       );
     },
-    [doneSet, isDoneView, isWorkersView, navigate, promoteWorker, unmarkDone]
+    [doneSet, isDoneView, isWorkersView, navigate]
   );
 
   const renderProjectSection = useCallback(
@@ -419,7 +427,7 @@ export function Gallery({ filter }: GalleryProps = {}) {
             <button
               type="button"
               className="project-header"
-              onClick={() => toggleCollapsed(group.directory)}
+              onClick={() => toggleGalleryCollapsed(group.directory)}
             >
               <div className="project-header-left">
                 <span className={`project-chevron ${isCollapsed ? 'collapsed' : ''}`}>&#9660;</span>
@@ -459,7 +467,7 @@ export function Gallery({ filter }: GalleryProps = {}) {
                   className="show-more-btn"
                   onClick={(e) => {
                     e.stopPropagation();
-                    toggleExpanded(group.directory);
+                    toggleGalleryExpanded(group.directory);
                   }}
                 >
                   Show more... ({hiddenCount} hidden)
@@ -472,7 +480,7 @@ export function Gallery({ filter }: GalleryProps = {}) {
                   className="show-more-btn"
                   onClick={(e) => {
                     e.stopPropagation();
-                    toggleExpanded(group.directory);
+                    toggleGalleryExpanded(group.directory);
                   }}
                 >
                   Show less
@@ -491,8 +499,6 @@ export function Gallery({ filter }: GalleryProps = {}) {
       getSectionKey,
       renderConversationCard,
       showDoneBySection,
-      toggleCollapsed,
-      toggleExpanded,
       toggleSectionDoneVisibility,
     ]
   );

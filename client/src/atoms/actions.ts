@@ -7,7 +7,6 @@ import type {
 } from '@unleashd/shared';
 import { ConversationSchema } from '@unleashd/shared';
 import { enableMapSet, produce } from 'immer';
-import { DRAFT_KEY_PREFIX, PENDING_FILES_KEY_PREFIX, useUIStore } from '../stores/uiStore';
 import {
   activeConversationIdAtom,
   childConversationsAtomFamily,
@@ -47,6 +46,15 @@ import {
   resendPendingCreation,
 } from './pending-creations';
 import { jotaiStore } from './store';
+import {
+  DRAFT_KEY_PREFIX,
+  PENDING_FILES_KEY_PREFIX,
+  getSavedActiveConversationId,
+  hydrateUiFromServer,
+  markConversationsSeenBulk,
+  markMessagesSeen,
+  removeSeenIndex,
+} from './ui';
 
 // Enable Immer's Map/Set support — must be called once before any produce() on Maps.
 // mutate.ts also calls enableMapSet; this is idempotent and keeps this file standalone.
@@ -356,7 +364,7 @@ function handleInit(data: Extract<ServerMessage, { type: 'init' }>): void {
 
   // Apply server UI state preferences
   if (data.uiState) {
-    useUIStore.getState().hydrateFromServer(data.uiState);
+    hydrateUiFromServer(data.uiState);
   }
 
   // Drop stale streaming state from before this reconnect
@@ -462,10 +470,7 @@ function handleConversationDeleted(
   });
   localStorage.removeItem(`${DRAFT_KEY_PREFIX}${data.conversationId}`);
   localStorage.removeItem(`${PENDING_FILES_KEY_PREFIX}${data.conversationId}`);
-  useUIStore.setState((s) => {
-    const { [data.conversationId]: _, ...rest } = s.lastSeenMessageIndex;
-    return { lastSeenMessageIndex: rest };
-  });
+  removeSeenIndex(data.conversationId);
   // §5 #10 — atomFamily memoizes per-ID atoms forever; deleted conversations
   // leak one atom per family. Remove all families keyed by this id.
   conversationAtomFamily.remove(data.conversationId);
@@ -500,9 +505,9 @@ function handleMessageEvent(data: Extract<ServerMessage, { type: 'message' }>): 
   });
 
   if (newMessageIndex !== null) {
-    const activeId = useUIStore.getState().activeConversationId;
+    const activeId = getSavedActiveConversationId();
     if (activeId === data.conversationId) {
-      useUIStore.getState().markMessagesSeen(data.conversationId, newMessageIndex);
+      markMessagesSeen(data.conversationId, newMessageIndex);
     }
   }
 }
@@ -584,14 +589,12 @@ function handleConversationsUpdated(
   }
   // Mark all updated conversations as seen to prevent stale NEW badges after
   // external JSONL edits. Conservative — better to miss a badge than show wrong one.
-  useUIStore.setState((s) => {
-    const updates: Record<string, number> = {};
-    for (const conv of data.conversations) {
-      const messageCount = conv.messageCount ?? conv.messages.length;
-      if (messageCount > 0) updates[conv.id] = messageCount - 1;
-    }
-    return { lastSeenMessageIndex: { ...s.lastSeenMessageIndex, ...updates } };
-  });
+  const updates: Record<string, number> = {};
+  for (const conv of data.conversations) {
+    const messageCount = conv.messageCount ?? conv.messages.length;
+    if (messageCount > 0) updates[conv.id] = messageCount - 1;
+  }
+  markConversationsSeenBulk(updates);
 }
 
 function handleConversationLoadComplete(

@@ -9,9 +9,9 @@ import {
   normalizeModelId,
 } from '@unleashd/shared';
 import { produce } from 'immer';
-import { PENDING_CONVERSATIONS_KEY } from '../stores/uiStore';
 import { activeConversationIdAtom, pendingCreationsAtom, sendFnAtom } from './conversations';
 import { jotaiStore } from './store';
+import { PENDING_CONVERSATIONS_KEY } from './ui';
 
 export type { BuddyContext } from '@unleashd/shared';
 
