@@ -44,6 +44,25 @@ export const mobileSearchResultsAtom = atom((get) => get(mobileSearchStateAtom).
 
 `T2`: `MobileSearchState` sum type, never `atom<string>('')` sentinel. `mobile/atoms/search.ts → atoms/conversations.ts` is allowed; core never imports mobile.
 
+### Creation actions (`mobile/atoms/create.ts`)
+
+Mobile v1 shipped read-only: no create affordance on Chats, Swarms, or Buddies,
+and empty states that told the user to go use the desktop app. `+ New` on all
+three now routes through `mobile/atoms/create.ts`:
+
+- `MobileCreateRequest` (`kind: 'chat' | 'swarm'`) → thin `createFromRequest`
+  dispatcher → one handler per kind. Both land on the core `createConversation`
+  action, so there is no second creation spine; `swarm` only adds the
+  `swarmDebugPrefix` from `GET /api/oompa-swarm-context`. That fetch failing
+  surfaces as an error in the sheet — never a silent downgrade to a plain chat.
+- `createBuddyViaBuilder()` is a different shape (no directory, no config):
+  `POST /api/buddies/builder` with a client-owned `conversationId`, then route
+  to the returned Builder thread.
+
+`recentDirectoriesAtom` (`atoms/conversations.ts`) is shared with the desktop
+`PathAutocomplete` — it replaced a local `useMemo` in `Sidebar.tsx` so the two
+trees cannot drift on what counts as a recent folder.
+
 ### UI state partition
 
 `atoms/ui.ts` holds the shared/local partition (folded from the former
@@ -80,3 +99,37 @@ Scalar / full-replace sets stay plain `jotaiStore.set`. Current code already con
 `client/src/components/SubAgentPanel.tsx:158` previously linked to `/swarms/project` — dead link matching no `App.tsx` route. Retarget to `/workers/detail` or remove; do not copy the stale path into mobile.
 
 ---
+
+### One conversation pane, two entry points
+
+`mobile/conversations/ConversationView.tsx` is the only mobile conversation UI.
+`ChatMobile` is a 15-line route wrapper for `/chat/:id`; buddy threads route to
+the same place, and any buddy surface wanting an inline thread embeds
+`ConversationView` directly. Logic added to `ChatMobile` is logic buddy threads
+silently do not get — keep it a wrapper.
+
+Shared with desktop rather than reimplemented:
+- `atoms/fork-actions.ts` — `forkConversation()` used by both `Chat.tsx` and the
+  mobile header. Soft handoff: new conversation + `resumedFromConversationId` +
+  transcript seeded into `draft:<new id>`.
+- `utils/conversation-transcript.ts` — transcript and fork-draft text, including
+  the swarm-debug-prefix strip that display does.
+- `utils/ids.ts` — `newId()`. `crypto.randomUUID` is secure-context-gated and is
+  `undefined` over a plain-http LAN IP, which is exactly how phones reach the dev
+  server. Gate G4 bans bare `crypto.randomUUID`.
+
+### Layout contract: panes fill their parent, never the viewport
+
+`.mobile-content` is already `100dvh − tab-bar`. A route that sizes itself to the
+viewport ends up taller than its own scrollport, and anything pinned to its
+bottom edge (the composer) lands underneath the tab bar — unreachable, because
+the inner message list's `overscroll-behavior: contain` blocks scroll chaining
+to the outer container.
+
+`ShellMobile` therefore has two layout modes, keyed on the route:
+- list routes scroll as a page — `.mobile-content__inner` is `flex: 1 0 auto`
+- `/chat/*` is a fixed-height pane — `.mobile-content--pane` makes the inner
+  `flex: 1 1 0` so it has a *definite* height and the pane scrolls internally
+
+`height: 100%` alone does not work here: against an `auto`-basis parent it falls
+back to content height, which produced a 43,000px pane.
