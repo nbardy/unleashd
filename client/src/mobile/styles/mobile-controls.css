@@ -1,0 +1,223 @@
+/* =============================================================================
+   mobile-controls.css — small shared controls used across mobile feature views.
+
+   These class names were in use across the buddy and swarm mobile trees with NO
+   rule behind them (found 2026-08-18 by client/test/css-classes.test.ts). CSS
+   does not warn about an undefined class, so the buttons rendered as bare
+   inline elements with no tap target — which is why the buddy page looked like
+   it was "missing" a new-conversation action that had in fact been wired up all
+   along.
+   ============================================================================= */
+
+.mobile-cta {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  /* 44px: the affordances here are primary actions on a touch screen. */
+  min-height: 44px;
+  padding: 0 16px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--text-on-accent);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1;
+  text-align: center;
+  white-space: nowrap;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform 100ms ease, opacity 120ms ease;
+}
+
+.mobile-cta:active {
+  transform: scale(0.97);
+}
+
+.mobile-cta:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.mobile-cta:disabled,
+.mobile-cta[aria-disabled='true'] {
+  cursor: default;
+  opacity: 0.5;
+  transform: none;
+}
+
+.mobile-cta--secondary {
+  border-color: var(--border-subtle);
+  background: var(--bg-raised-2);
+  color: var(--text-primary);
+}
+
+.mobile-cta--small {
+  min-height: 36px;
+  padding: 0 12px;
+  font-size: 13px;
+}
+
+.mobile-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 36px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.mobile-link:active {
+  opacity: 0.7;
+}
+
+.mobile-muted {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.mobile-body {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 14px;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+
+.mobile-badge {
+  display: inline-flex;
+  align-items: center;
+  flex: none;
+  min-height: 20px;
+  padding: 3px 8px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 999px;
+  background: var(--bg-raised-2);
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+/* `status` is a free-form server string, so these are opportunistic accents —
+   an unknown status still renders as the neutral base above. */
+.mobile-badge--active,
+.mobile-badge--running,
+.mobile-badge--open {
+  border-color: color-mix(in srgb, var(--theme-success) 35%, var(--border-subtle));
+  color: var(--theme-success);
+}
+
+.mobile-badge--blocked,
+.mobile-badge--error,
+.mobile-badge--failed {
+  border-color: color-mix(in srgb, var(--theme-danger) 40%, var(--border-subtle));
+  color: var(--theme-danger);
+}
+
+.mobile-badge--review,
+.mobile-badge--pending {
+  border-color: color-mix(in srgb, var(--theme-warning) 40%, var(--border-subtle));
+  color: var(--theme-warning);
+}
+
+.mobile-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  color: var(--text-muted);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.mobile-toggle input {
+  width: 18px;
+  height: 18px;
+  accent-color: var(--accent);
+}
+
+.mobile-field {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.mobile-field input,
+.mobile-field textarea,
+.mobile-field select,
+.mobile-inline-form input {
+  width: 100%;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  background: var(--bg-raised-2);
+  color: var(--text-primary);
+  font-family: inherit;
+  /* 16px prevents iOS Safari from auto-zooming the viewport on focus. */
+  font-size: 16px;
+  line-height: 1.4;
+}
+
+.mobile-field input:focus-visible,
+.mobile-field textarea:focus-visible,
+.mobile-field select:focus-visible,
+.mobile-inline-form input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.mobile-inline-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-top: 8px;
+}
+
+.mobile-inline-form input {
+  flex: 1;
+  min-width: 160px;
+}
+
+.mobile-error {
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--theme-danger) 45%, var(--border-subtle));
+  border-radius: 10px;
+  color: var(--theme-danger);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.mobile-pre {
+  margin: 0;
+  padding: 10px 12px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  background: var(--bg-page);
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}

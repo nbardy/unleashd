@@ -13,9 +13,11 @@ import {
   MobileBadge,
   MobileCardButton,
   MobileEmptyPanel,
+  MobileHeaderAction,
   MobilePage,
   MobilePath,
 } from '../components/MobileUI';
+import { NewConversationSheet } from '../components/NewConversationSheet';
 
 function useTimeTick(ms = 30_000) {
   const [, setTick] = useState(0);
@@ -89,11 +91,14 @@ export function ConversationListMobile({
 }) {
   const ids = useAtomValue(scope === 'chats' ? chatConversationIdsAtom : allConversationIdsAtom);
   const chatInbox = useAtomValue(chatConversationInboxAtom);
+  const [showCreate, setShowCreate] = useState(false);
   useTimeTick();
 
   const list =
     ids.length === 0 ? (
-      <MobileEmptyPanel>No conversations yet. Create one from desktop or via API.</MobileEmptyPanel>
+      <MobileEmptyPanel>
+        No conversations yet. Tap <strong>+ New</strong> to start one.
+      </MobileEmptyPanel>
     ) : (
       <div className="mobile-ui-stack mobile-conversation-list">
         {ids.map((id) => (
@@ -110,8 +115,20 @@ export function ConversationListMobile({
       : `${chatInbox.total} ${chatInbox.total === 1 ? 'conversation' : 'conversations'}`;
 
   return (
-    <MobilePage title="Chats" subtitle={subtitle} className="mobile-chats">
-      {list}
-    </MobilePage>
+    <>
+      <MobilePage
+        title="Chats"
+        subtitle={subtitle}
+        className="mobile-chats"
+        headerAside={
+          <MobileHeaderAction onClick={() => setShowCreate(true)} aria-label="New conversation">
+            + New
+          </MobileHeaderAction>
+        }
+      >
+        {list}
+      </MobilePage>
+      {showCreate && <NewConversationSheet kind="chat" onClose={() => setShowCreate(false)} />}
+    </>
   );
 }

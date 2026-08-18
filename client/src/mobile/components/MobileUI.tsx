@@ -63,6 +63,23 @@ export function MobileCardButton({
   );
 }
 
+/**
+ * Primary action in a page header — the "+ New" affordance on Chats, Swarms and
+ * Buddies. Sized to the 44px tap target so it stays reachable one-handed.
+ */
+export function MobileHeaderAction({
+  className,
+  type = 'button',
+  children,
+  ...props
+}: ButtonHTMLAttributes<HTMLButtonElement>) {
+  return (
+    <button {...props} type={type} className={classes('mobile-ui-header-action', className)}>
+      {children}
+    </button>
+  );
+}
+
 export function MobileSurface({
   className,
   children,

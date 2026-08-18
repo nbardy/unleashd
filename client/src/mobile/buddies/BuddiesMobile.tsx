@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useState } from 'react';
+import { type ReactNode, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { buddyApi } from '../../components/buddies/api';
 import type { BuddyOverview } from '../../components/buddies/types';
 import { buddyCardMetrics, selectDirectoryEmployees } from '../../components/buddies/ui-contract';
+import { createBuddyViaBuilder } from '../atoms/create';
 import { EmptyState } from '../components/EmptyState';
-import { MobileCardButton, MobilePage } from '../components/MobileUI';
+import { MobileCardButton, MobileHeaderAction, MobilePage } from '../components/MobileUI';
 
 /**
  * BuddiesMobile — directory at /buddies (mobile @ /buddies).
@@ -41,6 +42,8 @@ export function BuddiesMobile() {
   const [loading, setLoading] = useState(true);
   const [query, setQuery] = useState('');
   const [sortKey, setSortKey] = useState<SortKey>('name');
+  const [creating, setCreating] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -91,42 +94,82 @@ export function BuddiesMobile() {
     return next;
   }, [filtered, sortKey]);
 
+  const openBuilder = async () => {
+    setCreating(true);
+    setCreateError(null);
+    try {
+      navigate(`/chat/${await createBuddyViaBuilder()}`);
+    } catch (cause) {
+      setCreateError(cause instanceof Error ? cause.message : String(cause));
+      setCreating(false);
+    }
+  };
+
+  // The page shell is constant across loading/error/empty/populated so the
+  // "+ New" action never disappears — the empty state is precisely when a user
+  // needs it, and hiding it behind an early return is what made mobile look
+  // like it had no create affordance at all.
+  const shell = (body: ReactNode, subtitle: string) => (
+    <MobilePage
+      title="Buddies"
+      subtitle={subtitle}
+      className="mobile-buddies"
+      headerAside={
+        <MobileHeaderAction
+          onClick={() => void openBuilder()}
+          disabled={creating}
+          aria-label="New buddy"
+        >
+          {creating ? 'Opening…' : '+ New'}
+        </MobileHeaderAction>
+      }
+    >
+      {createError && (
+        <div className="mobile-sheet__error" role="alert">
+          {createError}
+        </div>
+      )}
+      {body}
+    </MobilePage>
+  );
+
   if (loading) {
-    return (
-      <output className="mobile-hub" aria-live="polite" aria-busy="true">
+    return shell(
+      <output className="mobile-buddies__status" aria-live="polite" aria-busy="true">
         <p className="mobile-empty__message">Loading buddies…</p>
-      </output>
+      </output>,
+      'Loading…'
     );
   }
 
   if (error) {
-    return (
-      <div className="mobile-hub">
-        <EmptyState
-          icon="⚠"
-          title="Could not load buddies"
-          message={error}
-          actionLabel="Retry"
-          onAction={() => window.location.reload()}
-        />
-      </div>
+    return shell(
+      <EmptyState
+        icon="⚠"
+        title="Could not load buddies"
+        message={error}
+        actionLabel="Retry"
+        onAction={() => window.location.reload()}
+      />,
+      'Unavailable'
     );
   }
 
   if (!overview || employees.length === 0) {
-    return (
-      <div className="mobile-hub">
-        <EmptyState
-          icon="◎"
-          title="No buddies yet"
-          message="Create a buddy from the desktop Buddies dashboard or via the Builder."
-        />
-      </div>
+    return shell(
+      <EmptyState
+        icon="◎"
+        title="No buddies yet"
+        message="Tap + New to open the Buddy Builder — it interviews you and sets one up."
+        actionLabel={creating ? 'Opening…' : 'New buddy'}
+        onAction={() => void openBuilder()}
+      />,
+      'No buddies'
     );
   }
 
-  return (
-    <MobilePage title="Buddies" subtitle={`${employees.length} buddies`} className="mobile-buddies">
+  return shell(
+    <>
       <div className="mobile-buddies__controls">
         <label className="mobile-search__field" aria-label="Filter buddies">
           <input
@@ -215,6 +258,7 @@ export function BuddiesMobile() {
           })}
         </ul>
       )}
-    </MobilePage>
+    </>,
+    `${employees.length} buddies`
   );
 }

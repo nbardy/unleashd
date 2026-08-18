@@ -1,0 +1,351 @@
+/* =============================================================================
+   mobile-swarm.css — swarm detail + analytics.
+
+   Same story as mobile-buddy.css: these classes were live in the TSX with no
+   rule behind them. Kill signals in particular rendered as identical bare
+   buttons, so "stop" and "kill" were visually indistinguishable.
+   ============================================================================= */
+
+.mobile-swarm-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 16px 16px calc(20px + env(safe-area-inset-bottom));
+}
+
+.mobile-back-btn {
+  align-self: flex-start;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 40px;
+  padding: 0 12px 0 8px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 999px;
+  background: var(--bg-raised-2);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.mobile-swarm-detail__header {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.mobile-swarm-detail__title {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+  overflow-wrap: anywhere;
+}
+
+.mobile-swarm-detail__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.mobile-swarm-detail__actions,
+.mobile-swarm-detail__signals {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.mobile-swarm-detail__debug-btn,
+.mobile-signal-btn {
+  min-height: 40px;
+  padding: 0 14px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 999px;
+  background: var(--bg-raised-2);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* Destructive signals must not look like the neutral ones. */
+.mobile-signal-btn.signal-stop {
+  border-color: color-mix(in srgb, var(--theme-warning) 45%, var(--border-subtle));
+  color: var(--theme-warning);
+}
+
+.mobile-signal-btn.signal-kill {
+  border-color: color-mix(in srgb, var(--theme-danger) 50%, var(--border-subtle));
+  color: var(--theme-danger);
+}
+
+.mobile-signal-btn.signal-confirm {
+  border-color: transparent;
+  background: var(--theme-danger);
+  color: #fff;
+}
+
+.mobile-signal-btn.signal-cancel {
+  color: var(--text-muted);
+}
+
+.mobile-swarm-detail__confirm {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--theme-danger) 40%, var(--border-subtle));
+  border-radius: 12px;
+  color: var(--text-primary);
+  font-size: 13px;
+}
+
+.mobile-swarm-detail__error {
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--theme-danger) 45%, var(--border-subtle));
+  border-radius: 10px;
+  color: var(--theme-danger);
+  font-size: 13px;
+}
+
+.mobile-swarm-detail__empty {
+  padding: 26px 16px;
+  border: 1px dashed var(--border-subtle);
+  border-radius: 14px;
+  color: var(--text-muted);
+  font-size: 13px;
+  text-align: center;
+}
+
+.mobile-swarm-detail__list {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.mobile-worker-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 10px;
+  width: 100%;
+  min-width: 0;
+  padding: 12px 14px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  background: var(--bg-raised-1);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.mobile-worker-row__id {
+  color: var(--text-primary);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.mobile-worker-row__model,
+.mobile-worker-row__msgs {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.mobile-exec-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 14px;
+  background: var(--bg-raised-1);
+}
+
+.mobile-exec-group__snippet {
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.mobile-exec-group__reviews {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding-left: 10px;
+  border-left: 2px solid var(--border-subtle);
+}
+
+.mobile-exec-group__reviews-title {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+/* ---- Analytics ---- */
+.mobile-analytics {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 16px 16px calc(20px + env(safe-area-inset-bottom));
+}
+
+.mobile-analytics__controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+.mobile-analytics__disclaimer {
+  color: var(--text-muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.mobile-analytics__stats,
+.mobile-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 10px;
+}
+
+.mobile-stat-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 12px 14px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  background: var(--bg-raised-1);
+}
+
+.mobile-stat-card__label {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.mobile-stat-card__value {
+  color: var(--text-primary);
+  font-size: 20px;
+  font-weight: 700;
+  line-height: 1.1;
+}
+
+.mobile-stat-card__bar {
+  height: 6px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: var(--bg-raised-2);
+}
+
+.mobile-stat-card__fill {
+  height: 100%;
+  border-radius: 999px;
+  background: var(--accent);
+}
+
+.mobile-analytics__timeline,
+.mobile-timeline {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  min-width: 0;
+}
+
+.mobile-timeline__row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+}
+
+.mobile-timeline__worker {
+  color: var(--text-primary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.mobile-timeline__spans {
+  display: flex;
+  gap: 2px;
+  height: 14px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.mobile-timeline__span-label {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+/* ---- Bottom sheet (analytics span inspector) ---- */
+.mobile-bottom-sheet {
+  position: fixed;
+  inset: 0;
+  z-index: 60;
+  display: flex;
+  align-items: flex-end;
+  background: rgb(0 0 0 / 55%);
+}
+
+.mobile-bottom-sheet__content {
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+  max-height: 80vh;
+  padding: 12px 16px calc(20px + env(safe-area-inset-bottom));
+  border-radius: 18px 18px 0 0;
+  background: var(--bg-raised-1);
+}
+
+.mobile-bottom-sheet__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--text-primary);
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.mobile-bottom-sheet__body {
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* ---- List-page container hooks ---- */
+.mobile-chats,
+.mobile-swarms,
+.mobile-swarms__list {
+  min-width: 0;
+}
+
+.stat-idle {
+  color: var(--text-muted);
+}
+
+.stat-time {
+  color: var(--text-muted);
+}

@@ -7,6 +7,7 @@ import type {
 } from '@unleashd/shared';
 import { atom } from 'jotai';
 import { atomFamily } from 'jotai-family';
+import { normalizeFolderDirectory } from '../utils/directories';
 import { isWorktreeDirectory } from '../utils/swarmUtils';
 import { getConversationLastActivity } from '../utils/time';
 
@@ -148,6 +149,19 @@ export const allConversationsAtom = atom((get) => {
 // Stable sorted ID list — only changes on add/delete/reorder.
 // Use with atomFamily for per-item subtree pruning (see CLAUDE.md).
 export const allConversationIdsAtom = atom((get) => get(allConversationsAtom).map((c) => c.id));
+
+// Distinct real project folders, newest-first (allConversationsAtom is sorted).
+// Worktrees are excluded — they are worker scratch dirs, never a folder a human
+// would start a new conversation in. Feeds every "pick a directory" surface:
+// desktop PathAutocomplete and the mobile create sheet.
+export const recentDirectoriesAtom = atom((get) => {
+  const seen = new Set<string>();
+  for (const conv of get(allConversationsAtom)) {
+    const dir = normalizeFolderDirectory(conv.workingDirectory);
+    if (!isWorktreeDirectory(dir)) seen.add(dir);
+  }
+  return Array.from(seen);
+});
 
 const CHAT_INBOX_LIMIT = 50;
 

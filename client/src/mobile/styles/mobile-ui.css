@@ -208,3 +208,732 @@
     transition: none;
   }
 }
+
+/* ---- Header action ("+ New" on Chats / Swarms / Buddies) ---- */
+
+.mobile-ui-header-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding: 0 16px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: var(--accent);
+  color: var(--text-on-accent);
+  font: inherit;
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    transform 100ms ease,
+    opacity 120ms ease;
+}
+
+.mobile-ui-header-action:active {
+  transform: scale(0.96);
+}
+
+.mobile-ui-header-action:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.mobile-ui-header-action:disabled {
+  cursor: default;
+  opacity: 0.55;
+  transform: none;
+}
+
+/* ---- Create sheet ---- */
+
+/* Native <dialog>: showModal() puts it in the top layer, so no z-index needed.
+   Bottom-anchored via auto side margins + 0 bottom margin. */
+.mobile-sheet {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 560px;
+  max-height: 88vh;
+  margin: auto auto 0;
+  padding: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  border: 1px solid var(--border-subtle);
+  border-bottom: none;
+  border-radius: 18px 18px 0 0;
+  background: var(--bg-raised-1);
+  color: var(--text-primary);
+}
+
+.mobile-sheet::backdrop {
+  background: rgb(0 0 0 / 55%);
+}
+
+.mobile-sheet__inner {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 10px 16px calc(20px + env(safe-area-inset-bottom));
+}
+
+.mobile-sheet *,
+.mobile-sheet *::before,
+.mobile-sheet *::after {
+  box-sizing: border-box;
+}
+
+.mobile-sheet__grabber {
+  flex: none;
+  align-self: center;
+  width: 38px;
+  height: 4px;
+  border-radius: 999px;
+  background: var(--border-strong);
+}
+
+.mobile-sheet__header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.mobile-sheet__title {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 19px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.mobile-sheet__close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 36px;
+  height: 36px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 999px;
+  background: var(--bg-raised-2);
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.mobile-sheet__label,
+.mobile-sheet__section-title {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.mobile-sheet__section-title {
+  margin-top: 4px;
+}
+
+.mobile-sheet__input {
+  width: 100%;
+  min-width: 0;
+  /* 16px keeps iOS Safari from zooming the viewport on focus. */
+  padding: 12px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  background: var(--bg-raised-2);
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 16px;
+  line-height: 1.35;
+}
+
+.mobile-sheet__input--filter {
+  font-family: inherit;
+}
+
+.mobile-sheet__input:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.mobile-sheet__recents {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 6px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.mobile-sheet__recent {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 12px;
+  background: var(--bg-raised-2);
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.mobile-sheet__recent--selected {
+  border-color: var(--accent);
+}
+
+.mobile-sheet__recent-name {
+  display: block;
+  overflow: hidden;
+  color: var(--text-primary);
+  font-size: 14px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mobile-sheet__recent-path {
+  display: block;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mobile-sheet__no-matches,
+.mobile-sheet__note {
+  /* __note is an <output> (inline by default) — block keeps it on its own row. */
+  display: block;
+  padding: 8px 2px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.mobile-sheet__error {
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--theme-error, #ef4444) 45%, var(--border-subtle));
+  border-radius: 12px;
+  color: var(--theme-error, #ef4444);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.mobile-sheet__footer {
+  position: sticky;
+  bottom: calc(-20px - env(safe-area-inset-bottom));
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin: 0 -16px calc(-20px - env(safe-area-inset-bottom));
+  padding: 10px 16px calc(20px + env(safe-area-inset-bottom));
+  border-top: 1px solid var(--border-subtle);
+  background: var(--bg-raised-1);
+}
+
+.mobile-sheet__confirm {
+  min-height: 48px;
+  border: none;
+  border-radius: 14px;
+  background: var(--accent);
+  color: var(--text-on-accent);
+  font: inherit;
+  font-size: 15px;
+  font-weight: 700;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.mobile-sheet__confirm:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.mobile-buddies__status {
+  display: block;
+  padding: 24px 0;
+  text-align: center;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mobile-ui-header-action {
+    transition: none;
+  }
+}
+
+/* ---- Conversation pane (ConversationView) ---- */
+/* Fills its parent, never the viewport — see the layout contract comment in
+   ConversationView.tsx and the .mobile-content rules in mobile.css. */
+.mobile-chat {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+  background: var(--bg-page);
+}
+
+.mobile-chat__header {
+  flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid var(--border-subtle);
+  background: var(--bg-raised-1);
+}
+
+.mobile-chat__titlebar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.mobile-chat__back {
+  flex: none;
+  min-width: 40px;
+  min-height: 40px;
+  border: none;
+  background: transparent;
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 16px;
+  cursor: pointer;
+}
+
+.mobile-chat__dir {
+  overflow: hidden;
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mobile-chat__status {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.mobile-chat__status--running {
+  color: var(--theme-success);
+}
+
+.mobile-chat__actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+}
+
+.mobile-chat__action {
+  min-height: 36px;
+  padding: 0 12px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 999px;
+  background: var(--bg-raised-2);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.mobile-chat__action:active {
+  border-color: var(--border-strong);
+}
+
+.mobile-chat__action:disabled {
+  cursor: default;
+  opacity: 0.45;
+}
+
+.mobile-chat__action-error {
+  color: var(--theme-danger);
+  font-size: 11px;
+}
+
+.mobile-chat__messages {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 8px;
+  min-height: 0;
+  padding: 12px 12px 8px;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior-y: contain;
+}
+
+.mobile-chat__empty,
+.mobile-chat__notice,
+.mobile-chat__loading {
+  padding: 24px;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.mobile-chat__empty {
+  text-align: center;
+}
+
+.mobile-chat__loading {
+  display: grid;
+  flex: 1;
+  place-items: center;
+}
+
+.mobile-chat__back-link {
+  color: var(--accent);
+  font-size: 13px;
+}
+
+.mobile-chat__thinking {
+  padding: 4px 12px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+/* ---- Message markdown (MessageRow sets .mobile-markdown) ---- */
+/* This selector did not exist: MessageRow.tsx has always set the class but no
+   rule matched it, so every inline code span, pre block, list and table in a
+   mobile message rendered as unstyled default HTML. Same silent-failure shape
+   as the undefined --accent token — a name with no definition behind it. */
+.mobile-markdown {
+  min-width: 0;
+  color: var(--text-primary);
+  font-size: 14px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.mobile-markdown > :first-child {
+  margin-top: 0;
+}
+
+.mobile-markdown > :last-child {
+  margin-bottom: 0;
+}
+
+.mobile-markdown p,
+.mobile-markdown ul,
+.mobile-markdown ol,
+.mobile-markdown blockquote {
+  margin: 0 0 8px;
+}
+
+.mobile-markdown ul,
+.mobile-markdown ol {
+  padding-left: 20px;
+}
+
+.mobile-markdown li {
+  margin: 2px 0;
+}
+
+.mobile-markdown h1,
+.mobile-markdown h2,
+.mobile-markdown h3,
+.mobile-markdown h4 {
+  margin: 12px 0 6px;
+  font-size: 15px;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.mobile-markdown code {
+  padding: 1px 5px;
+  border-radius: 5px;
+  background: var(--bg-raised-2);
+  color: var(--text-primary);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.mobile-markdown pre {
+  margin: 0 0 8px;
+  padding: 10px 12px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  background: var(--bg-page);
+}
+
+/* A <pre><code> block must not inherit the inline-code chip styling. */
+.mobile-markdown pre code {
+  padding: 0;
+  border-radius: 0;
+  background: none;
+  font-size: 12px;
+  line-height: 1.45;
+  white-space: pre;
+}
+
+.mobile-markdown blockquote {
+  padding-left: 10px;
+  border-left: 3px solid var(--border-strong);
+  color: var(--text-muted);
+}
+
+.mobile-markdown a {
+  color: var(--accent);
+  overflow-wrap: anywhere;
+}
+
+.mobile-markdown table {
+  display: block;
+  max-width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.mobile-markdown th,
+.mobile-markdown td {
+  padding: 5px 8px;
+  border: 1px solid var(--border-subtle);
+  text-align: left;
+}
+
+.mobile-markdown img {
+  max-width: 100%;
+  height: auto;
+}
+
+.mobile-markdown hr {
+  margin: 10px 0;
+  border: none;
+  border-top: 1px solid var(--border-subtle);
+}
+
+/* ---- Composer ---- */
+/* Lean footer: minimal height, restrained corners, no standing helper text.
+   The earlier version was a 22px-radius pill with a queue-count line above it
+   and ~67px of total height — chunky for something present on every screen. */
+.mobile-composer {
+  flex-shrink: 0;
+  padding: 6px 10px 8px;
+  /* No safe-area inset: the tab bar below already pads for the home indicator.
+     Adding it here double-counted and pushed the composer off-screen. */
+  border-top: 1px solid var(--border-subtle);
+  background: var(--bg-raised-1);
+}
+
+.mobile-composer__box {
+  display: flex;
+  align-items: flex-end;
+  gap: 4px;
+  min-width: 0;
+  padding: 3px 3px 3px 4px;
+  border: 1px solid var(--border-subtle);
+  /* 10px, not a pill — enough to read as a field, not as a chat bubble. */
+  border-radius: 10px;
+  background: var(--bg-page);
+  transition: border-color 120ms ease;
+}
+
+.mobile-composer__box:focus-within {
+  border-color: var(--accent);
+}
+
+.mobile-composer__box--disabled {
+  opacity: 0.6;
+}
+
+.mobile-composer__input {
+  flex: 1;
+  min-width: 0;
+  /* One 16px line + 4px padding. Was 36px. */
+  min-height: 30px;
+  max-height: 112px;
+  padding: 4px 4px 4px 6px;
+  border: none;
+  background: none;
+  color: var(--text-primary);
+  /* 16px is load-bearing: iOS Safari auto-zooms the viewport on focus for any
+     input under 16px, which is what zoomed the page and clipped the send
+     button. Do not lower this to buy height — take it from padding instead. */
+  font-family: inherit;
+  font-size: 16px;
+  line-height: 1.35;
+  resize: none;
+  outline: none;
+}
+
+.mobile-composer__input::placeholder {
+  color: var(--text-muted);
+}
+
+.mobile-composer__actions {
+  display: flex;
+  align-items: center;
+  flex: none;
+  gap: 4px;
+}
+
+.mobile-composer__btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition:
+    transform 100ms ease,
+    opacity 120ms ease;
+}
+
+.mobile-composer__btn:active {
+  transform: scale(0.92);
+}
+
+.mobile-composer__btn--send {
+  background: var(--accent);
+  color: var(--text-on-accent);
+}
+
+.mobile-composer__btn--send:disabled {
+  background: var(--bg-raised-2);
+  color: var(--text-muted);
+  cursor: default;
+  opacity: 0.6;
+  transform: none;
+}
+
+.mobile-composer__btn--stop {
+  background: var(--theme-danger);
+  color: #fff;
+}
+
+.mobile-composer__stop-glyph {
+  width: 9px;
+  height: 9px;
+  border-radius: 1px;
+  background: currentColor;
+}
+
+.mobile-composer__spinner {
+  width: 12px;
+  height: 12px;
+  border: 2px solid currentColor;
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: mobile-composer-spin 700ms linear infinite;
+}
+
+@keyframes mobile-composer-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mobile-composer__spinner {
+    animation-duration: 2s;
+  }
+  .mobile-composer__btn {
+    transition: none;
+  }
+}
+
+.mobile-composer__error {
+  padding: 4px 4px 0;
+  color: var(--theme-danger);
+  font-size: 11px;
+  white-space: pre-wrap;
+}
+
+/* ---- Slim conversation header ---- */
+.mobile-chat__heading {
+  flex: 1;
+  min-width: 0;
+}
+
+.mobile-chat__model {
+  max-width: 100%;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.mobile-chat__model:active {
+  color: var(--text-primary);
+}
+
+.mobile-chat__config-error {
+  padding: 6px 8px;
+  border: 1px solid color-mix(in srgb, var(--theme-danger) 45%, var(--border-subtle));
+  border-radius: 8px;
+  color: var(--theme-danger);
+  font-size: 11px;
+}
+
+.mobile-chat__creation-error {
+  max-width: 320px;
+  text-align: center;
+}
+
+.mobile-chat__creation-error-detail {
+  margin: 6px 0 12px;
+  color: var(--theme-danger);
+  font-size: 12px;
+  word-break: break-word;
+}
+
+/* ---- Model sheet options ---- */
+.mobile-sheet__options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.mobile-sheet__option {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 40px;
+  padding: 0 14px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 999px;
+  background: var(--bg-raised-2);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.mobile-sheet__option--selected {
+  border-color: var(--accent);
+  color: var(--text-primary);
+}
+
+.mobile-sheet__option-meta {
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}

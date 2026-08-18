@@ -1,10 +1,22 @@
+import { useAtomValue } from 'jotai';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { useAtomValue } from 'jotai';
-import { createConversation } from '../../atoms/pending-creations';
-import { allConversationIdsAtom } from '../../atoms/conversations';
 import { setConversationConfig } from '../../atoms/config-actions';
-import { buddyApi, asArray } from '../../components/buddies/api';
+import { allConversationIdsAtom } from '../../atoms/conversations';
+import { createConversation } from '../../atoms/pending-creations';
+import { asArray, buddyApi } from '../../components/buddies/api';
+import {
+  buildBuddyContextForTalk,
+  countReviewConversations,
+  deriveBuddyHierarchy,
+  filterAutomationConversations,
+  filterVisibleConversations,
+  getLatestWorkspaceConversation,
+  selectLegacyWorkForWorkspace,
+  selectPrimaryProject,
+  selectWorkspace,
+  selectWorkspaceProjects,
+} from '../../components/buddies/buddies-shaping';
 import type {
   Buddy,
   BuddyAutomation,
@@ -18,24 +30,12 @@ import type {
   Workspace,
 } from '../../components/buddies/types';
 import { EMPTY_MEMORY } from '../../components/buddies/types';
-import {
-  buildBuddyContextForTalk,
-  countReviewConversations,
-  deriveBuddyHierarchy,
-  filterAutomationConversations,
-  filterVisibleConversations,
-  getLatestWorkspaceConversation,
-  selectLegacyWorkForWorkspace,
-  selectPrimaryProject,
-  selectWorkspace,
-  selectWorkspaceProjects,
-} from '../../components/buddies/buddies-shaping';
 import { EmptyState } from '../components/EmptyState';
-import { WorkTab } from './BuddyDetailWorkTab';
+import { AutomationsTab } from './BuddyDetailAutomationsTab';
 import { ConversationsTab } from './BuddyDetailConversationsTab';
 import { MemoryTab } from './BuddyDetailMemoryTab';
-import { AutomationsTab } from './BuddyDetailAutomationsTab';
 import { BuddyProfileEditor } from './BuddyDetailProfileEditor';
+import { WorkTab } from './BuddyDetailWorkTab';
 
 /**
  * BuddyDetailMobile — per-buddy detail at /buddies/:buddyId (mobile).
@@ -122,7 +122,7 @@ export function BuddyDetailMobile() {
         conversations: asArray<ConversationLink>(detail, 'conversations'),
         skills: asArray<{ name: string; mode?: string; instruction_path?: string | null }>(
           detail,
-          'skills',
+          'skills'
         ),
         manager,
         directReports,
@@ -132,13 +132,13 @@ export function BuddyDetailMobile() {
       setEmployee(record);
       const preferredWorkspace =
         workspaces.find((candidate) =>
-          legacyWorkItems.some((item) => item.project_id === candidate.id),
+          legacyWorkItems.some((item) => item.project_id === candidate.id)
         ) ??
         workspaces.find((candidate) => candidate.slug !== 'buddies') ??
         workspaces[0];
       setSelectedWorkspaceId(preferredWorkspace?.id ?? '');
     },
-    [buddyId, loadGenerationRef],
+    [buddyId, loadGenerationRef]
   );
 
   const loadMemory = useCallback(
@@ -157,7 +157,7 @@ export function BuddyDetailMobile() {
       });
       setMemoryError(null);
     },
-    [buddyId, employee?.buddy.soul_path, loadGenerationRef],
+    [buddyId, employee?.buddy.soul_path, loadGenerationRef]
   );
 
   const loadAutomations = useCallback(
@@ -169,7 +169,7 @@ export function BuddyDetailMobile() {
       setAutomations(asArray<BuddyAutomation>(payload, 'automations'));
       setAutomationError(null);
     },
-    [buddyId, loadGenerationRef],
+    [buddyId, loadGenerationRef]
   );
 
   useEffect(() => {
@@ -219,33 +219,40 @@ export function BuddyDetailMobile() {
 
   const workspace = useMemo(
     () => selectWorkspace(employee?.workspaces ?? [], selectedWorkspaceId),
-    [employee?.workspaces, selectedWorkspaceId],
+    [employee?.workspaces, selectedWorkspaceId]
   );
   const workspaceProjects = useMemo(
     () => selectWorkspaceProjects(employee?.projects ?? [], workspace?.id),
-    [employee?.projects, workspace?.id],
+    [employee?.projects, workspace?.id]
   );
   const legacyWork = useMemo(
     () => selectLegacyWorkForWorkspace(employee?.legacyWorkItems ?? [], workspace?.id),
-    [employee?.legacyWorkItems, workspace?.id],
+    [employee?.legacyWorkItems, workspace?.id]
   );
-  const primaryProject = useMemo(() => selectPrimaryProject(workspaceProjects), [workspaceProjects]);
+  const primaryProject = useMemo(
+    () => selectPrimaryProject(workspaceProjects),
+    [workspaceProjects]
+  );
   const visibleConversations = useMemo(
     () =>
-      filterVisibleConversations(employee?.conversations ?? [], showReviewConversations, availableIds),
-    [availableIds, employee?.conversations, showReviewConversations],
+      filterVisibleConversations(
+        employee?.conversations ?? [],
+        showReviewConversations,
+        availableIds
+      ),
+    [availableIds, employee?.conversations, showReviewConversations]
   );
   const reviewCount = useMemo(
     () => countReviewConversations(employee?.conversations ?? []),
-    [employee?.conversations],
+    [employee?.conversations]
   );
   const automationConversations = useMemo(
     () => filterAutomationConversations(employee?.conversations ?? []),
-    [employee?.conversations],
+    [employee?.conversations]
   );
   const latestWorkspaceConversation = useMemo(
     () => getLatestWorkspaceConversation(employee?.conversations ?? [], workspace?.id),
-    [employee?.conversations, workspace?.id],
+    [employee?.conversations, workspace?.id]
   );
 
   const talk = useCallback(
@@ -271,14 +278,15 @@ export function BuddyDetailMobile() {
       });
       navigate(`/chat/${id}`);
     },
-    [employee, navigate],
+    [employee, navigate]
   );
 
   const openProjectConversation = useCallback(
     (targetWorkspace: Workspace, projectId: string) => {
       const existing = [...(employee?.conversations ?? [])]
         .filter((conversation) => {
-          const conversationId = conversation.conversation_id ?? conversation.unleashd_conversation_id;
+          const conversationId =
+            conversation.conversation_id ?? conversation.unleashd_conversation_id;
           return (
             conversation.buddy_project_id === projectId &&
             Boolean(conversationId && availableIds.has(conversationId))
@@ -287,7 +295,7 @@ export function BuddyDetailMobile() {
         .sort(
           (left, right) =>
             new Date(right.last_active_at ?? 0).getTime() -
-            new Date(left.last_active_at ?? 0).getTime(),
+            new Date(left.last_active_at ?? 0).getTime()
         )[0];
       const conversationId = existing?.conversation_id ?? existing?.unleashd_conversation_id;
       if (conversationId) {
@@ -296,7 +304,7 @@ export function BuddyDetailMobile() {
       }
       talk(targetWorkspace, projectId);
     },
-    [availableIds, employee?.conversations, navigate, talk],
+    [availableIds, employee?.conversations, navigate, talk]
   );
 
   if (!buddyId) {
@@ -347,7 +355,9 @@ export function BuddyDetailMobile() {
           <div className="mobile-buddy-detail__copy">
             <h1 className="mobile-buddy-detail__name">{employee.buddy.name}</h1>
             <p className="mobile-buddy-detail__role">{employee.buddy.role}</p>
-            <span className={`mobile-buddy-card__presence mobile-buddy-card__presence--${employee.buddy.status}`}>
+            <span
+              className={`mobile-buddy-card__presence mobile-buddy-card__presence--${employee.buddy.status}`}
+            >
               {employee.buddy.status}
             </span>
           </div>
@@ -356,25 +366,36 @@ export function BuddyDetailMobile() {
           <span>
             Reports to <strong>{employee.manager?.name ?? 'Owner'}</strong>
           </span>
-          {employee.directReports.length > 0 && (
-            <span>
-              {employee.directReports.length} {employee.directReports.length === 1 ? 'report' : 'reports'}:{' '}
+          <span>
+            {employee.skills.length} {employee.skills.length === 1 ? 'skill' : 'skills'}
+          </span>
+        </div>
+
+        {/* Sub-buddies get their own block rather than inline links in the meta
+            row, where they ran together as one unbroken string ("3 reports:
+            AliceBobCarol") and read as prose instead of navigation. This is the
+            ONLY route to a sub-buddy: the Buddies directory lists `topLevel`
+            only, i.e. buddies with no manager. */}
+        {employee.directReports.length > 0 && (
+          <div className="mobile-buddy-reports">
+            <span className="mobile-buddy-reports__title">
+              {employee.directReports.length}{' '}
+              {employee.directReports.length === 1 ? 'sub-buddy' : 'sub-buddies'}
+            </span>
+            <div className="mobile-buddy-reports__list">
               {employee.directReports.map((report) => (
                 <button
                   key={report.id}
                   type="button"
-                  className="mobile-link"
+                  className="mobile-buddy-reports__item"
                   onClick={() => navigate(`/buddies/${encodeURIComponent(report.id)}`)}
                 >
                   {report.name}
                 </button>
               ))}
-            </span>
-          )}
-          <span>
-            {employee.skills.length} {employee.skills.length === 1 ? 'skill' : 'skills'}
-          </span>
-        </div>
+            </div>
+          </div>
+        )}
 
         <BuddyProfileEditor
           buddy={employee.buddy}
@@ -452,7 +473,7 @@ export function BuddyDetailMobile() {
           onRetry={() => {
             const controller = new AbortController();
             void loadMemory(controller.signal).catch((cause: unknown) =>
-              setMemoryError(cause instanceof Error ? cause.message : String(cause)),
+              setMemoryError(cause instanceof Error ? cause.message : String(cause))
             );
           }}
         />
@@ -470,7 +491,7 @@ export function BuddyDetailMobile() {
           onOpenConversation={(conversationId) => navigate(`/chat/${conversationId}`)}
           onRefresh={() =>
             loadAutomations().catch((cause: unknown) =>
-              setAutomationError(cause instanceof Error ? cause.message : String(cause)),
+              setAutomationError(cause instanceof Error ? cause.message : String(cause))
             )
           }
         />

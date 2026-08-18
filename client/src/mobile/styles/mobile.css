@@ -28,8 +28,12 @@
 
   /* dvh = dynamic viewport height (tracks URL bar collapse on iOS). */
   /* svh fallback for older WebKit via @supports below. */
-  height: 100dvh;
-  min-height: 100dvh;
+  /* --mobile-keyboard-inset is published by useKeyboardInset(): iOS shrinks only
+     the VISUAL viewport when the keyboard opens, so without subtracting it the
+     composer sits underneath the keyboard. Defaults to 0px when closed or when
+     visualViewport is unavailable. */
+  height: calc(100dvh - var(--mobile-keyboard-inset, 0px));
+  min-height: 0;
 
   /* Notch / Dynamic Island / rounded corners — never hidden behind chrome. */
   padding-top: env(safe-area-inset-top);
@@ -45,19 +49,30 @@
    because svh is at least stable; last resort is 100vh. */
 @supports not (height: 100dvh) {
   .mobile-shell {
-    height: 100svh;
-    min-height: 100svh;
+    height: calc(100svh - var(--mobile-keyboard-inset, 0px));
   }
 }
 @supports not (height: 100svh) {
   .mobile-shell {
-    height: 100vh;
-    min-height: 100vh;
+    height: calc(100vh - var(--mobile-keyboard-inset, 0px));
   }
 }
 
+/* Keyboard up: the tab bar is `hidden` in the markup; drop its safe-area
+   padding too so the composer sits flush above the keyboard. */
+.mobile-shell--keyboard {
+  padding-bottom: 0;
+}
+
 /* ---- Scrollable content area (between header and tab bar) ---- */
+/* Flex column so a full-height pane (the conversation view) can stretch to
+   exactly this box. Before this, ConversationView sized itself with
+   `height: 100dvh` — 56px taller than this scrollport — and its composer sat
+   underneath the tab bar, unreachable because the inner message list consumed
+   the scroll gesture. Panes must fill the PARENT, never the viewport. */
 .mobile-content {
+  display: flex;
+  flex-direction: column;
   flex: 1;
   min-height: 0;
   min-width: 0;
@@ -68,8 +83,25 @@
   overscroll-behavior-y: contain;
 }
 
+/* Pane mode (conversation route): the content area does not scroll — the pane
+   inside it does. `flex: 1 1 0` gives the inner a DEFINITE height equal to the
+   content area, which is what lets the composer pin to its bottom edge. */
+.mobile-content--pane {
+  overflow-y: hidden;
+}
+
+.mobile-content--pane .mobile-content__inner {
+  flex: 1 1 0;
+  min-height: 0;
+}
+
 /* Constrain reading width on tablet-sized "mobile" viewports */
+/* `flex: 1 0 auto` = at least the container's height, but grows with taller
+   content so list pages keep scrolling the outer container as before. */
 .mobile-content__inner {
+  display: flex;
+  flex-direction: column;
+  flex: 1 0 auto;
   width: 100%;
   min-width: 0;
   max-width: var(--mobile-content-max-width);

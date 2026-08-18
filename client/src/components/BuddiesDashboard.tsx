@@ -3,10 +3,23 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { createConversation } from '../atoms/actions';
 import { allConversationIdsAtom } from '../atoms/conversations';
+import { newId } from '../utils/ids';
 import { BuddyAutomationsTab } from './buddies/BuddyAutomationsTab';
 import { BuddyDirectory } from './buddies/BuddyDirectory';
 import { BuddyExecutionProfile } from './buddies/BuddyExecutionProfile';
 import { buddyApi as api, asArray } from './buddies/api';
+import {
+  buildBuddyContextForTalk,
+  countReviewConversations,
+  deriveBuddyHierarchy,
+  filterAutomationConversations,
+  filterVisibleConversations,
+  getLatestWorkspaceConversation,
+  selectLegacyWorkForWorkspace,
+  selectPrimaryProject,
+  selectWorkspace,
+  selectWorkspaceProjects,
+} from './buddies/buddies-shaping';
 import {
   type Buddy,
   type BuddyAutomation,
@@ -23,18 +36,6 @@ import {
   type Workspace,
 } from './buddies/types';
 import { buddyProjectTodoProgress } from './buddies/ui-contract';
-import {
-  buildBuddyContextForTalk,
-  countReviewConversations,
-  deriveBuddyHierarchy,
-  filterAutomationConversations,
-  filterVisibleConversations,
-  getLatestWorkspaceConversation,
-  selectLegacyWorkForWorkspace,
-  selectPrimaryProject,
-  selectWorkspace,
-  selectWorkspaceProjects,
-} from './buddies/buddies-shaping';
 import './BuddiesDashboard.css';
 
 const STATUS_LABELS: Record<WorkStatus, string> = {
@@ -230,7 +231,10 @@ export function BuddiesDashboard() {
     () => selectLegacyWorkForWorkspace(employee?.legacyWorkItems ?? [], workspace?.id),
     [employee?.legacyWorkItems, workspace?.id]
   );
-  const primaryProject = useMemo(() => selectPrimaryProject(workspaceProjects), [workspaceProjects]);
+  const primaryProject = useMemo(
+    () => selectPrimaryProject(workspaceProjects),
+    [workspaceProjects]
+  );
   const visibleConversations = useMemo(
     () =>
       filterVisibleConversations(
@@ -298,7 +302,7 @@ export function BuddiesDashboard() {
     try {
       // IDs are client-owned for retry safety: a lost HTTP response can replay
       // the same creation instead of leaving duplicate empty Builder threads.
-      const conversationId = crypto.randomUUID();
+      const conversationId = newId();
       const result = await api<{ conversationId?: string; conversation?: { id?: string } }>(
         '/api/buddies/builder',
         {
@@ -306,7 +310,7 @@ export function BuddiesDashboard() {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             conversationId,
-            commandId: crypto.randomUUID(),
+            commandId: newId(),
           }),
         }
       );

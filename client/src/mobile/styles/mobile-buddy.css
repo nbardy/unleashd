@@ -1,0 +1,339 @@
+/* =============================================================================
+   mobile-buddy.css — buddy detail view.
+
+   BuddyDetailMobile and its tabs were authored against a stylesheet that was
+   never written. Every class below was live in the TSX with no rule behind it,
+   so the page rendered as default HTML: an unconstrained h1, labels running
+   into values ("Reports to Owner0 skills", "Last run8/5/2026"), and primary
+   actions that did not read as buttons.
+   ============================================================================= */
+
+.mobile-buddy-detail {
+  padding: 16px 16px calc(20px + env(safe-area-inset-bottom));
+}
+
+.mobile-buddy-detail__back {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 40px;
+  margin-bottom: 8px;
+  padding: 0 12px 0 8px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 999px;
+  background: var(--bg-raised-2);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.mobile-buddy-detail__hero {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.mobile-buddy-detail__identity {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  min-width: 0;
+}
+
+.mobile-buddy-detail__name {
+  /* Was an unstyled <h1>: ~40px, wrapping to three lines before any content. */
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 22px;
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: -0.02em;
+  overflow-wrap: anywhere;
+}
+
+.mobile-buddy-detail__role {
+  display: block;
+  margin-top: 2px;
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.mobile-buddy-detail__copy {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+/* The meta row is where "Reports to Owner" and the skills count collided. */
+.mobile-buddy-detail__meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 14px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.mobile-buddy-detail__meta > * {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.mobile-buddy-detail__meta strong {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+
+/* Direct reports (sub-buddies). Sub-buddies never appear in the Buddies
+   directory — `topLevel` filters to managerless buddies — so these links are
+   the ONLY way to reach one. They must look tappable. */
+.mobile-buddy-reports {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 4px;
+}
+
+.mobile-buddy-reports__title {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.mobile-buddy-reports__list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.mobile-buddy-reports__item {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 40px;
+  padding: 0 14px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 999px;
+  background: var(--bg-raised-2);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.mobile-buddy-reports__item:active {
+  border-color: var(--border-strong);
+}
+
+.mobile-buddy-reports__item::after {
+  content: '→';
+  color: var(--text-muted);
+}
+
+/* ---- Tabs ---- */
+.mobile-buddy-tabs {
+  display: flex;
+  gap: 4px;
+  margin: 14px 0 12px;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+
+.mobile-buddy-tabs::-webkit-scrollbar {
+  display: none;
+}
+
+.mobile-buddy-tab {
+  flex: none;
+  min-height: 40px;
+  padding: 0 14px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  background: none;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.mobile-buddy-tab--active {
+  border-color: var(--border-subtle);
+  background: var(--bg-raised-1);
+  color: var(--text-primary);
+}
+
+/* ---- Sections ---- */
+.mobile-buddy-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.mobile-buddy-section__toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+
+.mobile-buddy-section__label {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.mobile-buddy-section__select {
+  min-height: 40px;
+  padding: 0 10px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  background: var(--bg-raised-2);
+  color: var(--text-primary);
+  font-family: inherit;
+  font-size: 16px;
+}
+
+/* ---- Work tab ---- */
+.mobile-buddy-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 12px 14px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 14px;
+  background: var(--bg-raised-1);
+}
+
+/* The label/value pairs that rendered as "Last run8/5/2026" with no separation. */
+.mobile-buddy-summary__row {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.mobile-buddy-summary__row > strong,
+.mobile-buddy-summary__row > span:last-child {
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.mobile-buddy-work-list,
+.mobile-buddy-convo-list,
+.mobile-journal-list,
+.mobile-automation-list {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 10px;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.mobile-buddy-work-card,
+.mobile-buddy-convo-card,
+.mobile-journal-card,
+.mobile-automation-card {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: flex-start;
+  min-width: 0;
+  padding: 14px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 14px;
+  background: var(--bg-raised-1);
+}
+
+.mobile-buddy-work-card__header,
+.mobile-buddy-convo-card__header,
+.mobile-automation-card__header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+  color: var(--text-primary);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.mobile-buddy-work-card__blocker {
+  width: 100%;
+  padding: 8px 10px;
+  border-left: 3px solid var(--theme-danger);
+  border-radius: 0 8px 8px 0;
+  background: color-mix(in srgb, var(--theme-danger) 8%, transparent);
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.45;
+}
+
+.mobile-automation-card__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.mobile-automation-runs {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+/* ---- Profile editor ---- */
+.mobile-buddy-profile-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-width: 0;
+}
+
+.mobile-buddy-profile-editor__summary {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-primary);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.mobile-buddy-profile-editor__form {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 14px;
+  background: var(--bg-raised-1);
+}

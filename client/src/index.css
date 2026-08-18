@@ -171,6 +171,12 @@
      ========================================= */
   --accent-primary: var(--primary);
   --accent-primary-hover: var(--primary-bright);
+  /* Bare --accent is the mobile tree's shorthand for the primary accent. It was
+     referenced by ~15 mobile rules (focus rings, the unread "New" badge) but
+     never defined, so those rules silently resolved to transparent/inherited —
+     an invisible badge on a dark surface. Define it once here rather than
+     rewriting every mobile call site. */
+  --accent: var(--accent-primary);
   --accent-user: var(--user);
   --accent-assistant: var(--ai);
   --accent-success: var(--ai);

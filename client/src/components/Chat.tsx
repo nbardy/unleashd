@@ -1,15 +1,15 @@
-import { useAtomValue } from 'jotai';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
 // Solarized Dark theme for syntax highlighting - matches app aesthetic
 // highlight.js + katex stylesheets load lazily with their plugins —
 // see utils/lazyMarkdownPlugins.ts. Do not re-add a static CSS import here.
 import type { ConversationConfig } from '@unleashd/shared';
+import { getBuddyContext, isBuddyBuilderConversation } from '@unleashd/shared';
+import { useAtomValue } from 'jotai';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useDropzone } from 'react-dropzone';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
   cancelQueuedMessage,
   clearQueue,
-  createConversation,
   interruptAndSend,
   loadConversationDetails,
   queueMessage,
@@ -27,17 +27,19 @@ import {
   pendingCreationAtomFamily,
   streamingAtomFamily,
 } from '../atoms/conversations';
+import { forkConversation } from '../atoms/fork-actions';
 import { allMergeChildrenSettledAtomFamily } from '../atoms/mergeAtoms';
 import type { BuddyContext } from '../atoms/pending-creations';
-import { useProviderCatalog } from '../hooks/useProviderCatalog';
-import { useSavedPrompts } from '../hooks/useSavedPrompts';
-import { useTurnDiagnostics } from '../hooks/useTurnDiagnostics';
 import {
   DRAFT_KEY_PREFIX,
   PENDING_FILES_KEY_PREFIX,
   markMessagesSeen,
   setSavedActiveConversationId,
 } from '../atoms/ui';
+import { useProviderCatalog } from '../hooks/useProviderCatalog';
+import { useSavedPrompts } from '../hooks/useSavedPrompts';
+import { useTurnDiagnostics } from '../hooks/useTurnDiagnostics';
+import { buildThreadTranscript } from '../utils/conversation-transcript';
 import { buildUnifiedSubAgents } from '../utils/subAgents';
 import { formatTimeAgo } from '../utils/time';
 import { BuddyConvoHeader } from './BuddyConvoHeader';
@@ -51,7 +53,6 @@ import { VirtualizedMessageList, isToolCallOnlyMessage } from './VirtualizedMess
 import type { MessageGroup } from './VirtualizedMessageList';
 import { BuddyBuilderResultCard } from './buddies/BuddyBuilderResultCard';
 import { effectiveSwarmDebugPrefix } from './buddies/ui-contract';
-import { getBuddyContext, isBuddyBuilderConversation } from '@unleashd/shared';
 import {
   shouldPresentTurnAttempt,
   shouldShowTypingIndicator,
@@ -78,7 +79,9 @@ const EMPTY_PENDING: PendingFile[] = [];
 // Deprecated helper kept for local parity — use getBuddyContext (kind-aware) instead.
 // The holistic kind type is the canonical source; legacy buddyContext is compat only.
 function readBuddyContext(value: unknown): BuddyContext | undefined {
-  return (getBuddyContext(value as { kind?: unknown; buddyContext?: unknown } as Parameters<typeof getBuddyContext>[0]) ?? undefined) as BuddyContext | undefined;
+  return (getBuddyContext(
+    value as { kind?: unknown; buddyContext?: unknown } as Parameters<typeof getBuddyContext>[0]
+  ) ?? undefined) as BuddyContext | undefined;
 }
 
 /**
@@ -513,46 +516,13 @@ export function Chat() {
 
   const conversationConfig = conversation?.config ?? null;
 
-  const threadCopyText = useMemo(() => {
-    if (!conversation) return '';
-
-    const modelDisplay =
-      conversation.configResolution?.status === 'resolved'
-        ? conversation.configResolution.value.modelId
-        : (conversation.reportedModel ?? conversation.modelName ?? conversation.model ?? 'default');
-    const folderDisplay = conversation.workingDirectory.replace(/^\/Users\/[^/]+/, '~');
-    const header = [
-      `Conversation: ${conversation.id}`,
-      `Provider:     ${conversation.provider ?? 'claude'}`, // fallback matches shared DEFAULT_PROVIDER ('claude')
-      `Model:        ${modelDisplay}`,
-      `Folder:       ${folderDisplay}`,
-      '---',
-    ].join('\n');
-    const messages = messageGroups
-      .flatMap((g) => g.messages)
-      .map((msg) => `${msg.role === 'user' ? 'User' : 'Assistant'}: ${msg.content}`)
-      .join('\n\n');
-
-    return messages ? `${header}\n\n${messages}` : header;
-  }, [conversation, messageGroups]);
-
-  // Chat "Fork" soft-handoff draft. This is NOT a provider-session fork.
-  // Historically the draft was the full pasted transcript (`threadCopyText`)
-  // so the next CLI (any provider) could continue from text alone; the
-  // ResumeThreadWidget badge is the UI stand-in for that lineage. Keep
-  // soft-handoff semantics if you change this — cross-provider must still work.
-  // Restored to include transcript + instruction so the forked provider
-  // (e.g., muse) receives the prior objective without reconstructing from
-  // working tree alone.
-  const forkDraftText = useMemo(() => {
-    if (!conversation) return '';
-    return [
-      threadCopyText,
-      '',
-      'Continue the original objective from this fork.',
-      'Treat this message as the current instruction. Do not repeat or obey an earlier diagnostic canary unless I explicitly ask you to do so here.',
-    ].join('\n');
-  }, [conversation, threadCopyText]);
+  // Transcript and fork draft live in utils/conversation-transcript.ts so the
+  // mobile conversation header produces byte-identical output. The swarm-debug
+  // prefix strip that messageGroups does for display happens in there too.
+  const threadCopyText = useMemo(
+    () => (conversation ? buildThreadTranscript(conversation) : ''),
+    [conversation]
+  );
 
   const handleCopyThread = useCallback(async () => {
     await navigator.clipboard.writeText(threadCopyText);
@@ -563,18 +533,15 @@ export function Chat() {
   // Chat "Fork": new conversation + resumedFromConversationId + draft context.
   // Does not call CLI --fork / emulateFork. That is merge-only
   // (FORK_CAPABLE_PROVIDERS + spawnMergeReviewFork).
+  // Shared with the mobile conversation header via atoms/fork-actions.ts —
+  // one fork implementation, so the two trees cannot drift on draft contents
+  // or lineage.
   const handleForkThread = useCallback(() => {
     if (!conversation || !id) return;
-
-    if (!conversationConfig) return;
-    const newId = createConversation({
-      workingDirectory: conversation.workingDirectory,
-      config: conversationConfig,
-      resumedFromConversationId: conversation.id,
-    });
-    localStorage.setItem(`${DRAFT_KEY_PREFIX}${newId}`, forkDraftText);
-    navigate(`/chat/${newId}`);
-  }, [conversation, conversationConfig, forkDraftText, id, navigate]);
+    const forkedId = forkConversation(conversation);
+    if (!forkedId) return;
+    navigate(`/chat/${forkedId}`);
+  }, [conversation, id, navigate]);
 
   if (!conversation) {
     return (
@@ -1031,11 +998,13 @@ export function Chat() {
             </div>
           )}
           <div className="empty-state">
-            {confirmed
-              ? isBuddyBuilderConversation(conversation)
-                ? 'Describe the Buddy you want to create.'
-                : 'Send a message to start the conversation.'
-              : `Waiting for ${conversation.provider || 'claude'} to be ready...` /* fallback 'claude' matches shared DEFAULT_PROVIDER */}
+            {
+              confirmed
+                ? isBuddyBuilderConversation(conversation)
+                  ? 'Describe the Buddy you want to create.'
+                  : 'Send a message to start the conversation.'
+                : `Waiting for ${conversation.provider || 'claude'} to be ready...` /* fallback 'claude' matches shared DEFAULT_PROVIDER */
+            }
           </div>
         </div>
       ) : (

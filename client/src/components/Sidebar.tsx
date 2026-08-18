@@ -13,6 +13,7 @@ import {
   allConversationsAtom,
   allPendingCreationsAtom,
   defaultCwdAtom,
+  recentDirectoriesAtom,
   wsStatusAtom,
 } from '../atoms/conversations';
 import type { PendingConversationCreation } from '../atoms/conversations';
@@ -34,7 +35,8 @@ import {
 import { useProviderCatalog } from '../hooks/useProviderCatalog';
 import { useSwarmRuntimeSnapshots } from '../hooks/useSwarmRuntimeSnapshots';
 import { getProjectColor } from '../utils/projectColors';
-import { getProjectRoot, isWorktreeDirectory } from '../utils/swarmUtils';
+import { normalizeFolderDirectory } from '../utils/directories';
+import { getProjectRoot } from '../utils/swarmUtils';
 import { getWorkerVisibilitySummary } from '../utils/swarmWorkerVisibility';
 import { formatTimeAgo, getConversationLastActivity, getMinutesElapsed } from '../utils/time';
 import { ConversationConfigPicker } from './ConversationConfigPicker';
@@ -43,7 +45,6 @@ import { SearchPalette } from './SearchPalette';
 import './Sidebar.css';
 
 const RECENT_CUTOFF_MS = 7 * 24 * 60 * 60 * 1000;
-const ROOT_PLACEHOLDER = '/';
 interface FolderGroup {
   directory: string;
   conversations: Conversation[];
@@ -90,13 +91,6 @@ interface BuddySidebarItemData {
   pendingCreation: PendingConversationCreation | null;
   workspaceName: string | null;
   lastActiveAt: Date | null;
-}
-
-function normalizeFolderDirectory(path: string): string {
-  const trimmed = path.trim();
-  if (!trimmed) return ROOT_PLACEHOLDER;
-  const withoutTrailingSlashes = trimmed.replace(/\/+$/, '');
-  return withoutTrailingSlashes || ROOT_PLACEHOLDER;
 }
 
 /**
@@ -270,17 +264,9 @@ export function Sidebar() {
     };
   }, [runtimeSnapshots, workerConversationsByProject, workerProjectRoots]);
 
-  // Deduplicated working directories from all conversations — fed to PathAutocomplete for fuzzy matching
-  const recentDirectories = useMemo(() => {
-    const dirs = new Set<string>();
-    for (const conv of allConversations) {
-      const dir = normalizeFolderDirectory(conv.workingDirectory);
-      if (!isWorktreeDirectory(dir)) {
-        dirs.add(dir);
-      }
-    }
-    return Array.from(dirs);
-  }, [allConversations]);
+  // Deduplicated working directories from all conversations — fed to PathAutocomplete for fuzzy
+  // matching. Derived atom (not a local useMemo) so the mobile create sheet reads the same list.
+  const recentDirectories = useAtomValue(recentDirectoriesAtom);
 
   const [showSearch, setShowSearch] = useState(false);
   const [searchFilterDir, setSearchFilterDir] = useState<string | undefined>(undefined);

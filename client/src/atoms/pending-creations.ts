@@ -9,6 +9,7 @@ import {
   normalizeModelId,
 } from '@unleashd/shared';
 import { produce } from 'immer';
+import { newId } from '../utils/ids';
 import { activeConversationIdAtom, pendingCreationsAtom, sendFnAtom } from './conversations';
 import { jotaiStore } from './store';
 import { PENDING_CONVERSATIONS_KEY } from './ui';
@@ -141,7 +142,7 @@ function migrateLegacyPendingConversation(value: unknown): PersistedPendingCreat
   if (!legacy.id || !legacy.workingDirectory || !legacy.provider || !legacy.createdAt) return null;
   const model = normalizeModelId(legacy.provider, legacy.model);
   return {
-    commandId: crypto.randomUUID(),
+    commandId: newId(),
     conversationId: legacy.id,
     workingDirectory: legacy.workingDirectory,
     config: {
@@ -259,8 +260,8 @@ export function resendPendingCreation(creation: PersistedPendingCreation): void 
 }
 
 export function createConversation(args: CreateConversationArgs): string {
-  const conversationId = crypto.randomUUID();
-  const commandId = crypto.randomUUID();
+  const conversationId = newId();
+  const commandId = newId();
   const workingDirectory = normalizeWorkingDirectory(args.workingDirectory);
   const createdAt = new Date();
   const persisted: PersistedPendingCreation = {

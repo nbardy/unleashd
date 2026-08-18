@@ -7,6 +7,7 @@ import type {
 } from '@unleashd/shared';
 import { ConversationSchema } from '@unleashd/shared';
 import { enableMapSet, produce } from 'immer';
+import { newId } from '../utils/ids';
 import {
   activeConversationIdAtom,
   childConversationsAtomFamily,
@@ -16,9 +17,9 @@ import {
   conversationLoadCompleteAtom,
   conversationsAtom,
   defaultCwdAtom,
+  pendingConfigCommandAtomFamily,
   pendingConfigCommandsAtom,
   pendingCreationAtomFamily,
-  pendingConfigCommandAtomFamily,
   pendingCreationsAtom,
   sendFnAtom,
   streamingAtomFamily,
@@ -273,7 +274,7 @@ function sendAcknowledgedMessageCommand(
     | { type: 'queue_message'; conversationId: string; content: string }
     | { type: 'interrupt_and_send'; conversationId: string; content: string }
 ): Promise<void> {
-  const commandId = crypto.randomUUID();
+  const commandId = newId();
   return new Promise<void>((resolve, reject) => {
     pendingMessageCommands.set(commandId, { resolve, reject });
     send({ ...message, commandId });
@@ -557,9 +558,7 @@ function handleError(data: Extract<ServerMessage, { type: 'error' }>): void {
   rejectPendingMessageCommands(new Error(data.message));
 }
 
-function handleMessageComplete(
-  _data: Extract<ServerMessage, { type: 'message_complete' }>
-): void {
+function handleMessageComplete(_data: Extract<ServerMessage, { type: 'message_complete' }>): void {
   // Flush buffered chunks synchronously — message_complete can arrive in the same
   // event loop tick as the last chunk, before rAF fires.
   flushChunkBuffer();
@@ -579,7 +578,9 @@ function handleConversationsUpdated(
       draft.set(conv.id, {
         ...conv,
         messages:
-          data.summaries && existing && loadedDetails.has(conv.id) ? existing.messages : conv.messages,
+          data.summaries && existing && loadedDetails.has(conv.id)
+            ? existing.messages
+            : conv.messages,
         swarmDebugPrefix: conv.swarmDebugPrefix ?? existing?.swarmDebugPrefix ?? null,
       });
     }

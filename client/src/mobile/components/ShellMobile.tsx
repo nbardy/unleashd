@@ -1,6 +1,10 @@
-import { NavLink, Outlet } from 'react-router-dom';
+import { NavLink, Outlet, useLocation } from 'react-router-dom';
+import { useKeyboardInset } from '../hooks/useKeyboardInset';
 import '../styles/mobile.css';
 import '../styles/mobile-ui.css';
+import '../styles/mobile-controls.css';
+import '../styles/mobile-buddy.css';
+import '../styles/mobile-swarm.css';
 
 /**
  * ShellMobile — mobile chrome around <Outlet/>.
@@ -27,14 +31,30 @@ const TABS: readonly TabDef[] = [
 ] as const;
 
 export function ShellMobile() {
+  const { pathname } = useLocation();
+  // Two layout modes, and they are genuinely different documents:
+  //   - list routes scroll as a page (content taller than the shell)
+  //   - the conversation route is a fixed-height PANE that scrolls internally,
+  //     so its composer can sit pinned at the bottom of the content area.
+  // Without this distinction the pane grew to its own message-list height and
+  // the composer ended up thousands of pixels below the tab bar. See the layout
+  // contract in ConversationView.tsx.
+  const isPaneRoute = pathname.startsWith('/chat/');
+  // Publishes --mobile-keyboard-inset and tells us when the keyboard is up, so
+  // the shell can shrink to the visual viewport and hand that space to the
+  // composer instead of leaving it under the keyboard.
+  const keyboardOpen = useKeyboardInset();
+
   return (
-    <div className="mobile-shell">
-      <div className="mobile-content">
+    <div className={keyboardOpen ? 'mobile-shell mobile-shell--keyboard' : 'mobile-shell'}>
+      <div className={isPaneRoute ? 'mobile-content mobile-content--pane' : 'mobile-content'}>
         <div className="mobile-content__inner">
           <Outlet />
         </div>
       </div>
-      <nav className="mobile-tab-bar" aria-label="Primary">
+      {/* Tab bar yields to the keyboard — competing for the same ~50px is what
+          made the composer feel cramped and clipped on focus. */}
+      <nav className="mobile-tab-bar" aria-label="Primary" hidden={keyboardOpen}>
         {TABS.map((tab) => (
           <NavLink
             key={tab.to}

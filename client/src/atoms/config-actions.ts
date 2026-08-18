@@ -1,5 +1,6 @@
 import type { ConversationConfigPatch, SetConversationConfigCommand } from '@unleashd/shared';
 import { produce } from 'immer';
+import { newId } from '../utils/ids';
 import { pendingConfigCommandsAtom, sendFnAtom } from './conversations';
 import { jotaiStore } from './store';
 
@@ -14,7 +15,7 @@ export function setConversationConfig({
   expectedRevision,
   patch,
 }: SetConversationConfigArgs): string {
-  const commandId = crypto.randomUUID();
+  const commandId = newId();
   jotaiStore.set(
     pendingConfigCommandsAtom,
     produce(jotaiStore.get(pendingConfigCommandsAtom), (draft) => {

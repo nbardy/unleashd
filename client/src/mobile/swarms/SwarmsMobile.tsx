@@ -3,8 +3,8 @@ import { useAtomValue } from 'jotai';
 import { useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { workersByProjectAtom } from '../../atoms/conversations';
-import { usePolledFetch } from '../../hooks/usePolledFetch';
 import { promotedWorkersAtom } from '../../atoms/ui';
+import { usePolledFetch } from '../../hooks/usePolledFetch';
 import { getProjectName, getProjectRoot } from '../../utils/swarmUtils';
 import { getWorkerVisibilitySummary } from '../../utils/swarmWorkerVisibility';
 import { formatTimeAgo, getLastMessageTime } from '../../utils/time';
@@ -12,9 +12,11 @@ import {
   MobileBadge,
   MobileCardButton,
   MobileEmptyPanel,
+  MobileHeaderAction,
   MobilePage,
   MobilePath,
 } from '../components/MobileUI';
+import { NewConversationSheet } from '../components/NewConversationSheet';
 
 interface SwarmProjectEntry {
   projectRoot: string;
@@ -36,6 +38,7 @@ export function SwarmsMobile() {
   const navigate = useNavigate();
   const promotedWorkers = useAtomValue(promotedWorkersAtom);
   const promotedSet = useMemo(() => new Set(promotedWorkers), [promotedWorkers]);
+  const [showCreate, setShowCreate] = useState(false);
 
   // Discovery via /api/swarm-projects (poll 15s, visibility-aware, reconnect-refetch)
   const { data: discovered } = usePolledFetch<{ projects: SwarmProjectEntry[] }>(
@@ -110,53 +113,79 @@ export function SwarmsMobile() {
     });
   }, [workerConversationsByProject, runsDiscoveredProjects]);
 
+  // One header action for both the empty and populated states — an empty Swarms
+  // page is exactly where a user most wants to start one.
+  const headerAside = (
+    <MobileHeaderAction onClick={() => setShowCreate(true)} aria-label="New swarm">
+      + New
+    </MobileHeaderAction>
+  );
+  const sheet = showCreate ? (
+    <NewConversationSheet kind="swarm" onClose={() => setShowCreate(false)} />
+  ) : null;
+
   if (projectCards.length === 0) {
     return (
-      <MobilePage title="Swarms" subtitle="Worker groups by project" className="mobile-swarms">
-        <MobileEmptyPanel>
-          No swarms running. Workers appear when an oompa swarm starts.
-        </MobileEmptyPanel>
-      </MobilePage>
+      <>
+        <MobilePage
+          title="Swarms"
+          subtitle="Worker groups by project"
+          className="mobile-swarms"
+          headerAside={headerAside}
+        >
+          <MobileEmptyPanel>
+            No swarms running. Tap <strong>+ New</strong> to start one, or workers appear here when
+            an oompa swarm starts.
+          </MobileEmptyPanel>
+        </MobilePage>
+        {sheet}
+      </>
     );
   }
 
   return (
-    <MobilePage
-      title="Swarms"
-      subtitle={`${projectCards.length} project${projectCards.length !== 1 ? 's' : ''}`}
-      className="mobile-swarms"
-    >
-      <div className="mobile-ui-stack mobile-swarms__list">
-        {projectCards.map((p) => (
-          <MobileCardButton
-            key={p.projectRoot}
-            className={`mobile-swarm-card ${p.runningCount > 0 ? 'mobile-swarm-card--running' : ''}`}
-            onClick={() => navigate(`/workers/detail?project=${encodeURIComponent(p.projectRoot)}`)}
-          >
-            <div className="mobile-swarm-card__top">
-              <span className="mobile-swarm-card__name">{p.projectName}</span>
-              <MobileBadge tone={p.runningCount > 0 ? 'active' : 'neutral'}>
-                {p.runningCount > 0 ? `${p.runningCount} running` : 'idle'}
-              </MobileBadge>
-            </div>
-            <MobilePath title={p.projectRoot}>
-              {p.projectRoot.replace(/^\/Users\/[^/]+/, '~')}
-            </MobilePath>
-            <div className="mobile-swarm-card__stats">
-              <span>
-                {p.workerCount} worker{p.workerCount !== 1 ? 's' : ''}
-              </span>
-              {p.runningCount > 0 && (
-                <span className="stat-running"> · {p.runningCount} running</span>
-              )}
-              {p.idleCount > 0 && <span className="stat-idle"> · {p.idleCount} idle</span>}
-              {p.latestActivity && (
-                <span className="stat-time"> · {formatTimeAgo(p.latestActivity)}</span>
-              )}
-            </div>
-          </MobileCardButton>
-        ))}
-      </div>
-    </MobilePage>
+    <>
+      <MobilePage
+        title="Swarms"
+        subtitle={`${projectCards.length} project${projectCards.length !== 1 ? 's' : ''}`}
+        className="mobile-swarms"
+        headerAside={headerAside}
+      >
+        <div className="mobile-ui-stack mobile-swarms__list">
+          {projectCards.map((p) => (
+            <MobileCardButton
+              key={p.projectRoot}
+              className={`mobile-swarm-card ${p.runningCount > 0 ? 'mobile-swarm-card--running' : ''}`}
+              onClick={() =>
+                navigate(`/workers/detail?project=${encodeURIComponent(p.projectRoot)}`)
+              }
+            >
+              <div className="mobile-swarm-card__top">
+                <span className="mobile-swarm-card__name">{p.projectName}</span>
+                <MobileBadge tone={p.runningCount > 0 ? 'active' : 'neutral'}>
+                  {p.runningCount > 0 ? `${p.runningCount} running` : 'idle'}
+                </MobileBadge>
+              </div>
+              <MobilePath title={p.projectRoot}>
+                {p.projectRoot.replace(/^\/Users\/[^/]+/, '~')}
+              </MobilePath>
+              <div className="mobile-swarm-card__stats">
+                <span>
+                  {p.workerCount} worker{p.workerCount !== 1 ? 's' : ''}
+                </span>
+                {p.runningCount > 0 && (
+                  <span className="stat-running"> · {p.runningCount} running</span>
+                )}
+                {p.idleCount > 0 && <span className="stat-idle"> · {p.idleCount} idle</span>}
+                {p.latestActivity && (
+                  <span className="stat-time"> · {formatTimeAgo(p.latestActivity)}</span>
+                )}
+              </div>
+            </MobileCardButton>
+          ))}
+        </div>
+      </MobilePage>
+      {sheet}
+    </>
   );
 }
