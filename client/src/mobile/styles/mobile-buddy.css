@@ -139,41 +139,6 @@
   color: var(--text-muted);
 }
 
-/* ---- Tabs ---- */
-.mobile-buddy-tabs {
-  display: flex;
-  gap: 4px;
-  margin: 14px 0 12px;
-  overflow-x: auto;
-  -webkit-overflow-scrolling: touch;
-  scrollbar-width: none;
-}
-
-.mobile-buddy-tabs::-webkit-scrollbar {
-  display: none;
-}
-
-.mobile-buddy-tab {
-  flex: none;
-  min-height: 40px;
-  padding: 0 14px;
-  border: 1px solid transparent;
-  border-radius: 999px;
-  background: none;
-  color: var(--text-muted);
-  font: inherit;
-  font-size: 13px;
-  font-weight: 600;
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
-}
-
-.mobile-buddy-tab--active {
-  border-color: var(--border-subtle);
-  background: var(--bg-raised-1);
-  color: var(--text-primary);
-}
-
 /* ---- Sections ---- */
 .mobile-buddy-section {
   display: flex;

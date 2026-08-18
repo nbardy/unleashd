@@ -81,12 +81,17 @@ else
 fi
 echo
 
+# Both remaining gates ban a secure-context-gated browser API outside its
+# wrapper. They are text greps, so a doc comment naming the API would trip them
+# — strip comment lines (leading //, * or /*) before matching.
+strip_comments() { grep -v -E '^[^:]*:[0-9]+:[[:space:]]*(//|\*|/\*)'; }
+
 echo "==> Gate G4: bare crypto.randomUUID() — secure-context only, undefined over plain-http LAN"
 # The dev server is opened on phones via http://<lan-ip>:7489, which is NOT a secure
 # context, so crypto.randomUUID is undefined there and every creation path throws.
 # client/src/utils/ids.ts owns the getRandomValues-based fallback; it is the one
 # allowed reference to crypto.randomUUID.
-if grep -R --include="*.ts" --include="*.tsx" -n "crypto\.randomUUID" client/src 2>/dev/null | grep -v "client/src/utils/ids.ts" ; then
+if grep -R --include="*.ts" --include="*.tsx" -n "crypto\.randomUUID" client/src 2>/dev/null | grep -v "client/src/utils/ids.ts" | strip_comments | grep . ; then
   echo "G4 FAIL: bare crypto.randomUUID() outside client/src/utils/ids.ts."
   echo "  Fix: import { newId } from '<...>/utils/ids' and call newId()."
   FAIL=1
@@ -95,9 +100,23 @@ else
 fi
 echo
 
+echo "==> Gate G5: bare navigator.clipboard — same secure-context trap as G4"
+# navigator.clipboard is undefined (not merely rejecting) in a non-secure
+# context, so `navigator.clipboard.writeText(...)` throws a TypeError before it
+# can be caught as a rejection. client/src/utils/clipboard.ts owns the
+# execCommand fallback and reports success as a boolean.
+if grep -R --include="*.ts" --include="*.tsx" -n "navigator\.clipboard" client/src 2>/dev/null | grep -v "client/src/utils/clipboard.ts" | strip_comments | grep . ; then
+  echo "G5 FAIL: bare navigator.clipboard outside client/src/utils/clipboard.ts."
+  echo "  Fix: import { copyText } from '<...>/utils/clipboard' and check its boolean result."
+  FAIL=1
+else
+  echo "G5 PASS"
+fi
+echo
+
 if [ "$FAIL" -ne 0 ]; then
   echo "check-client-invariants: FAILED — fix the gates above."
   exit 1
 fi
 
-echo "check-client-invariants: all 4 gates PASS"
+echo "check-client-invariants: all 5 gates PASS"

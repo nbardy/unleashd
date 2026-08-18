@@ -349,3 +349,59 @@
 .stat-time {
   color: var(--text-muted);
 }
+
+/* These six reach the DOM through conditional/template classNames, which the
+   css-classes guard originally skipped — so they were undefined for longer than
+   the rest. The guard now scans string literals, not just static attributes. */
+.mobile-swarm-detail__badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 20px;
+  padding: 3px 8px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 999px;
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.mobile-worker-row__dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text-muted);
+}
+
+.mobile-worker-row__dot--running {
+  background: var(--theme-success);
+}
+
+.mobile-worker-row__role,
+.mobile-worker-row__state {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.mobile-exec-group__verdict {
+  display: inline-flex;
+  align-items: center;
+  min-height: 20px;
+  padding: 2px 8px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 999px;
+  color: var(--text-muted);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.mobile-timeline__span {
+  flex: none;
+  min-width: 3px;
+  height: 100%;
+  border-radius: 2px;
+  background: var(--accent);
+}

@@ -1,6 +1,45 @@
+import { useAtomValue } from 'jotai';
 import { useState } from 'react';
+import { conversationAtomFamily } from '../../atoms/conversations';
 import type { ConversationLink, Workspace } from '../../components/buddies/types';
 import { EmptyState } from '../components/EmptyState';
+import { ModelSheetMobile } from '../components/ModelSheetMobile';
+
+/**
+ * Per-conversation config editing reads the LIVE configRevision off the
+ * conversation atom. The previous inline form hard-coded `expectedRevision: 0`
+ * into a strict optimistic-concurrency check, so it succeeded only on a
+ * conversation whose config had never been touched and silently failed
+ * afterwards — the rejection lands in pendingConfigCommandsAtom, which this
+ * tree never read. It was also a free-text effort box; the catalog-driven sheet
+ * offers only values the provider actually accepts.
+ */
+function ConversationConfigButton({ conversationId }: { conversationId: string }) {
+  const conversation = useAtomValue(conversationAtomFamily(conversationId));
+  const [open, setOpen] = useState(false);
+
+  if (!conversation?.config) return null;
+
+  return (
+    <>
+      <button
+        type="button"
+        className="mobile-cta mobile-cta--secondary mobile-cta--small"
+        onClick={() => setOpen(true)}
+      >
+        Model
+      </button>
+      {open && (
+        <ModelSheetMobile
+          conversationId={conversationId}
+          config={conversation.config}
+          configRevision={conversation.configRevision}
+          onClose={() => setOpen(false)}
+        />
+      )}
+    </>
+  );
+}
 
 // ---------------------------------------------------------------------------
 // Conversations tab (filtered/sorted via shaping, tap → /chat/:id)
@@ -14,7 +53,7 @@ export function ConversationsTab({
   onOpenConversation,
   workspace,
   onTalk,
-  onEditConversationConfig,
+  availableIds,
   busy,
 }: {
   visibleConversations: ConversationLink[];
@@ -24,19 +63,10 @@ export function ConversationsTab({
   onOpenConversation: (conversationId: string) => void;
   workspace: Workspace | undefined;
   onTalk: () => void;
-  onEditConversationConfig: (
-    conversationId: string,
-    expectedRevision: number,
-    patch: import('@unleashd/shared').ConversationConfigPatch,
-  ) => void;
+  /** Conversation ids the client actually holds — a link can outlive its thread. */
+  availableIds: Set<string>;
   busy: string | null;
 }) {
-  // The edit UI demonstrates pass-through verbatim config edits via atoms/config-actions.
-  // The buddy profile editor owns the Buddy's durable provider/model/effort; this
-  // inline editor shows the same pass-through contract for an existing conversation.
-  const [editingId, setEditingId] = useState<string | null>(null);
-  const [reasoningInput, setReasoningInput] = useState('');
-
   return (
     <section className="mobile-buddy-section" aria-label="Conversations">
       <div className="mobile-buddy-section__toolbar">
@@ -54,77 +84,53 @@ export function ConversationsTab({
       {visibleConversations.length === 0 ? (
         <EmptyState message="No conversations for this buddy." />
       ) : (
-        <div className="mobile-buddy-convo-list" role="list">
+        <ul className="mobile-buddy-convo-list">
           {visibleConversations.map((conversation) => {
-            const conversationId = conversation.conversation_id ?? conversation.unleashd_conversation_id ?? '';
-            const available = Boolean(conversationId);
+            const conversationId =
+              conversation.conversation_id ?? conversation.unleashd_conversation_id ?? '';
+            // A link can outlive its conversation. Testing only that the link
+            // CARRIES an id sent stale rows to "Conversation not found".
+            const available = Boolean(conversationId) && availableIds.has(conversationId);
             return (
-              <article
+              <li
                 key={`${conversationId}-${conversation.buddy_project_id ?? 'no-project'}`}
                 className="mobile-buddy-convo-card"
-                role="listitem"
               >
                 <div className="mobile-buddy-convo-card__header">
-                  <span className={`mobile-badge mobile-badge--${conversation.status}`}>{conversation.status}</span>
+                  <span className={`mobile-badge mobile-badge--${conversation.status}`}>
+                    {conversation.status}
+                  </span>
                   {conversation.kind && <span className="mobile-badge">{conversation.kind}</span>}
+                  {conversationId && !available && <span className="mobile-badge">deleted</span>}
                 </div>
                 {conversation.last_active_at && (
-                  <p className="mobile-muted">{new Date(conversation.last_active_at).toLocaleString()}</p>
+                  <p className="mobile-muted">
+                    {new Date(conversation.last_active_at).toLocaleString()}
+                  </p>
                 )}
-                {conversationId ? (
-                  <>
+                {available ? (
+                  <div className="mobile-buddy-section__toolbar">
                     <button
                       type="button"
                       className="mobile-cta"
-                      disabled={!available || busy?.startsWith('config-')}
+                      disabled={busy !== null}
                       onClick={() => onOpenConversation(conversationId)}
                     >
                       Open chat →
                     </button>
-                    <button
-                      type="button"
-                      className="mobile-cta mobile-cta--secondary"
-                      onClick={() => setEditingId(editingId === conversationId ? null : conversationId)}
-                    >
-                      {editingId === conversationId ? 'Close config' : 'Edit provider/model/effort'}
-                    </button>
-                    {editingId === conversationId && (
-                      <form
-                        className="mobile-inline-form"
-                        onSubmit={(event) => {
-                          event.preventDefault();
-                          const data = new FormData(event.currentTarget);
-                          const effort = String(data.get('effort') ?? '').trim();
-                          if (!effort) return;
-                          // Pass-through verbatim: effort string flows unchanged (no translation).
-                          // In a real picker this would be a select populated from the catalog;
-                          // the free-text path demonstrates the verbatim contract.
-                          setReasoningInput(effort);
-                          onEditConversationConfig(conversationId, 0, {
-                            kind: 'set_reasoning',
-                            reasoning: { mode: 'explicit', effort },
-                          });
-                        }}
-                      >
-                        <input
-                          name="effort"
-                          placeholder="Reasoning effort (verbatim)"
-                          defaultValue={reasoningInput}
-                          aria-label="Reasoning effort"
-                        />
-                        <button type="submit" className="mobile-cta mobile-cta--small">
-                          Apply effort
-                        </button>
-                      </form>
-                    )}
-                  </>
+                    <ConversationConfigButton conversationId={conversationId} />
+                  </div>
                 ) : (
-                  <p className="mobile-muted">No linked conversation</p>
+                  <p className="mobile-muted">
+                    {conversationId
+                      ? 'This conversation is no longer available.'
+                      : 'No linked conversation'}
+                  </p>
                 )}
-              </article>
+              </li>
             );
           })}
-        </div>
+        </ul>
       )}
     </section>
   );

@@ -1,7 +1,6 @@
 import { useAtomValue } from 'jotai';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
-import { setConversationConfig } from '../../atoms/config-actions';
 import { allConversationIdsAtom } from '../../atoms/conversations';
 import { createConversation } from '../../atoms/pending-creations';
 import { asArray, buddyApi } from '../../components/buddies/api';
@@ -451,16 +450,7 @@ export function BuddyDetailMobile() {
           onOpenConversation={(conversationId) => navigate(`/chat/${conversationId}`)}
           workspace={workspace}
           onTalk={() => workspace && talk(workspace)}
-          onEditConversationConfig={(conversationId, expectedRevision, patch) => {
-            setBusy(`config-${conversationId}`);
-            try {
-              // Pass-through verbatim: patch strings flow unchanged to the CLI harness.
-              // setConversationConfig owns the WS command lifecycle.
-              setConversationConfig({ conversationId, expectedRevision, patch });
-            } finally {
-              setBusy(null);
-            }
-          }}
+          availableIds={availableIds}
           busy={busy}
         />
       )}

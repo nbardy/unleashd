@@ -17,8 +17,11 @@ import { fileURLToPath } from 'node:url';
  * of 86 classes — the whole mobile buddy-detail and swarm-detail trees had been
  * written against stylesheets nobody authored — and is now empty.
  *
- * Only static string classNames are checked — template literals and conditional
- * expressions are skipped, so this under-reports rather than false-positives.
+ * Scans every string literal in the file that contains a `mobile-` token, not
+ * just static `className="..."` attributes. The narrower version missed six
+ * classes that reach the DOM through conditional expressions and template
+ * literals (`mobile-worker-row__dot`, `mobile-timeline__span`, …), which is
+ * exactly where an unstyled name is hardest to notice by eye.
  */
 
 const clientSrc = path.resolve(fileURLToPath(import.meta.url), '../../src');
@@ -47,13 +50,19 @@ function definedClasses(files: readonly string[]): Set<string> {
   return defined;
 }
 
-function staticMobileClassNames(files: readonly string[]): Array<{ file: string; name: string }> {
+// `mobile-new-directory` and friends are element ids, not classes; requiring a
+// `mobile-` prefix AND a CSS definition would flag them, so ids are excluded by
+// only considering tokens that appear in a class-list-shaped literal.
+const ID_LIKE = new Set(['mobile-new-directory']);
+
+function mobileClassNames(files: readonly string[]): Array<{ file: string; name: string }> {
   const used: Array<{ file: string; name: string }> = [];
   const mobileDir = `${path.join(clientSrc, 'mobile')}${path.sep}`;
   for (const file of files.filter((f) => f.startsWith(mobileDir) && f.endsWith('.tsx'))) {
     const src = fs.readFileSync(file, 'utf8');
-    for (const match of src.matchAll(/className=["'`]([^"'`{}]+)["'`]/g)) {
-      for (const name of match[1].split(/\s+/).filter(Boolean)) {
+    for (const match of src.matchAll(/['"`]([^'"`\n]*\bmobile-[\w-]+[^'"`\n]*)['"`]/g)) {
+      for (const name of match[1].split(/\s+/)) {
+        if (!/^mobile-[\w-]+$/.test(name) || ID_LIKE.has(name)) continue;
         used.push({ file: path.relative(clientSrc, file), name });
       }
     }
@@ -65,7 +74,7 @@ test('no new unstyled className in the mobile tree', () => {
   const files = walk(clientSrc);
   const defined = definedClasses(files);
 
-  const missing = staticMobileClassNames(files)
+  const missing = mobileClassNames(files)
     .filter((use) => !defined.has(use.name) && !UNSTYLED_BASELINE.has(use.name))
     .map((use) => `${use.file}: .${use.name}`);
 

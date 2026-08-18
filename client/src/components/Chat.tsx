@@ -39,6 +39,7 @@ import {
 import { useProviderCatalog } from '../hooks/useProviderCatalog';
 import { useSavedPrompts } from '../hooks/useSavedPrompts';
 import { useTurnDiagnostics } from '../hooks/useTurnDiagnostics';
+import { copyText } from '../utils/clipboard';
 import { buildThreadTranscript } from '../utils/conversation-transcript';
 import { buildUnifiedSubAgents } from '../utils/subAgents';
 import { formatTimeAgo } from '../utils/time';
@@ -524,8 +525,14 @@ export function Chat() {
     [conversation]
   );
 
+  // Was an unguarded navigator.clipboard.writeText: secure-context gated, so
+  // over a LAN IP it threw and the button silently never flipped to copied.
   const handleCopyThread = useCallback(async () => {
-    await navigator.clipboard.writeText(threadCopyText);
+    const copied = await copyText(threadCopyText);
+    if (!copied) {
+      setSubmissionError('Could not copy the thread to the clipboard.');
+      return;
+    }
     setThreadCopied(true);
     setTimeout(() => setThreadCopied(false), 2000);
   }, [threadCopyText]);

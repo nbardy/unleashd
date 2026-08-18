@@ -17,8 +17,14 @@ import type { Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import type { Plugin } from 'unified';
-import { useLazyMarkdownPlugins } from '../utils/lazyMarkdownPlugins';
 import type { BuddyContext } from '../atoms/pending-creations';
+import { parseBuddyReviewRequest, parseBuddyReviewResult } from '../utils/buddy-review-message';
+import { copyText } from '../utils/clipboard';
+import { useLazyMarkdownPlugins } from '../utils/lazyMarkdownPlugins';
+import {
+  OOMPA_RUN_TOOL_FRAGMENT_RE,
+  splitStructuredMessageContent,
+} from '../utils/structured-message-segments';
 import { AskUserQuestionWidget, parseAskUserQuestion } from './AskUserQuestion';
 import { BuddyConvoHeader } from './BuddyConvoHeader';
 import { BuddyReviewRequestCard, BuddyReviewResultCard } from './BuddyReviewMessage';
@@ -26,11 +32,6 @@ import { FilePreview, getPreviewType, getPreviewableLocalHref } from './FilePrev
 import { InlineSwarmRunWidget } from './InlineSwarmRunWidget';
 import { SwarmConvoPrefix } from './SwarmConvoPrefix';
 import { effectiveSwarmDebugPrefix } from './buddies/ui-contract';
-import { parseBuddyReviewRequest, parseBuddyReviewResult } from '../utils/buddy-review-message';
-import {
-  OOMPA_RUN_TOOL_FRAGMENT_RE,
-  splitStructuredMessageContent,
-} from '../utils/structured-message-segments';
 
 // =============================================================================
 // remarkBreaks — inline remark plugin (replaces the `remark-breaks` npm package)
@@ -346,14 +347,16 @@ function CodeBlockFrame({
   const handleCopy = useCallback(async () => {
     if (!rawCode) return;
 
-    try {
-      await navigator.clipboard.writeText(rawCode);
-      setCopied(true);
-      if (resetTimerRef.current) clearTimeout(resetTimerRef.current);
-      resetTimerRef.current = setTimeout(() => setCopied(false), 2000);
-    } catch (error) {
-      console.warn('[VirtualizedMessageList] Failed to copy code block:', error);
+    // copyText falls back to execCommand when navigator.clipboard is absent
+    // (non-secure context, e.g. the dev server over a LAN IP).
+    const copied = await copyText(rawCode);
+    if (!copied) {
+      console.warn('[VirtualizedMessageList] Failed to copy code block');
+      return;
     }
+    setCopied(true);
+    if (resetTimerRef.current) clearTimeout(resetTimerRef.current);
+    resetTimerRef.current = setTimeout(() => setCopied(false), 2000);
   }, [rawCode]);
 
   return (
