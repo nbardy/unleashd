@@ -628,7 +628,14 @@ async function parseOpenCodePartFiles(
 
 /**
  * Compute an OpenCode session mtime from message files, part directories, and
- * optional session metadata. Used for startup discovery + polling.
+ * optional session metadata. Used for polling (accurate dirty detection).
+ *
+ * Startup discovery (loader.ts) intentionally does NOT use this for ordering —
+ * it uses a single stat(dir) proxy to avoid the 38s regression seen with 3099
+ * sources (Aug 2026). The composite is correct but scans every message file +
+ * part dir per session; polling can afford it because only dirty sessions are
+ * checked. If startup ordering ever needs precision, compute composite only
+ * for the top-K after the fast sort.
  */
 export async function getOpenCodeSessionMtime(
   sessionDirPath: string,

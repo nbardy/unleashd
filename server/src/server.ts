@@ -16,6 +16,9 @@ import { WebSocketServer } from 'ws';
 import { loadAllConversations, pollForChanges } from './adapters/loader';
 import { NormalizedSessionCache } from './adapters/session-cache';
 import { createConversationApplicationContext } from './application/context';
+import { registerAuthRoutes } from './auth/express';
+import { authorizeUpgrade } from './auth/gate';
+import { describePolicy, resolveAuthPolicy } from './auth/policy';
 import { setIgnorePatterns } from './config';
 import {
   EXTERNAL_GRACE_MS,
@@ -70,10 +73,43 @@ const VERBOSE = process.env.VERBOSE === '1' || process.argv.includes('--verbose'
 
 const app = express();
 const server = http.createServer(app);
-const wss = new WebSocketServer({ server });
 const APP_DATA_DIR = path.resolve(
   process.env.UNLEASHD_DATA_DIR ?? path.join(os.homedir(), '.agent-viewer')
 );
+const LISTEN_HOST = resolveListenHost();
+
+const authResolution = resolveAuthPolicy({
+  env: process.env,
+  listenHost: LISTEN_HOST,
+  dataDirectory: APP_DATA_DIR,
+});
+if (!authResolution.ok) {
+  console.error(`[auth] ${authResolution.error}`);
+  process.exit(1);
+}
+const AUTH_POLICY = authResolution.policy;
+console.log(`[auth] ${describePolicy(AUTH_POLICY)}`);
+
+// noServer + an explicit upgrade handler is what makes the WebSocket gateable:
+// `new WebSocketServer({ server })` accepts every upgrade before any of our
+// code runs, so the socket — which carries the full command surface — would
+// stay open to anyone who can reach the port.
+const wss = new WebSocketServer({ noServer: true });
+server.on('upgrade', (request, socket, head) => {
+  const gateRequest = {
+    method: request.method ?? 'GET',
+    url: request.url ?? '/',
+    headers: request.headers,
+  };
+  if (!authorizeUpgrade(AUTH_POLICY, gateRequest)) {
+    socket.write('HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n');
+    socket.destroy();
+    return;
+  }
+  wss.handleUpgrade(request, socket, head, (client) => {
+    wss.emit('connection', client, request);
+  });
+});
 const conversationConfigStore = new ConversationConfigStore({
   appDataRoot: APP_DATA_DIR,
   logger: {
@@ -182,8 +218,14 @@ registerConversationWebSocket(wss, {
   externalActivity: applicationContext.externalActivity,
   completionSuppression: applicationContext.completionSuppression,
   initialLoadComplete,
-  // `idle` is the sole ready state: startup has completed and no reload or
-  // shutdown owns the mutation gate.
+  // Lifecycle: `starting` hydrates disk history, `idle` is the sole ready state
+  // for mutations on existing history. WS `init` streams immediately with
+  // `loading:true` + summaries; Phase 2 batches arrive via
+  // `conversations_updated` and `conversation_load_complete` flips `idle`.
+  // Only `create_conversation` is allowed during `starting` (5d79890) — it
+  // mints a fresh UUID/config record that cannot collide with disk hydration.
+  // All other commands await `initialLoadComplete` in the WS handler so they
+  // never race the authoritative restore.
   isInitialLoadComplete: () => shutdownController?.state === 'idle',
   beginCommand: (command) =>
     beginMutation({ allowDuringStartup: command.type === 'create_conversation' }),
@@ -207,6 +249,10 @@ registerConversationWebSocket(wss, {
 // =============================================================================
 // Express Routes
 // =============================================================================
+
+// Auth first: every route below (API, uploads, and the static app shell) is
+// unreachable without the shared secret.
+registerAuthRoutes(app, AUTH_POLICY);
 
 // JSON body parser for API routes.
 // Default limit is 100kb which is far too small — queue-message, merge, and
@@ -348,7 +394,6 @@ const DEV_CLIENT_PORT = 7489;
 const DEV_API_PORT = 7499;
 const PORT =
   process.env.PORT || (process.env.NODE_ENV === 'development' ? DEV_API_PORT : DEV_CLIENT_PORT);
-const LISTEN_HOST = resolveListenHost();
 
 shutdownController = registerShutdownHandlers(
   {

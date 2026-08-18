@@ -9,6 +9,7 @@ that area.
 shared/src/index.ts                → Zod schemas, types, per-provider helpers
 server/src/server.ts               → Conversation class + WS router (state authority)
 server/src/adapters/*              → registry/disk-adapter/loader: session persistence
+server/src/auth/*                  → shared-secret gate (policy/gate/express)
 server/src/providers/*             → thin Provider impls per CLI
 vendor/agent-cli-tool/             → GIT SUBMODULE: canonical request → argv →
                                      process → unified event stream. Thin wrapper;
@@ -30,6 +31,9 @@ client/src/atoms/ui.ts             → persisted UI prefs (local+shared partitio
   updates). Mobile never imports `components/*` except `components/buddies/`.
   Gates: `bash tools/check-client-invariants.sh`.
 - One WS bridge (`App.tsx`), one `handleMessage` spine — never a second.
+- Auth gate stays FIRST in the Express chain and the WS stays `noServer` +
+  explicit `upgrade` handler. `new WebSocketServer({ server })` accepts every
+  upgrade before app code runs and republishes the whole command channel.
 - Provider-bespoke values (effort levels etc.) pass through verbatim as
   `z.string()`; no shared enums, no value translation, server-side defaults.
 - Submodule commits: commit + push INSIDE `vendor/agent-cli-tool` first, then
@@ -45,6 +49,7 @@ client/src/atoms/ui.ts             → persisted UI prefs (local+shared partitio
 | Mobile view tree, grep gates, DeviceKind, UI-state partition | `docs/mobile-view-tree.md` |
 | Mobile UI primitives, styling layers, extraction rules | `docs/mobile-ui.md` |
 | Architecture: provider seam, submodule rules, lifecycle | `docs/architecture.md` |
+| Auth: shared secret, bind policy, why plain-http LAN is the weak path | `docs/auth.md` |
 | Per-conversation settings + pass-through pattern (7-step checklist) | `docs/pass-through-pattern.md` |
 | WS contract surprises (`conversation_created` reused for updates, optimistic stubs) | `docs/ws-contract-surprises.md` |
 | Submodule commit dance + `git status` cheatsheet | `docs/git-submodule-dance.md` |

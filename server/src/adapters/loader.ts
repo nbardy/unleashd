@@ -1,12 +1,17 @@
 /**
  * Loader — generic load and poll loop driven by the DiskAdapter registry.
  *
- * No per-provider if/else chains here. Adding a new provider to the registry
- * (registry.ts) is sufficient — this file never needs to change.
+ * No per-provider if/else here. Add a provider to registry.ts only.
  *
- * Two phases (matching original design):
- *   Phase 1 — discoverAll(): stat every file for mtime, sort by mtime desc.
- *   Phase 2 — parseFile() in parallel with bounded concurrency, emit batches.
+ * Two phases: Phase 1 discoverAll() stat + sort by mtime desc, Phase 2
+ * parseFile() bounded concurrency + batched onProgress.
+ *
+ * Why Phase 1 is single-stat: Feb 2026 (1bb9ba9) streamed Phase 2 but Jul
+ * 2026 (59da781) added `starting→idle` barrier for authoritative init. Phase 2
+ * got fast again (Codex filter 6920s→40s, cache 1.09s), but opencode composite
+ * mtime made Phase 1 38s/3099 before any batch (Aug 2026). Now Phase 1 uses
+ * one stat per source; composite stays in poll for correctness. Baseline
+ * still records all sources so `limit` is hydration cap (eedf239).
  */
 
 import * as fs from 'node:fs';
@@ -41,8 +46,14 @@ const DEFAULT_MAX_IN_FLIGHT_PARSE_BYTES = 256 * 1024 * 1024;
  * Discover all session paths from all adapters, stat each for mtime, sort by
  * mtime descending so progressive loading serves the most recent sessions first.
  *
- * OpenCode sessions are directories — their mtime is the max mtime across all
- * contained message files and part subdirectories (computed by getOpenCodeSessionMtime).
+ * OpenCode sessions are directories. The accurate mtime is the max across
+ * message files + part subdirs (getOpenCodeSessionMtime), but that composite
+ * scan is expensive: 3099 sources took 38s in Aug 2026. For startup ordering
+ * we use a single `stat(dir)` as a fast proxy — dir mtime correlates with
+ * recent activity and is sufficient to get the newest ~500 into the first
+ * parse batches. Polling (pollForChanges) still uses the full composite for
+ * correctness on dirty detection. If ordering precision ever matters, compute
+ * composite only for the top-K after the fast sort.
  */
 async function discoverAll(adapters: DiskAdapter[]): Promise<DiscoveredFile[]> {
   const files: DiscoveredFile[] = [];
@@ -62,21 +73,18 @@ async function discoverAll(adapters: DiskAdapter[]): Promise<DiscoveredFile[]> {
       const statResults = await Promise.all(
         paths.map(async (filePath) => {
           try {
-            if (adapter.provider === 'opencode') {
-              // OpenCode "files" are session directories — compute composite mtime.
-              // getOpenCodeSessionMtime inspects message files + part dirs.
-              // We don't have the session index available here, but the adapter
-              // already built it during discoverFiles(), so a plain stat suffices
-              // for mtime ordering; the real mtime is computed as a composite below.
-              const mtimeMs = await getOpenCodeSessionMtime(filePath, OPENCODE_PART_DIR);
-              if (mtimeMs <= 0) return null;
-              // OpenCode sessions are directories whose parser reads many small
-              // files. Charge a small non-zero weight; JSONL files are the
-              // dominant peak-memory risk and have an exact stat size below.
-              return { filePath, mtimeMs, sizeBytes: 1, adapter };
-            }
+            // Single stat for ordering — opencode composite (getOpenCodeSessionMtime)
+            // was 38s for 3099 sources in Aug 2026; now only poll uses composite.
+            // Opencode dirs get weight 1 (many small files); JSONL weight is exact
+            // size for the 256MB in-flight budget.
             const stat = await fs.promises.stat(filePath);
-            return { filePath, mtimeMs: stat.mtimeMs, sizeBytes: stat.size, adapter };
+            if (stat.mtimeMs <= 0) return null;
+            return {
+              filePath,
+              mtimeMs: stat.mtimeMs,
+              sizeBytes: adapter.provider === 'opencode' ? 1 : stat.size,
+              adapter,
+            };
           } catch {
             // File may have been deleted between discoverFiles() and stat()
             return null;

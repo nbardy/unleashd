@@ -63,6 +63,28 @@ pnpm build
 pnpm start     # serves built client + API on port 7489
 ```
 
+### Access key
+
+By default both servers bind loopback only and no key is required. To reach
+unleashd from another device (Tailscale, LAN), set a shared secret first:
+
+```bash
+openssl rand -hex 32 | tee ~/.agent-viewer/auth-token
+```
+
+With a key configured, every request and the WebSocket require it, and the dev
+server starts listening on all interfaces. Without one, binding a non-loopback
+address is refused at startup rather than silently exposing the API.
+
+Sign in through the form at any URL, or bookmark `http://<host>:<port>/?token=<key>`
+on a phone — it stores an HttpOnly cookie and strips itself from the URL. Scripts
+use `Authorization: Bearer <key>`.
+
+A shared key is a bearer credential, so it is only as private as the wire. Over
+Tailscale it travels inside the WireGuard tunnel; over plain http on a LAN it is
+cleartext. See [docs/auth.md](docs/auth.md) for the threat model and the
+one-command Tailscale https setup.
+
 ## Buddies (persistent employees)
 
 The Unleashd package includes a versioned `@nbardy/buddies` snapshot; no manual

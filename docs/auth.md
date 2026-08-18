@@ -1,0 +1,148 @@
+# Auth — shared secret
+
+unleashd is a single-user personal tool, so auth is one shared secret rather
+than accounts. This doc covers what that does and does not buy you, because the
+answer depends entirely on which network path you reach the app over.
+
+## What it protects
+
+Everything. The gate is mounted before every route (`registerAuthRoutes` at the
+top of the Express Routes section in `server/src/server.ts`) and before the
+WebSocket upgrade, so an unauthenticated caller cannot read conversations, list
+providers, browse the filesystem via `/api/filesystem`, upload files, drive an
+agent, or even discover which endpoints exist. The static app shell is behind
+the same gate.
+
+The WebSocket matters most: it carries the whole command surface (create
+conversation, queue message, run an agent in any working directory). That is
+why the server uses `new WebSocketServer({ noServer: true })` plus an explicit
+`server.on('upgrade')` handler. `new WebSocketServer({ server })` accepts every
+upgrade before any application code runs — restoring it silently republishes
+the command channel.
+
+## Configuring the secret
+
+In precedence order:
+
+1. `UNLEASHD_AUTH_TOKEN` — env var.
+2. `UNLEASHD_AUTH_TOKEN_FILE` — path to a file holding the token. A named file
+   that cannot be read is a startup error, never a fallback to no auth.
+3. `<UNLEASHD_DATA_DIR>/auth-token` — the conventional default, normally
+   `~/.agent-viewer/auth-token`. This is the recommended option.
+
+```bash
+openssl rand -hex 32 > ~/.agent-viewer/auth-token
+```
+
+Prefer the file over the env var. The server spawns agent CLIs as child
+processes and children inherit the environment, so a secret in
+`UNLEASHD_AUTH_TOKEN` is readable by every agent the server launches.
+
+Do **not** put the token in `~/.agent-viewer/settings.json` — that file is
+served verbatim by `GET /api/settings`.
+
+Tokens shorter than 16 characters are rejected at startup.
+
+## Startup policy (`server/src/auth/policy.ts`)
+
+`resolveAuthPolicy` is the single place the decision is made:
+
+| Token configured | Listen host | Result |
+|---|---|---|
+| yes | any | auth required on every request |
+| no | loopback | open, with a warning — localhost dev keeps working |
+| no | anything else | **refuses to start** |
+| no, `UNLEASHD_AUTH_DISABLED=1` | any | open, explicitly |
+
+Refusing to start on a non-loopback bind without a token is the point of the
+feature: exposing the port must be a decision, not an accident.
+
+The Vite dev server follows the same rule from the other direction. Without a
+token it binds `127.0.0.1` only; a configured token is what earns `host: true`.
+Before this, `pnpm dev` bound every interface and proxied `/api` and `/ws`
+straight to the backend, so anyone on the same wifi had the full API at
+`http://<lan-ip>:7489` — the backend's own loopback bind did nothing to stop it.
+
+## Presenting the secret
+
+- `Authorization: Bearer <token>` — scripts, curl, anything non-browser.
+- `unleashd_auth` cookie — HttpOnly, SameSite=Strict, `Secure` when the request
+  arrives over https (including via `X-Forwarded-Proto` from a proxy). Set by
+  the login form or by a magic link. This is what authorizes the WebSocket:
+  browsers cannot attach an Authorization header to `new WebSocket()`.
+- `?token=<token>` on a GET navigation — sets the cookie and immediately
+  redirects to the same URL without the parameter. Convenient for bookmarking
+  on a phone; note the token does pass through browser history and any proxy
+  access log on the way.
+
+Because the cookie is same-origin, `fetch()` and `new WebSocket()` send it
+automatically — no client call sites needed changing.
+
+`GET /__auth/logout` clears the cookie.
+
+## Is a shared secret enough?
+
+It depends on the wire, not on the secret.
+
+A shared key is a **bearer credential**: whoever presents it is you. It is only
+ever as private as the channel carrying it. unleashd is served over plain http,
+so:
+
+- **Over Tailscale** — fine. The request is inside a WireGuard tunnel, so the
+  key is encrypted end to end between your devices and cannot be sniffed by
+  anything between them. Tailnet-only serve (no Funnel) means only your own
+  devices can even open the connection; the key is the second layer.
+- **Over the LAN** — weaker. Plain http means the key crosses the wire in
+  cleartext, readable by anyone who can see your traffic (a shared or hostile
+  wifi, an untrusted router). It is a real improvement over no auth — it stops
+  casual and automated access from anything that merely reaches the port — but
+  it is only as safe as the network you are on.
+
+The honest summary: a shared key is proportionate for a single-user tool and it
+closes the "anyone who can reach the port owns the machine" hole. It is not a
+substitute for transport security on an untrusted network.
+
+### Recommended hardening
+
+Both are cheap and each removes the cleartext-on-the-wire caveat:
+
+1. **Serve over https through Tailscale.** One command, real cert, no config
+   change in this repo:
+
+   ```bash
+   tailscale serve --bg --https 443 http://127.0.0.1:7499
+   ```
+
+   This also makes the page a *secure context*, which fixes the
+   `crypto.randomUUID` / `navigator.clipboard` unavailability that gates G4 and
+   G5 in `tools/check-client-invariants.sh` exist to work around.
+
+2. **Keep the backend bound to loopback** (the default) and let Tailscale be
+   the only thing that reaches it. If you want the backend itself on the
+   tailnet interface instead, set `UNLEASHD_HOST=100.64.36.46` — a non-loopback
+   bind now requires a token, so this cannot be done accidentally.
+
+Do not enable Tailscale Funnel unless you specifically want the app on the
+public internet; with Funnel on, the shared key becomes the *only* thing
+between the internet and full agent execution on this machine.
+
+## Known gaps
+
+- No rate limiting on the login form. On a tailnet-only deployment the attacker
+  set is your own devices; on a Funnel deployment this would need to change.
+- A 401 mid-session (server restarted with a new token) surfaces as failing API
+  calls until the page is reloaded; reloading shows the login form.
+- The Vite HMR websocket is not gated. It is dev-only and carries source-change
+  notifications, not conversation data or commands; `/ws` and `/api` through
+  the dev proxy are gated by the backend.
+
+## Files
+
+| File | Role |
+|---|---|
+| `server/src/auth/policy.ts` | κ: env/disk → `AuthPolicy`; startup refusal |
+| `server/src/auth/gate.ts` | framework-agnostic decisions, cookies, login page |
+| `server/src/auth/express.ts` | Express adapter + `/__auth/login`, `/__auth/logout` |
+| `server/src/server.ts` | mounts the gate; gates the WebSocket upgrade |
+| `client/vite.config.ts` | same gate for the dev server; loopback bind default |
+| `server/test/auth.test.ts` | boots the real server and probes it over real sockets |

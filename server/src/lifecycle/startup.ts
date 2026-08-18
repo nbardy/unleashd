@@ -48,6 +48,9 @@ export async function runServerStartup(
     exec(`${command} ${startUrl}`);
   });
 
+  // Barrier is intentional (59da781): authoritative init + single mtime
+  // baseline. WS `init` streams summaries with loading:true; Phase 1 was
+  // 38s before batches (composite opencode) — now single-stat in loader.ts.
   console.log('Loading conversations before accepting WebSocket commands...');
   await ports.loadConversations();
   if (!ports.isStartupActive()) {
