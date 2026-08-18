@@ -36,7 +36,7 @@ import { registerConversationRoutes } from './http/conversation-routes';
 import { registerCoreRoutes } from './http/core-routes';
 import { registerFilesystemRoutes } from './http/filesystem-routes';
 import { createKnownProjectAuthorizer } from './http/known-projects';
-import { resolveWorkingDirectoryInput } from './http/path-utils';
+import { resolveDefaultWorkingDirectory, resolveWorkingDirectoryInput } from './http/path-utils';
 import { PersistedServerState } from './http/persisted-state';
 import { registerSearchRoutes } from './http/search-routes';
 import { registerTurnDiagnosticsRoutes } from './http/turn-diagnostics-routes';
@@ -189,7 +189,7 @@ registerConversationWebSocket(wss, {
     beginMutation({ allowDuringStartup: command.type === 'create_conversation' }),
   configService: conversationConfigService,
   getUIState: () => persistedServerState.getUIState(),
-  getDefaultWorkingDirectory: () => process.cwd(),
+  getDefaultWorkingDirectory: () => resolveDefaultWorkingDirectory(),
   resolveWorkingDirectory: resolveWorkingDirectoryInput,
   resolveBuddyConversation,
   createConversation: (options) => new Conversation(options),
@@ -250,7 +250,9 @@ registerBuddyRoutes(app, {
     buddyCreationService.createBuddyBuilderConversation({
       commandId,
       conversationId,
-      workingDirectory: process.cwd(),
+      // The Builder has no buddy workspace yet — it is the thing that creates
+      // one — so it gets the default workspace, not the server's own cwd.
+      workingDirectory: resolveDefaultWorkingDirectory(),
     }),
   getBuilderResult: async (conversationId) =>
     new BuddyBuilderService(
