@@ -13,6 +13,8 @@ import {
 } from '../../atoms/conversations';
 import { forkConversation } from '../../atoms/fork-actions';
 import { markMessagesSeen, setSavedActiveConversationId } from '../../atoms/ui';
+import { useCopyAction } from '../../hooks/useCopyAction';
+import { buildThreadTranscript } from '../../utils/conversation-transcript';
 import { useProviderCatalog } from '../../hooks/useProviderCatalog';
 import { ComposerMobile } from '../components/ComposerMobile';
 import { MessageRow } from '../components/MessageRow';
@@ -42,6 +44,24 @@ import { ModelSheetMobile, modelSummary } from '../components/ModelSheetMobile';
  * route changes) looked fine. Mirror Chat.tsx: only claim "not found" once the
  * conversation list has finished loading AND there is no pending creation.
  */
+
+
+function CopyThreadButton({ conversation }: { conversation: Conversation }) {
+  const text = buildThreadTranscript(conversation);
+  const { state, copy } = useCopyAction(text);
+  const label = state === 'copied' ? 'Copied' : state === 'failed' ? 'Copy failed' : 'Copy thread';
+  return (
+    <button
+      type="button"
+      className="mobile-chat__action"
+      onClick={copy}
+      title={label}
+      aria-label={label}
+    >
+      {label}
+    </button>
+  );
+}
 
 function ForkButton({ conversation }: { conversation: Conversation }) {
   const navigate = useNavigate();
@@ -340,6 +360,7 @@ export function ConversationView({
           </div>
           <div className="mobile-chat__actions">
             {headerAside}
+            <CopyThreadButton conversation={conversation} />
             <ForkButton conversation={conversation} />
           </div>
         </div>
