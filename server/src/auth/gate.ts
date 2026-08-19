@@ -15,7 +15,27 @@ export const LOGOUT_PATH = '/__auth/logout';
 /** Query parameter for bookmarkable links: /?token=… sets the cookie once. */
 export const TOKEN_QUERY_PARAM = 'token';
 
+/**
+ * A year, and deliberately not a session cookie: on a phone this is the
+ * difference between signing in once and signing in every time Safari evicts
+ * the tab or the home-screen app is backgrounded. Because the cookie is set by
+ * a `Set-Cookie` header rather than `document.cookie`, it is not subject to
+ * WebKit ITP's 7-day cap on script-writable storage. Chrome clamps any cookie
+ * to 400 days, so keep this under that.
+ */
 const COOKIE_MAX_AGE_SECONDS = 60 * 60 * 24 * 365;
+
+/**
+ * Lax, not Strict. Strict withholds the cookie on cross-site navigations, which
+ * includes tapping a link to unleashd from Messages, Mail, or Slack — the user
+ * is still signed in but gets the login page anyway, which is exactly the
+ * re-entry this cookie exists to prevent. Lax costs nothing here: it still
+ * withholds the cookie from cross-site subresources (fetch, XHR, the WebSocket
+ * handshake) and from cross-site POSTs, and every mutating route in this app is
+ * a POST or a WS command — the GET surface is read-only by construction
+ * (see the mutation gate in server.ts, which exempts GET/HEAD/OPTIONS).
+ */
+const COOKIE_SAME_SITE = 'Lax';
 
 export interface GateRequest {
   readonly method: string;
@@ -138,7 +158,7 @@ export function buildSessionCookie(token: string, options: { secure: boolean }):
     `${SESSION_COOKIE}=${encodeURIComponent(token)}`,
     'Path=/',
     'HttpOnly',
-    'SameSite=Strict',
+    `SameSite=${COOKIE_SAME_SITE}`,
     `Max-Age=${COOKIE_MAX_AGE_SECONDS}`,
   ];
   if (options.secure) attributes.push('Secure');
@@ -146,7 +166,7 @@ export function buildSessionCookie(token: string, options: { secure: boolean }):
 }
 
 export function buildClearedSessionCookie(): string {
-  return `${SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0`;
+  return `${SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=${COOKIE_SAME_SITE}; Max-Age=0`;
 }
 
 /**

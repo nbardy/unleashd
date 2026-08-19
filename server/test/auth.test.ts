@@ -147,7 +147,7 @@ describe('shared-secret auth (real server)', () => {
     const cookie = response.headers.get('set-cookie') ?? '';
     assert.match(cookie, /unleashd_auth=/);
     assert.match(cookie, /HttpOnly/);
-    assert.match(cookie, /SameSite=Strict/);
+    assert.match(cookie, /SameSite=Lax/);
 
     const withCookie = await fetch(`${BASE}/api/provider-catalog`, {
       headers: { cookie: `unleashd_auth=${TOKEN}` },
@@ -216,6 +216,49 @@ describe('shared-secret auth (real server)', () => {
     assert.equal(accepted.status, 200);
     assert.deepEqual(await accepted.json(), { ok: true, redirectTo: '/buddies' });
     assert.match(accepted.headers.get('set-cookie') ?? '', /unleashd_auth=/);
+  });
+
+  test('the session cookie is persistent, not a session cookie', async () => {
+    // Dropping Max-Age turns this into a session cookie, and the only symptom
+    // is "my phone makes me sign in again every day" — which is nearly
+    // untraceable after the fact. Pin the durability here.
+    const response = await fetch(`${BASE}/__auth/login`, {
+      method: 'POST',
+      headers: {
+        'content-type': 'application/x-www-form-urlencoded',
+        // What `tailscale serve` sends; it is what makes the cookie Secure.
+        'x-forwarded-proto': 'https',
+      },
+      body: new URLSearchParams({ token: TOKEN }).toString(),
+      redirect: 'manual',
+    });
+    const cookie = response.headers.get('set-cookie') ?? '';
+
+    const maxAge = Number(cookie.match(/Max-Age=(\d+)/)?.[1] ?? '0');
+    assert.ok(maxAge >= 60 * 60 * 24 * 30, `Max-Age must outlast a month, got ${maxAge}s`);
+    // Chrome silently clamps anything past 400 days.
+    assert.ok(maxAge <= 60 * 60 * 24 * 400, `Max-Age must stay under Chrome's 400-day clamp`);
+
+    assert.match(cookie, /HttpOnly/);
+    assert.match(cookie, /Path=\//);
+    assert.match(cookie, /Secure/);
+    // Strict would withhold the cookie when the app is opened from a link in
+    // another app, producing a spurious login prompt.
+    assert.match(cookie, /SameSite=Lax/);
+  });
+
+  test('the cookie is not marked Secure on a plain-http origin', async () => {
+    // A Secure cookie is dropped outright over http, so the loopback/LAN dev
+    // path would silently never stay signed in.
+    const response = await fetch(`${BASE}/__auth/login`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded' },
+      body: new URLSearchParams({ token: TOKEN }).toString(),
+      redirect: 'manual',
+    });
+    const cookie = response.headers.get('set-cookie') ?? '';
+    assert.doesNotMatch(cookie, /Secure/);
+    assert.match(cookie, /Max-Age=\d+/);
   });
 
   test('the WebSocket command channel refuses unauthenticated upgrades', async () => {

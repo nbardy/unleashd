@@ -66,10 +66,24 @@ straight to the backend, so anyone on the same wifi had the full API at
 ## Presenting the secret
 
 - `Authorization: Bearer <token>` — scripts, curl, anything non-browser.
-- `unleashd_auth` cookie — HttpOnly, SameSite=Strict, `Secure` when the request
-  arrives over https (including via `X-Forwarded-Proto` from a proxy). Set by
-  the login form or by a magic link. This is what authorizes the WebSocket:
-  browsers cannot attach an Authorization header to `new WebSocket()`.
+- `unleashd_auth` cookie — set by the login form or a magic link. This is what
+  authorizes the WebSocket: browsers cannot attach an Authorization header to
+  `new WebSocket()`. Attributes, and why each one is what it is:
+
+  | Attribute | Value | Reason |
+  |---|---|---|
+  | `Max-Age` | `31536000` (365 days) | Persistent, **not** a session cookie — otherwise the phone re-prompts every time Safari evicts the tab. Kept under Chrome's 400-day clamp. |
+  | `HttpOnly` | always | Keeps the secret out of `document.cookie`, and out of ITP's 7-day cap on script-writable storage. |
+  | `Secure` | only over https | A `Secure` cookie is dropped outright over http, so the loopback/LAN dev path would never stay signed in. Driven by `X-Forwarded-Proto`, which `tailscale serve` sets. |
+  | `SameSite` | `Lax` | `Strict` withholds the cookie on cross-site navigations — opening unleashd from a link in Messages or Mail would show the login page despite a valid session. |
+  | `Path` | `/` | One scope for the app, the API, and `/ws`. |
+
+  `Lax` is safe here: it still withholds the cookie from cross-site
+  subresources (fetch, XHR, the WebSocket handshake) and cross-site POSTs, and
+  every mutating route is a POST or a WS command — the GET surface is read-only
+  by construction, which the mutation gate in `server.ts` already assumes. The
+  one GET with an effect is `/__auth/logout`, so a hostile page could navigate
+  you to it and sign you out; an annoyance, not a disclosure.
 - `?token=<token>` on a GET navigation — sets the cookie and immediately
   redirects to the same URL without the parameter. Convenient for bookmarking
   on a phone; note the token does pass through browser history and any proxy
