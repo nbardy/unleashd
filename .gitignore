@@ -35,5 +35,8 @@ output/playwright/
 *.temp
 
 # Local planning scratch (not committed)
-product/
+# product/*.md is tracked — product plans are durable intent, not scratch.
+product/**
+!product/
+!product/*.md
 output

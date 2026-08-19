@@ -1,91 +1,192 @@
-# 2026-08-19 Direct Reports (Sub-Buddies) — Unified Design — Final
+# 2026-08-19 Direct Reports (Sub-Buddies) — Implementation Spec
 
-**Date:** 2026-08-19 · **Status:** Design — not yet coded — **Unified: `sub-buddy == directReport`**
-**Companion:** `product/PLANNING_SUB_BUDDIES.md`
-**Context:** `buddy_relationships(manager|reports_to)` + `overview.topLevel = filter(!managerId)` (`store.js:2668`, `ui-contract.ts:6`) already hides reports under `Team: N`. Sub-buddies are that — Owner-built today, Parent-hirable tomorrow.
+**Status:** design, not yet coded · **Companion:** `product/PLANNING_SUB_BUDDIES.md`
+**Terminology:** `sub-buddy == direct report`. One hierarchy
+(`buddy_relationships(manager|reports_to)`), one hide rule (`overview.topLevel`), one UI
+section (`Team: N`). Ops are named `hire_direct_report` / `retire_direct_report`.
 
-## 1. Surface (minimal)
+A first draft of this doc claimed "no migration, no store change, reuse the existing
+allowlist." Every one of those was wrong against the code; §2–§6 record why, because each
+is a trap the next reader would fall into again.
 
-Two ops only, same `BuddyOperationsService` + `BuddiesStorePort` + `buddies:operations` Zod surface as `delegate`/`request_review`:
+## 1. Where the code actually lives
 
-* `buddy.create_sub_buddy { name, role, workspaceId, additionalWorkspaceIds?, provider?, model?, reasoningEffort? } → {buddy, workspaces}`
-* `buddy.retire_sub_buddy { subBuddyId, reason? } → buddy` (`status='archived'`)
+`@nbardy/buddies` is **not** in this repo. It is a vendored tarball
+(`vendor/nbardy-buddies-0.1.0.tgz`, provenance `sourceCommit 3b7027f`) built from
+`~/git/buddies` by `tools/vendor-buddies.mjs` (`pnpm vendor:buddies`). Every store change
+below is a commit in that repo, a repack, and a provenance bump in this one — the same
+discipline as the `vendor/agent-cli-tool` submodule. Plan it as phase 0, not as a detail.
 
-No `parent_buddy_id` FK, no new table, no new UI section — `create` writes the same `buddies`+`buddy_projects`+`manager` edge the Builder does, in one txn.
+Store paths in this doc are `@nbardy/buddies src/store.js`.
 
-## 2. Data model — no migration
+## 2. Trap: the operation allowlist is default-**open**
 
-Current `buddies(id, project_id FK→projects, slug, name, role, status, soul_path, memory_path, provider, model, reasoning_effort, …) UNIQUE(project_id, slug)`
+`BuddyOperationContext.allowedOperations` is optional. `operations.ts:277` only enforces
+it when present, and `mcp-config.ts buddyCodexMcpArgs` never passes `--allowed-operation`
+for an ordinary Buddy conversation — so it is `undefined` and `mcp-server.ts:100`
+registers *every* tool. `DEFAULT_DELEGATED_BUDDY_OPERATIONS` (`operations.ts:216`)
+constrains only delegated child conversations.
 
-New helper `createSubBuddy` (in `src/store.js` — mirrors `createBuddyFromBuilder` atomicity):
+Therefore "just leave hire out of `DEFAULT_DELEGATED_BUDDY_OPERATIONS`" grants hiring to
+every top-level Buddy in every normal conversation. The capability must be **per-Buddy
+state checked inside the operation**, which is what `hire_quota` is.
+
+Corollary: the same reasoning applies to any future privileged op. Adding a name to a list
+that defaults open is not a gate.
+
+## 3. Trap: a Buddy created the Builder way has no soul and no memory
+
+`createBuddyFromBuilder` writes `soul_path: null, memory_path: null` (`store.js:891`).
+Consequences for such a Buddy:
+
+* briefing renders `(No Buddy soul has been configured.)` (`integration.ts:225`)
+* `readBuddyMemory` silently returns `{summary:"", recentJournal:[]}` (`store.js:2120`)
+* the **first `buddy.remember` throws** `Buddy has no configured memory path`
+  (`store.js:3300`)
+
+Persistent memory is the entire difference between a direct report and an ephemeral
+sub-agent, so hire must provision both. `createBuddy` already accepts workspace-relative
+`soulPath`/`memoryPath` (`store.js:765`) and the shipped convention is
+`profiles/<slug>/BUDDY_SOUL.md` + `profiles/<slug>/memory`
+(`scripts/initialize-growth-lead.js:24,128`).
+
+`soul` is a **required** string argument on hire. The manager is an LLM; it can author the
+soul inline. (This is why the hire path does *not* reuse the Builder conversation: the only
+things Builder adds are soul authoring and conversation-keyed idempotency, and an inline
+`soul` plus the reactivation rule in §5 cover both — without making hire asynchronous or
+nesting a builder conversation inside an agent turn.)
+
+## 4. Trap: the hide rule is `!managerId`, so deleting the edge *un-hides*
+
+`overview()` derives `managerByReport` from `buddy_relationships` and returns
+`topLevel: employees.filter((item) => !item.managerId)` (`store.js:2668`). A retire that
+tidies up the manager edge would make the retiree managerless — i.e. promote it into the
+directory. **Retire never touches relationships.**
+
+Related: `listBuddies()` has no status filter (`store.js:1086`), so archived Buddies
+currently stay in `employees`, in `topLevel`, and in `team[]`. Retire is therefore
+invisible today. Fix in `overview()`:
+
+```js
+const employees = buddies
+  .filter((buddy) => buddy.status !== "archived")
+  .map(employee);
+// buddyById still built from all buddies, so team[] keeps archived
+// entries with their status — the manager can see and reactivate them.
+```
+
+Note the behaviour change: an existing archived *top-level* Buddy also drops out of the
+directory. That is the intended fix, but call it out in the vendor changelog.
+
+## 5. Schema v12 and the two store helpers
+
+```sql
+ALTER TABLE buddies ADD COLUMN hire_quota INTEGER NOT NULL DEFAULT 0;
+PRAGMA user_version = 12;  -- CURRENT_SCHEMA_VERSION 11 -> 12
+```
+
+One column is the capability gate, the quota, and the depth rule at once: a hired report
+is created with `hire_quota = 0`, so it cannot hire unless the Owner deliberately grants
+it. There is no separate "depth == 1" assertion to get wrong. (The first draft's
+`count manager edges … WHERE status='active'` was also unimplementable —
+`buddy_relationships` has no status column; the count must join `buddies`.)
+
+### `hireDirectReport({ managerBuddy, name, role, soul, workspace, additionalWorkspaces, provider, model, reasoningEffort })`
 
 ```
+manager = requireBuddy(managerBuddy); assert manager.status === 'active'
+assert workspace and every additionalWorkspace ∈ listBuddyWorkspaces(manager.id)
+slug = slugify(name)
+existing = getBuddy(slug, workspace)
+  ├─ archived AND managed by manager -> REACTIVATE (see below), return
+  ├─ active   AND managed by manager -> replay: return it unchanged
+  └─ otherwise                       -> 409 (name taken in this workspace)
+assert countActiveDirectReports(manager.id) < manager.hire_quota   -- 0 => always fails
+soulPath = `profiles/${slug}/BUDDY_SOUL.md`; memoryPath = `profiles/${slug}/memory`
+write those files with flag 'wx' + mkdir memory      -- BEFORE the txn; unlink on rollback
 BEGIN IMMEDIATE
-  assert parent.status='active' && workspaceId ∈ listBuddyWorkspaces(parentId)
-  assert count manager edges parent→* with status='active' < 12
-  assert directReports depth ==1 (parent has no manager) else 403
-  slug = slugify(name); assert UNIQUE(project_id=workspaceId, slug)
-  fingerprint = sha256(parentId:name:workspaceId)
-  if fingerprint exists for this parentNameWorkspace → replay / 409 if different slug
-  INSERT buddies(id, project_id=workspaceId, slug, name, role, status='active', …)
-  INSERT buddy_projects for workspaceId + additionalWorkspaceIds (deduped)
-  INSERT buddy_relationships(id, from=parent, to=sub, kind='manager') ON CONFLICT DO NOTHING
-           + reciprocal ('reports_to') for dedup path already in store
-  audit 'buddy.create_sub_buddy'
-COMMIT
+  INSERT buddies(..., project_id = workspace, soul_path, memory_path, hire_quota = 0)
+  INSERT buddy_projects for workspace + additionalWorkspaces (deduped)
+  setBuddyRelationship({from: manager, to: sub, kind: 'manager'})   -- ON CONFLICT DO NOTHING
+  recordAuditEvent('buddy.hire_direct_report')
+COMMIT   -- on failure: ROLLBACK and remove profiles/<slug>/
 ```
 
-`retireSubBuddy(subId, byId)` — assert `byId` is parent (`manager` edge) or owner (`buddy.project_id` owner), `UPDATE buddies SET status='archived'`, disable its `buddy_automations`, cancel its active `buddy_delegations`/`buddy_reviews` via existing `updateDelegation` path, audit `buddy.retire_sub_buddy`.
+Reactivation is the whole idempotency story: `UNIQUE(project_id, slug)` already prevents
+duplicates, so no fingerprint column and no `buddy_builder_creations` analogue. Reactivate
+= `updateBuddy(sub, {status: 'active', role})` + re-assert the manager edge + audit; memory
+and soul survive, which is the behaviour you want when re-hiring a role. (`updateBuddy`
+cannot change `slug` — another reason not to release the slug on retire.)
 
-Idempotency: same `fingerprint` → replay `getBuddy`; same `(parent,workspace)`+different `name` → new row (different fingerprint); same `name`+`workspace`+different `role` but same fingerprint base → 409 unless `replay`.
-
-## 3. API layer
+### `retireDirectReport({ managerBuddy, subBuddy, reason, reassignOpenWorkTo })`
 
 ```
-POST   /api/buddies/:buddyId/sub-buddies              {name,role,workspaceId,additionalWorkspaceIds?,provider?,model?,reasoningEffort?}
-POST   /api/buddies/:buddyId/sub-buddies/:subId/retire {reason?}
-GET    /api/buddies/:buddyId              → includes directReports (no new field — reuse relationships)
-GET    /api/buddies/overview?includeSubBuddies=false  default false (topLevel only)
+assert sub is a direct report of manager (manager edge in either direction)
+open = listBuddyOwnedProjects({buddy: sub})            -- excludes closed by default
+if open.length and !reassignOpenWorkTo -> throw 409 with the open project slugs
+if reassignOpenWorkTo: assert it === manager.id, reassign those projects
+disable sub's buddy_automations (enabled = 0, next_run_at = NULL)
+cancel sub's pending/active buddy_delegations and draft buddy_reviews
+UPDATE buddies SET status='archived'                   -- relationships untouched (§4)
+recordAuditEvent('buddy.retire_direct_report', {reason})
 ```
 
-Validation mirrors `routes.ts:349 isDirectReport` — `workspaceId` must be on parent, caller is `BuddyContext(buddyId)` or Owner HTTP, duplicate slug under same workspace → 409, quota → 429, depth → 403. Detail and health reuse `listAutomations`/`listAutomationRuns` (`buddy_id=subId`).
+## 6. Server surface
 
-## 4. Tool / MCP injection
+Two entries in `BuddyOperationName` / `BuddyOperationInputSchemas` / `BuddiesStorePort`,
+dispatched by `BuddyOperationsService.execute`, registered by `createBuddyMcpServer` like
+any other op. Both are gated by `hire_quota` in the store helper, so the gate holds no
+matter which caller reaches it.
 
-Same layer as every Buddy op — `server/src/buddies/operations.ts` (`BuddyOperationInputSchemas`), `server/src/buddies/contract.ts` ( `BuddiesStorePort`), `server/src/buddies/integration.ts` (briefing), `server/src/buddies/mcp-server.ts` (`createBuddyMcpServer` registers tools per conversation):
+* **Not** added to the store's `AUTOMATION_ALLOWED_OPERATIONS` (`store.js:57`, enforced at
+  `store.js:3479`) — scheduled runs can never hire, and `assertAutomationOperationAllowed`
+  rejects it for free.
+* **Not** added to `DEFAULT_DELEGATED_BUDDY_OPERATIONS` — belt and braces; the real gate is
+  §2/§5.
+* **No model-facing HTTP route.** `delegate` needs `--api-base` because dispatch spawns a
+  conversation; hire does not, so it runs in-process where `--buddy` is server-set. Owner
+  hire/retire goes through the existing profile/relationship routes.
+* Honest limitation: every `/api/buddies/*` route sits behind only the shared-secret gate
+  with no per-Buddy caller identity, and a Buddy has a shell. So any Owner route we add is
+  reachable by a Buddy that reads the secret. `hire_quota` defaulting to `0` is what bounds
+  that: spoofing only lets you hire on behalf of a Buddy the Owner already funded, and the
+  result is an audited row under that manager.
+* Briefing (`integration.ts`): one line for a report — `You are a direct report of <Manager>
+  (<role>).` One line for a funded manager — `You may hire N more direct reports.`
 
-* `BuddyContext {buddyId: parentId, workspaceId, allowedOperations}` — `create_sub_buddy` **not** in `DEFAULT_DELEGATED_BUDDY_OPERATIONS`; parent must explicitly grant it (like `set_automation`). Automation runs likewise respect `assertAutomationOperationAllowed`.
-* `mcp-server.ts` adds `registerTool('buddy_create_sub_buddy'/'buddy_retire_sub_buddy')` via `BuddyOperationsService.execute` — same `ToolServer` wrapper as `delegate`.
-* First-turn briefing for sub-buddy (via `integration.ts` `getBuddyContext`) adds one line within 40k budget: `You are a direct report (sub-buddy) of <Parent name> (<role>); own scoped projects and fan out via sub-agents (swarm) in one automation loop/sequence.`
-* Conversations remain ordinary Unleashd conversations with typed `buddyContext` + `kind='buddy'` — scheduler’s `createConversation(automation, run)` creates one `automation` conversation per tick (prompt/sequence/loop inside one run) as today; sub-buddy’s runs have `buddy_id=subId`.
+## 7. Client
 
-No new WS contract — `conversation_created` reused for updates as documented.
+`overview.employees[].team` already carries `{id, name, role, status}` (`store.js:2616`).
+`deriveBuddyDirectReports` (`buddies-shaping.ts:84`) recomputes the same fact from raw
+relationships and **drops status**, which is why "archived renders dimmed" was false.
 
-## 5. Client & simplifies
+Read `team` from the overview projection and delete the relationship-derived list — a
+net-negative change that also makes retire visible. `Team: N` counts
+`status === 'active'`; archived reports render dimmed underneath.
+`selectDirectoryEmployees` and `check-client-invariants.sh` are unchanged.
 
-* Reuse `deriveBuddyHierarchy` / `Team: N` + `mobile-buddy-reports` — no new `deriveSubBuddies` or `buddy-sub-buddies` section. `archived` dimmed via existing status style.
-* `ui-contract.selectDirectoryEmployees` stays `topLevel`. Overview debug flag only.
-* `check-client-invariants.sh` G1/G2/G3 unchanged.
+## 8. Tests (`server/test/buddy-direct-reports.test.ts`)
 
-## 6. Automations (reuse)
+Each one guards a specific finding above; none of them mirror the schema.
 
-No new scheduler — reuse shipped `buddy_automations(schedule_kind=cron|interval, job_kind=prompt|sequence|loop, job_payload, enabled, next_run_at)` + `BuddyScheduler` poll 30s + `claimAutomationRun` lease `max_runtime_seconds+60`:
+1. Buddy with default `hire_quota = 0` calling hire → refused. *(§2 — the gate is real.)*
+2. Funded manager hires → `overview.topLevel` length unchanged, manager's `team` contains
+   the report. *(hide rule.)*
+3. Newly hired report's first `buddy.remember` writes to `profiles/<slug>/memory` and
+   `readBuddyMemory` reads it back. *(§3 — would throw under the first draft.)*
+4. Retire with an open owned project → refused with the project slug; with
+   `reassignOpenWorkTo` → manager owns it.
+5. After retire: report absent from `employees`/`topLevel`, present in manager's `team`
+   with `status: 'archived'`, **manager edge still present**. *(§4 — the un-hide hazard.)*
+6. Re-hire the retired name → same `buddyId`, memory intact, status active.
+7. Hired report cannot itself hire (inherits `hire_quota = 0`). *(depth, via capability.)*
+8. `setAutomation` with `allowed_operations: ['buddy.hire_direct_report']` → rejected by
+   the store enum.
 
-* Cron per-tick = new `automation` conversation. To “interval-repeat in same thread” use `job_kind: loop` (`prompt + termination{condition,max_iterations,max_duration_seconds}`) — Buddy outputs `{buddyAutomation:{done:true}}` (`parseAutomationCompletion`) to stop. `sequence` is fixed `prompts[]` in one conversation (guard `len <= max_iterations`). Sub-buddy’s automation is just a normal row with `buddy_id=subId, workspace_id=subWorkspace`.
-* `BuddyAutomationsTab.tsx` already shows `scheduleKind/scheduleExpression/jobKind` + run list; reuse for sub-buddy detail.
+## 9. Out of scope
 
-## 7. Tests
-
-* `server/test/buddy-sub-buddy.test.ts` — create sub (still `topLevel==1`), `GET /:parent` shows directReports contains sub, quota 12 hit, idempotent replay, depth 1 guard, retire archives + disables automations + cancels active delegations.
-* Extend `buddy-routes` + `buddy-lifecycle-e2e:245` stays green.
-
-## 8. Rollout (4 commits)
-
-1. `createSubBuddy`/`retireSubBuddy` helpers + unit tests (no migration).
-2. Ops + routes + MCP `createBuddyMcpServer` tools + allowedOperations gate.
-3. One-line briefing + `store.getBuddyContext` parent note.
-4. Trial `data-engineer` (Lead→sub, sub owns 3 scrapers, loop `max_iterations=3` in one conversation).
-
-## 9. Reflection
-
-Kept FK out — `parent_buddy_id` would duplicate the `manager` edge and need a second hide rule. Reused the one hierarchy, one list, one txn style (`createBuddyFromBuilder`) and one scheduler. Two ops are the only new surface; everything else is an assignment + relationship the system already proves.
+Interval-repeat inside one conversation. `job_kind: loop` iterates back-to-back with no
+delay (`scheduler.ts:333-368`) and every tick calls `createConversation`
+(`scheduler.ts:273`), so there is no way to wake an existing thread on a schedule. The fix
+shape is a `conversation_id` binding on `buddy_automations` plus a scheduler resume path;
+it is independent of hiring and should not be smuggled into this change.
