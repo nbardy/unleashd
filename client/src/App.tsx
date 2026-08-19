@@ -57,6 +57,13 @@ function useWebSocketBridge() {
  * Desktop: restores "/" → /chat/:id from the saved active conversation id.
  * Mobile: keeps the Chats inbox at "/" — never auto-opens an old conversation.
  * Must be hoisted above AppRoutes so the nav fires once before the shell mounts.
+ *
+ * HMR-safe: Vite Fast Refresh patches modules without reloading the page but
+ * may remount AppInner — didRestore prevents a second push, and a dedicated
+ * HMR/visibility handler re-focuses the conversation input without stealing
+ * focus from another field. URL is owned by BrowserRouter (window.history) so
+ * HMR does not reset it; we only guard the case where a soft HMR reload
+ * lands back on "/" while a conversation was active.
  */
 function useRestoreOnLoad(device: DeviceKind) {
   const navigate = useNavigate();
@@ -78,6 +85,46 @@ function useRestoreOnLoad(device: DeviceKind) {
       }
     }
   }, [allConversations.length, navigate, savedActiveId, location.pathname, device]);
+
+  // Re-assert focus after HMR without touching the URL.
+  // Vite's `vite:beforeUpdate` fires before patching; `pagehide`/`visibility`
+  // already flush drafts via useConversationDraft — here we only restore focus.
+  useEffect(() => {
+    if (device === 'mobile') return;
+    const refocus = () => {
+      // Only when a chat is active and no other input holds focus.
+      const active = document.activeElement;
+      if (active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement) return;
+      const loc = window.location.pathname;
+      if (!loc.startsWith('/chat/')) return;
+      const el = document.querySelector<HTMLTextAreaElement>('[data-conversation-input="true"]');
+      if (!el || el.disabled) return;
+      requestAnimationFrame(() => {
+        const stillActive = document.activeElement;
+        if (stillActive instanceof HTMLInputElement || stillActive instanceof HTMLTextAreaElement) return;
+        el.focus();
+        try {
+          const end = el.value.length;
+          el.setSelectionRange(end, end);
+        } catch {
+          // ignore hidden
+        }
+      });
+    };
+    type ViteHMR = { addEventListener?: (e: string, cb: () => void) => void };
+    const viteHmr = (import.meta as unknown as { hot?: ViteHMR }).hot;
+    viteHmr?.addEventListener?.('vite:beforeUpdate', () => {
+      // After patch, next frame re-focuses
+      setTimeout(refocus, 50);
+    });
+    // Also handle the old-book/overlap case where HMR triggers a
+    // visibilitychange or the user returns to the tab
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') refocus();
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
+  }, [device]);
 }
 
 // =============================================================================

@@ -1,9 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useRef, useState } from 'react';
 import { interruptAndSend, queueMessage, stopConversation } from '../../atoms/actions';
-import { DRAFT_KEY_PREFIX } from '../../atoms/ui';
-
-// Matches Chat.tsx's DRAFT_SAVE_DELAY_MS — both trees write the same key.
-const DRAFT_SAVE_DELAY_MS = 500;
+import { useConversationDraft } from '../../hooks/useConversationDraft';
+import { usePendingAttachments } from '../../hooks/usePendingAttachments';
 
 export function ComposerMobile({
   conversationId,
@@ -23,82 +21,62 @@ export function ComposerMobile({
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const draftTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  // Saving reads these refs, never the `draft` state. An effect keyed on
-  // [conversationId, draft] looks equivalent but is not: its cleanup closes over
-  // the PREVIOUS draft, so the first render's cleanup fires with '' and deletes
-  // the key the load effect just read — which silently ate every forked draft.
-  const draftRef = useRef('');
-  const draftKeyRef = useRef('');
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const writeDraft = useCallback(() => {
-    const key = draftKeyRef.current;
-    if (!key) return;
-    try {
-      if (draftRef.current) localStorage.setItem(key, draftRef.current);
-      else localStorage.removeItem(key);
-    } catch {
-      // Quota or private-mode failure — a lost draft must never take down the
-      // composer. Same posture as the storage wrapper in atoms/ui.ts.
-    }
-  }, []);
+  // Portable draft persistence — same hook desktop Chat.tsx uses.
+  // Fork handoff seeds `draft:<newId>`; this hook loads it and debounces saves.
+  const { setDraft: setDraftPersisted, clear: clearDraftPersisted } = useConversationDraft({
+    conversationId,
+    textareaRef,
+    maxHeight: 120,
+    autoFocus: false,
+    controlled: true,
+    onDraftLoaded: (loaded) => setDraft(loaded),
+    onDraftChange: (value) => setDraft(value),
+  });
+
+  // Shared attachment lifecycle — same hook desktop Chat.tsx uses so both
+  // trees share upload (POST /api/upload), object-URL previews, framing,
+  // and localStorage key `pendingFiles:{conversationId}`.
+  const {
+    pendingFiles,
+    isUploading,
+    handleFilesUpload,
+    removeFile,
+    clearFiles,
+    buildContent,
+    handlePaste,
+  } = usePendingAttachments(conversationId);
 
   const updateDraft = useCallback(
     (value: string) => {
-      setDraft(value);
-      draftRef.current = value;
-      if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
-      draftTimerRef.current = setTimeout(writeDraft, DRAFT_SAVE_DELAY_MS);
+      setDraftPersisted(value);
     },
-    [writeDraft]
+    [setDraftPersisted]
   );
-
-  // Draft persistence, same localStorage key as Chat.tsx. Load on conversation
-  // switch. Without this, Fork silently loses its handoff: forkConversation()
-  // seeds the transcript under `draft:<new id>` and the composer must pick it up
-  // or the forked thread opens blank and carries nothing.
-  useEffect(() => {
-    if (!conversationId) return;
-    const key = `${DRAFT_KEY_PREFIX}${conversationId}`;
-    let saved = '';
-    try {
-      saved = localStorage.getItem(key) ?? '';
-    } catch {
-      saved = '';
-    }
-    draftKeyRef.current = key;
-    draftRef.current = saved;
-    setDraft(saved);
-    const ta = textareaRef.current;
-    if (ta) {
-      ta.style.height = 'auto';
-      ta.style.height = `${Math.min(ta.scrollHeight, 120)}px`;
-    }
-    // Flush on unmount / conversation switch so a back-navigation keeps the draft.
-    return () => {
-      if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
-      writeDraft();
-    };
-  }, [conversationId, writeDraft]);
 
   const hasActiveTurn = isRunning || isStreaming;
   const hasQueue = queueLength > 0;
-  const canSend = draft.trim().length > 0 && !sending;
+  const hasText = draft.trim().length > 0;
+  const hasAttachments = pendingFiles.length > 0;
+  const canSend = (hasText || hasAttachments) && !sending;
   // One label for the button and the hint below it, so they cannot disagree.
   const sendLabel = hasActiveTurn ? 'Interrupt' : hasQueue ? 'Queue' : 'Send';
 
   const handleSend = useCallback(async () => {
     const text = draft.trim();
-    if (!text || sending) return;
+    if ((!text && !hasAttachments) || sending) return;
     setSending(true);
     setError(null);
+    const content = buildContent(text);
     try {
       if (hasActiveTurn) {
-        await interruptAndSend(conversationId, text);
+        await interruptAndSend(conversationId, content);
       } else {
-        await queueMessage(conversationId, text);
+        await queueMessage(conversationId, content);
       }
-      updateDraft('');
+      clearDraftPersisted();
+      clearFiles();
       if (textareaRef.current) {
         textareaRef.current.style.height = 'auto';
       }
@@ -107,11 +85,20 @@ export function ComposerMobile({
     } finally {
       setSending(false);
     }
-  }, [conversationId, draft, hasActiveTurn, sending, updateDraft]);
+  }, [conversationId, draft, hasActiveTurn, hasAttachments, sending, buildContent, clearDraftPersisted, clearFiles]);
 
   const handleStop = useCallback(() => {
     stopConversation(conversationId);
   }, [conversationId]);
+
+  const handleFilesSelected = useCallback(
+    async (e: React.ChangeEvent<HTMLInputElement>) => {
+      const files = e.target.files ? Array.from(e.target.files) : [];
+      e.target.value = '';
+      if (files.length > 0) await handleFilesUpload(files);
+    },
+    [handleFilesUpload]
+  );
 
   // Enter inserts a newline; the button sends. This inverts the desktop binding
   // deliberately: a soft keyboard has no Shift+Enter, so intercepting Enter left
@@ -122,12 +109,13 @@ export function ComposerMobile({
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
       e.preventDefault();
-      if (canSend) void handleSend();
+      if (canSend && !disabled) void handleSend();
     }
   };
 
   const handleInput = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
-    setDraft(e.target.value);
+    const value = e.target.value;
+    updateDraft(value);
     const ta = e.target;
     ta.style.height = 'auto';
     ta.style.height = `${Math.min(ta.scrollHeight, 120)}px`;
@@ -138,13 +126,45 @@ export function ComposerMobile({
 
   return (
     <div className="mobile-composer">
-      {/* No queue-count line and no keybinding hint: both were standing helper
-          text in a footer that needs to be lean. The queue depth still reaches
-          the user through the send button's label ("Queue") and its title. */}
+      {/* Pending attachments — same data as desktop, mobile-styled strip. */}
+      {pendingFiles.length > 0 && (
+        <div className="mobile-pending-files" aria-label="Attached files">
+          {pendingFiles.map((file) => (
+            <div key={file.absolutePath} className="mobile-pending-file">
+              {file.previewUrl ? (
+                <img className="mobile-pending-file__thumb" src={file.previewUrl} alt={file.originalName} />
+              ) : (
+                <span className="mobile-pending-file__icon" aria-hidden="true">
+                  📄
+                </span>
+              )}
+              <span className="mobile-pending-file__name">{file.originalName}</span>
+              <button
+                type="button"
+                className="mobile-pending-file__remove"
+                onClick={() => removeFile(file.absolutePath)}
+                aria-label={`Remove ${file.originalName}`}
+                title="Remove file"
+              >
+                ×
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
 
-      {/* Send control lives INSIDE the box. Previously the button was a sibling
-          of the textarea, so iOS auto-zoom on focus pushed it past the right
-          edge and clipped it. */}
+      {/* Hidden file input — triggered by the attach button. Same POST /api/upload
+          as desktop; accept any file, preview only for images. */}
+      <input
+        ref={fileInputRef}
+        type="file"
+        multiple
+        onChange={handleFilesSelected}
+        style={{ display: 'none' }}
+        aria-hidden="true"
+        tabIndex={-1}
+      />
+
       <div
         className={
           disabled ? 'mobile-composer__box mobile-composer__box--disabled' : 'mobile-composer__box'
@@ -155,6 +175,7 @@ export function ComposerMobile({
           value={draft}
           onChange={handleInput}
           onKeyDown={handleKeyDown}
+          onPaste={handlePaste}
           disabled={disabled}
           placeholder={disabledReason ?? (hasActiveTurn ? 'Interrupt with message…' : 'Message…')}
           rows={1}
@@ -162,9 +183,19 @@ export function ComposerMobile({
           aria-label="Message"
         />
         <div className="mobile-composer__actions">
-          {/* Stop and Send coexist during a turn. Previously Stop REPLACED Send,
-              so interrupt-with-a-message was reachable only via the Enter key —
-              and Enter is now a newline, which would have left no path at all. */}
+          {/* Attach — reuses desktop's upload path (same hook). */}
+          <button
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={disabled || isUploading}
+            className="mobile-composer__btn mobile-composer__btn--attach"
+            aria-label="Attach files"
+            title="Attach files"
+          >
+            <span aria-hidden="true" style={{ fontSize: 16, lineHeight: 1 }}>
+              📎
+            </span>
+          </button>
           {hasActiveTurn && !disabled && (
             <button
               type="button"

@@ -30,12 +30,9 @@ import {
 import { forkConversation } from '../atoms/fork-actions';
 import { allMergeChildrenSettledAtomFamily } from '../atoms/mergeAtoms';
 import type { BuddyContext } from '../atoms/pending-creations';
-import {
-  DRAFT_KEY_PREFIX,
-  PENDING_FILES_KEY_PREFIX,
-  markMessagesSeen,
-  setSavedActiveConversationId,
-} from '../atoms/ui';
+import { markMessagesSeen, setSavedActiveConversationId } from '../atoms/ui';
+import { useConversationDraft } from '../hooks/useConversationDraft';
+import { usePendingAttachments } from '../hooks/usePendingAttachments';
 import { useProviderCatalog } from '../hooks/useProviderCatalog';
 import { useSavedPrompts } from '../hooks/useSavedPrompts';
 import { useTurnDiagnostics } from '../hooks/useTurnDiagnostics';
@@ -63,19 +60,6 @@ import './Chat.css';
 
 // Stable reference for empty queue — avoids new [] on every render triggering re-renders
 const EMPTY_QUEUE: QueuedMessage[] = [];
-
-// Draft persistence: debounce delay for saving textarea content to localStorage
-const DRAFT_SAVE_DELAY_MS = 500;
-
-interface PendingFile {
-  originalName: string;
-  absolutePath: string;
-  mimeType: string;
-  size: number;
-  previewUrl: string | null;
-}
-
-const EMPTY_PENDING: PendingFile[] = [];
 
 // Deprecated helper kept for local parity — use getBuddyContext (kind-aware) instead.
 // The holistic kind type is the canonical source; legacy buddyContext is compat only.
@@ -161,72 +145,36 @@ export function Chat() {
   const [detailLoadError, setDetailLoadError] = useState<string | null>(null);
   const [submissionError, setSubmissionError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
-  const [pendingFiles, setPendingFiles] = useState<PendingFile[]>(EMPTY_PENDING);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-  const draftValueRef = useRef('');
   const lastMessageRef = useRef<HTMLDivElement>(null);
-  const draftTimerRef = useRef<ReturnType<typeof setTimeout>>(null);
 
-  const saveDraft = useCallback(() => {
-    if (!id) return;
-    const value = draftValueRef.current;
-    if (value) {
-      localStorage.setItem(`${DRAFT_KEY_PREFIX}${id}`, value);
-    } else {
-      localStorage.removeItem(`${DRAFT_KEY_PREFIX}${id}`);
-    }
-  }, [id]);
+  // Portable draft persistence — same hook mobile uses (localStorage `draft:{id}`).
+  // Handles debounced save, flush on pagehide/visibility/HMR, and focus restore
+  // without stale-closure bug (refs only).
+  const {
+    setDraft: setDraftValue,
+    clear: clearDraftValue,
+    getDraft: getDraftValue,
+  } = useConversationDraft({
+    conversationId: id,
+    textareaRef,
+    maxHeight: 300,
+    autoFocus: true,
+    onDraftLoaded: (draft) => setHasInput(draft.trim().length > 0),
+  });
 
-  const attachTextarea = useCallback(
-    (textarea: HTMLTextAreaElement | null) => {
-      if (!textarea) {
-        saveDraft();
-        textareaRef.current = null;
-        return;
-      }
-
-      textareaRef.current = textarea;
-      const draft = id ? (localStorage.getItem(`${DRAFT_KEY_PREFIX}${id}`) ?? '') : '';
-      draftValueRef.current = draft;
-      textarea.value = draft;
-      textarea.style.height = 'auto';
-      textarea.style.height = `${Math.min(textarea.scrollHeight, 300)}px`;
-      setHasInput(draft.trim().length > 0);
-      textarea.focus();
-    },
-    [id, saveDraft]
-  );
-
-  useEffect(() => {
-    const flushDraft = () => saveDraft();
-    window.addEventListener('pagehide', flushDraft);
-    return () => {
-      window.removeEventListener('pagehide', flushDraft);
-    };
-  }, [saveDraft]);
-
-  // Load pending files from localStorage on mount
-  useEffect(() => {
-    if (!id) return;
-    const key = `${PENDING_FILES_KEY_PREFIX}${id}`;
-    try {
-      const stored = localStorage.getItem(key);
-      if (stored) {
-        const parsed = JSON.parse(stored) as Array<Omit<PendingFile, 'previewUrl'>>;
-        // Reconstruct pendingFiles: object URLs won't survive refresh, so previewUrl is null
-        const reconstructed: PendingFile[] = parsed.map((f) => ({
-          ...f,
-          previewUrl: null,
-        }));
-        setPendingFiles(reconstructed);
-      }
-    } catch (e) {
-      console.warn('[Chat] Failed to load pending files from localStorage:', e);
-      localStorage.removeItem(key);
-    }
-  }, [id]);
-
-  const [isUploading, setIsUploading] = useState(false);
+  // Shared attachment lifecycle — same hook mobile ComposerMobile uses so
+  // pending files survive refresh, framing is identical, and upload goes
+  // through one path (POST /api/upload). See hooks/usePendingAttachments.ts.
+  const {
+    pendingFiles,
+    isUploading,
+    handleFilesUpload,
+    removeFile: removePendingFile,
+    clearFiles: clearPendingFiles,
+    buildContent: buildAttachedContent,
+    handlePaste: handlePasteFromHook,
+  } = usePendingAttachments(id);
 
   const confirmed = conversation?.confirmed ?? false;
   const isRunning = conversation?.isRunning ?? false;
@@ -255,59 +203,6 @@ export function Chat() {
   const hasActiveTurn = confirmed && (isRunning || isStreaming || currentMessage !== null);
   const hasContent = hasInput || pendingFiles.length > 0;
 
-  const handleFilesUpload = useCallback(
-    async (acceptedFiles: File[]) => {
-      if (!id || acceptedFiles.length === 0) return;
-
-      setIsUploading(true);
-      try {
-        const formData = new FormData();
-        formData.append('conversationId', id);
-        for (const file of acceptedFiles) {
-          formData.append('files', file);
-        }
-
-        const response = await fetch('/api/upload', {
-          method: 'POST',
-          body: formData,
-        });
-
-        if (!response.ok) {
-          const error = await response.json();
-          throw new Error(`Upload failed: ${error.error}`);
-        }
-
-        const result = (await response.json()) as {
-          files: Array<{
-            originalName: string;
-            absolutePath: string;
-            mimeType: string;
-            size: number;
-          }>;
-        };
-        const withPreviews: PendingFile[] = result.files.map((uploaded, i) => ({
-          ...uploaded,
-          previewUrl: acceptedFiles[i].type.startsWith('image/')
-            ? URL.createObjectURL(acceptedFiles[i])
-            : null,
-        }));
-
-        setPendingFiles((prev) => {
-          const next = [...prev, ...withPreviews];
-          // Save to localStorage (without previewUrl, which is an object URL)
-          const toStore = next.map(({ previewUrl, ...f }) => f);
-          localStorage.setItem(`${PENDING_FILES_KEY_PREFIX}${id}`, JSON.stringify(toStore));
-          return next;
-        });
-      } catch (err) {
-        console.error('File upload failed:', err);
-      } finally {
-        setIsUploading(false);
-      }
-    },
-    [id]
-  );
-
   const {
     getRootProps,
     getInputProps,
@@ -319,26 +214,7 @@ export function Chat() {
     noKeyboard: true,
   });
 
-  // Track current pendingFiles via ref so unmount cleanup sees the latest value
-  // without re-running the effect on every addition.
-  const pendingFilesRef = useRef(pendingFiles);
-  pendingFilesRef.current = pendingFiles;
-
-  // Revoke object URLs only on unmount — not on every pendingFiles change.
-  // Per-file revocation happens explicitly in the remove handler and clearInput.
   useEffect(() => {
-    return () => {
-      for (const file of pendingFilesRef.current) {
-        if (file.previewUrl) URL.revokeObjectURL(file.previewUrl);
-      }
-    };
-  }, []);
-
-  useEffect(() => {
-    if (draftTimerRef.current) {
-      clearTimeout(draftTimerRef.current);
-      draftTimerRef.current = null;
-    }
     if (id) {
       setActiveConversationId(id);
       setSavedActiveConversationId(id);
@@ -389,24 +265,12 @@ export function Chat() {
 
   const scrollToBottomRef = useRef<(() => void) | null>(null);
 
-  const getInputValue = () => textareaRef.current?.value ?? '';
+  const getInputValue = () => getDraftValue() || textareaRef.current?.value || '';
 
   const clearInput = () => {
-    draftValueRef.current = '';
-    if (textareaRef.current) {
-      textareaRef.current.value = '';
-      textareaRef.current.style.height = 'auto';
-    }
+    clearDraftValue();
     setHasInput(false);
-    for (const file of pendingFiles) {
-      if (file.previewUrl) URL.revokeObjectURL(file.previewUrl);
-    }
-    setPendingFiles(EMPTY_PENDING);
-    if (id) {
-      localStorage.removeItem(`${DRAFT_KEY_PREFIX}${id}`);
-      localStorage.removeItem(`${PENDING_FILES_KEY_PREFIX}${id}`);
-    }
-    if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
+    clearPendingFiles();
   };
 
   const handleInput = () => {
@@ -415,33 +279,16 @@ export function Chat() {
 
     textarea.style.height = 'auto';
     textarea.style.height = `${Math.min(textarea.scrollHeight, 300)}px`;
-    draftValueRef.current = textarea.value;
+    const value = textarea.value;
+    setDraftValue(value);
 
-    const has = textarea.value.trim().length > 0;
+    const has = value.trim().length > 0;
     if (has !== hasInput) setHasInput(has);
-
-    if (draftTimerRef.current) clearTimeout(draftTimerRef.current);
-    draftTimerRef.current = setTimeout(saveDraft, DRAFT_SAVE_DELAY_MS);
   };
 
-  const handlePaste = async (e: React.ClipboardEvent) => {
-    const items = e.clipboardData?.items;
-    if (!items) return;
-
-    const files: File[] = [];
-    for (let i = 0; i < items.length; i++) {
-      const item = items[i];
-      if (item.kind === 'file') {
-        const file = item.getAsFile();
-        if (file) files.push(file);
-      }
-    }
-
-    if (files.length > 0) {
-      e.preventDefault();
-      await handleFilesUpload(files);
-    }
-  };
+  // Delegate to shared hook — same framing as mobile so paste in either
+  // tree lands identically (clipboard items → upload → preview).
+  const handlePaste = handlePasteFromHook;
 
   // IMPORTANT: All hooks must be called before any early return.
   const conversationMessagesSnapshot = conversation?.messages;
@@ -618,15 +465,7 @@ export function Chat() {
     const textContent = getInputValue().trim();
     if ((!textContent && pendingFiles.length === 0) || !id || !canInput || isSubmitting) return;
 
-    let content = '';
-    if (pendingFiles.length > 0) {
-      content += '[Attached files]\n';
-      for (const file of pendingFiles) {
-        content += `${file.absolutePath}\n`;
-      }
-      if (textContent) content += '\n';
-    }
-    content += textContent;
+    const content = buildAttachedContent(textContent);
 
     setIsSubmitting(true);
     setSubmissionError(null);
@@ -644,15 +483,7 @@ export function Chat() {
     const textContent = getInputValue().trim();
     if ((!textContent && pendingFiles.length === 0) || !id || !confirmed || isSubmitting) return;
 
-    let content = '';
-    if (pendingFiles.length > 0) {
-      content += '[Attached files]\n';
-      for (const file of pendingFiles) {
-        content += `${file.absolutePath}\n`;
-      }
-      if (textContent) content += '\n';
-    }
-    content += textContent;
+    const content = buildAttachedContent(textContent);
 
     setIsSubmitting(true);
     setSubmissionError(null);
@@ -1120,14 +951,7 @@ export function Chat() {
                 <button
                   type="button"
                   className="pending-file-remove"
-                  onClick={() => {
-                    // Revoke the removed file's object URL immediately so it
-                    // doesn't leak — the unmount-only effect won't cover it.
-                    if (file.previewUrl) URL.revokeObjectURL(file.previewUrl);
-                    setPendingFiles((prev) =>
-                      prev.filter((f) => f.absolutePath !== file.absolutePath)
-                    );
-                  }}
+                  onClick={() => removePendingFile(file.absolutePath)}
                   title="Remove file"
                 >
                   &times;
@@ -1144,7 +968,8 @@ export function Chat() {
             </div>
           )}
           <textarea
-            ref={attachTextarea}
+            ref={textareaRef}
+            data-conversation-input="true"
             className={`message-input ${hasActiveTurn ? 'interrupt-mode' : ''}`}
             defaultValue=""
             onInput={handleInput}
@@ -1228,12 +1053,11 @@ export function Chat() {
         deletePrompt={deletePrompt}
         onSelect={(content) => {
           if (textareaRef.current) {
-            draftValueRef.current = content;
+            setDraftValue(content);
             textareaRef.current.value = content;
             textareaRef.current.style.height = 'auto';
             textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 300)}px`;
             setHasInput(content.trim().length > 0);
-            saveDraft();
             textareaRef.current.focus();
             const end = content.length;
             textareaRef.current.setSelectionRange(end, end);

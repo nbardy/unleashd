@@ -19,6 +19,9 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
+  gap: 12px 16px;
+  flex-wrap: wrap;
+  min-width: 0;
 }
 
 .chat-title {
@@ -26,8 +29,11 @@
   color: var(--text-secondary);
   font-family: var(--font-mono);
   display: flex;
-  gap: 12px;
+  gap: 8px 12px;
   align-items: center;
+  flex: 1;
+  min-width: 0;
+  flex-wrap: wrap;
 }
 
 .chat-id {
@@ -91,6 +97,7 @@
   align-items: center;
   gap: 6px;
   min-width: 0;
+  flex-wrap: wrap;
 }
 
 .provider-picker-trigger {

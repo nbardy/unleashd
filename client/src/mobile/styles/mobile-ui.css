@@ -862,6 +862,87 @@
   white-space: pre-wrap;
 }
 
+/* ---- Attach button + pending files (shared behaviour with desktop Chat.tsx) ---- */
+/* Uses same hook (usePendingAttachments) and same localStorage key / upload path.
+   Visuals are mobile-scaled: horizontal chip strip above the composer box. */
+.mobile-composer__btn--attach {
+  background: var(--bg-raised-2);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-subtle);
+}
+
+.mobile-composer__btn--attach:disabled {
+  opacity: 0.45;
+  cursor: default;
+  transform: none;
+}
+
+.mobile-composer__btn--attach:active:not(:disabled) {
+  background: var(--bg-raised-1);
+}
+
+.mobile-pending-files {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-bottom: 6px;
+}
+
+.mobile-pending-file {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  padding: 4px 6px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 8px;
+  background: var(--bg-raised-2);
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.mobile-pending-file__thumb {
+  width: 28px;
+  height: 28px;
+  object-fit: cover;
+  border-radius: 4px;
+  flex: none;
+}
+
+.mobile-pending-file__icon {
+  font-size: 16px;
+  line-height: 1;
+  flex: none;
+}
+
+.mobile-pending-file__name {
+  max-width: 110px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mobile-pending-file__remove {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  display: inline-grid;
+  place-items: center;
+  border: none;
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--theme-danger) 18%, transparent);
+  color: var(--theme-danger);
+  font-size: 12px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.mobile-pending-file__remove:active {
+  background: var(--theme-danger);
+  color: #fff;
+}
+
 /* ---- Slim conversation header ---- */
 .mobile-chat__heading {
   flex: 1;

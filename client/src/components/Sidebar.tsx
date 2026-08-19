@@ -86,6 +86,7 @@ interface BuddySidebarOverview {
 interface BuddySidebarItemData {
   buddyId: string;
   buddyName: string;
+  conversations: Conversation[];
   latestConversation: Conversation | null;
   latestRun: BuddySidebarRun | null;
   pendingCreation: PendingConversationCreation | null;
@@ -112,7 +113,7 @@ export function Sidebar() {
   const activeConversationId = useAtomValue(activeConversationIdAtom);
   const defaultCwd = useAtomValue(defaultCwdAtom);
   const wsStatus = useAtomValue(wsStatusAtom);
-  const [mergeMode, setMergeMode] = useAtom(mergeModeAtom);
+  const mergeMode = useAtomValue(mergeModeAtom);
   const [mergeSelection, setMergeSelection] = useAtom(mergeSelectionAtom);
 
   const lastWorkingDirectory = useAtomValue(lastWorkingDirectoryAtom);
@@ -287,11 +288,22 @@ export function Sidebar() {
   const [buddyDirectory, setBuddyDirectory] = useState<BuddySidebarEmployee[]>([]);
   const [buddyRecentRuns, setBuddyRecentRuns] = useState<BuddySidebarRun[]>([]);
   const buddySidebarItems = useMemo(() => {
-    const latestConversationByBuddy = new Map<string, Conversation>();
+    const conversationsByBuddy = new Map<string, Conversation[]>();
     for (const conversation of topLevelBuddyConversations) {
       const buddyId = getBuddyContext(conversation)?.buddyId;
-      if (!buddyId || latestConversationByBuddy.has(buddyId)) continue;
-      latestConversationByBuddy.set(buddyId, conversation);
+      if (!buddyId) continue;
+      const list = conversationsByBuddy.get(buddyId);
+      if (list) list.push(conversation);
+      else conversationsByBuddy.set(buddyId, [conversation]);
+    }
+    for (const list of conversationsByBuddy.values()) {
+      list.sort(
+        (a, b) => getConversationLastActivity(b).getTime() - getConversationLastActivity(a).getTime()
+      );
+    }
+    const latestConversationByBuddy = new Map<string, Conversation>();
+    for (const [buddyId, list] of conversationsByBuddy) {
+      if (list[0]) latestConversationByBuddy.set(buddyId, list[0]);
     }
 
     const latestRunByBuddy = new Map<string, BuddySidebarRun>();
@@ -337,6 +349,9 @@ export function Sidebar() {
         return {
           buddyId,
           buddyName: directoryEntry?.name ?? latestRun?.buddyName ?? 'Buddy',
+          conversations: (conversationsByBuddy.get(buddyId) ?? []).filter(
+            (c) => !doneSet.has(c.sessionId ?? c.id)
+          ),
           latestConversation,
           latestRun,
           pendingCreation,
@@ -350,7 +365,9 @@ export function Sidebar() {
           (right.lastActiveAt?.getTime() ?? 0) - (left.lastActiveAt?.getTime() ?? 0);
         return activityDelta || left.buddyName.localeCompare(right.buddyName);
       });
-  }, [buddyDirectory, buddyPendingCreations, buddyRecentRuns, topLevelBuddyConversations]);
+  }, [buddyDirectory, buddyPendingCreations, buddyRecentRuns, topLevelBuddyConversations, doneSet]);
+  const [expandedBuddies, setExpandedBuddies] = useState<Set<string>>(() => new Set());
+  const [expandedDirectories, setExpandedDirectories] = useState<Set<string>>(() => new Set());
   const navigate = useNavigate();
   const location = useLocation();
 
@@ -391,10 +408,6 @@ export function Sidebar() {
     setConfigDraft(createDefaultDraft(defaultProvider));
     setShowPicker(true);
   }, [allConversations, lastWorkingDirectory, defaultCwd, defaultProvider]);
-
-  const handleOpenNewSwarmFlow = useCallback(() => {
-    handleNewConversation();
-  }, [handleNewConversation]);
 
   // Shift+Space global shortcut to open "New Conversation" dialog.
   // Skipped when focus is in an input/textarea so it doesn't hijack typing.
@@ -487,15 +500,6 @@ export function Sidebar() {
     navigate(`/chat/${id}`);
   };
 
-  const handleToggleMergeMode = () => {
-    if (mergeMode) {
-      setMergeSelection(new Set());
-      setMergeMode(false);
-    } else {
-      setMergeMode(true);
-    }
-  };
-
   const handleDone = (conv: Conversation, e: React.MouseEvent) => {
     e.stopPropagation();
     // Use sessionId when available — it's stable across server restarts.
@@ -521,7 +525,7 @@ export function Sidebar() {
                 : undefined
             }
           >
-            <span>Chats</span>
+            <span>chat</span>
           </button>
           <button
             type="button"
@@ -530,7 +534,7 @@ export function Sidebar() {
             title={hasWorkers ? 'Open swarm dashboard' : 'Open swarm dashboard (no workers yet)'}
             aria-current={location.pathname.startsWith('/workers') ? 'page' : undefined}
           >
-            <span>Swarms</span>
+            <span>swarms</span>
           </button>
           <button
             type="button"
@@ -538,14 +542,14 @@ export function Sidebar() {
             onClick={() => navigate('/buddies')}
             aria-current={location.pathname.startsWith('/buddies') ? 'page' : undefined}
           >
-            <span>Buddies</span>
+            <span>buddies</span>
           </button>
         </nav>
 
         <div className="sidebar-actions" aria-label="Quick actions">
           <button
             type="button"
-            className="nav-create-btn nav-create-btn--search"
+            className="sidebar-search-field"
             aria-label="Search conversations"
             onClick={() => {
               setSearchFilterDir(undefined);
@@ -556,75 +560,27 @@ export function Sidebar() {
             <svg
               role="img"
               aria-hidden="true"
-              className="nav-search-icon"
+              className="sidebar-search-field-icon"
               width="12"
               height="12"
               viewBox="0 0 16 16"
               fill="none"
             >
               <circle cx="7" cy="7" r="5.5" stroke="currentColor" strokeWidth="2" />
-              <line
-                x1="11"
-                y1="11"
-                x2="14.5"
-                y2="14.5"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-              />
+              <line x1="11" y1="11" x2="14.5" y2="14.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
             </svg>
+            <span className="sidebar-search-field-label">search</span>
+            <span className="sidebar-search-field-shortcut">⌘K</span>
           </button>
           <button
             type="button"
-            className="nav-create-btn"
+            className="sidebar-new-btn"
             onClick={handleNewConversation}
             aria-label="New conversation"
             title="New conversation (Shift+Space)"
           >
-            +
-          </button>
-          <button
-            type="button"
-            className={`nav-create-btn nav-create-btn--merge ${mergeMode ? 'nav-create-btn--merge-active' : ''}`}
-            onClick={handleToggleMergeMode}
-            aria-label={mergeMode ? 'Exit merge mode' : 'Merge conversations'}
-            title={mergeMode ? 'Exit merge mode' : 'Merge conversations'}
-          >
-            <svg
-              role="img"
-              aria-hidden="true"
-              width="14"
-              height="14"
-              viewBox="0 0 16 16"
-              fill="none"
-            >
-              <path
-                d="M3 2v4a3 3 0 0 0 3 3h4a3 3 0 0 1 3 3v2"
-                stroke="currentColor"
-                strokeWidth="1.6"
-                strokeLinecap="round"
-                fill="none"
-              />
-              <path
-                d="M13 2v4a3 3 0 0 1-3 3"
-                stroke="currentColor"
-                strokeWidth="1.6"
-                strokeLinecap="round"
-                fill="none"
-              />
-              <circle cx="3" cy="2" r="1.3" fill="currentColor" />
-              <circle cx="13" cy="2" r="1.3" fill="currentColor" />
-              <circle cx="13" cy="14" r="1.3" fill="currentColor" />
-            </svg>
-          </button>
-          <button
-            type="button"
-            className="nav-create-btn nav-create-btn--swarm"
-            onClick={() => void handleOpenNewSwarmFlow()}
-            aria-label="New swarm"
-            title="Create new swarm"
-          >
-            +
+            <span>new</span>
+            <span className="sidebar-new-btn-plus">+</span>
           </button>
         </div>
 
@@ -843,46 +799,123 @@ export function Sidebar() {
                 <span className="folder-group-count">{buddySidebarItems.length}</span>
               </div>
               {!collapsedSet.has('__buddies__') &&
-                buddySidebarItems.map((item) => (
-                  <BuddySidebarItem
-                    key={item.buddyId}
-                    item={item}
-                    isActive={location.pathname === `/buddies/${encodeURIComponent(item.buddyId)}`}
-                    hasUnseen={
-                      item.latestConversation
-                        ? hasUnseenMessages(
-                            lastSeenMessageIndex,
-                            item.latestConversation.id,
-                            conversationMessageCount(item.latestConversation)
-                          )
-                        : false
-                    }
-                    onSelect={() => navigate(`/buddies/${encodeURIComponent(item.buddyId)}`)}
-                    onDone={handleDone}
-                  />
-                ))}
+                buddySidebarItems.map((item) => {
+                  const buddyKey = `buddy:${item.buddyId}`;
+                  const isBuddyCollapsed = collapsedSet.has(buddyKey);
+                  const isExpanded = expandedBuddies.has(item.buddyId);
+                  const convs = item.conversations;
+                  const visibleConvs = isExpanded ? convs : convs.slice(0, 3);
+                  const remaining = convs.length - visibleConvs.length;
+                  return (
+                    <div key={item.buddyId} className="buddy-subgroup">
+                      <div
+                        className="folder-group-header folder-group-header--buddy"
+                        style={{ borderLeftColor: 'var(--ai)', cursor: 'pointer' }}
+                        onClick={() => toggleGalleryCollapsed(buddyKey)}
+                      >
+                        <span className={`folder-chevron ${isBuddyCollapsed ? 'collapsed' : ''}`}>
+                          &#x25BC;
+                        </span>
+                        <span className="folder-group-name" title={item.buddyName}>
+                          {item.buddyName}
+                        </span>
+                        <span className="folder-group-count">{convs.length || ''}</span>
+                      </div>
+                      {!isBuddyCollapsed && (
+                        <>
+                          {visibleConvs.length > 0 ? (
+                            visibleConvs.map((conv) => (
+                              <ConversationItem
+                                key={conv.id}
+                                conv={conv}
+                                isActive={conv.id === activeConversationId}
+                                hasUnseen={hasUnseenMessages(
+                                  lastSeenMessageIndex,
+                                  conv.id,
+                                  conversationMessageCount(conv)
+                                )}
+                                showFolderBadge={false}
+                                onSelect={handleSelectConversation}
+                                onDone={handleDone}
+                              />
+                            ))
+                          ) : item.pendingCreation ? (
+                            <div className="conversation-item pending-creation">
+                              <div className="conversation-preview">
+                                {item.pendingCreation.error
+                                  ? `Failed: ${item.pendingCreation.error}`
+                                  : `Starting ${item.pendingCreation.config.provider}…`}
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="folder-group-all-done">No conversations yet</div>
+                          )}
+                          {convs.length > 3 && (
+                            <button
+                              type="button"
+                              className="show-more-btn"
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                setExpandedBuddies((prev) => {
+                                  const next = new Set(prev);
+                                  if (next.has(item.buddyId)) next.delete(item.buddyId);
+                                  else next.add(item.buddyId);
+                                  return next;
+                                });
+                              }}
+                            >
+                              {isExpanded ? 'show less' : `show ${remaining} more`}
+                            </button>
+                          )}
+                        </>
+                      )}
+                    </div>
+                  );
+                })}
             </div>
           </div>
         )}
         {sidebarViewMode === 'list' ? (
-          topLevelConversations
-            .filter((conv) => !doneSet.has(conv.sessionId ?? conv.id))
-            .map((conv) => (
-              <ConversationItem
-                key={conv.id}
-                conv={conv}
-                isActive={conv.id === activeConversationId}
-                hasUnseen={hasUnseenMessages(lastSeenMessageIndex, conv.id, conversationMessageCount(conv))}
-                showFolderBadge
-                onSelect={handleSelectConversation}
-                onDone={handleDone}
-                mergeMode={mergeMode}
-                mergeSelected={mergeSelection.has(conv.id)}
-                mergeDisabled={
-                  mergeMode && (!providerSupportsFork(conv.provider) || conv.isRunning)
-                }
-              />
-            ))
+          (() => {
+            const listActive = topLevelConversations.filter((conv) => !doneSet.has(conv.sessionId ?? conv.id));
+            const isListExpanded = expandedDirectories.has('__list__');
+            const visibleList = isListExpanded ? listActive : listActive.slice(0, 3);
+            const remainingList = listActive.length - visibleList.length;
+            return (
+              <>
+                {visibleList.map((conv) => (
+                  <ConversationItem
+                    key={conv.id}
+                    conv={conv}
+                    isActive={conv.id === activeConversationId}
+                    hasUnseen={hasUnseenMessages(lastSeenMessageIndex, conv.id, conversationMessageCount(conv))}
+                    showFolderBadge
+                    onSelect={handleSelectConversation}
+                    onDone={handleDone}
+                    mergeMode={mergeMode}
+                    mergeSelected={mergeSelection.has(conv.id)}
+                    mergeDisabled={mergeMode && (!providerSupportsFork(conv.provider) || conv.isRunning)}
+                  />
+                ))}
+                {listActive.length > 3 && (
+                  <button
+                    type="button"
+                    className="show-more-btn"
+                    onClick={() => {
+                      setExpandedDirectories((prev) => {
+                        const next = new Set(prev);
+                        if (next.has('__list__')) next.delete('__list__');
+                        else next.add('__list__');
+                        return next;
+                      });
+                    }}
+                  >
+                    {isListExpanded ? 'show less' : `show ${remainingList} more`}
+                  </button>
+                )}
+              </>
+            );
+          })()
         ) : (
           <>
             {recentGroups.length > 0 && (
@@ -957,40 +990,71 @@ export function Sidebar() {
                         <span className="folder-group-count">{activeConvs.length || ''}</span>
                       </div>
                       {!isCollapsed &&
-                        (activeConvs.length > 0 ? (
-                          activeConvs.map((conv) => (
-                            <ConversationItem
-                              key={conv.id}
-                              conv={conv}
-                              isActive={conv.id === activeConversationId}
-                              hasUnseen={hasUnseenMessages(lastSeenMessageIndex, conv.id, conversationMessageCount(conv))}
-                              showFolderBadge={false}
-                              onSelect={handleSelectConversation}
-                              onDone={handleDone}
-                            />
-                          ))
-                        ) : (
-                          <div className="folder-group-all-done">All conversations marked done</div>
-                        ))}
+                        (() => {
+                          const isExpanded = expandedDirectories.has(group.directory);
+                          const visibleConvs = isExpanded ? activeConvs : activeConvs.slice(0, 3);
+                          const remaining = activeConvs.length - visibleConvs.length;
+                          return activeConvs.length > 0 ? (
+                            <>
+                              {visibleConvs.map((conv) => (
+                                <ConversationItem
+                                  key={conv.id}
+                                  conv={conv}
+                                  isActive={conv.id === activeConversationId}
+                                  hasUnseen={hasUnseenMessages(
+                                    lastSeenMessageIndex,
+                                    conv.id,
+                                    conversationMessageCount(conv)
+                                  )}
+                                  showFolderBadge={false}
+                                  onSelect={handleSelectConversation}
+                                  onDone={handleDone}
+                                />
+                              ))}
+                              {activeConvs.length > 3 && (
+                                <button
+                                  type="button"
+                                  className="show-more-btn"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setExpandedDirectories((prev) => {
+                                      const next = new Set(prev);
+                                      if (next.has(group.directory)) next.delete(group.directory);
+                                      else next.add(group.directory);
+                                      return next;
+                                    });
+                                  }}
+                                >
+                                  {isExpanded ? 'show less' : `show ${remaining} more`}
+                                </button>
+                              )}
+                            </>
+                          ) : (
+                            <div className="folder-group-all-done">All conversations marked done</div>
+                          );
+                        })()}
                     </div>
                   );
                 })}
               </div>
             )}
 
-            {olderConversations.some(
-              (conversation) => !doneSet.has(conversation.sessionId ?? conversation.id)
-            ) && (
-              <div className="sidebar-section">
-                <div className="sidebar-section-header">Older</div>
-                {olderConversations
-                  .sort(
-                    (left, right) =>
-                      getConversationLastActivity(right).getTime() -
-                      getConversationLastActivity(left).getTime()
-                  )
-                  .filter((conv) => !doneSet.has(conv.sessionId ?? conv.id))
-                  .map((conv) => (
+            {(() => {
+              const olderActive = olderConversations
+                .filter((conv) => !doneSet.has(conv.sessionId ?? conv.id))
+                .sort(
+                  (left, right) =>
+                    getConversationLastActivity(right).getTime() -
+                    getConversationLastActivity(left).getTime()
+                );
+              if (olderActive.length === 0) return null;
+              const isOlderExpanded = expandedDirectories.has('__older__');
+              const visibleOlder = isOlderExpanded ? olderActive : olderActive.slice(0, 3);
+              const remainingOlder = olderActive.length - visibleOlder.length;
+              return (
+                <div className="sidebar-section">
+                  <div className="sidebar-section-header">Older</div>
+                  {visibleOlder.map((conv) => (
                     <ConversationItem
                       key={conv.id}
                       conv={conv}
@@ -1001,8 +1065,25 @@ export function Sidebar() {
                       onDone={handleDone}
                     />
                   ))}
-              </div>
-            )}
+                  {olderActive.length > 3 && (
+                    <button
+                      type="button"
+                      className="show-more-btn"
+                      onClick={() => {
+                        setExpandedDirectories((prev) => {
+                          const next = new Set(prev);
+                          if (next.has('__older__')) next.delete('__older__');
+                          else next.add('__older__');
+                          return next;
+                        });
+                      }}
+                    >
+                      {isOlderExpanded ? 'show less' : `show ${remainingOlder} more`}
+                    </button>
+                  )}
+                </div>
+              );
+            })()}
           </>
         )}
       </div>
@@ -1011,106 +1092,25 @@ export function Sidebar() {
 }
 
 /**
+ * Title derived from first user message, single-line, stripped of oompa prefix.
+ * Falls back to first message or placeholder. Title > most-recent preview per spec.
+ */
+function getConversationTitle(conversation: Conversation): string {
+  const userMsg = conversation.messages.find((m) => m.role === 'user');
+  const source = userMsg ?? conversation.messages[0];
+  if (!source) return 'New conversation';
+  const firstLine = source.content.split('\n')[0]?.trim() ?? '';
+  if (!firstLine) return 'New conversation';
+  const cleaned = firstLine.replace(/^\[oompa[^\]]*\]\s*/i, '').trim() || firstLine;
+  return cleaned.length > 80 ? `${cleaned.substring(0, 77)}…` : cleaned;
+}
+
+/**
  * Extracted conversation item — avoids duplicating JSX across list/grouped modes.
  * showFolderBadge=false in grouped mode since the folder header already shows the path.
  */
 function conversationMessageCount(conversation: Conversation): number {
   return conversation.messageCount ?? conversation.messages.length;
-}
-
-function BuddySidebarItem({
-  item,
-  isActive,
-  hasUnseen,
-  onSelect,
-  onDone,
-}: {
-  item: BuddySidebarItemData;
-  isActive: boolean;
-  hasUnseen: boolean;
-  onSelect: () => void;
-  onDone: (conv: Conversation, e: React.MouseEvent) => void;
-}) {
-  const conversation = item.latestConversation;
-  const pending = item.pendingCreation;
-  const isRunning = Boolean(conversation?.isRunning) || item.latestRun?.status === 'active';
-  const statusLabel = pending
-    ? pending.error
-      ? 'Failed'
-      : 'Starting'
-    : isRunning
-      ? 'Active'
-      : (item.latestRun?.status ?? (conversation ? 'Idle' : 'No conversations'));
-  const preview = conversation
-    ? conversation.messages.length > 0
-      ? conversation.messages[conversation.messages.length - 1].content.substring(0, 120)
-      : item.workspaceName
-        ? `${item.workspaceName} · New conversation`
-        : 'New conversation'
-    : pending
-      ? pending.error
-        ? `Failed: ${pending.error}`
-        : `Starting ${pending.config.provider}…`
-      : item.workspaceName
-        ? `${item.workspaceName} · ${statusLabel}`
-        : statusLabel;
-  const timeAgo = item.lastActiveAt ? formatTimeAgo(item.lastActiveAt) : null;
-  const timeColor = item.lastActiveAt
-    ? timeAgoColor(getMinutesElapsed(item.lastActiveAt))
-    : undefined;
-
-  return (
-    <div
-      className={`conversation-item ${isActive ? 'active' : ''}`}
-      onClick={onSelect}
-      title={`Open ${item.buddyName}`}
-    >
-      <div className="conversation-header no-badge">
-        <span className="buddy-conversation-label">{item.buddyName}</span>
-        <div className="conversation-header-right">
-          {hasUnseen && <span className="new-badge">NEW</span>}
-          {timeAgo && (
-            <span className="conversation-time-ago" style={{ color: timeColor }}>
-              {timeAgo}
-            </span>
-          )}
-          {conversation?.isRunning ? (
-            <div className="running-status-control">
-              <span className="status-indicator running" aria-label="Conversation is running" />
-              <button
-                type="button"
-                className="thread-stop-btn"
-                title="Stop this conversation and clear queued work"
-                aria-label={`Stop conversation ${conversation.id.substring(0, 8)}`}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  endConversation(conversation.id);
-                }}
-              >
-                Stop
-              </button>
-            </div>
-          ) : (
-            <span
-              className={`status-indicator ${isRunning ? 'running' : pending ? 'pending' : ''}`}
-              aria-label={`Buddy ${statusLabel.toLowerCase()}`}
-            />
-          )}
-        </div>
-      </div>
-      <div className="conversation-preview">{preview}</div>
-      {conversation && (
-        <button
-          type="button"
-          className="done-btn"
-          title="Mark latest conversation done"
-          onClick={(event) => onDone(conversation, event)}
-        >
-          Done
-        </button>
-      )}
-    </div>
-  );
 }
 
 function ConversationItem({
@@ -1138,10 +1138,7 @@ function ConversationItem({
   const projectColor = getProjectColor(workingDirectory);
   const dirDisplay = workingDirectory.replace(/^\/Users\/[^/]+/, '~');
   const folderName = workingDirectory.split('/').filter(Boolean).pop() ?? dirDisplay;
-  const preview =
-    conv.messages.length > 0
-      ? conv.messages[conv.messages.length - 1].content.substring(0, 120)
-      : 'New conversation';
+  const title = getConversationTitle(conv);
 
   const lastTime = getConversationLastActivity(conv);
   const timeAgo = lastTime ? formatTimeAgo(lastTime) : null;
@@ -1214,7 +1211,9 @@ function ConversationItem({
           )}
         </div>
       </div>
-      <div className="conversation-preview">{preview}</div>
+      <div className="conversation-title" title={title}>
+        {title}
+      </div>
       {!mergeMode && (
         <button type="button" className="done-btn" onClick={(e) => onDone(conv, e)}>
           Done

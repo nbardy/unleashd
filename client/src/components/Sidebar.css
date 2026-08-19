@@ -59,13 +59,105 @@
 }
 
 .sidebar-actions {
-  display: flex;
-  justify-content: flex-end;
+  display: grid;
+  grid-template-columns: 1fr auto;
   gap: 6px;
   padding: 0 2px;
+  align-items: center;
 }
 
-/* + button — sharp, monospace, compact */
+/* Universal search field — input-like pill, searches all (chats/swarms/buddies) */
+.sidebar-search-field {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  height: 26px;
+  padding: 0 8px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--bg-panel) 70%, transparent);
+  color: var(--text-secondary);
+  font: 500 11px / 1 var(--font-mono);
+  letter-spacing: 0.02em;
+  cursor: pointer;
+  transition: border-color 0.15s, background 0.15s, color 0.15s;
+}
+
+.sidebar-search-field:hover,
+.sidebar-search-field:focus-visible {
+  border-color: color-mix(in srgb, var(--ai) 40%, var(--border-subtle));
+  background: color-mix(in srgb, var(--ai) 10%, var(--bg-panel));
+  color: var(--text-primary);
+  outline: none;
+}
+
+.sidebar-search-field-icon {
+  display: block;
+  width: 12px;
+  height: 12px;
+  flex: 0 0 12px;
+  overflow: visible;
+  color: var(--ai-bright);
+}
+
+.sidebar-search-field-icon circle,
+.sidebar-search-field-icon line {
+  stroke: var(--ai-bright);
+  stroke-width: 2.2;
+  vector-effect: non-scaling-stroke;
+}
+
+.sidebar-search-field-label {
+  flex: 1;
+  text-align: left;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sidebar-search-field-shortcut {
+  flex-shrink: 0;
+  font: 500 9px / 1 var(--font-mono);
+  color: var(--text-muted);
+  border: 1px solid var(--border-subtle);
+  border-radius: 3px;
+  padding: 1px 4px;
+  background: color-mix(in srgb, var(--bg-base) 60%, transparent);
+}
+
+/* Universal new — creates a conversation (buddy/swarm are just conversations) */
+.sidebar-new-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  height: 26px;
+  padding: 0 10px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-secondary);
+  font: 600 11px / 1 var(--font-mono);
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.sidebar-new-btn:hover,
+.sidebar-new-btn:focus-visible {
+  background: var(--accent-primary);
+  border-color: var(--accent-primary);
+  color: var(--text-on-accent);
+  outline: none;
+}
+
+.sidebar-new-btn-plus {
+  font-size: 13px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+/* Legacy compat — keep selectors for any remaining merge/swarm triggers (hidden from header now) */
 .nav-create-btn {
   width: 22px;
   height: 22px;
@@ -85,20 +177,10 @@
   transition: all 0.1s;
 }
 
-.nav-create-btn--search {
-  border-color: var(--border-subtle);
-  background: transparent;
-}
-
 .nav-create-btn:hover {
   background: var(--accent-primary);
   color: var(--text-on-accent);
   border-color: var(--accent-primary);
-}
-
-.nav-create-btn.nav-create-btn--search:hover {
-  background: color-mix(in srgb, var(--ai) 16%, transparent);
-  border-color: color-mix(in srgb, var(--ai) 55%, var(--border-subtle));
 }
 
 .nav-search-icon {
@@ -115,12 +197,6 @@
   stroke: var(--ai-bright);
   stroke-width: 2.2;
   vector-effect: non-scaling-stroke;
-}
-
-.nav-create-btn--swarm:hover {
-  background: var(--primary);
-  border-color: var(--primary);
-  color: var(--text-on-accent);
 }
 
 /* New Conversation Modal — centered popup overlay */
@@ -622,6 +698,50 @@
   -webkit-box-orient: vertical;
   padding-left: 8px;
   min-height: calc(2 * 1.4em); /* Always reserve 2 lines of height */
+}
+
+/* Title — single line, derived from first user message (spec: title > preview) */
+.conversation-title {
+  font-size: 12px;
+  line-height: 1.4;
+  color: var(--text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding-left: 8px;
+  min-height: calc(1 * 1.4em);
+}
+
+.show-more-btn {
+  width: 100%;
+  padding: 6px 12px;
+  background: transparent;
+  color: var(--text-muted);
+  border: none;
+  border-top: 1px dashed color-mix(in srgb, var(--border-subtle) 80%, transparent);
+  font: 600 10px / 1 var(--font-mono);
+  letter-spacing: 0.04em;
+  text-transform: lowercase;
+  cursor: pointer;
+  transition: color 0.15s, background 0.15s;
+}
+
+.show-more-btn:hover {
+  color: var(--ai-bright);
+  background: color-mix(in srgb, var(--ai) 6%, transparent);
+}
+
+.buddy-subgroup {
+  border-top: 1px solid color-mix(in srgb, var(--border-subtle) 50%, transparent);
+}
+
+.buddy-subgroup:first-of-type {
+  border-top: none;
+}
+
+.folder-group-header--buddy {
+  padding-left: 20px;
+  background: color-mix(in srgb, var(--bg-tertiary) 70%, transparent);
 }
 
 .conversation-time-ago {
