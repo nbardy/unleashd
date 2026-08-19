@@ -34,6 +34,8 @@ client/src/atoms/ui.ts             → persisted UI prefs (local+shared partitio
 - Auth gate stays FIRST in the Express chain and the WS stays `noServer` +
   explicit `upgrade` handler. `new WebSocketServer({ server })` accepts every
   upgrade before app code runs and republishes the whole command channel.
+  Same for the Vite dev server: Connect middleware never sees `upgrade`, so
+  the HMR socket needs its own `prependListener('upgrade')` gate.
 - Provider-bespoke values (effort levels etc.) pass through verbatim as
   `z.string()`; no shared enums, no value translation, server-side defaults.
 - Submodule commits: commit + push INSIDE `vendor/agent-cli-tool` first, then

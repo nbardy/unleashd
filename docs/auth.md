@@ -194,17 +194,40 @@ between the internet and full agent execution on this machine.
 
 - No rate limiting on the login form. On a tailnet-only deployment the attacker
   set is your own devices; on a Funnel deployment this would need to change.
-- The Vite HMR websocket is not gated, and this is a real hole rather than a
-  theoretical one: `wss://<host>/` with `Sec-WebSocket-Protocol: vite-hmr` and
-  no credentials upgrades successfully. Vite's own `?token=` guard only engages
-  when an `Origin` header is present (its CVE-2025-24010 mitigation), so a
-  non-browser client simply omits `Origin`. The cause is structural —
-  `devAuthPlugin` registers via `server.middlewares.use()`, and Connect
-  middleware runs only on HTTP `request` events, never on `upgrade`. Closing it
-  needs an explicit `httpServer.on('upgrade')` handler in the plugin, the same
-  shape the backend already uses. Exposure is dev-only and tailnet-only: file
-  paths and edit activity, not conversation data. `/ws` and `/api` through the
-  dev proxy are gated by the backend and are unaffected.
+- No rate limiting on the login form (see above).
+
+## Why both servers need an `upgrade` handler
+
+Connect middleware — `server.middlewares.use()` in the Vite plugin, and Express
+in the backend — only ever runs on the HTTP server's `request` event. A
+WebSocket does not arrive as a `request`; it arrives as an `upgrade`. So a
+middleware-only gate never sees a socket at all, and the socket is open to
+anyone who can reach the port.
+
+Both servers therefore carry an explicit upgrade handler, and both must keep
+one:
+
+- **Backend (`server.ts`)** — `new WebSocketServer({ noServer: true })` plus
+  `server.on('upgrade')`. This protects `/ws`, the whole command channel.
+- **Vite dev server (`client/vite.config.ts`)** — `prependListener('upgrade')`,
+  which protects Vite's HMR socket. `prependListener`, not `on`: Vite attaches
+  its own upgrade listener when the dev server is built, and ours has to reject
+  the socket before that one completes the handshake.
+
+This was a live hole until it was fixed: `wss://<host>/` with
+`Sec-WebSocket-Protocol: vite-hmr` and no credentials upgraded successfully from
+the LAN as well as the tailnet. Vite's own `?token=` guard does not cover it —
+that only engages when an `Origin` header is present (its CVE-2025-24010
+mitigation), so a non-browser client just omits `Origin`. What leaked was file
+paths and edit activity, not conversation data.
+
+Regression check, which should return `401` on every line:
+
+```bash
+node -e "const {WebSocket}=require('ws');
+  for (const u of ['ws://127.0.0.1:7489/','ws://127.0.0.1:7489/ws'])
+    new WebSocket(u,'vite-hmr').on('unexpected-response',(_q,r)=>console.log(u,r.statusCode));"
+```
 
 ## Files
 

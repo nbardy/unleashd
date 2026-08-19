@@ -105,6 +105,30 @@ function devAuthPlugin(policy: AuthPolicy) {
     configureServer(server: ViteDevServer) {
       console.log(`[unleashd] ${describePolicy(policy)}`);
       if (policy.kind === 'open') return;
+
+      // Connect middleware only ever runs on the httpServer's `request` event.
+      // A WebSocket arrives as an `upgrade` event instead, so without this the
+      // middleware chain below never sees Vite's HMR socket at all and it
+      // accepts any connection that can reach the port — confirmed reachable
+      // from the LAN, not just the tailnet. Vite's own ?token= guard does not
+      // cover it: that only engages when an `Origin` header is present, so any
+      // non-browser client simply omits `Origin`.
+      //
+      // prependListener, not on: Vite attaches its own upgrade listener when
+      // the dev server is built, and this has to reject the socket before that
+      // one completes the handshake.
+      server.httpServer?.prependListener('upgrade', (request, socket) => {
+        const decision = decideAuth(policy, {
+          method: request.method ?? 'GET',
+          url: request.url ?? '/',
+          headers: request.headers,
+        });
+        if (decision.kind === 'challenge') {
+          socket.write('HTTP/1.1 401 Unauthorized\r\nConnection: close\r\n\r\n');
+          socket.destroy();
+        }
+      });
+
       server.middlewares.use((request, response, next) => {
         const gateRequest = {
           method: request.method ?? 'GET',
