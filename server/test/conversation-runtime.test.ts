@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import type { Provider } from '@unleashd/shared';
 import { createDefaultConversationConfig } from '@unleashd/shared';
 import {
   type ConversationRuntimeDependencies,
@@ -12,13 +13,14 @@ import { resolveConfigAgainstProviderCatalog } from '../src/providers/catalog-se
 
 function runtimeFixture(
   options: {
+    provider?: Provider;
     getConversation?: ConversationRuntimeDependencies['getConversation'];
     turnAttempts?: ConversationRuntimeDependencies['turnAttempts'];
   } = {}
 ) {
   const aliases: Array<[string, string]> = [];
   const broadcasts: unknown[] = [];
-  const config = createDefaultConversationConfig('codex');
+  const config = createDefaultConversationConfig(options.provider ?? 'codex');
   const Conversation = createConversationRuntime({
     broadcast: (message) => broadcasts.push(message),
     registerSessionAlias: (sessionId, conversationId) => {
@@ -97,6 +99,57 @@ test('first message in a user fork inherits the native source session without co
   assert.deepEqual(
     child.messages.map((message) => message.content),
     ['Continue the original objective from this fork.']
+  );
+});
+
+// Regression: muse -> muse Chat Fork threw `Harness "muse" does not support
+// fork.` because the same-provider branch handed the source session to the
+// harness without checking fork capability. muse -> claude worked, which is
+// what made it look provider-pair specific. Session inheritance is gated on
+// capability; every other fork stays a soft string handoff.
+test('same-provider fork on a fork-incapable harness falls back to string handoff', () => {
+  const conversations = new Map<
+    string,
+    ReturnType<ConversationRuntimeDependencies['getConversation']>
+  >();
+  const fixture = runtimeFixture({
+    provider: 'muse',
+    getConversation: (id) => conversations.get(id),
+  });
+  const source = new fixture.Conversation({
+    id: 'muse-source',
+    workingDirectory: '/tmp',
+    configState: fixture.configState,
+    existingSessionId: 'muse-native-session',
+  });
+  conversations.set(source.id, source);
+
+  const child = new fixture.Conversation({
+    id: 'muse-child',
+    workingDirectory: '/tmp',
+    configState: fixture.configState,
+    resumedFromConversationId: source.id,
+  });
+  let spawned: { content: string; forkSourceSessionId?: string } | undefined;
+  (
+    child as unknown as {
+      spawnForMessage(
+        content: string,
+        executionConfig: unknown,
+        forkSourceSessionId?: string
+      ): void;
+    }
+  ).spawnForMessage = (content, _executionConfig, forkSourceSessionId) => {
+    spawned = { content, forkSourceSessionId };
+  };
+
+  child.enqueueMessage('Continue the original objective from this fork.');
+
+  assert.equal(spawned?.forkSourceSessionId, undefined);
+  assert.ok(spawned?.content.includes('Continue the original objective from this fork.'));
+  assert.deepEqual(
+    child.messages.filter((message) => message.role === 'system').map((m) => m.content),
+    []
   );
 });
 

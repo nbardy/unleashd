@@ -87,6 +87,28 @@ Flow is:
 `server` state remains authoritative while the provider process is active.
 Poller/loader merges skip active in-memory IDs.
 
+### Two things are called "fork"
+
+| | Chat "Fork" (soft handoff) | Merge session-fork |
+|---|---|---|
+| Trigger | Fork button (`atoms/fork-actions.ts`) | `POST /api/conversations/merge` |
+| Carries | transcript as draft text | the native CLI session |
+| Provider gate | none — any provider, any pair | `FORK_CAPABLE_PROVIDERS` |
+
+Chat Fork **opportunistically upgrades** to session inheritance on its first
+send when the source is the same provider *and* that provider is fork-capable
+(`runtime.ts` `sendMessage`). Everything else stays string handoff. That upgrade
+must never reject the send.
+
+It did once: the branch checked only `source.provider === this.provider`, so a
+muse -> muse fork handed a session id to a harness with neither
+`sessionForkFlags` nor `emulateFork` and the turn died with `Harness "muse"
+does not support fork.` (`vendor/agent-cli-tool/src/session.ts`). muse -> claude
+and claude -> muse worked, which made it look provider-pair specific — it was
+capability, not pairing. Same latent bug applied to cursor -> cursor. The gate
+is now `providerSupportsFork(this.provider)`; guard:
+`server/test/conversation-runtime.test.ts`.
+
 ## 4) Client state frequency budget
 
 Streaming is separated from structural state:

@@ -29,6 +29,7 @@ import {
   isBuddyKind,
   matchConversationKind,
   mergeReviewDocPath,
+  providerSupportsFork,
 } from '@unleashd/shared';
 import { formatToolUse, isCompletionOnlyToolUse } from '../adapters/tool-format';
 import { BUDDY_BUILDER_BRIEFING } from '../buddies/builder';
@@ -1565,10 +1566,10 @@ export function createConversationRuntime(
       // passes forkSourceSessionId into the harness (--fork / emulateFork).
       // That path is gated by FORK_CAPABLE_PROVIDERS.
       //
-      // The block below currently tries provider-session inheritance on the
-      // first send of ANY resumedFromConversationId thread. That conflates
-      // the two concepts and rejects cross-provider Chat Forks. Keep this
-      // distinction in mind before extending it.
+      // The block below opportunistically upgrades a Chat Fork to session
+      // inheritance when the source is the same provider AND that provider is
+      // fork-capable. Anything else stays a soft handoff — it must never
+      // reject the send. Keep this distinction in mind before extending it.
       let forkSourceSessionId: string | undefined;
       if (
         !this._hasStartedSession &&
@@ -1582,12 +1583,21 @@ export function createConversationRuntime(
           );
           return;
         }
-        if (source.provider !== this.provider) {
-          // Cross-provider Chat Fork: soft handoff via string context (draft/first message),
-          // not provider session inheritance. This is intentional — the whole goal of Fork
+        // Session inheritance needs BOTH the same provider AND a harness that
+        // can fork (claude/opencode sessionForkFlags, codex/gemini
+        // emulateFork). muse and cursor have neither.
+        //
+        // Bug (2026-08-20): muse -> muse Chat Fork died with `Harness "muse"
+        // does not support fork.` while muse -> claude and claude -> muse
+        // worked — only the same-provider branch reached prepareSession, so
+        // the fork-incapable harness was never checked. Capability, not
+        // provider equality, decides the path.
+        if (source.provider !== this.provider || !providerSupportsFork(this.provider)) {
+          // Soft handoff via string context (draft/first message), not provider
+          // session inheritance. This is intentional — the whole goal of Fork
           // is to inject prior convo as string context across clients.
           console.log(
-            `[${this.id}] Cross-provider fork ${source.provider} -> ${this.provider}, using string context handoff (no provider session fork)`
+            `[${this.id}] Soft fork ${source.provider} -> ${this.provider} (${source.provider === this.provider ? 'harness cannot fork sessions' : 'cross-provider'}), using string context handoff (no provider session fork)`
           );
         } else {
           if (!source.hasStartedSession()) {
