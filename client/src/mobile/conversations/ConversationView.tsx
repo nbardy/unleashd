@@ -357,6 +357,7 @@ export function ConversationView({
   // The composer remains thin: it only renders save/ palette buttons and forwards
   // selections via prop + custom event bridge.
   const {
+    savePrompt,
     prompts: savedPrompts,
     fuzzySearch,
     incrementUsage,
@@ -556,6 +557,7 @@ export function ConversationView({
             pendingCreation.error ? 'Creation failed' : 'Waiting for the server to confirm…'
           }
           onOpenPalette={() => setShowPalette(true)}
+          onSavePrompt={savePrompt}
           paletteSelectedContent={paletteSelectedContent}
         />
       </div>
@@ -730,6 +732,7 @@ export function ConversationView({
         isStreaming={isStreaming}
         queueLength={queue.length}
         onOpenPalette={() => setShowPalette(true)}
+        onSavePrompt={savePrompt}
         paletteSelectedContent={paletteSelectedContent}
       />
 

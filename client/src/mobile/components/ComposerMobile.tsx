@@ -33,6 +33,8 @@ export function ComposerMobile({
   onOpenPalette?: () => void;
   /** Optional: content selected from a parent-owned palette to insert. */
   paletteSelectedContent?: string | null;
+  /** Optional: parent-owned savePrompt (single hook source). Falls back to own hook. */
+  onSavePrompt?: (content: string) => void;
 }) {
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
@@ -132,8 +134,10 @@ export function ComposerMobile({
 
   const handleSavePrompt = useCallback(() => {
     const content = draft.trim();
-    if (content) savePrompt(content);
-  }, [draft, savePrompt]);
+    if (!content) return;
+    if (onSavePrompt) onSavePrompt(content);
+    else savePrompt(content);
+  }, [draft, savePrompt, onSavePrompt]);
 
   // Turn diagnostics — same hook as ConversationView (and desktop Chat.tsx).
   // Composer owns its own subscription so typing/turn status remains visible
@@ -389,16 +393,19 @@ export function ComposerMobile({
         </div>
       )}
 
-      {/* Prompt palette — mobile bottom-sheet (thin wrapper) */}
-      <PromptPaletteMobile
-        isOpen={showPalette}
-        onClose={() => setShowPalette(false)}
-        onSelect={handleSelectPrompt}
-        prompts={savedPrompts}
-        fuzzySearch={fuzzySearch}
-        incrementUsage={incrementUsage}
-        deletePrompt={deletePrompt}
-      />
+      {/* Prompt palette — mobile bottom-sheet (thin wrapper). When parent owns palette
+          (ConversationView), this self palette is the fallback for standalone usage. */}
+      {!onOpenPalette && (
+        <PromptPaletteMobile
+          isOpen={showPalette}
+          onClose={() => setShowPalette(false)}
+          onSelect={handleSelectPrompt}
+          prompts={savedPrompts}
+          fuzzySearch={fuzzySearch}
+          incrementUsage={incrementUsage}
+          deletePrompt={deletePrompt}
+        />
+      )}
     </div>
   );
 }
