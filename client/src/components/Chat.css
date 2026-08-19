@@ -44,6 +44,12 @@
   color: var(--text-muted);
   font-size: 12px;
   text-decoration: none;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 240px;
+  min-width: 0;
+  flex-shrink: 1;
 }
 
 .chat-dir:hover {
@@ -55,6 +61,8 @@
   color: var(--text-muted);
   font-size: 11px;
   opacity: 0.7;
+  white-space: nowrap;
+  flex-shrink: 0;
 }
 
 /* Provider badge */
@@ -515,7 +523,11 @@
 .header-status {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: 8px 12px;
+  flex-shrink: 0;
+  flex-wrap: wrap;
+  min-width: 0;
+  justify-content: flex-end;
 }
 
 .fork-thread-btn,
@@ -886,6 +898,10 @@
   font-family: var(--font-mono);
   font-size: 0.85em;
   color: var(--queue);
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
 }
 
 /* Code blocks — elevated to darkest bg for clear separation from prose */
