@@ -1,9 +1,18 @@
+import { useAtomValue } from 'jotai';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { streamingAtomFamily } from '../../atoms/conversations';
 import { interruptAndSend, queueMessage, stopConversation } from '../../atoms/actions';
 import { useConversationDraft } from '../../hooks/useConversationDraft';
 import { usePendingAttachments } from '../../hooks/usePendingAttachments';
 import { useSavedPrompts } from '../../hooks/useSavedPrompts';
+import { useTurnDiagnostics } from '../../hooks/useTurnDiagnostics';
+import {
+  shouldPresentTurnAttempt,
+  shouldShowTypingIndicator,
+  turnDiagnosticsFromAttempt,
+} from '../../utils/turn-diagnostics';
 import { PromptPaletteMobile } from './PromptPaletteMobile';
+import { TurnStatusMobile } from './TurnStatusMobile';
 
 export function ComposerMobile({
   conversationId,
@@ -126,6 +135,19 @@ export function ComposerMobile({
     if (content) savePrompt(content);
   }, [draft, savePrompt]);
 
+  // Turn diagnostics — same hook as ConversationView (and desktop Chat.tsx).
+  // Composer owns its own subscription so typing/turn status remains visible
+  // even when the conversation pane is not mounted (e.g. embedded use).
+  // Reuses derived view model, not new state.
+  const streamingText = useAtomValue(streamingAtomFamily(conversationId));
+  const runtimeTurnActive = isRunning || isStreaming;
+  const { attempt: composerTurnAttempt } = useTurnDiagnostics(conversationId || undefined, runtimeTurnActive);
+  const composerTurnDiagnostics =
+    composerTurnAttempt && shouldPresentTurnAttempt(composerTurnAttempt, runtimeTurnActive)
+      ? turnDiagnosticsFromAttempt(composerTurnAttempt)
+      : null;
+  const composerShowTyping = shouldShowTypingIndicator(isStreaming, streamingText ?? '');
+
   const handleSelectPrompt = useCallback(
     (content: string) => {
       updateDraft(content);
@@ -216,6 +238,18 @@ export function ComposerMobile({
 
   return (
     <div className="mobile-composer">
+      {composerTurnDiagnostics ? (
+        <div className="mobile-composer__turn-status">
+          <TurnStatusMobile diagnostics={composerTurnDiagnostics} />
+        </div>
+      ) : null}
+      {composerShowTyping && !composerTurnDiagnostics ? (
+        <div className="mobile-composer__typing" aria-live="polite">
+          <span className="mobile-composer__typing-dot" />
+          <span className="mobile-composer__typing-dot" />
+          <span className="mobile-composer__typing-dot" />
+        </div>
+      ) : null}
       {/* Pending attachments — same data as desktop, mobile-styled strip. */}
       {pendingFiles.length > 0 && (
         <div className="mobile-pending-files" aria-label="Attached files">

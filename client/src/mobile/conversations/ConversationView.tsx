@@ -350,6 +350,21 @@ export function ConversationView({
   const lastMessageRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
+  // Prompt palette — shared hook (logic) + mobile sheet (UI). Mirrors Chat.tsx.
+  // Owned here so the palette is available at the conversation-pane level:
+  // ChatMobile is a thin wrapper and buddy inline threads embed ConversationView
+  // directly — owning it here means both get the palette without duplication.
+  // The composer remains thin: it only renders save/ palette buttons and forwards
+  // selections via prop + custom event bridge.
+  const {
+    prompts: savedPrompts,
+    fuzzySearch,
+    incrementUsage,
+    deletePrompt,
+  } = useSavedPrompts();
+  const [showPalette, setShowPalette] = useState(false);
+  const [paletteSelectedContent, setPaletteSelectedContent] = useState<string | null>(null);
+
   // Dual-active-id: ephemeral routing atom `activeConversationIdAtom`
   // (conversations.ts) + persisted `savedActiveConversationIdAtom` (atoms/ui).
   // Cleanup clears only the ephemeral one (preserve persisted truth).
@@ -425,6 +440,19 @@ export function ConversationView({
     return () => observer.disconnect();
   }, [conversationId, messages.length]);
 
+  // Prompt palette: Ctrl+P / Cmd+P at the pane level (matches desktop Chat.tsx).
+  // Owned here so hardware keyboards work even when composer textarea is not focused.
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'p') {
+        e.preventDefault();
+        setShowPalette(true);
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, []);
+
   // Auto-scroll to bottom on new messages (flat list, not virtualized — iOS momentum)
   useEffect(() => {
     const el = scrollRef.current;
@@ -435,6 +463,15 @@ export function ConversationView({
       el.scrollTop = el.scrollHeight;
     }
   }, [messages.length, streamingText]);
+
+  const handlePaletteSelect = (content: string) => {
+    // Push into composer via prop (primary) + event bridge (fallback if composer remounts)
+    setPaletteSelectedContent(content);
+    window.dispatchEvent(new CustomEvent('prompt-palette:select', { detail: content }));
+    setShowPalette(false);
+    // Clear after a tick so repeated same-content selections re-trigger the effect
+    setTimeout(() => setPaletteSelectedContent(null), 0);
+  };
 
   // Also scroll to bottom on mount / conversation switch
   useEffect(() => {
@@ -518,6 +555,8 @@ export function ConversationView({
           disabledReason={
             pendingCreation.error ? 'Creation failed' : 'Waiting for the server to confirm…'
           }
+          onOpenPalette={() => setShowPalette(true)}
+          paletteSelectedContent={paletteSelectedContent}
         />
       </div>
     );
@@ -690,6 +729,8 @@ export function ConversationView({
         isRunning={isRunning}
         isStreaming={isStreaming}
         queueLength={queue.length}
+        onOpenPalette={() => setShowPalette(true)}
+        paletteSelectedContent={paletteSelectedContent}
       />
 
       {modelSheetOpen && conversation.config ? (
@@ -700,6 +741,18 @@ export function ConversationView({
           onClose={() => setModelSheetOpen(false)}
         />
       ) : null}
+
+      {/* Prompt palette — mobile sheet, owned at pane level so buddy threads share it.
+          Thin UI; logic lives in hooks/useSavedPrompts (same hook desktop uses). */}
+      <PromptPaletteMobile
+        isOpen={showPalette}
+        onClose={() => setShowPalette(false)}
+        onSelect={handlePaletteSelect}
+        prompts={savedPrompts}
+        fuzzySearch={fuzzySearch}
+        incrementUsage={incrementUsage}
+        deletePrompt={deletePrompt}
+      />
     </div>
   );
 }
