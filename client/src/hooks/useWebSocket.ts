@@ -1,5 +1,6 @@
 import { type ServerMessage, safeParseServerMessage } from '@unleashd/shared';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { probeSessionAfterSocketFailure } from '../auth/session';
 
 type Status = 'connecting' | 'connected' | 'disconnected';
 
@@ -52,6 +53,8 @@ export function useWebSocket(url: string, onMessage: (data: ServerMessage) => vo
       if (isMounted.current && !isIntentionalClose.current) {
         console.log('WebSocket disconnected, reconnecting...');
         setStatus('disconnected');
+        // A rejected (401) upgrade looks identical to a dead server here.
+        void probeSessionAfterSocketFailure();
         // Reconnect after 2 seconds
         reconnectTimeout.current = window.setTimeout(() => {
           if (isMounted.current) {

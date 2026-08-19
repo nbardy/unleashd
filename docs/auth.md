@@ -78,7 +78,57 @@ straight to the backend, so anyone on the same wifi had the full API at
 Because the cookie is same-origin, `fetch()` and `new WebSocket()` send it
 automatically — no client call sites needed changing.
 
-`GET /__auth/logout` clears the cookie.
+`GET /__auth/logout` clears the cookie and returns to the login page.
+
+## The login page
+
+`server/src/auth/login-page.ts` renders a standalone, server-rendered document.
+It cannot be a React route: the gate blocks the app bundle itself, so the page
+has to render before any of the client's JS is reachable. That also means it
+cannot consume `client/src/index.css`, so it repeats the Solarized `--theme-*`
+values literally — keep the two in sync.
+
+Routes:
+
+| Route | Behaviour |
+|---|---|
+| `GET /__auth/login` | 200 + the form. Honours `?redirectTo=` and `?error=`. |
+| `POST /__auth/login` | Content-negotiated: JSON for the enhanced form, 302/HTML for a plain form POST. |
+| `GET /__auth/logout` | Clears the cookie, redirects to `?error=signed-out`. |
+
+Error states are a named sum (`LoginNotice`), not a boolean, so "wrong key" and
+"signed out" cannot collapse into one message:
+
+- **Wrong key** → `Invalid access key, try again.` The form submits with
+  `Accept: application/json` specifically so it can render this inline instead
+  of reloading; a 302/HTML-only response would make the two indistinguishable.
+- **Server unreachable** → `Cannot reach the server…`, from the `fetch` rejection
+  path. A plain form POST cannot report this at all, which is why the page
+  enhances the submit rather than relying on the browser's default.
+- **No JS** → the plain `<form method="post">` still works and gets the HTML 401
+  with the same message.
+
+Mobile specifics that are load-bearing, not cosmetic: the input is explicitly
+`font-size: 16px` (anything smaller makes iOS Safari zoom on focus), the page
+uses `100svh` and `env(safe-area-inset-*)`, and the Paste button is created only
+when `window.isSecureContext && navigator.clipboard?.readText` — outside a
+secure context `navigator.clipboard` is undefined, the same trap gates G4/G5
+guard against in `tools/check-client-invariants.sh`.
+
+### Recovering an expired session
+
+`client/src/auth/session.ts` wraps `window.fetch` once at boot: a 401 from any
+same-origin request redirects to `/__auth/login?redirectTo=<current path>`.
+There is no single API client to hook — roughly 45 call sites use `fetch`
+directly — so the wrapper keeps the recovery in one place instead of spreading
+an auth concern across every caller. `GET /__auth/login` is deliberately
+ungated; if it 401'd, the redirect would loop.
+
+The WebSocket hands no status code to its error handler, so a rejected upgrade
+is indistinguishable from a dead server there. `useWebSocket` fires one cheap
+`/api/settings` probe on disconnect: a 401 trips the wrapper and redirects,
+anything else means the failure was not about auth and the reconnect loop owns
+it.
 
 ## Is a shared secret enough?
 
@@ -130,19 +180,27 @@ between the internet and full agent execution on this machine.
 
 - No rate limiting on the login form. On a tailnet-only deployment the attacker
   set is your own devices; on a Funnel deployment this would need to change.
-- A 401 mid-session (server restarted with a new token) surfaces as failing API
-  calls until the page is reloaded; reloading shows the login form.
-- The Vite HMR websocket is not gated. It is dev-only and carries source-change
-  notifications, not conversation data or commands; `/ws` and `/api` through
-  the dev proxy are gated by the backend.
+- The Vite HMR websocket is not gated, and this is a real hole rather than a
+  theoretical one: `wss://<host>/` with `Sec-WebSocket-Protocol: vite-hmr` and
+  no credentials upgrades successfully. Vite's own `?token=` guard only engages
+  when an `Origin` header is present (its CVE-2025-24010 mitigation), so a
+  non-browser client simply omits `Origin`. The cause is structural —
+  `devAuthPlugin` registers via `server.middlewares.use()`, and Connect
+  middleware runs only on HTTP `request` events, never on `upgrade`. Closing it
+  needs an explicit `httpServer.on('upgrade')` handler in the plugin, the same
+  shape the backend already uses. Exposure is dev-only and tailnet-only: file
+  paths and edit activity, not conversation data. `/ws` and `/api` through the
+  dev proxy are gated by the backend and are unaffected.
 
 ## Files
 
 | File | Role |
 |---|---|
 | `server/src/auth/policy.ts` | κ: env/disk → `AuthPolicy`; startup refusal |
-| `server/src/auth/gate.ts` | framework-agnostic decisions, cookies, login page |
+| `server/src/auth/gate.ts` | framework-agnostic decisions, cookies, credentials |
+| `server/src/auth/login-page.ts` | the unauthenticated landing page + its error states |
 | `server/src/auth/express.ts` | Express adapter + `/__auth/login`, `/__auth/logout` |
 | `server/src/server.ts` | mounts the gate; gates the WebSocket upgrade |
 | `client/vite.config.ts` | same gate for the dev server; loopback bind default |
+| `client/src/auth/session.ts` | 401 → login page recovery for the running app |
 | `server/test/auth.test.ts` | boots the real server and probes it over real sockets |

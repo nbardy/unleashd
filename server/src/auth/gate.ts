@@ -149,46 +149,6 @@ export function buildClearedSessionCookie(): string {
   return `${SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0`;
 }
 
-export function loginPageHtml(options: { failed: boolean; redirectTo: string }): string {
-  const notice = options.failed
-    ? '<p class="error" role="alert">That key was not accepted.</p>'
-    : '';
-  return `<!doctype html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="robots" content="noindex, nofollow">
-<title>unleashd — sign in</title>
-<style>
-  :root { color-scheme: light dark; }
-  body { font: 16px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-         display: grid; place-items: center; min-height: 100svh; margin: 0; }
-  form { display: grid; gap: 12px; width: min(360px, 88vw); }
-  h1 { font-size: 1.1rem; margin: 0; }
-  input, button { font: inherit; padding: 10px 12px; border-radius: 8px;
-                  border: 1px solid color-mix(in srgb, currentColor 30%, transparent); }
-  button { cursor: pointer; }
-  .error { color: #c0392b; margin: 0; }
-</style>
-</head>
-<body>
-<form method="post" action="${LOGIN_PATH}">
-  <h1>unleashd</h1>
-  ${notice}
-  <input type="hidden" name="redirectTo" value="${escapeAttribute(options.redirectTo)}">
-  <input type="password" name="token" placeholder="Access key" autocomplete="current-password"
-         autofocus required aria-label="Access key">
-  <button type="submit">Unlock</button>
-</form>
-</body>
-</html>`;
-}
-
-function escapeAttribute(value: string): string {
-  return value.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
-}
-
 /**
  * Only same-origin paths are honoured after login, so a crafted `redirectTo`
  * cannot turn the login form into an open redirect.

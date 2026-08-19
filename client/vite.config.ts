@@ -9,8 +9,8 @@ import {
   decideAuth,
   isAuthEndpoint,
   isSecureRequest,
-  loginPageHtml,
 } from '../server/src/auth/gate';
+import { loginPageHtml } from '../server/src/auth/login-page';
 import { type AuthPolicy, describePolicy, resolveAuthPolicy } from '../server/src/auth/policy';
 
 const DEV_CLIENT_PORT = 7489;
@@ -139,7 +139,7 @@ function devAuthPlugin(policy: AuthPolicy) {
           return;
         }
         response.setHeader('Content-Type', 'text/html; charset=utf-8');
-        response.end(loginPageHtml({ failed: false, redirectTo: gateRequest.url }));
+        response.end(loginPageHtml({ notice: { kind: 'none' }, redirectTo: gateRequest.url }));
       });
     },
   };

@@ -7,10 +7,10 @@ import {
   buildSessionCookie,
   decideAuth,
   isSecureRequest,
-  loginPageHtml,
   safeRedirectTarget,
   tokenMatches,
 } from './gate';
+import { type LoginNotice, loginNoticeFromQuery, loginPageHtml } from './login-page';
 import type { AuthPolicy } from './policy';
 
 /**
@@ -23,15 +23,29 @@ function gateRequest(request: Request) {
   return { method: request.method, url: request.originalUrl, headers: request.headers };
 }
 
+function renderLogin(
+  response: Response,
+  status: number,
+  notice: LoginNotice,
+  redirectTo: string
+): void {
+  response.status(status).type('html').send(loginPageHtml({ notice, redirectTo }));
+}
+
+/**
+ * The enhanced login form asks for JSON so it can tell "wrong key" apart from
+ * "server unreachable"; a plain form POST (no JS) still gets HTML and a 302.
+ */
+function wantsJson(request: Request): boolean {
+  return request.accepts(['html', 'json']) === 'json';
+}
+
 function sendChallenge(request: Request, response: Response, wants: 'html' | 'json'): void {
   if (wants === 'json') {
     response.status(401).json({ error: 'unauthorized', message: 'Missing or invalid access key' });
     return;
   }
-  response
-    .status(401)
-    .type('html')
-    .send(loginPageHtml({ failed: false, redirectTo: request.originalUrl }));
+  renderLogin(response, 401, { kind: 'none' }, request.originalUrl);
 }
 
 function applyDecision(
@@ -58,37 +72,60 @@ function applyDecision(
 export function registerAuthRoutes(app: Express, policy: AuthPolicy): void {
   // Login and logout must stay reachable without a credential, so they are
   // registered ahead of the gate rather than exempted from inside it.
+
+  // GET is what the client redirects to on a 401, so a session that expires
+  // mid-use lands on a real page instead of a blank or half-broken shell.
+  app.get(LOGIN_PATH, (request: Request, response: Response) => {
+    const redirectTo = safeRedirectTarget(request.query.redirectTo);
+    if (policy.kind === 'open') {
+      response.redirect(302, redirectTo);
+      return;
+    }
+    const notice = loginNoticeFromQuery(
+      typeof request.query.error === 'string' ? request.query.error : undefined
+    );
+    renderLogin(response, 200, notice, redirectTo);
+  });
+
   app.post(
     LOGIN_PATH,
     express.urlencoded({ extended: false, limit: '4kb' }),
     (request: Request, response: Response) => {
       const redirectTo = safeRedirectTarget(request.body?.redirectTo);
       if (policy.kind === 'open') {
+        if (wantsJson(request)) {
+          response.status(200).json({ ok: true, redirectTo });
+          return;
+        }
         response.redirect(302, redirectTo);
         return;
       }
+
       const submitted = typeof request.body?.token === 'string' ? request.body.token.trim() : '';
       if (!submitted || !tokenMatches(submitted, policy.digest)) {
-        response
-          .status(401)
-          .type('html')
-          .send(loginPageHtml({ failed: true, redirectTo }));
+        if (wantsJson(request)) {
+          response.status(401).json({ ok: false, error: 'invalid_key' });
+          return;
+        }
+        renderLogin(response, 401, { kind: 'invalid-key' }, redirectTo);
         return;
       }
+
       response.setHeader(
         'Set-Cookie',
         buildSessionCookie(submitted, { secure: isSecureRequest(gateRequest(request)) })
       );
+      if (wantsJson(request)) {
+        response.status(200).json({ ok: true, redirectTo });
+        return;
+      }
       response.redirect(302, redirectTo);
     }
   );
 
   app.get(LOGOUT_PATH, (_request: Request, response: Response) => {
     response.setHeader('Set-Cookie', buildClearedSessionCookie());
-    response
-      .status(200)
-      .type('html')
-      .send(loginPageHtml({ failed: false, redirectTo: '/' }));
+    response.redirect(302, `${LOGIN_PATH}?error=signed-out`);
   });
 
   app.use((request: Request, response: Response, next: NextFunction) => {

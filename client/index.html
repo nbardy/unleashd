@@ -3,7 +3,13 @@
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/vite.svg" />
-    <link rel="manifest" href="/manifest.webmanifest" />
+    <!--
+      crossorigin="use-credentials" is required, not decorative: a manifest is
+      fetched with credentials omitted by default, so behind the shared-secret
+      auth gate it 401s and the install prompt silently loses the app name,
+      icons, and standalone display. Same reason applies to the icons it lists.
+    -->
+    <link rel="manifest" href="/manifest.webmanifest" crossorigin="use-credentials" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="theme-color" content="#002b36" />
     <meta name="apple-mobile-web-app-capable" content="yes" />

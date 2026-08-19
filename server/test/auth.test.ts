@@ -133,7 +133,8 @@ describe('shared-secret auth (real server)', () => {
     const response = await fetch(BASE, { headers: { accept: 'text/html' } });
     assert.equal(response.status, 401);
     const body = await response.text();
-    assert.match(body, /<form method="post" action="\/__auth\/login">/);
+    assert.match(body, /action="\/__auth\/login"/);
+    assert.match(body, /Enter your access key to continue/);
   });
 
   test('?token= establishes a cookie and strips itself from the URL', async () => {
@@ -173,6 +174,48 @@ describe('shared-secret auth (real server)', () => {
     });
     assert.equal(rejected.status, 401);
     assert.equal(rejected.headers.get('set-cookie'), null);
+  });
+
+  test('GET /__auth/login answers 200, so a 401 redirect cannot loop', async () => {
+    // The client redirects here on any 401. If this path were itself gated the
+    // browser would bounce between 401 and redirect forever.
+    const response = await fetch(`${BASE}/__auth/login?redirectTo=/chat/xyz`, {
+      headers: { accept: 'text/html' },
+    });
+    assert.equal(response.status, 200);
+    assert.match(await response.text(), /name="redirectTo" value="\/chat\/xyz"/);
+  });
+
+  test('a crafted redirectTo cannot turn the form into an open redirect', async () => {
+    const response = await fetch(`${BASE}/__auth/login?redirectTo=//evil.example.com`, {
+      headers: { accept: 'text/html' },
+    });
+    const body = await response.text();
+    assert.match(body, /name="redirectTo" value="\/"/);
+    assert.doesNotMatch(body, /evil\.example\.com/);
+  });
+
+  test('the JSON login path tells a wrong key apart from an unreachable server', async () => {
+    // The form submits with Accept: application/json precisely so it can show
+    // "Invalid access key" inline instead of reloading the whole page. A plain
+    // 302/HTML response would collapse that distinction.
+    const rejected = await fetch(`${BASE}/__auth/login`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded', accept: 'application/json' },
+      body: new URLSearchParams({ token: 'wrong-key-entirely' }).toString(),
+    });
+    assert.equal(rejected.status, 401);
+    assert.deepEqual(await rejected.json(), { ok: false, error: 'invalid_key' });
+    assert.equal(rejected.headers.get('set-cookie'), null);
+
+    const accepted = await fetch(`${BASE}/__auth/login`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/x-www-form-urlencoded', accept: 'application/json' },
+      body: new URLSearchParams({ token: TOKEN, redirectTo: '/buddies' }).toString(),
+    });
+    assert.equal(accepted.status, 200);
+    assert.deepEqual(await accepted.json(), { ok: true, redirectTo: '/buddies' });
+    assert.match(accepted.headers.get('set-cookie') ?? '', /unleashd_auth=/);
   });
 
   test('the WebSocket command channel refuses unauthenticated upgrades', async () => {
