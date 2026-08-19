@@ -169,3 +169,124 @@ test('a conversation with no durable buddy context stays general', async () => {
   assert.equal(options.kind, null);
   assert.equal(options.buddyContext ?? null, null);
 });
+
+/**
+ * Drives the durable-record recovery pass (no transcripts on disk) with a
+ * `hydrate` that fails for one specific conversation. Returns the ids that were
+ * actually recovered, plus whether the whole load rejected.
+ */
+async function recoverAll(input: {
+  recoverable: Array<{ conversationId: string; workingDirectory: string | null }>;
+  failFor: string;
+}): Promise<{ recovered: string[]; threw: boolean }> {
+  const created: ConversationOptions[] = [];
+  const registry = new Map<string, ConversationRuntime>();
+
+  const dependencies = {
+    options: {
+      startupLimit: 10,
+      startupConcurrency: 1,
+      startupBatchSize: 1,
+      startupInitialBatchSize: 1,
+      startupLogEveryFiles: 1000,
+      pollIntervalMs: 1000,
+      externalGraceMs: 1000,
+      verbose: false,
+    },
+    registry: {
+      get: (id: string) => registry.get(id),
+      has: (id: string) => registry.has(id),
+      set: (conversation: ConversationRuntime) => registry.set(conversation.id, conversation),
+      values: () => registry.values(),
+      entries: () => registry.entries(),
+      get size() {
+        return registry.size;
+      },
+    },
+    sessions: { registerAlias: () => {}, unregisterAlias: () => {}, aliasFor: () => undefined },
+    externalActivity: { clear: () => {} },
+    completionSuppression: { clear: () => {} },
+    configStore: { findBySession: async () => undefined } as unknown as ConversationConfigStore,
+    configService: {
+      hydrate: async (request: { conversationId: string }) => {
+        if (request.conversationId === input.failFor) {
+          throw new Error(`unreadable durable record ${request.conversationId}`);
+        }
+        return {
+          state: { config: {}, revision: 0, resolution: { status: 'resolved', value: {} } },
+          record: { conversationId: request.conversationId },
+          migrated: false,
+          diagnostics: [],
+        };
+      },
+      listRecoverable: async () =>
+        input.recoverable.map((entry) => ({
+          ...entry,
+          config: { provider: 'claude' },
+          currentSession: null,
+          creation: undefined,
+          lastResolvedConfig: undefined,
+        })),
+    } as unknown as ConversationConfigService,
+    loadConversations: async (options: {
+      onProgress(
+        batch: DiscoveredConversation[],
+        progress: { loaded: number; total: number }
+      ): Promise<void>;
+    }) => {
+      await options.onProgress([], { loaded: 0, total: 0 });
+      return { mtimes: new Map<string, number>() };
+    },
+    pollConversations: async () => ({ mtimes: new Map<string, number>() }),
+    createConversation: (conversationOptions: ConversationOptions) => {
+      created.push(conversationOptions);
+      return {
+        id: conversationOptions.id,
+        parentConversationId: null,
+        messages: [],
+        createdAt: new Date(),
+        subAgents: [],
+        toJSON: () => ({ id: conversationOptions.id, messages: [] }),
+      } as unknown as ConversationRuntime;
+    },
+    createId: () => 'unused-id',
+    resolveBuddyConversation: async (context: BuddyContext) => ({ context, briefing: 'soul' }),
+    dispatchInitialMessage: async () => {},
+    persistCurrentSession: async () => {},
+    broadcast: () => {},
+    logger: { error: () => {}, log: () => {}, warn: () => {} },
+  } as unknown as SessionLoaderDependencies;
+
+  let threw = false;
+  try {
+    await createSessionLoader(dependencies).loadExistingConversations();
+  } catch {
+    threw = true;
+  }
+  return { recovered: created.map((options) => options.id), threw };
+}
+
+/**
+ * Regression, incident 2026-08-20. The recovery loop had no error handling, and
+ * it runs inside the startup barrier: one unreadable or future-versioned durable
+ * record threw all the way out of loadExistingConversations() into
+ * handleStartupFailure(), which exits the process with code 1. A single bad
+ * record therefore bricked every conversation on disk and the backend would not
+ * boot. Deleting this test lets one corrupt file take down startup again.
+ */
+test('one unrecoverable record does not abort the whole startup hydration', async () => {
+  const result = await recoverAll({
+    recoverable: [
+      { conversationId: 'aaaaaaaa-0000-4000-8000-000000000001', workingDirectory: '/tmp/a' },
+      { conversationId: 'bbbbbbbb-0000-4000-8000-000000000002', workingDirectory: '/tmp/b' },
+      { conversationId: 'cccccccc-0000-4000-8000-000000000003', workingDirectory: '/tmp/c' },
+    ],
+    failFor: 'bbbbbbbb-0000-4000-8000-000000000002',
+  });
+
+  assert.equal(result.threw, false, 'startup hydration must survive a bad record');
+  assert.deepEqual(result.recovered, [
+    'aaaaaaaa-0000-4000-8000-000000000001',
+    'cccccccc-0000-4000-8000-000000000003',
+  ]);
+});

@@ -264,3 +264,65 @@ throw sites are defended today, so this is ordering to fix, not an active bug.
   `pkill -f "tsx src/server.ts"` cannot hit both it and `test/api.test.js:44`.
 - Age out / start-time-verify `runs/*/started.json` PIDs before
   `server/src/swarm/routes.ts:176` sends them a signal.
+
+---
+
+# Resolution (branch `fix/reload-drain-and-watcher-teardown`)
+
+Landed on top of `0d7ec84`. Server tests 190 (189 pass / 0 fail), tools tests 28/28,
+`tsc -p server/tsconfig.json --noEmit` clean.
+
+## Fixed
+
+1. **Watcher no longer escalates an un-orchestrated exit to fatal.**
+   `tools/watch-server.mjs` — the close handler is now a thin dispatcher over four
+   variants (`watcher_stop`, `reload_replace`, `quick_failure`, `unexpected_exit`),
+   one handler each. A clean `exit(0)` or any signal after a healthy uptime is a
+   **restart**, bounded by `unexpectedExitStreak` (escalates after 3 lives that
+   never reach `HEALTHY_UPTIME_MS`). A signal is never routed to the "likely a
+   syntax error" path. This is the fix that would have prevented the incident.
+2. **`exiting` is bounded.** `shutdown.ts` arms a `flushGraceMs` watchdog *after*
+   `clearTimers()`, so a hung `turnAttemptJournal.flush()` can no longer strand the
+   process alive-but-refusing-everything.
+3. **Force-drain plumbing.** `reloadDrainGraceMs` and `flushGraceMs` are explicit
+   injected options (was: hardcoded `8000`). `handleShutdown` no longer arms a
+   second timer over `waitForDrain`'s handle — that leak is gone. Force-drain
+   resets its counters *before* `interrupt()` and wraps it, so a broadcast failure
+   cannot skip `exitOnce()` and wedge `reloading`.
+4. **Startup barrier never strands.** `runServerStartup(...).finally(resolveInitialLoad)`
+   covers all three terminal outcomes; the barrier now means "startup is no longer
+   in progress". Waiters resume and get a typed rejection instead of hanging.
+5. **Recovery is fault-isolated per record.** `session-loader.ts` — one unreadable
+   durable record no longer propagates to `handleStartupFailure()` and exits.
+6. **`tools/watch-server.test.mjs` is wired into `pnpm test`** (it existed but no
+   script ran it).
+
+## Tests added / revised
+
+- `tools/watch-server.test.mjs`: revised `kill -9` (was `assert.equal(s.stopping,
+  true, 'SIGKILL should be fatal')` — deliberately inverted, with rationale);
+  added "healthy backend exiting 0 is restarted, not fatal" and "a backend that
+  never stays up escalates instead of restarting forever".
+- `server/test/shutdown.test.ts`: added "a reload whose work never drains still
+  exits after the grace" (the liveness case every prior test avoided by making the
+  work go away), "a state flush that never settles still exits the process", and
+  "shutdown force-exits on the shutdown grace, not the reload grace".
+- `server/test/session-loader-hydration.test.ts`: added "one unrecoverable record
+  does not abort the whole startup hydration". Verified falsifiable — it fails when
+  the try/catch is removed.
+
+## Deliberately NOT done
+
+- **Admitting `create_conversation` during `reloading`.** Listed as an option in the
+  diagnosis, rejected on reflection: creation can dispatch an initial message, which
+  starts a provider turn in a process already committed to dying — it would either
+  extend the drain or be force-interrupted seconds later. `allowDuringStartup` is
+  justified because that process is coming *up*. The symptom is instead handled by
+  bounding the window (fixes 1-3) plus the client's existing retry on reconnect.
+- **The `O(new × total)` `findBySession` rescan** (`config-store.ts:153-162`). A
+  naive memo does not help: `hydrate` writes a record per session, so any
+  write-invalidated cache is invalidated on every iteration. The real fix is a live
+  in-memory binding→conversationId index updated (not invalidated) on write/delete/
+  rekey. That is a refactor of the authoritative persistence layer where a missed
+  invalidation duplicates conversations, so it does not belong in an incident fix.
+  Startup latency is unchanged by this branch.

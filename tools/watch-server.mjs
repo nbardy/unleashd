@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 
 import { spawn } from 'node:child_process';
+import { readFile, readdir } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { readdir, readFile } from 'node:fs/promises';
 import { missingRuntimeArtifacts } from './watch-runtime-readiness.mjs';
 import { snapshotDirectory } from './watch-snapshot.mjs';
 
@@ -26,6 +26,14 @@ const requiredRuntimeArtifacts = [
 export const POLL_INTERVAL_MS = 300;
 export const RELOAD_SETTLE_MS = 600;
 export const RELOAD_MESSAGE = 'unleashd:dev-reload';
+/** Below this uptime a death is a failure to start, not a healthy backend dying. */
+export const QUICK_EXIT_MS = 3000;
+/** Above this uptime the backend demonstrably worked, so restarts get a fresh budget. */
+export const HEALTHY_UPTIME_MS = 30000;
+
+export function describeExit(code, signal) {
+  return signal ? `signal ${signal}` : `exit ${code ?? 0}`;
+}
 const RUNTIME_EXTENSIONS = new Set(['.js', '.cjs', '.mjs', '.json']);
 
 /**
@@ -74,13 +82,17 @@ export function createWatchServer(overrides = {}) {
   const proc = overrides.process ?? process;
   const consoleLog = overrides.consoleLog ?? console.log.bind(console);
   const consoleError = overrides.consoleError ?? console.error.bind(console);
-  const stderrWrite = overrides.stderrWrite ?? ((chunk) => proc.stderr?.write?.(chunk) ?? process.stderr.write(chunk));
+  const stderrWrite =
+    overrides.stderrWrite ??
+    ((chunk) => proc.stderr?.write?.(chunk) ?? process.stderr.write(chunk));
   const watchedRootsOverride = overrides.watchedRoots ?? watchedRoots;
-  const requiredRuntimeArtifactsOverride = overrides.requiredRuntimeArtifacts ?? requiredRuntimeArtifacts;
+  const requiredRuntimeArtifactsOverride =
+    overrides.requiredRuntimeArtifacts ?? requiredRuntimeArtifacts;
   const pollIntervalMs = overrides.pollIntervalMs ?? POLL_INTERVAL_MS;
   const reloadSettleMs = overrides.reloadSettleMs ?? RELOAD_SETTLE_MS;
   const backendDownRetryDelayMs = overrides.backendDownRetryDelayMs ?? 5000;
   const backendDownReminderIntervalMs = overrides.backendDownReminderIntervalMs ?? 30000;
+  const healthyUptimeMs = overrides.healthyUptimeMs ?? HEALTHY_UPTIME_MS;
 
   let child = null;
   let childStartMs = 0;
@@ -99,6 +111,9 @@ export function createWatchServer(overrides = {}) {
   // self-healing — the developer fixes the file — so they must NOT consume the
   // 3-strike escalation budget, which exists for failures that never recover.
   let lastQuickFailureWasTransform = false;
+  // Consecutive deaths of a backend that had already started successfully. Reset
+  // as soon as one manages a healthy uptime; bounds the restart loop.
+  let unexpectedExitStreak = 0;
   let failWatcherConsecutive = 0;
   let lastStderr = '';
   const STDERR_RING_LIMIT = 32768;
@@ -138,7 +153,9 @@ export function createWatchServer(overrides = {}) {
       return cachedEsbuild;
     } catch (e) {
       if (!esbuildResolveWarningShown) {
-        consoleError(`[server-watch] Pre-flight check unavailable (esbuild not resolved): ${e.message}`);
+        consoleError(
+          `[server-watch] Pre-flight check unavailable (esbuild not resolved): ${e.message}`
+        );
         esbuildResolveWarningShown = true;
       }
       cachedEsbuild = null;
@@ -192,11 +209,15 @@ export function createWatchServer(overrides = {}) {
           let formatted;
           try {
             if (e.errors) {
-              formatted = (await esbuild.formatMessages(e.errors, { kind: 'error', color: false })).join('\n');
+              formatted = (
+                await esbuild.formatMessages(e.errors, { kind: 'error', color: false })
+              ).join('\n');
             }
           } catch {}
           const message = (formatted && formatted.trim()) || e.message || String(e);
-          const withPrefix = /Transform failed/i.test(message) ? message : `Transform failed: ${message}`;
+          const withPrefix = /Transform failed/i.test(message)
+            ? message
+            : `Transform failed: ${message}`;
           errors.push({ file, message: withPrefix });
         }
       })
@@ -208,7 +229,9 @@ export function createWatchServer(overrides = {}) {
   function logPreflightErrors(errors) {
     consoleError('');
     consoleError('[server-watch] ──────────────────────────────────────────────────');
-    consoleError('[server-watch] Pre-flight transform check failed — keeping previous backend alive');
+    consoleError(
+      '[server-watch] Pre-flight transform check failed — keeping previous backend alive'
+    );
     for (const { file, message } of errors) {
       const rel = path.relative(repositoryRootOverride, file);
       consoleError(`[server-watch] ${rel}:`);
@@ -329,86 +352,131 @@ export function createWatchServer(overrides = {}) {
         lastStderr = (lastStderr + chunk.toString()).slice(-STDERR_RING_LIMIT);
       });
     }
+    // Thin dispatcher: pick the handler for this kind of close, nothing else.
+    // Each handler owns one outcome and never re-asks what kind of close it was.
     child.once('close', (code, signal) => {
       child = null;
-      if (stopping) {
-        if (pollTimer !== null) {
-          clearIntervalFn(pollTimer);
-          pollTimer = null;
-        }
-        proc.exitCode = fatalError || signal ? 1 : (code ?? 0);
-        return;
-      }
-      if (reloadPending) {
-        consoleLog('[server-watch] Active turns finished; starting the updated backend');
-        void startServer().catch(failWatcher);
-        return;
-      }
+      if (stopping) return handleWatcherStop(code, signal);
+      if (reloadPending) return handleReloadReplace();
       const uptimeMs = nowFn() - childStartMs;
+      // A signal is always an external kill, never a build error — do not let it
+      // reach the "likely a syntax/type error" path regardless of uptime.
+      if (signal) return handleUnexpectedExit(code, signal, uptimeMs);
       const isTransformFailure =
         /Transform failed/i.test(lastStderr) || /ERROR:\s+Expected/i.test(lastStderr);
-      const isQuickBuildFailure =
-        !signal && code !== 0 && code !== null && (isTransformFailure || uptimeMs < 3000);
-      if (isQuickBuildFailure) {
-        lastQuickFailureWasTransform = isTransformFailure;
-        const reason = isTransformFailure ? 'Transform failure' : `quick exit after ${uptimeMs}ms`;
-        consoleError(
-          `[server-watch] Backend failed to start (exit ${code}, ${reason}) — likely a syntax/type error. Waiting for file change to retry...`
-        );
-        if (backendDownRetryCount >= 3) {
-          consoleError(
-            `[server-watch] Backend quick-failed ${backendDownRetryCount} times (last exit ${code}) — escalating to fatal. Fix the port/env error and use pnpm dev:replace`
-          );
-          if (backendDownReminderTimer) {
-            clearIntervalFn(backendDownReminderTimer);
-            backendDownReminderTimer = null;
-          }
-          stopping = true;
-          if (pollTimer !== null) {
-            clearIntervalFn(pollTimer);
-            pollTimer = null;
-          }
-          proc.exitCode = 1;
-          return;
-        }
-        if (!backendDownRetryTimer) {
-          backendDownRetryCount += 1;
-          backendDownRetryTimer = setTimeoutFn(() => {
-            backendDownRetryTimer = null;
-            if (!stopping && !child) {
-              consoleLog(
-                `[server-watch] Retrying backend after quick failure (attempt ${backendDownRetryCount}/3)...`
-              );
-              void startServer().catch(failWatcher);
-            }
-          }, backendDownRetryDelayMs);
-        }
-        if (!backendDownReminderTimer) {
-          backendDownReminderTimer = setIntervalFn(() => {
-            if (!stopping && !child) {
-              consoleError(
-                `[server-watch] Backend is DOWN (last exit ${code} after ${uptimeMs}ms) — fix the error or touch a server file to retry`
-              );
-            } else {
-              clearIntervalFn(backendDownReminderTimer);
-              backendDownReminderTimer = null;
-            }
-          }, backendDownReminderIntervalMs);
-        }
-        return;
+      // A backend that stayed up past QUICK_EXIT_MS is a backend that started
+      // successfully, so its death is an event to recover from, not a build error.
+      if (isTransformFailure || uptimeMs < QUICK_EXIT_MS) {
+        return handleQuickFailure(code, signal, uptimeMs, isTransformFailure);
+      }
+      return handleUnexpectedExit(code, signal, uptimeMs);
+    });
+  }
+
+  /** The watcher itself asked the backend to stop; propagate its exit code. */
+  function handleWatcherStop(code, signal) {
+    if (pollTimer !== null) {
+      clearIntervalFn(pollTimer);
+      pollTimer = null;
+    }
+    proc.exitCode = fatalError || signal ? 1 : (code ?? 0);
+  }
+
+  /** The drain we requested finished; start the replacement on the new source. */
+  function handleReloadReplace() {
+    consoleLog('[server-watch] Active turns finished; starting the updated backend');
+    void startServer().catch(failWatcher);
+  }
+
+  /**
+   * The backend never got off the ground — a source typo or an env error such as
+   * EADDRINUSE. Transform failures are self-healing (the developer fixes the file)
+   * so they do not consume the escalation budget; see startServer.
+   */
+  function handleQuickFailure(code, signal, uptimeMs, isTransformFailure) {
+    lastQuickFailureWasTransform = isTransformFailure;
+    const reason = isTransformFailure ? 'Transform failure' : `quick exit after ${uptimeMs}ms`;
+    consoleError(
+      `[server-watch] Backend failed to start (${describeExit(code, signal)}, ${reason}) — likely a syntax/type error. Waiting for file change to retry...`
+    );
+    if (backendDownRetryCount >= 3) {
+      consoleError(
+        `[server-watch] Backend quick-failed ${backendDownRetryCount} times (last ${describeExit(code, signal)}) — escalating to fatal. Fix the port/env error and use pnpm dev:replace`
+      );
+      if (backendDownReminderTimer) {
+        clearIntervalFn(backendDownReminderTimer);
+        backendDownReminderTimer = null;
       }
       stopping = true;
       if (pollTimer !== null) {
         clearIntervalFn(pollTimer);
         pollTimer = null;
       }
+      proc.exitCode = 1;
+      return;
+    }
+    if (!backendDownRetryTimer) {
+      backendDownRetryCount += 1;
+      backendDownRetryTimer = setTimeoutFn(() => {
+        backendDownRetryTimer = null;
+        if (!stopping && !child) {
+          consoleLog(
+            `[server-watch] Retrying backend after quick failure (attempt ${backendDownRetryCount}/3)...`
+          );
+          void startServer().catch(failWatcher);
+        }
+      }, backendDownRetryDelayMs);
+    }
+    if (!backendDownReminderTimer) {
+      backendDownReminderTimer = setIntervalFn(() => {
+        if (!stopping && !child) {
+          consoleError(
+            `[server-watch] Backend is DOWN (last ${describeExit(code, signal)} after ${uptimeMs}ms) — fix the error or touch a server file to retry`
+          );
+        } else {
+          clearIntervalFn(backendDownReminderTimer);
+          backendDownReminderTimer = null;
+        }
+      }, backendDownReminderIntervalMs);
+    }
+  }
+
+  /**
+   * A backend that ran past QUICK_EXIT_MS and then died without the watcher
+   * asking it to. Restart it.
+   *
+   * This used to be fatal for every exit code including 0: `stopping = true` and
+   * `proc.exitCode = 1`, which `concurrently --kill-others-on-fail` turns into a
+   * SIGTERM for shared-esm/shared-cjs/cli/client. So a developer typing
+   * `kill <backend-pid>` — the obvious way out of a wedged reload drain — lost
+   * the entire dev runtime and had to run `pnpm dev:replace` (incident
+   * 2026-08-20). A dev watcher's contract is to keep a backend running, so an
+   * exit it did not orchestrate is a restart.
+   *
+   * The streak counter is the crash-loop bound: a backend that never manages to
+   * stay up for HEALTHY_UPTIME_MS is failing for a reason restarting cannot fix,
+   * and escalates rather than spinning. Quick failures are handled separately
+   * above, with their own budget and backoff.
+   */
+  function handleUnexpectedExit(code, signal, uptimeMs) {
+    if (uptimeMs >= healthyUptimeMs) unexpectedExitStreak = 0;
+    unexpectedExitStreak += 1;
+    if (unexpectedExitStreak > 3) {
       consoleError(
-        `[server-watch] Backend exited unexpectedly${
-          signal ? ` from ${signal}` : ` with code ${code ?? 1}`
-        }; stopping dev runtime`
+        `[server-watch] Backend exited ${unexpectedExitStreak} times without staying up ${healthyUptimeMs}ms (last ${describeExit(code, signal)}) — escalating to fatal. Use pnpm dev:replace once the cause is fixed`
       );
+      stopping = true;
+      if (pollTimer !== null) {
+        clearIntervalFn(pollTimer);
+        pollTimer = null;
+      }
       proc.exitCode = code && code > 0 ? code : 1;
-    });
+      return;
+    }
+    consoleError(
+      `[server-watch] Backend exited (${describeExit(code, signal)}) after ${uptimeMs}ms without a reload request; restarting`
+    );
+    void startServer().catch(failWatcher);
   }
 
   async function poll() {
@@ -464,7 +532,9 @@ export function createWatchServer(overrides = {}) {
     const preflight = await preflightTransformCheck();
     if (!preflight.ok) {
       logPreflightErrors(preflight.errors);
-      consoleError('[server-watch] Pre-flight failed — keeping previous backend alive; fix and save to retry');
+      consoleError(
+        '[server-watch] Pre-flight failed — keeping previous backend alive; fix and save to retry'
+      );
       return;
     }
     reloadPending = true;
@@ -580,11 +650,14 @@ export function createWatchServer(overrides = {}) {
       backendDownRetryTimer,
       backendDownReminderTimer,
       backendDownRetryCount,
+      unexpectedExitStreak,
       failWatcherConsecutive,
       lastStderr,
       pollTimer,
     }),
-    setSnapshot: (next) => { snapshot = next; },
+    setSnapshot: (next) => {
+      snapshot = next;
+    },
     getSnapshot: () => snapshot,
     _internals: {
       takeSnapshot,

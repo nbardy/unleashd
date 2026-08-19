@@ -574,9 +574,14 @@ test('kill -9 and Ctrl-C paths', async (t) => {
     await new Promise((r) => setImmediate(r));
     await new Promise((r) => setImmediate(r));
     const s = server.getState();
-    assert.equal(s.stopping, true, 'SIGKILL should be fatal');
-    assert.equal(fakeProc.exitCode, 1);
-    assert.match(logger.errors.join('\n'), /Backend exited unexpectedly from SIGKILL/);
+    // Revised 2026-08-20 (was: 'SIGKILL should be fatal'). A targeted kill of the
+    // backend must NOT take down the dev runtime — the watcher's job is to keep a
+    // backend running, and `stopping = true` here propagates exitCode 1 into
+    // `concurrently --kill-others-on-fail`, which SIGTERMs shared/cli/client too.
+    assert.equal(s.stopping, false, 'an external kill must not stop the dev runtime');
+    assert.equal(fakeProc.exitCode, undefined, 'no fatal exit code for an external kill');
+    assert.equal(children.length, 2, 'backend should be restarted after an external kill');
+    assert.match(logger.errors.join('\n'), /Backend exited \(signal SIGKILL\).*restarting/);
   }
 
   // Ctrl-C while child running
@@ -692,4 +697,93 @@ test('snapshotsMatch helper', () => {
   assert.equal(snapshotsMatch(a, b), true);
   assert.equal(snapshotsMatch(a, c), false);
   assert.equal(snapshotsMatch(a, new Map()), false);
+});
+
+// ---------------------------------------------------------------------------
+// 7) Regression: incident 2026-08-20 — a manual `kill` killed the dev runtime
+//
+// The backend wedged in its reload drain, the developer ran `kill <backend-pid>`
+// to recover, the backend shut down gracefully (exit 0, no signal), and this
+// watcher logged "Backend exited unexpectedly with code 0; stopping dev runtime"
+// and set exitCode 1. `concurrently --kill-others-on-fail` then SIGTERMed
+// shared-esm, shared-cjs, cli and client, so recovering the backend cost the
+// whole dev runtime and required `pnpm dev:replace`.
+// ---------------------------------------------------------------------------
+
+test('a healthy backend exiting 0 without a reload request is restarted, not fatal', async (t) => {
+  const clock = createClock(0);
+  const logger = collectLogs();
+  const fakeProc = createFakeProcess();
+  const children = [];
+  const server = createWatchServer({
+    spawn: () => { const c = new FakeChild(); children.push(c); return c; },
+    snapshotDirectory: async () => {},
+    missingRuntimeArtifacts: async () => [],
+    now: clock.now,
+    setTimeout: clock.setTimeout,
+    clearTimeout: clock.clearTimeout,
+    setInterval: clock.setInterval,
+    clearInterval: clock.clearInterval,
+    process: fakeProc,
+    consoleLog: logger.log,
+    consoleError: logger.error,
+    preflightTransformCheck: okPreflight,
+  });
+  t.after(() => server.destroy());
+
+  await server.startServer();
+  assert.equal(children.length, 1);
+
+  // Backend served for two minutes, then a targeted SIGTERM made it drain and
+  // exit(0) cleanly. reloadPending is false: the watcher never asked for this.
+  clock.advance(120_000);
+  children[0].exitCode = 0;
+  children[0].emit('close', 0, null);
+  await new Promise((r) => setImmediate(r));
+  await new Promise((r) => setImmediate(r));
+
+  const state = server.getState();
+  assert.equal(state.stopping, false, 'a clean exit must not stop the dev runtime');
+  assert.equal(fakeProc.exitCode, undefined, 'must not set a fatal exit code');
+  assert.equal(children.length, 2, 'replacement backend should have been spawned');
+  assert.equal(state.unexpectedExitStreak, 1);
+});
+
+test('a backend that never stays up escalates instead of restarting forever', async (t) => {
+  const clock = createClock(0);
+  const logger = collectLogs();
+  const fakeProc = createFakeProcess();
+  const children = [];
+  const server = createWatchServer({
+    spawn: () => { const c = new FakeChild(); children.push(c); return c; },
+    snapshotDirectory: async () => {},
+    missingRuntimeArtifacts: async () => [],
+    now: clock.now,
+    setTimeout: clock.setTimeout,
+    clearTimeout: clock.clearTimeout,
+    setInterval: clock.setInterval,
+    clearInterval: clock.clearInterval,
+    process: fakeProc,
+    consoleLog: logger.log,
+    consoleError: logger.error,
+    healthyUptimeMs: 30_000,
+    preflightTransformCheck: okPreflight,
+  });
+  t.after(() => server.destroy());
+
+  await server.startServer();
+  // Each life is longer than QUICK_EXIT_MS (so it is not a build failure) but
+  // shorter than healthyUptimeMs (so it never earns a fresh budget).
+  for (let attempt = 0; attempt < 4; attempt += 1) {
+    clock.advance(5_000);
+    const child = children[children.length - 1];
+    child.exitCode = 0;
+    child.emit('close', 0, null);
+    await new Promise((r) => setImmediate(r));
+    await new Promise((r) => setImmediate(r));
+  }
+
+  assert.equal(server.getState().stopping, true, 'restart loop must be bounded');
+  assert.equal(fakeProc.exitCode, 1);
+  assert.match(logger.errors.join('\n'), /escalating to fatal/);
 });

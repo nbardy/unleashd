@@ -215,43 +215,75 @@ export function createSessionLoader(dependencies: SessionLoaderDependencies): Se
       if (dependencies.registry.has(record.conversationId) || !record.workingDirectory) {
         continue;
       }
-      const hydrated = await dependencies.configService.hydrate({
-        conversationId: record.conversationId,
-        sessionBindings: [],
-        legacy: {
-          provider: record.config.provider,
-          reportedModel: record.lastResolvedConfig?.modelId,
-          source: 'external_session',
-        },
-      });
-      const recoveredBuddy = record.creation?.buddyContext
-        ? await dependencies
-            .resolveBuddyConversation(record.creation.buddyContext)
-            .catch((error) => {
-              logger.warn(`[buddies] Could not rebuild ${record.conversationId} briefing:`, error);
-              return null;
-            })
-        : null;
-      const recovered = dependencies.createConversation({
-        id: record.conversationId,
-        workingDirectory: record.workingDirectory,
-        configState: hydrated.state,
-        existingSessionId: record.currentSession?.sessionId,
-        swarmDebugPrefix: record.creation?.swarmDebugPrefix ?? null,
-        resumedFromConversationId: record.creation?.resumedFromConversationId ?? null,
-        kind: recoveredBuddy?.context
-          ? { kind: 'buddy', buddyId: recoveredBuddy.context.buddyId, workspaceId: recoveredBuddy.context.workspaceId, buddyProjectId: recoveredBuddy.context.buddyProjectId ?? null, legacyWorkItemId: recoveredBuddy.context.legacyWorkItemId ?? null, automationRunId: recoveredBuddy.context.automationRunId ?? null, delegatedByBuddyId: recoveredBuddy.context.delegatedByBuddyId ?? null, parentBuddyConversationId: recoveredBuddy.context.parentBuddyConversationId ?? null, allowedBuddyOperations: recoveredBuddy.context.allowedBuddyOperations }
-          : record.creation?.buddyContext
-            ? { kind: 'buddy', buddyId: record.creation.buddyContext.buddyId, workspaceId: record.creation.buddyContext.workspaceId, buddyProjectId: record.creation.buddyContext.buddyProjectId ?? null, legacyWorkItemId: record.creation.buddyContext.legacyWorkItemId ?? null, automationRunId: record.creation.buddyContext.automationRunId ?? null, delegatedByBuddyId: record.creation.buddyContext.delegatedByBuddyId ?? null, parentBuddyConversationId: record.creation.buddyContext.parentBuddyConversationId ?? null, allowedBuddyOperations: record.creation.buddyContext.allowedBuddyOperations }
-            : record.creation?.purpose === 'buddy_builder'
-              ? { kind: 'buddy_builder' }
-              : null,
-        buddyContext: recoveredBuddy?.context ?? record.creation?.buddyContext ?? null,
-        buddyBriefing: recoveredBuddy?.briefing ?? null,
-        purpose: record.creation?.purpose ?? 'general',
-      });
-      dependencies.registry.set(recovered);
-      await dependencies.dispatchInitialMessage(recovered);
+      // Per-record isolation is required, not defensive: this loop runs inside the
+      // startup barrier, so an unreadable or future-versioned record used to throw
+      // all the way out to handleStartupFailure() and exit the process — one bad
+      // record bricked every conversation on disk (incident 2026-08-20).
+      try {
+        const hydrated = await dependencies.configService.hydrate({
+          conversationId: record.conversationId,
+          sessionBindings: [],
+          legacy: {
+            provider: record.config.provider,
+            reportedModel: record.lastResolvedConfig?.modelId,
+            source: 'external_session',
+          },
+        });
+        const recoveredBuddy = record.creation?.buddyContext
+          ? await dependencies
+              .resolveBuddyConversation(record.creation.buddyContext)
+              .catch((error) => {
+                logger.warn(
+                  `[buddies] Could not rebuild ${record.conversationId} briefing:`,
+                  error
+                );
+                return null;
+              })
+          : null;
+        const recovered = dependencies.createConversation({
+          id: record.conversationId,
+          workingDirectory: record.workingDirectory,
+          configState: hydrated.state,
+          existingSessionId: record.currentSession?.sessionId,
+          swarmDebugPrefix: record.creation?.swarmDebugPrefix ?? null,
+          resumedFromConversationId: record.creation?.resumedFromConversationId ?? null,
+          kind: recoveredBuddy?.context
+            ? {
+                kind: 'buddy',
+                buddyId: recoveredBuddy.context.buddyId,
+                workspaceId: recoveredBuddy.context.workspaceId,
+                buddyProjectId: recoveredBuddy.context.buddyProjectId ?? null,
+                legacyWorkItemId: recoveredBuddy.context.legacyWorkItemId ?? null,
+                automationRunId: recoveredBuddy.context.automationRunId ?? null,
+                delegatedByBuddyId: recoveredBuddy.context.delegatedByBuddyId ?? null,
+                parentBuddyConversationId: recoveredBuddy.context.parentBuddyConversationId ?? null,
+                allowedBuddyOperations: recoveredBuddy.context.allowedBuddyOperations,
+              }
+            : record.creation?.buddyContext
+              ? {
+                  kind: 'buddy',
+                  buddyId: record.creation.buddyContext.buddyId,
+                  workspaceId: record.creation.buddyContext.workspaceId,
+                  buddyProjectId: record.creation.buddyContext.buddyProjectId ?? null,
+                  legacyWorkItemId: record.creation.buddyContext.legacyWorkItemId ?? null,
+                  automationRunId: record.creation.buddyContext.automationRunId ?? null,
+                  delegatedByBuddyId: record.creation.buddyContext.delegatedByBuddyId ?? null,
+                  parentBuddyConversationId:
+                    record.creation.buddyContext.parentBuddyConversationId ?? null,
+                  allowedBuddyOperations: record.creation.buddyContext.allowedBuddyOperations,
+                }
+              : record.creation?.purpose === 'buddy_builder'
+                ? { kind: 'buddy_builder' }
+                : null,
+          buddyContext: recoveredBuddy?.context ?? record.creation?.buddyContext ?? null,
+          buddyBriefing: recoveredBuddy?.briefing ?? null,
+          purpose: record.creation?.purpose ?? 'general',
+        });
+        dependencies.registry.set(recovered);
+        await dependencies.dispatchInitialMessage(recovered);
+      } catch (error) {
+        logger.error(`Failed to recover conversation ${record.conversationId}:`, error);
+      }
     }
   }
 

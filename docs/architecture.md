@@ -145,6 +145,49 @@ capability, not pairing. Same latent bug applied to cursor -> cursor. The gate
 is now `providerSupportsFork(this.provider)`; guard:
 `server/test/conversation-runtime.test.ts`.
 
+### Backend reload, drain, and the dev watcher (liveness rules)
+
+`server/src/lifecycle/shutdown.ts` is the only mutation-admission and
+process-lifecycle authority. States: `starting → idle`, and `starting|idle →
+reloading → exiting`.
+
+**`reloading` is absorbing — nothing returns the controller to `idle`.** While in
+it, `beginMutation()` returns `null` and every command is refused with
+`Backend reload is draining active turns` (WS `server_draining`, HTTP 503). So
+every wait in that state needs a finite bound, or the server stays up refusing
+work until it is killed by hand. Three bounds exist, and all three are load-bearing:
+
+| Bound | Constant | Protects against |
+|---|---|---|
+| reload drain | `HOT_RELOAD_DRAIN_GRACE_MS` (8s) | a provider turn that never ends |
+| shutdown drain | `HOT_RELOAD_FORCE_EXIT_GRACE_MS` (3s) | work `interrupt()` cannot clear |
+| flush watchdog | `SHUTDOWN_FLUSH_GRACE_MS` (5s) | `exiting` wedged by a hung flush |
+
+The flush watchdog is the subtle one: `exitOnce()` calls `clearTimers()` *before*
+awaiting `flushState()`, so without it a `turnAttemptJournal.flush()` that never
+settles leaves the process alive in `exiting` with nothing armed to rescue it —
+the same user-visible error, but permanent. It is armed after `clearTimers()`
+deliberately. Force-drain also resets its counters *before* calling `interrupt()`,
+because the force timer is one-shot and a throw there would strand `reloading`.
+
+The startup barrier (`initialLoadComplete`) means "startup is no longer in
+progress", **not** "startup succeeded". A reload arriving mid-startup makes
+`completeStartup()` return false; every terminal outcome must still resolve the
+barrier (see the `.finally` in `server.ts`) or non-create WS commands await it
+forever with no reply. Recovery of durable records is per-record fault-isolated
+for the same reason — it runs inside the barrier, so an unreadable record used to
+reach `handleStartupFailure()` and exit the process.
+
+**Watcher contract** (`tools/watch-server.mjs`): the watcher keeps a backend
+running. A close it did not orchestrate — including a clean `exit(0)` from a
+manual `kill`, and any signal — is a **restart**, bounded by
+`unexpectedExitStreak` (escalates after 3 lives that never reach
+`HEALTHY_UPTIME_MS`). Treating those as fatal is what made a single `kill` set
+`process.exitCode = 1` and let `concurrently --kill-others-on-fail` tear down
+shared-esm/shared-cjs/cli/client (incident 2026-08-20,
+`agent_notes/2026-08-20_reload-drain-and-watcher-teardown.md`). Quick failures
+(<3s, or an esbuild Transform error) keep their own separate retry budget.
+
 ## 4) Client state frequency budget
 
 Streaming is separated from structural state:

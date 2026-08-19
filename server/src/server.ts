@@ -23,9 +23,11 @@ import { setIgnorePatterns } from './config';
 import {
   EXTERNAL_GRACE_MS,
   FILE_POLL_INTERVAL_MS,
+  HOT_RELOAD_DRAIN_GRACE_MS,
   HOT_RELOAD_FORCE_EXIT_GRACE_MS,
   LOCAL_COMPLETION_SUPPRESS_MS,
   PALETTE_GENERATION_TIMEOUT_MS,
+  SHUTDOWN_FLUSH_GRACE_MS,
   SWARM_CONTEXT_COMMAND_TIMEOUT_MS,
 } from './constants/timeouts';
 import {
@@ -158,6 +160,14 @@ const {
 
 // One hydration barrier governs both the authoritative initial snapshot and
 // command admission. Disk state must be loaded before either can proceed.
+//
+// The barrier means "startup is no longer in progress", NOT "startup succeeded".
+// Every terminal outcome must resolve it — see the `.finally` on runServerStartup
+// below. A reload IPC arriving mid-startup makes completeStartup() return false,
+// and before 2026-08-20 that path left this promise pending forever, so every
+// non-create WS command awaited it with no reply and no error, and the client's
+// load spinner never cleared. Waiters that resume into a non-idle state are
+// refused by beginMutation with a typed rejection, which the client can retry.
 let resolveInitialLoad!: () => void;
 const initialLoadComplete = new Promise<void>((resolve) => {
   resolveInitialLoad = resolve;
@@ -403,6 +413,8 @@ const PORT =
 shutdownController = registerShutdownHandlers(
   {
     forceExitGraceMs: HOT_RELOAD_FORCE_EXIT_GRACE_MS,
+    reloadDrainGraceMs: HOT_RELOAD_DRAIN_GRACE_MS,
+    flushGraceMs: SHUTDOWN_FLUSH_GRACE_MS,
   },
   {
     conversations: () => conversations.values(),
@@ -490,7 +502,13 @@ void runServerStartup(
     loadConversations: sessionLoader.loadExistingConversations,
     startPolling: sessionLoader.startFilePolling,
   }
-).catch((error) => {
-  console.error('Server startup failed before authoritative state was ready:', error);
-  shutdownController?.handleStartupFailure();
-});
+)
+  .catch((error) => {
+    console.error('Server startup failed before authoritative state was ready:', error);
+    shutdownController?.handleStartupFailure();
+  })
+  // Startup has three terminal outcomes — ready, aborted early, threw — and only
+  // the first resolved this barrier. The other two left every non-create WS
+  // command awaiting it forever with no reply (incident 2026-08-20). Resolving
+  // here covers all three; it is idempotent with the call in markReady.
+  .finally(() => resolveInitialLoad());
