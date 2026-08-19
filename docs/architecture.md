@@ -74,6 +74,42 @@ Adding a provider means adding:
 - a server provider,
 - a disk adapter (if persisted artifacts are needed).
 
+### 2.1) Rehydration: the durable record owns Buddy identity
+
+Two independent stores describe a Buddy conversation, and only one of them is
+rebuilt on restart:
+
+| Surface | Source | Survives restart |
+|---|---|---|
+| Buddies page conversation list | `conversation_links` rows in the Buddies SQLite, written once at creation | yes, unconditionally |
+| Sidebar "Buddies" group | live runtime `kind` (`isBuddyConversation`) | only if rehydration recovers it |
+
+`sessionToConversation` (`disk-adapter.ts`) **never returns a nullish `kind`** —
+it falls back to `{kind:'general'}` when the transcript carries no
+`<!-- unleashd:buddy-context-v2 -->` marker. So in `session-loader.ts` any
+`source.kind ?? durableFallback` chain is a bug: the `general` default
+short-circuits it and the durable fallback becomes dead code. Resolve kind by
+**first specific candidate wins**, never first non-null.
+
+This bit Chat "Fork". A fork inherits its buddy identity server-side from
+`resumedFromConversationId` (`conversation-websocket.ts`) and persists it to
+`creation.buddyContext`, but the marker is only injected on a first turn that
+has a briefing (`runtime.ts`), and forks are created without one — so a fork's
+transcript never carries the marker. Before the fix, every restart rehydrated
+forks as `general`: they vanished from the sidebar's Buddies group and lost
+buddy MCP scoping while their link row stayed live. The visible symptom was
+"N conversations on the Buddies page, N-1 in the sidebar".
+
+Regression guard: `server/test/session-loader-hydration.test.ts`.
+
+Related: link rows are never deleted — deletion only flips status to `cancelled`
+(`server.ts`), which is also what a stopped or killed turn writes
+(`runtime.ts`). **Never filter the Buddies page on link status** — it would hide
+live conversations. `GET /api/buddies/:buddyId` instead asks the config store
+for a tombstone (`isConversationDeleted`), the only unambiguous "this is gone"
+signal. Links carrying only a `provider_session_id` are kept: there is no
+conversation record to tombstone them against.
+
 ## 3) Conversation lifecycle and state authority
 
 Authoritative in-memory model is `Conversation` in `server/src/server.ts`.

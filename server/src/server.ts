@@ -272,6 +272,7 @@ app.use((request, response, next) => {
       message: draining
         ? 'Backend reload is draining active turns; try again after reconnecting'
         : 'Backend is restoring persisted conversations; try again when startup completes',
+      retryable: true,
     });
     return;
   }
@@ -308,6 +309,10 @@ registerBuddyRoutes(app, {
   sendError: sendBuddiesError,
   getNextAutomationRunAt: nextAutomationRunAt,
   createId: uuidv4,
+  // A missing record means "never persisted", not "deleted" — only an explicit
+  // tombstone hides a link row.
+  isConversationDeleted: async (conversationId) =>
+    (await conversationConfigService.getRecord(conversationId))?.status === 'deleted',
 });
 
 registerSearchRoutes(app, () => conversations.values());

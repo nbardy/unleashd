@@ -719,16 +719,16 @@ export function Sidebar() {
               }`}
               onClick={() => navigate(`/chat/${creation.conversationId}`)}
             >
-              <div className="conversation-header">
+              <div className="conversation-row">
                 <span className="folder-badge">
                   {creation.workingDirectory.split('/').filter(Boolean).pop() ?? '/'}
                 </span>
+                <span className="conversation-title">
+                  {creation.error
+                    ? `Failed: ${creation.error}`
+                    : `Starting ${creation.config.provider}…`}
+                </span>
                 <span className="status-indicator pending" />
-              </div>
-              <div className="conversation-preview">
-                {creation.error
-                  ? `Failed: ${creation.error}`
-                  : `Starting ${creation.config.provider}…`}
               </div>
             </button>
           ))}
@@ -851,7 +851,6 @@ export function Sidebar() {
                         <span className="folder-group-name" title={item.buddyName}>
                           {item.buddyName}
                         </span>
-                        <span className="folder-group-count">{convs.length || ''}</span>
                         <button
                           type="button"
                           className="folder-group-add-btn"
@@ -864,6 +863,7 @@ export function Sidebar() {
                         >
                           +
                         </button>
+                        <span className="folder-group-count folder-group-count--right">{convs.length || ''}</span>
                       </div>
                       {!isBuddyCollapsed && (
                         <>
@@ -879,17 +879,19 @@ export function Sidebar() {
                                   conversationMessageCount(conv)
                                 )}
                                 showFolderBadge={false}
-                                singleLine
                                 onSelect={handleSelectConversation}
                                 onDone={handleDone}
                               />
                             ))
                           ) : item.pendingCreation ? (
                             <div className="conversation-item pending-creation">
-                              <div className="conversation-preview">
-                                {item.pendingCreation.error
-                                  ? `Failed: ${item.pendingCreation.error}`
-                                  : `Starting ${item.pendingCreation.config.provider}…`}
+                              <div className="conversation-row">
+                                <span className="conversation-title">
+                                  {item.pendingCreation.error
+                                    ? `Failed: ${item.pendingCreation.error}`
+                                    : `Starting ${item.pendingCreation.config.provider}…`}
+                                </span>
+                                <span className="status-indicator pending" />
                               </div>
                             </div>
                           ) : (
@@ -1163,7 +1165,6 @@ function ConversationItem({
   isActive,
   hasUnseen,
   showFolderBadge,
-  singleLine = false,
   onSelect,
   onDone,
   mergeMode = false,
@@ -1174,7 +1175,6 @@ function ConversationItem({
   isActive: boolean;
   hasUnseen: boolean;
   showFolderBadge: boolean;
-  singleLine?: boolean;
   onSelect: (id: string) => void;
   onDone: (conv: Conversation, e: React.MouseEvent) => void;
   mergeMode?: boolean;
@@ -1197,66 +1197,20 @@ function ConversationItem({
     mergeMode ? 'conversation-item--merge-mode' : '',
     mergeSelected ? 'conversation-item--merge-selected' : '',
     mergeMode && mergeDisabled ? 'conversation-item--merge-disabled' : '',
-    singleLine ? 'conversation-item--singleline' : '',
   ]
     .filter(Boolean)
     .join(' ');
 
-  // Single-line variant for buddy conversations: Title - time [busy icon] in one row.
-  // Reuses existing timeAgoColor, status-indicator, and NEW badge — just new layout.
-  if (singleLine) {
-    return (
-      <div
-        className={itemClasses}
-        onClick={() => onSelect(conv.id)}
-        title={`${title}${timeAgo ? ` — ${timeAgo}` : ''}${mergeDisabled ? ` (Fork not supported for ${conv.provider})` : ''}`}
-      >
-        {mergeMode && (
-          <div
-            className={`merge-checkmark ${mergeSelected ? 'merge-checkmark--on' : ''} ${mergeDisabled ? 'merge-checkmark--disabled' : ''}`}
-            aria-hidden="true"
-          >
-            {mergeSelected ? '✓' : ''}
-          </div>
-        )}
-        <div className="buddy-convo-singleline">
-          <span className="conversation-title conversation-title--singleline" title={title}>
-            {title}
-          </span>
-          {timeAgo && (
-            <>
-              <span className="singleline-sep" aria-hidden="true">
-                —
-              </span>
-              <span className="conversation-time-ago" style={{ color: timeColor }}>
-                {timeAgo}
-              </span>
-            </>
-          )}
-          {hasUnseen && <span className="new-badge">NEW</span>}
-          {conv.isRunning ? (
-            <span className="status-indicator running" aria-label="Conversation is running" />
-          ) : (
-            <span
-              className={`status-indicator ${conv.queue?.length ? 'pending' : ''}`}
-              aria-label={conv.queue?.length ? 'Conversation has queued work' : 'Conversation idle'}
-            />
-          )}
-        </div>
-        {!mergeMode && (
-          <button type="button" className="done-btn" onClick={(e) => onDone(conv, e)}>
-            Done
-          </button>
-        )}
-      </div>
-    );
-  }
-
+  // ONE row shape for every conversation, buddy or not:
+  //   [merge ✓] [folder badge] title — time [NEW] [status/Stop]  (+ Done on hover)
+  // There used to be a second two-line branch here, kept only for non-buddy rows.
+  // showFolderBadge is a display slot, not a second layout: grouped views hide the
+  // badge because the group header already names the folder.
   return (
     <div
       className={itemClasses}
       onClick={() => onSelect(conv.id)}
-      title={mergeDisabled ? `Fork not supported for ${conv.provider}` : undefined}
+      title={`${title}${timeAgo ? ` — ${timeAgo}` : ''}${mergeDisabled ? ` (Fork not supported for ${conv.provider})` : ''}`}
     >
       {mergeMode && (
         <div
@@ -1266,51 +1220,48 @@ function ConversationItem({
           {mergeSelected ? '✓' : ''}
         </div>
       )}
-      <div className={`conversation-header ${showFolderBadge ? '' : 'no-badge'}`}>
+      <div className="conversation-row">
         {showFolderBadge && (
-          <span
-            className="folder-badge"
-            style={{
-              color: projectColor,
-            }}
-            title={dirDisplay}
-          >
+          <span className="folder-badge" style={{ color: projectColor }} title={dirDisplay}>
             {isBuddyConversation(conv) ? 'Buddies' : folderName}
           </span>
         )}
-        <div className="conversation-header-right">
-          {hasUnseen && <span className="new-badge">NEW</span>}
-          {timeAgo && (
+        <span className="conversation-title" title={title}>
+          {title}
+        </span>
+        {timeAgo && (
+          <>
+            <span className="conversation-row-sep" aria-hidden="true">
+              —
+            </span>
             <span className="conversation-time-ago" style={{ color: timeColor }}>
               {timeAgo}
             </span>
-          )}
-          {conv.isRunning ? (
-            <div className="running-status-control">
-              <span className="status-indicator running" aria-label="Conversation is running" />
-              <button
-                type="button"
-                className="thread-stop-btn"
-                title="Stop this conversation and clear queued work"
-                aria-label={`Stop conversation ${conv.id.substring(0, 8)}`}
-                onClick={(event) => {
-                  event.stopPropagation();
-                  endConversation(conv.id);
-                }}
-              >
-                Stop
-              </button>
-            </div>
-          ) : (
-            <span
-              className={`status-indicator ${conv.queue?.length ? 'pending' : ''}`}
-              aria-label={conv.queue?.length ? 'Conversation has queued work' : 'Conversation idle'}
-            />
-          )}
-        </div>
-      </div>
-      <div className="conversation-title" title={title}>
-        {title}
+          </>
+        )}
+        {hasUnseen && <span className="new-badge">NEW</span>}
+        {conv.isRunning ? (
+          <div className="running-status-control">
+            <span className="status-indicator running" aria-label="Conversation is running" />
+            <button
+              type="button"
+              className="thread-stop-btn"
+              title="Stop this conversation and clear queued work"
+              aria-label={`Stop conversation ${conv.id.substring(0, 8)}`}
+              onClick={(event) => {
+                event.stopPropagation();
+                endConversation(conv.id);
+              }}
+            >
+              Stop
+            </button>
+          </div>
+        ) : (
+          <span
+            className={`status-indicator ${conv.queue?.length ? 'pending' : ''}`}
+            aria-label={conv.queue?.length ? 'Conversation has queued work' : 'Conversation idle'}
+          />
+        )}
       </div>
       {!mergeMode && (
         <button type="button" className="done-btn" onClick={(e) => onDone(conv, e)}>

@@ -38,6 +38,7 @@ test('Buddy overview route forwards the optional cutoff and returns one projecti
     },
     getNextAutomationRunAt: () => '2026-07-29T00:00:00.000Z',
     createId: () => 'test-id',
+    isConversationDeleted: async () => false,
   });
 
   const server = app.listen(0, '127.0.0.1');
@@ -73,6 +74,9 @@ test('Buddy detail classifies review and automation conversations for separate U
       { id: 'link-general', unleashd_conversation_id: 'conversation-general' },
       { id: 'link-review', unleashd_conversation_id: 'conversation-review' },
       { id: 'link-automation', unleashd_conversation_id: 'conversation-automation' },
+      { id: 'link-deleted', unleashd_conversation_id: 'conversation-deleted' },
+      // Provider-session-only link: nothing to tombstone it against, so it stays.
+      { id: 'link-sessionless', provider_session_id: 'session-1' },
     ],
     listAutomations: () => [{ id: 'automation-1' }],
     listAutomationRuns: () => [{ conversation_id: 'conversation-automation' }],
@@ -95,6 +99,7 @@ test('Buddy detail classifies review and automation conversations for separate U
     },
     getNextAutomationRunAt: () => '2026-07-29T00:00:00.000Z',
     createId: () => 'test-id',
+    isConversationDeleted: async (conversationId) => conversationId === 'conversation-deleted',
   });
 
   const server = app.listen(0, '127.0.0.1');
@@ -109,12 +114,15 @@ test('Buddy detail classifies review and automation conversations for separate U
     const body = (await response.json()) as {
       conversations: Array<{ id: string; kind: string }>;
     };
+    // `link-deleted` is absent: deleting a conversation only terminalizes its
+    // link row, so the route must ask the config store for the tombstone.
     assert.deepEqual(
       Object.fromEntries(body.conversations.map((conversation) => [conversation.id, conversation.kind])),
       {
         'link-general': 'conversation',
         'link-review': 'review',
         'link-automation': 'automation',
+        'link-sessionless': 'conversation',
       }
     );
   } finally {
@@ -155,6 +163,7 @@ test('human approval routes list pending requests and persist one terminal owner
     },
     getNextAutomationRunAt: () => '2026-07-29T00:00:00.000Z',
     createId: () => 'test-id',
+    isConversationDeleted: async () => false,
   });
 
   const server = app.listen(0, '127.0.0.1');
@@ -245,6 +254,7 @@ test('manager review request dispatches one least-privilege reviewer conversatio
     },
     getNextAutomationRunAt: () => '2026-07-29T00:00:00.000Z',
     createId: () => conversationId,
+    isConversationDeleted: async () => false,
   });
 
   const server = app.listen(0, '127.0.0.1');

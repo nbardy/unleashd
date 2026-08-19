@@ -508,7 +508,9 @@
    Color identity comes from the folder-badge text only.
    Thin separator line between items replaces margins/borders. */
 .conversation-item {
-  padding: 14px 12px;
+  display: flex;
+  align-items: center;
+  padding: 7px 12px;
   margin: 0;
   border-radius: 0;
   background: transparent;
@@ -538,19 +540,18 @@
   text-align: left;
 }
 
-/* Conversation header — folder badge + metadata row.
-   Left padding aligns with preview text below. */
-.conversation-header {
+/* The one conversation row: [badge] title — time [NEW] [status/Stop].
+   Every sidebar conversation (buddy, grouped, list, older, pending) uses this.
+   Title is the only flexible child; everything else stays at natural width.
+   Deliberately NO hover padding here: .done-btn is a right-aligned overlay and
+   reserving space for it on hover shifts the whole row left, which reads as jitter. */
+.conversation-row {
   display: flex;
-  justify-content: space-between;
-  align-items: flex-start;
-  margin: 0 0 4px 0;
-  padding-left: 8px;
-}
-
-/* In grouped mode (no folder badge), same alignment. */
-.conversation-header.no-badge {
-  margin: 0 0 4px 0;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
 }
 
 /* Folder badge — colored text label at top of each conversation item.
@@ -566,8 +567,11 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  max-width: 160px;
   line-height: 1;
+  /* Capped share of the row, and never shrinks below it — the title (flex-basis 0)
+     absorbs the squeeze instead, so the badge stays readable in a narrow sidebar. */
+  flex: 0 0 auto;
+  max-width: 30%;
 }
 
 .folder-group-name-button {
@@ -594,18 +598,6 @@
   font-weight: 700;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.conversation-header-right {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 6px 0 0;
-}
-
-/* When no folder badge, header-right doesn't need the offset padding */
-.conversation-header.no-badge .conversation-header-right {
-  padding: 0;
 }
 
 .status-indicator {
@@ -685,31 +677,16 @@
   }
 }
 
-/* Preview text — always 2 lines tall (min-height), clamp at 2 lines.
-   Left indent aligns with time-ago row above. */
-.conversation-preview {
-  font-size: 12px;
-  line-height: 1.4;
-  color: var(--text-primary);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  padding-left: 8px;
-  min-height: calc(2 * 1.4em); /* Always reserve 2 lines of height */
-}
-
-/* Title — single line, derived from first user message (spec: title > preview) */
+/* Title — the only flexible cell in the row; ellipsises when space runs out. */
 .conversation-title {
+  flex: 1 1 0;
+  min-width: 0;
   font-size: 12px;
   line-height: 1.4;
   color: var(--text-primary);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  padding-left: 8px;
-  min-height: calc(1 * 1.4em);
 }
 
 .show-more-btn {
@@ -732,25 +709,49 @@
 }
 
 .buddy-subgroup {
-  border-top: 1px solid color-mix(in srgb, var(--border-subtle) 50%, transparent);
-  /* 2 layers nested: Buddies header (level 0) -> buddy header (level 1) indented, left border as guide */
+  /* 2 layers nested: Buddies header (level 0) -> buddy header (level 1) indented, subtle guide only */
   margin-left: 8px;
   border-left: 1px solid color-mix(in srgb, var(--border-subtle) 40%, transparent);
+  border-top: none;
 }
 
 .buddy-subgroup:first-of-type {
   border-top: none;
 }
 
+/* Big header (Buddies) + sub-header (buddy name) — same size, maximally shared */
+.folder-group--buddies > .folder-group-header,
 .folder-group-header--buddy {
-  padding-left: 12px;
+  padding: 3px 10px;
   background: color-mix(in srgb, var(--bg-tertiary) 70%, transparent);
+  /* accent down the header's left edge — only place accent lives */
+  border-left-width: 3px;
+  min-height: 0;
 }
 
-/* Conversation items under a buddy are the second nested level */
-.buddy-subgroup .conversation-item {
-  padding-left: 24px;
+.folder-group--buddies > .folder-group-header:hover,
+.folder-group-header--buddy:hover {
+  background: color-mix(in srgb, var(--ai) 8%, var(--bg-tertiary));
+}
+
+/* Count pushed to far right so it aligns vertically with parent Buddies count */
+.folder-group-count--right {
   margin-left: 0;
+}
+
+.folder-group-header--buddy .folder-group-add-btn {
+  margin-left: auto;
+}
+
+.folder-group-header--buddy .folder-group-count--right {
+  margin-left: 6px;
+}
+
+/* Conversation items under a buddy — about 1/2 the padding/margin per thread */
+.buddy-subgroup .conversation-item {
+  padding: 7px 12px 7px 24px;
+  margin-left: 0;
+  border-bottom-width: 1px;
 }
 
 .buddy-subgroup .conversation-item.active {
@@ -763,42 +764,22 @@
   padding-left: 16px;
 }
 
-/* Single-line buddy conversation row: Title - time [busy icon] */
-.conversation-item--singleline {
-  display: flex;
-  align-items: center;
-  gap: 0;
-}
-
-.buddy-convo-singleline {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-  flex: 1;
-  padding-left: 0;
-  overflow: hidden;
-}
-
-.conversation-title--singleline {
-  flex: 1 1 auto;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  padding-left: 0;
-  min-height: auto;
-}
-
-.singleline-sep {
+.conversation-row-sep {
   color: var(--text-muted);
   font-size: 11px;
   flex-shrink: 0;
 }
 
-.buddy-convo-singleline .conversation-time-ago,
-.buddy-convo-singleline .status-indicator {
+.conversation-row .conversation-time-ago,
+.conversation-row .status-indicator,
+.conversation-row .new-badge,
+.conversation-row .running-status-control {
   flex-shrink: 0;
+}
+
+/* Row gap already spaces the badge — drop its standalone trailing margin. */
+.conversation-row .new-badge {
+  margin-right: 0;
 }
 
 .conversation-time-ago {

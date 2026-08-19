@@ -81,3 +81,26 @@ defensive and is skipped. The mobile tree is held to zero debt; the desktop tree
 carries a `KNOWN_UNDEFINED` ratchet of 11 pre-existing Solarized-era token names
 (`--theme-base0`, `--theme-violet`, …) that still render unset — fix one, delete
 its entry.
+
+## Hover-only affordances need a mobile counterpart, not a port
+
+The message copy action is the worked example. Desktop follows the Claude /
+ChatGPT convention: a quiet action row *below* the message, revealed on
+`.message:hover` / `:focus-within` (`.message-actions` in `Chat.css`). Below,
+not pinned top-right, because the top-left corner of every code block already
+holds `.message-code-copy-btn` — an overlay in the message corner competes with
+it, and on a long assistant turn the message's top edge has scrolled away by the
+time you want the button.
+
+Touch has no hover, so that reveal has no analogue. It is also not a long-press:
+long-press is already the browser's text-selection gesture, which is how people
+copy a *fragment*. Mobile instead makes the action permanent but quiet — a small
+pill on the message footer line, right-aligned opposite the timestamp
+(`.mobile-message__copy`), costing no extra vertical rhythm.
+
+What the two trees share is the interaction *logic*, not the markup:
+`hooks/useCopyAction.ts` owns the attempt, the `idle | copied | failed` state,
+and the auto-reset. `failed` is a real state because `copyText` genuinely fails
+over plain-http LAN (see `docs/auth.md`); a button that silently stays on "Copy"
+reads as broken. Gate G3 forbids mobile importing `components/*`, so anything
+shared between the trees has to land in `hooks/`, `utils/`, or `atoms/`.

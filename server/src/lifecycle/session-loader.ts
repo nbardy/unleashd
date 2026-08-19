@@ -154,22 +154,35 @@ export function createSessionLoader(dependencies: SessionLoaderDependencies): Se
 
     // Kind is canonical; durable record creation may still carry legacy buddyContext/purpose for old sessions.
     // Prefer source.kind (from disk-adapter, already migrated), else derive from creation legacy.
+    //
+    // SUBTLE — first *specific* candidate wins, not first non-null. `sessionToConversation`
+    // never returns a nullish kind: it falls back to `{kind:'general'}` when the transcript
+    // carries no buddy marker (disk-adapter.ts:193). A `source.kind ?? …` chain therefore
+    // short-circuits on that default and makes both durable fallbacks below dead code for
+    // every transcript-backed conversation. That silently de-buddied Chat "Fork" threads:
+    // a fork inherits its buddy identity from `resumedFromConversationId` at creation
+    // (conversation-websocket.ts:159) and stores it in `creation.buddyContext`, but its
+    // transcript has no marker (its first message is the pasted fork draft), so on the next
+    // restart it rehydrated as `general` — dropping out of the sidebar's Buddies group and
+    // losing buddy MCP scoping while its buddy_conversations link row stayed live. That is
+    // the "N conversations on the Buddies page, N-1 in the sidebar" split.
+    //
+    // Nothing ever demotes buddy → general (no detach flow exists), so preferring any
+    // specific kind over `general` cannot resurrect a deliberate downgrade.
     const kindForHydrate =
-      source.kind ??
-      (hydratedConfig.record.creation?.buddyContext || hydratedConfig.record.creation?.purpose
-        ? conversationKindFromLegacy({
-            buddyContext: hydratedConfig.record.creation?.buddyContext ?? null,
-            purpose: hydratedConfig.record.creation?.purpose ?? null,
-            kind: null,
-          })
-        : null) ??
-      (source.buddyContext || source.purpose
-        ? conversationKindFromLegacy({
-            buddyContext: source.buddyContext ?? null,
-            purpose: source.purpose ?? null,
-            kind: null,
-          })
-        : null);
+      [
+        source.kind,
+        conversationKindFromLegacy({
+          buddyContext: hydratedConfig.record.creation?.buddyContext ?? null,
+          purpose: hydratedConfig.record.creation?.purpose ?? null,
+          kind: null,
+        }),
+        conversationKindFromLegacy({
+          buddyContext: source.buddyContext ?? null,
+          purpose: source.purpose ?? null,
+          kind: null,
+        }),
+      ].find((candidate) => candidate != null && candidate.kind !== 'general') ?? null;
     const conversation = dependencies.createConversation({
       id: hydratedConfig.record.conversationId,
       workingDirectory: hydratedConfig.record.workingDirectory ?? source.workingDirectory,

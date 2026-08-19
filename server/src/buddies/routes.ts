@@ -41,6 +41,17 @@ export interface BuddyRouteDependencies {
   sendError(response: Response, error: unknown, fallbackStatus: number): void;
   getNextAutomationRunAt(automation: BuddyAutomation, after: Date): string;
   createId(): string;
+  /**
+   * True when the conversation was durably deleted (tombstoned in the config
+   * store). Buddy link rows are never removed, so the detail route has to ask
+   * this to avoid listing conversations that no longer open.
+   *
+   * The link's own `status` cannot answer it: `'cancelled'` is also what a
+   * stopped or killed turn writes (`runtime.ts`), so filtering on it would hide
+   * live conversations. The tombstone is the only unambiguous signal.
+   * See docs/architecture.md 2.1.
+   */
+  isConversationDeleted(conversationId: string): Promise<boolean>;
 }
 
 export function registerBuddyRoutes(app: Express, dependencies: BuddyRouteDependencies): void {
@@ -53,6 +64,7 @@ export function registerBuddyRoutes(app: Express, dependencies: BuddyRouteDepend
     sendError,
     getNextAutomationRunAt,
     createId,
+    isConversationDeleted,
   } = dependencies;
 
   app.get('/api/buddies', async (_req: Request, res: Response) => {
@@ -188,24 +200,34 @@ export function registerBuddyRoutes(app: Express, dependencies: BuddyRouteDepend
             .filter((conversationId): conversationId is string => Boolean(conversationId))
         )
       );
-      const conversations = buddies.listConversationLinks(buddy.id).map((value) => {
-        const conversation = value as Record<string, unknown>;
-        const conversationId =
-          typeof conversation.unleashd_conversation_id === 'string'
-            ? conversation.unleashd_conversation_id
-            : typeof conversation.conversation_id === 'string'
-              ? conversation.conversation_id
-              : null;
-        return {
-          ...conversation,
-          kind:
-            conversationId && automationConversationIds.has(conversationId)
-              ? 'automation'
-              : conversationId && reviewConversationIds.has(conversationId)
-                ? 'review'
-                : 'conversation',
-        };
-      });
+      const linked = await Promise.all(
+        buddies.listConversationLinks(buddy.id).map(async (value) => {
+          const conversation = value as Record<string, unknown>;
+          const conversationId =
+            typeof conversation.unleashd_conversation_id === 'string'
+              ? conversation.unleashd_conversation_id
+              : typeof conversation.conversation_id === 'string'
+                ? conversation.conversation_id
+                : null;
+          // Deleting a conversation only terminalizes its link row, so without
+          // this the page keeps listing threads that can never be opened again.
+          // Links with no conversation id (provider-session only) are kept —
+          // there is nothing to tombstone them against.
+          if (conversationId && (await isConversationDeleted(conversationId))) {
+            return null;
+          }
+          return {
+            ...conversation,
+            kind:
+              conversationId && automationConversationIds.has(conversationId)
+                ? 'automation'
+                : conversationId && reviewConversationIds.has(conversationId)
+                  ? 'review'
+                  : 'conversation',
+          };
+        })
+      );
+      const conversations = linked.filter((conversation) => conversation !== null);
       res.json({
         buddy,
         workspaces: buddies.listBuddyWorkspaces(buddy.id),

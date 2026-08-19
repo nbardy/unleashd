@@ -134,7 +134,7 @@ export function usePendingAttachments(
   }, []);
 
   const handleFilesUpload = useCallback(
-    async (acceptedFiles: File[]) => {
+    async (acceptedFiles: File[], attempt = 0) => {
       if (!conversationId || acceptedFiles.length === 0) return;
       setIsUploading(true);
       try {
@@ -144,8 +144,18 @@ export function usePendingAttachments(
 
         const response = await fetch('/api/upload', { method: 'POST', body: formData });
         if (!response.ok) {
-          const error = (await response.json()) as { error?: string };
-          throw new Error(`Upload failed: ${error.error ?? response.statusText}`);
+          const payload = (await response.json().catch(() => ({}))) as {
+            error?: string;
+            retryable?: boolean;
+            code?: string;
+          };
+          const isRetryable = payload.retryable === true || payload.error === 'server_draining' || response.status === 503;
+          if (isRetryable && attempt === 0) {
+            // Dev hot-reload drain: server is reloading, upload will succeed after ~1s reconnect
+            await new Promise((r) => setTimeout(r, 1200));
+            return handleFilesUpload(acceptedFiles, 1);
+          }
+          throw new Error(`Upload failed: ${payload.error ?? response.statusText}`);
         }
         const result = (await response.json()) as {
           files: Array<{ originalName: string; absolutePath: string; mimeType: string; size: number }>;

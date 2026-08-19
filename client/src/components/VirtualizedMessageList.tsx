@@ -1,7 +1,7 @@
 import { useVirtualizer } from '@tanstack/react-virtual';
 import type { Message } from '@unleashd/shared';
 import type { Break, Root, Text } from 'mdast';
-import type { ComponentPropsWithoutRef } from 'react';
+import type { ComponentPropsWithoutRef, ReactNode } from 'react';
 import {
   isValidElement,
   memo,
@@ -18,8 +18,9 @@ import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import type { Plugin } from 'unified';
 import type { BuddyContext } from '../atoms/pending-creations';
+import type { CopyState } from '../hooks/useCopyAction';
+import { COPY_LABEL, useCopyAction } from '../hooks/useCopyAction';
 import { parseBuddyReviewRequest, parseBuddyReviewResult } from '../utils/buddy-review-message';
-import { copyText } from '../utils/clipboard';
 import { useLazyMarkdownPlugins } from '../utils/lazyMarkdownPlugins';
 import {
   OOMPA_RUN_TOOL_FRAGMENT_RE,
@@ -330,77 +331,78 @@ function getRawCodeText(children: unknown): string | null {
   return getRawCodeText(children.props.children);
 }
 
+// -- Copy button --------------------------------------------------------------
+
+function CopyGlyph({ children }: { children: ReactNode }) {
+  return (
+    <svg
+      width="14"
+      height="14"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      {children}
+    </svg>
+  );
+}
+
+/** One glyph per copy state — a Record so a new state is a type error, not a fallthrough. */
+const COPY_GLYPH: Record<CopyState, ReactNode> = {
+  idle: (
+    <CopyGlyph>
+      <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
+      <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
+    </CopyGlyph>
+  ),
+  copied: (
+    <CopyGlyph>
+      <polyline points="20 6 9 17 4 12" />
+    </CopyGlyph>
+  ),
+  failed: (
+    <CopyGlyph>
+      <circle cx="12" cy="12" r="10" />
+      <line x1="12" y1="8" x2="12" y2="12" />
+      <line x1="12" y1="16" x2="12.01" y2="16" />
+    </CopyGlyph>
+  ),
+};
+
+/**
+ * The label is always in the DOM; `.message-code-copy-btn` hides it with CSS so
+ * the code-block variant stays icon-only. Keeps the JSX free of a variant prop
+ * and keeps the accessible name on `aria-label` either way.
+ */
+function CopyButton({ text, className }: { text: string; className: string }) {
+  const { state, copy } = useCopyAction(text);
+  const label = COPY_LABEL[state];
+  return (
+    <button
+      type="button"
+      className={`${className} copy-btn copy-btn--${state}`}
+      onClick={copy}
+      title={label}
+      aria-label={label}
+    >
+      {COPY_GLYPH[state]}
+      <span className="copy-btn__label">{label}</span>
+    </button>
+  );
+}
+
 function CodeBlockFrame({
   children,
   rawCode,
   ...preProps
 }: ComponentPropsWithoutRef<'pre'> & { rawCode: string | null }) {
-  const [copied, setCopied] = useState(false);
-  const resetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  useEffect(() => {
-    return () => {
-      if (resetTimerRef.current) clearTimeout(resetTimerRef.current);
-    };
-  }, []);
-
-  const handleCopy = useCallback(async () => {
-    if (!rawCode) return;
-
-    // copyText falls back to execCommand when navigator.clipboard is absent
-    // (non-secure context, e.g. the dev server over a LAN IP).
-    const copied = await copyText(rawCode);
-    if (!copied) {
-      console.warn('[VirtualizedMessageList] Failed to copy code block');
-      return;
-    }
-    setCopied(true);
-    if (resetTimerRef.current) clearTimeout(resetTimerRef.current);
-    resetTimerRef.current = setTimeout(() => setCopied(false), 2000);
-  }, [rawCode]);
-
   return (
     <div className="message-code-block">
-      {rawCode && (
-        <button
-          type="button"
-          className={`message-code-copy-btn${copied ? ' copied' : ''}`}
-          onClick={handleCopy}
-          title={copied ? 'Copied' : 'Copy code'}
-          aria-label={copied ? 'Code copied' : 'Copy code'}
-        >
-          {copied ? (
-            <svg
-              width="14"
-              height="14"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              aria-hidden="true"
-            >
-              <polyline points="20 6 9 17 4 12" />
-            </svg>
-          ) : (
-            <svg
-              width="14"
-              height="14"
-              viewBox="0 0 24 24"
-              fill="none"
-              stroke="currentColor"
-              strokeWidth="2"
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              aria-hidden="true"
-            >
-              <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
-              <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
-            </svg>
-          )}
-        </button>
-      )}
+      {rawCode && <CopyButton text={rawCode} className="message-code-copy-btn" />}
       <pre {...preProps}>{children}</pre>
     </div>
   );
@@ -577,6 +579,7 @@ const MemoizedMessage = memo(
       () => (reviewRequest ? [] : splitStructuredMessageContent(displayContent)),
       [displayContent, reviewRequest]
     );
+    const hasCopyableContent = (msg.content ?? '').trim().length > 0;
     const hasWidget = segments.some((s) => s.type !== 'text');
     const hasReviewResult = segments.some((s) => s.type === 'buddy_review_result');
     const roleLabel = reviewRequest
@@ -646,6 +649,13 @@ const MemoizedMessage = memo(
             </Markdown>
           )}
         </div>
+        {/* Copies the raw content, not `displayContent` — the latter has had
+            tool lines collapsed and LaTeX delimiters rewritten for display. */}
+        {hasCopyableContent && (
+          <div className="message-actions">
+            <CopyButton text={msg.content} className="message-action-btn" />
+          </div>
+        )}
       </div>
     );
   },

@@ -4,6 +4,7 @@ import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import type { PluggableList } from 'unified';
+import { COPY_LABEL, useCopyAction } from '../../hooks/useCopyAction';
 import { parseBuddyReviewRequest, parseBuddyReviewResult } from '../../utils/buddy-review-message';
 import { useLazyMarkdownPlugins } from '../../utils/lazyMarkdownPlugins';
 import { splitStructuredMessageContent } from '../../utils/structured-message-segments';
@@ -63,6 +64,29 @@ function BuddyReviewResultCard({ json }: { json: string }) {
       </div>
       <div style={{ fontSize: 12, marginTop: 4, whiteSpace: 'pre-wrap' }}>{parsed.summary}</div>
     </div>
+  );
+}
+
+/**
+ * Mobile has no hover, so the desktop reveal-on-hover affordance has no
+ * equivalent here — and a long-press menu would fight the browser's own
+ * text-selection gesture, which is how people already copy a fragment. Instead
+ * the action is permanent but quiet: a small pill on the message's footer line,
+ * right-aligned opposite the timestamp, at the same 36px secondary tap size as
+ * `.mobile-chat__action`.
+ */
+function MessageCopyButton({ content }: { content: string }) {
+  const { state, copy } = useCopyAction(content);
+  const label = COPY_LABEL[state];
+  return (
+    <button
+      type="button"
+      className={`mobile-message__copy copy-btn--${state}`}
+      onClick={copy}
+      aria-label={label}
+    >
+      {label}
+    </button>
   );
 }
 
@@ -189,11 +213,16 @@ export const MessageRow = memo(function MessageRow({
         })}
       </div>
 
-      {message.timestamp && (
-        <div style={{ fontSize: 10, color: 'var(--text-muted, #777)' }}>
-          {new Date(message.timestamp).toLocaleTimeString()}
-        </div>
-      )}
+      <div className="mobile-message__footer">
+        {message.timestamp && (
+          <span style={{ fontSize: 10, color: 'var(--text-muted, #777)' }}>
+            {new Date(message.timestamp).toLocaleTimeString()}
+          </span>
+        )}
+        {/* Raw content, not the rendered markdown — copying should give back
+            what the model actually wrote. */}
+        {message.content.trim().length > 0 && <MessageCopyButton content={message.content} />}
+      </div>
       {subAgents && subAgents.length > 0 && (
         <div style={{ marginTop: 6, display: 'flex', flexDirection: 'column', gap: 4 }}>
           {subAgents.map((sa) => (

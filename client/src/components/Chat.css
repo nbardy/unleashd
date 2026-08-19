@@ -930,9 +930,17 @@
   transition: opacity 0.15s, color 0.15s, background 0.15s;
 }
 
+/* Icon-only variant: CopyButton always renders the label so the same component
+   serves both call sites, and the code-block variant hides it here. The
+   accessible name lives on aria-label, so hiding this is not a11y loss. */
+.message-code-copy-btn .copy-btn__label {
+  display: none;
+}
+
 .message-code-block:hover .message-code-copy-btn,
 .message-code-block:focus-within .message-code-copy-btn,
-.message-code-copy-btn.copied {
+.message-code-copy-btn.copy-btn--copied,
+.message-code-copy-btn.copy-btn--failed {
   opacity: 1;
 }
 
@@ -942,9 +950,98 @@
   color: var(--text-emphasis);
 }
 
-.message-code-copy-btn.copied {
+.message-code-copy-btn.copy-btn--copied {
   background: color-mix(in srgb, var(--bg-panel) 72%, transparent);
-  color: var(--accent-success, #4caf50);
+  color: var(--accent-success);
+}
+
+.message-code-copy-btn.copy-btn--failed {
+  background: color-mix(in srgb, var(--bg-panel) 72%, transparent);
+  color: var(--danger);
+}
+
+/* -----------------------------------------------------------------------------
+   Message hover actions (Claude / ChatGPT pattern: a quiet action row *below*
+   the message, revealed on hover). Below rather than pinned top-right because
+   the top-left of every code block already holds its own copy button — a
+   floating overlay in the message corner competes with it and with long
+   assistant turns where the top edge has scrolled away.
+
+   The row reserves its height at all times so revealing it never reflows the
+   thread; only the button fades. `copied` / `failed` keep the button visible
+   after the pointer leaves, so the result is readable.
+   -------------------------------------------------------------------------- */
+.message-actions {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 2px;
+  /* The row lives *inside* the message's existing 16px padding-bottom rather
+     than stacking on top of it. Reserving a full row of its own added ~24px
+     under every message; this costs ~8px and still leaves 6px of clearance
+     between the button and the separator rule. */
+  margin-bottom: -10px;
+  padding-left: 22px;
+}
+
+.message-action-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 11px;
+  line-height: 1;
+  letter-spacing: 0.3px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.12s, color 0.12s, background 0.12s;
+}
+
+/* CopyButton ships a 14px glyph for the code-block variant; the inline message
+   action wants a lighter one. Overrides the SVG's width/height attributes. */
+.message-action-btn svg {
+  width: 12px;
+  height: 12px;
+}
+
+.message:hover .message-action-btn,
+.message:focus-within .message-action-btn,
+.message-action-btn.copy-btn--copied,
+.message-action-btn.copy-btn--failed {
+  opacity: 1;
+}
+
+.message-action-btn:hover,
+.message-action-btn:focus-visible {
+  background: color-mix(in srgb, var(--text-emphasis) 8%, transparent);
+  color: var(--text-emphasis);
+}
+
+.message-action-btn.copy-btn--copied {
+  color: var(--accent-success);
+}
+
+.message-action-btn.copy-btn--failed {
+  color: var(--danger);
+}
+
+/* Keyboard users get no hover; never hide a focused control. */
+.message-action-btn:focus-visible {
+  opacity: 1;
+  outline: 1px solid var(--accent-primary);
+  outline-offset: 1px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .message-action-btn,
+  .message-code-copy-btn {
+    transition: none;
+  }
 }
 
 .message-content pre {

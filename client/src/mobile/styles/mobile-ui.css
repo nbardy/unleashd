@@ -1018,3 +1018,57 @@
   font-family: var(--font-mono);
   font-size: 11px;
 }
+
+/* ---- Message footer actions (MessageRow) ---- */
+/* Touch has no hover state, so the desktop reveal-on-hover copy button has no
+   analogue here. The mobile action is permanent but visually quiet, and sits on
+   the same line as the timestamp so it costs no extra vertical rhythm. */
+/* No min-height on the row: a reserved 36px band under every message dominated
+   short turns. The pill sets the height, and a negative top margin claws back
+   most of MessageRow's 6px column gap. */
+.mobile-message__footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: -2px;
+}
+
+/* 28px rather than the 44px primary-action target: this is a secondary,
+   non-destructive action that repeats on every row, and the pill is ~60px wide,
+   so it stays an easy thumb target without eating the thread's vertical rhythm. */
+.mobile-message__copy {
+  min-height: 28px;
+  margin-left: auto;
+  padding: 0 10px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.mobile-message__copy:active {
+  border-color: var(--border-strong);
+  background: var(--bg-raised-2);
+}
+
+.mobile-message__copy:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.mobile-message__copy.copy-btn--copied {
+  border-color: color-mix(in srgb, var(--accent-success) 45%, transparent);
+  color: var(--accent-success);
+}
+
+.mobile-message__copy.copy-btn--failed {
+  border-color: color-mix(in srgb, var(--danger) 45%, transparent);
+  color: var(--danger);
+}

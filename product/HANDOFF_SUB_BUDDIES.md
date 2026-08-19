@@ -1,93 +1,93 @@
 # HANDOFF — Direct Reports (Sub-Buddies) — Unleashd
 
-*Date: 2026-08-20 · Branch: `mobile-fixes-and-audit-2026-08-18` · Status: design corrected, not yet coded*
+*Date: 2026-08-20 · Branch: `mobile-fixes-and-audit-2026-08-18` · Status: design third pass, not yet coded*
 
 ## 1. TL;DR
 
-* **Sub-buddy == direct report.** One `buddies` type, one hierarchy
-  (`buddy_relationships(manager|reports_to)`), one hide rule
-  (`overview.topLevel = employees.filter(!managerId)`), one UI section (`Team: N`). What
-  is new is *who may hire*, not what gets created. Ops are named
-  `buddy.hire_direct_report` / `buddy.retire_direct_report`.
-* **The gate is a column, not a list.** `buddies.hire_quota` (schema v12, default `0`) is
-  the capability, the quota, and the depth rule at once. Leaving an op out of
-  `DEFAULT_DELEGATED_BUDDY_OPERATIONS` gates nothing — that allowlist is default-open for
-  ordinary conversations (see design §2).
-* **Hire provisions identity.** `soul` is a required argument; the txn writes
-  `profiles/<slug>/BUDDY_SOUL.md` + `profiles/<slug>/memory/`. Without them the report's
-  first `buddy.remember` throws.
-* **Retire never deletes the manager edge** — the hide rule is `!managerId`, so deleting it
-  would promote the retiree into the directory. `overview` filters archived instead.
+* **Sub-buddy == direct report.** One `buddies` type, one hierarchy, one directory rule, one UI
+  section. What is new is *who may hire*. Ops: `buddy.hire_direct_report` /
+  `buddy.retire_direct_report`.
+* **`hire_quota` is a budget, not a gate.** Schema v12, default `0`. It makes hiring legible and
+  audited. It is **not** a security boundary — a Buddy has a shell and four write paths to the
+  column. The doc says so plainly now; the previous draft claimed otherwise and was wrong.
+* **Hire provisions identity.** `soul` is required; the txn writes
+  `profiles/<slug>/BUDDY_SOUL.md` + `profiles/<slug>/memory/`. Without them `buddy.remember`
+  throws.
+* **Retire never deletes the manager edge** — the rule is `!managerId`, so deleting it would
+  promote the retiree into the directory. `overview` filters archived instead, deriving
+  visibility from the *pair* so archiving a manager cannot orphan an active report.
 
-## 2. Where things stand (disk)
+## 2. Third-pass review — six blockers, do not skip
+
+Four independent code reviews ran against the corrected design on 2026-08-20. The feature was
+**unimplementable as written in three places and dead on arrival in a fourth**:
+
+| # | Blocker | Why it matters |
+|---|---|---|
+| B1 | `updateBuddy` cannot write `hire_quota` — fixed option list, silently discarded | Every Buddy stays at 0; **every hire refuses forever**, HTTP 200, no diagnostic |
+| B2 | Reactivate nests a transaction; the store is `node:sqlite` (no savepoints) and `updateBuddy`'s catch **rolls back its caller** | Real error is masked by "no transaction is active" |
+| B3 | `reassignOpenWorkTo` is unimplementable — nothing can change `owned_projects.buddy_id` | Retire-with-open-work has no path |
+| B4 | Quota read sits outside the transaction | Two processes both pass `0 < 1`; quota overrun |
+| B5 | No `busy_timeout` is ever set | Concurrent hire surfaces raw `database is locked` |
+| B6 | The **second pass's own fix** ("QUOTA FIRST, ALWAYS") breaks idempotent replay when the Owner lowers quota below headcount | Seats are consumed by transitions, not by calls |
+
+Plus: `slugify` returns `""` for `"..."`, making the post-commit `rename` target `profiles/`
+itself; the archived filter as drafted **reintroduces the vanishing act** when a *manager* is
+archived; the crash window between `COMMIT` and `rename` is silent and permanent (re-hire takes
+the replay arm and never repairs); and the client plan **does not compile** — neither caller of
+`deriveBuddyDirectReports` has an overview payload.
+
+All are addressed in the design. See design §1 for the blocker table and §9.3, §8.4, §5.1, §12.
+
+## 3. Where things stand (disk)
 
 | File | Role |
 |---|---|
-| `product/PLANNING_SUB_BUDDIES.md` | Product intent + locked decisions |
-| `agent_notes/2026-08-19_sub-buddies-design.md` | Implementation spec, incl. the four verified traps |
+| `product/PLANNING_SUB_BUDDIES.md` | Product intent + locked decisions + threat model |
+| `agent_notes/2026-08-19_sub-buddies-design.md` | Implementation spec — blockers, traps, ops, 16 tests |
 | This file | Handoff |
-| `docs/reviews/2026-08-18-open-product-decisions.md` | Prior open decisions — the hiring item is superseded here |
 
-`product/*.md` is now tracked (`.gitignore` keeps `product/**` scratch ignored but
-un-ignores markdown). Unrelated client WIP on this branch stays unstaged.
+Nothing is implemented. Repo-wide search for
+`hire_quota|hireDirectReport|retireDirectReport|hire_direct_report|retire_direct_report`
+excluding markdown returns **0 matches**. `~/git/buddies` is clean at `3b7027f`; both source and
+vendored `store.js` are `CURRENT_SCHEMA_VERSION = 11`.
 
-## 3. Corrections against the first draft
+## 4. Remaining work (in order)
 
-The 2026-08-19 draft was reviewed against the code on 2026-08-20 and was wrong in five
-places. Do not reintroduce them:
+0. **Vendor** (`~/git/buddies`) — a release, not an edit. Store prerequisites first (re-entrant
+   `#tx`, `busy_timeout`, `hireQuota` on `updateBuddy`, `reassignOwnedProject`), then schema v12
+   (column + `CHECK` + partial unique indexes + backfill), then the two helpers, the `overview`
+   employment sum + pair-derived archived filter, and the scheduler status filter. Then
+   `pnpm vendor:buddies` + provenance bump here.
+1. **Server** — two ops + MCP registration; `allowedOperations` becomes a required sum;
+   `hire_quota` on the profile route; stop spreading `enabled` from `req.body`; fix the
+   delegate/review gates to use the canonical edge and exclude archived; briefing lines.
+2. **Client** — serve `team` on `GET /api/buddies/:id`; delete `deriveBuddyHierarchy` whole;
+   archived filter into `buddyCardMetrics`; gate the badge on `metrics.team > 0` to avoid a new
+   "0 team" regression.
+3. **Tests** — `server/test/buddy-direct-reports.test.ts`, 16 cases on one fixture.
+4. **Trial** — Lead hires `data-engineer` in EventMap.
 
-| Draft claimed | Reality |
-|---|---|
-| Excluding from `DEFAULT_DELEGATED_BUDDY_OPERATIONS` gates hiring | `allowedOperations` is optional and unset for normal conversations, so every tool is registered (`operations.ts:277`, `mcp-config.ts`, `mcp-server.ts:100`). Gate must live in the store. |
-| Sub gets its own `BUDDY_SOUL.md` + memory for free | `createBuddyFromBuilder` writes `soul_path: null, memory_path: null` (`store.js:891`); `buddy.remember` then throws (`store.js:3300`). |
-| "No migration, no store change" | `@nbardy/buddies` is a vendored tarball from `~/git/buddies`; every helper is a cross-repo release + `pnpm vendor:buddies` + provenance bump. |
-| `retire='archived'` shows as dimmed today | `listBuddies()` has no status filter (`store.js:1086`) and the client drops status (`buddies-shaping.ts:84`), so retire is currently invisible and still counted. |
-| Quota via `manager edges … status='active'`, plus a `sha256` fingerprint | `buddy_relationships` has no status column; and `UNIQUE(project_id, slug)` already gives idempotency — reactivating an archived report replaces the fingerprint entirely. |
-
-## 4. UI today (shipped)
-
-Directory shows `topLevel` only; reports are reachable solely via the manager's `Team: N`
-pills (`BuddiesDashboard.tsx:126`, `BuddyDetailMobile.tsx:378`). A report's detail is the
-full Buddy detail — `currentWork`, owned projects/todos, conversations, memory, reviews,
-`BuddyAutomationsTab`. So counts, pending work, and history are already visible; only the
-hiring path is missing.
-
-## 5. Remaining work (in order)
-
-0. **Vendor** (`~/git/buddies`): schema v12 `hire_quota`; `hireDirectReport` /
-   `retireDirectReport`; `overview()` excludes archived from `employees` while `team[]`
-   keeps them with status. Then `pnpm vendor:buddies` + provenance bump here.
-1. **Server**: two ops in `operations.ts` + `BuddiesStorePort` + MCP registration
-   (in-process only, no model-facing HTTP route); `hire_quota` on the profile route;
-   briefing lines in `integration.ts`.
-2. **Client**: read reports from `overview.employees[].team` and delete the
-   relationship-derived `deriveBuddyDirectReports` list; `Team: N` counts active; archived
-   dimmed.
-3. **Tests**: `server/test/buddy-direct-reports.test.ts` — the eight cases in design §8,
-   each guarding one trap.
-4. **Trial**: Lead hires `data-engineer` in EventMap; it owns 3 scraper projects and runs
-   one `loop` automation fanning out sub-agents.
-
-## 6. How to resume
+## 5. How to resume
 
 ```bash
 # vendor first — the store change is a release, not an edit
-cd ~/git/buddies && $EDITOR src/store.js   # v12 + two helpers + overview filter
+cd ~/git/buddies && $EDITOR src/store.js
 node --test && pnpm pack
 cd ~/git/unleashd && pnpm vendor:buddies   # updates tgz + provenance
 
 pnpm test:server                           # buddy-lifecycle-e2e must stay green
 ```
 
-## 7. Open call
+## 6. Open call
 
-Whether the first hire in a workspace should route through `request_human_approval`. The
-lean default is no — `hire_quota` is already an explicit Owner grant, and the Owner can
-pause or archive any report. Flip only if hiring turns out to need per-instance review.
+Whether the first hire in a workspace should route through `request_human_approval`. The lean
+default is no — `hire_quota` is already an explicit Owner grant and the Owner can pause or
+archive any report. Flip only if hiring turns out to need per-instance review.
 
-## 8. Known gap, tracked separately
+## 7. Deliberately out of scope
 
-There is no way to wake an existing conversation on a schedule: every tick calls
-`createConversation` (`scheduler.ts:273`), and `job_kind: loop` iterates back-to-back with
-no delay. The fix is a `conversation_id` binding on `buddy_automations` plus a scheduler
-resume path. Independent of hiring — do not smuggle it in.
+Real capability containment (OS-level uid separation + per-caller identity on
+`/api/buddies/*`); cumulative automation budgets (`max_tokens`/`max_cost_usd` are validated,
+persisted, and **never read**); per-report resource caps; and waking an existing conversation on
+a schedule. All tracked in design §14 — do not smuggle them in.

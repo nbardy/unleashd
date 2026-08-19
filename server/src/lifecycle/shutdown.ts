@@ -102,9 +102,30 @@ export function createShutdownController(
       return;
     }
     onWaiting();
+    // Grace: dev reload must not hang forever if a mutation never released
+    // (e.g. HTTP finish/close missed) or a provider turn hangs. After 8s
+    // force the drain so the watcher can start the replacement process.
     drainInterval = setInterval(() => {
       if (activeWorkCount() === 0) void exitOnce();
     }, 500);
+    forceExitTimeout = setTimeout(() => {
+      if (state === 'reloading' || state === 'shutting_down') {
+        if (activeWorkCount() !== 0) {
+          console.warn(
+            `Backend reload force-draining ${activeWorkCount()} stale operation(s) after grace`
+          );
+          // In dev, a hung provider turn or scheduler run should not block
+          // the watcher forever. Interrupt live turns and drop stale counts,
+          // then exit so the replacement can start.
+          interrupt('force-drain after grace');
+          stopScheduler();
+          startupPending = false;
+          activeMutations = 0;
+          clearTimers();
+          void exitOnce();
+        }
+      }
+    }, 8000);
   };
   const completeStartup = () => {
     startupPending = false;

@@ -86,6 +86,7 @@ test('Builder MCP creates one durable Buddy and canonical result across restart'
       },
       getNextAutomationRunAt: () => '2026-07-29T00:00:00.000Z',
       createId: () => 'not-used',
+      isConversationDeleted: async () => false,
     });
     const server = app.listen(0, '127.0.0.1');
     await new Promise<void>((resolve) => server.once('listening', resolve));
