@@ -219,10 +219,14 @@ export function useConversationDraft(
     };
   }, [conversationId, applyToTextarea, focusIfNeeded, writeDraft]);
 
-  // Flush on pagehide/hidden, re-sync on visible and after HMR — portable
+  // Flush on pagehide/hidden/beforeunload, re-sync on visible and after HMR — portable
   // for desktop (autoFocus:true) and mobile (autoFocus:false → no steal).
+  // beforeunload is the reliable hook for a hard refresh/cmd-R — pagehide
+  // alone is not fired in all browsers until after the new document starts
+  // loading, so the 500ms debounce would be lost without this.
   useEffect(() => {
     const onPageHide = () => flush();
+    const onBeforeUnload = () => flush();
     const onVisibility = () => {
       if (document.visibilityState === 'hidden') flush();
       else if (document.visibilityState === 'visible') syncFromStorage();
@@ -233,11 +237,15 @@ export function useConversationDraft(
     };
 
     window.addEventListener('pagehide', onPageHide);
+    window.addEventListener('beforeunload', onBeforeUnload);
+    window.addEventListener('unload', onPageHide);
     document.addEventListener('visibilitychange', onVisibility);
     type ViteHMR = { addEventListener?: (e: string, cb: () => void) => void };
     (import.meta as unknown as { hot?: ViteHMR }).hot?.addEventListener?.('vite:beforeUpdate', onHmr);
     return () => {
       window.removeEventListener('pagehide', onPageHide);
+      window.removeEventListener('beforeunload', onBeforeUnload);
+      window.removeEventListener('unload', onPageHide);
       document.removeEventListener('visibilitychange', onVisibility);
     };
   }, [flush, syncFromStorage]);
