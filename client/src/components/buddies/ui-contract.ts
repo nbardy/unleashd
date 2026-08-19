@@ -3,7 +3,23 @@ import { isBuddyKind } from '@unleashd/shared';
 import type { BuddyOverview, BuddyOverviewEmployee, BuddyProject } from './types';
 
 export function selectDirectoryEmployees(overview: BuddyOverview | null | undefined): BuddyOverviewEmployee[] {
-  return overview?.topLevel ?? [];
+  const employees = overview?.topLevel ?? [];
+  if (!overview?.recentRuns?.length) return employees;
+  // Most recent conversation started per buddy — map buddyId -> latest lastActiveAt
+  const latestByBuddy = new Map<string, number>();
+  for (const run of overview.recentRuns) {
+    const t = new Date(run.lastActiveAt).getTime();
+    if (!Number.isFinite(t)) continue;
+    const existing = latestByBuddy.get(run.buddyId);
+    if (existing === undefined || t > existing) latestByBuddy.set(run.buddyId, t);
+  }
+  if (latestByBuddy.size === 0) return employees;
+  return [...employees].sort((a, b) => {
+    const aTime = latestByBuddy.get(a.buddy.id) ?? 0;
+    const bTime = latestByBuddy.get(b.buddy.id) ?? 0;
+    if (bTime !== aTime) return bTime - aTime;
+    return a.buddy.name.localeCompare(b.buddy.name);
+  });
 }
 
 export function buddyCardMetrics(employee: BuddyOverviewEmployee) {

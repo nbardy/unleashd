@@ -2,9 +2,14 @@ import { timingSafeEqual } from 'node:crypto';
 import { type AuthPolicy, digestToken } from './policy';
 
 /**
- * Framework-agnostic auth decisions. Express, the Vite dev server, and the
- * WebSocket upgrade all adapt to this one gate rather than each re-deriving
- * "is this request allowed" — one clean path, three thin adapters.
+ * Framework-agnostic auth decisions — single decideAuth used by Express,
+ * the Vite dev server, and the WebSocket upgrade (one clean path, three thin
+ * adapters).
+ *
+ * Two-gate design: Vite devAuthPlugin (client/vite.config.ts:devAuthPlugin)
+ * is the LAN-facing gate before this backend gate. Both enforce the same
+ * secret (resolveAuthPolicy in policy.ts) — the backend is not the only check.
+ * See docs/auth.md and policy.ts header.
  */
 
 export const SESSION_COOKIE = 'unleashd_auth';

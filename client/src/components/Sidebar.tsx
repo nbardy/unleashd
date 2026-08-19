@@ -409,6 +409,38 @@ export function Sidebar() {
     setShowPicker(true);
   }, [allConversations, lastWorkingDirectory, defaultCwd, defaultProvider]);
 
+  const handleNewBuddyConversation = useCallback(
+    (item: BuddySidebarItemData) => {
+      // Reuse existing new-conversation flow but seed buddyContext so the
+      // new thread is owned by that buddy — mirrors BuddiesDashboard talk().
+      const workspaceId =
+        getBuddyContext(item.latestConversation as unknown as Conversation)?.workspaceId ??
+        (item.pendingCreation
+          ? getBuddyContext(item.pendingCreation as unknown as Conversation)?.workspaceId
+          : undefined) ??
+        buddyDirectory.find((employee) => employee.id === item.buddyId)?.workspaces?.[0]?.id ??
+        item.latestRun?.workspaceId ??
+        '';
+      const workingDirectory =
+        item.latestConversation?.workingDirectory ??
+        (item.pendingCreation as unknown as { workingDirectory?: string })?.workingDirectory ??
+        allConversations.find((c) => getBuddyContext(c)?.buddyId === item.buddyId)?.workingDirectory ??
+        lastWorkingDirectory ??
+        defaultCwd ??
+        '/';
+      // Direct create — reuses pending-creations createConversation + buddyContext shape
+      const id = createConversation({
+        workingDirectory,
+        config: configDraft,
+        buddyContext: workspaceId
+          ? { buddyId: item.buddyId, workspaceId, buddyProjectId: null }
+          : { buddyId: item.buddyId, workspaceId: '', buddyProjectId: null },
+      });
+      navigate(`/chat/${id}`);
+    },
+    [allConversations, buddyDirectory, configDraft, defaultCwd, lastWorkingDirectory, navigate]
+  );
+
   // Shift+Space global shortcut to open "New Conversation" dialog.
   // Skipped when focus is in an input/textarea so it doesn't hijack typing.
   useEffect(() => {
@@ -820,6 +852,18 @@ export function Sidebar() {
                           {item.buddyName}
                         </span>
                         <span className="folder-group-count">{convs.length || ''}</span>
+                        <button
+                          type="button"
+                          className="folder-group-add-btn"
+                          aria-label={`New conversation with ${item.buddyName}`}
+                          title={`New conversation with ${item.buddyName}`}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleNewBuddyConversation(item);
+                          }}
+                        >
+                          +
+                        </button>
                       </div>
                       {!isBuddyCollapsed && (
                         <>
@@ -835,6 +879,7 @@ export function Sidebar() {
                                   conversationMessageCount(conv)
                                 )}
                                 showFolderBadge={false}
+                                singleLine
                                 onSelect={handleSelectConversation}
                                 onDone={handleDone}
                               />
@@ -1118,6 +1163,7 @@ function ConversationItem({
   isActive,
   hasUnseen,
   showFolderBadge,
+  singleLine = false,
   onSelect,
   onDone,
   mergeMode = false,
@@ -1128,6 +1174,7 @@ function ConversationItem({
   isActive: boolean;
   hasUnseen: boolean;
   showFolderBadge: boolean;
+  singleLine?: boolean;
   onSelect: (id: string) => void;
   onDone: (conv: Conversation, e: React.MouseEvent) => void;
   mergeMode?: boolean;
@@ -1150,9 +1197,60 @@ function ConversationItem({
     mergeMode ? 'conversation-item--merge-mode' : '',
     mergeSelected ? 'conversation-item--merge-selected' : '',
     mergeMode && mergeDisabled ? 'conversation-item--merge-disabled' : '',
+    singleLine ? 'conversation-item--singleline' : '',
   ]
     .filter(Boolean)
     .join(' ');
+
+  // Single-line variant for buddy conversations: Title - time [busy icon] in one row.
+  // Reuses existing timeAgoColor, status-indicator, and NEW badge — just new layout.
+  if (singleLine) {
+    return (
+      <div
+        className={itemClasses}
+        onClick={() => onSelect(conv.id)}
+        title={`${title}${timeAgo ? ` — ${timeAgo}` : ''}${mergeDisabled ? ` (Fork not supported for ${conv.provider})` : ''}`}
+      >
+        {mergeMode && (
+          <div
+            className={`merge-checkmark ${mergeSelected ? 'merge-checkmark--on' : ''} ${mergeDisabled ? 'merge-checkmark--disabled' : ''}`}
+            aria-hidden="true"
+          >
+            {mergeSelected ? '✓' : ''}
+          </div>
+        )}
+        <div className="buddy-convo-singleline">
+          <span className="conversation-title conversation-title--singleline" title={title}>
+            {title}
+          </span>
+          {timeAgo && (
+            <>
+              <span className="singleline-sep" aria-hidden="true">
+                —
+              </span>
+              <span className="conversation-time-ago" style={{ color: timeColor }}>
+                {timeAgo}
+              </span>
+            </>
+          )}
+          {hasUnseen && <span className="new-badge">NEW</span>}
+          {conv.isRunning ? (
+            <span className="status-indicator running" aria-label="Conversation is running" />
+          ) : (
+            <span
+              className={`status-indicator ${conv.queue?.length ? 'pending' : ''}`}
+              aria-label={conv.queue?.length ? 'Conversation has queued work' : 'Conversation idle'}
+            />
+          )}
+        </div>
+        {!mergeMode && (
+          <button type="button" className="done-btn" onClick={(e) => onDone(conv, e)}>
+            Done
+          </button>
+        )}
+      </div>
+    );
+  }
 
   return (
     <div

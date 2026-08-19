@@ -1,5 +1,5 @@
 import { Provider, useAtomValue } from 'jotai';
-import { type ComponentType, type ReactElement, useEffect, useRef } from 'react';
+import { type ComponentType, type ReactElement, useCallback, useEffect, useRef } from 'react';
 import { BrowserRouter, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { handleMessage, setSendFn, setWsStatus } from './atoms/actions';
 import { allConversationsAtom, conversationsAtom } from './atoms/conversations';
@@ -58,12 +58,17 @@ function useWebSocketBridge() {
  * Mobile: keeps the Chats inbox at "/" — never auto-opens an old conversation.
  * Must be hoisted above AppRoutes so the nav fires once before the shell mounts.
  *
+ * Portable: URL ownership lives here; chat-input persistence + focus lives in
+ * useConversationDraft (shared by Chat.tsx desktop and ComposerMobile). This
+ * merges the old uiStore-based restore with the new jotai/book via React —
+ * desktop reuses the same localStorage `draft:{id}` + HMR flush/focus path as
+ * mobile, so typing survives hot reload on both shells without duplicating code.
+ *
  * HMR-safe: Vite Fast Refresh patches modules without reloading the page but
- * may remount AppInner — didRestore prevents a second push, and a dedicated
- * HMR/visibility handler re-focuses the conversation input without stealing
- * focus from another field. URL is owned by BrowserRouter (window.history) so
- * HMR does not reset it; we only guard the case where a soft HMR reload
- * lands back on "/" while a conversation was active.
+ * may remount AppInner — didRestore prevents a second push. URL is owned by
+ * BrowserRouter (window.history) so HMR does not reset it; we only guard the
+ * case where a soft HMR/full reload lands back on "/" while a conversation
+ * was active. Focus is NOT handled here — useConversationDraft owns it.
  */
 function useRestoreOnLoad(device: DeviceKind) {
   const navigate = useNavigate();
@@ -72,59 +77,38 @@ function useRestoreOnLoad(device: DeviceKind) {
   const savedActiveId = useAtomValue(savedActiveConversationIdAtom);
   const didRestore = useRef(false);
 
-  useEffect(() => {
-    // Mobile keeps the inbox — never auto-redirect to a chat (PLANNING §5 #1).
-    if (device === 'mobile') return;
-    if (didRestore.current || allConversations.length === 0) return;
+  const tryRestore = useCallback(() => {
+    if (device === 'mobile') return false;
+    if (window.location.pathname !== '/') return false;
+    if (!savedActiveId) return false;
+    if (didRestore.current) return false;
+    if (!jotaiStore.get(conversationsAtom).has(savedActiveId)) return false;
     didRestore.current = true;
+    navigate(`/chat/${savedActiveId}`, { replace: true });
+    return true;
+  }, [device, navigate, savedActiveId]);
 
-    if (location.pathname === '/' && savedActiveId) {
-      const conversations = jotaiStore.get(conversationsAtom);
-      if (conversations.has(savedActiveId)) {
-        navigate(`/chat/${savedActiveId}`, { replace: true });
-      }
-    }
-  }, [allConversations.length, navigate, savedActiveId, location.pathname, device]);
+  // Initial: "/" → /chat/:id once conversations have hydrated.
+  useEffect(() => {
+    if (allConversations.length === 0) return;
+    if (location.pathname !== '/') return;
+    tryRestore();
+  }, [allConversations.length, location.pathname, tryRestore]);
 
-  // Re-assert focus after HMR without touching the URL.
-  // Vite's `vite:beforeUpdate` fires before patching; `pagehide`/`visibility`
-  // already flush drafts via useConversationDraft — here we only restore focus.
+  // HMR/visibility: re-assert URL if a soft reload landed back on "/".
+  // Focus is owned by useConversationDraft — no input handling here.
   useEffect(() => {
     if (device === 'mobile') return;
-    const refocus = () => {
-      // Only when a chat is active and no other input holds focus.
-      const active = document.activeElement;
-      if (active instanceof HTMLInputElement || active instanceof HTMLTextAreaElement) return;
-      const loc = window.location.pathname;
-      if (!loc.startsWith('/chat/')) return;
-      const el = document.querySelector<HTMLTextAreaElement>('[data-conversation-input="true"]');
-      if (!el || el.disabled) return;
-      requestAnimationFrame(() => {
-        const stillActive = document.activeElement;
-        if (stillActive instanceof HTMLInputElement || stillActive instanceof HTMLTextAreaElement) return;
-        el.focus();
-        try {
-          const end = el.value.length;
-          el.setSelectionRange(end, end);
-        } catch {
-          // ignore hidden
-        }
-      });
+    const onVisible = () => {
+      if (document.visibilityState === 'visible') tryRestore();
     };
     type ViteHMR = { addEventListener?: (e: string, cb: () => void) => void };
-    const viteHmr = (import.meta as unknown as { hot?: ViteHMR }).hot;
-    viteHmr?.addEventListener?.('vite:beforeUpdate', () => {
-      // After patch, next frame re-focuses
-      setTimeout(refocus, 50);
+    (import.meta as unknown as { hot?: ViteHMR }).hot?.addEventListener?.('vite:beforeUpdate', () => {
+      setTimeout(tryRestore, 60);
     });
-    // Also handle the old-book/overlap case where HMR triggers a
-    // visibilitychange or the user returns to the tab
-    const onVisible = () => {
-      if (document.visibilityState === 'visible') refocus();
-    };
     document.addEventListener('visibilitychange', onVisible);
     return () => document.removeEventListener('visibilitychange', onVisible);
-  }, [device]);
+  }, [device, tryRestore]);
 }
 
 // =============================================================================

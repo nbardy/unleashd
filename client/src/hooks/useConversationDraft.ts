@@ -1,3 +1,12 @@
+/**
+ * useConversationDraft — canonical draft lifecycle shared by desktop Chat.tsx
+ * and mobile ComposerMobile.tsx. Do not duplicate inline draft state elsewhere.
+ *
+ * Owns the refs-only + debounce (500ms) + flush (pagehide / visibilitychange /
+ * HMR via vite:beforeUpdate) contract for `draft:{conversationId}` in
+ * localStorage, so future readers don't reintroduce stale-closure or focus-steal
+ * bugs. Pair with usePendingAttachments.ts (revokeObjectURL on remove/clear).
+ */
 import { useCallback, useEffect, useRef } from 'react';
 import { DRAFT_KEY_PREFIX } from '../atoms/ui';
 
@@ -161,6 +170,25 @@ export function useConversationDraft(
 
   const getDraft = useCallback(() => draftRef.current, []);
 
+  // Single helper — read persisted draft, push to refs + textarea + owner,
+  // then rAF re-apply + focus. Used by mount, HMR, and visibility-visible.
+  const syncFromStorage = useCallback(() => {
+    let saved = draftRef.current;
+    try {
+      const k = keyRef.current;
+      if (k) saved = localStorage.getItem(k) ?? saved;
+    } catch {
+      // quota / private-mode — keep in-memory draft
+    }
+    draftRef.current = saved;
+    applyToTextarea(saved);
+    onDraftLoadedRef.current?.(saved);
+    requestAnimationFrame(() => {
+      applyToTextarea(saved);
+      focusIfNeeded();
+    });
+  }, [applyToTextarea, focusIfNeeded]);
+
   // Load on conversationId change. Flush previous draft on cleanup so
   // back-navigation and HMR unmount keep the draft.
   useEffect(() => {
@@ -179,9 +207,6 @@ export function useConversationDraft(
     keyRef.current = key;
     draftRef.current = saved;
     onDraftLoadedRef.current?.(saved);
-    // Apply to textarea on next frame — element may not be mounted yet when
-    // this effect runs (e.g. Chat mounts textarea after this). We also try
-    // immediately and again rAF for HMR case where element persists.
     applyToTextarea(saved);
     requestAnimationFrame(() => {
       applyToTextarea(saved);
@@ -190,28 +215,32 @@ export function useConversationDraft(
 
     return () => {
       if (timerRef.current) clearTimeout(timerRef.current);
-      // writeDraft reads keyRef/draftRef — never stale state
       writeDraft();
     };
   }, [conversationId, applyToTextarea, focusIfNeeded, writeDraft]);
 
-  // Also flush on pagehide / visibility hidden — before HMR reload or tab close
+  // Flush on pagehide/hidden, re-sync on visible and after HMR — portable
+  // for desktop (autoFocus:true) and mobile (autoFocus:false → no steal).
   useEffect(() => {
-    const handler = () => flush();
-    window.addEventListener('pagehide', handler);
-    document.addEventListener('visibilitychange', () => {
+    const onPageHide = () => flush();
+    const onVisibility = () => {
       if (document.visibilityState === 'hidden') flush();
-    });
-    // Vite HMR: beforeUpdate fires before patching
-    type ViteHMR = { addEventListener?: (e: string, cb: () => void) => void };
-    const viteHmr = (import.meta as unknown as { hot?: ViteHMR }).hot;
-    if (viteHmr?.addEventListener) {
-      viteHmr.addEventListener('vite:beforeUpdate', handler);
-    }
-    return () => {
-      window.removeEventListener('pagehide', handler);
+      else if (document.visibilityState === 'visible') syncFromStorage();
     };
-  }, [flush]);
+    const onHmr = () => {
+      flush();
+      setTimeout(syncFromStorage, 50);
+    };
+
+    window.addEventListener('pagehide', onPageHide);
+    document.addEventListener('visibilitychange', onVisibility);
+    type ViteHMR = { addEventListener?: (e: string, cb: () => void) => void };
+    (import.meta as unknown as { hot?: ViteHMR }).hot?.addEventListener?.('vite:beforeUpdate', onHmr);
+    return () => {
+      window.removeEventListener('pagehide', onPageHide);
+      document.removeEventListener('visibilitychange', onVisibility);
+    };
+  }, [flush, syncFromStorage]);
 
   // Public imperative handle for container to call on send
   return { flush, clear, setDraft, getDraft };

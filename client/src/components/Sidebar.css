@@ -733,6 +733,9 @@
 
 .buddy-subgroup {
   border-top: 1px solid color-mix(in srgb, var(--border-subtle) 50%, transparent);
+  /* 2 layers nested: Buddies header (level 0) -> buddy header (level 1) indented, left border as guide */
+  margin-left: 8px;
+  border-left: 1px solid color-mix(in srgb, var(--border-subtle) 40%, transparent);
 }
 
 .buddy-subgroup:first-of-type {
@@ -740,8 +743,62 @@
 }
 
 .folder-group-header--buddy {
-  padding-left: 20px;
+  padding-left: 12px;
   background: color-mix(in srgb, var(--bg-tertiary) 70%, transparent);
+}
+
+/* Conversation items under a buddy are the second nested level */
+.buddy-subgroup .conversation-item {
+  padding-left: 24px;
+  margin-left: 0;
+}
+
+.buddy-subgroup .conversation-item.active {
+  border-left-width: 2px;
+}
+
+.buddy-subgroup .show-more-btn,
+.buddy-subgroup .folder-group-all-done {
+  margin-left: 8px;
+  padding-left: 16px;
+}
+
+/* Single-line buddy conversation row: Title - time [busy icon] */
+.conversation-item--singleline {
+  display: flex;
+  align-items: center;
+  gap: 0;
+}
+
+.buddy-convo-singleline {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  flex: 1;
+  padding-left: 0;
+  overflow: hidden;
+}
+
+.conversation-title--singleline {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding-left: 0;
+  min-height: auto;
+}
+
+.singleline-sep {
+  color: var(--text-muted);
+  font-size: 11px;
+  flex-shrink: 0;
+}
+
+.buddy-convo-singleline .conversation-time-ago,
+.buddy-convo-singleline .status-indicator {
+  flex-shrink: 0;
 }
 
 .conversation-time-ago {

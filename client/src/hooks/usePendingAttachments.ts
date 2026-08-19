@@ -1,3 +1,12 @@
+/**
+ * usePendingAttachments — canonical attachment lifecycle shared by desktop
+ * Chat.tsx and mobile ComposerMobile.tsx. Do not duplicate inline attach state.
+ *
+ * Owns the refs-only persistence (pending:{conversationId}) + debounce/flush
+ * discipline and revokeObjectURL on remove/clear/unmount, so future readers
+ * don't reintroduce preview leaks or duplicate upload framing. Pair with
+ * useConversationDraft.ts (pagehide / visibilitychange / HMR flush).
+ */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { PENDING_FILES_KEY_PREFIX } from '../atoms/ui';
 

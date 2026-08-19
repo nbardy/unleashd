@@ -11,4 +11,15 @@ import { createStore } from 'jotai';
 // in actions always touch the same state.
 // =============================================================================
 
-export const jotaiStore = createStore();
+declare global {
+  // eslint-disable-next-line no-var
+  var __unleashdJotaiStore: ReturnType<typeof createStore> | undefined;
+}
+
+type GlobalStore = typeof globalThis & { __unleashdJotaiStore?: ReturnType<typeof createStore> };
+
+export const jotaiStore: ReturnType<typeof createStore> =
+  (globalThis as GlobalStore).__unleashdJotaiStore ?? createStore();
+
+// HMR-safe: survives Vite Fast Refresh of this module
+(globalThis as GlobalStore).__unleashdJotaiStore = jotaiStore;

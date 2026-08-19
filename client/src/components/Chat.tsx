@@ -1052,16 +1052,10 @@ export function Chat() {
         incrementUsage={incrementUsage}
         deletePrompt={deletePrompt}
         onSelect={(content) => {
-          if (textareaRef.current) {
-            setDraftValue(content);
-            textareaRef.current.value = content;
-            textareaRef.current.style.height = 'auto';
-            textareaRef.current.style.height = `${Math.min(textareaRef.current.scrollHeight, 300)}px`;
-            setHasInput(content.trim().length > 0);
-            textareaRef.current.focus();
-            const end = content.length;
-            textareaRef.current.setSelectionRange(end, end);
-          }
+          setDraftValue(content);
+          setHasInput(content.trim().length > 0);
+          // Focus is owned by useConversationDraft's rAF; re-assert for palette UX
+          requestAnimationFrame(() => textareaRef.current?.focus());
         }}
       />
     </div>

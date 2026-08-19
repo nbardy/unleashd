@@ -3,6 +3,14 @@ import { readFileSync } from 'node:fs';
 import path from 'node:path';
 
 /**
+ * Auth gate — backend half of a two-gate design.
+ * Vite devAuthPlugin (client/vite.config.ts:devAuthPlugin) is the LAN-facing
+ * gate for the dev server's static assets; this backend gate (policy + gate.ts)
+ * guards /api + WebSocket upgrade. Both enforce the same secret resolved here
+ * (resolveAuthPolicy) — the backend is not the only check. See docs/auth.md.
+ */
+
+/**
  * Shared-secret auth for a single-user personal tool.
  *
  * The secret is a bearer credential: whoever presents it is the user. That is
