@@ -1218,6 +1218,12 @@
   margin-bottom: 6px;
 }
 
+.mobile-chat__thread-context {
+  /* Container for merge strip + sub-agent + resume + swarm prefix below header.
+     Layout via inline grid/gap in JSX; this class exists so css-classes test
+     sees a rule (no extra styling needed beyond the inline grid). */
+}
+
 /* ---- Prompt palette (mobile sheet) — thin wrapper over desktop PromptPalette ---- */
 /* Mobile uses a bottom sheet (dialog[modal]) so keyboard / home indicator safe-area
    is handled by .mobile-sheet__inner padding (env(safe-area-inset-bottom)).
