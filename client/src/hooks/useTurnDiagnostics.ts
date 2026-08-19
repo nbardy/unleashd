@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import {
   type TurnAttemptSnapshotLike,
   turnDiagnosticsPollDelay,
-} from '../components/turn-diagnostics';
+} from '../utils/turn-diagnostics';
 
 interface DiagnosticsResponse {
   attempt: TurnAttemptSnapshotLike | null;

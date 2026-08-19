@@ -1,9 +1,11 @@
-import type { Conversation } from '@unleashd/shared';
+import type { Conversation, SubAgent } from '@unleashd/shared';
+import { getBuddyContext } from '@unleashd/shared';
 import { useAtomValue } from 'jotai';
 import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { loadConversationDetails, setActiveConversationId } from '../../atoms/actions';
 import {
+  childConversationsAtomFamily,
   conversationAtomFamily,
   conversationDetailsLoadedAtomFamily,
   conversationLoadCompleteAtom,
@@ -12,13 +14,28 @@ import {
   streamingAtomFamily,
 } from '../../atoms/conversations';
 import { forkConversation } from '../../atoms/fork-actions';
+import {
+  mergeChildErrorAtomFamily,
+  mergeChildStatusAtomFamily,
+} from '../../atoms/mergeAtoms';
 import { markMessagesSeen, setSavedActiveConversationId } from '../../atoms/ui';
+import { effectiveSwarmDebugPrefix } from '../../components/buddies/ui-contract';
 import { useCopyAction } from '../../hooks/useCopyAction';
-import { buildThreadTranscript } from '../../utils/conversation-transcript';
 import { useProviderCatalog } from '../../hooks/useProviderCatalog';
+import { useTurnDiagnostics } from '../../hooks/useTurnDiagnostics';
+import { buildThreadTranscript } from '../../utils/conversation-transcript';
+import { buildUnifiedSubAgents } from '../../utils/subAgents';
+import { parseStatsFromPrefix } from '../../utils/swarmConvoParsers';
+import {
+  shouldPresentTurnAttempt,
+  shouldShowTypingIndicator,
+  turnDiagnosticsFromAttempt,
+} from '../../utils/turn-diagnostics';
 import { ComposerMobile } from '../components/ComposerMobile';
 import { MessageRow } from '../components/MessageRow';
+import { MobileBadge, MobileSection, MobileSurface } from '../components/MobileUI';
 import { ModelSheetMobile, modelSummary } from '../components/ModelSheetMobile';
+import { TurnStatusMobile } from '../components/TurnStatusMobile';
 
 /**
  * ConversationView — the one mobile conversation pane.
@@ -44,7 +61,6 @@ import { ModelSheetMobile, modelSummary } from '../components/ModelSheetMobile';
  * route changes) looked fine. Mirror Chat.tsx: only claim "not found" once the
  * conversation list has finished loading AND there is no pending creation.
  */
-
 
 function CopyThreadButton({ conversation }: { conversation: Conversation }) {
   const text = buildThreadTranscript(conversation);
@@ -101,6 +117,215 @@ function ForkButton({ conversation }: { conversation: Conversation }) {
   );
 }
 
+// ---------------------------------------------------------------------------
+// Mobile thread-context panels — reuse Chat.tsx data derivation, render with
+// MobileSection/MobileSurface primitives (not desktop VirtualizedMessageList /
+// SubAgentPanel / SwarmConvoPrefix / ResumeThreadWidget / MergeProgressStrip).
+// G3: mobile never imports components/* except buddies/, so we import the
+// shared utils directly and render mobile-appropriate UI here.
+// ---------------------------------------------------------------------------
+
+function MobileMergeProgressStrip({ parent }: { parent: Conversation }) {
+  const meta = parent.mergeParentMeta;
+  if (!meta) return null;
+  return (
+    <MobileSection title="Reviews" meta={`${meta.children.length} ${meta.children.length === 1 ? 'review' : 'reviews'}`}>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+        {meta.children.map((child) => (
+          <MergeChip
+            key={child.childConversationId}
+            childId={child.childConversationId}
+            reviewUuid={child.reviewUuid}
+          />
+        ))}
+      </div>
+    </MobileSection>
+  );
+}
+
+function MergeChip({ childId, reviewUuid }: { childId: string; reviewUuid: string }) {
+  const status = useAtomValue(mergeChildStatusAtomFamily(childId));
+  const errorMessage = useAtomValue(mergeChildErrorAtomFamily(childId));
+  const tone: 'active' | 'accent' | 'neutral' =
+    status === 'complete' ? 'accent' : status === 'error' ? 'neutral' : 'active';
+  const label = status === 'complete' ? '✓' : status === 'error' ? '!' : '…';
+  const title =
+    status === 'complete'
+      ? `REVIEW_DOC_${reviewUuid}.txt`
+      : status === 'error'
+        ? (errorMessage ?? `Review did not produce ${reviewUuid}`)
+        : 'Reviewing…';
+  return (
+    <MobileBadge tone={tone} title={title} style={{ fontSize: 11, gap: 4 }}>
+      <span aria-hidden="true">{label}</span> {reviewUuid.slice(0, 8)}
+      {status === 'error' && errorMessage ? (
+        <span style={{ opacity: 0.7, marginLeft: 4 }}>{errorMessage.slice(0, 40)}</span>
+      ) : null}
+    </MobileBadge>
+  );
+}
+
+function MobileSubAgentPanel({ subAgents }: { subAgents: SubAgent[] }) {
+  const active = subAgents.filter((a) => a.status === 'running' || a.status === 'pending');
+  const completed = subAgents.filter((a) => a.status === 'completed' || a.status === 'error').slice(-3);
+  const display = [...active, ...completed];
+  if (display.length === 0) return null;
+  return (
+    <MobileSection title="Sub-agents" meta={`${active.length} running · ${subAgents.length} total`}>
+      <div style={{ display: 'grid', gap: 8 }}>
+        {display.map((agent) => (
+          <MobileSurface key={agent.id} style={{ padding: '10px 12px', display: 'flex', gap: 10, alignItems: 'flex-start' }}>
+            <MobileBadge tone={agent.status === 'running' || agent.status === 'pending' ? 'active' : agent.status === 'error' ? 'neutral' : 'accent'} style={{ marginTop: 2 }}>
+              {agent.status === 'running' || agent.status === 'pending' ? '●' : agent.status === 'error' ? '!' : '✓'}
+            </MobileBadge>
+            <div style={{ minWidth: 0, flex: 1 }}>
+              <div style={{ fontSize: 12, fontWeight: 600, lineHeight: 1.3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {agent.description || agent.id}
+              </div>
+              {agent.currentAction ? (
+                <div style={{ fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.35, marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                  {agent.currentAction}
+                </div>
+              ) : null}
+              <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 4, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                {agent.toolUses ? <span>{agent.toolUses} tools</span> : null}
+                {agent.tokens ? <span>{agent.tokens >= 1000 ? `${(agent.tokens / 1000).toFixed(1)}k` : agent.tokens} tokens</span> : null}
+                {agent.status ? <span style={{ textTransform: 'capitalize' }}>{agent.status}</span> : null}
+              </div>
+            </div>
+          </MobileSurface>
+        ))}
+      </div>
+    </MobileSection>
+  );
+}
+
+function MobileResumeWidget({
+  sourceConversationId,
+  sourceConversation,
+}: {
+  sourceConversationId: string;
+  sourceConversation: Conversation | null;
+}) {
+  const displayId = sourceConversation?.id?.substring(0, 8) ?? sourceConversationId.substring(0, 8);
+  const provider = sourceConversation?.provider ?? 'claude';
+  const folder = sourceConversation?.workingDirectory?.replace(/^\/Users\/[^/]+/, '~');
+  return (
+    <MobileSection title="Resumed from">
+      <Link to={`/chat/${sourceConversationId}`} style={{ textDecoration: 'none', color: 'inherit' }}>
+        <MobileSurface style={{ padding: '10px 12px', display: 'flex', alignItems: 'center', gap: 10 }}>
+          <span style={{ fontSize: 14, lineHeight: 1 }} aria-hidden="true">↩</span>
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <div style={{ fontSize: 12, fontWeight: 600 }}>
+              {displayId} <MobileBadge tone="neutral" style={{ marginLeft: 6, fontSize: 10 }}>{provider}</MobileBadge>
+            </div>
+            {folder ? (
+              <div style={{ fontSize: 11, color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {folder}
+              </div>
+            ) : null}
+          </div>
+          <span style={{ fontSize: 12, color: 'var(--text-muted)' }} aria-hidden="true">Open ›</span>
+        </MobileSurface>
+      </Link>
+    </MobileSection>
+  );
+}
+
+function MobileSwarmPrefix({ prefix, swarmId }: { prefix: string; swarmId: string | null }) {
+  const [expanded, setExpanded] = useState(false);
+  const stats = useMemo(() => parseStatsFromPrefix(prefix), [prefix]);
+  const isSetup = prefix.includes('You are helping create and run a NEW oompa swarm configuration');
+  const label = isSetup ? 'Setup' : (swarmId ?? 'debug');
+  const title = isSetup ? 'SWARM SETUP' : 'SWARM DEBUG';
+
+  const chips: Array<{ label: string; value: string }> = [];
+  if (stats.completed) chips.push({ label: 'Done', value: stats.completed });
+  if (stats.merges) chips.push({ label: 'Merges', value: stats.merges });
+  if (stats.rejections && stats.rejections !== '0') chips.push({ label: 'Rej', value: stats.rejections });
+  if (stats.errors && stats.errors !== '0') chips.push({ label: 'Err', value: stats.errors });
+
+  return (
+    <MobileSection title={title} meta={label}>
+      <MobileSurface style={{ padding: 0, overflow: 'hidden' }}>
+        <button
+          type="button"
+          onClick={() => setExpanded((v) => !v)}
+          aria-expanded={expanded}
+          style={{
+            width: '100%',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+            padding: '10px 12px',
+            border: 'none',
+            background: 'transparent',
+            color: 'inherit',
+            font: 'inherit',
+            cursor: 'pointer',
+            textAlign: 'left',
+          }}
+        >
+          <span aria-hidden="true" style={{ fontSize: 10 }}>{expanded ? '▼' : '▶'}</span>
+          <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase' }}>{title}</span>
+          <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{label}</span>
+          {chips.length > 0 ? (
+            <span style={{ display: 'inline-flex', gap: 4, flexWrap: 'wrap', marginLeft: 'auto' }}>
+              {chips.map((c) => (
+                <MobileBadge key={c.label} tone="neutral" style={{ fontSize: 10 }}>{c.value} {c.label}</MobileBadge>
+              ))}
+            </span>
+          ) : null}
+        </button>
+        {expanded ? (
+          <div style={{ padding: '0 12px 12px', borderTop: '1px solid var(--border-subtle)', marginTop: 0 }}>
+            <div style={{ display: 'grid', gap: 6, paddingTop: 10 }}>
+              {stats.project ? <SwarmRow k="Project" v={stats.project} mono /> : null}
+              {stats.primaryConfig ? <SwarmRow k="Primary Config" v={stats.primaryConfig} mono /> : null}
+              {stats.generatedAt ? <SwarmRow k="Generated" v={stats.generatedAt} /> : null}
+              {stats.started ? <SwarmRow k="Started" v={stats.started} /> : null}
+              {stats.runsDir ? <SwarmRow k="Runs" v={stats.runsDir} mono /> : null}
+              {stats.iterations ? (
+                <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginTop: 4 }}>
+                  <SwarmStat label="Completed" value={stats.completed ?? '—'} />
+                  <SwarmStat label="Cycles" value={stats.iterations} />
+                  <SwarmStat label="Merges" value={stats.merges ?? '0'} />
+                  <SwarmStat label="Rejections" value={stats.rejections ?? '0'} />
+                  <SwarmStat label="Errors" value={stats.errors ?? '0'} />
+                </div>
+              ) : null}
+            </div>
+            <details style={{ marginTop: 12 }}>
+              <summary style={{ fontSize: 11, color: 'var(--text-muted)', cursor: 'pointer' }}>Raw CLI context</summary>
+              <pre style={{ marginTop: 8, padding: 8, borderRadius: 8, background: 'var(--bg-page)', fontSize: 10, lineHeight: 1.4, whiteSpace: 'pre-wrap', wordBreak: 'break-word', maxHeight: 240, overflow: 'auto' }}>
+                {prefix}
+              </pre>
+            </details>
+          </div>
+        ) : null}
+      </MobileSurface>
+    </MobileSection>
+  );
+}
+
+function SwarmRow({ k, v, mono }: { k: string; v: string; mono?: boolean }) {
+  return (
+    <div style={{ display: 'flex', gap: 8, minWidth: 0 }}>
+      <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', flex: 'none', minWidth: 90 }}>{k}</span>
+      <span style={{ fontSize: 11, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontFamily: mono ? 'ui-monospace, monospace' : undefined }}>{v}</span>
+    </div>
+  );
+}
+
+function SwarmStat({ label, value }: { label: string; value: string }) {
+  return (
+    <span style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'center', gap: 1, minWidth: 52 }}>
+      <span style={{ fontSize: 13, fontWeight: 700 }}>{value}</span>
+      <span style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>{label}</span>
+    </span>
+  );
+}
+
 export function ConversationView({
   conversationId,
   onBack,
@@ -117,6 +342,7 @@ export function ConversationView({
   const pendingCreation = useAtomValue(pendingCreationAtomFamily(conversationId));
   const conversationLoadComplete = useAtomValue(conversationLoadCompleteAtom);
   const pendingConfigCommand = useAtomValue(pendingConfigCommandAtomFamily(conversationId));
+  const childConversations = useAtomValue(childConversationsAtomFamily(conversationId));
   const { catalog } = useProviderCatalog();
 
   const [detailError, setDetailError] = useState<string | null>(null);
@@ -163,6 +389,23 @@ export function ConversationView({
     return msgs;
   }, [conversation, streamingText]);
 
+  // Same derivation as Chat.tsx: unified sub-agents + swarm prefix + resume lineage.
+  // Reuses shared utils so desktop and mobile cannot drift.
+  const unifiedSubAgents = useMemo(() => {
+    if (!conversation) return [];
+    return buildUnifiedSubAgents(conversation, childConversations);
+  }, [conversation, childConversations]);
+
+  const buddyContext = useMemo(() => getBuddyContext(conversation as Parameters<typeof getBuddyContext>[0]), [conversation]);
+
+  const visibleSwarmDebugPrefix = useMemo(() => {
+    if (!conversation) return null;
+    return effectiveSwarmDebugPrefix(buddyContext, conversation.swarmDebugPrefix ?? null, conversation.kind ?? null);
+  }, [buddyContext, conversation]);
+
+  const resumedFromConversationId = conversation?.resumedFromConversationId ?? '';
+  const resumedFromConversation = useAtomValue(conversationAtomFamily(resumedFromConversationId));
+
   // Mark seen when last message becomes visible (IntersectionObserver plumbing §4)
   useEffect(() => {
     if (messages.length === 0) return;
@@ -198,6 +441,22 @@ export function ConversationView({
     const el = scrollRef.current;
     if (el) el.scrollTop = el.scrollHeight;
   }, [conversationId]);
+
+  // Turn diagnostics — same hook desktop Chat.tsx uses (hooks/useTurnDiagnostics)
+  // + same derived view model (utils/turn-diagnostics). Reuses existing atoms
+  // and polling, not new state. Must stay before early returns.
+  const runtimeIsRunning = conversation?.isRunning ?? false;
+  const runtimeIsStreaming = conversation?.isStreaming ?? false;
+  const runtimeTurnActive = runtimeIsRunning || runtimeIsStreaming;
+  const { attempt: latestTurnAttempt } = useTurnDiagnostics(
+    conversationId || undefined,
+    runtimeTurnActive
+  );
+  const turnDiagnostics =
+    latestTurnAttempt && shouldPresentTurnAttempt(latestTurnAttempt, runtimeTurnActive)
+      ? turnDiagnosticsFromAttempt(latestTurnAttempt)
+      : null;
+  const showTyping = shouldShowTypingIndicator(runtimeIsStreaming, streamingText ?? '');
 
   // All hooks above early returns (React hook ordering)
   if (!conversationId) {
@@ -311,6 +570,9 @@ export function ConversationView({
   const configSaving = !!pendingConfigCommand && !pendingConfigCommand.error;
   const configError = pendingConfigCommand?.error ?? null;
 
+  const hasThreadContext = unifiedSubAgents.length > 0 || !!conversation.resumedFromConversationId;
+  const showSwarmPrefix = !!visibleSwarmDebugPrefix;
+
   return (
     <div className="mobile-chat">
       <div className="mobile-chat__header">
@@ -372,7 +634,30 @@ export function ConversationView({
             {configError}
           </div>
         ) : null}
+        {turnDiagnostics ? (
+          <div className="mobile-chat__turn-status-row">
+            <TurnStatusMobile diagnostics={turnDiagnostics} />
+          </div>
+        ) : null}
       </div>
+
+      {/* Thread-context strip — mirrors Chat.tsx: MergeProgressStrip + SubAgentPanel + ResumeThreadWidget + SwarmConvoPrefix,
+          rendered with MobileSection/MobileSurface primitives and shared data derivation. */}
+      {(conversation.mergeParentMeta || hasThreadContext || showSwarmPrefix) && (
+        <div className="mobile-chat__thread-context" style={{ padding: '10px 12px 0', display: 'grid', gap: 10 }}>
+          {conversation.mergeParentMeta ? <MobileMergeProgressStrip parent={conversation} /> : null}
+          {unifiedSubAgents.length > 0 ? <MobileSubAgentPanel subAgents={unifiedSubAgents} /> : null}
+          {conversation.resumedFromConversationId ? (
+            <MobileResumeWidget
+              sourceConversationId={conversation.resumedFromConversationId}
+              sourceConversation={resumedFromConversation ?? null}
+            />
+          ) : null}
+          {showSwarmPrefix ? (
+            <MobileSwarmPrefix prefix={visibleSwarmDebugPrefix!} swarmId={conversation.swarmId ?? null} />
+          ) : null}
+        </div>
+      )}
 
       {/* Flat message list — not virtualized, iOS momentum-scroll (§10 Phase 1) */}
       <div ref={scrollRef} className="mobile-chat__messages">
@@ -388,8 +673,15 @@ export function ConversationView({
             />
           ))
         )}
-        {(isRunning || isStreaming) && !streamingText && (
+        {(isRunning || isStreaming) && !streamingText && !turnDiagnostics && (
           <div className="mobile-chat__thinking">Thinking…</div>
+        )}
+        {showTyping && (
+          <div className="mobile-chat__typing" aria-live="polite">
+            <span className="mobile-chat__typing-dot" />
+            <span className="mobile-chat__typing-dot" />
+            <span className="mobile-chat__typing-dot" />
+          </div>
         )}
       </div>
 

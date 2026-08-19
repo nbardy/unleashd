@@ -1072,3 +1072,91 @@
   border-color: color-mix(in srgb, var(--danger) 45%, transparent);
   color: var(--danger);
 }
+
+/* ---- Prompt palette (mobile sheet) — thin wrapper over desktop PromptPalette ---- */
+/* Mobile uses a bottom sheet (dialog[modal]) so keyboard / home indicator safe-area
+   is handled by .mobile-sheet__inner padding (env(safe-area-inset-bottom)).
+   Logic (fuzzySearch, incrementUsage, deletePrompt) stays in hooks/useSavedPrompts
+   — this file only lays out the list. */
+.mobile-sheet--prompt-palette {
+  max-height: 72vh;
+}
+
+.prompt-palette-mobile__results {
+  display: grid;
+  gap: 6px;
+  max-height: 42vh;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  padding: 2px 0;
+}
+
+.prompt-palette-mobile__item {
+  /* Reuse .mobile-sheet__recent shape but add meta row */
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+}
+
+.prompt-palette-mobile__meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: 2px;
+}
+
+.prompt-palette-mobile__usage {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.prompt-palette-mobile__delete {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--theme-danger) 14%, transparent);
+  color: var(--theme-danger);
+  font-size: 14px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.prompt-palette-mobile__empty {
+  padding: 24px 12px;
+  color: var(--text-muted);
+  font-size: 13px;
+  text-align: center;
+}
+
+.prompt-palette-mobile__hint {
+  margin: 2px 0 0;
+  color: var(--text-muted);
+  font-size: 11px;
+  text-align: center;
+}
+
+/* Composer prompt buttons — same 30px circle as attach/send */
+.mobile-composer__btn--save,
+.mobile-composer__btn--palette {
+  background: var(--bg-raised-2);
+  color: var(--text-secondary);
+  border: 1px solid var(--border-subtle);
+}
+
+.mobile-composer__btn--save:disabled {
+  opacity: 0.45;
+  cursor: default;
+  transform: none;
+}
+
+.mobile-composer__btn--save:active:not(:disabled),
+.mobile-composer__btn--palette:active {
+  background: var(--bg-raised-1);
+}

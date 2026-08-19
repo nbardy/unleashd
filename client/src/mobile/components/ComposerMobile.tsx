@@ -1,7 +1,9 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { interruptAndSend, queueMessage, stopConversation } from '../../atoms/actions';
 import { useConversationDraft } from '../../hooks/useConversationDraft';
 import { usePendingAttachments } from '../../hooks/usePendingAttachments';
+import { useSavedPrompts } from '../../hooks/useSavedPrompts';
+import { PromptPaletteMobile } from './PromptPaletteMobile';
 
 export function ComposerMobile({
   conversationId,
@@ -9,6 +11,8 @@ export function ComposerMobile({
   isStreaming,
   queueLength,
   disabledReason,
+  onOpenPalette,
+  paletteSelectedContent,
 }: {
   conversationId: string;
   isRunning: boolean;
@@ -16,12 +20,28 @@ export function ComposerMobile({
   queueLength: number;
   /** Set to render the composer inert with an explanation (e.g. unconfirmed). */
   disabledReason?: string;
+  /** Optional: called when the palette button is pressed (parent owns palette). */
+  onOpenPalette?: () => void;
+  /** Optional: content selected from a parent-owned palette to insert. */
+  paletteSelectedContent?: string | null;
 }) {
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showPalette, setShowPalette] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Prompt palette — thin wrapper over shared hook (logic in hooks/, UI here).
+  // Mirrors desktop Chat.tsx: { savePrompt, fuzzySearch, incrementUsage, deletePrompt } + <PromptPalette>.
+  // Mobile never imports components/* (G3) — this wrapper lives in mobile/components/.
+  const {
+    savePrompt,
+    prompts: savedPrompts,
+    fuzzySearch,
+    incrementUsage,
+    deletePrompt,
+  } = useSavedPrompts();
 
   // Portable draft persistence — same hook desktop Chat.tsx uses.
   // Fork handoff seeds `draft:<newId>`; this hook loads it and debounces saves.
@@ -53,6 +73,70 @@ export function ComposerMobile({
       setDraftPersisted(value);
     },
     [setDraftPersisted]
+  );
+
+  // Ctrl+P / Cmd+P to open palette — matches desktop Chat.tsx window listener.
+  // Also handles palette selection pushed from parent (ConversationView) via prop.
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'p') {
+        e.preventDefault();
+        if (onOpenPalette) onOpenPalette();
+        else setShowPalette(true);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [onOpenPalette]);
+
+  // Parent-owned palette selection (ConversationView -> ComposerMobile)
+  useEffect(() => {
+    if (paletteSelectedContent) {
+      updateDraft(paletteSelectedContent);
+      requestAnimationFrame(() => textareaRef.current?.focus());
+      // resize textarea to fit
+      if (textareaRef.current) {
+        const ta = textareaRef.current;
+        ta.style.height = 'auto';
+        ta.style.height = `${Math.min(ta.scrollHeight, 120)}px`;
+      }
+    }
+  }, [paletteSelectedContent, updateDraft]);
+
+  // Also listen for custom event bridge (alternative parent->child channel)
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent<string>).detail;
+      if (typeof detail === 'string' && detail) {
+        updateDraft(detail);
+        requestAnimationFrame(() => textareaRef.current?.focus());
+        if (textareaRef.current) {
+          const ta = textareaRef.current;
+          ta.style.height = 'auto';
+          ta.style.height = `${Math.min(ta.scrollHeight, 120)}px`;
+        }
+      }
+    };
+    window.addEventListener('prompt-palette:select', handler as EventListener);
+    return () => window.removeEventListener('prompt-palette:select', handler as EventListener);
+  }, [updateDraft]);
+
+  const handleSavePrompt = useCallback(() => {
+    const content = draft.trim();
+    if (content) savePrompt(content);
+  }, [draft, savePrompt]);
+
+  const handleSelectPrompt = useCallback(
+    (content: string) => {
+      updateDraft(content);
+      requestAnimationFrame(() => textareaRef.current?.focus());
+      if (textareaRef.current) {
+        const ta = textareaRef.current;
+        ta.style.height = 'auto';
+        ta.style.height = `${Math.min(ta.scrollHeight, 120)}px`;
+      }
+    },
+    [updateDraft]
   );
 
   const hasActiveTurn = isRunning || isStreaming;
@@ -107,6 +191,12 @@ export function ComposerMobile({
   // Standard mobile-chat behaviour (Messages, WhatsApp) is return = newline.
   // A hardware keyboard (iPad, Bluetooth) still gets Cmd/Ctrl+Enter to send.
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'p') {
+      e.preventDefault();
+      if (onOpenPalette) onOpenPalette();
+      else setShowPalette(true);
+      return;
+    }
     if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
       e.preventDefault();
       if (canSend && !disabled) void handleSend();
@@ -183,6 +273,32 @@ export function ComposerMobile({
           aria-label="Message"
         />
         <div className="mobile-composer__actions">
+          {/* Save prompt — mirrors desktop Chat.tsx save-prompt-btn (star). Thin UI, logic in hook. */}
+          <button
+            type="button"
+            onClick={handleSavePrompt}
+            disabled={disabled || !hasText}
+            className="mobile-composer__btn mobile-composer__btn--save"
+            aria-label="Save prompt"
+            title="Save prompt (prompt palette: Ctrl+P)"
+          >
+            <span aria-hidden="true" style={{ fontSize: 14, lineHeight: 1 }}>
+              ☆
+            </span>
+          </button>
+          {/* Palette — mobile sheet trigger (desktop uses Ctrl+P only). */}
+          <button
+            type="button"
+            onClick={() => (onOpenPalette ? onOpenPalette() : setShowPalette(true))}
+            disabled={disabled}
+            className="mobile-composer__btn mobile-composer__btn--palette"
+            aria-label="Open prompt palette"
+            title="Prompt palette (Ctrl+P)"
+          >
+            <span aria-hidden="true" style={{ fontSize: 14, lineHeight: 1 }}>
+              ☰
+            </span>
+          </button>
           {/* Attach — reuses desktop's upload path (same hook). */}
           <button
             type="button"
@@ -238,6 +354,17 @@ export function ComposerMobile({
           {error}
         </div>
       )}
+
+      {/* Prompt palette — mobile bottom-sheet (thin wrapper) */}
+      <PromptPaletteMobile
+        isOpen={showPalette}
+        onClose={() => setShowPalette(false)}
+        onSelect={handleSelectPrompt}
+        prompts={savedPrompts}
+        fuzzySearch={fuzzySearch}
+        incrementUsage={incrementUsage}
+        deletePrompt={deletePrompt}
+      />
     </div>
   );
 }
