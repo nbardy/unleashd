@@ -32,7 +32,18 @@ import {
 } from '@unleashd/shared';
 import { formatToolUse, isCompletionOnlyToolUse } from '../adapters/tool-format';
 import { BUDDY_BUILDER_BRIEFING } from '../buddies/builder';
-import { buddyBuilderCodexMcpArgs, buddyCodexMcpArgs } from '../buddies/mcp-config';
+import {
+  buddyBuilderClaudeMcpArgs,
+  buddyBuilderCodexMcpArgs,
+  buddyBuilderGeminiMcpArgs,
+  buddyBuilderMuseMcpArgs,
+  buddyBuilderOpencodeMcpArgs,
+  buddyClaudeMcpArgs,
+  buddyCodexMcpArgs,
+  buddyGeminiMcpArgs,
+  buddyMuseMcpArgs,
+  buddyOpencodeMcpArgs,
+} from '../buddies/mcp-config';
 import {
   SWARM_POLL_INTERVAL_MS,
   SWARM_POLL_THROTTLE_MS,
@@ -725,25 +736,58 @@ export function createConversationRuntime(
       };
       let turn: ReturnType<typeof executeCommand>;
       try {
+        const buddyExtraArgs = matchConversationKind(this.kind, {
+          buddy: (k) => {
+            const ctx = buddyContextFromKind(k);
+            if (executionConfig.provider === 'codex') return buddyCodexMcpArgs(ctx, this.id);
+            if (executionConfig.provider === 'claude') return buddyClaudeMcpArgs(ctx, this.id);
+            if (executionConfig.provider === 'muse') return buddyMuseMcpArgs(ctx, this.id);
+            if (executionConfig.provider === 'opencode') return buddyOpencodeMcpArgs(ctx, this.id);
+            if (executionConfig.provider === 'gemini' || String(executionConfig.provider).startsWith('gemini'))
+              return buddyGeminiMcpArgs(ctx, this.id);
+            return undefined;
+          },
+          buddy_builder: () => {
+            if (executionConfig.provider === 'codex') return buddyBuilderCodexMcpArgs(this.id);
+            if (executionConfig.provider === 'claude') return buddyBuilderClaudeMcpArgs(this.id);
+            if (executionConfig.provider === 'muse') return buddyBuilderMuseMcpArgs(this.id);
+            if (executionConfig.provider === 'opencode') return buddyBuilderOpencodeMcpArgs(this.id);
+            if (executionConfig.provider === 'gemini' || String(executionConfig.provider).startsWith('gemini'))
+              return buddyBuilderGeminiMcpArgs(this.id);
+            return undefined;
+          },
+          general: () => undefined,
+        });
+
         turn = executeCommand(
           executionConfig.provider === 'claude'
             ? {
                 harness: 'claude',
                 ...baseRequest,
                 reasoningEffort: executionConfig.reasoningEffort,
+                ...(buddyExtraArgs ? { extraArgs: buddyExtraArgs } : {}),
               }
             : executionConfig.provider === 'codex'
               ? {
                   harness: 'codex',
                   ...baseRequest,
                   reasoningEffort: executionConfig.reasoningEffort,
-                  extraArgs: matchConversationKind(this.kind, {
-                    buddy: (k) => buddyCodexMcpArgs(buddyContextFromKind(k), this.id),
-                    buddy_builder: () => buddyBuilderCodexMcpArgs(this.id),
-                    general: () => undefined,
-                  }),
+                  ...(buddyExtraArgs ? { extraArgs: buddyExtraArgs } : {}),
                 }
-              : { harness: executionConfig.provider, ...baseRequest }
+              : executionConfig.provider === 'muse'
+                ? {
+                    harness: 'muse',
+                    ...baseRequest,
+                    reasoningEffort: executionConfig.reasoningEffort,
+                    ...(buddyExtraArgs ? { extraArgs: buddyExtraArgs } : {}),
+                  }
+                : buddyExtraArgs
+                  ? {
+                      harness: executionConfig.provider,
+                      ...baseRequest,
+                      extraArgs: buddyExtraArgs,
+                    } as any
+                  : { harness: executionConfig.provider, ...baseRequest } as any
         );
       } catch (error) {
         this._finishTurnAttempt('failed', 'spawn_failed');

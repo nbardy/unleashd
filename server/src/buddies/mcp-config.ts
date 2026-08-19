@@ -39,17 +39,14 @@ export function resolveBuddyMcpLaunch(): BuddyMcpLaunch {
   return {
     command: process.execPath,
     args: ['--import', 'tsx', sourceEntrypoint],
-    // The provider process runs in the Buddy workspace, which is usually a
-    // different repository. Resolve the source loader from Unleashd instead
-    // of asking that workspace to have `tsx` installed.
     cwd: path.resolve(__dirname, '../..'),
   };
 }
 
-export function buddyCodexMcpArgs(
+function buildBuddyServerArgs(
   context: BuddyContext,
   conversationId: string,
-  launch: BuddyMcpLaunch = resolveBuddyMcpLaunch()
+  launch: BuddyMcpLaunch,
 ): string[] {
   const args = [
     ...launch.args,
@@ -71,6 +68,50 @@ export function buddyCodexMcpArgs(
   for (const operation of context.allowedBuddyOperations ?? []) {
     args.push('--allowed-operation', operation);
   }
+  return args;
+}
+
+function buddyMcpServerJson(
+  context: BuddyContext,
+  conversationId: string,
+  launch: BuddyMcpLaunch,
+): string {
+  const serverArgs = buildBuddyServerArgs(context, conversationId, launch);
+  const server: Record<string, unknown> = {
+    command: launch.command,
+    args: serverArgs,
+  };
+  if (launch.cwd) server.cwd = launch.cwd;
+  return JSON.stringify({
+    mcpServers: {
+      [BUDDY_MCP_SERVER_NAME]: server,
+    },
+  });
+}
+
+function buddyBuilderMcpServerJson(
+  conversationId: string,
+  launch: BuddyMcpLaunch,
+): string {
+  const serverArgs = [...launch.args, '--builder', '--conversation', conversationId];
+  const server: Record<string, unknown> = {
+    command: launch.command,
+    args: serverArgs,
+  };
+  if (launch.cwd) server.cwd = launch.cwd;
+  return JSON.stringify({
+    mcpServers: {
+      [BUDDY_MCP_SERVER_NAME]: server,
+    },
+  });
+}
+
+export function buddyCodexMcpArgs(
+  context: BuddyContext,
+  conversationId: string,
+  launch: BuddyMcpLaunch = resolveBuddyMcpLaunch()
+): string[] {
+  const args = buildBuddyServerArgs(context, conversationId, launch);
   const config = [
     '-c',
     `mcp_servers.${BUDDY_MCP_SERVER_NAME}.command=${tomlString(launch.command)}`,
@@ -79,8 +120,6 @@ export function buddyCodexMcpArgs(
     '-c',
     `mcp_servers.${BUDDY_MCP_SERVER_NAME}.enabled=true`,
     '-c',
-    // Buddy state tools are part of the employee contract. Failing the turn
-    // is more truthful than silently running without the promised controls.
     `mcp_servers.${BUDDY_MCP_SERVER_NAME}.required=true`,
   ];
   if (launch.cwd) {
@@ -108,4 +147,81 @@ export function buddyBuilderCodexMcpArgs(
     config.push('-c', `mcp_servers.${BUDDY_MCP_SERVER_NAME}.cwd=${tomlString(launch.cwd)}`);
   }
   return config;
+}
+
+// --- Generic / Claude / Muse / Opencode support ---
+// Claude supports --mcp-config <json-or-file> (space-separated, supports --strict-mcp-config).
+// Muse and Opencode are wired via the same JSON shape so the shared agent CLI can
+// forward it once their CLIs expose a --mcp-config flag. Until then the JSON
+// helper is still the canonical source for tests and for the temp-file fallback.
+
+export function buddyClaudeMcpArgs(
+  context: BuddyContext,
+  conversationId: string,
+  launch: BuddyMcpLaunch = resolveBuddyMcpLaunch()
+): string[] {
+  return ['--mcp-config', buddyMcpServerJson(context, conversationId, launch), '--strict-mcp-config'];
+}
+
+export function buddyBuilderClaudeMcpArgs(
+  conversationId: string,
+  launch: BuddyMcpLaunch = resolveBuddyMcpLaunch()
+): string[] {
+  return ['--mcp-config', buddyBuilderMcpServerJson(conversationId, launch), '--strict-mcp-config'];
+}
+
+export function buddyMuseMcpArgs(
+  context: BuddyContext,
+  conversationId: string,
+  launch: BuddyMcpLaunch = resolveBuddyMcpLaunch()
+): string[] {
+  // Muse exec currently has no --mcp-config flag (verified via `muse exec --help`).
+  // We keep the JSON helper for tests and for the future temp-file wiring,
+  // but return no CLI args until the binary exposes --mcp-config or an
+  // equivalent env/config-file hook. Enable by returning
+  // ['--mcp-config', buddyMcpServerJson(context, conversationId, launch)] once supported.
+  void buddyMcpServerJson(context, conversationId, launch);
+  return [];
+}
+
+export function buddyBuilderMuseMcpArgs(
+  conversationId: string,
+  launch: BuddyMcpLaunch = resolveBuddyMcpLaunch()
+): string[] {
+  void buddyBuilderMcpServerJson(conversationId, launch);
+  return [];
+}
+
+export function buddyOpencodeMcpArgs(
+  context: BuddyContext,
+  conversationId: string,
+  launch: BuddyMcpLaunch = resolveBuddyMcpLaunch()
+): string[] {
+  // Opencode run has no --mcp-config flag (verified via `opencode run --help`).
+  // Keep helper for future file-based wiring; return no args until CLI supports it.
+  void buddyMcpServerJson(context, conversationId, launch);
+  return [];
+}
+
+export function buddyBuilderOpencodeMcpArgs(
+  conversationId: string,
+  launch: BuddyMcpLaunch = resolveBuddyMcpLaunch()
+): string[] {
+  void buddyBuilderMcpServerJson(conversationId, launch);
+  return [];
+}
+
+export function buddyGeminiMcpArgs(
+  context: BuddyContext,
+  conversationId: string,
+  launch: BuddyMcpLaunch = resolveBuddyMcpLaunch()
+): string[] {
+  return ['--mcp-config', buddyMcpServerJson(context, conversationId, launch)];
+}
+
+export function buddyBuilderGeminiMcpArgs(
+  conversationId: string,
+  launch: BuddyMcpLaunch = resolveBuddyMcpLaunch()
+): string[] {
+  return ['--mcp-config', buddyBuilderMcpServerJson(conversationId, launch)];
 }
