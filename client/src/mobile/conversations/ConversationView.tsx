@@ -22,6 +22,7 @@ import { markMessagesSeen, setSavedActiveConversationId } from '../../atoms/ui';
 import { effectiveSwarmDebugPrefix } from '../../components/buddies/ui-contract';
 import { useCopyAction } from '../../hooks/useCopyAction';
 import { useProviderCatalog } from '../../hooks/useProviderCatalog';
+import { useSavedPrompts } from '../../hooks/useSavedPrompts';
 import { useTurnDiagnostics } from '../../hooks/useTurnDiagnostics';
 import { buildThreadTranscript } from '../../utils/conversation-transcript';
 import { buildUnifiedSubAgents } from '../../utils/subAgents';
@@ -32,6 +33,7 @@ import {
   turnDiagnosticsFromAttempt,
 } from '../../utils/turn-diagnostics';
 import { ComposerMobile } from '../components/ComposerMobile';
+import { PromptPaletteMobile } from '../components/PromptPaletteMobile';
 import { MessageRow } from '../components/MessageRow';
 import { MobileBadge, MobileSection, MobileSurface } from '../components/MobileUI';
 import { ModelSheetMobile, modelSummary } from '../components/ModelSheetMobile';

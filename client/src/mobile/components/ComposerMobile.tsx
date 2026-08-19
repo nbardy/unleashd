@@ -22,6 +22,7 @@ export function ComposerMobile({
   disabledReason,
   onOpenPalette,
   paletteSelectedContent,
+  onSavePrompt,
 }: {
   conversationId: string;
   isRunning: boolean;
