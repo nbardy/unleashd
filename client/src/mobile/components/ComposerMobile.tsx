@@ -1,7 +1,8 @@
+import type { QueuedMessage } from '@unleashd/shared';
 import { useAtomValue } from 'jotai';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { streamingAtomFamily } from '../../atoms/conversations';
 import { interruptAndSend, queueMessage, stopConversation } from '../../atoms/actions';
+import { queueAtomFamily, streamingAtomFamily } from '../../atoms/conversations';
 import { useConversationDraft } from '../../hooks/useConversationDraft';
 import { usePendingAttachments } from '../../hooks/usePendingAttachments';
 import { useSavedPrompts } from '../../hooks/useSavedPrompts';
@@ -18,7 +19,8 @@ export function ComposerMobile({
   conversationId,
   isRunning,
   isStreaming,
-  queueLength,
+  queue,
+  queueLength: queueLengthLegacy,
   disabledReason,
   onOpenPalette,
   paletteSelectedContent,
@@ -27,7 +29,10 @@ export function ComposerMobile({
   conversationId: string;
   isRunning: boolean;
   isStreaming: boolean;
-  queueLength: number;
+  /** Full queue list — per-item cancel via cancelQueuedMessage. Prefer over queueLength. */
+  queue?: QueuedMessage[];
+  /** @deprecated — use queue. Kept for backward compat during migration. */
+  queueLength?: number;
   /** Set to render the composer inert with an explanation (e.g. unconfirmed). */
   disabledReason?: string;
   /** Optional: called when the palette button is pressed (parent owns palette). */
@@ -37,6 +42,15 @@ export function ComposerMobile({
   /** Optional: parent-owned savePrompt (single hook source). Falls back to own hook. */
   onSavePrompt?: (content: string) => void;
 }) {
+  // Queue — shared atom family with desktop (no new state). Accepts prop
+  // queue list when parent (ConversationView) passes it; falls back to atom
+  // read so standalone use still shows queue. Hook before any early return.
+  const queueFromAtom = useAtomValue(queueAtomFamily(conversationId ?? ''));
+  const resolvedQueue: QueuedMessage[] = queue ?? queueFromAtom ?? [];
+  // Legacy fallback: queueLength prop → synthesize length for sendLabel
+  const effectiveQueue: QueuedMessage[] =
+    queue !== undefined ? queue : queueLengthLegacy !== undefined ? Array.from({ length: queueLengthLegacy }, (_, i) => ({ id: `legacy-${i}`, content: '', queuedAt: new Date(0), status: 'pending' as const })) : resolvedQueue;
+
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -167,12 +181,13 @@ export function ComposerMobile({
   );
 
   const hasActiveTurn = isRunning || isStreaming;
-  const hasQueue = queueLength > 0;
+  const hasQueue = effectiveQueue.length > 0;
   const hasText = draft.trim().length > 0;
   const hasAttachments = pendingFiles.length > 0;
   const canSend = (hasText || hasAttachments) && !sending;
   // One label for the button and the hint below it, so they cannot disagree.
   const sendLabel = hasActiveTurn ? 'Interrupt' : hasQueue ? 'Queue' : 'Send';
+
 
   const handleSend = useCallback(async () => {
     const text = draft.trim();

@@ -12,6 +12,7 @@ import {
   activeConversationIdAtom,
   childConversationsAtomFamily,
   conversationAtomFamily,
+  queueAtomFamily,
   conversationDetailsLoadedAtom,
   conversationDetailsLoadedAtomFamily,
   conversationLoadCompleteAtom,
@@ -480,6 +481,7 @@ function handleConversationDeleted(
   pendingCreationAtomFamily.remove(data.conversationId);
   pendingConfigCommandAtomFamily.remove(data.conversationId);
   childConversationsAtomFamily.remove(data.conversationId);
+  queueAtomFamily.remove(data.conversationId);
   mergeChildStatusAtomFamily.remove(data.conversationId);
   mergeChildReviewDocPathAtomFamily.remove(data.conversationId);
   mergeChildErrorAtomFamily.remove(data.conversationId);

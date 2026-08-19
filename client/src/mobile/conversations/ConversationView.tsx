@@ -11,6 +11,7 @@ import {
   conversationLoadCompleteAtom,
   pendingConfigCommandAtomFamily,
   pendingCreationAtomFamily,
+  queueAtomFamily,
   streamingAtomFamily,
 } from '../../atoms/conversations';
 import { forkConversation } from '../../atoms/fork-actions';
@@ -36,6 +37,7 @@ import { ComposerMobile } from '../components/ComposerMobile';
 import { PromptPaletteMobile } from '../components/PromptPaletteMobile';
 import { MessageRow } from '../components/MessageRow';
 import { MobileBadge, MobileSection, MobileSurface } from '../components/MobileUI';
+import { MobileQueueStrip } from './MobileQueueStrip';
 import { ModelSheetMobile, modelSummary } from '../components/ModelSheetMobile';
 import { TurnStatusMobile } from '../components/TurnStatusMobile';
 
@@ -345,6 +347,8 @@ export function ConversationView({
   const conversationLoadComplete = useAtomValue(conversationLoadCompleteAtom);
   const pendingConfigCommand = useAtomValue(pendingConfigCommandAtomFamily(conversationId));
   const childConversations = useAtomValue(childConversationsAtomFamily(conversationId));
+  // Queue — shared atom family with desktop (no new state). Hook before early return.
+  const queue = useAtomValue(queueAtomFamily(conversationId ?? ''));
   const { catalog } = useProviderCatalog();
 
   const [detailError, setDetailError] = useState<string | null>(null);
@@ -554,7 +558,7 @@ export function ConversationView({
           conversationId={conversationId}
           isRunning={false}
           isStreaming={false}
-          queueLength={0}
+          queue={[]}
           disabledReason={
             pendingCreation.error ? 'Creation failed' : 'Waiting for the server to confirm…'
           }
@@ -609,7 +613,7 @@ export function ConversationView({
   const dirDisplay = conversation.workingDirectory.replace(/^\/Users\/[^/]+/, '~');
   const isRunning = conversation.isRunning ?? false;
   const isStreaming = conversation.isStreaming ?? false;
-  const queue = conversation.queue ?? [];
+  // queue already derived via queueAtomFamily before early returns — keeps hook order
   const configSaving = !!pendingConfigCommand && !pendingConfigCommand.error;
   const configError = pendingConfigCommand?.error ?? null;
 
@@ -728,11 +732,13 @@ export function ConversationView({
         )}
       </div>
 
+      <MobileQueueStrip conversationId={conversation.id} queue={queue} />
+
       <ComposerMobile
         conversationId={conversation.id}
         isRunning={isRunning}
         isStreaming={isStreaming}
-        queueLength={queue.length}
+        queue={queue}
         onOpenPalette={() => setShowPalette(true)}
         onSavePrompt={savePrompt}
         paletteSelectedContent={paletteSelectedContent}

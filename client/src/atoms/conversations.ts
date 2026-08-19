@@ -4,6 +4,7 @@ import type {
   Conversation,
   ConversationConfig,
   ConversationConfigPatch,
+  QueuedMessage,
 } from '@unleashd/shared';
 import { atom } from 'jotai';
 import { atomFamily } from 'jotai-family';
@@ -122,6 +123,18 @@ export const childConversationsAtomFamily = atomFamily((parentId: string) =>
       (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
     );
   })
+);
+
+// Stable empty queue — shared reference avoids new [] on every read
+const EMPTY_QUEUE: QueuedMessage[] = [];
+
+// Queue for one conversation — derived from conversationsAtom so mobile and
+// desktop share the same authoritative server queue. No new state; this is a
+// pure view over Conversation.queue. Components subscribe via
+// useAtomValue(queueAtomFamily(id)) and get per-item cancel via
+// cancelQueuedMessage/clearQueue (atoms/actions).
+export const queueAtomFamily = atomFamily((id: string) =>
+  atom((get) => get(conversationsAtom).get(id)?.queue ?? EMPTY_QUEUE)
 );
 
 // =============================================================================
