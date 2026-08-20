@@ -179,7 +179,7 @@ export function BuddyDetailMobile() {
     const controller = new AbortController();
     setLoading(true);
     setError(null);
-    setActiveTab('work');
+    // No tab reset — the tab is the URL now (see buddy-tabs.ts).
     setShowReviewConversations(false);
     setSelectedWorkspaceId('');
     setEmployee(null);

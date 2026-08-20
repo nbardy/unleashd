@@ -184,8 +184,10 @@ export function BuddiesDashboard() {
     const generation = ++loadGenerationRef.current;
     const controller = new AbortController();
     setError(null);
+    // Deliberately does NOT reset the tab: the tab is the URL now. Slamming it
+    // to 'conversations' on every buddy mount is what made Back out of a thread
+    // land on the Conversations list instead of the tab you left from.
     if (buddyId) {
-      setActiveTab('conversations');
       setEmployee(null);
       setMemory(EMPTY_MEMORY);
       setAutomations([]);
@@ -193,8 +195,6 @@ export function BuddiesDashboard() {
       setAutomationError(null);
       setSelectedWorkspaceId('');
       setShowReviewConversations(false);
-    } else {
-      setActiveTab('work');
     }
     const loading = buddyId
       ? loadEmployee(controller.signal, generation)
