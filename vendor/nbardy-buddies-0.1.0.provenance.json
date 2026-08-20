@@ -3,8 +3,8 @@
   "package": "@nbardy/buddies",
   "version": "0.1.0",
   "archive": "vendor/nbardy-buddies-0.1.0.tgz",
-  "sha256": "299fe6268f845fa76117ce247cd875c10b8aa89df77c21a111be7e317bbe88b6",
+  "sha256": "2640d358bfa50fc88218ea1f8f0d1e6f227396a65364b82ed04355da42e930fc",
   "reproduciblePack": true,
-  "sourceCommit": "3b7027f4349ab849ce08a2c4131ee89c26740af6",
+  "sourceCommit": "fc7751a33ed67430d9fbcbb6c3ec47ea25fce511",
   "sourceDirty": false
 }
