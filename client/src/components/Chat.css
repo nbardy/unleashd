@@ -36,8 +36,47 @@
   flex-wrap: wrap;
 }
 
-.chat-id {
+/* Header model/effort chip. NOT `.config-summary` — SwarmDetail.css already
+   owns that name globally with `flex-direction: column`, which stacked
+   "Opus 5 / · High / ▾" onto three lines. Keep this prefix. */
+.chat-config-summary {
+  display: inline-flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 8px;
+  border-radius: 4px;
+  border: 1px solid transparent;
+  background: color-mix(in srgb, var(--text-muted) 10%, transparent);
   color: var(--text-emphasis);
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.4;
+  letter-spacing: 0.3px;
+  cursor: pointer;
+  white-space: nowrap;
+  flex-shrink: 0;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.chat-config-summary:hover,
+.chat-config-summary.expanded {
+  border-color: color-mix(in srgb, var(--warning) 40%, transparent);
+  background: color-mix(in srgb, var(--warning) 18%, transparent);
+}
+
+.chat-config-summary-effort {
+  color: var(--text-muted);
+  font-weight: 500;
+  text-transform: none;
+}
+
+.chat-config-summary-effort::before {
+  content: '·';
+  margin-right: 6px;
+  color: var(--text-muted);
+  opacity: 0.6;
 }
 
 .chat-dir {
@@ -1209,18 +1248,6 @@
 .message-content dd {
   margin-left: 24px;
   color: var(--text-emphasis);
-}
-
-/* Current message badge in header */
-.current-message-badge {
-  display: inline-flex;
-  align-items: center;
-  padding: 4px 10px;
-  background: var(--accent-success);
-  border-radius: 12px;
-  font-size: 12px;
-  color: var(--text-on-accent);
-  font-weight: 500;
 }
 
 /* Current message indicator — shown above the queue, labels the "sending" message.

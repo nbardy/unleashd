@@ -116,20 +116,24 @@ export function Chat() {
   const [headerPickerOpen, setHeaderPickerOpen] = useState<
     'provider' | 'model' | 'reasoning' | null
   >(null);
+  // Header shows a compact "Opus 5 · High" summary; the full provider/model/
+  // reasoning pickers only mount once the summary is expanded.
+  const [headerConfigExpanded, setHeaderConfigExpanded] = useState(false);
   const configPickerRef = useRef<HTMLDivElement>(null);
 
-  // Click-outside to close pickers
+  // Click-outside to close pickers and collapse the config row
   useEffect(() => {
-    if (!headerPickerOpen) return;
+    if (!headerPickerOpen && !headerConfigExpanded) return;
     const handleClickOutside = (e: MouseEvent) => {
       const target = e.target as Node;
       if (configPickerRef.current && !configPickerRef.current.contains(target)) {
         setHeaderPickerOpen(null);
+        setHeaderConfigExpanded(false);
       }
     };
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [headerPickerOpen]);
+  }, [headerPickerOpen, headerConfigExpanded]);
 
   const {
     savePrompt,
@@ -418,11 +422,15 @@ export function Chat() {
     );
   }
 
+  const dirDisplay = conversation.workingDirectory.replace(/^\/Users\/[^/]+/, '~');
+
   if (!conversationDetailsLoaded) {
     return (
       <div className="chat-view">
         <div className="chat-header">
-          <div className="chat-title">{conversation.id.slice(0, 8)}</div>
+          <div className="chat-title">
+            <span className="chat-dir">{dirDisplay}</span>
+          </div>
         </div>
         <div className="messages-container">
           <div className="empty-state">{detailLoadError ?? 'Loading conversation history…'}</div>
@@ -431,7 +439,6 @@ export function Chat() {
     );
   }
 
-  const dirDisplay = conversation.workingDirectory.replace(/^\/Users\/[^/]+/, '~');
   const headerProvider = catalog?.providers.find(
     (provider) => provider.id === conversationConfig?.provider
   );
@@ -451,6 +458,22 @@ export function Chat() {
         : resolvedHeaderModel?.reasoning?.defaultEffort
           ? `Default · ${resolvedHeaderModel.reasoning.defaultEffort}`
           : 'Default';
+  const headerModelLabel = resolvedHeaderModel?.displayName ?? resolvedHeaderModelId ?? 'Default';
+  // "Claude Opus 5" under the Claude provider is redundant — the summary drops
+  // the vendor prefix and shows "Opus 5". Full name stays in the expanded row.
+  const headerModelShortLabel =
+    headerProvider && headerModelLabel.startsWith(`${headerProvider.displayName} `)
+      ? headerModelLabel.slice(headerProvider.displayName.length + 1)
+      : headerModelLabel;
+  const headerEffort =
+    headerReasoning?.mode === 'explicit'
+      ? headerReasoning.effort
+      : headerReasoning?.mode === 'disabled'
+        ? null
+        : (resolvedHeaderModel?.reasoning?.defaultEffort ?? null);
+  const headerEffortShortLabel = headerEffort
+    ? headerEffort.charAt(0).toUpperCase() + headerEffort.slice(1)
+    : null;
 
   const updateHeaderConfig = (patch: Parameters<typeof setConversationConfig>[0]['patch']) => {
     setConversationConfig({
@@ -542,37 +565,54 @@ export function Chat() {
       )}
       <div className="chat-header">
         <div className="chat-title">
-          <span className="chat-id">{conversation.id.substring(0, 8)}</span>
           <div className="header-config-controls" ref={configPickerRef}>
-            {canChangeHarness ? (
-              <div className="provider-picker">
-                <button
-                  type="button"
-                  className={`provider-picker-trigger ${conversation.provider}`}
-                  disabled={!catalog || configIsSaving}
-                  onClick={() =>
-                    setHeaderPickerOpen((open) => (open === 'provider' ? null : 'provider'))
-                  }
-                >
-                  {headerProvider?.displayName ?? conversation.provider}
-                  <span className="provider-picker-caret">&#x25BE;</span>
-                </button>
-                {headerPickerOpen === 'provider' && catalog && (
-                  <div className="provider-picker-menu">
-                    {catalog.providers.map((provider) => (
-                      <button
-                        key={provider.id}
-                        type="button"
-                        className={`provider-picker-option ${
-                          provider.id === conversation.provider ? 'selected' : ''
-                        }`}
-                        onClick={() =>
-                          updateHeaderConfig({ kind: 'set_provider', provider: provider.id })
-                        }
-                      >
-                        {provider.displayName}
-                      </button>
-                    ))}
+            <button
+              type="button"
+              className={`chat-config-summary${headerConfigExpanded ? ' expanded' : ''}`}
+              title={`${headerProvider?.displayName ?? conversation.provider} · ${headerModelLabel} · ${headerReasoningLabel}`}
+              aria-expanded={headerConfigExpanded}
+              onClick={() => {
+                setHeaderPickerOpen(null);
+                setHeaderConfigExpanded((open) => !open);
+              }}
+            >
+              <span className="chat-config-summary-model">{headerModelShortLabel}</span>
+              {headerEffortShortLabel && (
+                <span className="chat-config-summary-effort">{headerEffortShortLabel}</span>
+              )}
+              <span className="model-picker-caret">&#x25BE;</span>
+            </button>
+
+            {headerConfigExpanded &&
+              (canChangeHarness ? (
+                <div className="provider-picker">
+                  <button
+                    type="button"
+                    className={`provider-picker-trigger ${conversation.provider}`}
+                    disabled={!catalog || configIsSaving}
+                    onClick={() =>
+                      setHeaderPickerOpen((open) => (open === 'provider' ? null : 'provider'))
+                    }
+                  >
+                    {headerProvider?.displayName ?? conversation.provider}
+                    <span className="provider-picker-caret">&#x25BE;</span>
+                  </button>
+                  {headerPickerOpen === 'provider' && catalog && (
+                    <div className="provider-picker-menu">
+                      {catalog.providers.map((provider) => (
+                        <button
+                          key={provider.id}
+                          type="button"
+                          className={`provider-picker-option ${
+                            provider.id === conversation.provider ? 'selected' : ''
+                          }`}
+                          onClick={() =>
+                            updateHeaderConfig({ kind: 'set_provider', provider: provider.id })
+                          }
+                        >
+                          {provider.displayName}
+                        </button>
+                      ))}
                   </div>
                 )}
               </div>
@@ -580,9 +620,9 @@ export function Chat() {
               <span className={`provider-badge provider-${conversation.provider}`}>
                 {headerProvider?.displayName ?? conversation.provider}
               </span>
-            )}
+              ))}
 
-            {headerProvider && conversationConfig && (
+            {headerConfigExpanded && headerProvider && conversationConfig && (
               <div className="model-picker">
                 <button
                   type="button"
@@ -642,7 +682,7 @@ export function Chat() {
               </div>
             )}
 
-            {resolvedHeaderModel?.reasoning && conversationConfig && (
+            {headerConfigExpanded && resolvedHeaderModel?.reasoning && conversationConfig && (
               <div className="model-picker">
                 <button
                   type="button"
@@ -777,11 +817,6 @@ export function Chat() {
             )}
           </button>
           {!confirmed && <div className="ready-badge waiting">Starting...</div>}
-          {currentMessage && (
-            <div className="current-message-badge" title="Currently processing">
-              Current
-            </div>
-          )}
           {pendingQueue.length > 0 && (
             <div className="queue-badge" title="Messages waiting to send">
               {pendingQueue.length} queued
@@ -796,7 +831,11 @@ export function Chat() {
             </div>
           )}
           {turnDiagnostics ? (
-            <TurnStatus diagnostics={turnDiagnostics} className="chat-turn-status" />
+            <TurnStatus
+              diagnostics={turnDiagnostics}
+              className="chat-turn-status"
+              density="compact"
+            />
           ) : (
             <div className={`status-indicator ${isRunning || isStreaming ? 'running' : ''}`} />
           )}

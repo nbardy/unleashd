@@ -4,6 +4,7 @@ import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { TurnStatusView } from '../src/components/TurnStatusView';
 import {
+  type TurnDiagnosticsInput,
   buildTurnDiagnosticsViewModel,
   isActiveTurnStatus,
   isNonterminalAttemptState,
@@ -177,6 +178,46 @@ test('status component renders heartbeat-only startup as waiting, not generic ac
   assert.match(markup, /Waiting for provider output/);
   assert.match(markup, /Bridge heartbeat 22s ago · provider output silent 11m 15s/);
   assert.doesNotMatch(markup, /Last activity/);
+});
+
+test('compact density drops routine activity text but never hides a stall', () => {
+  // Regression guard: the chat header renders TurnStatus with density="compact"
+  // to kill "Running 7s Provider output just now". Compacting must not also
+  // swallow the warning/danger detail that is the whole point of the pill.
+  const healthy = turnDiagnosticsFromAttempt({
+    ...baseAttempt,
+    state: 'running',
+    lastActivityAt: '2026-07-29T00:00:04.000Z',
+    lastActivity: { source: 'provider_event', providerEventType: 'text.delta' },
+  });
+  const stalled = turnDiagnosticsFromAttempt({
+    ...baseAttempt,
+    state: 'running',
+    lastActivityAt: '2026-07-29T00:11:15.000Z',
+    lastActivity: {
+      source: 'agent_cli_heartbeat',
+      providerEventType: 'progress',
+      heartbeat: { rawStdoutSilentSeconds: 675, phase: 'startup' },
+    },
+  });
+  const now = new Date('2026-07-29T00:11:37.000Z').getTime();
+  const compact = (input: TurnDiagnosticsInput) =>
+    renderToStaticMarkup(
+      createElement(TurnStatusView, {
+        view: buildTurnDiagnosticsViewModel(input, now),
+        density: 'compact',
+      })
+    );
+
+  const healthyMarkup = compact(healthy);
+  const healthyBody = healthyMarkup.replace(/title="[^"]*"/, '');
+  assert.match(healthyBody, /Running/);
+  assert.match(healthyBody, /11m 37s/);
+  assert.doesNotMatch(healthyBody, /Provider output/);
+  // Full detail still reachable on hover.
+  assert.match(healthyMarkup, /title="[^"]*Provider output/);
+
+  assert.match(compact(stalled), /provider output silent 11m 15s/);
 });
 
 test('native progress and visible output remain distinct', () => {

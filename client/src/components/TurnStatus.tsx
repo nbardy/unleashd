@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { TurnStatusView } from './TurnStatusView';
+import { TurnStatusView, type TurnStatusDensity } from './TurnStatusView';
 import {
   type TurnDiagnosticsInput,
   buildTurnDiagnosticsViewModel,
@@ -12,6 +12,7 @@ export interface TurnStatusProps {
   className?: string;
   now?: number;
   refreshIntervalMs?: number;
+  density?: TurnStatusDensity;
 }
 
 export function TurnStatus({
@@ -19,6 +20,7 @@ export function TurnStatus({
   className = '',
   now,
   refreshIntervalMs = 1_000,
+  density = 'full',
 }: TurnStatusProps) {
   const [clock, setClock] = useState(() => now ?? Date.now());
 
@@ -38,5 +40,5 @@ export function TurnStatus({
   }, [diagnostics.lastActivityAt, diagnostics.status, now, refreshIntervalMs]);
 
   const view = buildTurnDiagnosticsViewModel(diagnostics, now ?? clock);
-  return <TurnStatusView view={view} className={className} />;
+  return <TurnStatusView view={view} className={className} density={density} />;
 }
