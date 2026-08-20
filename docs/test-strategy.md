@@ -34,6 +34,24 @@
   gate, or task-specific model routing as incidental “safety.” Those are
   separate architecture decisions and require an explicit scoped design.
 
+### Rendering a client component in a test (no DOM harness required)
+
+The repo has no jsdom/testing-library and does not need one. `react-dom/server`
++ `MemoryRouter` render a real component to a string, which is enough to assert
+on the markup contract (hrefs, presence/absence of a target) through the real
+router — no mocks, and no assertions on TSX source text.
+
+Two gotchas, both already handled by `pnpm test:client`:
+
+- The test file must be `.tsx`, and `tsx` needs `--tsconfig client/tsconfig.app.json`
+  or it transpiles JSX with the classic runtime and every component under test
+  throws `ReferenceError: React is not defined`.
+- Only markup that renders on first paint is visible. Anything behind local
+  state (desktop `AutomationCard`'s run history sits behind a `showRuns`
+  toggle) will not appear — assert against a section that renders immediately.
+
+`client/test/buddy-conversation-links.test.tsx` is the worked example.
+
 ### High-value, low-cost
 - Contract tests for builder + provider command specs (`agent-cli-tool`).
 - Adapter loader/poller integration fixture test.

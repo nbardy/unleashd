@@ -1,6 +1,8 @@
 import { useAtomValue } from 'jotai';
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { conversationAtomFamily } from '../../atoms/conversations';
+import { conversationPath } from '../../components/buddies/buddy-tabs';
 import type { ConversationLink, Workspace } from '../../components/buddies/types';
 import { EmptyState } from '../components/EmptyState';
 import { ModelSheetMobile } from '../components/ModelSheetMobile';
@@ -50,22 +52,18 @@ export function ConversationsTab({
   reviewCount,
   showReviewConversations,
   onToggleReviews,
-  onOpenConversation,
   workspace,
   onTalk,
   availableIds,
-  busy,
 }: {
   visibleConversations: ConversationLink[];
   reviewCount: number;
   showReviewConversations: boolean;
   onToggleReviews: () => void;
-  onOpenConversation: (conversationId: string) => void;
   workspace: Workspace | undefined;
   onTalk: () => void;
   /** Conversation ids the client actually holds — a link can outlive its thread. */
   availableIds: Set<string>;
-  busy: string | null;
 }) {
   return (
     <section className="mobile-buddy-section" aria-label="Conversations">
@@ -110,14 +108,15 @@ export function ConversationsTab({
                 )}
                 {available ? (
                   <div className="mobile-buddy-section__toolbar">
-                    <button
-                      type="button"
-                      className="mobile-cta"
-                      disabled={busy !== null}
-                      onClick={() => onOpenConversation(conversationId)}
-                    >
+                    {/* A LINK, not an onClick: the target id is already known and
+                        already availability-checked, so it belongs in an href —
+                        long-press/open-in-new-tab work and it lands in history.
+                        Desktop's Conversations tab has always been a <Link>;
+                        mobile was the last "open this conversation" affordance
+                        still faking one with a button. */}
+                    <Link className="mobile-cta" to={conversationPath(conversationId)}>
                       Open chat →
-                    </button>
+                    </Link>
                     <ConversationConfigButton conversationId={conversationId} />
                   </div>
                 ) : (

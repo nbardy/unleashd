@@ -73,7 +73,15 @@ client/src/atoms/ui.ts             → persisted UI prefs (local+shared partitio
   conversation only terminalises its buddy link row, and an automation run
   keeps its `conversation_id` forever — navigating to a thread the client no
   longer holds hits `Chat.tsx`'s `navigate('/')` bounce, which reads to the
-  user as "Open took me to the conversation list."
+  user as "Open took me to the conversation list." Guarded by
+  `client/test/buddy-conversation-links.test.tsx`. A button is still correct
+  where the click CREATES the thread (`talk()`, the Buddy Builder, delegate /
+  review, find-or-create on a project) — there is no id to put in an href yet.
+- Client component tests are `.tsx` under `client/test/` and render through
+  `react-dom/server` + `MemoryRouter` (no jsdom). They need
+  `--tsconfig client/tsconfig.app.json` or JSX compiles with the classic
+  runtime and every component throws `ReferenceError: React is not defined`.
+  `pnpm test:client` passes it. See `docs/test-strategy.md`.
 
 - Typecheck the client with `tsc -b`, never `tsc --noEmit`. `client/tsconfig.json`
   is a solution file (`"files": []` + project references), so plain

@@ -452,11 +452,9 @@ export function BuddyDetailMobile() {
           reviewCount={reviewCount}
           showReviewConversations={showReviewConversations}
           onToggleReviews={() => setShowReviewConversations((value) => !value)}
-          onOpenConversation={(conversationId) => navigate(`/chat/${conversationId}`)}
           workspace={workspace}
           onTalk={() => workspace && talk(workspace)}
           availableIds={availableIds}
-          busy={busy}
         />
       )}
 
