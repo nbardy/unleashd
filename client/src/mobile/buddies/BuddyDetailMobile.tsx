@@ -1,6 +1,6 @@
 import { useAtomValue } from 'jotai';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { Link, Navigate, useNavigate, useParams } from 'react-router-dom';
 import { allConversationIdsAtom } from '../../atoms/conversations';
 import { createConversation } from '../../atoms/pending-creations';
 import { asArray, buddyApi } from '../../components/buddies/api';
@@ -16,6 +16,12 @@ import {
   selectWorkspace,
   selectWorkspaceProjects,
 } from '../../components/buddies/buddies-shaping';
+import {
+  EMPLOYEE_TABS,
+  EMPLOYEE_TAB_LABELS_SHORT,
+  buddyTabPath,
+  parseEmployeeTab,
+} from '../../components/buddies/buddy-tabs';
 import type {
   Buddy,
   BuddyAutomation,
@@ -63,15 +69,8 @@ function initials(name: string): string {
     .toUpperCase();
 }
 
-const TABS: readonly { id: EmployeeTab; label: string }[] = [
-  { id: 'work', label: 'Work' },
-  { id: 'conversations', label: 'Chats' },
-  { id: 'memory', label: 'Memory' },
-  { id: 'automations', label: 'Autos' },
-] as const;
-
 export function BuddyDetailMobile() {
-  const { buddyId } = useParams<{ buddyId: string }>();
+  const { buddyId, tab: tabSegment } = useParams<{ buddyId: string; tab: string }>();
   const navigate = useNavigate();
   const conversationIds = useAtomValue(allConversationIdsAtom);
   const availableIds = useMemo(() => new Set(conversationIds), [conversationIds]);
@@ -79,7 +78,10 @@ export function BuddyDetailMobile() {
   const [employee, setEmployee] = useState<EmployeeRecord | null>(null);
   const [memory, setMemory] = useState<BuddyMemory>(EMPTY_MEMORY);
   const [automations, setAutomations] = useState<BuddyAutomation[]>([]);
-  const [activeTab, setActiveTab] = useState<EmployeeTab>('work');
+  // The tab is the URL, not state (see components/buddies/buddy-tabs.ts).
+  // `routedTab === null` means the URL is not canonical yet — redirect below.
+  const routedTab = parseEmployeeTab(tabSegment);
+  const activeTab: EmployeeTab = routedTab ?? 'work';
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string>('');
   const [showReviewConversations, setShowReviewConversations] = useState(false);
   const [loading, setLoading] = useState(true);
@@ -314,6 +316,11 @@ export function BuddyDetailMobile() {
     );
   }
 
+  // Canonicalise `/buddies/:id` (and any junk tab segment) onto a real tab URL.
+  if (routedTab === null) {
+    return <Navigate to={buddyTabPath(buddyId, activeTab)} replace />;
+  }
+
   if (loading) {
     return (
       <div className="mobile-hub" role="status" aria-live="polite" aria-busy="true">
@@ -407,21 +414,19 @@ export function BuddyDetailMobile() {
       </header>
 
       <nav className="mobile-buddy-detail__tabs" aria-label="Buddy sections">
-        {TABS.map((tab) => (
-          <button
-            key={tab.id}
-            type="button"
-            role="tab"
-            aria-selected={activeTab === tab.id}
+        {EMPLOYEE_TABS.map((tab) => (
+          <Link
+            key={tab}
+            to={buddyTabPath(buddyId, tab)}
+            aria-current={activeTab === tab ? 'page' : undefined}
             className={
-              activeTab === tab.id
+              activeTab === tab
                 ? 'mobile-buddy-detail__tab mobile-buddy-detail__tab--active'
                 : 'mobile-buddy-detail__tab'
             }
-            onClick={() => setActiveTab(tab.id)}
           >
-            {tab.label}
-          </button>
+            {EMPLOYEE_TAB_LABELS_SHORT[tab]}
+          </Link>
         ))}
       </nav>
 
@@ -478,7 +483,7 @@ export function BuddyDetailMobile() {
           busy={busy}
           setBusy={setBusy}
           error={automationError}
-          onOpenConversation={(conversationId) => navigate(`/chat/${conversationId}`)}
+          availableIds={availableIds}
           onRefresh={() =>
             loadAutomations().catch((cause: unknown) =>
               setAutomationError(cause instanceof Error ? cause.message : String(cause))

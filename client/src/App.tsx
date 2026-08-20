@@ -103,9 +103,12 @@ function useRestoreOnLoad(device: DeviceKind) {
       if (document.visibilityState === 'visible') tryRestore();
     };
     type ViteHMR = { addEventListener?: (e: string, cb: () => void) => void };
-    (import.meta as unknown as { hot?: ViteHMR }).hot?.addEventListener?.('vite:beforeUpdate', () => {
-      setTimeout(tryRestore, 60);
-    });
+    (import.meta as unknown as { hot?: ViteHMR }).hot?.addEventListener?.(
+      'vite:beforeUpdate',
+      () => {
+        setTimeout(tryRestore, 60);
+      }
+    );
     document.addEventListener('visibilitychange', onVisible);
     return () => document.removeEventListener('visibilitychange', onVisible);
   }, [device, tryRestore]);
@@ -138,6 +141,14 @@ const ROUTES: RouteDef[] = [
   { path: '/buddies', desktop: () => <BuddiesDashboard />, mobile: () => <BuddiesMobile /> },
   {
     path: '/buddies/:buddyId',
+    desktop: () => <BuddiesDashboard />,
+    mobile: () => <BuddyDetailMobile />,
+  },
+  // Employee sections are pages, not local tab state — see
+  // components/buddies/buddy-tabs.ts. `/buddies/:buddyId` canonicalises itself
+  // onto this route, so Back out of Automations lands on the previous tab.
+  {
+    path: '/buddies/:buddyId/:tab',
     desktop: () => <BuddiesDashboard />,
     mobile: () => <BuddyDetailMobile />,
   },

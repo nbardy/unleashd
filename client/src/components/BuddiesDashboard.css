@@ -1017,7 +1017,10 @@
   line-height: 1.45;
 }
 
-.buddy-section-tabs button {
+/* Tabs are anchors now (one URL per section) — `a` shares the button rules so
+   the strip looks identical whether a tab is a link or a legacy button. */
+.buddy-section-tabs button,
+.buddy-section-tabs a {
   margin-bottom: -1px;
   padding: 11px 1px 10px;
   border: 0;
@@ -1026,20 +1029,25 @@
   background: transparent;
   font-size: 12px;
   letter-spacing: 0.01em;
+  text-decoration: none;
   cursor: pointer;
 }
 
 .buddy-section-tabs button:hover,
-.buddy-section-tabs button.active {
+.buddy-section-tabs button.active,
+.buddy-section-tabs a:hover,
+.buddy-section-tabs a.active {
   color: var(--text-emphasis);
   border-bottom-color: var(--ai);
 }
 
-.buddy-section-tabs button:focus {
+.buddy-section-tabs button:focus,
+.buddy-section-tabs a:focus {
   outline: none;
 }
 
-.buddy-section-tabs button:focus-visible {
+.buddy-section-tabs button:focus-visible,
+.buddy-section-tabs a:focus-visible {
   color: var(--text-emphasis);
   outline: 1px solid var(--ai);
   outline-offset: 4px;
@@ -1546,21 +1554,47 @@
   font-size: 15px;
 }
 
-.buddy-automation-conversations > button {
+.buddy-automation-conversation {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 14px;
   width: 100%;
   padding: 11px 13px;
+  border: 1px solid var(--border-subtle);
   border-left: 3px solid var(--ai);
+  background: var(--bg-card);
   text-align: left;
 }
 
-.buddy-automation-conversations > button > span:first-child {
+.buddy-automation-conversation > span:first-child {
   display: flex;
   flex-direction: column;
   gap: 3px;
+}
+
+.buddy-automation-conversation__open,
+.buddy-run-open {
+  flex-shrink: 0;
+  color: var(--ai-bright);
+  font-size: 11px;
+  text-decoration: none;
+}
+
+.buddy-automation-conversation__open:hover,
+.buddy-run-open:hover {
+  text-decoration: underline;
+}
+
+/* A run keeps its conversation_id after the thread is deleted; the dead target
+   is shown, never linked, so it cannot bounce off Chat.tsx back to `/`. */
+.buddy-automation-conversation__open--unavailable,
+.buddy-run-open--unavailable,
+.buddy-automation-conversation__open--unavailable:hover,
+.buddy-run-open--unavailable:hover {
+  color: var(--text-muted);
+  text-decoration: none;
+  cursor: default;
 }
 
 .buddy-run-history {

@@ -1,5 +1,7 @@
 import { type FormEvent, useState } from 'react';
+import { Link } from 'react-router-dom';
 import { asArray, buddyApi } from './api';
+import { conversationPath } from './buddy-tabs';
 import type { AutomationRun, BuddyApprovalRequest, BuddyAutomation, BuddyMutation } from './types';
 import type { ConversationLink } from './types';
 
@@ -12,8 +14,41 @@ interface BuddyAutomationsTabProps {
   mutate: BuddyMutation;
   refresh: () => Promise<void>;
   onError: (message: string) => void;
-  onOpenConversation: (conversationId: string) => void;
+  /** Conversation ids the client actually holds — a run outlives its thread. */
+  availableConversationIds: Set<string>;
   automationConversations: ConversationLink[];
+}
+
+/**
+ * Automation threads are LINKS (`<a href="/chat/:id">`), not onClick handlers:
+ * they open in a new tab, show their target in the status bar, and land in
+ * history. They also have to be availability-checked the same way the
+ * Conversations tab is — deleting a conversation only terminalises its link
+ * row, and an automation run keeps its `conversation_id` forever. Navigating to
+ * a thread the client no longer holds bounces off Chat.tsx straight back to
+ * `/`, which is exactly the "Open sends me to the conversation list" bug.
+ */
+function OpenConversationLink({
+  conversationId,
+  available,
+  className,
+}: {
+  conversationId: string;
+  available: boolean;
+  className: string;
+}) {
+  if (!available) {
+    return (
+      <span aria-disabled="true" className={`${className} ${className}--unavailable`}>
+        Deleted
+      </span>
+    );
+  }
+  return (
+    <Link className={className} to={conversationPath(conversationId)}>
+      Open →
+    </Link>
+  );
 }
 
 export function BuddyAutomationsTab({
@@ -25,7 +60,7 @@ export function BuddyAutomationsTab({
   mutate,
   refresh,
   onError,
-  onOpenConversation,
+  availableConversationIds,
   automationConversations,
 }: BuddyAutomationsTabProps) {
   const [scheduleKind, setScheduleKind] = useState<BuddyAutomation['schedule_kind']>('interval');
@@ -172,7 +207,7 @@ export function BuddyAutomationsTab({
             busy={busy}
             onMutate={mutate}
             onRefresh={refresh}
-            onOpenConversation={onOpenConversation}
+            availableConversationIds={availableConversationIds}
           />
         ))}
       </div>
@@ -182,20 +217,21 @@ export function BuddyAutomationsTab({
           const conversationId =
             conversation.conversation_id ?? conversation.unleashd_conversation_id;
           if (!conversationId) return null;
+          const available = availableConversationIds.has(conversationId);
           return (
-            <button
-              type="button"
-              key={conversation.id ?? conversationId}
-              onClick={() => onOpenConversation(conversationId)}
-            >
+            <div className="buddy-automation-conversation" key={conversation.id ?? conversationId}>
               <span>
                 <strong>Automation run</strong>
                 {conversation.last_active_at
                   ? new Date(conversation.last_active_at).toLocaleString()
                   : 'No activity recorded'}
               </span>
-              <span>Open →</span>
-            </button>
+              <OpenConversationLink
+                conversationId={conversationId}
+                available={available}
+                className="buddy-automation-conversation__open"
+              />
+            </div>
           );
         })}
         {automationConversations.length === 0 && (
@@ -211,7 +247,7 @@ interface AutomationCardProps {
   busy: boolean;
   onMutate: BuddyMutation;
   onRefresh: () => Promise<void>;
-  onOpenConversation: (conversationId: string) => void;
+  availableConversationIds: Set<string>;
 }
 
 function AutomationCard({
@@ -219,7 +255,7 @@ function AutomationCard({
   busy,
   onMutate,
   onRefresh,
-  onOpenConversation,
+  availableConversationIds,
 }: AutomationCardProps) {
   const [runs, setRuns] = useState<AutomationRun[]>(automation.runs ?? []);
   const [showRuns, setShowRuns] = useState(false);
@@ -301,9 +337,11 @@ function AutomationCard({
                 {run.status} · {new Date(run.scheduled_for).toLocaleString()}
               </span>
               {run.conversation_id && (
-                <button type="button" onClick={() => onOpenConversation(run.conversation_id!)}>
-                  Open
-                </button>
+                <OpenConversationLink
+                  conversationId={run.conversation_id}
+                  available={availableConversationIds.has(run.conversation_id)}
+                  className="buddy-run-open"
+                />
               )}
               <small>{run.outcome ?? run.error}</small>
               {(run.tokens_used !== undefined || run.cost_usd !== undefined) && (

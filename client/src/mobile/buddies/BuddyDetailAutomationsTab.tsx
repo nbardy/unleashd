@@ -1,5 +1,7 @@
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { buddyApi } from '../../components/buddies/api';
+import { conversationPath } from '../../components/buddies/buddy-tabs';
 import type { BuddyAutomation, ConversationLink } from '../../components/buddies/types';
 import { EmptyState } from '../components/EmptyState';
 
@@ -12,6 +14,37 @@ import { EmptyState } from '../components/EmptyState';
 const automationItemUrl = (automationId: string) =>
   `/api/buddies/automations/${encodeURIComponent(automationId)}`;
 
+/**
+ * Automation threads are LINKS (`<a href="/chat/:id">`), not onClick handlers,
+ * and they are availability-checked exactly like the Conversations tab.
+ * Deleting a conversation only terminalises its link row and an automation run
+ * keeps its `conversation_id` forever, so navigating to a thread the client no
+ * longer holds bounces off Chat.tsx back to `/` — that was the "Open sends me
+ * to the conversation list" bug.
+ */
+function OpenConversationLink({
+  conversationId,
+  available,
+  className,
+}: {
+  conversationId: string;
+  available: boolean;
+  className: string;
+}) {
+  if (!available) {
+    return (
+      <span aria-disabled="true" className={className}>
+        Deleted
+      </span>
+    );
+  }
+  return (
+    <Link className={className} to={conversationPath(conversationId)}>
+      Open →
+    </Link>
+  );
+}
+
 // ---------------------------------------------------------------------------
 // Automations tab (lightweight, reuses asArray + automationConversations filter)
 // ---------------------------------------------------------------------------
@@ -22,7 +55,7 @@ export function AutomationsTab({
   busy,
   setBusy,
   error,
-  onOpenConversation,
+  availableIds,
   onRefresh,
 }: {
   buddyId: string;
@@ -32,7 +65,8 @@ export function AutomationsTab({
   busy: string | null;
   setBusy: (value: string | null) => void;
   error: string | null;
-  onOpenConversation: (conversationId: string) => void;
+  /** Conversation ids the client actually holds — a run outlives its thread. */
+  availableIds: Set<string>;
   onRefresh: () => void;
 }) {
   const [actionError, setActionError] = useState<string | null>(null);
@@ -136,13 +170,11 @@ export function AutomationsTab({
                     <li key={run.id} className="mobile-muted">
                       {run.status} · {new Date(run.scheduled_for).toLocaleString()}
                       {run.conversation_id && (
-                        <button
-                          type="button"
+                        <OpenConversationLink
+                          conversationId={run.conversation_id}
+                          available={availableIds.has(run.conversation_id)}
                           className="mobile-link"
-                          onClick={() => onOpenConversation(run.conversation_id!)}
-                        >
-                          Open →
-                        </button>
+                        />
                       )}
                     </li>
                   ))}
@@ -166,13 +198,11 @@ export function AutomationsTab({
                   <span className={`mobile-badge mobile-badge--${conversation.status}`}>
                     {conversation.status}
                   </span>
-                  <button
-                    type="button"
+                  <OpenConversationLink
+                    conversationId={conversationId}
+                    available={availableIds.has(conversationId)}
                     className="mobile-cta"
-                    onClick={() => onOpenConversation(conversationId)}
-                  >
-                    Open →
-                  </button>
+                  />
                 </article>
               );
             })}

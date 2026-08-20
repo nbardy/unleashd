@@ -601,6 +601,8 @@
   z-index: 2;
 }
 
+/* Anchors, not buttons — each tab is a URL, so Back returns to the previous
+   tab instead of leaving the buddy. */
 .mobile-buddy-detail__tab {
   flex-shrink: 0;
   padding: 8px 14px;
@@ -611,6 +613,7 @@
   font-size: 13px;
   font-weight: 600;
   white-space: nowrap;
+  text-decoration: none;
 }
 
 .mobile-buddy-detail__tab--active {
@@ -626,7 +629,3 @@
   color: var(--text-primary);
   letter-spacing: -0.01em;
 }
-
-
-
-

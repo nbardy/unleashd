@@ -40,6 +40,7 @@ client/src/atoms/ui.ts             → persisted UI prefs (local+shared partitio
   `z.string()`; no shared enums, no value translation, server-side defaults.
 - Submodule commits: commit + push INSIDE `vendor/agent-cli-tool` first, then
   bump the outer pointer. Never push main unless the user asks.
+- Never `git reset --hard`, `filter-branch`, `filter-repo`, or `rebase -i` on a shared branch — they orphaned 5a6cf40/79a8381 on 2026-08-20. Use `git stash` or a throwaway branch and ask. Guarded in `.claude/settings.local.json` (deny) + `~/.zshrc` wrapper.
 - Prefer one integration test through a real boundary over mock-heavy units;
   never assert on TSX/CSS source text.
 
@@ -62,6 +63,18 @@ client/src/atoms/ui.ts             → persisted UI prefs (local+shared partitio
 
 - Adding a provider: harness (submodule) + `server/src/providers/{name}.ts` +
   `ProviderSchema` in shared + registry entry + disk adapter if persisted.
+- Buddy sections are ROUTES, not tab state: `/buddies/:buddyId/:tab` with
+  `/buddies/:buddyId` redirecting onto the default tab. Tab segments and labels
+  live in `client/src/components/buddies/buddy-tabs.ts` (pure, mobile-safe).
+  Tab strips are `<Link>`s so Back returns to the previous tab instead of
+  leaving the buddy, and a tab survives reload.
+- Any "open this conversation" affordance must be a `<Link to={/chat/:id}>`
+  AND availability-checked against `allConversationIdsAtom`. Deleting a
+  conversation only terminalises its buddy link row, and an automation run
+  keeps its `conversation_id` forever — navigating to a thread the client no
+  longer holds hits `Chat.tsx`'s `navigate('/')` bounce, which reads to the
+  user as "Open took me to the conversation list."
+
 - When source is broken, `server/dist/*.js` (and `shared/dist/`) is the oracle
   for the author's prior intent — check it before git archaeology.
 - The formatter is **biome** (`pnpm format`, `pnpm lint:fix`; config in

@@ -1,6 +1,6 @@
 import { useAtomValue } from 'jotai';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, Navigate, useNavigate, useParams } from 'react-router-dom';
 import { createConversation } from '../atoms/actions';
 import { allConversationIdsAtom } from '../atoms/conversations';
 import { newId } from '../utils/ids';
@@ -20,6 +20,12 @@ import {
   selectWorkspace,
   selectWorkspaceProjects,
 } from './buddies/buddies-shaping';
+import {
+  EMPLOYEE_TABS,
+  EMPLOYEE_TAB_LABELS,
+  buddyTabPath,
+  parseEmployeeTab,
+} from './buddies/buddy-tabs';
 import {
   type Buddy,
   type BuddyAutomation,
@@ -63,7 +69,7 @@ function compactPath(path: string | null): string {
 
 export function BuddiesDashboard() {
   const navigate = useNavigate();
-  const { buddyId } = useParams();
+  const { buddyId, tab: tabSegment } = useParams();
   const conversationIds = useAtomValue(allConversationIdsAtom);
   const availableConversationIds = useMemo(() => new Set(conversationIds), [conversationIds]);
   const [overview, setOverview] = useState<BuddyOverview | null>(null);
@@ -73,9 +79,11 @@ export function BuddiesDashboard() {
   const [memoryError, setMemoryError] = useState<string | null>(null);
   const [automationError, setAutomationError] = useState<string | null>(null);
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string>('');
-  const [activeTab, setActiveTab] = useState<EmployeeTab>(() =>
-    buddyId ? 'conversations' : 'work'
-  );
+  // The tab is the URL, not state. `routedTab === null` means the URL is not
+  // canonical yet (`/buddies/:id`, or a junk segment); we render the default
+  // tab's redirect below rather than showing one tab under another tab's URL.
+  const routedTab = parseEmployeeTab(tabSegment);
+  const activeTab: EmployeeTab = routedTab ?? (buddyId ? 'conversations' : 'work');
   const [showReviewConversations, setShowReviewConversations] = useState(false);
   const [busy, setBusy] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -347,6 +355,12 @@ export function BuddiesDashboard() {
     talk(targetWorkspace, projectId);
   };
 
+  // Canonicalise `/buddies/:id` (and any junk tab segment) onto a real tab URL.
+  // `replace` keeps Back pointing at whatever linked here, not at a redirect loop.
+  if (buddyId && routedTab === null) {
+    return <Navigate to={buddyTabPath(buddyId, activeTab)} replace />;
+  }
+
   if (error && !employee) {
     return (
       <div className="buddies-dashboard buddies-dashboard--centered">
@@ -457,16 +471,15 @@ export function BuddiesDashboard() {
           className="buddy-section-tabs buddy-section-tabs--header"
           aria-label="Employee sections"
         >
-          {(['work', 'conversations', 'memory', 'automations'] as EmployeeTab[]).map((tab) => (
-            <button
+          {EMPLOYEE_TABS.map((tab) => (
+            <Link
               key={tab}
-              type="button"
+              to={buddyTabPath(employee.buddy.id, tab)}
               className={activeTab === tab ? 'active' : ''}
               aria-current={activeTab === tab ? 'page' : undefined}
-              onClick={() => setActiveTab(tab)}
             >
-              {tab[0].toUpperCase() + tab.slice(1)}
-            </button>
+              {EMPLOYEE_TAB_LABELS[tab]}
+            </Link>
           ))}
         </nav>
       </header>
@@ -876,7 +889,7 @@ export function BuddiesDashboard() {
               mutate={mutate}
               refresh={loadAutomations}
               onError={setError}
-              onOpenConversation={(conversationId) => navigate(`/chat/${conversationId}`)}
+              availableConversationIds={availableConversationIds}
               automationConversations={automationConversations}
             />
           </>
