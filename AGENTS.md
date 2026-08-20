@@ -72,3 +72,13 @@ client/src/atoms/ui.ts             → persisted UI prefs (local+shared partitio
   classes with the component (`.chat-config-summary`, not `.config-summary`
   — that one is already SwarmDetail's, with `flex-direction: column`).
   ~16 class names are currently defined in more than one file.
+- Callbacks handed to a library are called with the library's arity, not
+  yours. `handleFilesUpload` goes straight into react-dropzone's `onDrop`,
+  which invokes it as `(acceptedFiles, fileRejections, event)` — a defaulted
+  second parameter silently receives `fileRejections`, and `tsc` allows it
+  because a 1-arg function fits a 3-arg slot. Keep such callbacks unary and
+  put the extra state in a helper (`uploadFilesWithDrainRetry`).
+- Sidebar rows are ONE line. `.done-btn` is an absolute overlay on the row's
+  right edge, so anything else anchored right (`.thread-stop-btn`) sits under
+  it and stops receiving clicks. Two-line rows hid this; single-line rows do
+  not. Guarded by `.conversation-item:has(.thread-stop-btn):hover .done-btn`.

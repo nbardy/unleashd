@@ -89,6 +89,89 @@ function persistPendingFiles(conversationId: string, files: PendingFile[]): void
 }
 
 // ---------------------------------------------------------------------------
+// Upload transport — retries the dev hot-reload drain window.
+// ---------------------------------------------------------------------------
+
+export interface UploadedFileDescriptor {
+  originalName: string;
+  absolutePath: string;
+  mimeType: string;
+  size: number;
+}
+
+/**
+ * Backoff schedule for a retryable upload rejection, in ms.
+ *
+ * Sized against a real dev restart, not a reconnect blip: the server refuses
+ * every non-GET with 503 `server_draining` while `state === 'reloading'`
+ * (server.ts), then the replacement process refuses with `server_starting`
+ * until it finishes rehydrating persisted conversations. A single ~1s retry
+ * lands squarely inside that second window and fails anyway; ~7s of total
+ * patience covers a normal restart.
+ */
+export const UPLOAD_RETRY_BACKOFF_MS = [750, 1500, 2500, 2500];
+
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+
+/**
+ * A rejection is retryable when the server says so. Both drain codes carry
+ * `retryable: true`; the bare 503 check covers a proxy that swallows the body.
+ */
+function isRetryableUploadRejection(
+  status: number,
+  payload: { error?: string; retryable?: boolean }
+): boolean {
+  return (
+    payload.retryable === true ||
+    payload.error === 'server_draining' ||
+    payload.error === 'server_starting' ||
+    status === 503
+  );
+}
+
+/**
+ * POST the attachments, retrying only while the server reports a drain.
+ *
+ * SUBTLE — the retry counter lives HERE and not as a defaulted second parameter
+ * on the hook's callback. `handleFilesUpload` is handed straight to
+ * react-dropzone as `onDrop` (Chat.tsx), and react-dropzone invokes it as
+ * `onDrop(acceptedFiles, fileRejections, event)`. A `(files, attempt = 0)`
+ * signature therefore receives `fileRejections` (an array) as `attempt` on every
+ * drag-and-drop, so an `attempt === 0` guard is false on the first try and the
+ * retry silently never runs — paste retried, drag did not. TypeScript cannot
+ * catch it: the hook's public type declares one parameter, and a 1-arg function
+ * is assignable to a 3-arg callback slot. Keep the public callback unary.
+ *
+ * `fetchImpl`/`sleepImpl` are seams for the regression test only.
+ */
+export async function uploadFilesWithDrainRetry(
+  conversationId: string,
+  acceptedFiles: File[],
+  fetchImpl: typeof fetch = fetch,
+  sleepImpl: (ms: number) => Promise<unknown> = sleep
+): Promise<{ files: UploadedFileDescriptor[] }> {
+  let lastError = '';
+  for (let attempt = 0; attempt <= UPLOAD_RETRY_BACKOFF_MS.length; attempt += 1) {
+    const formData = new FormData();
+    formData.append('conversationId', conversationId);
+    for (const file of acceptedFiles) formData.append('files', file);
+
+    const response = await fetchImpl('/api/upload', { method: 'POST', body: formData });
+    if (response.ok) return (await response.json()) as { files: UploadedFileDescriptor[] };
+
+    const payload = (await response.json().catch(() => ({}))) as {
+      error?: string;
+      retryable?: boolean;
+    };
+    lastError = payload.error ?? response.statusText;
+    const backoff = UPLOAD_RETRY_BACKOFF_MS[attempt];
+    if (backoff === undefined || !isRetryableUploadRejection(response.status, payload)) break;
+    await sleepImpl(backoff);
+  }
+  throw new Error(`Upload failed: ${lastError}`);
+}
+
+// ---------------------------------------------------------------------------
 // Hook — stateful pending-files lifecycle shared by desktop + mobile.
 // ---------------------------------------------------------------------------
 
@@ -133,33 +216,15 @@ export function usePendingAttachments(
     };
   }, []);
 
+  // Unary by contract — this is handed straight to react-dropzone as `onDrop`,
+  // which calls it with (acceptedFiles, fileRejections, event). Never add a
+  // second parameter here; see uploadFilesWithDrainRetry for why.
   const handleFilesUpload = useCallback(
-    async (acceptedFiles: File[], attempt = 0) => {
+    async (acceptedFiles: File[]) => {
       if (!conversationId || acceptedFiles.length === 0) return;
       setIsUploading(true);
       try {
-        const formData = new FormData();
-        formData.append('conversationId', conversationId);
-        for (const file of acceptedFiles) formData.append('files', file);
-
-        const response = await fetch('/api/upload', { method: 'POST', body: formData });
-        if (!response.ok) {
-          const payload = (await response.json().catch(() => ({}))) as {
-            error?: string;
-            retryable?: boolean;
-            code?: string;
-          };
-          const isRetryable = payload.retryable === true || payload.error === 'server_draining' || response.status === 503;
-          if (isRetryable && attempt === 0) {
-            // Dev hot-reload drain: server is reloading, upload will succeed after ~1s reconnect
-            await new Promise((r) => setTimeout(r, 1200));
-            return handleFilesUpload(acceptedFiles, 1);
-          }
-          throw new Error(`Upload failed: ${payload.error ?? response.statusText}`);
-        }
-        const result = (await response.json()) as {
-          files: Array<{ originalName: string; absolutePath: string; mimeType: string; size: number }>;
-        };
+        const result = await uploadFilesWithDrainRetry(conversationId, acceptedFiles);
         const withPreviews: PendingFile[] = result.files.map((uploaded, i) => ({
           ...uploaded,
           previewUrl: acceptedFiles[i]?.type.startsWith('image/') ? URL.createObjectURL(acceptedFiles[i]) : null,

@@ -628,6 +628,10 @@
   margin: -4px;
   padding: 4px;
   border-radius: 4px;
+  /* Stacked above .done-btn, which is an absolute overlay on the same right
+     edge — see the :has(.thread-stop-btn) rule below. */
+  position: relative;
+  z-index: 1;
 }
 
 .thread-stop-btn {
@@ -828,6 +832,21 @@
 
 .conversation-item:hover .done-btn {
   opacity: 1;
+}
+
+/* Done must not land on top of Stop.
+   Both are anchored to the row's right edge and vertically centred, and
+   .done-btn is an absolutely-positioned overlay painted after .conversation-row,
+   so it wins the stacking contest and swallows the click. This was harmless
+   while rows were two lines tall (Done's centre fell between the metadata row
+   and the title); collapsing every row to a single line put the two controls
+   on exactly the same pixels, making a running conversation impossible to stop
+   from the sidebar. .thread-stop-btn only renders while conv.isRunning, so this
+   shifts Done left by the stop control's expanded width for exactly those rows.
+   Keep the offset >= .thread-stop-btn's hover max-width (48px) + its 6px margin
+   + the 8px status dot + the row's 6px gap. */
+.conversation-item:has(.thread-stop-btn):hover .done-btn {
+  right: 78px;
 }
 
 .done-btn:hover {
