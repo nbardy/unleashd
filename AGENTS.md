@@ -64,14 +64,18 @@ client/src/atoms/ui.ts             → persisted UI prefs (local+shared partitio
   `ProviderSchema` in shared + registry entry + disk adapter if persisted.
 - When source is broken, `server/dist/*.js` (and `shared/dist/`) is the oracle
   for the author's prior intent — check it before git archaeology.
-- No prettier config lives in this repo. `npx prettier --write` fetches
-  prettier with its defaults and reformats whole files (single → double
-  quotes), burying a 20-line change in a 700-line diff. Match surrounding
-  style by hand instead.
-- CSS is global (plain `.css` imports, no modules). Prefix new component
-  classes with the component (`.chat-config-summary`, not `.config-summary`
-  — that one is already SwarmDetail's, with `flex-direction: column`).
-  ~16 class names are currently defined in more than one file.
+- The formatter is **biome** (`pnpm format`, `pnpm lint:fix`; config in
+  `biome.json` — single quotes, width 100). There is no prettier config, so
+  `npx prettier --write` fetches prettier with ITS defaults and reformats
+  whole files (single → double quotes), burying a 20-line change in a
+  700-line diff. Never reach for prettier here.
+- CSS is global (plain `.css` imports, no modules), so one class defined in
+  two files silently fights over the cascade — import order picks the winner.
+  Prefix component classes with the component (`.chat-config-summary`, not
+  `.config-summary` — that one is SwarmDetail's, with `flex-direction:
+  column`). Genuinely shared primitives (`.empty-state`, `.provider-badge`)
+  live once in `client/src/App.css`. Gate G6 in
+  `tools/check-client-invariants.sh` fails on any cross-file duplicate.
 - Callbacks handed to a library are called with the library's arity, not
   yours. `handleFilesUpload` goes straight into react-dropzone's `onDrop`,
   which invokes it as `(acceptedFiles, fileRejections, event)` — a defaulted

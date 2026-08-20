@@ -65,3 +65,52 @@ body {
   filter: brightness(0.55) saturate(0.8);
   transition: filter 200ms ease;
 }
+
+/* =============================================================================
+   Shared primitives
+   CSS here is global (plain .css imports, no modules), so a class defined in
+   two component files silently fights over the cascade — import order decides,
+   and the loser is invisible. `.empty-state` and `.provider-badge` are used by
+   five components between them, so they live here once instead.
+   ============================================================================= */
+
+.empty-state {
+  padding: 40px;
+  text-align: center;
+  color: var(--text-muted);
+}
+
+.provider-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.provider-badge.provider-claude {
+  background: color-mix(in srgb, var(--primary) 20%, transparent);
+  color: var(--primary);
+}
+
+.provider-badge.provider-codex {
+  background: color-mix(in srgb, var(--meta) 20%, transparent);
+  color: var(--meta);
+}
+
+.provider-badge.provider-opencode {
+  background: color-mix(in srgb, var(--success) 20%, transparent);
+  color: var(--success);
+}
+
+.provider-badge.provider-gemini {
+  background: color-mix(in oklch, var(--user), transparent 75%);
+  color: var(--user-bright);
+}
+
+.provider-badge.provider-worker {
+  background: color-mix(in srgb, var(--primary) 20%, transparent);
+  color: var(--primary);
+}

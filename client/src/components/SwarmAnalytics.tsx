@@ -534,7 +534,7 @@ export function SwarmAnalytics() {
       {/* Content */}
       <div className="swarm-analytics-content">
         {projects.length === 0 ? (
-          <div className="empty-state">
+          <div className="swarm-analytics-empty-state">
             <p>No worker conversations found.</p>
             <p>Workers are detected by the [oompa] prefix in the first message.</p>
           </div>
@@ -563,7 +563,7 @@ export function SwarmAnalytics() {
                         className={`run-tab ${selectedSwarmId === run.swarmId ? 'active' : ''}`}
                         onClick={() => setSelectedSwarmId(run.swarmId)}
                       >
-                        <span className="run-id">{run.swarmId}</span>
+                        <span className="swarm-analytics-run-id">{run.swarmId}</span>
                         {run.summary && (
                           <span className="run-progress">
                             {run.summary['total-completed']}/{run.summary['total-iterations']}
@@ -590,7 +590,7 @@ export function SwarmAnalytics() {
                 <TimelineChart runData={selectedRun} />
               </div>
             ) : runsData.size === 0 ? (
-              <div className="empty-state">
+              <div className="swarm-analytics-empty-state">
                 <p>No recorded runs for this project.</p>
                 <p>Runs are recorded when oompa swarm data is available in the runs/ directory.</p>
               </div>

@@ -464,7 +464,7 @@ export function Gallery({ filter }: GalleryProps = {}) {
               {showMoreButton && (
                 <button
                   type="button"
-                  className="show-more-btn"
+                  className="gallery-show-more-btn"
                   onClick={(e) => {
                     e.stopPropagation();
                     toggleGalleryExpanded(group.directory);
@@ -477,7 +477,7 @@ export function Gallery({ filter }: GalleryProps = {}) {
               {isExpanded && totalCount > CONVERSATIONS_PER_PROJECT && (
                 <button
                   type="button"
-                  className="show-more-btn"
+                  className="gallery-show-more-btn"
                   onClick={(e) => {
                     e.stopPropagation();
                     toggleGalleryExpanded(group.directory);

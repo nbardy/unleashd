@@ -837,7 +837,7 @@ export function Chat() {
               density="compact"
             />
           ) : (
-            <div className={`status-indicator ${isRunning || isStreaming ? 'running' : ''}`} />
+            <div className={`chat-status-indicator ${isRunning || isStreaming ? 'running' : ''}`} />
           )}
         </div>
       </div>

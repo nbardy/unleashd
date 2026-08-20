@@ -114,9 +114,36 @@ else
 fi
 echo
 
+echo "==> Gate G6: one owner per CSS class — the same class defined in two .css files"
+# CSS here is global (plain .css imports, no modules). Two files defining the
+# same class silently fight over the cascade: import order picks the winner and
+# the loser leaves no trace. This cost real debugging time when a header chip
+# picked up SwarmDetail's .config-summary { flex-direction: column }. Shared
+# primitives (.empty-state, .provider-badge) live once in client/src/App.css;
+# everything else is prefixed with its component.
+DUPES="$(
+  while IFS= read -r f; do
+    grep -o -E '^\.[a-zA-Z0-9_-]+' "$f" | sed 's/^\.//' | sort -u | sed "s|\$| $f|"
+  done < <(find client/src -name '*.css') | awk '{print $1}' | sort | uniq -d
+)"
+if [ -n "$DUPES" ]; then
+  echo "G6 FAIL: these classes are defined in more than one .css file:"
+  while IFS= read -r c; do
+    [ -z "$c" ] && continue
+    echo "  .$c"
+    grep -l -E "^\.$c[[:space:],{:]" $(find client/src -name '*.css') | sed 's/^/      /'
+  done <<< "$DUPES"
+  echo "  Fix: prefix the class with its component (.chat-config-summary, not"
+  echo "  .config-summary), or move a genuinely shared primitive to client/src/App.css."
+  FAIL=1
+else
+  echo "G6 PASS"
+fi
+echo
+
 if [ "$FAIL" -ne 0 ]; then
   echo "check-client-invariants: FAILED — fix the gates above."
   exit 1
 fi
 
-echo "check-client-invariants: all 5 gates PASS"
+echo "check-client-invariants: all 6 gates PASS"

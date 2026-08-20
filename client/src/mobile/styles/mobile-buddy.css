@@ -302,3 +302,20 @@
   border-radius: 14px;
   background: var(--bg-raised-1);
 }
+
+/* Folded in from mobile.css, which defined these same classes earlier in the
+   bundle. Everything else it declared was already redeclared below; these four
+   properties were the only ones still reaching the DOM, so they move here to
+   keep the rendering identical with one owner per class. */
+.mobile-buddy-section {
+  padding: 16px;
+}
+
+.mobile-buddy-section__toolbar {
+  justify-content: space-between;
+}
+
+.mobile-buddy-convo-card__header {
+  justify-content: space-between;
+  margin-bottom: 6px;
+}

@@ -105,34 +105,9 @@
 }
 
 /* Provider badge */
-.provider-badge {
-  display: inline-block;
-  padding: 2px 8px;
-  border-radius: 4px;
-  font-size: 10px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-}
 
-.provider-badge.provider-claude {
-  background: color-mix(in srgb, var(--primary) 20%, transparent);
-  color: var(--primary);
-}
 
-.provider-badge.provider-codex {
-  background: color-mix(in srgb, var(--meta) 20%, transparent);
-  color: var(--meta);
-}
 
-.provider-badge.provider-opencode {
-  background: color-mix(in srgb, var(--success) 20%, transparent);
-  color: var(--success);
-}
-.provider-badge.provider-gemini {
-  background: color-mix(in oklch, var(--user), transparent 75%);
-  color: var(--user-bright);
-}
 
 .provider-picker {
   position: relative;
@@ -784,20 +759,15 @@
   color: var(--text-secondary);
 }
 
-.empty-state {
-  padding: 40px;
-  text-align: center;
-  color: var(--text-muted);
-}
 
-.status-indicator {
+.chat-status-indicator {
   width: 8px;
   height: 8px;
   border-radius: 50%;
   background: var(--text-secondary);
 }
 
-.status-indicator.running {
+.chat-status-indicator.running {
   background: var(--accent-warning);
   animation: status-glow 1.5s ease-in-out infinite;
 }
@@ -1593,67 +1563,3 @@
   color: var(--text-on-accent);
 }
 
-/* =============================================================================
-   Swarm Debug Conversation Prefix Token
-   Collapsible badge shown above messages when conversation has swarmDebugPrefix.
-   ============================================================================= */
-
-.swarm-convo-prefix {
-  padding: 8px 16px 0;
-  display: flex;
-  flex-direction: column;
-}
-
-.swarm-prefix-token {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 10px;
-  border-radius: 2px;
-  background: var(--primary-dim);
-  border: 1px solid var(--primary);
-  color: var(--primary-bright);
-  font-size: 11px;
-  font-weight: 700;
-  font-family: var(--font-mono);
-  letter-spacing: 0.5px;
-  cursor: pointer;
-  transition: background 0.15s, box-shadow 0.15s;
-  text-align: left;
-  width: fit-content;
-}
-
-.swarm-prefix-token:hover {
-  background: color-mix(in srgb, var(--primary) 20%, var(--bg-content));
-  box-shadow: 0 0 0 1px var(--primary-glow);
-}
-
-.swarm-prefix-token.expanded {
-  border-radius: 6px 6px 0 0;
-  border-bottom-color: transparent;
-}
-
-.swarm-prefix-indicator {
-  font-size: 9px;
-  opacity: 0.8;
-}
-
-.swarm-prefix-content {
-  background: var(--bg-content);
-  border: 1px solid var(--primary);
-  border-top: none;
-  border-radius: 0 0 6px 6px;
-  padding: 10px 14px;
-  max-height: 200px;
-  overflow-y: auto;
-  max-width: 600px;
-}
-
-.swarm-prefix-text {
-  margin: 0;
-  font-family: var(--font-mono);
-  font-size: 12px;
-  color: var(--text-secondary);
-  white-space: pre-wrap;
-  line-height: 1.5;
-}

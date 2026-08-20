@@ -24,6 +24,7 @@
     "test:package": "node test/package-smoke.js",
     "test:api": "node test/api.test.js",
     "vendor:buddies": "node tools/vendor-buddies.mjs",
+    "sub:latest": "git submodule update --remote --merge vendor/agent-cli-tool && git -C vendor/agent-cli-tool log --oneline -1",
     "check:catalog": "pnpm --filter @unleashd/shared check:catalog",
     "check:client-invariants": "bash tools/check-client-invariants.sh",
     "lint": "biome check .",

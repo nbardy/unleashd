@@ -587,9 +587,6 @@
 }
 
 /* ---- BuddyDetailMobile ---- */
-.mobile-buddy-detail {
-  padding-bottom: calc(16px + env(safe-area-inset-bottom));
-}
 
 .mobile-buddy-detail__tabs {
   display: flex;
@@ -622,12 +619,6 @@
   color: var(--text-primary);
 }
 
-.mobile-buddy-section {
-  padding: 16px;
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-}
 
 .mobile-buddy-section__heading {
   font-size: 13px;
@@ -636,28 +627,6 @@
   letter-spacing: -0.01em;
 }
 
-.mobile-buddy-section__toolbar {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-}
 
-.mobile-buddy-convo-list {
-  display: grid;
-  gap: 10px;
-}
 
-.mobile-buddy-convo-card {
-  padding: 12px;
-  border: 1px solid var(--border-subtle);
-  border-radius: 12px;
-  background: var(--bg-raised-1);
-}
 
-.mobile-buddy-convo-card__header {
-  display: flex;
-  justify-content: space-between;
-  gap: 10px;
-  margin-bottom: 6px;
-}

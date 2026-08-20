@@ -144,7 +144,7 @@
 }
 
 /* Show more/less button */
-.show-more-btn {
+.gallery-show-more-btn {
   margin-top: 16px;
   padding: 10px 20px;
   background: transparent;
@@ -157,7 +157,7 @@
   align-self: center;
 }
 
-.show-more-btn:hover {
+.gallery-show-more-btn:hover {
   background: var(--bg-tertiary);
   border-color: var(--accent-primary);
   color: var(--text-primary);
@@ -174,11 +174,6 @@
   align-content: start;
 }
 
-.empty-state {
-  padding: 40px;
-  text-align: center;
-  color: var(--text-muted);
-}
 
 .gallery-card {
   background: var(--bg-card); /* Tier 2 */
@@ -214,34 +209,9 @@
 }
 
 /* Provider badge */
-.provider-badge {
-  display: inline-block;
-  padding: 2px 8px;
-  border-radius: 4px;
-  font-size: 10px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-}
 
-.provider-badge.provider-claude {
-  background: color-mix(in srgb, var(--primary) 20%, transparent);
-  color: var(--primary);
-}
 
-.provider-badge.provider-codex {
-  background: color-mix(in srgb, var(--meta) 20%, transparent);
-  color: var(--meta);
-}
 
-.provider-badge.provider-opencode {
-  background: color-mix(in srgb, var(--success) 20%, transparent);
-  color: var(--success);
-}
-.provider-badge.provider-gemini {
-  background: color-mix(in oklch, var(--user), transparent 75%);
-  color: var(--user-bright);
-}
 
 .gallery-card-status {
   display: flex;
@@ -586,10 +556,6 @@
 }
 
 /* Worker provider badge — violet */
-.provider-badge.provider-worker {
-  background: color-mix(in srgb, var(--primary) 20%, transparent);
-  color: var(--primary);
-}
 
 /* Promote button on worker cards */
 .promote-worker-btn {
