@@ -75,6 +75,14 @@ client/src/atoms/ui.ts             → persisted UI prefs (local+shared partitio
   longer holds hits `Chat.tsx`'s `navigate('/')` bounce, which reads to the
   user as "Open took me to the conversation list."
 
+- Typecheck the client with `tsc -b`, never `tsc --noEmit`. `client/tsconfig.json`
+  is a solution file (`"files": []` + project references), so plain
+  `tsc --noEmit` checks ZERO files and exits 0 on a broken tree — it reported
+  success on three `ReferenceError`-grade unresolved identifiers on 2026-08-20.
+  `vite build` does not catch them either (esbuild strips types, no scope
+  analysis). `pnpm typecheck` (dev-supervisor) runs `tsc -b`; when the
+  supervisor lock is held by another session, run `pnpm -C client exec tsc -b`
+  directly rather than falling back to `--noEmit`.
 - When source is broken, `server/dist/*.js` (and `shared/dist/`) is the oracle
   for the author's prior intent — check it before git archaeology.
 - The formatter is **biome** (`pnpm format`, `pnpm lint:fix`; config in
