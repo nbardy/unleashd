@@ -1,7 +1,7 @@
 import type { QueuedMessage } from '@unleashd/shared';
 import { useAtomValue } from 'jotai';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { interruptAndSend, queueMessage, stopConversation } from '../../atoms/actions';
+import { endConversation, interruptAndSend, queueMessage } from '../../atoms/actions';
 import { queueAtomFamily, streamingAtomFamily } from '../../atoms/conversations';
 import { useConversationDraft } from '../../hooks/useConversationDraft';
 import { usePendingAttachments } from '../../hooks/usePendingAttachments';
@@ -49,7 +49,16 @@ export function ComposerMobile({
   const resolvedQueue: QueuedMessage[] = queue ?? queueFromAtom ?? [];
   // Legacy fallback: queueLength prop → synthesize length for sendLabel
   const effectiveQueue: QueuedMessage[] =
-    queue !== undefined ? queue : queueLengthLegacy !== undefined ? Array.from({ length: queueLengthLegacy }, (_, i) => ({ id: `legacy-${i}`, content: '', queuedAt: new Date(0), status: 'pending' as const })) : resolvedQueue;
+    queue !== undefined
+      ? queue
+      : queueLengthLegacy !== undefined
+        ? Array.from({ length: queueLengthLegacy }, (_, i) => ({
+            id: `legacy-${i}`,
+            content: '',
+            queuedAt: new Date(0),
+            status: 'pending' as const,
+          }))
+        : resolvedQueue;
 
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
@@ -160,7 +169,10 @@ export function ComposerMobile({
   // Reuses derived view model, not new state.
   const streamingText = useAtomValue(streamingAtomFamily(conversationId));
   const runtimeTurnActive = isRunning || isStreaming;
-  const { attempt: composerTurnAttempt } = useTurnDiagnostics(conversationId || undefined, runtimeTurnActive);
+  const { attempt: composerTurnAttempt } = useTurnDiagnostics(
+    conversationId || undefined,
+    runtimeTurnActive
+  );
   const composerTurnDiagnostics =
     composerTurnAttempt && shouldPresentTurnAttempt(composerTurnAttempt, runtimeTurnActive)
       ? turnDiagnosticsFromAttempt(composerTurnAttempt)
@@ -188,7 +200,6 @@ export function ComposerMobile({
   // One label for the button and the hint below it, so they cannot disagree.
   const sendLabel = hasActiveTurn ? 'Interrupt' : hasQueue ? 'Queue' : 'Send';
 
-
   const handleSend = useCallback(async () => {
     const text = draft.trim();
     if ((!text && !hasAttachments) || sending) return;
@@ -211,11 +222,55 @@ export function ComposerMobile({
     } finally {
       setSending(false);
     }
-  }, [conversationId, draft, hasActiveTurn, hasAttachments, sending, buildContent, clearDraftPersisted, clearFiles]);
+  }, [
+    conversationId,
+    draft,
+    hasActiveTurn,
+    hasAttachments,
+    sending,
+    buildContent,
+    clearDraftPersisted,
+    clearFiles,
+  ]);
 
+  // Desktop's only stop affordance is endConversation (clear_queue then
+  // stop_conversation, Sidebar.tsx). Mobile called bare stopConversation, so
+  // tapping Stop on a runaway agent ended the current turn and the next queued
+  // message started immediately — there was no "stop everything" on a phone.
+  // Per-item cancel and Clear All in MobileQueueStrip cover the finer-grained
+  // case, so Stop matches desktop and means end all work.
   const handleStop = useCallback(() => {
-    stopConversation(conversationId);
+    endConversation(conversationId);
   }, [conversationId]);
+
+  // A phone has no Tab key, so the desktop queue-vs-interrupt toggle is
+  // unreachable here. Without this the only send path during an active turn was
+  // interruptAndSend, which destroys the in-flight turn's partial progress —
+  // "add a follow-up without killing the current turn" was impossible on mobile.
+  const handleQueue = useCallback(async () => {
+    const text = draft.trim();
+    if ((!text && !hasAttachments) || sending) return;
+    setSending(true);
+    setError(null);
+    try {
+      await queueMessage(conversationId, buildContent(text));
+      clearDraftPersisted();
+      clearFiles();
+      if (textareaRef.current) textareaRef.current.style.height = 'auto';
+    } catch (e) {
+      setError(e instanceof Error ? e.message : String(e));
+    } finally {
+      setSending(false);
+    }
+  }, [
+    conversationId,
+    draft,
+    hasAttachments,
+    sending,
+    buildContent,
+    clearDraftPersisted,
+    clearFiles,
+  ]);
 
   const handleFilesSelected = useCallback(
     async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -276,7 +331,11 @@ export function ComposerMobile({
           {pendingFiles.map((file) => (
             <div key={file.absolutePath} className="mobile-pending-file">
               {file.previewUrl ? (
-                <img className="mobile-pending-file__thumb" src={file.previewUrl} alt={file.originalName} />
+                <img
+                  className="mobile-pending-file__thumb"
+                  src={file.previewUrl}
+                  alt={file.originalName}
+                />
               ) : (
                 <span className="mobile-pending-file__icon" aria-hidden="true">
                   📄
@@ -371,10 +430,24 @@ export function ComposerMobile({
               type="button"
               onClick={handleStop}
               className="mobile-composer__btn mobile-composer__btn--stop"
-              aria-label="Stop"
-              title="Stop"
+              aria-label="Stop all work"
+              title="Stop all work (also clears queued messages)"
             >
               <span className="mobile-composer__stop-glyph" aria-hidden="true" />
+            </button>
+          )}
+          {hasActiveTurn && !disabled && (
+            <button
+              type="button"
+              onClick={() => void handleQueue()}
+              disabled={!sendEnabled}
+              className="mobile-composer__btn mobile-composer__btn--queue"
+              aria-label="Queue message"
+              title="Queue after the current turn (does not interrupt)"
+            >
+              <span aria-hidden="true" style={{ fontSize: 15, lineHeight: 1 }}>
+                ⏱
+              </span>
             </button>
           )}
           <button

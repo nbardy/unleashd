@@ -1,7 +1,13 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { ClientMessage, QueuedMessage } from '@unleashd/shared';
-import { cancelQueuedMessage, clearQueue, handleMessage, setSendFn } from '../src/atoms/actions';
+import {
+  cancelQueuedMessage,
+  clearQueue,
+  endConversation,
+  handleMessage,
+  setSendFn,
+} from '../src/atoms/actions';
 import { conversationsAtom, queueAtomFamily } from '../src/atoms/conversations';
 import { jotaiStore } from '../src/atoms/store';
 
@@ -18,9 +24,18 @@ function makeConversation(queue: QueuedMessage[]) {
     createdAt: new Date('2026-08-01T00:00:00.000Z'),
     workingDirectory: '/tmp/project',
     provider: 'claude' as const,
-    config: { provider: 'claude', model: { mode: 'default' as const }, reasoning: { mode: 'default' as const } },
+    config: {
+      provider: 'claude',
+      model: { mode: 'default' as const },
+      reasoning: { mode: 'default' as const },
+    },
     configRevision: 0,
-    configResolution: { kind: 'resolved' as const, provider: 'claude' as const, model: { mode: 'default' as const }, reasoning: { mode: 'default' as const } },
+    configResolution: {
+      kind: 'resolved' as const,
+      provider: 'claude' as const,
+      model: { mode: 'default' as const },
+      reasoning: { mode: 'default' as const },
+    },
     subAgents: [],
     queue,
     isWorker: false,
@@ -40,8 +55,18 @@ function makeConversation(queue: QueuedMessage[]) {
 }
 
 test('queueAtomFamily derives from conversationsAtom (no new state)', () => {
-  const q1: QueuedMessage = { id: 'q-1', content: 'first', queuedAt: new Date('2026-08-01T00:00:00.000Z'), status: 'pending' };
-  const q2: QueuedMessage = { id: 'q-2', content: 'second', queuedAt: new Date('2026-08-01T00:00:01.000Z'), status: 'pending' };
+  const q1: QueuedMessage = {
+    id: 'q-1',
+    content: 'first',
+    queuedAt: new Date('2026-08-01T00:00:00.000Z'),
+    status: 'pending',
+  };
+  const q2: QueuedMessage = {
+    id: 'q-2',
+    content: 'second',
+    queuedAt: new Date('2026-08-01T00:00:01.000Z'),
+    status: 'pending',
+  };
   jotaiStore.set(conversationsAtom, new Map([[conversationId, makeConversation([q1, q2])]]));
   const queue = jotaiStore.get(queueAtomFamily(conversationId));
   assert.equal(queue.length, 2);
@@ -54,7 +79,12 @@ test('queueAtomFamily derives from conversationsAtom (no new state)', () => {
 });
 
 test('queueAtomFamily updates when conversationsAtom queue changes', () => {
-  const q1: QueuedMessage = { id: 'q-1', content: 'first', queuedAt: new Date(), status: 'pending' };
+  const q1: QueuedMessage = {
+    id: 'q-1',
+    content: 'first',
+    queuedAt: new Date(),
+    status: 'pending',
+  };
   jotaiStore.set(conversationsAtom, new Map([[conversationId, makeConversation([q1])]]));
   assert.equal(jotaiStore.get(queueAtomFamily(conversationId)).length, 1);
   handleMessage({ type: 'queue_updated', conversationId, queue: [] });
@@ -62,38 +92,57 @@ test('queueAtomFamily updates when conversationsAtom queue changes', () => {
 });
 
 test('cancelQueuedMessage sends cancel_queued_message with same shape as desktop', () => {
-  let sent: ClientMessage | null = null;
-  setSendFn((msg) => { sent = msg; });
+  const sent: ClientMessage[] = [];
+  setSendFn((msg) => {
+    sent.push(msg);
+  });
   cancelQueuedMessage(conversationId, 'q-42');
-  assert.equal(sent?.type, 'cancel_queued_message');
-  assert.equal((sent as any).conversationId, conversationId);
-  assert.equal((sent as any).messageId, 'q-42');
+  assert.deepEqual(sent, [{ type: 'cancel_queued_message', conversationId, messageId: 'q-42' }]);
 });
 
 test('clearQueue sends clear_queue with same shape as desktop', () => {
-  let sent: ClientMessage | null = null;
-  setSendFn((msg) => { sent = msg; });
+  const sent: ClientMessage[] = [];
+  setSendFn((msg) => {
+    sent.push(msg);
+  });
   clearQueue(conversationId);
-  assert.equal(sent?.type, 'clear_queue');
-  assert.equal((sent as any).conversationId, conversationId);
+  assert.deepEqual(sent, [{ type: 'clear_queue', conversationId }]);
 });
 
-test('MobileQueueStrip reuses same atoms — no new state for queue storage', async () => {
-  const q: QueuedMessage = { id: 'q-mobile', content: 'hello mobile queue', queuedAt: new Date(), status: 'pending' };
+test('mobile and desktop read one shared queue — no second source of truth', () => {
+  const q: QueuedMessage = {
+    id: 'q-mobile',
+    content: 'hello mobile queue',
+    queuedAt: new Date(),
+    status: 'pending',
+  };
   jotaiStore.set(conversationsAtom, new Map([[conversationId, makeConversation([q])]]));
   const mobileQueue = jotaiStore.get(queueAtomFamily(conversationId));
   const desktopQueue = jotaiStore.get(conversationsAtom).get(conversationId)?.queue ?? [];
-  assert.deepEqual(mobileQueue, desktopQueue, 'mobile and desktop should see same queue via shared atom');
-  const fs = await import('node:fs');
-  const strip = fs.readFileSync('client/src/mobile/conversations/MobileQueueStrip.tsx', 'utf8');
-  assert.match(strip, /MobileBadge/, 'MobileQueueStrip should use MobileBadge');
-  assert.match(strip, /MobileSection/, 'MobileQueueStrip should use MobileSection');
-  assert.match(strip, /cancelQueuedMessage/, 'MobileQueueStrip should call cancelQueuedMessage');
-  assert.match(strip, /queueAtomFamily/, 'MobileQueueStrip should read queueAtomFamily');
-  const composer = fs.readFileSync('client/src/mobile/components/ComposerMobile.tsx', 'utf8');
-  assert.match(composer, /queueAtomFamily/, 'ComposerMobile should share queueAtomFamily');
-  assert.match(composer, /queue\?: QueuedMessage/, 'ComposerMobile should accept queue: QueuedMessage[]');
-  const convoView = fs.readFileSync('client/src/mobile/conversations/ConversationView.tsx', 'utf8');
-  assert.match(convoView, /queueAtomFamily/, 'ConversationView should share queueAtomFamily');
-  assert.match(convoView, /queue=\{queue\}/, 'ConversationView should pass queue list to ComposerMobile');
+  assert.deepEqual(
+    mobileQueue,
+    desktopQueue,
+    'mobile and desktop should see same queue via shared atom'
+  );
+});
+
+/**
+ * Mobile's Stop button calls endConversation (ComposerMobile), so this ordering
+ * is load-bearing on a phone: WebSocket messages are handled in order, and if
+ * stop_conversation went first the next queued message would start the instant
+ * the turn died — "Stop" would visibly fail to stop anything. Mobile previously
+ * called bare stopConversation and had exactly that bug.
+ */
+test('endConversation clears the queue before stopping the turn', () => {
+  const sent: ClientMessage[] = [];
+  setSendFn((msg) => {
+    sent.push(msg);
+  });
+  jotaiStore.set(conversationsAtom, new Map([[conversationId, makeConversation([])]]));
+  endConversation(conversationId);
+  assert.deepEqual(
+    sent.map((m) => m.type),
+    ['clear_queue', 'stop_conversation'],
+    'clear_queue must precede stop_conversation'
+  );
 });

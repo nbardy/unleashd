@@ -119,10 +119,7 @@
   font: inherit;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
-  transition:
-    transform 100ms ease,
-    border-color 120ms ease,
-    background 120ms ease;
+  transition: transform 100ms ease, border-color 120ms ease, background 120ms ease;
 }
 
 .mobile-ui-card--button:active {
@@ -228,9 +225,7 @@
   white-space: nowrap;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
-  transition:
-    transform 100ms ease,
-    opacity 120ms ease;
+  transition: transform 100ms ease, opacity 120ms ease;
 }
 
 .mobile-ui-header-action:active {
@@ -797,9 +792,7 @@
   border-radius: 50%;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
-  transition:
-    transform 100ms ease,
-    opacity 120ms ease;
+  transition: transform 100ms ease, opacity 120ms ease;
 }
 
 .mobile-composer__btn:active {
@@ -822,6 +815,20 @@
 .mobile-composer__btn--stop {
   background: var(--theme-danger);
   color: #fff;
+}
+
+/* Queue-during-turn: a secondary action beside Stop, so the destructive
+   Interrupt is never the only way to send while a turn is running. */
+.mobile-composer__btn--queue {
+  background: var(--bg-raised-2);
+  color: var(--text-primary);
+}
+
+.mobile-composer__btn--queue:disabled {
+  color: var(--text-muted);
+  cursor: default;
+  opacity: 0.6;
+  transform: none;
 }
 
 .mobile-composer__stop-glyph {

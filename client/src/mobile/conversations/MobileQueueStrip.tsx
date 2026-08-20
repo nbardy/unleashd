@@ -35,11 +35,10 @@ export function MobileQueueStrip({
   // Pending items are the cancelable ones; 'sending' is the current turn's
   // message already being processed (desktop shows it separately as Current).
   const pendingQueue = queue.filter((m) => m.status === 'pending');
-  const displayQueue = pendingQueue.length > 0 ? pendingQueue : queue;
+  // If only 'sending' remains, still show it — but without a cancel button.
+  const showQueue = pendingQueue.length > 0 ? pendingQueue : queue;
 
   if (!conversationId || queue.length === 0) return null;
-  // If only 'sending' remains, still show it but without cancel
-  const showQueue = displayQueue;
 
   const handleCancel = (messageId: string) => {
     cancelQueuedMessage(conversationId, messageId);
@@ -54,7 +53,11 @@ export function MobileQueueStrip({
       title="Queued"
       meta={
         <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-          <MobileBadge tone="active">{queue.length} queued</MobileBadge>
+          {/* Count what the list actually shows. Counting every status made the
+              badge disagree with the rows below it (one 'sending' + one
+              'pending' read "2 queued" above a single row) and diverged from
+              desktop, which counts pending only (Chat.tsx). */}
+          <MobileBadge tone="active">{showQueue.length} queued</MobileBadge>
           {queue.length > 0 ? (
             <button
               type="button"
@@ -78,15 +81,13 @@ export function MobileQueueStrip({
         </span>
       }
     >
-      <div
-        role="list"
+      <ul
         aria-label="Queued messages"
-        style={{ display: 'grid', gap: 8 }}
+        style={{ display: 'grid', gap: 8, margin: 0, padding: 0, listStyle: 'none' }}
       >
         {showQueue.map((qm, index) => (
-          <div
+          <li
             key={qm.id}
-            role="listitem"
             style={{
               display: 'flex',
               alignItems: 'center',
@@ -98,7 +99,10 @@ export function MobileQueueStrip({
               minWidth: 0,
             }}
           >
-            <MobileBadge tone={qm.status === 'sending' ? 'accent' : 'neutral'} style={{ flexShrink: 0 }}>
+            <MobileBadge
+              tone={qm.status === 'sending' ? 'accent' : 'neutral'}
+              style={{ flexShrink: 0 }}
+            >
               #{index + 1}
             </MobileBadge>
             <span
@@ -144,9 +148,9 @@ export function MobileQueueStrip({
                 sending
               </MobileBadge>
             )}
-          </div>
+          </li>
         ))}
-      </div>
+      </ul>
     </MobileSection>
   );
 }
