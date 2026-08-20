@@ -64,3 +64,11 @@ client/src/atoms/ui.ts             → persisted UI prefs (local+shared partitio
   `ProviderSchema` in shared + registry entry + disk adapter if persisted.
 - When source is broken, `server/dist/*.js` (and `shared/dist/`) is the oracle
   for the author's prior intent — check it before git archaeology.
+- No prettier config lives in this repo. `npx prettier --write` fetches
+  prettier with its defaults and reformats whole files (single → double
+  quotes), burying a 20-line change in a 700-line diff. Match surrounding
+  style by hand instead.
+- CSS is global (plain `.css` imports, no modules). Prefix new component
+  classes with the component (`.chat-config-summary`, not `.config-summary`
+  — that one is already SwarmDetail's, with `flex-direction: column`).
+  ~16 class names are currently defined in more than one file.
