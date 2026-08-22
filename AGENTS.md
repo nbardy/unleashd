@@ -60,7 +60,7 @@ client/src/atoms/ui.ts             → persisted UI prefs (local+shared partitio
 | Buddy automations: `job_kind` vs `schedule_kind`, the loop driver, known defects | `agent_notes/2026-08-21_buddy-automations-reference.md` |
 | Buddy coordination primitives: no review type, the missing wait | `product/buddies/PLANNING_PRIMITIVES.md` + `agent_notes/2026-08-21_primitives-and-the-wait-design.md` |
 | Direct reports (sub-buddies): hiring, `hire_quota`, threat model | `product/buddies/PLANNING_SUB_BUDDIES.md` + `agent_notes/2026-08-19_sub-buddies-design.md` |
-| Buddy memory: soul/long-term/working docs + append-only notes, two known defects | `product/buddies/PLANNING_MEMORY.md` + `agent_notes/2026-08-21_memory-architecture-research_buddies-development-lead.md` |
+| Buddy memory: soul/long-term/working docs + append-only notes, two known defects | `product/buddies/PLANNING_MEMORY.md` (design) + `product/buddies/HANDOFF_MEMORY.md` (review handoff) + `agent_notes/2026-08-21_memory-architecture-research_buddies-development-lead.md` (evidence) |
 | New provider integration protocol | `docs/agent_client_spec.md` |
 
 ## Misc
