@@ -1,6 +1,6 @@
 # 2026-08-19 Direct Reports (Sub-Buddies) — Implementation Spec
 
-**Status:** design, third pass, not yet coded · **Companion:** `product/PLANNING_SUB_BUDDIES.md`
+**Status:** design, third pass, not yet coded · **Companion:** `product/buddies/PLANNING_SUB_BUDDIES.md`
 **Terminology:** `sub-buddy == direct report`. One hierarchy
 (`buddy_relationships`), one directory rule (`overview.topLevel`), one UI section. Ops are
 named `hire_direct_report` / `retire_direct_report`.

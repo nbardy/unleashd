@@ -35,8 +35,13 @@ output/playwright/
 *.temp
 
 # Local planning scratch (not committed)
-# product/*.md is tracked — product plans are durable intent, not scratch.
+# Markdown under product/ is tracked — product plans are durable intent, not
+# scratch. The negation must cover SUBDIRECTORIES: `!product/*.md` alone only
+# re-includes the top level, so `product/buddies/*.md` silently stayed ignored
+# when docs were foldered on 2026-08-21. Directories need their own negation or
+# git never descends into them to see the .md files.
 product/**
 !product/
-!product/*.md
+!product/**/
+!product/**/*.md
 output

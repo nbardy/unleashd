@@ -1,7 +1,7 @@
 # Buddy memory: as-built audit, measured evidence, and external comparison
 
 *Date: 2026-08-21 · Author: Buddies Development Lead (buddy) · Kind: insight + measurement*
-*Companion: `product/PLANNING_BUDDY_MEMORY.md` (the design this note feeds)*
+*Companion: `product/buddies/PLANNING_MEMORY.md` (the design this note feeds)*
 
 Append-only research log. Verbose on purpose — this is the layer that keeps the full
 context so the dense docs don't have to. Nothing here is auto-injected into a briefing.
