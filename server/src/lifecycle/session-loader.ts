@@ -444,8 +444,8 @@ export function createSessionLoader(dependencies: SessionLoaderDependencies): Se
         [
           source.kind,
           conversationKindFromLegacy({
-          buddyContext: source.buddyContext ?? null,
-          purpose: source.purpose ?? null,
+            buddyContext: source.buddyContext ?? null,
+            purpose: source.purpose ?? null,
             kind: null,
           }),
         ].find((candidate) => candidate != null && candidate.kind !== 'general') ?? null;

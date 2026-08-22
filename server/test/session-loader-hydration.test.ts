@@ -1,11 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
-  buddyKindFromContext,
   type BuddyContext,
   type Conversation as ConversationData,
   type ConversationKind,
   type DiscoveredConversation,
+  buddyKindFromContext,
 } from '@unleashd/shared';
 import type { ConversationConfigService } from '../src/conversations/config-service';
 import type { ConversationConfigStore } from '../src/conversations/config-store';
@@ -15,8 +15,8 @@ import type {
   ConversationRuntime,
 } from '../src/conversations/runtime';
 import {
-  createSessionLoader,
   type SessionLoaderDependencies,
+  createSessionLoader,
 } from '../src/lifecycle/session-loader';
 
 const BUDDY: BuddyContext = {
@@ -113,7 +113,10 @@ async function hydrateOne(input: {
       listRecoverable: async () => [],
     } as unknown as ConversationConfigService,
     loadConversations: async (options: {
-      onProgress(batch: DiscoveredConversation[], progress: { loaded: number; total: number }): Promise<void>;
+      onProgress(
+        batch: DiscoveredConversation[],
+        progress: { loaded: number; total: number }
+      ): Promise<void>;
     }) => {
       await options.onProgress([input.source], { loaded: 1, total: 1 });
       return { mtimes: new Map<string, number>() };
