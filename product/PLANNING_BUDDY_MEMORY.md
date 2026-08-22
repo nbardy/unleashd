@@ -34,7 +34,7 @@ Each layer's constraint follows from its access mode instead of being arbitrary.
 - **SOUL** — behaviour and authority contract. Human-controlled. Evolves only on an
   explicit owner request ("change how you do X"), never autonomously.
 - **LONG_TERM_MEMORY** — this buddy's durable operating knowledge. **Per-buddy, not
-  per-repo.** Repo-level rules stay in `CLAUDE.md`/`AGENTS.md`, human-owned. Two
+  per-repo** (confirmed). Repo-level rules stay in `CLAUDE.md`/`AGENTS.md`, human-owned. Two
   competing operating-rule docs is the CSS-cascade failure mode again.
 - **WORKING_MEMORY** — what is in motion: current themes, recent corrections, open
   loops. Rewritten, not appended.
@@ -59,21 +59,51 @@ staleness, no rebuild, it works from any harness, and a human can run the same
 command. Add FTS5 or embeddings only when `rg` demonstrably fails to find
 something.
 
-Note format — frontmatter gives structure without a database:
+### The filename is the index
+
+The append-only layer is **file-separated** — one file per note, which is exactly
+what `agent_notes/` already is. There is no journal file to append to and no
+per-buddy memory directory.
+
+```
+agent_notes/YYYY-MM-DD_topic_<buddy-slug>.md
+```
+
+`date`, `topic`, and `buddy` live in the **filename only** — never also in
+frontmatter. Encoding the same fact twice is the dual-encoding failure already on
+the backlog (`manager`/`reports_to` in `buddy_relationships`: two rows meaning one
+thing, the overview disagreeing with itself). The filename wins because `rg` can
+filter on it without opening the file.
+
+Frontmatter therefore shrinks to what a filename cannot carry:
 
 ```markdown
 ---
-buddy: buddies-development-lead
-date: 2026-08-21
 kind: failure | decision | correction | insight
-topic: mcp-harness-boundary
 evidence: [server/src/buddies/mcp-server.ts:100, 6eb64eb]
 ---
 ```
 
-Filed as `agent_notes/YYYY-MM-DD_topic_buddy-name.md`. The buddy suffix is new;
-the 26 existing notes keep their `DATE_topic` names because four docs link them
-by exact filename.
+The 26 existing notes keep their `DATE_topic` names — four docs link them by exact
+filename. They are legacy-unattributed: a topic search finds them, a buddy-scoped
+search does not.
+
+**Scope by glob, anchored to the trailing segment.** `-g '*<slug>*'` substring-matches
+across buddies (`growth-lead` inside `growth-lead-2`); `-g '*_<slug>.md'` is exact
+because the buddy is always the last segment.
+
+```bash
+rg -n '<pattern>' agent_notes/                              # everyone, by topic
+rg -n '<pattern>' -g '*_growth-lead.md' agent_notes/        # only this buddy
+rg --files -g '*_growth-lead.md' agent_notes/ | sort | tail -20   # this buddy, recent
+```
+
+Default broad. Narrowing to your own notes is the *exception*, not the default —
+half the value of a shared log is reading what another buddy already learned.
+
+**Implementation note:** `getBuddyContext` already returns the full buddy row, so
+`slug` is available at runtime; the `BuddyRecord` interface in
+`server/src/buddies/contract.ts` just omits it. One-line type addition.
 
 ## 4. The review procedure (a prompt, not a tool)
 
@@ -97,9 +127,15 @@ OpenClaw-proven triggers; scheduled runs are already free via `buddy_automations
 - **Out:** `agent_notes/` — pull-only via `recall`.
 
 Instead of injecting notes, the briefing carries **trigger instructions** (a few
-lines, not kilobytes), the way Hermes prompts for `session_search`: reach for
-`recall` when the user references prior work, when a decision looks previously
-made, or before repeating an attempt that may have already failed.
+lines, not kilobytes), the way Hermes prompts for `session_search`. The buddy's
+own slug is interpolated in, so it knows the glob that selects its own notes:
+
+> **YOUR NOTES** — `agent_notes/` holds one file per note, named
+> `YYYY-MM-DD_topic_<buddy-slug>.md`. None of it is loaded for you; search it.
+> `rg -n '<pattern>' agent_notes/` for everyone's notes on a topic;
+> add `-g '*_<your-slug>.md'` to narrow to your own.
+> Search before repeating an attempt that may have already failed, when the owner
+> references prior work, or when a decision looks previously made.
 
 If buddies later repeat corrected mistakes, the narrow exception is
 `kind: correction` only — a small, actively-retired set. Start with nothing.
@@ -163,11 +199,13 @@ price of density.
    travel with the code. Buddy-level notes ("I was corrected for being too verbose")
    are not repo-scoped and need a home in the buddy's home workspace. Same format,
    same tool, destination chosen by scope.
-5. **Correction retirement.** Corrections accumulate forever unless they can be closed
+5. **Legacy notes.** The 26 pre-convention notes are unattributed, so buddy-scoped
+   globs miss them. Backfill a suffix, leave them, or accept the gap.
+6. **Correction retirement.** Corrections accumulate forever unless they can be closed
    or superseded.
-6. **Git noise.** `remember` auto-committing one file per note on a feature branch —
+7. **Git noise.** `remember` auto-committing one file per note on a feature branch —
    confirm this is acceptable before it becomes a habit.
-7. **Privacy.** Notes are public in git and ship with the repo, including a buddy's
+8. **Privacy.** Notes are public in git and ship with the repo, including a buddy's
    record of its own failures.
 
 ## 10. Tests to write
