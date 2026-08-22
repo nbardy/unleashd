@@ -95,6 +95,15 @@ client/src/atoms/ui.ts             → persisted UI prefs (local+shared partitio
   analysis). `pnpm typecheck` (dev-supervisor) runs `tsc -b`; when the
   supervisor lock is held by another session, run `pnpm -C client exec tsc -b`
   directly rather than falling back to `--noEmit`.
+- Recursive `rg` output is rewritten by rtk and is NOT safe to cite. The hook
+  turns directory-target searches into `rtk rg`, which substitutes tokens
+  silently (`compact_memory` reads back as `n_memory`, `compactProject` as
+  `nProject`) and drops line numbers. Single-FILE searches pass through intact.
+  Locate with a recursive search, then re-run against the one file before you
+  quote, cite `file:line`, or conclude a symbol is absent. `rtk proxy` does not
+  help. Same root cause as `git diff > x.patch` capturing a hunk-less summary —
+  rtk output is for reading, never for capturing or citing. See
+  `agent_notes/2026-08-22_memory-implementation-handoff_buddies-development-lead.md`.
 - When source is broken, `server/dist/*.js` (and `shared/dist/`) is the oracle
   for the author's prior intent — check it before git archaeology.
 - The formatter is **biome** (`pnpm format`, `pnpm lint:fix`; config in
