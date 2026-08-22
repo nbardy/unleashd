@@ -1,9 +1,19 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import type { BuddyContext, DiscoveredConversation } from '@unleashd/shared';
+import {
+  buddyKindFromContext,
+  type BuddyContext,
+  type Conversation as ConversationData,
+  type ConversationKind,
+  type DiscoveredConversation,
+} from '@unleashd/shared';
 import type { ConversationConfigService } from '../src/conversations/config-service';
 import type { ConversationConfigStore } from '../src/conversations/config-store';
-import type { ConversationOptions, ConversationRuntime } from '../src/conversations/runtime';
+import type {
+  ConversationBroadcast,
+  ConversationOptions,
+  ConversationRuntime,
+} from '../src/conversations/runtime';
 import {
   createSessionLoader,
   type SessionLoaderDependencies,
@@ -289,4 +299,176 @@ test('one unrecoverable record does not abort the whole startup hydration', asyn
     'aaaaaaaa-0000-4000-8000-000000000001',
     'cccccccc-0000-4000-8000-000000000003',
   ]);
+});
+
+/**
+ * Exercises kind reconciliation through the real polling boundary. The timer is
+ * returned by SessionLoader solely so callers that own its lifecycle can stop it;
+ * production startup intentionally leaves it running for the process lifetime.
+ */
+async function pollExistingKind(input: {
+  existingKind: ConversationKind;
+  source: DiscoveredConversation;
+}): Promise<{ runtimeKind: ConversationKind; broadcastKind: ConversationKind }> {
+  const conversationId = 'dddddddd-0000-4000-8000-000000000004';
+  const sessionId = input.source.sessionId;
+  const runtimeState = {
+    id: conversationId,
+    sessionId,
+    provider: input.source.provider,
+    workingDirectory: input.source.workingDirectory,
+    messages: [],
+    subAgents: [],
+    createdAt: new Date(),
+    isWorker: false,
+    swarmId: null,
+    workerId: null,
+    workerRole: null,
+    parentConversationId: null,
+    resumedFromConversationId: null,
+    modelName: null,
+    kind: input.existingKind,
+    hasActiveProcess: () => false,
+    refreshConfigResolution: () => {},
+    toJSON: () =>
+      ({
+        id: conversationId,
+        sessionId: runtimeState.sessionId,
+        messages: runtimeState.messages,
+        kind: runtimeState.kind,
+      }) as unknown as ConversationData,
+  };
+  const runtime = runtimeState as unknown as ConversationRuntime;
+  const registry = new Map<string, ConversationRuntime>([[conversationId, runtime]]);
+  const aliases = new Map<string, string>();
+  const externalActivity = new Map<string, number>();
+
+  let resolveUpdated!: () => void;
+  const updated = new Promise<void>((resolve) => {
+    resolveUpdated = resolve;
+  });
+  let broadcastKind: ConversationKind | undefined;
+
+  const dependencies = {
+    options: {
+      startupLimit: 10,
+      startupConcurrency: 1,
+      startupBatchSize: 1,
+      startupInitialBatchSize: 1,
+      startupLogEveryFiles: 1000,
+      pollIntervalMs: 5,
+      externalGraceMs: 1000,
+      verbose: false,
+    },
+    registry: {
+      get: (id: string) => registry.get(id),
+      has: (id: string) => registry.has(id),
+      set: (conversation: ConversationRuntime) => registry.set(conversation.id, conversation),
+      delete: (id: string) => registry.delete(id),
+      values: () => registry.values(),
+      entries: () => registry.entries(),
+      keys: () => registry.keys(),
+      get size() {
+        return registry.size;
+      },
+    },
+    sessions: {
+      registerAlias: (id: string, ownerId: string) => aliases.set(id, ownerId),
+      unregisterAlias: (id: string) => aliases.delete(id),
+      unregisterConversationAliases: () => {},
+      aliasFor: (id: string) => aliases.get(id),
+      aliasEntries: () => aliases.entries(),
+      hasAlias: (id: string) => aliases.has(id),
+      isKnown: () => false,
+      isDeleted: () => false,
+      markDeleted: () => {},
+      prune: () => {},
+    },
+    externalActivity: {
+      entries: () => externalActivity.entries(),
+      has: (id: string) => externalActivity.has(id),
+      set: (id: string, timestamp: number) => externalActivity.set(id, timestamp),
+      delete: (id: string) => externalActivity.delete(id),
+      clear: (...ids: string[]) => ids.forEach((id) => externalActivity.delete(id)),
+    },
+    completionSuppression: {
+      mark: () => {},
+      clear: () => {},
+      isSuppressed: () => false,
+      prune: () => {},
+    },
+    configStore: {} as ConversationConfigStore,
+    configService: {} as ConversationConfigService,
+    loadConversations: async () => ({ mtimes: new Map<string, number>() }),
+    pollConversations: async () => ({
+      updated: new Map([[sessionId, input.source]]),
+      mtimes: new Map<string, number>(),
+    }),
+    createConversation: () => {
+      throw new Error('poll should update the existing runtime');
+    },
+    createId: () => 'unused-id',
+    resolveBuddyConversation: async (context: BuddyContext) => ({ context, briefing: 'soul' }),
+    dispatchInitialMessage: async () => {},
+    persistCurrentSession: async () => {},
+    broadcast: (data: ConversationBroadcast) => {
+      if (data.type !== 'conversations_updated') return;
+      broadcastKind = data.conversations[0]?.kind;
+      resolveUpdated();
+    },
+    logger: { error: () => {}, log: () => {}, warn: () => {} },
+  } as unknown as SessionLoaderDependencies;
+
+  const interval = createSessionLoader(dependencies).startFilePolling();
+  let timeout: NodeJS.Timeout | undefined;
+  try {
+    await Promise.race([
+      updated,
+      new Promise<never>((_resolve, reject) => {
+        timeout = setTimeout(() => reject(new Error('poll update was not broadcast')), 1000);
+      }),
+    ]);
+  } finally {
+    clearInterval(interval);
+    if (timeout) clearTimeout(timeout);
+  }
+
+  assert.ok(broadcastKind, 'expected the poll update to include a canonical kind');
+  return { runtimeKind: runtimeState.kind, broadcastKind };
+}
+
+// Regression, incident 2026-08-22. Codex can store host-injected user-role
+// metadata before the real Buddy prompt. The adapter then reports general
+// because the first user item has no Buddy marker. Polling used to overwrite the
+// durable runtime kind, moving the thread out of the Buddy sidebar and removing
+// Buddy MCP tools on the next turn.
+test('polling cannot demote a durable Buddy kind when the provider reports general', async () => {
+  const buddyKind = buddyKindFromContext(BUDDY);
+  const source = {
+    ...discoveredWithoutMarker('eeeeeeee-0000-4000-8000-000000000005'),
+    provider: 'codex',
+  } as DiscoveredConversation;
+
+  const result = await pollExistingKind({ existingKind: buddyKind, source });
+
+  assert.deepEqual(result.runtimeKind, buddyKind);
+  assert.deepEqual(result.broadcastKind, buddyKind);
+});
+
+test('polling can still promote a general runtime when the provider reports a Buddy kind', async () => {
+  const buddyKind = buddyKindFromContext(BUDDY);
+  const source = {
+    ...discoveredWithoutMarker('ffffffff-0000-4000-8000-000000000006'),
+    provider: 'codex',
+    kind: buddyKind,
+    buddyContext: BUDDY,
+  } as DiscoveredConversation;
+
+  const result = await pollExistingKind({
+    existingKind: { kind: 'general' },
+    source,
+  });
+
+  assert.deepEqual(result.runtimeKind, buddyKind);
+  assert.deepEqual(result.broadcastKind, buddyKind);
 });

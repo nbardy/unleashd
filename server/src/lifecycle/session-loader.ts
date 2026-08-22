@@ -62,7 +62,7 @@ export interface SessionLoaderDependencies {
 
 export interface SessionLoader {
   loadExistingConversations(): Promise<void>;
-  startFilePolling(): void;
+  startFilePolling(): NodeJS.Timeout;
 }
 
 export function createSessionLoader(dependencies: SessionLoaderDependencies): SessionLoader {
@@ -435,15 +435,22 @@ export function createSessionLoader(dependencies: SessionLoaderDependencies): Se
       // must never erase the durable parent recorded at child creation.
       existing.resumedFromConversationId =
         source.resumedFromConversationId ?? existing.resumedFromConversationId;
-      // Holistic kind is canonical; buddyContext/purpose are derived. Only set kind.
-      if (source.kind) {
-        existing.kind = source.kind;
-      } else if (source.buddyContext || source.purpose) {
-        existing.kind = conversationKindFromLegacy({
+      // Provider artifacts are discovery evidence, not authority to detach a
+      // conversation from an application-owned kind. Their general fallback only
+      // means that no marker was observed. Since no Buddy/Builder detach flow
+      // exists, polling may promote general to a specific kind but never demote or
+      // reassign a specific durable runtime kind.
+      const specificPolledKind =
+        [
+          source.kind,
+          conversationKindFromLegacy({
           buddyContext: source.buddyContext ?? null,
           purpose: source.purpose ?? null,
-          kind: existing.kind,
-        });
+            kind: null,
+          }),
+        ].find((candidate) => candidate != null && candidate.kind !== 'general') ?? null;
+      if (existing.kind.kind === 'general' && specificPolledKind) {
+        existing.kind = specificPolledKind;
       }
       existing.modelName = source.modelName ?? source.model ?? null;
       existing.refreshConfigResolution();
@@ -471,8 +478,8 @@ export function createSessionLoader(dependencies: SessionLoaderDependencies): Se
     dependencies.sessions.prune(dependencies.registry);
   }
 
-  function startFilePolling(): void {
-    createFilePoller<DiscoveredConversation, ConversationData>(
+  function startFilePolling(): NodeJS.Timeout {
+    return createFilePoller<DiscoveredConversation, ConversationData>(
       {
         intervalMs: dependencies.options.pollIntervalMs,
         externalGraceMs: dependencies.options.externalGraceMs,
