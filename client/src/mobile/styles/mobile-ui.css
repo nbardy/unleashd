@@ -1318,3 +1318,36 @@
 .mobile-composer__btn--palette:active {
   background: var(--bg-raised-1);
 }
+
+/* Upload failure banner — mobile parity with .chat-upload-error.
+   Same contract: a failed drop/paste must announce itself rather than look
+   like an ignored one. See hooks/usePendingAttachments.ts (uploadError). */
+.mobile-upload-error {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 6px 0;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: color-mix(in srgb, var(--theme-danger) 18%, transparent);
+  color: var(--theme-danger);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.mobile-upload-error__text {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.mobile-upload-error__dismiss {
+  flex: 0 0 auto;
+  min-width: 32px;
+  min-height: 32px;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font-size: 18px;
+  line-height: 1;
+  cursor: pointer;
+}

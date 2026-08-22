@@ -97,6 +97,8 @@ export function ComposerMobile({
     pendingFiles,
     isUploading,
     handleFilesUpload,
+    uploadError,
+    dismissUploadError,
     removeFile,
     clearFiles,
     buildContent,
@@ -325,6 +327,21 @@ export function ComposerMobile({
           <span className="mobile-composer__typing-dot" />
         </div>
       ) : null}
+      {/* Upload failure — parity with desktop. A failed drop/paste must never
+          look like an ignored one; see usePendingAttachments' uploadError. */}
+      {uploadError && (
+        <div className="mobile-upload-error" role="alert">
+          <span className="mobile-upload-error__text">{uploadError}</span>
+          <button
+            type="button"
+            className="mobile-upload-error__dismiss"
+            onClick={dismissUploadError}
+            aria-label="Dismiss upload error"
+          >
+            ×
+          </button>
+        </div>
+      )}
       {/* Pending attachments — same data as desktop, mobile-styled strip. */}
       {pendingFiles.length > 0 && (
         <div className="mobile-pending-files" aria-label="Attached files">

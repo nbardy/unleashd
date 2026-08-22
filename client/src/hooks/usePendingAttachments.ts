@@ -180,6 +180,14 @@ export interface UsePendingAttachmentsReturn {
   isUploading: boolean;
   hasFiles: boolean;
   handleFilesUpload: (acceptedFiles: File[]) => Promise<void>;
+  /**
+   * Last upload failure, or null. Both shells MUST render this: a drop that
+   * fails is otherwise indistinguishable from a drop that was ignored, which
+   * is exactly how the 2026-08-20 hot-reload drain reported itself ("drag and
+   * drop stopped working"). Cleared when the next upload starts.
+   */
+  uploadError: string | null;
+  dismissUploadError: () => void;
   removeFile: (absolutePath: string) => void;
   clearFiles: () => void;
   buildContent: (textContent: string) => string;
@@ -191,6 +199,7 @@ export function usePendingAttachments(
 ): UsePendingAttachmentsReturn {
   const [pendingFiles, setPendingFiles] = useState<PendingFile[]>(EMPTY_PENDING);
   const [isUploading, setIsUploading] = useState(false);
+  const [uploadError, setUploadError] = useState<string | null>(null);
 
   // Track latest for unmount-only revocation without re-running the effect.
   const pendingFilesRef = useRef(pendingFiles);
@@ -223,6 +232,7 @@ export function usePendingAttachments(
     async (acceptedFiles: File[]) => {
       if (!conversationId || acceptedFiles.length === 0) return;
       setIsUploading(true);
+      setUploadError(null);
       try {
         const result = await uploadFilesWithDrainRetry(conversationId, acceptedFiles);
         const withPreviews: PendingFile[] = result.files.map((uploaded, i) => ({
@@ -236,7 +246,12 @@ export function usePendingAttachments(
           return next;
         });
       } catch (err) {
+        // Surfaced, not just logged — see the uploadError contract above.
         console.error('[usePendingAttachments] File upload failed:', err);
+        const detail = err instanceof Error ? err.message : String(err);
+        setUploadError(
+          `${detail}. ${acceptedFiles.length === 1 ? 'The file was' : 'The files were'} not attached — try again.`
+        );
       } finally {
         setIsUploading(false);
       }
@@ -256,6 +271,8 @@ export function usePendingAttachments(
     },
     [conversationId]
   );
+
+  const dismissUploadError = useCallback(() => setUploadError(null), []);
 
   const clearFiles = useCallback(() => {
     setPendingFiles((prev) => {
@@ -292,6 +309,8 @@ export function usePendingAttachments(
     isUploading,
     hasFiles: pendingFiles.length > 0,
     handleFilesUpload,
+    uploadError,
+    dismissUploadError,
     removeFile,
     clearFiles,
     buildContent,

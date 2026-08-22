@@ -1563,3 +1563,37 @@
   color: var(--text-on-accent);
 }
 
+
+/* Upload failure banner — sits directly above the pending-files tray.
+   A drop that fails must not look like a drop that was ignored: during the
+   2026-08-20 hot-reload drain the upload 503'd and only console.error'd, so
+   drag-and-drop read as silently broken. See hooks/usePendingAttachments.ts. */
+.chat-upload-error {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 6px 0;
+  padding: 6px 10px;
+  border: 1px solid var(--error, #dc322f);
+  border-radius: 4px;
+  background: color-mix(in srgb, var(--error, #dc322f) 12%, transparent);
+  color: var(--error, #dc322f);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.chat-upload-error__text {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.chat-upload-error__dismiss {
+  flex: 0 0 auto;
+  padding: 0 4px;
+  border: none;
+  background: transparent;
+  color: inherit;
+  font-size: 16px;
+  line-height: 1;
+  cursor: pointer;
+}

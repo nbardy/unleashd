@@ -83,3 +83,21 @@ test('a drain that never lifts gives up after the whole schedule', async () => {
   // One attempt per backoff step, plus the initial try — and then it stops.
   assert.equal(callCount(), UPLOAD_RETRY_BACKOFF_MS.length + 1);
 });
+
+test('an exhausted drain reports the reason instead of failing silently', async () => {
+  // The 2026-08-20 report was "drag and drop stopped working" — the upload was
+  // 503ing the whole time but only console.error'd, so a failed drop and an
+  // ignored drop looked identical. usePendingAttachments turns this rejection
+  // into `uploadError`; both shells render it. Guards the message, since an
+  // empty/undefined reason would render a blank banner.
+  const responses = Array.from({ length: UPLOAD_RETRY_BACKOFF_MS.length + 1 }, drainingResponse);
+  const { impl } = recordingFetch(responses);
+  const error = await uploadFilesWithDrainRetry('conv-1', [], impl, async () => undefined).then(
+    () => null,
+    (err: unknown) => err as Error
+  );
+
+  assert.ok(error, 'exhausting the backoff must reject, not resolve empty');
+  assert.match(error.message, /server_draining/);
+  assert.notEqual(error.message.trim(), 'Upload failed:');
+});

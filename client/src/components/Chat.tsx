@@ -174,6 +174,8 @@ export function Chat() {
     pendingFiles,
     isUploading,
     handleFilesUpload,
+    uploadError,
+    dismissUploadError,
     removeFile: removePendingFile,
     clearFiles: clearPendingFiles,
     buildContent: buildAttachedContent,
@@ -970,6 +972,20 @@ export function Chat() {
                 </li>
               ))}
             </ul>
+          </div>
+        )}
+
+        {uploadError && (
+          <div className="chat-upload-error" role="alert">
+            <span className="chat-upload-error__text">{uploadError}</span>
+            <button
+              type="button"
+              className="chat-upload-error__dismiss"
+              onClick={dismissUploadError}
+              aria-label="Dismiss upload error"
+            >
+              &times;
+            </button>
           </div>
         )}
 
