@@ -1,6 +1,9 @@
 # Dependencies
 node_modules/
 
+# Local Buddy runtime state
+.buddies/
+
 # Build output
 dist/
 build/
