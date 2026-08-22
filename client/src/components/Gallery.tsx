@@ -331,8 +331,12 @@ export function Gallery({ filter }: GalleryProps = {}) {
                   type="button"
                   className="undo-done-btn"
                   onClick={(e) => {
+                    // Restore opens the thread as well as un-marking it. Un-marking
+                    // alone makes the card vanish from the Done view with no visible
+                    // destination, which reads as "Restore did nothing".
                     e.stopPropagation();
                     unmarkDone(conversationKey);
+                    navigate(`/chat/${conv.id}`);
                   }}
                 >
                   Restore

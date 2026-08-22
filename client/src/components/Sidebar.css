@@ -814,9 +814,12 @@
 
 /* conversation-dir removed — folder is now shown as top-left badge */
 
+/* Flush to the sidebar's right edge (right: 0), not inset to the row's 12px
+   padding — Done is an absolute overlay, so it does not have to respect the
+   row box. The :has(.thread-stop-btn) offset below compensates. */
 .done-btn {
   position: absolute;
-  right: 8px;
+  right: 0;
   top: 50%;
   transform: translateY(-50%);
   padding: 4px 8px;
@@ -843,10 +846,10 @@
    on exactly the same pixels, making a running conversation impossible to stop
    from the sidebar. .thread-stop-btn only renders while conv.isRunning, so this
    shifts Done left by the stop control's expanded width for exactly those rows.
-   Keep the offset >= .thread-stop-btn's hover max-width (48px) + its 6px margin
-   + the 8px status dot + the row's 6px gap. */
+   Keep the offset >= the row's 12px right padding + .thread-stop-btn's hover
+   max-width (48px) + its 6px margin + the 8px status dot + the row's 6px gap. */
 .conversation-item:has(.thread-stop-btn):hover .done-btn {
-  right: 78px;
+  right: 82px;
 }
 
 .done-btn:hover {
