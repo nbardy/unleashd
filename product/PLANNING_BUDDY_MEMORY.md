@@ -59,7 +59,7 @@ staleness, no rebuild, it works from any harness, and a human can run the same
 command. Add FTS5 or embeddings only when `rg` demonstrably fails to find
 something.
 
-### The filename is the index
+## 4. The filename is the index
 
 The append-only layer is **file-separated** — one file per note, which is exactly
 what `agent_notes/` already is. There is no journal file to append to and no
@@ -79,10 +79,15 @@ Frontmatter therefore shrinks to what a filename cannot carry:
 
 ```markdown
 ---
-kind: failure | decision | correction | insight
+kind: failure          # open-ended string, NOT an enum — see §11
 evidence: [server/src/buddies/mcp-server.ts:100, 6eb64eb]
 ---
 ```
+
+`kind` is a free-text category. `failure`, `decision`, `correction`, `insight` are
+conventions, not a sum type. This follows the locked "categories pass through"
+decision in `PLANNING_BUDDY_PRIMITIVES.md` §3 and the existing hard rule that
+bespoke values travel verbatim as `z.string()` with no shared enums.
 
 The 26 existing notes keep their `DATE_topic` names — four docs link them by exact
 filename. They are legacy-unattributed: a topic search finds them, a buddy-scoped
@@ -105,7 +110,7 @@ half the value of a shared log is reading what another buddy already learned.
 `slug` is available at runtime; the `BuddyRecord` interface in
 `server/src/buddies/contract.ts` just omits it. One-line type addition.
 
-## 4. The review procedure (a prompt, not a tool)
+## 5. The review procedure (a prompt, not a tool)
 
 Intelligence in the prompt; minimum in the tool list. The only API surface is the
 atomic write.
@@ -117,11 +122,17 @@ atomic write.
 > `update_memory` once with the full new body and your reasoning. If nothing
 > changed, do nothing.
 
-**When it runs** — decision open (§7). Conversation end and pre-compaction are the
-OpenClaw-proven triggers; scheduled runs are already free via `buddy_automations`
-(`job_kind: prompt` + cron), which is functionally OpenClaw's HEARTBEAT.
+**When it runs** — decision open (§9). Conversation end and pre-compaction are the
+OpenClaw-proven triggers.
 
-## 5. Injection rule
+Scheduled runs are *not* free, contrary to my first reading. Per
+`agent_notes/2026-08-21_buddy-automations-reference.md`: `job_kind: loop` ships in
+code but has **never run in production**, iterations cap at 10 and **throw** on
+exhaustion rather than checkpointing, and spend is unenforced (`tokens_used` /
+`cost_usd` are zero across all 22 historical runs). A scheduled review would
+inherit all three. Conversation-end is the cheaper first trigger.
+
+## 6. Injection rule
 
 - **In:** `SOUL.md`, `LONG_TERM_MEMORY.md`, `WORKING_MEMORY.md` — all bounded, all dense.
 - **Out:** `agent_notes/` — pull-only via `recall`.
@@ -140,7 +151,7 @@ own slug is interpolated in, so it knows the glob that selects its own notes:
 If buddies later repeat corrected mistakes, the narrow exception is
 `kind: correction` only — a small, actively-retired set. Start with nothing.
 
-## 6. Caps are write-time invariants, not read-time truncation
+## 7. Caps are write-time invariants, not read-time truncation
 
 `update_memory` **rejects** an over-cap body. It never silently trims.
 
@@ -153,7 +164,7 @@ read-time guess, per style rule T4 (no silent fallbacks).
 The cap is also the forcing function that keeps the layers distinct. Unbounded
 working memory becomes long-term memory becomes agent_notes.
 
-## 7. Versioned document chain
+## 8. Versioned document chain
 
 ```
 profiles/<slug>/soul/
@@ -178,7 +189,7 @@ append-only cannot. The version chain plus git means nothing is truly lost, but
 the *live* doc can omit, and only the `reasoning` field will say why. That is the
 price of density.
 
-## 8. What gets deleted
+## 9. What gets deleted
 
 - `MEMORY.md` / `journal/` / `archive/` / `index.json` — replaced by the three docs + the log.
 - `compactMemory` and its ~140 lines of temp-file / backup / rollback-on-throw /
@@ -189,7 +200,7 @@ price of density.
   Measured: 43.5 GB, ~1% of which is conversation, and the owner prunes it
   regularly — an index into it rots exactly when it is needed.
 
-## 9. Open decisions
+## 10. Open decisions
 
 1. **Cap values.** ~2 KB working, ~8 KB long-term are guesses. Tune after first use.
 2. **When the review runs** — conversation end, pre-compaction, scheduled, or on demand.
@@ -208,7 +219,44 @@ price of density.
 8. **Privacy.** Notes are public in git and ship with the repo, including a buddy's
    record of its own failures.
 
-## 10. Tests to write
+## 11. Reconciliation with the primitives handoff
+
+This design was drafted **without** `PLANNING_BUDDY_PRIMITIVES.md` or the
+2026-08-21 primitives/automations notes in context. Reconciled after the fact:
+
+**Corrected by the handoff**
+
+- `kind` is a free-text string, not an enum (§3). The locked "no review type" /
+  "categories pass through" decisions forbid adding sum variants for specific
+  intents. Applied above.
+- Scheduled reviews are not free (§4). The loop driver is unproven and throws.
+
+**Where the two designs meet**
+
+- *"No continuity across scheduled runs — each run gets a fresh conversation, so
+  memory is the only carrier, and provisioning it is currently broken on the Lead
+  itself."* Memory is therefore **on the critical path** for the wait/loop work,
+  not adjacent to it. This design should not be sequenced after it.
+- The Owner decision **"Lead memory path"** (`buddy.remember` throws
+  `Buddy has no configured memory path`) is **dissolved for notes** by this
+  design — notes go to `agent_notes/` in the workspace, not
+  `profiles/<slug>/memory/`, so `remember` stops depending on `memory_path` at
+  all. `LONG_TERM_MEMORY` / `WORKING_MEMORY` still need a per-buddy home, so
+  `profiles/<slug>/` provisioning is still required — but for two bounded files,
+  not a memory tree.
+- Defect D1 (silent front-truncation) is the same class as the automations defect
+  *"malformed completion output silently reads as `done:false`"*. Both are style
+  rule T4 violations — a silent fallback where a typed refusal belongs. Worth
+  fixing as one sweep.
+
+**Operation count.** This design nets +1 operation (`recall` and `update_memory`
+added, `compact_memory` deleted). That is not the proliferation the primitives
+doc forbids — it forbids a *new variant per intent*. Memory reads currently have
+**no** verb at all, and the layers collapse 4 stores into 2 primitives. If the
+6→2 send/reply consolidation lands, `recall`/`update_memory` should be reviewed
+against it in the same pass.
+
+## 12. Tests to write
 
 Model on the existing good ones (`v1.test.js:361/439/464`,
 `buddy-lifecycle-e2e.test.ts:17`) — falsifiable, real fixtures, no mirrors.
