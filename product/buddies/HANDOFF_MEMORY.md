@@ -126,7 +126,7 @@ has already lost a verified changeset to a concurrent `git reset`:
 
 ```
 agent_notes/2026-08-20_buddy-mcp-harness-boundary.md
-agent_notes/2026-08-20_buddy-mcp-partial.patch        ← not a real patch, see below
+agent_notes/2026-08-20_buddy-mcp-partial.patch        ← removed 2026-08-22; it was not a real patch
 agent_notes/2026-08-21_buddy-automations-reference.md ← AGENTS.md links this; the link dangles
 agent_notes/2026-08-21_turn-lifecycle-RFR.md
 agent_notes/2026-08-21_turn-lifecycle-design.md
@@ -138,9 +138,9 @@ Two traps in there:
 
 - **`AGENTS.md` links a file that is not in the repo.** The automations reference
   is committed-linked but untracked. Either commit it or the index lies.
-- **`buddy-mcp-partial.patch` is not a patch.** Zero `@@` hunks — it is rtk's
-  compressed summary saved to a `.patch` name. The work is the dirty submodule,
-  not lost. Written up in
+- **`buddy-mcp-partial.patch` was not a patch and was removed on 2026-08-22.**
+  It had zero `@@` hunks — an rtk compressed summary saved to a `.patch` name.
+  The work is the dirty submodule, not that artifact. Written up in
   `agent_notes/2026-08-21_rtk-diff-is-not-a-patch_buddies-development-lead.md`.
 
 Also fixed in passing: `.gitignore` had `product/**` with `!product/*.md`, which

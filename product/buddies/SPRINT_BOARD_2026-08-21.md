@@ -96,7 +96,7 @@ before, and **none of the following is committed anywhere.**
 | 1 | `vendor/agent-cli-tool` | **4 modified files** (`src/harnesses/{claude,codex,opencode}.ts`, `src/types.ts`) — this is the buddy-MCP harness-boundary work, *"~30% done, uncommitted"*. Fixes a real bug: a `muse` buddy had the context header but **no `unleashd_buddy` tools** and silently shelled out to the CLI. | High — submodule rule says commit inside first, then bump the pointer |
 | 2 | `~/git/buddies` | **1,331 uncommitted lines** implementing direct reports, schema v13. Tests green. | High — the entire store lane |
 | 3 | `unleashd` working tree | 5 untracked files: `SPRINT_HANDOFF_2026-08-20.md`, 2 turn-lifecycle docs, `buddy-mcp-harness-boundary.md`, `buddy-mcp-partial.patch` | Medium |
-| 4 | — | `agent_notes/2026-08-20_buddy-mcp-partial.patch` is a **dangling patch artifact** with no diff hunks — decide whether it is superseded by the dirty submodule and delete it, or reconstruct it | Low, but confusing |
+| 4 | — | **Resolved 2026-08-22:** `agent_notes/2026-08-20_buddy-mcp-partial.patch` had no diff hunks, was superseded by the dirty submodule, and was removed | Closed |
 | 5 | — | **5 stale background sessions** (3 blocked, 2 done) never stopped | Low |
 | 6 | `.gitmodules` | Remote drift: says `nbardy/agent-cli.git`, but the checkout has only `legacy-origin -> nbardy/nbardy-agent-cli.git`, no `origin` | Blocks item 1's push step |
 

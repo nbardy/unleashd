@@ -1,11 +1,11 @@
 ---
 kind: failure
-evidence: [agent_notes/2026-08-20_buddy-mcp-partial.patch, ~/.claude/RTK.md]
+evidence: [agent_notes/2026-08-20_buddy-mcp-harness-boundary.md, ~/.claude/RTK.md]
 ---
 
 # `git diff > x.patch` produces an unappliable file in this repo
 
-`agent_notes/2026-08-20_buddy-mcp-partial.patch` looks like a recoverable patch
+The since-removed `agent_notes/2026-08-20_buddy-mcp-partial.patch` looked like a recoverable patch
 and is not. 124 lines, **zero `@@` hunks**, a `--- Changes ---` header, and
 bodies replaced by `// ... 118 lines omitted`.
 
