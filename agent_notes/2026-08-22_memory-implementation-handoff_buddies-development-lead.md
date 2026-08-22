@@ -117,3 +117,20 @@ transcript bytes in one Codex session), and we have **no signal when they do**.
 OpenClaw's entire flush design hooks pre-compaction; we cannot copy it. Same-turn
 capture is therefore not a preference — it is the only reliable mechanism
 available. Your docs already say this; this is corroboration.
+
+## 4. "Measure whether capture works" needs a stated threshold
+
+`REVIEW_MEMORY_2026-08-22.md` §1 defers the automatic review and says to "first
+use same-turn capture instructions and measure whether useful corrections and
+lessons are actually recorded." That is the right call — it directly targets the
+largest risk in the original design (discretionary writes are exactly what left
+the old system at ~19 KB in months).
+
+But the success criterion has to be fixed **before** the pilot, or "measure"
+degrades into "we'll see" and the pilot cannot fail. Something falsifiable, e.g.:
+after N buddy conversations, at least X% contain a recorded correction or lesson,
+and a spot-read of K of them finds them non-trivial. Pick N, X, K up front.
+
+Without a threshold there is no way to distinguish "capture works" from "capture
+never fires and nobody noticed" — which is the exact failure the current system
+already exhibits.
