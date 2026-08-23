@@ -81,7 +81,7 @@ export function createBuddyBuilderMcpServer(
     'create_buddy',
     {
       description:
-        'Create or replay one Buddy with a home workspace, optional explicit workspace assignments, and an execution profile.',
+        'Create or replay one Buddy with a home workspace, optional explicit workspace assignments, and an execution profile. The result includes follow-up questions when the role brief is still sparse.',
       inputSchema: CreateBuddyInputSchema,
       annotations: {
         readOnlyHint: false,

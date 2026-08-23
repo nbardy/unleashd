@@ -19,14 +19,12 @@
  */
 import assert from 'node:assert/strict';
 import test from 'node:test';
+// biome-ignore lint/style/useImportType: tsx's test transform uses the classic JSX runtime.
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { MemoryRouter } from 'react-router-dom';
 import { BuddyAutomationsTab } from '../src/components/buddies/BuddyAutomationsTab';
-import type {
-  BuddyAutomation,
-  ConversationLink,
-} from '../src/components/buddies/types';
+import type { BuddyAutomation, ConversationLink } from '../src/components/buddies/types';
 import { AutomationsTab } from '../src/mobile/buddies/BuddyDetailAutomationsTab';
 import { ConversationsTab } from '../src/mobile/buddies/BuddyDetailConversationsTab';
 
@@ -63,8 +61,18 @@ const AUTOMATION: BuddyAutomation = {
   },
   enabled: true,
   runs: [
-    { id: 'run-live', status: 'complete', scheduled_for: '2026-08-21T00:00:00.000Z', conversation_id: LIVE },
-    { id: 'run-dead', status: 'complete', scheduled_for: '2026-08-21T00:00:00.000Z', conversation_id: DEAD },
+    {
+      id: 'run-live',
+      status: 'complete',
+      scheduled_for: '2026-08-21T00:00:00.000Z',
+      conversation_id: LIVE,
+    },
+    {
+      id: 'run-dead',
+      status: 'complete',
+      scheduled_for: '2026-08-21T00:00:00.000Z',
+      conversation_id: DEAD,
+    },
   ],
 };
 
@@ -79,13 +87,11 @@ function chatHrefs(html: string): string[] {
 test('desktop automations tab links live automation threads and never links dead ones', () => {
   const html = render(
     <BuddyAutomationsTab
-      buddyId="buddy-1"
       automations={[]}
       approvals={[]}
       busy={false}
       mutate={async () => {}}
       refresh={async () => {}}
-      onError={() => {}}
       availableConversationIds={AVAILABLE}
       automationConversations={[link(LIVE, 'automation'), link(DEAD, 'automation')]}
     />

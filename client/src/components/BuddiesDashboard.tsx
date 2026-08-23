@@ -3,7 +3,6 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, Navigate, useNavigate, useParams } from 'react-router-dom';
 import { createConversation } from '../atoms/actions';
 import { allConversationIdsAtom } from '../atoms/conversations';
-import { newId } from '../utils/ids';
 import { BuddyAutomationsTab } from './buddies/BuddyAutomationsTab';
 import { BuddyDirectory } from './buddies/BuddyDirectory';
 import { BuddyExecutionProfile } from './buddies/BuddyExecutionProfile';
@@ -26,6 +25,7 @@ import {
   buddyTabPath,
   parseEmployeeTab,
 } from './buddies/buddy-tabs';
+import { createBuddyViaBuilder } from './buddies/create-buddy-builder';
 import {
   type Buddy,
   type BuddyAutomation,
@@ -308,23 +308,8 @@ export function BuddiesDashboard() {
     setBusy('buddy-builder');
     setError(null);
     try {
-      // IDs are client-owned for retry safety: a lost HTTP response can replay
-      // the same creation instead of leaving duplicate empty Builder threads.
-      const conversationId = newId();
-      const result = await api<{ conversationId?: string; conversation?: { id?: string } }>(
-        '/api/buddies/builder',
-        {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            conversationId,
-            commandId: newId(),
-          }),
-        }
-      );
-      const confirmedId = result.conversationId ?? result.conversation?.id;
-      if (!confirmedId) throw new Error('Buddy Builder did not return a conversation');
-      navigate(`/chat/${confirmedId}`);
+      const conversationId = await createBuddyViaBuilder();
+      navigate(`/chat/${conversationId}?helper=buddies`);
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
@@ -881,14 +866,11 @@ export function BuddiesDashboard() {
               </div>
             )}
             <BuddyAutomationsTab
-              buddyId={employee.buddy.id}
-              workspaceId={workspace?.id}
               automations={automations}
               approvals={employee.approvals ?? []}
               busy={busy !== null}
               mutate={mutate}
               refresh={loadAutomations}
-              onError={setError}
               availableConversationIds={availableConversationIds}
               automationConversations={automationConversations}
             />

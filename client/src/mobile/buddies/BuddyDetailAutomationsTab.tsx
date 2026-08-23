@@ -168,7 +168,8 @@ export function AutomationsTab({
                 <ul className="mobile-automation-runs">
                   {automation.runs.slice(0, 3).map((run) => (
                     <li key={run.id} className="mobile-muted">
-                      {run.status} · {new Date(run.scheduled_for).toLocaleString()}
+                      {run.status === 'claimed' ? 'starting' : run.status} ·{' '}
+                      {new Date(run.scheduled_for).toLocaleString()}
                       {run.conversation_id && (
                         <OpenConversationLink
                           conversationId={run.conversation_id}

@@ -6,7 +6,7 @@ import { getBuddyContext, isBuddyBuilderConversation } from '@unleashd/shared';
 import { useAtomValue } from 'jotai';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useDropzone } from 'react-dropzone';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import {
   cancelQueuedMessage,
   clearQueue,
@@ -60,6 +60,10 @@ import './Chat.css';
 
 // Stable reference for empty queue — avoids new [] on every render triggering re-renders
 const EMPTY_QUEUE: QueuedMessage[] = [];
+const BUDDY_STARTER_PROMPTS = [
+  'Create a Buddy who owns product research for my team.',
+  'I need a research teammate for this workspace.',
+] as const;
 
 // Deprecated helper kept for local parity — use getBuddyContext (kind-aware) instead.
 // The holistic kind type is the canonical source; legacy buddyContext is compat only.
@@ -89,6 +93,7 @@ function useTimeAgo(date: Date | undefined): string | null {
 export function Chat() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
 
   // Per-ID atoms — only re-render when THIS conversation changes, not others
   const conversation = useAtomValue(conversationAtomFamily(id ?? ''));
@@ -183,6 +188,11 @@ export function Chat() {
   } = usePendingAttachments(id);
 
   const confirmed = conversation?.confirmed ?? false;
+  const isBuddyBuilderHelper =
+    searchParams.get('helper') === 'buddies' &&
+    confirmed &&
+    conversation !== undefined &&
+    isBuddyBuilderConversation(conversation);
   const isRunning = conversation?.isRunning ?? false;
   const isStreaming = conversation?.isStreaming ?? false;
   const runtimeTurnActive = isRunning || isStreaming;
@@ -876,15 +886,36 @@ export function Chat() {
               />
             </div>
           )}
-          <div className="empty-state">
-            {
-              confirmed
+          {isBuddyBuilderHelper ? (
+            <div className="buddy-helper-panel">
+              <span className="buddy-helper-kicker">Buddy Builder · a guided hire</span>
+              <h2>Let’s create a Buddy for the work you want done.</h2>
+              <p>
+                To create a new Buddy, describe the role, the workspace it should live in, and
+                what a good first outcome looks like. I’ll create it for you and ask follow-up
+                questions when the brief needs more shape.
+              </p>
+              <div className="buddy-helper-example" aria-label="Example Buddy brief">
+                “Create a research Buddy for unleashd who turns customer conversations into
+                prioritized product opportunities.”
+              </div>
+              <div className="buddy-helper-prompts">
+                {BUDDY_STARTER_PROMPTS.map((prompt) => (
+                  <button type="button" key={prompt} onClick={() => setDraftValue(prompt)}>
+                    {prompt}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <div className="empty-state">
+              {confirmed
                 ? isBuddyBuilderConversation(conversation)
                   ? 'Describe the Buddy you want to create.'
                   : 'Send a message to start the conversation.'
-                : `Waiting for ${conversation.provider || 'claude'} to be ready...` /* fallback 'claude' matches shared DEFAULT_PROVIDER */
-            }
-          </div>
+                : `Waiting for ${conversation.provider || 'claude'} to be ready...` /* fallback 'claude' matches shared DEFAULT_PROVIDER */}
+            </div>
+          )}
         </div>
       ) : (
         <div className="messages-container-wrapper">

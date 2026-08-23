@@ -1,14 +1,7 @@
 import type { BuddyOverview } from './types';
 import { buddyCardMetrics, selectDirectoryEmployees } from './ui-contract';
 
-function initials(name: string): string {
-  return name
-    .split(/\s+/)
-    .map((part) => part[0])
-    .join('')
-    .slice(0, 2)
-    .toUpperCase();
-}
+const CARD_VISUALS = ['horizon', 'archive', 'orbit', 'ember', 'tide'] as const;
 
 export function BuddyDirectory({
   overview,
@@ -25,6 +18,16 @@ export function BuddyDirectory({
 
   return (
     <main className="buddies-directory-content">
+      <header className="buddies-directory-header">
+        <div>
+          <span className="buddies-directory-eyebrow">Workspace directory</span>
+          <h1>Buddies</h1>
+          <p>Meet the specialist teammates shaping work across your projects.</p>
+        </div>
+        <span className="buddies-directory-count">
+          {visibleBuddies.length} {visibleBuddies.length === 1 ? 'Buddy' : 'Buddies'}
+        </span>
+      </header>
       <div className="buddy-card-grid">
         <button
           type="button"
@@ -32,66 +35,48 @@ export function BuddyDirectory({
           onClick={onNew}
           disabled={creating}
         >
-          <span className="buddy-new-card-mark" aria-hidden="true">
-            +
+          <span className="buddy-card-visual buddy-card-visual--new" aria-hidden="true">
+            <span className="buddy-card-visual__plus">+</span>
           </span>
-          <span className="buddy-new-card-copy">
-            <span className="buddy-new-card-eyebrow">Build your team</span>
-            <strong>{creating ? 'Opening Builder…' : 'Create a new Buddy'}</strong>
-            <span>Define a role, working style, and durable memory.</span>
+          <span className="buddy-card-title">{creating ? 'Opening Builder…' : 'Create a new Buddy'}</span>
+          <span className="buddy-card-hover-copy">
+            <span>Describe a role in chat and the Builder will shape the brief with you.</span>
+            <span className="buddy-card-hover-action">{creating ? 'Opening…' : 'Start here →'}</span>
           </span>
-          <span className="buddy-new-card-action">{creating ? 'Opening…' : 'Start here →'}</span>
         </button>
-        {visibleBuddies.map((employeeOverview) => {
+        {visibleBuddies.map((employeeOverview, index) => {
           const { buddy, workspaces, team } = employeeOverview;
           const metrics = buddyCardMetrics(employeeOverview);
+          const visual = CARD_VISUALS[index % CARD_VISUALS.length];
           return (
             <button
               type="button"
               key={buddy.id}
-              className="buddy-directory-card"
+              className={`buddy-directory-card buddy-directory-card--${visual}`}
               onClick={() => onOpen(buddy.id)}
             >
-              <div className="buddy-directory-card-info">
-                <div className="buddy-avatar" aria-hidden="true">
-                  {initials(buddy.name)}
-                </div>
-                <div className="buddy-directory-card-copy">
-                  <h2>{buddy.name}</h2>
-                  <p>{buddy.role}</p>
-                  <div className="buddy-project-chips">
-                    {workspaces.map((workspace) => (
-                      <span key={workspace.id}>{workspace.name}</span>
-                    ))}
-                  </div>
-                  <div className="buddy-card-stats">
-                    {team.length > 0 && (
-                      <div>
-                        <strong>{metrics.team}</strong>
-                        <span>team</span>
-                      </div>
-                    )}
-                    <div>
-                      <strong>{metrics.open}</strong>
-                      <span>open</span>
-                    </div>
-                    <div>
-                      <strong>{metrics.active}</strong>
-                      <span>active</span>
-                    </div>
-                    <div>
-                      <strong>{metrics.blocked}</strong>
-                      <span>blocked</span>
-                    </div>
-                  </div>
-                </div>
-              </div>
-              <div className="buddy-directory-card-actions">
-                <span className={`buddy-presence buddy-presence--${buddy.status}`}>
-                  {buddy.status}
+              <span className="buddy-card-visual" aria-hidden="true">
+                <span className="buddy-card-visual__orb" />
+                <span className="buddy-card-visual__line" />
+              </span>
+              <span className="buddy-card-title">{buddy.name}</span>
+              <span className="buddy-card-hover-copy">
+                <span>{buddy.role}</span>
+                <span className="buddy-card-hover-meta">
+                  <span className={`buddy-presence buddy-presence--${buddy.status}`}>
+                    {buddy.status}
+                  </span>
+                  {workspaces.slice(0, 2).map((workspace) => (
+                    <span key={workspace.id} className="buddy-card-workspace">
+                      {workspace.name}
+                    </span>
+                  ))}
+                  {team.length > 0 && <span>{metrics.team} reports</span>}
+                  <span>{metrics.open} open</span>
+                  <span>{metrics.blocked} blocked</span>
                 </span>
-                <span className="buddy-directory-card-link">Open employee →</span>
-              </div>
+                <span className="buddy-card-hover-action">Open Buddy →</span>
+              </span>
             </button>
           );
         })}

@@ -1,4 +1,4 @@
-import { type FormEvent, useState } from 'react';
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { asArray, buddyApi } from './api';
 import { conversationPath } from './buddy-tabs';
@@ -6,14 +6,11 @@ import type { AutomationRun, BuddyApprovalRequest, BuddyAutomation, BuddyMutatio
 import type { ConversationLink } from './types';
 
 interface BuddyAutomationsTabProps {
-  buddyId: string;
-  workspaceId?: string;
   automations: BuddyAutomation[];
   approvals: BuddyApprovalRequest[];
   busy: boolean;
   mutate: BuddyMutation;
   refresh: () => Promise<void>;
-  onError: (message: string) => void;
   /** Conversation ids the client actually holds — a run outlives its thread. */
   availableConversationIds: Set<string>;
   automationConversations: ConversationLink[];
@@ -52,65 +49,14 @@ function OpenConversationLink({
 }
 
 export function BuddyAutomationsTab({
-  buddyId,
-  workspaceId,
   automations,
   approvals,
   busy,
   mutate,
   refresh,
-  onError,
   availableConversationIds,
   automationConversations,
 }: BuddyAutomationsTabProps) {
-  const [scheduleKind, setScheduleKind] = useState<BuddyAutomation['schedule_kind']>('interval');
-
-  const createAutomation = (event: FormEvent<HTMLFormElement>) => {
-    event.preventDefault();
-    const form = event.currentTarget;
-    const data = new FormData(form);
-    const jobKind = String(data.get('jobKind')) as BuddyAutomation['job_kind'];
-    const scheduleExpression = String(data.get('scheduleExpression') ?? '').trim();
-    if (
-      scheduleKind === 'interval' &&
-      (!/^\d+$/.test(scheduleExpression) || Number(scheduleExpression) < 1)
-    ) {
-      onError('Interval must be a positive whole number of seconds.');
-      return;
-    }
-    const prompt = String(data.get('prompt'));
-    const jobPayload =
-      jobKind === 'sequence'
-        ? { prompts: prompt.split('\n').filter(Boolean) }
-        : jobKind === 'loop'
-          ? {
-              prompt,
-              termination: {
-                condition: String(data.get('condition')),
-                max_iterations: 5,
-                max_duration_seconds: 900,
-              },
-            }
-          : { prompt };
-
-    void mutate('new-automation', () =>
-      buddyApi(`/api/buddies/${encodeURIComponent(buddyId)}/automations`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          workspaceId: workspaceId ?? null,
-          name: data.get('name'),
-          scheduleKind,
-          scheduleExpression,
-          timezone: Intl.DateTimeFormat().resolvedOptions().timeZone,
-          jobKind,
-          jobPayload,
-          enabled: true,
-        }),
-      })
-    ).then(() => form.reset());
-  };
-
   return (
     <section className="buddy-section">
       <div className="buddy-approval-list">
@@ -156,49 +102,6 @@ export function BuddyAutomationsTab({
           <p className="buddy-empty">No pending approvals.</p>
         )}
       </div>
-      <form className="buddy-form buddy-form--automation" onSubmit={createAutomation}>
-        <h2>New automation</h2>
-        <input name="name" required placeholder="Automation name" />
-        <select
-          name="scheduleKind"
-          value={scheduleKind}
-          onChange={(event) =>
-            setScheduleKind(event.currentTarget.value as BuddyAutomation['schedule_kind'])
-          }
-        >
-          <option value="interval">Interval</option>
-          <option value="cron">Cron</option>
-        </select>
-        {scheduleKind === 'interval' ? (
-          <input
-            name="scheduleExpression"
-            type="number"
-            min="1"
-            step="1"
-            inputMode="numeric"
-            required
-            aria-label="Interval in seconds"
-            placeholder="Interval in seconds (e.g. 3600)"
-          />
-        ) : (
-          <input
-            name="scheduleExpression"
-            required
-            aria-label="Cron expression"
-            placeholder="Cron expression (e.g. 0 9 * * 1)"
-          />
-        )}
-        <select name="jobKind">
-          <option value="prompt">Single prompt</option>
-          <option value="sequence">Prompt sequence</option>
-          <option value="loop">Bounded loop</option>
-        </select>
-        <textarea name="prompt" required placeholder="Prompt; for sequences use one per line" />
-        <input name="condition" placeholder="Loop termination condition" />
-        <button type="submit" disabled={busy}>
-          Create automation
-        </button>
-      </form>
       <div className="buddy-record-list">
         {automations.map((automation) => (
           <AutomationCard
@@ -269,26 +172,17 @@ function AutomationCard({
     <article className="buddy-automation-card">
       <div>
         <strong>{automation.name}</strong>
-        <span>
-          {automation.schedule_kind} · {automation.schedule_expression} · {automation.job_kind}
+        <span className="buddy-automation-card__schedule">
+          {automation.schedule_kind} · {automation.schedule_expression} · {automation.timezone}
         </span>
-        <span>
-          Next{' '}
+        <span className="buddy-automation-card__next">
           {automation.next_run_at
-            ? new Date(automation.next_run_at).toLocaleString()
-            : 'not scheduled'}{' '}
-          · Last{' '}
-          {automation.last_run_at ? new Date(automation.last_run_at).toLocaleString() : 'never'}
+            ? `Next ${new Date(automation.next_run_at).toLocaleString()}`
+            : 'Not scheduled'}
+          {automation.last_run_at
+            ? ` · Last ${new Date(automation.last_run_at).toLocaleString()}`
+            : ''}
         </span>
-        {automation.policy && (
-          <span>
-            Policy · {automation.policy.max_runtime_seconds}s · {automation.policy.max_iterations}{' '}
-            iteration
-            {automation.policy.max_iterations === 1 ? '' : 's'} ·{' '}
-            {automation.policy.max_tokens.toLocaleString()} tokens · $
-            {automation.policy.max_cost_usd.toFixed(2)}
-          </span>
-        )}
       </div>
       <div className="buddy-record-actions">
         <button
@@ -334,7 +228,8 @@ function AutomationCard({
           {runs.map((run) => (
             <div key={run.id}>
               <span>
-                {run.status} · {new Date(run.scheduled_for).toLocaleString()}
+                {run.status === 'claimed' ? 'starting' : run.status} ·{' '}
+                {new Date(run.scheduled_for).toLocaleString()}
               </span>
               {run.conversation_id && (
                 <OpenConversationLink

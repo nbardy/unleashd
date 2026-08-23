@@ -16,6 +16,7 @@ function initials(name: string): string {
 export function BuddyCreatedCard({ result }: { result: BuddyBuilderResult }) {
   const navigate = useNavigate();
   const { buddy } = result;
+  const buddyQuestions = result.followUpQuestions;
   const runtime = [buddy.model ?? buddy.provider, buddy.reasoning_effort]
     .filter(Boolean)
     .join(' · ');
@@ -53,6 +54,16 @@ export function BuddyCreatedCard({ result }: { result: BuddyBuilderResult }) {
         <span className="buddy-created-card__status">{buddy.status}</span>
       </header>
       {runtime && <p className="buddy-created-card__runtime">{runtime}</p>}
+      {buddyQuestions.length > 0 && (
+        <div className="buddy-created-card__questions">
+          <span>Questions to sharpen this Buddy</span>
+          <ul>
+            {buddyQuestions.map((question) => (
+              <li key={question}>{question}</li>
+            ))}
+          </ul>
+        </div>
+      )}
       <div className="buddy-created-card__actions">
         <Link to={route}>Open Buddy</Link>
         <button type="button" onClick={startConversation}>

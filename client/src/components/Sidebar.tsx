@@ -42,6 +42,7 @@ import { formatTimeAgo, getConversationLastActivity, getMinutesElapsed } from '.
 import { ConversationConfigPicker } from './ConversationConfigPicker';
 import { PathAutocomplete } from './PathAutocomplete';
 import { SearchPalette } from './SearchPalette';
+import { createBuddyViaBuilder } from './buddies/create-buddy-builder';
 import './Sidebar.css';
 
 const RECENT_CUTOFF_MS = 7 * 24 * 60 * 60 * 1000;
@@ -285,6 +286,8 @@ export function Sidebar() {
   const [configDraft, setConfigDraft] = useState(() => createDefaultDraft(defaultProvider));
   const [isCreatingSwarm, setIsCreatingSwarm] = useState(false);
   const [modalError, setModalError] = useState<string | null>(null);
+  const [isOpeningBuddyBuilder, setIsOpeningBuddyBuilder] = useState(false);
+  const [buddyBuilderError, setBuddyBuilderError] = useState<string | null>(null);
   const [buddyDirectory, setBuddyDirectory] = useState<BuddySidebarEmployee[]>([]);
   const [buddyRecentRuns, setBuddyRecentRuns] = useState<BuddySidebarRun[]>([]);
   const buddySidebarItems = useMemo(() => {
@@ -408,6 +411,19 @@ export function Sidebar() {
     setConfigDraft(createDefaultDraft(defaultProvider));
     setShowPicker(true);
   }, [allConversations, lastWorkingDirectory, defaultCwd, defaultProvider]);
+
+  const handleNewBuddyBuilder = useCallback(async () => {
+    setIsOpeningBuddyBuilder(true);
+    setBuddyBuilderError(null);
+    try {
+      const conversationId = await createBuddyViaBuilder();
+      navigate(`/chat/${conversationId}?helper=buddies`);
+    } catch (cause) {
+      setBuddyBuilderError(cause instanceof Error ? cause.message : String(cause));
+    } finally {
+      setIsOpeningBuddyBuilder(false);
+    }
+  }, [navigate]);
 
   const handleNewBuddyConversation = useCallback(
     (item: BuddySidebarItemData) => {
@@ -805,123 +821,145 @@ export function Sidebar() {
             </div>
           </div>
         )}
-        {buddySidebarItems.length > 0 && (
-          <div className="sidebar-section">
-            <div className="folder-group folder-group--buddies">
-              <div
-                className="folder-group-header"
-                style={{ borderLeftColor: 'var(--ai)' }}
-                onClick={() => toggleGalleryCollapsed('__buddies__')}
+        <div className="sidebar-section">
+          <div className="folder-group folder-group--buddies">
+            <div
+              className="folder-group-header"
+              style={{ borderLeftColor: 'var(--ai)' }}
+              onClick={() => toggleGalleryCollapsed('__buddies__')}
+            >
+              <span
+                className={`folder-chevron ${collapsedSet.has('__buddies__') ? 'collapsed' : ''}`}
               >
-                <span
-                  className={`folder-chevron ${collapsedSet.has('__buddies__') ? 'collapsed' : ''}`}
-                >
-                  &#x25BC;
-                </span>
-                <button
-                  type="button"
-                  className="folder-group-name folder-group-name-button"
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    navigate('/buddies');
-                  }}
-                >
-                  Buddies
-                </button>
-                <span className="folder-group-count">{buddySidebarItems.length}</span>
-              </div>
-              {!collapsedSet.has('__buddies__') &&
-                buddySidebarItems.map((item) => {
-                  const buddyKey = `buddy:${item.buddyId}`;
-                  const isBuddyCollapsed = collapsedSet.has(buddyKey);
-                  const isExpanded = expandedBuddies.has(item.buddyId);
-                  const convs = item.conversations;
-                  const visibleConvs = isExpanded ? convs : convs.slice(0, 3);
-                  const remaining = convs.length - visibleConvs.length;
-                  return (
-                    <div key={item.buddyId} className="buddy-subgroup">
-                      <div
-                        className="folder-group-header folder-group-header--buddy"
-                        style={{ borderLeftColor: 'var(--ai)', cursor: 'pointer' }}
-                        onClick={() => toggleGalleryCollapsed(buddyKey)}
-                      >
-                        <span className={`folder-chevron ${isBuddyCollapsed ? 'collapsed' : ''}`}>
-                          &#x25BC;
-                        </span>
-                        <span className="folder-group-name" title={item.buddyName}>
-                          {item.buddyName}
-                        </span>
-                        <button
-                          type="button"
-                          className="folder-group-add-btn"
-                          aria-label={`New conversation with ${item.buddyName}`}
-                          title={`New conversation with ${item.buddyName}`}
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleNewBuddyConversation(item);
-                          }}
-                        >
-                          +
-                        </button>
-                        <span className="folder-group-count folder-group-count--right">{convs.length || ''}</span>
-                      </div>
-                      {!isBuddyCollapsed && (
-                        <>
-                          {visibleConvs.length > 0 ? (
-                            visibleConvs.map((conv) => (
-                              <ConversationItem
-                                key={conv.id}
-                                conv={conv}
-                                isActive={conv.id === activeConversationId}
-                                hasUnseen={hasUnseenMessages(
-                                  lastSeenMessageIndex,
-                                  conv.id,
-                                  conversationMessageCount(conv)
-                                )}
-                                showFolderBadge={false}
-                                onSelect={handleSelectConversation}
-                                onDone={handleDone}
-                              />
-                            ))
-                          ) : item.pendingCreation ? (
-                            <div className="conversation-item pending-creation">
-                              <div className="conversation-row">
-                                <span className="conversation-title">
-                                  {item.pendingCreation.error
-                                    ? `Failed: ${item.pendingCreation.error}`
-                                    : `Starting ${item.pendingCreation.config.provider}…`}
-                                </span>
-                                <span className="status-indicator pending" />
-                              </div>
-                            </div>
-                          ) : (
-                            <div className="folder-group-all-done">No conversations yet</div>
-                          )}
-                          {convs.length > 3 && (
-                            <button
-                              type="button"
-                              className="show-more-btn"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                setExpandedBuddies((prev) => {
-                                  const next = new Set(prev);
-                                  if (next.has(item.buddyId)) next.delete(item.buddyId);
-                                  else next.add(item.buddyId);
-                                  return next;
-                                });
-                              }}
-                            >
-                              {isExpanded ? 'show less' : `show ${remaining} more`}
-                            </button>
-                          )}
-                        </>
-                      )}
-                    </div>
-                  );
-                })}
+                &#x25BC;
+              </span>
+              <button
+                type="button"
+                className="folder-group-name folder-group-name-button"
+                onClick={(event) => {
+                  event.stopPropagation();
+                  navigate('/buddies');
+                }}
+              >
+                Buddies
+              </button>
+              <button
+                type="button"
+                className="folder-group-add-btn folder-group-add-btn--section"
+                aria-label="Create a new Buddy"
+                title="Create a new Buddy"
+                disabled={isOpeningBuddyBuilder}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  void handleNewBuddyBuilder();
+                }}
+              >
+                +
+              </button>
+              <span className="folder-group-count">{buddySidebarItems.length || ''}</span>
             </div>
+            {buddyBuilderError && (
+              <div className="sidebar-buddy-error" role="alert">
+                {buddyBuilderError}
+              </div>
+            )}
+            {!collapsedSet.has('__buddies__') && buddySidebarItems.length === 0 && (
+              <div className="folder-group-all-done">No Buddies yet</div>
+            )}
+            {!collapsedSet.has('__buddies__') &&
+              buddySidebarItems.length > 0 &&
+              buddySidebarItems.map((item) => {
+                const buddyKey = `buddy:${item.buddyId}`;
+                const isBuddyCollapsed = collapsedSet.has(buddyKey);
+                const isExpanded = expandedBuddies.has(item.buddyId);
+                const convs = item.conversations;
+                const visibleConvs = isExpanded ? convs : convs.slice(0, 3);
+                const remaining = convs.length - visibleConvs.length;
+                return (
+                  <div key={item.buddyId} className="buddy-subgroup">
+                    <div
+                      className="folder-group-header folder-group-header--buddy"
+                      style={{ borderLeftColor: 'var(--ai)', cursor: 'pointer' }}
+                      onClick={() => toggleGalleryCollapsed(buddyKey)}
+                    >
+                      <span className={`folder-chevron ${isBuddyCollapsed ? 'collapsed' : ''}`}>
+                        &#x25BC;
+                      </span>
+                      <span className="folder-group-name" title={item.buddyName}>
+                        {item.buddyName}
+                      </span>
+                      <button
+                        type="button"
+                        className="folder-group-add-btn"
+                        aria-label={`New conversation with ${item.buddyName}`}
+                        title={`New conversation with ${item.buddyName}`}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleNewBuddyConversation(item);
+                        }}
+                      >
+                        +
+                      </button>
+                      <span className="folder-group-count folder-group-count--right">
+                        {convs.length || ''}
+                      </span>
+                    </div>
+                    {!isBuddyCollapsed && (
+                      <>
+                        {visibleConvs.length > 0 ? (
+                          visibleConvs.map((conv) => (
+                            <ConversationItem
+                              key={conv.id}
+                              conv={conv}
+                              isActive={conv.id === activeConversationId}
+                              hasUnseen={hasUnseenMessages(
+                                lastSeenMessageIndex,
+                                conv.id,
+                                conversationMessageCount(conv)
+                              )}
+                              showFolderBadge={false}
+                              onSelect={handleSelectConversation}
+                              onDone={handleDone}
+                            />
+                          ))
+                        ) : item.pendingCreation ? (
+                          <div className="conversation-item pending-creation">
+                            <div className="conversation-row">
+                              <span className="conversation-title">
+                                {item.pendingCreation.error
+                                  ? `Failed: ${item.pendingCreation.error}`
+                                  : `Starting ${item.pendingCreation.config.provider}…`}
+                              </span>
+                              <span className="status-indicator pending" />
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="folder-group-all-done">No conversations yet</div>
+                        )}
+                        {convs.length > 3 && (
+                          <button
+                            type="button"
+                            className="show-more-btn"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              setExpandedBuddies((prev) => {
+                                const next = new Set(prev);
+                                if (next.has(item.buddyId)) next.delete(item.buddyId);
+                                else next.add(item.buddyId);
+                                return next;
+                              });
+                            }}
+                          >
+                            {isExpanded ? 'show less' : `show ${remaining} more`}
+                          </button>
+                        )}
+                      </>
+                    )}
+                  </div>
+                );
+              })}
           </div>
-        )}
+        </div>
         {sidebarViewMode === 'list' ? (
           (() => {
             const listActive = topLevelConversations.filter((conv) => !doneSet.has(conv.sessionId ?? conv.id));

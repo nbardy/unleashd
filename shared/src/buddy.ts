@@ -28,5 +28,6 @@ export const BuddyBuilderResultSchema = z.object({
   buddy: BuddySummarySchema,
   homeWorkspace: BuddyWorkspaceSummarySchema,
   workspaces: z.array(BuddyWorkspaceSummarySchema),
+  followUpQuestions: z.array(z.string().min(1)).default([]),
 });
 export type BuddyBuilderResult = z.infer<typeof BuddyBuilderResultSchema>;

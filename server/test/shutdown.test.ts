@@ -1,4 +1,8 @@
 import assert from 'node:assert/strict';
+import { spawn } from 'node:child_process';
+import { existsSync, mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import test from 'node:test';
 import type { Message } from '@unleashd/shared';
 import {
@@ -113,8 +117,10 @@ test('reload waits for active turns and coalesces repeated requests', async () =
   admissionProbe();
 
   controller.handleReload();
-  assert.equal(controller.state, 'reloading');
-  assert.equal(controller.beginMutation(), null);
+  assert.equal(controller.state, 'idle');
+  const workDuringDeferral = controller.beginMutation();
+  assert.ok(workDuringDeferral);
+  workDuringDeferral();
   controller.handleReload();
 
   assert.deepEqual(fixture.counts(), {
@@ -174,35 +180,135 @@ test('reload drains the automation run beyond its individual provider turn', asy
 });
 
 /**
- * Incident 2026-08-20. `reloading` is an absorbing state — nothing returns the
- * controller to `idle` — so if the drain never completes the server stays up
- * refusing every mutation with "Backend reload is draining active turns" until
- * the process is killed by hand. A provider turn that outlives the grace is the
- * normal case here (agents editing server/src while their own turn is running),
- * so the grace is a liveness requirement. Every other test in this file lets the
- * work go away; this one never does.
+ * Incident 2026-08-22. The old reload grace force-killed ordinary provider turns
+ * because they routinely outlive eight seconds. The grace now bounds only how
+ * long the old backend remains fully available: afterward it quiesces admission
+ * but retains process ownership until the turn completes naturally.
  */
-test('a reload whose work never drains still exits after the grace', async () => {
+test('a reload quiesces after the grace without interrupting its live turn', async () => {
   const fixture = createFixture(true);
   const controller = createShutdownController({ ...INERT, reloadDrainGraceMs: 300 }, fixture.ports);
   assert.equal(controller.completeStartup(), true);
 
   controller.handleReload();
-  assert.equal(controller.state, 'reloading');
-  assert.equal(controller.beginMutation(), null);
+  assert.equal(controller.state, 'idle');
+  const admittedDuringDeferral = controller.beginMutation();
+  assert.ok(admittedDuringDeferral);
+  admittedDuringDeferral();
 
   await sleep(150);
   assert.equal(fixture.counts().processStops, 0, 'turn is left alone before the grace');
   assert.equal(fixture.counts().flushes, 0);
 
-  await sleep(350);
-  assert.equal(fixture.counts().processStops, 1, 'live turn interrupted at the grace');
-  assert.equal(fixture.counts().flushes, 1, 'exit started despite the turn never ending');
+  await sleep(250);
+  assert.equal(controller.state, 'reloading');
+  assert.equal(controller.beginMutation(), null, 'new work is refused after the grace');
+  assert.equal(fixture.counts().processStops, 0, 'live turn survives the grace');
+  assert.equal(fixture.counts().flushes, 0, 'reload still waits for its owned turn');
+
+  fixture.setActive(false);
+  await sleep(550);
+  assert.equal(fixture.counts().flushes, 1);
   fixture.pendingFlush.resolve();
   await fixture.pendingFlush.promise;
   await Promise.resolve();
   assert.equal(fixture.counts().exits, 1);
   controller.dispose();
+});
+
+test('quiesced reload waits for admitted mutations and active automation wrappers', async () => {
+  const fixture = createFixture(false);
+  fixture.setActiveSchedulerRuns(1);
+  const controller = createShutdownController({ ...INERT, reloadDrainGraceMs: 100 }, fixture.ports);
+  assert.equal(controller.completeStartup(), true);
+  const releaseMutation = controller.beginMutation();
+  assert.ok(releaseMutation);
+
+  controller.handleReload();
+  await sleep(150);
+
+  assert.equal(controller.state, 'reloading');
+  assert.equal(fixture.counts().schedulerStops, 0, 'reload never cancels an active automation');
+  assert.equal(fixture.counts().flushes, 0);
+
+  fixture.setActiveSchedulerRuns(0);
+  await sleep(550);
+  assert.equal(fixture.counts().flushes, 0, 'admitted mutation still owns the process');
+
+  releaseMutation();
+  await sleep(550);
+  assert.equal(fixture.counts().flushes, 1);
+  fixture.pendingFlush.resolve();
+  await fixture.pendingFlush.promise;
+  controller.dispose();
+});
+
+test('hot reload preserves a real detached provider process beyond its grace', async (t) => {
+  const directory = mkdtempSync(join(tmpdir(), 'unleashd-reload-provider-'));
+  const marker = join(directory, 'completed');
+  const child = spawn(
+    process.execPath,
+    [
+      '-e',
+      "setTimeout(() => require('node:fs').writeFileSync(process.argv[1], 'ok'), 650)",
+      marker,
+    ],
+    { detached: true, stdio: 'ignore' }
+  );
+  let stopped = 0;
+  let flushed = 0;
+  let exited = 0;
+  const conversation: ShutdownConversation = {
+    id: 'real-provider-turn',
+    messages: [],
+    process: child,
+    hasActiveProcess: () => child.exitCode === null,
+    stop: () => {
+      stopped += 1;
+      if (child.pid != null) process.kill(-child.pid, 'SIGTERM');
+    },
+  };
+  const controller = createShutdownController(
+    { ...INERT, reloadDrainGraceMs: 100 },
+    {
+      conversations: () => [conversation],
+      activeSchedulerRuns: () => 0,
+      pauseScheduler: () => undefined,
+      stopScheduler: () => undefined,
+      flushState: () => {
+        flushed += 1;
+      },
+      broadcastMessage: () => undefined,
+      exit: () => {
+        exited += 1;
+      },
+    }
+  );
+  t.after(() => {
+    controller.dispose();
+    if (child.exitCode === null && child.pid != null) {
+      try {
+        process.kill(-child.pid, 'SIGKILL');
+      } catch {}
+    }
+    rmSync(directory, { recursive: true, force: true });
+  });
+  assert.equal(controller.completeStartup(), true);
+
+  controller.handleReload();
+  await sleep(250);
+
+  assert.equal(controller.state, 'reloading');
+  assert.equal(stopped, 0);
+  assert.equal(flushed, 0);
+
+  await new Promise<void>((resolve) => child.once('close', () => resolve()));
+  await sleep(550);
+
+  assert.equal(existsSync(marker), true, 'provider completed its work after reload quiesced');
+  assert.equal(stopped, 0, 'reload never signalled the provider process group');
+  assert.equal(flushed, 1);
+  assert.equal(exited, 1);
 });
 
 /**

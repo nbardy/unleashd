@@ -965,6 +965,27 @@
   color: var(--text-on-accent);
 }
 
+.folder-group-add-btn--section {
+  opacity: 1;
+  border: 1px solid color-mix(in srgb, var(--ai) 28%, transparent);
+  color: var(--ai-bright);
+  background: color-mix(in srgb, var(--ai) 9%, var(--bg-base));
+}
+
+.folder-group-add-btn--section:disabled {
+  cursor: wait;
+  opacity: 0.55;
+}
+
+.sidebar-buddy-error {
+  padding: 6px 12px 7px 28px;
+  border-left: 3px solid var(--danger);
+  color: var(--danger-bright);
+  background: color-mix(in srgb, var(--danger) 8%, var(--bg-base));
+  font-size: 10px;
+  line-height: 1.35;
+}
+
 /* ============================================================================
    Merge feature — sidebar glow, merge button, row checkmark overlay
    ============================================================================ */

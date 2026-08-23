@@ -12,11 +12,10 @@ export const HOT_RELOAD_FORCE_EXIT_GRACE_MS = readPositiveIntEnv(
   'CWV_HOT_RELOAD_FORCE_EXIT_GRACE_MS',
   3_000
 );
-// A dev reload waits for live provider turns to finish, and `reloading` refuses
-// every mutation while it waits. This is the upper bound on that refusal window:
-// past it, live turns are interrupted so the replacement process can start.
-// Longer than the SIGTERM grace above because a reload is opportunistic — the
-// developer did not ask for the turn to die — but it must still be finite.
+// A dev reload first remains fully available while seeking an idle boundary.
+// This bounds that deferral window. Afterward the old backend quiesces new
+// mutations but continues owning every admitted operation until it completes;
+// hot reload never uses this timer as permission to interrupt provider work.
 export const HOT_RELOAD_DRAIN_GRACE_MS = readPositiveIntEnv('CWV_HOT_RELOAD_DRAIN_GRACE_MS', 8_000);
 // Hard cap on the final state flush. Without it a journal flush that never
 // settles leaves the process alive in `exiting`, refusing every request forever.

@@ -3,7 +3,12 @@ import crypto from 'node:crypto';
 import { EventEmitter } from 'node:events';
 import fs from 'node:fs';
 import path from 'node:path';
-import { type UnifiedAgentEvent, executeCommand } from '@nbardy/agent-cli';
+import {
+  type ExecuteCommandRequest,
+  type UnifiedAgentEvent,
+  executeCommand,
+  harnessSupportsMcp,
+} from '@nbardy/agent-cli';
 import type {
   BuddyContext,
   ConfigResolution,
@@ -25,7 +30,6 @@ import {
   buddyContextFromKind,
   buddyKindFromContext,
   conversationKindFromLegacy,
-  getConversationKind,
   isBuddyKind,
   matchConversationKind,
   mergeReviewDocPath,
@@ -33,18 +37,7 @@ import {
 } from '@unleashd/shared';
 import { formatToolUse, isCompletionOnlyToolUse } from '../adapters/tool-format';
 import { BUDDY_BUILDER_BRIEFING } from '../buddies/builder';
-import {
-  buddyBuilderClaudeMcpArgs,
-  buddyBuilderCodexMcpArgs,
-  buddyBuilderGeminiMcpArgs,
-  buddyBuilderMuseMcpArgs,
-  buddyBuilderOpencodeMcpArgs,
-  buddyClaudeMcpArgs,
-  buddyCodexMcpArgs,
-  buddyGeminiMcpArgs,
-  buddyMuseMcpArgs,
-  buddyOpencodeMcpArgs,
-} from '../buddies/mcp-config';
+import { buddyBuilderMcpServers, buddyMcpServers } from '../buddies/mcp-config';
 import {
   SWARM_POLL_INTERVAL_MS,
   SWARM_POLL_THROTTLE_MS,
@@ -167,6 +160,13 @@ export function isProviderProgressEvent(event: UnifiedAgentEvent): boolean {
     return true;
   }
   return !(event.type === 'progress' && event.source === AGENT_CLI_HEARTBEAT_SOURCE);
+}
+
+export function assertBuddyProviderSupportsMcp(provider: ProviderName): void {
+  if (harnessSupportsMcp(provider)) return;
+  throw new Error(
+    `Provider "${provider}" cannot start Buddy conversations because its harness has no MCP support for required Buddy state tools.`
+  );
 }
 
 export function turnAttemptActivityFromEvent(event: UnifiedAgentEvent): TurnAttemptActivity {
@@ -455,9 +455,9 @@ export function createConversationRuntime(
     // Parent conversation id for provider-native spawned sub-agent threads.
     // For Codex this is resolved from thread_spawn.parent_thread_id.
     parentConversationId: string | null;
-  // Chat "Fork" soft-handoff lineage (UI). Not a provider-session fork.
-  // See shared FORK_CAPABLE_PROVIDERS comment for the two "fork" concepts.
-  resumedFromConversationId: string | null;
+    // Chat "Fork" soft-handoff lineage (UI). Not a provider-session fork.
+    // See shared FORK_CAPABLE_PROVIDERS comment for the two "fork" concepts.
+    resumedFromConversationId: string | null;
     // Full model name from CLI (e.g., "claude-sonnet-4-5-20250929") — more specific than provider.
     modelName: string | null;
     // Debug prefix for swarm conversations — prepended to first CLI message.
@@ -737,28 +737,13 @@ export function createConversationRuntime(
       };
       let turn: ReturnType<typeof executeCommand>;
       try {
-        const buddyExtraArgs = matchConversationKind(this.kind, {
-          buddy: (k) => {
-            const ctx = buddyContextFromKind(k);
-            if (executionConfig.provider === 'codex') return buddyCodexMcpArgs(ctx, this.id);
-            if (executionConfig.provider === 'claude') return buddyClaudeMcpArgs(ctx, this.id);
-            if (executionConfig.provider === 'muse') return buddyMuseMcpArgs(ctx, this.id);
-            if (executionConfig.provider === 'opencode') return buddyOpencodeMcpArgs(ctx, this.id);
-            if (executionConfig.provider === 'gemini' || String(executionConfig.provider).startsWith('gemini'))
-              return buddyGeminiMcpArgs(ctx, this.id);
-            return undefined;
-          },
-          buddy_builder: () => {
-            if (executionConfig.provider === 'codex') return buddyBuilderCodexMcpArgs(this.id);
-            if (executionConfig.provider === 'claude') return buddyBuilderClaudeMcpArgs(this.id);
-            if (executionConfig.provider === 'muse') return buddyBuilderMuseMcpArgs(this.id);
-            if (executionConfig.provider === 'opencode') return buddyBuilderOpencodeMcpArgs(this.id);
-            if (executionConfig.provider === 'gemini' || String(executionConfig.provider).startsWith('gemini'))
-              return buddyBuilderGeminiMcpArgs(this.id);
-            return undefined;
-          },
+        const buddyServers = matchConversationKind(this.kind, {
+          buddy: (kind) => buddyMcpServers(buddyContextFromKind(kind), this.id),
+          buddy_builder: () => buddyBuilderMcpServers(this.id),
           general: () => undefined,
         });
+        if (buddyServers) assertBuddyProviderSupportsMcp(executionConfig.provider);
+        const buddyRequest = buddyServers ? { mcpServers: buddyServers } : {};
 
         turn = executeCommand(
           executionConfig.provider === 'claude'
@@ -766,29 +751,27 @@ export function createConversationRuntime(
                 harness: 'claude',
                 ...baseRequest,
                 reasoningEffort: executionConfig.reasoningEffort,
-                ...(buddyExtraArgs ? { extraArgs: buddyExtraArgs } : {}),
+                ...buddyRequest,
               }
             : executionConfig.provider === 'codex'
               ? {
                   harness: 'codex',
                   ...baseRequest,
                   reasoningEffort: executionConfig.reasoningEffort,
-                  ...(buddyExtraArgs ? { extraArgs: buddyExtraArgs } : {}),
+                  ...buddyRequest,
                 }
               : executionConfig.provider === 'muse'
                 ? {
                     harness: 'muse',
                     ...baseRequest,
                     reasoningEffort: executionConfig.reasoningEffort,
-                    ...(buddyExtraArgs ? { extraArgs: buddyExtraArgs } : {}),
+                    ...buddyRequest,
                   }
-                : buddyExtraArgs
-                  ? {
-                      harness: executionConfig.provider,
-                      ...baseRequest,
-                      extraArgs: buddyExtraArgs,
-                    } as any
-                  : { harness: executionConfig.provider, ...baseRequest } as any
+                : ({
+                    harness: executionConfig.provider,
+                    ...baseRequest,
+                    ...buddyRequest,
+                  } as ExecuteCommandRequest)
         );
       } catch (error) {
         this._finishTurnAttempt('failed', 'spawn_failed');

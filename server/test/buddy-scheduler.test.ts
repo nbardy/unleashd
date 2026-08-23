@@ -447,6 +447,133 @@ test('scheduler start immediately coalesces an overdue definition into one catch
   assert.equal(recordedNextRunAt, '2026-01-01T01:01:00.000Z');
 });
 
+test('scheduler health records poll failures, isolates a bad claim, and reports recovery', async () => {
+  const first = automation({ id: 'automation-bad' });
+  const second = automation({ id: 'automation-good' });
+  const polledAt = new Date('2026-01-01T01:00:00.000Z');
+  let due = [first, second];
+  let goodRun: BuddyAutomationRun = {
+    id: 'run-good',
+    automation_id: second.id,
+    scheduled_for: second.next_run_at!,
+    idempotency_key: `${second.id}:${second.next_run_at}`,
+    status: 'claimed',
+    conversation_id: null,
+    iteration: 0,
+    tokens_used: 0,
+    cost_usd: 0,
+    policy: second.policy,
+    outcome: null,
+    error: null,
+    claimed_at: polledAt.toISOString(),
+    started_at: null,
+    ended_at: null,
+    claim_token: null,
+    claim_expires_at: null,
+  };
+  const store = {
+    listDueAutomations: () => due,
+    claimAutomationRun: (id: string) => {
+      if (id === first.id) throw new Error('database busy');
+      return goodRun;
+    },
+    updateAutomationRun: (_id: string, changes: Partial<BuddyAutomationRun>) => {
+      goodRun = { ...goodRun, ...changes };
+      return goodRun;
+    },
+    getAutomation: () => second,
+  } as unknown as BuddiesStorePort;
+  const scheduler = new BuddyScheduler({
+    store,
+    now: () => polledAt,
+    logger: { warn() {}, error() {} },
+    createConversation: async () => ({
+      conversationId: 'conversation-good',
+      runTurn: async () => 'complete',
+      stop() {},
+      finish() {},
+    }),
+  });
+
+  await scheduler.poll();
+  for (let attempt = 0; attempt < 20 && goodRun.status !== 'complete'; attempt += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+
+  assert.equal(goodRun.status, 'complete', 'one bad claim must not starve later due work');
+  assert.deepEqual(scheduler.health(), {
+    running: false,
+    pollIntervalMs: 30_000,
+    activeRunIds: [],
+    catchUpPolicy: 'coalesce',
+    lastPollAt: polledAt.toISOString(),
+    lastSuccessfulPollAt: null,
+    lastFailedPollAt: polledAt.toISOString(),
+    lastPollError: 'Could not claim automation automation-bad: database busy',
+    consecutivePollFailures: 1,
+    lastPollDueCount: 2,
+    lastPollOldestDueAt: first.next_run_at,
+  });
+
+  due = [];
+  await scheduler.poll();
+  assert.equal(scheduler.health().lastSuccessfulPollAt, polledAt.toISOString());
+  assert.equal(scheduler.health().lastPollError, null);
+  assert.equal(scheduler.health().consecutivePollFailures, 0);
+});
+
+test('scheduler durably fails and advances a run when provider startup fails', async () => {
+  const directory = mkdtempSync(join(tmpdir(), 'buddy-scheduler-provider-start-'));
+  const databasePath = join(directory, 'buddies.sqlite');
+  const store = new BuddiesStore(databasePath);
+  try {
+    const workspace = store.createWorkspace({
+      name: 'Workspace',
+      rootPath: join(directory, 'workspace'),
+    });
+    const buddy = store.createBuddy({
+      project: workspace.id,
+      name: 'Lead',
+      role: 'Own outcomes',
+    });
+    const definition = store.createAutomation({
+      buddy: buddy.id,
+      workspace: workspace.id,
+      name: 'Provider failure proof',
+      scheduleKind: 'interval',
+      scheduleExpression: '60',
+      jobKind: 'prompt',
+      jobPayload: { prompt: 'Check state.' },
+      nextRunAt: '2026-07-28T01:00:00.000Z',
+    });
+    const scheduler = new BuddyScheduler({
+      store: store as unknown as BuddiesStorePort,
+      now: () => new Date('2026-07-28T01:00:00.000Z'),
+      logger: { warn() {}, error() {} },
+      createConversation: async () => {
+        throw new Error('provider executable unavailable');
+      },
+    });
+
+    await scheduler.poll();
+    let failed: BuddyAutomationRun | undefined;
+    for (let attempt = 0; attempt < 40; attempt += 1) {
+      [failed] = store.listAutomationRuns(definition.id, { limit: 1 });
+      if (failed?.status === 'failed') break;
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+
+    assert.equal(failed?.status, 'failed');
+    assert.equal(failed?.conversation_id, null);
+    assert.equal(failed?.error, 'provider executable unavailable');
+    assert.ok(failed?.ended_at, 'provider startup failure must be terminal and timestamped');
+    assert.equal(store.getAutomation(definition.id).next_run_at, '2026-07-28T01:01:00.000Z');
+  } finally {
+    store.close();
+    rmSync(directory, { recursive: true, force: true });
+  }
+});
+
 test('scheduler fails and advances a run interrupted by process restart', async () => {
   const definition = automation();
   const now = new Date('2026-01-01T01:00:00.000Z');

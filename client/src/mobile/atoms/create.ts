@@ -1,7 +1,7 @@
 import type { ConversationConfig } from '@unleashd/shared';
 import { createConversation } from '../../atoms/actions';
+export { createBuddyViaBuilder } from '../../components/buddies/create-buddy-builder';
 import { setLastWorkingDirectory } from '../../atoms/ui';
-import { newId } from '../../utils/ids';
 
 /**
  * Mobile create flow — canonical request + type-directed dispatch.
@@ -65,31 +65,4 @@ const CREATE_HANDLERS: Record<MobileCreateKind, (request: MobileCreateRequest) =
 /** Resolves to the new conversation id. Rejects with a typed Error on failure. */
 export function createFromRequest(request: MobileCreateRequest): Promise<string> {
   return CREATE_HANDLERS[request.kind](request);
-}
-
-/**
- * Buddy creation is a different shape entirely — no directory, no config. The
- * server spawns a Builder conversation that interviews the user, so the id is
- * client-owned for the same retry-safety reason as `createConversation`.
- */
-export async function createBuddyViaBuilder(): Promise<string> {
-  const response = await fetch('/api/buddies/builder', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      conversationId: newId(),
-      commandId: newId(),
-    }),
-  });
-  const payload = (await response.json().catch(() => ({}))) as {
-    conversationId?: string;
-    conversation?: { id?: string };
-    error?: string;
-  };
-  if (!response.ok) {
-    throw new Error(payload.error ?? `Buddy Builder failed (HTTP ${response.status})`);
-  }
-  const confirmedId = payload.conversationId ?? payload.conversation?.id;
-  if (!confirmedId) throw new Error('Buddy Builder did not return a conversation');
-  return confirmedId;
 }

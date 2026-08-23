@@ -92,12 +92,22 @@ function workspaceName(rootPath: string, requested?: string): string {
   return requested?.trim() || path.basename(rootPath);
 }
 
+function followUpQuestionsForRole(role: string): string[] {
+  const words = role.trim().split(/\s+/).filter(Boolean);
+  if (words.length >= 6 || role.trim().length >= 52) return [];
+  return [
+    'What should this Buddy own first, and what would a successful first week look like?',
+    'Which decisions should this Buddy make independently versus bring back to you?',
+  ];
+}
+
 function canonicalResult(conversationId: string, result: StoredBuilderResult): BuddyBuilderResult {
   return {
     conversationId,
     buddy: result.buddy,
     homeWorkspace: result.homeWorkspace,
     workspaces: result.workspaces,
+    followUpQuestions: followUpQuestionsForRole(result.buddy.role),
   };
 }
 
@@ -242,5 +252,5 @@ export const BUDDY_BUILDER_BRIEFING = [
   'Creation includes identity, one home workspace, explicit additional workspace assignments, and an execution profile only.',
   'Do not create managers, automations, files, skills, projects, permissions, sends, or production changes.',
   'The server defaults new Buddies to Codex, gpt-5.6-luna, high. Omit profile fields unless the user requests an exception.',
-  'After create_buddy succeeds, briefly confirm the hire. The application renders the canonical Buddy card separately.',
+  'After create_buddy succeeds, briefly confirm the hire. If the result includes followUpQuestions, ask those questions next so the user can sharpen the brief without creating a second Buddy. The application renders the canonical Buddy card separately.',
 ].join('\n');

@@ -159,6 +159,13 @@ export class BuddyScheduler {
   private activeRuns = new Set<string>();
   private activeConversations = new Map<string, BuddyAutomationConversation>();
   private cancelledRuns = new Set<string>();
+  private lastPollAt: string | null = null;
+  private lastSuccessfulPollAt: string | null = null;
+  private lastFailedPollAt: string | null = null;
+  private lastPollError: string | null = null;
+  private consecutivePollFailures = 0;
+  private lastPollDueCount = 0;
+  private lastPollOldestDueAt: string | null = null;
 
   constructor(options: BuddySchedulerOptions) {
     this.store = options.store;
@@ -196,6 +203,14 @@ export class BuddyScheduler {
       running: this.timer !== null,
       pollIntervalMs: this.pollIntervalMs,
       activeRunIds: [...this.activeRuns],
+      catchUpPolicy: 'coalesce' as const,
+      lastPollAt: this.lastPollAt,
+      lastSuccessfulPollAt: this.lastSuccessfulPollAt,
+      lastFailedPollAt: this.lastFailedPollAt,
+      lastPollError: this.lastPollError,
+      consecutivePollFailures: this.consecutivePollFailures,
+      lastPollDueCount: this.lastPollDueCount,
+      lastPollOldestDueAt: this.lastPollOldestDueAt,
     };
   }
 
@@ -218,30 +233,62 @@ export class BuddyScheduler {
   }
 
   async poll(): Promise<void> {
-    for (const automation of this.store.listDueAutomations(this.now())) {
-      const claimToken = randomUUID();
-      const run = this.store.claimAutomationRun(automation.id, {
-        scheduledFor: automation.next_run_at ?? this.now().toISOString(),
-        claimToken,
-        leaseSeconds: automation.policy.max_runtime_seconds + 60,
-      });
-      // Older store adapters and focused test doubles predate durable claim
-      // ownership. Undefined keeps that compatibility path; only an explicit
-      // false means another executor owns this occurrence.
-      if (run.claim_acquired === false) continue;
-      if (this.activeRuns.has(run.id)) continue;
-      if (run.status === 'running' && run.claim_acquired === undefined) {
-        const nextRunAt = this.nextRunAt(automation, run);
-        this.store.updateAutomationRun(run.id, {
-          status: 'failed',
-          error: 'Automation interrupted by scheduler restart',
-          ...(nextRunAt ? { nextRunAt } : {}),
-        });
-        continue;
+    const polledAt = this.now();
+    this.lastPollAt = polledAt.toISOString();
+    let due: BuddyAutomation[];
+    try {
+      due = this.store.listDueAutomations(polledAt);
+      this.lastPollDueCount = due.length;
+      this.lastPollOldestDueAt = due[0]?.next_run_at ?? null;
+      let pollError: string | null = null;
+      for (const automation of due) {
+        try {
+          const claimToken = randomUUID();
+          const run = this.store.claimAutomationRun(automation.id, {
+            scheduledFor: automation.next_run_at ?? polledAt.toISOString(),
+            claimToken,
+            leaseSeconds: automation.policy.max_runtime_seconds + 60,
+          });
+          // Older store adapters and focused test doubles predate durable claim
+          // ownership. Undefined keeps that compatibility path; only an explicit
+          // false means another executor owns this occurrence.
+          if (run.claim_acquired === false) continue;
+          if (this.activeRuns.has(run.id)) continue;
+          if (run.status === 'running' && run.claim_acquired === undefined) {
+            const nextRunAt = this.nextRunAt(automation, run);
+            this.store.updateAutomationRun(run.id, {
+              status: 'failed',
+              error: 'Automation interrupted by scheduler restart',
+              ...(nextRunAt ? { nextRunAt } : {}),
+            });
+            continue;
+          }
+          if (run.status !== 'claimed') continue;
+          void this.execute(automation, run, claimToken);
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          pollError = `Could not claim automation ${automation.id}: ${message}`;
+          this.logger.error(`[buddies] ${pollError}`);
+        }
       }
-      if (run.status !== 'claimed') continue;
-      void this.execute(automation, run, claimToken);
+      if (pollError) {
+        this.recordPollFailure(polledAt, pollError);
+      } else {
+        this.lastSuccessfulPollAt = polledAt.toISOString();
+        this.lastPollError = null;
+        this.consecutivePollFailures = 0;
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      this.recordPollFailure(polledAt, message);
+      this.logger.error(`[buddies] Scheduler poll failed: ${message}`);
     }
+  }
+
+  private recordPollFailure(at: Date, message: string): void {
+    this.lastFailedPollAt = at.toISOString();
+    this.lastPollError = message;
+    this.consecutivePollFailures += 1;
   }
 
   async runNow(automationId: string): Promise<BuddyAutomationRun> {

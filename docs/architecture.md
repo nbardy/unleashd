@@ -151,15 +151,19 @@ is now `providerSupportsFork(this.provider)`; guard:
 process-lifecycle authority. States: `starting → idle`, and `starting|idle →
 reloading → exiting`.
 
-**`reloading` is absorbing — nothing returns the controller to `idle`.** While in
-it, `beginMutation()` returns `null` and every command is refused with
-`Backend reload is draining active turns` (WS `server_draining`, HTTP 503). So
-every wait in that state needs a finite bound, or the server stays up refusing
-work until it is killed by hand. Three bounds exist, and all three are load-bearing:
+**`reloading` is absorbing — nothing returns the controller to `idle`.** A source
+reload therefore stays in `idle` first, with the scheduler paused, while seeking
+an idle boundary. `HOT_RELOAD_DRAIN_GRACE_MS` (8s) bounds that fully-available
+deferral. If work remains after the grace, the old backend enters `reloading`,
+refuses new mutations, and keeps ownership of every admitted provider turn,
+automation wrapper, startup task, and HTTP/WS mutation until it completes. Hot
+reload never interrupts that owned work; SIGINT/SIGTERM are the only destructive
+paths.
+
+The remaining hard bounds are specific to explicit shutdown and final flushing:
 
 | Bound | Constant | Protects against |
 |---|---|---|
-| reload drain | `HOT_RELOAD_DRAIN_GRACE_MS` (8s) | a provider turn that never ends |
 | shutdown drain | `HOT_RELOAD_FORCE_EXIT_GRACE_MS` (3s) | work `interrupt()` cannot clear |
 | flush watchdog | `SHUTDOWN_FLUSH_GRACE_MS` (5s) | `exiting` wedged by a hung flush |
 
@@ -168,7 +172,8 @@ awaiting `flushState()`, so without it a `turnAttemptJournal.flush()` that never
 settles leaves the process alive in `exiting` with nothing armed to rescue it —
 the same user-visible error, but permanent. It is armed after `clearTimers()`
 deliberately. Force-drain also resets its counters *before* calling `interrupt()`,
-because the force timer is one-shot and a throw there would strand `reloading`.
+because the explicit-shutdown force timer is one-shot and a throw there would
+strand `shutting_down`.
 
 The startup barrier (`initialLoadComplete`) means "startup is no longer in
 progress", **not** "startup succeeded". A reload arriving mid-startup makes
