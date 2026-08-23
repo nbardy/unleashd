@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { Provider } from '@unleashd/shared';
-import { createDefaultConversationConfig } from '@unleashd/shared';
+import { type ConversationConfig, createDefaultConversationConfig } from '@unleashd/shared';
 import {
   type ConversationRuntimeDependencies,
   createConversationRuntime,
@@ -14,13 +14,18 @@ import { resolveConfigAgainstProviderCatalog } from '../src/providers/catalog-se
 function runtimeFixture(
   options: {
     provider?: Provider;
+    config?: ConversationConfig;
     getConversation?: ConversationRuntimeDependencies['getConversation'];
+    persistCurrentSession?: ConversationRuntimeDependencies['persistCurrentSession'];
+    executeTurn?: ConversationRuntimeDependencies['executeTurn'];
     turnAttempts?: ConversationRuntimeDependencies['turnAttempts'];
+    requestAutomationCancellation?: ConversationRuntimeDependencies['requestAutomationCancellation'];
+    revokeBuddyControlCapability?: ConversationRuntimeDependencies['revokeBuddyControlCapability'];
   } = {}
 ) {
   const aliases: Array<[string, string]> = [];
   const broadcasts: unknown[] = [];
-  const config = createDefaultConversationConfig(options.provider ?? 'codex');
+  const config = options.config ?? createDefaultConversationConfig(options.provider ?? 'codex');
   const Conversation = createConversationRuntime({
     broadcast: (message) => broadcasts.push(message),
     registerSessionAlias: (sessionId, conversationId) => {
@@ -30,7 +35,7 @@ function runtimeFixture(
     clearExternalRunningStatus: () => undefined,
     clearLocalCompletionSuppression: () => undefined,
     markLocalCompletionSuppression: () => undefined,
-    persistCurrentSession: async () => undefined,
+    persistCurrentSession: options.persistCurrentSession ?? (async () => undefined),
     updateBuddyStatus: () => undefined,
     settleBuddyDelegation: () => undefined,
     getConversation: options.getConversation ?? (() => undefined),
@@ -40,7 +45,10 @@ function runtimeFixture(
       reason: 'No runs directory found',
     }),
     createSessionId: () => 'rotated-session',
+    executeTurn: options.executeTurn,
     turnAttempts: options.turnAttempts,
+    requestAutomationCancellation: options.requestAutomationCancellation,
+    revokeBuddyControlCapability: options.revokeBuddyControlCapability,
   });
   const configState = {
     config,
@@ -54,6 +62,218 @@ function runtimeFixture(
   });
   return { aliases, broadcasts, configState, Conversation, conversation };
 }
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((resolvePromise) => {
+    resolve = resolvePromise;
+  });
+  return { promise, resolve };
+}
+
+async function eventually(assertion: () => void): Promise<void> {
+  for (let attempt = 0; attempt < 50; attempt += 1) {
+    try {
+      assertion();
+      return;
+    } catch {
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+  }
+  assertion();
+}
+
+test('provider completion waits for the normalized event stream and session persistence', async () => {
+  const persistence = deferred<void>();
+  const completion = deferred<{
+    exitCode: number;
+    signal: null;
+    sessionId: string;
+    reason: 'success';
+  }>();
+  async function* events() {
+    yield { type: 'session.started' as const, sessionId: 'provider-session' };
+    yield { type: 'turn.started' as const };
+    yield { type: 'text.delta' as const, text: 'durable output' };
+    yield { type: 'turn.complete' as const, reason: 'success' as const };
+  }
+  const revoked: string[] = [];
+  const fixture = runtimeFixture({
+    persistCurrentSession: () => persistence.promise,
+    revokeBuddyControlCapability: (conversationId) => revoked.push(conversationId),
+    executeTurn: (() => ({
+      child: { exitCode: 0 },
+      events: events(),
+      completed: completion.promise,
+      stop: () => undefined,
+    })) as NonNullable<ConversationRuntimeDependencies['executeTurn']>,
+  });
+  let automationOutput: string | null = null;
+  fixture.conversation.once('buddy-turn-complete', (output) => {
+    automationOutput = output;
+  });
+
+  fixture.conversation.sendMessage('Run the turn');
+  completion.resolve({
+    exitCode: 0,
+    signal: null,
+    sessionId: 'provider-session',
+    reason: 'success',
+  });
+  await Promise.resolve();
+  await Promise.resolve();
+
+  assert.equal(fixture.conversation.hasActiveProcess(), true);
+  assert.equal(
+    automationOutput,
+    null,
+    'automation ownership must not release on turn.complete before process/event drain'
+  );
+  assert.equal(
+    fixture.conversation.messages.some((message) => message.content.includes('durable output')),
+    false,
+    'completion must not release ownership while session persistence blocks event consumption'
+  );
+  assert.deepEqual(revoked, [], 'control authority remains until the joined turn drains');
+
+  persistence.resolve();
+  await eventually(() => assert.equal(fixture.conversation.hasActiveProcess(), false));
+  assert.equal(
+    fixture.conversation.messages.some((message) => message.content.includes('durable output')),
+    true
+  );
+  assert.equal(automationOutput, 'durable output');
+  assert.deepEqual(revoked, ['conversation-id']);
+});
+
+test('event-stream failure after turn.complete fails automation after joined drain', async () => {
+  async function* events() {
+    yield { type: 'turn.started' as const };
+    yield { type: 'text.delta' as const, text: 'partial output' };
+    yield { type: 'turn.complete' as const, reason: 'success' as const };
+    throw new Error('event stream failed after completion marker');
+  }
+  const fixture = runtimeFixture({
+    executeTurn: (() => ({
+      child: { exitCode: 0 },
+      events: events(),
+      completed: Promise.resolve({
+        exitCode: 0,
+        signal: null,
+        sessionId: 'provider-session',
+        reason: 'success',
+      }),
+      stop: () => undefined,
+    })) as NonNullable<ConversationRuntimeDependencies['executeTurn']>,
+  });
+  let completed = false;
+  let failure: string | null = null;
+  fixture.conversation.once('buddy-turn-complete', () => {
+    completed = true;
+  });
+  fixture.conversation.once('buddy-turn-failed', (reason) => {
+    failure = reason;
+  });
+
+  fixture.conversation.sendMessage('Run the turn');
+  await eventually(() => assert.equal(fixture.conversation.hasActiveProcess(), false));
+
+  assert.equal(completed, false);
+  assert.equal(failure, 'event stream failed after completion marker');
+});
+
+test('preflight failure immediately rejects an automation turn listener', () => {
+  const config: ConversationConfig = {
+    provider: 'codex',
+    model: { mode: 'explicit', modelId: 'model-that-does-not-exist' },
+    reasoning: { mode: 'default' },
+  };
+  const { conversation } = runtimeFixture({ config });
+  let failure: string | undefined;
+  conversation.once('buddy-turn-failed', (reason) => {
+    failure = reason;
+  });
+
+  conversation.sendMessage('Run an automation');
+
+  assert.equal(
+    failure,
+    'Configuration unavailable: Model is unavailable for codex: model-that-does-not-exist'
+  );
+  assert.equal(conversation.hasActiveProcess(), false);
+});
+
+test('synchronous provider startup failure notifies automation listeners', () => {
+  const { conversation } = runtimeFixture({
+    executeTurn: (() => {
+      throw new Error('provider startup rejected');
+    }) as NonNullable<ConversationRuntimeDependencies['executeTurn']>,
+  });
+  let failure: string | undefined;
+  conversation.once('buddy-turn-failed', (reason) => {
+    failure = reason;
+  });
+
+  assert.throws(() => conversation.sendMessage('Run an automation'), /provider startup rejected/);
+  assert.equal(failure, 'provider startup rejected');
+  assert.equal(conversation.hasActiveProcess(), false);
+});
+
+test('historical automation transcripts refuse every user turn-admission path', () => {
+  let providerStarts = 0;
+  const fixture = runtimeFixture({
+    executeTurn: (() => {
+      providerStarts += 1;
+      throw new Error('must not start');
+    }) as NonNullable<ConversationRuntimeDependencies['executeTurn']>,
+  });
+  const conversation = new fixture.Conversation({
+    id: 'automation-history',
+    workingDirectory: '/tmp',
+    configState: fixture.configState,
+    buddyContext: {
+      buddyId: 'buddy-1',
+      workspaceId: 'workspace-1',
+      automationRunId: 'terminal-run',
+    },
+  });
+
+  conversation.sendMessage('Continue this completed automation');
+  conversation.enqueueMessage('Queue work on this completed automation');
+  conversation.interruptAndSend('Interrupt this completed automation');
+
+  assert.equal(providerStarts, 0);
+  assert.equal(conversation.hasActiveProcess(), false);
+  assert.deepEqual(conversation.queue, []);
+  assert.match(conversation.messages.at(-1)?.content ?? '', /automation transcript is read-only/);
+});
+
+test('public stop delegates automation cancellation without killing provider authority directly', async () => {
+  const cancellationRequests: string[] = [];
+  const fixture = runtimeFixture({
+    requestAutomationCancellation: async (runId) => {
+      cancellationRequests.push(runId);
+    },
+  });
+  const conversation = new fixture.Conversation({
+    id: 'active-automation',
+    workingDirectory: '/tmp',
+    configState: fixture.configState,
+    automationClaimToken: 'private-claim-token',
+    buddyContext: {
+      buddyId: 'buddy-1',
+      workspaceId: 'workspace-1',
+      automationRunId: 'active-run',
+    },
+  });
+
+  conversation.stop();
+  await eventually(() => assert.deepEqual(cancellationRequests, ['active-run']));
+
+  // Only the scheduler-owned path may enter the provider stop boundary after
+  // durable cancel_requested has revoked tool authority.
+  assert.doesNotThrow(() => conversation.stopAutomationTurn());
+});
 
 test('first message in a user fork inherits the native source session without copying history', () => {
   const conversations = new Map<

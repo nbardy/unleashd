@@ -1,5 +1,6 @@
 import { z } from 'zod';
-import type { BuddiesStorePort } from './contract';
+import type { BuddiesStorePort, BuddyAutomation } from './contract';
+import { publicAutomationRun } from './public-automation-run';
 import { nextAutomationRunAt } from './scheduler';
 
 export const BuddyOperationContextSchema = z.object({
@@ -213,6 +214,11 @@ export type PreparedBuddyReviewRequest = {
   }>;
 };
 
+export interface BuddyPrivateExecutionAuthority {
+  /** Server-issued claim token. Never persist this in BuddyContext or expose it as tool input. */
+  automationClaimToken?: string;
+}
+
 export const DEFAULT_DELEGATED_BUDDY_OPERATIONS: BuddyOperationName[] = [
   'buddy.get_current_work',
   'buddy.get_inbox',
@@ -234,7 +240,9 @@ export const REVIEW_BUDDY_OPERATIONS: BuddyOperationName[] = [
 
 export function resolveDelegatedBuddyOperations(input: unknown): BuddyOperationName[] {
   const requested =
-    input === undefined ? DEFAULT_DELEGATED_BUDDY_OPERATIONS : z.array(z.string().min(1)).parse(input);
+    input === undefined
+      ? DEFAULT_DELEGATED_BUDDY_OPERATIONS
+      : z.array(z.string().min(1)).parse(input);
   const allowedOperations = requested.map((operation) => {
     if (!(operation in BuddyOperationInputSchemas)) {
       throw new Error(`Unknown Buddy operation in delegation policy: ${operation}`);
@@ -252,13 +260,16 @@ export const BuddyOperationResultSchema = z.object({
   data: z.unknown(),
   audit: z.unknown(),
 });
+export type BuddyOperationResult = z.infer<typeof BuddyOperationResultSchema>;
 
 export class BuddyOperationsService {
   readonly context: BuddyOperationContext;
+  private automationAuthorityDepth = 0;
 
   constructor(
     private readonly store: BuddiesStorePort,
-    context: BuddyOperationContext
+    context: BuddyOperationContext,
+    private readonly authority: BuddyPrivateExecutionAuthority = {}
   ) {
     this.context = BuddyOperationContextSchema.parse(context);
     const buddy = this.store.getBuddy(this.context.buddyId);
@@ -272,15 +283,28 @@ export class BuddyOperationsService {
     if (this.context.buddyProjectId) this.requireScopedProject(this.context.buddyProjectId);
   }
 
-  execute(name: BuddyOperationName, input: unknown = {}) {
-    if (
-      this.context.allowedOperations &&
-      !this.context.allowedOperations.includes(name)
-    ) {
+  execute(name: BuddyOperationName, input: unknown = {}): BuddyOperationResult {
+    if (this.context.allowedOperations && !this.context.allowedOperations.includes(name)) {
       throw new Error(`${name} is not allowed in this delegated conversation`);
     }
-    if (this.context.automationRunId) {
-      this.store.assertAutomationOperationAllowed(this.context.automationRunId, name);
+    if (this.context.automationRunId && this.automationAuthorityDepth === 0) {
+      // One synchronous SQLite transaction encloses both the ownership check
+      // and the operation/audit writes below. A check followed by a separate
+      // transaction lets cancellation win between them. See
+      // agent_notes/2026-08-24_automation-execution-ownership-design.md I2.
+      return this.store.withAutomationRunAuthority(
+        this.context.automationRunId,
+        name,
+        this.authority.automationClaimToken ?? '',
+        () => {
+          this.automationAuthorityDepth += 1;
+          try {
+            return this.execute(name, input);
+          } finally {
+            this.automationAuthorityDepth -= 1;
+          }
+        }
+      );
     }
     switch (name) {
       case 'buddy.get_current_work': {
@@ -323,14 +347,16 @@ export class BuddyOperationsService {
           buddy: this.context.buddyId,
           workspace: this.context.workspaceId,
         });
-        const reviews = this.store.listReviews({
-          workspace: this.context.workspaceId,
-        }).filter(
-          (review) =>
-            review.reviewer_buddy_id === this.context.buddyId ||
-            (managedBuddyIds.has(review.reviewer_buddy_id) &&
-              managedBuddyIds.has(review.subject_buddy_id))
-        );
+        const reviews = this.store
+          .listReviews({
+            workspace: this.context.workspaceId,
+          })
+          .filter(
+            (review) =>
+              review.reviewer_buddy_id === this.context.buddyId ||
+              (managedBuddyIds.has(review.reviewer_buddy_id) &&
+                managedBuddyIds.has(review.subject_buddy_id))
+          );
         const automations = [...managedBuddyIds].flatMap((buddyId) =>
           this.store
             .listAutomations({ buddy: buddyId })
@@ -362,9 +388,8 @@ export class BuddyOperationsService {
             delegationOutcomes: delegationOutcomes.map((delegation) => ({
               ...delegation,
               completionAudit:
-                completionAudits.find(
-                  (event) => event.payload.delegationId === delegation.id
-                ) ?? null,
+                completionAudits.find((event) => event.payload.delegationId === delegation.id) ??
+                null,
             })),
             assignedReviews: reviews.filter(
               (review) =>
@@ -375,13 +400,13 @@ export class BuddyOperationsService {
             teamReviewQueue: reviews.filter(
               (review) => review.status !== 'complete' && review.status !== 'cancelled'
             ),
-            reviewOutcomes: reviews
-              .filter((review) => review.status === 'complete')
-              .slice(0, 20),
-            pendingApprovals: this.store.listApprovalRequests({
-              workspace: this.context.workspaceId,
-              status: 'pending',
-            }).filter((approval) => managedBuddyIds.has(approval.buddy_id)),
+            reviewOutcomes: reviews.filter((review) => review.status === 'complete').slice(0, 20),
+            pendingApprovals: this.store
+              .listApprovalRequests({
+                workspace: this.context.workspaceId,
+                status: 'pending',
+              })
+              .filter((approval) => managedBuddyIds.has(approval.buddy_id)),
             blockedProjects: [...managedBuddyIds].flatMap((buddyId) =>
               this.store
                 .listBuddyOwnedProjects({
@@ -398,9 +423,8 @@ export class BuddyOperationsService {
             ),
             failedAutomations: automations.flatMap((automation) => {
               const latest = this.store.listAutomationRuns(automation.id, { limit: 1 })[0];
-              return latest?.status === 'failed'
-                ? [{ automation, latestRun: latest }]
-                : [];
+              if (latest?.status !== 'failed') return [];
+              return [{ automation, latestRun: publicAutomationRun(latest) }];
             }),
           },
           parsed
@@ -426,7 +450,19 @@ export class BuddyOperationsService {
           const project = parsed.projectId
             ? this.requireAutomationProject(parsed.projectId, targetBuddyId)
             : undefined;
-          let automation = this.store.createAutomation({
+          // Schedule validation precedes the first durable write. Creating a
+          // disabled placeholder and repairing it afterward leaves malformed
+          // definitions behind when validation throws. See invariant I10 in
+          // agent_notes/2026-08-24_automation-execution-ownership-design.md.
+          const nextRunAt = nextAutomationRunAt(
+            {
+              schedule_kind: parsed.scheduleKind,
+              schedule_expression: parsed.scheduleExpression,
+              timezone: parsed.timezone,
+            } as BuddyAutomation,
+            new Date()
+          );
+          const automation = this.store.createAutomation({
             buddy: targetBuddyId,
             workspace: this.context.workspaceId,
             project: project?.id,
@@ -438,9 +474,7 @@ export class BuddyOperationsService {
             jobPayload: parsed.jobPayload,
             policy: parsed.policy,
             enabled: false,
-          });
-          automation = this.store.updateAutomation(automation.id, {
-            nextRunAt: nextAutomationRunAt(automation, new Date()),
+            nextRunAt,
           });
           return this.result(
             name,
@@ -471,16 +505,26 @@ export class BuddyOperationsService {
           );
         }
         const { action: _action, automationId: _automationId, ...changes } = parsed;
-        let updated = this.store.updateAutomation(automation.id, changes);
+        let nextRunAt: string | undefined;
         if (
           parsed.scheduleKind !== undefined ||
           parsed.scheduleExpression !== undefined ||
           parsed.timezone !== undefined
         ) {
-          updated = this.store.updateAutomation(updated.id, {
-            nextRunAt: nextAutomationRunAt(updated, new Date()),
-          });
+          nextRunAt = nextAutomationRunAt(
+            {
+              ...automation,
+              schedule_kind: parsed.scheduleKind ?? automation.schedule_kind,
+              schedule_expression: parsed.scheduleExpression ?? automation.schedule_expression,
+              timezone: parsed.timezone ?? automation.timezone,
+            },
+            new Date()
+          );
         }
+        const updated = this.store.updateAutomation(automation.id, {
+          ...changes,
+          ...(nextRunAt ? { nextRunAt } : {}),
+        });
         return this.result(name, updated, parsed);
       }
       case 'buddy.new_project': {
@@ -678,8 +722,7 @@ export class BuddyOperationsService {
       ...parsed,
       allowedOperations,
       projectId,
-      parentConversationId:
-        parsed.parentConversationId ?? this.context.conversationId ?? undefined,
+      parentConversationId: parsed.parentConversationId ?? this.context.conversationId ?? undefined,
     };
   }
 
@@ -706,8 +749,7 @@ export class BuddyOperationsService {
     }
     return {
       ...parsed,
-      parentConversationId:
-        parsed.parentConversationId ?? this.context.conversationId ?? undefined,
+      parentConversationId: parsed.parentConversationId ?? this.context.conversationId ?? undefined,
     };
   }
 
@@ -786,10 +828,7 @@ export class BuddyOperationsService {
   private requireAutomationProject(projectId: string, targetBuddyId: string) {
     const project = this.store.getBuddyProject(projectId);
     if (!project) throw new Error('Buddy project not found');
-    if (
-      project.buddy_id !== targetBuddyId ||
-      project.workspace_id !== this.context.workspaceId
-    ) {
+    if (project.buddy_id !== targetBuddyId || project.workspace_id !== this.context.workspaceId) {
       throw new Error('Automation project is outside the target employee scope');
     }
     return project;

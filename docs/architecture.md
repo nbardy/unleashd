@@ -151,14 +151,17 @@ is now `providerSupportsFork(this.provider)`; guard:
 process-lifecycle authority. States: `starting → idle`, and `starting|idle →
 reloading → exiting`.
 
-**`reloading` is absorbing — nothing returns the controller to `idle`.** A source
-reload therefore stays in `idle` first, with the scheduler paused, while seeking
-an idle boundary. `HOT_RELOAD_DRAIN_GRACE_MS` (8s) bounds that fully-available
-deferral. If work remains after the grace, the old backend enters `reloading`,
-refuses new mutations, and keeps ownership of every admitted provider turn,
-automation wrapper, startup task, and HTTP/WS mutation until it completes. Hot
-reload never interrupts that owned work; SIGINT/SIGTERM are the only destructive
-paths.
+**`reloading` is absorbing — so a source reload must not enter it while work is
+active.** A reload request remains pending while the old backend stays in
+`starting|idle`, fully accepts mutations, and retains sole ownership of every
+provider stream and automation wrapper. At an observed idle boundary the
+controller pauses the scheduler, synchronously rechecks all work counters, and
+only then enters `reloading` and exits. If work appeared, it resumes the
+scheduler and keeps waiting. Hot reload has no force/quiesce deadline: such a
+deadline must either kill admitted work or strand the app read-only. Provider
+watchdogs bound provider turns; SIGINT/SIGTERM are the explicit bounded operator
+recovery paths. The alternatives and tradeoffs are recorded in
+`agent_notes/2026-08-24_automation-execution-ownership-design.md`.
 
 The remaining hard bounds are specific to explicit shutdown and final flushing:
 

@@ -1,4 +1,10 @@
-export type BuddyAutomationRunStatus = 'claimed' | 'running' | 'complete' | 'failed' | 'cancelled';
+export type BuddyAutomationRunStatus =
+  | 'claimed'
+  | 'running'
+  | 'cancel_requested'
+  | 'complete'
+  | 'failed'
+  | 'cancelled';
 
 export type BuddyOperationName =
   | 'buddy.get_current_work'
@@ -47,6 +53,7 @@ export interface BuddyAutomation {
       };
   policy: BuddyAutomationPolicy;
   enabled: boolean;
+  archived_at: string | null;
   next_run_at: string | null;
   last_run_at: string | null;
   created_at: string;
@@ -187,7 +194,7 @@ export interface BuddiesStorePort {
   } | null;
   listWorkItems(input: Record<string, unknown>): unknown[];
   listConversationLinks(buddy: string): unknown[];
-  listAutomations(input: { buddy: string }): BuddyAutomation[];
+  listAutomations(input: { buddy: string; includeArchived?: boolean }): BuddyAutomation[];
   listBuddyRelationships(buddy: string): unknown[];
   listBuddySkills(buddy: string): BuddySkill[];
   listDelegations(input: Record<string, unknown>): BuddyDelegation[];
@@ -218,10 +225,7 @@ export interface BuddiesStorePort {
     id: string,
     input: { claimToken: string; childConversationId: string }
   ): BuddyDelegation;
-  failDelegationDispatch(
-    id: string,
-    input: { claimToken: string; error: string }
-  ): BuddyDelegation;
+  failDelegationDispatch(id: string, input: { claimToken: string; error: string }): BuddyDelegation;
   createReview(input: Record<string, unknown>): { id: string };
   getReview(id: string): BuddyReviewRecord | null;
   updateReview(id: string, changes: Record<string, unknown>): unknown;
@@ -273,6 +277,7 @@ export interface BuddiesStorePort {
   getAutomation(id: string): BuddyAutomation | null;
   updateAutomation(id: string, changes: Record<string, unknown>): BuddyAutomation;
   deleteAutomation(id: string): BuddyAutomation;
+  archiveAutomation(id: string): BuddyAutomation;
   listDueAutomations(at: Date): BuddyAutomation[];
   claimAutomationRun(
     id: string,
@@ -299,7 +304,19 @@ export interface BuddiesStorePort {
     }
   ): BuddyAutomationRun;
   listAutomationRuns(id: string, options?: { limit?: number }): BuddyAutomationRun[];
-  assertAutomationOperationAllowed(id: string, operation: BuddyOperationName): true;
+  getAutomationRunByConversationId(conversationId: string): BuddyAutomationRun | null;
+  listNonterminalAutomationRuns(): BuddyAutomationRun[];
+  assertAutomationOperationAllowed(
+    id: string,
+    operation: BuddyOperationName,
+    claimToken: string
+  ): true;
+  withAutomationRunAuthority<T>(
+    id: string,
+    operation: BuddyOperationName,
+    claimToken: string,
+    callback: () => T
+  ): T;
   updateWorkItemStatus(
     id: string,
     status: string,

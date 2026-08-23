@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
-import { useProviderCatalog } from '../../hooks/useProviderCatalog';
 import { buddyApi } from '../../components/buddies/api';
 import type { Buddy } from '../../components/buddies/types';
+import { useProviderCatalog } from '../../hooks/useProviderCatalog';
 
 // ---------------------------------------------------------------------------
 // Buddy profile editor — provider/model/effort pass-through (verbatim)
@@ -34,6 +34,12 @@ export function BuddyProfileEditor({
   }, [buddy.provider, buddy.model, buddy.reasoning_effort]);
 
   const providerInfo = catalog?.providers.find((candidate) => candidate.id === provider);
+  const buddyProviders = catalog
+    ? [
+        ...(providerInfo && !providerInfo.supportsRequiredMcp ? [providerInfo] : []),
+        ...catalog.providers.filter((candidate) => candidate.supportsRequiredMcp),
+      ]
+    : [{ id: provider, displayName: provider, supportsRequiredMcp: true } as never];
   const selectedModel =
     providerInfo?.models.find((candidate) => candidate.id === model) ??
     providerInfo?.models.find((candidate) => candidate.id === providerInfo?.defaultModelId);
@@ -42,7 +48,8 @@ export function BuddyProfileEditor({
   return (
     <details className="mobile-buddy-profile-editor">
       <summary className="mobile-buddy-profile-editor__summary">
-        Execution · {provider} · {buddy.model ?? 'default model'} · {buddy.reasoning_effort ?? 'default effort'}
+        Execution · {provider} · {buddy.model ?? 'default model'} ·{' '}
+        {buddy.reasoning_effort ?? 'default effort'}
       </summary>
       <form
         className="mobile-buddy-profile-editor__form"
@@ -62,16 +69,23 @@ export function BuddyProfileEditor({
             body: JSON.stringify(payload),
           })
             .then(() => onSaved())
-            .catch((cause: unknown) => onError(cause instanceof Error ? cause.message : String(cause)))
+            .catch((cause: unknown) =>
+              onError(cause instanceof Error ? cause.message : String(cause))
+            )
             .finally(() => onBusy(false));
         }}
       >
         <label className="mobile-field">
           <span>Provider</span>
-          <select value={provider} disabled={busy} onChange={(event) => setProvider(event.target.value)}>
-            {(catalog?.providers ?? [{ id: provider, displayName: provider } as never]).map((candidate) => (
+          <select
+            value={provider}
+            disabled={busy}
+            onChange={(event) => setProvider(event.target.value)}
+          >
+            {buddyProviders.map((candidate) => (
               <option key={candidate.id} value={candidate.id}>
                 {candidate.displayName ?? candidate.id}
+                {candidate.supportsRequiredMcp ? '' : ' (unsupported for Buddy turns)'}
               </option>
             ))}
           </select>
@@ -80,7 +94,8 @@ export function BuddyProfileEditor({
           <span>Model</span>
           <select value={model} disabled={busy} onChange={(event) => setModel(event.target.value)}>
             <option value="">
-              Provider default {providerInfo?.defaultModelId ? `(${providerInfo.defaultModelId})` : ''}
+              Provider default{' '}
+              {providerInfo?.defaultModelId ? `(${providerInfo.defaultModelId})` : ''}
             </option>
             {(providerInfo?.models ?? []).map((candidate) => (
               <option key={candidate.id} value={candidate.id}>
@@ -97,7 +112,10 @@ export function BuddyProfileEditor({
             onChange={(event) => setReasoningEffort(event.target.value)}
           >
             <option value="">
-              Model default {selectedModel?.reasoning?.defaultEffort ? `(${selectedModel.reasoning.defaultEffort})` : ''}
+              Model default{' '}
+              {selectedModel?.reasoning?.defaultEffort
+                ? `(${selectedModel.reasoning.defaultEffort})`
+                : ''}
             </option>
             {effortLevels.map((level) => (
               <option key={level} value={level}>

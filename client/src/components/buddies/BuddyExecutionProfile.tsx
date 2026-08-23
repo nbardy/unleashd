@@ -23,6 +23,12 @@ export function BuddyExecutionProfile({
   const [model, setModel] = useState(buddy.model ?? '');
   const [reasoningEffort, setReasoningEffort] = useState(buddy.reasoning_effort ?? '');
   const providerInfo = catalog?.providers.find((candidate) => candidate.id === provider);
+  const buddyProviders = catalog
+    ? [
+        ...(providerInfo && !providerInfo.supportsRequiredMcp ? [providerInfo] : []),
+        ...catalog.providers.filter((candidate) => candidate.supportsRequiredMcp),
+      ]
+    : [];
   const selectedModel =
     providerInfo?.models.find((candidate) => candidate.id === model) ??
     providerInfo?.models.find((candidate) => candidate.id === providerInfo.defaultModelId);
@@ -60,9 +66,10 @@ export function BuddyExecutionProfile({
                 setReasoningEffort('');
               }}
             >
-              {catalog.providers.map((candidate) => (
+              {buddyProviders.map((candidate) => (
                 <option key={candidate.id} value={candidate.id}>
                   {candidate.displayName}
+                  {candidate.supportsRequiredMcp ? '' : ' (unsupported for Buddy turns)'}
                 </option>
               ))}
             </select>

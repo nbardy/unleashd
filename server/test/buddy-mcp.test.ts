@@ -128,59 +128,57 @@ test('Buddy MCP exposes scoped native tools and enforces completion evidence', a
 });
 
 test('Buddy MCP specification binds trusted context outside tool input', () => {
-  const priorApiBase = process.env.UNLEASHD_BUDDY_API_BASE;
-  process.env.UNLEASHD_BUDDY_API_BASE = 'http://127.0.0.1:9999';
-  try {
-    const servers = buddyMcpServers(
-      {
-        buddyId: 'buddy-1',
-        workspaceId: 'workspace-1',
-        buddyProjectId: 'project-1',
-        legacyWorkItemId: null,
-        automationRunId: 'run-1',
-        delegatedByBuddyId: null,
-        parentBuddyConversationId: null,
-        allowedBuddyOperations: ['buddy.get_automations', 'buddy.complete_assignment'],
-      },
-      'conversation-1',
-      {
-        command: '/usr/bin/node',
-        args: ['/app/server/dist/buddies/mcp-server.js'],
-        cwd: '/app/server',
-      }
-    );
+  const servers = buddyMcpServers(
+    {
+      buddyId: 'buddy-1',
+      workspaceId: 'workspace-1',
+      buddyProjectId: 'project-1',
+      legacyWorkItemId: null,
+      automationRunId: 'run-1',
+      delegatedByBuddyId: null,
+      parentBuddyConversationId: null,
+      allowedBuddyOperations: ['buddy.get_automations', 'buddy.complete_assignment'],
+    },
+    'conversation-1',
+    {
+      command: '/usr/bin/node',
+      args: ['/app/server/dist/buddies/mcp-server.js'],
+      cwd: '/app/server',
+    },
+    {
+      UNLEASHD_BUDDY_CONTROL_URL: 'http://127.0.0.1:9999',
+      UNLEASHD_BUDDY_CONTROL_TOKEN: 'scoped-token',
+    }
+  );
 
-    assert.deepEqual(servers, {
-      unleashd_buddy: {
-        command: '/usr/bin/node',
-        args: [
-          '/app/server/dist/buddies/mcp-server.js',
-          '--buddy',
-          'buddy-1',
-          '--workspace',
-          'workspace-1',
-          '--conversation',
-          'conversation-1',
-          '--api-base',
-          'http://127.0.0.1:9999',
-          '--project',
-          'project-1',
-          '--automation-run',
-          'run-1',
-          '--allowed-operation',
-          'buddy.get_automations',
-          '--allowed-operation',
-          'buddy.complete_assignment',
-        ],
-        cwd: '/app/server',
-        required: true,
+  assert.deepEqual(servers, {
+    unleashd_buddy: {
+      command: '/usr/bin/node',
+      args: [
+        '/app/server/dist/buddies/mcp-server.js',
+        '--buddy',
+        'buddy-1',
+        '--workspace',
+        'workspace-1',
+        '--conversation',
+        'conversation-1',
+        '--project',
+        'project-1',
+        '--automation-run',
+        'run-1',
+        '--allowed-operation',
+        'buddy.get_automations',
+        '--allowed-operation',
+        'buddy.complete_assignment',
+      ],
+      cwd: '/app/server',
+      env: {
+        UNLEASHD_BUDDY_CONTROL_URL: 'http://127.0.0.1:9999',
+        UNLEASHD_BUDDY_CONTROL_TOKEN: 'scoped-token',
       },
-    });
-  } finally {
-    if (priorApiBase === undefined) {
-      Reflect.deleteProperty(process.env, 'UNLEASHD_BUDDY_API_BASE');
-    } else process.env.UNLEASHD_BUDDY_API_BASE = priorApiBase;
-  }
+      required: true,
+    },
+  });
 });
 
 test('Buddy Builder MCP specification is required and conversation-scoped', () => {
@@ -208,19 +206,25 @@ test('Buddy Builder MCP specification is required and conversation-scoped', () =
 
 test('Buddy conversations fail closed when a provider cannot inject required MCP', () => {
   assert.doesNotThrow(() => assertBuddyProviderSupportsMcp('codex'));
-  assert.doesNotThrow(() => assertBuddyProviderSupportsMcp('claude'));
-  assert.doesNotThrow(() => assertBuddyProviderSupportsMcp('opencode'));
+  assert.throws(
+    () => assertBuddyProviderSupportsMcp('claude'),
+    /cannot start Buddy conversations.*cannot guarantee required Buddy state tools/
+  );
+  assert.throws(
+    () => assertBuddyProviderSupportsMcp('opencode'),
+    /cannot start Buddy conversations.*cannot guarantee required Buddy state tools/
+  );
   assert.throws(
     () => assertBuddyProviderSupportsMcp('muse'),
-    /cannot start Buddy conversations.*no MCP support/
+    /cannot start Buddy conversations.*cannot guarantee required Buddy state tools/
   );
   assert.throws(
     () => assertBuddyProviderSupportsMcp('gemini'),
-    /cannot start Buddy conversations.*no MCP support/
+    /cannot start Buddy conversations.*cannot guarantee required Buddy state tools/
   );
   assert.throws(
     () => assertBuddyProviderSupportsMcp('cursor'),
-    /cannot start Buddy conversations.*no MCP support/
+    /cannot start Buddy conversations.*cannot guarantee required Buddy state tools/
   );
 });
 
@@ -250,7 +254,7 @@ test('resolved stdio Buddy MCP entrypoint opens the current durable schema', asy
   fixtureDatabase.close();
   assert.equal(
     schemaVersion.user_version,
-    13,
+    15,
     'the vendored Buddy package must understand the live schema'
   );
 
@@ -259,6 +263,7 @@ test('resolved stdio Buddy MCP entrypoint opens the current durable schema', asy
   );
   env.BUDDIES_HOME = home;
   const launch = resolveBuddyMcpLaunch();
+  Object.assign(env, launch.env);
   const transport = new StdioClientTransport({
     command: launch.command,
     args: [

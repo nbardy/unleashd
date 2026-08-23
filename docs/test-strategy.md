@@ -25,10 +25,11 @@
 - `server/src/lifecycle/shutdown.ts` is the only process-lifecycle and mutation
   admission authority. The dev watcher requests reloads; it never owns, adopts,
   or transfers provider processes.
-- A source reload pauses the scheduler, stays available while seeking an idle
-  boundary, then quiesces new mutations after the grace. The server that spawned
-  each admitted turn keeps ownership until it drains; only explicit shutdown
-  interrupts owned turns.
+- A source reload remains pending and fully available while seeking an idle
+  boundary. It pauses the scheduler only at a candidate boundary, rechecks all
+  active work synchronously, and resumes it if the boundary was not actually
+  idle. The server that spawned each admitted turn keeps ownership until it
+  drains; only explicit shutdown interrupts owned turns.
 - Conversation summaries are bounded transport projections, never durable
   state or a cache. Full transcripts hydrate through the conversation-detail
   route, while the runtime/store remains authoritative.

@@ -5,6 +5,8 @@ import type { ZodTypeAny } from 'zod';
 import type { BuddyBuilderStore } from './builder';
 import { createBuddyBuilderMcpServer } from './builder-mcp-server';
 import type { BuddiesStorePort } from './contract';
+import { BUDDY_CONTROL_TOKEN_ENV, BUDDY_CONTROL_URL_ENV } from './control-server';
+import { BUDDY_AUTOMATION_CLAIM_TOKEN_ENV } from './mcp-config';
 import {
   type BuddyOperationContext,
   BuddyOperationInputSchemas,
@@ -87,9 +89,12 @@ export function createBuddyMcpServer(
     dispatchDelegation?: (input: PreparedBuddyDelegation) => Promise<unknown>;
     dispatchReview?: (input: PreparedBuddyReviewRequest) => Promise<unknown>;
     allowedOperations?: readonly BuddyOperationName[];
+    automationClaimToken?: string;
   } = {}
 ): McpServer {
-  const operations = new BuddyOperationsService(store, context);
+  const operations = new BuddyOperationsService(store, context, {
+    automationClaimToken: options.automationClaimToken,
+  });
   const server = new McpServer({
     name: 'unleashd-buddy',
     version: '1.0.0',
@@ -191,71 +196,40 @@ async function main(): Promise<void> {
       : undefined,
     allowedOperations: allowedOperations.length ? allowedOperations : undefined,
   };
-  const apiBase = process.argv.includes('--api-base')
-    ? requiredArgument('--api-base').replace(/\/+$/, '')
-    : undefined;
+  const controlUrl = process.env[BUDDY_CONTROL_URL_ENV]?.replace(/\/+$/, '');
+  const controlToken = process.env[BUDDY_CONTROL_TOKEN_ENV];
+  const dispatch = async (path: string, input: unknown) => {
+    if (!controlUrl || !controlToken) {
+      throw new Error('This Buddy turn has no internal dispatch capability');
+    }
+    const response = await fetch(`${controlUrl}${path}`, {
+      method: 'POST',
+      headers: {
+        authorization: `Bearer ${controlToken}`,
+        'content-type': 'application/json',
+      },
+      body: JSON.stringify(input),
+    });
+    const body = (await response.json()) as unknown;
+    if (!response.ok) {
+      const message =
+        typeof body === 'object' &&
+        body !== null &&
+        'error' in body &&
+        typeof (body as { error?: unknown }).error === 'string'
+          ? (body as { error: string }).error
+          : `Buddy dispatch failed with HTTP ${response.status}`;
+      throw new Error(message);
+    }
+    return body;
+  };
   const server = createBuddyMcpServer(store, context, {
     allowedOperations: context.allowedOperations as BuddyOperationName[] | undefined,
-    dispatchDelegation: apiBase
-      ? async (input) => {
-          const response = await fetch(`${apiBase}/api/buddies/${context.buddyId}/delegations`, {
-            method: 'POST',
-            headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({
-              toBuddyId: input.toBuddyId,
-              workspaceId: context.workspaceId,
-              buddyProjectId: input.projectId,
-              purpose: input.purpose,
-              parentConversationId: input.parentConversationId,
-              allowedOperations: input.allowedOperations,
-            }),
-          });
-          const body = (await response.json()) as unknown;
-          if (!response.ok) {
-            const message =
-              typeof body === 'object' &&
-              body !== null &&
-              'error' in body &&
-              typeof (body as { error?: unknown }).error === 'string'
-                ? (body as { error: string }).error
-                : `Delegation dispatch failed with HTTP ${response.status}`;
-            throw new Error(message);
-          }
-          return body;
-        }
-      : undefined,
-    dispatchReview: apiBase
-      ? async (input) => {
-          const response = await fetch(
-            `${apiBase}/api/buddies/${context.buddyId}/review-requests`,
-            {
-              method: 'POST',
-              headers: { 'content-type': 'application/json' },
-              body: JSON.stringify({
-                reviewerBuddyId: input.reviewerBuddyId,
-                subjectBuddyId: input.subjectBuddyId,
-                workspaceId: context.workspaceId,
-                buddyProjectId: input.projectId,
-                purpose: input.purpose,
-                parentConversationId: input.parentConversationId,
-                evidence: input.evidence,
-              }),
-            }
-          );
-          const body = (await response.json()) as unknown;
-          if (!response.ok) {
-            const message =
-              typeof body === 'object' &&
-              body !== null &&
-              'error' in body &&
-              typeof (body as { error?: unknown }).error === 'string'
-                ? (body as { error: string }).error
-                : `Review dispatch failed with HTTP ${response.status}`;
-            throw new Error(message);
-          }
-          return body;
-        }
-      : undefined,
+    automationClaimToken: process.env[BUDDY_AUTOMATION_CLAIM_TOKEN_ENV],
+    dispatchDelegation:
+      controlUrl && controlToken ? (input) => dispatch('/v1/delegations', input) : undefined,
+    dispatchReview:
+      controlUrl && controlToken ? (input) => dispatch('/v1/reviews', input) : undefined,
   });
   const transport = new StdioServerTransport();
   const close = async () => {

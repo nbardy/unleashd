@@ -23,7 +23,6 @@ import { setIgnorePatterns } from './config';
 import {
   EXTERNAL_GRACE_MS,
   FILE_POLL_INTERVAL_MS,
-  HOT_RELOAD_DRAIN_GRACE_MS,
   HOT_RELOAD_FORCE_EXIT_GRACE_MS,
   LOCAL_COMPLETION_SUPPRESS_MS,
   PALETTE_GENERATION_TIMEOUT_MS,
@@ -65,6 +64,8 @@ import { registerConversationWebSocket } from './transport/conversation-websocke
 
 import { auditLocalAgents } from './audit.js';
 import { BuddyBuilderService, type BuddyBuilderStore } from './buddies/builder';
+import { BuddyControlServer } from './buddies/control-server';
+import { createBuddyDispatchService } from './buddies/dispatch-service';
 import { createBuddiesIntegration } from './buddies/integration';
 import { registerBuddyRoutes } from './buddies/routes';
 import { BuddyScheduler, nextAutomationRunAt } from './buddies/scheduler';
@@ -137,6 +138,7 @@ let shutdownController: ShutdownController | null = null;
 const beginMutation = (options?: { allowDuringStartup?: boolean }) =>
   shutdownController?.beginMutation(options) ?? null;
 const pauseBuddyScheduler = () => buddyScheduler?.pause();
+const resumeBuddyScheduler = () => buddyScheduler?.start();
 const stopBuddyScheduler = () => {
   buddyScheduler?.stop();
   buddyScheduler = null;
@@ -205,6 +207,28 @@ const buddyCreationService: BuddyCreationService = createBuddyCreationService({
   broadcast: applicationContext.broadcast,
 });
 
+const buddyDispatchService = createBuddyDispatchService({
+  getStore: getBuddiesStore,
+  createConversation: buddyCreationService.createServerBuddyConversation,
+  dispatchInitialMessage: (conversation, options) =>
+    buddyCreationService.dispatchInitialMessageIfPending(
+      conversation as ConversationRuntime,
+      options
+    ),
+  abandonConversation: (conversation) => {
+    const runtime = conversation as ConversationRuntime;
+    runtime.stop();
+    updateBuddyConversationLink(runtime, 'cancelled');
+  },
+  createId: uuidv4,
+});
+const buddyControlServer = new BuddyControlServer({
+  getStore: getBuddiesStore,
+  isConversationActive: (conversationId) => conversations.get(conversationId)?.isRunning === true,
+  dispatchDelegation: buddyDispatchService.delegation,
+  dispatchReview: buddyDispatchService.review,
+});
+
 const Conversation = createConversationRuntime({
   broadcast: applicationContext.broadcast,
   registerSessionAlias: applicationContext.sessions.registerAlias,
@@ -219,6 +243,13 @@ const Conversation = createConversationRuntime({
   getConversation: (id) => conversations.get(id),
   readLatestOompaRuntime: readLatestSwarmRuntime,
   createSessionId: uuidv4,
+  issueBuddyControlCapability: (context, conversationId, automationClaimToken) =>
+    buddyControlServer.issue(context, conversationId, automationClaimToken),
+  revokeBuddyControlCapability: (conversationId) => buddyControlServer.revoke(conversationId),
+  requestAutomationCancellation: async (runId) => {
+    if (!buddyScheduler) throw new Error('Buddy automation scheduler is not ready');
+    return buddyScheduler.cancel(runId);
+  },
   turnAttempts: turnAttemptObserver,
 });
 
@@ -413,17 +444,18 @@ const PORT =
 shutdownController = registerShutdownHandlers(
   {
     forceExitGraceMs: HOT_RELOAD_FORCE_EXIT_GRACE_MS,
-    reloadDrainGraceMs: HOT_RELOAD_DRAIN_GRACE_MS,
     flushGraceMs: SHUTDOWN_FLUSH_GRACE_MS,
   },
   {
     conversations: () => conversations.values(),
     activeSchedulerRuns: () => buddyScheduler?.health().activeRunIds.length ?? 0,
     pauseScheduler: pauseBuddyScheduler,
+    resumeScheduler: resumeBuddyScheduler,
     stopScheduler: stopBuddyScheduler,
     flushState: async () => {
       persistedServerState.flushUIStateSync();
       await turnAttemptJournal.flush();
+      await buddyControlServer.close();
     },
     broadcastMessage: (conversationId, content) => {
       applicationContext.broadcast({ type: 'message', conversationId, role: 'system', content });
@@ -472,6 +504,7 @@ void runServerStartup(
   {
     server,
     initialize: async () => {
+      await buddyControlServer.start();
       startupAuditResults = auditLocalAgents();
       await normalizedSessionCache.initialize();
       await turnAttemptJournal.initialize();

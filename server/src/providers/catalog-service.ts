@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { harnessMcpCapability } from '@nbardy/agent-cli';
 import type {
   ConfigResolution,
   ConversationConfig,
@@ -45,7 +46,10 @@ function loadFileCatalogReasoning(): Map<string, Map<string, FileReasoning>> | n
     try {
       const raw = readFileSync(p, 'utf-8');
       const parsed = JSON.parse(stripJsonc(raw)) as {
-        providers?: Array<{ id: string; models?: Array<{ id: string; reasoning?: FileReasoning }> }>;
+        providers?: Array<{
+          id: string;
+          models?: Array<{ id: string; reasoning?: FileReasoning }>;
+        }>;
       };
       if (!Array.isArray(parsed.providers)) continue;
       const map = new Map<string, Map<string, FileReasoning>>();
@@ -63,9 +67,7 @@ function loadFileCatalogReasoning(): Map<string, Map<string, FileReasoning>> | n
         map.set(prov.id, mMap);
       }
       return map;
-    } catch {
-      continue;
-    }
+    } catch {}
   }
   return null;
 }
@@ -106,6 +108,7 @@ function buildProviderEntry(provider: Provider): ProviderCatalogEntry {
     shortName: metadata.shortLabel,
     defaultModelId: defaultModel.id,
     supportsDynamicModels: provider === 'opencode',
+    supportsRequiredMcp: harnessMcpCapability(provider) === 'required',
     models: models.map((model) => {
       const fileReasoning = getFileReasoning(provider, model.id);
       if (fileReasoning) {
@@ -114,7 +117,9 @@ function buildProviderEntry(provider: Provider): ProviderCatalogEntry {
           displayName: model.displayName,
           reasoning: {
             levels: fileReasoning.levels,
-            ...(fileReasoning.defaultEffort === undefined ? {} : { defaultEffort: fileReasoning.defaultEffort }),
+            ...(fileReasoning.defaultEffort === undefined
+              ? {}
+              : { defaultEffort: fileReasoning.defaultEffort }),
           },
         };
       }

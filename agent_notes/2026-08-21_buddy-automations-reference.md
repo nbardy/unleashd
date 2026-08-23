@@ -5,6 +5,12 @@
 system?" — and nothing in `docs/`, `product/`, or `agent_notes/` answered it. Four separate
 sessions have now re-derived this. Written down so nobody derives it a fifth time.
 
+> **2026-08-24 execution update:** Sections 3, 4, and 7 describe the pre-ownership-hardening
+> implementation. The current ownership, recovery, fencing, archive, reload, and MCP authority
+> contract is `agent_notes/2026-08-24_automation-execution-ownership-design.md`. Keep this file
+> for the stable `schedule_kind`/`job_kind` product vocabulary and historical evidence; do not
+> use its old lease/recovery implications as current design guidance.
+
 ---
 
 ## 1. There is no job system

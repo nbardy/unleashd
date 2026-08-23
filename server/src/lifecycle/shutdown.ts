@@ -12,6 +12,7 @@ export interface ShutdownPorts {
   conversations(): Iterable<ShutdownConversation>;
   activeSchedulerRuns(): number;
   pauseScheduler(): void;
+  resumeScheduler(): void;
   stopScheduler(): void;
   flushState(): void | Promise<void>;
   broadcastMessage(conversationId: string, content: string): void;
@@ -21,8 +22,6 @@ export interface ShutdownPorts {
 export interface ShutdownOptions {
   /** SIGINT/SIGTERM: how long already-interrupted work may take to release. */
   forceExitGraceMs: number;
-  /** Dev reload: how long to seek an idle boundary before quiescing new mutations. */
-  reloadDrainGraceMs: number;
   /** Hard cap on the final state flush. A hung flush must never strand `exiting`. */
   flushGraceMs: number;
 }
@@ -49,7 +48,6 @@ export function createShutdownController(
 ): ShutdownController {
   let drainInterval: NodeJS.Timeout | null = null;
   let forceExitTimeout: NodeJS.Timeout | null = null;
-  let reloadQuiesceTimeout: NodeJS.Timeout | null = null;
   let flushWatchdog: NodeJS.Timeout | null = null;
   let state: ShutdownState = 'starting';
   let reloadRequested = false;
@@ -66,17 +64,20 @@ export function createShutdownController(
   const clearTimers = () => {
     if (drainInterval) clearInterval(drainInterval);
     if (forceExitTimeout) clearTimeout(forceExitTimeout);
-    if (reloadQuiesceTimeout) clearTimeout(reloadQuiesceTimeout);
     if (flushWatchdog) clearTimeout(flushWatchdog);
     drainInterval = null;
     forceExitTimeout = null;
-    reloadQuiesceTimeout = null;
     flushWatchdog = null;
   };
   const pauseScheduler = () => {
     if (schedulerPaused || schedulerStopped) return;
     schedulerPaused = true;
     ports.pauseScheduler();
+  };
+  const resumeScheduler = () => {
+    if (!schedulerPaused || schedulerStopped) return;
+    schedulerPaused = false;
+    ports.resumeScheduler();
   };
   const stopScheduler = () => {
     if (schedulerStopped) return;
@@ -154,49 +155,36 @@ export function createShutdownController(
     }, DRAIN_POLL_INTERVAL_MS);
     forceExitTimeout = setTimeout(() => forceShutdownDrain(graceMs), graceMs);
   };
-  const waitForReloadDrain = () => {
-    const remaining = activeWorkCount();
-    if (remaining === 0) {
-      void exitOnce();
+  const enterReloadingAtIdleBoundary = () => {
+    if (!reloadRequested || activeWorkCount() !== 0) return;
+    // The scheduler is another producer, so pause it only at the candidate
+    // boundary and recheck synchronously before committing to exit. Pausing at
+    // reload request time made a reload that waited on a long provider turn also
+    // stop unrelated scheduled work. If pausing exposes work, restore the exact
+    // prior availability and keep seeking a later boundary.
+    //
+    // A reload never enters a read-only absorbing state while work is active.
+    // This is the deliberately simpler ownership rule chosen in
+    // agent_notes/2026-08-24_automation-execution-ownership-design.md: the old
+    // server remains the fully usable owner; SIGINT/SIGTERM is the explicit,
+    // bounded operator-recovery path. We do not pretend a replacement can adopt
+    // parent-owned provider pipes.
+    pauseScheduler();
+    if (activeWorkCount() !== 0) {
+      resumeScheduler();
       return;
     }
-    console.warn(
-      `Backend reload quiesced; preserving ${remaining} active operation(s) until completion`
-    );
-    drainInterval = setInterval(() => {
-      if (activeWorkCount() === 0) void exitOnce();
-    }, DRAIN_POLL_INTERVAL_MS);
-  };
-  const enterReloading = (quiesce: boolean) => {
-    if (!reloadRequested || (state !== 'starting' && state !== 'idle')) return;
     reloadRequested = false;
     state = 'reloading';
     clearTimers();
-    if (quiesce) {
-      // The fully-available deferral window elapsed. Close admission so a busy
-      // backend eventually reaches a restart boundary, but NEVER convert a live
-      // provider turn into `server_restart`. Provider watchdogs remain the
-      // authority for genuinely hung turns; hot reload is not a kill policy.
-      //
-      // Keep every existing counter honest. In particular, stopScheduler()
-      // cancels active automation conversations, while clearing activeMutations
-      // or startupPending lets the process exit in the middle of durable writes
-      // or hydration. The scheduler was already paused by handleReload(), so no
-      // new scheduled work can appear; wait for all admitted work to release.
-      waitForReloadDrain();
-      return;
-    }
     void exitOnce();
-  };
-  const enterReloadingAtIdleBoundary = () => {
-    if (!reloadRequested || activeWorkCount() !== 0) return;
-    enterReloading(false);
   };
   const completeStartup = () => {
     startupPending = false;
     if (state !== 'starting') return false;
     state = 'idle';
-    return true;
+    enterReloadingAtIdleBoundary();
+    return state === 'idle';
   };
   const abortStartup = () => {
     startupPending = false;
@@ -210,33 +198,22 @@ export function createShutdownController(
       if (released) return;
       released = true;
       activeMutations = Math.max(0, activeMutations - 1);
+      enterReloadingAtIdleBoundary();
     };
   };
   const handleReload = () => {
     if ((state !== 'starting' && state !== 'idle') || reloadRequested) return;
     reloadRequested = true;
-    pauseScheduler();
-    if (activeWorkCount() === 0) {
-      enterReloading(false);
-      return;
-    }
-    // Stay in `idle` while the current backend owns live streams. This keeps the
-    // app usable and lets turns finish naturally. The watcher already coalesces
-    // later source changes and will start exactly one replacement after exit.
+    // Stay fully available while the current backend owns live streams. The
+    // watcher already coalesces later source changes and starts one replacement
+    // after exit. There is intentionally no reload deadline: a deadline either
+    // kills admitted work or creates the permanent read-only wedge this state
+    // machine exists to prevent.
     console.warn(
       `Backend reload queued: keeping current backend available for ${activeWorkCount()} active operation(s)`
     );
     drainInterval = setInterval(enterReloadingAtIdleBoundary, DRAIN_POLL_INTERVAL_MS);
-    // A continuously busy backend may never expose a fully idle poll. After the
-    // grace, stop admitting new mutations but preserve every provider process
-    // until it completes. This bounds reload deferral without killing the work
-    // that triggered the reload (incident 2026-08-22).
-    reloadQuiesceTimeout = setTimeout(() => {
-      console.warn(
-        `Backend did not reach an idle reload boundary within ${options.reloadDrainGraceMs}ms; quiescing new mutations`
-      );
-      enterReloading(true);
-    }, options.reloadDrainGraceMs);
+    enterReloadingAtIdleBoundary();
   };
   const handleShutdown = (signal: 'SIGINT' | 'SIGTERM') => {
     if (state === 'exiting' || state === 'shutting_down') return;

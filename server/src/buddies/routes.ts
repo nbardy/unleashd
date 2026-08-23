@@ -10,10 +10,9 @@ import {
 import type { Express, Request, Response } from 'express';
 import type { BuddiesStorePort, BuddyAutomation, BuddyAutomationRun } from './contract';
 import { BUDDY_REVIEW_RESULT_INSTRUCTIONS } from './integration';
-import {
-  REVIEW_BUDDY_OPERATIONS,
-  resolveDelegatedBuddyOperations,
-} from './operations';
+import { REVIEW_BUDDY_OPERATIONS, resolveDelegatedBuddyOperations } from './operations';
+import { assertBuddyProviderSupportsMcp } from './provider-capability';
+import { publicAutomationRun } from './public-automation-run';
 
 export interface BuddyConversationView {
   id: string;
@@ -24,7 +23,7 @@ export interface BuddyRouteDependencies {
   getStore(): Promise<BuddiesStorePort>;
   getScheduler(): {
     runNow(automationId: string): Promise<BuddyAutomationRun>;
-    cancel(runId: string): BuddyAutomationRun;
+    cancel(runId: string): Promise<BuddyAutomationRun>;
     health(): { running: boolean; pollIntervalMs: number; activeRunIds: string[] };
   } | null;
   createConversation(input: {
@@ -192,14 +191,6 @@ export function registerBuddyRoutes(app: Express, dependencies: BuddyRouteDepend
           .map((review) => review.conversation_id)
           .filter((conversationId): conversationId is string => Boolean(conversationId))
       );
-      const automationConversationIds = new Set(
-        automations.flatMap((automation) =>
-          buddies
-            .listAutomationRuns(automation.id)
-            .map((run) => run.conversation_id)
-            .filter((conversationId): conversationId is string => Boolean(conversationId))
-        )
-      );
       const linked = await Promise.all(
         buddies.listConversationLinks(buddy.id).map(async (value) => {
           const conversation = value as Record<string, unknown>;
@@ -219,7 +210,7 @@ export function registerBuddyRoutes(app: Express, dependencies: BuddyRouteDepend
           return {
             ...conversation,
             kind:
-              conversationId && automationConversationIds.has(conversationId)
+              conversationId && buddies.getAutomationRunByConversationId(conversationId)
                 ? 'automation'
                 : conversationId && reviewConversationIds.has(conversationId)
                   ? 'review'
@@ -254,6 +245,14 @@ export function registerBuddyRoutes(app: Express, dependencies: BuddyRouteDepend
         return;
       }
       const provider = providerResult.data;
+      try {
+        assertBuddyProviderSupportsMcp(provider);
+      } catch (error) {
+        res.status(400).json({
+          error: error instanceof Error ? error.message : String(error),
+        });
+        return;
+      }
       const model =
         typeof req.body?.model === 'string' && req.body.model.trim()
           ? normalizeModelId(provider, req.body.model.trim())
@@ -473,14 +472,8 @@ export function registerBuddyRoutes(app: Express, dependencies: BuddyRouteDepend
   });
 
   app.post('/api/buddies/:buddyId/review-requests', async (req: Request, res: Response) => {
-    const {
-      reviewerBuddyId,
-      subjectBuddyId,
-      workspaceId,
-      buddyProjectId,
-      purpose,
-      evidence,
-    } = req.body ?? {};
+    const { reviewerBuddyId, subjectBuddyId, workspaceId, buddyProjectId, purpose, evidence } =
+      req.body ?? {};
     if (
       typeof reviewerBuddyId !== 'string' ||
       typeof subjectBuddyId !== 'string' ||
@@ -502,16 +495,10 @@ export function registerBuddyRoutes(app: Express, dependencies: BuddyRouteDepend
       }>;
       const manageable = new Set([req.params.buddyId]);
       for (const relationship of relationships) {
-        if (
-          relationship.from_buddy_id === req.params.buddyId &&
-          relationship.kind === 'manager'
-        ) {
+        if (relationship.from_buddy_id === req.params.buddyId && relationship.kind === 'manager') {
           manageable.add(relationship.to_buddy_id);
         }
-        if (
-          relationship.to_buddy_id === req.params.buddyId &&
-          relationship.kind === 'reports_to'
-        ) {
+        if (relationship.to_buddy_id === req.params.buddyId && relationship.kind === 'reports_to') {
           manageable.add(relationship.from_buddy_id);
         }
       }
@@ -727,17 +714,21 @@ export function registerBuddyRoutes(app: Express, dependencies: BuddyRouteDepend
   app.post('/api/buddies/:buddyId/automations', async (req: Request, res: Response) => {
     try {
       const buddies = await getStore();
-      let automation = buddies.createAutomation({
+      const scheduleCandidate = {
+        schedule_kind: req.body?.scheduleKind,
+        schedule_expression: req.body?.scheduleExpression,
+        timezone: req.body?.timezone ?? 'UTC',
+      } as BuddyAutomation;
+      // Validate and compute before persistence. A 400 must never leave an
+      // enabled definition whose schedule cannot be evaluated.
+      const nextRunAt = getNextAutomationRunAt(scheduleCandidate, new Date());
+      const automation = buddies.createAutomation({
         ...req.body,
         buddy: req.params.buddyId,
         workspace: req.body?.workspaceId,
         project: req.body?.projectId,
+        nextRunAt,
       });
-      if (!automation.next_run_at) {
-        automation = buddies.updateAutomation(automation.id, {
-          nextRunAt: getNextAutomationRunAt(automation, new Date()),
-        });
-      }
       res.status(201).json(automation);
     } catch (error) {
       sendError(res, error, 400);
@@ -747,17 +738,25 @@ export function registerBuddyRoutes(app: Express, dependencies: BuddyRouteDepend
   app.patch('/api/buddies/automations/:automationId', async (req: Request, res: Response) => {
     try {
       const buddies = await getStore();
-      let automation = buddies.updateAutomation(req.params.automationId, req.body ?? {});
+      const current = buddies.getAutomation(req.params.automationId);
+      if (!current) throw new Error(`automation not found: ${req.params.automationId}`);
+      let changes = req.body ?? {};
       if (
         req.body?.nextRunAt === undefined &&
-        (req.body?.scheduleKind !== undefined ||
+        ((req.body?.enabled === true && current.next_run_at === null) ||
+          req.body?.scheduleKind !== undefined ||
           req.body?.scheduleExpression !== undefined ||
           req.body?.timezone !== undefined)
       ) {
-        automation = buddies.updateAutomation(automation.id, {
-          nextRunAt: getNextAutomationRunAt(automation, new Date()),
-        });
+        const candidate = {
+          ...current,
+          schedule_kind: req.body.scheduleKind ?? current.schedule_kind,
+          schedule_expression: req.body.scheduleExpression ?? current.schedule_expression,
+          timezone: req.body.timezone ?? current.timezone,
+        };
+        changes = { ...changes, nextRunAt: getNextAutomationRunAt(candidate, new Date()) };
       }
+      const automation = buddies.updateAutomation(current.id, changes);
       res.json(automation);
     } catch (error) {
       sendError(res, error, 400);
@@ -767,7 +766,18 @@ export function registerBuddyRoutes(app: Express, dependencies: BuddyRouteDepend
   app.delete('/api/buddies/automations/:automationId', async (req: Request, res: Response) => {
     try {
       const buddies = await getStore();
-      res.json(buddies.deleteAutomation(req.params.automationId));
+      const activeRuns = buddies
+        .listNonterminalAutomationRuns()
+        .filter((run) => run.automation_id === req.params.automationId);
+      if (activeRuns.length) {
+        const scheduler = getScheduler();
+        if (!scheduler) {
+          res.status(503).json({ error: 'Buddy scheduler is not ready to cancel active work' });
+          return;
+        }
+        for (const run of activeRuns) await scheduler.cancel(run.id);
+      }
+      res.json(buddies.archiveAutomation(req.params.automationId));
     } catch (error) {
       sendError(res, error, 400);
     }
@@ -780,7 +790,7 @@ export function registerBuddyRoutes(app: Express, dependencies: BuddyRouteDepend
         res.status(503).json({ error: 'Buddy scheduler is not ready' });
         return;
       }
-      res.status(202).json(await scheduler.runNow(req.params.automationId));
+      res.status(202).json(publicAutomationRun(await scheduler.runNow(req.params.automationId)));
     } catch (error) {
       sendError(res, error, 400);
     }
@@ -790,24 +800,28 @@ export function registerBuddyRoutes(app: Express, dependencies: BuddyRouteDepend
     try {
       const buddies = await getStore();
       res.json(
-        buddies.listAutomationRuns(req.params.automationId, {
-          limit:
-            typeof req.query.limit === 'string' ? Number.parseInt(req.query.limit, 10) : undefined,
-        })
+        buddies
+          .listAutomationRuns(req.params.automationId, {
+            limit:
+              typeof req.query.limit === 'string'
+                ? Number.parseInt(req.query.limit, 10)
+                : undefined,
+          })
+          .map(publicAutomationRun)
       );
     } catch (error) {
       sendError(res, error, 400);
     }
   });
 
-  app.post('/api/buddies/automation-runs/:runId/cancel', (req: Request, res: Response) => {
+  app.post('/api/buddies/automation-runs/:runId/cancel', async (req: Request, res: Response) => {
     try {
       const scheduler = getScheduler();
       if (!scheduler) {
         res.status(503).json({ error: 'Buddy scheduler is not ready' });
         return;
       }
-      res.json(scheduler.cancel(req.params.runId));
+      res.json(publicAutomationRun(await scheduler.cancel(req.params.runId)));
     } catch (error) {
       sendError(res, error, 400);
     }

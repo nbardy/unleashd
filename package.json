@@ -3,6 +3,9 @@
   "version": "1.1.0",
   "private": false,
   "packageManager": "pnpm@9.15.0",
+  "engines": {
+    "node": ">=22.5.0"
+  },
   "scripts": {
     "prepack": "pnpm build",
     "dev": "node tools/dev-supervisor.mjs",
@@ -41,16 +44,8 @@
   "bin": {
     "unleashd": "./bin/unleashd.js"
   },
-  "files": [
-    "bin",
-    "server/dist",
-    "client/dist"
-  ],
-  "bundledDependencies": [
-    "@nbardy/agent-cli",
-    "@nbardy/buddies",
-    "@unleashd/shared"
-  ],
+  "files": ["bin", "server/dist", "client/dist"],
+  "bundledDependencies": ["@nbardy/agent-cli", "@nbardy/buddies", "@unleashd/shared"],
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",
     "@nbardy/agent-cli": "workspace:0.1.1",

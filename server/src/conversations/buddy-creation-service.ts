@@ -34,6 +34,16 @@ export interface CreateServerBuddyConversationInput {
   initialMessage: string;
   commandId: string;
   conversationId?: string;
+  /** Register/link the transcript but leave its first provider turn dormant. */
+  deferInitialMessage?: boolean;
+}
+
+export interface InitialMessageDispatchOptions {
+  /**
+   * Run the synchronous enqueue inside the caller's authority transaction.
+   * Throwing leaves the child dormant and disables automatic retry.
+   */
+  enqueueAuthorized?(enqueue: () => void): void;
 }
 
 export interface CreateBuddyBuilderConversationInput {
@@ -69,7 +79,10 @@ export interface BuddyCreationServicePorts {
 export interface BuddyCreationService {
   creationFingerprint(input: CreationFingerprintInput): string;
   persistCurrentSession(conversation: ConversationRuntimeView, sessionId: string): Promise<void>;
-  dispatchInitialMessageIfPending(conversation: ConversationRuntime): Promise<void>;
+  dispatchInitialMessageIfPending(
+    conversation: ConversationRuntime,
+    options?: InitialMessageDispatchOptions
+  ): Promise<void>;
   createAutomationConversation(
     automation: BuddyAutomation,
     run: BuddyAutomationRun
@@ -102,6 +115,9 @@ export function creationFingerprint(input: CreationFingerprintInput): string {
 export function createBuddyCreationService(ports: BuddyCreationServicePorts): BuddyCreationService {
   const logger = ports.logger ?? console;
   const dispatchRetryTimers = new Map<string, NodeJS.Timeout>();
+  const dispatchOptions = new Map<string, InitialMessageDispatchOptions>();
+
+  class InitialMessageAuthorityRejectedError extends Error {}
 
   async function persistCurrentSession(
     conversation: ConversationRuntimeView,
@@ -120,7 +136,11 @@ export function createBuddyCreationService(ports: BuddyCreationServicePorts): Bu
     }
   }
 
-  async function dispatchInitialMessageIfPending(conversation: ConversationRuntime): Promise<void> {
+  async function dispatchInitialMessageIfPending(
+    conversation: ConversationRuntime,
+    options?: InitialMessageDispatchOptions
+  ): Promise<void> {
+    if (options) dispatchOptions.set(conversation.id, options);
     const claimed = await ports.configService.claimInitialMessageDispatch(conversation.id);
     if (!claimed) {
       const current = await ports.configService.getRecord(conversation.id);
@@ -140,7 +160,26 @@ export function createBuddyCreationService(ports: BuddyCreationServicePorts): Bu
       const alreadyVisible = conversation.messages.some(
         (message) => message.role === 'user' && message.content === initialMessage
       );
-      if (!alreadyVisible) conversation.enqueueMessage(initialMessage);
+      if (!alreadyVisible) {
+        const enqueue = () => conversation.enqueueMessage(initialMessage);
+        const currentOptions = dispatchOptions.get(conversation.id);
+        if (currentOptions?.enqueueAuthorized) {
+          try {
+            // The authority check, any durable binding, and enqueue are one
+            // synchronous critical section. There is no await where cancellation
+            // can interleave. Ownership design I2/I7 (2026-08-24).
+            currentOptions.enqueueAuthorized(enqueue);
+          } catch (error) {
+            dispatchOptions.delete(conversation.id);
+            throw new InitialMessageAuthorityRejectedError(
+              error instanceof Error ? error.message : String(error)
+            );
+          }
+        } else {
+          enqueue();
+        }
+      }
+      dispatchOptions.delete(conversation.id);
       const completed = await ports.configService.completeInitialMessageDispatch(
         conversation.id,
         claimToken
@@ -154,14 +193,12 @@ export function createBuddyCreationService(ports: BuddyCreationServicePorts): Bu
       if (timer) clearTimeout(timer);
       dispatchRetryTimers.delete(conversation.id);
     } catch (error) {
+      if (error instanceof InitialMessageAuthorityRejectedError) throw error;
       logger.warn(
         `[conversation-config] Initial message enqueue failed for ${conversation.id}; retrying after lease:`,
         error
       );
-      scheduleInitialMessageRetry(
-        conversation,
-        claimed.creation?.initialMessageDispatchClaimedAt
-      );
+      scheduleInitialMessageRetry(conversation, claimed.creation?.initialMessageDispatchClaimedAt);
     }
   }
 
@@ -203,6 +240,7 @@ export function createBuddyCreationService(ports: BuddyCreationServicePorts): Bu
     config: ConversationConfig;
     commandId: string;
     initialMessage?: string;
+    automationClaimToken?: string;
   }): Promise<ConversationRuntime> {
     const fingerprint = creationFingerprint({
       workingDirectory: input.workingDirectory,
@@ -227,6 +265,7 @@ export function createBuddyCreationService(ports: BuddyCreationServicePorts): Bu
       configState: creation.state,
       buddyContext: input.resolved.context,
       buddyBriefing: input.resolved.briefing,
+      automationClaimToken: input.automationClaimToken,
     });
     ports.registerConversation(conversation);
     await ports.createConversationLink(conversation);
@@ -259,6 +298,7 @@ export function createBuddyCreationService(ports: BuddyCreationServicePorts): Bu
       resolved,
       config,
       commandId: `buddy-automation-${run.id}`,
+      automationClaimToken: run.claim_token ?? undefined,
     });
 
     return {
@@ -279,10 +319,14 @@ export function createBuddyCreationService(ports: BuddyCreationServicePorts): Bu
           };
           conversation.once('buddy-turn-complete', onComplete);
           conversation.once('buddy-turn-failed', onFailure);
-          conversation.sendMessage(prompt);
+          conversation.sendAutomationMessage(prompt);
         });
       },
-      stop: () => conversation.stop(),
+      stop: () => conversation.stopAutomationTurn(),
+      async stopAndDrain() {
+        conversation.stopAutomationTurn();
+        await conversation.waitForTurnDrain();
+      },
       finish: (status) => ports.updateConversationStatus(conversation, status),
     };
   }
@@ -299,7 +343,7 @@ export function createBuddyCreationService(ports: BuddyCreationServicePorts): Bu
       commandId: input.commandId,
       initialMessage: input.initialMessage,
     });
-    await dispatchInitialMessageIfPending(conversation);
+    if (!input.deferInitialMessage) await dispatchInitialMessageIfPending(conversation);
     return conversation;
   }
 

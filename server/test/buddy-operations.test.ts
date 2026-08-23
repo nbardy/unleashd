@@ -122,14 +122,11 @@ test('scoped Buddy operations close work, remember, delegate, review, and audit'
     });
     assert.ok(prepared.allowedOperations.includes('buddy.complete_assignment'));
     assert.ok(!prepared.allowedOperations.includes('buddy.new_project'));
-    const delegatedOperations = new BuddyOperationsService(
-      store as unknown as BuddiesStorePort,
-      {
-        buddyId: operator.id,
-        workspaceId: workspace.id,
-        allowedOperations: prepared.allowedOperations,
-      }
-    );
+    const delegatedOperations = new BuddyOperationsService(store as unknown as BuddiesStorePort, {
+      buddyId: operator.id,
+      workspaceId: workspace.id,
+      allowedOperations: prepared.allowedOperations,
+    });
     assert.throws(
       () =>
         delegatedOperations.execute('buddy.new_project', {
@@ -152,13 +149,10 @@ test('scoped Buddy operations close work, remember, delegate, review, and audit'
       projectId: operatorProject.id,
     });
     const reviewId = (requestedReview.data as { id: string }).id;
-    const criticOperations = new BuddyOperationsService(
-      store as unknown as BuddiesStorePort,
-      {
-        buddyId: critic.id,
-        workspaceId: workspace.id,
-      }
-    );
+    const criticOperations = new BuddyOperationsService(store as unknown as BuddiesStorePort, {
+      buddyId: critic.id,
+      workspaceId: workspace.id,
+    });
     assert.deepEqual(
       (
         criticOperations.execute('buddy.get_inbox').data as {
@@ -245,14 +239,33 @@ test('automation-scoped operations enforce the durable allowlist and create a re
     const run = store.claimAutomationRun(automation.id, {
       scheduledFor: '2026-07-28T00:00:00.000Z',
     });
-    const operations = new BuddyOperationsService(store as unknown as BuddiesStorePort, {
-      buddyId: lead.id,
-      workspaceId: workspace.id,
-      buddyProjectId: project.id,
-      automationRunId: run.id,
+    store.updateAutomationRun(run.id, {
+      status: 'running',
+      claimToken: run.claim_token,
     });
+    const operations = new BuddyOperationsService(
+      store as unknown as BuddiesStorePort,
+      {
+        buddyId: lead.id,
+        workspaceId: workspace.id,
+        buddyProjectId: project.id,
+        automationRunId: run.id,
+      },
+      { automationClaimToken: run.claim_token ?? undefined }
+    );
 
     operations.execute('buddy.get_current_work');
+    const staleOperations = new BuddyOperationsService(
+      store as unknown as BuddiesStorePort,
+      {
+        buddyId: lead.id,
+        workspaceId: workspace.id,
+        buddyProjectId: project.id,
+        automationRunId: run.id,
+      },
+      { automationClaimToken: 'stale-executor' }
+    );
+    assert.throws(() => staleOperations.execute('buddy.get_current_work'), /claim is not owned/);
     assert.throws(
       () =>
         operations.execute('buddy.update_project', {
@@ -291,6 +304,76 @@ test('automation-scoped operations enforce the durable allowlist and create a re
         }),
       /already approved/
     );
+
+    store.updateAutomationRun(run.id, {
+      status: 'failed',
+      error: 'provider failed',
+      claimToken: run.claim_token ?? undefined,
+    });
+    const inbox = new BuddyOperationsService(store as unknown as BuddiesStorePort, {
+      buddyId: lead.id,
+      workspaceId: workspace.id,
+    }).execute('buddy.get_inbox');
+    assert.match(JSON.stringify(inbox.data), /provider failed/);
+    assert.doesNotMatch(JSON.stringify(inbox.data), /claim_token|automation_claim/);
+    assert.throws(() => operations.execute('buddy.get_current_work'), /not active: failed/);
+  } finally {
+    store.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('automation schedule validation leaves durable definitions unchanged on failure', () => {
+  const root = mkdtempSync(join(tmpdir(), 'buddy-automation-validation-'));
+  const store = new BuddiesStore(':memory:');
+  try {
+    const workspace = store.createWorkspace({ name: 'Workspace', rootPath: root });
+    const buddy = store.createBuddy({
+      project: workspace.id,
+      name: 'Scheduler',
+      role: 'Own bounded schedules',
+    });
+    const operations = new BuddyOperationsService(store as unknown as BuddiesStorePort, {
+      buddyId: buddy.id,
+      workspaceId: workspace.id,
+    });
+
+    assert.throws(
+      () =>
+        operations.execute('buddy.set_automation', {
+          action: 'create',
+          name: 'Invalid interval',
+          scheduleKind: 'interval',
+          scheduleExpression: 'not-seconds',
+          timezone: 'UTC',
+          jobKind: 'prompt',
+          jobPayload: { prompt: 'Never persist this.' },
+        }),
+      /positive seconds/
+    );
+    assert.deepEqual(store.listAutomations({ buddy: buddy.id }), []);
+
+    const created = operations.execute('buddy.set_automation', {
+      action: 'create',
+      name: 'Valid interval',
+      scheduleKind: 'interval',
+      scheduleExpression: '60',
+      timezone: 'UTC',
+      jobKind: 'prompt',
+      jobPayload: { prompt: 'Persist once.' },
+    }).data as { id: string; schedule_expression: string; next_run_at: string };
+    const before = store.getAutomation(created.id);
+    assert.throws(
+      () =>
+        operations.execute('buddy.set_automation', {
+          action: 'update',
+          automationId: created.id,
+          name: 'Must not partially update',
+          scheduleExpression: '0',
+        }),
+      /positive seconds/
+    );
+    assert.deepEqual(store.getAutomation(created.id), before);
   } finally {
     store.close();
     rmSync(root, { recursive: true, force: true });

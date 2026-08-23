@@ -12,11 +12,6 @@ export const HOT_RELOAD_FORCE_EXIT_GRACE_MS = readPositiveIntEnv(
   'CWV_HOT_RELOAD_FORCE_EXIT_GRACE_MS',
   3_000
 );
-// A dev reload first remains fully available while seeking an idle boundary.
-// This bounds that deferral window. Afterward the old backend quiesces new
-// mutations but continues owning every admitted operation until it completes;
-// hot reload never uses this timer as permission to interrupt provider work.
-export const HOT_RELOAD_DRAIN_GRACE_MS = readPositiveIntEnv('CWV_HOT_RELOAD_DRAIN_GRACE_MS', 8_000);
 // Hard cap on the final state flush. Without it a journal flush that never
 // settles leaves the process alive in `exiting`, refusing every request forever.
 export const SHUTDOWN_FLUSH_GRACE_MS = readPositiveIntEnv('CWV_SHUTDOWN_FLUSH_GRACE_MS', 5_000);

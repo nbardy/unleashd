@@ -23,7 +23,6 @@ function deferred(): { promise: Promise<void>; resolve: () => void } {
 // Graces long enough that only the one under test can fire.
 const INERT: ShutdownOptions = {
   forceExitGraceMs: 60_000,
-  reloadDrainGraceMs: 60_000,
   flushGraceMs: 60_000,
 };
 
@@ -33,6 +32,7 @@ function createFixture(activeInitially: boolean) {
   let active = activeInitially;
   let activeSchedulerRuns = 0;
   let schedulerPauses = 0;
+  let schedulerResumes = 0;
   let schedulerStops = 0;
   let flushes = 0;
   let exits = 0;
@@ -54,6 +54,9 @@ function createFixture(activeInitially: boolean) {
     activeSchedulerRuns: () => activeSchedulerRuns,
     pauseScheduler: () => {
       schedulerPauses += 1;
+    },
+    resumeScheduler: () => {
+      schedulerResumes += 1;
     },
     stopScheduler: () => {
       schedulerStops += 1;
@@ -77,7 +80,14 @@ function createFixture(activeInitially: boolean) {
     setActiveSchedulerRuns: (value: number) => {
       activeSchedulerRuns = value;
     },
-    counts: () => ({ schedulerPauses, schedulerStops, flushes, exits, processStops }),
+    counts: () => ({
+      schedulerPauses,
+      schedulerResumes,
+      schedulerStops,
+      flushes,
+      exits,
+      processStops,
+    }),
   };
 }
 
@@ -91,6 +101,7 @@ test('SIGTERM claims shutdown before its single flush can be re-entered', async 
   assert.equal(controller.state, 'exiting');
   assert.deepEqual(fixture.counts(), {
     schedulerPauses: 0,
+    schedulerResumes: 0,
     schedulerStops: 1,
     flushes: 1,
     exits: 0,
@@ -124,7 +135,8 @@ test('reload waits for active turns and coalesces repeated requests', async () =
   controller.handleReload();
 
   assert.deepEqual(fixture.counts(), {
-    schedulerPauses: 1,
+    schedulerPauses: 0,
+    schedulerResumes: 0,
     schedulerStops: 0,
     flushes: 0,
     exits: 0,
@@ -180,14 +192,14 @@ test('reload drains the automation run beyond its individual provider turn', asy
 });
 
 /**
- * Incident 2026-08-22. The old reload grace force-killed ordinary provider turns
- * because they routinely outlive eight seconds. The grace now bounds only how
- * long the old backend remains fully available: afterward it quiesces admission
- * but retains process ownership until the turn completes naturally.
+ * Incident 2026-08-22. A reload used to move into an absorbing state and then
+ * either kill an ordinary provider turn or leave the backend permanently
+ * read-only. A pending reload is now only intent: the owning server remains
+ * fully available until it observes a genuine idle boundary.
  */
-test('a reload quiesces after the grace without interrupting its live turn', async () => {
+test('a pending reload remains fully available without interrupting its live turn', async () => {
   const fixture = createFixture(true);
-  const controller = createShutdownController({ ...INERT, reloadDrainGraceMs: 300 }, fixture.ports);
+  const controller = createShutdownController(INERT, fixture.ports);
   assert.equal(controller.completeStartup(), true);
 
   controller.handleReload();
@@ -196,15 +208,14 @@ test('a reload quiesces after the grace without interrupting its live turn', asy
   assert.ok(admittedDuringDeferral);
   admittedDuringDeferral();
 
-  await sleep(150);
-  assert.equal(fixture.counts().processStops, 0, 'turn is left alone before the grace');
+  await sleep(650);
+  assert.equal(controller.state, 'idle');
+  const admittedLater = controller.beginMutation();
+  assert.ok(admittedLater, 'pending reload never turns the old owner read-only');
+  admittedLater();
+  assert.equal(fixture.counts().processStops, 0, 'reload never signals a live turn');
+  assert.equal(fixture.counts().schedulerPauses, 0, 'scheduler remains live while work is active');
   assert.equal(fixture.counts().flushes, 0);
-
-  await sleep(250);
-  assert.equal(controller.state, 'reloading');
-  assert.equal(controller.beginMutation(), null, 'new work is refused after the grace');
-  assert.equal(fixture.counts().processStops, 0, 'live turn survives the grace');
-  assert.equal(fixture.counts().flushes, 0, 'reload still waits for its owned turn');
 
   fixture.setActive(false);
   await sleep(550);
@@ -216,19 +227,20 @@ test('a reload quiesces after the grace without interrupting its live turn', asy
   controller.dispose();
 });
 
-test('quiesced reload waits for admitted mutations and active automation wrappers', async () => {
+test('pending reload waits for admitted mutations and active automation wrappers', async () => {
   const fixture = createFixture(false);
   fixture.setActiveSchedulerRuns(1);
-  const controller = createShutdownController({ ...INERT, reloadDrainGraceMs: 100 }, fixture.ports);
+  const controller = createShutdownController(INERT, fixture.ports);
   assert.equal(controller.completeStartup(), true);
   const releaseMutation = controller.beginMutation();
   assert.ok(releaseMutation);
 
   controller.handleReload();
-  await sleep(150);
+  await sleep(650);
 
-  assert.equal(controller.state, 'reloading');
+  assert.equal(controller.state, 'idle');
   assert.equal(fixture.counts().schedulerStops, 0, 'reload never cancels an active automation');
+  assert.equal(fixture.counts().schedulerPauses, 0);
   assert.equal(fixture.counts().flushes, 0);
 
   fixture.setActiveSchedulerRuns(0);
@@ -243,7 +255,49 @@ test('quiesced reload waits for admitted mutations and active automation wrapper
   controller.dispose();
 });
 
-test('hot reload preserves a real detached provider process beyond its grace', async (t) => {
+test('reload resumes the scheduler when pausing reveals newly active work', async () => {
+  let schedulerWork = 0;
+  let revealWorkOnPause = true;
+  let pauses = 0;
+  let resumes = 0;
+  let exits = 0;
+  const controller = createShutdownController(INERT, {
+    conversations: () => [],
+    activeSchedulerRuns: () => schedulerWork,
+    pauseScheduler: () => {
+      pauses += 1;
+      if (revealWorkOnPause) schedulerWork = 1;
+    },
+    resumeScheduler: () => {
+      resumes += 1;
+      schedulerWork = 0;
+    },
+    stopScheduler: () => undefined,
+    flushState: () => undefined,
+    broadcastMessage: () => undefined,
+    exit: () => {
+      exits += 1;
+    },
+  });
+  assert.equal(controller.completeStartup(), true);
+
+  controller.handleReload();
+
+  assert.equal(controller.state, 'idle');
+  assert.equal(pauses, 1);
+  assert.equal(resumes, 1);
+  assert.equal(exits, 0);
+
+  revealWorkOnPause = false;
+  await sleep(550);
+  await Promise.resolve();
+  assert.equal(pauses, 2);
+  assert.equal(resumes, 1);
+  assert.equal(exits, 1);
+  controller.dispose();
+});
+
+test('hot reload preserves a real detached provider process until an idle boundary', async (t) => {
   const directory = mkdtempSync(join(tmpdir(), 'unleashd-reload-provider-'));
   const marker = join(directory, 'completed');
   const child = spawn(
@@ -268,22 +322,20 @@ test('hot reload preserves a real detached provider process beyond its grace', a
       if (child.pid != null) process.kill(-child.pid, 'SIGTERM');
     },
   };
-  const controller = createShutdownController(
-    { ...INERT, reloadDrainGraceMs: 100 },
-    {
-      conversations: () => [conversation],
-      activeSchedulerRuns: () => 0,
-      pauseScheduler: () => undefined,
-      stopScheduler: () => undefined,
-      flushState: () => {
-        flushed += 1;
-      },
-      broadcastMessage: () => undefined,
-      exit: () => {
-        exited += 1;
-      },
-    }
-  );
+  const controller = createShutdownController(INERT, {
+    conversations: () => [conversation],
+    activeSchedulerRuns: () => 0,
+    pauseScheduler: () => undefined,
+    resumeScheduler: () => undefined,
+    stopScheduler: () => undefined,
+    flushState: () => {
+      flushed += 1;
+    },
+    broadcastMessage: () => undefined,
+    exit: () => {
+      exited += 1;
+    },
+  });
   t.after(() => {
     controller.dispose();
     if (child.exitCode === null && child.pid != null) {
@@ -298,7 +350,7 @@ test('hot reload preserves a real detached provider process beyond its grace', a
   controller.handleReload();
   await sleep(250);
 
-  assert.equal(controller.state, 'reloading');
+  assert.equal(controller.state, 'idle');
   assert.equal(stopped, 0);
   assert.equal(flushed, 0);
 

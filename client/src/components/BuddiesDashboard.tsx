@@ -271,6 +271,12 @@ export function BuddiesDashboard() {
     try {
       await action();
       await loadEmployee();
+      // Automations are a separate route-backed projection, not part of employee detail.
+      // Reloading only the employee made successful toggle/run/archive actions look as if
+      // they had failed. Keep the UI derived from durable server state; do not patch cards
+      // optimistically with a second client lifecycle. Design rationale:
+      // agent_notes/2026-08-24_automation-execution-ownership-design.md §6/I1, §14/8.
+      if (activeTab === 'automations') await loadAutomations();
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
     } finally {
@@ -870,7 +876,6 @@ export function BuddiesDashboard() {
               approvals={employee.approvals ?? []}
               busy={busy !== null}
               mutate={mutate}
-              refresh={loadAutomations}
               availableConversationIds={availableConversationIds}
               automationConversations={automationConversations}
             />

@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { asArray, buddyApi } from './api';
 import { conversationPath } from './buddy-tabs';
@@ -10,7 +10,6 @@ interface BuddyAutomationsTabProps {
   approvals: BuddyApprovalRequest[];
   busy: boolean;
   mutate: BuddyMutation;
-  refresh: () => Promise<void>;
   /** Conversation ids the client actually holds — a run outlives its thread. */
   availableConversationIds: Set<string>;
   automationConversations: ConversationLink[];
@@ -53,7 +52,6 @@ export function BuddyAutomationsTab({
   approvals,
   busy,
   mutate,
-  refresh,
   availableConversationIds,
   automationConversations,
 }: BuddyAutomationsTabProps) {
@@ -109,7 +107,6 @@ export function BuddyAutomationsTab({
             automation={automation}
             busy={busy}
             onMutate={mutate}
-            onRefresh={refresh}
             availableConversationIds={availableConversationIds}
           />
         ))}
@@ -149,7 +146,6 @@ interface AutomationCardProps {
   automation: BuddyAutomation;
   busy: boolean;
   onMutate: BuddyMutation;
-  onRefresh: () => Promise<void>;
   availableConversationIds: Set<string>;
 }
 
@@ -157,17 +153,34 @@ function AutomationCard({
   automation,
   busy,
   onMutate,
-  onRefresh,
   availableConversationIds,
 }: AutomationCardProps) {
   const [runs, setRuns] = useState<AutomationRun[]>(automation.runs ?? []);
   const [showRuns, setShowRuns] = useState(false);
+  const [runsError, setRunsError] = useState<string | null>(null);
   const base = `/api/buddies/automations/${encodeURIComponent(automation.id)}`;
-  const loadRuns = async () => {
-    const payload = await buddyApi<unknown>(`${base}/runs`);
-    setRuns(asArray<AutomationRun>(payload, 'runs'));
-    setShowRuns(true);
+  const hasActiveRun = runs.some((run) =>
+    ['claimed', 'running', 'cancel_requested'].includes(run.status)
+  );
+  const loadRuns = useCallback(async () => {
+    setRunsError(null);
+    try {
+      const payload = await buddyApi<unknown>(`${base}/runs`);
+      setRuns(asArray<AutomationRun>(payload, 'runs'));
+      setShowRuns(true);
+    } catch (cause) {
+      setRunsError(cause instanceof Error ? cause.message : String(cause));
+    }
+  }, [base]);
+  const mutateAndRefreshRuns = async (key: string, action: () => Promise<unknown>) => {
+    await onMutate(key, action);
+    if (showRuns) await loadRuns();
   };
+  useEffect(() => {
+    if (!showRuns || !hasActiveRun) return;
+    const timer = window.setInterval(() => void loadRuns(), 2_000);
+    return () => window.clearInterval(timer);
+  }, [showRuns, hasActiveRun, loadRuns]);
   return (
     <article className="buddy-automation-card">
       <div>
@@ -189,7 +202,7 @@ function AutomationCard({
           type="button"
           disabled={busy}
           onClick={() =>
-            void onMutate(`toggle-${automation.id}`, () =>
+            void mutateAndRefreshRuns(`toggle-${automation.id}`, () =>
               buddyApi(base, {
                 method: 'PATCH',
                 headers: { 'Content-Type': 'application/json' },
@@ -204,7 +217,9 @@ function AutomationCard({
           type="button"
           disabled={busy}
           onClick={() =>
-            void onMutate(`run-${automation.id}`, () => buddyApi(`${base}/run`, { method: 'POST' }))
+            void mutateAndRefreshRuns(`run-${automation.id}`, () =>
+              buddyApi(`${base}/run`, { method: 'POST' })
+            )
           }
         >
           Run now
@@ -216,11 +231,11 @@ function AutomationCard({
           type="button"
           disabled={busy}
           onClick={() => {
-            if (window.confirm(`Delete "${automation.name}"?`))
-              void onMutate(`delete-${automation.id}`, () => buddyApi(base, { method: 'DELETE' }));
+            if (window.confirm(`Archive "${automation.name}" and preserve its run history?`))
+              void onMutate(`archive-${automation.id}`, () => buddyApi(base, { method: 'DELETE' }));
           }}
         >
-          Delete
+          Archive
         </button>
       </div>
       {showRuns && (
@@ -228,8 +243,12 @@ function AutomationCard({
           {runs.map((run) => (
             <div key={run.id}>
               <span>
-                {run.status === 'claimed' ? 'starting' : run.status} ·{' '}
-                {new Date(run.scheduled_for).toLocaleString()}
+                {run.status === 'claimed'
+                  ? 'starting'
+                  : run.status === 'cancel_requested'
+                    ? 'cancelling'
+                    : run.status}{' '}
+                · {new Date(run.scheduled_for).toLocaleString()}
               </span>
               {run.conversation_id && (
                 <OpenConversationLink
@@ -239,22 +258,39 @@ function AutomationCard({
                 />
               )}
               <small>{run.outcome ?? run.error}</small>
-              {(run.tokens_used !== undefined || run.cost_usd !== undefined) && (
-                <small>
-                  {run.tokens_used ?? 0} tokens · ${(run.cost_usd ?? 0).toFixed(2)}
-                </small>
+              {['claimed', 'running'].includes(run.status) && (
+                <button
+                  type="button"
+                  disabled={busy}
+                  onClick={() =>
+                    void mutateAndRefreshRuns(`cancel-${run.id}`, () =>
+                      buddyApi(
+                        `/api/buddies/automation-runs/${encodeURIComponent(run.id)}/cancel`,
+                        { method: 'POST' }
+                      )
+                    )
+                  }
+                >
+                  Cancel
+                </button>
               )}
+              {/* Token/cost columns exist for forward compatibility, but no provider-neutral
+                  metering boundary supplies trustworthy values yet. Rendering zero as measured
+                  usage is actively misleading. See the ownership design note §11. */}
+              <small>Usage metering unavailable</small>
             </div>
           ))}
           {runs.length === 0 && <span>No runs yet.</span>}
         </div>
       )}
+      {runsError && (
+        <span className="buddies-error" role="alert">
+          {runsError}
+        </span>
+      )}
       <span className="sr-only" aria-live="polite">
         {busy ? 'Updating automation' : ''}
       </span>
-      <button className="sr-only" type="button" onClick={() => void onRefresh()}>
-        Refresh
-      </button>
     </article>
   );
 }

@@ -13,6 +13,7 @@ import {
   normalizeModelId,
 } from '@unleashd/shared';
 import { z } from 'zod';
+import { assertBuddyProviderSupportsMcp } from './provider-capability';
 
 export const CreateBuddyInputSchema = z
   .object({
@@ -179,6 +180,7 @@ export class BuddyBuilderService {
     const parsed = CreateBuddyInputSchema.parse(input);
 
     const provider = parsed.provider ?? 'codex';
+    assertBuddyProviderSupportsMcp(provider);
     const requestedModel = parsed.model ?? (provider === 'codex' ? 'gpt-5.6-luna' : undefined);
     const model = normalizeModelId(provider, requestedModel);
     const reasoningEffort =

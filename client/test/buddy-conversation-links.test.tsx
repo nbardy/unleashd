@@ -91,7 +91,6 @@ test('desktop automations tab links live automation threads and never links dead
       approvals={[]}
       busy={false}
       mutate={async () => {}}
-      refresh={async () => {}}
       availableConversationIds={AVAILABLE}
       automationConversations={[link(LIVE, 'automation'), link(DEAD, 'automation')]}
     />
@@ -101,7 +100,7 @@ test('desktop automations tab links live automation threads and never links dead
   assert.ok(!html.includes(DEAD), 'a dead conversation id must not reach the markup as a target');
 });
 
-test('mobile automations tab links live run threads and never links dead ones', () => {
+test('mobile automations tab exposes explicit history and links only loaded live threads', () => {
   const html = render(
     <AutomationsTab
       buddyId="buddy-1"
@@ -115,9 +114,10 @@ test('mobile automations tab links live run threads and never links dead ones', 
     />
   );
 
-  // One anchor for the live run in history, one for the live automation
-  // conversation. The dead run and the dead link render as plain text.
-  assert.deepEqual(chatHrefs(html), [`/chat/${LIVE}`, `/chat/${LIVE}`]);
+  // Runs are fetched only after History instead of pretending the bare automation-list
+  // response contains them. The already-loaded live automation conversation remains a link.
+  assert.ok(html.includes('History'));
+  assert.deepEqual(chatHrefs(html), [`/chat/${LIVE}`]);
   assert.ok(!html.includes(DEAD), 'a dead conversation id must not reach the markup as a target');
 });
 

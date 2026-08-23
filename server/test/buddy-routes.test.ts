@@ -79,7 +79,8 @@ test('Buddy detail classifies review and automation conversations for separate U
       { id: 'link-sessionless', provider_session_id: 'session-1' },
     ],
     listAutomations: () => [{ id: 'automation-1' }],
-    listAutomationRuns: () => [{ conversation_id: 'conversation-automation' }],
+    getAutomationRunByConversationId: (conversationId: string) =>
+      conversationId === 'conversation-automation' ? { id: 'run-1' } : null,
     listBuddyRelationships: empty,
     listBuddySkills: empty,
     listDelegations: empty,
@@ -117,7 +118,9 @@ test('Buddy detail classifies review and automation conversations for separate U
     // `link-deleted` is absent: deleting a conversation only terminalizes its
     // link row, so the route must ask the config store for the tombstone.
     assert.deepEqual(
-      Object.fromEntries(body.conversations.map((conversation) => [conversation.id, conversation.kind])),
+      Object.fromEntries(
+        body.conversations.map((conversation) => [conversation.id, conversation.kind])
+      ),
       {
         'link-general': 'conversation',
         'link-review': 'review',
@@ -125,6 +128,100 @@ test('Buddy detail classifies review and automation conversations for separate U
         'link-sessionless': 'conversation',
       }
     );
+  } finally {
+    await new Promise<void>((resolve, reject) =>
+      server.close((error) => (error ? reject(error) : resolve()))
+    );
+  }
+});
+
+test('automation routes validate before persistence and keep claim credentials private', async () => {
+  const app = express();
+  app.use(express.json());
+  let creates = 0;
+  const run = {
+    id: 'run-private',
+    automation_id: 'automation-1',
+    scheduled_for: '2026-08-24T00:00:00.000Z',
+    idempotency_key: 'automation-1:manual:test',
+    status: 'claimed' as const,
+    conversation_id: null,
+    iteration: 0,
+    tokens_used: 0,
+    cost_usd: 0,
+    policy: {
+      max_runtime_seconds: 60,
+      max_iterations: 1,
+      max_tokens: 1,
+      max_cost_usd: 1,
+      allowed_operations: ['buddy.get_current_work' as const],
+    },
+    outcome: null,
+    error: null,
+    claimed_at: '2026-08-24T00:00:00.000Z',
+    started_at: null,
+    ended_at: null,
+    claim_token: 'must-not-cross-http',
+    claim_expires_at: '2026-08-24T00:01:00.000Z',
+    claim_acquired: true,
+  };
+  const store = {
+    createAutomation() {
+      creates += 1;
+      throw new Error('must not persist');
+    },
+  } as unknown as BuddiesStorePort;
+  registerBuddyRoutes(app, {
+    getStore: async () => store,
+    getScheduler: () => ({
+      runNow: async () => run,
+      cancel: async () => run,
+      health: () => ({ running: true, pollIntervalMs: 30_000, activeRunIds: [] }),
+    }),
+    createConversation: async () => {
+      throw new Error('not used');
+    },
+    sendError(response, error, fallbackStatus) {
+      response
+        .status(fallbackStatus)
+        .json({ error: error instanceof Error ? error.message : String(error) });
+    },
+    getNextAutomationRunAt: () => {
+      throw new Error('No cron occurrence found in the next year');
+    },
+    createId: () => 'test-id',
+    isConversationDeleted: async () => false,
+  });
+
+  const server = app.listen(0, '127.0.0.1');
+  try {
+    await new Promise<void>((resolve, reject) => {
+      server.once('listening', resolve);
+      server.once('error', reject);
+    });
+    const { port } = server.address() as AddressInfo;
+    const invalid = await fetch(`http://127.0.0.1:${port}/api/buddies/buddy-1/automations`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        scheduleKind: 'cron',
+        scheduleExpression: 'impossible',
+        jobKind: 'prompt',
+        jobPayload: { prompt: 'Never persisted' },
+      }),
+    });
+    assert.equal(invalid.status, 400);
+    assert.equal(creates, 0);
+
+    const started = await fetch(
+      `http://127.0.0.1:${port}/api/buddies/automations/automation-1/run`,
+      { method: 'POST' }
+    );
+    assert.equal(started.status, 202);
+    const body = (await started.json()) as Record<string, unknown>;
+    assert.equal(body.id, run.id);
+    assert.equal('claim_token' in body, false);
+    assert.equal('claim_acquired' in body, false);
   } finally {
     await new Promise<void>((resolve, reject) =>
       server.close((error) => (error ? reject(error) : resolve()))
@@ -292,10 +389,7 @@ test('manager review request dispatches one least-privilege reviewer conversatio
     assert.equal(body.review.reviewer_buddy_id, critic.id);
     assert.equal(body.review.subject_buddy_id, operator.id);
     assert.equal(body.review.conversation_id, conversationId);
-    assert.match(
-      String(created[0]?.initialMessage),
-      /delegation-proof/
-    );
+    assert.match(String(created[0]?.initialMessage), /delegation-proof/);
     assert.equal(created.length, 1);
     assert.deepEqual(created[0]?.context, {
       buddyId: critic.id,

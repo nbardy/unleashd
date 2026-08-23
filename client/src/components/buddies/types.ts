@@ -83,18 +83,7 @@ export interface BuddyMemory {
   recentJournal: Array<{ path: string; content: string }>;
 }
 
-export interface AutomationRun {
-  id: string;
-  status: string;
-  scheduled_for: string;
-  outcome?: string | null;
-  error?: string | null;
-  conversation_id?: string | null;
-  iteration?: number;
-  tokens_used?: number;
-  cost_usd?: number;
-  policy?: BuddyAutomationPolicy;
-}
+export type AutomationRun = PublicBuddyAutomationRun;
 
 export interface BuddyAutomationPolicy {
   max_runtime_seconds: number;
@@ -215,3 +204,4 @@ export interface EmployeeRecord {
 export type BuddyMutation = (key: string, action: () => Promise<unknown>) => Promise<void>;
 
 export const EMPTY_MEMORY: BuddyMemory = { summary: '', recentJournal: [] };
+import type { BuddyAutomationRun as PublicBuddyAutomationRun } from '@unleashd/shared';

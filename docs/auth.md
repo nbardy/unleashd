@@ -20,6 +20,20 @@ why the server uses `new WebSocketServer({ noServer: true })` plus an explicit
 upgrade before any application code runs — restoring it silently republishes
 the command channel.
 
+### Buddy turn callbacks are not public-route exceptions
+
+An admitted Buddy turn sometimes needs its owning server to create another
+conversation (delegation/review). Those callbacks use a separate ephemeral
+loopback listener with a rotating conversation capability; they do **not** add
+an allowlist, loopback exception, or hidden bearer to this public Express gate.
+The owner process revalidates conversation liveness, Buddy scope, allowed
+operation, and—during automation work—the exact private run claim token. The
+listener closes with that server after its admitted turns drain.
+
+This is an execution-lifetime boundary, not a second product API. Alternatives
+and the reason public HTTP was rejected are recorded in
+`agent_notes/2026-08-24_automation-execution-ownership-design.md` §8.
+
 ## Configuring the secret
 
 In precedence order:

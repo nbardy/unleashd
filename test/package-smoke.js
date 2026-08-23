@@ -25,9 +25,14 @@ if (
   buddiesProvenance.package !== '@nbardy/buddies' ||
   buddiesProvenance.version !== '0.1.0' ||
   buddiesProvenance.reproduciblePack !== true ||
+  typeof buddiesProvenance.sourceCommit !== 'string' ||
+  buddiesProvenance.sourceCommit.length < 7 ||
+  buddiesProvenance.sourceDirty !== false ||
   buddiesArchiveHash !== buddiesProvenance.sha256
 ) {
-  throw new Error('Vendored Buddies archive does not match its provenance record');
+  throw new Error(
+    'Vendored Buddies archive is dirty, not release-ready, or does not match its provenance record'
+  );
 }
 const installRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'unleashd-package-install-'));
 const artifactRoot = path.join(installRoot, 'artifacts');
@@ -94,6 +99,7 @@ const appDataRoot = path.join(installRoot, 'app-data');
 let output = '';
 let finished = false;
 let child = null;
+let mcpChild = null;
 let timer = null;
 
 function finish(error) {
@@ -101,6 +107,7 @@ function finish(error) {
   finished = true;
   if (timer) clearTimeout(timer);
   child?.kill('SIGTERM');
+  mcpChild?.kill('SIGTERM');
   fs.rmSync(installRoot, { recursive: true, force: true });
   if (error) {
     console.error(error);
@@ -108,6 +115,102 @@ function finish(error) {
   } else {
     console.log('Compiled package and plain-node server smoke passed');
   }
+}
+
+/**
+ * The source-mode MCP regression is necessary but cannot prove the npm artifact
+ * contains a runnable compiled entrypoint. Exercise the installed JS over its
+ * real newline-delimited stdio protocol before accepting the package. See
+ * agent_notes/2026-08-24_automation-execution-ownership-design.md §13/10.
+ */
+function verifyInstalledMcpEntrypoint() {
+  return new Promise((resolve, reject) => {
+    const entrypoint = path.join(
+      installedPackageRoot,
+      'server',
+      'dist',
+      'buddies',
+      'mcp-server.js'
+    );
+    if (!fs.existsSync(entrypoint)) {
+      reject(new Error(`Packed Buddy MCP entrypoint is missing: ${entrypoint}`));
+      return;
+    }
+    let stderr = '';
+    let stdout = '';
+    const timeout = setTimeout(() => {
+      mcpChild?.kill('SIGTERM');
+      reject(new Error(`Packed Buddy MCP handshake timed out:\n${stderr}`));
+    }, 10_000);
+    const settle = (error) => {
+      clearTimeout(timeout);
+      mcpChild?.kill('SIGTERM');
+      mcpChild = null;
+      error ? reject(error) : resolve();
+    };
+    mcpChild = spawn(
+      process.execPath,
+      [entrypoint, '--builder', '--conversation', 'package-smoke'],
+      {
+        cwd: installedPackageRoot,
+        env: {
+          ...process.env,
+          HOME: appDataRoot,
+          BUDDIES_HOME: path.join(appDataRoot, 'buddies'),
+        },
+        stdio: ['pipe', 'pipe', 'pipe'],
+      }
+    );
+    mcpChild.stderr.on('data', (chunk) => {
+      stderr += chunk;
+    });
+    mcpChild.stdout.on('data', (chunk) => {
+      stdout += chunk;
+      while (stdout.includes('\n')) {
+        const newline = stdout.indexOf('\n');
+        const line = stdout.slice(0, newline);
+        stdout = stdout.slice(newline + 1);
+        if (!line.trim()) continue;
+        let message;
+        try {
+          message = JSON.parse(line);
+        } catch (error) {
+          settle(new Error(`Packed Buddy MCP emitted invalid JSON: ${line}`, { cause: error }));
+          return;
+        }
+        if (message.id === 1) {
+          mcpChild?.stdin.write(
+            `${JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' })}\n`
+          );
+          mcpChild?.stdin.write(
+            `${JSON.stringify({ jsonrpc: '2.0', id: 2, method: 'tools/list', params: {} })}\n`
+          );
+        } else if (message.id === 2) {
+          const names = message.result?.tools?.map((tool) => tool.name) ?? [];
+          settle(
+            names.includes('create_buddy') && names.includes('list_workspaces')
+              ? null
+              : new Error(`Packed Buddy MCP tools are invalid: ${JSON.stringify(names)}`)
+          );
+        }
+      }
+    });
+    mcpChild.on('exit', (code) => {
+      if (mcpChild) settle(new Error(`Packed Buddy MCP exited with ${code}:\n${stderr}`));
+    });
+    mcpChild.stdin.write(
+      `${JSON.stringify({
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'initialize',
+        params: {
+          protocolVersion: '2025-06-18',
+          capabilities: {},
+          clientInfo: { name: 'unleashd-package-smoke', version: '1.0.0' },
+        },
+      })}\n`
+    );
+  });
 }
 
 function requestJson(port, requestPath) {
@@ -181,13 +284,15 @@ function startInstalledServer(port) {
   });
 }
 
-const portProbe = net.createServer();
-portProbe.on('error', finish);
-portProbe.listen(0, '127.0.0.1', () => {
-  const address = portProbe.address();
-  if (!address || typeof address === 'string') {
-    finish(new Error('Could not allocate a test port'));
-    return;
-  }
-  portProbe.close(() => startInstalledServer(address.port));
-});
+void verifyInstalledMcpEntrypoint().then(() => {
+  const portProbe = net.createServer();
+  portProbe.on('error', finish);
+  portProbe.listen(0, '127.0.0.1', () => {
+    const address = portProbe.address();
+    if (!address || typeof address === 'string') {
+      finish(new Error('Could not allocate a test port'));
+      return;
+    }
+    portProbe.close(() => startInstalledServer(address.port));
+  });
+}, finish);

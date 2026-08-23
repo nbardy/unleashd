@@ -13,6 +13,11 @@ jobs:
       id-token: write
     steps:
       - uses: actions/checkout@v4
+        with:
+          # `@nbardy/agent-cli` is a bundled dependency sourced from this submodule.
+          # A publish checkout without it can build a workspace-shaped artifact that
+          # no clean consumer can reproduce. See the ownership design note §13/10.
+          submodules: recursive
 
       - uses: pnpm/action-setup@v3
         with:
@@ -20,7 +25,9 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          node-version: "20"
+          # @nbardy/buddies uses node:sqlite (Node >=22.5). CI must exercise the
+          # runtime we publish, not merely a compiler that happens to accept its JS.
+          node-version: "22.12"
           registry-url: "https://registry.npmjs.org"
 
       - run: pnpm install --frozen-lockfile
@@ -31,7 +38,16 @@ jobs:
       - name: Check client invariants
         run: pnpm check:client-invariants
 
+      - name: Typecheck
+        run: pnpm typecheck
+
+      - name: Test server, client, and provider harness boundaries
+        run: pnpm test:server && pnpm test:client && pnpm test:cli
+
       - run: pnpm build
+
+      - name: Test the packed artifact and public API
+        run: pnpm test:package && pnpm test:api
 
       - name: Check version and publish
         run: |

@@ -7,7 +7,6 @@ import {
   type ExecuteCommandRequest,
   type UnifiedAgentEvent,
   executeCommand,
-  harnessSupportsMcp,
 } from '@nbardy/agent-cli';
 import type {
   BuddyContext,
@@ -37,7 +36,12 @@ import {
 } from '@unleashd/shared';
 import { formatToolUse, isCompletionOnlyToolUse } from '../adapters/tool-format';
 import { BUDDY_BUILDER_BRIEFING } from '../buddies/builder';
-import { buddyBuilderMcpServers, buddyMcpServers } from '../buddies/mcp-config';
+import {
+  BUDDY_AUTOMATION_CLAIM_TOKEN_ENV,
+  buddyBuilderMcpServers,
+  buddyMcpServers,
+} from '../buddies/mcp-config';
+import { assertBuddyProviderSupportsMcp } from '../buddies/provider-capability';
 import {
   SWARM_POLL_INTERVAL_MS,
   SWARM_POLL_THROTTLE_MS,
@@ -138,6 +142,15 @@ export interface ConversationRuntimeDependencies {
     | undefined;
   readLatestOompaRuntime(projectRoot: string): OompaRuntimeSnapshot;
   createSessionId(): string;
+  issueBuddyControlCapability?(
+    context: BuddyContext,
+    conversationId: string,
+    automationClaimToken?: string
+  ): Readonly<Record<string, string>>;
+  revokeBuddyControlCapability?(conversationId: string): void;
+  requestAutomationCancellation?(runId: string): Promise<unknown>;
+  /** Test seam for the real provider boundary; production uses agent-cli directly. */
+  executeTurn?: typeof executeCommand;
   turnAttempts?: RuntimeTurnAttemptObserver;
 }
 
@@ -162,12 +175,7 @@ export function isProviderProgressEvent(event: UnifiedAgentEvent): boolean {
   return !(event.type === 'progress' && event.source === AGENT_CLI_HEARTBEAT_SOURCE);
 }
 
-export function assertBuddyProviderSupportsMcp(provider: ProviderName): void {
-  if (harnessSupportsMcp(provider)) return;
-  throw new Error(
-    `Provider "${provider}" cannot start Buddy conversations because its harness has no MCP support for required Buddy state tools.`
-  );
-}
+export { assertBuddyProviderSupportsMcp } from '../buddies/provider-capability';
 
 export function turnAttemptActivityFromEvent(event: UnifiedAgentEvent): TurnAttemptActivity {
   if (event.type === 'progress' && event.source === AGENT_CLI_HEARTBEAT_SOURCE) {
@@ -310,6 +318,8 @@ export interface ConversationOptions {
   swarmDebugPrefix?: string | null;
   buddyContext?: BuddyContext | null;
   buddyBriefing?: string | null;
+  /** Server-private automation ownership. Never serialized or placed in BuddyContext. */
+  automationClaimToken?: string | null;
   purpose?: ConversationPurpose;
   kind?: ConversationKind | null;
   mergeParentMeta?: MergeParentMeta | null;
@@ -341,8 +351,10 @@ export interface ConversationRuntime extends EventEmitter, ConversationRuntimeVi
   readonly model: ModelId | undefined;
   readonly reasoningEffort: string | undefined;
   sendMessage(content: string): void;
+  sendAutomationMessage(content: string): void;
   spawnMergeReviewFork(content: string, forkSourceSessionId: string): void;
   stop(reason?: 'user_stop' | 'server_restart'): void;
+  stopAutomationTurn(): void;
   resetProcess(): void;
   enqueueMessage(content: string): void;
   interruptAndSend(content: string): void;
@@ -350,6 +362,7 @@ export interface ConversationRuntime extends EventEmitter, ConversationRuntimeVi
   clearQueue(): void;
   processQueue(): void;
   hasActiveProcess(): boolean;
+  waitForTurnDrain(): Promise<void>;
   hasStartedSession(): boolean;
   applyConfigState(state: ConversationConfigState): void;
   refreshConfigResolution(): ConfigResolution;
@@ -426,6 +439,7 @@ export function createConversationRuntime(
     getConversation,
     readLatestOompaRuntime,
     createSessionId,
+    executeTurn = executeCommand,
     turnAttempts = NOOP_TURN_ATTEMPT_OBSERVER,
   } = dependencies;
 
@@ -489,6 +503,7 @@ export function createConversationRuntime(
     // Hidden first-turn context. Never serialized to clients; the typed
     // buddyContext is the durable/UI-facing metadata.
     private _buddyBriefing: string | null;
+    private _automationClaimToken: string | null;
     // Merge feature: set on a "parent" thread that aggregates review docs from
     // N forked children. Children have mergeChildMeta instead.
     mergeParentMeta: MergeParentMeta | null;
@@ -541,6 +556,7 @@ export function createConversationRuntime(
     private _lastObservedTurnActivity: TurnAttemptActivity | null = null;
     private _runToken = 0;
     private _activeTurnStop: ((signal?: NodeJS.Signals) => void) | null = null;
+    private _activeTurnDrain: Promise<void> | null = null;
 
     constructor(opts: ConversationOptions) {
       super();
@@ -559,6 +575,7 @@ export function createConversationRuntime(
         swarmDebugPrefix = null,
         buddyContext = null,
         buddyBriefing = null,
+        automationClaimToken = null,
         purpose = 'general',
         kind = null,
         mergeParentMeta = null,
@@ -597,6 +614,7 @@ export function createConversationRuntime(
       this.modelName = modelName;
       this.swarmDebugPrefix = isBuddyConversation ? null : swarmDebugPrefix;
       this._buddyBriefing = buddyBriefing;
+      this._automationClaimToken = automationClaimToken;
       this.mergeParentMeta = mergeParentMeta;
       this.mergeChildMeta = mergeChildMeta;
       this.subAgents = [];
@@ -738,14 +756,28 @@ export function createConversationRuntime(
       let turn: ReturnType<typeof executeCommand>;
       try {
         const buddyServers = matchConversationKind(this.kind, {
-          buddy: (kind) => buddyMcpServers(buddyContextFromKind(kind), this.id),
+          buddy: (kind) => {
+            const context = buddyContextFromKind(kind);
+            return buddyMcpServers(context, this.id, undefined, {
+              ...dependencies.issueBuddyControlCapability?.(
+                context,
+                this.id,
+                this._automationClaimToken ?? undefined
+              ),
+              ...(this._automationClaimToken
+                ? {
+                    [BUDDY_AUTOMATION_CLAIM_TOKEN_ENV]: this._automationClaimToken,
+                  }
+                : {}),
+            });
+          },
           buddy_builder: () => buddyBuilderMcpServers(this.id),
           general: () => undefined,
         });
         if (buddyServers) assertBuddyProviderSupportsMcp(executionConfig.provider);
         const buddyRequest = buddyServers ? { mcpServers: buddyServers } : {};
 
-        turn = executeCommand(
+        turn = executeTurn(
           executionConfig.provider === 'claude'
             ? {
                 harness: 'claude',
@@ -774,7 +806,15 @@ export function createConversationRuntime(
                   } as ExecuteCommandRequest)
         );
       } catch (error) {
+        dependencies.revokeBuddyControlCapability?.(this.id);
         this._finishTurnAttempt('failed', 'spawn_failed');
+        const message = error instanceof Error ? error.message : String(error);
+        // An automation subscribes to this event before calling sendMessage(). A
+        // provider/configuration failure can happen synchronously, before there
+        // is a child process whose completion could reject the run. Keep this
+        // signal at the conversation boundary so every caller sees one terminal
+        // result. See agent_notes/2026-08-24_automation-execution-ownership-design.md.
+        this.emit('buddy-turn-failed', message);
         throw error;
       }
 
@@ -790,6 +830,7 @@ export function createConversationRuntime(
       this._startTurnWatchdogs();
       this.broadcastStatus();
 
+      let automationCompletionError: string | null = null;
       const consumeEvents = async (): Promise<void> => {
         for await (const event of turn.events) {
           if (runToken !== this._runToken) return;
@@ -836,6 +877,11 @@ export function createConversationRuntime(
               break;
             }
             case 'turn.complete': {
+              if (event.reason === 'error' || event.reason === 'out_of_tokens') {
+                automationCompletionError = `Provider completed the turn with reason: ${event.reason}`;
+              } else if (event.reason === 'killed') {
+                automationCompletionError = 'Provider turn was interrupted';
+              }
               this.handleOutput({ type: 'message_complete', reason: event.reason });
               break;
             }
@@ -884,16 +930,27 @@ export function createConversationRuntime(
         }
       };
 
-      void consumeEvents().catch((err: unknown) => {
+      let eventConsumptionError: Error | null = null;
+      const eventConsumption = consumeEvents().catch((err: unknown) => {
         if (runToken !== this._runToken) return;
-        const message = err instanceof Error ? err.message : String(err);
+        eventConsumptionError = err instanceof Error ? err : new Error(String(err));
+        const message = eventConsumptionError.message;
         console.error(`[${this.id}] Event stream error: ${message}`);
         this._terminalCauseHint = 'provider_error';
         this.handleOutput({ type: 'error', message: normalizeProviderErrorMessage(message) });
       });
 
-      void turn.completed
+      const turnDrain = turn.completed
         .then(async ({ exitCode, signal, sessionId, reason }) => {
+          if (runToken !== this._runToken) return;
+          // `completed` describes child-process termination, not consumption of
+          // the normalized event stream. In particular, session persistence is
+          // asynchronous. Releasing ownership before that consumer drains can
+          // start the next queued turn while text/session/turn.complete events
+          // from this one are still being applied. One joined terminal path is
+          // simpler than trying to make every event handler replay-safe. See
+          // agent_notes/2026-08-24_automation-execution-ownership-design.md.
+          await eventConsumption;
           if (runToken !== this._runToken) return;
           this._clearTurnWatchdogs();
           if (sessionId && sessionId !== this.sessionId) {
@@ -915,6 +972,7 @@ export function createConversationRuntime(
           // message_complete already handled state cleanup and broadcast.
           // Just null the process ref, dequeue, and continue.
           if (this._turnCompletedCleanly) {
+            dependencies.revokeBuddyControlCapability?.(this.id);
             this.process = null;
             this._activeTurnStop = null;
             this._pendingTaskTools.clear();
@@ -923,6 +981,33 @@ export function createConversationRuntime(
             if (this.queue.length > 0 && this.queue[0].status === 'sending') {
               this.queue.shift();
               this.broadcastQueue();
+            }
+            const completionFailure =
+              eventConsumptionError?.message ??
+              automationCompletionError ??
+              (this._terminalCauseHint === 'out_of_tokens'
+                ? 'Provider ran out of tokens'
+                : this._terminalCauseHint === 'provider_error'
+                  ? 'Provider reported an error'
+                  : null);
+            if (completionFailure) {
+              if (this._stopCause) {
+                this._finishTurnAttempt(
+                  this._stopCause === 'server_restart' ? 'interrupted' : 'cancelled',
+                  this._stopCause
+                );
+              } else if (this._terminalCauseHint === 'out_of_tokens') {
+                this._finishTurnAttempt('failed', 'out_of_tokens');
+              } else {
+                this._finishTurnAttempt('failed', 'provider_error');
+              }
+              this.emit('buddy-turn-failed', completionFailure);
+            } else {
+              this._finishTurnAttempt('succeeded', 'provider_complete');
+              const completedAssistant = [...this.messages]
+                .reverse()
+                .find((message) => message.role === 'assistant');
+              this.emit('buddy-turn-complete', completedAssistant?.content ?? '');
             }
             this.processQueue();
             return;
@@ -998,6 +1083,7 @@ export function createConversationRuntime(
 
           this.isStreaming = false;
           this.isRunning = false;
+          dependencies.revokeBuddyControlCapability?.(this.id);
           this.process = null;
           this._activeTurnStop = null;
           // Clear pending task tools — message_complete handles the normal path, but
@@ -1031,6 +1117,7 @@ export function createConversationRuntime(
           this.handleOutput({ type: 'error', message: normalizeProviderErrorMessage(message) });
           this.isStreaming = false;
           this.isRunning = false;
+          dependencies.revokeBuddyControlCapability?.(this.id);
           this.process = null;
           this._activeTurnStop = null;
           this._pendingTaskTools.clear();
@@ -1050,6 +1137,10 @@ export function createConversationRuntime(
             this.broadcastQueue();
           }
         });
+      this._activeTurnDrain = turnDrain;
+      void turnDrain.finally(() => {
+        if (this._activeTurnDrain === turnDrain) this._activeTurnDrain = null;
+      });
     }
 
     private _ensureAssistantMessage(): void {
@@ -1392,22 +1483,9 @@ export function createConversationRuntime(
           // Clear watchdog timers immediately — the turn completed normally.
           // Without this they dangle until process close, risking a spurious timeout.
           this._clearTurnWatchdogs();
-          if (event.reason === 'out_of_tokens' || this._terminalCauseHint === 'out_of_tokens') {
-            this._finishTurnAttempt('failed', 'out_of_tokens');
-          } else if (event.reason === 'error' || this._terminalCauseHint === 'provider_error') {
-            this._finishTurnAttempt('failed', 'provider_error');
-          } else if (event.reason === 'killed') {
-            this._finishTurnAttempt(
-              this._stopCause === 'server_restart'
-                ? 'interrupted'
-                : this._stopCause === 'user_stop'
-                  ? 'cancelled'
-                  : 'failed',
-              this._stopCause ?? 'process_killed'
-            );
-          } else {
-            this._finishTurnAttempt('succeeded', 'provider_complete');
-          }
+          // This closes the UI stream, not execution ownership. The attempt is
+          // terminalized only after child exit and event EOF join above. See
+          // invariant I8 and its alternatives in the ownership design note.
           // Mark all running sub-agents as complete
           const completedAt = new Date();
 
@@ -1474,11 +1552,6 @@ export function createConversationRuntime(
           // Close handler will skip redundant state changes and broadcasts.
           this._turnCompletedCleanly = true;
           updateBuddyConversationLink(this, 'active');
-          const completedAssistant = [...this.messages]
-            .reverse()
-            .find((message) => message.role === 'assistant');
-          this.emit('buddy-turn-complete', completedAssistant?.content ?? '');
-
           // Merge feature: if this is a review child, scan the final assistant
           // message for the sentinel `merge_review_docs/REVIEW_DOC_<uuid>.txt`.
           // Presence → complete; absence → error. Either way, broadcast once so
@@ -1528,6 +1601,45 @@ export function createConversationRuntime(
     }
 
     sendMessage(content: string): void {
+      if (this.buddyContext?.automationRunId) {
+        this.refuseAutomationTranscript();
+        return;
+      }
+      this.sendMessageInternal(content);
+    }
+
+    /**
+     * Coordinator-only admission for an owned automation occurrence. Public
+     * sendMessage deliberately refuses durable automation transcripts so a
+     * historical thread cannot mint another turn from expired authority. See
+     * invariant I4 in
+     * agent_notes/2026-08-24_automation-execution-ownership-design.md.
+     */
+    sendAutomationMessage(content: string): void {
+      if (!this.buddyContext?.automationRunId || !this._automationClaimToken) {
+        throw new Error('Automation turn requires current server-private execution authority');
+      }
+      this.sendMessageInternal(content);
+    }
+
+    private refuseAutomationTranscript(message?: string): void {
+      const content =
+        message ??
+        'This automation transcript is read-only. Start an ordinary Buddy conversation to continue working.';
+      this.messages.push({ role: 'system', content, timestamp: new Date() });
+      this.broadcastMessage({
+        type: 'message',
+        role: 'system',
+        content,
+        conversationId: this.id,
+      });
+      broadcast({
+        type: 'conversations_updated',
+        conversations: [this.toJSON()],
+      });
+    }
+
+    private sendMessageInternal(content: string): void {
       console.log(
         `[${this.id}] sendMessage called, isRunning=${this.isRunning}, hasProcess=${this.process !== null}, queueDepth=${this.queue.length}, contentLen=${content.length}, preview="${formatLogPreview(content)}"`
       );
@@ -1593,10 +1705,7 @@ export function createConversationRuntime(
 
       this._prepareTurnAttempt();
       const executionConfig = this.preflightExecution();
-      if (!executionConfig) {
-        this._finishTurnAttempt('failed', 'spawn_failed');
-        return;
-      }
+      if (!executionConfig) return;
 
       // UI/history retain clean user text. Only the first unstarted provider
       // turn receives a hidden context prefix.
@@ -1728,10 +1837,7 @@ export function createConversationRuntime(
       }
       this._prepareTurnAttempt();
       const executionConfig = this.preflightExecution();
-      if (!executionConfig) {
-        this._finishTurnAttempt('failed', 'spawn_failed');
-        return;
-      }
+      if (!executionConfig) return;
       const userMessage: Message = {
         role: 'user',
         content,
@@ -1776,10 +1882,48 @@ export function createConversationRuntime(
         reason: 'config',
         conversation: this.toJSON(),
       });
+      // Preflight has no child process and therefore no later completion event.
+      // Terminalise and notify here, at the single point that owns the error,
+      // so an automation's runTurn promise cannot wait until its outer timeout.
+      // See agent_notes/2026-08-24_automation-execution-ownership-design.md.
+      this._finishTurnAttempt('failed', 'spawn_failed');
+      this.emit('buddy-turn-failed', errorMessage);
       return undefined;
     }
 
     stop(reason: 'user_stop' | 'server_restart' = 'user_stop'): void {
+      const automationRunId = this.buddyContext?.automationRunId;
+      if (reason === 'user_stop' && automationRunId) {
+        const requestCancellation = dependencies.requestAutomationCancellation;
+        if (!requestCancellation) {
+          this.refuseAutomationTranscript(
+            'Automation cancellation is temporarily unavailable. The owned run was left running.'
+          );
+          return;
+        }
+        void requestCancellation(automationRunId).catch((error) => {
+          const detail = error instanceof Error ? error.message : String(error);
+          this.refuseAutomationTranscript(`Automation cancellation failed: ${detail}`);
+        });
+        return;
+      }
+      this.stopOwnedTurn(reason);
+    }
+
+    /**
+     * Coordinator-only process stop. The scheduler first persists
+     * cancel_requested, revoking MCP authority, and only then enters here. Do
+     * not expose this on the public command path; see invariant I4 in
+     * agent_notes/2026-08-24_automation-execution-ownership-design.md.
+     */
+    stopAutomationTurn(): void {
+      if (!this.buddyContext?.automationRunId || !this._automationClaimToken) {
+        throw new Error('Automation stop requires current server-private execution authority');
+      }
+      this.stopOwnedTurn('user_stop');
+    }
+
+    private stopOwnedTurn(reason: 'user_stop' | 'server_restart'): void {
       this._clearTurnWatchdogs();
       if (!this.process) return;
       this._stopCause = reason;
@@ -2133,6 +2277,10 @@ export function createConversationRuntime(
      * process immediately. Otherwise it sits until the next status/ready change.
      */
     enqueueMessage(content: string): void {
+      if (this.buddyContext?.automationRunId) {
+        this.refuseAutomationTranscript();
+        return;
+      }
       const queueDepthBefore = this.queue.length;
       const msg: QueuedMessage = {
         id: crypto.randomUUID(),
@@ -2161,6 +2309,10 @@ export function createConversationRuntime(
      * state, and enqueue the user's final interruption message as the next task.
      */
     interruptAndSend(content: string): void {
+      if (this.buddyContext?.automationRunId) {
+        this.refuseAutomationTranscript();
+        return;
+      }
       const pendingQueuedMessages = this.queue.filter((m) => m.status === 'pending');
       const hasPendingTasks = pendingQueuedMessages.length > 0;
 
@@ -2211,6 +2363,12 @@ export function createConversationRuntime(
      * Called from: close handler (after process exits), enqueueMessage (new message).
      */
     processQueue(): void {
+      if (this.buddyContext?.automationRunId) {
+        // Old persisted queue state must not become an authority bypass after
+        // restart. User admission is closed on every automation transcript.
+        this.clearQueue();
+        return;
+      }
       if (this.process || this.isRunning) return;
       if (this.queue.length === 0) return;
 
@@ -2239,6 +2397,10 @@ export function createConversationRuntime(
 
     hasActiveProcess(): boolean {
       return this.process !== null;
+    }
+
+    async waitForTurnDrain(): Promise<void> {
+      await this._activeTurnDrain;
     }
 
     hasStartedSession(): boolean {

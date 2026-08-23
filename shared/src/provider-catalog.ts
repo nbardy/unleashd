@@ -62,6 +62,11 @@ export const ProviderCatalogEntrySchema = z.object({
   models: z.array(ModelDefinitionSchema),
   defaultModelId: z.string().min(1),
   supportsDynamicModels: z.boolean().default(false),
+  // Buddy conversations require an MCP harness that fails closed when its
+  // state-authority server cannot initialize. This capability is generated
+  // from the harness registry, so profile UIs never maintain a second provider
+  // allowlist. See agent_notes/2026-08-24_automation-execution-ownership-design.md.
+  supportsRequiredMcp: z.boolean().default(false),
 });
 export type ProviderCatalogEntry = z.infer<typeof ProviderCatalogEntrySchema>;
 

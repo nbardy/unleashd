@@ -97,3 +97,46 @@ test('startup does not release readiness or background work after hydration fail
 
   assert.deepEqual(events, ['initialize', 'listen', 'hydrate']);
 });
+
+test('reload during scheduler startup pauses the scheduler before aborting readiness', async () => {
+  const events: string[] = [];
+  let startupActive = true;
+
+  await runServerStartup(
+    {
+      port: 0,
+      host: '127.0.0.1',
+      development: true,
+      developmentClientPort: 7489,
+    },
+    {
+      server: {
+        listen: (_port: number, _host: string, callback: () => void) => callback(),
+      } as never,
+      initialize: async () => undefined,
+      loadConversations: async () => undefined,
+      isStartupActive: () => startupActive,
+      startOptionalScheduler: async () => {
+        events.push('scheduler-start');
+        // Models reload IPC arriving while an async scheduler initialization is
+        // in flight. The post-start markReady check is the ownership boundary.
+        startupActive = false;
+      },
+      markReady: () => {
+        events.push('ready-check');
+        return false;
+      },
+      pauseOptionalScheduler: () => {
+        events.push('scheduler-pause');
+      },
+      abortStartup: () => {
+        events.push('abort');
+      },
+      startPolling: () => {
+        events.push('poll');
+      },
+    }
+  );
+
+  assert.deepEqual(events, ['scheduler-start', 'ready-check', 'scheduler-pause']);
+});

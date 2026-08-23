@@ -77,6 +77,31 @@ test('cron follows standard OR semantics when day-of-month and weekday are both 
   );
 });
 
+test('cron rejects impossible calendar combinations before the minute scan', () => {
+  const startedAt = performance.now();
+  assert.throws(
+    () =>
+      nextAutomationRunAt(
+        automation({
+          schedule_kind: 'cron',
+          schedule_expression: '0 9 31 2 *',
+          timezone: 'UTC',
+        }),
+        new Date('2026-01-01T00:00:00.000Z')
+      ),
+    /cannot occur/
+  );
+  assert.ok(performance.now() - startedAt < 100, 'impossible cron validation must be bounded');
+  assert.throws(
+    () =>
+      nextAutomationRunAt(
+        automation({ schedule_kind: 'cron', schedule_expression: '0 nope * * *' }),
+        new Date('2026-01-01T00:00:00.000Z')
+      ),
+    /Invalid cron field/
+  );
+});
+
 test('automation completion requires structured JSON', () => {
   assert.deepEqual(
     parseAutomationCompletion(
@@ -505,6 +530,7 @@ test('scheduler health records poll failures, isolates a bad claim, and reports 
     running: false,
     pollIntervalMs: 30_000,
     activeRunIds: [],
+    degradedRuns: [],
     catchUpPolicy: 'coalesce',
     lastPollAt: polledAt.toISOString(),
     lastSuccessfulPollAt: null,
@@ -636,7 +662,11 @@ test('scheduler cancellation stops the active conversation and preserves cancell
     started_at: null,
     ended_at: null,
   };
-  let resolveTurn: ((value: string) => void) | null = null;
+  let rejectTurn: ((error: Error) => void) | null = null;
+  let releaseDrain: (() => void) | null = null;
+  const drain = new Promise<void>((resolve) => {
+    releaseDrain = resolve;
+  });
   let stopped = 0;
   const finishes: string[] = [];
   const store = {
@@ -655,11 +685,16 @@ test('scheduler cancellation stops the active conversation and preserves cancell
     createConversation: async () => ({
       conversationId: 'conversation-cancel',
       runTurn: () =>
-        new Promise<string>((resolve) => {
-          resolveTurn = resolve;
+        new Promise<string>((_resolve, reject) => {
+          rejectTurn = reject;
         }),
       stop() {
         stopped += 1;
+      },
+      async stopAndDrain() {
+        stopped += 1;
+        rejectTurn?.(new Error('provider stopped'));
+        await drain;
       },
       finish(status) {
         finishes.push(status);
@@ -677,18 +712,169 @@ test('scheduler cancellation stops the active conversation and preserves cancell
   assert.deepEqual(scheduler.health().activeRunIds, [run.id]);
   assert.equal(run.status, 'running');
   assert.equal(stopped, 0);
-  assert.equal(scheduler.cancel(run.id).status, 'cancelled');
-  resolveTurn?.('late result');
-  for (let attempt = 0; attempt < 20 && scheduler.health().activeRunIds.length; attempt += 1) {
-    await new Promise((resolve) => setTimeout(resolve, 5));
-  }
+  const cancellation = scheduler.cancel(run.id);
+  await new Promise((resolve) => setTimeout(resolve, 0));
+  assert.equal(
+    run.status,
+    'cancel_requested',
+    'authority is revoked while durable exclusion remains until provider close is acknowledged'
+  );
+  assert.deepEqual(scheduler.health().activeRunIds, [run.id]);
+  releaseDrain?.();
+  assert.equal((await cancellation).status, 'cancelled');
   assert.equal(run.status, 'cancelled');
   assert.equal(stopped, 1);
   assert.deepEqual(finishes, ['cancelled']);
   assert.deepEqual(scheduler.health().activeRunIds, []);
 });
 
-test('scheduler recovers an interrupted run from a real SQLite database after restart', async () => {
+test('terminal persistence failure keeps local ownership and exposes degraded health', async () => {
+  const definition = automation({ job_kind: 'prompt', job_payload: { prompt: 'Review now' } });
+  let run: BuddyAutomationRun = {
+    id: 'run-terminal-write-failure',
+    automation_id: definition.id,
+    scheduled_for: definition.next_run_at!,
+    idempotency_key: 'automation-1:terminal-write-failure',
+    status: 'claimed',
+    conversation_id: null,
+    iteration: 0,
+    outcome: null,
+    error: null,
+    claimed_at: definition.next_run_at!,
+    started_at: null,
+    ended_at: null,
+    claim_token: 'claim-terminal-write-failure',
+    claim_expires_at: '2099-01-01T00:00:00.000Z',
+  };
+  const finishes: string[] = [];
+  let due = true;
+  let terminalWrites = 0;
+  const store = {
+    listDueAutomations: () => (due ? [definition] : []),
+    claimAutomationRun: () => ({ ...run, claim_acquired: true }),
+    getAutomationRun: () => run,
+    getAutomation: () => definition,
+    updateAutomationRun: (_id: string, changes: Partial<BuddyAutomationRun>) => {
+      if (changes.status === 'complete' && terminalWrites++ === 0) {
+        throw new Error('database is read-only');
+      }
+      run = { ...run, ...changes };
+      return run;
+    },
+  } as unknown as BuddiesStorePort;
+  const scheduler = new BuddyScheduler({
+    store,
+    logger: { warn() {}, error() {} },
+    createConversation: async () => ({
+      conversationId: 'conversation-terminal-write-failure',
+      runTurn: async () => 'finished output',
+      stop() {},
+      finish(status) {
+        finishes.push(status);
+      },
+    }),
+  });
+
+  await scheduler.poll();
+  for (
+    let attempt = 0;
+    attempt < 20 && scheduler.health().degradedRuns.length === 0;
+    attempt += 1
+  ) {
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+
+  assert.equal(run.status, 'running');
+  assert.deepEqual(scheduler.health().activeRunIds, [run.id]);
+  assert.deepEqual(scheduler.health().degradedRuns, [
+    { runId: run.id, error: 'database is read-only' },
+  ]);
+  assert.deepEqual(
+    finishes,
+    [],
+    'a transcript must not report completion without durable terminal state'
+  );
+
+  due = false;
+  await scheduler.poll();
+  assert.equal(run.status, 'complete');
+  assert.deepEqual(scheduler.health().activeRunIds, []);
+  assert.deepEqual(scheduler.health().degradedRuns, []);
+  assert.deepEqual(finishes, ['complete']);
+});
+
+test('cancellation during conversation creation terminalizes a late conversation', async () => {
+  const definition = automation();
+  let run: BuddyAutomationRun = {
+    id: 'run-cancel-creation',
+    automation_id: definition.id,
+    scheduled_for: definition.next_run_at!,
+    idempotency_key: 'automation-1:cancel-creation',
+    status: 'claimed',
+    conversation_id: null,
+    iteration: 0,
+    tokens_used: 0,
+    cost_usd: 0,
+    policy: definition.policy,
+    outcome: null,
+    error: null,
+    claimed_at: definition.next_run_at!,
+    started_at: null,
+    ended_at: null,
+    claim_token: 'claim-cancel-creation',
+    claim_expires_at: '2099-01-01T00:00:00.000Z',
+  };
+  let resolveCreation:
+    | ((conversation: {
+        conversationId: string;
+        runTurn(prompt: string): Promise<string>;
+        stop(): void;
+        finish(status: 'complete' | 'failed' | 'cancelled'): void;
+      }) => void)
+    | null = null;
+  const lateFinishes: string[] = [];
+  let lateStops = 0;
+  const store = {
+    listDueAutomations: () => [definition],
+    claimAutomationRun: () => ({ ...run, claim_acquired: true }),
+    getAutomationRun: () => run,
+    getAutomation: () => definition,
+    updateAutomationRun: (_id: string, changes: Partial<BuddyAutomationRun>) => {
+      run = { ...run, ...changes };
+      return run;
+    },
+  } as unknown as BuddiesStorePort;
+  const scheduler = new BuddyScheduler({
+    store,
+    createConversation: () =>
+      new Promise((resolve) => {
+        resolveCreation = resolve;
+      }),
+  });
+
+  await scheduler.poll();
+  assert.deepEqual(scheduler.health().activeRunIds, [run.id]);
+  assert.equal((await scheduler.cancel(run.id)).status, 'cancelled');
+  resolveCreation?.({
+    conversationId: 'late-conversation',
+    runTurn: async () => 'must not run',
+    stop() {
+      lateStops += 1;
+    },
+    finish(status) {
+      lateFinishes.push(status);
+    },
+  });
+  for (let attempt = 0; attempt < 20 && lateFinishes.length === 0; attempt += 1) {
+    await new Promise((resolve) => setTimeout(resolve, 5));
+  }
+  assert.equal(run.status, 'cancelled');
+  assert.deepEqual(lateFinishes, ['cancelled']);
+  assert.equal(lateStops, 1);
+  assert.deepEqual(scheduler.health().activeRunIds, []);
+});
+
+test('scheduler interrupts an expired run without creating a replacement executor', async () => {
   const directory = mkdtempSync(join(tmpdir(), 'buddy-scheduler-restart-'));
   const databasePath = join(directory, 'buddies.sqlite');
   let store = new BuddiesStore(databasePath);
@@ -718,6 +904,7 @@ test('scheduler recovers an interrupted run from a real SQLite database after re
     store.updateAutomationRun(claimed.id, {
       status: 'running',
       conversationId: 'conversation-before-restart',
+      claimToken: claimed.claim_token,
     });
     store.db
       .prepare('UPDATE buddy_automation_runs SET claim_expires_at = ? WHERE id = ?')
@@ -726,9 +913,10 @@ test('scheduler recovers an interrupted run from a real SQLite database after re
 
     store = new BuddiesStore(databasePath);
     let recoveryConversations = 0;
+    let schedulerNow = new Date('2026-07-28T01:00:00.000Z');
     const scheduler = new BuddyScheduler({
       store: store as unknown as BuddiesStorePort,
-      now: () => new Date('2026-07-28T01:00:00.000Z'),
+      now: () => schedulerNow,
       createConversation: async () => {
         recoveryConversations += 1;
         return {
@@ -741,16 +929,168 @@ test('scheduler recovers an interrupted run from a real SQLite database after re
     });
     await scheduler.poll();
     for (let attempt = 0; attempt < 40; attempt += 1) {
-      if (store.getAutomationRun(claimed.id)?.status === 'complete') break;
+      if (store.getAutomationRun(claimed.id)?.status === 'failed') break;
       await new Promise((resolve) => setTimeout(resolve, 5));
     }
     const recovered = store.getAutomationRun(claimed.id);
-    assert.equal(recoveryConversations, 1);
-    assert.equal(recovered.status, 'complete');
-    assert.equal(recovered.conversation_id, 'conversation-after-restart');
+    assert.equal(recoveryConversations, 0);
+    assert.equal(recovered.status, 'failed');
+    assert.equal(recovered.conversation_id, 'conversation-before-restart');
+    assert.match(recovered.error ?? '', /executor lease expired/);
     assert.equal(store.getAutomation(definition.id).next_run_at, '2026-07-28T01:01:00.000Z');
+
+    schedulerNow = new Date('2026-07-28T01:01:00.000Z');
+    await scheduler.poll();
+    for (let attempt = 0; attempt < 40; attempt += 1) {
+      const runs = store.listAutomationRuns(definition.id);
+      if (
+        runs.some((candidate) => candidate.id !== claimed.id && candidate.status === 'complete')
+      ) {
+        break;
+      }
+      await new Promise((resolve) => setTimeout(resolve, 5));
+    }
+    const runs = store.listAutomationRuns(definition.id);
+    assert.equal(recoveryConversations, 1, 'the next occurrence starts once, not the expired one');
+    assert.equal(runs.length, 2);
+    assert.equal(store.getAutomationRun(claimed.id)?.status, 'failed');
+    assert.ok(
+      runs.some((candidate) => candidate.id !== claimed.id && candidate.status === 'complete')
+    );
   } finally {
     store.close();
     rmSync(directory, { recursive: true, force: true });
   }
+});
+
+test('startup recovery terminalizes disabled manual and cancellation-requested runs without replay', () => {
+  const disabled = automation({ enabled: false, next_run_at: '2099-01-01T00:00:00.000Z' });
+  const cancelling = automation({
+    id: 'automation-cancelling',
+    enabled: false,
+    next_run_at: '2099-01-01T00:00:00.000Z',
+  });
+  const runs = [
+    {
+      id: 'run-disabled-manual',
+      automation_id: disabled.id,
+      scheduled_for: '2026-08-24T00:00:00.000Z',
+      idempotency_key: `${disabled.id}:manual:2026-08-24T00:00:00.000Z`,
+      status: 'running' as const,
+      conversation_id: 'conversation-disabled',
+      iteration: 1,
+      outcome: null,
+      error: null,
+      claimed_at: '2026-08-24T00:00:00.000Z',
+      started_at: '2026-08-24T00:00:01.000Z',
+      ended_at: null,
+      claim_token: 'disabled-token',
+      claim_expires_at: '2099-01-01T00:00:00.000Z',
+    },
+    {
+      id: 'run-cancel-requested',
+      automation_id: cancelling.id,
+      scheduled_for: '2026-08-24T00:00:00.000Z',
+      idempotency_key: `${cancelling.id}:manual:2026-08-24T00:00:00.000Z`,
+      status: 'cancel_requested' as const,
+      conversation_id: 'conversation-cancelling',
+      iteration: 0,
+      outcome: null,
+      error: 'Automation cancellation requested',
+      claimed_at: '2026-08-24T00:00:00.000Z',
+      started_at: '2026-08-24T00:00:01.000Z',
+      ended_at: null,
+      claim_token: 'cancelling-token',
+      claim_expires_at: '2099-01-01T00:00:00.000Z',
+    },
+  ];
+  let conversations = 0;
+  const writes: Array<{ id: string; status: string; claimToken?: string }> = [];
+  const definitions = new Map([
+    [disabled.id, disabled],
+    [cancelling.id, cancelling],
+  ]);
+  const store = {
+    listNonterminalAutomationRuns: () => runs,
+    listDueAutomations: () => [],
+    getAutomation: (id: string) => definitions.get(id) ?? null,
+    updateAutomationRun: (
+      id: string,
+      changes: Partial<BuddyAutomationRun> & { claimToken?: string }
+    ) => {
+      writes.push({ id, status: changes.status ?? '', claimToken: changes.claimToken });
+      const run = runs.find((candidate) => candidate.id === id)!;
+      Object.assign(run, changes);
+      return run;
+    },
+  } as unknown as BuddiesStorePort;
+  const scheduler = new BuddyScheduler({
+    store,
+    createConversation: async () => {
+      conversations += 1;
+      throw new Error('recovery must not replay');
+    },
+  });
+
+  scheduler.start();
+  scheduler.pause();
+
+  assert.equal(runs[0].status, 'failed');
+  assert.equal(runs[1].status, 'cancelled');
+  assert.deepEqual(writes, [
+    { id: runs[0].id, status: 'failed', claimToken: 'disabled-token' },
+    { id: runs[1].id, status: 'cancelled', claimToken: 'cancelling-token' },
+  ]);
+  assert.equal(conversations, 0);
+});
+
+test('a recovered cancellation retains ownership and retries a failed terminal write', async () => {
+  const definition = automation({ enabled: false });
+  let run = {
+    id: 'run-recovered-cancel-retry',
+    automation_id: definition.id,
+    scheduled_for: definition.next_run_at!,
+    idempotency_key: `${definition.id}:manual:recovered`,
+    status: 'cancel_requested' as const,
+    conversation_id: null,
+    iteration: 0,
+    outcome: null,
+    error: 'Automation cancellation requested',
+    claimed_at: definition.next_run_at!,
+    started_at: null,
+    ended_at: null,
+    claim_token: 'recovered-cancel-token',
+    claim_expires_at: '2099-01-01T00:00:00.000Z',
+  } as BuddyAutomationRun;
+  let terminalAttempts = 0;
+  const store = {
+    getAutomationRun: () => run,
+    getAutomation: () => definition,
+    listDueAutomations: () => [],
+    updateAutomationRun: (_id: string, changes: Partial<BuddyAutomationRun>) => {
+      if (changes.status === 'cancelled' && terminalAttempts++ === 0) {
+        throw new Error('database temporarily busy');
+      }
+      run = { ...run, ...changes };
+      return run;
+    },
+  } as unknown as BuddiesStorePort;
+  const scheduler = new BuddyScheduler({
+    store,
+    logger: { warn() {}, error() {} },
+    createConversation: async () => {
+      throw new Error('recovered cancellation must not create a conversation');
+    },
+  });
+
+  assert.equal((await scheduler.cancel(run.id)).status, 'cancel_requested');
+  assert.deepEqual(scheduler.health().activeRunIds, [run.id]);
+  assert.deepEqual(scheduler.health().degradedRuns, [
+    { runId: run.id, error: 'database temporarily busy' },
+  ]);
+
+  await scheduler.poll();
+  assert.equal(run.status, 'cancelled');
+  assert.deepEqual(scheduler.health().activeRunIds, []);
+  assert.deepEqual(scheduler.health().degradedRuns, []);
 });
