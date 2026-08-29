@@ -219,6 +219,36 @@ test('synchronous provider startup failure notifies automation listeners', () =>
   assert.equal(conversation.hasActiveProcess(), false);
 });
 
+test('unsupported Buddy provider leaves a queued message retryable', () => {
+  const fixture = runtimeFixture({ provider: 'muse' });
+  const conversation = new fixture.Conversation({
+    id: 'muse-buddy',
+    workingDirectory: '/tmp',
+    configState: fixture.configState,
+    buddyContext: {
+      buddyId: 'buddy-1',
+      workspaceId: 'workspace-1',
+      buddyProjectId: null,
+      legacyWorkItemId: null,
+      automationRunId: null,
+      delegatedByBuddyId: null,
+      parentBuddyConversationId: null,
+      allowedBuddyOperations: ['read'],
+    },
+  });
+
+  assert.equal(conversation.kind.kind, 'buddy');
+  conversation.enqueueMessage('Hello Buddy');
+
+  assert.equal(conversation.isRunning, false);
+  assert.equal(conversation.hasActiveProcess(), false);
+  assert.equal(conversation.queue[0]?.status, 'pending');
+  assert.match(
+    conversation.messages.at(-1)?.content ?? '',
+    /cannot start Buddy conversations.*required Buddy state tools/
+  );
+});
+
 test('historical automation transcripts refuse every user turn-admission path', () => {
   let providerStarts = 0;
   const fixture = runtimeFixture({

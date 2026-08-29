@@ -319,8 +319,14 @@ function handleInit(data: Extract<ServerMessage, { type: 'init' }>): void {
   conversationDetailEpoch += 1;
   conversationDetailRequests.clear();
 
-  // Total wipe and replace. Server is the absolute epoch.
-  const serverState = new Map<string, Conversation>();
+  // During startup the server intentionally sends an early, possibly empty,
+  // snapshot and hydrates disk conversations via later batches. Preserve the
+  // prior epoch until that authoritative load completes; otherwise a reload
+  // makes the sidebar flash empty and can evict the active conversation while
+  // its replacement server is still restoring it.
+  const serverState = data.loading
+    ? new Map(jotaiStore.get(conversationsAtom))
+    : new Map<string, Conversation>();
   for (let i = 0; i < data.conversations.length; i++) {
     const conv = data.conversations[i];
     serverState.set(conv.id, conv);
@@ -601,8 +607,16 @@ function handleConversationsUpdated(
 }
 
 function handleConversationLoadComplete(
-  _data: Extract<ServerMessage, { type: 'conversation_load_complete' }>
+  data: Extract<ServerMessage, { type: 'conversation_load_complete' }>
 ): void {
+  if (data.conversationIds) {
+    const authoritativeIds = new Set(data.conversationIds);
+    mutate(conversationsAtom, (draft) => {
+      for (const id of draft.keys()) {
+        if (!authoritativeIds.has(id)) draft.delete(id);
+      }
+    });
+  }
   jotaiStore.set(conversationLoadCompleteAtom, true);
 }
 

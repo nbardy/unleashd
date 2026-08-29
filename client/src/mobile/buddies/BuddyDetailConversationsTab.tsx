@@ -99,7 +99,9 @@ export function ConversationsTab({
                     {conversation.status}
                   </span>
                   {conversation.kind && <span className="mobile-badge">{conversation.kind}</span>}
-                  {conversationId && !available && <span className="mobile-badge">deleted</span>}
+                  {conversationId && !available && (
+                    <span className="mobile-badge">unavailable</span>
+                  )}
                 </div>
                 {conversation.last_active_at && (
                   <p className="mobile-muted">

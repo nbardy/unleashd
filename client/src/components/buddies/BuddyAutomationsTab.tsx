@@ -36,7 +36,7 @@ function OpenConversationLink({
   if (!available) {
     return (
       <span aria-disabled="true" className={`${className} ${className}--unavailable`}>
-        Deleted
+        Unavailable
       </span>
     );
   }

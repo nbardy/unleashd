@@ -1129,6 +1129,8 @@ export type ConversationsUpdatedMessage = z.infer<typeof ConversationsUpdatedMes
 
 export const ConversationLoadCompleteMessageSchema = z.object({
   type: z.literal('conversation_load_complete'),
+  /** Final authoritative membership after progressive startup hydration. */
+  conversationIds: z.array(z.string()).optional(),
 });
 
 export type ConversationLoadCompleteMessage = z.infer<typeof ConversationLoadCompleteMessageSchema>;

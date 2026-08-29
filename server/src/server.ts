@@ -528,7 +528,10 @@ void runServerStartup(
     markReady: () => {
       if (!shutdownController?.completeStartup()) return false;
       resolveInitialLoad();
-      applicationContext.broadcast({ type: 'conversation_load_complete' });
+      applicationContext.broadcast({
+        type: 'conversation_load_complete',
+        conversationIds: Array.from(conversations.keys()),
+      });
       return true;
     },
     abortStartup: () => shutdownController?.abortStartup(),

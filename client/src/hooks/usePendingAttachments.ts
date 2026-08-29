@@ -109,7 +109,7 @@ export interface UploadedFileDescriptor {
  * lands squarely inside that second window and fails anyway; ~7s of total
  * patience covers a normal restart.
  */
-export const UPLOAD_RETRY_BACKOFF_MS = [750, 1500, 2500, 2500];
+export const UPLOAD_RETRY_BACKOFF_MS = [750, 1500, 2500, 4000, 6000, 8000, 10000];
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -237,7 +237,9 @@ export function usePendingAttachments(
         const result = await uploadFilesWithDrainRetry(conversationId, acceptedFiles);
         const withPreviews: PendingFile[] = result.files.map((uploaded, i) => ({
           ...uploaded,
-          previewUrl: acceptedFiles[i]?.type.startsWith('image/') ? URL.createObjectURL(acceptedFiles[i]) : null,
+          previewUrl: acceptedFiles[i]?.type.startsWith('image/')
+            ? URL.createObjectURL(acceptedFiles[i])
+            : null,
         }));
 
         setPendingFiles((prev) => {

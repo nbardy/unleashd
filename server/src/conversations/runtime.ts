@@ -1862,7 +1862,40 @@ export function createConversationRuntime(
       // Resolve immediately before any message, merge-prefix, or queue mutation.
       // Catalog changes may affect defaults without changing durable intent.
       const resolution = this.refreshConfigResolution();
-      if (resolution.status === 'resolved') return resolution.value;
+      if (resolution.status === 'resolved') {
+        try {
+          // This is a configuration admission rule, not a provider process
+          // failure. Checking it here keeps a queued message retryable and
+          // prevents the synchronous throw in spawnForMessage from leaving the
+          // queue's head permanently marked as "sending".
+          if (this.kind.kind !== 'general') {
+            assertBuddyProviderSupportsMcp(resolution.value.provider);
+          }
+        } catch (error) {
+          const errorMessage = error instanceof Error ? error.message : String(error);
+          console.error(`[${this.id}] ${errorMessage}`);
+          this.messages.push({
+            role: 'system',
+            content: errorMessage,
+            timestamp: new Date(),
+            completionReason: 'error',
+          });
+          const queued = this.queue[0];
+          if (queued?.status === 'sending') {
+            queued.status = 'pending';
+            this.broadcastQueue();
+          }
+          broadcast({
+            type: 'conversation_updated',
+            reason: 'config',
+            conversation: this.toJSON(),
+          });
+          this._finishTurnAttempt('failed', 'spawn_failed');
+          this.emit('buddy-turn-failed', errorMessage);
+          return undefined;
+        }
+        return resolution.value;
+      }
 
       const errorMessage = `Configuration unavailable: ${resolution.error.message}`;
       console.error(`[${this.id}] ${errorMessage}`);
@@ -2392,7 +2425,17 @@ export function createConversationRuntime(
         `[${this.id}] processQueue sending id=${next.id.substring(0, 8)}, queueDepth=${this.queue.length}, contentLen=${next.content.length}, preview="${formatLogPreview(next.content)}"`
       );
       this.broadcastQueue();
-      this.sendMessage(next.content);
+      try {
+        this.sendMessage(next.content);
+      } catch (error) {
+        // Provider admission can still fail synchronously at a future seam.
+        // Never strand the queue head in "sending" when no process exists.
+        if (this.queue[0] === next && next.status === 'sending') {
+          next.status = 'pending';
+          this.broadcastQueue();
+        }
+        throw error;
+      }
     }
 
     hasActiveProcess(): boolean {

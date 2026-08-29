@@ -776,7 +776,7 @@ export function BuddiesDashboard() {
                       </span>
                     </div>
                     <span className="buddy-conversation-card__action">
-                      {isAvailable ? 'Open →' : 'Deleted'}
+                      {isAvailable ? 'Open →' : 'Unavailable'}
                     </span>
                   </>
                 );
