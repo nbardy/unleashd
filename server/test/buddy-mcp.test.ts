@@ -271,12 +271,9 @@ test('Buddy Builder MCP specification is required and conversation-scoped', () =
   );
 });
 
-test('Buddy conversations fail closed when a provider cannot inject required MCP', () => {
+test('Buddy conversations allow Claude and fail closed for weaker MCP harnesses', () => {
   assert.doesNotThrow(() => assertBuddyProviderSupportsMcp('codex'));
-  assert.throws(
-    () => assertBuddyProviderSupportsMcp('claude'),
-    /cannot start Buddy conversations.*cannot guarantee required Buddy state tools/
-  );
+  assert.doesNotThrow(() => assertBuddyProviderSupportsMcp('claude'));
   assert.throws(
     () => assertBuddyProviderSupportsMcp('opencode'),
     /cannot start Buddy conversations.*cannot guarantee required Buddy state tools/
