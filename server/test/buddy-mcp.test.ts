@@ -56,11 +56,14 @@ test('Buddy MCP exposes scoped native tools and enforces completion evidence', a
       'get_current_work',
       'get_inbox',
       'new_project',
+      'recall',
       'remember',
+      'remember_note',
       'request_human_approval',
       'request_review',
       'set_automation',
       'submit_review',
+      'update_memory',
       'update_project',
     ]);
 
@@ -181,6 +184,70 @@ test('Buddy MCP specification binds trusted context outside tool input', () => {
   });
 });
 
+test('Buddy MCP exposes memory-v2 tools and preserves structured memory errors', async () => {
+  const calls: Array<{ operation: string; input: unknown }> = [];
+  const store = {
+    getBuddy: () => ({ id: 'buddy-1', name: 'Lead', role: 'Lead', status: 'active' }),
+    listBuddyWorkspaces: () => [{ id: 'workspace-1' }],
+    recordAuditEvent: (input: { operation: string }) => ({ id: 'audit-1', ...input }),
+    updateMemory: () => {
+      throw Object.assign(new Error('StaleMemoryWrite: working memory is at revision 3'), {
+        code: 'STALE_MEMORY_WRITE',
+        currentVersion: 3,
+        yourBase: 2,
+      });
+    },
+    rememberNote: (_buddy: string, input: unknown) => {
+      calls.push({ operation: 'rememberNote', input });
+      return { id: 'note-1', content: 'captured' };
+    },
+    recall: (_buddy: string, input: unknown) => {
+      calls.push({ operation: 'recall', input });
+      return { pattern: 'needle', matches: [], truncated: false };
+    },
+  } as unknown as BuddiesStorePort;
+  const server = createBuddyMcpServer(store, {
+    buddyId: 'buddy-1',
+    workspaceId: 'workspace-1',
+    conversationId: 'conversation-1',
+  });
+  const client = new Client({ name: 'memory-v2-mcp-test', version: '1.0.0' });
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  await Promise.all([server.connect(serverTransport), client.connect(clientTransport)]);
+  try {
+    const stale = await client.callTool({
+      name: 'update_memory',
+      arguments: {
+        doc: 'working',
+        content: 'new body',
+        reasoning: 'test conflict',
+        baseVersion: 2,
+      },
+    });
+    assert.equal(stale.isError, true);
+    assert.match(JSON.stringify(stale.structuredContent), /MEMORY_STALE/);
+    assert.match(JSON.stringify(stale.structuredContent), /current_version/);
+
+    const note = await client.callTool({
+      name: 'remember_note',
+      arguments: { body: 'captured', topic: 'test' },
+    });
+    assert.equal(note.isError, undefined);
+    const recall = await client.callTool({
+      name: 'recall',
+      arguments: { pattern: 'needle' },
+    });
+    assert.equal(recall.isError, undefined);
+    assert.deepEqual(
+      calls.map(({ operation }) => operation),
+      ['rememberNote', 'recall']
+    );
+  } finally {
+    await client.close();
+    await server.close();
+  }
+});
+
 test('Buddy Builder MCP specification is required and conversation-scoped', () => {
   assert.deepEqual(
     buddyBuilderMcpServers('conversation-builder', {
@@ -254,7 +321,7 @@ test('resolved stdio Buddy MCP entrypoint opens the current durable schema', asy
   fixtureDatabase.close();
   assert.equal(
     schemaVersion.user_version,
-    15,
+    16,
     'the vendored Buddy package must understand the live schema'
   );
 

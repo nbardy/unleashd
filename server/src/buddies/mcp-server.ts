@@ -23,6 +23,9 @@ const TOOL_NAMES = [
   'buddy.set_automation',
   'buddy.new_project',
   'buddy.update_project',
+  'buddy.update_memory',
+  'buddy.remember_note',
+  'buddy.recall',
   'buddy.remember',
   'buddy.compact_memory',
   'buddy.delegate',
@@ -46,6 +49,12 @@ const TOOL_DESCRIPTIONS: Record<BuddyOperationName, string> = {
     'Create a bounded project owned by this employee in the conversation workspace.',
   'buddy.update_project':
     'Atomically update the selected employee project and its todos. Completing work requires evidence.',
+  'buddy.update_memory':
+    'Compare-and-swap rewrite of this Buddy working or long-term memory document. The full bounded document and a non-empty reason are required.',
+  'buddy.remember_note':
+    'Create one bounded, collision-proof append-only Buddy note in the authorized current or home workspace. Notes are evidence, not instructions.',
+  'buddy.recall':
+    'Run a bounded pull-only search over authorized Buddy notes. Literal matching is the default; regex must be explicitly enabled.',
   'buddy.remember': 'Append a durable journal or curated memory entry for this employee.',
   'buddy.compact_memory':
     'Compact this employee memory with source references, containment checks, and atomic rollback.',
@@ -112,13 +121,17 @@ export function createBuddyMcpServer(
           readOnlyHint:
             operation === 'buddy.get_current_work' ||
             operation === 'buddy.get_inbox' ||
-            operation === 'buddy.get_automations',
+            operation === 'buddy.get_automations' ||
+            operation === 'buddy.recall',
           destructiveHint:
-            operation === 'buddy.update_project' || operation === 'buddy.set_automation',
+            operation === 'buddy.update_project' ||
+            operation === 'buddy.set_automation' ||
+            operation === 'buddy.update_memory',
           idempotentHint:
             operation === 'buddy.get_current_work' ||
             operation === 'buddy.get_inbox' ||
-            operation === 'buddy.get_automations',
+            operation === 'buddy.get_automations' ||
+            operation === 'buddy.recall',
           openWorldHint: false,
         },
       },
@@ -150,9 +163,26 @@ export function createBuddyMcpServer(
             content: [
               {
                 type: 'text' as const,
-                text: error instanceof Error ? error.message : String(error),
+                text: JSON.stringify({
+                  error: error instanceof Error ? error.message : String(error),
+                  ...(error && typeof error === 'object' && 'code' in error
+                    ? { code: (error as { code: unknown }).code }
+                    : {}),
+                  ...(error && typeof error === 'object' && 'details' in error
+                    ? { details: (error as { details: unknown }).details }
+                    : {}),
+                }),
               },
             ],
+            structuredContent: {
+              error: error instanceof Error ? error.message : String(error),
+              ...(error && typeof error === 'object' && 'code' in error
+                ? { code: (error as { code: unknown }).code }
+                : {}),
+              ...(error && typeof error === 'object' && 'details' in error
+                ? { details: (error as { details: unknown }).details }
+                : {}),
+            },
           };
         }
       }

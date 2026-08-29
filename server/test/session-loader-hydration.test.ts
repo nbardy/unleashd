@@ -14,6 +14,7 @@ import type {
   ConversationOptions,
   ConversationRuntime,
 } from '../src/conversations/runtime';
+import { buildFirstTurnCliContent } from '../src/conversations/runtime';
 import {
   type SessionLoaderDependencies,
   createSessionLoader,
@@ -168,6 +169,36 @@ test('durable creation.buddyContext wins over a transcript-derived general kind'
   const restored = options.kind as { buddyId: string; workspaceId: string };
   assert.equal(restored.buddyId, BUDDY.buddyId);
   assert.equal(restored.workspaceId, BUDDY.workspaceId);
+});
+
+test('hydration retains the memory snapshot embedded at application-conversation creation', async () => {
+  const firstPrompt = buildFirstTurnCliContent({
+    content: 'Original user message',
+    messageCount: 0,
+    hasStartedSession: false,
+    kind: buddyKindFromContext(BUDDY),
+    buddyBriefing: 'Memory from generation seven',
+    buddyMemoryGeneration: 'generation-7',
+    swarmDebugPrefix: null,
+  });
+  const options = await hydrateOne({
+    source: {
+      ...discoveredWithoutMarker('d682b842-fcba-48fe-9634-c7b9d4f7a52b'),
+      kind: buddyKindFromContext(BUDDY),
+      buddyContext: BUDDY,
+      messages: [
+        {
+          role: 'user',
+          content: firstPrompt,
+          timestamp: new Date(),
+        },
+      ],
+    },
+    creation: { buddyContext: BUDDY },
+  });
+
+  assert.equal(options.buddyMemoryGeneration, 'generation-7');
+  assert.equal(options.buddyBriefing, 'Memory from generation seven');
 });
 
 // Guards the other direction: preferring a specific kind must not invent buddy

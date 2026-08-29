@@ -23,7 +23,9 @@ import type {
   ConversationBroadcast,
   ConversationOptions,
   ConversationRuntime,
+  MemoryGenerationInput,
 } from '../conversations/runtime';
+import { extractBuddyMemorySnapshot } from '../conversations/runtime';
 import { summarizeConversation } from '../conversations/serialization';
 import { createFilePoller } from './file-poller';
 import { loadProgressively } from './progressive-loader';
@@ -51,9 +53,11 @@ export interface SessionLoaderDependencies {
   pollConversations: typeof pollForChanges;
   createConversation(options: ConversationOptions): ConversationRuntime;
   createId(): string;
-  resolveBuddyConversation(
-    context: BuddyContext
-  ): Promise<{ context: BuddyContext; briefing: string }>;
+  resolveBuddyConversation(context: BuddyContext): Promise<{
+    context: BuddyContext;
+    briefing: string;
+    memoryGeneration?: MemoryGenerationInput | null;
+  }>;
   dispatchInitialMessage(conversation: ConversationRuntime): Promise<void>;
   persistCurrentSession(conversation: ConversationRuntime, sessionId: string): Promise<void>;
   broadcast(data: ConversationBroadcast): void;
@@ -63,6 +67,12 @@ export interface SessionLoaderDependencies {
 export interface SessionLoader {
   loadExistingConversations(): Promise<void>;
   startFilePolling(): NodeJS.Timeout;
+}
+
+function normalizeMemoryGeneration(value: MemoryGenerationInput | null | undefined): string | null {
+  if (value === null || value === undefined) return null;
+  const normalized = String(value).trim();
+  return normalized || null;
 }
 
 export function createSessionLoader(dependencies: SessionLoaderDependencies): SessionLoader {
@@ -183,6 +193,11 @@ export function createSessionLoader(dependencies: SessionLoaderDependencies): Se
           kind: null,
         }),
       ].find((candidate) => candidate != null && candidate.kind !== 'general') ?? null;
+    const memorySnapshot =
+      source.messages
+        .filter((message) => message.role === 'user')
+        .map((message) => extractBuddyMemorySnapshot(message.content))
+        .find((snapshot) => snapshot !== null) ?? null;
     const conversation = dependencies.createConversation({
       id: hydratedConfig.record.conversationId,
       workingDirectory: hydratedConfig.record.workingDirectory ?? source.workingDirectory,
@@ -203,6 +218,8 @@ export function createSessionLoader(dependencies: SessionLoaderDependencies): Se
       kind: kindForHydrate,
       buddyContext: source.buddyContext ?? hydratedConfig.record.creation?.buddyContext ?? null,
       purpose: source.purpose ?? hydratedConfig.record.creation?.purpose ?? 'general',
+      buddyBriefing: memorySnapshot?.briefing ?? null,
+      buddyMemoryGeneration: memorySnapshot?.generation ?? null,
     });
     conversation.messages = source.messages;
     conversation.createdAt = source.createdAt;
@@ -229,17 +246,24 @@ export function createSessionLoader(dependencies: SessionLoaderDependencies): Se
             source: 'external_session',
           },
         });
-        const recoveredBuddy = record.creation?.buddyContext
-          ? await dependencies
-              .resolveBuddyConversation(record.creation.buddyContext)
-              .catch((error) => {
-                logger.warn(
-                  `[buddies] Could not rebuild ${record.conversationId} briefing:`,
-                  error
-                );
-                return null;
-              })
-          : null;
+        // A conversation with a current provider session is a resumed
+        // application conversation, not a new memory-generation boundary. It
+        // has no transcript snapshot to recover here, so do not inject the
+        // latest Buddy briefing during recovery. Fresh records that have not
+        // started a provider session still need the latest generation for
+        // their pending initial message.
+        const recoveredBuddy =
+          record.creation?.buddyContext && !record.currentSession
+            ? await dependencies
+                .resolveBuddyConversation(record.creation.buddyContext)
+                .catch((error) => {
+                  logger.warn(
+                    `[buddies] Could not rebuild ${record.conversationId} briefing:`,
+                    error
+                  );
+                  return null;
+                })
+            : null;
         const recovered = dependencies.createConversation({
           id: record.conversationId,
           workingDirectory: record.workingDirectory,
@@ -277,6 +301,7 @@ export function createSessionLoader(dependencies: SessionLoaderDependencies): Se
                 : null,
           buddyContext: recoveredBuddy?.context ?? record.creation?.buddyContext ?? null,
           buddyBriefing: recoveredBuddy?.briefing ?? null,
+          buddyMemoryGeneration: normalizeMemoryGeneration(recoveredBuddy?.memoryGeneration),
           purpose: record.creation?.purpose ?? 'general',
         });
         dependencies.registry.set(recovered);

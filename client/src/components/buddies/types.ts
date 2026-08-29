@@ -81,6 +81,61 @@ export interface BuddyMemory {
   soul?: string;
   summary: string;
   recentJournal: Array<{ path: string; content: string }>;
+  /** v2 dense documents; omitted by the legacy endpoint during rollout. */
+  working?: string;
+  longTerm?: string;
+  workingRevision?: number;
+  longTermRevision?: number;
+  generation?: number;
+  revisions?: Partial<Record<'working' | 'longTerm', BuddyMemoryRevision[]>>;
+  notes?: BuddyMemoryNote[];
+  operations?: {
+    updateMemory?: boolean;
+    rememberNote?: boolean;
+    recall?: boolean;
+  };
+}
+
+export type BuddyMemoryDocumentKind = 'working' | 'longTerm';
+
+export interface BuddyMemoryRevision {
+  id?: string;
+  buddy_id?: string;
+  document_kind?: 'working' | 'long_term';
+  revision: number;
+  generation?: number;
+  body: string;
+  reasoning: string;
+  author_kind?: string;
+  requested_by?: string | null;
+  provenance?: unknown;
+  sha256?: string;
+  view_status?: 'current' | 'stale';
+  view_error?: string;
+  updated_at?: string;
+}
+
+export interface BuddyMemoryNote {
+  id: string;
+  path: string;
+  topic: string;
+  kind: string;
+  buddy_id: string;
+  workspace_id: string;
+  evidence: unknown[];
+  content: string;
+  written_at: string;
+}
+
+export interface BuddyMemoryRecallResult {
+  pattern: string;
+  matches: Array<{
+    path: string;
+    content: string;
+    created_at: string | null;
+    workspace_id: string;
+  }>;
+  truncated: boolean;
 }
 
 export type AutomationRun = PublicBuddyAutomationRun;

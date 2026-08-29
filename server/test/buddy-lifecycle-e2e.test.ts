@@ -66,10 +66,12 @@ test('Buddy closure loop survives restart with work, review, delegation, memory,
       },
     ],
   });
-  store.remember(lead.id, {
-    kind: 'journal',
-    content:
-      'Failed attempt: destination evidence was stale. Next attempt must refresh the audit first.',
+  store.rememberNote(lead.id, {
+    topic: 'proof-result',
+    kind: 'decision',
+    body: 'Failed attempt: destination evidence was stale. Next attempt must refresh the audit first. Source metric:concierge-proof-2026-07-28.',
+    workspace: workspace.id,
+    scope: 'current',
   });
 
   const integration = createBuddiesIntegration({
@@ -90,8 +92,10 @@ test('Buddy closure loop survives restart with work, review, delegation, memory,
   assert.equal(resolved.workingDirectory, workspaceRoot);
   assert.match(resolved.briefing, /Close GTM work with evidence/);
   assert.match(resolved.briefing, /Adjudicate concierge onboarding proof/);
-  assert.match(resolved.briefing, /Recent journal excerpts/);
-  assert.match(resolved.briefing, /destination evidence was stale/);
+  assert.match(resolved.briefing, /WORKING_MEMORY\.md/);
+  assert.match(resolved.briefing, /LONG_TERM_MEMORY\.md/);
+  assert.match(resolved.briefing, /Use recall before repeating an attempt/);
+  assert.doesNotMatch(resolved.briefing, /destination evidence was stale/);
   assert.match(resolved.briefing, /SOUL_CHANGE_PROPOSAL/);
   assert.match(resolved.briefing, /native `unleashd_buddy` tools/);
   assert.deepEqual(resolved.context.allowedBuddyOperations, ['buddy.get_current_work']);
@@ -238,8 +242,12 @@ test('Buddy closure loop survives restart with work, review, delegation, memory,
     assert.equal(store.getReview(review.id)?.verdict, 'needs_work');
     assert.equal(store.listAuditEvents({}).length, auditCountBeforeRestart);
 
-    const memory = store.readBuddyMemory(lead.id);
-    assert.match(memory.summary, /metric:concierge-proof-2026-07-28/);
+    const memory = store.recall(lead.id, {
+      pattern: 'metric:concierge-proof-2026-07-28',
+      workspace: workspace.id,
+      scope: 'current',
+    });
+    assert.equal(memory.matches.length, 1);
 
     const overview = store.overview({ recentSince: '2020-01-01T00:00:00.000Z' });
     assert.equal(overview.topLevel.length, 1);

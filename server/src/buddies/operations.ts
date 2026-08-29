@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { BuddiesStorePort, BuddyAutomation } from './contract';
+import { type BuddiesStorePort, type BuddyAutomation, BuddyMemoryOperationError } from './contract';
 import { publicAutomationRun } from './public-automation-run';
 import { nextAutomationRunAt } from './scheduler';
 
@@ -123,6 +123,32 @@ export const BuddyOperationInputSchemas = {
     todoOperations: z.array(TodoOperationSchema).optional(),
     evidence: z.array(z.string().min(1)).optional(),
   }),
+  'buddy.update_memory': z
+    .object({
+      doc: z.enum(['working', 'long_term']),
+      content: z.string(),
+      reasoning: z.string().min(1),
+      baseVersion: z.number().int().nonnegative(),
+    })
+    .strict(),
+  'buddy.remember_note': z
+    .object({
+      topic: z.string().min(1).max(160).optional(),
+      kind: z.string().min(1).max(80).optional(),
+      body: z.string().min(1).max(32_000),
+      evidence: z.array(z.unknown()).max(32).optional(),
+      scope: z.enum(['current', 'home', 'all']).optional(),
+    })
+    .strict(),
+  'buddy.recall': z
+    .object({
+      pattern: z.string().min(1).max(500),
+      scope: z.enum(['current', 'home', 'all']).optional(),
+      since: z.string().datetime().optional(),
+      limit: z.number().int().positive().max(100).optional(),
+      regex: z.boolean().optional(),
+    })
+    .strict(),
   'buddy.remember': z.object({
     content: z.string().min(1),
     kind: z.enum(['journal', 'curated']).optional(),
@@ -224,6 +250,9 @@ export const DEFAULT_DELEGATED_BUDDY_OPERATIONS: BuddyOperationName[] = [
   'buddy.get_inbox',
   'buddy.get_automations',
   'buddy.update_project',
+  'buddy.update_memory',
+  'buddy.remember_note',
+  'buddy.recall',
   'buddy.remember',
   'buddy.complete_assignment',
   'buddy.request_human_approval',
@@ -233,6 +262,9 @@ export const REVIEW_BUDDY_OPERATIONS: BuddyOperationName[] = [
   'buddy.get_current_work',
   'buddy.get_inbox',
   'buddy.get_automations',
+  'buddy.update_memory',
+  'buddy.remember_note',
+  'buddy.recall',
   'buddy.remember',
   'buddy.submit_review',
   'buddy.request_human_approval',
@@ -253,6 +285,44 @@ export function resolveDelegatedBuddyOperations(input: unknown): BuddyOperationN
     throw new Error('Delegated Buddy operations must include buddy.complete_assignment');
   }
   return [...new Set(allowedOperations)];
+}
+
+function escapeRegExp(value: string): string {
+  return value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+function normalizeMemoryError(error: unknown): unknown {
+  if (error instanceof BuddyMemoryOperationError) return error;
+  const candidate = error as { code?: unknown; currentVersion?: unknown; yourBase?: unknown };
+  if (candidate.code === 'STALE_MEMORY_WRITE' || /StaleMemoryWrite/i.test(String(error))) {
+    return new BuddyMemoryOperationError(
+      'MEMORY_STALE',
+      error instanceof Error ? error.message : 'Memory revision is stale',
+      {
+        current_version: candidate.currentVersion,
+        supplied_base: candidate.yourBase,
+      }
+    );
+  }
+  if (/exceeds .*characters|exceeds .*bytes/i.test(String(error))) {
+    return new BuddyMemoryOperationError(
+      'MEMORY_TOO_LARGE',
+      error instanceof Error ? error.message : 'Memory content exceeds its limit'
+    );
+  }
+  if (/no configured memory path|not initialized/i.test(String(error))) {
+    return new BuddyMemoryOperationError(
+      'MEMORY_UNCONFIGURED',
+      error instanceof Error ? error.message : 'Buddy memory is not configured'
+    );
+  }
+  if (/does not belong to the workspace|requested note workspace/i.test(String(error))) {
+    return new BuddyMemoryOperationError(
+      'WORKSPACE_FORBIDDEN',
+      error instanceof Error ? error.message : 'Memory workspace is outside the Buddy scope'
+    );
+  }
+  return error;
 }
 
 export const BuddyOperationResultSchema = z.object({
@@ -550,8 +620,83 @@ export class BuddyOperationsService {
         const project = this.store.updateProject(projectId, changes);
         return this.result(name, project, parsed, projectId);
       }
+      case 'buddy.update_memory': {
+        const parsed = BuddyOperationInputSchemas[name].parse(input);
+        this.requireActiveBuddy();
+        if (!this.store.updateMemory) {
+          throw new BuddyMemoryOperationError(
+            'MEMORY_CAPABILITY_MISSING',
+            'The installed Buddies package does not expose memory-v2 update_memory'
+          );
+        }
+        try {
+          const memory = this.store.updateMemory(this.context.buddyId, {
+            documentKind: parsed.doc,
+            content: parsed.content,
+            reasoning: parsed.reasoning,
+            baseVersion: parsed.baseVersion,
+            authorKind: 'buddy',
+            requestedBy: null,
+            provenance: {
+              workspace_id: this.context.workspaceId,
+              conversation_id: this.context.conversationId ?? null,
+              automation_run_id: this.context.automationRunId ?? null,
+            },
+          });
+          return this.result(name, memory, parsed, this.context.buddyProjectId ?? undefined);
+        } catch (error) {
+          throw normalizeMemoryError(error);
+        }
+      }
+      case 'buddy.remember_note': {
+        const parsed = BuddyOperationInputSchemas[name].parse(input);
+        this.requireActiveBuddy();
+        if (!this.store.rememberNote) {
+          throw new BuddyMemoryOperationError(
+            'MEMORY_CAPABILITY_MISSING',
+            'The installed Buddies package does not expose memory-v2 remember-note'
+          );
+        }
+        try {
+          const note = this.store.rememberNote(this.context.buddyId, {
+            topic: parsed.topic,
+            kind: parsed.kind,
+            body: parsed.body,
+            evidence: parsed.evidence,
+            workspace: this.context.workspaceId,
+            scope: parsed.scope ?? 'current',
+          });
+          return this.result(name, note, parsed, this.context.buddyProjectId ?? undefined);
+        } catch (error) {
+          throw normalizeMemoryError(error);
+        }
+      }
+      case 'buddy.recall': {
+        const parsed = BuddyOperationInputSchemas[name].parse(input);
+        if (!this.store.recall) {
+          throw new BuddyMemoryOperationError(
+            'MEMORY_CAPABILITY_MISSING',
+            'The installed Buddies package does not expose memory-v2 recall'
+          );
+        }
+        try {
+          const result = this.store.recall(this.context.buddyId, {
+            pattern: parsed.regex ? parsed.pattern : escapeRegExp(parsed.pattern),
+            workspace: this.context.workspaceId,
+            scope: parsed.scope ?? 'all',
+            since: parsed.since,
+            limit: parsed.limit ?? 20,
+          });
+          // The package currently returns the matcher it received. Restore the
+          // user-facing literal so escaping remains an implementation detail.
+          return this.result(name, { ...result, pattern: parsed.pattern }, parsed);
+        } catch (error) {
+          throw normalizeMemoryError(error);
+        }
+      }
       case 'buddy.remember': {
         const parsed = BuddyOperationInputSchemas[name].parse(input);
+        this.requireActiveBuddy();
         return this.result(
           name,
           this.store.remember(this.context.buddyId, parsed),
@@ -561,6 +706,7 @@ export class BuddyOperationsService {
       }
       case 'buddy.compact_memory': {
         const parsed = BuddyOperationInputSchemas[name].parse(input);
+        this.requireActiveBuddy();
         return this.result(
           name,
           this.store.compactMemory(this.context.buddyId, parsed),
@@ -767,6 +913,19 @@ export class BuddyOperationsService {
       throw new Error('Buddy project is outside the conversation scope');
     }
     return project;
+  }
+
+  private requireActiveBuddy() {
+    const buddy = this.store.getBuddy(this.context.buddyId);
+    if (!buddy) throw new Error('Buddy not found');
+    if (buddy.status !== 'active') {
+      throw new BuddyMemoryOperationError(
+        'BUDDY_INACTIVE',
+        `Buddy is ${buddy.status}; memory writes are available only to active Buddies`,
+        { status: buddy.status }
+      );
+    }
+    return buddy;
   }
 
   private requireManageableBuddy(targetBuddyId: string) {

@@ -379,3 +379,108 @@ test('automation schedule validation leaves durable definitions unchanged on fai
     rmSync(root, { recursive: true, force: true });
   }
 });
+
+test('memory-v2 operations use typed inputs, trusted workspace scope, and CAS errors', () => {
+  const calls: Array<{ operation: string; input: unknown }> = [];
+  const store = {
+    getBuddy: () => ({ id: 'buddy-1', name: 'Lead', role: 'Lead', status: 'active' }),
+    listBuddyWorkspaces: () => [{ id: 'workspace-1' }],
+    recordAuditEvent: (input: { operation: string }) => ({ id: 'audit-1', ...input }),
+    updateMemory: (_buddy: string, input: unknown) => {
+      calls.push({ operation: 'updateMemory', input });
+      return {
+        buddy_id: 'buddy-1',
+        document_kind: 'working',
+        revision: 2,
+        generation: 2,
+        body: 'A corrected working context.',
+        reasoning: 'Owner correction is durable.',
+        author_kind: 'buddy',
+        requested_by: null,
+        provenance: {},
+        sha256: 'hash',
+        view_status: 'current',
+        updated_at: '2026-08-29T00:00:00.000Z',
+      };
+    },
+    rememberNote: (_buddy: string, input: unknown) => {
+      calls.push({ operation: 'rememberNote', input });
+      return {
+        id: 'note-1',
+        path: '/workspace/agent_notes/note.md',
+        topic: 'decision',
+        kind: 'decision',
+        buddy_id: 'buddy-1',
+        workspace_id: 'workspace-1',
+        evidence: [],
+        content: 'A durable decision.',
+        written_at: '2026-08-29T00:00:00.000Z',
+      };
+    },
+    recall: (_buddy: string, input: { pattern: string }) => {
+      calls.push({ operation: 'recall', input });
+      return { pattern: input.pattern, matches: [], truncated: false };
+    },
+  } as unknown as BuddiesStorePort;
+  const operations = new BuddyOperationsService(store, {
+    buddyId: 'buddy-1',
+    workspaceId: 'workspace-1',
+    conversationId: 'conversation-1',
+  });
+
+  const updated = operations.execute('buddy.update_memory', {
+    doc: 'working',
+    content: 'A corrected working context.',
+    reasoning: 'Owner correction is durable.',
+    baseVersion: 1,
+  });
+  assert.equal((updated.data as { document_kind: string }).document_kind, 'working');
+  const note = operations.execute('buddy.remember_note', {
+    topic: 'decision',
+    kind: 'decision',
+    body: 'A durable decision.',
+    scope: 'current',
+  });
+  assert.equal((note.data as { id: string }).id, 'note-1');
+  operations.execute('buddy.recall', { pattern: 'decision.v2' });
+
+  assert.deepEqual(calls, [
+    {
+      operation: 'updateMemory',
+      input: {
+        documentKind: 'working',
+        content: 'A corrected working context.',
+        reasoning: 'Owner correction is durable.',
+        baseVersion: 1,
+        authorKind: 'buddy',
+        requestedBy: null,
+        provenance: {
+          workspace_id: 'workspace-1',
+          conversation_id: 'conversation-1',
+          automation_run_id: null,
+        },
+      },
+    },
+    {
+      operation: 'rememberNote',
+      input: {
+        topic: 'decision',
+        kind: 'decision',
+        body: 'A durable decision.',
+        evidence: undefined,
+        workspace: 'workspace-1',
+        scope: 'current',
+      },
+    },
+    {
+      operation: 'recall',
+      input: {
+        pattern: 'decision\\.v2',
+        workspace: 'workspace-1',
+        scope: 'all',
+        since: undefined,
+        limit: 20,
+      },
+    },
+  ]);
+});

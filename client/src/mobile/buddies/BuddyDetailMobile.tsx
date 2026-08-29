@@ -3,6 +3,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, Navigate, useNavigate, useParams } from 'react-router-dom';
 import { allConversationIdsAtom } from '../../atoms/conversations';
 import { createConversation } from '../../atoms/pending-creations';
+import { BuddyMemoryPanel } from '../../components/buddies/BuddyMemoryPanel';
 import { asArray, buddyApi } from '../../components/buddies/api';
 import {
   buildBuddyContextForTalk,
@@ -22,10 +23,13 @@ import {
   buddyTabPath,
   parseEmployeeTab,
 } from '../../components/buddies/buddy-tabs';
+import { formatMemoryWriteError, normalizeBuddyMemory } from '../../components/buddies/memory';
 import type {
   Buddy,
   BuddyAutomation,
   BuddyMemory,
+  BuddyMemoryDocumentKind,
+  BuddyMemoryRecallResult,
   BuddyProject,
   ConversationLink,
   EmployeeRecord,
@@ -38,7 +42,6 @@ import { EMPTY_MEMORY } from '../../components/buddies/types';
 import { EmptyState } from '../components/EmptyState';
 import { AutomationsTab } from './BuddyDetailAutomationsTab';
 import { ConversationsTab } from './BuddyDetailConversationsTab';
-import { MemoryTab } from './BuddyDetailMemoryTab';
 import { BuddyProfileEditor } from './BuddyDetailProfileEditor';
 import { WorkTab } from './BuddyDetailWorkTab';
 
@@ -151,11 +154,13 @@ export function BuddyDetailMobile() {
         buddyApi<BuddyMemory>(`/api/buddies/${encoded}/memory`, { signal }),
       ]);
       if (signal?.aborted || generation !== loadGenerationRef.current) return;
-      setMemory({
-        ...(memoryPayload ?? EMPTY_MEMORY),
-        soul: typeof contextPayload.soul === 'string' ? contextPayload.soul : undefined,
-        soulPath: employee?.buddy.soul_path ?? null,
-      });
+      setMemory(
+        normalizeBuddyMemory(
+          memoryPayload,
+          typeof contextPayload.soul === 'string' ? contextPayload.soul : undefined,
+          employee?.buddy.soul_path ?? null
+        )
+      );
       setMemoryError(null);
     },
     [buddyId, employee?.buddy.soul_path, loadGenerationRef]
@@ -172,6 +177,81 @@ export function BuddyDetailMobile() {
     },
     [buddyId, loadGenerationRef]
   );
+
+  const runMemoryAction = async (key: string, action: () => Promise<unknown>) => {
+    setBusy(key);
+    setMemoryError(null);
+    try {
+      await action();
+      await loadMemory();
+    } catch (cause) {
+      setMemoryError(formatMemoryWriteError(cause));
+      throw cause;
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const updateMemory = async (
+    documentKind: BuddyMemoryDocumentKind,
+    content: string,
+    reasoning: string,
+    baseVersion: number
+  ) => {
+    await runMemoryAction(`memory-${documentKind}`, () =>
+      buddyApi(
+        `/api/buddies/${encodeURIComponent(buddyId ?? '')}/memory/${documentKind === 'longTerm' ? 'long_term' : 'working'}`,
+        {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            content,
+            reasoning,
+            baseVersion,
+            workspaceId: selectedWorkspaceId,
+          }),
+        }
+      )
+    );
+  };
+
+  const rememberNote = async (input: {
+    topic: string;
+    kind: string;
+    body: string;
+    scope: 'current' | 'home' | 'all';
+  }) => {
+    await runMemoryAction('memory-note', () =>
+      buddyApi(`/api/buddies/${encodeURIComponent(buddyId ?? '')}/memory/notes`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...input, workspaceId: selectedWorkspaceId }),
+      })
+    );
+  };
+
+  const recallNotes = async (input: {
+    pattern: string;
+    scope: 'current' | 'home' | 'all';
+  }): Promise<BuddyMemoryRecallResult> =>
+    buddyApi<{ data: BuddyMemoryRecallResult }>(
+      `/api/buddies/${encodeURIComponent(buddyId ?? '')}/memory/recall`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...input, workspaceId: selectedWorkspaceId }),
+      }
+    ).then((result) => result.data);
+
+  const rememberLegacy = async (kind: 'journal' | 'curated', content: string) => {
+    await runMemoryAction('remember', () =>
+      buddyApi(`/api/buddies/${encodeURIComponent(buddyId ?? '')}/memory`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ kind, content }),
+      })
+    );
+  };
 
   useEffect(() => {
     if (!buddyId) return;
@@ -323,7 +403,7 @@ export function BuddyDetailMobile() {
 
   if (loading) {
     return (
-      <div className="mobile-hub" role="status" aria-live="polite" aria-busy="true">
+      <div className="mobile-hub" aria-live="polite" aria-busy="true">
         <p className="mobile-empty__message">Loading buddy…</p>
       </div>
     );
@@ -459,16 +539,21 @@ export function BuddyDetailMobile() {
       )}
 
       {activeTab === 'memory' && (
-        <MemoryTab
+        <BuddyMemoryPanel
           memory={memory}
           error={memoryError}
           buddy={employee.buddy}
+          variant="mobile"
           onRetry={() => {
             const controller = new AbortController();
             void loadMemory(controller.signal).catch((cause: unknown) =>
               setMemoryError(cause instanceof Error ? cause.message : String(cause))
             );
           }}
+          onUpdate={updateMemory}
+          onRememberLegacy={rememberLegacy}
+          onRememberNote={rememberNote}
+          onRecall={recallNotes}
         />
       )}
 

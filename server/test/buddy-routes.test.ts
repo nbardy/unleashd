@@ -401,6 +401,9 @@ test('manager review request dispatches one least-privilege reviewer conversatio
         'buddy.get_current_work',
         'buddy.get_inbox',
         'buddy.get_automations',
+        'buddy.update_memory',
+        'buddy.remember_note',
+        'buddy.recall',
         'buddy.remember',
         'buddy.submit_review',
         'buddy.request_human_approval',
@@ -412,5 +415,82 @@ test('manager review request dispatches one least-privilege reviewer conversatio
     );
     store.close();
     rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('memory-v2 HTTP routes use the Buddy operation authority boundary', async () => {
+  const calls: Array<{ operation: string; input: unknown }> = [];
+  const store = {
+    getBuddy: () => ({ id: 'buddy-1', name: 'Lead', role: 'Lead', status: 'active' }),
+    listBuddyWorkspaces: () => [{ id: 'workspace-1' }],
+    recordAuditEvent: (input: { operation: string }) => ({ id: 'audit-1', ...input }),
+    updateMemory: (_buddy: string, input: unknown) => {
+      calls.push({ operation: 'updateMemory', input });
+      return { document_kind: 'working', revision: 2, generation: 2, body: 'updated' };
+    },
+    rememberNote: (_buddy: string, input: unknown) => {
+      calls.push({ operation: 'rememberNote', input });
+      return { id: 'note-1', workspace_id: 'workspace-1', content: 'noted' };
+    },
+    recall: (_buddy: string, input: unknown) => {
+      calls.push({ operation: 'recall', input });
+      return { pattern: 'needle', matches: [], truncated: false };
+    },
+  } as unknown as BuddiesStorePort;
+  const app = express();
+  app.use(express.json());
+  registerBuddyRoutes(app, {
+    getStore: async () => store,
+    getScheduler: () => null,
+    createConversation: async () => {
+      throw new Error('not used');
+    },
+    sendError(response, error, fallbackStatus) {
+      response
+        .status(fallbackStatus)
+        .json({ error: error instanceof Error ? error.message : String(error) });
+    },
+    getNextAutomationRunAt: () => '2026-07-29T00:00:00.000Z',
+    createId: () => 'test-id',
+    isConversationDeleted: async () => false,
+  });
+  const server = app.listen(0, '127.0.0.1');
+  try {
+    await new Promise<void>((resolve, reject) => {
+      server.once('listening', resolve);
+      server.once('error', reject);
+    });
+    const { port } = server.address() as AddressInfo;
+    const update = await fetch(`http://127.0.0.1:${port}/api/buddies/buddy-1/memory/working`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        workspaceId: 'workspace-1',
+        content: 'updated',
+        reasoning: 'test update',
+        baseVersion: 1,
+      }),
+    });
+    assert.equal(update.status, 200);
+    const note = await fetch(`http://127.0.0.1:${port}/api/buddies/buddy-1/memory/notes`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ workspaceId: 'workspace-1', body: 'noted', topic: 'test' }),
+    });
+    assert.equal(note.status, 201);
+    const recall = await fetch(`http://127.0.0.1:${port}/api/buddies/buddy-1/memory/recall`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ workspaceId: 'workspace-1', pattern: 'needle' }),
+    });
+    assert.equal(recall.status, 200);
+    assert.deepEqual(
+      calls.map(({ operation }) => operation),
+      ['updateMemory', 'rememberNote', 'recall']
+    );
+  } finally {
+    await new Promise<void>((resolve, reject) =>
+      server.close((error) => (error ? reject(error) : resolve()))
+    );
   }
 });
