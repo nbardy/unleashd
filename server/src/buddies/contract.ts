@@ -13,6 +13,9 @@ export type BuddyOperationName =
   | 'buddy.set_automation'
   | 'buddy.new_project'
   | 'buddy.update_project'
+  | 'buddy.update_memory'
+  | 'buddy.remember_note'
+  | 'buddy.recall'
   | 'buddy.remember'
   | 'buddy.compact_memory'
   | 'buddy.delegate'
@@ -156,6 +159,114 @@ interface BuddyLegacyWorkItem {
   project_id: string;
 }
 
+export type BuddyMemoryDocumentKind = 'working' | 'long_term';
+
+export interface BuddyMemoryRevision {
+  buddy_id: string;
+  document_kind: BuddyMemoryDocumentKind;
+  revision: number;
+  generation: number;
+  body: string;
+  reasoning: string;
+  author_kind: string;
+  requested_by: string | null;
+  provenance: unknown;
+  sha256: string;
+  view_status: 'current' | 'stale';
+  view_error?: string;
+  updated_at: string;
+}
+
+export interface BuddyMemoryNote {
+  id: string;
+  path: string;
+  topic: string;
+  kind: string;
+  buddy_id: string;
+  workspace_id: string;
+  evidence: unknown[];
+  content: string;
+  written_at: string;
+}
+
+export interface BuddyMemoryRecall {
+  pattern: string;
+  matches: Array<{
+    path: string;
+    content: string;
+    created_at: string | null;
+    workspace_id: string;
+  }>;
+  truncated: boolean;
+}
+
+/**
+ * The v2 package shape. summary/recentJournal remain only as a one-release
+ * read compatibility projection for the existing desktop/mobile clients and
+ * the still-legacy vendored package.
+ */
+export interface BuddyMemory {
+  working: string;
+  longTerm: string;
+  workingRevision: number;
+  longTermRevision: number;
+  generation: number;
+  summary: string;
+  recentJournal: Array<{ path: string; content: string }>;
+}
+
+export interface BuddyMemoryUpdateInput {
+  documentKind?: BuddyMemoryDocumentKind;
+  doc?: BuddyMemoryDocumentKind;
+  content: string;
+  reasoning: string;
+  baseVersion: number;
+  authorKind?: string;
+  requestedBy?: string | null;
+  provenance?: unknown;
+}
+
+export interface BuddyMemoryNoteInput {
+  topic?: string;
+  kind?: string;
+  body?: string;
+  content?: string;
+  evidence?: unknown[];
+  workspace?: string;
+  scope?: 'current' | 'home' | 'all';
+}
+
+export interface BuddyMemoryRecallInput {
+  pattern: string;
+  workspace?: string;
+  scope?: 'current' | 'home' | 'all';
+  since?: string;
+  limit?: number;
+}
+
+export type BuddyMemoryErrorCode =
+  | 'MEMORY_UNCONFIGURED'
+  | 'MEMORY_CORRUPT'
+  | 'MEMORY_STALE'
+  | 'MEMORY_TOO_LARGE'
+  | 'MEMORY_CAPABILITY_MISSING'
+  | 'BUDDY_INACTIVE'
+  | 'WORKSPACE_FORBIDDEN'
+  | 'RECALL_TRUNCATED'
+  | 'MATERIALIZED_VIEW_STALE';
+
+export class BuddyMemoryOperationError extends Error {
+  readonly code: BuddyMemoryErrorCode;
+  readonly details: Record<string, unknown>;
+
+  constructor(code: BuddyMemoryErrorCode, message: string, details: Record<string, unknown> = {}) {
+    super(message);
+    this.name = 'BuddyMemoryOperationError';
+    this.code = code;
+    this.details = details;
+  }
+}
+
 interface BuddyDetailContext {
   buddy: BuddyRecord;
   workspace: BuddyWorkspace | null;
@@ -167,6 +278,11 @@ interface BuddyDetailContext {
   skills: BuddySkill[];
   soul: string;
   memory: {
+    working: string;
+    longTerm: string;
+    workingRevision: number;
+    longTermRevision: number;
+    generation: number;
     summary: string;
     recentJournal: Array<{ path: string; content: string }>;
   };
@@ -229,8 +345,13 @@ export interface BuddiesStorePort {
   createReview(input: Record<string, unknown>): { id: string };
   getReview(id: string): BuddyReviewRecord | null;
   updateReview(id: string, changes: Record<string, unknown>): unknown;
-  readBuddyMemory(buddy: string): unknown;
+  readBuddyMemory(buddy: string): BuddyMemory;
+  updateMemory?(buddy: string, input: BuddyMemoryUpdateInput): BuddyMemoryRevision;
+  rememberNote?(buddy: string, input: BuddyMemoryNoteInput): BuddyMemoryNote;
+  recall?(buddy: string, input: BuddyMemoryRecallInput): BuddyMemoryRecall;
+  /** Legacy compatibility for the pre-v2 package during the migration window. */
   remember(buddy: string, input: Record<string, unknown>): unknown;
+  /** Legacy compatibility for the pre-v2 package during the migration window. */
   compactMemory(buddy: string, input: Record<string, unknown>): unknown;
   recordAuditEvent(input: Record<string, unknown>): unknown;
   listAuditEvents(input?: {

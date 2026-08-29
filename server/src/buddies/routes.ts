@@ -10,7 +10,12 @@ import {
 import type { Express, Request, Response } from 'express';
 import type { BuddiesStorePort, BuddyAutomation, BuddyAutomationRun } from './contract';
 import { BUDDY_REVIEW_RESULT_INSTRUCTIONS } from './integration';
-import { REVIEW_BUDDY_OPERATIONS, resolveDelegatedBuddyOperations } from './operations';
+import {
+  type BuddyOperationContext,
+  BuddyOperationsService,
+  REVIEW_BUDDY_OPERATIONS,
+  resolveDelegatedBuddyOperations,
+} from './operations';
 import { assertBuddyProviderSupportsMcp } from './provider-capability';
 import { publicAutomationRun } from './public-automation-run';
 
@@ -51,6 +56,64 @@ export interface BuddyRouteDependencies {
    * See docs/architecture.md 2.1.
    */
   isConversationDeleted(conversationId: string): Promise<boolean>;
+}
+
+function memoryPayload(req: Request): Record<string, unknown> {
+  if (!req.body || typeof req.body !== 'object' || Array.isArray(req.body)) return {};
+  const { workspaceId: _workspaceId, ...payload } = req.body as Record<string, unknown>;
+  return payload;
+}
+
+function memoryHttpContext(
+  buddies: BuddiesStorePort,
+  buddyId: string,
+  req: Request
+): BuddyOperationContext {
+  const bodyWorkspaceId =
+    req.body && typeof req.body === 'object' && !Array.isArray(req.body)
+      ? (req.body as Record<string, unknown>).workspaceId
+      : undefined;
+  const queryWorkspaceId =
+    typeof req.query.workspaceId === 'string' ? req.query.workspaceId : undefined;
+  const requestedWorkspace =
+    typeof bodyWorkspaceId === 'string' && bodyWorkspaceId.trim()
+      ? bodyWorkspaceId.trim()
+      : queryWorkspaceId;
+  const workspaces = buddies.listBuddyWorkspaces(buddyId) as Array<{ id: string }>;
+  const workspaceId = requestedWorkspace ?? workspaces[0]?.id;
+  if (!workspaceId) throw new Error('Buddy has no authorized memory workspace');
+  if (!workspaces.some((workspace) => workspace.id === workspaceId)) {
+    throw new Error('Buddy does not belong to the requested memory workspace');
+  }
+  return { buddyId, workspaceId };
+}
+
+function sendMemoryError(
+  sendError: BuddyRouteDependencies['sendError'],
+  response: Response,
+  error: unknown
+): void {
+  const code =
+    error && typeof error === 'object' && 'code' in error
+      ? (error as { code?: unknown }).code
+      : undefined;
+  const status =
+    code === 'MEMORY_STALE'
+      ? 409
+      : code === 'MEMORY_TOO_LARGE'
+        ? 413
+        : code === 'WORKSPACE_FORBIDDEN' || code === 'BUDDY_INACTIVE'
+          ? 403
+          : 400;
+  if (code && error && typeof error === 'object' && 'details' in error) {
+    response.status(status).json({
+      error: error instanceof Error ? error.message : String(error),
+      code,
+      details: (error as { details?: unknown }).details,
+    });
+    return;
+  }
+  sendError(response, error, status);
 }
 
 export function registerBuddyRoutes(app: Express, dependencies: BuddyRouteDependencies): void {
@@ -621,6 +684,53 @@ export function registerBuddyRoutes(app: Express, dependencies: BuddyRouteDepend
       res.json(buddies.readBuddyMemory(req.params.buddyId));
     } catch (error) {
       sendError(res, error, 404);
+    }
+  });
+
+  app.put('/api/buddies/:buddyId/memory/:document', async (req: Request, res: Response) => {
+    try {
+      const buddies = await getStore();
+      const context = memoryHttpContext(buddies, req.params.buddyId, req);
+      const document = req.params.document;
+      const result = new BuddyOperationsService(buddies, context).execute('buddy.update_memory', {
+        ...memoryPayload(req),
+        doc: document,
+      });
+      res.json(result);
+    } catch (error) {
+      sendMemoryError(sendError, res, error);
+    }
+  });
+
+  app.post('/api/buddies/:buddyId/memory/notes', async (req: Request, res: Response) => {
+    try {
+      const buddies = await getStore();
+      const context = memoryHttpContext(buddies, req.params.buddyId, req);
+      const result = new BuddyOperationsService(buddies, context).execute('buddy.remember_note', {
+        ...memoryPayload(req),
+        body:
+          typeof req.body?.body === 'string'
+            ? req.body.body
+            : typeof req.body?.content === 'string'
+              ? req.body.content
+              : undefined,
+      });
+      res.status(201).json(result);
+    } catch (error) {
+      sendMemoryError(sendError, res, error);
+    }
+  });
+
+  app.post('/api/buddies/:buddyId/memory/recall', async (req: Request, res: Response) => {
+    try {
+      const buddies = await getStore();
+      const context = memoryHttpContext(buddies, req.params.buddyId, req);
+      const result = new BuddyOperationsService(buddies, context).execute('buddy.recall', {
+        ...memoryPayload(req),
+      });
+      res.json(result);
+    } catch (error) {
+      sendMemoryError(sendError, res, error);
     }
   });
 

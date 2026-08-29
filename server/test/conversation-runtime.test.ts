@@ -4,9 +4,12 @@ import type { Provider } from '@unleashd/shared';
 import { type ConversationConfig, createDefaultConversationConfig } from '@unleashd/shared';
 import {
   type ConversationRuntimeDependencies,
+  buildFirstTurnCliContent,
   createConversationRuntime,
   describeTurnTimeout,
+  extractBuddyMemorySnapshot,
   isProviderProgressEvent,
+  resolveAutomationMemoryWritePolicy,
   turnAttemptActivityFromEvent,
 } from '../src/conversations/runtime';
 import { resolveConfigAgainstProviderCatalog } from '../src/providers/catalog-service';
@@ -319,6 +322,137 @@ test('first message in a user fork inherits the native source session without co
   assert.deepEqual(
     child.messages.map((message) => message.content),
     ['Continue the original objective from this fork.']
+  );
+});
+
+test('first Buddy prompt carries a recoverable immutable memory snapshot', () => {
+  const content = buildFirstTurnCliContent({
+    content: 'Start the task',
+    messageCount: 0,
+    hasStartedSession: false,
+    kind: {
+      kind: 'buddy',
+      buddyId: 'buddy-1',
+      workspaceId: 'workspace-1',
+      buddyProjectId: null,
+      legacyWorkItemId: null,
+      automationRunId: null,
+      delegatedByBuddyId: null,
+      parentBuddyConversationId: null,
+    },
+    buddyBriefing: 'Memory generation seven',
+    buddyMemoryGeneration: 7,
+    swarmDebugPrefix: null,
+  });
+
+  const snapshot = extractBuddyMemorySnapshot(content);
+  assert.deepEqual(snapshot, {
+    generation: '7',
+    briefing: 'Memory generation seven',
+  });
+  assert.match(content, /Start the task$/);
+});
+
+test('native session fork falls back to a fresh handoff when memory generation changes', () => {
+  const conversations = new Map<
+    string,
+    ReturnType<ConversationRuntimeDependencies['getConversation']>
+  >();
+  const fixture = runtimeFixture({
+    getConversation: (id) => conversations.get(id),
+  });
+  const buddyContext = {
+    buddyId: 'buddy-1',
+    workspaceId: 'workspace-1',
+    buddyProjectId: null,
+    legacyWorkItemId: null,
+    automationRunId: null,
+    delegatedByBuddyId: null,
+    parentBuddyConversationId: null,
+  };
+  const source = new fixture.Conversation({
+    id: 'source-buddy-conversation',
+    workingDirectory: '/tmp',
+    configState: fixture.configState,
+    existingSessionId: 'source-native-session',
+    buddyContext,
+    buddyBriefing: 'Old memory',
+    buddyMemoryGeneration: 'generation-6',
+  });
+  conversations.set(source.id, source);
+
+  const child = new fixture.Conversation({
+    id: 'child-buddy-conversation',
+    workingDirectory: '/tmp',
+    configState: fixture.configState,
+    resumedFromConversationId: source.id,
+    buddyContext,
+    buddyBriefing: 'New memory',
+    buddyMemoryGeneration: 'generation-7',
+  });
+  let spawned: { content: string; forkSourceSessionId?: string } | undefined;
+  (
+    child as unknown as {
+      spawnForMessage(
+        content: string,
+        executionConfig: unknown,
+        forkSourceSessionId?: string
+      ): void;
+    }
+  ).spawnForMessage = (content, _executionConfig, forkSourceSessionId) => {
+    spawned = { content, forkSourceSessionId };
+  };
+
+  child.enqueueMessage('Continue with current memory.');
+
+  assert.equal(spawned?.forkSourceSessionId, undefined);
+  assert.match(spawned?.content ?? '', /New memory/);
+  assert.doesNotMatch(spawned?.content ?? '', /Old memory/);
+});
+
+test('automation memory-write policy is explicit and provider-scoped', () => {
+  assert.equal(
+    resolveAutomationMemoryWritePolicy({
+      isAutomation: false,
+      provider: 'codex',
+      hasClaimToken: false,
+    }),
+    'not_applicable'
+  );
+  assert.equal(
+    resolveAutomationMemoryWritePolicy({
+      isAutomation: true,
+      provider: 'codex',
+      hasClaimToken: true,
+    }),
+    'denied'
+  );
+  assert.equal(
+    resolveAutomationMemoryWritePolicy({
+      isAutomation: true,
+      provider: 'muse',
+      allowedOperations: ['buddy.update_memory'],
+      hasClaimToken: true,
+    }),
+    'unsupported'
+  );
+  assert.equal(
+    resolveAutomationMemoryWritePolicy({
+      isAutomation: true,
+      provider: 'codex',
+      allowedOperations: ['buddy.update_memory'],
+      hasClaimToken: true,
+    }),
+    'allowed'
+  );
+  assert.equal(
+    resolveAutomationMemoryWritePolicy({
+      isAutomation: true,
+      provider: 'codex',
+      allowedOperations: ['buddy.remember_note'],
+      hasClaimToken: true,
+    }),
+    'allowed'
   );
 });
 

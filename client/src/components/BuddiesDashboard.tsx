@@ -6,6 +6,7 @@ import { allConversationIdsAtom } from '../atoms/conversations';
 import { BuddyAutomationsTab } from './buddies/BuddyAutomationsTab';
 import { BuddyDirectory } from './buddies/BuddyDirectory';
 import { BuddyExecutionProfile } from './buddies/BuddyExecutionProfile';
+import { BuddyMemoryPanel } from './buddies/BuddyMemoryPanel';
 import { buddyApi as api, asArray } from './buddies/api';
 import {
   buildBuddyContextForTalk,
@@ -26,10 +27,13 @@ import {
   parseEmployeeTab,
 } from './buddies/buddy-tabs';
 import { createBuddyViaBuilder } from './buddies/create-buddy-builder';
+import { formatMemoryWriteError, normalizeBuddyMemory } from './buddies/memory';
 import {
   type Buddy,
   type BuddyAutomation,
   type BuddyMemory,
+  type BuddyMemoryDocumentKind,
+  type BuddyMemoryRecallResult,
   type BuddyOverview,
   type BuddyProject,
   type ConversationLink,
@@ -156,11 +160,13 @@ export function BuddiesDashboard() {
         api<BuddyMemory>(`/api/buddies/${encoded}/memory`, { signal }),
       ]);
       if (signal?.aborted || generation !== loadGenerationRef.current) return;
-      setMemory({
-        ...(memoryPayload ?? EMPTY_MEMORY),
-        soul: typeof contextPayload.soul === 'string' ? contextPayload.soul : undefined,
-        soulPath: employee?.buddy.soul_path,
-      });
+      setMemory(
+        normalizeBuddyMemory(
+          memoryPayload,
+          typeof contextPayload.soul === 'string' ? contextPayload.soul : undefined,
+          employee?.buddy.soul_path
+        )
+      );
       setMemoryError(null);
     },
     [buddyId, employee?.buddy.soul_path]
@@ -282,6 +288,81 @@ export function BuddiesDashboard() {
     } finally {
       setBusy(null);
     }
+  };
+
+  const runMemoryAction = async (key: string, action: () => Promise<unknown>) => {
+    setBusy(key);
+    setMemoryError(null);
+    try {
+      await action();
+      await loadMemory();
+    } catch (cause) {
+      setMemoryError(formatMemoryWriteError(cause));
+      throw cause;
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const updateMemory = async (
+    documentKind: BuddyMemoryDocumentKind,
+    content: string,
+    reasoning: string,
+    baseVersion: number
+  ) => {
+    await runMemoryAction(`memory-${documentKind}`, () =>
+      api(
+        `/api/buddies/${encodeURIComponent(employee?.buddy.id ?? '')}/memory/${documentKind === 'longTerm' ? 'long_term' : 'working'}`,
+        {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            content,
+            reasoning,
+            baseVersion,
+            workspaceId: workspace?.id,
+          }),
+        }
+      )
+    );
+  };
+
+  const rememberNote = async (input: {
+    topic: string;
+    kind: string;
+    body: string;
+    scope: 'current' | 'home' | 'all';
+  }) => {
+    await runMemoryAction('memory-note', () =>
+      api(`/api/buddies/${encodeURIComponent(employee?.buddy.id ?? '')}/memory/notes`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...input, workspaceId: workspace?.id }),
+      })
+    );
+  };
+
+  const recallNotes = async (input: {
+    pattern: string;
+    scope: 'current' | 'home' | 'all';
+  }): Promise<BuddyMemoryRecallResult> =>
+    api<{ data: BuddyMemoryRecallResult }>(
+      `/api/buddies/${encodeURIComponent(employee?.buddy.id ?? '')}/memory/recall`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...input, workspaceId: workspace?.id }),
+      }
+    ).then((result) => result.data);
+
+  const rememberLegacy = async (kind: 'journal' | 'curated', content: string) => {
+    await runMemoryAction('remember', () =>
+      api(`/api/buddies/${encodeURIComponent(employee?.buddy.id ?? '')}/memory`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ kind, content }),
+      })
+    );
   };
 
   const talk = useCallback(
@@ -809,59 +890,17 @@ export function BuddiesDashboard() {
         )}
 
         {activeTab === 'memory' && (
-          <section className="buddy-section buddy-memory">
-            {memoryError && (
-              <div className="buddies-error" role="alert">
-                Memory is unavailable: {memoryError}
-              </div>
-            )}
-            <div className="buddy-memory-block">
-              <span>Soul · {memory.soulPath ?? employee.buddy.soul_path ?? 'Not configured'}</span>
-              <pre>
-                {memory.soul || 'Soul content is loaded into Buddy conversations by the server.'}
-              </pre>
-            </div>
-            <div className="buddy-memory-block">
-              <span>Curated memory</span>
-              <pre>{memory.summary || 'No curated memory yet.'}</pre>
-            </div>
-            <form
-              className="buddy-form"
-              onSubmit={(event) => {
-                event.preventDefault();
-                const form = event.currentTarget;
-                const data = new FormData(form);
-                void mutate('remember', () =>
-                  api(`/api/buddies/${encodeURIComponent(employee.buddy.id)}/memory`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ kind: data.get('kind'), content: data.get('content') }),
-                  })
-                ).then(async () => {
-                  await loadMemory();
-                  form.reset();
-                });
-              }}
-            >
-              <h2>Remember</h2>
-              <select name="kind" aria-label="Memory kind">
-                <option value="journal">Journal</option>
-                <option value="curated">Curated</option>
-              </select>
-              <textarea name="content" required placeholder="What should this employee retain?" />
-              <button type="submit" disabled={busy !== null}>
-                Remember
-              </button>
-            </form>
-            <div className="buddy-journal">
-              {memory.recentJournal.map((entry) => (
-                <details key={entry.path}>
-                  <summary>{compactPath(entry.path)}</summary>
-                  <pre>{entry.content}</pre>
-                </details>
-              ))}
-            </div>
-          </section>
+          <BuddyMemoryPanel
+            buddy={employee.buddy}
+            memory={memory}
+            variant="desktop"
+            error={memoryError}
+            onRetry={() => void loadMemory().catch(() => {})}
+            onUpdate={updateMemory}
+            onRememberLegacy={rememberLegacy}
+            onRememberNote={rememberNote}
+            onRecall={recallNotes}
+          />
         )}
 
         {activeTab === 'automations' && (

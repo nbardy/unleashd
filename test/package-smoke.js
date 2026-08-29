@@ -8,26 +8,75 @@ const { createRequire } = require('node:module');
 const { createHash } = require('node:crypto');
 
 const repositoryRoot = path.resolve(__dirname, '..');
-const buddiesProvenancePath = path.join(
-  repositoryRoot,
-  'vendor',
-  'nbardy-buddies-0.1.0.provenance.json'
-);
+const vendorRoot = path.join(repositoryRoot, 'vendor');
+const buddiesProvenancePath = path.join(vendorRoot, 'nbardy-buddies-0.1.0.provenance.json');
 if (!fs.existsSync(buddiesProvenancePath)) {
   throw new Error('Vendored Buddies provenance is missing; run pnpm vendor:buddies');
 }
 const buddiesProvenance = JSON.parse(fs.readFileSync(buddiesProvenancePath, 'utf8'));
-const buddiesArchivePath = path.join(repositoryRoot, buddiesProvenance.archive);
+const buddiesArchivePath = path.resolve(repositoryRoot, buddiesProvenance.archive);
+if (!buddiesArchivePath.startsWith(`${vendorRoot}${path.sep}`)) {
+  throw new Error(`Buddies provenance points outside vendor/: ${buddiesProvenance.archive}`);
+}
 const buddiesArchiveHash = createHash('sha256')
   .update(fs.readFileSync(buddiesArchivePath))
   .digest('hex');
+
+function archiveFiles(archivePath) {
+  const listed = spawnSync('tar', ['-tzf', archivePath], { encoding: 'utf8' });
+  if (listed.status !== 0) {
+    throw new Error(
+      `Could not inspect archive ${archivePath}:\n${listed.stdout}\n${listed.stderr}`
+    );
+  }
+  return listed.stdout
+    .trim()
+    .split('\n')
+    .map((entry) => entry.replace(/^package\//, '').replace(/\/$/, ''))
+    .filter(Boolean)
+    .sort();
+}
+
+function isRuntimePath(filePath) {
+  return (
+    /(^|\/)memory(\/|$)/i.test(filePath) ||
+    /(^|\/)(?:memory|working_memory|long_term_memory)\.md$/i.test(filePath) ||
+    /(^|\/)agent_notes(\/|$)/i.test(filePath) ||
+    /(^|\/)provenance(?:\.[^/]+)?\.json$/i.test(filePath)
+  );
+}
+
+function assertSafeArchive(archivePath, label) {
+  const files = archiveFiles(archivePath);
+  const forbidden = files.filter(isRuntimePath);
+  if (forbidden.length) {
+    throw new Error(`${label} contains runtime state or provenance: ${forbidden.join(', ')}`);
+  }
+  return files;
+}
+
+const buddiesArchiveFiles = assertSafeArchive(buddiesArchivePath, 'Vendored Buddies archive');
+const buddiesManifest = buddiesProvenance.manifest ?? {};
+const expectedBuddiesFiles = buddiesManifest.packedFiles;
 if (
   buddiesProvenance.package !== '@nbardy/buddies' ||
-  buddiesProvenance.version !== '0.1.0' ||
+  typeof buddiesProvenance.version !== 'string' ||
+  buddiesProvenance.schemaVersion !== 2 ||
   buddiesProvenance.reproduciblePack !== true ||
-  typeof buddiesProvenance.sourceCommit !== 'string' ||
-  buddiesProvenance.sourceCommit.length < 7 ||
+  !/^[0-9a-f]{40}$/i.test(buddiesProvenance.sourceCommit ?? '') ||
   buddiesProvenance.sourceDirty !== false ||
+  !Array.isArray(buddiesProvenance.sourceStatus) ||
+  buddiesProvenance.sourceStatus.length !== 0 ||
+  buddiesProvenance.releaseReady !== true ||
+  !Array.isArray(expectedBuddiesFiles) ||
+  !Array.isArray(buddiesManifest.packageFiles) ||
+  buddiesManifest.packageFiles.some(isRuntimePath) ||
+  buddiesManifest.ignoredFiles?.length !== 0 ||
+  buddiesManifest.untrackedFiles?.length !== 0 ||
+  buddiesManifest.runtimeFiles?.length !== 0 ||
+  createHash('sha256').update(JSON.stringify(expectedBuddiesFiles)).digest('hex') !==
+    buddiesManifest.sha256 ||
+  JSON.stringify(buddiesArchiveFiles) !== JSON.stringify([...expectedBuddiesFiles].sort()) ||
   buddiesArchiveHash !== buddiesProvenance.sha256
 ) {
   throw new Error(
@@ -84,6 +133,7 @@ const tarballSize = fs.statSync(tarballPath).size;
 if (tarballSize > 3_000_000) {
   throw new Error(`Packed artifact unexpectedly exceeds 3 MB: ${tarballSize} bytes`);
 }
+assertSafeArchive(tarballPath, 'Unleashd package archive');
 for (const unwantedPath of [
   'shared',
   path.join('node_modules', '@unleashd', 'shared', 'src'),

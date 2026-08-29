@@ -94,7 +94,12 @@
   position: absolute;
   z-index: 1;
   inset: 0;
-  background: linear-gradient(180deg, transparent 32%, color-mix(in srgb, var(--pole-bg-deep) 12%, transparent) 50%, var(--pole-bg-deep) 100%);
+  background: linear-gradient(
+    180deg,
+    transparent 32%,
+    color-mix(in srgb, var(--pole-bg-deep) 12%, transparent) 50%,
+    var(--pole-bg-deep) 100%
+  );
   content: "";
   pointer-events: none;
 }
@@ -103,7 +108,8 @@
 .buddy-directory-card:focus-visible {
   transform: translateY(-4px);
   border-color: color-mix(in srgb, var(--ai) 70%, var(--border-default));
-  box-shadow: 0 18px 40px color-mix(in srgb, var(--pole-bg-deep) 38%, transparent), 0 0 0 1px color-mix(in srgb, var(--ai) 22%, transparent);
+  box-shadow: 0 18px 40px color-mix(in srgb, var(--pole-bg-deep) 38%, transparent), 0 0 0 1px
+    color-mix(in srgb, var(--ai) 22%, transparent);
   outline: none;
 }
 
@@ -112,7 +118,11 @@
   z-index: 0;
   inset: 0;
   overflow: hidden;
-  background: radial-gradient(circle at 28% 18%, color-mix(in srgb, var(--ai-bright) 34%, transparent), transparent 22%), linear-gradient(140deg, #0b3d45 0%, #082b38 42%, #08151e 100%);
+  background: radial-gradient(
+      circle at 28% 18%,
+      color-mix(in srgb, var(--ai-bright) 34%, transparent),
+      transparent 22%
+    ), linear-gradient(140deg, #0b3d45 0%, #082b38 42%, #08151e 100%);
 }
 
 .buddy-card-visual::before,
@@ -129,7 +139,12 @@
   right: -16%;
   width: 78%;
   height: 34%;
-  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--ai) 70%, transparent), transparent);
+  background: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in srgb, var(--ai) 70%, transparent),
+    transparent
+  );
   filter: blur(10px);
 }
 
@@ -144,19 +159,35 @@
 }
 
 .buddy-directory-card--archive .buddy-card-visual {
-  background: radial-gradient(circle at 76% 30%, color-mix(in srgb, var(--warning-bright) 35%, transparent), transparent 18%), linear-gradient(145deg, #3a3020, #1c2730 55%, #101b22);
+  background: radial-gradient(
+      circle at 76% 30%,
+      color-mix(in srgb, var(--warning-bright) 35%, transparent),
+      transparent 18%
+    ), linear-gradient(145deg, #3a3020, #1c2730 55%, #101b22);
 }
 
 .buddy-directory-card--orbit .buddy-card-visual {
-  background: radial-gradient(circle at 68% 36%, color-mix(in srgb, var(--primary-bright) 40%, transparent), transparent 21%), linear-gradient(145deg, #1d1d4e, #133b50 54%, #111920);
+  background: radial-gradient(
+      circle at 68% 36%,
+      color-mix(in srgb, var(--primary-bright) 40%, transparent),
+      transparent 21%
+    ), linear-gradient(145deg, #1d1d4e, #133b50 54%, #111920);
 }
 
 .buddy-directory-card--ember .buddy-card-visual {
-  background: radial-gradient(circle at 34% 30%, color-mix(in srgb, var(--queue-bright) 45%, transparent), transparent 23%), linear-gradient(145deg, #4a261f, #30243e 58%, #151b27);
+  background: radial-gradient(
+      circle at 34% 30%,
+      color-mix(in srgb, var(--queue-bright) 45%, transparent),
+      transparent 23%
+    ), linear-gradient(145deg, #4a261f, #30243e 58%, #151b27);
 }
 
 .buddy-directory-card--tide .buddy-card-visual {
-  background: radial-gradient(circle at 62% 22%, color-mix(in srgb, var(--user-bright) 36%, transparent), transparent 26%), linear-gradient(145deg, #173f55, #1b3950 50%, #141f2d);
+  background: radial-gradient(
+      circle at 62% 22%,
+      color-mix(in srgb, var(--user-bright) 36%, transparent),
+      transparent 26%
+    ), linear-gradient(145deg, #173f55, #1b3950 50%, #141f2d);
 }
 
 .buddy-card-visual__orb {
@@ -167,7 +198,8 @@
   height: 80px;
   border: 1px solid color-mix(in srgb, var(--text-bright) 48%, transparent);
   border-radius: 50%;
-  box-shadow: 0 0 0 20px color-mix(in srgb, var(--ai) 5%, transparent), 0 0 0 40px color-mix(in srgb, var(--ai) 4%, transparent);
+  box-shadow: 0 0 0 20px color-mix(in srgb, var(--ai) 5%, transparent), 0 0 0 40px
+    color-mix(in srgb, var(--ai) 4%, transparent);
 }
 
 .buddy-card-visual__line {
@@ -176,7 +208,12 @@
   left: -10%;
   width: 120%;
   height: 1px;
-  background: linear-gradient(90deg, transparent, color-mix(in srgb, var(--text-bright) 52%, transparent), transparent);
+  background: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in srgb, var(--text-bright) 52%, transparent),
+    transparent
+  );
   transform: rotate(-17deg);
 }
 
@@ -253,17 +290,24 @@
 }
 
 .buddy-directory-card--new {
-  border-style: dashed;
   border: 1px dashed color-mix(in srgb, var(--ai) 55%, var(--border-subtle));
   background: var(--bg-card);
 }
 
 .buddy-directory-card--new::before {
-  background: linear-gradient(180deg, color-mix(in srgb, var(--ai) 12%, transparent), var(--bg-card) 100%);
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--ai) 12%, transparent),
+    var(--bg-card) 100%
+  );
 }
 
 .buddy-card-visual--new {
-  background: radial-gradient(circle at 50% 42%, color-mix(in srgb, var(--ai) 25%, transparent), transparent 24%), linear-gradient(145deg, #0b4249, #0b2e3a 56%, #0b1821);
+  background: radial-gradient(
+      circle at 50% 42%,
+      color-mix(in srgb, var(--ai) 25%, transparent),
+      transparent 24%
+    ), linear-gradient(145deg, #0b4249, #0b2e3a 56%, #0b1821);
 }
 
 .buddy-card-visual__plus {
@@ -1612,6 +1656,150 @@
   color: var(--text-secondary);
   font: 11px / 1.55 var(--font-mono);
   white-space: pre-wrap;
+}
+
+.buddy-memory-v2 {
+  gap: 14px;
+}
+
+.buddy-memory-v2__block,
+.buddy-memory-v2__form,
+.buddy-memory-v2__notes {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 14px;
+  border: 1px solid var(--border-subtle);
+  background: var(--bg-card);
+}
+
+.buddy-memory-v2__block > span,
+.buddy-memory-v2__notes h3,
+.buddy-memory-v2__form h3 {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.buddy-memory-v2__block pre,
+.buddy-memory-v2__notes pre,
+.buddy-memory-v2__recall-results pre {
+  max-height: 320px;
+  margin: 0;
+  overflow: auto;
+  color: var(--text-secondary);
+  font: 12px / 1.55 var(--font-mono);
+  white-space: pre-wrap;
+}
+
+.buddy-memory-v2__block textarea,
+.buddy-memory-v2__form textarea,
+.buddy-memory-v2__form input,
+.buddy-memory-v2__form select,
+.buddy-memory-v2__update-form input {
+  box-sizing: border-box;
+  width: 100%;
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  background: var(--bg-raised-1);
+  color: var(--text-primary);
+  font: 12px / 1.45 inherit;
+}
+
+.buddy-memory-v2__block textarea,
+.buddy-memory-v2__form textarea {
+  min-height: 90px;
+  padding: 9px;
+  resize: vertical;
+}
+
+.buddy-memory-v2__form input,
+.buddy-memory-v2__form select,
+.buddy-memory-v2__update-form input {
+  min-height: 34px;
+  padding: 6px 9px;
+}
+
+.buddy-memory-v2__update-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: end;
+}
+
+.buddy-memory-v2__update-form label {
+  display: flex;
+  flex: 1 1 240px;
+  flex-direction: column;
+  gap: 5px;
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.buddy-memory-v2 button {
+  min-height: 34px;
+  padding: 0 12px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  background: var(--bg-raised-2);
+  color: var(--text-primary);
+  cursor: pointer;
+}
+
+.buddy-memory-v2 button:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.buddy-memory-v2__block-heading {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.buddy-memory-v2__block-heading small {
+  color: var(--text-secondary);
+  font-weight: 400;
+  letter-spacing: 0;
+  text-transform: none;
+}
+
+.buddy-memory-v2__generation {
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.buddy-memory-v2__error {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--theme-danger) 45%, var(--border-subtle));
+  background: color-mix(in srgb, var(--theme-danger) 8%, transparent);
+  color: var(--text-primary);
+  font-size: 12px;
+}
+
+.buddy-memory-v2__notes details,
+.buddy-memory-v2__recall-results details {
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border-subtle);
+  color: var(--text-muted);
+  font-size: 11px;
+}
+
+.buddy-memory-v2__notes h3,
+.buddy-memory-v2__form h3 {
+  margin-bottom: 2px;
 }
 
 .buddy-journal details {

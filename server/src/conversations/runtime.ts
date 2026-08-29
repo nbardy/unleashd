@@ -101,13 +101,124 @@ interface MessageData {
 }
 export type ConversationBroadcast = ServerMessage | ChunkData | MessageCompleteData | MessageData;
 
+/**
+ * The memory context is an application-conversation snapshot.  The generation
+ * is deliberately opaque here: the canonical Buddy store owns its meaning,
+ * while legacy installations use a deterministic briefing digest until that
+ * store exposes a native generation.
+ */
+export interface MemorySnapshot {
+  readonly generation: string;
+  readonly briefing: string;
+}
+
+/** Boundary input accepts the numeric generation used by the v2 package; the runtime stores only an opaque string. */
+export type MemoryGenerationInput = string | number;
+
+export type AutomationMemoryWritePolicy = 'not_applicable' | 'denied' | 'allowed' | 'unsupported';
+
+const MEMORY_WRITE_OPERATIONS = new Set([
+  'buddy.remember',
+  'buddy.remember_note',
+  'buddy.update_memory',
+  'buddy.compact_memory',
+]);
+
+function providerSupportsRequiredBuddyMcp(provider: ProviderName): boolean {
+  try {
+    assertBuddyProviderSupportsMcp(provider);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export function memoryGenerationForBriefing(briefing: string): string {
+  return `briefing-sha256:${crypto.createHash('sha256').update(briefing, 'utf8').digest('hex')}`;
+}
+
+export function createMemorySnapshot(
+  briefing: string | null | undefined,
+  generation?: MemoryGenerationInput | null
+): MemorySnapshot | null {
+  if (briefing === null || briefing === undefined) return null;
+  const normalizedGeneration =
+    generation === null || generation === undefined
+      ? memoryGenerationForBriefing(briefing)
+      : String(generation).trim() || memoryGenerationForBriefing(briefing);
+  return Object.freeze({ briefing, generation: normalizedGeneration });
+}
+
+/**
+ * Resolve automation memory-write policy before provider startup.  A missing
+ * allowlist is intentionally read-only; durable run policy remains the final
+ * operation gate inside the Buddy control plane.  This helper only makes the
+ * provider/capability boundary explicit and never creates a worker.
+ */
+export function resolveAutomationMemoryWritePolicy(input: {
+  isAutomation: boolean;
+  provider: ProviderName;
+  allowedOperations?: readonly string[];
+  hasClaimToken: boolean;
+}): AutomationMemoryWritePolicy {
+  if (!input.isAutomation) return 'not_applicable';
+  const requestsMemoryWrite = (input.allowedOperations ?? []).some((operation) =>
+    MEMORY_WRITE_OPERATIONS.has(operation)
+  );
+  if (!requestsMemoryWrite) return 'denied';
+  if (!input.hasClaimToken || !providerSupportsRequiredBuddyMcp(input.provider)) {
+    return 'unsupported';
+  }
+  return 'allowed';
+}
+
+const BUDDY_CONTEXT_V2_HEADER_RE =
+  /^<!-- unleashd:buddy-context-v2 ([A-Za-z0-9_-]+) ([0-9]+) -->\n/;
+const BUDDY_CONTEXT_V2_SUFFIX = '\n<!-- /unleashd:buddy-context-v2 -->\n\n';
+const MEMORY_GENERATION_RE = /^<!-- unleashd:buddy-memory-generation ([A-Za-z0-9_-]+) -->\n/;
+
+/**
+ * Recover the hidden snapshot embedded in a first provider prompt.  This is a
+ * compatibility bridge for restart/hydration: the application conversation
+ * keeps the same briefing even if the current Buddy memory has advanced.
+ */
+export function extractBuddyMemorySnapshot(content: string): MemorySnapshot | null {
+  const header = content.match(BUDDY_CONTEXT_V2_HEADER_RE);
+  if (!header) return null;
+  const briefingLength = Number.parseInt(header[2], 10);
+  const briefingStart = header[0].length;
+  const suffixStart = briefingStart + briefingLength;
+  if (
+    !Number.isSafeInteger(briefingLength) ||
+    briefingLength < 0 ||
+    !content.startsWith(BUDDY_CONTEXT_V2_SUFFIX, suffixStart)
+  ) {
+    return null;
+  }
+  const encodedBriefing = content.slice(briefingStart, suffixStart);
+  const generationMarker = encodedBriefing.match(MEMORY_GENERATION_RE);
+  if (!generationMarker) {
+    return createMemorySnapshot(encodedBriefing);
+  }
+  let generation: string;
+  try {
+    generation = Buffer.from(generationMarker[1], 'base64url').toString('utf8');
+  } catch {
+    return null;
+  }
+  if (!generation) return null;
+  return createMemorySnapshot(encodedBriefing.slice(generationMarker[0].length), generation);
+}
+
 export interface ConversationRuntimeView {
   id: string;
   sessionId: string;
   config: ConversationConfig;
   readonly provider: ProviderName;
   buddyContext: BuddyContext | null;
+  readonly memoryGeneration: string | null;
   kind: ConversationKind;
+  getMemorySnapshot(): MemorySnapshot | null;
   isRunning: boolean;
   toJSON(): ConversationData;
 }
@@ -138,6 +249,7 @@ export interface ConversationRuntimeDependencies {
         provider: ProviderName;
         sessionId: string;
         hasStartedSession(): boolean;
+        getMemorySnapshot?: () => MemorySnapshot | null;
       }
     | undefined;
   readLatestOompaRuntime(projectRoot: string): OompaRuntimeSnapshot;
@@ -318,6 +430,8 @@ export interface ConversationOptions {
   swarmDebugPrefix?: string | null;
   buddyContext?: BuddyContext | null;
   buddyBriefing?: string | null;
+  /** Native generation when the Buddy resolver provides one; otherwise derived from the briefing. */
+  buddyMemoryGeneration?: MemoryGenerationInput | null;
   /** Server-private automation ownership. Never serialized or placed in BuddyContext. */
   automationClaimToken?: string | null;
   purpose?: ConversationPurpose;
@@ -348,6 +462,7 @@ export interface ConversationRuntime extends EventEmitter, ConversationRuntimeVi
   subAgents: SubAgent[];
   queue: QueuedMessage[];
   readonly provider: ProviderName;
+  readonly memoryGeneration: string | null;
   readonly model: ModelId | undefined;
   readonly reasoningEffort: string | undefined;
   sendMessage(content: string): void;
@@ -367,6 +482,7 @@ export interface ConversationRuntime extends EventEmitter, ConversationRuntimeVi
   applyConfigState(state: ConversationConfigState): void;
   refreshConfigResolution(): ConfigResolution;
   canChangeProvider(): boolean;
+  getMemorySnapshot(): MemorySnapshot | null;
   toJSON(): ConversationData;
 }
 
@@ -389,6 +505,7 @@ export function buildFirstTurnCliContent(input: {
   kind?: ConversationKind | null;
   buddyContext?: BuddyContext | null;
   buddyBriefing: string | null;
+  buddyMemoryGeneration?: MemoryGenerationInput | null;
   swarmDebugPrefix: string | null;
   purpose?: ConversationPurpose;
 }): string {
@@ -408,7 +525,13 @@ export function buildFirstTurnCliContent(input: {
       if (!firstUnstartedTurn || input.buddyBriefing === null) return input.content;
       const ctx: BuddyContext = buddyContextFromKind(k);
       const encodedContext = Buffer.from(JSON.stringify(ctx), 'utf8').toString('base64url');
-      return `<!-- unleashd:buddy-context-v2 ${encodedContext} ${input.buddyBriefing.length} -->\n${input.buddyBriefing}\n<!-- /unleashd:buddy-context-v2 -->\n\n${input.content}`;
+      const snapshot = createMemorySnapshot(
+        input.buddyBriefing,
+        input.buddyMemoryGeneration
+      ) as MemorySnapshot;
+      const encodedGeneration = Buffer.from(snapshot.generation, 'utf8').toString('base64url');
+      const snapshotBriefing = `<!-- unleashd:buddy-memory-generation ${encodedGeneration} -->\n${snapshot.briefing}`;
+      return `<!-- unleashd:buddy-context-v2 ${encodedContext} ${snapshotBriefing.length} -->\n${snapshotBriefing}\n<!-- /unleashd:buddy-context-v2 -->\n\n${input.content}`;
     },
     buddy_builder: () => {
       if (!firstUnstartedTurn) return input.content;
@@ -502,7 +625,10 @@ export function createConversationRuntime(
     }
     // Hidden first-turn context. Never serialized to clients; the typed
     // buddyContext is the durable/UI-facing metadata.
-    private _buddyBriefing: string | null;
+    private _memorySnapshot: MemorySnapshot | null;
+    private get _buddyBriefing(): string | null {
+      return this._memorySnapshot?.briefing ?? null;
+    }
     private _automationClaimToken: string | null;
     // Merge feature: set on a "parent" thread that aggregates review docs from
     // N forked children. Children have mergeChildMeta instead.
@@ -575,6 +701,7 @@ export function createConversationRuntime(
         swarmDebugPrefix = null,
         buddyContext = null,
         buddyBriefing = null,
+        buddyMemoryGeneration = null,
         automationClaimToken = null,
         purpose = 'general',
         kind = null,
@@ -613,7 +740,9 @@ export function createConversationRuntime(
       this.resumedFromConversationId = resumedFromConversationId;
       this.modelName = modelName;
       this.swarmDebugPrefix = isBuddyConversation ? null : swarmDebugPrefix;
-      this._buddyBriefing = buddyBriefing;
+      this._memorySnapshot = isBuddyConversation
+        ? createMemorySnapshot(buddyBriefing, buddyMemoryGeneration)
+        : null;
       this._automationClaimToken = automationClaimToken;
       this.mergeParentMeta = mergeParentMeta;
       this.mergeChildMeta = mergeChildMeta;
@@ -626,6 +755,14 @@ export function createConversationRuntime(
       this._sawMeaningfulProviderOutputThisRun = false;
       this._lastSwarmRunId = null;
       this._hasSwarmBaseline = false;
+    }
+
+    get memoryGeneration(): string | null {
+      return this._memorySnapshot?.generation ?? null;
+    }
+
+    getMemorySnapshot(): MemorySnapshot | null {
+      return this._memorySnapshot;
     }
 
     /**
@@ -1619,6 +1756,17 @@ export function createConversationRuntime(
       if (!this.buddyContext?.automationRunId || !this._automationClaimToken) {
         throw new Error('Automation turn requires current server-private execution authority');
       }
+      const memoryPolicy = resolveAutomationMemoryWritePolicy({
+        isAutomation: true,
+        provider: this.provider,
+        allowedOperations: this.buddyContext.allowedBuddyOperations,
+        hasClaimToken: true,
+      });
+      if (memoryPolicy === 'unsupported') {
+        throw new Error(
+          `Automation memory writes are unsupported for provider "${this.provider}" or this run lacks an explicit memory-write capability.`
+        );
+      }
       this.sendMessageInternal(content);
     }
 
@@ -1687,12 +1835,26 @@ export function createConversationRuntime(
         // worked — only the same-provider branch reached prepareSession, so
         // the fork-incapable harness was never checked. Capability, not
         // provider equality, decides the path.
-        if (source.provider !== this.provider || !providerSupportsFork(this.provider)) {
+        const sourceMemorySnapshot = source.getMemorySnapshot?.() ?? null;
+        const memoryGenerationMatches =
+          sourceMemorySnapshot === null && this._memorySnapshot === null
+            ? true
+            : sourceMemorySnapshot !== null &&
+              this._memorySnapshot !== null &&
+              sourceMemorySnapshot.generation === this._memorySnapshot.generation;
+        if (
+          source.provider !== this.provider ||
+          !providerSupportsFork(this.provider) ||
+          !memoryGenerationMatches
+        ) {
           // Soft handoff via string context (draft/first message), not provider
           // session inheritance. This is intentional — the whole goal of Fork
           // is to inject prior convo as string context across clients.
+          const memoryDetail = memoryGenerationMatches
+            ? ''
+            : ', memory generation changed so native session inheritance is disabled';
           console.log(
-            `[${this.id}] Soft fork ${source.provider} -> ${this.provider} (${source.provider === this.provider ? 'harness cannot fork sessions' : 'cross-provider'}), using string context handoff (no provider session fork)`
+            `[${this.id}] Soft fork ${source.provider} -> ${this.provider} (${source.provider === this.provider ? 'harness cannot fork sessions' : 'cross-provider'}${memoryDetail}), using string context handoff (no provider session fork)`
           );
         } else {
           if (!source.hasStartedSession()) {
@@ -1715,6 +1877,7 @@ export function createConversationRuntime(
         hasStartedSession: this._hasStartedSession,
         kind: this.kind,
         buddyBriefing: this._buddyBriefing,
+        buddyMemoryGeneration: this.memoryGeneration,
         swarmDebugPrefix: this.swarmDebugPrefix,
       });
       // When provider-session inheritance ran above, skip first-turn briefing /

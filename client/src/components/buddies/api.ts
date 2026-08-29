@@ -1,8 +1,24 @@
+export class BuddyApiError extends Error {
+  readonly status: number;
+  readonly payload: unknown;
+
+  constructor(message: string, status: number, payload: unknown) {
+    super(message);
+    this.name = 'BuddyApiError';
+    this.status = status;
+    this.payload = payload;
+  }
+}
+
 export async function buddyApi<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, init);
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
-    throw new Error((payload as { error?: string }).error ?? `Request failed (${response.status})`);
+    throw new BuddyApiError(
+      (payload as { error?: string }).error ?? `Request failed (${response.status})`,
+      response.status,
+      payload
+    );
   }
   return payload as T;
 }
