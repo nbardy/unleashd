@@ -106,7 +106,11 @@ export function extractCodexTurnLifecycle(entries: readonly unknown[]): CodexLif
     .sort((left, right) => left.order - right.order)
     .map(({ order: _order, ...turn }) => turn);
   const latestTurn = projected.at(-1) ?? null;
-  const activeTurn = [...projected].reverse().find((turn) => turn.status === 'running') ?? null;
+  // Reverse scan rather than copy-and-reverse; this runs on every projection.
+  let activeTurn: (typeof projected)[number] | null = null;
+  for (let i = projected.length - 1; i >= 0 && activeTurn === null; i--) {
+    if (projected[i].status === 'running') activeTurn = projected[i];
+  }
   return { turns: projected, latestTurn, activeTurn };
 }
 

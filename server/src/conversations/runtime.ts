@@ -1695,7 +1695,12 @@ export function createConversationRuntime(
           // the parent's progress strip updates.
           if (this.mergeChildMeta) {
             const expectedPath = mergeReviewDocPath(this.mergeChildMeta.reviewUuid);
-            const lastAssistant = [...this.messages].reverse().find((m) => m.role === 'assistant');
+            // Reverse scan instead of `[...messages].reverse().find(...)`, which
+            // copied the whole transcript to find one message from the end.
+            let lastAssistant: Message | undefined;
+            for (let i = this.messages.length - 1; i >= 0 && !lastAssistant; i--) {
+              if (this.messages[i].role === 'assistant') lastAssistant = this.messages[i];
+            }
             const found = !!lastAssistant && lastAssistant.content.includes(expectedPath);
             broadcast({
               type: 'merge_child_status',
