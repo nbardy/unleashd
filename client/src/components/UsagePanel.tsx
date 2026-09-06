@@ -136,14 +136,25 @@ export function UsagePanel({ onClose }: Props) {
     } else {
       setLoading(true);
     }
+    // Toggling 7 → 30 → 7 quickly leaves three requests in flight. Without this
+    // guard the slowest response wins regardless of which `days` is current, and
+    // — because clientCache holds a single entry — it would also overwrite the
+    // cache with data for the wrong window. A stale response is dropped entirely.
+    let cancelled = false;
     fetch(`/api/usage?days=${days}`)
       .then((r) => r.json())
       .then((d: UsageData) => {
+        if (cancelled) return;
         clientCache = { days, data: d, time: Date.now() };
         setData(d);
         setLoading(false);
       })
-      .catch(() => setLoading(false));
+      .catch(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
   }, [days]);
 
   // Filter entries by provider tab

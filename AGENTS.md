@@ -27,6 +27,13 @@ client/src/atoms/ui.ts             → persisted UI prefs (local+shared partitio
   `streamingContent`/streaming atoms, never `conversations.messages` mid-stream.
 - All hooks before any early `return`. New list views go in derived atoms, not
   component `useMemo`. Stable fallbacks are module constants.
+- One-shot data loads in components go through `usePolledFetch(source, 0)`,
+  never a bare `fetch(...).then(setState)` inside `useEffect`. The bare form has
+  no abort-on-change, so when the key changes quickly the SLOWEST response
+  wins, not the latest — seven panels showed the previous project's data after
+  a fast switch until 2026-09-06 (SwarmDetail, SwarmAnalytics, UsagePanel).
+  Pass a memoised `(signal) => Promise<T>` fetcher when one load fans out into
+  several requests; thread `signal` into every inner `fetch`.
 - `jotaiStore.set` only inside `client/src/atoms/` (via `mutate()` for partial
   updates). Mobile never imports `components/*` except `components/buddies/`.
   Gates: `bash tools/check-client-invariants.sh`.

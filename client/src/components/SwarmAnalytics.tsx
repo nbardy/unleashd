@@ -1,24 +1,33 @@
 import type { Conversation } from '@unleashd/shared';
+import type { SwarmRunLog, SwarmRunSummary } from '@unleashd/shared';
 import { useAtomValue } from 'jotai';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { workersByProjectAtom } from '../atoms/conversations';
 import { promotedWorkersAtom } from '../atoms/ui';
+import { usePolledFetch } from '../hooks/usePolledFetch';
 import { getProjectColor } from '../utils/projectColors';
-import { getProjectName, getProjectRoot } from '../utils/swarmUtils';
 import {
-  buildTimelineData,
-  computeSwarmStats,
   type IterationSpan,
   type RunData,
+  buildTimelineData,
+  computeSwarmStats,
 } from '../utils/swarmAnalyticsParsers';
-import type { SwarmRunLog, SwarmRunSummary } from '@unleashd/shared';
+import { getProjectName, getProjectRoot } from '../utils/swarmUtils';
 import { formatDuration, formatTimeAgo } from '../utils/time';
 import './SwarmAnalytics.css';
 
+// Stable empty fallback (AGENTS.md: stable fallbacks are module constants).
+const NO_RUNS_DATA = new Map<string, RunData>();
+
 // Re-export analytics parsers for mobile (utils is canonical)
 export { buildTimelineData, computeSwarmStats } from '../utils/swarmAnalyticsParsers';
-export type { IterationSpan, RunData, SwarmStats, WorkerTimeline } from '../utils/swarmAnalyticsParsers';
+export type {
+  IterationSpan,
+  RunData,
+  SwarmStats,
+  WorkerTimeline,
+} from '../utils/swarmAnalyticsParsers';
 // =============================================================================
 // Types (component-local)
 // =============================================================================
@@ -103,7 +112,10 @@ function TimelineChart({ runData, onWorkerClick }: TimelineChartProps) {
   } | null>(null);
 
   // Build timeline data from run summary and reviews (pure parser in utils)
-  const { timelines, timeRange, isEstimated } = useMemo(() => buildTimelineData(runData), [runData]);
+  const { timelines, timeRange, isEstimated } = useMemo(
+    () => buildTimelineData(runData),
+    [runData]
+  );
 
   // Chart dimensions
   const rowHeight = 40;
@@ -383,9 +395,50 @@ export function SwarmAnalytics() {
   const [selectedProject, setSelectedProject] = useState<string | null>(null);
   const [selectedSwarmId, setSelectedSwarmId] = useState<string | null>(null);
 
-  // Run data state
-  const [runsData, setRunsData] = useState<Map<string, RunData>>(new Map());
-  const [loading, setLoading] = useState(true);
+  // Run data: one fetch per project, aborted if the project changes first.
+  // Memoised on selectedProject because usePolledFetch keys its effect on
+  // source identity — an inline closure would refetch on every render. Null
+  // when no project is selected, which disables the hook.
+  const fetchRunsData = useMemo(() => {
+    if (!selectedProject) return null;
+    const project = selectedProject;
+    return async (signal: AbortSignal): Promise<Map<string, RunData>> => {
+      const response = await fetch(`/api/swarm-runs?dir=${encodeURIComponent(project)}`, {
+        signal,
+      });
+      if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      const body = (await response.json()) as {
+        runs: Array<{ swarmId: string; run: SwarmRunLog | null; summary: SwarmRunSummary | null }>;
+      };
+      // Reviews for every run in parallel. The effect this replaces awaited
+      // them one at a time inside .then(), so twenty runs meant twenty serial
+      // round trips — and switching project mid-loop let the OLD project's
+      // loop run to completion and overwrite the new project's state.
+      const entries = await Promise.all(
+        body.runs.map(async (run): Promise<RunData> => {
+          const reviews = await fetch(
+            `/api/swarm-reviews?dir=${encodeURIComponent(project)}&swarmId=${encodeURIComponent(run.swarmId)}`,
+            { signal }
+          )
+            .then((r) => r.json() as Promise<{ reviews?: RunData['reviews'] }>)
+            .then((json) => json.reviews ?? [])
+            .catch((error: unknown) => {
+              // An abort must propagate so the hook drops the whole cycle; any
+              // other per-run failure degrades to "no reviews", as before.
+              if ((error as Error).name === 'AbortError') throw error;
+              return [];
+            });
+          return { swarmId: run.swarmId, run: run.run, summary: run.summary, reviews };
+        })
+      );
+      return new Map(entries.map((entry) => [entry.swarmId, entry]));
+    };
+  }, [selectedProject]);
+  const runsFetch = usePolledFetch<Map<string, RunData>>(fetchRunsData, 0);
+  // While a new project loads, data still holds the previous project's map. The
+  // spinner branch below hides it, and the project <select> resets selectedSwarmId.
+  const runsData = runsFetch.data ?? NO_RUNS_DATA;
+  const loading = runsFetch.loading;
 
   // Track whether we've auto-selected the first swarm run for this project.
   // Without this, auto-selection of setSelectedSwarmId triggers the fetch effect
@@ -429,65 +482,14 @@ export function SwarmAnalytics() {
     hasAutoSelected.current = false;
   }, [selectedProject]);
 
-  // Fetch runs data when project is selected.
-  // selectedSwarmId is intentionally excluded from deps — including it caused
-  // a re-fetch loop because the auto-selection below sets selectedSwarmId,
-  // which would re-trigger this effect.
+  // Auto-select the first run once per project selection. Insertion order of
+  // the map is the server's order, so the first key is the first run.
   useEffect(() => {
-    if (!selectedProject) {
-      setLoading(false);
-      return;
-    }
-
-    setLoading(true);
-    fetch(`/api/swarm-runs?dir=${encodeURIComponent(selectedProject)}`)
-      .then((res) => res.json())
-      .then(
-        async (data: {
-          runs: Array<{
-            swarmId: string;
-            run: SwarmRunLog | null;
-            summary: SwarmRunSummary | null;
-          }>;
-        }) => {
-          const runsMap = new Map<string, RunData>();
-
-          // Fetch reviews for each run
-          for (const run of data.runs) {
-            try {
-              const reviewsRes = await fetch(
-                `/api/swarm-reviews?dir=${encodeURIComponent(selectedProject)}&swarmId=${encodeURIComponent(run.swarmId)}`
-              );
-              const reviewsData = await reviewsRes.json();
-
-              runsMap.set(run.swarmId, {
-                swarmId: run.swarmId,
-                run: run.run,
-                summary: run.summary,
-                reviews: reviewsData.reviews || [],
-              });
-            } catch {
-              runsMap.set(run.swarmId, {
-                swarmId: run.swarmId,
-                run: run.run,
-                summary: run.summary,
-                reviews: [],
-              });
-            }
-          }
-
-          setRunsData(runsMap);
-          setLoading(false);
-
-          // Auto-select first run once per project selection
-          if (!hasAutoSelected.current && data.runs.length > 0) {
-            hasAutoSelected.current = true;
-            setSelectedSwarmId(data.runs[0].swarmId);
-          }
-        }
-      )
-      .catch(() => setLoading(false));
-  }, [selectedProject]);
+    const data = runsFetch.data;
+    if (hasAutoSelected.current || !data || data.size === 0) return;
+    hasAutoSelected.current = true;
+    setSelectedSwarmId(data.keys().next().value ?? null);
+  }, [runsFetch.data]);
 
   // Auto-select first project
   useEffect(() => {
@@ -519,7 +521,6 @@ export function SwarmAnalytics() {
             onChange={(e) => {
               setSelectedProject(e.target.value);
               setSelectedSwarmId(null);
-              setRunsData(new Map());
             }}
           >
             {projects.map((project) => (

@@ -12,6 +12,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom';
 import { createConversation } from '../atoms/actions';
 import { conversationAtomFamily, workersByProjectAtom } from '../atoms/conversations';
 import { markMessagesSeen, promotedWorkersAtom } from '../atoms/ui';
+import { usePolledFetch } from '../hooks/usePolledFetch';
 import { useSwarmRuntimeSnapshots } from '../hooks/useSwarmRuntimeSnapshots';
 import { getProjectRoot } from '../utils/swarmUtils';
 import { getWorkerVisibilitySummary } from '../utils/swarmWorkerVisibility';
@@ -19,6 +20,12 @@ import { formatTimeAgo, getLastMessageTime } from '../utils/time';
 import { VirtualizedMessageList } from './VirtualizedMessageList';
 import type { MessageGroup } from './VirtualizedMessageList';
 import './SwarmDetail.css';
+
+// Stable empty fallbacks for usePolledFetch results (AGENTS.md: stable fallbacks
+// are module constants — a fresh [] per render defeats downstream memoisation).
+const NO_COMMITS: GitLogEntry[] = [];
+const NO_RUNS: SwarmRun[] = [];
+const NO_REVIEWS: SwarmReviewLog[] = [];
 
 // =============================================================================
 // Types for server API responses
@@ -269,19 +276,13 @@ function WorkerChatPane({
 // =============================================================================
 
 function GitLogPanel({ projectRoot }: { projectRoot: string }) {
-  const [commits, setCommits] = useState<GitLogEntry[]>([]);
-  const [loading, setLoading] = useState(true);
   const [isCollapsed, setIsCollapsed] = useState(false);
-
-  useEffect(() => {
-    fetch(`/api/git-log?dir=${encodeURIComponent(projectRoot)}`)
-      .then((res) => res.json())
-      .then((data: GitLogEntry[]) => {
-        setCommits(data);
-        setLoading(false);
-      })
-      .catch(() => setLoading(false));
-  }, [projectRoot]);
+  // intervalMs 0: one fetch per projectRoot, aborted if projectRoot changes first.
+  const { data, loading } = usePolledFetch<GitLogEntry[]>(
+    `/api/git-log?dir=${encodeURIComponent(projectRoot)}`,
+    0
+  );
+  const commits = data ?? NO_COMMITS;
 
   return (
     <div className={`swarm-bottom-panel ${isCollapsed ? 'collapsed' : ''}`}>
@@ -316,20 +317,14 @@ function GitLogPanel({ projectRoot }: { projectRoot: string }) {
 // =============================================================================
 
 function OompaConfigPanel({ projectRoot }: { projectRoot: string }) {
-  const [config, setConfig] = useState<OompaConfig | null>(null);
-  const [error, setError] = useState<string | null>(null);
   const [expandedPrompts, setExpandedPrompts] = useState<Map<string, string>>(new Map());
   const [isCollapsed, setIsCollapsed] = useState(false);
-
-  useEffect(() => {
-    fetch(`/api/oompa-config?dir=${encodeURIComponent(projectRoot)}`)
-      .then((res) => {
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        return res.json();
-      })
-      .then((data: OompaConfig) => setConfig(data))
-      .catch((e: Error) => setError(e.message));
-  }, [projectRoot]);
+  // intervalMs 0: one fetch per projectRoot, aborted if projectRoot changes first.
+  // `error` is only ever tested for truthiness below, so the Error object serves as-is.
+  const { data: config, error } = usePolledFetch<OompaConfig>(
+    `/api/oompa-config?dir=${encodeURIComponent(projectRoot)}`,
+    0
+  );
 
   // Move fetch outside setState updater — StrictMode double-fires updater callbacks,
   // which would duplicate the fetch. Instead, read current state and branch outside.
@@ -424,48 +419,45 @@ function SwarmRunsPanel({
   selectedRunId: string | null;
   onSelectRunId: (id: string) => void;
 }) {
-  const [runs, setRuns] = useState<SwarmRun[]>([]);
-  const [reviews, setReviews] = useState<SwarmReviewLog[]>([]);
   const setSelectedRunId = onSelectRunId;
   const [expandedReview, setExpandedReview] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [newFilesCount, setNewFilesCount] = useState<number | null>(null);
 
-  useEffect(() => {
-    fetch(`/api/swarm-runs?dir=${encodeURIComponent(projectRoot)}`)
-      .then((res) => res.json())
-      .then((data: { runs: SwarmRun[] }) => {
-        setRuns(data.runs);
-        if (data.runs.length > 0 && !selectedRunId) {
-          setSelectedRunId(data.runs[0].swarmId);
-        }
-        setLoading(false);
-      })
-      .catch(() => setLoading(false));
-  }, [projectRoot, selectedRunId, setSelectedRunId]);
+  // All three loads use intervalMs 0: one fetch per key, aborted if the key
+  // changes first. The effects they replace had no such guard, so switching
+  // projects or runs quickly let the slowest response win.
+  const { data: runsData, loading } = usePolledFetch<{ runs: SwarmRun[] }>(
+    `/api/swarm-runs?dir=${encodeURIComponent(projectRoot)}`,
+    0
+  );
+  const runs = runsData?.runs ?? NO_RUNS;
 
-  // Fetch reviews when a run is selected
+  // Seeding the selection is its own concern. It used to sit inside the runs
+  // fetch with selectedRunId in that effect's deps, which re-fetched the whole
+  // run list every time the user picked a run.
   useEffect(() => {
-    if (!selectedRunId) return;
-    fetch(
-      `/api/swarm-reviews?dir=${encodeURIComponent(projectRoot)}&swarmId=${encodeURIComponent(selectedRunId)}`
-    )
-      .then((res) => res.json())
-      .then((data: { reviews: SwarmReviewLog[] }) => setReviews(data.reviews))
-      .catch(() => setReviews([]));
-  }, [projectRoot, selectedRunId]);
+    if (runs.length > 0 && !selectedRunId) setSelectedRunId(runs[0].swarmId);
+  }, [runs, selectedRunId, setSelectedRunId]);
 
-  // Fetch count of .json files added in merge commits during this run's time window
-  useEffect(() => {
-    if (!selectedRunId) return;
-    setNewFilesCount(null);
-    fetch(
-      `/api/swarm-new-files?dir=${encodeURIComponent(projectRoot)}&swarmId=${encodeURIComponent(selectedRunId)}`
-    )
-      .then((res) => res.json())
-      .then((data: { count: number }) => setNewFilesCount(data.count))
-      .catch(() => setNewFilesCount(0));
-  }, [projectRoot, selectedRunId]);
+  const runScoped = (endpoint: string) =>
+    selectedRunId
+      ? `${endpoint}?dir=${encodeURIComponent(projectRoot)}&swarmId=${encodeURIComponent(selectedRunId)}`
+      : null;
+
+  const reviewsFetch = usePolledFetch<{ reviews: SwarmReviewLog[] }>(
+    runScoped('/api/swarm-reviews'),
+    0
+  );
+  // The hook keeps last-good data across a failed fetch (right for polling
+  // callers); this panel showed an empty list on failure, so keep that.
+  const reviews = reviewsFetch.error ? NO_REVIEWS : (reviewsFetch.data?.reviews ?? NO_REVIEWS);
+
+  const newFiles = usePolledFetch<{ count: number }>(runScoped('/api/swarm-new-files'), 0);
+  // null while loading (the old effect reset to null on each run change), 0 on error.
+  const newFilesCount = newFiles.loading
+    ? null
+    : newFiles.error
+      ? 0
+      : (newFiles.data?.count ?? null);
 
   if (loading) return <div className="empty-state">Loading run history...</div>;
   if (runs.length === 0) return <div className="empty-state">No runs recorded yet</div>;

@@ -31,13 +31,18 @@ export type PolledSource<T> = string | ((signal: AbortSignal) => Promise<T>);
  * NOT tanstack-query — just useEffect + setInterval + visibilitychange (PLANNING §7 #8).
  *
  * @param source - fetch URL, a fetcher function for multi-request cycles, or null to disable
- * @param intervalMs - polling interval in ms
+ * @param intervalMs - polling interval in ms. 0 means fetch once per source change
+ *   and never poll. Use 0 for one-shot loads so they inherit the abort-on-change
+ *   guarantee: a bare `useEffect(() => fetch(url).then(setState), [key])` has no
+ *   such guard, so when the key changes quickly the SLOWEST response wins, not
+ *   the latest — SwarmDetail's git-log / config / runs panels and SwarmAnalytics
+ *   all showed the previous project's data after a fast switch (2026-09-06).
  * @param enabled - when false, no fetch and no interval (default true)
  */
 export function usePolledFetch<T>(
   source: PolledSource<T> | null,
   intervalMs: number,
-  enabled = true,
+  enabled = true
 ): UsePolledFetchResult<T> {
   const [data, setData] = useState<T | null>(null);
   const [loading, setLoading] = useState<boolean>(enabled && source !== null);
@@ -92,6 +97,7 @@ export function usePolledFetch<T>(
 
     const startInterval = () => {
       if (intervalRef.current !== null) window.clearInterval(intervalRef.current);
+      if (intervalMs <= 0) return;
       if (typeof document !== 'undefined' && document.hidden) return;
       intervalRef.current = window.setInterval(() => void fetchData(), intervalMs);
     };
