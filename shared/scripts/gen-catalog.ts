@@ -5,7 +5,7 @@
  * Run: pnpm --filter @unleashd/shared gen:catalog  (or pnpm exec tsx shared/scripts/gen-catalog.ts)
  */
 
-import { readFile, writeFile, mkdir } from 'node:fs/promises';
+import { mkdir, readFile, writeFile } from 'node:fs/promises';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -82,51 +82,63 @@ async function main() {
   // If catalog ever diverges per-model, this union remains correct for validation.
 
   const lines: string[] = [];
-  lines.push(`// DO NOT EDIT - generated from catalog.jsonc`);
+  lines.push('// DO NOT EDIT - generated from catalog.jsonc');
   lines.push(`// Source: vendor/agent-cli-tool/catalog.jsonc (revision ${catalog.revision})`);
-  lines.push(`// Generator: shared/scripts/gen-catalog.ts`);
-  lines.push(`// Run: pnpm --filter @unleashd/shared gen:catalog`);
-  lines.push(``);
+  lines.push('// Generator: shared/scripts/gen-catalog.ts');
+  lines.push('// Run: pnpm --filter @unleashd/shared gen:catalog');
+  lines.push('');
 
   lines.push(`export const CLAUDE_MODEL_IDS = ${JSON.stringify(claudeIds)} as const;`);
   lines.push(`export const GEMINI_MODEL_IDS = ${JSON.stringify(geminiIds)} as const;`);
   lines.push(`export const MUSE_MODEL_IDS = ${JSON.stringify(museIds)} as const;`);
-  lines.push(``);
+  lines.push('');
   // Cursor registry
   const cursorIds = cursor.models.map((m) => m.id);
-  lines.push(`export const CURSOR_MODEL_REGISTRY = ${JSON.stringify(
-    cursor.models.map((m) => ({ id: m.id, displayName: m.displayName, isDefault: Boolean(m.isDefault) })),
-    null,
-    2
-  )} as const;`);
+  lines.push(
+    `export const CURSOR_MODEL_REGISTRY = ${JSON.stringify(
+      cursor.models.map((m) => ({
+        id: m.id,
+        displayName: m.displayName,
+        isDefault: Boolean(m.isDefault),
+      })),
+      null,
+      2
+    )} as const;`
+  );
   lines.push(`export const CURSOR_MODEL_IDS = ${JSON.stringify(cursorIds)} as const;`);
-  lines.push(``);
+  lines.push('');
   // Effort levels
   lines.push(`export const CLAUDE_EFFORT_LEVELS = ${JSON.stringify(claudeLevels)} as const;`);
   lines.push(`export const CODEX_EFFORT_LEVELS = ${JSON.stringify(codexLevels)} as const;`);
   lines.push(`export const MUSE_EFFORT_LEVELS = ${JSON.stringify(museLevels)} as const;`);
-  lines.push(``);
+  lines.push('');
   // Codex thinking options — alias of effort levels per current catalog; kept separate for backward compat
-  lines.push(`export const CODEX_THINKING_OPTIONS = CODEX_EFFORT_LEVELS;`);
+  lines.push('export const CODEX_THINKING_OPTIONS = CODEX_EFFORT_LEVELS;');
   lines.push(`export const NO_CODEX_THINKING = "none" as const;`);
-  lines.push(`export const CODEX_UNIFIED_THINKING_OPTIONS = [NO_CODEX_THINKING, ...CODEX_THINKING_OPTIONS] as const;`);
-  lines.push(``);
+  lines.push(
+    'export const CODEX_UNIFIED_THINKING_OPTIONS = [NO_CODEX_THINKING, ...CODEX_THINKING_OPTIONS] as const;'
+  );
+  lines.push('');
   // Codex registry — references unified thinking options for each entry
   // We emit literal objects with thinkingOptions: CODEX_UNIFIED_THINKING_OPTIONS and defaultThinkingOption per catalog
-  lines.push(`export const CODEX_MODEL_REGISTRY = [`);
+  lines.push('export const CODEX_MODEL_REGISTRY = [');
   for (const m of codex.models) {
     const def = m.reasoning?.defaultEffort;
-    const defStr = def ? `, defaultThinkingOption: ${JSON.stringify(def)}` : ``;
-    lines.push(`  { modelName: ${JSON.stringify(m.id)}, displayName: ${JSON.stringify(m.displayName)}, thinkingOptions: CODEX_UNIFIED_THINKING_OPTIONS${defStr}, isDefault: ${Boolean(m.isDefault)} },`);
+    const defStr = def ? `, defaultThinkingOption: ${JSON.stringify(def)}` : '';
+    lines.push(
+      `  { modelName: ${JSON.stringify(m.id)}, displayName: ${JSON.stringify(m.displayName)}, thinkingOptions: CODEX_UNIFIED_THINKING_OPTIONS${defStr}, isDefault: ${Boolean(m.isDefault)} },`
+    );
   }
-  lines.push(`] as const;`);
-  lines.push(``);
+  lines.push('] as const;');
+  lines.push('');
 
-  const out = lines.join('\n') + '\n';
+  const out = `${lines.join('\n')}\n`;
   await mkdir(dirname(OUT_FILE), { recursive: true });
   await writeFile(OUT_FILE, out, 'utf-8');
   console.log(`Wrote ${OUT_FILE}`);
-  console.log(`  claude: ${claudeIds.length} models, gemini: ${geminiIds.length}, cursor: ${cursor.models.length}, muse: ${museIds.length}, codex: ${codex.models.length}`);
+  console.log(
+    `  claude: ${claudeIds.length} models, gemini: ${geminiIds.length}, cursor: ${cursor.models.length}, muse: ${museIds.length}, codex: ${codex.models.length}`
+  );
 }
 
 main().catch((e) => {

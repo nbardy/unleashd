@@ -214,7 +214,7 @@ export function createWatchServer(overrides = {}) {
               ).join('\n');
             }
           } catch {}
-          const message = (formatted && formatted.trim()) || e.message || String(e);
+          const message = formatted?.trim() || e.message || String(e);
           const withPrefix = /Transform failed/i.test(message)
             ? message
             : `Transform failed: ${message}`;

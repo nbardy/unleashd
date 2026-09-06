@@ -26,10 +26,7 @@ const noMarkerAnywhere = () => false;
 
 test('climbs out of the server package to the workspace root', () => {
   // The exact failing configuration: dev server cwd is <repo>/server.
-  assert.equal(
-    resolveDefaultWorkingDirectory({}, path.join(REPO, 'server'), onlyRepoRoot),
-    REPO
-  );
+  assert.equal(resolveDefaultWorkingDirectory({}, path.join(REPO, 'server'), onlyRepoRoot), REPO);
 });
 
 test('a cwd already at the workspace root is unchanged', () => {

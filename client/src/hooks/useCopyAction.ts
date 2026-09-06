@@ -16,7 +16,10 @@ export type CopyState = 'idle' | 'copied' | 'failed';
  * and the mobile message action — mobile cannot import `components/*` (gate
  * G3), so the shared piece has to live in `hooks/`.
  */
-export function useCopyAction(text: string, resetMs = 2000): {
+export function useCopyAction(
+  text: string,
+  resetMs = 2000
+): {
   state: CopyState;
   copy: () => void;
 } {

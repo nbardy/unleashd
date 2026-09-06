@@ -1,9 +1,5 @@
 import type { DiskAdapter, ParsedSession } from './disk-adapter';
-import {
-  MUSE_SESSIONS_DIR,
-  getMuseSessionFiles,
-  parseMuseSessionFile,
-} from './jsonl';
+import { MUSE_SESSIONS_DIR, getMuseSessionFiles, parseMuseSessionFile } from './jsonl';
 
 /**
  * Muse adapter — reads ~/.local/share/muse/sessions/YYYY/MM/DD/{sessionId}/session.jsonl

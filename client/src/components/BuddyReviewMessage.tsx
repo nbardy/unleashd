@@ -1,7 +1,4 @@
-import type {
-  BuddyReviewRequest,
-  BuddyReviewResult,
-} from '../utils/buddy-review-message';
+import type { BuddyReviewRequest, BuddyReviewResult } from '../utils/buddy-review-message';
 import './BuddyReviewMessage.css';
 
 function shortId(value: string): string {
@@ -22,7 +19,10 @@ function EvidenceDetails({
       </summary>
       <div className="buddy-review-evidence">
         {evidence.map((item, index) => (
-          <div className="buddy-review-evidence__item" key={`${item.kind}-${item.reference}-${index}`}>
+          <div
+            className="buddy-review-evidence__item"
+            key={`${item.kind}-${item.reference}-${index}`}
+          >
             <div className="buddy-review-evidence__reference">
               <span>{item.kind}</span>
               <code>{item.reference}</code>

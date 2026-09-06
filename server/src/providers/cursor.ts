@@ -1,6 +1,6 @@
 import type { ModelInfo } from '@unleashd/shared';
-import type { Provider } from './index';
 import { loadProviderModels } from './catalog';
+import type { Provider } from './index';
 
 const FALLBACK_CURSOR_MODELS: ModelInfo[] = [
   { id: 'composer-2.5', displayName: 'Composer 2.5', isDefault: true },

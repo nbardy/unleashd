@@ -4,8 +4,8 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { createConversation } from '../../atoms/actions';
 import { conversationAtomFamily, workersByProjectAtom } from '../../atoms/conversations';
-import { usePolledFetch } from '../../hooks/usePolledFetch';
 import { promotedWorkersAtom } from '../../atoms/ui';
+import { usePolledFetch } from '../../hooks/usePolledFetch';
 import { getProjectRoot } from '../../utils/swarmUtils';
 import { getWorkerVisibilitySummary } from '../../utils/swarmWorkerVisibility';
 import { formatTimeAgo, getLastMessageTime } from '../../utils/time';
@@ -41,7 +41,7 @@ function buildSwarmDebugPrefix(
   configPath: string | null,
   swarmId: string | null,
   summary: SwarmRunSummary | null,
-  startedAt: string | null,
+  startedAt: string | null
 ): string {
   const configDisplay = configPath ?? `${projectRoot}/oompa.json`;
   const swarmDisplay = swarmId ?? 'unknown';
@@ -66,18 +66,18 @@ function buildSwarmDebugPrefix(
       `- Total Cycles: ${summary['total-iterations']}`,
       `- Merges: ${totalMerges}`,
       `- Rejections: ${totalRej}`,
-      `- Errors: ${totalErr}`,
+      `- Errors: ${totalErr}`
     );
     if (summary.workers.length > 0) {
       lines.push(
         '',
         '## Worker Status',
         'Worker | Harness | Status | Done | Merges | Rej | Err | Reviews',
-        '-------|---------|--------|------|--------|-----|-----|--------',
+        '-------|---------|--------|------|--------|-----|-----|--------'
       );
       for (const w of summary.workers) {
         lines.push(
-          `${w.id} | ${w.harness}:${w.model ?? 'default'} | ${w.status} | ${w.completed}/${w.iterations} | ${w.merges} | ${w.rejections} | ${w.errors} | ${w['review-rounds-total']}`,
+          `${w.id} | ${w.harness}:${w.model ?? 'default'} | ${w.status} | ${w.completed}/${w.iterations} | ${w.merges} | ${w.rejections} | ${w.errors} | ${w['review-rounds-total']}`
         );
       }
     }
@@ -94,14 +94,14 @@ function buildSwarmDebugPrefix(
     '',
     `To list run artifacts: ls ${runsDir}/`,
     '',
-    'Given this context, help the user debug and investigate the swarm run.',
+    'Given this context, help the user debug and investigate the swarm run.'
   );
   return lines.join('\n');
 }
 
 async function sendSwarmSignal(
   projectRoot: string,
-  signal: 'stop' | 'kill',
+  signal: 'stop' | 'kill'
 ): Promise<{ ok: boolean; message: string }> {
   const res = await fetch('/api/swarm-signal', {
     method: 'POST',
@@ -158,14 +158,19 @@ export function SwarmDetailMobile() {
   const promotedSet = useMemo(() => new Set(promotedWorkers), [promotedWorkers]);
 
   // Runtime snapshot polled via usePolledFetch (10s, visibility-aware)
-  const { data: runtimeData } = usePolledFetch<{ snapshot: import('@unleashd/shared').OompaRuntimeSnapshot } | import('@unleashd/shared').OompaRuntimeSnapshot>(
+  const { data: runtimeData } = usePolledFetch<
+    | { snapshot: import('@unleashd/shared').OompaRuntimeSnapshot }
+    | import('@unleashd/shared').OompaRuntimeSnapshot
+  >(
     projectRoot ? `/api/swarm-runtime?dir=${encodeURIComponent(projectRoot)}` : null,
     10_000,
-    !!projectRoot,
+    !!projectRoot
   );
   const runtimeSnapshot = useMemo(() => {
     if (!runtimeData) return null;
-    if ('snapshot' in (runtimeData as Record<string, unknown>)) return (runtimeData as { snapshot: import('@unleashd/shared').OompaRuntimeSnapshot }).snapshot;
+    if ('snapshot' in (runtimeData as Record<string, unknown>))
+      return (runtimeData as { snapshot: import('@unleashd/shared').OompaRuntimeSnapshot })
+        .snapshot;
     return runtimeData as import('@unleashd/shared').OompaRuntimeSnapshot;
   }, [runtimeData]);
 
@@ -183,7 +188,7 @@ export function SwarmDetailMobile() {
       if (!state) return w.isRunning;
       return state.status === 'running' || state.status === 'starting';
     },
-    [runtimeWorkerStates],
+    [runtimeWorkerStates]
   );
 
   // 30s time-ago tick (PLANNING §7 #8)
@@ -199,14 +204,24 @@ export function SwarmDetailMobile() {
   const handleOpenChat = useCallback((id: string) => navigate(`/chat/${id}`), [navigate]);
 
   const handleStartDebugConversation = useCallback(async () => {
-    const swarmId = runtimeSnapshot?.available ? (runtimeSnapshot.run?.swarmId ?? runtimeSnapshot.run?.runId ?? null) : null;
-    const configPath = runtimeSnapshot?.available ? (runtimeSnapshot.run?.configPath ?? null) : null;
+    const swarmId = runtimeSnapshot?.available
+      ? (runtimeSnapshot.run?.swarmId ?? runtimeSnapshot.run?.runId ?? null)
+      : null;
+    const configPath = runtimeSnapshot?.available
+      ? (runtimeSnapshot.run?.configPath ?? null)
+      : null;
     let summary: SwarmRunSummary | null = null;
     let startedAt: string | null = null;
     try {
       const res = await fetch(`/api/swarm-runs?dir=${encodeURIComponent(projectRoot)}`);
       if (res.ok) {
-        const data: { runs: { swarmId: string; summary: SwarmRunSummary; run: { 'started-at': string } | null }[] } = await res.json();
+        const data: {
+          runs: {
+            swarmId: string;
+            summary: SwarmRunSummary;
+            run: { 'started-at': string } | null;
+          }[];
+        } = await res.json();
         const match = swarmId ? data.runs.find((r) => r.swarmId === swarmId) : data.runs[0];
         if (match) {
           summary = match.summary;
@@ -254,7 +269,8 @@ export function SwarmDetailMobile() {
       let bestDelta = Number.POSITIVE_INFINITY;
       for (const g of groups) {
         if (g.exec.swarmId !== rf.swarmId) continue;
-        const execTime = getLastMessageTime(g.exec.messages)?.getTime() ?? new Date(g.exec.createdAt).getTime();
+        const execTime =
+          getLastMessageTime(g.exec.messages)?.getTime() ?? new Date(g.exec.createdAt).getTime();
         const delta = Math.abs(rfCreated - execTime);
         if (delta < bestDelta) {
           bestDelta = delta;
@@ -269,7 +285,7 @@ export function SwarmDetailMobile() {
 
   const workerVisibility = useMemo(
     () => getWorkerVisibilitySummary(allWorkers, runtimeSnapshot, isWorkerRunningLive),
-    [allWorkers, runtimeSnapshot, isWorkerRunningLive],
+    [allWorkers, runtimeSnapshot, isWorkerRunningLive]
   );
 
   if (!projectRoot) {
@@ -294,13 +310,21 @@ export function SwarmDetailMobile() {
         <h2 className="mobile-swarm-detail__title" title={projectRoot}>
           {displayPath}
         </h2>
-        <div className={`mobile-swarm-detail__badge ${workerVisibility.runningWorkers > 0 ? 'badge-running' : 'badge-idle'}`}>
-          {workerVisibility.runningWorkers > 0 ? `${workerVisibility.runningWorkers} running` : 'All idle'}
+        <div
+          className={`mobile-swarm-detail__badge ${workerVisibility.runningWorkers > 0 ? 'badge-running' : 'badge-idle'}`}
+        >
+          {workerVisibility.runningWorkers > 0
+            ? `${workerVisibility.runningWorkers} running`
+            : 'All idle'}
         </div>
       </div>
 
       <div className="mobile-swarm-detail__actions">
-        <button type="button" className="mobile-swarm-detail__debug-btn" onClick={handleStartDebugConversation}>
+        <button
+          type="button"
+          className="mobile-swarm-detail__debug-btn"
+          onClick={handleStartDebugConversation}
+        >
           Debug Conversation
         </button>
         {workerVisibility.runningWorkers > 0 && confirmAction === null && (
@@ -329,7 +353,9 @@ export function SwarmDetailMobile() {
         )}
         {confirmAction !== null && (
           <div className="mobile-swarm-detail__confirm">
-            <span>{confirmAction === 'stop' ? 'Stop swarm gracefully?' : 'Kill swarm immediately?'}</span>
+            <span>
+              {confirmAction === 'stop' ? 'Stop swarm gracefully?' : 'Kill swarm immediately?'}
+            </span>
             <button
               type="button"
               className="mobile-signal-btn signal-confirm"
@@ -345,7 +371,11 @@ export function SwarmDetailMobile() {
             >
               Confirm
             </button>
-            <button type="button" className="mobile-signal-btn signal-cancel" onClick={() => setConfirmAction(null)}>
+            <button
+              type="button"
+              className="mobile-signal-btn signal-cancel"
+              onClick={() => setConfirmAction(null)}
+            >
               Cancel
             </button>
           </div>
@@ -357,7 +387,15 @@ export function SwarmDetailMobile() {
         <span>
           {workerVisibility.totalWorkers} workers · {allWorkers.length} sessions
         </span>
-        {allWorkers.length > 0 && <span> · longest {formatTimeAgo(new Date(Math.min(...allWorkers.map((w) => new Date(w.createdAt).getTime()))))}</span>}
+        {allWorkers.length > 0 && (
+          <span>
+            {' '}
+            · longest{' '}
+            {formatTimeAgo(
+              new Date(Math.min(...allWorkers.map((w) => new Date(w.createdAt).getTime())))
+            )}
+          </span>
+        )}
       </div>
 
       {/* Stacked worker list — single-pane (no side-by-side), mobile-friendly */}

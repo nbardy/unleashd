@@ -202,6 +202,69 @@ export function decodeProjectPath(encodedName: string): string {
   return encodedName;
 }
 
+/**
+ * Resolve an encoded project directory name to a real path on this machine.
+ *
+ * The naive decode above is not just imprecise, it invents directories that
+ * have never existed. Cursor's `Users-nicholasbardy-git-room-runners-arena-lib-
+ * wsf91148d3-w1-i2` decoded to `/Users/nicholasbardy/git/room/runners/arena/lib/
+ * wsf91148d3/w1/i2`, which then rendered as its own sidebar folder group beside
+ * the real repo and made that group's "new conversation here" button point at
+ * nothing (2026-09-06). Cursor is doubly lossy: it also drops the leading `.`
+ * of dotted directories, so `/.wsf91148d3-w1-i2` comes back as `-wsf91148d3…`.
+ *
+ * Resolve the ambiguity against the filesystem instead of guessing: consume
+ * hyphen-separated tokens left to right, and at each step take the longest run
+ * of tokens that names a real child directory (with or without a restored dot
+ * prefix). Longest-first with backtracking, so `room-runners-arena-lib` wins
+ * over `room` when both exist.
+ *
+ * Returns null when nothing on disk matches — a deleted worktree, or a session
+ * copied from another machine. Callers keep the naive reading in that case
+ * rather than being handed a fabricated path that looks authoritative.
+ */
+const encodedProjectDirectoryCache = new Map<string, string | null>();
+const MAX_ENCODED_TOKENS = 40;
+
+export function resolveEncodedProjectDirectory(encodedName: string): string | null {
+  const cached = encodedProjectDirectoryCache.get(encodedName);
+  if (cached !== undefined) return cached;
+  const resolved = searchEncodedProjectDirectory(encodedName);
+  encodedProjectDirectoryCache.set(encodedName, resolved);
+  return resolved;
+}
+
+function searchEncodedProjectDirectory(encodedName: string): string | null {
+  const tokens = encodedName.split('-').filter((token) => token.length > 0);
+  if (tokens.length === 0 || tokens.length > MAX_ENCODED_TOKENS) return null;
+
+  const walk = (parent: string, index: number): string | null => {
+    if (index === tokens.length) return parent;
+    // Longest run first: a repo named `room-runners-arena-lib` must beat the
+    // shorter `room` even when a sibling `room` directory happens to exist.
+    for (let end = tokens.length; end > index; end--) {
+      const run = tokens.slice(index, end).join('-');
+      for (const name of [run, `.${run}`]) {
+        const candidate = `${parent}/${name}`;
+        if (!isDirectory(candidate)) continue;
+        const resolved = walk(candidate, end);
+        if (resolved) return resolved;
+      }
+    }
+    return null;
+  };
+
+  return walk('', 0);
+}
+
+function isDirectory(candidate: string): boolean {
+  try {
+    return fs.statSync(candidate).isDirectory();
+  } catch {
+    return false;
+  }
+}
+
 // =============================================================================
 // JSONL File Parsing
 // =============================================================================
@@ -274,7 +337,8 @@ export async function parseJsonlFile(filePath: string): Promise<JsonlSession> {
   // Fallback for working directory: decode from parent directory name
   if (!workingDirectory) {
     const projectDirName = path.basename(path.dirname(filePath));
-    workingDirectory = decodeProjectPath(projectDirName);
+    workingDirectory =
+      resolveEncodedProjectDirectory(projectDirName) ?? decodeProjectPath(projectDirName);
   }
 
   return {
@@ -1667,7 +1731,9 @@ export async function parseCursorTranscriptFile(filePath: string): Promise<Curso
   }
 
   if (skippedLines > 0) {
-    console.warn(`Skipped ${skippedLines} malformed line${skippedLines > 1 ? 's' : ''} in ${filePath}`);
+    console.warn(
+      `Skipped ${skippedLines} malformed line${skippedLines > 1 ? 's' : ''} in ${filePath}`
+    );
   }
 
   const sessionId = path.basename(filePath, '.jsonl');
@@ -1680,13 +1746,15 @@ export async function parseCursorTranscriptFile(filePath: string): Promise<Curso
   try {
     const agentTranscriptsDir = path.dirname(path.dirname(filePath)); // .../agent-transcripts
     const encodedProject = path.basename(path.dirname(agentTranscriptsDir));
-    // Prefer shared decodeProjectPath when it has a leading dash; otherwise
-    // treat every '-' as '/' and ensure an absolute path.
+    // Resolve against the filesystem first — every '-' is ambiguous, and for a
+    // hyphenated repo the naive reading names a directory that never existed.
+    // Fall back to it only when nothing on disk matches.
     const decoded = decodeProjectPath(encodedProject);
-    workingDirectory =
+    const naive =
       decoded === encodedProject && !encodedProject.startsWith('-') && encodedProject.includes('-')
-        ? '/' + encodedProject.replace(/-/g, '/')
+        ? `/${encodedProject.replace(/-/g, '/')}`
         : decoded;
+    workingDirectory = resolveEncodedProjectDirectory(encodedProject) ?? naive;
   } catch {
     workingDirectory = process.cwd();
   }
@@ -1875,7 +1943,11 @@ export async function parseMuseSessionFile(filePath: string): Promise<MuseSessio
 
       if (payloadType !== 'runtime.session') continue;
       const payloadKind = asString(payload?.kind);
-      if (payloadKind !== 'run' && payloadKind !== 'task' && payloadKind !== 'agent_tree_initialized') {
+      if (
+        payloadKind !== 'run' &&
+        payloadKind !== 'task' &&
+        payloadKind !== 'agent_tree_initialized'
+      ) {
         if (payloadKind !== 'run') continue;
       }
       const event = asObject((payload as Record<string, unknown>).event);

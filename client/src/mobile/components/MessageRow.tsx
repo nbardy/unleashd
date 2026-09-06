@@ -22,7 +22,9 @@ function BuddyReviewRequestCard({ content }: { content: string }) {
         marginBottom: 8,
       }}
     >
-      <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 4 }}>Review request · {parsed.reviewId}</div>
+      <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 4 }}>
+        Review request · {parsed.reviewId}
+      </div>
       <div style={{ fontSize: 12, color: 'var(--text-muted, #999)' }}>
         Subject: {parsed.subjectBuddyId} · Purpose: {parsed.purpose}
       </div>

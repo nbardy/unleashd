@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import { BuddyContextSchema, type BuddyContext } from './conversation-config.js';
+import { type BuddyContext, BuddyContextSchema } from './conversation-config.js';
 
 /**
  * Canonical conversation kind — holistic sum type (D = ⊕ᵢ Dᵢ).
@@ -94,10 +94,7 @@ export function isBuddyBuilderKind(kind: ConversationKind): kind is BuddyBuilder
  * Consequence: `buddyContextFromKind(buddyKindFromContext(ctx))` is idempotent and
  * deep-equal-stable. Do not reintroduce `?? undefined` on the nullish fields.
  */
-export function buddyKindFromContext(
-  context: BuddyContext,
-  briefing?: string
-): BuddyKind {
+export function buddyKindFromContext(context: BuddyContext, briefing?: string): BuddyKind {
   return {
     kind: 'buddy',
     buddyId: context.buddyId,
@@ -173,11 +170,14 @@ export function conversationKindFromLegacy(input: {
 
 // Effective kind for any Conversation-shaped object (compat: derives when field absent).
 export function getConversationKind(
-  value: {
-    kind?: ConversationKind | null;
-    buddyContext?: BuddyContext | null;
-    purpose?: string | null;
-  } | null | undefined,
+  value:
+    | {
+        kind?: ConversationKind | null;
+        buddyContext?: BuddyContext | null;
+        purpose?: string | null;
+      }
+    | null
+    | undefined
 ): ConversationKind {
   if (!value) return { kind: 'general' };
   return conversationKindFromLegacy({
@@ -188,45 +188,61 @@ export function getConversationKind(
 }
 
 export function isBuddyConversation(
-  value: {
-    kind?: ConversationKind | null;
-    buddyContext?: BuddyContext | null;
-    purpose?: string | null;
-  } | null | undefined,
+  value:
+    | {
+        kind?: ConversationKind | null;
+        buddyContext?: BuddyContext | null;
+        purpose?: string | null;
+      }
+    | null
+    | undefined
 ): boolean {
   return getConversationKind(value).kind === 'buddy';
 }
 
 export function isBuddyBuilderConversation(
-  value: {
-    kind?: ConversationKind | null;
-    buddyContext?: BuddyContext | null;
-    purpose?: string | null;
-  } | null | undefined,
+  value:
+    | {
+        kind?: ConversationKind | null;
+        buddyContext?: BuddyContext | null;
+        purpose?: string | null;
+      }
+    | null
+    | undefined
 ): boolean {
   return getConversationKind(value).kind === 'buddy_builder';
 }
 
 export function getBuddyContext(
-  value: {
-    kind?: ConversationKind | null;
-    buddyContext?: BuddyContext | null;
-  } | null | undefined,
+  value:
+    | {
+        kind?: ConversationKind | null;
+        buddyContext?: BuddyContext | null;
+      }
+    | null
+    | undefined
 ): BuddyContext | null {
   if (!value) return null;
-  const kind = getConversationKind(value as { kind?: ConversationKind | null; buddyContext?: BuddyContext | null });
+  const kind = getConversationKind(
+    value as { kind?: ConversationKind | null; buddyContext?: BuddyContext | null }
+  );
   if (isBuddyKind(kind)) return buddyContextFromKind(kind);
   return value.buddyContext ?? null;
 }
 
 export function getBuddyId(
-  value: {
-    kind?: ConversationKind | null;
-    buddyContext?: BuddyContext | null;
-  } | null | undefined,
+  value:
+    | {
+        kind?: ConversationKind | null;
+        buddyContext?: BuddyContext | null;
+      }
+    | null
+    | undefined
 ): string | null {
   if (!value) return null;
-  const kind = getConversationKind(value as { kind?: ConversationKind | null; buddyContext?: BuddyContext | null });
+  const kind = getConversationKind(
+    value as { kind?: ConversationKind | null; buddyContext?: BuddyContext | null }
+  );
   return isBuddyKind(kind) ? kind.buddyId : null;
 }
 
@@ -234,6 +250,8 @@ export function getWorkspaceId(value: {
   kind?: ConversationKind | null;
   buddyContext?: BuddyContext | null;
 }): string | null {
-  const kind = getConversationKind(value as { kind?: ConversationKind | null; buddyContext?: BuddyContext | null });
+  const kind = getConversationKind(
+    value as { kind?: ConversationKind | null; buddyContext?: BuddyContext | null }
+  );
   return isBuddyKind(kind) ? kind.workspaceId : null;
 }

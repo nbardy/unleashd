@@ -26,9 +26,7 @@ export interface BuddyReviewResult {
 }
 
 function lineValue(content: string, label: string): string | null {
-  const line = content
-    .split(/\r?\n/)
-    .find((candidate) => candidate.startsWith(`${label}:`));
+  const line = content.split(/\r?\n/).find((candidate) => candidate.startsWith(`${label}:`));
   return line ? line.slice(label.length + 1).trim() : null;
 }
 

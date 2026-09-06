@@ -13,6 +13,7 @@ import {
   turnDiagnosticsFromAttempt,
   turnDiagnosticsPollDelay,
 } from '../src/components/turn-diagnostics';
+import { TurnStatusMobile } from '../src/mobile/components/TurnStatusMobile';
 
 const baseAttempt = {
   createdAt: '2026-07-29T00:00:00.000Z',
@@ -169,15 +170,17 @@ test('status component renders heartbeat-only startup as waiting, not generic ac
       heartbeat: { rawStdoutSilentSeconds: 675, phase: 'startup' },
     },
   });
-  const view = buildTurnDiagnosticsViewModel(
-    diagnostics,
-    new Date('2026-07-29T00:11:37.000Z').getTime()
-  );
-  const markup = renderToStaticMarkup(createElement(TurnStatusView, { view }));
-
-  assert.match(markup, /Waiting for provider output/);
-  assert.match(markup, /Bridge heartbeat 22s ago · provider output silent 11m 15s/);
-  assert.doesNotMatch(markup, /Last activity/);
+  const now = new Date('2026-07-29T00:11:37.000Z').getTime();
+  const view = buildTurnDiagnosticsViewModel(diagnostics, now);
+  for (const component of [
+    createElement(TurnStatusView, { view }),
+    createElement(TurnStatusMobile, { diagnostics, now }),
+  ]) {
+    const markup = renderToStaticMarkup(component);
+    assert.match(markup, /Waiting for provider output/);
+    assert.match(markup, /Bridge heartbeat 22s ago · provider output silent 11m 15s/);
+    assert.doesNotMatch(markup, /Last activity/);
+  }
 });
 
 test('compact density drops routine activity text but never hides a stall', () => {

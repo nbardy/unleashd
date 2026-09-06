@@ -220,9 +220,14 @@ test('a conversation with no durable buddy context stays general', async () => {
  * actually recovered, plus whether the whole load rejected.
  */
 async function recoverAll(input: {
-  recoverable: Array<{ conversationId: string; workingDirectory: string | null }>;
+  recoverable: Array<{
+    conversationId: string;
+    workingDirectory: string | null;
+    provenance?: string;
+    createdAt?: string;
+  }>;
   failFor: string;
-}): Promise<{ recovered: string[]; threw: boolean }> {
+}): Promise<{ recovered: string[]; threw: boolean; createdAt: Map<string, Date> }> {
   const created: ConversationOptions[] = [];
   const registry = new Map<string, ConversationRuntime>();
 
@@ -265,6 +270,8 @@ async function recoverAll(input: {
       },
       listRecoverable: async () =>
         input.recoverable.map((entry) => ({
+          provenance: 'user',
+          createdAt: '2026-01-01T00:00:00.000Z',
           ...entry,
           config: { provider: 'claude' },
           currentSession: null,
@@ -307,7 +314,9 @@ async function recoverAll(input: {
   } catch {
     threw = true;
   }
-  return { recovered: created.map((options) => options.id), threw };
+  const createdAt = new Map<string, Date>();
+  for (const [id, conversation] of registry) createdAt.set(id, conversation.createdAt);
+  return { recovered: created.map((options) => options.id), threw, createdAt };
 }
 
 /**
@@ -333,6 +342,58 @@ test('one unrecoverable record does not abort the whole startup hydration', asyn
     'aaaaaaaa-0000-4000-8000-000000000001',
     'cccccccc-0000-4000-8000-000000000003',
   ]);
+});
+
+/**
+ * Regression, incident 2026-09-06. Startup hydrates only the newest
+ * `startupLimit` (500) transcripts, but the recovery pass ran over EVERY active
+ * durable record — including the one `external_discovered` sidecar written per
+ * session file ever seen. Every un-hydrated session therefore came back as a
+ * message-less conversation stamped createdAt=now: 5,275 of 5,633 conversations
+ * in the init payload, all titled "New conversation — 1m ago", all sorted into
+ * the top of the sidebar's recent-folder groups. A config sidecar is evidence
+ * that a transcript exists on disk, never evidence that a conversation exists.
+ * Deleting this test lets the sidebar refill with thousands of empty rows.
+ */
+test('externally-discovered records are not recovered as empty conversations', async () => {
+  const result = await recoverAll({
+    recoverable: [
+      {
+        conversationId: 'aaaaaaaa-0000-4000-8000-000000000001',
+        workingDirectory: '/tmp/a',
+        provenance: 'external_discovered',
+      },
+      {
+        conversationId: 'bbbbbbbb-0000-4000-8000-000000000002',
+        workingDirectory: '/tmp/b',
+        provenance: 'user',
+      },
+    ],
+    failFor: 'none',
+  });
+
+  assert.deepEqual(result.recovered, ['bbbbbbbb-0000-4000-8000-000000000002']);
+});
+
+// Same incident, ordering half: a recovered conversation kept the runtime's
+// `new Date()` default, so history with nothing on disk claimed it was created
+// at boot and outranked genuinely recent threads in every time-sorted view.
+test('a recovered conversation keeps the durable record createdAt', async () => {
+  const result = await recoverAll({
+    recoverable: [
+      {
+        conversationId: 'bbbbbbbb-0000-4000-8000-000000000002',
+        workingDirectory: '/tmp/b',
+        createdAt: '2026-03-04T05:06:07.000Z',
+      },
+    ],
+    failFor: 'none',
+  });
+
+  assert.equal(
+    result.createdAt.get('bbbbbbbb-0000-4000-8000-000000000002')?.toISOString(),
+    '2026-03-04T05:06:07.000Z'
+  );
 });
 
 /**

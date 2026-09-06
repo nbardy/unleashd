@@ -52,7 +52,9 @@ test('an upload survives a drain that outlasts the first retry', async () => {
     drainingResponse(),
     drainingResponse(),
     drainingResponse(),
-    okResponse([{ originalName: 'a.png', absolutePath: '/tmp/a.png', mimeType: 'image/png', size: 1 }]),
+    okResponse([
+      { originalName: 'a.png', absolutePath: '/tmp/a.png', mimeType: 'image/png', size: 1 },
+    ]),
   ]);
   const slept: number[] = [];
   const result = await uploadFilesWithDrainRetry('conv-1', [], impl, async (ms) => {

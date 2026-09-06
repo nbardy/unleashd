@@ -21,7 +21,7 @@ function classifyDeviceKind(): DeviceKind {
   if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') {
     throw new Error(
       'useDeviceKind: window.matchMedia is unavailable — cannot classify DeviceKind. ' +
-        'This environment does not support matchMedia; refusing silent fallback per T4.',
+        'This environment does not support matchMedia; refusing silent fallback per T4.'
     );
   }
   return window.matchMedia('(max-width: 768px)').matches ? 'mobile' : 'desktop';

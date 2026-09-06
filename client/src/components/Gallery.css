@@ -163,7 +163,6 @@
   color: var(--text-primary);
 }
 
-
 .gallery-card {
   background: var(--bg-card); /* Tier 2 */
   border-radius: 2px;
@@ -198,9 +197,6 @@
 }
 
 /* Provider badge */
-
-
-
 
 .gallery-card-status {
   display: flex;

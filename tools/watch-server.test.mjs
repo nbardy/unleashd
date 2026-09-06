@@ -67,8 +67,12 @@ function createClock(initial = 1000) {
   }
   return {
     now: () => now,
-    advance: (ms) => { now += ms; },
-    set: (v) => { now = v; },
+    advance: (ms) => {
+      now += ms;
+    },
+    set: (v) => {
+      now = v;
+    },
     setTimeout: setTimeoutFn,
     clearTimeout: clearTimeoutFn,
     setInterval: setIntervalFn,
@@ -120,7 +124,10 @@ test('Transform failed typo stays up and recovers on fix', async (t) => {
   };
   let snapshotVersion = 0;
   const snapshotDirectory = async (root, snapshot) => {
-    snapshot.set(`/fake/server/src/file-${snapshotVersion}.ts`, { digest: `v${snapshotVersion}`, metadataKey: `${snapshotVersion}` });
+    snapshot.set(`/fake/server/src/file-${snapshotVersion}.ts`, {
+      digest: `v${snapshotVersion}`,
+      metadataKey: `${snapshotVersion}`,
+    });
   };
   const missingRuntimeArtifacts = async () => [];
 
@@ -147,7 +154,10 @@ test('Transform failed typo stays up and recovers on fix', async (t) => {
   const child1 = children[0];
   assert.equal(server.getState().stopping, false);
 
-  child1.stderr.emit('data', Buffer.from('Transform failed: jsonl.ts:13:42 Expected ";" but found "is"\n'));
+  child1.stderr.emit(
+    'data',
+    Buffer.from('Transform failed: jsonl.ts:13:42 Expected ";" but found "is"\n')
+  );
   clock.advance(100);
   child1.exitCode = 1;
   child1.emit('close', 1, null);
@@ -217,7 +227,10 @@ test('EADDRINUSE quick crash retries 3x then fatal with DOWN reminder', async (t
   t.after(() => server.destroy());
 
   async function quickCrash(child, code = 1) {
-    child.stderr.emit('data', Buffer.from(`Error: listen EADDRINUSE: address already in use 0.0.0.0:7499\n`));
+    child.stderr.emit(
+      'data',
+      Buffer.from('Error: listen EADDRINUSE: address already in use 0.0.0.0:7499\n')
+    );
     clock.advance(50);
     child.exitCode = code;
     child.emit('close', code, null);
@@ -245,9 +258,17 @@ test('EADDRINUSE quick crash retries 3x then fatal with DOWN reminder', async (t
   assert.equal(s.backendDownRetryCount, 2);
   assert.equal(s.stopping, false);
 
-  console.log('DEBUG second before tick', { now: clock.now(), children: children.length, state: s });
+  console.log('DEBUG second before tick', {
+    now: clock.now(),
+    children: children.length,
+    state: s,
+  });
   await clock.tick(10);
-  console.log('DEBUG second after tick', { now: clock.now(), children: children.length, state: server.getState() });
+  console.log('DEBUG second after tick', {
+    now: clock.now(),
+    children: children.length,
+    state: server.getState(),
+  });
   await new Promise((r) => setImmediate(r));
   await new Promise((r) => setImmediate(r));
   console.log('DEBUG second after flush', { children: children.length });
@@ -259,7 +280,11 @@ test('EADDRINUSE quick crash retries 3x then fatal with DOWN reminder', async (t
 
   console.log('DEBUG third before tick', { now: clock.now(), children: children.length });
   await clock.tick(10);
-  console.log('DEBUG third after tick', { now: clock.now(), children: children.length, state: server.getState() });
+  console.log('DEBUG third after tick', {
+    now: clock.now(),
+    children: children.length,
+    state: server.getState(),
+  });
   await new Promise((r) => setImmediate(r));
   await new Promise((r) => setImmediate(r));
   console.log('DEBUG third after flush', { children: children.length });
@@ -278,7 +303,11 @@ test('EADDRINUSE quick crash retries 3x then fatal with DOWN reminder', async (t
   const children2 = [];
   const clock2 = createClock(0);
   const server2 = createWatchServer({
-    spawn: () => { const c = new FakeChild(); children2.push(c); return c; },
+    spawn: () => {
+      const c = new FakeChild();
+      children2.push(c);
+      return c;
+    },
     snapshotDirectory,
     missingRuntimeArtifacts,
     now: clock2.now,
@@ -320,7 +349,11 @@ test('close vs exit race: uses close event and stderr buffer is complete', async
   const fakeProc = createFakeProcess();
   const children = [];
   const server = createWatchServer({
-    spawn: () => { const c = new FakeChild(); children.push(c); return c; },
+    spawn: () => {
+      const c = new FakeChild();
+      children.push(c);
+      return c;
+    },
     snapshotDirectory: async () => {},
     missingRuntimeArtifacts: async () => [],
     now: clock.now,
@@ -351,7 +384,11 @@ test('close vs exit race: uses close event and stderr buffer is complete', async
   // large ring truncation still detects Transform
   const children2 = [];
   const server2 = createWatchServer({
-    spawn: () => { const c = new FakeChild(); children2.push(c); return c; },
+    spawn: () => {
+      const c = new FakeChild();
+      children2.push(c);
+      return c;
+    },
     snapshotDirectory: async () => {},
     missingRuntimeArtifacts: async () => [],
     now: clock.now,
@@ -367,7 +404,7 @@ test('close vs exit race: uses close event and stderr buffer is complete', async
   t.after(() => server2.destroy());
   await server2.startServer();
   const child2 = children2[0];
-  const bigChunk = 'a'.repeat(40000) + 'Transform failed';
+  const bigChunk = `${'a'.repeat(40000)}Transform failed`;
   child2.stderr.emit('data', Buffer.from(bigChunk));
   clock.advance(10);
   child2.exitCode = 1;
@@ -388,7 +425,9 @@ test('poll respects failWatcher backoff', async (t) => {
   const logger = collectLogs();
   const fakeProc = createFakeProcess();
   let snapshotCalls = 0;
-  const snapshotDirectory = async () => { snapshotCalls += 1; };
+  const snapshotDirectory = async () => {
+    snapshotCalls += 1;
+  };
   const missingRuntimeArtifacts = async () => [];
   const server = createWatchServer({
     spawn: () => new FakeChild(),
@@ -512,7 +551,11 @@ test('poll respects failWatcher backoff', async (t) => {
   const clock3 = createClock(0);
   const fakeProc3 = createFakeProcess();
   const server5 = createWatchServer({
-    spawn: () => { const c = new FakeChild(); c.exitCode = null; return c; },
+    spawn: () => {
+      const c = new FakeChild();
+      c.exitCode = null;
+      return c;
+    },
     snapshotDirectory: async () => {},
     missingRuntimeArtifacts: async () => [],
     now: clock3.now,
@@ -551,7 +594,11 @@ test('kill -9 and Ctrl-C paths', async (t) => {
     const fakeProc = createFakeProcess();
     const children = [];
     const server = createWatchServer({
-      spawn: () => { const c = new FakeChild(); children.push(c); return c; },
+      spawn: () => {
+        const c = new FakeChild();
+        children.push(c);
+        return c;
+      },
       snapshotDirectory: async () => {},
       missingRuntimeArtifacts: async () => [],
       now: clock.now,
@@ -590,7 +637,11 @@ test('kill -9 and Ctrl-C paths', async (t) => {
     const logger2 = collectLogs();
     const children = [];
     const server = createWatchServer({
-      spawn: () => { const c = new FakeChild(); children.push(c); return c; },
+      spawn: () => {
+        const c = new FakeChild();
+        children.push(c);
+        return c;
+      },
       snapshotDirectory: async () => {},
       missingRuntimeArtifacts: async () => [],
       now: clock.now,
@@ -626,7 +677,11 @@ test('kill -9 and Ctrl-C paths', async (t) => {
     const logger3 = collectLogs();
     const children = [];
     const server = createWatchServer({
-      spawn: () => { const c = new FakeChild(); children.push(c); return c; },
+      spawn: () => {
+        const c = new FakeChild();
+        children.push(c);
+        return c;
+      },
       snapshotDirectory: async () => {},
       missingRuntimeArtifacts: async () => [],
       now: clock2.now,
@@ -716,7 +771,11 @@ test('a healthy backend exiting 0 without a reload request is restarted, not fat
   const fakeProc = createFakeProcess();
   const children = [];
   const server = createWatchServer({
-    spawn: () => { const c = new FakeChild(); children.push(c); return c; },
+    spawn: () => {
+      const c = new FakeChild();
+      children.push(c);
+      return c;
+    },
     snapshotDirectory: async () => {},
     missingRuntimeArtifacts: async () => [],
     now: clock.now,
@@ -755,7 +814,11 @@ test('a backend that never stays up escalates instead of restarting forever', as
   const fakeProc = createFakeProcess();
   const children = [];
   const server = createWatchServer({
-    spawn: () => { const c = new FakeChild(); children.push(c); return c; },
+    spawn: () => {
+      const c = new FakeChild();
+      children.push(c);
+      return c;
+    },
     snapshotDirectory: async () => {},
     missingRuntimeArtifacts: async () => [],
     now: clock.now,

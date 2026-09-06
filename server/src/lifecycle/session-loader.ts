@@ -232,6 +232,16 @@ export function createSessionLoader(dependencies: SessionLoaderDependencies): Se
       if (dependencies.registry.has(record.conversationId) || !record.workingDirectory) {
         continue;
       }
+      // An `external_discovered` record is a config sidecar for a transcript that
+      // already exists on disk — it is not independent evidence that a conversation
+      // exists. Startup only hydrates the newest `startupLimit` (500) transcripts,
+      // so recovering these materialised one empty "New conversation" per
+      // un-hydrated session: 5,275 of 5,633 conversations on 2026-09-06, each
+      // stamped createdAt=now, which floated all of them to the top of the
+      // sidebar's recent-folder groups. Only app-created records (`user` /
+      // `legacy_inferred`) may become a conversation without a transcript —
+      // those are the ones that genuinely have nothing on disk yet.
+      if (record.provenance === 'external_discovered') continue;
       // Per-record isolation is required, not defensive: this loop runs inside the
       // startup barrier, so an unreadable or future-versioned record used to throw
       // all the way out to handleStartupFailure() and exit the process — one bad
@@ -304,6 +314,11 @@ export function createSessionLoader(dependencies: SessionLoaderDependencies): Se
           buddyMemoryGeneration: normalizeMemoryGeneration(recoveredBuddy?.memoryGeneration),
           purpose: record.creation?.purpose ?? 'general',
         });
+        // The record's createdAt is the conversation's real birth time. Leaving
+        // the runtime's `new Date()` default made every recovered conversation
+        // look like it was created at boot, sorting the oldest history to the
+        // top of the sidebar as "1m ago".
+        recovered.createdAt = new Date(record.createdAt);
         dependencies.registry.set(recovered);
         await dependencies.dispatchInitialMessage(recovered);
       } catch (error) {

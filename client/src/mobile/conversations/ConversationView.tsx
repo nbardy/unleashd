@@ -15,10 +15,7 @@ import {
   streamingAtomFamily,
 } from '../../atoms/conversations';
 import { forkConversation } from '../../atoms/fork-actions';
-import {
-  mergeChildErrorAtomFamily,
-  mergeChildStatusAtomFamily,
-} from '../../atoms/mergeAtoms';
+import { mergeChildErrorAtomFamily, mergeChildStatusAtomFamily } from '../../atoms/mergeAtoms';
 import { markMessagesSeen, setSavedActiveConversationId } from '../../atoms/ui';
 import { effectiveSwarmDebugPrefix } from '../../components/buddies/ui-contract';
 import { useCopyAction } from '../../hooks/useCopyAction';
@@ -34,12 +31,12 @@ import {
   turnDiagnosticsFromAttempt,
 } from '../../utils/turn-diagnostics';
 import { ComposerMobile } from '../components/ComposerMobile';
-import { PromptPaletteMobile } from '../components/PromptPaletteMobile';
 import { MessageRow } from '../components/MessageRow';
 import { MobileBadge, MobileSection, MobileSurface } from '../components/MobileUI';
-import { MobileQueueStrip } from './MobileQueueStrip';
 import { ModelSheetMobile, modelSummary } from '../components/ModelSheetMobile';
+import { PromptPaletteMobile } from '../components/PromptPaletteMobile';
 import { TurnStatusMobile } from '../components/TurnStatusMobile';
+import { MobileQueueStrip } from './MobileQueueStrip';
 
 /**
  * ConversationView — the one mobile conversation pane.
@@ -133,7 +130,10 @@ function MobileMergeProgressStrip({ parent }: { parent: Conversation }) {
   const meta = parent.mergeParentMeta;
   if (!meta) return null;
   return (
-    <MobileSection title="Reviews" meta={`${meta.children.length} ${meta.children.length === 1 ? 'review' : 'reviews'}`}>
+    <MobileSection
+      title="Reviews"
+      meta={`${meta.children.length} ${meta.children.length === 1 ? 'review' : 'reviews'}`}
+    >
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
         {meta.children.map((child) => (
           <MergeChip
@@ -171,30 +171,83 @@ function MergeChip({ childId, reviewUuid }: { childId: string; reviewUuid: strin
 
 function MobileSubAgentPanel({ subAgents }: { subAgents: SubAgent[] }) {
   const active = subAgents.filter((a) => a.status === 'running' || a.status === 'pending');
-  const completed = subAgents.filter((a) => a.status === 'completed' || a.status === 'error').slice(-3);
+  const completed = subAgents
+    .filter((a) => a.status === 'completed' || a.status === 'error')
+    .slice(-3);
   const display = [...active, ...completed];
   if (display.length === 0) return null;
   return (
     <MobileSection title="Sub-agents" meta={`${active.length} running · ${subAgents.length} total`}>
       <div style={{ display: 'grid', gap: 8 }}>
         {display.map((agent) => (
-          <MobileSurface key={agent.id} style={{ padding: '10px 12px', display: 'flex', gap: 10, alignItems: 'flex-start' }}>
-            <MobileBadge tone={agent.status === 'running' || agent.status === 'pending' ? 'active' : agent.status === 'error' ? 'neutral' : 'accent'} style={{ marginTop: 2 }}>
-              {agent.status === 'running' || agent.status === 'pending' ? '●' : agent.status === 'error' ? '!' : '✓'}
+          <MobileSurface
+            key={agent.id}
+            style={{ padding: '10px 12px', display: 'flex', gap: 10, alignItems: 'flex-start' }}
+          >
+            <MobileBadge
+              tone={
+                agent.status === 'running' || agent.status === 'pending'
+                  ? 'active'
+                  : agent.status === 'error'
+                    ? 'neutral'
+                    : 'accent'
+              }
+              style={{ marginTop: 2 }}
+            >
+              {agent.status === 'running' || agent.status === 'pending'
+                ? '●'
+                : agent.status === 'error'
+                  ? '!'
+                  : '✓'}
             </MobileBadge>
             <div style={{ minWidth: 0, flex: 1 }}>
-              <div style={{ fontSize: 12, fontWeight: 600, lineHeight: 1.3, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              <div
+                style={{
+                  fontSize: 12,
+                  fontWeight: 600,
+                  lineHeight: 1.3,
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                }}
+              >
                 {agent.description || agent.id}
               </div>
               {agent.currentAction ? (
-                <div style={{ fontSize: 11, color: 'var(--text-muted)', lineHeight: 1.35, marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                <div
+                  style={{
+                    fontSize: 11,
+                    color: 'var(--text-muted)',
+                    lineHeight: 1.35,
+                    marginTop: 2,
+                    overflow: 'hidden',
+                    textOverflow: 'ellipsis',
+                    whiteSpace: 'nowrap',
+                  }}
+                >
                   {agent.currentAction}
                 </div>
               ) : null}
-              <div style={{ fontSize: 10, color: 'var(--text-muted)', marginTop: 4, display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <div
+                style={{
+                  fontSize: 10,
+                  color: 'var(--text-muted)',
+                  marginTop: 4,
+                  display: 'flex',
+                  gap: 8,
+                  flexWrap: 'wrap',
+                }}
+              >
                 {agent.toolUses ? <span>{agent.toolUses} tools</span> : null}
-                {agent.tokens ? <span>{agent.tokens >= 1000 ? `${(agent.tokens / 1000).toFixed(1)}k` : agent.tokens} tokens</span> : null}
-                {agent.status ? <span style={{ textTransform: 'capitalize' }}>{agent.status}</span> : null}
+                {agent.tokens ? (
+                  <span>
+                    {agent.tokens >= 1000 ? `${(agent.tokens / 1000).toFixed(1)}k` : agent.tokens}{' '}
+                    tokens
+                  </span>
+                ) : null}
+                {agent.status ? (
+                  <span style={{ textTransform: 'capitalize' }}>{agent.status}</span>
+                ) : null}
               </div>
             </div>
           </MobileSurface>
@@ -216,20 +269,40 @@ function MobileResumeWidget({
   const folder = sourceConversation?.workingDirectory?.replace(/^\/Users\/[^/]+/, '~');
   return (
     <MobileSection title="Resumed from">
-      <Link to={`/chat/${sourceConversationId}`} style={{ textDecoration: 'none', color: 'inherit' }}>
-        <MobileSurface style={{ padding: '10px 12px', display: 'flex', alignItems: 'center', gap: 10 }}>
-          <span style={{ fontSize: 14, lineHeight: 1 }} aria-hidden="true">↩</span>
+      <Link
+        to={`/chat/${sourceConversationId}`}
+        style={{ textDecoration: 'none', color: 'inherit' }}
+      >
+        <MobileSurface
+          style={{ padding: '10px 12px', display: 'flex', alignItems: 'center', gap: 10 }}
+        >
+          <span style={{ fontSize: 14, lineHeight: 1 }} aria-hidden="true">
+            ↩
+          </span>
           <div style={{ minWidth: 0, flex: 1 }}>
             <div style={{ fontSize: 12, fontWeight: 600 }}>
-              {displayId} <MobileBadge tone="neutral" style={{ marginLeft: 6, fontSize: 10 }}>{provider}</MobileBadge>
+              {displayId}{' '}
+              <MobileBadge tone="neutral" style={{ marginLeft: 6, fontSize: 10 }}>
+                {provider}
+              </MobileBadge>
             </div>
             {folder ? (
-              <div style={{ fontSize: 11, color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+              <div
+                style={{
+                  fontSize: 11,
+                  color: 'var(--text-muted)',
+                  overflow: 'hidden',
+                  textOverflow: 'ellipsis',
+                  whiteSpace: 'nowrap',
+                }}
+              >
                 {folder}
               </div>
             ) : null}
           </div>
-          <span style={{ fontSize: 12, color: 'var(--text-muted)' }} aria-hidden="true">Open ›</span>
+          <span style={{ fontSize: 12, color: 'var(--text-muted)' }} aria-hidden="true">
+            Open ›
+          </span>
         </MobileSurface>
       </Link>
     </MobileSection>
@@ -246,7 +319,8 @@ function MobileSwarmPrefix({ prefix, swarmId }: { prefix: string; swarmId: strin
   const chips: Array<{ label: string; value: string }> = [];
   if (stats.completed) chips.push({ label: 'Done', value: stats.completed });
   if (stats.merges) chips.push({ label: 'Merges', value: stats.merges });
-  if (stats.rejections && stats.rejections !== '0') chips.push({ label: 'Rej', value: stats.rejections });
+  if (stats.rejections && stats.rejections !== '0')
+    chips.push({ label: 'Rej', value: stats.rejections });
   if (stats.errors && stats.errors !== '0') chips.push({ label: 'Err', value: stats.errors });
 
   return (
@@ -270,22 +344,43 @@ function MobileSwarmPrefix({ prefix, swarmId }: { prefix: string; swarmId: strin
             textAlign: 'left',
           }}
         >
-          <span aria-hidden="true" style={{ fontSize: 10 }}>{expanded ? '▼' : '▶'}</span>
-          <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase' }}>{title}</span>
+          <span aria-hidden="true" style={{ fontSize: 10 }}>
+            {expanded ? '▼' : '▶'}
+          </span>
+          <span
+            style={{
+              fontSize: 11,
+              fontWeight: 700,
+              letterSpacing: '0.04em',
+              textTransform: 'uppercase',
+            }}
+          >
+            {title}
+          </span>
           <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>{label}</span>
           {chips.length > 0 ? (
             <span style={{ display: 'inline-flex', gap: 4, flexWrap: 'wrap', marginLeft: 'auto' }}>
               {chips.map((c) => (
-                <MobileBadge key={c.label} tone="neutral" style={{ fontSize: 10 }}>{c.value} {c.label}</MobileBadge>
+                <MobileBadge key={c.label} tone="neutral" style={{ fontSize: 10 }}>
+                  {c.value} {c.label}
+                </MobileBadge>
               ))}
             </span>
           ) : null}
         </button>
         {expanded ? (
-          <div style={{ padding: '0 12px 12px', borderTop: '1px solid var(--border-subtle)', marginTop: 0 }}>
+          <div
+            style={{
+              padding: '0 12px 12px',
+              borderTop: '1px solid var(--border-subtle)',
+              marginTop: 0,
+            }}
+          >
             <div style={{ display: 'grid', gap: 6, paddingTop: 10 }}>
               {stats.project ? <SwarmRow k="Project" v={stats.project} mono /> : null}
-              {stats.primaryConfig ? <SwarmRow k="Primary Config" v={stats.primaryConfig} mono /> : null}
+              {stats.primaryConfig ? (
+                <SwarmRow k="Primary Config" v={stats.primaryConfig} mono />
+              ) : null}
               {stats.generatedAt ? <SwarmRow k="Generated" v={stats.generatedAt} /> : null}
               {stats.started ? <SwarmRow k="Started" v={stats.started} /> : null}
               {stats.runsDir ? <SwarmRow k="Runs" v={stats.runsDir} mono /> : null}
@@ -300,8 +395,23 @@ function MobileSwarmPrefix({ prefix, swarmId }: { prefix: string; swarmId: strin
               ) : null}
             </div>
             <details style={{ marginTop: 12 }}>
-              <summary style={{ fontSize: 11, color: 'var(--text-muted)', cursor: 'pointer' }}>Raw CLI context</summary>
-              <pre style={{ marginTop: 8, padding: 8, borderRadius: 8, background: 'var(--bg-page)', fontSize: 10, lineHeight: 1.4, whiteSpace: 'pre-wrap', wordBreak: 'break-word', maxHeight: 240, overflow: 'auto' }}>
+              <summary style={{ fontSize: 11, color: 'var(--text-muted)', cursor: 'pointer' }}>
+                Raw CLI context
+              </summary>
+              <pre
+                style={{
+                  marginTop: 8,
+                  padding: 8,
+                  borderRadius: 8,
+                  background: 'var(--bg-page)',
+                  fontSize: 10,
+                  lineHeight: 1.4,
+                  whiteSpace: 'pre-wrap',
+                  wordBreak: 'break-word',
+                  maxHeight: 240,
+                  overflow: 'auto',
+                }}
+              >
                 {prefix}
               </pre>
             </details>
@@ -315,17 +425,55 @@ function MobileSwarmPrefix({ prefix, swarmId }: { prefix: string; swarmId: strin
 function SwarmRow({ k, v, mono }: { k: string; v: string; mono?: boolean }) {
   return (
     <div style={{ display: 'flex', gap: 8, minWidth: 0 }}>
-      <span style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-muted)', flex: 'none', minWidth: 90 }}>{k}</span>
-      <span style={{ fontSize: 11, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontFamily: mono ? 'ui-monospace, monospace' : undefined }}>{v}</span>
+      <span
+        style={{
+          fontSize: 11,
+          fontWeight: 600,
+          color: 'var(--text-muted)',
+          flex: 'none',
+          minWidth: 90,
+        }}
+      >
+        {k}
+      </span>
+      <span
+        style={{
+          fontSize: 11,
+          minWidth: 0,
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
+          fontFamily: mono ? 'ui-monospace, monospace' : undefined,
+        }}
+      >
+        {v}
+      </span>
     </div>
   );
 }
 
 function SwarmStat({ label, value }: { label: string; value: string }) {
   return (
-    <span style={{ display: 'inline-flex', flexDirection: 'column', alignItems: 'center', gap: 1, minWidth: 52 }}>
+    <span
+      style={{
+        display: 'inline-flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        gap: 1,
+        minWidth: 52,
+      }}
+    >
       <span style={{ fontSize: 13, fontWeight: 700 }}>{value}</span>
-      <span style={{ fontSize: 10, color: 'var(--text-muted)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>{label}</span>
+      <span
+        style={{
+          fontSize: 10,
+          color: 'var(--text-muted)',
+          textTransform: 'uppercase',
+          letterSpacing: '0.04em',
+        }}
+      >
+        {label}
+      </span>
     </span>
   );
 }
@@ -418,11 +566,18 @@ export function ConversationView({
     return buildUnifiedSubAgents(conversation, childConversations);
   }, [conversation, childConversations]);
 
-  const buddyContext = useMemo(() => getBuddyContext(conversation as Parameters<typeof getBuddyContext>[0]), [conversation]);
+  const buddyContext = useMemo(
+    () => getBuddyContext(conversation as Parameters<typeof getBuddyContext>[0]),
+    [conversation]
+  );
 
   const visibleSwarmDebugPrefix = useMemo(() => {
     if (!conversation) return null;
-    return effectiveSwarmDebugPrefix(buddyContext, conversation.swarmDebugPrefix ?? null, conversation.kind ?? null);
+    return effectiveSwarmDebugPrefix(
+      buddyContext,
+      conversation.swarmDebugPrefix ?? null,
+      conversation.kind ?? null
+    );
   }, [buddyContext, conversation]);
 
   const resumedFromConversationId = conversation?.resumedFromConversationId ?? '';
@@ -691,9 +846,14 @@ export function ConversationView({
       {/* Thread-context strip — mirrors Chat.tsx: MergeProgressStrip + SubAgentPanel + ResumeThreadWidget + SwarmConvoPrefix,
           rendered with MobileSection/MobileSurface primitives and shared data derivation. */}
       {(conversation.mergeParentMeta || hasThreadContext || showSwarmPrefix) && (
-        <div className="mobile-chat__thread-context" style={{ padding: '10px 12px 0', display: 'grid', gap: 10 }}>
+        <div
+          className="mobile-chat__thread-context"
+          style={{ padding: '10px 12px 0', display: 'grid', gap: 10 }}
+        >
           {conversation.mergeParentMeta ? <MobileMergeProgressStrip parent={conversation} /> : null}
-          {unifiedSubAgents.length > 0 ? <MobileSubAgentPanel subAgents={unifiedSubAgents} /> : null}
+          {unifiedSubAgents.length > 0 ? (
+            <MobileSubAgentPanel subAgents={unifiedSubAgents} />
+          ) : null}
           {conversation.resumedFromConversationId ? (
             <MobileResumeWidget
               sourceConversationId={conversation.resumedFromConversationId}
@@ -701,7 +861,10 @@ export function ConversationView({
             />
           ) : null}
           {showSwarmPrefix ? (
-            <MobileSwarmPrefix prefix={visibleSwarmDebugPrefix!} swarmId={conversation.swarmId ?? null} />
+            <MobileSwarmPrefix
+              prefix={visibleSwarmDebugPrefix!}
+              swarmId={conversation.swarmId ?? null}
+            />
           ) : null}
         </div>
       )}

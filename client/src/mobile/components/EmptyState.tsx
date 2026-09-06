@@ -11,13 +11,7 @@ type EmptyStateProps = {
   onAction?: () => void;
 };
 
-export function EmptyState({
-  icon = '∅',
-  title,
-  message,
-  actionLabel,
-  onAction,
-}: EmptyStateProps) {
+export function EmptyState({ icon = '∅', title, message, actionLabel, onAction }: EmptyStateProps) {
   return (
     <div className="mobile-empty" role="status" aria-live="polite">
       <div className="mobile-empty__icon" aria-hidden="true">

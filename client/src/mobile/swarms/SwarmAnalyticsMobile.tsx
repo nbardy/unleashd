@@ -1,19 +1,19 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import type { Conversation } from '@unleashd/shared';
 import { useAtomValue } from 'jotai';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { workersByProjectAtom } from '../../atoms/conversations';
 import { promotedWorkersAtom } from '../../atoms/ui';
 import { getProjectColor } from '../../utils/projectColors';
-import { getProjectName, getProjectRoot } from '../../utils/swarmUtils';
 import {
-  buildTimelineData,
-  computeSwarmStats,
   type IterationSpan,
   type RunData,
+  buildTimelineData,
+  computeSwarmStats,
 } from '../../utils/swarmAnalyticsParsers';
+import { getProjectName, getProjectRoot } from '../../utils/swarmUtils';
 import { formatDuration, formatTimeAgo } from '../../utils/time';
 import { EmptyState } from '../components/EmptyState';
-import type { Conversation } from '@unleashd/shared';
 
 /**
  * SwarmAnalyticsMobile — mobile analytics at /workers/analytics.
@@ -76,7 +76,9 @@ export function SwarmAnalyticsMobile() {
   const [runsData, setRunsData] = useState<Map<string, RunData>>(new Map());
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [inspected, setInspected] = useState<{ span: IterationSpan; workerId: string } | null>(null);
+  const [inspected, setInspected] = useState<{ span: IterationSpan; workerId: string } | null>(
+    null
+  );
 
   const hasAutoSelected = useRef(false);
 
@@ -121,7 +123,7 @@ export function SwarmAnalyticsMobile() {
             try {
               const reviewsRes = await fetch(
                 `/api/swarm-reviews?dir=${encodeURIComponent(selectedProject)}&swarmId=${encodeURIComponent(run.swarmId)}`,
-                { signal: controller.signal },
+                { signal: controller.signal }
               );
               const reviewsData = await reviewsRes.json();
               map.set(run.swarmId, {
@@ -147,7 +149,7 @@ export function SwarmAnalyticsMobile() {
             hasAutoSelected.current = true;
             setSelectedSwarmId(data.runs[0].swarmId);
           }
-        },
+        }
       )
       .catch((cause: unknown) => {
         if (controller.signal.aborted) return;
@@ -158,7 +160,7 @@ export function SwarmAnalyticsMobile() {
     return () => controller.abort();
   }, [selectedProject]);
 
-  const selectedRun = selectedSwarmId ? runsData.get(selectedSwarmId) ?? null : null;
+  const selectedRun = selectedSwarmId ? (runsData.get(selectedSwarmId) ?? null) : null;
 
   // Timeline derived via pure parser (utils is canonical)
   const timeline = useMemo(() => {
@@ -174,7 +176,11 @@ export function SwarmAnalyticsMobile() {
   if (projects.length === 0 && !loading) {
     return (
       <div className="mobile-hub">
-        <EmptyState icon="⬡" title="No swarms" message="No worker conversations found for analytics." />
+        <EmptyState
+          icon="⬡"
+          title="No swarms"
+          message="No worker conversations found for analytics."
+        />
       </div>
     );
   }
@@ -268,9 +274,11 @@ export function SwarmAnalyticsMobile() {
               <span className="mobile-stat-card__value">{stats.totalWorkers}</span>
               <span className="mobile-stat-card__label">Workers</span>
               <span className="mobile-muted">
-                {[stats.runningWorkers > 0 ? `${stats.runningWorkers} running` : null,
+                {[
+                  stats.runningWorkers > 0 ? `${stats.runningWorkers} running` : null,
                   stats.completedWorkers > 0 ? `${stats.completedWorkers} done` : null,
-                  stats.errorWorkers > 0 ? `${stats.errorWorkers} error` : null]
+                  stats.errorWorkers > 0 ? `${stats.errorWorkers} error` : null,
+                ]
                   .filter(Boolean)
                   .join(' · ') || '—'}
               </span>
@@ -281,7 +289,10 @@ export function SwarmAnalyticsMobile() {
             </div>
           </div>
           {stats.finishedAt && (
-            <p className="mobile-muted">Finished {formatTimeAgo(new Date(stats.finishedAt))} · {formatDuration(timeline?.timeRange.duration ?? 0)}</p>
+            <p className="mobile-muted">
+              Finished {formatTimeAgo(new Date(stats.finishedAt))} ·{' '}
+              {formatDuration(timeline?.timeRange.duration ?? 0)}
+            </p>
           )}
         </section>
       )}
@@ -309,7 +320,11 @@ export function SwarmAnalyticsMobile() {
                       aria-label={`Cycle ${span.iteration} ${span.status}${span.verdict ? ` verdict ${span.verdict}` : ''} — tap to inspect`}
                     >
                       <span className="mobile-timeline__span-label">#{span.iteration}</span>
-                      {span.verdict && <span className={`mobile-badge mobile-badge--${span.verdict}`}>{span.verdict}</span>}
+                      {span.verdict && (
+                        <span className={`mobile-badge mobile-badge--${span.verdict}`}>
+                          {span.verdict}
+                        </span>
+                      )}
                     </button>
                   ))}
                 </div>
@@ -337,12 +352,20 @@ export function SwarmAnalyticsMobile() {
           aria-label="Cycle detail"
           onClick={() => setInspected(null)}
         >
-          <div className="mobile-bottom-sheet__content" onClick={(event) => event.stopPropagation()}>
+          <div
+            className="mobile-bottom-sheet__content"
+            onClick={(event) => event.stopPropagation()}
+          >
             <div className="mobile-bottom-sheet__header">
               <strong>
                 {shortWorkerId(inspected.workerId)} · Cycle {inspected.span.iteration}
               </strong>
-              <button type="button" className="mobile-link" onClick={() => setInspected(null)} aria-label="Close">
+              <button
+                type="button"
+                className="mobile-link"
+                onClick={() => setInspected(null)}
+                aria-label="Close"
+              >
                 ✕
               </button>
             </div>
@@ -366,7 +389,8 @@ export function SwarmAnalyticsMobile() {
               </p>
               {inspected.span.startTime && inspected.span.endTime && (
                 <p className="mobile-muted">
-                  {new Date(inspected.span.startTime).toLocaleString()} → {new Date(inspected.span.endTime).toLocaleString()}
+                  {new Date(inspected.span.startTime).toLocaleString()} →{' '}
+                  {new Date(inspected.span.endTime).toLocaleString()}
                 </p>
               )}
               {inspected.span.output && (

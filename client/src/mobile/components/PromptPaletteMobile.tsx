@@ -117,7 +117,12 @@ export function PromptPaletteMobile({
         <div className="mobile-sheet__grabber" aria-hidden="true" />
         <div className="mobile-sheet__header">
           <h2 className="mobile-sheet__title">Prompts</h2>
-          <button type="button" className="mobile-sheet__close" onClick={onClose} aria-label="Close">
+          <button
+            type="button"
+            className="mobile-sheet__close"
+            onClick={onClose}
+            aria-label="Close"
+          >
             ✕
           </button>
         </div>
@@ -148,9 +153,13 @@ export function PromptPaletteMobile({
                 }}
                 onMouseEnter={() => setSelectedIndex(i)}
               >
-                <span className="mobile-sheet__recent-name prompt-palette-mobile__name">{prompt.name}</span>
+                <span className="mobile-sheet__recent-name prompt-palette-mobile__name">
+                  {prompt.name}
+                </span>
                 <span className="mobile-sheet__recent-path prompt-palette-mobile__preview">
-                  {prompt.content.length > 100 ? `${prompt.content.substring(0, 100)}…` : prompt.content}
+                  {prompt.content.length > 100
+                    ? `${prompt.content.substring(0, 100)}…`
+                    : prompt.content}
                 </span>
                 <span className="prompt-palette-mobile__meta">
                   <span className="prompt-palette-mobile__usage">used {prompt.usageCount}×</span>
@@ -172,12 +181,16 @@ export function PromptPaletteMobile({
             ))
           ) : (
             <div className="prompt-palette-mobile__empty">
-              {prompts.length === 0 ? 'No saved prompts yet. Use the bookmark button to save one!' : 'No prompts match your search'}
+              {prompts.length === 0
+                ? 'No saved prompts yet. Use the bookmark button to save one!'
+                : 'No prompts match your search'}
             </div>
           )}
         </div>
 
-        <p className="prompt-palette-mobile__hint">Ctrl+P / ⌘P to open · ↑↓ to navigate · Enter to insert</p>
+        <p className="prompt-palette-mobile__hint">
+          Ctrl+P / ⌘P to open · ↑↓ to navigate · Enter to insert
+        </p>
       </div>
     </dialog>
   );

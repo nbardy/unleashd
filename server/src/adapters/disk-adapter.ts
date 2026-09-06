@@ -23,11 +23,10 @@ import type {
 import {
   ModelIdSchema,
   buddyContextFromKind,
-  buddyKindFromContext,
   conversationKindFromLegacy,
-  matchConversationKind,
   fromCodexModelId,
   isModelIdValidForProvider,
+  matchConversationKind,
   normalizeModelId,
 } from '@unleashd/shared';
 import {
@@ -221,7 +220,9 @@ export function sessionToConversation(session: ParsedSession): DiscoveredConvers
     resumedFromConversationId,
     kind,
     buddyContext,
-    purpose: isBuddyBuilder ? 'buddy_builder' : (durablePurpose as 'buddy_builder' | 'general' | undefined) ?? undefined,
+    purpose: isBuddyBuilder
+      ? 'buddy_builder'
+      : ((durablePurpose as 'buddy_builder' | 'general' | undefined) ?? undefined),
   };
 }
 

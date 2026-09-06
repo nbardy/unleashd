@@ -74,6 +74,35 @@ Adding a provider means adding:
 - a server provider,
 - a disk adapter (if persisted artifacts are needed).
 
+### 2.0) A config record is not a conversation
+
+Startup hydrates only the newest `STARTUP_INITIAL_LOAD_LIMIT` (500) transcripts;
+the mtime baseline still records every source, so `limit` is a real hydration
+cap and the omitted history does not look "new" to the first poll.
+
+The config store writes one durable record per session it has ever seen,
+tagged `provenance: 'external_discovered'`. That record is a **sidecar for a
+transcript on disk, not evidence that a conversation exists.** Only records the
+app itself created (`user` / `legacy_inferred`) may be materialised without a
+transcript — those are the ones that genuinely have nothing on disk yet, e.g. a
+new thread whose first message has not dispatched.
+
+`recoverConversationsWithoutTranscripts()` ignored provenance and recovered all
+6,143 active records. Every un-hydrated session came back as a message-less
+conversation stamped `createdAt = now`: **5,275 of 5,633 conversations in the
+init payload on 2026-09-06**, all titled "New conversation — 1m ago", all
+sorted into the top of the sidebar's recent-folder groups. A recovered
+conversation now also keeps `record.createdAt`, so history with nothing on disk
+cannot claim it was created at boot.
+
+Consequence to keep in mind: a conversation older than the hydration cap is
+absent from the sidebar until polling or a raised cap hydrates it. That is the
+designed meaning of the cap — an empty row for it was never a better answer,
+since `GET /api/conversations/:id` serves the registry and would have returned
+an empty transcript anyway.
+
+Regression guard: `server/test/session-loader-hydration.test.ts`.
+
 ### 2.1) Rehydration: the durable record owns Buddy identity
 
 Two independent stores describe a Buddy conversation, and only one of them is

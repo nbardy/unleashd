@@ -1,9 +1,5 @@
 import type { Conversation } from '@unleashd/shared';
-import {
-  getBuddyContext,
-  isBuddyConversation,
-  providerSupportsFork,
-} from '@unleashd/shared';
+import { getBuddyContext, isBuddyConversation, providerSupportsFork } from '@unleashd/shared';
 import { useAtom, useAtomValue } from 'jotai';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
@@ -18,7 +14,6 @@ import {
 } from '../atoms/conversations';
 import type { PendingConversationCreation } from '../atoms/conversations';
 import { mergeModeAtom, mergeSelectionAtom } from '../atoms/mergeAtoms';
-import { createDefaultDraft } from '../domain/conversation-config-draft';
 import {
   doneConversationsAtom,
   galleryCollapsedProjectsAtom,
@@ -32,10 +27,11 @@ import {
   sidebarViewModeAtom,
   toggleGalleryCollapsed,
 } from '../atoms/ui';
+import { createDefaultDraft } from '../domain/conversation-config-draft';
 import { useProviderCatalog } from '../hooks/useProviderCatalog';
 import { useSwarmRuntimeSnapshots } from '../hooks/useSwarmRuntimeSnapshots';
+import { folderGroupKey, normalizeFolderDirectory } from '../utils/directories';
 import { getProjectColor } from '../utils/projectColors';
-import { normalizeFolderDirectory } from '../utils/directories';
 import { getProjectRoot } from '../utils/swarmUtils';
 import { getWorkerVisibilitySummary } from '../utils/swarmWorkerVisibility';
 import { formatTimeAgo, getConversationLastActivity, getMinutesElapsed } from '../utils/time';
@@ -217,7 +213,7 @@ export function Sidebar() {
     for (const conv of topLevelConversations) {
       const lastTime = getConversationLastActivity(conv);
       const isRecent = now - lastTime.getTime() < RECENT_CUTOFF_MS;
-      const folderDirectory = normalizeFolderDirectory(conv.workingDirectory);
+      const folderDirectory = folderGroupKey(conv.workingDirectory);
 
       if (isRecent) {
         const existing = recentMap.get(folderDirectory);
@@ -301,7 +297,8 @@ export function Sidebar() {
     }
     for (const list of conversationsByBuddy.values()) {
       list.sort(
-        (a, b) => getConversationLastActivity(b).getTime() - getConversationLastActivity(a).getTime()
+        (a, b) =>
+          getConversationLastActivity(b).getTime() - getConversationLastActivity(a).getTime()
       );
     }
     const latestConversationByBuddy = new Map<string, Conversation>();
@@ -440,7 +437,8 @@ export function Sidebar() {
       const workingDirectory =
         item.latestConversation?.workingDirectory ??
         (item.pendingCreation as unknown as { workingDirectory?: string })?.workingDirectory ??
-        allConversations.find((c) => getBuddyContext(c)?.buddyId === item.buddyId)?.workingDirectory ??
+        allConversations.find((c) => getBuddyContext(c)?.buddyId === item.buddyId)
+          ?.workingDirectory ??
         lastWorkingDirectory ??
         defaultCwd ??
         '/';
@@ -471,11 +469,11 @@ export function Sidebar() {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [handleNewConversation]);
 
-  // Cmd+K / Ctrl+K global shortcut to open search palette.
+  // Cmd/Ctrl+P (and the legacy Cmd/Ctrl+K alias) opens the global search palette.
   // Skipped when focus is in an input/textarea so it doesn't hijack typing.
   useEffect(() => {
     const handleSearchShortcut = (e: KeyboardEvent) => {
-      if (!(e.metaKey || e.ctrlKey) || e.key !== 'k') return;
+      if (!(e.metaKey || e.ctrlKey) || !['k', 'p'].includes(e.key.toLowerCase())) return;
       const tag = (e.target as HTMLElement).tagName;
       if (tag === 'INPUT' || tag === 'TEXTAREA') return;
       e.preventDefault();
@@ -598,12 +596,12 @@ export function Sidebar() {
           <button
             type="button"
             className="sidebar-search-field"
-            aria-label="Search conversations"
+            aria-label="Search Buddies and conversations"
             onClick={() => {
               setSearchFilterDir(undefined);
               setShowSearch(true);
             }}
-            title="Search conversations (Cmd+K)"
+            title="Search Buddies and conversations (Cmd/Ctrl+P)"
           >
             <svg
               role="img"
@@ -615,10 +613,18 @@ export function Sidebar() {
               fill="none"
             >
               <circle cx="7" cy="7" r="5.5" stroke="currentColor" strokeWidth="2" />
-              <line x1="11" y1="11" x2="14.5" y2="14.5" stroke="currentColor" strokeWidth="2" strokeLinecap="round" />
+              <line
+                x1="11"
+                y1="11"
+                x2="14.5"
+                y2="14.5"
+                stroke="currentColor"
+                strokeWidth="2"
+                strokeLinecap="round"
+              />
             </svg>
             <span className="sidebar-search-field-label">search</span>
-            <span className="sidebar-search-field-shortcut">⌘K</span>
+            <span className="sidebar-search-field-shortcut">⌘P</span>
           </button>
           <button
             type="button"
@@ -718,6 +724,9 @@ export function Sidebar() {
           onClose={() => setShowSearch(false)}
           onSelectConversation={(id) => {
             navigate(`/chat/${id}`);
+          }}
+          onSelectBuddy={(id) => {
+            navigate(`/buddies/${id}`);
           }}
           filterDirectory={searchFilterDir}
         />
@@ -962,7 +971,9 @@ export function Sidebar() {
         </div>
         {sidebarViewMode === 'list' ? (
           (() => {
-            const listActive = topLevelConversations.filter((conv) => !doneSet.has(conv.sessionId ?? conv.id));
+            const listActive = topLevelConversations.filter(
+              (conv) => !doneSet.has(conv.sessionId ?? conv.id)
+            );
             const isListExpanded = expandedDirectories.has('__list__');
             const visibleList = isListExpanded ? listActive : listActive.slice(0, 3);
             const remainingList = listActive.length - visibleList.length;
@@ -973,13 +984,19 @@ export function Sidebar() {
                     key={conv.id}
                     conv={conv}
                     isActive={conv.id === activeConversationId}
-                    hasUnseen={hasUnseenMessages(lastSeenMessageIndex, conv.id, conversationMessageCount(conv))}
+                    hasUnseen={hasUnseenMessages(
+                      lastSeenMessageIndex,
+                      conv.id,
+                      conversationMessageCount(conv)
+                    )}
                     showFolderBadge
                     onSelect={handleSelectConversation}
                     onDone={handleDone}
                     mergeMode={mergeMode}
                     mergeSelected={mergeSelection.has(conv.id)}
-                    mergeDisabled={mergeMode && (!providerSupportsFork(conv.provider) || conv.isRunning)}
+                    mergeDisabled={
+                      mergeMode && (!providerSupportsFork(conv.provider) || conv.isRunning)
+                    }
                   />
                 ))}
                 {listActive.length > 3 && (
@@ -1115,7 +1132,9 @@ export function Sidebar() {
                               )}
                             </>
                           ) : (
-                            <div className="folder-group-all-done">All conversations marked done</div>
+                            <div className="folder-group-all-done">
+                              All conversations marked done
+                            </div>
                           );
                         })()}
                     </div>
@@ -1144,7 +1163,11 @@ export function Sidebar() {
                       key={conv.id}
                       conv={conv}
                       isActive={conv.id === activeConversationId}
-                      hasUnseen={hasUnseenMessages(lastSeenMessageIndex, conv.id, conversationMessageCount(conv))}
+                      hasUnseen={hasUnseenMessages(
+                        lastSeenMessageIndex,
+                        conv.id,
+                        conversationMessageCount(conv)
+                      )}
                       showFolderBadge
                       onSelect={handleSelectConversation}
                       onDone={handleDone}

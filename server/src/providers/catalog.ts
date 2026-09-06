@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { stripJsonc, type ModelInfo } from '@unleashd/shared';
+import { type ModelInfo, stripJsonc } from '@unleashd/shared';
 
 // Shared loader for vendor/agent-cli-tool/catalog.jsonc
 // Providers use this as primary source; hardcoded fallbacks are only for minimal test env.

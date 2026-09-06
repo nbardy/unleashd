@@ -39,7 +39,11 @@ const CHROME_CANDIDATES = [
 const VIEWPORT = { width: 375, height: 812, deviceScaleFactor: 2, mobile: true };
 
 function parseArgs(argv) {
-  const args = { url: 'http://localhost:7489', out: path.join(ROOT, 'docs/screenshots/mobile'), only: null };
+  const args = {
+    url: 'http://localhost:7489',
+    out: path.join(ROOT, 'docs/screenshots/mobile'),
+    only: null,
+  };
   for (let i = 0; i < argv.length; i += 1) {
     if (argv[i] === '--url') args.url = argv[++i];
     else if (argv[i] === '--out') args.out = path.resolve(argv[++i]);
@@ -52,8 +56,7 @@ function findChrome() {
   const found = CHROME_CANDIDATES.find((p) => fs.existsSync(p));
   if (!found) {
     throw new Error(
-      `No Chrome/Chromium found. Looked in:\n  ${CHROME_CANDIDATES.join('\n  ')}\n` +
-        'Set one of these paths, or install Chrome.'
+      `No Chrome/Chromium found. Looked in:\n  ${CHROME_CANDIDATES.join('\n  ')}\nSet one of these paths, or install Chrome.`
     );
   }
   return found;
@@ -91,6 +94,11 @@ class Cdp {
     return new Cdp(ws);
   }
 
+  // `params` keeps its default on purpose. The rule's unsafe fix removed it on
+  // 2026-09-06, which changed this method's contract (a two-arg call would send
+  // `params: undefined` to CDP instead of `{}`). Reordering is not an option
+  // either: `sessionId` is optional and must stay last.
+  // biome-ignore lint/style/useDefaultParameterLast: sessionId must remain the trailing optional
   send(method, params = {}, sessionId) {
     const id = this.nextId++;
     const payload = { id, method, params };
@@ -267,7 +275,11 @@ async function main() {
     await cdp.send('Emulation.setDeviceMetricsOverride', VIEWPORT, sessionId);
     // Without a touch-capable UA the app still renders mobile (it switches on
     // width), but this keeps hover/pointer media queries honest.
-    await cdp.send('Emulation.setTouchEmulationEnabled', { enabled: true, maxTouchPoints: 5 }, sessionId);
+    await cdp.send(
+      'Emulation.setTouchEmulationEnabled',
+      { enabled: true, maxTouchPoints: 5 },
+      sessionId
+    );
 
     const goto = async (url, settleMs) => {
       const loaded = cdp.once('Page.loadEventFired', sessionId, 30_000);
@@ -323,7 +335,9 @@ async function main() {
     ids.buddyId = await idFromFirstCard('/buddies', '.mobile-buddy-card', /^\/buddies\/([^?]+)/);
     ids.swarmProject = await idFromFirstCard('/workers', '.mobile-swarm-card', /project=([^&]+)/);
 
-    const screens = buildScreens(ids).filter((s) => !args.only || args.only.has(s.name.replace(/^\d+-/, '')));
+    const screens = buildScreens(ids).filter(
+      (s) => !args.only || args.only.has(s.name.replace(/^\d+-/, ''))
+    );
 
     for (const screen of screens) {
       await goto(`${args.url}${screen.path}`, screen.settleMs ?? 1500);

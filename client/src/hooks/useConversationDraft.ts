@@ -66,7 +66,15 @@ export interface UseConversationDraftReturn {
 export function useConversationDraft(
   options: UseConversationDraftOptions
 ): UseConversationDraftReturn {
-  const { conversationId, textareaRef, maxHeight = 300, autoFocus = true, onDraftLoaded, onDraftChange, controlled = false } = options;
+  const {
+    conversationId,
+    textareaRef,
+    maxHeight = 300,
+    autoFocus = true,
+    onDraftLoaded,
+    onDraftChange,
+    controlled = false,
+  } = options;
 
   const draftRef = useRef('');
   const keyRef = useRef('');
@@ -241,7 +249,10 @@ export function useConversationDraft(
     window.addEventListener('unload', onPageHide);
     document.addEventListener('visibilitychange', onVisibility);
     type ViteHMR = { addEventListener?: (e: string, cb: () => void) => void };
-    (import.meta as unknown as { hot?: ViteHMR }).hot?.addEventListener?.('vite:beforeUpdate', onHmr);
+    (import.meta as unknown as { hot?: ViteHMR }).hot?.addEventListener?.(
+      'vite:beforeUpdate',
+      onHmr
+    );
     return () => {
       window.removeEventListener('pagehide', onPageHide);
       window.removeEventListener('beforeunload', onBeforeUnload);

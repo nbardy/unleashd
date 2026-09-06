@@ -1,6 +1,6 @@
 import type { ModelInfo } from '@unleashd/shared';
-import type { Provider } from './index';
 import { loadProviderModels } from './catalog';
+import type { Provider } from './index';
 
 const FALLBACK_GEMINI_MODELS: ModelInfo[] = [
   { id: 'gemini-3.1-pro-preview', displayName: 'Gemini 3.1 Pro Preview', isDefault: false },

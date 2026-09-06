@@ -138,6 +138,23 @@ client/src/atoms/ui.ts             → persisted UI prefs (local+shared partitio
   second parameter silently receives `fileRejections`, and `tsc` allows it
   because a 1-arg function fits a 3-arg slot. Keep such callbacks unary and
   put the extra state in a helper (`uploadFilesWithDrainRetry`).
+- Sidebar recent-folder groups key on `folderGroupKey()`, never the raw
+  `workingDirectory`. Oompa runs one worktree per iteration
+  (`<repo>/.ws<swarm>-w3-i7`), so the raw key gave every iteration its own group
+  header — 1,107 groups for one repo on 2026-09-06, all rendering as the same
+  truncated `~/git/room-runners-aren…`. The fold is `getProjectRoot`, shared
+  with the Swarm dashboard; it deliberately does NOT live in
+  `normalizeFolderDirectory`, which answers "which directory did the user mean"
+  and must not rewrite a worktree the user typed into its parent repo. Guard:
+  `client/test/folder-grouping.test.ts`.
+- A `~/.claude/projects` / `~/.cursor/projects` directory name is a LOSSY
+  encoding — `/` became `-`, and Cursor also drops a leading `.`. Decoding it by
+  replacing every `-` with `/` invents paths that have never existed
+  (`~/git/room-runners-arena-lib/.wsf9…` came back as
+  `~/git/room/runners/arena/lib/wsf9…`, 98 fabricated folders from one repo).
+  Use `resolveEncodedProjectDirectory()`, which disambiguates against the
+  filesystem and returns null rather than guessing. It only fires as a fallback:
+  a modern Claude transcript carries an explicit `cwd`, which always wins.
 - Sidebar rows are ONE line. `.done-btn` is an absolute overlay on the row's
   right edge, so anything else anchored right (`.thread-stop-btn`) sits under
   it and stops receiving clicks. Two-line rows hid this; single-line rows do
