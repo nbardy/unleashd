@@ -48,3 +48,8 @@ product/**
 !product/**/
 !product/**/*.md
 output
+
+# Buddy memory profiles — generated runtime state (same class as .buddies/).
+# Each profiles/<buddyId>/memory/*.md carries a generated `updated:` timestamp
+# and is rewritten on every turn, so committing it churns the tree constantly.
+profiles/

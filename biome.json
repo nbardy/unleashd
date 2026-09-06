@@ -57,7 +57,7 @@
       "*.min.js",
       "public",
       "runs",
-      "vendor/agent-cli-tool/manual_tests/runs",
+      "vendor",
       "shared/src/generated"
     ]
   }

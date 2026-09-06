@@ -1047,12 +1047,13 @@ export function Chat() {
           </div>
         )}
 
+        {submissionError && (
+          <div className="submission-error" role="alert">
+            {submissionError}
+          </div>
+        )}
+
         <div className="input-wrapper">
-          {submissionError && (
-            <div className="submission-error" role="alert">
-              {submissionError}
-            </div>
-          )}
           <textarea
             ref={textareaRef}
             data-conversation-input="true"

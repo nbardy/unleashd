@@ -111,6 +111,13 @@ client/src/atoms/ui.ts             → persisted UI prefs (local+shared partitio
   `npx prettier --write` fetches prettier with ITS defaults and reformats
   whole files (single → double quotes), burying a 20-line change in a
   700-line diff. Never reach for prettier here.
+  `biome.json` ignores `vendor` wholesale. It previously ignored only
+  `vendor/agent-cli-tool/manual_tests/runs`, so a root `pnpm format` reformatted
+  the SUBMODULE's source — the submodule carries no formatter config of its own,
+  so it inherits width-100 biome and reflows every one-line `catalog.jsonc`
+  model entry. That produced a 189-line, semantically-zero submodule diff on
+  2026-09-06 which then demands a commit + push inside the submodule and an
+  outer pointer bump, for no behaviour change. Never format across `vendor/`.
 - CSS is global (plain `.css` imports, no modules), so one class defined in
   two files silently fights over the cascade — import order picks the winner.
   Prefix component classes with the component (`.chat-config-summary`, not

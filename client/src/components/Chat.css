@@ -711,11 +711,16 @@
 }
 
 .submission-error {
+  box-sizing: border-box;
+  width: 100%;
+  margin: 0 0 8px;
   padding: 8px 12px;
   border: 1px solid var(--error, #dc322f);
   border-radius: 6px;
   color: var(--error, #dc322f);
   font-size: 12px;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
 }
 
 .input-actions {
