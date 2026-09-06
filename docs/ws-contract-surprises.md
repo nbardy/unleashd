@@ -31,4 +31,26 @@ stub (plus the pending-conversation localStorage stub in `handleMessage`'s
 `init` reconciler), otherwise the UI renders wrong for a brief window before
 the server confirmation arrives.
 
+### Replay of `create_conversation` can send `conversation_created` THEN `command_rejected`
+
+When a client re-sends `create_conversation` for an id the server already
+holds (a reconnect replay), the server answers `conversation_created` as soon
+as the config replay matches, and only THEN runs `dispatchInitialMessage`.
+Dispatch rethrows Buddy-authority rejections, so the client can receive
+`conversation_created` followed by `command_rejected` for the same
+`commandId`. The conversation does exist in that case — only the initial
+message was refused — which is why the rejection still carries
+`authoritativeConversation`.
+
+Until 2026-09-06 that rejection, and a deleted-id tombstone, were both
+reported with the fingerprint-mismatch text "Conversation ID already exists
+with different configuration", so a refused Buddy message read to the user as
+a config conflict on a conversation they had just been told exists.
+`replayFailureMessage` in `server/src/transport/conversation-websocket.ts`
+now picks the message by error type (`ConfigRevisionConflictError` →
+mismatch text, `ConversationTombstonedError` → its own message, anything else
+→ the failure's message). Guarded by
+`server/test/buddy-conversation-contract.test.ts` ("replaying
+create_conversation reports the real failure").
+
 ---

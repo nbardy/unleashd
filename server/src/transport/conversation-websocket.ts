@@ -8,10 +8,10 @@ import type {
   UIState,
 } from '@unleashd/shared';
 import {
+  PROTOCOL_INFO,
   buddyContextFromKind,
   buddyKindFromContext,
   conversationKindFromLegacy,
-  PROTOCOL_INFO,
   safeParseClientMessage,
 } from '@unleashd/shared';
 import { WebSocket, type WebSocketServer } from 'ws';
@@ -21,7 +21,11 @@ import type {
   ExternalActivity,
   SessionTracking,
 } from '../application/context';
-import type { ConversationConfigService } from '../conversations/config-service';
+import {
+  type ConversationConfigService,
+  ConversationTombstonedError,
+} from '../conversations/config-service';
+import { ConfigRevisionConflictError } from '../conversations/config-store';
 import type {
   ConversationBroadcast,
   ConversationOptions,
@@ -161,7 +165,8 @@ export function registerConversationWebSocket(
               if (sourceForBuddy?.kind) {
                 const srcKind = conversationKindFromLegacy({
                   kind: sourceForBuddy.kind,
-                  buddyContext: (sourceForBuddy as { buddyContext?: BuddyContext | null }).buddyContext ?? null,
+                  buddyContext:
+                    (sourceForBuddy as { buddyContext?: BuddyContext | null }).buddyContext ?? null,
                   purpose: (sourceForBuddy as { purpose?: string }).purpose ?? null,
                 });
                 if (!effectiveKind && srcKind.kind !== 'general') effectiveKind = srcKind;
@@ -170,10 +175,15 @@ export function registerConversationWebSocket(
                 }
               }
               // Legacy fallback: direct buddyContext on source without kind
-              if (!effectiveBuddyContext && (sourceForBuddy as { buddyContext?: BuddyContext | null })?.buddyContext) {
+              if (
+                !effectiveBuddyContext &&
+                (sourceForBuddy as { buddyContext?: BuddyContext | null })?.buddyContext
+              ) {
                 effectiveBuddyContext =
-                  (sourceForBuddy as { buddyContext?: BuddyContext | null }).buddyContext ?? undefined;
-                if (!effectiveKind && effectiveBuddyContext) effectiveKind = buddyKindFromContext(effectiveBuddyContext);
+                  (sourceForBuddy as { buddyContext?: BuddyContext | null }).buddyContext ??
+                  undefined;
+                if (!effectiveKind && effectiveBuddyContext)
+                  effectiveKind = buddyKindFromContext(effectiveBuddyContext);
               }
             }
             const fingerprint = dependencies.creationFingerprint({
@@ -206,14 +216,11 @@ export function registerConversationWebSocket(
                   conversation: existingConversation.toJSON(),
                 });
                 await dependencies.dispatchInitialMessage(existingConversation);
-              } catch {
+              } catch (error) {
                 sendCommandRejected(socket, {
                   commandId: data.commandId,
                   conversationId: data.conversationId,
-                  error: {
-                    code: 'create_failed',
-                    message: 'Conversation ID already exists with different configuration',
-                  },
+                  error: { code: 'create_failed', message: replayFailureMessage(error) },
                   authoritativeConversation: existingConversation.toJSON(),
                 });
               }
@@ -262,7 +269,9 @@ export function registerConversationWebSocket(
               }
               const createdKind =
                 effectiveKind ??
-                (buddyResolution?.context ? buddyKindFromContext(buddyResolution.context) : undefined) ??
+                (buddyResolution?.context
+                  ? buddyKindFromContext(buddyResolution.context)
+                  : undefined) ??
                 (effectiveBuddyContext
                   ? buddyKindFromContext(effectiveBuddyContext as BuddyContext)
                   : undefined);
@@ -274,7 +283,10 @@ export function registerConversationWebSocket(
                 swarmDebugPrefix: data.swarmDebugPrefix ?? null,
                 resumedFromConversationId: data.resumedFromConversationId ?? null,
                 kind: createdKind ?? null,
-                buddyContext: buddyResolution?.context ?? (effectiveBuddyContext as BuddyContext | null) ?? null,
+                buddyContext:
+                  buddyResolution?.context ??
+                  (effectiveBuddyContext as BuddyContext | null) ??
+                  null,
                 buddyBriefing: buddyResolution?.briefing ?? null,
               });
               dependencies.registry.set(conversation);
@@ -500,4 +512,23 @@ function formatLogPreview(content: string, maximumCharacters = 140): string {
 
 function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+/**
+ * Message for a create_conversation replay that threw. Three distinct failures
+ * reach that catch: createOrReplay rejects a fingerprint mismatch with
+ * ConfigRevisionConflictError and a deleted id with ConversationTombstonedError;
+ * anything else came from dispatchInitialMessage (it rethrows Buddy-authority
+ * rejections) or the config store. Until 2026-09-06 all three were reported as
+ * "already exists with different configuration" — and the dispatch case landed
+ * right after conversation_created, so the client showed a config mismatch for
+ * a conversation it had just been told exists. The type is the only reliable
+ * discriminator; the message is what the user reads.
+ */
+function replayFailureMessage(error: unknown): string {
+  if (error instanceof ConfigRevisionConflictError) {
+    return 'Conversation ID already exists with different configuration';
+  }
+  if (error instanceof ConversationTombstonedError) return error.message;
+  return errorMessage(error);
 }

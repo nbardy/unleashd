@@ -260,6 +260,113 @@ test('empty Buddy WebSocket creation resolves and registers without sending a pr
   assert.equal(conversations.has('00000000-0000-4000-8000-000000000123'), false);
 });
 
+test('replaying create_conversation reports the real failure, not a config mismatch', async () => {
+  // Regression guard (2026-09-06). The replay path's catch answered every
+  // failure with "Conversation ID already exists with different configuration".
+  // dispatchInitialMessage rethrows Buddy-authority rejections, so an inactive
+  // Buddy read to the user as a config mismatch — right after conversation_created.
+  // Deleting this test lets that misattribution return silently: the happy-path
+  // test above never makes dispatch throw.
+  const fixture = runtimeFixture();
+  const conversationId = '00000000-0000-4000-8000-000000000456';
+  const existing = new fixture.Conversation({
+    id: conversationId,
+    workingDirectory: '/tmp',
+    configState: fixture.configState,
+    buddyContext,
+  });
+  const conversations = new Map([[conversationId, existing]]);
+  const rejectionText = 'Buddy authority rejected the initial message: buddy is inactive';
+  class FakeSocket extends EventEmitter {
+    readyState = 1;
+    sent: string[] = [];
+    send(payload: string): void {
+      this.sent.push(payload);
+    }
+  }
+  const webSocketServer = new EventEmitter();
+  registerConversationWebSocket(
+    webSocketServer as never,
+    {
+      registry: {
+        get: (id: string) => conversations.get(id),
+        set: () => undefined,
+        delete: (id: string) => conversations.delete(id),
+        values: () => conversations.values(),
+        keys: () => conversations.keys(),
+      },
+      sessions: {
+        markDeleted: () => undefined,
+        aliasEntries: () => [][Symbol.iterator](),
+        unregisterConversationAliases: () => undefined,
+      },
+      externalActivity: { clear: () => undefined, has: () => false },
+      completionSuppression: { clear: () => undefined },
+      initialLoadComplete: Promise.resolve(),
+      isInitialLoadComplete: () => true,
+      beginCommand: () => () => undefined,
+      configService: {
+        getRecord: async () => null,
+        delete: async () => true,
+        // A matching replay: createOrReplay succeeds, so the only thing left
+        // to throw inside that try is dispatchInitialMessage.
+        createOrReplay: async () => ({ record: { workingDirectory: '/tmp' }, replayed: true }),
+      },
+      getUIState: () => ({
+        activeConversationId: null,
+        lastWorkingDirectory: null,
+        galleryExpandedProjects: [],
+      }),
+      getDefaultWorkingDirectory: () => '/tmp',
+      resolveWorkingDirectory: (directory: string) => directory,
+      resolveBuddyConversation: async () => ({
+        context: buddyContext,
+        briefing: 'PRIVATE BRIEFING',
+        workingDirectory: '/tmp',
+        provider: 'codex',
+      }),
+      createConversation: () => existing,
+      createConversationLink: async () => undefined,
+      cancelBuddyConversation: () => undefined,
+      dispatchInitialMessage: async () => {
+        throw new Error(rejectionText);
+      },
+      creationFingerprint: () => 'fingerprint',
+      broadcast: () => undefined,
+      broadcastExcept: () => undefined,
+      logger: { log: () => undefined, error: () => undefined },
+    } as never
+  );
+
+  const socket = new FakeSocket();
+  webSocketServer.emit('connection', socket);
+  socket.emit(
+    'message',
+    Buffer.from(
+      JSON.stringify({
+        type: 'create_conversation',
+        commandId: 'replay-existing',
+        conversationId,
+        workingDirectory: '/tmp',
+        config: fixture.config,
+        buddyContext,
+      })
+    )
+  );
+  await new Promise((resolve) => setImmediate(resolve));
+
+  const sent = socket.sent.map(
+    (payload) => JSON.parse(payload) as { type: string; error?: { message: string } }
+  );
+  const rejected = sent.find((message) => message.type === 'command_rejected');
+  assert.ok(rejected, 'a replay failure must surface as command_rejected');
+  assert.equal(rejected.error?.message, rejectionText);
+  assert.ok(
+    sent.some((message) => message.type === 'conversation_created'),
+    'the replay still acknowledges the existing conversation before dispatch runs'
+  );
+});
+
 test('hidden Buddy briefing is injected exactly once and never on resumed turns', () => {
   const first = buildFirstTurnCliContent({
     content: 'Start the campaign.',
