@@ -1,4 +1,4 @@
-import { UIStateSchema, type UIState } from '@unleashd/shared';
+import { type UIState, UIStateSchema } from '@unleashd/shared';
 import { atom } from 'jotai';
 import { atomWithStorage } from 'jotai/utils';
 import type { SyncStorage } from 'jotai/vanilla/utils/atomWithStorage';
@@ -83,12 +83,17 @@ export const PENDING_FILES_KEY_PREFIX = 'pendingFiles:';
 
 function pickLocal(data: Partial<UIState>): Partial<LocalSlice> {
   const local: Partial<LocalSlice> = {};
-  if ('activeConversationId' in data) local.activeConversationId = data.activeConversationId ?? null;
-  if (data.galleryExpandedProjects !== undefined) local.galleryExpandedProjects = data.galleryExpandedProjects;
-  if (data.galleryCollapsedProjects !== undefined) local.galleryCollapsedProjects = data.galleryCollapsedProjects;
+  if ('activeConversationId' in data)
+    local.activeConversationId = data.activeConversationId ?? null;
+  if (data.galleryExpandedProjects !== undefined)
+    local.galleryExpandedProjects = data.galleryExpandedProjects;
+  if (data.galleryCollapsedProjects !== undefined)
+    local.galleryCollapsedProjects = data.galleryCollapsedProjects;
   if (data.showTempSessions !== undefined) local.showTempSessions = data.showTempSessions;
-  if (data.showDoneConversations !== undefined) local.showDoneConversations = data.showDoneConversations;
-  if (data.showWorkerConversations !== undefined) local.showWorkerConversations = data.showWorkerConversations;
+  if (data.showDoneConversations !== undefined)
+    local.showDoneConversations = data.showDoneConversations;
+  if (data.showWorkerConversations !== undefined)
+    local.showWorkerConversations = data.showWorkerConversations;
   if (data.sidebarViewMode !== undefined) local.sidebarViewMode = data.sidebarViewMode;
   return local;
 }
@@ -127,9 +132,14 @@ const validatedLocalStorage: SyncStorage<LocalSlice> = {
 
 // getOnInit — read synchronously at first get so App.tsx restore-on-load sees
 // the persisted activeConversationId on its initial render.
-const uiLocalAtom = atomWithStorage<LocalSlice>(LOCAL_STORAGE_KEY, LOCAL_DEFAULTS, validatedLocalStorage, {
-  getOnInit: true,
-});
+const uiLocalAtom = atomWithStorage<LocalSlice>(
+  LOCAL_STORAGE_KEY,
+  LOCAL_DEFAULTS,
+  validatedLocalStorage,
+  {
+    getOnInit: true,
+  }
+);
 
 const uiSharedAtom = atom<SharedSlice>(SHARED_DEFAULTS);
 
@@ -142,7 +152,9 @@ const uiSharedAtom = atom<SharedSlice>(SHARED_DEFAULTS);
  *  the "dual-active-id" design (this one survives reload). */
 export const savedActiveConversationIdAtom = atom((get) => get(uiLocalAtom).activeConversationId);
 export const galleryExpandedProjectsAtom = atom((get) => get(uiLocalAtom).galleryExpandedProjects);
-export const galleryCollapsedProjectsAtom = atom((get) => get(uiLocalAtom).galleryCollapsedProjects);
+export const galleryCollapsedProjectsAtom = atom(
+  (get) => get(uiLocalAtom).galleryCollapsedProjects
+);
 export const showTempSessionsAtom = atom((get) => get(uiLocalAtom).showTempSessions);
 export const showDoneConversationsAtom = atom((get) => get(uiLocalAtom).showDoneConversations);
 export const showWorkerConversationsAtom = atom((get) => get(uiLocalAtom).showWorkerConversations);
@@ -165,21 +177,56 @@ export const lastWorkingDirectoryAtom = atom((get) => get(uiSharedAtom).lastWork
 let syncTimer: ReturnType<typeof setTimeout> | null = null;
 let hydrated = false;
 
+function postSharedState(keepalive: boolean): void {
+  fetch('/api/ui-state', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(jotaiStore.get(uiSharedAtom)),
+    keepalive,
+  })
+    .then((res) => {
+      if (!res.ok) console.warn(`[UI State] Sync failed: ${res.status} ${res.statusText}`);
+    })
+    .catch((err) => console.warn('[UI State] Sync error:', err));
+}
+
 function scheduleSharedSync(): void {
   if (syncTimer) clearTimeout(syncTimer);
   syncTimer = setTimeout(() => {
     syncTimer = null;
     if (!hydrated) return;
-    fetch('/api/ui-state', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(jotaiStore.get(uiSharedAtom)),
-    })
-      .then((res) => {
-        if (!res.ok) console.warn(`[UI State] Sync failed: ${res.status} ${res.statusText}`);
-      })
-      .catch((err) => console.warn('[UI State] Sync error:', err));
+    postSharedState(false);
   }, 500);
+}
+
+/**
+ * Send a PENDING shared write now, bypassing the debounce. No-op when nothing
+ * is pending, so backgrounding a tab does not spam the server.
+ *
+ * Why: marking a conversation done and then closing the tab inside the 500ms
+ * window lost the write — the timer died with the document. The draft hook
+ * (useConversationDraft.ts) flushes on the same three events for the same
+ * reason; beforeunload is the one that reliably fires on a hard refresh.
+ * `keepalive` lets the request outlive the page. It caps the body at 64KB,
+ * which the four shared fields stay far under.
+ */
+export function flushSharedSync(): void {
+  if (!syncTimer) return;
+  clearTimeout(syncTimer);
+  syncTimer = null;
+  if (!hydrated) return;
+  postSharedState(true);
+}
+
+// Module-scoped rather than a hook: the atoms are mutated from actions outside
+// React, so the flush must not depend on any component being mounted. Guarded
+// because this module is also loaded by react-dom/server tests with no window.
+if (typeof window !== 'undefined') {
+  window.addEventListener('pagehide', flushSharedSync);
+  window.addEventListener('beforeunload', flushSharedSync);
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') flushSharedSync();
+  });
 }
 
 function setLocal(patch: Partial<LocalSlice>): void {
@@ -226,11 +273,18 @@ function toggleInList(list: string[], value: string): string[] {
 }
 
 export function toggleGalleryExpanded(dir: string): void {
-  setLocal({ galleryExpandedProjects: toggleInList(jotaiStore.get(uiLocalAtom).galleryExpandedProjects, dir) });
+  setLocal({
+    galleryExpandedProjects: toggleInList(jotaiStore.get(uiLocalAtom).galleryExpandedProjects, dir),
+  });
 }
 
 export function toggleGalleryCollapsed(dir: string): void {
-  setLocal({ galleryCollapsedProjects: toggleInList(jotaiStore.get(uiLocalAtom).galleryCollapsedProjects, dir) });
+  setLocal({
+    galleryCollapsedProjects: toggleInList(
+      jotaiStore.get(uiLocalAtom).galleryCollapsedProjects,
+      dir
+    ),
+  });
 }
 
 export function setShowTempSessions(show: boolean): void {
@@ -253,17 +307,21 @@ export function markDone(conversationId: string): void {
   setShared((s) =>
     s.doneConversations.includes(conversationId)
       ? {}
-      : { doneConversations: [...s.doneConversations, conversationId] },
+      : { doneConversations: [...s.doneConversations, conversationId] }
   );
 }
 
 export function unmarkDone(conversationId: string): void {
-  setShared((s) => ({ doneConversations: s.doneConversations.filter((id) => id !== conversationId) }));
+  setShared((s) => ({
+    doneConversations: s.doneConversations.filter((id) => id !== conversationId),
+  }));
 }
 
 export function promoteWorker(conversationId: string): void {
   setShared((s) =>
-    s.promotedWorkers.includes(conversationId) ? {} : { promotedWorkers: [...s.promotedWorkers, conversationId] },
+    s.promotedWorkers.includes(conversationId)
+      ? {}
+      : { promotedWorkers: [...s.promotedWorkers, conversationId] }
   );
 }
 
@@ -298,7 +356,7 @@ export function removeSeenIndex(conversationId: string): void {
 export function hasUnseenMessages(
   lastSeenMessageIndex: Record<string, number>,
   conversationId: string,
-  totalMessages: number,
+  totalMessages: number
 ): boolean {
   if (totalMessages === 0) return false;
   const lastSeen = lastSeenMessageIndex[conversationId];
