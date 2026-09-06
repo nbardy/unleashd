@@ -47,18 +47,6 @@
   border-color: var(--danger) !important;
 }
 
-/* Validation error message */
-.path-validation-error {
-  margin-top: 6px;
-  padding: 6px 10px;
-  background: color-mix(in srgb, var(--danger) 10%, transparent);
-  border: 1px solid var(--danger);
-  border-radius: 4px;
-  color: var(--danger);
-  font-size: 12px;
-  font-weight: 500;
-}
-
 /* Loading indicator - small spinning dot */
 .path-loading-indicator {
   position: absolute;

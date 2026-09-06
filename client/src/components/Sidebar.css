@@ -157,48 +157,6 @@
   line-height: 1;
 }
 
-/* Legacy compat — keep selectors for any remaining merge/swarm triggers (hidden from header now) */
-.nav-create-btn {
-  width: 22px;
-  height: 22px;
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid var(--border-subtle);
-  border-radius: 3px;
-  background: transparent;
-  color: var(--text-secondary);
-  font-size: 14px;
-  font-weight: 600;
-  font-family: var(--font-mono);
-  line-height: 1;
-  cursor: pointer;
-  transition: all 0.1s;
-}
-
-.nav-create-btn:hover {
-  background: var(--accent-primary);
-  color: var(--text-on-accent);
-  border-color: var(--accent-primary);
-}
-
-.nav-search-icon {
-  display: block;
-  width: 12px;
-  height: 12px;
-  flex: 0 0 12px;
-  overflow: visible;
-  color: var(--ai-bright);
-}
-
-.nav-search-icon circle,
-.nav-search-icon line {
-  stroke: var(--ai-bright);
-  stroke-width: 2.2;
-  vector-effect: non-scaling-stroke;
-}
-
 /* New Conversation Modal — centered popup overlay */
 .new-conv-overlay {
   position: fixed;
@@ -407,15 +365,6 @@
   opacity: 0.5;
 }
 
-.dir-cancel-btn {
-  background: var(--bg-tertiary);
-  color: var(--text-emphasis);
-}
-
-.dir-cancel-btn:hover {
-  background: var(--border-color);
-}
-
 /* View mode toggle: grouped vs list */
 .view-mode-toggle {
   display: flex;
@@ -588,16 +537,6 @@
 .folder-group-name-button:focus-visible {
   color: var(--ai-bright);
   outline: none;
-}
-
-.buddy-conversation-label {
-  min-width: 0;
-  overflow: hidden;
-  color: var(--ai-bright);
-  font-size: 10px;
-  font-weight: 700;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .status-indicator {
@@ -994,57 +933,6 @@
   box-shadow: inset 0 0 0 2px var(--theme-violet), 0 0 32px
     color-mix(in oklab, var(--theme-violet) 45%, transparent);
   transition: box-shadow 200ms ease;
-}
-
-.nav-create-btn--merge {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.nav-create-btn--merge-active {
-  background: var(--theme-violet);
-  color: var(--theme-base03);
-}
-
-.merge-mode-bar {
-  display: flex;
-  gap: 6px;
-  align-items: center;
-  padding: 6px 12px;
-  background: color-mix(in oklab, var(--theme-violet) 12%, transparent);
-  border-bottom: 1px solid var(--theme-violet);
-  font-size: 11px;
-}
-
-.merge-mode-bar__label {
-  flex: 1;
-  color: var(--theme-violet);
-  font-weight: 600;
-}
-
-.merge-mode-bar__confirm {
-  padding: 3px 10px;
-  border-radius: 3px;
-  background: var(--theme-violet);
-  color: var(--theme-base03);
-  border: none;
-  font-weight: 600;
-  cursor: pointer;
-}
-
-.merge-mode-bar__confirm:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-}
-
-.merge-mode-bar__cancel {
-  padding: 3px 10px;
-  border-radius: 3px;
-  background: transparent;
-  color: var(--theme-base0);
-  border: 1px solid var(--theme-base01);
-  cursor: pointer;
 }
 
 .conversation-item--merge-mode {

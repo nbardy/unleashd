@@ -257,9 +257,7 @@ code,
 pre,
 kbd,
 samp,
-.filepath-pill,
-.cli-context,
-.raw-json {
+.filepath-pill {
   font-family: var(--font-mono);
 }
 

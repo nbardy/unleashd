@@ -295,12 +295,6 @@
   color: var(--text-muted);
 }
 
-.worker-pane-worker-id {
-  font-size: 13px;
-  font-weight: 600;
-  color: var(--text-emphasis);
-}
-
 .worker-pane-provider {
   font-size: 10px;
   padding: 2px 6px;
@@ -533,12 +527,6 @@
   white-space: pre-wrap;
   max-height: 200px;
   overflow-y: auto;
-}
-
-.config-source-hint {
-  font-size: 10px;
-  color: var(--text-muted);
-  font-style: italic;
 }
 
 /* Loading / error states */

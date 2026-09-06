@@ -163,17 +163,6 @@
   color: var(--text-primary);
 }
 
-/* Legacy gallery-grid (kept for backwards compatibility if needed) */
-.gallery-grid {
-  flex: 1;
-  padding: 24px;
-  overflow-y: auto;
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-  gap: 20px;
-  align-content: start;
-}
-
 
 .gallery-card {
   background: var(--bg-card); /* Tier 2 */
@@ -269,13 +258,6 @@
   50% {
     opacity: 0.5;
   }
-}
-
-.gallery-card-dir {
-  font-size: 11px;
-  color: var(--text-muted);
-  font-family: var(--font-mono);
-  margin-bottom: 8px;
 }
 
 .gallery-messages {
