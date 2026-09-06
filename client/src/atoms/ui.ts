@@ -267,10 +267,6 @@ export function promoteWorker(conversationId: string): void {
   );
 }
 
-export function demoteToWorker(conversationId: string): void {
-  setShared((s) => ({ promotedWorkers: s.promotedWorkers.filter((id) => id !== conversationId) }));
-}
-
 export function markMessagesSeen(conversationId: string, messageIndex: number): void {
   setShared((s) => ({
     lastSeenMessageIndex: { ...s.lastSeenMessageIndex, [conversationId]: messageIndex },

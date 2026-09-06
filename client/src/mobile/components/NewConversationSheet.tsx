@@ -1,9 +1,9 @@
+import { type ConversationConfig, createDefaultConversationConfig } from '@unleashd/shared';
 import { useAtomValue } from 'jotai';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { defaultCwdAtom, recentDirectoriesAtom, wsStatusAtom } from '../../atoms/conversations';
 import { lastWorkingDirectoryAtom } from '../../atoms/ui';
-import { createDefaultDraft } from '../../domain/conversation-config-draft';
 import { useProviderCatalog } from '../../hooks/useProviderCatalog';
 import { normalizeFolderDirectory } from '../../utils/directories';
 import { type MobileCreateKind, createFromRequest } from '../atoms/create';
@@ -78,10 +78,8 @@ export function NewConversationSheet({
         kind,
         workingDirectory: resolvedDirectory,
         // Catalog-derived default; 'claude' fallback matches shared DEFAULT_PROVIDER.
-        config: createDefaultDraft(
-          (catalog?.providers[0]?.id ?? 'claude') as ReturnType<
-            typeof createDefaultDraft
-          >['provider']
+        config: createDefaultConversationConfig(
+          (catalog?.providers[0]?.id ?? 'claude') as ConversationConfig['provider']
         ),
       });
       onClose();

@@ -55,6 +55,12 @@ export function migrateLegacyConversationConfig(
     }
   }
 
+  // Claude reports this versioned name for the catalog's Fable alias.
+  // Recover it only from session evidence; explicit stored selections stay unchanged.
+  if (evidence.provider === 'claude' && modelId === 'claude-fable-5-1') {
+    modelId = 'fable';
+  }
+
   // Collapse provider aliases (e.g. composer-2 → composer-2.5) before validation
   // so historical session labels land on the current catalog id.
   if (modelId) {

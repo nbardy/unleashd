@@ -535,7 +535,8 @@ void runServerStartup(
       return true;
     },
     abortStartup: () => shutdownController?.abortStartup(),
-    loadConversations: sessionLoader.loadExistingConversations,
+    loadConversations: () =>
+      conversationConfigStore.withSessionLookupIndex(sessionLoader.loadExistingConversations),
     startPolling: sessionLoader.startFilePolling,
   }
 )

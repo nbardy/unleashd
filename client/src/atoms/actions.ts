@@ -2,7 +2,6 @@ import type {
   ClientMessage,
   Conversation,
   ConversationConfig,
-  QueuedMessage,
   ServerMessage,
 } from '@unleashd/shared';
 import { ConversationSchema } from '@unleashd/shared';
@@ -240,19 +239,6 @@ export async function createMergeConversations(args: {
   return res.json();
 }
 
-export function deleteConversation(id: string): void {
-  send({ type: 'delete_conversation', conversationId: id });
-}
-
-export function sendMessage(conversationId: string, content: string): Promise<void> {
-  const conv = jotaiStore.get(conversationsAtom).get(conversationId);
-  if (!conv) {
-    console.warn(`[Send] Cannot send message: conversation ${conversationId} not found`);
-    return Promise.reject(new Error(`Conversation ${conversationId} not found`));
-  }
-  return queueMessage(conversationId, content);
-}
-
 export function stopConversation(conversationId: string): void {
   const conv = jotaiStore.get(conversationsAtom).get(conversationId);
   if (!conv) return;
@@ -298,10 +284,6 @@ export function cancelQueuedMessage(conversationId: string, messageId: string): 
 
 export function clearQueue(conversationId: string): void {
   send({ type: 'clear_queue', conversationId });
-}
-
-export function getQueue(conversationId: string): QueuedMessage[] {
-  return jotaiStore.get(conversationsAtom).get(conversationId)?.queue ?? [];
 }
 
 // =============================================================================

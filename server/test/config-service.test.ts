@@ -215,6 +215,44 @@ test('create, update, fork, and hydrate preserve selection intent and revisions'
   });
 });
 
+test('Fable session hydration recovers reported model names and preserves saved selections', async () => {
+  await withService(async (service, store) => {
+    const legacy = {
+      provider: 'claude' as const,
+      reportedModel: 'claude-fable-5-1',
+      source: 'external_session' as const,
+    };
+    const imported = await service.hydrate({
+      conversationId: CONVERSATION_ID,
+      sessionBindings: [{ provider: 'claude', sessionId: 'imported-fable-session' }],
+      legacy,
+    });
+    assert.equal(imported.migrated, true);
+    assert.deepEqual(imported.diagnostics, []);
+    assert.deepEqual((await store.getByConversationId(CONVERSATION_ID))?.config, {
+      provider: 'claude',
+      model: { mode: 'explicit', modelId: 'fable' },
+      reasoning: { mode: 'disabled' },
+    });
+    assert.equal(imported.record.lastResolvedConfig?.modelId, 'fable');
+
+    const savedConfig: ConversationConfig = {
+      provider: 'claude',
+      model: { mode: 'explicit', modelId: 'opus' },
+      reasoning: { mode: 'explicit', effort: 'high' },
+    };
+    await service.create({ conversationId: FORK_ID, config: savedConfig });
+    const existing = await service.hydrate({
+      conversationId: FORK_ID,
+      sessionBindings: [{ provider: 'claude', sessionId: 'saved-claude-session' }],
+      legacy,
+    });
+    assert.equal(existing.migrated, false);
+    assert.deepEqual(existing.state.config, savedConfig);
+    assert.deepEqual((await store.getByConversationId(FORK_ID))?.config, savedConfig);
+  });
+});
+
 test('matching create replay recovers crash metadata without duplicating the record', async () => {
   await withService(async (service, store) => {
     const input = {
@@ -355,4 +393,11 @@ test('legacy migration is deterministic and confines composite decoding to known
   assert.deepEqual(futureSuffix.config.model, { mode: 'default' });
   assert.deepEqual(futureSuffix.config.reasoning, { mode: 'disabled' });
   assert.equal(futureSuffix.diagnostics[0]?.code, 'unknown_reported_model');
+
+  const futureFable = migrateLegacyConversationConfig({
+    provider: 'claude',
+    reportedModel: 'claude-fable-future',
+  });
+  assert.deepEqual(futureFable.config.model, { mode: 'default' });
+  assert.equal(futureFable.diagnostics[0]?.code, 'unknown_reported_model');
 });

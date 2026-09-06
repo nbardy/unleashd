@@ -1,5 +1,6 @@
-import type { Conversation } from '@unleashd/shared';
+import type { Conversation, ConversationConfig } from '@unleashd/shared';
 import {
+  createDefaultConversationConfig,
   getBuddyContext,
   isBuddyConversation,
   providerSupportsFork,
@@ -18,7 +19,6 @@ import {
 } from '../atoms/conversations';
 import type { PendingConversationCreation } from '../atoms/conversations';
 import { mergeModeAtom, mergeSelectionAtom } from '../atoms/mergeAtoms';
-import { createDefaultDraft } from '../domain/conversation-config-draft';
 import {
   doneConversationsAtom,
   galleryCollapsedProjectsAtom,
@@ -280,10 +280,10 @@ export function Sidebar() {
   // Default provider is catalog-derived; fallback 'claude' matches
   // shared/src/provider-catalog.ts DEFAULT_PROVIDER and shared/src/conversation-config.ts
   // createDefaultConversationConfig(). Catalog is authoritative once loaded.
-  const defaultProvider = (catalog?.providers[0]?.id ?? 'claude') as Parameters<
-    typeof createDefaultDraft
-  >[0];
-  const [configDraft, setConfigDraft] = useState(() => createDefaultDraft(defaultProvider));
+  const defaultProvider = (catalog?.providers[0]?.id ?? 'claude') as ConversationConfig['provider'];
+  const [configDraft, setConfigDraft] = useState<ConversationConfig>(() =>
+    createDefaultConversationConfig(defaultProvider)
+  );
   const [isCreatingSwarm, setIsCreatingSwarm] = useState(false);
   const [modalError, setModalError] = useState<string | null>(null);
   const [isOpeningBuddyBuilder, setIsOpeningBuddyBuilder] = useState(false);
@@ -408,7 +408,7 @@ export function Sidebar() {
     setHasPendingDefault(true);
     setModalError(null);
     // Provider default is catalog-derived; fallback 'claude' matches shared DEFAULT_PROVIDER.
-    setConfigDraft(createDefaultDraft(defaultProvider));
+    setConfigDraft(createDefaultConversationConfig(defaultProvider));
     setShowPicker(true);
   }, [allConversations, lastWorkingDirectory, defaultCwd, defaultProvider]);
 

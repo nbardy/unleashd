@@ -1,77 +1,71 @@
-# Pass-through pattern for provider-bespoke values
+# Pass-through pattern for provider-owned values
 
-Moved out of AGENTS.md (startup-context size limit).
+Use this pattern for per-conversation settings whose values belong to the
+upstream CLI, such as model IDs and reasoning effort. Preserve the provider's
+strings through storage, transport, resolution, and CLI arguments.
 
-Use this pattern for **any per-conversation setting whose accepted values are
-bespoke per provider/CLI** (effort levels, reasoning modes, sandbox policies,
-output formats, anything the upstream CLI owns).
+## Canonical settings and catalog
 
-**Canonical example: `reasoningEffort` (claude `--effort`, codex `-c model_reasoning_effort=`).**
-Each CLI accepts a different set, and those sets change as vendors ship updates.
+[ConversationConfig](../shared/src/conversation-config.ts) stores selection
+intent. A model is `default` or `explicit`; reasoning is `default`, `disabled`,
+or `explicit`. An explicit effort is a `z.string().min(1)`, not a shared enum.
+These selection modes are application semantics; the effort strings remain
+provider-owned. `disabled` omits the effort argument, while `default` resolves
+the selected model's catalog default.
 
-## Rules
+The model and effort catalog originates in
+[`vendor/agent-cli-tool/catalog.jsonc`](../vendor/agent-cli-tool/catalog.jsonc).
+[`shared/scripts/gen-catalog.ts`](../shared/scripts/gen-catalog.ts) generates
+[`shared/src/generated/catalog.ts`](../shared/src/generated/catalog.ts); do not
+hand-maintain parallel arrays in `shared/src/index.ts`. The server's
+[catalog service](../server/src/providers/catalog-service.ts) builds the runtime
+`ProviderCatalog`, including dynamic model handling. UI choices come from that
+catalog through [useProviderCatalog](../client/src/hooks/useProviderCatalog.ts).
 
-1. **Wire and storage = plain `z.string()`.** Do not invent a shared union Zod
-   enum. A shared enum forces a schema bump every time a CLI adds/removes a
-   level, and it implies a "canonical" vocabulary we don't own.
-2. **Submodule (`vendor/agent-cli-tool`) knows the FLAG, not the VALUES.** Each
-   harness's `reasoningFlags(level)` maps `level` into the CLI's flag shape
-   (e.g. `['--effort', level]` vs `['-c', 'model_reasoning_effort=<level>']`).
-   The value string passes through unchanged — we never rename or translate.
-3. **Per-provider accepted lists live in `shared/src/index.ts` as `as const`
-   string arrays**, one per provider. Derive literal-union types from them if
-   useful for UI typing, but do NOT export them as the wire type.
-   - Today: `CLAUDE_EFFORT_LEVELS`, `CODEX_EFFORT_LEVELS`.
-4. **Validation helpers are functions, not schemas.** Expose
-   `xLevelsForProvider(p): readonly string[]` and
-   `isXValidForProvider(p, v): boolean`. Use them in:
-   - the UI, to render only valid options per provider;
-   - the server, at every WS boundary that accepts the value (both create and
-     update handlers), with a typed rejection that lists the valid set.
-5. **Defaults live in the server's Conversation constructor**, not in UI state.
-   A single `defaultXForProvider(p)` helper keeps every creation path (WS,
-   merge fork, swarm spawn, test setup) consistent. The UI sends `undefined`
-   when the user didn't pick; server applies the canonical default.
-6. **Source of truth for each CLI's accepted values = `<cli> --help` and the
-   runtime rejection message** (for codex, passing an invalid `-c foo=bogus`
-   prints `expected one of ...`). Record the verification command in a comment
-   next to the per-provider array so the next update is a grep-and-bump.
-7. **Keep pass-through through the entire spine:** do not coerce, rename, or
-   alias values at any layer. UI string → WS string → server string → submodule
-   string → CLI flag argument. Every hop is identity on the value.
+`resolveConversationConfig` resolves intent to a `ResolvedExecutionConfig` and
+validates model-specific reasoning levels. The server owns execution defaults
+and validates every create/update through
+[ConversationConfigService](../server/src/conversations/config-service.ts).
+Client defaults express `{ mode: 'default' }`, not guessed model or effort values.
 
-## Adding a per-conversation setting (quick checklist)
+A running turn keeps the execution snapshot captured at spawn. Model/reasoning
+changes apply to the next turn; provider changes are blocked while work is active
+or queued and after a provider session has started.
 
-For settings that differ per provider (effort levels, reasoning modes, sandbox
-policies, etc.), confirm each of the 7 touch points before committing:
+## Adding a setting: seven touch points
 
-1. **shared/src/index.ts** — per-provider `as const` array(s) + literal types;
-   schema fields on `ConversationSchema`, `NewConversationMessage`, `Set*Message`
-   as `z.string().optional()`.
-2. **shared/src/index.ts** — `xLevelsForProvider`, `isXValidForProvider`,
-   `defaultXForProvider` helpers.
-3. **server/src/server.ts** — new field on the `Conversation` class;
-   constructor applies default via `defaultXForProvider`; WS `new_conversation`
-   + `set_*` handlers validate via `isXValidForProvider` and reject with a
-   message listing the valid set.
-4. **server/src/adapters/disk-adapter.ts** — decide what happens on session
-   reload. Most CLI session files DON'T store these fields; emit a warn on load.
-5. **vendor/agent-cli-tool** — extend the harness's `reasoningFlags`-style
-   hook. Pass the string verbatim; do not translate. Submodule commit → push
-   → bump outer pointer (see submodule commit dance).
-6. **client/src/components/Sidebar.tsx + ProviderModelPicker.tsx** — per-provider
-   option list; reset state on modal-open; reset on provider-switch **synchronously
-   inside the radio onChange**, NEVER an async `useEffect` that races user clicks.
-7. **client/src/components/Chat.tsx** — thread-header dropdown for mid-conversation
-   changes; dispatch a `set_*` WS action (mirror `setReasoningEffort` in
-   `actions.ts`, remembering optimistic writes need schema-complete stubs).
+1. **Shared contract** — extend the schemas and types in
+   [conversation-config.ts](../shared/src/conversation-config.ts), including
+   selection intent, patches, and resolved execution values as needed. Keep
+   provider values as strings and reuse these types across client and server.
+2. **Catalog and resolution** — add provider/model capabilities and defaults to
+   the catalog and shared resolver. Record evidence from the actual CLI contract;
+   expose validation failures with typed errors and valid values. Regenerate the
+   shared catalog with `pnpm --filter @unleashd/shared gen:catalog` when it changes.
+3. **Server update path** — use `create_conversation` and revision-checked
+   `set_conversation_config` through the config service. Extend runtime execution
+   mapping in [runtime.ts](../server/src/conversations/runtime.ts), rather than
+   adding an independent setter or assigning a provider default in the UI.
+4. **Persistence and hydration** — extend the durable config record and review
+   [config-store](../server/src/conversations/config-store.ts) and
+   [legacy-config-migration](../server/src/conversations/legacy-config-migration.ts).
+   Provider transcripts may lack the setting: retain durable intent on reload.
+   Retired explicit selections remain `unavailable` with diagnostics rather than
+   silently becoming defaults; `lastResolved` is historical resolution context.
+5. **CLI harness** — extend the appropriate flag hook in `agent-cli-tool` and
+   pass the value verbatim. Commit and push the submodule before bumping its outer
+   pointer; see [submodule workflow](git-submodule-dance.md).
+6. **Shared UI** — extend
+   [ConversationConfigPicker](../client/src/components/ConversationConfigPicker.tsx)
+   and its callers using the same config and catalog. Keep provider-change resets
+   synchronous in the selection handler; avoid effects that race user input.
+7. **Commands and verification** — extend
+   [config actions](../client/src/atoms/config-actions.ts) or the
+   [pending creation/replay path](../client/src/atoms/pending-creations.ts), as
+   appropriate. Preserve authoritative acknowledgement/rejection handling from
+   [WS contract notes](ws-contract-surprises.md). Exercise the real config/CLI
+   boundaries using [test strategy](test-strategy.md).
 
-Full rules and anti-patterns below.
-
-## Anti-patterns (don't do these)
-
-Violations of the rules above in their most common disguises: a shared
-`z.enum([...all providers...])` on the wire; a `valueMap['medium'] =
-'moderate'` translation in the submodule; `useState('high')` UI defaults;
-async `useEffect` resets on provider change (races user clicks — reset
-synchronously in the click handler).
+Do not add a union of every provider's effort strings, translate one provider's
+value into another's vocabulary, or infer selected intent from a displayed
+resolved value. Keep legacy-format conversion at its existing migration boundary.

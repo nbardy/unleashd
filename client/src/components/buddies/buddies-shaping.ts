@@ -24,12 +24,7 @@
  * (`utils/` + `components/buddies/*`) must stay CSS-free.
  */
 
-import {
-  type BuddyContext,
-  buddyContextFromKind,
-  getConversationKind,
-  matchConversationKind,
-} from '@unleashd/shared';
+import type { BuddyContext } from '@unleashd/shared';
 import type { BuddyProject, ConversationLink, LegacyWorkItem, Workspace } from './types';
 
 // ---------------------------------------------------------------------------
@@ -239,40 +234,4 @@ export function buildBuddyContextForTalk(params: {
     workspaceId: params.workspaceId,
     buddyProjectId: params.buddyProjectId ?? null,
   };
-}
-
-/**
- * Extract BuddyContext from any Conversation-shaped value via the canonical
- * kind dispatcher. Never reads `.buddyContext` directly.
- *
- * Uses: getConversationKind → matchConversationKind → buddyContextFromKind
- */
-export function getBuddyContextFromConversation(value: {
-  kind?: unknown | null;
-  buddyContext?: unknown | null;
-  purpose?: string | null;
-}): BuddyContext | null {
-  const kind = getConversationKind(
-    value as { kind?: null; buddyContext?: BuddyContext | null; purpose?: string | null }
-  );
-  return matchConversationKind<BuddyContext | null>(kind, {
-    general: () => null,
-    buddy: (b) => buddyContextFromKind(b),
-    buddy_builder: () => null,
-  });
-}
-
-/**
- * True if the value is a buddy conversation (via getConversationKind).
- * Convenience for mobile filters that previously checked `.buddyContext != null`.
- */
-export function isBuddyConversationKind(value: {
-  kind?: unknown | null;
-  buddyContext?: unknown | null;
-  purpose?: string | null;
-}): boolean {
-  const kind = getConversationKind(
-    value as { kind?: null; buddyContext?: BuddyContext | null; purpose?: string | null }
-  );
-  return kind.kind === 'buddy';
 }

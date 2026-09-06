@@ -263,18 +263,3 @@ export const workersByProjectAtom = atom((get) => {
   }
   return groups;
 });
-
-// Just the project roots that have workers (for project picker dropdowns).
-export const workerProjectRootsAtom = atom((get) => {
-  return Array.from(get(workersByProjectAtom).keys()).sort();
-});
-
-// All worker IDs — stable list for per-item subscriptions on worker list views.
-export const workerIdsAtom = atom((get) => {
-  const convs = get(conversationsAtom);
-  const ids: string[] = [];
-  for (const conv of convs.values()) {
-    if (conv.isWorker) ids.push(conv.id);
-  }
-  return ids;
-});
