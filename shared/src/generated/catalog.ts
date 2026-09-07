@@ -1,11 +1,11 @@
 // DO NOT EDIT - generated from catalog.jsonc
-// Source: vendor/agent-cli-tool/catalog.jsonc (revision 2026-08-06.muse-spark-1.2)
+// Source: vendor/agent-cli-tool/catalog.jsonc (revision 2026-09-06.fable-5.1-gpt-6-astra)
 // Generator: shared/scripts/gen-catalog.ts
 // Run: pnpm --filter @unleashd/shared gen:catalog
 
 export const CLAUDE_MODEL_IDS = ["fable","opus","sonnet","haiku"] as const;
 export const GEMINI_MODEL_IDS = ["gemini-3.1-pro-preview","gemini-2.5-pro","gemini-2.5-flash","gemini-2.0-flash"] as const;
-export const MUSE_MODEL_IDS = ["muse-spark-1.1","muse-spark-1.2-contributor"] as const;
+export const MUSE_MODEL_IDS = ["muse-spark-1.1","muse-spark-1.2-contributor","muse-spark-1.3-contributor"] as const;
 
 export const CURSOR_MODEL_REGISTRY = [
   {
@@ -46,6 +46,7 @@ export const CODEX_MODEL_REGISTRY = [
   { modelName: "gpt-5.5", displayName: "GPT-5.5", thinkingOptions: CODEX_UNIFIED_THINKING_OPTIONS, defaultThinkingOption: "xhigh", isDefault: false },
   { modelName: "gpt-5.4", displayName: "GPT-5.4", thinkingOptions: CODEX_UNIFIED_THINKING_OPTIONS, defaultThinkingOption: "xhigh", isDefault: false },
   { modelName: "gpt-5.4-mini", displayName: "GPT-5.4 Mini", thinkingOptions: CODEX_UNIFIED_THINKING_OPTIONS, defaultThinkingOption: "xhigh", isDefault: false },
+  { modelName: "gpt-6-astra", displayName: "GPT-6 Astra", thinkingOptions: CODEX_UNIFIED_THINKING_OPTIONS, defaultThinkingOption: "xhigh", isDefault: false },
   { modelName: "gpt-5.3-codex-spark", displayName: "Codex Spark", thinkingOptions: CODEX_UNIFIED_THINKING_OPTIONS, defaultThinkingOption: "xhigh", isDefault: false },
 ] as const;
 

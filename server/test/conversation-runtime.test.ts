@@ -223,9 +223,9 @@ test('synchronous provider startup failure notifies automation listeners', () =>
 });
 
 test('unsupported Buddy provider leaves a queued message retryable', () => {
-  const fixture = runtimeFixture({ provider: 'muse' });
+  const fixture = runtimeFixture({ provider: 'gemini' });
   const conversation = new fixture.Conversation({
-    id: 'muse-buddy',
+    id: 'gemini-buddy',
     workingDirectory: '/tmp',
     configState: fixture.configState,
     buddyContext: {
@@ -461,6 +461,15 @@ test('automation memory-write policy is explicit and provider-scoped', () => {
     resolveAutomationMemoryWritePolicy({
       isAutomation: true,
       provider: 'muse',
+      allowedOperations: ['buddy.update_memory'],
+      hasClaimToken: true,
+    }),
+    'allowed'
+  );
+  assert.equal(
+    resolveAutomationMemoryWritePolicy({
+      isAutomation: true,
+      provider: 'gemini',
       allowedOperations: ['buddy.update_memory'],
       hasClaimToken: true,
     }),
@@ -752,4 +761,44 @@ test('timeout diagnostics classify bridge, provider-idle, and hard-cap failures 
       message: 'Turn reached its maximum runtime after 86400s',
     }
   );
+});
+
+// First-turn prompt markers are kind-routed: only buddy_builder threads may
+// carry the builder briefing. A buddy (or general) thread must never be
+// misclassified into the builder prompt — see 2026-09-07 report where a
+// Product Development Lead thread rendered the buddy-builder briefing.
+test('first-turn markers are kind-exclusive: builder, buddy, general', () => {
+  const base = {
+    content: 'Lets make some updates',
+    messageCount: 0,
+    hasStartedSession: false,
+    swarmDebugPrefix: null,
+  } as const;
+
+  const builder = buildFirstTurnCliContent({ ...base, kind: { kind: 'buddy_builder' } });
+  assert.match(builder, /unleashd:buddy-builder-v1/);
+  assert.doesNotMatch(builder, /unleashd:buddy-context-v2/);
+
+  const buddy = buildFirstTurnCliContent({
+    ...base,
+    kind: {
+      kind: 'buddy',
+      buddyId: 'buddy-1',
+      workspaceId: 'workspace-1',
+      buddyProjectId: null,
+      legacyWorkItemId: null,
+      automationRunId: null,
+      delegatedByBuddyId: null,
+      parentBuddyConversationId: null,
+    },
+    buddyBriefing: 'Memory generation seven',
+    buddyMemoryGeneration: 7,
+  });
+  assert.match(buddy, /unleashd:buddy-context-v2/);
+  assert.doesNotMatch(buddy, /unleashd:buddy-builder-v1/);
+
+  const general = buildFirstTurnCliContent({ ...base, kind: { kind: 'general' } });
+  assert.doesNotMatch(general, /unleashd:buddy-builder-v1/);
+  assert.doesNotMatch(general, /unleashd:buddy-context-v2/);
+  assert.equal(general, 'Lets make some updates');
 });

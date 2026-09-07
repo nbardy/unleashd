@@ -124,9 +124,9 @@ export function Chat() {
   // Header shows a compact "Opus 5 · High" summary; the full provider/model/
   // reasoning pickers only mount once the summary is expanded.
   const [headerConfigExpanded, setHeaderConfigExpanded] = useState(false);
-  const configPickerRef = useRef<HTMLDivElement>(null);
+  const configPickerRef = useRef<HTMLDialogElement>(null);
 
-  // Click-outside to close pickers and collapse the config row
+  // Click-outside / Escape closes the harness popup (and any open picker).
   useEffect(() => {
     if (!headerPickerOpen && !headerConfigExpanded) return;
     const handleClickOutside = (e: MouseEvent) => {
@@ -136,8 +136,18 @@ export function Chat() {
         setHeaderConfigExpanded(false);
       }
     };
+    const handleEscape = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setHeaderPickerOpen(null);
+        setHeaderConfigExpanded(false);
+      }
+    };
     document.addEventListener('mousedown', handleClickOutside);
-    return () => document.removeEventListener('mousedown', handleClickOutside);
+    document.addEventListener('keydown', handleEscape);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+      document.removeEventListener('keydown', handleEscape);
+    };
   }, [headerPickerOpen, headerConfigExpanded]);
 
   const {
@@ -454,6 +464,11 @@ export function Chat() {
   const headerProvider = catalog?.providers.find(
     (provider) => provider.id === conversationConfig?.provider
   );
+  // Buddy and Builder turns need fail-closed MCP state tools, so only
+  // supportsRequiredMcp providers are offered. getBuddyContext covers the
+  // buddy kind only; the Builder kind needs its own check — the server gate
+  // (runtime preflight) enforces both, this menu just steers early.
+  const requiresBuddyMcp = Boolean(buddyContext) || isBuddyBuilderConversation(conversation);
   const resolvedHeaderModelId =
     conversationConfig?.model.mode === 'explicit'
       ? conversationConfig.model.modelId
@@ -577,12 +592,13 @@ export function Chat() {
       )}
       <div className="chat-header">
         <div className="chat-title">
-          <div className="header-config-controls" ref={configPickerRef}>
+          <div className="header-config-controls">
             <button
               type="button"
               className={`chat-config-summary${headerConfigExpanded ? ' expanded' : ''}`}
               title={`${headerProvider?.displayName ?? conversation.provider} · ${headerModelLabel} · ${headerReasoningLabel}`}
               aria-expanded={headerConfigExpanded}
+              aria-haspopup="dialog"
               onClick={() => {
                 setHeaderPickerOpen(null);
                 setHeaderConfigExpanded((open) => !open);
@@ -594,186 +610,238 @@ export function Chat() {
               )}
               <span className="model-picker-caret">&#x25BE;</span>
             </button>
-
-            {headerConfigExpanded &&
-              (canChangeHarness ? (
-                <div className="provider-picker">
+          </div>
+          {headerConfigExpanded && (
+            <div
+              className="chat-config-modal-backdrop"
+              onMouseDown={(event) => {
+                if (event.target === event.currentTarget) {
+                  setHeaderPickerOpen(null);
+                  setHeaderConfigExpanded(false);
+                }
+              }}
+            >
+              {/* Full harness picker lives in a popup so the header stays one
+              lean row; the summary button above only opens/closes this. */}
+              <dialog
+                open
+                className="chat-config-modal"
+                aria-label="Conversation harness settings"
+                ref={configPickerRef}
+              >
+                <div className="chat-config-modal__header">
+                  <span>Harness</span>
                   <button
                     type="button"
-                    className={`provider-picker-trigger ${conversation.provider}`}
-                    disabled={!catalog || configIsSaving}
-                    onClick={() =>
-                      setHeaderPickerOpen((open) => (open === 'provider' ? null : 'provider'))
-                    }
+                    className="chat-config-modal__close"
+                    aria-label="Close harness settings"
+                    onClick={() => {
+                      setHeaderPickerOpen(null);
+                      setHeaderConfigExpanded(false);
+                    }}
                   >
-                    {headerProvider?.displayName ?? conversation.provider}
-                    <span className="provider-picker-caret">&#x25BE;</span>
+                    ✕
                   </button>
-                  {headerPickerOpen === 'provider' && catalog && (
-                    <div className="provider-picker-menu">
-                      {catalog.providers.map((provider) => (
+                </div>
+                {canChangeHarness ? (
+                  <div className="provider-picker">
+                    <button
+                      type="button"
+                      className={`provider-picker-trigger ${conversation.provider}`}
+                      disabled={!catalog || configIsSaving}
+                      onClick={() =>
+                        setHeaderPickerOpen((open) => (open === 'provider' ? null : 'provider'))
+                      }
+                    >
+                      {headerProvider?.displayName ?? conversation.provider}
+                      <span className="provider-picker-caret">&#x25BE;</span>
+                    </button>
+                    {headerPickerOpen === 'provider' && catalog && (
+                      <div className="provider-picker-menu">
+                        {(requiresBuddyMcp
+                          ? [
+                              // Keep the current selection visible so the user
+                              // sees WHY it fails instead of it vanishing.
+                              // The server gate (assertBuddyProviderSupportsMcp)
+                              // stays the enforcer; this menu only steers.
+                              ...(headerProvider && !headerProvider.supportsRequiredMcp
+                                ? [headerProvider]
+                                : []),
+                              ...catalog.providers.filter(
+                                (candidate) => candidate.supportsRequiredMcp
+                              ),
+                            ]
+                          : catalog.providers
+                        ).map((provider) => (
+                          <button
+                            key={provider.id}
+                            type="button"
+                            className={`provider-picker-option ${
+                              provider.id === conversation.provider ? 'selected' : ''
+                            }`}
+                            onClick={() =>
+                              updateHeaderConfig({ kind: 'set_provider', provider: provider.id })
+                            }
+                          >
+                            {provider.displayName}
+                            {requiresBuddyMcp && !provider.supportsRequiredMcp
+                              ? ' (unsupported for Buddy turns)'
+                              : ''}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                ) : (
+                  <span className={`provider-badge provider-${conversation.provider}`}>
+                    {headerProvider?.displayName ?? conversation.provider}
+                  </span>
+                )}
+
+                {headerProvider && conversationConfig && (
+                  <div className="model-picker">
+                    <button
+                      type="button"
+                      className="model-picker-trigger"
+                      disabled={configIsSaving}
+                      onClick={() =>
+                        setHeaderPickerOpen((open) => (open === 'model' ? null : 'model'))
+                      }
+                    >
+                      {resolvedHeaderModel?.displayName ?? resolvedHeaderModelId ?? 'Default'}
+                      <span className="model-picker-caret">&#x25BE;</span>
+                    </button>
+                    {headerPickerOpen === 'model' && (
+                      <div className="model-picker-menu">
                         <button
-                          key={provider.id}
                           type="button"
-                          className={`provider-picker-option ${
-                            provider.id === conversation.provider ? 'selected' : ''
+                          className={`model-picker-option ${
+                            conversationConfig.model.mode === 'default' ? 'selected' : ''
                           }`}
                           onClick={() =>
-                            updateHeaderConfig({ kind: 'set_provider', provider: provider.id })
+                            updateHeaderConfig({ kind: 'set_model', model: { mode: 'default' } })
                           }
                         >
-                          {provider.displayName}
+                          Provider default
+                          <span className="model-default-tag">{headerProvider.defaultModelId}</span>
                         </button>
-                      ))}
+                        {headerProvider.models.map((model) => {
+                          const selected =
+                            conversationConfig.model.mode === 'explicit' &&
+                            conversationConfig.model.modelId === model.id;
+                          const currentEffort =
+                            conversationConfig.reasoning.mode === 'explicit'
+                              ? conversationConfig.reasoning.effort
+                              : null;
+                          const supportsCurrentEffort =
+                            !currentEffort || model.reasoning?.levels.includes(currentEffort);
+                          const nextConfig: ConversationConfig = {
+                            ...conversationConfig,
+                            model: { mode: 'explicit', modelId: model.id },
+                            reasoning: supportsCurrentEffort
+                              ? conversationConfig.reasoning
+                              : { mode: 'default' },
+                          };
+                          return (
+                            <button
+                              key={model.id}
+                              type="button"
+                              className={`model-picker-option ${selected ? 'selected' : ''}`}
+                              onClick={() =>
+                                updateHeaderConfig({ kind: 'replace', config: nextConfig })
+                              }
+                            >
+                              {model.displayName}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    )}
                   </div>
                 )}
-              </div>
-            ) : (
-              <span className={`provider-badge provider-${conversation.provider}`}>
-                {headerProvider?.displayName ?? conversation.provider}
-              </span>
-              ))}
 
-            {headerConfigExpanded && headerProvider && conversationConfig && (
-              <div className="model-picker">
-                <button
-                  type="button"
-                  className="model-picker-trigger"
-                  disabled={configIsSaving}
-                  onClick={() => setHeaderPickerOpen((open) => (open === 'model' ? null : 'model'))}
-                >
-                  {resolvedHeaderModel?.displayName ?? resolvedHeaderModelId ?? 'Default'}
-                  <span className="model-picker-caret">&#x25BE;</span>
-                </button>
-                {headerPickerOpen === 'model' && (
-                  <div className="model-picker-menu">
+                {resolvedHeaderModel?.reasoning && conversationConfig && (
+                  <div className="model-picker">
                     <button
                       type="button"
-                      className={`model-picker-option ${
-                        conversationConfig.model.mode === 'default' ? 'selected' : ''
-                      }`}
+                      className="model-picker-trigger reasoning-picker-trigger"
+                      disabled={configIsSaving}
                       onClick={() =>
-                        updateHeaderConfig({ kind: 'set_model', model: { mode: 'default' } })
+                        setHeaderPickerOpen((open) => (open === 'reasoning' ? null : 'reasoning'))
                       }
                     >
-                      Provider default
-                      <span className="model-default-tag">{headerProvider.defaultModelId}</span>
+                      {headerReasoningLabel}
+                      <span className="model-picker-caret">&#x25BE;</span>
                     </button>
-                    {headerProvider.models.map((model) => {
-                      const selected =
-                        conversationConfig.model.mode === 'explicit' &&
-                        conversationConfig.model.modelId === model.id;
-                      const currentEffort =
-                        conversationConfig.reasoning.mode === 'explicit'
-                          ? conversationConfig.reasoning.effort
-                          : null;
-                      const supportsCurrentEffort =
-                        !currentEffort || model.reasoning?.levels.includes(currentEffort);
-                      const nextConfig: ConversationConfig = {
-                        ...conversationConfig,
-                        model: { mode: 'explicit', modelId: model.id },
-                        reasoning: supportsCurrentEffort
-                          ? conversationConfig.reasoning
-                          : { mode: 'default' },
-                      };
-                      return (
+                    {headerPickerOpen === 'reasoning' && (
+                      <div className="model-picker-menu reasoning-picker-menu">
                         <button
-                          key={model.id}
                           type="button"
-                          className={`model-picker-option ${selected ? 'selected' : ''}`}
+                          className={`model-picker-option ${
+                            conversationConfig.reasoning.mode === 'default' ? 'selected' : ''
+                          }`}
                           onClick={() =>
-                            updateHeaderConfig({ kind: 'replace', config: nextConfig })
+                            updateHeaderConfig({
+                              kind: 'set_reasoning',
+                              reasoning: { mode: 'default' },
+                            })
                           }
                         >
-                          {model.displayName}
+                          Model default
+                          {resolvedHeaderModel.reasoning.defaultEffort && (
+                            <span className="model-default-tag">
+                              {resolvedHeaderModel.reasoning.defaultEffort}
+                            </span>
+                          )}
                         </button>
-                      );
-                    })}
+                        <button
+                          type="button"
+                          className={`model-picker-option ${
+                            conversationConfig.reasoning.mode === 'disabled' ? 'selected' : ''
+                          }`}
+                          onClick={() =>
+                            updateHeaderConfig({
+                              kind: 'set_reasoning',
+                              reasoning: { mode: 'disabled' },
+                            })
+                          }
+                        >
+                          No reasoning flag
+                        </button>
+                        {resolvedHeaderModel.reasoning.levels.map((effort) => (
+                          <button
+                            key={effort}
+                            type="button"
+                            className={`model-picker-option ${
+                              conversationConfig.reasoning.mode === 'explicit' &&
+                              conversationConfig.reasoning.effort === effort
+                                ? 'selected'
+                                : ''
+                            }`}
+                            onClick={() =>
+                              updateHeaderConfig({
+                                kind: 'set_reasoning',
+                                reasoning: { mode: 'explicit', effort },
+                              })
+                            }
+                          >
+                            {effort}
+                          </button>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 )}
-              </div>
-            )}
 
-            {headerConfigExpanded && resolvedHeaderModel?.reasoning && conversationConfig && (
-              <div className="model-picker">
-                <button
-                  type="button"
-                  className="model-picker-trigger reasoning-picker-trigger"
-                  disabled={configIsSaving}
-                  onClick={() =>
-                    setHeaderPickerOpen((open) => (open === 'reasoning' ? null : 'reasoning'))
-                  }
-                >
-                  {headerReasoningLabel}
-                  <span className="model-picker-caret">&#x25BE;</span>
-                </button>
-                {headerPickerOpen === 'reasoning' && (
-                  <div className="model-picker-menu reasoning-picker-menu">
-                    <button
-                      type="button"
-                      className={`model-picker-option ${
-                        conversationConfig.reasoning.mode === 'default' ? 'selected' : ''
-                      }`}
-                      onClick={() =>
-                        updateHeaderConfig({
-                          kind: 'set_reasoning',
-                          reasoning: { mode: 'default' },
-                        })
-                      }
-                    >
-                      Model default
-                      {resolvedHeaderModel.reasoning.defaultEffort && (
-                        <span className="model-default-tag">
-                          {resolvedHeaderModel.reasoning.defaultEffort}
-                        </span>
-                      )}
-                    </button>
-                    <button
-                      type="button"
-                      className={`model-picker-option ${
-                        conversationConfig.reasoning.mode === 'disabled' ? 'selected' : ''
-                      }`}
-                      onClick={() =>
-                        updateHeaderConfig({
-                          kind: 'set_reasoning',
-                          reasoning: { mode: 'disabled' },
-                        })
-                      }
-                    >
-                      No reasoning flag
-                    </button>
-                    {resolvedHeaderModel.reasoning.levels.map((effort) => (
-                      <button
-                        key={effort}
-                        type="button"
-                        className={`model-picker-option ${
-                          conversationConfig.reasoning.mode === 'explicit' &&
-                          conversationConfig.reasoning.effort === effort
-                            ? 'selected'
-                            : ''
-                        }`}
-                        onClick={() =>
-                          updateHeaderConfig({
-                            kind: 'set_reasoning',
-                            reasoning: { mode: 'explicit', effort },
-                          })
-                        }
-                      >
-                        {effort}
-                      </button>
-                    ))}
-                  </div>
+                {configIsSaving && <span className="config-save-state">Saving…</span>}
+                {pendingConfigCommand?.error && (
+                  <span className="config-save-state error" role="alert">
+                    {pendingConfigCommand.error}
+                  </span>
                 )}
-              </div>
-            )}
-
-            {configIsSaving && <span className="config-save-state">Saving…</span>}
-            {pendingConfigCommand?.error && (
-              <span className="config-save-state error" role="alert">
-                {pendingConfigCommand.error}
-              </span>
-            )}
-          </div>
+              </dialog>
+            </div>
+          )}
           <Link
             className="chat-dir"
             to={`/?folders=${encodeURIComponent(conversation.workingDirectory)}`}
@@ -891,9 +959,9 @@ export function Chat() {
               <span className="buddy-helper-kicker">Buddy Builder · a guided hire</span>
               <h2>Let’s create a Buddy for the work you want done.</h2>
               <p>
-                To create a new Buddy, describe the role, the workspace it should live in, and
-                what a good first outcome looks like. I’ll create it for you and ask follow-up
-                questions when the brief needs more shape.
+                To create a new Buddy, describe the role, the workspace it should live in, and what
+                a good first outcome looks like. I’ll create it for you and ask follow-up questions
+                when the brief needs more shape.
               </p>
               <div className="buddy-helper-example" aria-label="Example Buddy brief">
                 “Create a research Buddy for unleashd who turns customer conversations into
@@ -909,11 +977,13 @@ export function Chat() {
             </div>
           ) : (
             <div className="empty-state">
-              {confirmed
-                ? isBuddyBuilderConversation(conversation)
-                  ? 'Describe the Buddy you want to create.'
-                  : 'Send a message to start the conversation.'
-                : `Waiting for ${conversation.provider || 'claude'} to be ready...` /* fallback 'claude' matches shared DEFAULT_PROVIDER */}
+              {
+                confirmed
+                  ? isBuddyBuilderConversation(conversation)
+                    ? 'Describe the Buddy you want to create.'
+                    : 'Send a message to start the conversation.'
+                  : `Waiting for ${conversation.provider || 'claude'} to be ready...` /* fallback 'claude' matches shared DEFAULT_PROVIDER */
+              }
             </div>
           )}
         </div>

@@ -1,5 +1,10 @@
-import type { Conversation } from '@unleashd/shared';
-import { getBuddyContext, isBuddyConversation, providerSupportsFork } from '@unleashd/shared';
+import type { Conversation, ConversationConfig } from '@unleashd/shared';
+import {
+  createDefaultConversationConfig,
+  getBuddyContext,
+  isBuddyConversation,
+  providerSupportsFork,
+} from '@unleashd/shared';
 import { useAtom, useAtomValue } from 'jotai';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
@@ -27,7 +32,6 @@ import {
   sidebarViewModeAtom,
   toggleGalleryCollapsed,
 } from '../atoms/ui';
-import { createDefaultDraft } from '../domain/conversation-config-draft';
 import { useProviderCatalog } from '../hooks/useProviderCatalog';
 import { useSwarmRuntimeSnapshots } from '../hooks/useSwarmRuntimeSnapshots';
 import { folderGroupKey, normalizeFolderDirectory } from '../utils/directories';
@@ -276,10 +280,10 @@ export function Sidebar() {
   // Default provider is catalog-derived; fallback 'claude' matches
   // shared/src/provider-catalog.ts DEFAULT_PROVIDER and shared/src/conversation-config.ts
   // createDefaultConversationConfig(). Catalog is authoritative once loaded.
-  const defaultProvider = (catalog?.providers[0]?.id ?? 'claude') as Parameters<
-    typeof createDefaultDraft
-  >[0];
-  const [configDraft, setConfigDraft] = useState(() => createDefaultDraft(defaultProvider));
+  const defaultProvider = (catalog?.providers[0]?.id ?? 'claude') as ConversationConfig['provider'];
+  const [configDraft, setConfigDraft] = useState<ConversationConfig>(() =>
+    createDefaultConversationConfig(defaultProvider)
+  );
   const [isCreatingSwarm, setIsCreatingSwarm] = useState(false);
   const [modalError, setModalError] = useState<string | null>(null);
   const [isOpeningBuddyBuilder, setIsOpeningBuddyBuilder] = useState(false);
@@ -405,7 +409,7 @@ export function Sidebar() {
     setHasPendingDefault(true);
     setModalError(null);
     // Provider default is catalog-derived; fallback 'claude' matches shared DEFAULT_PROVIDER.
-    setConfigDraft(createDefaultDraft(defaultProvider));
+    setConfigDraft(createDefaultConversationConfig(defaultProvider));
     setShowPicker(true);
   }, [allConversations, lastWorkingDirectory, defaultCwd, defaultProvider]);
 
@@ -442,10 +446,16 @@ export function Sidebar() {
         lastWorkingDirectory ??
         defaultCwd ??
         '/';
+      // Seed the harness from this buddy's latest thread so a provider/model
+      // picked there sticks for the next thread. Falls back to the global
+      // new-conversation draft only when the buddy has no prior thread.
+      // (The dashboard talk() path seeds from the saved Execution profile
+      // instead; the sidebar has last-used config locally, so it uses that.)
+      const seedConfig = item.latestConversation?.config ?? configDraft;
       // Direct create — reuses pending-creations createConversation + buddyContext shape
       const id = createConversation({
         workingDirectory,
-        config: configDraft,
+        config: seedConfig,
         buddyContext: workspaceId
           ? { buddyId: item.buddyId, workspaceId, buddyProjectId: null }
           : { buddyId: item.buddyId, workspaceId: '', buddyProjectId: null },
