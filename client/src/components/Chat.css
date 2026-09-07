@@ -379,6 +379,17 @@
   text-transform: uppercase;
 }
 
+/* Header variant: larger pill so a Builder thread is recognizable at a glance */
+.buddy-helper-kicker--header {
+  padding: 3px 10px;
+  border: 1px solid color-mix(in srgb, var(--ai) 55%, transparent);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--ai) 16%, transparent);
+  font-size: 11px;
+  letter-spacing: 0.1em;
+  white-space: nowrap;
+}
+
 .buddy-helper-panel h2 {
   max-width: 520px;
   margin: 10px 0 10px;

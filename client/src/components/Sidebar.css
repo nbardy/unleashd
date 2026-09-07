@@ -664,6 +664,7 @@
 
 /* Big header (Buddies) + sub-header (buddy name) — same size, maximally shared */
 .folder-group--buddies > .folder-group-header,
+.folder-group--builder > .folder-group-header,
 .folder-group-header--buddy {
   padding: 3px 10px;
   background: color-mix(in srgb, var(--bg-tertiary) 70%, transparent);
@@ -673,6 +674,7 @@
 }
 
 .folder-group--buddies > .folder-group-header:hover,
+.folder-group--builder > .folder-group-header:hover,
 .folder-group-header--buddy:hover {
   background: color-mix(in srgb, var(--ai) 8%, var(--bg-tertiary));
 }

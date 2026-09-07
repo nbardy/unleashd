@@ -6,7 +6,7 @@ import { getBuddyContext, isBuddyBuilderConversation } from '@unleashd/shared';
 import { useAtomValue } from 'jotai';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useDropzone } from 'react-dropzone';
-import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { Link, useNavigate, useParams } from 'react-router-dom';
 import {
   cancelQueuedMessage,
   clearQueue,
@@ -93,7 +93,6 @@ function useTimeAgo(date: Date | undefined): string | null {
 export function Chat() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const [searchParams] = useSearchParams();
 
   // Per-ID atoms — only re-render when THIS conversation changes, not others
   const conversation = useAtomValue(conversationAtomFamily(id ?? ''));
@@ -198,11 +197,11 @@ export function Chat() {
   } = usePendingAttachments(id);
 
   const confirmed = conversation?.confirmed ?? false;
-  const isBuddyBuilderHelper =
-    searchParams.get('helper') === 'buddies' &&
-    confirmed &&
-    conversation !== undefined &&
-    isBuddyBuilderConversation(conversation);
+  // Persistent Builder identity — canonical kind, never the transient
+  // ?helper=buddies query param (lost on refresh/sidebar nav, which made
+  // Builder threads indistinguishable from normal chats).
+  const isBuddyBuilder = conversation !== undefined && isBuddyBuilderConversation(conversation);
+  const isBuddyBuilderHelper = confirmed && isBuddyBuilder;
   const isRunning = conversation?.isRunning ?? false;
   const isStreaming = conversation?.isStreaming ?? false;
   const runtimeTurnActive = isRunning || isStreaming;
@@ -849,6 +848,9 @@ export function Chat() {
             {dirDisplay}
           </Link>
           {timeAgo && <span className="chat-time-ago">{timeAgo}</span>}
+          {isBuddyBuilder && (
+            <span className="buddy-helper-kicker buddy-helper-kicker--header">Buddy Builder</span>
+          )}
         </div>
         <div className="header-status">
           <button
