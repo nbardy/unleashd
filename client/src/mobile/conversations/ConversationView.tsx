@@ -1,5 +1,5 @@
 import type { Conversation, SubAgent } from '@unleashd/shared';
-import { getBuddyContext } from '@unleashd/shared';
+import { getBuddyContext, isBuddyBuilderConversation } from '@unleashd/shared';
 import { useAtomValue } from 'jotai';
 import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
@@ -792,6 +792,9 @@ export function ConversationView({
           <div className="mobile-chat__heading">
             <div className="mobile-chat__dir" title={conversation.workingDirectory}>
               {dirDisplay}
+              {isBuddyBuilderConversation(conversation) && (
+                <span className="buddy-helper-kicker"> · Buddy Builder</span>
+              )}
             </div>
             <div className="mobile-chat__status">
               {/* One compact line: status + model. The model used to be three
