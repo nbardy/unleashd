@@ -8,6 +8,7 @@ import {
   normalizeModelId,
 } from '@unleashd/shared';
 import type { Express, Request, Response } from 'express';
+import { BUDDY_BUILDER_SOUL_MAX_CHARACTERS, stageBuddySoulFile } from './builder';
 import type { BuddiesStorePort, BuddyAutomation, BuddyAutomationRun } from './contract';
 import { BUDDY_REVIEW_RESULT_INSTRUCTIONS } from './integration';
 import {
@@ -359,6 +360,69 @@ export function registerBuddyRoutes(app: Express, dependencies: BuddyRouteDepend
         reasoningEffort,
       })
     );
+  });
+
+  /**
+   * Owner-only soul management. This route lives on the owner HTTP surface
+   * next to the profile route; it is deliberately never exposed through Buddy
+   * MCP tools, so a Buddy cannot rewrite its own behavior contract. The soul
+   * text is staged owner-side as a workspace file and only the
+   * workspace-relative path reaches the store, which resolves it against the
+   * Buddy's home workspace root.
+   */
+  route.put('/api/buddies/:buddyId/soul', 400, async (req, res) => {
+    const soul = req.body?.soul;
+    if (typeof soul !== 'string' || !soul.trim()) {
+      res.status(400).json({ error: 'soul must be a non-empty string' });
+      return;
+    }
+    if (soul.length > BUDDY_BUILDER_SOUL_MAX_CHARACTERS) {
+      res.status(413).json({
+        error: `soul exceeds the ${BUDDY_BUILDER_SOUL_MAX_CHARACTERS}-character limit`,
+      });
+      return;
+    }
+
+    const buddies = await getStore();
+    const buddy = buddies.getBuddy(req.params.buddyId) as unknown as {
+      id: string;
+      slug?: string;
+      project_id?: string;
+    } | null;
+    if (!buddy) {
+      res.status(404).json({ error: 'Buddy not found' });
+      return;
+    }
+    const workspaces = buddies.listBuddyWorkspaces(buddy.id) as Array<{
+      id: string;
+      root_path: string;
+    }>;
+    const home = workspaces.find((workspace) => workspace.id === buddy.project_id) ?? workspaces[0];
+    if (!home) {
+      res.status(400).json({ error: 'Buddy has no workspace to stage its soul' });
+      return;
+    }
+    const slug = typeof buddy.slug === 'string' && buddy.slug ? buddy.slug : buddy.id;
+    const staged = stageBuddySoulFile(home.root_path, slug, soul.trim());
+    buddies.updateBuddy(buddy.id, { soulPath: staged });
+    if (typeof buddies.updateSoul === 'function' && typeof buddies.readBuddySoul === 'function') {
+      // The canonical store serves briefings from the versioned soul ledger,
+      // seeded once from the legacy file. A file rewrite alone goes stale
+      // after that first read, so re-souls must land as a new owner revision.
+      const head = buddies.readBuddySoul(buddy.id);
+      if (head.body !== soul.trim()) {
+        buddies.updateSoul(buddy.id, {
+          content: soul.trim(),
+          reasoning: 'Owner soul update via HTTP.',
+          baseVersion: head.revision,
+          requestedBy: 'owner:http',
+          provenance: { source: 'http-soul-route' },
+        });
+      }
+      res.json(buddies.getBuddy(req.params.buddyId));
+      return;
+    }
+    res.json(buddies.getBuddy(req.params.buddyId));
   });
 
   route.get('/api/buddies/:buddyId/context', 404, async (req, res) => {

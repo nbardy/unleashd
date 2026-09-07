@@ -37,6 +37,7 @@ test('Builder MCP creates one durable Buddy and canonical result across restart'
     workspaceId: workspace.id,
     name: 'Growth Researcher',
     role: 'Research campaigns and competitors',
+    soul: 'Verify every claim against primary sources before reporting it.',
   };
   try {
     const tools = await mcpClient.listTools();
@@ -69,6 +70,16 @@ test('Builder MCP creates one durable Buddy and canonical result across restart'
     );
     assert.equal(store.listBuddies().length, 1);
 
+    const persisted = (
+      store as unknown as {
+        getBuddyContext(buddy: string, input: { workspace?: string }): { soul: string };
+      }
+    ).getBuddyContext(recovered.buddy.id, { workspace: workspace.id });
+    assert.ok(
+      persisted.soul.includes(request.soul),
+      `creation soul should persist, got: ${persisted.soul}`
+    );
+
     const app = express();
     app.use(express.json());
     registerBuddyRoutes(app, {
@@ -100,6 +111,96 @@ test('Builder MCP creates one durable Buddy and canonical result across restart'
         BuddyBuilderResultSchema.parse(await response.json()).buddy.id,
         recovered.buddy.id
       );
+    } finally {
+      await new Promise<void>((resolve, reject) =>
+        server.close((error) => (error ? reject(error) : resolve()))
+      );
+    }
+  } finally {
+    store.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('owner PUT soul stages text and rejects oversize payloads', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'unleashd-buddy-soul-'));
+  const workspaceRoot = join(root, 'workspace');
+  const database = join(root, 'buddies.sqlite');
+  mkdirSync(workspaceRoot);
+
+  const store = new BuddiesStore(database);
+  try {
+    const workspace = store.createWorkspace({ name: 'Growth', rootPath: workspaceRoot });
+    const buddy = store.createBuddy({
+      project: workspace.id,
+      name: 'Soul Owner',
+      role: 'Holds a staged soul',
+    });
+
+    const app = express();
+    app.use(express.json());
+    registerBuddyRoutes(app, {
+      getStore: async () => store as unknown as BuddiesStorePort,
+      getScheduler: () => null,
+      createConversation: async () => {
+        throw new Error('not used');
+      },
+      sendError(response, error, status) {
+        response
+          .status(status)
+          .json({ error: error instanceof Error ? error.message : String(error) });
+      },
+      getNextAutomationRunAt: () => '2026-07-29T00:00:00.000Z',
+      createId: () => 'not-used',
+      isConversationDeleted: async () => false,
+    });
+    const server = app.listen(0, '127.0.0.1');
+    await new Promise<void>((resolve) => server.once('listening', resolve));
+    try {
+      const { port } = server.address() as AddressInfo;
+      const base = `http://127.0.0.1:${port}/api/buddies/${buddy.id}/soul`;
+      const putSoul = (body: unknown) =>
+        fetch(base, {
+          method: 'PUT',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify(body),
+        });
+
+      const soul = 'Act with steady focus and cite primary sources.';
+      const updated = await putSoul({ soul });
+      assert.equal(updated.status, 200);
+      const context = (
+        store as unknown as {
+          getBuddyContext(buddy: string, input: { workspace?: string }): { soul: string };
+        }
+      ).getBuddyContext(buddy.id, { workspace: workspace.id });
+      assert.ok(context.soul.includes(soul), `PUT soul should persist, got: ${context.soul}`);
+
+      const replacement = 'Keep every answer short and verifiable.';
+      const replaced = await putSoul({ soul: replacement });
+      assert.equal(replaced.status, 200);
+      const replacedContext = (
+        store as unknown as {
+          getBuddyContext(buddy: string, input: { workspace?: string }): { soul: string };
+        }
+      ).getBuddyContext(buddy.id, { workspace: workspace.id });
+      assert.ok(replacedContext.soul.includes(replacement));
+
+      const oversize = await putSoul({ soul: 'x'.repeat(10_001) });
+      assert.equal(oversize.status, 413);
+
+      const empty = await putSoul({ soul: '   ' });
+      assert.equal(empty.status, 400);
+
+      const missing = await fetch(
+        `http://127.0.0.1:${port}/api/buddies/buddy_does_not_exist/soul`,
+        {
+          method: 'PUT',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({ soul }),
+        }
+      );
+      assert.equal(missing.status, 404);
     } finally {
       await new Promise<void>((resolve, reject) =>
         server.close((error) => (error ? reject(error) : resolve()))

@@ -298,6 +298,7 @@ export interface BuddiesStorePort {
       provider?: string | null;
       model?: string | null;
       reasoningEffort?: string | null;
+      soulPath?: string | null;
     }
   ): BuddyRecord;
   listBuddyWorkspaces(buddy: string): unknown[];
@@ -347,6 +348,17 @@ export interface BuddiesStorePort {
   updateReview(id: string, changes: Record<string, unknown>): unknown;
   readBuddyMemory(buddy: string): BuddyMemory;
   updateMemory?(buddy: string, input: BuddyMemoryUpdateInput): BuddyMemoryRevision;
+  readBuddySoul?(buddy: string): { body: string; revision: number };
+  updateSoul?(
+    buddy: string,
+    input: {
+      content: string;
+      reasoning: string;
+      baseVersion: number;
+      requestedBy: string;
+      provenance?: unknown;
+    }
+  ): BuddyMemoryRevision;
   rememberNote?(buddy: string, input: BuddyMemoryNoteInput): BuddyMemoryNote;
   recall?(buddy: string, input: BuddyMemoryRecallInput): BuddyMemoryRecall;
   /** Legacy compatibility for the pre-v2 package during the migration window. */

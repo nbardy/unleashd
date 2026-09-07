@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { DatabaseSync } from 'node:sqlite';
@@ -271,15 +271,14 @@ test('Buddy Builder MCP specification is required and conversation-scoped', () =
   );
 });
 
-test('Buddy conversations allow Claude and fail closed for weaker MCP harnesses', () => {
+test('Buddy conversations allow required-MCP harnesses and fail closed for the rest', () => {
   assert.doesNotThrow(() => assertBuddyProviderSupportsMcp('codex'));
   assert.doesNotThrow(() => assertBuddyProviderSupportsMcp('claude'));
+  // Muse negotiates MCP through a merged settings file with explicit
+  // required mode; the CLI aborts when a required server fails startup.
+  assert.doesNotThrow(() => assertBuddyProviderSupportsMcp('muse'));
   assert.throws(
     () => assertBuddyProviderSupportsMcp('opencode'),
-    /cannot start Buddy conversations.*cannot guarantee required Buddy state tools/
-  );
-  assert.throws(
-    () => assertBuddyProviderSupportsMcp('muse'),
     /cannot start Buddy conversations.*cannot guarantee required Buddy state tools/
   );
   assert.throws(
@@ -318,7 +317,7 @@ test('resolved stdio Buddy MCP entrypoint opens the current durable schema', asy
   fixtureDatabase.close();
   assert.equal(
     schemaVersion.user_version,
-    16,
+    17,
     'the vendored Buddy package must understand the live schema'
   );
 
@@ -349,6 +348,63 @@ test('resolved stdio Buddy MCP entrypoint opens the current durable schema', asy
     const current = await client.callTool({ name: 'get_current_work', arguments: {} });
     assert.equal(current.isError, undefined);
     assert.match(JSON.stringify(current.structuredContent), /Durable MCP project/);
+  } finally {
+    await client.close();
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test('Buddy MCP server starts from a cwd without resolvable tooling', async () => {
+  // Regression: muse forwards no per-server cwd, so the source-mode launch
+  // must not depend on the child's cwd (bare `--import tsx` died with
+  // ERR_MODULE_NOT_FOUND from conversation workspaces). Spawning from a bare
+  // dir exercises exactly the muse-shaped launch.
+  const home = mkdtempSync(join(tmpdir(), 'buddy-mcp-bare-cwd-'));
+  const bareCwd = join(home, 'cwd');
+  const database = join(home, 'buddies.sqlite');
+  const store = new BuddiesStore(database);
+  const workspace = store.createWorkspace({ name: 'Workspace', rootPath: join(home, 'workspace') });
+  const lead = store.createBuddy({
+    project: workspace.id,
+    name: 'Bare Cwd Lead',
+    role: 'Prove cwd independence',
+  });
+  store.newProject({
+    buddy: lead.id,
+    workspace: workspace.id,
+    title: 'Bare cwd project',
+    definitionOfDone: 'Spawned without cwd must still serve tools',
+  });
+  store.close();
+
+  mkdirSync(bareCwd, { recursive: true });
+  const env = Object.fromEntries(
+    Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined)
+  );
+  env.BUDDIES_HOME = home;
+  const launch = resolveBuddyMcpLaunch();
+  Object.assign(env, launch.env);
+  const transport = new StdioClientTransport({
+    command: launch.command,
+    args: [
+      ...launch.args,
+      '--buddy',
+      lead.id,
+      '--workspace',
+      workspace.id,
+      '--conversation',
+      'conversation-bare-cwd',
+    ],
+    cwd: bareCwd,
+    env,
+    stderr: 'pipe',
+  });
+  const client = new Client({ name: 'buddy-mcp-bare-cwd-test', version: '1.0.0' });
+  try {
+    await client.connect(transport);
+    const current = await client.callTool({ name: 'get_current_work', arguments: {} });
+    assert.equal(current.isError, undefined);
+    assert.match(JSON.stringify(current.structuredContent), /Bare cwd project/);
   } finally {
     await client.close();
     rmSync(home, { recursive: true, force: true });
