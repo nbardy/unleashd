@@ -103,6 +103,16 @@ an empty transcript anyway.
 
 Regression guard: `server/test/session-loader-hydration.test.ts`.
 
+Codex app transcripts can store `AGENTS.md` and environment setup as user-role
+`response_item` messages ahead of the real prompt, and again on resumed turns.
+The adapter filters their `content_item_kinds` provenance tags before extracting
+visible text; do not hide actual user text based on an `AGENTS.md` prefix.
+Buddy envelope removal runs independently of durable identity and checks every
+user message, since the briefing need not occupy the first row. Durable kind
+still wins over recovered marker identity. Parser changes must invalidate the
+normalized session cache so unchanged older transcripts are repaired on reload.
+Regression guard: `server/test/codex-buddy-transcript.test.ts`.
+
 ### 2.1) Rehydration: the durable record owns Buddy identity
 
 Two independent stores describe a Buddy conversation, and only one of them is

@@ -117,24 +117,21 @@ export type LoadProgressCallback = (
  * geminiSessionToConversation functions that previously existed in jsonl.ts.
  */
 export function sessionToConversation(session: ParsedSession): DiscoveredConversation | null {
-  // Canonical kind is the single source. For new sessions, `session.kind` is set
-  // directly by the adapter from durable storage and we do NOT parse hidden HTML.
-  // For old sessions lacking `kind`, we migrate once from either durable buddyContext/purpose
-  // or hidden HTML prefix (extractBuddyContext). Hidden parsing mutates messages to strip the marker.
+  // Durable kind owns identity. Briefing removal is separate: even sessions
+  // with durable identity can contain the first-turn CLI envelope on disk.
   const durableKind = session.kind ?? null;
   const durableBuddy = session.buddyContext ?? null;
   const durableSwarmPrefix = session.swarmDebugPrefix ?? null;
   const durableResumed = session.resumedFromConversationId ?? null;
   const durablePurpose = session.purpose ?? null;
 
-  // Only parse hidden markers when durable kind/buddyContext is absent — one-time migration for old sessions.
-  // This keeps new sessions from depending on prose markers; they rely on `kind` instead.
+  const extractedBuddy = extractBuddyContext(session.messages);
   let buddyContext: BuddyContext | null = durableBuddy;
   let isBuddyBuilder = false;
   let swarmDebugPrefix: string | null = durableSwarmPrefix;
 
   if (durableKind) {
-    // Kind already present — derive legacy fields for compat without touching messages.
+    // Kind already present — derive legacy fields without trusting marker identity.
     // Still strip swarm prefix if present in durable, else lazily extract (swarm prefix not yet migrated to kind).
     if (!swarmDebugPrefix) {
       const extractedSwarm = extractSwarmDebugPrefix(session.messages);
@@ -153,10 +150,7 @@ export function sessionToConversation(session: ParsedSession): DiscoveredConvers
     });
     buddyContext = derived.buddyContext;
     isBuddyBuilder = derived.isBuddyBuilder;
-    // For kind-present sessions, don't parse hidden buddy markers — they shouldn't exist anymore.
-    // But keep messages mutation for swarm/worker detection below.
   } else {
-    const extractedBuddy = extractBuddyContext(session.messages);
     buddyContext = durableBuddy ?? extractedBuddy;
     isBuddyBuilder = buddyContext
       ? false
