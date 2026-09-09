@@ -5,7 +5,9 @@ import { MessageSchema, type Provider, ProviderSchema, SubAgentSchema } from '@u
 import { z } from 'zod';
 import type { ParsedSession } from './disk-adapter';
 
-const CACHE_VERSION = 1;
+// v2 removes provider-tagged Codex setup messages. Reparse unchanged sources
+// too, otherwise existing conversations keep their cached context dumps.
+const CACHE_VERSION = 2;
 
 const CachedParsedSessionSchema = z.object({
   sessionId: z.string(),

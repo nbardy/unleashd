@@ -1024,12 +1024,33 @@ function extractCodexContentText(content: unknown): string {
   return textParts.join('\n');
 }
 
+const CODEX_SETUP_CONTENT_KINDS = new Set([
+  'agents_md.instructions',
+  'environments.environment_context',
+]);
+
+function extractCodexUserContent(payload: { content: unknown }): string {
+  const metadata = asObject(asObject(payload)?.internal_chat_message_metadata_passthrough);
+  const kinds = metadata?.content_item_kinds;
+  const content = payload.content;
+  // Codex app transcripts tag setup blocks as user-role content. Filter by
+  // provenance, not their text: a user's actual AGENTS.md question/paste stays visible.
+  // Only pair tags with blocks when their positions are unambiguous.
+  if (Array.isArray(content) && Array.isArray(kinds) && kinds.length === content.length) {
+    return extractCodexContentText(
+      content.filter((_, index) => !CODEX_SETUP_CONTENT_KINDS.has(kinds[index]))
+    );
+  }
+  return extractCodexContentText(content);
+}
+
 /**
  * Extract user/assistant messages from native Codex session entries.
  *
  * Preferred source: event_msg (user_message + agent_message) to avoid importing
  * system/developer bootstrap prompts from response_item entries.
- * Fallback: response_item payload.message entries for older traces.
+ * Fallback: response_item messages (older CLI and Codex app traces), with
+ * provider-tagged setup content removed from user messages.
  */
 export function extractMessagesFromCodexEntries(entries: CodexSessionEntry[]): Message[] {
   const messages: Message[] = [];
@@ -1078,7 +1099,10 @@ export function extractMessagesFromCodexEntries(entries: CodexSessionEntry[]): M
       continue;
     }
 
-    const content = extractCodexContentText(entry.payload.content);
+    const content =
+      role === 'user'
+        ? extractCodexUserContent(entry.payload)
+        : extractCodexContentText(entry.payload.content);
     if (!content) {
       continue;
     }
@@ -1331,8 +1355,16 @@ const BUDDY_BUILDER_V1_SUFFIX = '\n<!-- /unleashd:buddy-builder-v1 -->\n\n';
  * memory, and work state are deliberately rebuilt for new conversations.
  */
 export function extractBuddyContext(messages: Message[]): BuddyContext | null {
-  const firstUserMsg = messages.find((message) => message.role === 'user');
-  if (!firstUserMsg) return null;
+  let context: BuddyContext | null = null;
+  for (const message of messages) {
+    if (message.role !== 'user') continue;
+    const recovered = extractBuddyContextFromMessage(message);
+    context ??= recovered;
+  }
+  return context;
+}
+
+function extractBuddyContextFromMessage(firstUserMsg: Message): BuddyContext | null {
   const v2Header = firstUserMsg.content.match(BUDDY_CONTEXT_V2_HEADER_RE);
   if (v2Header) {
     const briefingLength = Number.parseInt(v2Header[2], 10);
