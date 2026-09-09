@@ -1,7 +1,13 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import type { BuddyBuilderEvent } from '@unleashd/shared';
 import type { ZodTypeAny } from 'zod';
 import { z } from 'zod';
-import { BuddyBuilderService, type BuddyBuilderStore, CreateBuddyInputSchema } from './builder';
+import {
+  BuddyBuilderService,
+  type BuddyBuilderStore,
+  CreateBuddyInputSchema,
+  UpdateBuilderSoulSchema,
+} from './builder';
 
 interface ToolServer {
   registerTool(
@@ -23,15 +29,16 @@ interface ToolServer {
 const EmptyInputSchema = z.object({}).strict();
 const WorkspaceFilterSchema = z.object({ workspaceId: z.string().min(1).optional() }).strict();
 
-function success(value: unknown, key: string): Record<string, unknown> {
+function success(value: unknown, key: string, event?: BuddyBuilderEvent): Record<string, unknown> {
+  const structuredContent = { [key]: value, ...(event ? { buddyBuilderEvent: event } : {}) };
   return {
-    content: [{ type: 'text', text: JSON.stringify(value, null, 2) }],
-    structuredContent: { [key]: value },
+    content: [{ type: 'text', text: JSON.stringify(event ? structuredContent : value, null, 2) }],
+    structuredContent,
   };
 }
 
 /**
- * Builder conversations deliberately get only these three tools. Keep this
+ * Builder conversations deliberately get only hiring and refinement tools. Keep this
  * server separate from employee tools so adding a normal Buddy operation can
  * never broaden the hiring flow by accident.
  */
@@ -92,7 +99,8 @@ export function createBuddyBuilderMcpServer(
     },
     async (input: unknown) => {
       try {
-        return success(builder.createBuddy(input), 'result');
+        const result = builder.createBuddy(input);
+        return success(result, 'result', { action: 'created', result });
       } catch (error) {
         return {
           isError: true,
@@ -101,6 +109,46 @@ export function createBuddyBuilderMcpServer(
       }
     }
   );
+
+  for (const name of ['get_soul', 'update_soul'] as const) {
+    tools.registerTool(
+      name,
+      {
+        description:
+          name === 'get_soul'
+            ? 'Read the current soul and revision of the Buddy created in this conversation.'
+            : 'Save an owner-requested refinement to this conversation’s Buddy. Supply the complete soul, reasoning and the baseVersion returned by get_soul.',
+        inputSchema: name === 'get_soul' ? EmptyInputSchema : UpdateBuilderSoulSchema,
+        annotations: {
+          readOnlyHint: name === 'get_soul',
+          destructiveHint: name === 'update_soul',
+          idempotentHint: name === 'get_soul',
+          openWorldHint: false,
+        },
+      },
+      async (input) => {
+        try {
+          const result = builder.getResult();
+          if (!result) throw new Error('Create a Buddy in this conversation first');
+          const soul = name === 'get_soul' ? builder.getSoul() : builder.updateSoul(input);
+          return success(
+            soul,
+            'soul',
+            name === 'update_soul'
+              ? { action: 'updated', result, revision: soul.revision }
+              : undefined
+          );
+        } catch (error) {
+          return {
+            isError: true,
+            content: [
+              { type: 'text', text: error instanceof Error ? error.message : String(error) },
+            ],
+          };
+        }
+      }
+    );
+  }
 
   return server;
 }

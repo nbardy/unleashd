@@ -32,6 +32,55 @@ export const BuddyBuilderResultSchema = z.object({
 });
 export type BuddyBuilderResult = z.infer<typeof BuddyBuilderResultSchema>;
 
+/** Successful Builder mutations, carried by the tool result into the transcript. */
+export const BuddyBuilderEventSchema = z.discriminatedUnion('action', [
+  z.object({ action: z.literal('created'), result: BuddyBuilderResultSchema }),
+  z.object({
+    action: z.literal('updated'),
+    result: BuddyBuilderResultSchema,
+    revision: z.number().int().nonnegative(),
+  }),
+]);
+export type BuddyBuilderEvent = z.infer<typeof BuddyBuilderEventSchema>;
+
+/** Unwrap provider/MCP result envelopes; failed tools never become success cards. */
+export function parseBuddyBuilderToolResult(value: unknown, depth = 0): BuddyBuilderEvent | null {
+  if (depth > 6) return null;
+  if (typeof value === 'string') {
+    try {
+      return parseBuddyBuilderToolResult(JSON.parse(value), depth + 1);
+    } catch {
+      return null;
+    }
+  }
+  if (!value || typeof value !== 'object') return null;
+  if (Array.isArray(value)) {
+    for (const block of value) {
+      const event = parseBuddyBuilderToolResult(block, depth + 1);
+      if (event) return event;
+    }
+    return null;
+  }
+  const record = value as Record<string, unknown>;
+  if (record.isError || record.is_error || record.error) return null;
+  const event = BuddyBuilderEventSchema.safeParse(record.buddyBuilderEvent);
+  if (event.success) return event.data;
+  if ('buddyBuilderEvent' in record) return null;
+  // Creation results from older Builder transcripts already contain this projection.
+  const legacy = BuddyBuilderResultSchema.safeParse(record);
+  if (legacy.success) return { action: 'created', result: legacy.data };
+  for (const key of ['structuredContent', 'content', 'text', 'result']) {
+    const nested = parseBuddyBuilderToolResult(record[key], depth + 1);
+    if (nested) return nested;
+  }
+  return null;
+}
+
+export function formatBuddyBuilderToolResult(output: unknown): string | null {
+  const event = parseBuddyBuilderToolResult(output);
+  return event ? `<!--buddy_builder_result:${encodeURIComponent(JSON.stringify(event))}-->` : null;
+}
+
 export const BuddyAutomationRunStatusSchema = z.enum([
   'claimed',
   'running',

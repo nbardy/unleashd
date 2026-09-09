@@ -4,6 +4,9 @@
   border: 1px solid var(--border-default);
   border-left: 4px solid var(--ai);
   background: var(--bg-card);
+  box-sizing: border-box;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 
 .buddy-created-card > header {
@@ -12,6 +15,14 @@
   align-items: center;
   gap: 12px;
   padding: 16px;
+}
+
+.buddy-created-card__questions,
+.buddy-created-card__update {
+  padding: 0 16px 14px;
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 12px;
 }
 
 .buddy-created-card__avatar {
@@ -67,6 +78,7 @@
 
 .buddy-created-card__actions {
   display: flex;
+  flex-wrap: wrap;
   justify-content: flex-end;
   gap: 8px;
   padding: 12px 16px;
@@ -96,4 +108,14 @@
 .buddy-created-card__actions button:hover {
   border-color: var(--ai);
   color: var(--ai-bright);
+}
+
+@media (max-width: 767px) {
+  .buddy-created-card__actions a,
+  .buddy-created-card__actions button {
+    min-height: 44px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+  }
 }

@@ -5,7 +5,8 @@ import { MessageSchema, type Provider, ProviderSchema, SubAgentSchema } from '@u
 import { z } from 'zod';
 import type { ParsedSession } from './disk-adapter';
 
-const CACHE_VERSION = 1;
+// Reparse tool results so historical Builder mutations appear inline.
+const CACHE_VERSION = 3;
 
 const CachedParsedSessionSchema = z.object({
   sessionId: z.string(),

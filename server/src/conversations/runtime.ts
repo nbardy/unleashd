@@ -29,6 +29,7 @@ import {
   buddyContextFromKind,
   buddyKindFromContext,
   conversationKindFromLegacy,
+  formatBuddyBuilderToolResult,
   isBuddyKind,
   matchConversationKind,
   mergeReviewDocPath,
@@ -1011,6 +1012,12 @@ export function createConversationRuntime(
                 input: event.input,
                 displayText: event.displayText,
               });
+              break;
+            }
+            case 'tool.result': {
+              if (this.kind.kind !== 'buddy_builder' || event.isError) break;
+              const content = formatBuddyBuilderToolResult(event.output);
+              if (content) this.handleOutput({ type: 'text_delta', text: `\n${content}\n` });
               break;
             }
             case 'turn.complete': {

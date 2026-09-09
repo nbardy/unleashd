@@ -32,6 +32,7 @@ import { BuddyReviewRequestCard, BuddyReviewResultCard } from './BuddyReviewMess
 import { FilePreview, getPreviewType, getPreviewableLocalHref } from './FilePreview';
 import { InlineSwarmRunWidget } from './InlineSwarmRunWidget';
 import { SwarmConvoPrefix } from './SwarmConvoPrefix';
+import { InlineBuddyBuilderResult } from './buddies/BuddyBuilderResultCard';
 import { effectiveSwarmDebugPrefix } from './buddies/ui-contract';
 
 // =============================================================================
@@ -620,6 +621,9 @@ const MemoizedMessage = memo(
               }
               if (seg.type === 'oompa_run') {
                 return <InlineSwarmRunWidget key={i} workingDirectory={workingDirectory} />;
+              }
+              if (seg.type === 'buddy_builder_result') {
+                return <InlineBuddyBuilderResult key={i} payload={seg.json} />;
               }
               if (seg.type === 'buddy_review_result') {
                 const result = parseBuddyReviewResult(seg.json);

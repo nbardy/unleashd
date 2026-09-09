@@ -36,6 +36,14 @@ export const CreateBuddyInputSchema = z
   })
   .strict();
 
+export const UpdateBuilderSoulSchema = z
+  .object({
+    content: z.string().trim().min(1).max(BUDDY_BUILDER_SOUL_MAX_CHARACTERS),
+    reasoning: z.string().trim().min(1).max(2000),
+    baseVersion: z.number().int().nonnegative(),
+  })
+  .strict();
+
 export type CreateBuddyInput = z.infer<typeof CreateBuddyInputSchema>;
 
 export type BuddyBuilderRecord = BuddySummary;
@@ -50,6 +58,17 @@ interface StoredBuilderResult {
 }
 
 export interface BuddyBuilderStore {
+  readBuddySoul?(buddy: string): { body: string; revision: number };
+  updateSoul?(
+    buddy: string,
+    input: {
+      content: string;
+      reasoning: string;
+      baseVersion: number;
+      requestedBy: string;
+      provenance: Record<string, unknown>;
+    }
+  ): { body: string; revision: number };
   listWorkspaces(): BuddyBuilderWorkspace[];
   listBuddies(workspace?: string): BuddyBuilderRecord[];
   createWorkspace(input: {
@@ -154,8 +173,8 @@ function canonicalResult(conversationId: string, result: StoredBuilderResult): B
 }
 
 /**
- * Application boundary for the Buddy Builder. The model receives three narrow
- * tools; this service owns validation and delegates the one durable mutation to
+ * Application boundary for the Buddy Builder. The model receives narrow
+ * tools; this service owns validation and delegates durable mutations to
  * the store. Keep the result server-readable: the UI must never depend on the
  * model copying a special marker into prose.
  */
@@ -182,6 +201,39 @@ export class BuddyBuilderService {
   getResult(): BuddyBuilderResult | null {
     const result = this.store.getBuddyBuilderResult(this.conversationId);
     return result ? canonicalResult(this.conversationId, result) : null;
+  }
+
+  getSoul(): { body: string; revision: number } {
+    const result = this.getResult();
+    if (!result) throw new Error('Create a Buddy in this conversation first');
+    if (!this.store.readBuddySoul) throw new Error('Versioned soul reading is unavailable');
+    return this.store.readBuddySoul(result.buddy.id);
+  }
+
+  updateSoul(input: unknown): { body: string; revision: number } {
+    const parsed = UpdateBuilderSoulSchema.parse(input);
+    const result = this.getResult();
+    if (!result) throw new Error('Create a Buddy in this conversation first');
+    if (!this.store.updateSoul || !this.store.updateBuddy) {
+      throw new Error('Versioned soul editing is unavailable');
+    }
+    const head = this.getSoul();
+    if (head.revision !== parsed.baseVersion) {
+      throw new Error(
+        `Soul changed to revision ${head.revision}. Read get_soul and reconcile before retrying.`
+      );
+    }
+    // Configure only the projection pointer; the store owns the CAS write and file contents.
+    if (!(result.buddy as BuddyBuilderRecord & { soul_path?: string }).soul_path) {
+      this.store.updateBuddy(result.buddy.id, {
+        soulPath: buddySoulRelativePath(result.buddy.slug),
+      });
+    }
+    return this.store.updateSoul(result.buddy.id, {
+      ...parsed,
+      requestedBy: `owner:builder:${this.conversationId}`,
+      provenance: { source: 'buddy-builder', conversation_id: this.conversationId },
+    });
   }
 
   private resolveWorkspace(input: {
@@ -315,7 +367,7 @@ export class BuddyBuilderService {
 
 export const BUDDY_BUILDER_BRIEFING = [
   'You are the Unleashd Buddy Builder. Help the user hire one durable Buddy through conversation.',
-  'Use only the native list_workspaces, list_buddies, and create_buddy tools for Buddy state.',
+  'Use only the native list_workspaces, list_buddies, create_buddy, get_soul, and update_soul tools for Buddy state.',
   'Inspect available workspaces and existing Buddies before proposing a hire.',
   'A workspace is durable context, not an approval allowlist. If the requested home folder exists but is not registered, pass its absolute path as workspacePath and the server will register it.',
   'Use additionalWorkspacePaths only for other existing folders the user explicitly placed in scope.',
@@ -324,5 +376,6 @@ export const BUDDY_BUILDER_BRIEFING = [
   'Draft the soul from the name/role conversation — a short behavior and authority contract for the new Buddy — and pass it as soul.',
   'Do not create managers, automations, files, skills, projects, permissions, sends, or production changes. Passing the soul string is allowed; writing soul files is not.',
   'The server defaults new Buddies to Codex, gpt-5.6-luna, high. Omit profile fields unless the user requests an exception.',
-  'After create_buddy succeeds, briefly confirm the hire. If the result includes followUpQuestions, ask those questions next so the user can sharpen the brief without creating a second Buddy. The application renders the canonical Buddy card separately.',
+  'When the owner answers follow-up questions or requests a refinement, read get_soul and use update_soul with its revision and the complete revised soul. Preserve unrelated content. Only refine the Buddy created in this conversation; never change it unsolicited.',
+  'After create_buddy succeeds, briefly confirm the hire. If the result includes followUpQuestions, ask those questions next so the user can sharpen the brief without creating a second Buddy. The application renders the canonical Buddy card inline at tool completion.',
 ].join('\n');

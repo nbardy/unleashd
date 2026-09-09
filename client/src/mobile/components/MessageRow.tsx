@@ -4,6 +4,7 @@ import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import type { PluggableList } from 'unified';
+import { InlineBuddyBuilderResult } from '../../components/buddies/BuddyBuilderResultCard';
 import { COPY_LABEL, useCopyAction } from '../../hooks/useCopyAction';
 import { parseBuddyReviewRequest, parseBuddyReviewResult } from '../../utils/buddy-review-message';
 import { useLazyMarkdownPlugins } from '../../utils/lazyMarkdownPlugins';
@@ -165,6 +166,9 @@ export const MessageRow = memo(function MessageRow({
           }
           if (seg.type === 'buddy_review_result') {
             return <BuddyReviewResultCard key={idx} json={seg.json} />;
+          }
+          if (seg.type === 'buddy_builder_result') {
+            return <InlineBuddyBuilderResult key={idx} payload={seg.json} />;
           }
           if (seg.type === 'ask_user_question') {
             let question: unknown = null;

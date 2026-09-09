@@ -49,7 +49,6 @@ import { SwarmConvoPrefix } from './SwarmConvoPrefix';
 import { TurnStatus } from './TurnStatus';
 import { VirtualizedMessageList, isToolCallOnlyMessage } from './VirtualizedMessageList';
 import type { MessageGroup } from './VirtualizedMessageList';
-import { BuddyBuilderResultCard } from './buddies/BuddyBuilderResultCard';
 import { effectiveSwarmDebugPrefix } from './buddies/ui-contract';
 import {
   shouldPresentTurnAttempt,
@@ -1006,18 +1005,6 @@ export function Chat() {
             swarmId={conversation.swarmId ?? null}
             buddyContext={buddyContext}
           />
-          {isBuddyBuilderConversation(conversation) && (
-            <div className="buddy-builder-result-slot">
-              <BuddyBuilderResultCard
-                // Keyed so switching builder conversations remounts the card; without it
-                // the previous conversation's result (and its "Start conversation" button)
-                // leaks across navigation.
-                key={conversation.id}
-                conversationId={conversation.id}
-                isRunning={conversation.isRunning}
-              />
-            </div>
-          )}
           {shouldShowTypingIndicator(isStreaming, streamingText) && (
             <div className="typing-indicator-overlay">
               <span className="typing-dot" />
