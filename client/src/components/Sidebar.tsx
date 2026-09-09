@@ -751,9 +751,6 @@ export function Sidebar() {
           onSelectConversation={(id) => {
             navigate(`/chat/${id}`);
           }}
-          onSelectBuddy={(id) => {
-            navigate(`/buddies/${id}`);
-          }}
           filterDirectory={searchFilterDir}
         />
       </div>
