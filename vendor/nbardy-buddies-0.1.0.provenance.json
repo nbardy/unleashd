@@ -3,11 +3,26 @@
   "package": "@nbardy/buddies",
   "version": "0.1.0",
   "archive": "vendor/nbardy-buddies-0.1.0.tgz",
-  "sha256": "63c58be70e89309ffc2051c6f3254ed2ac702746fca177ed52a59213da65699d",
+  "sha256": "bae75fa91825382b92f40951a8aa9d68f55d4164ede28278c7587222d7a78554",
   "reproduciblePack": true,
   "sourceCommit": "842631961d7d3c51d3dfdc9cc9ae444532a4b020",
-  "sourceDirty": false,
-  "sourceStatus": [],
+  "sourceDirty": true,
+  "sourceStatus": [
+    "M README.md",
+    " M src/cli.js",
+    " M src/index.d.ts",
+    " M src/index.js",
+    " M src/store.js",
+    " M test/cli.test.js",
+    " M test/store.test.js",
+    " M test/v1.test.js",
+    "?? agent_notes/20260728T000000Z_01KYK0AT001D28M0BHBFSMNNP8_legacy-journal_growth-engineer_5bf6dfbf.md",
+    "?? agent_notes/20260728T000000Z_01KYK0AT005EPQ71H12Y7EGW0X_legacy-journal_growth-lead_3a8a2a7b.md",
+    "?? agent_notes/20260728T000000Z_01KYK0AT007YARF9DY5RG4N803_legacy-journal_growth-operator_c61e6080.md",
+    "?? agent_notes/20260820T000000Z_01M0E7FB00GJ69WSJ0WKBH3MNP_legacy-journal_gtm-critic_f0a1a1a0.md",
+    "?? profiles/product-dev-lead/BUDDY_SOUL.md",
+    "?? test/package-reconcile.test.js"
+  ],
   "manifest": {
     "packageFiles": [
       "README.md",
@@ -51,5 +66,5 @@
     "runtimeFiles": [],
     "sha256": "60e0f6269b2122fd519f03aa1161b127c42ea5eebdad83ea788b244a8d3ed12d"
   },
-  "releaseReady": true
+  "releaseReady": false
 }

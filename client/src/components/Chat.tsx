@@ -62,7 +62,7 @@ import './Chat.css';
 const EMPTY_QUEUE: QueuedMessage[] = [];
 const BUDDY_STARTER_PROMPTS = [
   'Create a Buddy who owns product research for my team.',
-  'I need a research teammate for this workspace.',
+  'Create a team for this workspace: a researcher, a designer, and an engineer.',
 ] as const;
 
 // Deprecated helper kept for local parity — use getBuddyContext (kind-aware) instead.
@@ -958,12 +958,11 @@ export function Chat() {
           )}
           {isBuddyBuilderHelper ? (
             <div className="buddy-helper-panel">
-              <span className="buddy-helper-kicker">Buddy Builder · a guided hire</span>
-              <h2>Let’s create a Buddy for the work you want done.</h2>
+              <span className="buddy-helper-kicker">Buddy Builder · hire a Buddy or a team</span>
+              <h2>Let’s build your team.</h2>
               <p>
-                To create a new Buddy, describe the role, the workspace it should live in, and what
-                a good first outcome looks like. I’ll create it for you and ask follow-up questions
-                when the brief needs more shape.
+                Describe one Buddy or a whole team, their workspace, and what a good first outcome
+                looks like. I’ll create each Buddy here with its own role and working brief.
               </p>
               <div className="buddy-helper-example" aria-label="Example Buddy brief">
                 “Create a research Buddy for unleashd who turns customer conversations into
@@ -1140,7 +1139,7 @@ export function Chat() {
                 : hasActiveTurn
                   ? 'Enter to interrupt, Tab to queue...'
                   : isBuddyBuilderConversation(conversation)
-                    ? 'I want a new Buddy for…'
+                    ? 'I want a Buddy or team for…'
                     : 'Type your message...'
             }
             disabled={!canInput}

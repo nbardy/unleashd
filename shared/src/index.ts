@@ -1293,3 +1293,5 @@ export {
   isCodexUserMessageEvent,
   isCodexAgentMessageEvent,
 } from './adapters/codex-session.types.js';
+
+export * from './buddy-soul.js';

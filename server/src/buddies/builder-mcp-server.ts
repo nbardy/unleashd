@@ -1,7 +1,10 @@
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
+import { BuddySoulUpdateSchema } from '@unleashd/shared';
 import type { ZodTypeAny } from 'zod';
 import { z } from 'zod';
 import { BuddyBuilderService, type BuddyBuilderStore, CreateBuddyInputSchema } from './builder';
+import type { BuddiesStorePort } from './contract';
+import { readBuddySoul, updateBuddySoul } from './soul';
 
 interface ToolServer {
   registerTool(
@@ -22,6 +25,8 @@ interface ToolServer {
 
 const EmptyInputSchema = z.object({}).strict();
 const WorkspaceFilterSchema = z.object({ workspaceId: z.string().min(1).optional() }).strict();
+const SoulTargetSchema = z.object({ buddyId: z.string().min(1).optional() }).strict();
+const BuilderSoulUpdateSchema = BuddySoulUpdateSchema.extend(SoulTargetSchema.shape);
 
 function success(value: unknown, key: string): Record<string, unknown> {
   return {
@@ -31,7 +36,7 @@ function success(value: unknown, key: string): Record<string, unknown> {
 }
 
 /**
- * Builder conversations deliberately get only these three tools. Keep this
+ * Builder tools can create multiple Buddies and refine those hires' souls. Keep this
  * server separate from employee tools so adding a normal Buddy operation can
  * never broaden the hiring flow by accident.
  */
@@ -42,6 +47,57 @@ export function createBuddyBuilderMcpServer(
   const builder = new BuddyBuilderService(store, conversationId);
   const server = new McpServer({ name: 'unleashd-buddy-builder', version: '1.0.0' });
   const tools = server as unknown as ToolServer;
+
+  for (const name of ['get_soul', 'update_soul'] as const) {
+    tools.registerTool(
+      name,
+      {
+        description:
+          name === 'get_soul'
+            ? 'Read a saved soul and revision. Pass buddyId from create_buddy or list_created_buddies; it may be omitted only when this conversation has exactly one hire.'
+            : 'Refine a Buddy created in this conversation. Pass its buddyId, the complete soul, a reason and the revision returned by get_soul. Cannot target hires from another conversation or change permissions.',
+        inputSchema: name === 'get_soul' ? SoulTargetSchema : BuilderSoulUpdateSchema,
+        annotations: {
+          readOnlyHint: name === 'get_soul',
+          destructiveHint: name === 'update_soul',
+          idempotentHint: name === 'get_soul',
+          openWorldHint: false,
+        },
+      },
+      async (input) => {
+        try {
+          const { buddyId, ...update } = (
+            name === 'get_soul' ? SoulTargetSchema : BuilderSoulUpdateSchema
+          ).parse(input);
+          const buddy = builder.getSoulTarget(buddyId);
+          const soulStore = store as unknown as BuddiesStorePort;
+          const soul =
+            name === 'get_soul'
+              ? readBuddySoul(soulStore, buddy.id)
+              : updateBuddySoul(soulStore, buddy.id, update, `owner:builder:${conversationId}`, {
+                  source: 'buddy-builder',
+                  conversation_id: conversationId,
+                });
+          return success(soul, 'soul');
+        } catch (error) {
+          const detail = error as { code?: string; details?: unknown };
+          return {
+            isError: true,
+            content: [
+              {
+                type: 'text',
+                text: JSON.stringify({
+                  error: error instanceof Error ? error.message : String(error),
+                  code: detail.code,
+                  details: detail.details,
+                }),
+              },
+            ],
+          };
+        }
+      }
+    );
+  }
 
   tools.registerTool(
     'list_workspaces',
@@ -78,10 +134,26 @@ export function createBuddyBuilderMcpServer(
   );
 
   tools.registerTool(
+    'list_created_buddies',
+    {
+      description:
+        'Recover all hires saved by this Builder conversation, including their creation keys and Buddy IDs. Use before continuing a team or refining a member.',
+      inputSchema: EmptyInputSchema,
+      annotations: {
+        readOnlyHint: true,
+        destructiveHint: false,
+        idempotentHint: true,
+        openWorldHint: false,
+      },
+    },
+    async () => success(builder.getResults(), 'result')
+  );
+
+  tools.registerTool(
     'create_buddy',
     {
       description:
-        'Create or replay one Buddy with a home workspace, optional explicit workspace assignments, an execution profile, and a soul behavior contract drafted from the hiring conversation. The result includes follow-up questions when the role brief is still sparse.',
+        'Create one member of a team with a home workspace, optional explicit workspace assignments, execution profile and soul. Use a distinct stable creationKey per member; reuse that key and unchanged arguments to retry safely. Omitted creationKey uses the legacy default slot. Call again with another key to add more members in this chat.',
       inputSchema: CreateBuddyInputSchema,
       annotations: {
         readOnlyHint: false,
@@ -92,7 +164,8 @@ export function createBuddyBuilderMcpServer(
     },
     async (input: unknown) => {
       try {
-        return success(builder.createBuddy(input), 'result');
+        const result = builder.createBuddy(input);
+        return success(result, 'result');
       } catch (error) {
         return {
           isError: true,

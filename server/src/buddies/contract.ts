@@ -103,6 +103,8 @@ export interface BuddyApprovalRequest {
 
 interface BuddyRecord {
   id: string;
+  slug?: string;
+  soul_path?: string | null;
   name: string;
   role: string;
   status: string;

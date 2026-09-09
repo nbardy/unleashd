@@ -17,6 +17,7 @@ import {
 import { forkConversation } from '../../atoms/fork-actions';
 import { mergeChildErrorAtomFamily, mergeChildStatusAtomFamily } from '../../atoms/mergeAtoms';
 import { markMessagesSeen, setSavedActiveConversationId } from '../../atoms/ui';
+import { BuddyBuilderResultCard } from '../../components/buddies/BuddyBuilderResultCard';
 import { effectiveSwarmDebugPrefix } from '../../components/buddies/ui-contract';
 import { useCopyAction } from '../../hooks/useCopyAction';
 import { useProviderCatalog } from '../../hooks/useProviderCatalog';
@@ -875,7 +876,11 @@ export function ConversationView({
       {/* Flat message list — not virtualized, iOS momentum-scroll (§10 Phase 1) */}
       <div ref={scrollRef} className="mobile-chat__messages">
         {messages.length === 0 ? (
-          <div className="mobile-chat__empty">No messages yet. Send a message to start.</div>
+          <div className="mobile-chat__empty">
+            {isBuddyBuilderConversation(conversation)
+              ? 'Describe a Buddy or a whole team, their workspace, and what they should accomplish.'
+              : 'No messages yet. Send a message to start.'}
+          </div>
         ) : (
           messages.map((msg, idx) => (
             <MessageRow
@@ -885,6 +890,13 @@ export function ConversationView({
               lastMessageRef={lastMessageRef}
             />
           ))
+        )}
+        {isBuddyBuilderConversation(conversation) && (
+          <BuddyBuilderResultCard
+            key={conversation.id}
+            conversationId={conversation.id}
+            isRunning={isRunning}
+          />
         )}
         {(isRunning || isStreaming) && !streamingText && !turnDiagnostics && (
           <div className="mobile-chat__thinking">Thinking…</div>

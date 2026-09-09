@@ -317,7 +317,7 @@ test('resolved stdio Buddy MCP entrypoint opens the current durable schema', asy
   fixtureDatabase.close();
   assert.equal(
     schemaVersion.user_version,
-    17,
+    19,
     'the vendored Buddy package must understand the live schema'
   );
 

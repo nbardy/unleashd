@@ -7,7 +7,11 @@ import test from 'node:test';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { BuddiesStore } from '@nbardy/buddies';
-import { BuddyBuilderResultSchema, createDefaultConversationConfig } from '@unleashd/shared';
+import {
+  BuddyBuilderResultSchema,
+  BuddyBuilderResultsSchema,
+  createDefaultConversationConfig,
+} from '@unleashd/shared';
 import express from 'express';
 import { BuddyBuilderService, type BuddyBuilderStore } from '../src/buddies/builder';
 import { createBuddyBuilderMcpServer } from '../src/buddies/builder-mcp-server';
@@ -17,7 +21,7 @@ import { ConversationConfigStore } from '../src/conversations/config-store';
 
 const CONVERSATION_ID = '550e8400-e29b-41d4-a716-446655440000';
 
-test('Builder MCP creates one durable Buddy and canonical result across restart', async () => {
+test('Builder MCP creates a team with safe retries, scoped edits and restart recovery', async () => {
   const root = mkdtempSync(join(tmpdir(), 'unleashd-buddy-builder-'));
   const workspaceRoot = join(root, 'workspace');
   const database = join(root, 'buddies.sqlite');
@@ -43,14 +47,70 @@ test('Builder MCP creates one durable Buddy and canonical result across restart'
     const tools = await mcpClient.listTools();
     assert.deepEqual(tools.tools.map((tool) => tool.name).sort(), [
       'create_buddy',
+      'get_soul',
       'list_buddies',
+      'list_created_buddies',
       'list_workspaces',
+      'update_soul',
     ]);
     const created = await mcpClient.callTool({ name: 'create_buddy', arguments: request });
     assert.equal(created.isError, undefined);
     const result = BuddyBuilderResultSchema.parse(created.structuredContent?.result);
     assert.equal(result.buddy.model, 'gpt-5.6-luna');
     assert.equal(result.buddy.reasoning_effort, 'high');
+    for (const creationKey of ['designer', 'engineer']) {
+      const args = { ...request, creationKey, name: creationKey, soul: `Own ${creationKey} work.` };
+      const failed = await mcpClient.callTool({
+        name: 'create_buddy',
+        arguments: { ...args, workspaceId: 'missing' },
+      });
+      assert.equal(failed.isError, true);
+      const hire = await mcpClient.callTool({ name: 'create_buddy', arguments: args });
+      assert.equal(hire.isError, undefined);
+      const retry = await mcpClient.callTool({ name: 'create_buddy', arguments: args });
+      assert.equal(
+        BuddyBuilderResultSchema.parse(retry.structuredContent?.result).buddy.id,
+        BuddyBuilderResultSchema.parse(hire.structuredContent?.result).buddy.id
+      );
+    }
+    const list = await mcpClient.callTool({ name: 'list_created_buddies', arguments: {} });
+    const team = BuddyBuilderResultsSchema.parse(list.structuredContent?.result);
+    assert.equal(team.results.length, 3);
+    assert.equal(new Set(team.results.map((hire) => hire.buddy.slug)).size, 3);
+    assert.equal((await mcpClient.callTool({ name: 'get_soul', arguments: {} })).isError, true);
+    const buddyId = team.results[1].buddy.id;
+    const read = await mcpClient.callTool({ name: 'get_soul', arguments: { buddyId } });
+    const soul = read.structuredContent?.soul as { body: string; revision: number };
+    assert.match(soul.body, /Own designer work/);
+    const edit = {
+      buddyId,
+      content: 'Design accessible interfaces.',
+      baseVersion: soul.revision,
+      reasoning: 'Owner preference.',
+    };
+    assert.equal(
+      (await mcpClient.callTool({ name: 'update_soul', arguments: edit })).isError,
+      undefined
+    );
+    assert.equal(
+      (await mcpClient.callTool({ name: 'update_soul', arguments: edit })).isError,
+      true
+    );
+    const readBack = await mcpClient.callTool({ name: 'get_soul', arguments: { buddyId } });
+    assert.equal((readBack.structuredContent?.soul as { body: string }).body, edit.content);
+    assert.equal(
+      (await mcpClient.callTool({ name: 'get_soul', arguments: { buddyId: 'outside' } })).isError,
+      true
+    );
+    assert.equal(
+      (
+        await mcpClient.callTool({
+          name: 'update_soul',
+          arguments: { ...edit, buddyId: 'outside' },
+        })
+      ).isError,
+      true
+    );
   } finally {
     await mcpClient.close();
     await mcpServer.close();
@@ -68,7 +128,11 @@ test('Builder MCP creates one durable Buddy and canonical result across restart'
       () => builder.createBuddy({ ...request, name: 'Different Buddy' }),
       /already created a different Buddy/
     );
-    assert.equal(store.listBuddies().length, 1);
+    assert.equal(store.listBuddies().length, 3);
+    assert.deepEqual(
+      builder.getResults().results.map((hire) => hire.creationKey),
+      ['default', 'designer', 'engineer']
+    );
 
     const persisted = (
       store as unknown as {
@@ -90,6 +154,8 @@ test('Builder MCP creates one durable Buddy and canonical result across restart'
       },
       getBuilderResult: async (conversationId) =>
         new BuddyBuilderService(store as unknown as BuddyBuilderStore, conversationId).getResult(),
+      getBuilderResults: async (conversationId) =>
+        new BuddyBuilderService(store as unknown as BuddyBuilderStore, conversationId).getResults(),
       sendError(response, error, status) {
         response
           .status(status)
@@ -111,6 +177,16 @@ test('Builder MCP creates one durable Buddy and canonical result across restart'
         BuddyBuilderResultSchema.parse(await response.json()).buddy.id,
         recovered.buddy.id
       );
+      const all = await fetch(
+        `http://127.0.0.1:${port}/api/buddies/builder/${CONVERSATION_ID}/results`
+      );
+      assert.equal(all.status, 200);
+      assert.deepEqual(
+        BuddyBuilderResultsSchema.parse(await all.json()).results.map((hire) => hire.buddy.id),
+        builder.getResults().results.map((hire) => hire.buddy.id)
+      );
+      const empty = await fetch(`http://127.0.0.1:${port}/api/buddies/builder/no-hires/results`);
+      assert.deepEqual(BuddyBuilderResultsSchema.parse(await empty.json()).results, []);
     } finally {
       await new Promise<void>((resolve, reject) =>
         server.close((error) => (error ? reject(error) : resolve()))

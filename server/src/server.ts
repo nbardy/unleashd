@@ -347,6 +347,11 @@ registerBuddyRoutes(app, {
       (await getBuddiesStore()) as unknown as BuddyBuilderStore,
       conversationId
     ).getResult(),
+  getBuilderResults: async (conversationId) =>
+    new BuddyBuilderService(
+      (await getBuddiesStore()) as unknown as BuddyBuilderStore,
+      conversationId
+    ).getResults(),
   sendError: sendBuddiesError,
   getNextAutomationRunAt: nextAutomationRunAt,
   createId: uuidv4,

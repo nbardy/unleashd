@@ -1,7 +1,8 @@
-import { type BuddyBuilderResult, BuddyBuilderResultSchema } from '@unleashd/shared';
-import { useEffect, useState } from 'react';
+import { type BuddyBuilderResult, BuddyBuilderResultsSchema } from '@unleashd/shared';
+import { useCallback } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { createConversation } from '../../atoms/actions';
+import { usePolledFetch } from '../../hooks/usePolledFetch';
 import './BuddyBuilderResultCard.css';
 
 function initials(name: string): string {
@@ -81,39 +82,23 @@ export function BuddyBuilderResultCard({
   conversationId: string;
   isRunning: boolean;
 }) {
-  const [result, setResult] = useState<BuddyBuilderResult | null>(null);
-
-  useEffect(() => {
-    if (isRunning) return;
-    // `result` is component-local state that used to be write-only: a 404 (no builder
-    // result for this conversation) left the previous conversation's card on screen,
-    // and its "Start conversation" button carried the wrong buddy context. Always
-    // write the fetch outcome — including null — and ignore late resolutions from a
-    // previous conversationId so a stale response can't overwrite the current one.
-    // (Render site in Chat.tsx also passes key={conversation.id} to force a remount.)
-    let cancelled = false;
-    const controller = new AbortController();
-    void fetch(`/api/buddies/builder/${encodeURIComponent(conversationId)}/result`, {
-      signal: controller.signal,
-    })
-      .then(async (response) => {
-        if (response.status === 404) return null;
-        if (!response.ok) throw new Error(`Builder result failed (${response.status})`);
-        return BuddyBuilderResultSchema.parse(await response.json());
-      })
-      .then((value) => {
-        if (!cancelled) setResult(value);
-      })
-      .catch((error) => {
-        if (error instanceof DOMException && error.name === 'AbortError') return;
-        console.warn('[buddies] Could not load Builder result:', error);
-        if (!cancelled) setResult(null);
-      });
-    return () => {
-      cancelled = true;
-      controller.abort();
-    };
-  }, [conversationId, isRunning]);
-
-  return result ? <BuddyCreatedCard result={result} /> : null;
+  const source = useCallback(
+    async (signal: AbortSignal) => {
+      const response = await fetch(
+        `/api/buddies/builder/${encodeURIComponent(conversationId)}/results`,
+        { signal }
+      );
+      if (!response.ok) throw new Error(`Builder results failed (${response.status})`);
+      return BuddyBuilderResultsSchema.parse(await response.json());
+    },
+    [conversationId]
+  );
+  const { data, error } = usePolledFetch(source, isRunning ? 2000 : 0);
+  return (
+    <>
+      {data?.conversationId === conversationId &&
+        data.results.map((result) => <BuddyCreatedCard key={result.buddy.id} result={result} />)}
+      {error && <p role="alert">Could not load created Buddies. {error.message}</p>}
+    </>
+  );
 }

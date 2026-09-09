@@ -97,3 +97,12 @@
   border-color: var(--ai);
   color: var(--ai-bright);
 }
+
+@media (max-width: 768px) {
+  .buddy-created-card__actions a,
+  .buddy-created-card__actions button {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+  }
+}

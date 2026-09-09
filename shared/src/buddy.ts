@@ -25,12 +25,19 @@ export type BuddyWorkspaceSummary = z.infer<typeof BuddyWorkspaceSummarySchema>;
 
 export const BuddyBuilderResultSchema = z.object({
   conversationId: z.string().min(1),
+  creationKey: z.string().min(1).default('default'),
   buddy: BuddySummarySchema,
   homeWorkspace: BuddyWorkspaceSummarySchema,
   workspaces: z.array(BuddyWorkspaceSummarySchema),
   followUpQuestions: z.array(z.string().min(1)).default([]),
 });
 export type BuddyBuilderResult = z.infer<typeof BuddyBuilderResultSchema>;
+
+export const BuddyBuilderResultsSchema = z.object({
+  conversationId: z.string().min(1),
+  results: z.array(BuddyBuilderResultSchema),
+});
+export type BuddyBuilderResults = z.infer<typeof BuddyBuilderResultsSchema>;
 
 export const BuddyAutomationRunStatusSchema = z.enum([
   'claimed',

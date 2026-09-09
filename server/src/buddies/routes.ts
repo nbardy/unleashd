@@ -1,5 +1,6 @@
 import {
   type BuddyBuilderResult,
+  type BuddyBuilderResults,
   type BuddyContext,
   ProviderSchema,
   isEffortValidForProvider,
@@ -43,6 +44,7 @@ export interface BuddyRouteDependencies {
     conversationId?: string;
   }): Promise<BuddyConversationView>;
   getBuilderResult?(conversationId: string): Promise<BuddyBuilderResult | null>;
+  getBuilderResults?(conversationId: string): Promise<BuddyBuilderResults>;
   sendError(response: Response, error: unknown, fallbackStatus: number): void;
   getNextAutomationRunAt(automation: BuddyAutomation, after: Date): string;
   createId(): string;
@@ -205,6 +207,14 @@ export function registerBuddyRoutes(app: Express, dependencies: BuddyRouteDepend
       conversationId: conversation.id,
       conversation: conversation.toJSON(),
     });
+  });
+
+  route.get('/api/buddies/builder/:conversationId/results', 400, async (req, res) => {
+    if (!dependencies.getBuilderResults) {
+      res.status(503).json({ error: 'Buddy Builder is unavailable' });
+      return;
+    }
+    res.json(await dependencies.getBuilderResults(req.params.conversationId));
   });
 
   route.get('/api/buddies/builder/:conversationId/result', 400, async (req, res) => {
