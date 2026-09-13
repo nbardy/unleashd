@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { formatTimeAgo } from '../utils/time';
+import type { BuddyOverviewEmployee } from './buddies/types';
 import './SearchPalette.css';
 
 interface SearchResult {
@@ -29,6 +30,7 @@ interface Props {
   isOpen: boolean;
   onClose: () => void;
   onSelectConversation: (id: string) => void;
+  onSelectBuddy: (id: string) => void;
   /** When set, only search conversations whose workingDirectory starts with this path */
   filterDirectory?: string;
 }
@@ -36,6 +38,47 @@ interface Props {
 const MAX_RESULTS = 50;
 const MIN_SEARCH_QUERY_LENGTH = 2;
 const SEARCH_DEBOUNCE_MS = 150;
+
+function SearchResultIcon({ kind }: { kind: 'buddy' | 'chat' }) {
+  if (kind === 'buddy') {
+    return (
+      <svg
+        aria-hidden="true"
+        className="search-result-icon search-result-icon--buddy"
+        width="16"
+        height="16"
+        viewBox="0 0 16 16"
+        fill="none"
+      >
+        <circle cx="8" cy="5" r="2.25" stroke="currentColor" strokeWidth="1.4" />
+        <path
+          d="M3.5 13c.55-2.2 2.05-3.3 4.5-3.3s3.95 1.1 4.5 3.3"
+          stroke="currentColor"
+          strokeWidth="1.4"
+          strokeLinecap="round"
+        />
+      </svg>
+    );
+  }
+  return (
+    <svg
+      aria-hidden="true"
+      className="search-result-icon search-result-icon--chat"
+      width="16"
+      height="16"
+      viewBox="0 0 16 16"
+      fill="none"
+    >
+      <path
+        d="M3 3.25h10a1 1 0 0 1 1 1v6.1a1 1 0 0 1-1 1H8l-2.8 1.9v-1.9H3a1 1 0 0 1-1-1v-6.1a1 1 0 0 1 1-1Z"
+        stroke="currentColor"
+        strokeWidth="1.35"
+        strokeLinejoin="round"
+      />
+      <path d="M5 6.5h6M5 8.75h4" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+    </svg>
+  );
+}
 
 function highlightMatch(snippet: string, query: string): React.ReactNode[] {
   if (!query) return [snippet];
@@ -69,13 +112,20 @@ function highlightMatch(snippet: string, query: string): React.ReactNode[] {
   return parts;
 }
 
-export function SearchPalette({ isOpen, onClose, onSelectConversation, filterDirectory }: Props) {
+export function SearchPalette({
+  isOpen,
+  onClose,
+  onSelectConversation,
+  onSelectBuddy,
+  filterDirectory,
+}: Props) {
   const [query, setQuery] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
   const [debouncedQuery, setDebouncedQuery] = useState('');
   const [results, setResults] = useState<SearchResult[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [searchError, setSearchError] = useState<string | null>(null);
+  const [buddyDirectory, setBuddyDirectory] = useState<BuddyOverviewEmployee[]>([]);
   const inputRef = useRef<HTMLInputElement>(null);
   const resultsRef = useRef<HTMLDivElement>(null);
 
@@ -97,6 +147,30 @@ export function SearchPalette({ isOpen, onClose, onSelectConversation, filterDir
     const timer = setTimeout(() => inputRef.current?.focus(), 0);
     return () => clearTimeout(timer);
   }, [isOpen]);
+
+  // Buddy names and roles are a small directory projection, so load it once
+  // when the palette opens and filter it locally alongside deep chat search.
+  useEffect(() => {
+    if (!isOpen || filterDirectory) {
+      setBuddyDirectory([]);
+      return;
+    }
+    const controller = new AbortController();
+    fetch('/api/buddies/overview', { signal: controller.signal })
+      .then((response) => {
+        if (!response.ok) throw new Error(`Buddy search failed with status ${response.status}`);
+        return response.json() as Promise<{ employees?: BuddyOverviewEmployee[] }>;
+      })
+      .then((payload) => {
+        if (!controller.signal.aborted) setBuddyDirectory(payload.employees ?? []);
+      })
+      .catch((error) => {
+        if (!(error instanceof DOMException && error.name === 'AbortError')) {
+          setBuddyDirectory([]);
+        }
+      });
+    return () => controller.abort();
+  }, [filterDirectory, isOpen]);
 
   useEffect(() => {
     const trimmed = debouncedQuery.trim();
@@ -157,11 +231,28 @@ export function SearchPalette({ isOpen, onClose, onSelectConversation, filterDir
     };
   }, [debouncedQuery, filterDirectory]);
 
+  const buddyResults = filterDirectory
+    ? []
+    : buddyDirectory.filter((employee) => {
+        const trimmed = debouncedQuery.trim().toLowerCase();
+        if (trimmed.length < MIN_SEARCH_QUERY_LENGTH) return false;
+        const haystack = [
+          employee.buddy.name,
+          employee.buddy.role,
+          employee.buddy.status,
+          ...employee.workspaces.map((workspace) => workspace.name),
+          ...employee.team.map((member) => `${member.name} ${member.role}`),
+        ]
+          .join(' ')
+          .toLowerCase();
+        return haystack.includes(trimmed);
+      });
+
   // Reset selection when results change
-  // biome-ignore lint/correctness/useExhaustiveDependencies: reset on results length change
+  // biome-ignore lint/correctness/useExhaustiveDependencies: reset on result count change
   useEffect(() => {
     setSelectedIndex(0);
-  }, [results.length]);
+  }, [results.length, buddyResults.length]);
 
   // Scroll selected item into view
   useEffect(() => {
@@ -175,19 +266,22 @@ export function SearchPalette({ isOpen, onClose, onSelectConversation, filterDir
     (e: React.KeyboardEvent) => {
       switch (e.key) {
         case 'ArrowDown':
-          if (!results.length) return;
+          if (!buddyResults.length && !results.length) return;
           e.preventDefault();
-          setSelectedIndex((i) => Math.min(i + 1, results.length - 1));
+          setSelectedIndex((i) => Math.min(i + 1, buddyResults.length + results.length - 1));
           break;
         case 'ArrowUp':
-          if (!results.length) return;
+          if (!buddyResults.length && !results.length) return;
           e.preventDefault();
           setSelectedIndex((i) => Math.max(i - 1, 0));
           break;
         case 'Enter':
           e.preventDefault();
-          if (results[selectedIndex]) {
-            onSelectConversation(results[selectedIndex].conversationId);
+          if (buddyResults[selectedIndex]) {
+            onSelectBuddy(buddyResults[selectedIndex].buddy.id);
+            onClose();
+          } else if (results[selectedIndex - buddyResults.length]) {
+            onSelectConversation(results[selectedIndex - buddyResults.length].conversationId);
             onClose();
           }
           break;
@@ -196,7 +290,7 @@ export function SearchPalette({ isOpen, onClose, onSelectConversation, filterDir
           break;
       }
     },
-    [results, selectedIndex, onSelectConversation, onClose]
+    [buddyResults, results, selectedIndex, onSelectBuddy, onSelectConversation, onClose]
   );
 
   if (!isOpen) return null;
@@ -234,7 +328,7 @@ export function SearchPalette({ isOpen, onClose, onSelectConversation, filterDir
             placeholder={
               filterDirectory
                 ? `Search in ${filterDirectory.split('/').filter(Boolean).pop()}...`
-                : 'Search all conversations...'
+                : 'Search Buddies and conversations...'
             }
             value={query}
             onChange={(e) => setQuery(e.target.value)}
@@ -243,35 +337,64 @@ export function SearchPalette({ isOpen, onClose, onSelectConversation, filterDir
           <kbd className="search-palette-shortcut">esc</kbd>
         </div>
         <div className="search-palette-results" ref={resultsRef}>
-          {isSearching ? (
+          {isSearching && buddyResults.length === 0 && results.length === 0 ? (
             <div className="search-palette-empty">Searching…</div>
-          ) : searchError ? (
+          ) : searchError && buddyResults.length === 0 && results.length === 0 ? (
             <div className="search-palette-empty">{searchError}</div>
-          ) : results.length > 0 ? (
-            results.map((result, i) => (
-              <div
-                key={`${result.conversationId}-${result.messageIndex}`}
-                className={`search-result-item ${i === selectedIndex ? 'selected' : ''}`}
-                onClick={() => {
-                  onSelectConversation(result.conversationId);
-                  onClose();
-                }}
-                onMouseEnter={() => setSelectedIndex(i)}
-              >
-                <div className="search-result-header">
-                  <span className="search-result-folder">
-                    {folderName(result.workingDirectory)}
-                  </span>
-                  <span className={`search-result-role search-result-role--${result.role}`}>
-                    {result.role}
-                  </span>
-                  <span className="search-result-time">{formatTimeAgo(result.timestamp)}</span>
+          ) : buddyResults.length > 0 || results.length > 0 ? (
+            <>
+              {buddyResults.map((employee, i) => (
+                <div
+                  key={`buddy-${employee.buddy.id}`}
+                  className={`search-result-item search-result-item--buddy ${i === selectedIndex ? 'selected' : ''}`}
+                  onClick={() => {
+                    onSelectBuddy(employee.buddy.id);
+                    onClose();
+                  }}
+                  onMouseEnter={() => setSelectedIndex(i)}
+                >
+                  <SearchResultIcon kind="buddy" />
+                  <div className="search-result-content">
+                    <div className="search-result-header">
+                      <span className="search-result-kind">Buddy</span>
+                      <span className="search-result-folder">{employee.buddy.name}</span>
+                      <span className="search-result-time">{employee.buddy.status}</span>
+                    </div>
+                    <div className="search-result-snippet">
+                      {highlightMatch(employee.buddy.role, debouncedQuery.trim())}
+                    </div>
+                  </div>
                 </div>
-                <div className="search-result-snippet">
-                  {highlightMatch(result.snippet, debouncedQuery.trim())}
+              ))}
+              {results.map((result, i) => (
+                <div
+                  key={`${result.conversationId}-${result.messageIndex}`}
+                  className={`search-result-item search-result-item--chat ${i + buddyResults.length === selectedIndex ? 'selected' : ''}`}
+                  onClick={() => {
+                    onSelectConversation(result.conversationId);
+                    onClose();
+                  }}
+                  onMouseEnter={() => setSelectedIndex(i + buddyResults.length)}
+                >
+                  <SearchResultIcon kind="chat" />
+                  <div className="search-result-content">
+                    <div className="search-result-header">
+                      <span className="search-result-kind">Chat</span>
+                      <span className="search-result-folder">
+                        {folderName(result.workingDirectory)}
+                      </span>
+                      <span className={`search-result-role search-result-role--${result.role}`}>
+                        {result.role}
+                      </span>
+                      <span className="search-result-time">{formatTimeAgo(result.timestamp)}</span>
+                    </div>
+                    <div className="search-result-snippet">
+                      {highlightMatch(result.snippet, debouncedQuery.trim())}
+                    </div>
+                  </div>
                 </div>
-              </div>
-            ))
+              ))}
+            </>
           ) : debouncedQuery.trim().length >= MIN_SEARCH_QUERY_LENGTH ? (
             <div className="search-palette-empty">No matches found</div>
           ) : (

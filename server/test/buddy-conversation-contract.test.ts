@@ -135,7 +135,7 @@ test('empty Buddy WebSocket creation resolves and registers without sending a pr
       beginCommand: (command: { type: string }) =>
         command.type === 'create_conversation' || acceptsCommands ? () => undefined : null,
       configService: {
-        getRecord: async () => null,
+        getRecord: async (id: string) => (conversations.has(id) ? { status: 'active' } : null),
         delete: async () => true,
         createOrReplay: async (input: {
           conversationId: string;
@@ -176,7 +176,6 @@ test('empty Buddy WebSocket creation resolves and registers without sending a pr
       dispatchInitialMessage: async () => {
         initialDispatches += 1;
       },
-      creationFingerprint: () => 'fingerprint',
       broadcast: (message) => transportBroadcasts.push(message),
       broadcastExcept: (_socket, message) => transportBroadcasts.push(message),
       logger: { log: () => undefined, error: () => undefined },
@@ -189,6 +188,7 @@ test('empty Buddy WebSocket creation resolves and registers without sending a pr
     JSON.parse(socket.sent[0]) as { type?: string; summaries?: boolean; loading?: boolean },
     {
       type: 'init',
+      archivedBuddyIds: [],
       summaries: true,
       loading: true,
       conversations: [],
@@ -236,7 +236,7 @@ test('empty Buddy WebSocket creation resolves and registers without sending a pr
   assert.ok(conversation);
   assert.equal(runtimeCreations, 1);
   assert.equal(conversationLinks, 1);
-  assert.equal(initialDispatches, 1);
+  assert.equal(initialDispatches, 2, 'both replay callers check durable initial delivery');
   assert.equal(conversation.isRunning, false);
   assert.equal(conversation.process, null);
   assert.deepEqual(conversation.messages, []);
@@ -306,7 +306,7 @@ test('replaying create_conversation reports the real failure, not a config misma
       isInitialLoadComplete: () => true,
       beginCommand: () => () => undefined,
       configService: {
-        getRecord: async () => null,
+        getRecord: async (id: string) => (conversations.has(id) ? { status: 'active' } : null),
         delete: async () => true,
         // A matching replay: createOrReplay succeeds, so the only thing left
         // to throw inside that try is dispatchInitialMessage.
@@ -331,7 +331,6 @@ test('replaying create_conversation reports the real failure, not a config misma
       dispatchInitialMessage: async () => {
         throw new Error(rejectionText);
       },
-      creationFingerprint: () => 'fingerprint',
       broadcast: () => undefined,
       broadcastExcept: () => undefined,
       logger: { log: () => undefined, error: () => undefined },

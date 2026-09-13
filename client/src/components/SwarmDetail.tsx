@@ -1,6 +1,5 @@
 import type {
   Conversation,
-  Message,
   OompaRuntimeWorker,
   SwarmReviewLog,
   SwarmRun,
@@ -10,7 +9,11 @@ import { useAtomValue } from 'jotai';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { createConversation } from '../atoms/actions';
-import { conversationAtomFamily, workersByProjectAtom } from '../atoms/conversations';
+import {
+  chatMessageGroupsAtomFamily,
+  conversationAtomFamily,
+  workersByProjectAtom,
+} from '../atoms/conversations';
 import { markMessagesSeen, promotedWorkersAtom } from '../atoms/ui';
 import { usePolledFetch } from '../hooks/usePolledFetch';
 import { useSwarmRuntimeSnapshots } from '../hooks/useSwarmRuntimeSnapshots';
@@ -18,7 +21,6 @@ import { getProjectRoot } from '../utils/swarmUtils';
 import { getWorkerVisibilitySummary } from '../utils/swarmWorkerVisibility';
 import { formatTimeAgo, getLastMessageTime } from '../utils/time';
 import { VirtualizedMessageList } from './VirtualizedMessageList';
-import type { MessageGroup } from './VirtualizedMessageList';
 import './SwarmDetail.css';
 
 // Stable empty fallbacks for usePolledFetch results (AGENTS.md: stable fallbacks
@@ -215,13 +217,7 @@ function WorkerChatPane({
   const isStreaming = conversation?.isStreaming ?? false;
 
   // ALL hooks before any early return (React hook ordering rule)
-  const messageGroups = useMemo((): MessageGroup[] => {
-    if (!conversation) return [];
-    return conversation.messages.map((msg: Message) => ({
-      type: 'single' as const,
-      messages: [msg],
-    }));
-  }, [conversation]);
+  const messageGroups = useAtomValue(chatMessageGroupsAtomFamily(conversationId ?? ''));
 
   const lastMessageRef = useRef<HTMLDivElement>(null);
   const scrollToBottomRef = useRef<(() => void) | null>(null);

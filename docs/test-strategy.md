@@ -2,6 +2,11 @@
 
 (Moved out of AGENTS.md to keep startup context small.)
 
+For Buddy memory reviewer prompt/tool changes, use the
+[memory curation benchmark runbook](../server/test/fixtures/memory-curation/README.md).
+It separates live semantic evaluation from deterministic boundary tests and links
+the fixed cases, historical scores, prompt snapshots and preserved traces.
+
 ## Test Strategy: Useful vs Overkill
 
 ### Keep features lean

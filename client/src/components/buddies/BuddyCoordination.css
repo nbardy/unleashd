@@ -1,0 +1,36 @@
+.buddy-coordination {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+.buddy-coordination fieldset,
+.buddy-coordination article {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  margin: 0;
+  padding: 12px;
+  border: 1px solid var(--border-color);
+  border-radius: 10px;
+}
+.buddy-coordination form,
+.buddy-coordination label {
+  display: grid;
+  gap: 6px;
+  min-width: 0;
+}
+.buddy-coordination label:has(input[type="checkbox"]) {
+  display: flex;
+  align-items: center;
+}
+.buddy-coordination button,
+.buddy-coordination select,
+.buddy-coordination textarea,
+.buddy-coordination input:not([type="checkbox"]) {
+  min-height: 44px;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+.buddy-coordination textarea {
+  min-height: 100px;
+}

@@ -6,8 +6,13 @@ that area.
 ## Code tree map
 
 ```
-shared/src/index.ts                → Zod schemas, types, per-provider helpers
-server/src/server.ts               → Conversation class + WS router (state authority)
+shared/src/index.ts                → shared exports + WS Zod schemas/types
+shared/src/conversation-config.ts   → canonical selection intent, patches, resolution
+shared/src/provider-catalog.ts      → provider identities + catalog schemas
+server/src/server.ts               → application composition and startup
+server/src/conversations/runtime.ts → Conversation class + active turn state authority
+server/src/conversations/config-{service,store}.ts → durable configuration and revisions
+server/src/transport/conversation-websocket.ts → WS command routing
 server/src/adapters/*              → registry/disk-adapter/loader: session persistence
 server/src/auth/*                  → shared-secret gate (policy/gate/express)
 server/src/providers/*             → thin Provider impls per CLI
@@ -15,7 +20,7 @@ vendor/agent-cli-tool/             → GIT SUBMODULE: canonical request → argv
                                      process → unified event stream. Thin wrapper;
                                      harness differences live at its edges only.
 client/src/atoms/*                 → jotai atoms, derived views, WS actions
-client/src/components/{Sidebar,Chat,ProviderModelPicker}.tsx → main desktop UI
+client/src/components/{Sidebar,Chat,ConversationConfigPicker}.tsx → main desktop UI
 client/src/mobile/*                → mobile view tree (second shell, same core)
 client/src/atoms/ui.ts             → persisted UI prefs (local+shared partition)
 ```
@@ -50,6 +55,12 @@ client/src/atoms/ui.ts             → persisted UI prefs (local+shared partitio
 - Never `git reset --hard`, `filter-branch`, `filter-repo`, or `rebase -i` on a shared branch — they orphaned 5a6cf40/79a8381 on 2026-08-20. Use `git stash` or a throwaway branch and ask. Guarded in `.claude/settings.local.json` (deny) + `~/.zshrc` wrapper.
 - Prefer one integration test through a real boundary over mock-heavy units;
   never assert on TSX/CSS source text.
+- Foreground Buddy deadlines must receive `TURN_MAX_RUNTIME_MS` explicitly;
+  never inherit the background claim's 600-second default. Automatic expiry
+  uses `max_runtime_timeout`, not `stop()` / `user_stop`. Preserve the packaged
+  authority and runtime regression tests when changing timers or Buddy versions.
+  History: `docs/incident-2026-09-10-buddy-chat-timeout.md` (distinct from the
+  August bridge-heartbeat fix).
 
 ## Read before touching
 
@@ -61,13 +72,15 @@ client/src/atoms/ui.ts             → persisted UI prefs (local+shared partitio
 | Architecture: provider seam, submodule rules, lifecycle | `docs/architecture.md` |
 | Auth: shared secret, bind policy, why plain-http LAN is the weak path | `docs/auth.md` |
 | Per-conversation settings + pass-through pattern (7-step checklist) | `docs/pass-through-pattern.md` |
-| WS contract surprises (`conversation_created` reused for updates, optimistic stubs) | `docs/ws-contract-surprises.md` |
+| WS contract: correlated creation/config commands, summaries, pending state | `docs/ws-contract-surprises.md` |
 | Submodule commit dance + `git status` cheatsheet | `docs/git-submodule-dance.md` |
 | Test strategy: useful vs overkill, lifecycle authority | `docs/test-strategy.md` |
-| Buddy automations: `job_kind` vs `schedule_kind`, the loop driver, known defects | `agent_notes/2026-08-21_buddy-automations-reference.md` |
-| Buddy coordination primitives: no review type, the missing wait | `product/buddies/PLANNING_PRIMITIVES.md` + `agent_notes/2026-08-21_primitives-and-the-wait-design.md` |
-| Direct reports (sub-buddies): hiring, `hire_quota`, threat model | `product/buddies/PLANNING_SUB_BUDDIES.md` + `agent_notes/2026-08-19_sub-buddies-design.md` |
-| Buddy memory: soul/long-term/working docs + append-only notes, two known defects | `product/buddies/PLANNING_MEMORY.md` (design) + `product/buddies/HANDOFF_MEMORY.md` (review handoff) + `agent_notes/2026-08-21_memory-architecture-research_buddies-development-lead.md` (evidence) + `agent_notes/2026-08-22_memory-implementation-handoff_buddies-development-lead.md` (write-timing evidence + the context-fence requirement) |
+| Buddy automations: ownership, budgets, capture, cancellation | `product/buddies/AUTOMATION_OWNERSHIP.md` |
+| Buddy coordination: send/reply, bounded waiting, open purposes | `product/buddies/PLANNING_PRIMITIVES.md` |
+| Buddy team setup and operation: readiness, preview/apply, work and returns | `product/buddies/TEAM_OPERATOR_GUIDE.md` |
+| Direct reports: owner-granted staffing, relationships, retirement, threat model | `product/buddies/PLANNING_SUB_BUDDIES.md` |
+| Buddy memory: dense revisions, notes, capture, recall | `product/buddies/PLANNING_MEMORY.md` |
+| Memory reviewer benchmark: rerun, grade, extend, historical evidence (read before changing reviewer prompts/tools) | [Memory curation benchmark](server/test/fixtures/memory-curation/README.md) |
 | New provider integration protocol | `docs/agent_client_spec.md` |
 
 ## Misc

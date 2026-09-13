@@ -1,169 +1,188 @@
 import assert from 'node:assert/strict';
+import { mkdtempSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import test from 'node:test';
+import { BuddiesStore } from '@nbardy/buddies';
 import type { BuddyContext } from '@unleashd/shared';
 import type { BuddiesStorePort } from '../src/buddies/contract';
 import { createBuddyDispatchService } from '../src/buddies/dispatch-service';
+import { BuddyOperationsService, MESSAGE_BUDDY_OPERATIONS } from '../src/buddies/operations';
+import { teamStore } from '../src/buddies/team-access';
 
-function fixture(cancelDuringCreate: boolean) {
-  let active = true;
-  let inAuthority = false;
-  let bound = 0;
+test('a completed research handoff can start fresh recipient work and retains its source project', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'buddy-new-work-'));
+  const raw = new BuddiesStore(join(root, 'state.sqlite'));
+  const store = teamStore(raw as unknown as BuddiesStorePort);
+  try {
+    const workspace = raw.createWorkspace({ name: 'Wave fixture', rootPath: root });
+    const sender = raw.createBuddy({ project: workspace.id, name: 'Research', role: 'Theory' });
+    const recipient = raw.createBuddy({ project: workspace.id, name: 'Simulation', role: 'Apply' });
+    store.setCoordinationMembership(recipient.id, workspace.id, { background_enabled: true });
+    const source = raw.newProject({
+      buddy: sender.id,
+      workspace: workspace.id,
+      title: 'Theory',
+      definitionOfDone: 'Proof',
+    });
+    store.updateCoordinatedProject(
+      source.id,
+      { baseRevision: source.revision, status: 'done', evidence: ['proof:reviewed'] },
+      { actor: sender.id, key: 'finish' }
+    );
+    const active = store.beginBuddyChatRun({
+      buddyId: sender.id,
+      workspaceId: workspace.id,
+      conversationId: 'research',
+      projectId: source.id,
+      allowedOperations: MESSAGE_BUDDY_OPERATIONS,
+    });
+    const context = {
+      buddyId: sender.id,
+      workspaceId: workspace.id,
+      buddyProjectId: source.id,
+      coordinationRunId: active.id,
+      conversationId: 'research',
+    };
+    const operations = new BuddyOperationsService(store, context, {
+      automationClaimToken: active.claim_token!,
+    });
+    const dispatch = createBuddyDispatchService({
+      getStore: async () => store,
+      createConversation: async () => {
+        throw new Error('Durable dispatch must queue before creating a thread');
+      },
+      dispatchInitialMessage: async () => {},
+      abandonConversation: () => {},
+      createId: () => 'unused',
+    });
+    const input = {
+      key: 'handoff',
+      to: recipient.id,
+      purpose: 'Apply reviewed theory',
+      body: 'Create an implementation project from the proof.',
+      projectId: null,
+    };
+    // The actual stdio/control transport parses the request at both boundaries.
+    const { parentConversationId: _parent, ...body } = operations.prepareMessage(input);
+    const prepared = operations.prepareMessage(body);
+    assert.equal(prepared.projectId, null);
+    await dispatch.send(context, prepared, active.claim_token!);
+    const message = store.listMessages().find((m) => m.to_buddy_id === recipient.id)!;
+    assert.equal(message.buddy_project_id, null);
+    assert.equal(message.source_project_id, source.id);
+    const queued = store.listBuddyRuns({ buddyId: recipient.id })[0];
+    const run = store.claimBuddyRun(queued.id, {
+      claimToken: 'simulation',
+      conversationId: 'simulation',
+    })!;
+    store.startBuddyRun(run.id, 'simulation');
+    const worker = new BuddyOperationsService(
+      store,
+      {
+        buddyId: recipient.id,
+        workspaceId: workspace.id,
+        conversationId: 'simulation',
+        coordinationRunId: run.id,
+        allowedOperations: MESSAGE_BUDDY_OPERATIONS,
+      },
+      { automationClaimToken: 'simulation' }
+    );
+    const result = worker.execute('buddy.new_project', {
+      key: 'implementation',
+      title: 'Implement reviewed theory',
+      definitionOfDone: 'Validated simulation and benchmark',
+    });
+    assert.equal(result.operation, 'buddy.new_project');
+    assert.equal(store.listBuddyOwnedProjects({ buddy: recipient.id }).length, 1);
+  } finally {
+    raw.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+test('message enqueue checks current automation ownership after async conversation creation', async () => {
+  const store = new BuddiesStore(':memory:');
+  const workspace = store.createWorkspace({
+    name: 'Dispatch',
+    rootPath: '/tmp/buddy-dispatch-authority',
+  });
+  const sender = store.createBuddy({ project: workspace.id, name: 'Sender', role: 'Sender' });
+  const recipient = store.createBuddy({
+    project: workspace.id,
+    name: 'Recipient',
+    role: 'Recipient',
+  });
+  const automation = store.createAutomation({
+    buddy: sender.id,
+    workspace: workspace.id,
+    name: 'Bounded messages',
+    scheduleKind: 'interval',
+    scheduleExpression: '60',
+    jobKind: 'prompt',
+    jobPayload: { prompt: 'Ask for evidence.' },
+    policy: { allowedOperations: ['buddy.send'] },
+  });
+  let created = 0;
   let enqueued = 0;
   let abandoned = 0;
-  let failedDispatch = 0;
-  let cancelledReview = 0;
-  const requireAuthority = (_run: string, _operation: string, token: string) => {
-    if (!active) throw new Error('automation run is not active: cancelled');
-    if (token !== 'current-claim') throw new Error('automation run claim is not owned');
-    return true as const;
-  };
-  const store = {
-    assertAutomationOperationAllowed: requireAuthority,
-    withAutomationRunAuthority(
-      _run: string,
-      operation: string,
-      token: string,
-      callback: () => unknown
-    ) {
-      requireAuthority('run-1', operation, token);
-      inAuthority = true;
-      try {
-        const result = callback();
-        requireAuthority('run-1', operation, token);
-        return result;
-      } finally {
-        inAuthority = false;
-      }
-    },
-    listDelegations: () => [],
-    createDelegation: () => ({
-      id: 'delegation-1',
-      from_buddy_id: 'lead',
-      to_buddy_id: 'report',
-      workspace_id: 'workspace',
-      buddy_project_id: null,
-      child_conversation_id: null,
-      parent_conversation_id: 'parent',
-      purpose: 'Do work',
-      status: 'pending',
-    }),
-    claimDelegationDispatch: () => ({
-      id: 'delegation-1',
-      dispatch_claim_acquired: true,
-      child_conversation_id: null,
-    }),
-    bindDelegationConversation: () => {
-      assert.equal(inAuthority, true, 'binding shares the run authority transaction');
-      bound += 1;
-      return { id: 'delegation-1', status: 'active' };
-    },
-    failDelegationDispatch: () => {
-      failedDispatch += 1;
-      return { id: 'delegation-1' };
-    },
-    createReview: () => ({ id: 'review-1' }),
-    updateReview: () => {
-      cancelledReview += 1;
-      return { id: 'review-1' };
-    },
-  } as unknown as BuddiesStorePort;
+  const claimToken = 'dispatch-owner';
+  let cancelDuringCreate = false;
+  let activeRun = '';
   const service = createBuddyDispatchService({
-    getStore: async () => store,
-    createId: () => 'conversation-1',
+    getStore: async () => store as unknown as BuddiesStorePort,
     createConversation: async () => {
-      if (cancelDuringCreate) active = false;
-      return { id: 'conversation-1', toJSON: () => ({ id: 'conversation-1' }) };
+      created += 1;
+      if (cancelDuringCreate)
+        store.updateAutomationRun(activeRun, { status: 'cancel_requested', claimToken });
+      const id = `child-${created}`;
+      return { id, toJSON: () => ({ id }) };
     },
-    dispatchInitialMessage: async (_conversation, options) =>
+    dispatchInitialMessage: async (_child, options) =>
       options.enqueueAuthorized(() => {
-        assert.equal(inAuthority, true, 'enqueue shares the run authority transaction');
         enqueued += 1;
       }),
     abandonConversation: () => {
       abandoned += 1;
     },
+    createId: () => 'unused',
   });
-  const context: BuddyContext = {
-    buddyId: 'lead',
-    workspaceId: 'workspace',
-    buddyProjectId: null,
-    legacyWorkItemId: null,
-    automationRunId: 'run-1',
-    delegatedByBuddyId: null,
-    parentBuddyConversationId: 'parent',
-    allowedBuddyOperations: ['buddy.delegate', 'buddy.request_review'],
+  const input = {
+    to: recipient.id,
+    purpose: 'evidence',
+    body: 'Review it.',
+    evidence: [],
+    wait: false,
+    timeoutSeconds: 10,
+    parentConversationId: 'parent',
   };
-  return {
-    service,
-    context,
-    counts: () => ({ bound, enqueued, abandoned, failedDispatch, cancelledReview }),
-  };
-}
+  try {
+    const first = store.claimAutomationRun(automation.id, { claimToken, idempotencyKey: 'one' });
+    activeRun = first.id;
+    store.updateAutomationRun(first.id, { status: 'running', claimToken });
+    const context: BuddyContext = {
+      buddyId: sender.id,
+      workspaceId: workspace.id,
+      buddyProjectId: null,
+      automationRunId: first.id,
+    };
+    await service.send(context, input, claimToken);
+    assert.equal(enqueued, 1);
+    assert.equal(store.listMessages()[0].status, 'active');
+    store.updateAutomationRun(first.id, { status: 'complete', claimToken });
 
-test('delegation binds and starts inside the current automation authority transaction', async () => {
-  const { service, context, counts } = fixture(false);
-  await service.delegation(
-    context,
-    {
-      toBuddyId: 'report',
-      purpose: 'Do work',
-      parentConversationId: 'parent',
-      allowedOperations: ['buddy.complete_assignment'],
-    },
-    'current-claim'
-  );
-  assert.deepEqual(counts(), {
-    bound: 1,
-    enqueued: 1,
-    abandoned: 0,
-    failedDispatch: 0,
-    cancelledReview: 0,
-  });
-});
-
-test('cancellation during async creation leaves delegation and review children dormant', async () => {
-  const delegation = fixture(true);
-  await assert.rejects(
-    delegation.service.delegation(
-      delegation.context,
-      {
-        toBuddyId: 'report',
-        purpose: 'Do work',
-        parentConversationId: 'parent',
-        allowedOperations: ['buddy.complete_assignment'],
-      },
-      'current-claim'
-    ),
-    /not active: cancelled/
-  );
-  assert.deepEqual(delegation.counts(), {
-    bound: 0,
-    enqueued: 0,
-    abandoned: 1,
-    failedDispatch: 1,
-    cancelledReview: 0,
-  });
-
-  const review = fixture(true);
-  await assert.rejects(
-    review.service.review(
-      review.context,
-      {
-        reviewerBuddyId: 'critic',
-        subjectBuddyId: 'report',
-        purpose: 'Review work',
-        parentConversationId: 'parent',
-        evidence: [],
-      },
-      'current-claim'
-    ),
-    /not active: cancelled/
-  );
-  assert.deepEqual(review.counts(), {
-    bound: 0,
-    enqueued: 0,
-    abandoned: 1,
-    failedDispatch: 0,
-    cancelledReview: 1,
-  });
+    const second = store.claimAutomationRun(automation.id, { claimToken, idempotencyKey: 'two' });
+    activeRun = second.id;
+    store.updateAutomationRun(second.id, { status: 'running', claimToken });
+    cancelDuringCreate = true;
+    await assert.rejects(
+      service.send({ ...context, automationRunId: second.id }, input, claimToken),
+      /not active|cancel/i
+    );
+    assert.equal(enqueued, 1, 'cancellation wins before child binding and enqueue');
+    assert.equal(abandoned, 1);
+    assert.equal(store.listMessages().filter((message) => message.status === 'failed').length, 1);
+  } finally {
+    store.close();
+  }
 });

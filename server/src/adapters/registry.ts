@@ -10,6 +10,7 @@ import {
   GEMINI_SESSIONS_DIR,
   OPENCODE_MESSAGE_DIR,
   OPENCODE_PART_DIR,
+  extractCodexSessionIdFromFilename,
   extractMessagesFromCodexEntries,
   extractMessagesFromEntries,
   extractSubAgentsFromEntries,
@@ -58,6 +59,7 @@ async function discoverGeminiSandboxDirs(): Promise<string[]> {
 
 const claudeAdapter: DiskAdapter = {
   provider: 'claude',
+  matchesSessionFile: (filePath, sessionId) => path.basename(filePath, '.jsonl') === sessionId,
 
   async discoverFiles(): Promise<string[]> {
     const projectDirs = await getProjectDirectories(CLAUDE_PROJECTS_DIR);
@@ -97,6 +99,8 @@ const claudeAdapter: DiskAdapter = {
 
 const codexAdapter: DiskAdapter = {
   provider: 'codex',
+  matchesSessionFile: (filePath, sessionId) =>
+    extractCodexSessionIdFromFilename(filePath) === sessionId,
 
   async discoverFiles(): Promise<string[]> {
     const dayDirs = await getCodexSessionDirectories(CODEX_SESSIONS_DIR);
@@ -150,6 +154,7 @@ const codexAdapter: DiskAdapter = {
 
 const opencodeAdapter: DiskAdapter & { _sessionIndex: Map<string, string> | null } = {
   provider: 'opencode',
+  matchesSessionFile: (filePath, sessionId) => path.basename(filePath) === sessionId,
   _sessionIndex: null,
 
   async discoverFiles(): Promise<string[]> {
@@ -191,6 +196,16 @@ const opencodeAdapter: DiskAdapter & { _sessionIndex: Map<string, string> | null
 
 const geminiAdapter: DiskAdapter = {
   provider: 'gemini',
+  matchesSessionFile(filePath, sessionId) {
+    const stem = path.basename(filePath, '.json');
+    // Gemini also uses session-{timestamp}-{first eight id characters}. A
+    // prefix collision only selects a candidate; its JSON sessionId still wins.
+    return (
+      stem === sessionId ||
+      stem.endsWith(`-${sessionId}`) ||
+      stem.endsWith(`-${sessionId.slice(0, 8)}`)
+    );
+  },
 
   async discoverFiles(): Promise<string[]> {
     const mainFiles = await getGeminiSessionFiles(GEMINI_SESSIONS_DIR);
@@ -235,6 +250,7 @@ const geminiAdapter: DiskAdapter = {
 
 const cursorAdapter: DiskAdapter = {
   provider: 'cursor',
+  matchesSessionFile: (filePath, sessionId) => path.basename(filePath, '.jsonl') === sessionId,
 
   async discoverFiles(): Promise<string[]> {
     return getCursorSessionFiles(CURSOR_PROJECTS_DIR);

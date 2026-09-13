@@ -1,0 +1,32 @@
+{
+  "schemaVersion": 1,
+  "preservedAt": "2026-09-13T04:51:32.759349+00:00",
+  "sourceDirectory": "product/buddies/memory-curation-eval-2026-09-13",
+  "repositoryHeadAtPreservation": "1187a8b6660b95c0c60bd8fada105f015b98cc39",
+  "sourceState": "Uncommitted mixed working tree; HEAD alone does not identify evaluated code. Source snapshots match the prior decision note where hashes were recorded.",
+  "snapshotSources": {
+    "sources/server/test/fixtures/memory-curation/baseline-2026-09-13.txt": "server/test/fixtures/memory-curation/baseline-2026-09-13.txt",
+    "sources/server/test/fixtures/memory-curation/cases.ts.txt": "server/test/fixtures/memory-curation/cases.ts",
+    "sources/server/test/buddy-memory-curation.test.ts.txt": "server/test/buddy-memory-curation.test.ts",
+    "sources/server/src/buddies/memory-review.ts.txt": "server/src/buddies/memory-review.ts",
+    "sources/server/src/buddies/memory-review-tools.ts.txt": "server/src/buddies/memory-review-tools.ts",
+    "sources/server/src/buddies/memory-review-runner.ts.txt": "server/src/buddies/memory-review-runner.ts",
+    "sources/server/test/buddy-memory-review.test.ts.txt": "server/test/buddy-memory-review.test.ts",
+    "sources/docs/memory-curation-evaluation-2026-09-13.md.txt": "docs/memory-curation-evaluation-2026-09-13.md",
+    "sources/server/test/fixtures/memory-curation/README.md.txt": "server/test/fixtures/memory-curation/README.md"
+  },
+  "historicalDecisionNote": {
+    "name": "2026-09-13T04:46:56.453Z:59de39c2-a24d-48d8-a700-6f0dd4eaf203",
+    "targetBuddyId": "buddy_d3f11f11-d010-4383-bc72-940bfe6ef8cd",
+    "scope": {
+      "kind": "owner_thread",
+      "conversationId": "fd2b4690-a228-47d4-82fd-8e81b6573098"
+    }
+  },
+  "limitations": [
+    "Historical per-invocation dependency versions, exact provider build and token/cost accounting were not captured.",
+    "Historical grading was manual, unblinded, case-level and used for tuning; no per-rubric grades can be reconstructed as original evidence.",
+    "Log files were copied byte-for-byte with .txt suffixes so the global *.log ignore rule does not hide them.",
+    "All copied model inputs and stored tool outputs come from synthetic fixtures; historical absolute temporary paths are evidence, not portable entry points."
+  ]
+}

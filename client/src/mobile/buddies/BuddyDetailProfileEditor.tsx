@@ -1,3 +1,4 @@
+import { newId } from '../../utils/ids';
 import { useEffect, useState } from 'react';
 import { buddyApi } from '../../components/buddies/api';
 import type { Buddy } from '../../components/buddies/types';
@@ -9,6 +10,7 @@ import { useProviderCatalog } from '../../hooks/useProviderCatalog';
 
 export function BuddyProfileEditor({
   buddy,
+  workspaceId,
   busy,
   error,
   onBusy,
@@ -16,6 +18,7 @@ export function BuddyProfileEditor({
   onSaved,
 }: {
   buddy: Buddy;
+  workspaceId?: string;
   busy: boolean;
   error: string | null;
   onBusy: (busy: boolean) => void;
@@ -63,10 +66,17 @@ export function BuddyProfileEditor({
             model: model || null,
             reasoningEffort: reasoningEffort || null,
           };
-          void buddyApi(`/api/buddies/${encodeURIComponent(buddy.id)}/profile`, {
-            method: 'PATCH',
+          void buddyApi('/api/buddies/resources/update_profile', {
+            method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload),
+            body: JSON.stringify({
+              workspaceId,
+              targetBuddyId: buddy.id,
+              baseRevision: buddy.profile_revision,
+              key: newId(),
+              reason: 'Owner edited execution settings',
+              changes: payload,
+            }),
           })
             .then(() => onSaved())
             .catch((cause: unknown) =>

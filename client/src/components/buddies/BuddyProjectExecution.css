@@ -1,0 +1,63 @@
+.buddy-project-execution {
+  display: grid;
+  gap: 10px;
+  min-width: 0;
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border-color);
+  overflow-wrap: anywhere;
+}
+
+.buddy-project-execution p {
+  margin: 0;
+}
+
+.buddy-project-execution form,
+.buddy-project-execution fieldset,
+.buddy-project-execution label,
+.buddy-project-execution-status {
+  display: grid;
+  gap: 8px;
+  min-width: 0;
+}
+
+.buddy-project-execution fieldset {
+  margin: 0;
+  padding: 8px 0;
+  border: 0;
+}
+
+.buddy-project-execution-heading,
+.buddy-project-execution-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.buddy-project-execution button,
+.buddy-project-execution input,
+.buddy-project-execution textarea,
+.buddy-project-execution summary,
+.buddy-project-execution a {
+  min-height: 44px;
+  max-width: 100%;
+  box-sizing: border-box;
+}
+
+.buddy-project-execution textarea {
+  width: 100%;
+  min-height: 90px;
+}
+
+.buddy-project-execution-copy {
+  white-space: pre-wrap;
+}
+
+.buddy-project-execution-todos {
+  display: grid;
+  gap: 8px;
+  padding-left: 20px;
+  margin: 0;
+}

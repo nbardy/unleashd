@@ -1,25 +1,52 @@
+import { observeBuddyTeam } from './team-observation';
+import { BuddyKnowledgeScopeSchema, type BuddyKnowledgeScope } from '@unleashd/shared';
+import { knowledgeStore, scopedDocumentOperation, scopedNote, recallKnowledge } from './knowledge';
+import { executeOwnerResource, type OwnerResourceName } from './owner-resources';
+import {
+  BuddyProjectExecutionViewSchema,
+  BuddyProjectRunInputSchema,
+  BuddyTeamAccessViewSchema,
+  BuddyWorkProjectSchema,
+} from '@unleashd/shared';
 import {
   type BuddyBuilderResult,
   type BuddyBuilderResults,
   type BuddyContext,
+  BuddyMessageReplySchema,
+  BuddyWorkspaceActivitySchema,
+  parseTeamConfigurationProposal,
+  type BuddyRun,
   ProviderSchema,
   isEffortValidForProvider,
   isModelIdValidForProvider,
   modelValidationHint,
   normalizeModelId,
 } from '@unleashd/shared';
+import {
+  BUDDY_SOUL_MAX_CHARACTERS,
+  BuddyMembershipSettingsSchema,
+  BuddyRunSchema,
+} from '@unleashd/shared';
 import type { Express, Request, Response } from 'express';
-import { BUDDY_BUILDER_SOUL_MAX_CHARACTERS, stageBuddySoulFile } from './builder';
+import { z } from 'zod';
 import type { BuddiesStorePort, BuddyAutomation, BuddyAutomationRun } from './contract';
-import { BUDDY_REVIEW_RESULT_INSTRUCTIONS } from './integration';
+import { coordinationStore } from './coordination-store';
 import {
   type BuddyOperationContext,
+  BuddyOperationInputSchemas,
   BuddyOperationsService,
-  REVIEW_BUDDY_OPERATIONS,
-  resolveDelegatedBuddyOperations,
+  type PreparedBuddyMessage,
 } from './operations';
 import { assertBuddyProviderSupportsMcp } from './provider-capability';
 import { publicAutomationRun } from './public-automation-run';
+import { readBuddySoul, updateBuddySoul } from './soul';
+import { getTeamCapabilities, messageExecution, teamStore } from './team-access';
+import { visibleBuddyPayload } from './visibility';
+import {
+  configureOwnerTeam,
+  getOwnerTeamConfiguration,
+  ownerWorkspaceIds,
+} from './owner-team-configuration';
 
 export interface BuddyConversationView {
   id: string;
@@ -28,8 +55,9 @@ export interface BuddyConversationView {
 
 export interface BuddyRouteDependencies {
   getStore(): Promise<BuddiesStorePort>;
+  onBuddyArchived?(buddyId: string): Promise<void>;
   getScheduler(): {
-    runNow(automationId: string): Promise<BuddyAutomationRun>;
+    runNow(automationId: string, key?: string): Promise<BuddyAutomationRun | BuddyRun>;
     cancel(runId: string): Promise<BuddyAutomationRun>;
     health(): { running: boolean; pollIntervalMs: number; activeRunIds: string[] };
   } | null;
@@ -39,6 +67,12 @@ export interface BuddyRouteDependencies {
     commandId: string;
     conversationId?: string;
   }): Promise<BuddyConversationView>;
+  dispatchMessage?(
+    context: BuddyContext,
+    input: PreparedBuddyMessage,
+    automationClaimToken?: string,
+    signal?: AbortSignal
+  ): Promise<unknown>;
   createBuilderConversation?(input: {
     commandId: string;
     conversationId?: string;
@@ -63,7 +97,11 @@ export interface BuddyRouteDependencies {
 
 function memoryPayload(req: Request): Record<string, unknown> {
   if (!req.body || typeof req.body !== 'object' || Array.isArray(req.body)) return {};
-  const { workspaceId: _workspaceId, ...payload } = req.body as Record<string, unknown>;
+  const {
+    workspaceId: _workspaceId,
+    knowledgeScope: _scope,
+    ...payload
+  } = req.body as Record<string, unknown>;
   return payload;
 }
 
@@ -89,6 +127,13 @@ function memoryHttpContext(
     throw new Error('Buddy does not belong to the requested memory workspace');
   }
   return { buddyId, workspaceId };
+}
+
+function memoryAudience(req: Request): BuddyKnowledgeScope | undefined {
+  const scope = req.body?.knowledgeScope ?? req.query.knowledgeScope;
+  return scope === undefined
+    ? undefined
+    : BuddyKnowledgeScopeSchema.parse(typeof scope === 'string' ? JSON.parse(scope) : scope);
 }
 
 function sendMemoryError(
@@ -123,9 +168,9 @@ export function registerBuddyRoutes(app: Express, dependencies: BuddyRouteDepend
   const {
     getStore,
     getScheduler,
-    createConversation,
     createBuilderConversation,
     getBuilderResult,
+    getBuilderResults,
     sendError,
     getNextAutomationRunAt,
     createId,
@@ -160,6 +205,17 @@ export function registerBuddyRoutes(app: Express, dependencies: BuddyRouteDepend
     (fallback: RouteFallback, handler: RouteHandler) =>
     async (req: Request, res: Response): Promise<void> => {
       try {
+        const store = await getStore();
+        if (
+          req.params.buddyId &&
+          req.method !== 'DELETE' &&
+          store.getBuddy(req.params.buddyId)?.status === 'archived'
+        ) {
+          res.status(404).json({ error: 'Buddy not found' });
+          return;
+        }
+        const json = res.json.bind(res);
+        res.json = (body: unknown) => json(visibleBuddyPayload(body, store));
         await handler(req, res);
       } catch (error) {
         if (fallback === 'memory') sendMemoryError(sendError, res, error);
@@ -175,6 +231,276 @@ export function registerBuddyRoutes(app: Express, dependencies: BuddyRouteDepend
     delete: (p: string, f: RouteFallback, h: RouteHandler) => app.delete(p, guard(f, h)),
   };
 
+  // These are owner routes behind the normal auth/reload gates, not employee fallbacks.
+  route.post('/api/buddies/team-configuration', 'memory', async (req, res) => {
+    const store = await getStore();
+    res.json(
+      configureOwnerTeam(store, req.body, {
+        ownerInputId: createId(),
+        conversationId: null,
+        workspaceIds: ownerWorkspaceIds(store),
+      })
+    );
+  });
+  route.get('/api/buddies/team-configuration', 'memory', async (req, res) => {
+    const store = await getStore();
+    const input = z
+      .object({ workspaceId: z.string().min(1), key: z.string().min(1).max(200) })
+      .strict()
+      .parse(req.query);
+    res.json(
+      getOwnerTeamConfiguration(store, input, {
+        ownerInputId: createId(),
+        conversationId: null,
+        workspaceIds: ownerWorkspaceIds(store),
+      })
+    );
+  });
+
+  route.get('/api/buddies/capabilities/archive', 500, (_req, res) => {
+    res.json({ available: true });
+  });
+
+  route.get('/api/buddies/:buddyId/access/:workspaceId', 400, async (req, res) => {
+    const store = teamStore(await getStore());
+    const { buddyId, workspaceId } = req.params;
+    const grants = store.listBuddyAccess(buddyId, workspaceId);
+    const granteeEligible =
+      store.getBuddy(buddyId)?.status === 'active' &&
+      !!store.getCoordinationMembership(buddyId, workspaceId);
+    if (!granteeEligible && !grants.length) throw new Error('Buddy is outside workspace');
+    const savedTargets = new Set(grants.map((grant) => grant.target_id));
+    const targets = store
+      .listBuddies()
+      .filter(
+        (b) =>
+          savedTargets.has(b.id) ||
+          (b.status === 'active' && store.getCoordinationMembership(b.id, workspaceId))
+      )
+      .map((b) => ({
+        id: b.id,
+        name: b.name,
+        managerId: store.getBuddyTeamState(b.id).manager?.id ?? null,
+        backgroundEnabled: !!store.getCoordinationMembership(b.id, workspaceId)?.background_enabled,
+        permissionsEditable:
+          granteeEligible &&
+          b.status === 'active' &&
+          !!store.getCoordinationMembership(b.id, workspaceId),
+      }));
+    res.json(
+      BuddyTeamAccessViewSchema.parse({
+        targets,
+        grants,
+      })
+    );
+  });
+  route.get('/api/buddies/:buddyId/capabilities/:workspaceId', 400, async (req, res) => {
+    const target =
+      typeof req.query.targetBuddyId === 'string' ? req.query.targetBuddyId : undefined;
+    res.json(
+      getTeamCapabilities(
+        await getStore(),
+        { buddyId: req.params.buddyId, workspaceId: req.params.workspaceId },
+        target
+      )
+    );
+  });
+
+  route.post('/api/buddies/:buddyId/reparent', 400, async (req, res) => {
+    const input = z
+      .object({ managerId: z.string().min(1), key: z.string().min(1).max(200) })
+      .strict()
+      .parse(req.body);
+    res.json(coordinationStore(await getStore()).reparentBuddy(req.params.buddyId, input));
+  });
+  route.get('/api/buddies/:buddyId/team-state', 400, async (req, res) => {
+    const source = await getStore();
+    const buddy = source.getBuddy(req.params.buddyId);
+    if (!buddy) throw new Error('Buddy not found');
+    const workspaceId =
+      typeof req.query.workspaceId === 'string'
+        ? req.query.workspaceId
+        : (source.listBuddyWorkspaces(buddy.id) as Array<{ id: string }>)[0]?.id;
+    if (!workspaceId) throw new Error('Workspace is required');
+    res.json(
+      observeBuddyTeam(
+        source,
+        { buddyId: buddy.id, workspaceId, owner: true },
+        {
+          limit: Number(req.query.limit) || 20,
+          offset: Number(req.query.offset) || 0,
+          ...(typeof req.query.runId === 'string' ? { runId: req.query.runId } : {}),
+          checkpointOffset: Number(req.query.checkpointOffset) || 0,
+          checkpointLimit: Number(req.query.checkpointLimit) || 3,
+          deliveryOffset: Number(req.query.deliveryOffset) || 0,
+          deliveryLimit: Number(req.query.deliveryLimit) || 3,
+          ...(typeof req.query.rootMessageId === 'string'
+            ? { rootMessageId: req.query.rootMessageId }
+            : {}),
+          ...(typeof req.query.targetBuddyId === 'string'
+            ? { targetBuddyId: req.query.targetBuddyId }
+            : {}),
+        }
+      )
+    );
+  });
+  route.get('/api/buddies/:buddyId/coordination', 400, async (req, res) => {
+    const store = coordinationStore(await getStore());
+    res.json({
+      projects: store.listBuddyOwnedProjects({ buddy: req.params.buddyId, includeClosed: false }),
+      buddies: store
+        .listBuddies()
+        .filter((b) => b.status !== 'archived')
+        .map((b) => ({ id: b.id, name: b.name })),
+      conversations: store.listConversationLinks(req.params.buddyId),
+      memberships: (
+        store.listBuddyWorkspaces(req.params.buddyId) as Array<{ id: string; name: string }>
+      ).map((w) => ({
+        ...store.getCoordinationMembership(req.params.buddyId, w.id),
+        name: w.name,
+      })),
+      runs: store
+        .listBuddyRuns({
+          buddyId: req.params.buddyId,
+          limit: 100,
+          offset: Number(req.query.offset) || 0,
+        })
+        .map((r) => BuddyRunSchema.parse(r)),
+    });
+  });
+  route.patch('/api/buddies/:buddyId/memberships/:workspaceId', 400, async (req, res) => {
+    res.json(
+      coordinationStore(await getStore()).setCoordinationMembership(
+        req.params.buddyId,
+        req.params.workspaceId,
+        BuddyMembershipSettingsSchema.parse(req.body)
+      )
+    );
+  });
+  route.post('/api/buddies/runs/:runId/cancel', 400, async (req, res) => {
+    const run = coordinationStore(await getStore()).cancelBuddyRun(req.params.runId);
+    if (!run) throw new Error('Run not found');
+    res.json(BuddyRunSchema.parse(run));
+  });
+  route.post('/api/buddies/runs/:runId/repair', 400, async (req, res) => {
+    const input = z
+      .object({ key: z.string().min(1).max(200), conversationId: z.string().min(1) })
+      .strict()
+      .parse(req.body);
+    if (await isConversationDeleted(input.conversationId))
+      throw new Error('Destination was deleted');
+    res.json(
+      BuddyRunSchema.parse(
+        coordinationStore(await getStore()).repairBuddyRun(req.params.runId, input)
+      )
+    );
+  });
+  route.post('/api/buddies/runs/:runId/retry', 400, async (req, res) => {
+    const input = z
+      .object({
+        key: z.string().min(1).max(200),
+        reason: z.string().min(1).optional(),
+        checkpointId: z.string().min(1).optional(),
+      })
+      .strict()
+      .parse(req.body);
+    res.json(
+      BuddyRunSchema.parse(
+        coordinationStore(await getStore()).retryBuddyRun(req.params.runId, input)
+      )
+    );
+  });
+  route.post('/api/buddies/messages/:messageId/stop', 400, async (req, res) => {
+    res.json(
+      coordinationStore(await getStore())
+        .stopBuddyMessageRoot(req.params.messageId)
+        .map((r) => BuddyRunSchema.parse(r))
+    );
+  });
+  const projectExecutionView = (buddies: BuddiesStorePort, projectId: string) => {
+    const project = buddies.getBuddyProject(projectId);
+    if (!project) throw new Error('Project not found');
+    const work = teamStore(buddies).getProjectBackgroundExecution(projectId);
+    return BuddyProjectExecutionViewSchema.parse({
+      project,
+      message: work
+        ? { ...work.message, execution: messageExecution(buddies, work.message.id) }
+        : null,
+      runs: work?.runs ?? [],
+    });
+  };
+  route.get('/api/buddies/projects/:projectId/execution', 400, async (req, res) => {
+    res.json(projectExecutionView(await getStore(), req.params.projectId));
+  });
+  route.post('/api/buddies/projects/:projectId/run', 400, async (req, res) => {
+    const input = BuddyProjectRunInputSchema.parse(req.body);
+    const buddies = await getStore();
+    teamStore(buddies);
+    const project = BuddyWorkProjectSchema.parse(buddies.getBuddyProject(req.params.projectId));
+    if (input.parentConversationId) {
+      const links = buddies.listConversationLinks(project.buddy_id) as Array<{
+        conversation_id?: string;
+        unleashd_conversation_id?: string;
+        workspace_id: string;
+      }>;
+      if (
+        !links.some(
+          (link) =>
+            (link.unleashd_conversation_id ?? link.conversation_id) ===
+              input.parentConversationId && link.workspace_id === project.workspace_id
+        ) ||
+        (await isConversationDeleted(input.parentConversationId))
+      )
+        throw new Error(
+          'Return conversation must belong to the project Buddy and workspace and must not be deleted'
+        );
+    }
+    if (!dependencies.dispatchMessage)
+      throw new Error('Background dispatch runtime is unavailable');
+    await dependencies.dispatchMessage(
+      {
+        buddyId: project.buddy_id,
+        workspaceId: project.workspace_id,
+        buddyProjectId: project.id,
+      },
+      {
+        key: input.key,
+        to: project.buddy_id,
+        projectId: project.id,
+        parentConversationId: input.parentConversationId,
+        purpose: 'project_work',
+        body: 'Work on this project until its current project and task completion criteria are satisfied. Record evidence on the work records.',
+        execution: {
+          mode: 'until_done',
+          maxRuns: input.maxRuns,
+          maxDurationSeconds: input.maxDurationSeconds,
+        },
+        evidence: [],
+        expectsReply: true,
+        wait: false,
+        timeoutSeconds: 120,
+      }
+    );
+    res.json(projectExecutionView(buddies, project.id));
+  });
+  route.patch('/api/buddies/projects/:projectId/execution', 400, async (req, res) => {
+    const input = z
+      .object({
+        key: z.string().min(1).max(200),
+        baseRevision: z.number().int().positive(),
+        ownerId: z.string().min(1).optional(),
+        executionState: z.enum(['enabled', 'paused', 'cancelled']).optional(),
+      })
+      .strict()
+      .parse(req.body);
+    res.json(
+      coordinationStore(await getStore()).updateCoordinatedProject(req.params.projectId, input, {
+        actor: 'owner',
+        key: input.key,
+      })
+    );
+  });
+
   route.get('/api/buddies', 500, async (_req, res) => {
     const buddies = await getStore();
     res.json(buddies.dashboard());
@@ -185,6 +511,119 @@ export function registerBuddyRoutes(app: Express, dependencies: BuddyRouteDepend
     res.json(
       buddies.overview({
         recentSince: typeof req.query.recentSince === 'string' ? req.query.recentSince : undefined,
+      })
+    );
+  });
+
+  route.get('/api/buddies/workspaces/:workspaceId/activity', 400, async (req, res) => {
+    const buddies = await getStore();
+    const workspaceId = req.params.workspaceId;
+    const members = buddies
+      .listBuddies()
+      .filter((buddy) => buddy.status !== 'archived')
+      .map((buddy) => ({
+        buddy,
+        workspace: (
+          buddies.listBuddyWorkspaces(buddy.id) as Array<{
+            id: string;
+            name: string;
+            root_path?: string;
+          }>
+        ).find((workspace) => workspace.id === workspaceId),
+      }))
+      .filter(
+        (
+          entry
+        ): entry is typeof entry & {
+          workspace: { id: string; name: string; root_path?: string };
+        } => entry.workspace !== undefined
+      );
+    const workspace = members[0]?.workspace;
+    if (!workspace) {
+      res.status(404).json({ error: 'Buddy workspace not found' });
+      return;
+    }
+
+    const activeStatuses = ['claimed', 'running', 'cancel_requested'] as const;
+    const jobsByBuddy = new Map<string, Array<Record<string, unknown>>>(
+      members.map(({ buddy }) => [buddy.id, []])
+    );
+    const coordination = coordinationStore(buddies);
+    for (const status of activeStatuses) {
+      for (const run of coordination.listBuddyRuns({ workspaceId, status, limit: 100 })) {
+        const foreground = run.policy.foreground === true;
+        jobsByBuddy.get(run.buddy_id)?.push({
+          id: run.id,
+          buddyId: run.buddy_id,
+          kind: foreground ? 'foreground' : 'background',
+          source:
+            run.input_kind === 'message_request'
+              ? 'delegation'
+              : foreground
+                ? 'conversation'
+                : 'delegation',
+          status: run.status,
+          conversationId: run.conversation_id,
+          label: foreground
+            ? 'Conversation'
+            : run.input_kind === 'message_request'
+              ? 'Delegated work'
+              : 'Background work',
+          startedAt: run.started_at,
+          deadline: run.deadline,
+        });
+      }
+    }
+
+    const automations = new Map<string, BuddyAutomation>();
+    for (const { buddy } of members) {
+      for (const automation of buddies.listAutomations({
+        buddy: buddy.id,
+        includeArchived: true,
+      })) {
+        if (automation.workspace_id === workspaceId) automations.set(automation.id, automation);
+      }
+    }
+    for (const run of buddies.listNonterminalAutomationRuns()) {
+      const automation = automations.get(run.automation_id);
+      if (!automation || !activeStatuses.some((status) => status === run.status)) continue;
+      jobsByBuddy.get(automation.buddy_id)?.push({
+        id: run.id,
+        buddyId: automation.buddy_id,
+        kind: 'background',
+        source: 'automation',
+        status: run.status,
+        conversationId: run.conversation_id,
+        label: automation.name,
+        startedAt: run.started_at ?? run.claimed_at,
+        deadline: null,
+      });
+    }
+
+    res.json(
+      BuddyWorkspaceActivitySchema.parse({
+        generatedAt: new Date().toISOString(),
+        workspace: {
+          id: workspace.id,
+          name: workspace.name,
+          rootPath: workspace.root_path ?? null,
+        },
+        members: members
+          .map(({ buddy }) => ({
+            id: buddy.id,
+            name: buddy.name,
+            role: buddy.role,
+            status: buddy.status,
+            jobs: jobsByBuddy
+              .get(buddy.id)!
+              .sort((left, right) =>
+                String(right.startedAt ?? '').localeCompare(String(left.startedAt ?? ''))
+              ),
+          }))
+          .sort(
+            (left, right) =>
+              right.jobs.length - left.jobs.length || left.name.localeCompare(right.name)
+          ),
       })
     );
   });
@@ -210,11 +649,11 @@ export function registerBuddyRoutes(app: Express, dependencies: BuddyRouteDepend
   });
 
   route.get('/api/buddies/builder/:conversationId/results', 400, async (req, res) => {
-    if (!dependencies.getBuilderResults) {
+    if (!getBuilderResults) {
       res.status(503).json({ error: 'Buddy Builder is unavailable' });
       return;
     }
-    res.json(await dependencies.getBuilderResults(req.params.conversationId));
+    res.json(await getBuilderResults(req.params.conversationId));
   });
 
   route.get('/api/buddies/builder/:conversationId/result', 400, async (req, res) => {
@@ -228,6 +667,101 @@ export function registerBuddyRoutes(app: Express, dependencies: BuddyRouteDepend
       return;
     }
     res.json(result);
+  });
+
+  const sendMessageFromRequest = async (req: Request, input: unknown) => {
+    if (!dependencies.dispatchMessage) throw new Error('Message dispatch is unavailable');
+    const buddies = await getStore();
+    const scope = memoryHttpContext(buddies, req.params.buddyId, req);
+    const operations = new BuddyOperationsService(buddies, scope);
+    const prepared = operations.prepareMessage(input);
+    return dependencies.dispatchMessage(
+      {
+        buddyId: scope.buddyId,
+        workspaceId: scope.workspaceId,
+        buddyProjectId: null,
+        delegatedByBuddyId: null,
+        parentBuddyConversationId: null,
+      },
+      prepared
+    );
+  };
+
+  route.post('/api/buddies/:buddyId/messages', 400, async (req, res) => {
+    const { workspaceId: _workspace, ...input } = req.body ?? {};
+    res.status(201).json(await sendMessageFromRequest(req, input));
+  });
+
+  route.get('/api/buddies/messages', 400, async (req, res) => {
+    const buddies = await getStore();
+    res.json(
+      buddies
+        .listMessages({
+          buddy: typeof req.query.buddyId === 'string' ? req.query.buddyId : undefined,
+          workspace: typeof req.query.workspaceId === 'string' ? req.query.workspaceId : undefined,
+          toOwner: req.query.to === 'owner',
+          limit: typeof req.query.limit === 'string' ? Number(req.query.limit) : undefined,
+        })
+        .map((message) => ({
+          ...message,
+          execution: messageExecution(buddies, message.id),
+        }))
+    );
+  });
+
+  // The attachment is untrusted proposal data; the authenticated click supplies authority.
+  // A configuration receipt commits before the normal reply. Repeating repairs a lost
+  // acknowledgement without applying configuration twice or enqueueing a second reply.
+  route.post('/api/buddies/messages/:messageId/team-configuration', 'memory', async (req, res) => {
+    const input = z
+      .object({ preview: z.boolean(), expectedPlanHash: z.string().optional() })
+      .strict()
+      .parse(req.body);
+    const store = await getStore();
+    const message = store.getMessage(req.params.messageId);
+    const attachment =
+      message?.to_buddy_id === null ? parseTeamConfigurationProposal(message.body) : null;
+    if (!message || !attachment)
+      throw Object.assign(new Error('This is not an owner team configuration proposal.'), {
+        code: 'TEAM_PROPOSAL_NOT_FOUND',
+      });
+    if (
+      !['pending', 'active', 'replied'].includes(message.status) ||
+      (message.status === 'replied' && message.outcome !== 'team_configuration_applied')
+    )
+      throw Object.assign(new Error('This team proposal is no longer actionable.'), {
+        code: 'TEAM_PROPOSAL_CLOSED',
+      });
+    if (attachment.proposal.configuration.workspaceId !== message.workspace_id)
+      throw Object.assign(new Error('Proposal workspace differs from its source message.'), {
+        code: 'TEAM_PROPOSAL_SCOPE_MISMATCH',
+      });
+    const result = configureOwnerTeam(
+      store,
+      { ...attachment.proposal, ...input },
+      {
+        ownerInputId: createId(),
+        conversationId: null,
+        workspaceIds: ownerWorkspaceIds(store),
+      }
+    );
+    if (!input.preview && result.receipt && message.status !== 'replied') {
+      store.replyToOwnerMessage(message.id, {
+        outcome: 'team_configuration_applied',
+        body: `Owner applied team configuration ${result.key}. Recheck current capabilities and original queued work. Remaining blockers: ${result.readiness.blockers.map((b) => `${b.code}: ${b.remedy}`).join('; ') || 'none reported'}. This receipt does not authorize training, spending or external actions.`,
+        evidence: [result.receipt.auditId],
+      });
+    }
+    res.json(result);
+  });
+
+  // This route runs behind the application's authenticated owner gate. Buddy MCP
+  // has no owner actor field and cannot use this route through its scoped capability.
+  route.post('/api/buddies/messages/:messageId/reply', 400, async (req, res) => {
+    const buddies = await getStore();
+    res.json(
+      buddies.replyToOwnerMessage(req.params.messageId, BuddyMessageReplySchema.parse(req.body))
+    );
   });
 
   route.get('/api/buddies/approvals', 400, async (req, res) => {
@@ -259,6 +793,18 @@ export function registerBuddyRoutes(app: Express, dependencies: BuddyRouteDepend
       return;
     }
     const buddies = await getStore();
+    const approval = buddies.getApprovalRequest(req.params.approvalId) as {
+      message_id?: string;
+    } | null;
+    if (approval?.message_id) {
+      buddies.replyToOwnerMessage(approval.message_id, {
+        outcome: req.body.decision,
+        body: req.body.note ?? req.body.decision,
+        evidence: [`owner:${req.body.resolvedBy}`],
+      });
+      res.json(buddies.getApprovalRequest(req.params.approvalId));
+      return;
+    }
     res.json(
       buddies.resolveApprovalRequest(req.params.approvalId, {
         decision: req.body.decision,
@@ -266,6 +812,40 @@ export function registerBuddyRoutes(app: Express, dependencies: BuddyRouteDepend
         note: typeof req.body?.note === 'string' ? req.body.note : undefined,
       })
     );
+  });
+
+  route.delete('/api/buddies/:buddyId', 400, async (req, res) => {
+    const store = await getStore();
+    const buddy = store.getBuddy(req.params.buddyId);
+    if (!buddy) {
+      res.status(404).json({ error: 'Buddy not found' });
+      return;
+    }
+    const automations = store.listAutomations({ buddy: buddy.id });
+    const automationIds = new Set(automations.map((automation) => automation.id));
+    const runs = store
+      .listNonterminalAutomationRuns()
+      .filter((run) => automationIds.has(run.automation_id));
+    const scheduler = getScheduler();
+    if (runs.length && !scheduler) {
+      res.status(503).json({ error: 'Buddy scheduler is not ready to cancel active work' });
+      return;
+    }
+    // Revoke new dispatches before awaiting cancellation. Repeating DELETE safely
+    // finishes cleanup after an interrupted request; the durable archive is retained.
+    store.updateBuddy(buddy.id, { status: 'archived' });
+    for (const automation of automations) {
+      store.updateAutomation(automation.id, { enabled: false, nextRunAt: null });
+    }
+    await dependencies.onBuddyArchived?.(buddy.id);
+    for (const run of runs) await scheduler!.cancel(run.id);
+    store.recordAuditEvent({
+      buddy: buddy.id,
+      workspace: (store.listBuddyWorkspaces(buddy.id)[0] as { id: string }).id,
+      operation: 'buddy.archive',
+      payload: { source: 'owner:settings' },
+    });
+    res.json({ archived: true });
   });
 
   route.get('/api/buddies/:buddyId', 500, async (req, res) => {
@@ -312,6 +892,11 @@ export function registerBuddyRoutes(app: Express, dependencies: BuddyRouteDepend
     const conversations = linked.filter((conversation) => conversation !== null);
     res.json({
       buddy,
+      ...buddies.getBuddyTeamState(buddy.id),
+      messages: buddies.listMessages({ buddy: buddy.id }).map((message) => ({
+        ...message,
+        execution: messageExecution(buddies, message.id),
+      })),
       workspaces: buddies.listBuddyWorkspaces(buddy.id),
       projects: buddies.listBuddyOwnedProjects({ buddy: buddy.id, includeClosed: true }),
       legacyWorkItems: buddies.listWorkItems({ buddy: buddy.id, includeClosed: true }),
@@ -326,6 +911,13 @@ export function registerBuddyRoutes(app: Express, dependencies: BuddyRouteDepend
   });
 
   route.patch('/api/buddies/:buddyId/profile', 400, async (req, res) => {
+    if (req.body?.hireQuota !== undefined) {
+      res
+        .status(400)
+        .json({ error: 'Hiring quotas are no longer used; configure relationships instead' });
+      return;
+    }
+
     const providerResult = ProviderSchema.safeParse(req.body?.provider);
     if (!providerResult.success) {
       res.status(400).json({ error: 'A valid provider is required' });
@@ -372,67 +964,30 @@ export function registerBuddyRoutes(app: Express, dependencies: BuddyRouteDepend
     );
   });
 
-  /**
-   * Owner-only soul management. This route lives on the owner HTTP surface
-   * next to the profile route; it is deliberately never exposed through Buddy
-   * MCP tools, so a Buddy cannot rewrite its own behavior contract. The soul
-   * text is staged owner-side as a workspace file and only the
-   * workspace-relative path reaches the store, which resolves it against the
-   * Buddy's home workspace root.
-   */
-  route.put('/api/buddies/:buddyId/soul', 400, async (req, res) => {
-    const soul = req.body?.soul;
-    if (typeof soul !== 'string' || !soul.trim()) {
-      res.status(400).json({ error: 'soul must be a non-empty string' });
-      return;
-    }
-    if (soul.length > BUDDY_BUILDER_SOUL_MAX_CHARACTERS) {
-      res.status(413).json({
-        error: `soul exceeds the ${BUDDY_BUILDER_SOUL_MAX_CHARACTERS}-character limit`,
-      });
-      return;
-    }
+  route.get('/api/buddies/:buddyId/soul', 404, async (req, res) => {
+    res.json(readBuddySoul(await getStore(), req.params.buddyId));
+  });
 
+  // The caller supplies the revision it actually read. Never replace it with
+  // the server's latest revision, which silently overwrites concurrent edits.
+  route.put('/api/buddies/:buddyId/soul', 'memory', async (req, res) => {
+    if (
+      typeof req.body?.content === 'string' &&
+      req.body.content.trim().length > BUDDY_SOUL_MAX_CHARACTERS
+    ) {
+      res.status(413).json({ error: `Soul exceeds ${BUDDY_SOUL_MAX_CHARACTERS} characters` });
+      return;
+    }
     const buddies = await getStore();
-    const buddy = buddies.getBuddy(req.params.buddyId) as unknown as {
-      id: string;
-      slug?: string;
-      project_id?: string;
-    } | null;
-    if (!buddy) {
+    if (!buddies.getBuddy(req.params.buddyId)) {
       res.status(404).json({ error: 'Buddy not found' });
       return;
     }
-    const workspaces = buddies.listBuddyWorkspaces(buddy.id) as Array<{
-      id: string;
-      root_path: string;
-    }>;
-    const home = workspaces.find((workspace) => workspace.id === buddy.project_id) ?? workspaces[0];
-    if (!home) {
-      res.status(400).json({ error: 'Buddy has no workspace to stage its soul' });
-      return;
-    }
-    const slug = typeof buddy.slug === 'string' && buddy.slug ? buddy.slug : buddy.id;
-    const staged = stageBuddySoulFile(home.root_path, slug, soul.trim());
-    buddies.updateBuddy(buddy.id, { soulPath: staged });
-    if (typeof buddies.updateSoul === 'function' && typeof buddies.readBuddySoul === 'function') {
-      // The canonical store serves briefings from the versioned soul ledger,
-      // seeded once from the legacy file. A file rewrite alone goes stale
-      // after that first read, so re-souls must land as a new owner revision.
-      const head = buddies.readBuddySoul(buddy.id);
-      if (head.body !== soul.trim()) {
-        buddies.updateSoul(buddy.id, {
-          content: soul.trim(),
-          reasoning: 'Owner soul update via HTTP.',
-          baseVersion: head.revision,
-          requestedBy: 'owner:http',
-          provenance: { source: 'http-soul-route' },
-        });
-      }
-      res.json(buddies.getBuddy(req.params.buddyId));
-      return;
-    }
-    res.json(buddies.getBuddy(req.params.buddyId));
+    res.json(
+      updateBuddySoul(buddies, req.params.buddyId, req.body, 'owner:http', {
+        source: 'http-soul-route',
+      })
+    );
   });
 
   route.get('/api/buddies/:buddyId/context', 404, async (req, res) => {
@@ -468,133 +1023,18 @@ export function registerBuddyRoutes(app: Express, dependencies: BuddyRouteDepend
     );
   });
 
-  app.post('/api/buddies/:buddyId/delegations', async (req: Request, res: Response) => {
-    const {
-      toBuddyId,
-      workspaceId,
-      buddyProjectId,
-      purpose,
-      parentConversationId,
-      allowedOperations,
-    } = req.body ?? {};
-    if (
-      typeof toBuddyId !== 'string' ||
-      typeof workspaceId !== 'string' ||
-      typeof purpose !== 'string'
-    ) {
-      res.status(400).json({ error: 'toBuddyId, workspaceId, and purpose are required' });
-      return;
-    }
-    let delegationId: string | null = null;
-    let dispatchToken: string | null = null;
-    try {
-      const delegatedOperations = resolveDelegatedBuddyOperations(allowedOperations);
-      const buddies = await getStore();
-      const relationships = buddies.listBuddyRelationships(req.params.buddyId) as Array<{
-        from_buddy_id: string;
-        to_buddy_id: string;
-        kind: string;
-      }>;
-      const isDirectReport = relationships.some(
-        (relationship) =>
-          (relationship.from_buddy_id === req.params.buddyId &&
-            relationship.to_buddy_id === toBuddyId &&
-            relationship.kind === 'manager') ||
-          (relationship.from_buddy_id === toBuddyId &&
-            relationship.to_buddy_id === req.params.buddyId &&
-            relationship.kind === 'reports_to')
-      );
-      if (!isDirectReport) {
-        throw new Error('Target Buddy is not a direct report of this employee');
-      }
-      const normalizedParent =
-        typeof parentConversationId === 'string' ? parentConversationId : null;
-      const existing = buddies
-        .listDelegations({ buddy: req.params.buddyId, workspace: workspaceId })
-        .find(
-          (candidate) =>
-            candidate.from_buddy_id === req.params.buddyId &&
-            candidate.to_buddy_id === toBuddyId &&
-            candidate.purpose === purpose &&
-            candidate.parent_conversation_id === normalizedParent &&
-            (candidate.status === 'pending' || candidate.status === 'active')
-        );
-      if (existing?.child_conversation_id) {
-        res.status(200).json({ delegation: existing, alreadyDispatched: true });
-        return;
-      }
-      const delegation =
-        existing ??
-        buddies.createDelegation({
-          fromBuddy: req.params.buddyId,
-          toBuddy: toBuddyId,
-          workspace: workspaceId,
-          project: typeof buddyProjectId === 'string' ? buddyProjectId : undefined,
-          purpose,
-          parentConversationId: normalizedParent ?? undefined,
-        });
-      delegationId = delegation.id;
-      dispatchToken = createId();
-      const claim = buddies.claimDelegationDispatch(delegation.id, {
-        claimToken: dispatchToken,
-        leaseSeconds: 300,
-      });
-      if (!claim.dispatch_claim_acquired) {
-        if (claim.child_conversation_id) {
-          res.status(200).json({ delegation: claim, alreadyDispatched: true });
-        } else {
-          res.status(409).json({
-            error: 'Delegation dispatch is already claimed by another executor',
-            delegation: claim,
-          });
-        }
-        return;
-      }
-      const conversation = await createConversation({
-        context: {
-          buddyId: toBuddyId,
-          workspaceId,
-          // The linked project belongs to the delegating manager. The report
-          // returns evidence through the assignment; it does not inherit
-          // mutation authority over the manager's project.
-          buddyProjectId: null,
-          delegatedByBuddyId: req.params.buddyId,
-          parentBuddyConversationId:
-            typeof parentConversationId === 'string' ? parentConversationId : null,
-          allowedBuddyOperations: delegatedOperations,
-        },
-        commandId: `buddy-delegation-${delegation.id}`,
-        initialMessage: [
-          `Delegated by Buddy ${req.params.buddyId}.`,
-          `Delegation id: ${delegation.id}.`,
-          typeof buddyProjectId === 'string'
-            ? `Supervising project id: ${buddyProjectId}. The project remains owned by the delegating employee.`
-            : 'No supervising Buddy project was selected.',
-          `Purpose: ${purpose}`,
-          `Allowed Buddy operations: ${delegatedOperations.join(', ')}.`,
-          'Own this bounded assignment within that operation policy.',
-          'When the definition of done is actually satisfied, call complete_assignment with concrete evidence. A completed model turn alone does not complete the assignment.',
-        ].join('\n'),
-      });
-      const active = buddies.bindDelegationConversation(delegation.id, {
-        claimToken: dispatchToken,
-        childConversationId: conversation.id,
-      });
-      res.status(201).json({ delegation: active, conversation: conversation.toJSON() });
-    } catch (error) {
-      if (delegationId && dispatchToken) {
-        try {
-          const buddies = await getStore();
-          buddies.failDelegationDispatch(delegationId, {
-            claimToken: dispatchToken,
-            error: error instanceof Error ? error.message : String(error),
-          });
-        } catch {
-          // Preserve the original dispatch error; another executor may own the lease.
-        }
-      }
-      sendError(res, error, 400);
-    }
+  // Compatibility adapters for already-loaded clients. All new work uses messages.
+  route.post('/api/buddies/:buddyId/delegations', 400, async (req, res) => {
+    const input = req.body ?? {};
+    res.status(201).json(
+      await sendMessageFromRequest(req, {
+        to: input.toBuddyId,
+        purpose: 'delegation',
+        body: input.purpose,
+        projectId: input.buddyProjectId,
+        evidence: [],
+      })
+    );
   });
 
   route.patch('/api/buddies/delegations/:delegationId', 400, async (req, res) => {
@@ -602,135 +1042,30 @@ export function registerBuddyRoutes(app: Express, dependencies: BuddyRouteDepend
     res.json(buddies.updateDelegation(req.params.delegationId, req.body ?? {}));
   });
 
-  app.post('/api/buddies/:buddyId/review-requests', async (req: Request, res: Response) => {
-    const { reviewerBuddyId, subjectBuddyId, workspaceId, buddyProjectId, purpose, evidence } =
-      req.body ?? {};
-    if (
-      typeof reviewerBuddyId !== 'string' ||
-      typeof subjectBuddyId !== 'string' ||
-      typeof workspaceId !== 'string' ||
-      typeof purpose !== 'string'
-    ) {
-      res.status(400).json({
-        error: 'reviewerBuddyId, subjectBuddyId, workspaceId, and purpose are required',
-      });
-      return;
-    }
-    let reviewId: string | null = null;
-    try {
-      const buddies = await getStore();
-      const relationships = buddies.listBuddyRelationships(req.params.buddyId) as Array<{
-        from_buddy_id: string;
-        to_buddy_id: string;
-        kind: string;
-      }>;
-      const manageable = new Set([req.params.buddyId]);
-      for (const relationship of relationships) {
-        if (relationship.from_buddy_id === req.params.buddyId && relationship.kind === 'manager') {
-          manageable.add(relationship.to_buddy_id);
-        }
-        if (relationship.to_buddy_id === req.params.buddyId && relationship.kind === 'reports_to') {
-          manageable.add(relationship.from_buddy_id);
-        }
-      }
-      if (!manageable.has(reviewerBuddyId) || !manageable.has(subjectBuddyId)) {
-        throw new Error('Reviewer and subject must be this employee or a direct report');
-      }
-      if (reviewerBuddyId === subjectBuddyId) throw new Error('A Buddy cannot review itself');
-
-      const conversationId = createId();
-      const review = buddies.createReview({
-        reviewer: reviewerBuddyId,
-        subject: subjectBuddyId,
-        workspace: workspaceId,
-        project: typeof buddyProjectId === 'string' ? buddyProjectId : undefined,
-        conversationId,
-        evidence: Array.isArray(evidence) ? evidence : [],
-      });
-      reviewId = review.id;
-      const conversation = await createConversation({
-        conversationId,
-        context: {
-          buddyId: reviewerBuddyId,
-          workspaceId,
-          buddyProjectId: null,
-          delegatedByBuddyId: req.params.buddyId,
-          parentBuddyConversationId:
-            typeof req.body?.parentConversationId === 'string'
-              ? req.body.parentConversationId
-              : null,
-          allowedBuddyOperations: REVIEW_BUDDY_OPERATIONS,
-        },
-        commandId: `buddy-review-${review.id}`,
-        initialMessage: [
-          `Review requested by Buddy ${req.params.buddyId}.`,
-          `Review id: ${review.id}.`,
-          `Review Buddy ${subjectBuddyId}.`,
-          typeof buddyProjectId === 'string'
-            ? `Reviewed project id: ${buddyProjectId}.`
-            : 'No Buddy project was selected.',
-          `Review purpose: ${purpose}`,
-          `Input evidence: ${JSON.stringify(Array.isArray(evidence) ? evidence : [])}`,
-          `Allowed Buddy operations: ${REVIEW_BUDDY_OPERATIONS.join(', ')}.`,
-          'Use the native submit_review operation with a structured verdict, score, summary, concrete evidence, and required actions.',
-          'The legacy result block below is a compatibility fallback only.',
-          BUDDY_REVIEW_RESULT_INSTRUCTIONS,
-        ].join('\n'),
-      });
-      res.status(201).json({ review, conversation: conversation.toJSON() });
-    } catch (error) {
-      if (reviewId) {
-        try {
-          const buddies = await getStore();
-          buddies.updateReview(reviewId, { status: 'cancelled' });
-        } catch {
-          // Preserve the original dispatch error.
-        }
-      }
-      sendError(res, error, 400);
-    }
+  route.post('/api/buddies/:buddyId/review-requests', 400, async (req, res) => {
+    const input = req.body ?? {};
+    const evidence = Array.isArray(input.evidence)
+      ? input.evidence.map((item: unknown) =>
+          typeof item === 'string' ? item : JSON.stringify(item)
+        )
+      : [];
+    res.status(201).json(
+      await sendMessageFromRequest(req, {
+        to: input.reviewerBuddyId,
+        purpose: 'review',
+        body: `Review Buddy ${String(input.subjectBuddyId)}. ${String(input.purpose ?? 'Review employee work')}`,
+        evidence: [
+          ...evidence,
+          ...(typeof input.buddyProjectId === 'string' ? [`project:${input.buddyProjectId}`] : []),
+        ],
+      })
+    );
   });
 
-  route.post('/api/buddies/:buddyId/reviews', 400, async (req, res) => {
-    const {
-      subjectBuddyId,
-      workspaceId,
-      buddyProjectId,
-      purpose = 'Review employee work',
-    } = req.body ?? {};
-    if (typeof subjectBuddyId !== 'string' || typeof workspaceId !== 'string') {
-      res.status(400).json({ error: 'subjectBuddyId and workspaceId are required' });
-      return;
-    }
-    const buddies = await getStore();
-    const conversationId = createId();
-    const review = buddies.createReview({
-      reviewer: req.params.buddyId,
-      subject: subjectBuddyId,
-      workspace: workspaceId,
-      project: typeof buddyProjectId === 'string' ? buddyProjectId : undefined,
-      conversationId,
-    });
-    const conversation = await createConversation({
-      conversationId,
-      context: {
-        buddyId: req.params.buddyId,
-        workspaceId,
-        // The reviewed project belongs to the subject, not the reviewer.
-        buddyProjectId: null,
-        allowedBuddyOperations: REVIEW_BUDDY_OPERATIONS,
-      },
-      commandId: `buddy-review-${review.id}`,
-      initialMessage: [
-        `Review Buddy ${subjectBuddyId}.`,
-        `Review id: ${review.id}.`,
-        `Review purpose: ${purpose}`,
-        'Use the native submit_review operation with a structured verdict, score, summary, concrete evidence, and required actions.',
-        'The legacy result block below is a compatibility fallback only.',
-        BUDDY_REVIEW_RESULT_INSTRUCTIONS,
-      ].join('\n'),
-    });
-    res.status(201).json({ review, conversation: conversation.toJSON() });
+  // Direct review creation previously impersonated its recipient as the sender.
+  // Clients now choose a sender and use /messages or /review-requests.
+  route.post('/api/buddies/:buddyId/reviews', 410, async (_req, res) => {
+    res.status(410).json({ error: 'Choose a sender and use /api/buddies/:buddyId/messages' });
   });
 
   route.patch('/api/buddies/reviews/:reviewId', 400, async (req, res) => {
@@ -738,15 +1073,88 @@ export function registerBuddyRoutes(app: Express, dependencies: BuddyRouteDepend
     res.json(buddies.updateReview(req.params.reviewId, req.body ?? {}));
   });
 
+  route.get('/api/buddies/:buddyId/memory/scopes', 'memory', async (req, res) => {
+    const store = await getStore();
+    const context = memoryHttpContext(store, req.params.buddyId, req);
+    const scopes = knowledgeStore(store).listKnowledgeScopes(context.buddyId, {
+      actor: 'owner',
+      workspaceId: context.workspaceId,
+    });
+    const projects = store.listBuddyOwnedProjects({
+      buddy: context.buddyId,
+      workspace: context.workspaceId,
+      includeClosed: true,
+    }) as Array<{ id: string; title: string }>;
+    for (const project of projects)
+      if (!scopes.some((s) => s.kind === 'project' && s.projectId === project.id))
+        scopes.push({ kind: 'project', projectId: project.id });
+    res.json([
+      { label: 'Owner memory', scope: null },
+      ...scopes.map((scope) => ({
+        scope,
+        label:
+          scope.kind === 'workspace'
+            ? 'Workspace work'
+            : scope.kind === 'project'
+              ? `Project: ${projects.find((p) => p.id === scope.projectId)?.title ?? scope.projectId}`
+              : `Owner conversation: ${scope.conversationId}`,
+      })),
+    ]);
+  });
+
   route.get('/api/buddies/:buddyId/memory', 404, async (req, res) => {
     const buddies = await getStore();
-    res.json(buddies.readBuddyMemory(req.params.buddyId));
+    const scope = memoryAudience(req);
+    if (!scope) return void res.json(buddies.readBuddyMemory(req.params.buddyId));
+    const { buddyId, workspaceId } = memoryHttpContext(buddies, req.params.buddyId, req);
+    const ledger = knowledgeStore(buddies),
+      authority = { actor: 'owner', workspaceId };
+    const read = (kind: 'working' | 'long_term') =>
+      ledger.readKnowledgeDocument({ targetBuddyId: buddyId, scope, kind }, authority);
+    const working = read('working'),
+      longTerm = read('long_term');
+    res.json({
+      working: working.content,
+      longTerm: longTerm.content,
+      workingRevision: working.revision,
+      longTermRevision: longTerm.revision,
+      generation: Math.max(working.revision, longTerm.revision),
+      operations: { updateMemory: true, rememberNote: true, recall: true },
+      notes: ledger
+        .listKnowledgeDocuments(
+          { targetBuddyId: buddyId, scope, kinds: ['note'], limit: 20 },
+          authority
+        )
+        .filter((note) => note.ref.targetBuddyId === buddyId)
+        .map((note) => ({
+          id: note.id,
+          topic: note.ref.name,
+          kind: 'note',
+          content: note.content,
+        })),
+    });
   });
 
   route.put('/api/buddies/:buddyId/memory/:document', 'memory', async (req, res) => {
     const buddies = await getStore();
     const context = memoryHttpContext(buddies, req.params.buddyId, req);
     const document = req.params.document;
+    const scope = memoryAudience(req);
+    if (scope) {
+      const parsed = BuddyOperationInputSchemas['buddy.update_memory'].parse({
+        ...memoryPayload(req),
+        doc: document,
+      });
+      res.json(
+        scopedDocumentOperation(
+          buddies,
+          { targetBuddyId: context.buddyId, kind: parsed.doc, scope },
+          { ...parsed, key: parsed.key ?? createId() },
+          { actor: 'owner', workspaceId: context.workspaceId }
+        )
+      );
+      return;
+    }
     const result = new BuddyOperationsService(buddies, context).execute('buddy.update_memory', {
       ...memoryPayload(req),
       doc: document,
@@ -757,6 +1165,19 @@ export function registerBuddyRoutes(app: Express, dependencies: BuddyRouteDepend
   route.post('/api/buddies/:buddyId/memory/notes', 'memory', async (req, res) => {
     const buddies = await getStore();
     const context = memoryHttpContext(buddies, req.params.buddyId, req);
+    const scope = memoryAudience(req);
+    if (scope) {
+      const input = BuddyOperationInputSchemas['buddy.remember_note'].parse(memoryPayload(req));
+      res.status(201).json({
+        data: scopedNote(
+          buddies,
+          { actor: 'owner', workspaceId: context.workspaceId, scope },
+          input,
+          context.buddyId
+        ),
+      });
+      return;
+    }
     const result = new BuddyOperationsService(buddies, context).execute('buddy.remember_note', {
       ...memoryPayload(req),
       body:
@@ -772,25 +1193,23 @@ export function registerBuddyRoutes(app: Express, dependencies: BuddyRouteDepend
   route.post('/api/buddies/:buddyId/memory/recall', 'memory', async (req, res) => {
     const buddies = await getStore();
     const context = memoryHttpContext(buddies, req.params.buddyId, req);
+    const scope = memoryAudience(req);
+    if (scope) {
+      const input = BuddyOperationInputSchemas['buddy.recall'].parse(memoryPayload(req));
+      res.json({
+        data: recallKnowledge(
+          buddies,
+          { actor: 'owner', workspaceId: context.workspaceId, scope },
+          input,
+          context.buddyId
+        ),
+      });
+      return;
+    }
     const result = new BuddyOperationsService(buddies, context).execute('buddy.recall', {
       ...memoryPayload(req),
     });
     res.json(result);
-  });
-
-  route.post('/api/buddies/:buddyId/memory', 400, async (req, res) => {
-    const { content, kind = 'journal' } = req.body ?? {};
-    if (typeof content !== 'string' || !content.trim()) {
-      res.status(400).json({ error: 'content is required' });
-      return;
-    }
-    const buddies = await getStore();
-    res.status(201).json(
-      buddies.remember(req.params.buddyId, {
-        content,
-        kind: kind === 'curated' ? 'curated' : 'journal',
-      })
-    );
   });
 
   route.get('/api/buddies/:buddyId/projects', 400, async (req, res) => {
@@ -816,19 +1235,33 @@ export function registerBuddyRoutes(app: Express, dependencies: BuddyRouteDepend
     }
     const buddies = await getStore();
     res.status(201).json(
-      buddies.newProject({
-        ...optional,
-        buddy: req.params.buddyId,
-        workspace: workspaceId,
-        title,
-        definitionOfDone,
-      })
+      coordinationStore(buddies).createCoordinatedProject(
+        {
+          ...BuddyOperationInputSchemas['buddy.new_project'].parse({
+            ...optional,
+            title,
+            definitionOfDone,
+          }),
+          workspaceId,
+          ownerId: optional.ownerId ?? req.params.buddyId,
+        },
+        { actor: 'owner', key: req.get('Idempotency-Key') ?? optional.key ?? createId() }
+      )
     );
   });
 
   route.patch('/api/buddies/projects/:projectId', 400, async (req, res) => {
     const buddies = await getStore();
-    res.json(buddies.updateProject(req.params.projectId, req.body ?? {}));
+    const project = buddies.getBuddyProject(req.params.projectId) as { revision: number } | null;
+    if (!project) throw new Error('Project not found');
+    const changes = BuddyOperationInputSchemas['buddy.update_project'].parse(req.body ?? {});
+    res.json(
+      coordinationStore(buddies).updateCoordinatedProject(
+        req.params.projectId,
+        { ...changes, baseRevision: changes.baseRevision ?? project.revision },
+        { actor: 'owner', key: req.get('Idempotency-Key') ?? changes.key ?? createId() }
+      )
+    );
   });
 
   route.get('/api/buddies/:buddyId/automations', 400, async (req, res) => {
@@ -836,6 +1269,24 @@ export function registerBuddyRoutes(app: Express, dependencies: BuddyRouteDepend
     res.json(buddies.listAutomations({ buddy: req.params.buddyId }));
   });
 
+  app.post('/api/buddies/resources/:operation', async (request, response) => {
+    try {
+      const store = await dependencies.getStore();
+      const result = executeOwnerResource(
+        store,
+        request.params.operation as OwnerResourceName,
+        request.body,
+        {
+          ownerInputId: `http:${dependencies.createId()}`,
+          conversationId: null,
+          workspaceIds: ownerWorkspaceIds(store),
+        }
+      );
+      response.json(result);
+    } catch (error) {
+      dependencies.sendError(response, error, 400);
+    }
+  });
   app.get('/api/buddies/automations/health', (_req: Request, res: Response) => {
     const scheduler = getScheduler();
     if (!scheduler) {
@@ -869,6 +1320,10 @@ export function registerBuddyRoutes(app: Express, dependencies: BuddyRouteDepend
     const buddies = await getStore();
     const current = buddies.getAutomation(req.params.automationId);
     if (!current) throw new Error(`automation not found: ${req.params.automationId}`);
+    if (buddies.getBuddy(current.buddy_id)?.status === 'archived') {
+      res.status(404).json({ error: 'Buddy not found' });
+      return;
+    }
     let changes = req.body ?? {};
     if (
       req.body?.nextRunAt === undefined &&
@@ -911,7 +1366,13 @@ export function registerBuddyRoutes(app: Express, dependencies: BuddyRouteDepend
       res.status(503).json({ error: 'Buddy scheduler is not ready' });
       return;
     }
-    res.status(202).json(publicAutomationRun(await scheduler.runNow(req.params.automationId)));
+    const run = await scheduler.runNow(
+      req.params.automationId,
+      typeof req.body?.key === 'string' ? req.body.key : undefined
+    );
+    res
+      .status(202)
+      .json('input_kind' in run ? BuddyRunSchema.parse(run) : publicAutomationRun(run));
   });
 
   route.get('/api/buddies/automations/:automationId/runs', 400, async (req, res) => {

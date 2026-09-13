@@ -184,6 +184,89 @@ test('file poller preserves dirty baselines until an active session can be recon
   assert.deepEqual(applied, ['session-1:final-update']);
 });
 
+test('parsed updates survive runtime activity after parsing and retry once at idle', async (t) => {
+  for (const scenario of [
+    { phase: 'poll', newer: false },
+    { phase: 'apply', newer: false },
+    { phase: 'poll', newer: true },
+  ] as const) {
+    await t.test(`${scenario.phase}, newer update ${scenario.newer}`, async () => {
+      let active = false;
+      let cycle = 0;
+      let mtimes = new Map([['source', 1]]);
+      const attempts: string[] = [];
+      const broadcasts: string[][] = [];
+      const poller = createFilePoller<string, string>(
+        { intervalMs: 5_000, externalGraceMs: 30_000, verbose: false },
+        {
+          getMtimes: () => mtimes,
+          setMtimes: (next) => {
+            mtimes = next;
+          },
+          collectActiveIds: () => (active ? new Set(['session']) : new Set()),
+          poll: async () => {
+            cycle += 1;
+            await Promise.resolve();
+            if (cycle === 1 && scenario.phase === 'poll') active = true;
+            return {
+              updated:
+                cycle === 1
+                  ? new Map([['session', 'first']])
+                  : cycle === 2 && scenario.newer
+                    ? new Map([['session', 'newest']])
+                    : cycle === 5
+                      ? new Map([['session', 'deleted']])
+                      : new Map<string, string>(),
+              mtimes: new Map([['source', 2]]),
+            };
+          },
+          pruneCompletionSuppressions: () => {},
+          isCompletionSuppressed: () => false,
+          externalActivity: {
+            entries: () => new Map<string, number>().entries(),
+            has: () => false,
+            set: () => {},
+            delete: () => {},
+          },
+          findConversationId: () => undefined,
+          broadcastStatus: () => {},
+          applyUpdate: async (_sessionId, update) => {
+            attempts.push(update);
+            await Promise.resolve();
+            if (scenario.phase === 'apply' && attempts.length === 1) {
+              active = true;
+              return null;
+            }
+            return update === 'deleted' ? null : update;
+          },
+          broadcastUpdates: (updates) => broadcasts.push(updates),
+          pruneTracking: () => {},
+        }
+      );
+
+      await poller.runOnce();
+      assert.equal(mtimes.get('source'), 2, 'the parsed source baseline already advanced');
+      assert.deepEqual(broadcasts, []);
+      await poller.runOnce();
+      assert.deepEqual(broadcasts, [], 'active runtimes still own display state');
+      active = false;
+      await poller.runOnce();
+      const expected = scenario.newer ? 'newest' : 'first';
+      assert.deepEqual(broadcasts, [[expected]], 'idle retry needs no new dirty source');
+      const successfulAttempts = attempts.length;
+      await poller.runOnce();
+      assert.equal(attempts.length, successfulAttempts, 'successful updates are not replayed');
+      await poller.runOnce();
+      await poller.runOnce();
+      assert.equal(
+        attempts.filter((update) => update === 'deleted').length,
+        1,
+        'idle null results such as tombstones are not retried'
+      );
+    });
+  }
+});
+
 test('port guard kills an approved listener and verifies release', async () => {
   const calls: string[] = [];
   let checks = 0;

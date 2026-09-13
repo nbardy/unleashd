@@ -1,27 +1,25 @@
-# product/ — planning and handoff docs, by workstream
+# Product contracts
 
-One folder per workstream, not per sprint. Sprint-scoped folders age badly:
-every doc has to move next sprint, and every link breaks with it.
+Living documents are organized by workstream. Dated reviews, handoffs, and sprint
+boards belong in the flat `agent_notes/` directory.
 
-```
-product/
-├── buddies/   Buddies feature: primitives, memory, direct reports, sprints
-└── mobile/    Mobile view tree and its handoff
-```
+Start with the [Buddy team operator guide](buddies/TEAM_OPERATOR_GUIDE.md): inspect
+readiness → preview/apply setup → assign a project → send bounded work → verify
+evidence and return delivery. Owner-native `configure_team` is implemented; saving
+setup does not prove that a particular team has started or completed work.
 
-| Doc | What it is |
+| Contract | Scope |
 |---|---|
-| `buddies/PLANNING_MEMORY.md` | Memory design: 2 primitives, 4 layers, 3 verbs |
-| `buddies/PLANNING_PRIMITIVES.md` | Coordination primitives; the missing wait |
-| `buddies/PLANNING_SUB_BUDDIES.md` | Direct reports: hiring, quota, threat model |
-| `buddies/HANDOFF_SUB_BUDDIES.md` | Direct-reports handoff |
-| `buddies/SPRINT_BOARD_2026-08-21.md` | Product / design / engineering split |
-| `buddies/SPRINT_HANDOFF_2026-08-20.md` | Prior sprint handoff (superseded in part) |
-| `mobile/PLANNING_MOBILE.md` | Mobile plan |
-| `mobile/HANDOFF_MOBILE.md` | Mobile handoff |
+| [Buddy coordination](buddies/PLANNING_PRIMITIVES.md) | Send/reply, bounded waits, open purposes |
+| [Buddy memory](buddies/PLANNING_MEMORY.md) | Dense revisions, evidence notes, capture, recall |
+| [Direct reports](buddies/PLANNING_SUB_BUDDIES.md) | Identities, relationships, retirement, visibility |
+| [Team management](buddies/DESIGN_TEAM_OPERATIONS.md) | Current authority model and links to native operating contracts |
+| [Background work](buddies/DESIGN_BACKGROUND_TASK_EXECUTION.md) | Recipient-owned projects, typed work delivery, completion and recovery |
+| [Owner setup design history](buddies/DESIGN_OWNER_TEAM_SETUP.md) | Rationale and dated successors for the implemented owner configuration operation |
+| [Automation ownership](buddies/AUTOMATION_OWNERSHIP.md) | Run authority, budgets, cancellation, recovery |
+| [Mobile plan](mobile/PLANNING_MOBILE.md) | Mobile view tree |
+| [Mobile handoff](mobile/HANDOFF_MOBILE.md) | Mobile implementation context |
 
-**`agent_notes/` stays flat.** The filename is the index there
-(`YYYY-MM-DD_topic_<buddy-slug>.md`) and subfolders would break every glob and
-the docs that link notes by exact path. See `buddies/PLANNING_MEMORY.md` §7.
-
-Entry point for agents is the "Read before touching" table in `AGENTS.md`.
+Each Buddy contract starts with its implementation map. Historical artifacts keep
+their original date and an archive banner; old “not built” statements do not
+override the current contracts. `AGENTS.md` links the living entry points.

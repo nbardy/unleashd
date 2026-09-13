@@ -238,7 +238,10 @@ function verifyInstalledMcpEntrypoint() {
         } else if (message.id === 2) {
           const names = message.result?.tools?.map((tool) => tool.name) ?? [];
           settle(
-            names.includes('create_buddy') && names.includes('list_workspaces')
+            names.includes('list_buddies') &&
+              names.includes('list_workspaces') &&
+              !names.includes('create_buddy') &&
+              !names.includes('update_soul')
               ? null
               : new Error(`Packed Buddy MCP tools are invalid: ${JSON.stringify(names)}`)
           );

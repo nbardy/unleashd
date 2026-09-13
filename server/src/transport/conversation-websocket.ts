@@ -1,7 +1,7 @@
+import crypto from 'node:crypto';
 import type {
   BuddyContext,
   ClientMessage,
-  ConversationConfig,
   ConversationKind,
   ModelId,
   Provider,
@@ -25,6 +25,7 @@ import {
   type ConversationConfigService,
   ConversationTombstonedError,
 } from '../conversations/config-service';
+import { createConversationService } from '../conversations/creation-service';
 import { ConfigRevisionConflictError } from '../conversations/config-store';
 import type {
   ConversationBroadcast,
@@ -59,21 +60,18 @@ export interface ConversationWebSocketDependencies {
   beginCommand(command: ClientMessage): (() => void) | null;
   configService: ConversationConfigService;
   getUIState(): UIState;
+  getArchivedBuddyIds?(): Promise<string[]>;
+  isBuddyArchived?(buddyId: string): Promise<boolean>;
   getDefaultWorkingDirectory(): string;
   resolveWorkingDirectory(input: string): string;
   resolveBuddyConversation(context: BuddyContext): Promise<ResolvedBuddyConversation>;
   createConversation(options: ConversationOptions): ConversationRuntime;
   createConversationLink(conversation: ConversationRuntime): Promise<void>;
   cancelBuddyConversation(conversation: ConversationRuntime): void;
-  dispatchInitialMessage(conversation: ConversationRuntime): Promise<void>;
-  creationFingerprint(input: {
-    workingDirectory: string;
-    config: ConversationConfig;
-    initialMessage?: string;
-    swarmDebugPrefix?: string;
-    resumedFromConversationId?: string;
-    buddyContext?: BuddyContext;
-  }): string;
+  dispatchInitialMessage(
+    conversation: ConversationRuntime,
+    options?: { ownerInput: Readonly<{ origin: 'owner_input'; inputId: string }> }
+  ): Promise<void>;
   broadcast(data: ConversationBroadcast): void;
   broadcastExcept(excludedClient: WebSocket, data: ConversationBroadcast): void;
   logger?: Pick<Console, 'error' | 'log'>;
@@ -83,9 +81,18 @@ export function registerConversationWebSocket(
   webSocketServer: WebSocketServer,
   dependencies: ConversationWebSocketDependencies
 ): void {
+  const createOrReuse = createConversationService({
+    configService: dependencies.configService,
+    getConversation: (id) => dependencies.registry.get(id),
+    createConversation: dependencies.createConversation,
+    registerConversation: (conversation) => dependencies.registry.set(conversation),
+    createConversationLink: dependencies.createConversationLink,
+  });
   webSocketServer.on('connection', (socket) => {
     const logger = dependencies.logger ?? console;
-    sendInitialState(socket, dependencies);
+    void sendInitialState(socket, dependencies).catch((error) =>
+      logger.error('Initial state failed', error)
+    );
 
     socket.on('message', async (message) => {
       let activeCommand: { commandId: string; conversationId?: string } | null = null;
@@ -127,6 +134,14 @@ export function registerConversationWebSocket(
           }
           return;
         }
+        const target =
+          'conversationId' in data ? dependencies.registry.get(data.conversationId) : undefined;
+        if (
+          target?.kind.kind === 'buddy' &&
+          (await dependencies.isBuddyArchived?.(target.kind.buddyId))
+        ) {
+          throw new Error('Buddy is archived');
+        }
         logCommand(data, logger);
 
         switch (data.type) {
@@ -140,7 +155,8 @@ export function registerConversationWebSocket(
               sendCommandRejected(socket, {
                 commandId: data.commandId,
                 conversationId: data.conversationId,
-                error: { code: 'create_failed', message: errorMessage(error) },
+                error: { code: 'create_failed', message: replayFailureMessage(error) },
+                authoritativeConversation: dependencies.registry.get(data.conversationId)?.toJSON(),
               });
               break;
             }
@@ -186,47 +202,12 @@ export function registerConversationWebSocket(
                   effectiveKind = buddyKindFromContext(effectiveBuddyContext);
               }
             }
-            const fingerprint = dependencies.creationFingerprint({
-              workingDirectory,
-              config: data.config,
-              initialMessage: data.initialMessage,
-              swarmDebugPrefix: data.swarmDebugPrefix,
-              resumedFromConversationId: data.resumedFromConversationId,
-              buddyContext: effectiveBuddyContext,
-            });
-            const existingConversation = dependencies.registry.get(data.conversationId);
-            if (existingConversation) {
-              try {
-                await dependencies.configService.createOrReplay({
-                  conversationId: data.conversationId,
-                  config: data.config,
-                  workingDirectory,
-                  creation: {
-                    commandId: data.commandId,
-                    fingerprint,
-                    initialMessage: data.initialMessage,
-                    swarmDebugPrefix: data.swarmDebugPrefix,
-                    resumedFromConversationId: data.resumedFromConversationId,
-                    buddyContext: effectiveBuddyContext,
-                  },
-                });
-                sendToClient(socket, {
-                  type: 'conversation_created',
-                  commandId: data.commandId,
-                  conversation: existingConversation.toJSON(),
-                });
-                await dependencies.dispatchInitialMessage(existingConversation);
-              } catch (error) {
-                sendCommandRejected(socket, {
-                  commandId: data.commandId,
-                  conversationId: data.conversationId,
-                  error: { code: 'create_failed', message: replayFailureMessage(error) },
-                  authoritativeConversation: existingConversation.toJSON(),
-                });
-              }
-              break;
+            if (
+              effectiveBuddyContext &&
+              (await dependencies.isBuddyArchived?.(effectiveBuddyContext.buddyId))
+            ) {
+              throw new Error('Buddy is archived');
             }
-
             try {
               const persisted = await dependencies.configService.getRecord(data.conversationId);
               if (!persisted) {
@@ -241,56 +222,18 @@ export function registerConversationWebSocket(
                 }
               }
 
-              const creation = await dependencies.configService.createOrReplay({
+              const conversation = await createOrReuse({
                 conversationId: data.conversationId,
-                config: data.config,
+                commandId: data.commandId,
                 workingDirectory,
-                creation: {
-                  commandId: data.commandId,
-                  fingerprint,
-                  initialMessage: data.initialMessage,
-                  swarmDebugPrefix: data.swarmDebugPrefix,
-                  resumedFromConversationId: data.resumedFromConversationId,
-                  buddyContext: effectiveBuddyContext,
-                },
+                config: data.config,
+                initialMessage: data.initialMessage,
+                swarmDebugPrefix: data.swarmDebugPrefix,
+                resumedFromConversationId: data.resumedFromConversationId,
+                kind: effectiveKind,
+                buddyContext: effectiveBuddyContext,
+                buddyBriefing: buddyResolution?.briefing,
               });
-              // Matching create commands are deliberately at-least-once across
-              // reconnects. Another socket may have materialized the runtime
-              // while this command awaited durable config. Reuse that winner;
-              // JavaScript runs the following check + set without an async gap.
-              const replayWinner = dependencies.registry.get(data.conversationId);
-              if (replayWinner) {
-                sendToClient(socket, {
-                  type: 'conversation_created',
-                  commandId: data.commandId,
-                  conversation: replayWinner.toJSON(),
-                });
-                break;
-              }
-              const createdKind =
-                effectiveKind ??
-                (buddyResolution?.context
-                  ? buddyKindFromContext(buddyResolution.context)
-                  : undefined) ??
-                (effectiveBuddyContext
-                  ? buddyKindFromContext(effectiveBuddyContext as BuddyContext)
-                  : undefined);
-              const conversation = dependencies.createConversation({
-                id: data.conversationId,
-                workingDirectory: creation.record.workingDirectory ?? workingDirectory,
-                configState: creation.state,
-                existingSessionId: creation.record.currentSession?.sessionId,
-                swarmDebugPrefix: data.swarmDebugPrefix ?? null,
-                resumedFromConversationId: data.resumedFromConversationId ?? null,
-                kind: createdKind ?? null,
-                buddyContext:
-                  buddyResolution?.context ??
-                  (effectiveBuddyContext as BuddyContext | null) ??
-                  null,
-                buddyBriefing: buddyResolution?.briefing ?? null,
-              });
-              dependencies.registry.set(conversation);
-              await dependencies.createConversationLink(conversation);
               sendToClient(socket, {
                 type: 'conversation_created',
                 commandId: data.commandId,
@@ -301,7 +244,9 @@ export function registerConversationWebSocket(
                 reason: 'status',
                 conversation: conversation.toJSON(),
               });
-              await dependencies.dispatchInitialMessage(conversation);
+              await dependencies.dispatchInitialMessage(conversation, {
+                ownerInput: { origin: 'owner_input', inputId: data.commandId },
+              });
             } catch (error) {
               sendCommandRejected(socket, {
                 commandId: data.commandId,
@@ -319,7 +264,10 @@ export function registerConversationWebSocket(
             const conversation = dependencies.registry.get(data.conversationId);
             if (conversation) {
               logger.log('[WS] Found conversation, calling sendMessage');
-              conversation.sendMessage(data.content);
+              conversation.sendMessage(data.content, {
+                origin: 'owner_input',
+                inputId: crypto.randomUUID(),
+              });
             } else {
               logger.error(`[WS] Conversation not found: ${data.conversationId}`);
               logger.error(
@@ -406,14 +354,20 @@ export function registerConversationWebSocket(
           }
 
           case 'queue_message':
-            dependencies.registry.get(data.conversationId)?.enqueueMessage(data.content);
+            dependencies.registry.get(data.conversationId)?.enqueueMessage(data.content, {
+              origin: 'owner_input',
+              inputId: crypto.randomUUID(),
+            });
             sendCommandAccepted(socket, {
               commandId: data.commandId,
               conversationId: data.conversationId,
             });
             break;
           case 'interrupt_and_send':
-            dependencies.registry.get(data.conversationId)?.interruptAndSend(data.content);
+            dependencies.registry.get(data.conversationId)?.interruptAndSend(data.content, {
+              origin: 'owner_input',
+              inputId: crypto.randomUUID(),
+            });
             sendCommandAccepted(socket, {
               commandId: data.commandId,
               conversationId: data.conversationId,
@@ -443,13 +397,17 @@ export function registerConversationWebSocket(
   });
 }
 
-function sendInitialState(
+async function sendInitialState(
   socket: WebSocket,
   dependencies: ConversationWebSocketDependencies
-): void {
+): Promise<void> {
+  const archivedBuddyIds = dependencies.getArchivedBuddyIds
+    ? await dependencies.getArchivedBuddyIds()
+    : [];
   if (socket.readyState !== WebSocket.OPEN) return;
   sendToClient(socket, {
     type: 'init',
+    archivedBuddyIds,
     summaries: true,
     loading: !dependencies.isInitialLoadComplete(),
     conversations: Array.from(dependencies.registry.values(), (conversation) => {

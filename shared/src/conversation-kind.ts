@@ -1,5 +1,9 @@
 import { z } from 'zod';
-import { type BuddyContext, BuddyContextSchema } from './conversation-config.js';
+import {
+  type BuddyContext,
+  BuddyContextSchema,
+  ConversationIdSchema,
+} from './conversation-config.js';
 
 /**
  * Canonical conversation kind — holistic sum type (D = ⊕ᵢ Dᵢ).
@@ -25,7 +29,7 @@ export const ConversationKindSchema = z.discriminatedUnion('kind', [
     legacyWorkItemId: z.string().min(1).nullish(),
     automationRunId: z.string().min(1).nullish(),
     delegatedByBuddyId: z.string().min(1).nullish(),
-    parentBuddyConversationId: z.string().uuid().nullish(),
+    parentBuddyConversationId: ConversationIdSchema.nullish(),
     allowedBuddyOperations: z.array(z.string().min(1)).min(1).optional(),
     // briefing is first-turn hidden content, not durable identity, but may be
     // present when migrating from runtime's buddyBriefing; keep optional.

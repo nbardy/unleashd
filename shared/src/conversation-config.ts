@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { BuddyKnowledgeScopeSchema } from './buddy-resources.js';
 import {
   type Provider,
   type ProviderCatalog,
@@ -110,7 +111,14 @@ export type ConversationSessionBinding = z.infer<typeof ConversationSessionBindi
 export const ConversationLifecycleStatusSchema = z.enum(['active', 'deleted']);
 export type ConversationLifecycleStatus = z.infer<typeof ConversationLifecycleStatusSchema>;
 
+// Conversation IDs are opaque: Buddy runs use deterministic prefixed IDs and
+// older provider imports can be non-UUIDs. Use the same contract on disk and
+// across the wire; config-store encodes IDs before using them as file names.
+export const ConversationIdSchema = z.string().min(1);
+
 export const BuddyContextSchema = z.object({
+  knowledgeScope: BuddyKnowledgeScopeSchema.optional(),
+  coordinationRunId: z.string().min(1).nullish(),
   buddyId: z.string().min(1),
   workspaceId: z.string().min(1),
   buddyProjectId: z.string().min(1).nullish(),
@@ -119,7 +127,7 @@ export const BuddyContextSchema = z.object({
   // Set only for Buddy-to-Buddy work. This is employee delegation metadata,
   // not a provider-native subagent/swarm relationship.
   delegatedByBuddyId: z.string().min(1).nullish(),
-  parentBuddyConversationId: z.string().uuid().nullish(),
+  parentBuddyConversationId: ConversationIdSchema.nullish(),
   // Delegated conversations can expose only the Buddy state operations
   // required by the assignment. Provider-native tools are unaffected.
   allowedBuddyOperations: z.array(z.string().min(1)).min(1).optional(),
@@ -129,15 +137,19 @@ export type BuddyContext = z.infer<typeof BuddyContextSchema>;
 export const ConversationPurposeSchema = z.enum(['general', 'buddy_builder']);
 export type ConversationPurpose = z.infer<typeof ConversationPurposeSchema>;
 
+export const ConversationPlacementSchema = z.enum(['default', 'background']);
+export type ConversationPlacement = z.infer<typeof ConversationPlacementSchema>;
+
 export const ConversationCreationMetadataSchema = z.object({
   commandId: z.string().min(1).optional(),
   fingerprint: z.string().min(1).optional(),
+  placement: ConversationPlacementSchema.optional(),
   initialMessage: z.string().min(1).optional(),
   initialMessageDispatchClaimedAt: z.string().datetime().optional(),
   initialMessageDispatchClaimToken: z.string().min(1).optional(),
   initialMessageDispatchedAt: z.string().datetime().optional(),
   swarmDebugPrefix: z.string().optional(),
-  resumedFromConversationId: z.string().uuid().optional(),
+  resumedFromConversationId: ConversationIdSchema.optional(),
   buddyContext: BuddyContextSchema.optional(),
   purpose: ConversationPurposeSchema.optional(),
 });
@@ -145,9 +157,7 @@ export type ConversationCreationMetadata = z.infer<typeof ConversationCreationMe
 
 export const PersistedConversationConfigRecordSchema = z.object({
   version: z.literal(1),
-  // Provider-native sessions (notably OpenCode) can use opaque non-UUID IDs.
-  // Filesystem safety is enforced by the config-store's encoded path mapping.
-  conversationId: z.string().min(1),
+  conversationId: ConversationIdSchema,
   // Historical aliases remain indexed for transcript discovery. The session to
   // resume is stored separately so rotation never depends on array ordering.
   sessionBindings: z.array(ConversationSessionBindingSchema),

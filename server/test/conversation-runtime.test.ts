@@ -1,7 +1,20 @@
 import assert from 'node:assert/strict';
+import { EventEmitter } from 'node:events';
+import { promises as fs } from 'node:fs';
+import { tmpdir } from 'node:os';
+import path from 'node:path';
 import test from 'node:test';
 import type { Provider } from '@unleashd/shared';
-import { type ConversationConfig, createDefaultConversationConfig } from '@unleashd/shared';
+import {
+  type ConversationConfig,
+  createDefaultConversationConfig,
+  mergeReviewDocPath,
+} from '@unleashd/shared';
+import { loadAllConversations } from '../src/adapters/loader';
+import { getDiskAdapter } from '../src/adapters/registry';
+import { NormalizedSessionCache } from '../src/adapters/session-cache';
+import type { CompletedBuddyTurn } from '../src/buddies/memory-review';
+import { TURN_MAX_RUNTIME_MS } from '../src/constants/timeouts';
 import {
   type ConversationRuntimeDependencies,
   buildFirstTurnCliContent,
@@ -24,6 +37,11 @@ function runtimeFixture(
     turnAttempts?: ConversationRuntimeDependencies['turnAttempts'];
     requestAutomationCancellation?: ConversationRuntimeDependencies['requestAutomationCancellation'];
     revokeBuddyControlCapability?: ConversationRuntimeDependencies['revokeBuddyControlCapability'];
+    beginBuddyChatRun?: ConversationRuntimeDependencies['beginBuddyChatRun'];
+    finishBuddyChatRun?: ConversationRuntimeDependencies['finishBuddyChatRun'];
+    reviewCompletedBuddyTurn?: ConversationRuntimeDependencies['reviewCompletedBuddyTurn'];
+    readCurrentBuddyContext?: ConversationRuntimeDependencies['readCurrentBuddyContext'];
+    buddyContext?: CompletedBuddyTurn['context'];
   } = {}
 ) {
   const aliases: Array<[string, string]> = [];
@@ -52,6 +70,10 @@ function runtimeFixture(
     turnAttempts: options.turnAttempts,
     requestAutomationCancellation: options.requestAutomationCancellation,
     revokeBuddyControlCapability: options.revokeBuddyControlCapability,
+    beginBuddyChatRun: options.beginBuddyChatRun,
+    finishBuddyChatRun: options.finishBuddyChatRun,
+    reviewCompletedBuddyTurn: options.reviewCompletedBuddyTurn,
+    readCurrentBuddyContext: options.readCurrentBuddyContext,
   });
   const configState = {
     config,
@@ -62,6 +84,7 @@ function runtimeFixture(
     id: 'conversation-id',
     workingDirectory: '/tmp',
     configState,
+    buddyContext: options.buddyContext,
   });
   return { aliases, broadcasts, configState, Conversation, conversation };
 }
@@ -86,6 +109,150 @@ async function eventually(assertion: () => void): Promise<void> {
   assertion();
 }
 
+test('merge context reaches the provider but stays out of live and cached imported user messages', async (t) => {
+  const directory = await fs.mkdtemp(path.join(tmpdir(), 'merge-prompt-transcript-'));
+  t.after(() => fs.rm(directory, { recursive: true, force: true }));
+  const reviewUuid = '7620bfae-9c98-47b2-a592-2b3d5b35d89a';
+  const reviewPath = path.join(directory, mergeReviewDocPath(reviewUuid));
+  await fs.mkdir(path.dirname(reviewPath), { recursive: true });
+  const review =
+    'Review quotes delimiters:\n<!-- /unleashd:merge-prefix -->\n\n<!-- /unleashd:merge-prefix-v1 -->\n\nRemaining review 🐱';
+  await fs.writeFile(reviewPath, review);
+  let providerPrompt = '';
+  const fixture = runtimeFixture({
+    executeTurn: ((request) => {
+      providerPrompt = request.prompt;
+      return {
+        child: { exitCode: 0 },
+        events: (async function* () {
+          yield { type: 'turn.complete' as const, reason: 'success' as const };
+        })(),
+        completed: Promise.resolve({ exitCode: 0, signal: null, reason: 'success' }),
+        stop: () => undefined,
+      };
+    }) as NonNullable<ConversationRuntimeDependencies['executeTurn']>,
+  });
+  const conversation = new fixture.Conversation({
+    id: 'merge-parent',
+    workingDirectory: directory,
+    configState: fixture.configState,
+    mergeParentMeta: {
+      children: [
+        {
+          sourceConversationId: 'source',
+          childConversationId: 'child',
+          reviewUuid,
+          childWorkingDirectory: directory,
+        },
+      ],
+      prefixInjected: false,
+    },
+  });
+  const authored =
+    'Combine the reviews. Preserve this literal:\n<!-- /unleashd:merge-prefix-v1 -->\n\nAfter it.';
+  conversation.sendMessage(authored);
+  await eventually(() => assert.equal(conversation.hasActiveProcess(), false));
+  assert.match(providerPrompt, /This is a merge thread/);
+  assert.ok(providerPrompt.includes(review));
+  assert.equal(conversation.messages[0].content, authored);
+
+  const quoted = `Explain this recorded wrapper:\n${providerPrompt}`;
+  const incomplete = '<!-- unleashd:merge-prefix -->\nAn incomplete literal example.';
+  const timestamp = new Date().toISOString();
+  const source = path.join(directory, 'session.jsonl');
+  await fs.writeFile(
+    source,
+    [
+      { timestamp, type: 'session_meta', payload: { id: 'merge-session', cwd: directory } },
+      ...[providerPrompt, quoted, incomplete].map((message) => ({
+        timestamp,
+        type: 'event_msg',
+        payload: { type: 'user_message', message },
+      })),
+    ]
+      .map((entry) => JSON.stringify(entry))
+      .join('\n')
+  );
+  const adapter = { ...getDiskAdapter('codex'), discoverFiles: async () => [source] };
+  const cache = new NormalizedSessionCache(path.join(directory, 'cache'));
+  for (let pass = 0; pass < 2; pass++) {
+    const loaded = await loadAllConversations({ adapters: [adapter], cache });
+    assert.deepEqual(
+      loaded.conversations.get('merge-session')?.messages.map((m) => m.content),
+      [authored, quoted, incomplete]
+    );
+  }
+});
+
+test('retained Buddy display history stays out of fresh provider context across audience resets', async () => {
+  type Request = Parameters<NonNullable<ConversationRuntimeDependencies['executeTurn']>>[0];
+  const requests: Request[] = [];
+  let current = {
+    briefing: 'CURRENT_OWNER_BRIEFING',
+    memoryGeneration: '1',
+    audienceKey: 'owner-audience',
+  };
+  const fixture = runtimeFixture({
+    readCurrentBuddyContext: () => current,
+    executeTurn: ((request) => {
+      requests.push(request);
+      const sessionId = request.resumeSessionId ?? `native-${requests.length}`;
+      return {
+        child: { exitCode: 0 },
+        events: (async function* () {
+          yield { type: 'session.started' as const, sessionId };
+          yield { type: 'turn.started' as const };
+          yield { type: 'text.delta' as const, text: `Response ${requests.length}` };
+          yield { type: 'turn.complete' as const, reason: 'success' as const };
+        })(),
+        completed: Promise.resolve({ exitCode: 0, signal: null, sessionId, reason: 'success' }),
+        stop: () => undefined,
+      };
+    }) as NonNullable<ConversationRuntimeDependencies['executeTurn']>,
+  });
+  const conversation = new fixture.Conversation({
+    id: 'restored-buddy',
+    workingDirectory: '/tmp',
+    configState: fixture.configState,
+    buddyContext: { buddyId: 'buddy', workspaceId: 'workspace' },
+    existingSessionId: 'unverified-restored-session',
+  });
+  const originalDate = new Date('2026-09-09T04:45:02.313Z');
+  conversation.createdAt = originalDate;
+  conversation.messages = [
+    { role: 'user', content: 'PRIOR_PRIVATE_TRANSCRIPT', timestamp: originalDate },
+    { role: 'assistant', content: 'PRIOR_PRIVATE_ANSWER', timestamp: originalDate },
+  ];
+  const turn = async (content: string) => {
+    conversation.sendMessage(content, { origin: 'owner_input', inputId: content });
+    await eventually(() => assert.equal(conversation.hasActiveProcess(), false));
+  };
+
+  await turn('First followup');
+  assert.equal(requests[0].resumeSessionId, undefined, 'restored audience is unverified');
+  assert.match(requests[0].prompt, /CURRENT_OWNER_BRIEFING/);
+
+  current = { ...current, briefing: 'UPDATED_OWNER_MEMORY', memoryGeneration: '2' };
+  await turn('Second followup');
+  assert.equal(requests[1].resumeSessionId, 'native-1', 'unchanged audience resumes');
+  assert.match(requests[1].prompt, /UPDATED_OWNER_MEMORY/);
+
+  current = { briefing: 'NARROWED_BRIEFING', memoryGeneration: '3', audienceKey: 'narrowed' };
+  await turn('Third followup');
+  assert.equal(requests[2].resumeSessionId, undefined, 'changed audience starts fresh');
+  assert.match(requests[2].prompt, /NARROWED_BRIEFING/);
+  assert.doesNotMatch(requests[2].prompt, /CURRENT_OWNER_BRIEFING|UPDATED_OWNER_MEMORY/);
+  for (const request of requests) {
+    assert.doesNotMatch(request.prompt, /PRIOR_PRIVATE_TRANSCRIPT|PRIOR_PRIVATE_ANSWER/);
+  }
+  assert.deepEqual(
+    conversation.messages.slice(0, 2).map((message) => message.content),
+    ['PRIOR_PRIVATE_TRANSCRIPT', 'PRIOR_PRIVATE_ANSWER']
+  );
+  assert.equal(conversation.messages.length, 8);
+  assert.equal(conversation.createdAt, originalDate);
+});
+
 test('provider completion waits for the normalized event stream and session persistence', async () => {
   const persistence = deferred<void>();
   const completion = deferred<{
@@ -101,7 +268,10 @@ test('provider completion waits for the normalized event stream and session pers
     yield { type: 'turn.complete' as const, reason: 'success' as const };
   }
   const revoked: string[] = [];
+  const reviews: CompletedBuddyTurn[] = [];
   const fixture = runtimeFixture({
+    buddyContext: { buddyId: 'buddy-1', workspaceId: 'workspace-1' },
+    reviewCompletedBuddyTurn: (turn) => reviews.push(turn),
     persistCurrentSession: () => persistence.promise,
     revokeBuddyControlCapability: (conversationId) => revoked.push(conversationId),
     executeTurn: (() => ({
@@ -113,6 +283,7 @@ test('provider completion waits for the normalized event stream and session pers
   });
   let automationOutput: string | null = null;
   fixture.conversation.once('buddy-turn-complete', (output) => {
+    assert.equal(reviews.length, 1, 'snapshot precedes listeners admitting a new turn');
     automationOutput = output;
   });
 
@@ -138,6 +309,7 @@ test('provider completion waits for the normalized event stream and session pers
     'completion must not release ownership while session persistence blocks event consumption'
   );
   assert.deepEqual(revoked, [], 'control authority remains until the joined turn drains');
+  assert.equal(reviews.length, 0, 'memory review also waits for process exit and event drain');
 
   persistence.resolve();
   await eventually(() => assert.equal(fixture.conversation.hasActiveProcess(), false));
@@ -147,9 +319,13 @@ test('provider completion waits for the normalized event stream and session pers
   );
   assert.equal(automationOutput, 'durable output');
   assert.deepEqual(revoked, ['conversation-id']);
+  assert.equal(reviews.length, 1);
+  assert.ok(reviews[0].messages.some((message) => message.content === 'durable output'));
+  assert.ok(reviews[0].attemptId);
 });
 
 test('event-stream failure after turn.complete fails automation after joined drain', async () => {
+  const reviews: CompletedBuddyTurn[] = [];
   async function* events() {
     yield { type: 'turn.started' as const };
     yield { type: 'text.delta' as const, text: 'partial output' };
@@ -157,6 +333,8 @@ test('event-stream failure after turn.complete fails automation after joined dra
     throw new Error('event stream failed after completion marker');
   }
   const fixture = runtimeFixture({
+    buddyContext: { buddyId: 'buddy-1', workspaceId: 'workspace-1' },
+    reviewCompletedBuddyTurn: (turn) => reviews.push(turn),
     executeTurn: (() => ({
       child: { exitCode: 0 },
       events: events(),
@@ -183,6 +361,39 @@ test('event-stream failure after turn.complete fails automation after joined dra
 
   assert.equal(completed, false);
   assert.equal(failure, 'event stream failed after completion marker');
+  assert.deepEqual(reviews, []);
+});
+
+test('only a successfully exited Buddy turn schedules memory review', async () => {
+  for (const outcome of ['ordinary', 'failed', 'cancelled', 'success'] as const) {
+    const reviews: CompletedBuddyTurn[] = [];
+    const child = Object.assign(new EventEmitter(), { exitCode: 0 });
+    const completion = deferred<{ exitCode: number; signal: null; reason: 'success' | 'error' }>();
+    const fixture = runtimeFixture({
+      buddyContext:
+        outcome === 'ordinary' ? undefined : { buddyId: 'buddy-1', workspaceId: 'workspace-1' },
+      reviewCompletedBuddyTurn: (turn) => reviews.push(turn),
+      executeTurn: (() => ({
+        child,
+        events: (async function* () {
+          yield { type: 'turn.started' as const };
+          yield { type: 'text.delta' as const, text: 'Completed answer' };
+          yield { type: 'turn.complete' as const, reason: 'success' as const };
+        })(),
+        completed: completion.promise,
+        stop: () => undefined,
+      })) as NonNullable<ConversationRuntimeDependencies['executeTurn']>,
+    });
+    fixture.conversation.sendMessage('Remember our result');
+    if (outcome === 'cancelled') fixture.conversation.stop();
+    completion.resolve({
+      exitCode: outcome === 'failed' ? 1 : 0,
+      signal: null,
+      reason: outcome === 'failed' ? 'error' : 'success',
+    });
+    await eventually(() => assert.equal(fixture.conversation.hasActiveProcess(), false));
+    assert.equal(reviews.length, outcome === 'success' ? 1 : 0, outcome);
+  }
 });
 
 test('preflight failure immediately rejects an automation turn listener', () => {
@@ -250,6 +461,54 @@ test('unsupported Buddy provider leaves a queued message retryable', () => {
     conversation.messages.at(-1)?.content ?? '',
     /cannot start Buddy conversations.*required Buddy state tools/
   );
+});
+
+test('foreground Buddy capacity rejection fails once without hiding the owner message', () => {
+  let admissions = 0;
+  let providerStarts = 0;
+  const fixture = runtimeFixture({
+    buddyContext: {
+      buddyId: 'busy-buddy',
+      workspaceId: 'workspace-1',
+    },
+    beginBuddyChatRun: () => {
+      admissions += 1;
+      throw new Error('Conversation execution slot is unavailable');
+    },
+    executeTurn: (() => {
+      providerStarts += 1;
+      return {
+        child: { exitCode: 0 },
+        events: (async function* () {
+          yield { type: 'turn.started' as const };
+          yield { type: 'text.delta' as const, text: 'Must not start' };
+          yield { type: 'turn.complete' as const, reason: 'success' as const };
+        })(),
+        completed: Promise.resolve({
+          exitCode: 0,
+          signal: null,
+          reason: 'success' as const,
+          sessionId: 'provider-session',
+        }),
+        stop: () => undefined,
+      };
+    }) as NonNullable<ConversationRuntimeDependencies['executeTurn']>,
+  });
+
+  assert.throws(
+    () =>
+      fixture.conversation.enqueueMessage('Preserve this owner message', {
+        origin: 'owner_input',
+        inputId: 'owner-message',
+      }),
+    /execution slot is unavailable/
+  );
+
+  assert.equal(admissions, 1);
+  assert.equal(providerStarts, 0);
+  assert.equal(fixture.conversation.queue.length, 0);
+  assert.equal(fixture.conversation.messages.length, 1);
+  assert.equal(fixture.conversation.messages[0]?.content, 'Preserve this owner message');
 });
 
 test('historical automation transcripts refuse every user turn-admission path', () => {
@@ -801,4 +1060,166 @@ test('first-turn markers are kind-exclusive: builder, buddy, general', () => {
   assert.doesNotMatch(general, /unleashd:buddy-builder-v1/);
   assert.doesNotMatch(general, /unleashd:buddy-context-v2/);
   assert.equal(general, 'Lets make some updates');
+});
+
+test('foreground Buddy deadline uses the conversation budget and reports timeout after joined drain', async (t) => {
+  t.mock.timers.enable({ apis: ['Date', 'setTimeout', 'setInterval'] });
+  const completed = deferred<{
+    exitCode: number | null;
+    signal: NodeJS.Signals | null;
+    sessionId: string;
+    reason: 'killed';
+  }>();
+  const stopped = deferred<void>();
+  const child = Object.assign(new EventEmitter(), { exitCode: null as number | null });
+  const terminals: Parameters<
+    NonNullable<ConversationRuntimeDependencies['turnAttempts']>['terminal']
+  >[0][] = [];
+  const settlements: Parameters<
+    NonNullable<ConversationRuntimeDependencies['finishBuddyChatRun']>
+  >[] = [];
+  let requestedBudget: number | undefined;
+  let release = false;
+  const fixture = runtimeFixture({
+    beginBuddyChatRun: (_context, _id, maxRuntimeMs) => {
+      requestedBudget = maxRuntimeMs;
+      // A short owned deadline exercises the same callback without waiting a day.
+      return {
+        id: 'owned-run',
+        claim_token: 'private-fixture-token',
+        deadline: new Date(Date.now() + 1000).toISOString(),
+      };
+    },
+    finishBuddyChatRun: (...args) => settlements.push(args),
+    turnAttempts: {
+      queued: () => {},
+      starting: () => {},
+      running: () => {},
+      stopping: () => {},
+      activity: () => {},
+      bindProviderSession: () => {},
+      terminal: (result) => terminals.push(result),
+    },
+    executeTurn: (() => ({
+      child,
+      events: (async function* () {
+        yield { type: 'turn.started' as const };
+        yield { type: 'text.delta' as const, text: 'Still working' };
+        await stopped.promise;
+        yield { type: 'turn.complete' as const, reason: 'killed' as const };
+      })(),
+      completed: completed.promise,
+      stop: () => {
+        release = true;
+      },
+    })) as NonNullable<ConversationRuntimeDependencies['executeTurn']>,
+  });
+  const conversation = new fixture.Conversation({
+    id: 'foreground-timeout',
+    workingDirectory: '/tmp',
+    configState: fixture.configState,
+    buddyContext: { buddyId: 'buddy-fixture', workspaceId: 'workspace-fixture' },
+  });
+  conversation.sendMessage('Keep working');
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  assert.equal(requestedBudget, TURN_MAX_RUNTIME_MS);
+  t.mock.timers.tick(1000);
+  assert.equal(release, true);
+  assert.equal(terminals.at(-1)?.terminalCause, 'max_runtime_timeout');
+  assert.equal(terminals.at(-1)?.state, 'failed');
+  assert.equal(conversation.hasActiveProcess(), true);
+  assert.equal(settlements.length, 0, 'ownership must wait for process and event drain');
+  child.exitCode = 0;
+  child.emit('close');
+  stopped.resolve();
+  completed.resolve({
+    exitCode: null,
+    signal: 'SIGTERM',
+    sessionId: 'provider-session',
+    reason: 'killed',
+  });
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  assert.equal(conversation.hasActiveProcess(), false);
+  assert.equal(settlements.length, 1);
+  assert.equal(settlements[0][2], 'failed');
+  assert.match(settlements[0][3] ?? '', /maximum runtime/);
+});
+
+test('background deadline uses timeout classification and waits for provider drain', async (t) => {
+  t.mock.timers.enable({ apis: ['Date', 'setTimeout', 'setInterval'] });
+  const completed = deferred<{
+    exitCode: number | null;
+    signal: NodeJS.Signals | null;
+    sessionId: string;
+    reason: 'killed';
+  }>();
+  const stopped = deferred<void>();
+  const child = Object.assign(new EventEmitter(), { exitCode: null as number | null });
+  const terminals: Parameters<
+    NonNullable<ConversationRuntimeDependencies['turnAttempts']>['terminal']
+  >[0][] = [];
+  const settlements: Parameters<
+    NonNullable<ConversationRuntimeDependencies['finishBuddyChatRun']>
+  >[] = [];
+  let release = false;
+  const fixture = runtimeFixture({
+    turnAttempts: {
+      queued: () => {},
+      starting: () => {},
+      running: () => {},
+      stopping: () => {},
+      activity: () => {},
+      bindProviderSession: () => {},
+      terminal: (result) => terminals.push(result),
+    },
+    executeTurn: (() => ({
+      child,
+      events: (async function* () {
+        yield { type: 'turn.started' as const };
+        yield { type: 'text.delta' as const, text: 'Still working' };
+        await stopped.promise;
+        yield { type: 'turn.complete' as const, reason: 'killed' as const };
+      })(),
+      completed: completed.promise,
+      stop: () => {
+        release = true;
+      },
+    })) as NonNullable<ConversationRuntimeDependencies['executeTurn']>,
+  });
+  const conversation = new fixture.Conversation({
+    id: 'foreground-timeout',
+    workingDirectory: '/tmp',
+    configState: fixture.configState,
+    buddyContext: { buddyId: 'buddy-fixture', workspaceId: 'workspace-fixture' },
+  });
+  conversation.placement = 'background';
+  const execution = conversation.runCoordinationMessage(
+    'Keep working',
+    { buddyId: 'buddy-fixture', workspaceId: 'workspace-fixture', coordinationRunId: 'worker-run' },
+    'worker-token',
+    (status, detail) => settlements.push(['worker-run', 'worker-token', status, detail])
+  );
+  const rejected = assert.rejects(execution, /maximum runtime/);
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  conversation.expireCoordinationRun();
+  assert.equal(release, true);
+  assert.equal(terminals.at(-1)?.terminalCause, 'max_runtime_timeout');
+  assert.equal(terminals.at(-1)?.state, 'failed');
+  assert.equal(conversation.hasActiveProcess(), true);
+  assert.equal(settlements.length, 0, 'ownership must wait for process and event drain');
+  child.exitCode = 0;
+  child.emit('close');
+  stopped.resolve();
+  completed.resolve({
+    exitCode: null,
+    signal: 'SIGTERM',
+    sessionId: 'provider-session',
+    reason: 'killed',
+  });
+  await new Promise<void>((resolve) => setImmediate(resolve));
+  assert.equal(conversation.hasActiveProcess(), false);
+  assert.equal(settlements.length, 1);
+  await rejected;
+  assert.equal(settlements[0][2], 'failed');
+  assert.match(settlements[0][3] ?? '', /maximum runtime/);
 });

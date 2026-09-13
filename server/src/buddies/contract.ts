@@ -1,3 +1,7 @@
+import type { BuddyMemorySnapshot, BuddyTeamState } from '@unleashd/shared';
+
+import type { BuddyMessage } from '@unleashd/shared';
+
 export type BuddyAutomationRunStatus =
   | 'claimed'
   | 'running'
@@ -6,24 +10,8 @@ export type BuddyAutomationRunStatus =
   | 'failed'
   | 'cancelled';
 
-export type BuddyOperationName =
-  | 'buddy.get_current_work'
-  | 'buddy.get_inbox'
-  | 'buddy.get_automations'
-  | 'buddy.set_automation'
-  | 'buddy.new_project'
-  | 'buddy.update_project'
-  | 'buddy.update_memory'
-  | 'buddy.remember_note'
-  | 'buddy.recall'
-  | 'buddy.remember'
-  | 'buddy.compact_memory'
-  | 'buddy.delegate'
-  | 'buddy.request_review'
-  | 'buddy.complete_delegation'
-  | 'buddy.complete_assignment'
-  | 'buddy.submit_review'
-  | 'buddy.request_human_approval';
+import type { BuddyOperationName } from './operations';
+export type { BuddyOperationName } from './operations';
 
 export interface BuddyAutomationPolicy {
   max_runtime_seconds: number;
@@ -101,13 +89,14 @@ export interface BuddyApprovalRequest {
   resolved_at: string | null;
 }
 
-interface BuddyRecord {
+export interface BuddyRecord {
   id: string;
-  slug?: string;
-  soul_path?: string | null;
+  slug: string;
+  soul_path: string | null;
   name: string;
   role: string;
   status: string;
+  hire_quota: number;
   provider: string | null;
   model: string | null;
   reasoning_effort: string | null;
@@ -202,20 +191,7 @@ export interface BuddyMemoryRecall {
   truncated: boolean;
 }
 
-/**
- * The v2 package shape. summary/recentJournal remain only as a one-release
- * read compatibility projection for the existing desktop/mobile clients and
- * the still-legacy vendored package.
- */
-export interface BuddyMemory {
-  working: string;
-  longTerm: string;
-  workingRevision: number;
-  longTermRevision: number;
-  generation: number;
-  summary: string;
-  recentJournal: Array<{ path: string; content: string }>;
-}
+export type BuddyMemory = BuddyMemorySnapshot;
 
 export interface BuddyMemoryUpdateInput {
   documentKind?: BuddyMemoryDocumentKind;
@@ -279,20 +255,72 @@ interface BuddyDetailContext {
   relationships: unknown[];
   skills: BuddySkill[];
   soul: string;
-  memory: {
-    working: string;
-    longTerm: string;
-    workingRevision: number;
-    longTermRevision: number;
-    generation: number;
-    summary: string;
-    recentJournal: Array<{ path: string; content: string }>;
-  };
+  memory: BuddyMemory;
 }
 
 export interface BuddiesStorePort {
+  sendMessage(input: {
+    fromBuddy: string;
+    to: string;
+    workspace: string;
+    project?: string;
+    purpose: string;
+    body: string;
+    evidence?: string[];
+    parentConversationId?: string;
+    waitUntil?: string;
+  }): BuddyMessage;
+  getMessage(id: string): BuddyMessage | null;
+  listMessages(input?: {
+    buddy?: string;
+    workspace?: string;
+    toOwner?: boolean;
+    limit?: number;
+    offset?: number;
+    accept?: (message: BuddyMessage) => boolean;
+  }): BuddyMessage[];
+  bindMessageConversation(id: string, conversationId: string): BuddyMessage;
+  replyMessage(
+    id: string,
+    input: {
+      buddy: string;
+      conversationId: string;
+      outcome: string;
+      body: string;
+      evidence: string[];
+    }
+  ): BuddyMessage;
+  replyToOwnerMessage(
+    id: string,
+    input: { outcome: string; body: string; evidence: string[] }
+  ): BuddyMessage;
+  finishMessageWait(id: string, status?: 'cancelled' | 'timed_out'): BuddyMessage;
+  cancelConversationMessageWaits(conversationId: string): number;
+  finishConversationMessages(conversationId: string, reason?: string): number;
+  failMessage(id: string, error: string): BuddyMessage;
+
+  getBuddyTeamState(buddy: string): BuddyTeamState;
+  hireDirectReport(input: {
+    managerBuddy: string;
+    name: string;
+    role: string;
+    soul: string;
+    workspace: string;
+    additionalWorkspaces?: string[];
+    provider?: string;
+    model?: string;
+    reasoningEffort?: string;
+  }): { buddy: BuddyRecord; outcome: 'hired' | 'reactivated' | 'unchanged' };
+  retireDirectReport(input: {
+    managerBuddy: string;
+    subBuddy: string;
+    reason: string;
+    reassignOpenWorkTo?: string;
+  }): { buddy: BuddyRecord; reassignedProjects: number; disabledAutomations: number };
+
   dashboard(): unknown;
   overview(options?: { recentSince?: Date | string }): unknown;
+  listBuddies(): BuddyRecord[];
   getBuddy(id: string): BuddyRecord | null;
   updateBuddy(
     id: string,
@@ -301,6 +329,8 @@ export interface BuddiesStorePort {
       model?: string | null;
       reasoningEffort?: string | null;
       soulPath?: string | null;
+      hireQuota?: number;
+      status?: 'active' | 'paused' | 'archived';
     }
   ): BuddyRecord;
   listBuddyWorkspaces(buddy: string): unknown[];
@@ -363,11 +393,26 @@ export interface BuddiesStorePort {
   ): BuddyMemoryRevision;
   rememberNote?(buddy: string, input: BuddyMemoryNoteInput): BuddyMemoryNote;
   recall?(buddy: string, input: BuddyMemoryRecallInput): BuddyMemoryRecall;
-  /** Legacy compatibility for the pre-v2 package during the migration window. */
-  remember(buddy: string, input: Record<string, unknown>): unknown;
-  /** Legacy compatibility for the pre-v2 package during the migration window. */
-  compactMemory(buddy: string, input: Record<string, unknown>): unknown;
   recordAuditEvent(input: Record<string, unknown>): unknown;
+  summarizeMemoryWrites(input: {
+    buddy: string;
+    conversationId: string;
+    since: string;
+  }): { notes: number; working: number; longTerm: number };
+  listBuddyActivity(input: {
+    buddy: string;
+    workspace?: string;
+    project?: string;
+    limit?: number;
+  }): Array<{
+    id: string;
+    buddy_id: string;
+    workspace_id: string | null;
+    buddy_project_id: string | null;
+    operation: string;
+    created_at: string;
+    project_title: string | null;
+  }>;
   listAuditEvents(input?: {
     buddy?: string;
     workspace?: string;

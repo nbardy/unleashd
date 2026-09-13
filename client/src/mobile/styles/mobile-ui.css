@@ -1351,3 +1351,48 @@
   line-height: 1;
   cursor: pointer;
 }
+
+/* One assistant response owns text, tool activity, and one footer. */
+.mobile-assistant-response {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 12px;
+}
+
+.mobile-assistant-response__role {
+  margin-bottom: 4px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--accent-primary);
+}
+
+.mobile-assistant-response > .mobile-message__footer {
+  margin-top: 4px;
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+.mobile-response-activity__toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.mobile-response-activity__toggle:focus-visible {
+  outline: 1px solid var(--accent-primary);
+}
+
+.mobile-response-activity > .mobile-markdown {
+  margin: 4px 0;
+}

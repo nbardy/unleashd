@@ -1,12 +1,9 @@
+import { type ConversationConfig, createDefaultConversationConfig } from '@unleashd/shared';
 import { useAtom, useAtomValue } from 'jotai';
 import { useState } from 'react';
 import { createMergeConversations } from '../atoms/actions';
 import { defaultCwdAtom } from '../atoms/conversations';
 import { mergeModeAtom, mergeSelectionAtom } from '../atoms/mergeAtoms';
-import {
-  type ConversationConfigDraft,
-  createDefaultDraft,
-} from '../domain/conversation-config-draft';
 import { useProviderCatalog } from '../hooks/useProviderCatalog';
 import { ConversationConfigPicker } from './ConversationConfigPicker';
 import './MergeModal.css';
@@ -20,8 +17,8 @@ export function MergeModal({ onComplete }: { onComplete: (parentId: string) => v
   const [, setMergeMode] = useAtom(mergeModeAtom);
   const [mergeSelection, setMergeSelection] = useAtom(mergeSelectionAtom);
 
-  const [parentConfig, setParentConfig] = useState<ConversationConfigDraft>(() =>
-    createDefaultDraft('claude')
+  const [parentConfig, setParentConfig] = useState<ConversationConfig>(() =>
+    createDefaultConversationConfig('claude')
   );
   const { catalog, isLoading: isCatalogLoading, error: catalogError, retry } = useProviderCatalog();
   const [isSubmitting, setIsSubmitting] = useState(false);

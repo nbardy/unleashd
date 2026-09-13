@@ -5,8 +5,11 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import { BuddiesStore } from '@nbardy/buddies';
+import { BuddyWorkspaceActivitySchema } from '@unleashd/shared';
 import express from 'express';
 import type { BuddiesStorePort } from '../src/buddies/contract';
+import { createBuddyDispatchService } from '../src/buddies/dispatch-service';
+import { MESSAGE_BUDDY_OPERATIONS } from '../src/buddies/operations';
 import { registerBuddyRoutes } from '../src/buddies/routes';
 
 test('Buddy overview route forwards the optional cutoff and returns one projection', async () => {
@@ -61,6 +64,127 @@ test('Buddy overview route forwards the optional cutoff and returns one projecti
   }
 });
 
+test('workspace activity exposes foreground, delegated and automation jobs without credentials', async () => {
+  const app = express();
+  app.use(express.json());
+  const workspace = { id: 'workspace-1', name: 'wave_sim', root_path: '/repo/wave_sim' };
+  const coordinationRuns = [
+    {
+      id: 'foreground-run',
+      buddy_id: 'buddy-1',
+      workspace_id: workspace.id,
+      input_kind: 'chat',
+      status: 'running',
+      conversation_id: 'foreground-conversation',
+      started_at: '2026-09-12T10:00:00.000Z',
+      deadline: '2026-09-12T11:00:00.000Z',
+      policy: { foreground: true },
+      claim_token: 'must-stay-private',
+    },
+    {
+      id: 'delegated-run',
+      buddy_id: 'buddy-1',
+      workspace_id: workspace.id,
+      input_kind: 'message_request',
+      status: 'claimed',
+      conversation_id: null,
+      started_at: null,
+      deadline: '2026-09-12T11:00:00.000Z',
+      policy: { foreground: false },
+      claim_token: 'must-stay-private',
+    },
+  ];
+  const buddyRecords = [
+    { id: 'buddy-1', name: 'Wave Lead', role: 'Lead', status: 'active' },
+    { id: 'buddy-2', name: 'Researcher', role: 'Research', status: 'active' },
+  ];
+  const store = {
+    listBuddies: () => buddyRecords,
+    getBuddy: (id: string) => buddyRecords.find((buddy) => buddy.id === id) ?? null,
+    listBuddyWorkspaces: () => [workspace],
+    getBuddyRun: () => null,
+    listBuddyRuns: ({ status }: { status: string }) =>
+      coordinationRuns.filter((run) => run.status === status),
+    listAutomations: ({ buddy }: { buddy: string }) =>
+      buddy === 'buddy-2'
+        ? [
+            {
+              id: 'automation-1',
+              buddy_id: 'buddy-2',
+              workspace_id: workspace.id,
+              name: 'Nightly research',
+            },
+          ]
+        : [],
+    listNonterminalAutomationRuns: () => [
+      {
+        id: 'automation-run',
+        automation_id: 'automation-1',
+        status: 'cancel_requested',
+        conversation_id: 'automation-conversation',
+        claimed_at: '2026-09-12T09:00:00.000Z',
+        started_at: '2026-09-12T09:01:00.000Z',
+        claim_token: 'must-stay-private',
+      },
+    ],
+  } as unknown as BuddiesStorePort;
+  registerBuddyRoutes(app, {
+    getStore: async () => store,
+    getScheduler: () => null,
+    createConversation: async () => {
+      throw new Error('not used');
+    },
+    sendError(response, error, fallbackStatus) {
+      response
+        .status(fallbackStatus)
+        .json({ error: error instanceof Error ? error.message : String(error) });
+    },
+    getNextAutomationRunAt: () => '2026-09-13T00:00:00.000Z',
+    createId: () => 'test-id',
+    isConversationDeleted: async () => false,
+  });
+
+  const server = app.listen(0, '127.0.0.1');
+  try {
+    await new Promise<void>((resolve, reject) => {
+      server.once('listening', resolve);
+      server.once('error', reject);
+    });
+    const { port } = server.address() as AddressInfo;
+    const response = await fetch(
+      `http://127.0.0.1:${port}/api/buddies/workspaces/${workspace.id}/activity`
+    );
+    const raw = await response.json();
+    assert.equal(response.status, 200, JSON.stringify(raw));
+    const activity = BuddyWorkspaceActivitySchema.parse(raw);
+    assert.equal(activity.workspace.name, 'wave_sim');
+    assert.deepEqual(
+      activity.members.map((member) => [
+        member.name,
+        member.jobs.map((job) => [job.kind, job.source, job.status, job.conversationId]),
+      ]),
+      [
+        [
+          'Wave Lead',
+          [
+            ['foreground', 'conversation', 'running', 'foreground-conversation'],
+            ['background', 'delegation', 'claimed', null],
+          ],
+        ],
+        [
+          'Researcher',
+          [['background', 'automation', 'cancel_requested', 'automation-conversation']],
+        ],
+      ]
+    );
+    assert.doesNotMatch(JSON.stringify(raw), /claim_token|must-stay-private/);
+  } finally {
+    await new Promise<void>((resolve, reject) =>
+      server.close((error) => (error ? reject(error) : resolve()))
+    );
+  }
+});
+
 test('Buddy detail classifies review and automation conversations for separate UI surfaces', async () => {
   const app = express();
   app.use(express.json());
@@ -84,6 +208,13 @@ test('Buddy detail classifies review and automation conversations for separate U
     listBuddyRelationships: empty,
     listBuddySkills: empty,
     listDelegations: empty,
+    listMessages: empty,
+    getBuddyTeamState: () => ({
+      employment: { kind: 'top_level' },
+      hireQuota: 0,
+      heldDirectReports: 0,
+      remainingHireSlots: 0,
+    }),
     listReviews: () => [{ conversation_id: 'conversation-review' }],
     listApprovalRequests: empty,
   } as unknown as BuddiesStorePort;
@@ -337,9 +468,20 @@ test('manager review request dispatches one least-privilege reviewer conversatio
   const conversationId = 'a2e89aa3-f8df-4ceb-bf66-44cc031024fe';
   const app = express();
   app.use(express.json());
+  const dispatch = createBuddyDispatchService({
+    getStore: async () => store as unknown as BuddiesStorePort,
+    createConversation: async (input) => {
+      created.push(input as unknown as Record<string, unknown>);
+      return { id: conversationId, toJSON: () => ({ id: conversationId }) };
+    },
+    dispatchInitialMessage: async (_conversation, options) => options.enqueueAuthorized(() => {}),
+    abandonConversation: () => {},
+    createId: () => conversationId,
+  });
   registerBuddyRoutes(app, {
     getStore: async () => store as unknown as BuddiesStorePort,
     getScheduler: () => null,
+    dispatchMessage: dispatch.send,
     createConversation: async (input) => {
       created.push(input as unknown as Record<string, unknown>);
       return { id: conversationId, toJSON: () => ({ id: conversationId }) };
@@ -384,30 +526,33 @@ test('manager review request dispatches one least-privilege reviewer conversatio
     );
     assert.equal(response.status, 201);
     const body = (await response.json()) as {
-      review: { reviewer_buddy_id: string; subject_buddy_id: string; conversation_id: string };
+      data: {
+        message: {
+          to_buddy_id: string;
+          purpose: string;
+          child_conversation_id: string;
+          body: string;
+        };
+      };
     };
-    assert.equal(body.review.reviewer_buddy_id, critic.id);
-    assert.equal(body.review.subject_buddy_id, operator.id);
-    assert.equal(body.review.conversation_id, conversationId);
+    assert.equal(body.data.message.to_buddy_id, critic.id);
+    assert.equal(body.data.message.purpose, 'review');
+    assert.match(body.data.message.body, new RegExp(operator.id));
+    assert.equal(body.data.message.child_conversation_id, conversationId);
     assert.match(String(created[0]?.initialMessage), /delegation-proof/);
     assert.equal(created.length, 1);
+    assert.equal(
+      store.listReviews({ buddy: critic.id }).length,
+      0,
+      'new review uses only the generic mailbox'
+    );
     assert.deepEqual(created[0]?.context, {
       buddyId: critic.id,
       workspaceId: workspace.id,
       buddyProjectId: null,
       delegatedByBuddyId: lead.id,
       parentBuddyConversationId: null,
-      allowedBuddyOperations: [
-        'buddy.get_current_work',
-        'buddy.get_inbox',
-        'buddy.get_automations',
-        'buddy.update_memory',
-        'buddy.remember_note',
-        'buddy.recall',
-        'buddy.remember',
-        'buddy.submit_review',
-        'buddy.request_human_approval',
-      ],
+      allowedBuddyOperations: MESSAGE_BUDDY_OPERATIONS,
     });
   } finally {
     await new Promise<void>((resolve, reject) =>

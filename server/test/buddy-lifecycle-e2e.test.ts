@@ -12,7 +12,7 @@ import {
   BUDDY_REVIEW_RESULT_START,
   createBuddiesIntegration,
 } from '../src/buddies/integration';
-import { createBuddyMcpServer } from '../src/buddies/mcp-server';
+import { createLegacyBuddyMcpServer as createBuddyMcpServer } from '../src/buddies/mcp-server';
 
 test('Buddy closure loop survives restart with work, review, delegation, memory, and recent run', async () => {
   const root = mkdtempSync(join(tmpdir(), 'buddy-lifecycle-e2e-'));
@@ -96,7 +96,7 @@ test('Buddy closure loop survives restart with work, review, delegation, memory,
   assert.match(resolved.briefing, /LONG_TERM_MEMORY\.md/);
   assert.match(resolved.briefing, /Use recall before repeating an attempt/);
   assert.doesNotMatch(resolved.briefing, /destination evidence was stale/);
-  assert.match(resolved.briefing, /SOUL_CHANGE_PROPOSAL/);
+  assert.match(resolved.briefing, /cannot grant tools, budgets or permissions/);
   assert.match(resolved.briefing, /native `unleashd_buddy` tools/);
   assert.deepEqual(resolved.context.allowedBuddyOperations, ['buddy.get_current_work']);
   assert.ok(resolved.briefing.length <= 40_000);
@@ -105,7 +105,7 @@ test('Buddy closure loop survives restart with work, review, delegation, memory,
     buddyId: lead.id,
     workspaceId: workspace.id,
     automationRunId: 'automation-run-1',
-    allowedBuddyOperations: ['buddy.get_current_work', 'buddy.remember'],
+    allowedBuddyOperations: ['buddy.get_current_work', 'buddy.remember_note'],
   });
   assert.match(automationResolved.briefing, /AUTOMATION AUTHORITY/);
   assert.match(automationResolved.briefing, /CLI compatibility fallback is prohibited/);
@@ -143,20 +143,21 @@ test('Buddy closure loop survives restart with work, review, delegation, memory,
     assert.equal(completed.isError, undefined);
 
     const remembered = await mcpClient.callTool({
-      name: 'remember',
+      name: 'remember_note',
       arguments: {
-        kind: 'journal',
-        content:
-          'Concierge onboarding proof closed; metric:concierge-proof-2026-07-28 is the source.',
+        kind: 'decision',
+        body: 'Concierge onboarding proof closed; metric:concierge-proof-2026-07-28 is the source.',
       },
     });
     assert.equal(remembered.isError, undefined);
 
     const compacted = await mcpClient.callTool({
-      name: 'compact_memory',
+      name: 'update_memory',
       arguments: {
-        summary: 'Concierge onboarding was adjudicated from metric:concierge-proof-2026-07-28.',
-        retainDays: 0,
+        doc: 'long_term',
+        baseVersion: store.readBuddyMemory(lead.id).longTermRevision,
+        reasoning: 'Keep the durable result',
+        content: 'Concierge onboarding was adjudicated from metric:concierge-proof-2026-07-28.',
       },
     });
     assert.equal(compacted.isError, undefined);
@@ -247,7 +248,7 @@ test('Buddy closure loop survives restart with work, review, delegation, memory,
       workspace: workspace.id,
       scope: 'current',
     });
-    assert.equal(memory.matches.length, 1);
+    assert.equal(memory.matches.length, 2);
 
     const overview = store.overview({ recentSince: '2020-01-01T00:00:00.000Z' });
     assert.equal(overview.topLevel.length, 1);

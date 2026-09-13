@@ -2,6 +2,12 @@
 
 Date: 2026-08-04 (KST)
 
+Later recurrence: [September 10 Buddy foreground deadline](incident-2026-09-10-buddy-chat-timeout.md).
+The heartbeat fix below remained intact; a new Buddy claim inherited a separate
+600-second absolute deadline. A healthy event bridge cannot extend that deadline.
+The values below describe this incident's fix; current watchdog defaults live in
+`server/src/constants/timeouts.ts`.
+
 ## Outcome
 
 The ten-minute failure was an Unleashd bridge-idle timeout, not Codex's normal maximum run time.

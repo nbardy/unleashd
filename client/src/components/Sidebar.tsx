@@ -1,15 +1,14 @@
 import type { Conversation, ConversationConfig } from '@unleashd/shared';
 import {
   createDefaultConversationConfig,
-  getBuddyContext,
   isBuddyBuilderConversation,
   isBuddyConversation,
   providerSupportsFork,
 } from '@unleashd/shared';
 import { useAtom, useAtomValue } from 'jotai';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
-import { createConversation, endConversation } from '../atoms/actions';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { createConversation } from '../atoms/actions';
 import {
   activeConversationIdAtom,
   allConversationsAtom,
@@ -18,7 +17,6 @@ import {
   recentDirectoriesAtom,
   wsStatusAtom,
 } from '../atoms/conversations';
-import type { PendingConversationCreation } from '../atoms/conversations';
 import { mergeModeAtom, mergeSelectionAtom } from '../atoms/mergeAtoms';
 import {
   doneConversationsAtom,
@@ -29,71 +27,73 @@ import {
   markDone,
   promotedWorkersAtom,
   setLastWorkingDirectory,
-  setSidebarViewMode,
-  sidebarViewModeAtom,
   toggleGalleryCollapsed,
 } from '../atoms/ui';
+import {
+  buddySidebarOverviewAtom,
+  buddySidebarGroupsAtom,
+  buddyBuilderConversationsAtom,
+  buddySidebarCountAtom,
+  sidebarRunningCountByFolderAtom,
+  type BuddySidebarOverview,
+  type BuddySidebarItemData,
+} from '../atoms/buddy-sidebar';
+import { usePolledFetch } from '../hooks/usePolledFetch';
 import { useProviderCatalog } from '../hooks/useProviderCatalog';
-import { useSwarmRuntimeSnapshots } from '../hooks/useSwarmRuntimeSnapshots';
 import { folderGroupKey, normalizeFolderDirectory } from '../utils/directories';
 import { getProjectColor } from '../utils/projectColors';
-import { getProjectRoot } from '../utils/swarmUtils';
-import { getWorkerVisibilitySummary } from '../utils/swarmWorkerVisibility';
 import { formatTimeAgo, getConversationLastActivity, getMinutesElapsed } from '../utils/time';
 import { ConversationConfigPicker } from './ConversationConfigPicker';
 import { PathAutocomplete } from './PathAutocomplete';
 import { SearchPalette } from './SearchPalette';
 import { createBuddyViaBuilder } from './buddies/create-buddy-builder';
+import { buddyTabPath } from './buddies/buddy-tabs';
 import './Sidebar.css';
 
 const RECENT_CUTOFF_MS = 7 * 24 * 60 * 60 * 1000;
+
+function SidebarFolderIcon() {
+  return (
+    <svg
+      className="sidebar-folder-icon"
+      width="12"
+      height="12"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <path d="M3 7V5h6l2 2h10v12H3Z" />
+    </svg>
+  );
+}
+
+function SidebarBuddyIcon() {
+  return (
+    <svg
+      className="sidebar-buddy-icon"
+      width="12"
+      height="12"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      aria-hidden="true"
+    >
+      <circle cx="12" cy="8" r="4" />
+      <path d="M4 21v-2a8 8 0 0 1 16 0v2" />
+    </svg>
+  );
+}
+
 interface FolderGroup {
   directory: string;
   conversations: Conversation[];
   lastMessageTime: number;
-}
-
-interface BuddySidebarEmployee {
-  id: string;
-  name: string;
-  workspaces?: Array<{ id: string; name: string }>;
-  projects?: Array<{ id: string; name: string }>;
-  conversations?: Array<{
-    conversation_id?: string | null;
-    unleashd_conversation_id?: string | null;
-    workspace_id?: string | null;
-    status: string;
-    last_active_at?: string | null;
-  }>;
-}
-
-interface BuddySidebarRun {
-  conversationId: string;
-  buddyId: string;
-  buddyName: string;
-  workspaceId: string;
-  workspaceName: string;
-  status: string;
-  lastActiveAt: string;
-}
-
-interface BuddySidebarOverview {
-  employees: Array<{
-    buddy: BuddySidebarEmployee;
-    workspaces: Array<{ id: string; name: string }>;
-  }>;
-  recentRuns: BuddySidebarRun[];
-}
-
-interface BuddySidebarItemData {
-  buddyId: string;
-  buddyName: string;
-  conversations: Conversation[];
-  latestConversation: Conversation | null;
-  latestRun: BuddySidebarRun | null;
-  pendingCreation: PendingConversationCreation | null;
-  workspaceName: string | null;
-  lastActiveAt: Date | null;
 }
 
 /**
@@ -116,13 +116,12 @@ export function Sidebar() {
   const defaultCwd = useAtomValue(defaultCwdAtom);
   const wsStatus = useAtomValue(wsStatusAtom);
   const mergeMode = useAtomValue(mergeModeAtom);
-  const [mergeSelection, setMergeSelection] = useAtom(mergeSelectionAtom);
+  const [, setMergeSelection] = useAtom(mergeSelectionAtom);
 
   const lastWorkingDirectory = useAtomValue(lastWorkingDirectoryAtom);
   const doneConversations = useAtomValue(doneConversationsAtom);
   const lastSeenMessageIndex = useAtomValue(lastSeenMessageIndexAtom);
   const promotedWorkers = useAtomValue(promotedWorkersAtom);
-  const sidebarViewMode = useAtomValue(sidebarViewModeAtom);
   const galleryCollapsedProjects = useAtomValue(galleryCollapsedProjectsAtom);
 
   // Tick every 30s to keep time-ago displays current
@@ -135,33 +134,7 @@ export function Sidebar() {
   const promotedSet = useMemo(() => new Set(promotedWorkers), [promotedWorkers]);
   // O(1) lookup instead of O(n) Array.includes — avoids O(n*m) in visibleConversations filter
   const doneSet = useMemo(() => new Set(doneConversations), [doneConversations]);
-  const buddyConversations = useMemo(
-    () => allConversations.filter((conversation) => isBuddyConversation(conversation)),
-    [allConversations]
-  );
-
   // allConversations is already sorted newest-first by allConversationsAtom
-  const workerConversationsByProject = useMemo(() => {
-    const map = new Map<string, Conversation[]>();
-    for (const conv of allConversations) {
-      if (!conv.isWorker || promotedSet.has(conv.id)) continue;
-      const projectRoot = getProjectRoot(conv.workingDirectory);
-      const existing = map.get(projectRoot);
-      if (existing) {
-        existing.push(conv);
-      } else {
-        map.set(projectRoot, [conv]);
-      }
-    }
-    return map;
-  }, [allConversations, promotedSet]);
-
-  const workerProjectRoots = useMemo(
-    () => Array.from(workerConversationsByProject.keys()),
-    [workerConversationsByProject]
-  );
-  const runtimeSnapshots = useSwarmRuntimeSnapshots(workerProjectRoots);
-
   // Done conversations stay in the list for stable sort order — filtered at render time.
   // This prevents group/item order thrashing when marking conversations done.
   const visibleConversations = useMemo(
@@ -193,39 +166,9 @@ export function Sidebar() {
       ),
     [visibleConversations, conversationIds]
   );
-  const topLevelBuddyConversations = useMemo(
-    () =>
-      buddyConversations.filter(
-        (conv) => !(conv.parentConversationId && conversationIds.has(conv.parentConversationId))
-      ),
-    [buddyConversations, conversationIds]
-  );
-  // Builder threads get their own folder: same visibility rules as the main
-  // list (no hidden workers, no merge children, top-level only), newest first.
-  const builderConversations = useMemo(
-    () =>
-      allConversations.filter(
-        (conv) =>
-          isBuddyBuilderConversation(conv) &&
-          !(conv.isWorker && !promotedSet.has(conv.id)) &&
-          !conv.mergeChildMeta &&
-          !(conv.parentConversationId && conversationIds.has(conv.parentConversationId))
-      ),
-    [allConversations, conversationIds, promotedSet]
-  );
-  const buddyPendingCreations = useMemo(
-    () =>
-      pendingCreations.filter((creation) =>
-        isBuddyConversation(creation as unknown as Conversation)
-      ),
-    [pendingCreations]
-  );
+  const builderConversations = useAtomValue(buddyBuilderConversationsAtom);
   // Grouped view: split conversations into recent (48h, by folder) + older (flat)
   const { recentGroups, olderConversations } = useMemo(() => {
-    if (sidebarViewMode !== 'grouped') {
-      return { recentGroups: [] as FolderGroup[], olderConversations: [] as Conversation[] };
-    }
-
     const now = Date.now();
     const recentMap = new Map<string, Conversation[]>();
     const older: Conversation[] = [];
@@ -255,32 +198,9 @@ export function Sidebar() {
     groups.sort((a, b) => b.lastMessageTime - a.lastMessageTime);
 
     return { recentGroups: groups, olderConversations: older };
-  }, [topLevelConversations, sidebarViewMode]);
+  }, [topLevelConversations]);
 
   const collapsedSet = useMemo(() => new Set(galleryCollapsedProjects), [galleryCollapsedProjects]);
-
-  // Count active workers (isRunning && isWorker && not promoted) for the sidebar nav button
-  const { hasWorkers } = useMemo(() => {
-    let nextActive = 0;
-    let nextTotal = 0;
-    let nextHasWorkers = false;
-
-    for (const projectRoot of workerProjectRoots) {
-      const workers = workerConversationsByProject.get(projectRoot) ?? [];
-      const visibility = getWorkerVisibilitySummary(workers, runtimeSnapshots[projectRoot]);
-      nextActive += visibility.runningWorkers;
-      nextTotal += visibility.totalWorkers;
-      if (visibility.hasWorkers) {
-        nextHasWorkers = true;
-      }
-    }
-
-    return {
-      hasWorkers: nextHasWorkers,
-      activeWorkerCount: nextActive,
-      totalWorkerCount: nextTotal,
-    };
-  }, [runtimeSnapshots, workerConversationsByProject, workerProjectRoots]);
 
   // Deduplicated working directories from all conversations — fed to PathAutocomplete for fuzzy
   // matching. Derived atom (not a local useMemo) so the mobile create sheet reads the same list.
@@ -304,117 +224,21 @@ export function Sidebar() {
   const [modalError, setModalError] = useState<string | null>(null);
   const [isOpeningBuddyBuilder, setIsOpeningBuddyBuilder] = useState(false);
   const [buddyBuilderError, setBuddyBuilderError] = useState<string | null>(null);
-  const [buddyDirectory, setBuddyDirectory] = useState<BuddySidebarEmployee[]>([]);
-  const [buddyRecentRuns, setBuddyRecentRuns] = useState<BuddySidebarRun[]>([]);
-  const buddySidebarItems = useMemo(() => {
-    const conversationsByBuddy = new Map<string, Conversation[]>();
-    for (const conversation of topLevelBuddyConversations) {
-      const buddyId = getBuddyContext(conversation)?.buddyId;
-      if (!buddyId) continue;
-      const list = conversationsByBuddy.get(buddyId);
-      if (list) list.push(conversation);
-      else conversationsByBuddy.set(buddyId, [conversation]);
-    }
-    for (const list of conversationsByBuddy.values()) {
-      list.sort(
-        (a, b) =>
-          getConversationLastActivity(b).getTime() - getConversationLastActivity(a).getTime()
-      );
-    }
-    const latestConversationByBuddy = new Map<string, Conversation>();
-    for (const [buddyId, list] of conversationsByBuddy) {
-      if (list[0]) latestConversationByBuddy.set(buddyId, list[0]);
-    }
-
-    const latestRunByBuddy = new Map<string, BuddySidebarRun>();
-    for (const run of buddyRecentRuns) {
-      if (!latestRunByBuddy.has(run.buddyId)) latestRunByBuddy.set(run.buddyId, run);
-    }
-
-    const pendingByBuddy = new Map<string, PendingConversationCreation>();
-    for (const creation of buddyPendingCreations) {
-      const buddyId = getBuddyContext(creation as unknown as Conversation)?.buddyId;
-      if (!buddyId || pendingByBuddy.has(buddyId)) continue;
-      pendingByBuddy.set(buddyId, creation);
-    }
-
-    const workspaceNames = new Map(
-      buddyDirectory.flatMap((employee) =>
-        (employee.workspaces ?? []).map((workspace) => [workspace.id, workspace.name] as const)
-      )
-    );
-    const buddyIds = new Set([
-      ...buddyDirectory.map((employee) => employee.id),
-      ...latestConversationByBuddy.keys(),
-      ...latestRunByBuddy.keys(),
-      ...pendingByBuddy.keys(),
-    ]);
-
-    return Array.from(buddyIds)
-      .map((buddyId): BuddySidebarItemData => {
-        const latestConversation = latestConversationByBuddy.get(buddyId) ?? null;
-        const latestRun = latestRunByBuddy.get(buddyId) ?? null;
-        const pendingCreation = pendingByBuddy.get(buddyId) ?? null;
-        const timestamps = [
-          latestConversation ? getConversationLastActivity(latestConversation).getTime() : 0,
-          latestRun ? new Date(latestRun.lastActiveAt).getTime() : 0,
-          pendingCreation?.createdAt.getTime() ?? 0,
-        ];
-        const lastActiveMs = Math.max(...timestamps.filter(Number.isFinite));
-        const directoryEntry = buddyDirectory.find((employee) => employee.id === buddyId);
-        const workspaceId =
-          getBuddyContext(latestConversation as unknown as Conversation)?.workspaceId ??
-          getBuddyContext(pendingCreation as unknown as Conversation)?.workspaceId;
-
-        return {
-          buddyId,
-          buddyName: directoryEntry?.name ?? latestRun?.buddyName ?? 'Buddy',
-          conversations: (conversationsByBuddy.get(buddyId) ?? []).filter(
-            (c) => !doneSet.has(c.sessionId ?? c.id)
-          ),
-          latestConversation,
-          latestRun,
-          pendingCreation,
-          workspaceName:
-            (workspaceId && workspaceNames.get(workspaceId)) ?? latestRun?.workspaceName ?? null,
-          lastActiveAt: lastActiveMs > 0 ? new Date(lastActiveMs) : null,
-        };
-      })
-      .sort((left, right) => {
-        const activityDelta =
-          (right.lastActiveAt?.getTime() ?? 0) - (left.lastActiveAt?.getTime() ?? 0);
-        return activityDelta || left.buddyName.localeCompare(right.buddyName);
-      });
-  }, [buddyDirectory, buddyPendingCreations, buddyRecentRuns, topLevelBuddyConversations, doneSet]);
+  const { data: buddyOverview } = usePolledFetch<BuddySidebarOverview>(
+    '/api/buddies/overview',
+    30_000
+  );
+  const [, setBuddyOverview] = useAtom(buddySidebarOverviewAtom);
+  useEffect(() => {
+    if (buddyOverview) setBuddyOverview(buddyOverview);
+  }, [buddyOverview, setBuddyOverview]);
+  const buddySidebarGroups = useAtomValue(buddySidebarGroupsAtom);
+  const buddyCount = useAtomValue(buddySidebarCountAtom);
+  const runningCountByFolder = useAtomValue(sidebarRunningCountByFolderAtom);
   const [expandedBuddies, setExpandedBuddies] = useState<Set<string>>(() => new Set());
   const [expandedDirectories, setExpandedDirectories] = useState<Set<string>>(() => new Set());
   const navigate = useNavigate();
   const location = useLocation();
-
-  useEffect(() => {
-    let cancelled = false;
-    const loadBuddyOverview = () => {
-      void fetch('/api/buddies/overview')
-        .then((response) => (response.ok ? response.json() : Promise.reject()))
-        .then((payload: BuddySidebarOverview) => {
-          if (!cancelled) {
-            setBuddyDirectory(
-              payload.employees.map(({ buddy, workspaces }) => ({ ...buddy, workspaces }))
-            );
-            setBuddyRecentRuns(payload.recentRuns);
-          }
-        })
-        .catch(() => {
-          // Keep the last good projection through a transient server restart.
-        });
-    };
-    loadBuddyOverview();
-    const interval = window.setInterval(loadBuddyOverview, 30_000);
-    return () => {
-      cancelled = true;
-      window.clearInterval(interval);
-    };
-  }, []);
 
   const handleNewConversation = useCallback(() => {
     // Default to the most recently active conversation's working directory,
@@ -446,19 +270,11 @@ export function Sidebar() {
     (item: BuddySidebarItemData) => {
       // Reuse existing new-conversation flow but seed buddyContext so the
       // new thread is owned by that buddy — mirrors BuddiesDashboard talk().
-      const workspaceId =
-        getBuddyContext(item.latestConversation as unknown as Conversation)?.workspaceId ??
-        (item.pendingCreation
-          ? getBuddyContext(item.pendingCreation as unknown as Conversation)?.workspaceId
-          : undefined) ??
-        buddyDirectory.find((employee) => employee.id === item.buddyId)?.workspaces?.[0]?.id ??
-        item.latestRun?.workspaceId ??
-        '';
+      const workspaceId = item.workspaceId;
       const workingDirectory =
         item.latestConversation?.workingDirectory ??
-        (item.pendingCreation as unknown as { workingDirectory?: string })?.workingDirectory ??
-        allConversations.find((c) => getBuddyContext(c)?.buddyId === item.buddyId)
-          ?.workingDirectory ??
+        item.pendingCreation?.workingDirectory ??
+        item.workingDirectory ??
         lastWorkingDirectory ??
         defaultCwd ??
         '/';
@@ -478,7 +294,7 @@ export function Sidebar() {
       });
       navigate(`/chat/${id}`);
     },
-    [allConversations, buddyDirectory, configDraft, defaultCwd, lastWorkingDirectory, navigate]
+    [configDraft, defaultCwd, lastWorkingDirectory, navigate]
   );
 
   // Shift+Space global shortcut to open "New Conversation" dialog.
@@ -586,38 +402,6 @@ export function Sidebar() {
   return (
     <div className={`sidebar ${mergeMode ? 'sidebar--merge-mode' : ''}`}>
       <div className="sidebar-header">
-        <nav className="sidebar-primary-nav" aria-label="Main navigation">
-          <button
-            type="button"
-            className={`sidebar-nav-item ${!location.pathname.startsWith('/workers') && !location.pathname.startsWith('/buddies') ? 'active' : ''}`}
-            onClick={() => navigate('/')}
-            aria-current={
-              !location.pathname.startsWith('/workers') && !location.pathname.startsWith('/buddies')
-                ? 'page'
-                : undefined
-            }
-          >
-            <span>chat</span>
-          </button>
-          <button
-            type="button"
-            className={`sidebar-nav-item ${location.pathname.startsWith('/workers') ? 'active' : ''}`}
-            onClick={() => navigate('/workers')}
-            title={hasWorkers ? 'Open swarm dashboard' : 'Open swarm dashboard (no workers yet)'}
-            aria-current={location.pathname.startsWith('/workers') ? 'page' : undefined}
-          >
-            <span>swarms</span>
-          </button>
-          <button
-            type="button"
-            className={`sidebar-nav-item ${location.pathname.startsWith('/buddies') ? 'active' : ''}`}
-            onClick={() => navigate('/buddies')}
-            aria-current={location.pathname.startsWith('/buddies') ? 'page' : undefined}
-          >
-            <span>buddies</span>
-          </button>
-        </nav>
-
         <div className="sidebar-actions" aria-label="Quick actions">
           <button
             type="button"
@@ -783,79 +567,6 @@ export function Sidebar() {
               </div>
             </button>
           ))}
-        {(topLevelConversations.length > 0 ||
-          pendingCreations.length > 0 ||
-          buddySidebarItems.length > 0) && (
-          <div
-            className="sidebar-section-header"
-            style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              marginBottom: '8px',
-            }}
-          >
-            <span>{sidebarViewMode === 'list' ? 'All Conversations' : 'Recent Projects'}</span>
-            <div className="view-mode-toggle">
-              <button
-                type="button"
-                className={`view-mode-btn ${sidebarViewMode === 'grouped' ? 'active' : ''}`}
-                onClick={() => setSidebarViewMode('grouped')}
-                title="Grouped by folder"
-              >
-                <svg
-                  role="img"
-                  aria-label="icon"
-                  width="14"
-                  height="14"
-                  viewBox="0 0 14 14"
-                  fill="none"
-                >
-                  <rect
-                    x="1"
-                    y="1"
-                    width="12"
-                    height="3"
-                    rx="1"
-                    fill="currentColor"
-                    opacity="0.5"
-                  />
-                  <rect x="3" y="5.5" width="10" height="2" rx="0.5" fill="currentColor" />
-                  <rect x="3" y="8.5" width="10" height="2" rx="0.5" fill="currentColor" />
-                  <rect
-                    x="1"
-                    y="11.5"
-                    width="12"
-                    height="1.5"
-                    rx="0.5"
-                    fill="currentColor"
-                    opacity="0.5"
-                  />
-                </svg>
-              </button>
-              <button
-                type="button"
-                className={`view-mode-btn ${sidebarViewMode === 'list' ? 'active' : ''}`}
-                onClick={() => setSidebarViewMode('list')}
-                title="Flat list"
-              >
-                <svg
-                  role="img"
-                  aria-label="icon"
-                  width="14"
-                  height="14"
-                  viewBox="0 0 14 14"
-                  fill="none"
-                >
-                  <rect x="1" y="1" width="12" height="2" rx="0.5" fill="currentColor" />
-                  <rect x="1" y="4.5" width="12" height="2" rx="0.5" fill="currentColor" />
-                  <rect x="1" y="8" width="12" height="2" rx="0.5" fill="currentColor" />
-                  <rect x="1" y="11.5" width="12" height="2" rx="0.5" fill="currentColor" />
-                </svg>
-              </button>
-            </div>
-          </div>
-        )}
         <div className="sidebar-section">
           <div className="folder-group folder-group--buddies">
             <div
@@ -863,11 +574,6 @@ export function Sidebar() {
               style={{ borderLeftColor: 'var(--ai)' }}
               onClick={() => toggleGalleryCollapsed('__buddies__')}
             >
-              <span
-                className={`folder-chevron ${collapsedSet.has('__buddies__') ? 'collapsed' : ''}`}
-              >
-                &#x25BC;
-              </span>
               <button
                 type="button"
                 className="folder-group-name folder-group-name-button"
@@ -891,243 +597,218 @@ export function Sidebar() {
               >
                 +
               </button>
-              <span className="folder-group-count">{buddySidebarItems.length || ''}</span>
+              <span className="folder-group-count">{buddyCount || ''}</span>
             </div>
             {buddyBuilderError && (
               <div className="sidebar-buddy-error" role="alert">
                 {buddyBuilderError}
               </div>
             )}
-            {!collapsedSet.has('__buddies__') && buddySidebarItems.length === 0 && (
+            {!collapsedSet.has('__buddies__') && buddyCount === 0 && (
               <div className="folder-group-all-done">No Buddies yet</div>
             )}
             {!collapsedSet.has('__buddies__') &&
-              buddySidebarItems.length > 0 &&
-              buddySidebarItems.map((item) => {
-                const buddyKey = `buddy:${item.buddyId}`;
-                const isBuddyCollapsed = collapsedSet.has(buddyKey);
-                const isExpanded = expandedBuddies.has(item.buddyId);
-                const convs = item.conversations;
-                const visibleConvs = isExpanded ? convs : convs.slice(0, 3);
-                const remaining = convs.length - visibleConvs.length;
+              buddySidebarGroups.map((group) => {
+                if (group.kind === 'builder')
+                  return (
+                    <div key={group.key} className="folder-group folder-group--builder">
+                      <div
+                        className="folder-group-header"
+                        style={{ borderLeftColor: 'var(--ai)' }}
+                        onClick={() => toggleGalleryCollapsed('__builder__')}
+                      >
+                        <span className="folder-group-name" title="Buddy Builder conversations">
+                          Buddy Builder
+                        </span>
+                        <button
+                          type="button"
+                          className="folder-group-add-btn folder-group-add-btn--section"
+                          aria-label="Start a new Buddy Builder conversation"
+                          title="Start a new Buddy Builder conversation"
+                          disabled={isOpeningBuddyBuilder}
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            void handleNewBuddyBuilder();
+                          }}
+                        >
+                          +
+                        </button>
+                        <span className="folder-group-count">
+                          {builderConversations.filter((c) => !doneSet.has(c.sessionId ?? c.id))
+                            .length || ''}
+                        </span>
+                      </div>
+                      {!collapsedSet.has('__builder__') &&
+                        (() => {
+                          const builderActive = builderConversations.filter(
+                            (c) => !doneSet.has(c.sessionId ?? c.id)
+                          );
+                          if (builderActive.length === 0) return null;
+                          const isBuilderExpanded = expandedDirectories.has('__builder__');
+                          const visibleBuilder = isBuilderExpanded
+                            ? builderActive
+                            : builderActive.slice(0, 3);
+                          const remainingBuilder = builderActive.length - visibleBuilder.length;
+                          return (
+                            <>
+                              {visibleBuilder.map((conv) => (
+                                <ConversationItem
+                                  key={conv.id}
+                                  conv={conv}
+                                  isActive={conv.id === activeConversationId}
+                                  hasUnseen={hasUnseenMessages(
+                                    lastSeenMessageIndex,
+                                    conv.id,
+                                    conversationMessageCount(conv)
+                                  )}
+                                  showFolderBadge={false}
+                                  onSelect={handleSelectConversation}
+                                  onDone={handleDone}
+                                />
+                              ))}
+                              {builderActive.length > 3 && (
+                                <button
+                                  type="button"
+                                  className="show-more-btn"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setExpandedDirectories((prev) => {
+                                      const next = new Set(prev);
+                                      if (next.has('__builder__')) next.delete('__builder__');
+                                      else next.add('__builder__');
+                                      return next;
+                                    });
+                                  }}
+                                >
+                                  {isBuilderExpanded
+                                    ? 'show less'
+                                    : `show ${remainingBuilder} more`}
+                                </button>
+                              )}
+                            </>
+                          );
+                        })()}
+                    </div>
+                  );
+                const project = group.project;
+                const projectKey = `buddy-project:${project.workspaceId}`;
+                const isProjectCollapsed = collapsedSet.has(projectKey);
                 return (
-                  <div key={item.buddyId} className="buddy-subgroup">
-                    <div
-                      className="folder-group-header folder-group-header--buddy"
-                      style={{ borderLeftColor: 'var(--ai)', cursor: 'pointer' }}
-                      onClick={() => toggleGalleryCollapsed(buddyKey)}
-                    >
-                      <span className={`folder-chevron ${isBuddyCollapsed ? 'collapsed' : ''}`}>
-                        &#x25BC;
-                      </span>
-                      <span className="folder-group-name" title={item.buddyName}>
-                        {item.buddyName}
-                      </span>
+                  <div key={project.workspaceId} className="sidebar-buddy-project">
+                    <div className="folder-group-header sidebar-buddy-project-header sidebar-project-divider">
+                      <Link
+                        className="sidebar-project-link"
+                        to={`/buddies/workspaces/${encodeURIComponent(project.workspaceId)}`}
+                        title={`Open ${project.name} workspace activity`}
+                      >
+                        <SidebarFolderIcon />
+                        <span className="folder-group-name">{project.name}</span>
+                      </Link>
                       <button
                         type="button"
-                        className="folder-group-add-btn"
-                        aria-label={`New conversation with ${item.buddyName}`}
-                        title={`New conversation with ${item.buddyName}`}
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleNewBuddyConversation(item);
-                        }}
+                        className="sidebar-project-toggle"
+                        aria-label={`${isProjectCollapsed ? 'Expand' : 'Collapse'} ${project.name}`}
+                        aria-expanded={!isProjectCollapsed}
+                        onClick={() => toggleGalleryCollapsed(projectKey)}
                       >
-                        +
+                        <span className="sidebar-project-rule" aria-hidden="true" />
+                        <FolderRunningStatus count={project.runningCount} />
+                        <span className="folder-group-count">{project.items.length}</span>
+                        <span className="sidebar-project-chevron" aria-hidden="true">
+                          {isProjectCollapsed ? '›' : '⌄'}
+                        </span>
                       </button>
-                      <span className="folder-group-count folder-group-count--right">
-                        {convs.length || ''}
-                      </span>
                     </div>
-                    {!isBuddyCollapsed && (
-                      <>
-                        {visibleConvs.length > 0 ? (
-                          visibleConvs.map((conv) => (
-                            <ConversationItem
-                              key={conv.id}
-                              conv={conv}
-                              isActive={conv.id === activeConversationId}
-                              hasUnseen={hasUnseenMessages(
-                                lastSeenMessageIndex,
-                                conv.id,
-                                conversationMessageCount(conv)
-                              )}
-                              showFolderBadge={false}
-                              onSelect={handleSelectConversation}
-                              onDone={handleDone}
-                            />
-                          ))
-                        ) : item.pendingCreation ? (
-                          <div className="conversation-item pending-creation">
-                            <div className="conversation-row">
-                              <span className="conversation-title">
-                                {item.pendingCreation.error
-                                  ? `Failed: ${item.pendingCreation.error}`
-                                  : `Starting ${item.pendingCreation.config.provider}…`}
-                              </span>
-                              <span className="status-indicator pending" />
+                    {!isProjectCollapsed &&
+                      project.items.map((item) => {
+                        const buddyKey = `buddy:${project.workspaceId}:${item.buddyId}`;
+                        const isExpanded = expandedBuddies.has(buddyKey);
+                        const convs = item.conversations;
+                        const visibleConvs = isExpanded ? convs : convs.slice(0, 3);
+                        const remaining = convs.length - visibleConvs.length;
+                        return (
+                          <div key={item.buddyId} className="buddy-subgroup">
+                            <div className="folder-group-header folder-group-header--buddy">
+                              <button
+                                type="button"
+                                className="folder-group-add-btn"
+                                aria-label={`New conversation with ${item.buddyName}`}
+                                title={`New conversation with ${item.buddyName}`}
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  handleNewBuddyConversation(item);
+                                }}
+                              >
+                                +
+                              </button>
+                              <SidebarBuddyIcon />
+                              <Link
+                                className="folder-group-name sidebar-buddy-link"
+                                to={`/buddies/${item.buddyId}`}
+                                title={item.buddyName}
+                              >
+                                {item.buddyName}
+                              </Link>
+                              <BuddyRunningStatus item={item} />
                             </div>
+                            <>
+                              {visibleConvs.length > 0 ? (
+                                visibleConvs.map((conv) => (
+                                  <ConversationItem
+                                    key={conv.id}
+                                    conv={conv}
+                                    isActive={conv.id === activeConversationId}
+                                    hasUnseen={hasUnseenMessages(
+                                      lastSeenMessageIndex,
+                                      conv.id,
+                                      conversationMessageCount(conv)
+                                    )}
+                                    showFolderBadge={false}
+                                    onSelect={handleSelectConversation}
+                                    onDone={handleDone}
+                                  />
+                                ))
+                              ) : item.pendingCreation ? (
+                                <div className="conversation-item pending-creation">
+                                  <div className="conversation-row">
+                                    <span className="conversation-title">
+                                      {item.pendingCreation.error
+                                        ? `Failed: ${item.pendingCreation.error}`
+                                        : `Starting ${item.pendingCreation.config.provider}…`}
+                                    </span>
+                                    <span className="status-indicator pending" />
+                                  </div>
+                                </div>
+                              ) : item.backgroundConversationCount === 0 ? (
+                                <div className="folder-group-all-done">No conversations yet</div>
+                              ) : null}
+                              {convs.length > 3 && (
+                                <button
+                                  type="button"
+                                  className="show-more-btn"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setExpandedBuddies((prev) => {
+                                      const next = new Set(prev);
+                                      if (next.has(buddyKey)) next.delete(buddyKey);
+                                      else next.add(buddyKey);
+                                      return next;
+                                    });
+                                  }}
+                                >
+                                  {isExpanded ? 'show less' : `show ${remaining} more`}
+                                </button>
+                              )}
+                            </>
                           </div>
-                        ) : (
-                          <div className="folder-group-all-done">No conversations yet</div>
-                        )}
-                        {convs.length > 3 && (
-                          <button
-                            type="button"
-                            className="show-more-btn"
-                            onClick={(e) => {
-                              e.stopPropagation();
-                              setExpandedBuddies((prev) => {
-                                const next = new Set(prev);
-                                if (next.has(item.buddyId)) next.delete(item.buddyId);
-                                else next.add(item.buddyId);
-                                return next;
-                              });
-                            }}
-                          >
-                            {isExpanded ? 'show less' : `show ${remaining} more`}
-                          </button>
-                        )}
-                      </>
-                    )}
+                        );
+                      })}
                   </div>
                 );
               })}
           </div>
-          {builderConversations.length > 0 && (
-            <div className="folder-group folder-group--builder">
-              <div
-                className="folder-group-header"
-                style={{ borderLeftColor: 'var(--ai)' }}
-                onClick={() => toggleGalleryCollapsed('__builder__')}
-              >
-                <span
-                  className={`folder-chevron ${collapsedSet.has('__builder__') ? 'collapsed' : ''}`}
-                >
-                  &#x25BC;
-                </span>
-                <span className="folder-group-name" title="Buddy Builder conversations">
-                  Buddy Builder
-                </span>
-                <button
-                  type="button"
-                  className="folder-group-add-btn folder-group-add-btn--section"
-                  aria-label="Start a new Buddy Builder conversation"
-                  title="Start a new Buddy Builder conversation"
-                  disabled={isOpeningBuddyBuilder}
-                  onClick={(event) => {
-                    event.stopPropagation();
-                    void handleNewBuddyBuilder();
-                  }}
-                >
-                  +
-                </button>
-                <span className="folder-group-count">
-                  {builderConversations.filter((c) => !doneSet.has(c.sessionId ?? c.id)).length ||
-                    ''}
-                </span>
-              </div>
-              {!collapsedSet.has('__builder__') &&
-                (() => {
-                  const builderActive = builderConversations.filter(
-                    (c) => !doneSet.has(c.sessionId ?? c.id)
-                  );
-                  if (builderActive.length === 0) return null;
-                  const isBuilderExpanded = expandedDirectories.has('__builder__');
-                  const visibleBuilder = isBuilderExpanded
-                    ? builderActive
-                    : builderActive.slice(0, 3);
-                  const remainingBuilder = builderActive.length - visibleBuilder.length;
-                  return (
-                    <>
-                      {visibleBuilder.map((conv) => (
-                        <ConversationItem
-                          key={conv.id}
-                          conv={conv}
-                          isActive={conv.id === activeConversationId}
-                          hasUnseen={hasUnseenMessages(
-                            lastSeenMessageIndex,
-                            conv.id,
-                            conversationMessageCount(conv)
-                          )}
-                          showFolderBadge={false}
-                          onSelect={handleSelectConversation}
-                          onDone={handleDone}
-                        />
-                      ))}
-                      {builderActive.length > 3 && (
-                        <button
-                          type="button"
-                          className="show-more-btn"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setExpandedDirectories((prev) => {
-                              const next = new Set(prev);
-                              if (next.has('__builder__')) next.delete('__builder__');
-                              else next.add('__builder__');
-                              return next;
-                            });
-                          }}
-                        >
-                          {isBuilderExpanded ? 'show less' : `show ${remainingBuilder} more`}
-                        </button>
-                      )}
-                    </>
-                  );
-                })()}
-            </div>
-          )}
         </div>
-        {sidebarViewMode === 'list' ? (
-          (() => {
-            const listActive = topLevelConversations.filter(
-              (conv) => !doneSet.has(conv.sessionId ?? conv.id)
-            );
-            const isListExpanded = expandedDirectories.has('__list__');
-            const visibleList = isListExpanded ? listActive : listActive.slice(0, 3);
-            const remainingList = listActive.length - visibleList.length;
-            return (
-              <>
-                {visibleList.map((conv) => (
-                  <ConversationItem
-                    key={conv.id}
-                    conv={conv}
-                    isActive={conv.id === activeConversationId}
-                    hasUnseen={hasUnseenMessages(
-                      lastSeenMessageIndex,
-                      conv.id,
-                      conversationMessageCount(conv)
-                    )}
-                    showFolderBadge
-                    onSelect={handleSelectConversation}
-                    onDone={handleDone}
-                    mergeMode={mergeMode}
-                    mergeSelected={mergeSelection.has(conv.id)}
-                    mergeDisabled={
-                      mergeMode && (!providerSupportsFork(conv.provider) || conv.isRunning)
-                    }
-                  />
-                ))}
-                {listActive.length > 3 && (
-                  <button
-                    type="button"
-                    className="show-more-btn"
-                    onClick={() => {
-                      setExpandedDirectories((prev) => {
-                        const next = new Set(prev);
-                        if (next.has('__list__')) next.delete('__list__');
-                        else next.add('__list__');
-                        return next;
-                      });
-                    }}
-                  >
-                    {isListExpanded ? 'show less' : `show ${remainingList} more`}
-                  </button>
-                )}
-              </>
-            );
-          })()
-        ) : (
+        {
           <>
             {recentGroups.length > 0 && (
               <div className="sidebar-section">
@@ -1135,6 +816,7 @@ export function Sidebar() {
                   const isCollapsed = collapsedSet.has(group.directory);
                   const dirDisplay = group.directory.replace(/^\/Users\/[^/]+/, '~');
                   const projectColor = getProjectColor(group.directory);
+                  const runningCount = runningCountByFolder.get(group.directory) ?? 0;
                   // Filter done at render time — group position stays stable
                   const activeConvs = group.conversations.filter(
                     (c) => !doneSet.has(c.sessionId ?? c.id)
@@ -1143,16 +825,15 @@ export function Sidebar() {
                   return (
                     <div key={group.directory} className="folder-group">
                       <div
-                        className="folder-group-header"
+                        className="folder-group-header sidebar-project-divider"
                         onClick={() => toggleGalleryCollapsed(group.directory)}
                         style={{ borderLeftColor: projectColor }}
                       >
-                        <span className={`folder-chevron ${isCollapsed ? 'collapsed' : ''}`}>
-                          &#x25BC;
-                        </span>
+                        <SidebarFolderIcon />
                         <span className="folder-group-name" title={group.directory}>
                           {dirDisplay}
                         </span>
+                        <span className="sidebar-project-rule" aria-hidden="true" />
                         <button
                           type="button"
                           className="folder-group-add-btn"
@@ -1198,6 +879,7 @@ export function Sidebar() {
                         >
                           +
                         </button>
+                        <FolderRunningStatus count={runningCount} />
                         <span className="folder-group-count">{activeConvs.length || ''}</span>
                       </div>
                       {!isCollapsed &&
@@ -1302,9 +984,67 @@ export function Sidebar() {
               );
             })()}
           </>
-        )}
+        }
       </div>
     </div>
+  );
+}
+
+function BuddyRunningStatus({ item }: { item: BuddySidebarItemData }) {
+  const backgroundPath = `${buddyTabPath(item.buddyId, 'background')}?workspace=${encodeURIComponent(item.workspaceId)}`;
+  return (
+    <span className="sidebar-buddy-running">
+      <Link
+        to={buddyTabPath(item.buddyId, 'conversations')}
+        className={item.foregroundRunningCount ? 'sidebar-buddy-running-active' : ''}
+        aria-label={`${item.foregroundRunningCount} foreground conversations running for ${item.buddyName}`}
+        title={`${item.foregroundRunningCount} foreground conversations running`}
+      >
+        <svg
+          width="12"
+          height="12"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.5"
+          aria-hidden="true"
+        >
+          <path d="M4 4h16v12H9l-5 4V4Z" />
+        </svg>
+        {item.foregroundRunningCount}
+      </Link>
+      <span aria-hidden="true">/</span>
+      <Link
+        to={backgroundPath}
+        className={item.backgroundRunningCount ? 'sidebar-buddy-running-active' : ''}
+        aria-label={`${item.backgroundRunningCount} background tasks running for ${item.buddyName}`}
+        title={`${item.backgroundRunningCount} background tasks running · View background conversations`}
+      >
+        <svg
+          width="12"
+          height="12"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.5"
+          aria-hidden="true"
+        >
+          <path d="M4 16H2V2h14v2M7 7h15v15H7Z" />
+        </svg>
+        {item.backgroundRunningCount}
+      </Link>
+    </span>
+  );
+}
+
+function FolderRunningStatus({ count }: { count: number }) {
+  if (count === 0) return null;
+  const label = `${count} running`;
+  return (
+    <span className="folder-group-running" aria-label={`${label} in this project`} title={label}>
+      <span className="status-indicator running" aria-hidden="true" />
+      <span>{label}</span>
+    </span>
   );
 }
 
@@ -1372,7 +1112,7 @@ function ConversationItem({
     .join(' ');
 
   // ONE row shape for every conversation, buddy or not:
-  //   [merge ✓] [folder badge] title — time [NEW] [status/Stop]  (+ Done on hover)
+  //   [merge ✓] [folder badge] title — time [status]  (+ Done on hover)
   // There used to be a second two-line branch here, kept only for non-buddy rows.
   // showFolderBadge is a display slot, not a second layout: grouped views hide the
   // badge because the group header already names the folder.
@@ -1413,27 +1153,18 @@ function ConversationItem({
             </span>
           </>
         )}
-        {hasUnseen && <span className="new-badge">NEW</span>}
         {conv.isRunning ? (
-          <div className="running-status-control">
-            <span className="status-indicator running" aria-label="Conversation is running" />
-            <button
-              type="button"
-              className="thread-stop-btn"
-              title="Stop this conversation and clear queued work"
-              aria-label={`Stop conversation ${conv.id.substring(0, 8)}`}
-              onClick={(event) => {
-                event.stopPropagation();
-                endConversation(conv.id);
-              }}
-            >
-              Stop
-            </button>
-          </div>
+          <span className="status-indicator running" aria-label="Conversation is running" />
         ) : (
           <span
-            className={`status-indicator ${conv.queue?.length ? 'pending' : ''}`}
-            aria-label={conv.queue?.length ? 'Conversation has queued work' : 'Conversation idle'}
+            className={`status-indicator ${conv.queue?.length ? 'pending' : hasUnseen ? 'unread' : ''}`}
+            aria-label={
+              conv.queue?.length
+                ? 'Conversation has queued work'
+                : hasUnseen
+                  ? 'Conversation finished with unread messages'
+                  : 'Conversation idle'
+            }
           />
         )}
       </div>

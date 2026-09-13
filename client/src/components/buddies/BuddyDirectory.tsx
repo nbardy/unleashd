@@ -1,5 +1,12 @@
+import { useAtomValue } from 'jotai';
+import { archivedBuddyIdsAtom } from '../../atoms/buddy-visibility';
+import { useState } from 'react';
 import type { BuddyOverview } from './types';
-import { buddyCardMetrics, selectDirectoryEmployees } from './ui-contract';
+import {
+  buddyCardMetrics,
+  filterDirectoryEmployees,
+  selectDirectoryEmployees,
+} from './ui-contract';
 
 const CARD_VISUALS = ['horizon', 'archive', 'orbit', 'ember', 'tide'] as const;
 
@@ -14,7 +21,9 @@ export function BuddyDirectory({
   onNew: () => void;
   creating: boolean;
 }) {
-  const visibleBuddies = selectDirectoryEmployees(overview);
+  const archived = useAtomValue(archivedBuddyIdsAtom);
+  const [query, setQuery] = useState('');
+  const visibleBuddies = filterDirectoryEmployees(selectDirectoryEmployees(overview), query);
 
   return (
     <main className="buddies-directory-content">
@@ -24,10 +33,38 @@ export function BuddyDirectory({
           <h1>Buddies</h1>
           <p>Meet the specialist teammates shaping work across your projects.</p>
         </div>
-        <span className="buddies-directory-count">
-          {visibleBuddies.length} {visibleBuddies.length === 1 ? 'Buddy' : 'Buddies'}
-        </span>
+        <div className="buddies-directory-tools">
+          <label className="buddies-directory-search">
+            <span className="sr-only">Search buddies</span>
+            <svg aria-hidden="true" width="15" height="15" viewBox="0 0 16 16" fill="none">
+              <circle cx="7" cy="7" r="5.5" stroke="currentColor" strokeWidth="1.5" />
+              <line
+                x1="11"
+                y1="11"
+                x2="14.5"
+                y2="14.5"
+                stroke="currentColor"
+                strokeWidth="1.5"
+                strokeLinecap="round"
+              />
+            </svg>
+            <input
+              type="search"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Search buddies…"
+              autoComplete="off"
+              spellCheck={false}
+            />
+          </label>
+          <span className="buddies-directory-count">
+            {visibleBuddies.length} {visibleBuddies.length === 1 ? 'Buddy' : 'Buddies'}
+          </span>
+        </div>
       </header>
+      {visibleBuddies.length === 0 && query.trim() && (
+        <output className="buddies-directory-empty">No buddies match “{query.trim()}”.</output>
+      )}
       <div className="buddy-card-grid">
         <button
           type="button"
@@ -38,14 +75,19 @@ export function BuddyDirectory({
           <span className="buddy-card-visual buddy-card-visual--new" aria-hidden="true">
             <span className="buddy-card-visual__plus">+</span>
           </span>
-          <span className="buddy-card-title">{creating ? 'Opening Builder…' : 'Create a new Buddy'}</span>
+          <span className="buddy-card-title">
+            {creating ? 'Opening Builder…' : 'Create a new Buddy'}
+          </span>
           <span className="buddy-card-hover-copy">
             <span>Describe a role in chat and the Builder will shape the brief with you.</span>
-            <span className="buddy-card-hover-action">{creating ? 'Opening…' : 'Start here →'}</span>
+            <span className="buddy-card-hover-action">
+              {creating ? 'Opening…' : 'Start here →'}
+            </span>
           </span>
         </button>
         {visibleBuddies.map((employeeOverview, index) => {
-          const { buddy, workspaces, team } = employeeOverview;
+          const { buddy, workspaces } = employeeOverview;
+          if (archived.has(buddy.id)) return null;
           const metrics = buddyCardMetrics(employeeOverview);
           const visual = CARD_VISUALS[index % CARD_VISUALS.length];
           return (
@@ -71,7 +113,7 @@ export function BuddyDirectory({
                       {workspace.name}
                     </span>
                   ))}
-                  {team.length > 0 && <span>{metrics.team} reports</span>}
+                  {metrics.team > 0 && <span>{metrics.team} reports</span>}
                   <span>{metrics.open} open</span>
                   <span>{metrics.blocked} blocked</span>
                 </span>

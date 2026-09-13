@@ -1,17 +1,31 @@
+import './buddies/BuddyTeamExecution.css';
+import { BuddyTeamExecution } from './buddies/BuddyTeamExecution';
+import { newId } from '../utils/ids';
+import { archivedBuddyIdsAtom } from '../atoms/buddy-visibility';
+import { BuddySettings } from './buddies/BuddySettings';
+import './buddies/BuddyMessages.css';
+import './buddies/BuddyCoordination.css';
+import './buddies/BuddySoulConflict.css';
+import { BuddyTeamStateSchema } from '@unleashd/shared';
 import { useAtomValue } from 'jotai';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, Navigate, useNavigate, useParams } from 'react-router-dom';
 import { createConversation } from '../atoms/actions';
 import { allConversationIdsAtom } from '../atoms/conversations';
 import { BuddyAutomationsTab } from './buddies/BuddyAutomationsTab';
+import { BuddyBackgroundTasks } from './buddies/BuddyBackgroundTasks';
+import './buddies/BuddyBackgroundTasks.css';
+import { BuddyCoordination } from './buddies/BuddyCoordination';
 import { BuddyDirectory } from './buddies/BuddyDirectory';
 import { BuddyExecutionProfile } from './buddies/BuddyExecutionProfile';
-import { BuddyMemoryPanel } from './buddies/BuddyMemoryPanel';
+import { BuddyMemoryWorkspace } from './buddies/BuddyMemoryWorkspace';
+import { BuddyMessages } from './buddies/BuddyMessages';
+import { BuddyProjectExecution } from './buddies/BuddyProjectExecution';
+import './buddies/BuddyProjectExecution.css';
 import { buddyApi as api, asArray } from './buddies/api';
 import {
   buildBuddyContextForTalk,
   countReviewConversations,
-  deriveBuddyHierarchy,
   filterAutomationConversations,
   filterVisibleConversations,
   getLatestWorkspaceConversation,
@@ -27,17 +41,12 @@ import {
   parseEmployeeTab,
 } from './buddies/buddy-tabs';
 import { createBuddyViaBuilder } from './buddies/create-buddy-builder';
-import { formatMemoryWriteError, normalizeBuddyMemory } from './buddies/memory';
 import {
   type Buddy,
   type BuddyAutomation,
-  type BuddyMemory,
-  type BuddyMemoryDocumentKind,
-  type BuddyMemoryRecallResult,
   type BuddyOverview,
   type BuddyProject,
   type ConversationLink,
-  EMPTY_MEMORY,
   type EmployeeRecord,
   type EmployeeTab,
   type LegacyWorkItem,
@@ -78,14 +87,13 @@ export function BuddiesDashboard() {
   const availableConversationIds = useMemo(() => new Set(conversationIds), [conversationIds]);
   const [overview, setOverview] = useState<BuddyOverview | null>(null);
   const [employee, setEmployee] = useState<EmployeeRecord | null>(null);
-  const [memory, setMemory] = useState<BuddyMemory>(EMPTY_MEMORY);
   const [automations, setAutomations] = useState<BuddyAutomation[]>([]);
-  const [memoryError, setMemoryError] = useState<string | null>(null);
   const [automationError, setAutomationError] = useState<string | null>(null);
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string>('');
   // The tab is the URL, not state. `routedTab === null` means the URL is not
   // canonical yet (`/buddies/:id`, or a junk segment); we render the default
   // tab's redirect below rather than showing one tab under another tab's URL.
+  const archived = useAtomValue(archivedBuddyIdsAtom);
   const routedTab = parseEmployeeTab(tabSegment);
   const activeTab: EmployeeTab = routedTab ?? (buddyId ? 'conversations' : 'work');
   const [showReviewConversations, setShowReviewConversations] = useState(false);
@@ -114,14 +122,7 @@ export function BuddiesDashboard() {
       if (signal?.aborted || generation !== loadGenerationRef.current) return;
       const buddy = (detail.buddy ?? detail) as unknown as Buddy;
       const workspaces = asArray<Workspace>(detail, 'workspaces');
-      const relationships = asArray<{
-        from_buddy_id: string;
-        to_buddy_id: string;
-        kind: string;
-        from_buddy_name?: string;
-        to_buddy_name?: string;
-      }>(detail, 'relationships');
-      const { manager, directReports } = deriveBuddyHierarchy(relationships, buddy.id);
+      const teamState = BuddyTeamStateSchema.parse(detail);
       const legacyWorkItems = asArray<LegacyWorkItem>(detail, 'legacyWorkItems');
       const record: EmployeeRecord = {
         buddy,
@@ -134,8 +135,9 @@ export function BuddiesDashboard() {
           detail,
           'skills'
         ),
-        manager,
-        directReports,
+        manager: teamState.manager,
+        directReports: teamState.team,
+        messages: asArray<EmployeeRecord['messages'][number]>(detail, 'messages'),
         reviews: asArray<EmployeeRecord['reviews'][number]>(detail, 'reviews'),
         approvals: asArray<EmployeeRecord['approvals'][number]>(detail, 'approvals'),
       };
@@ -149,27 +151,6 @@ export function BuddiesDashboard() {
       setSelectedWorkspaceId(preferredWorkspace?.id ?? '');
     },
     [buddyId]
-  );
-
-  const loadMemory = useCallback(
-    async (signal?: AbortSignal, generation = loadGenerationRef.current) => {
-      if (!buddyId) return;
-      const encoded = encodeURIComponent(buddyId);
-      const [contextPayload, memoryPayload] = await Promise.all([
-        api<Record<string, unknown>>(`/api/buddies/${encoded}/context`, { signal }),
-        api<BuddyMemory>(`/api/buddies/${encoded}/memory`, { signal }),
-      ]);
-      if (signal?.aborted || generation !== loadGenerationRef.current) return;
-      setMemory(
-        normalizeBuddyMemory(
-          memoryPayload,
-          typeof contextPayload.soul === 'string' ? contextPayload.soul : undefined,
-          employee?.buddy.soul_path
-        )
-      );
-      setMemoryError(null);
-    },
-    [buddyId, employee?.buddy.soul_path]
   );
 
   const loadAutomations = useCallback(
@@ -195,9 +176,7 @@ export function BuddiesDashboard() {
     // land on the Conversations list instead of the tab you left from.
     if (buddyId) {
       setEmployee(null);
-      setMemory(EMPTY_MEMORY);
       setAutomations([]);
-      setMemoryError(null);
       setAutomationError(null);
       setSelectedWorkspaceId('');
       setShowReviewConversations(false);
@@ -211,27 +190,20 @@ export function BuddiesDashboard() {
       }
     });
     return () => controller.abort();
-  }, [buddyId, loadDirectory, loadEmployee]);
+  }, [buddyId, loadDirectory, loadEmployee, archived]);
 
   useEffect(() => {
     if (!buddyId || !employee || activeTab === 'work' || activeTab === 'conversations') return;
     const generation = loadGenerationRef.current;
     const controller = new AbortController();
-    if (activeTab === 'memory') {
-      void loadMemory(controller.signal, generation).catch((cause: unknown) => {
-        if (!controller.signal.aborted) {
-          setMemoryError(cause instanceof Error ? cause.message : String(cause));
-        }
-      });
-    } else {
-      void loadAutomations(controller.signal, generation).catch((cause: unknown) => {
-        if (!controller.signal.aborted) {
-          setAutomationError(cause instanceof Error ? cause.message : String(cause));
-        }
-      });
-    }
+    if (activeTab !== 'automations') return;
+    void loadAutomations(controller.signal, generation).catch((cause: unknown) => {
+      if (!controller.signal.aborted) {
+        setAutomationError(cause instanceof Error ? cause.message : String(cause));
+      }
+    });
     return () => controller.abort();
-  }, [activeTab, buddyId, employee, loadAutomations, loadMemory]);
+  }, [activeTab, buddyId, employee, loadAutomations]);
 
   const workspace = useMemo(
     () => selectWorkspace(employee?.workspaces ?? [], selectedWorkspaceId),
@@ -288,81 +260,6 @@ export function BuddiesDashboard() {
     } finally {
       setBusy(null);
     }
-  };
-
-  const runMemoryAction = async (key: string, action: () => Promise<unknown>) => {
-    setBusy(key);
-    setMemoryError(null);
-    try {
-      await action();
-      await loadMemory();
-    } catch (cause) {
-      setMemoryError(formatMemoryWriteError(cause));
-      throw cause;
-    } finally {
-      setBusy(null);
-    }
-  };
-
-  const updateMemory = async (
-    documentKind: BuddyMemoryDocumentKind,
-    content: string,
-    reasoning: string,
-    baseVersion: number
-  ) => {
-    await runMemoryAction(`memory-${documentKind}`, () =>
-      api(
-        `/api/buddies/${encodeURIComponent(employee?.buddy.id ?? '')}/memory/${documentKind === 'longTerm' ? 'long_term' : 'working'}`,
-        {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            content,
-            reasoning,
-            baseVersion,
-            workspaceId: workspace?.id,
-          }),
-        }
-      )
-    );
-  };
-
-  const rememberNote = async (input: {
-    topic: string;
-    kind: string;
-    body: string;
-    scope: 'current' | 'home' | 'all';
-  }) => {
-    await runMemoryAction('memory-note', () =>
-      api(`/api/buddies/${encodeURIComponent(employee?.buddy.id ?? '')}/memory/notes`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...input, workspaceId: workspace?.id }),
-      })
-    );
-  };
-
-  const recallNotes = async (input: {
-    pattern: string;
-    scope: 'current' | 'home' | 'all';
-  }): Promise<BuddyMemoryRecallResult> =>
-    api<{ data: BuddyMemoryRecallResult }>(
-      `/api/buddies/${encodeURIComponent(employee?.buddy.id ?? '')}/memory/recall`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...input, workspaceId: workspace?.id }),
-      }
-    ).then((result) => result.data);
-
-  const rememberLegacy = async (kind: 'journal' | 'curated', content: string) => {
-    await runMemoryAction('remember', () =>
-      api(`/api/buddies/${encodeURIComponent(employee?.buddy.id ?? '')}/memory`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ kind, content }),
-      })
-    );
   };
 
   const talk = useCallback(
@@ -427,6 +324,8 @@ export function BuddiesDashboard() {
     talk(targetWorkspace, projectId);
   };
 
+  if (buddyId && archived.has(buddyId)) return <Navigate to="/buddies" replace />;
+
   // Canonicalise `/buddies/:id` (and any junk tab segment) onto a real tab URL.
   // `replace` keeps Back pointing at whatever linked here, not at a redirect loop.
   if (buddyId && routedTab === null) {
@@ -485,7 +384,14 @@ export function BuddiesDashboard() {
               <p>{employee.buddy.role}</p>
               <div className="buddy-identity-meta">
                 <span>
-                  Reports to <strong>{employee.manager?.name ?? 'Owner'}</strong>
+                  Reports to{' '}
+                  {employee.manager ? (
+                    <Link to={`/buddies/${encodeURIComponent(employee.manager.id)}`}>
+                      {employee.manager.name}
+                    </Link>
+                  ) : (
+                    <strong>Owner</strong>
+                  )}
                 </span>
                 {employee.directReports.length > 0 ? (
                   <details className="buddy-report-menu">
@@ -497,7 +403,7 @@ export function BuddiesDashboard() {
                       {employee.directReports.map((report) => (
                         <Link to={`/buddies/${report.id}`} key={report.id}>
                           <strong>{report.name}</strong>
-                          <span>{report.role ?? 'Direct report'} →</span>
+                          <span>{report.status === 'archived' ? 'Archived' : report.role} →</span>
                         </Link>
                       ))}
                     </div>
@@ -524,10 +430,17 @@ export function BuddiesDashboard() {
               busy={busy !== null}
               onSave={(profile) =>
                 mutate('profile', () =>
-                  api(`/api/buddies/${encodeURIComponent(employee.buddy.id)}/profile`, {
-                    method: 'PATCH',
+                  api('/api/buddies/resources/update_profile', {
+                    method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(profile),
+                    body: JSON.stringify({
+                      workspaceId: workspace?.id,
+                      targetBuddyId: employee.buddy.id,
+                      baseRevision: employee.buddy.profile_revision,
+                      key: newId(),
+                      reason: 'Owner edited execution settings',
+                      changes: profile,
+                    }),
                   })
                 )
               }
@@ -557,121 +470,94 @@ export function BuddiesDashboard() {
       </header>
 
       <main className="buddies-content">
-        {employee.directReports.length > 0 && workspace && (
+        {activeTab === 'mailbox' && (
+          <BuddyMessages
+            key={employee.buddy.id}
+            buddyId={employee.buddy.id}
+            buddyNames={Object.fromEntries(
+              [
+                employee.buddy,
+                ...employee.directReports,
+                ...(employee.manager ? [employee.manager] : []),
+              ].map((member) => [member.id, member.name])
+            )}
+            messages={employee.messages}
+            availableConversationIds={availableConversationIds}
+            onReply={async (messageId, reply) => {
+              await api(`/api/buddies/messages/${encodeURIComponent(messageId)}/reply`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(reply),
+              });
+              await loadEmployee();
+            }}
+          />
+        )}
+        {activeTab === 'work' && employee.directReports.length > 0 && workspace && (
           <details className="buddy-lead-tools">
-            <summary>Lead tools · delegate and review reports</summary>
+            <summary>Send work or request a review</summary>
             <form
               className="buddy-form"
               onSubmit={(event) => {
                 event.preventDefault();
                 const form = event.currentTarget;
                 const data = new FormData(form);
-                setBusy('delegate');
-                void api<{ conversation?: { id?: string }; conversationId?: string }>(
-                  `/api/buddies/${encodeURIComponent(employee.buddy.id)}/delegations`,
-                  {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                      toBuddyId: data.get('reportId'),
-                      workspaceId: workspace.id,
-                      purpose: data.get('purpose'),
-                    }),
-                  }
-                )
-                  .then(async (result) => {
+                setBusy('send');
+                void api(`/api/buddies/${encodeURIComponent(employee.buddy.id)}/messages`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({
+                    to: data.get('reportId'),
+                    workspaceId: workspace.id,
+                    purpose: data.get('purpose'),
+                    body: data.get('body'),
+                    evidence: String(data.get('evidence') ?? '')
+                      .split('\n')
+                      .map((line) => line.trim())
+                      .filter(Boolean),
+                  }),
+                })
+                  .then(async () => {
                     form.reset();
                     await loadEmployee();
-                    const conversationId = result.conversation?.id ?? result.conversationId;
-                    if (conversationId) navigate(`/chat/${conversationId}`);
                   })
-                  .catch((cause: Error) => setError(cause.message))
+                  .catch((cause: unknown) =>
+                    setError(cause instanceof Error ? cause.message : String(cause))
+                  )
                   .finally(() => setBusy(null));
               }}
             >
-              <h2>Delegate outcome</h2>
               <select name="reportId" aria-label="Direct report">
-                {employee.directReports.map((report) => (
-                  <option value={report.id} key={report.id}>
-                    {report.name} · {report.role}
-                  </option>
-                ))}
-              </select>
-              <input name="purpose" required placeholder="Outcome and expected evidence" />
-              <button type="submit" disabled={busy !== null}>
-                Delegate
-              </button>
-            </form>
-            <form
-              className="buddy-form"
-              onSubmit={(event) => {
-                event.preventDefault();
-                const form = event.currentTarget;
-                const data = new FormData(form);
-                setBusy('review');
-                void api<{ conversation?: { id?: string }; conversationId?: string }>(
-                  `/api/buddies/${encodeURIComponent(employee.buddy.id)}/reviews`,
-                  {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                      subjectBuddyId: data.get('subjectBuddyId'),
-                      workspaceId: workspace.id,
-                      purpose: data.get('purpose'),
-                    }),
-                  }
-                )
-                  .then(async (result) => {
-                    form.reset();
-                    await loadEmployee();
-                    const conversationId = result.conversation?.id ?? result.conversationId;
-                    if (conversationId) navigate(`/chat/${conversationId}`);
-                  })
-                  .catch((cause: Error) => setError(cause.message))
-                  .finally(() => setBusy(null));
-              }}
-            >
-              <h2>Start employee review</h2>
-              <select name="subjectBuddyId" aria-label="Employee to review">
-                {employee.directReports.map((report) => (
-                  <option value={report.id} key={report.id}>
-                    {report.name} · {report.role}
-                  </option>
-                ))}
+                {employee.directReports.map(
+                  (report) =>
+                    report.status === 'active' && (
+                      <option value={report.id} key={report.id}>
+                        {report.name} · {report.role}
+                      </option>
+                    )
+                )}
               </select>
               <input
                 name="purpose"
                 required
-                placeholder="Evidence to inspect and decision to reach"
+                aria-label="Purpose"
+                placeholder="Purpose, such as review or implementation"
+              />
+              <textarea
+                name="body"
+                required
+                aria-label="Request"
+                placeholder="Outcome, context, and expected evidence"
+              />
+              <textarea
+                name="evidence"
+                aria-label="Evidence"
+                placeholder="Supporting references, one per line"
               />
               <button type="submit" disabled={busy !== null}>
-                Start skeptical review
+                Send message
               </button>
             </form>
-            <div className="buddy-review-grid">
-              {employee.reviews.map((review) => (
-                <article key={review.id}>
-                  <span>
-                    {review.subject_buddy_name ?? review.subject_buddy_id} ·{' '}
-                    {review.reviewer_role ?? employee.buddy.role}
-                  </span>
-                  <strong>{review.verdict ?? 'Pending verdict'}</strong>
-                  <p>{review.summary ?? 'No review summary recorded.'}</p>
-                  {review.evidence.length > 0 && (
-                    <pre>{JSON.stringify(review.evidence, null, 2)}</pre>
-                  )}
-                  {review.created_at && (
-                    <small>{new Date(review.created_at).toLocaleDateString()}</small>
-                  )}
-                </article>
-              ))}
-              {employee.reviews.length === 0 && (
-                <p className="buddy-empty">
-                  No structured reviews yet. Reviews should cite observed evidence and apply the
-                  skepticism appropriate to the reviewer’s role.
-                </p>
-              )}
-            </div>
           </details>
         )}
 
@@ -730,64 +616,63 @@ export function BuddiesDashboard() {
               </span>
             </div>
             <div className="buddy-work-list">
-              {workspaceProjects
-                .filter((project) => !['done', 'cancelled'].includes(project.status))
-                .map((project) => {
-                  const todoProgress = buddyProjectTodoProgress(project);
-                  const existingConversation = employee.conversations.some((conversation) => {
-                    const conversationId =
-                      conversation.conversation_id ?? conversation.unleashd_conversation_id;
-                    return (
-                      conversation.buddy_project_id === project.id &&
-                      Boolean(conversationId && availableConversationIds.has(conversationId))
-                    );
-                  });
+              {workspaceProjects.map((project) => {
+                const todoProgress = buddyProjectTodoProgress(project);
+                const existingConversation = employee.conversations.some((conversation) => {
+                  const conversationId =
+                    conversation.conversation_id ?? conversation.unleashd_conversation_id;
                   return (
-                    <article
-                      className={`buddy-work-card status-${project.status}`}
-                      key={project.id}
-                    >
-                      <span
-                        className="buddy-task-status"
-                        role="img"
-                        aria-label={STATUS_LABELS[project.status]}
-                      >
-                        {project.status === 'done' ? '✓' : ''}
-                      </span>
-                      <div className="buddy-work-card__body">
-                        <div className="buddy-work-card__title">
-                          <h3>{project.title}</h3>
-                          <span className={`buddy-work-status status-${project.status}`}>
-                            {STATUS_LABELS[project.status]}
-                          </span>
-                        </div>
-                        <div className="buddy-work-card__operations">
-                          <span>
-                            <strong>Next action</strong>
-                            {project.next_action ?? 'Not set'}
-                          </span>
-                          {project.blocked_reason && (
-                            <span className="buddy-work-blocker">
-                              <strong>Blocker</strong>
-                              {project.blocked_reason}
-                            </span>
-                          )}
-                          <span className="buddy-work-todos">
-                            <strong>Todos</strong>
-                            {todoProgress.done}/{todoProgress.total}
-                          </span>
-                        </div>
-                      </div>
-                      <button
-                        type="button"
-                        disabled={!workspace}
-                        onClick={() => workspace && openProjectConversation(workspace, project.id)}
-                      >
-                        {existingConversation ? 'Open conversation' : 'Start conversation'}
-                      </button>
-                    </article>
+                    conversation.buddy_project_id === project.id &&
+                    Boolean(conversationId && availableConversationIds.has(conversationId))
                   );
-                })}
+                });
+                return (
+                  <article className={`buddy-work-card status-${project.status}`} key={project.id}>
+                    <span
+                      className="buddy-task-status"
+                      role="img"
+                      aria-label={STATUS_LABELS[project.status]}
+                    >
+                      {project.status === 'done' ? '✓' : ''}
+                    </span>
+                    <div className="buddy-work-card__body">
+                      <div className="buddy-work-card__title">
+                        <h3>{project.title}</h3>
+                        <span className={`buddy-work-status status-${project.status}`}>
+                          {STATUS_LABELS[project.status]}
+                        </span>
+                      </div>
+                      <div className="buddy-work-card__operations">
+                        <span>
+                          <strong>Next action</strong>
+                          {project.next_action ?? 'Not set'}
+                        </span>
+                        {project.blocked_reason && (
+                          <span className="buddy-work-blocker">
+                            <strong>Blocker</strong>
+                            {project.blocked_reason}
+                          </span>
+                        )}
+                        <span className="buddy-work-todos">
+                          <strong>Todos</strong>
+                          {todoProgress.done}/{todoProgress.total}
+                        </span>
+                      </div>
+                      <BuddyProjectExecution
+                        project={project}
+                        availableConversationIds={availableConversationIds}
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      disabled={!workspace}
+                      onClick={() => workspace && openProjectConversation(workspace, project.id)}
+                    >
+                      {existingConversation ? 'Open conversation' : 'Start conversation'}
+                    </button>
+                  </article>
+                );
+              })}
             </div>
 
             {legacyWork.length > 0 && (
@@ -889,18 +774,36 @@ export function BuddiesDashboard() {
           </section>
         )}
 
+        {activeTab === 'background' && (
+          <BuddyBackgroundTasks buddyId={employee.buddy.id} workspaces={employee.workspaces} />
+        )}
+
         {activeTab === 'memory' && (
-          <BuddyMemoryPanel
+          <BuddyMemoryWorkspace
+            key={`${employee.buddy.id}:${workspace?.id}`}
             buddy={employee.buddy}
-            memory={memory}
+            workspaceId={workspace?.id ?? ''}
             variant="desktop"
-            error={memoryError}
-            onRetry={() => void loadMemory().catch(() => {})}
-            onUpdate={updateMemory}
-            onRememberLegacy={rememberLegacy}
-            onRememberNote={rememberNote}
-            onRecall={recallNotes}
           />
+        )}
+
+        {activeTab === 'team' && workspace && (
+          <BuddyTeamExecution
+            key={`${employee.buddy.id}:${workspace.id}`}
+            buddyId={employee.buddy.id}
+            workspaceId={workspace.id}
+            availableConversationIds={availableConversationIds}
+          />
+        )}
+        {activeTab === 'settings' && (
+          <>
+            <BuddyCoordination
+              key={employee.buddy.id}
+              buddyId={employee.buddy.id}
+              availableConversationIds={availableConversationIds}
+            />
+            <BuddySettings buddyId={employee.buddy.id} name={employee.buddy.name} />
+          </>
         )}
 
         {activeTab === 'automations' && (

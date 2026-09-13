@@ -1,6 +1,6 @@
 import { ProviderCatalogSchema } from '@unleashd/shared';
 import type { ProviderCatalog } from '@unleashd/shared';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useSyncExternalStore } from 'react';
 
 type CatalogSnapshot = {
   catalog: ProviderCatalog | null;
@@ -15,9 +15,20 @@ const snapshot: CatalogSnapshot = {
 };
 const listeners = new Set<() => void>();
 let activeController: AbortController | null = null;
+let snapshotVersion = 0;
 
 function publish(): void {
+  snapshotVersion += 1;
   for (const listener of listeners) listener();
+}
+
+function subscribe(listener: () => void): () => void {
+  listeners.add(listener);
+  return () => listeners.delete(listener);
+}
+
+function getSnapshotVersion(): number {
+  return snapshotVersion;
 }
 
 async function fetchCatalog(signal: AbortSignal): Promise<ProviderCatalog> {
@@ -67,15 +78,14 @@ export interface ProviderCatalogState {
  * deduplicates requests. A forced retry aborts the stale in-flight request.
  */
 export function useProviderCatalog(): ProviderCatalogState {
-  const [, render] = useState(0);
+  // React rechecks this version after subscribing. That closes the window where
+  // another picker can finish the shared request between this component's
+  // render and effect, otherwise the catalog sits cached until an unrelated
+  // state change (such as closing the modal) happens to re-render it.
+  useSyncExternalStore(subscribe, getSnapshotVersion, getSnapshotVersion);
 
   useEffect(() => {
-    const listener = () => render((value) => value + 1);
-    listeners.add(listener);
     void loadCatalog(false).catch(() => {});
-    return () => {
-      listeners.delete(listener);
-    };
   }, []);
 
   const retry = useCallback(() => {

@@ -20,6 +20,11 @@ const FALLBACK_OPENCODE_MODELS: ModelInfo[] = [
     displayName: 'Muse Spark 1.2 Contributor (Meta)',
     isDefault: false,
   },
+  {
+    id: 'meta/muse-spark-1.3-contributor',
+    displayName: 'Muse Spark 1.3 Contributor (Meta)',
+    isDefault: false,
+  },
 ];
 
 const opencodeProvider: Provider = {

@@ -15,6 +15,7 @@ import type {
   BuddyContext,
   Conversation,
   ConversationKind,
+  ConversationSessionBinding,
   DiscoveredConversation,
   Message,
   Provider,
@@ -34,6 +35,7 @@ import {
   extractBuddyContext,
   extractSwarmDebugPrefix,
   extractWorkerMetadata,
+  stripMergePrefix,
 } from './jsonl';
 
 // =============================================================================
@@ -78,6 +80,8 @@ export interface DiskAdapter {
   provider: Provider;
   discoverFiles(): Promise<string[]>;
   parseFile(filePath: string): Promise<ParsedSession | null>;
+  /** Candidate lookup only; callers must verify the parsed provider and full native id. */
+  matchesSessionFile?(filePath: string, sessionId: string): boolean;
 }
 
 // =============================================================================
@@ -87,6 +91,17 @@ export interface DiskAdapter {
 export interface LoadResult {
   conversations: Map<string, DiscoveredConversation>;
   mtimes: Map<string, number>; // filepath → mtime ms
+}
+
+/** Related native sessions are display history only, never provider resume input. */
+export type SessionHistorySource = DiscoveredConversation & {
+  boundSessionSources?: DiscoveredConversation[];
+};
+
+export interface SessionHistoryOptions {
+  resolveSessionBindings?(
+    source: DiscoveredConversation
+  ): Promise<readonly ConversationSessionBinding[]>;
 }
 
 export interface PollResult {
@@ -99,7 +114,7 @@ export interface PollResult {
 }
 
 export type LoadProgressCallback = (
-  batch: DiscoveredConversation[],
+  batch: SessionHistorySource[],
   progress: { loaded: number; total: number }
 ) => void | Promise<void>;
 
@@ -126,17 +141,18 @@ export function sessionToConversation(session: ParsedSession): DiscoveredConvers
   const durablePurpose = session.purpose ?? null;
 
   const extractedBuddy = extractBuddyContext(session.messages);
+  // Display cleanup must run even when durable metadata already owns identity.
+  // Skipping extraction in that case restores hidden instructions as user text.
+  const extractedBuilder = extractBuddyBuilderPurpose(session.messages);
+  const extractedSwarmPrefix = extractSwarmDebugPrefix(session.messages);
+  stripMergePrefix(session.messages);
   let buddyContext: BuddyContext | null = durableBuddy;
   let isBuddyBuilder = false;
   let swarmDebugPrefix: string | null = durableSwarmPrefix;
 
   if (durableKind) {
     // Kind already present — derive legacy fields without trusting marker identity.
-    // Still strip swarm prefix if present in durable, else lazily extract (swarm prefix not yet migrated to kind).
-    if (!swarmDebugPrefix) {
-      const extractedSwarm = extractSwarmDebugPrefix(session.messages);
-      swarmDebugPrefix = extractedSwarm ?? null;
-    }
+    swarmDebugPrefix = durableSwarmPrefix ?? extractedSwarmPrefix;
     // Thin dispatcher δ over the canonical kind — one clean handler per variant (D1/D2).
     // Handlers must not re-derive the buddy context field-by-field: `buddyContextFromKind`
     // is the single canonical projection and owns the null/omit absence invariant.
@@ -156,8 +172,7 @@ export function sessionToConversation(session: ParsedSession): DiscoveredConvers
       ? false
       : durablePurpose === 'buddy_builder'
         ? true
-        : extractBuddyBuilderPurpose(session.messages);
-    const extractedSwarmPrefix = extractSwarmDebugPrefix(session.messages);
+        : extractedBuilder;
     swarmDebugPrefix =
       buddyContext || isBuddyBuilder ? null : (durableSwarmPrefix ?? extractedSwarmPrefix);
   }

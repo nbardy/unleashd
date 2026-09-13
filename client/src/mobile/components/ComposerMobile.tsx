@@ -5,8 +5,10 @@ import { endConversation, interruptAndSend, queueMessage } from '../../atoms/act
 import { queueAtomFamily, streamingAtomFamily } from '../../atoms/conversations';
 import { useConversationDraft } from '../../hooks/useConversationDraft';
 import { usePendingAttachments } from '../../hooks/usePendingAttachments';
+import { useRestartRecovery } from '../../hooks/useRestartRecovery';
 import { useSavedPrompts } from '../../hooks/useSavedPrompts';
 import { useTurnDiagnostics } from '../../hooks/useTurnDiagnostics';
+import { RestartRecoveryPrompt } from '../../restart/RestartRecoveryPrompt';
 import {
   shouldPresentTurnAttempt,
   shouldShowTypingIndicator,
@@ -175,6 +177,11 @@ export function ComposerMobile({
     conversationId || undefined,
     runtimeTurnActive
   );
+  const restartRecovery = useRestartRecovery(
+    conversationId,
+    composerTurnAttempt,
+    runtimeTurnActive
+  );
   const composerTurnDiagnostics =
     composerTurnAttempt && shouldPresentTurnAttempt(composerTurnAttempt, runtimeTurnActive)
       ? turnDiagnosticsFromAttempt(composerTurnAttempt)
@@ -315,6 +322,7 @@ export function ComposerMobile({
 
   return (
     <div className="mobile-composer">
+      {restartRecovery ? <RestartRecoveryPrompt recovery={restartRecovery} /> : null}
       {composerTurnDiagnostics ? (
         <div className="mobile-composer__turn-status">
           <TurnStatusMobile diagnostics={composerTurnDiagnostics} />

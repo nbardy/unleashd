@@ -124,6 +124,7 @@ type RouteDef = { path: string; desktop: () => ReactElement; mobile: () => React
 
 import { BuddiesMobile } from './mobile/buddies/BuddiesMobile';
 import { BuddyDetailMobile } from './mobile/buddies/BuddyDetailMobile';
+import { BuddyWorkspaceActivity } from './components/buddies/BuddyWorkspaceActivity';
 import { ChatMobile } from './mobile/conversations/ChatMobile';
 import { ConversationListMobile } from './mobile/conversations/ConversationListMobile';
 import { SearchMobile } from './mobile/search/SearchMobile';
@@ -139,6 +140,11 @@ const ROUTES: RouteDef[] = [
   },
   { path: '/chat/:id', desktop: () => <Chat />, mobile: () => <ChatMobile /> },
   { path: '/buddies', desktop: () => <BuddiesDashboard />, mobile: () => <BuddiesMobile /> },
+  {
+    path: '/buddies/workspaces/:workspaceId',
+    desktop: () => <BuddyWorkspaceActivity />,
+    mobile: () => <BuddyWorkspaceActivity />,
+  },
   {
     path: '/buddies/:buddyId',
     desktop: () => <BuddiesDashboard />,

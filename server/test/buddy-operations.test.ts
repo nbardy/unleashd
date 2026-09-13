@@ -75,20 +75,21 @@ test('scoped Buddy operations close work, remember, delegate, review, and audit'
     });
     assert.equal((completed.data as { status: string }).status, 'done');
 
-    const memory = operations.execute('buddy.remember', {
-      kind: 'curated',
-      content: 'Proof requires an external-use decision.',
+    const memory = operations.execute('buddy.remember_note', {
+      kind: 'lesson',
+      body: 'Proof requires an external-use decision.',
     });
     assert.match((memory.data as { content: string }).content, /external-use decision/);
-    store.remember(lead.id, {
-      content: 'Daily execution note.',
-      date: '2026-07-01T00:00:00.000Z',
+    const updatedMemory = operations.execute('buddy.update_memory', {
+      doc: 'long_term',
+      content: 'The execution note was incorporated into durable memory.',
+      reasoning: 'Promote the verified execution lesson',
+      baseVersion: store.readBuddyMemory(lead.id).longTermRevision,
     });
-    const compactedMemory = operations.execute('buddy.compact_memory', {
-      summary: 'The execution note was incorporated into durable memory.',
-      retainDays: 0,
-    });
-    assert.equal((compactedMemory.data as { compact: boolean }).compact, true);
+    assert.equal(
+      (updatedMemory.data as { body: string }).body,
+      'The execution note was incorporated into durable memory.'
+    );
 
     const delegated = operations.execute('buddy.delegate', {
       toBuddyId: operator.id,
@@ -425,7 +426,6 @@ test('memory-v2 operations use typed inputs, trusted workspace scope, and CAS er
   const operations = new BuddyOperationsService(store, {
     buddyId: 'buddy-1',
     workspaceId: 'workspace-1',
-    conversationId: 'conversation-1',
   });
 
   const updated = operations.execute('buddy.update_memory', {
@@ -456,7 +456,7 @@ test('memory-v2 operations use typed inputs, trusted workspace scope, and CAS er
         requestedBy: null,
         provenance: {
           workspace_id: 'workspace-1',
-          conversation_id: 'conversation-1',
+          conversation_id: null,
           automation_run_id: null,
         },
       },

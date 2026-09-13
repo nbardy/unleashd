@@ -5,6 +5,8 @@
 /* Sidebar uses --bg-base (darkest usable bg) so conversation cards
    on --bg-card visually pop as elevated surfaces. */
 .sidebar {
+  --sidebar-selection: #f4d76b;
+  --sidebar-selection-text: #25220f;
   width: 280px;
   background: var(--bg-base);
   border-right: 1px solid var(--border-strong);
@@ -13,49 +15,15 @@
 }
 
 .sidebar-header {
-  padding: 10px 10px 8px;
+  height: var(--app-toolbar-height, 56px);
+  flex-shrink: 0;
+  justify-content: center;
+  padding: 8px 10px;
   border-bottom: 1px solid var(--border-emphasis);
   display: flex;
   flex-direction: column;
   gap: 8px;
-  background: var(--bg-darkest);
-}
-
-/* One visual home for the three top-level concepts. */
-.sidebar-primary-nav {
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 3px;
-}
-
-.sidebar-nav-item {
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 5px;
-  padding: 7px 4px;
-  border: 1px solid transparent;
-  border-radius: 4px;
   background: transparent;
-  color: var(--text-muted);
-  font: 600 10px / 1 var(--font-mono);
-  cursor: pointer;
-  transition: color 0.15s, background 0.15s, border-color 0.15s;
-}
-
-.sidebar-nav-item:hover,
-.sidebar-nav-item:focus-visible {
-  color: var(--text-primary);
-  background: color-mix(in srgb, var(--bg-panel) 60%, transparent);
-  border-color: var(--border-subtle);
-  outline: none;
-}
-
-.sidebar-nav-item.active {
-  color: var(--text-emphasis);
-  background: color-mix(in srgb, var(--bg-panel) 86%, transparent);
-  border-color: var(--border-default);
 }
 
 .sidebar-actions {
@@ -76,7 +44,7 @@
   padding: 0 8px;
   border: 1px solid var(--border-subtle);
   border-radius: 6px;
-  background: color-mix(in srgb, var(--bg-panel) 70%, transparent);
+  background: transparent;
   color: var(--text-secondary);
   font: 500 11px / 1 var(--font-mono);
   letter-spacing: 0.02em;
@@ -369,7 +337,7 @@
 .view-mode-toggle {
   display: flex;
   gap: 2px;
-  background: var(--bg-tertiary);
+  background: transparent;
   border-radius: 2px;
   padding: 2px;
 }
@@ -393,8 +361,8 @@
 }
 
 .view-mode-btn.active {
-  background: var(--accent-primary);
-  color: var(--text-on-accent);
+  background: var(--sidebar-selection);
+  color: var(--sidebar-selection-text);
 }
 
 .status-dot {
@@ -419,7 +387,7 @@
 .conversations-list {
   flex: 1;
   overflow-y: overlay; /* Float over content, no reserved gutter */
-  padding: 0;
+  padding: 4px 6px 12px;
 
   /* Floating scrollbar: hidden until hover/scroll, no track background */
   scrollbar-width: thin;
@@ -453,33 +421,59 @@
   background: color-mix(in srgb, var(--text-emphasis) 50%, transparent);
 }
 
-/* Conversation item — full-width, no border-radius, no left color bar.
-   Color identity comes from the folder-badge text only.
-   Thin separator line between items replaces margins/borders. */
+/* Quiet tree rows; only the current conversation gets a filled selection. */
 .conversation-item {
+  --sidebar-row-hover: color-mix(in srgb, var(--text-emphasis) 5%, transparent);
+  --sidebar-row-fill: transparent;
   display: flex;
   align-items: center;
   padding: 7px 12px;
-  margin: 0;
+  margin: 1px 0;
   border-radius: 0;
   background: transparent;
-  border-radius: 0;
   cursor: pointer;
-  transition: background 0.15s;
+  transition: background 0.15s, box-shadow 0.15s;
   position: relative;
   border: none;
-  border-bottom: 1px solid color-mix(in srgb, var(--text-emphasis) 6%, transparent);
+  /* Keep the full-width paint geometry mounted; hover only changes its color. */
+  box-shadow: 0 0 0 100vmax var(--sidebar-row-fill);
+  clip-path: inset(0 -100vmax);
 }
 
 .conversation-item:hover {
-  background: color-mix(in srgb, var(--text-emphasis) 5%, transparent);
+  --sidebar-row-fill: var(--sidebar-row-hover);
+  background: var(--sidebar-row-hover);
 }
 
-/* Active selection: base02 surface + blue left accent for "you are here" */
 .conversation-item.active {
-  background: var(--bg-selected);
-  border-bottom: 1px solid color-mix(in srgb, var(--text-emphasis) 6%, transparent);
-  border-left: 2px solid var(--user-dim);
+  --sidebar-row-selection: color-mix(in srgb, var(--sidebar-selection) 70%, transparent);
+  --sidebar-row-fill: var(--sidebar-row-selection);
+  background: var(--sidebar-row-selection);
+  color: var(--sidebar-selection-text);
+  animation: sidebar-selection-pop 180ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+@keyframes sidebar-selection-pop {
+  0% {
+    transform: scaleY(0.985);
+  }
+  65% {
+    transform: scaleY(1.008);
+  }
+  100% {
+    transform: scaleY(1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .conversation-item.active {
+    animation: none;
+  }
+}
+
+.conversation-item.active .conversation-title {
+  color: var(--sidebar-selection-text);
+  font-weight: 600;
 }
 
 .pending-creation {
@@ -554,60 +548,15 @@
   animation: glow-pulse 1.5s ease-in-out infinite;
 }
 
-/* Pending indicator: conversation has queued messages waiting to be sent.
-   Amber/orange to distinguish from running (green) and idle (grey). */
+/* Finished unread responses use a quiet accent from the current palette. */
+.status-indicator.unread {
+  background: color-mix(in oklch, var(--primary) 70%, var(--text-primary));
+}
+
+/* Pending indicator: conversation has queued messages waiting to be sent. */
 .status-indicator.pending {
   background: var(--warning, #f0a030);
   animation: glow-pulse 1.5s ease-in-out infinite;
-}
-
-.running-status-control {
-  display: inline-flex;
-  align-items: center;
-  margin: -4px;
-  padding: 4px;
-  border-radius: 4px;
-  /* Stacked above .done-btn, which is an absolute overlay on the same right
-     edge — see the :has(.thread-stop-btn) rule below. */
-  position: relative;
-  z-index: 1;
-}
-
-.thread-stop-btn {
-  max-width: 0;
-  margin-left: 0;
-  padding: 3px 0;
-  overflow: hidden;
-  border: 1px solid transparent;
-  border-radius: 3px;
-  color: var(--danger-bright);
-  background: color-mix(in srgb, var(--danger) 14%, var(--bg-tertiary));
-  font-size: 10px;
-  font-weight: 600;
-  line-height: 1;
-  white-space: nowrap;
-  cursor: pointer;
-  opacity: 0;
-  pointer-events: none;
-  transition: max-width 140ms ease, margin-left 140ms ease, padding 140ms ease, opacity 100ms ease,
-    border-color 100ms ease;
-}
-
-.running-status-control:hover .thread-stop-btn,
-.thread-stop-btn:focus-visible {
-  max-width: 48px;
-  margin-left: 6px;
-  padding: 3px 6px;
-  border-color: color-mix(in srgb, var(--danger) 65%, transparent);
-  opacity: 1;
-  pointer-events: auto;
-}
-
-.thread-stop-btn:hover,
-.thread-stop-btn:focus-visible {
-  color: var(--text-on-accent);
-  background: var(--danger);
-  outline: none;
 }
 
 @keyframes glow-pulse {
@@ -638,7 +587,7 @@
   background: transparent;
   color: var(--text-muted);
   border: none;
-  border-top: 1px dashed color-mix(in srgb, var(--border-subtle) 80%, transparent);
+  border-top: none;
   font: 600 10px / 1 var(--font-mono);
   letter-spacing: 0.04em;
   text-transform: lowercase;
@@ -651,62 +600,138 @@
   background: color-mix(in srgb, var(--ai) 6%, transparent);
 }
 
+/* Indentation carries hierarchy without stacked panels or colored rails. */
+.buddy-subgroup,
+.sidebar-buddy-project {
+  border: none;
+}
+
+.sidebar-buddy-project {
+  margin-left: 0;
+}
+
 .buddy-subgroup {
-  /* 2 layers nested: Buddies header (level 0) -> buddy header (level 1) indented, subtle guide only */
-  margin-left: 8px;
-  border-left: 1px solid color-mix(in srgb, var(--border-subtle) 40%, transparent);
-  border-top: none;
+  margin-left: 18px;
 }
 
-.buddy-subgroup:first-of-type {
-  border-top: none;
+.sidebar-buddy-project + .sidebar-buddy-project {
+  margin-top: 8px;
 }
 
-/* Big header (Buddies) + sub-header (buddy name) — same size, maximally shared */
-.folder-group--buddies > .folder-group-header,
-.folder-group--builder > .folder-group-header,
-.folder-group-header--buddy {
-  padding: 3px 10px;
-  background: color-mix(in srgb, var(--bg-tertiary) 70%, transparent);
-  /* accent down the header's left edge — only place accent lives */
-  border-left-width: 3px;
-  min-height: 0;
+.sidebar-buddy-project-header {
+  width: 100%;
+  color: inherit;
+  font: inherit;
+  text-align: left;
 }
 
-.folder-group--buddies > .folder-group-header:hover,
-.folder-group--builder > .folder-group-header:hover,
-.folder-group-header--buddy:hover {
-  background: color-mix(in srgb, var(--ai) 8%, var(--bg-tertiary));
+.sidebar-project-link,
+.sidebar-project-toggle {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  color: inherit;
+  font: inherit;
+}
+
+.sidebar-project-link {
+  gap: 6px;
+  max-width: 58%;
+  text-decoration: none;
+}
+
+.sidebar-project-link:hover .folder-group-name,
+.sidebar-project-link:focus-visible .folder-group-name {
+  color: var(--ai-bright);
+}
+
+.sidebar-project-link:focus-visible,
+.sidebar-project-toggle:focus-visible {
+  outline: none;
+}
+
+.sidebar-project-toggle {
+  flex: 1;
+  gap: 6px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.sidebar-project-chevron {
+  width: 8px;
+  flex: 0 0 8px;
+  color: var(--text-muted);
+  font-size: 12px;
+  text-align: center;
 }
 
 /* Count pushed to far right so it aligns vertically with parent Buddies count */
 .folder-group-count--right {
-  margin-left: 0;
-}
-
-.folder-group-header--buddy .folder-group-add-btn {
   margin-left: auto;
 }
 
+.folder-group-header--buddy {
+  position: relative;
+  cursor: default;
+}
+
+.sidebar-buddy-link {
+  text-decoration: none;
+}
+
+.sidebar-buddy-link:hover {
+  color: var(--text-emphasis);
+}
+
+.sidebar-buddy-running {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 0 auto;
+  margin-left: auto;
+  gap: 4px;
+  color: var(--text-muted);
+  font: 500 10px / 1 var(--font-mono);
+  font-variant-numeric: tabular-nums;
+}
+
+.sidebar-buddy-running a {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  min-height: 24px;
+  color: inherit;
+  text-decoration: none;
+}
+
+.sidebar-buddy-running a.sidebar-buddy-running-active {
+  color: var(--success-bright);
+}
+
+.sidebar-buddy-running a:hover {
+  color: var(--text-emphasis);
+}
+
+.sidebar-buddy-running a:focus-visible {
+  outline: 1px solid var(--accent-primary);
+  outline-offset: 2px;
+}
+
 .folder-group-header--buddy .folder-group-count--right {
-  margin-left: 6px;
+  margin-left: auto;
 }
 
 /* Conversation items under a buddy — about 1/2 the padding/margin per thread */
 .buddy-subgroup .conversation-item {
-  padding: 7px 12px 7px 24px;
+  padding: 7px 12px 7px 30px;
   margin-left: 0;
-  border-bottom-width: 1px;
-}
-
-.buddy-subgroup .conversation-item.active {
-  border-left-width: 2px;
 }
 
 .buddy-subgroup .show-more-btn,
 .buddy-subgroup .folder-group-all-done {
-  margin-left: 8px;
-  padding-left: 16px;
+  margin-left: 0;
+  padding-left: 30px;
 }
 
 .conversation-row-sep {
@@ -716,15 +741,8 @@
 }
 
 .conversation-row .conversation-time-ago,
-.conversation-row .status-indicator,
-.conversation-row .new-badge,
-.conversation-row .running-status-control {
+.conversation-row .status-indicator {
   flex-shrink: 0;
-}
-
-/* Row gap already spaces the badge — drop its standalone trailing margin. */
-.conversation-row .new-badge {
-  margin-right: 0;
 }
 
 .conversation-time-ago {
@@ -733,31 +751,9 @@
   white-space: nowrap;
 }
 
-/* NEW Badge Feature: Small pill badge to indicate unread messages.
- * Appears when lastSeenIndex < messages.length - 1 (user hasn't seen latest messages).
- * Positioned between folder badge and time-ago in conversation header.
- * Uses orange-bright on dark bg for high urgency visibility.
- * See docs/new_badge_feature.md for full design rationale. */
-.new-badge {
-  display: inline-block;
-  font-size: 10px;
-  font-weight: 700;
-  padding: 2px 6px;
-  border-radius: 2px;
-  background: var(--queue-bright);
-  color: var(--text-on-accent);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  transition: opacity 200ms ease-in-out;
-  margin-right: 8px;
-  box-shadow: 0 0 6px var(--queue-glow);
-}
-
 /* conversation-dir removed — folder is now shown as top-left badge */
 
-/* Flush to the sidebar's right edge (right: 0), not inset to the row's 12px
-   padding — Done is an absolute overlay, so it does not have to respect the
-   row box. The :has(.thread-stop-btn) offset below compensates. */
+/* Opaque hover action at the far right of every conversation row. */
 .done-btn {
   position: absolute;
   right: 0;
@@ -765,36 +761,22 @@
   transform: translateY(-50%);
   padding: 4px 8px;
   background: var(--bg-tertiary);
-  color: var(--text-secondary);
+  color: var(--text-primary);
   border: 1px solid var(--border-subtle);
   border-radius: 4px;
   font-size: 11px;
   cursor: pointer;
   opacity: 0;
-  transition: opacity 0.2s, background 0.2s;
+  transition: background 0.2s;
 }
 
-.conversation-item:hover .done-btn {
+.conversation-item:hover .done-btn,
+.conversation-item:focus-within .done-btn {
   opacity: 1;
 }
 
-/* Done must not land on top of Stop.
-   Both are anchored to the row's right edge and vertically centred, and
-   .done-btn is an absolutely-positioned overlay painted after .conversation-row,
-   so it wins the stacking contest and swallows the click. This was harmless
-   while rows were two lines tall (Done's centre fell between the metadata row
-   and the title); collapsing every row to a single line put the two controls
-   on exactly the same pixels, making a running conversation impossible to stop
-   from the sidebar. .thread-stop-btn only renders while conv.isRunning, so this
-   shifts Done left by the stop control's expanded width for exactly those rows.
-   Keep the offset >= the row's 12px right padding + .thread-stop-btn's hover
-   max-width (48px) + its 6px margin + the 8px status dot + the row's 6px gap. */
-.conversation-item:has(.thread-stop-btn):hover .done-btn {
-  right: 82px;
-}
-
 .done-btn:hover {
-  background: color-mix(in srgb, var(--success) 20%, transparent);
+  background: color-mix(in srgb, var(--success) 20%, var(--bg-tertiary));
   border-color: var(--success);
   color: var(--success);
 }
@@ -818,44 +800,60 @@
 
 /* Folder group header — click to collapse/expand */
 .folder-group {
-  margin-bottom: 0;
+  margin-bottom: 8px;
 }
 
 .folder-group-header {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 8px 12px;
+  padding: 4px 12px;
+  min-height: 28px;
+  box-sizing: border-box;
+  font: 500 11px / 20px var(--font-mono);
   margin: 0;
-  background: var(--bg-tertiary);
-  border-radius: 0;
-  border-left: 3px solid transparent; /* colored via inline style */
+  background: transparent;
+  border-radius: 5px;
+  border: none;
   cursor: pointer;
   transition: background 0.15s;
   user-select: none;
 }
 
 .folder-group-header:hover {
-  background: var(--border-color);
+  background: color-mix(in srgb, var(--text-emphasis) 5%, transparent);
 }
 
-.folder-chevron {
-  font-size: 8px;
+.sidebar-project-divider {
+  position: relative;
+}
+
+.sidebar-folder-icon,
+.sidebar-buddy-icon {
+  display: block;
+  flex: 0 0 12px;
+  width: 12px;
+  height: 12px;
   color: var(--text-secondary);
-  transition: transform 0.15s;
-  line-height: 1;
+  pointer-events: none;
 }
 
-.folder-chevron.collapsed {
-  transform: rotate(-90deg);
+/* Keep labels left-aligned; only the trailing rule fills unused space. */
+.sidebar-project-rule {
+  flex: 1 0 16px;
+  border-top: 1px solid var(--text-secondary);
+  opacity: 0.3;
+}
+
+.sidebar-project-divider > .folder-group-name {
+  flex: 0 1 auto;
 }
 
 .folder-group-name {
   flex: 1;
-  font-family: var(--font-mono);
-  font-size: 11px;
+  min-width: 0;
+  font: 500 11px / 20px var(--font-mono);
   color: var(--text-primary);
-  font-weight: 500;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -864,11 +862,32 @@
 .folder-group-count {
   font-size: 10px;
   color: var(--text-muted);
-  background: var(--bg-base);
-  padding: 1px 6px;
-  border-radius: 2px;
-  min-width: 18px;
-  text-align: center;
+  background: transparent;
+  padding: 0;
+  border-radius: 0;
+  flex: 0 0 24px;
+  margin-left: auto;
+  text-align: right;
+  font-variant-numeric: tabular-nums;
+}
+
+/* Project-level process visibility stays on the first line and remains visible
+   while the folder is collapsed. Individual conversation rows retain their own
+   status dots when expanded. */
+.folder-group-running {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex: 0 0 auto;
+  color: var(--success-bright);
+  font: 600 9px / 1 var(--font-mono);
+  white-space: nowrap;
+}
+
+.folder-group-running .status-indicator {
+  width: 6px;
+  height: 6px;
+  flex: 0 0 6px;
 }
 
 .folder-group-all-done {
@@ -897,7 +916,8 @@
   transition: opacity 0.15s, background 0.15s, color 0.15s;
 }
 
-.folder-group-header:hover .folder-group-add-btn {
+.folder-group-header:hover .folder-group-add-btn,
+.folder-group-header:focus-within .folder-group-add-btn {
   opacity: 1;
 }
 
@@ -908,9 +928,9 @@
 
 .folder-group-add-btn--section {
   opacity: 1;
-  border: 1px solid color-mix(in srgb, var(--ai) 28%, transparent);
-  color: var(--ai-bright);
-  background: color-mix(in srgb, var(--ai) 9%, var(--bg-base));
+  border: none;
+  color: var(--text-secondary);
+  background: transparent;
 }
 
 .folder-group-add-btn--section:disabled {
@@ -981,4 +1001,21 @@
 .merge-checkmark--disabled {
   background: transparent;
   border-color: color-mix(in oklab, var(--theme-base01) 60%, transparent);
+}
+
+.sidebar .folder-group-header:focus-visible,
+.sidebar .conversation-item:focus-visible {
+  outline: 2px solid var(--accent-primary);
+  outline-offset: -2px;
+}
+
+/* Keep selected-row metadata legible, including age colors supplied by the row. */
+.sidebar .conversation-item.active .conversation-time-ago,
+.sidebar .conversation-item.active .conversation-row-sep,
+.sidebar .conversation-item.active .folder-badge {
+  color: var(--sidebar-selection-text) !important;
+}
+
+.sidebar .conversation-item.active .status-indicator:not(.running):not(.pending):not(.unread) {
+  background: var(--sidebar-selection-text);
 }

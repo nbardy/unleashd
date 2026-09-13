@@ -13,6 +13,8 @@ import {
   ConfigResolutionSchema,
   ConversationConfigPatchSchema,
   ConversationConfigSchema,
+  ConversationIdSchema,
+  ConversationPlacementSchema,
   ConversationPurposeSchema,
   ModelIdSchema,
 } from './conversation-config.js';
@@ -34,110 +36,12 @@ import {
 export * from './conversation-config.js';
 export * from './conversation-kind.js';
 export * from './buddy.js';
+export * from './buddy-access.js';
+export * from './buddy-work.js';
+export * from './buddy-resources.js';
 export * from './provider-catalog.js';
 export * from './legacy/codex-composite-model.js';
 export { stripJsonc } from './utils/jsonc.js';
-
-// =============================================================================
-// Provider-Specific Types (re-exported)
-// =============================================================================
-
-// Claude CLI types - strict type definitions for Claude CLI stream-json protocol
-export {
-  // Content block types
-  type ClaudeTextBlock,
-  type ClaudeToolUseBlock,
-  type ClaudeToolResultBlock,
-  type ClaudeContentBlock,
-  // Output types from CLI stdout
-  type ClaudeSystemInitOutput,
-  type ClaudeToolDefinition,
-  type ClaudeMcpServer,
-  type ClaudeAssistantOutput,
-  type ClaudeResultSuccessOutput,
-  type ClaudeResultErrorOutput,
-  type ClaudeResultOutput,
-  type ClaudeUserOutput,
-  type ClaudeCliOutput,
-  // Input types to CLI stdin
-  type ClaudeCliInput,
-  // Unified internal event types
-  type ClaudeEventMessageStart,
-  type ClaudeEventTextDelta,
-  type ClaudeEventMessageComplete,
-  type ClaudeEventToolUse,
-  type ClaudeEventError,
-  type ClaudeEvent,
-  // Type guards
-  isClaudeSystemInitOutput,
-  isClaudeAssistantOutput,
-  isClaudeResultSuccessOutput,
-  isClaudeResultErrorOutput,
-  isClaudeResultOutput,
-  isClaudeUserOutput,
-  isClaudeTextBlock,
-  isClaudeToolUseBlock,
-  isClaudeToolResultBlock,
-  // Parser functions and error class
-  ClaudeParseError,
-  parseClaudeCliOutput,
-  parseClaudeCliOutputStream,
-  formatClaudeCliInput,
-  // Utility functions
-  extractTextFromContentBlocks,
-  extractToolUseFromContentBlocks,
-} from './providers/claude.types.js';
-
-// Codex CLI types - strict type definitions for Codex CLI JSON protocol
-export {
-  // Output schemas and types
-  CodexStartOutputSchema,
-  CodexMessageOutputSchema,
-  CodexToolCallOutputSchema,
-  CodexToolResultOutputSchema,
-  CodexEndOutputSchema,
-  CodexDoneOutputSchema,
-  CodexOutputSchema,
-  type CodexStartOutput,
-  type CodexMessageOutput,
-  type CodexToolCallOutput,
-  type CodexToolResultOutput,
-  type CodexEndOutput,
-  type CodexDoneOutput,
-  type CodexOutput,
-  // Input schemas and types
-  CodexInputSchema,
-  type CodexInput,
-  // Unified event schemas and types (normalized to match Claude's structure)
-  UnifiedMessageStartEventSchema,
-  UnifiedTextDeltaEventSchema,
-  UnifiedMessageCompleteEventSchema,
-  UnifiedToolUseEventSchema,
-  UnifiedToolResultEventSchema,
-  UnifiedErrorEventSchema,
-  UnifiedCodexEventSchema,
-  type UnifiedMessageStartEvent,
-  type UnifiedTextDeltaEvent,
-  type UnifiedMessageCompleteEvent,
-  type UnifiedToolUseEvent,
-  type UnifiedToolResultEvent,
-  type UnifiedErrorEvent,
-  type UnifiedCodexEvent,
-  // Type guards
-  isCodexStartOutput,
-  isCodexMessageOutput,
-  isCodexToolCallOutput,
-  isCodexToolResultOutput,
-  isCodexEndOutput,
-  isCodexDoneOutput,
-  isCodexTerminationOutput,
-  // Parser functions and error class
-  CodexParseError,
-  parseCodexOutput,
-  codexOutputToUnifiedEvent,
-  parseCodexOutputToUnifiedEvent,
-  formatCodexInput,
-} from './providers/codex.types.js';
 
 // =============================================================================
 // Core Data Structures
@@ -177,17 +81,17 @@ export {
 // duplicate enum literals in shared/src/index.ts.
 // =============================================================================
 import {
-  CLAUDE_MODEL_IDS as GEN_CLAUDE_MODEL_IDS,
-  GEMINI_MODEL_IDS as GEN_GEMINI_MODEL_IDS,
-  MUSE_MODEL_IDS as GEN_MUSE_MODEL_IDS,
-  CURSOR_MODEL_REGISTRY as GEN_CURSOR_MODEL_REGISTRY,
-  CODEX_MODEL_REGISTRY as GEN_CODEX_MODEL_REGISTRY,
   CLAUDE_EFFORT_LEVELS as GEN_CLAUDE_EFFORT_LEVELS,
+  CLAUDE_MODEL_IDS as GEN_CLAUDE_MODEL_IDS,
   CODEX_EFFORT_LEVELS as GEN_CODEX_EFFORT_LEVELS,
-  MUSE_EFFORT_LEVELS as GEN_MUSE_EFFORT_LEVELS,
+  CODEX_MODEL_REGISTRY as GEN_CODEX_MODEL_REGISTRY,
   CODEX_THINKING_OPTIONS as GEN_CODEX_THINKING_OPTIONS,
-  NO_CODEX_THINKING as GEN_NO_CODEX_THINKING,
   CODEX_UNIFIED_THINKING_OPTIONS as GEN_CODEX_UNIFIED_THINKING_OPTIONS,
+  CURSOR_MODEL_REGISTRY as GEN_CURSOR_MODEL_REGISTRY,
+  GEMINI_MODEL_IDS as GEN_GEMINI_MODEL_IDS,
+  MUSE_EFFORT_LEVELS as GEN_MUSE_EFFORT_LEVELS,
+  MUSE_MODEL_IDS as GEN_MUSE_MODEL_IDS,
+  NO_CODEX_THINKING as GEN_NO_CODEX_THINKING,
 } from './generated/catalog.js';
 
 // Re-export generated arrays so consumers can import from shared entry point
@@ -425,6 +329,8 @@ export const MessageSchema = z.object({
   role: z.enum(['user', 'assistant', 'system']),
   content: z.string(),
   timestamp: z.coerce.date(),
+  // Imported tool details stay separate from the compact, groupable summary.
+  toolCall: z.object({ name: z.string(), input: z.string().optional() }).optional(),
   completedAt: z.coerce.date().optional(),
   completionReason: z.enum(['success', 'error', 'out_of_tokens', 'killed']).optional(),
 });
@@ -558,7 +464,7 @@ export const EFFORT_DISPLAY_NAMES: Record<string, string> = {
 };
 
 export const ConversationSchema = z.object({
-  id: z.string().uuid(),
+  id: ConversationIdSchema,
   sessionId: z.string().optional(),
   messages: z.array(MessageSchema),
   // Full snapshots set this to messages.length. Summary snapshots keep only
@@ -609,14 +515,14 @@ export const ConversationSchema = z.object({
   // Optional parent conversation id for provider-native spawned sub-agent threads
   // (e.g., Codex thread_spawn parent_thread_id).
   // When present, UI can render this conversation nested under its parent.
-  parentConversationId: z.string().nullish(),
+  parentConversationId: ConversationIdSchema.nullish(),
   // Optional UI lineage for Chat "Fork" (soft handoff). Points at the source
   // conversation the user forked from. This is NOT provider-session inheritance
   // and does NOT imply FORK_CAPABLE_PROVIDERS. Context handoff is the draft /
   // first-message content (historically a pasted transcript); the Resume
   // badge is UI chrome for that lineage. Contrast with merge review children,
   // which use spawnMergeReviewFork + CLI --fork / emulateFork.
-  resumedFromConversationId: z.string().nullish(),
+  resumedFromConversationId: ConversationIdSchema.nullish(),
   // The actual model name from the CLI (e.g., "claude-sonnet-4-5-20250929").
   // More specific than `provider` which is just "claude", "codex", or "opencode".
   modelName: z.string().nullish(),
@@ -633,6 +539,7 @@ export const ConversationSchema = z.object({
   // compat; new writes mirror kind → buddyContext. Read via `getBuddyContext()` or `isBuddyConversation()`.
   buddyContext: BuddyContextSchema.nullish(),
   // Application-owned purpose (deprecated in favor of kind). `general` is implicit.
+  placement: ConversationPlacementSchema.optional(),
   purpose: ConversationPurposeSchema.optional(),
 
   // Merge feature metadata. Parent threads that aggregate review docs from
@@ -642,8 +549,8 @@ export const ConversationSchema = z.object({
     .object({
       children: z.array(
         z.object({
-          sourceConversationId: z.string().uuid(),
-          childConversationId: z.string().uuid(),
+          sourceConversationId: ConversationIdSchema,
+          childConversationId: ConversationIdSchema,
           reviewUuid: z.string().uuid(),
           childWorkingDirectory: z.string(),
         })
@@ -653,7 +560,7 @@ export const ConversationSchema = z.object({
     .nullish(),
   mergeChildMeta: z
     .object({
-      parentConversationId: z.string().uuid(),
+      parentConversationId: ConversationIdSchema,
       reviewUuid: z.string().uuid(),
     })
     .nullish(),
@@ -830,13 +737,13 @@ export interface SwarmRun {
 export const CreateConversationCommandSchema = z.object({
   type: z.literal('create_conversation'),
   commandId: z.string().min(1),
-  conversationId: z.string().uuid(),
+  conversationId: ConversationIdSchema,
   workingDirectory: z.string().min(1),
   config: ConversationConfigSchema,
   initialMessage: z.string().min(1).optional(),
   swarmDebugPrefix: z.string().optional(),
   // Chat "Fork" soft-handoff lineage only — not merge provider-session fork.
-  resumedFromConversationId: z.string().uuid().optional(),
+  resumedFromConversationId: ConversationIdSchema.optional(),
   buddyContext: BuddyContextSchema.optional(),
   kind: ConversationKindSchema.optional(),
 });
@@ -845,7 +752,7 @@ export type CreateConversationCommand = z.infer<typeof CreateConversationCommand
 export const SetConversationConfigCommandSchema = z.object({
   type: z.literal('set_conversation_config'),
   commandId: z.string().min(1),
-  conversationId: z.string().uuid(),
+  conversationId: ConversationIdSchema,
   expectedRevision: z.number().int().nonnegative(),
   patch: ConversationConfigPatchSchema,
 });
@@ -853,7 +760,7 @@ export type SetConversationConfigCommand = z.infer<typeof SetConversationConfigC
 
 export const SendMessageMessageSchema = z.object({
   type: z.literal('send_message'),
-  conversationId: z.string().uuid(),
+  conversationId: ConversationIdSchema,
   content: z.string().min(1),
 });
 
@@ -861,14 +768,14 @@ export type SendMessageMessage = z.infer<typeof SendMessageMessageSchema>;
 
 export const StopConversationMessageSchema = z.object({
   type: z.literal('stop_conversation'),
-  conversationId: z.string().uuid(),
+  conversationId: ConversationIdSchema,
 });
 
 export type StopConversationMessage = z.infer<typeof StopConversationMessageSchema>;
 
 export const DeleteConversationMessageSchema = z.object({
   type: z.literal('delete_conversation'),
-  conversationId: z.string().uuid(),
+  conversationId: ConversationIdSchema,
 });
 
 export type DeleteConversationMessage = z.infer<typeof DeleteConversationMessageSchema>;
@@ -877,7 +784,7 @@ export type DeleteConversationMessage = z.infer<typeof DeleteConversationMessage
 export const QueueMessageSchema = z.object({
   type: z.literal('queue_message'),
   commandId: z.string().min(1),
-  conversationId: z.string().uuid(),
+  conversationId: ConversationIdSchema,
   content: z.string().min(1),
 });
 
@@ -886,7 +793,7 @@ export type QueueMessage = z.infer<typeof QueueMessageSchema>;
 export const InterruptAndSendMessageSchema = z.object({
   type: z.literal('interrupt_and_send'),
   commandId: z.string().min(1),
-  conversationId: z.string().uuid(),
+  conversationId: ConversationIdSchema,
   content: z.string().min(1),
 });
 
@@ -894,7 +801,7 @@ export type InterruptAndSendMessage = z.infer<typeof InterruptAndSendMessageSche
 
 export const CancelQueuedMessageSchema = z.object({
   type: z.literal('cancel_queued_message'),
-  conversationId: z.string().uuid(),
+  conversationId: ConversationIdSchema,
   messageId: z.string(),
 });
 
@@ -902,7 +809,7 @@ export type CancelQueuedMessage = z.infer<typeof CancelQueuedMessageSchema>;
 
 export const ClearQueueMessageSchema = z.object({
   type: z.literal('clear_queue'),
-  conversationId: z.string().uuid(),
+  conversationId: ConversationIdSchema,
 });
 
 export type ClearQueueMessage = z.infer<typeof ClearQueueMessageSchema>;
@@ -962,6 +869,7 @@ export const PROTOCOL_INFO: ProtocolInfo = {
 
 export const InitMessageSchema = z.object({
   type: z.literal('init'),
+  archivedBuddyIds: z.array(z.string()).optional(),
   conversations: z.array(ConversationSchema),
   defaultCwd: z.string(),
   /** Conversations contain metadata + last-message previews, not full transcripts. */
@@ -996,7 +904,7 @@ export type ConversationUpdatedEvent = z.infer<typeof ConversationUpdatedEventSc
 export const ConversationDeletedEventSchema = z.object({
   type: z.literal('conversation_deleted'),
   commandId: z.string().min(1).optional(),
-  conversationId: z.string().uuid(),
+  conversationId: ConversationIdSchema,
 });
 export type ConversationDeletedEvent = z.infer<typeof ConversationDeletedEventSchema>;
 
@@ -1013,7 +921,7 @@ export type GeneralCommandError = z.infer<typeof GeneralCommandErrorSchema>;
 export const CommandRejectedEventSchema = z.object({
   type: z.literal('command_rejected'),
   commandId: z.string().min(1),
-  conversationId: z.string().uuid().optional(),
+  conversationId: ConversationIdSchema.optional(),
   error: z.union([ConfigErrorSchema, GeneralCommandErrorSchema]),
   authoritativeConversation: ConversationSchema.optional(),
 });
@@ -1022,13 +930,13 @@ export type CommandRejectedEvent = z.infer<typeof CommandRejectedEventSchema>;
 export const CommandAcceptedEventSchema = z.object({
   type: z.literal('command_accepted'),
   commandId: z.string().min(1),
-  conversationId: z.string().uuid(),
+  conversationId: ConversationIdSchema,
 });
 export type CommandAcceptedEvent = z.infer<typeof CommandAcceptedEventSchema>;
 
 export const MessageMessageSchema = z.object({
   type: z.literal('message'),
-  conversationId: z.string().uuid(),
+  conversationId: ConversationIdSchema,
   role: z.enum(['user', 'assistant', 'system']),
   content: z.string(),
 });
@@ -1037,7 +945,7 @@ export type MessageMessage = z.infer<typeof MessageMessageSchema>;
 
 export const ChunkMessageSchema = z.object({
   type: z.literal('chunk'),
-  conversationId: z.string().uuid(),
+  conversationId: ConversationIdSchema,
   text: z.string(),
 });
 
@@ -1045,7 +953,7 @@ export type ChunkMessage = z.infer<typeof ChunkMessageSchema>;
 
 export const MessageCompleteMessageSchema = z.object({
   type: z.literal('message_complete'),
-  conversationId: z.string().uuid(),
+  conversationId: ConversationIdSchema,
   reason: z.enum(['success', 'error', 'out_of_tokens', 'killed']).optional(),
 });
 
@@ -1053,7 +961,7 @@ export type MessageCompleteMessage = z.infer<typeof MessageCompleteMessageSchema
 
 export const SessionBoundMessageSchema = z.object({
   type: z.literal('session_bound'),
-  conversationId: z.string().uuid(),
+  conversationId: ConversationIdSchema,
   sessionId: z.string(),
 });
 
@@ -1061,7 +969,7 @@ export type SessionBoundMessage = z.infer<typeof SessionBoundMessageSchema>;
 
 export const StatusMessageSchema = z.object({
   type: z.literal('status'),
-  conversationId: z.string().uuid(),
+  conversationId: ConversationIdSchema,
   isRunning: z.boolean(),
   isStreaming: z.boolean(),
 });
@@ -1078,7 +986,7 @@ export type ErrorMessage = z.infer<typeof ErrorMessageSchema>;
 // Sub-Agent Messages (Server -> Client)
 export const SubAgentStartMessageSchema = z.object({
   type: z.literal('subagent_start'),
-  conversationId: z.string().uuid(),
+  conversationId: ConversationIdSchema,
   subAgent: SubAgentSchema,
 });
 
@@ -1086,7 +994,7 @@ export type SubAgentStartMessage = z.infer<typeof SubAgentStartMessageSchema>;
 
 export const SubAgentUpdateMessageSchema = z.object({
   type: z.literal('subagent_update'),
-  conversationId: z.string().uuid(),
+  conversationId: ConversationIdSchema,
   subAgentId: z.string(),
   toolUses: z.number().int().nonnegative().optional(),
   tokens: z.number().int().nonnegative().optional(),
@@ -1100,7 +1008,7 @@ export type SubAgentUpdateMessage = z.infer<typeof SubAgentUpdateMessageSchema>;
 
 export const SubAgentCompleteMessageSchema = z.object({
   type: z.literal('subagent_complete'),
-  conversationId: z.string().uuid(),
+  conversationId: ConversationIdSchema,
   subAgentId: z.string(),
   status: z.enum(['completed', 'error']),
   completedAt: z.coerce.date(),
@@ -1111,7 +1019,7 @@ export type SubAgentCompleteMessage = z.infer<typeof SubAgentCompleteMessageSche
 // Queue update broadcast (Server → Client)
 export const QueueUpdatedMessageSchema = z.object({
   type: z.literal('queue_updated'),
-  conversationId: z.string().uuid(),
+  conversationId: ConversationIdSchema,
   queue: z.array(QueuedMessageSchema),
 });
 
@@ -1130,15 +1038,15 @@ export type ConversationsUpdatedMessage = z.infer<typeof ConversationsUpdatedMes
 export const ConversationLoadCompleteMessageSchema = z.object({
   type: z.literal('conversation_load_complete'),
   /** Final authoritative membership after progressive startup hydration. */
-  conversationIds: z.array(z.string()).optional(),
+  conversationIds: z.array(ConversationIdSchema).optional(),
 });
 
 export type ConversationLoadCompleteMessage = z.infer<typeof ConversationLoadCompleteMessageSchema>;
 
 export const MergeChildStatusMessageSchema = z.object({
   type: z.literal('merge_child_status'),
-  parentConversationId: z.string().uuid(),
-  childConversationId: z.string().uuid(),
+  parentConversationId: ConversationIdSchema,
+  childConversationId: ConversationIdSchema,
   reviewUuid: z.string().uuid(),
   status: MergeChildStatusSchema,
   reviewDocPath: z.string().nullish(),
@@ -1149,6 +1057,7 @@ export type MergeChildStatusMessage = z.infer<typeof MergeChildStatusMessageSche
 
 export const ServerMessageSchema = z.discriminatedUnion('type', [
   InitMessageSchema,
+  z.object({ type: z.literal('buddy_archived'), buddyId: z.string() }),
   ConversationCreatedMessageSchema,
   ConversationUpdatedEventSchema,
   ConversationDeletedMessageSchema,
@@ -1294,4 +1203,36 @@ export {
   isCodexAgentMessageEvent,
 } from './adapters/codex-session.types.js';
 
-export * from './buddy-soul.js';
+export { BuddyMessageSchema, BuddyMessageReplySchema, type BuddyMessage } from './buddy-message';
+export {
+  BUDDY_SOUL_MAX_CHARACTERS,
+  BuddySoulSchema,
+  BuddySoulUpdateSchema,
+  BuddySoulConflictDetailsSchema,
+  BuddySoulConflictSchema,
+  type BuddySoul,
+  type BuddySoulUpdate,
+} from './buddy-soul.js';
+
+export {
+  BuddyEmploymentSchema,
+  BuddyTeamMemberSchema,
+  BuddyTeamStateSchema,
+  type BuddyEmployment,
+  type BuddyTeamState,
+} from './buddy-team.js';
+
+export * from './buddy-coordination.js';
+export * from './buddy-workspace-activity.js';
+export * from './buddy-team-configuration.js';
+
+export * from './buddy-team-configuration-result.js';
+
+export {
+  TeamConfigurationProposalSchema,
+  formatTeamConfigurationProposal,
+  parseTeamConfigurationProposal,
+  type TeamConfigurationProposal,
+} from './buddy-message.js';
+
+export * from './buddy-observation.js';

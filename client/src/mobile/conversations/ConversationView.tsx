@@ -5,6 +5,7 @@ import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { loadConversationDetails, setActiveConversationId } from '../../atoms/actions';
 import {
+  chatMessageGroupsAtomFamily,
   childConversationsAtomFamily,
   conversationAtomFamily,
   conversationDetailsLoadedAtomFamily,
@@ -17,7 +18,6 @@ import {
 import { forkConversation } from '../../atoms/fork-actions';
 import { mergeChildErrorAtomFamily, mergeChildStatusAtomFamily } from '../../atoms/mergeAtoms';
 import { markMessagesSeen, setSavedActiveConversationId } from '../../atoms/ui';
-import { BuddyBuilderResultCard } from '../../components/buddies/BuddyBuilderResultCard';
 import { effectiveSwarmDebugPrefix } from '../../components/buddies/ui-contract';
 import { useCopyAction } from '../../hooks/useCopyAction';
 import { useProviderCatalog } from '../../hooks/useProviderCatalog';
@@ -32,7 +32,7 @@ import {
   turnDiagnosticsFromAttempt,
 } from '../../utils/turn-diagnostics';
 import { ComposerMobile } from '../components/ComposerMobile';
-import { MessageRow } from '../components/MessageRow';
+import { AssistantResponseRow, MessageRow } from '../components/MessageRow';
 import { MobileBadge, MobileSection, MobileSurface } from '../components/MobileUI';
 import { ModelSheetMobile, modelSummary } from '../components/ModelSheetMobile';
 import { PromptPaletteMobile } from '../components/PromptPaletteMobile';
@@ -492,6 +492,8 @@ export function ConversationView({
   const conversation = useAtomValue(conversationAtomFamily(conversationId));
   const detailsLoaded = useAtomValue(conversationDetailsLoadedAtomFamily(conversationId));
   const streamingText = useAtomValue(streamingAtomFamily(conversationId));
+  const messageGroups = useAtomValue(chatMessageGroupsAtomFamily(conversationId));
+  const totalMessageCount = conversation?.messages.length ?? 0;
   const pendingCreation = useAtomValue(pendingCreationAtomFamily(conversationId));
   const conversationLoadComplete = useAtomValue(conversationLoadCompleteAtom);
   const pendingConfigCommand = useAtomValue(pendingConfigCommandAtomFamily(conversationId));
@@ -549,17 +551,6 @@ export function ConversationView({
     };
   }, [conversationId, conversation, detailsLoaded]);
 
-  // Merge streaming at render time — never write messages mid-stream
-  const messages = useMemo(() => {
-    if (!conversation) return [];
-    if (!streamingText) return conversation.messages;
-    const msgs = conversation.messages.slice();
-    const last = msgs[msgs.length - 1];
-    if (last?.role !== 'assistant') return conversation.messages;
-    msgs[msgs.length - 1] = { ...last, content: last.content + streamingText };
-    return msgs;
-  }, [conversation, streamingText]);
-
   // Same derivation as Chat.tsx: unified sub-agents + swarm prefix + resume lineage.
   // Reuses shared utils so desktop and mobile cannot drift.
   const unifiedSubAgents = useMemo(() => {
@@ -586,14 +577,14 @@ export function ConversationView({
 
   // Mark seen when last message becomes visible (IntersectionObserver plumbing §4)
   useEffect(() => {
-    if (messages.length === 0) return;
+    if (messageGroups.length === 0) return;
     const el = lastMessageRef.current;
     if (!el) return;
     const observer = new IntersectionObserver(
       (entries) => {
         for (const entry of entries) {
           if (entry.isIntersecting) {
-            markMessagesSeen(conversationId, messages.length - 1);
+            markMessagesSeen(conversationId, totalMessageCount - 1);
           }
         }
       },
@@ -601,7 +592,7 @@ export function ConversationView({
     );
     observer.observe(el);
     return () => observer.disconnect();
-  }, [conversationId, messages.length]);
+  }, [conversationId, totalMessageCount, messageGroups.length]);
 
   // Prompt palette: Ctrl+P / Cmd+P at the pane level (matches desktop Chat.tsx).
   // Owned here so hardware keyboards work even when composer textarea is not focused.
@@ -625,7 +616,7 @@ export function ConversationView({
     if (nearBottom) {
       el.scrollTop = el.scrollHeight;
     }
-  }, [messages.length, streamingText]);
+  }, [messageGroups, streamingText]);
 
   const handlePaletteSelect = (content: string) => {
     // Push into composer via prop (primary) + event bridge (fallback if composer remounts)
@@ -875,28 +866,30 @@ export function ConversationView({
 
       {/* Flat message list — not virtualized, iOS momentum-scroll (§10 Phase 1) */}
       <div ref={scrollRef} className="mobile-chat__messages">
-        {messages.length === 0 ? (
+        {messageGroups.length === 0 ? (
           <div className="mobile-chat__empty">
             {isBuddyBuilderConversation(conversation)
               ? 'Describe a Buddy or a whole team, their workspace, and what they should accomplish.'
               : 'No messages yet. Send a message to start.'}
           </div>
         ) : (
-          messages.map((msg, idx) => (
-            <MessageRow
-              key={`${idx}-${msg.timestamp ? new Date(msg.timestamp).getTime() : idx}`}
-              message={msg}
-              isLast={idx === messages.length - 1}
-              lastMessageRef={lastMessageRef}
-            />
-          ))
-        )}
-        {isBuddyBuilderConversation(conversation) && (
-          <BuddyBuilderResultCard
-            key={conversation.id}
-            conversationId={conversation.id}
-            isRunning={isRunning}
-          />
+          messageGroups.map((group, index) =>
+            group.type === 'assistant' ? (
+              <AssistantResponseRow
+                key={group.firstMessageIndex}
+                response={group}
+                isLast={index === messageGroups.length - 1}
+                lastMessageRef={lastMessageRef}
+              />
+            ) : (
+              <MessageRow
+                key={group.firstMessageIndex}
+                message={group.messages[0]}
+                isLast={index === messageGroups.length - 1}
+                lastMessageRef={lastMessageRef}
+              />
+            )
+          )
         )}
         {(isRunning || isStreaming) && !streamingText && !turnDiagnostics && (
           <div className="mobile-chat__thinking">Thinking…</div>

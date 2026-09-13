@@ -16,7 +16,13 @@ export function summarizeConversation(conversation: Conversation): Conversation 
     ...conversation,
     messageCount: conversation.messageCount ?? conversation.messages.length,
     messages: lastMessage
-      ? [{ ...lastMessage, content: lastMessage.content.slice(0, PREVIEW_CONTENT_LENGTH) }]
+      ? [
+          {
+            ...lastMessage,
+            content: lastMessage.content.slice(0, PREVIEW_CONTENT_LENGTH),
+            toolCall: undefined,
+          },
+        ]
       : [],
   };
 }

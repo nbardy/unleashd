@@ -109,10 +109,11 @@ test('automation completion requires structured JSON', () => {
     ),
     { done: true, outcome: 'Campaign is ready.' }
   );
-  assert.deepEqual(parseAutomationCompletion('[BUDDY_AUTOMATION_DONE]'), {
-    done: false,
-    outcome: null,
-  });
+  assert.throws(
+    () => parseAutomationCompletion('[BUDDY_AUTOMATION_DONE]'),
+    /Invalid automation completion/
+  );
+  assert.throws(() => parseAutomationCompletion('null'), /Invalid automation completion/);
 });
 
 test('Buddy context is typed conversation metadata independent of swarm state', () => {
@@ -276,7 +277,7 @@ test('scheduler fails a bounded loop that exhausts iterations without structured
     createConversation: async () => ({
       conversationId: 'conversation-exhausted',
       async runTurn() {
-        return 'continue';
+        return '{"buddyAutomation":{"done":false,"outcome":"Continue"}}';
       },
       stop() {},
       finish() {},

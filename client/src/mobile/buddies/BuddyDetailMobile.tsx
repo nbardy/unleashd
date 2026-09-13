@@ -1,14 +1,25 @@
+import '../../components/buddies/BuddyTeamExecution.css';
+import { BuddyTeamExecution } from '../../components/buddies/BuddyTeamExecution';
+import { archivedBuddyIdsAtom } from '../../atoms/buddy-visibility';
+import { BuddySettings } from '../../components/buddies/BuddySettings';
+import '../../components/buddies/BuddyMessages.css';
+import '../../components/buddies/BuddyCoordination.css';
+import '../../components/buddies/BuddySoulConflict.css';
+import { BuddyTeamStateSchema } from '@unleashd/shared';
 import { useAtomValue } from 'jotai';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, Navigate, useNavigate, useParams } from 'react-router-dom';
+import { BuddyBackgroundTasks } from '../../components/buddies/BuddyBackgroundTasks';
+import '../../components/buddies/BuddyBackgroundTasks.css';
 import { allConversationIdsAtom } from '../../atoms/conversations';
 import { createConversation } from '../../atoms/pending-creations';
-import { BuddyMemoryPanel } from '../../components/buddies/BuddyMemoryPanel';
+import { BuddyCoordination } from '../../components/buddies/BuddyCoordination';
+import { BuddyMemoryWorkspace } from '../../components/buddies/BuddyMemoryWorkspace';
+import { BuddyMessages } from '../../components/buddies/BuddyMessages';
 import { asArray, buddyApi } from '../../components/buddies/api';
 import {
   buildBuddyContextForTalk,
   countReviewConversations,
-  deriveBuddyHierarchy,
   filterAutomationConversations,
   filterVisibleConversations,
   getLatestWorkspaceConversation,
@@ -23,13 +34,9 @@ import {
   buddyTabPath,
   parseEmployeeTab,
 } from '../../components/buddies/buddy-tabs';
-import { formatMemoryWriteError, normalizeBuddyMemory } from '../../components/buddies/memory';
 import type {
   Buddy,
   BuddyAutomation,
-  BuddyMemory,
-  BuddyMemoryDocumentKind,
-  BuddyMemoryRecallResult,
   BuddyProject,
   ConversationLink,
   EmployeeRecord,
@@ -38,7 +45,6 @@ import type {
   Sprint,
   Workspace,
 } from '../../components/buddies/types';
-import { EMPTY_MEMORY } from '../../components/buddies/types';
 import { EmptyState } from '../components/EmptyState';
 import { AutomationsTab } from './BuddyDetailAutomationsTab';
 import { ConversationsTab } from './BuddyDetailConversationsTab';
@@ -79,17 +85,16 @@ export function BuddyDetailMobile() {
   const availableIds = useMemo(() => new Set(conversationIds), [conversationIds]);
 
   const [employee, setEmployee] = useState<EmployeeRecord | null>(null);
-  const [memory, setMemory] = useState<BuddyMemory>(EMPTY_MEMORY);
   const [automations, setAutomations] = useState<BuddyAutomation[]>([]);
   // The tab is the URL, not state (see components/buddies/buddy-tabs.ts).
   // `routedTab === null` means the URL is not canonical yet — redirect below.
+  const archived = useAtomValue(archivedBuddyIdsAtom);
   const routedTab = parseEmployeeTab(tabSegment);
   const activeTab: EmployeeTab = routedTab ?? 'work';
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState<string>('');
   const [showReviewConversations, setShowReviewConversations] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [memoryError, setMemoryError] = useState<string | null>(null);
   const [automationError, setAutomationError] = useState<string | null>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [profileError, setProfileError] = useState<string | null>(null);
@@ -108,14 +113,7 @@ export function BuddyDetailMobile() {
       if (signal?.aborted || generation !== loadGenerationRef.current) return;
       const buddy = (detail.buddy ?? detail) as unknown as Buddy;
       const workspaces = asArray<Workspace>(detail, 'workspaces');
-      const relationships = asArray<{
-        from_buddy_id: string;
-        to_buddy_id: string;
-        kind: string;
-        from_buddy_name?: string;
-        to_buddy_name?: string;
-      }>(detail, 'relationships');
-      const { manager, directReports } = deriveBuddyHierarchy(relationships, buddy.id);
+      const teamState = BuddyTeamStateSchema.parse(detail);
       const legacyWorkItems = asArray<LegacyWorkItem>(detail, 'legacyWorkItems');
       const record: EmployeeRecord = {
         buddy,
@@ -128,8 +126,9 @@ export function BuddyDetailMobile() {
           detail,
           'skills'
         ),
-        manager,
-        directReports,
+        manager: teamState.manager,
+        directReports: teamState.team,
+        messages: asArray<EmployeeRecord['messages'][number]>(detail, 'messages'),
         reviews: asArray<EmployeeRecord['reviews'][number]>(detail, 'reviews'),
         approvals: asArray<EmployeeRecord['approvals'][number]>(detail, 'approvals'),
       };
@@ -145,27 +144,6 @@ export function BuddyDetailMobile() {
     [buddyId, loadGenerationRef]
   );
 
-  const loadMemory = useCallback(
-    async (signal?: AbortSignal, generation = loadGenerationRef.current) => {
-      if (!buddyId) return;
-      const encoded = encodeURIComponent(buddyId);
-      const [contextPayload, memoryPayload] = await Promise.all([
-        buddyApi<Record<string, unknown>>(`/api/buddies/${encoded}/context`, { signal }),
-        buddyApi<BuddyMemory>(`/api/buddies/${encoded}/memory`, { signal }),
-      ]);
-      if (signal?.aborted || generation !== loadGenerationRef.current) return;
-      setMemory(
-        normalizeBuddyMemory(
-          memoryPayload,
-          typeof contextPayload.soul === 'string' ? contextPayload.soul : undefined,
-          employee?.buddy.soul_path ?? null
-        )
-      );
-      setMemoryError(null);
-    },
-    [buddyId, employee?.buddy.soul_path, loadGenerationRef]
-  );
-
   const loadAutomations = useCallback(
     async (signal?: AbortSignal, generation = loadGenerationRef.current) => {
       if (!buddyId) return;
@@ -178,81 +156,6 @@ export function BuddyDetailMobile() {
     [buddyId, loadGenerationRef]
   );
 
-  const runMemoryAction = async (key: string, action: () => Promise<unknown>) => {
-    setBusy(key);
-    setMemoryError(null);
-    try {
-      await action();
-      await loadMemory();
-    } catch (cause) {
-      setMemoryError(formatMemoryWriteError(cause));
-      throw cause;
-    } finally {
-      setBusy(null);
-    }
-  };
-
-  const updateMemory = async (
-    documentKind: BuddyMemoryDocumentKind,
-    content: string,
-    reasoning: string,
-    baseVersion: number
-  ) => {
-    await runMemoryAction(`memory-${documentKind}`, () =>
-      buddyApi(
-        `/api/buddies/${encodeURIComponent(buddyId ?? '')}/memory/${documentKind === 'longTerm' ? 'long_term' : 'working'}`,
-        {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            content,
-            reasoning,
-            baseVersion,
-            workspaceId: selectedWorkspaceId,
-          }),
-        }
-      )
-    );
-  };
-
-  const rememberNote = async (input: {
-    topic: string;
-    kind: string;
-    body: string;
-    scope: 'current' | 'home' | 'all';
-  }) => {
-    await runMemoryAction('memory-note', () =>
-      buddyApi(`/api/buddies/${encodeURIComponent(buddyId ?? '')}/memory/notes`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...input, workspaceId: selectedWorkspaceId }),
-      })
-    );
-  };
-
-  const recallNotes = async (input: {
-    pattern: string;
-    scope: 'current' | 'home' | 'all';
-  }): Promise<BuddyMemoryRecallResult> =>
-    buddyApi<{ data: BuddyMemoryRecallResult }>(
-      `/api/buddies/${encodeURIComponent(buddyId ?? '')}/memory/recall`,
-      {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ...input, workspaceId: selectedWorkspaceId }),
-      }
-    ).then((result) => result.data);
-
-  const rememberLegacy = async (kind: 'journal' | 'curated', content: string) => {
-    await runMemoryAction('remember', () =>
-      buddyApi(`/api/buddies/${encodeURIComponent(buddyId ?? '')}/memory`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ kind, content }),
-      })
-    );
-  };
-
   useEffect(() => {
     if (!buddyId) return;
     const generation = ++loadGenerationRef.current;
@@ -263,7 +166,6 @@ export function BuddyDetailMobile() {
     setShowReviewConversations(false);
     setSelectedWorkspaceId('');
     setEmployee(null);
-    setMemory(EMPTY_MEMORY);
     setAutomations([]);
     void loadEmployee(controller.signal, generation)
       .catch((cause: unknown) => {
@@ -275,28 +177,21 @@ export function BuddyDetailMobile() {
         if (!controller.signal.aborted) setLoading(false);
       });
     return () => controller.abort();
-  }, [buddyId, loadEmployee, loadGenerationRef]);
+  }, [buddyId, loadEmployee, loadGenerationRef, archived]);
 
   useEffect(() => {
     if (!buddyId || !employee) return;
     if (activeTab === 'work' || activeTab === 'conversations') return;
     const generation = loadGenerationRef.current;
     const controller = new AbortController();
-    if (activeTab === 'memory') {
-      void loadMemory(controller.signal, generation).catch((cause: unknown) => {
-        if (!controller.signal.aborted) {
-          setMemoryError(cause instanceof Error ? cause.message : String(cause));
-        }
-      });
-    } else {
-      void loadAutomations(controller.signal, generation).catch((cause: unknown) => {
-        if (!controller.signal.aborted) {
-          setAutomationError(cause instanceof Error ? cause.message : String(cause));
-        }
-      });
-    }
+    if (activeTab !== 'automations') return;
+    void loadAutomations(controller.signal, generation).catch((cause: unknown) => {
+      if (!controller.signal.aborted) {
+        setAutomationError(cause instanceof Error ? cause.message : String(cause));
+      }
+    });
     return () => controller.abort();
-  }, [activeTab, buddyId, employee, loadAutomations, loadMemory, loadGenerationRef]);
+  }, [activeTab, buddyId, employee, loadAutomations, loadGenerationRef]);
 
   const workspace = useMemo(
     () => selectWorkspace(employee?.workspaces ?? [], selectedWorkspaceId),
@@ -396,6 +291,8 @@ export function BuddyDetailMobile() {
     );
   }
 
+  if (buddyId && archived.has(buddyId)) return <Navigate to="/buddies" replace />;
+
   // Canonicalise `/buddies/:id` (and any junk tab segment) onto a real tab URL.
   if (routedTab === null) {
     return <Navigate to={buddyTabPath(buddyId, activeTab)} replace />;
@@ -450,7 +347,14 @@ export function BuddyDetailMobile() {
         </div>
         <div className="mobile-buddy-detail__meta">
           <span>
-            Reports to <strong>{employee.manager?.name ?? 'Owner'}</strong>
+            Reports to{' '}
+            {employee.manager ? (
+              <Link to={`/buddies/${encodeURIComponent(employee.manager.id)}`}>
+                {employee.manager.name}
+              </Link>
+            ) : (
+              <strong>Owner</strong>
+            )}
           </span>
           <span>
             {employee.skills.length} {employee.skills.length === 1 ? 'skill' : 'skills'}
@@ -466,24 +370,25 @@ export function BuddyDetailMobile() {
           <div className="mobile-buddy-reports">
             <span className="mobile-buddy-reports__title">
               {employee.directReports.length}{' '}
-              {employee.directReports.length === 1 ? 'sub-buddy' : 'sub-buddies'}
+              {employee.directReports.length === 1 ? 'direct report' : 'direct reports'}
             </span>
             <div className="mobile-buddy-reports__list">
               {employee.directReports.map((report) => (
-                <button
+                <Link
                   key={report.id}
-                  type="button"
                   className="mobile-buddy-reports__item"
-                  onClick={() => navigate(`/buddies/${encodeURIComponent(report.id)}`)}
+                  to={`/buddies/${encodeURIComponent(report.id)}`}
                 >
                   {report.name}
-                </button>
+                  {report.status === 'archived' ? ' · Archived' : ''}
+                </Link>
               ))}
             </div>
           </div>
         )}
 
         <BuddyProfileEditor
+          workspaceId={workspace?.id}
           buddy={employee.buddy}
           busy={busy === 'profile'}
           error={profileError}
@@ -509,6 +414,30 @@ export function BuddyDetailMobile() {
           </Link>
         ))}
       </nav>
+
+      {activeTab === 'mailbox' && (
+        <BuddyMessages
+          key={employee.buddy.id}
+          buddyId={employee.buddy.id}
+          buddyNames={Object.fromEntries(
+            [
+              employee.buddy,
+              ...employee.directReports,
+              ...(employee.manager ? [employee.manager] : []),
+            ].map((member) => [member.id, member.name])
+          )}
+          messages={employee.messages}
+          availableConversationIds={availableIds}
+          onReply={async (messageId, reply) => {
+            await buddyApi(`/api/buddies/messages/${encodeURIComponent(messageId)}/reply`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(reply),
+            });
+            await loadEmployee();
+          }}
+        />
+      )}
 
       {activeTab === 'work' && (
         <WorkTab
@@ -538,23 +467,36 @@ export function BuddyDetailMobile() {
         />
       )}
 
+      {activeTab === 'background' && (
+        <BuddyBackgroundTasks buddyId={employee.buddy.id} workspaces={employee.workspaces} />
+      )}
+
       {activeTab === 'memory' && (
-        <BuddyMemoryPanel
-          memory={memory}
-          error={memoryError}
+        <BuddyMemoryWorkspace
+          key={`${employee.buddy.id}:${workspace?.id}`}
           buddy={employee.buddy}
+          workspaceId={workspace?.id ?? ''}
           variant="mobile"
-          onRetry={() => {
-            const controller = new AbortController();
-            void loadMemory(controller.signal).catch((cause: unknown) =>
-              setMemoryError(cause instanceof Error ? cause.message : String(cause))
-            );
-          }}
-          onUpdate={updateMemory}
-          onRememberLegacy={rememberLegacy}
-          onRememberNote={rememberNote}
-          onRecall={recallNotes}
         />
+      )}
+
+      {activeTab === 'team' && workspace && (
+        <BuddyTeamExecution
+          key={`${employee.buddy.id}:${workspace.id}`}
+          buddyId={employee.buddy.id}
+          workspaceId={workspace.id}
+          availableConversationIds={availableIds}
+        />
+      )}
+      {activeTab === 'settings' && (
+        <>
+          <BuddyCoordination
+            key={employee.buddy.id}
+            buddyId={employee.buddy.id}
+            availableConversationIds={availableIds}
+          />
+          <BuddySettings buddyId={employee.buddy.id} name={employee.buddy.name} />
+        </>
       )}
 
       {activeTab === 'automations' && (
@@ -577,3 +519,4 @@ export function BuddyDetailMobile() {
     </div>
   );
 }
+import '../../components/buddies/BuddyProjectExecution.css';

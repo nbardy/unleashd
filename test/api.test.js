@@ -242,7 +242,7 @@ async function runTests() {
       const codex = catalog.providers?.find((provider) => provider.id === 'codex');
       if (!codex) throw new Error('Missing Codex catalog entry');
       const modelIds = codex.models.map((model) => model.id);
-      for (const expected of ['gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna']) {
+      for (const expected of ['gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna', 'gpt-6-astra']) {
         if (!modelIds.includes(expected)) throw new Error(`Missing catalog model ${expected}`);
       }
     });

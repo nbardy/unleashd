@@ -1,0 +1,209 @@
+{
+  "case": "I-native-note-reference",
+  "variant": "candidate",
+  "repeat": 2,
+  "rubric": [
+    "Preserves 14 cm and uncertainty about temperature.",
+    "Reuses the exact native note name/ref without inventing a filesystem prefix.",
+    "Creates no duplicate note; CAS and partial-save behavior are covered by the boundary suite."
+  ],
+  "model": "gpt-5.6-luna",
+  "effort": "low",
+  "instructionsSha256": "273771502f8d2267fff3b106eecadd7983f99d6c87adc37d3dc858bb15488f14",
+  "toolDescriptionsSha256": "1fe1ca463feff7eb046c02dd160ef1a34b8c94cac1716c9bb20311a291c57a70",
+  "elapsedMs": 22484,
+  "before": {
+    "working": "",
+    "longTerm": "Owner preference: use explicit measurement units.",
+    "note": {
+      "id": "knowledge_c038dc30-6b0f-4014-a097-f7fa9d14c4a3",
+      "ref": {
+        "targetBuddyId": "buddy_321f56e1-e484-4cd8-874b-3818a96161cb",
+        "scope": {
+          "kind": "owner_thread",
+          "conversationId": "curation-owner-fixture"
+        },
+        "kind": "note",
+        "name": "2026-09-13T04:38:24.568Z:b8a7fefb-2fb3-40bb-a600-ea8b2714be1c"
+      },
+      "revision": 1,
+      "auditId": "audit_e30e97f7-5d5c-4f16-b18d-012436c8dbe2"
+    }
+  },
+  "after": {
+    "working": {
+      "id": "knowledge_8fc65c1a-aebb-4f89-9ed1-ae72d2efc35a",
+      "ref": {
+        "targetBuddyId": "buddy_321f56e1-e484-4cd8-874b-3818a96161cb",
+        "kind": "working",
+        "scope": {
+          "kind": "owner_thread",
+          "conversationId": "curation-owner-fixture"
+        }
+      },
+      "revision": 2,
+      "content": "Calibration correction is relevant across experiments; keep its cause uncertain (temperature remains untested). Evidence: note `2026-09-13T04:38:24.568Z:b8a7fefb-2fb3-40bb-a600-ea8b2714be1c`."
+    },
+    "longTerm": {
+      "id": "knowledge_6666d989-a5ee-4c7b-8247-6ae83d77c00e",
+      "ref": {
+        "targetBuddyId": "buddy_321f56e1-e484-4cd8-874b-3818a96161cb",
+        "kind": "long_term",
+        "scope": {
+          "kind": "owner_thread",
+          "conversationId": "curation-owner-fixture"
+        }
+      },
+      "revision": 2,
+      "content": "Owner preference: use explicit measurement units.\n\nConfirmed reusable correction: calibration offset is 14 cm, not 10 cm; temperature as a cause remains an untested hypothesis. Evidence: note `2026-09-13T04:38:24.568Z:b8a7fefb-2fb3-40bb-a600-ea8b2714be1c`."
+    },
+    "notes": [
+      {
+        "id": "knowledge_c038dc30-6b0f-4014-a097-f7fa9d14c4a3",
+        "ref": {
+          "targetBuddyId": "buddy_321f56e1-e484-4cd8-874b-3818a96161cb",
+          "scope": {
+            "kind": "owner_thread",
+            "conversationId": "curation-owner-fixture"
+          },
+          "kind": "note",
+          "name": "2026-09-13T04:38:24.568Z:b8a7fefb-2fb3-40bb-a600-ea8b2714be1c"
+        },
+        "revision": 1,
+        "content": "{\"topic\":\"Temperature calibration correction\",\"body\":\"Confirmed reusable correction: the calibration offset is 14 cm, not 10 cm. Temperature as a cause remains an untested hypothesis. Preserve this native note reference; it has no filesystem path.\"}"
+      }
+    ]
+  },
+  "receipt": {
+    "id": "a60e899298e9e6d128560a05f0c2e73c7ee811aad665ad0a0c5820c8c2a65121",
+    "buddyId": "buddy_321f56e1-e484-4cd8-874b-3818a96161cb",
+    "workspaceId": "project_fa70e305-0d85-4db5-9d06-70dc596b6c58",
+    "conversationId": "curation-owner-fixture",
+    "attemptId": "fixture-attempt",
+    "completedAt": "2026-09-13T04:38:24.570Z",
+    "status": "complete",
+    "model": "gpt-5.6-luna",
+    "reasoningEffort": "low",
+    "writes": {
+      "working": 1,
+      "longTerm": 1,
+      "notes": 0
+    },
+    "finishedAt": "2026-09-13T04:38:46.989Z"
+  },
+  "calls": [
+    {
+      "operation": "get_memory",
+      "input": {
+        "doc": "long_term"
+      },
+      "result": {
+        "id": "knowledge_6666d989-a5ee-4c7b-8247-6ae83d77c00e",
+        "ref": {
+          "targetBuddyId": "buddy_321f56e1-e484-4cd8-874b-3818a96161cb",
+          "scope": {
+            "kind": "owner_thread",
+            "conversationId": "curation-owner-fixture"
+          },
+          "kind": "long_term"
+        },
+        "revision": 1,
+        "content": "Owner preference: use explicit measurement units."
+      }
+    },
+    {
+      "operation": "get_memory",
+      "input": {
+        "doc": "working"
+      },
+      "result": {
+        "id": "knowledge_8fc65c1a-aebb-4f89-9ed1-ae72d2efc35a",
+        "ref": {
+          "targetBuddyId": "buddy_321f56e1-e484-4cd8-874b-3818a96161cb",
+          "scope": {
+            "kind": "owner_thread",
+            "conversationId": "curation-owner-fixture"
+          },
+          "kind": "working"
+        },
+        "revision": 1,
+        "content": ""
+      }
+    },
+    {
+      "operation": "recall",
+      "input": {
+        "pattern": "Temperature calibration",
+        "limit": 8
+      },
+      "result": {
+        "pattern": "Temperature calibration",
+        "matches": [
+          {
+            "id": "knowledge_c038dc30-6b0f-4014-a097-f7fa9d14c4a3",
+            "ref": {
+              "targetBuddyId": "buddy_321f56e1-e484-4cd8-874b-3818a96161cb",
+              "scope": {
+                "kind": "owner_thread",
+                "conversationId": "curation-owner-fixture"
+              },
+              "kind": "note",
+              "name": "2026-09-13T04:38:24.568Z:b8a7fefb-2fb3-40bb-a600-ea8b2714be1c"
+            },
+            "revision": 1,
+            "content": "{\"topic\":\"Temperature calibration correction\",\"body\":\"Confirmed reusable correction: the calibration offset is 14 cm, not 10 cm. Temperature as a cause remains an untested hypothesis. Preserve this native note reference; it has no filesystem path.\"}",
+            "path": "2026-09-13T04:38:24.568Z:b8a7fefb-2fb3-40bb-a600-ea8b2714be1c",
+            "workspace_id": "project_fa70e305-0d85-4db5-9d06-70dc596b6c58",
+            "created_at": null
+          }
+        ],
+        "truncated": false
+      }
+    },
+    {
+      "operation": "update_memory",
+      "input": {
+        "doc": "working",
+        "content": "Calibration correction is relevant across experiments; keep its cause uncertain (temperature remains untested). Evidence: note `2026-09-13T04:38:24.568Z:b8a7fefb-2fb3-40bb-a600-ea8b2714be1c`.",
+        "reasoning": "Preserve the owner's cross-experiment relevance and explicit uncertainty, with the exact recalled native note reference; no task-status bookkeeping added.",
+        "baseVersion": 1
+      },
+      "result": {
+        "id": "knowledge_8fc65c1a-aebb-4f89-9ed1-ae72d2efc35a",
+        "ref": {
+          "targetBuddyId": "buddy_321f56e1-e484-4cd8-874b-3818a96161cb",
+          "scope": {
+            "kind": "owner_thread",
+            "conversationId": "curation-owner-fixture"
+          },
+          "kind": "working"
+        },
+        "revision": 2,
+        "auditId": "audit_97564f9b-136a-4372-a7e9-e2e917bbfaf2"
+      }
+    },
+    {
+      "operation": "update_memory",
+      "input": {
+        "doc": "long_term",
+        "content": "Owner preference: use explicit measurement units.\n\nConfirmed reusable correction: calibration offset is 14 cm, not 10 cm; temperature as a cause remains an untested hypothesis. Evidence: note `2026-09-13T04:38:24.568Z:b8a7fefb-2fb3-40bb-a600-ea8b2714be1c`.",
+        "reasoning": "Promote the recalled confirmed correction because it is reusable across experiments, while preserving the owner's uncertainty about causation and the exact native note reference.",
+        "baseVersion": 1
+      },
+      "result": {
+        "id": "knowledge_6666d989-a5ee-4c7b-8247-6ae83d77c00e",
+        "ref": {
+          "targetBuddyId": "buddy_321f56e1-e484-4cd8-874b-3818a96161cb",
+          "scope": {
+            "kind": "owner_thread",
+            "conversationId": "curation-owner-fixture"
+          },
+          "kind": "long_term"
+        },
+        "revision": 2,
+        "auditId": "audit_9c0f21ca-264f-4bea-bb3a-f54a04cc6055"
+      }
+    }
+  ],
+  "modelReport": "Saved:\n- Updated working memory with uncertainty and evidence pointer.\n- Added confirmed 14 cm calibration correction to long-term memory.\n- Reused existing evidence note; no new note created."
+}

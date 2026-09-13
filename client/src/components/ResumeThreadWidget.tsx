@@ -1,5 +1,8 @@
 import type { Conversation } from '@unleashd/shared';
+import { useAtomValue } from 'jotai';
+import { useId } from 'react';
 import { Link } from 'react-router-dom';
+import { allConversationIdsAtom } from '../atoms/conversations';
 import './ResumeThreadWidget.css';
 
 /**
@@ -19,59 +22,57 @@ export function ResumeThreadWidget({
   sourceConversationId,
   sourceConversation,
 }: ResumeThreadWidgetProps) {
-  const displayId = sourceConversation?.id?.substring(0, 8) ?? sourceConversationId.substring(0, 8);
-  const provider = sourceConversation?.provider ?? 'claude';
+  const tooltipId = useId();
+  const conversationIds = useAtomValue(allConversationIdsAtom);
+  const sourceAvailable = conversationIds.includes(sourceConversationId);
+  const displayId = sourceConversationId.substring(0, 8);
   const folder = sourceConversation?.workingDirectory?.replace(/^\/Users\/[^/]+/, '~');
+  const icon = (
+    <svg
+      aria-hidden="true"
+      width="16"
+      height="16"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="1.5"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      <circle cx="6" cy="5" r="2" />
+      <circle cx="6" cy="19" r="2" />
+      <circle cx="18" cy="5" r="2" />
+      <path d="M6 7v10M18 7v2a4 4 0 0 1-4 4H6" />
+    </svg>
+  );
 
   return (
-    <div className="resume-thread-widget">
-      <div className="resume-thread-widget__icon" aria-hidden="true">
-        <svg
-          aria-hidden="true"
-          width="16"
-          height="16"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
+    <span className="resume-thread-widget">
+      {sourceAvailable ? (
+        <Link
+          className="resume-thread-widget__trigger"
+          to={`/chat/${sourceConversationId}`}
+          aria-label={`Forked from ${displayId}. Open source thread`}
+          aria-describedby={tooltipId}
         >
-          <path d="M9 7 5 11l4 4" />
-          <path d="M5 11h9a5 5 0 0 1 5 5v1" />
-        </svg>
-      </div>
-      <div className="resume-thread-widget__body">
-        <div className="resume-thread-widget__title">
-          <span>Resumed from</span>
-          <Link to={`/chat/${sourceConversationId}`}>{displayId}</Link>
-        </div>
-        <div className="resume-thread-widget__meta">
-          <span className={`resume-thread-widget__provider provider-${provider}`}>{provider}</span>
-          {folder && <span className="resume-thread-widget__folder">{folder}</span>}
-        </div>
-      </div>
-      <Link
-        className="resume-thread-widget__link"
-        to={`/chat/${sourceConversationId}`}
-        aria-label={`Open source thread ${displayId}`}
-        title="Open source thread"
-      >
-        <span>Open</span>
-        <svg
-          aria-hidden="true"
-          width="14"
-          height="14"
-          viewBox="0 0 24 24"
-          fill="none"
-          stroke="currentColor"
-          strokeWidth="2"
-          strokeLinecap="round"
-          strokeLinejoin="round"
+          {icon}
+        </Link>
+      ) : (
+        <button
+          type="button"
+          className="resume-thread-widget__trigger"
+          aria-label={`Forked from ${displayId}. Source thread unavailable`}
+          aria-describedby={tooltipId}
         >
-          <path d="m9 18 6-6-6-6" />
-        </svg>
-      </Link>
-    </div>
+          {icon}
+        </button>
+      )}
+      <span className="resume-thread-widget__tooltip" id={tooltipId} role="tooltip">
+        <strong>Forked from {displayId}</strong>
+        {sourceConversation?.provider && <span>{sourceConversation.provider}</span>}
+        {folder && <span>{folder}</span>}
+        <span>{sourceAvailable ? 'Click to open source thread' : 'Source thread unavailable'}</span>
+      </span>
+    </span>
   );
 }

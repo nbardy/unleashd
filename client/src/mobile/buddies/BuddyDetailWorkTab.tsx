@@ -1,6 +1,7 @@
 import { useAtomValue } from 'jotai';
 import { useMemo } from 'react';
 import { allConversationIdsAtom } from '../../atoms/conversations';
+import { BuddyProjectExecution } from '../../components/buddies/BuddyProjectExecution';
 import type {
   BuddyProject,
   ConversationLink,
@@ -86,51 +87,47 @@ export function WorkTab({
       </h2>
 
       <div className="mobile-buddy-work-list">
-        {workspaceProjects
-          .filter((project) => !['done', 'cancelled'].includes(project.status))
-          .map((project) => {
-            const progress = buddyProjectTodoProgress(project);
-            const hasConversation = employee.conversations.some((conversation) => {
-              const conversationId =
-                conversation.conversation_id ?? conversation.unleashd_conversation_id;
-              return (
-                conversation.buddy_project_id === project.id &&
-                Boolean(conversationId && availableSet.has(conversationId))
-              );
-            });
+        {workspaceProjects.map((project) => {
+          const progress = buddyProjectTodoProgress(project);
+          const hasConversation = employee.conversations.some((conversation) => {
+            const conversationId =
+              conversation.conversation_id ?? conversation.unleashd_conversation_id;
             return (
-              <article
-                key={project.id}
-                className={`mobile-buddy-work-card mobile-buddy-work-card--${project.status}`}
-              >
-                <div className="mobile-buddy-work-card__header">
-                  <h3>{project.title}</h3>
-                  <span className={`mobile-badge mobile-badge--${project.status}`}>
-                    {project.status}
-                  </span>
-                </div>
-                <p className="mobile-muted">Next action: {project.next_action ?? 'Not set'}</p>
-                {project.blocked_reason && (
-                  <p className="mobile-buddy-work-card__blocker">
-                    Blocker: {project.blocked_reason}
-                  </p>
-                )}
-                <p className="mobile-muted">
-                  Todos: {progress.done}/{progress.total}
-                </p>
-                <button
-                  type="button"
-                  disabled={!workspace}
-                  className="mobile-cta"
-                  onClick={() => workspace && onOpenProjectConversation(workspace, project.id)}
-                >
-                  {hasConversation ? 'Open conversation' : 'Start conversation'}
-                </button>
-              </article>
+              conversation.buddy_project_id === project.id &&
+              Boolean(conversationId && availableSet.has(conversationId))
             );
-          })}
-        {workspaceProjects.filter((project) => !['done', 'cancelled'].includes(project.status))
-          .length === 0 && <EmptyState message="No open tasks for this workspace." />}
+          });
+          return (
+            <article
+              key={project.id}
+              className={`mobile-buddy-work-card mobile-buddy-work-card--${project.status}`}
+            >
+              <div className="mobile-buddy-work-card__header">
+                <h3>{project.title}</h3>
+                <span className={`mobile-badge mobile-badge--${project.status}`}>
+                  {project.status}
+                </span>
+              </div>
+              <p className="mobile-muted">Next action: {project.next_action ?? 'Not set'}</p>
+              {project.blocked_reason && (
+                <p className="mobile-buddy-work-card__blocker">Blocker: {project.blocked_reason}</p>
+              )}
+              <p className="mobile-muted">
+                Todos: {progress.done}/{progress.total}
+              </p>
+              <BuddyProjectExecution project={project} availableConversationIds={availableSet} />
+              <button
+                type="button"
+                disabled={!workspace}
+                className="mobile-cta"
+                onClick={() => workspace && onOpenProjectConversation(workspace, project.id)}
+              >
+                {hasConversation ? 'Open conversation' : 'Start conversation'}
+              </button>
+            </article>
+          );
+        })}
+        {workspaceProjects.length === 0 && <EmptyState message="No tasks for this workspace." />}
       </div>
 
       {legacyWork.length > 0 && (

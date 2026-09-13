@@ -8,6 +8,9 @@ import {
   buildMergeReviewPrompt,
   providerSupportsFork,
 } from '@unleashd/shared';
+import { type CoordinationStore, coordinationStore } from './buddies/coordination-store';
+import { BuddyOperationInputSchemas } from './buddies/operations';
+import { BuddyRunExecutor } from './buddies/run-executor';
 
 import { executeCommand } from '@nbardy/agent-cli';
 import express from 'express';
@@ -65,10 +68,13 @@ import { registerConversationWebSocket } from './transport/conversation-websocke
 import { auditLocalAgents } from './audit.js';
 import { BuddyBuilderService, type BuddyBuilderStore } from './buddies/builder';
 import { BuddyControlServer } from './buddies/control-server';
+import { ownerWorkspaceIds } from './buddies/owner-team-configuration';
 import { createBuddyDispatchService } from './buddies/dispatch-service';
 import { createBuddiesIntegration } from './buddies/integration';
 import { registerBuddyRoutes } from './buddies/routes';
 import { BuddyScheduler, nextAutomationRunAt } from './buddies/scheduler';
+import { BuddyMemoryReviewer } from './buddies/memory-review';
+import { createMemoryReviewRunner } from './buddies/memory-review-runner';
 
 let startupAuditResults: ReturnType<typeof auditLocalAgents> = [];
 
@@ -137,9 +143,16 @@ let buddyScheduler: BuddyScheduler | null = null;
 let shutdownController: ShutdownController | null = null;
 const beginMutation = (options?: { allowDuringStartup?: boolean }) =>
   shutdownController?.beginMutation(options) ?? null;
-const pauseBuddyScheduler = () => buddyScheduler?.pause();
-const resumeBuddyScheduler = () => buddyScheduler?.start();
+const pauseBuddyScheduler = () => {
+  buddyScheduler?.pause();
+  memoryReviewer.pause();
+};
+const resumeBuddyScheduler = () => {
+  buddyScheduler?.start();
+  memoryReviewer.start();
+};
 const stopBuddyScheduler = () => {
+  memoryReviewer.stop();
   buddyScheduler?.stop();
   buddyScheduler = null;
 };
@@ -153,6 +166,7 @@ const {
   getStore: getBuddiesStore,
   sendError: sendBuddiesError,
   resolveConversation: resolveBuddyConversation,
+  readCurrentConversation: readCurrentBuddyContext,
   updateStatus: updateBuddyConversationLink,
   settleDelegation: settleBuddyDelegation,
   createLink: createBuddyConversationLink,
@@ -200,6 +214,7 @@ const buddyCreationService: BuddyCreationService = createBuddyCreationService({
   resolveWorkingDirectory: resolveWorkingDirectoryInput,
   isProviderAvailable: (provider) => provider in providers,
   createId: uuidv4,
+  getConversation: (id) => applicationContext.registry.get(id),
   createConversation: (options) => new Conversation(options),
   registerConversation: applicationContext.registry.set,
   createConversationLink: createBuddyConversationLink,
@@ -227,9 +242,44 @@ const buddyControlServer = new BuddyControlServer({
   isConversationActive: (conversationId) => conversations.get(conversationId)?.isRunning === true,
   dispatchDelegation: buddyDispatchService.delegation,
   dispatchReview: buddyDispatchService.review,
+  dispatchMessage: buddyDispatchService.send,
 });
 
+let coordinationRuntimeStore: CoordinationStore | null = null;
+const memoryReviewer = new BuddyMemoryReviewer({
+  directory: path.join(APP_DATA_DIR, 'memory-reviews'),
+  getStore: getBuddiesStore,
+  run: createMemoryReviewRunner(buddyControlServer),
+  logger: console,
+});
 const Conversation = createConversationRuntime({
+  readCurrentBuddyContext,
+  reviewCompletedBuddyTurn: (turn) => memoryReviewer.enqueue(turn),
+  beginBuddyChatRun: (context, conversationId, maxRuntimeMs) => {
+    if (!coordinationRuntimeStore) throw new Error('Buddy execution store is not ready');
+    const run = coordinationRuntimeStore.beginBuddyChatRun({
+      buddyId: context.buddyId,
+      workspaceId: context.workspaceId,
+      conversationId,
+      projectId: context.buddyProjectId,
+      allowedOperations: context.allowedBuddyOperations ?? Object.keys(BuddyOperationInputSchemas),
+      // Explicitly pass the foreground budget (runtime ms -> package seconds).
+      // Do not fall back to a package/background default: that reintroduced the
+      // 600s cutoff independently of the already-fixed bridge watchdog.
+      maxRuntimeSeconds: maxRuntimeMs / 1000,
+    });
+    return { id: run.id, claim_token: run.claim_token!, deadline: run.deadline! };
+  },
+  finishBuddyChatRun: (id, token, status, detail) => {
+    if (!coordinationRuntimeStore) throw new Error('Buddy execution store is not ready');
+    const run = coordinationRuntimeStore.getBuddyRun(id);
+    coordinationRuntimeStore.finishBuddyRun(id, {
+      claimToken: token,
+      status: run?.status === 'cancel_requested' ? 'cancelled' : status,
+      outcome: status === 'complete' ? detail : undefined,
+      error: status === 'failed' ? detail : undefined,
+    });
+  },
   broadcast: applicationContext.broadcast,
   registerSessionAlias: applicationContext.sessions.registerAlias,
   unregisterSessionAlias: applicationContext.sessions.unregisterAlias,
@@ -246,6 +296,30 @@ const Conversation = createConversationRuntime({
   issueBuddyControlCapability: (context, conversationId, automationClaimToken) =>
     buddyControlServer.issue(context, conversationId, automationClaimToken),
   revokeBuddyControlCapability: (conversationId) => buddyControlServer.revoke(conversationId),
+  issueOwnerControlCapability: (input, conversationId) => {
+    if (!coordinationRuntimeStore) throw new Error('Buddy execution store is not ready');
+    return buddyControlServer.issueOwner(
+      input,
+      conversationId,
+      ownerWorkspaceIds(coordinationRuntimeStore),
+      () => ownerWorkspaceIds(coordinationRuntimeStore!),
+      conversations.get(conversationId)?.kind.kind === 'buddy_builder'
+    );
+  },
+  recordBuddyTurnOrigin: (conversationId, input, context, contentHash) => {
+    if (!coordinationRuntimeStore) throw new Error('Buddy execution store is not ready');
+    coordinationRuntimeStore.recordAuditEvent({
+      buddy: context?.buddyId,
+      workspace: context?.workspaceId,
+      operation: 'buddy.turn_input',
+      payload: {
+        conversation_id: conversationId,
+        input_id: input.inputId,
+        origin: input.origin,
+        content_hash: contentHash,
+      },
+    });
+  },
   requestAutomationCancellation: async (runId) => {
     if (!buddyScheduler) throw new Error('Buddy automation scheduler is not ready');
     return buddyScheduler.cancel(runId);
@@ -272,6 +346,13 @@ registerConversationWebSocket(wss, {
     beginMutation({ allowDuringStartup: command.type === 'create_conversation' }),
   configService: conversationConfigService,
   getUIState: () => persistedServerState.getUIState(),
+  isBuddyArchived: async (buddyId) =>
+    (await getBuddiesStore()).getBuddy(buddyId)?.status === 'archived',
+  getArchivedBuddyIds: async () =>
+    (await getBuddiesStore())
+      .listBuddies()
+      .filter((buddy) => buddy.status === 'archived')
+      .map((buddy) => buddy.id),
   getDefaultWorkingDirectory: () => resolveDefaultWorkingDirectory(),
   resolveWorkingDirectory: resolveWorkingDirectoryInput,
   resolveBuddyConversation,
@@ -282,7 +363,6 @@ registerConversationWebSocket(wss, {
     void settleBuddyDelegation(conversation, 'cancelled');
   },
   dispatchInitialMessage: buddyCreationService.dispatchInitialMessageIfPending,
-  creationFingerprint: buddyCreationService.creationFingerprint,
   broadcast: applicationContext.broadcast,
   broadcastExcept: applicationContext.broadcastExcept,
 });
@@ -331,9 +411,23 @@ registerTurnDiagnosticsRoutes(app, turnAttemptJournal);
 persistedServerState.registerRoutes(app);
 
 registerBuddyRoutes(app, {
+  onBuddyArchived: async (buddyId) => {
+    applicationContext.broadcast({ type: 'buddy_archived', buddyId });
+    for (const conversation of conversations.values()) {
+      if (conversation.kind.kind === 'buddy' && conversation.kind.buddyId === buddyId) {
+        conversation.clearQueue();
+        conversation.stop();
+      }
+    }
+  },
   getStore: getBuddiesStore,
+  dispatchMessage: buddyDispatchService.send,
   getScheduler: () => buddyScheduler,
-  createConversation: buddyCreationService.createServerBuddyConversation,
+  createConversation: (input) =>
+    buddyCreationService.createServerBuddyConversation({
+      ...input,
+      ownerInput: { origin: 'owner_input', inputId: input.commandId },
+    }),
   createBuilderConversation: ({ commandId, conversationId }) =>
     buddyCreationService.createBuddyBuilderConversation({
       commandId,
@@ -361,7 +455,17 @@ registerBuddyRoutes(app, {
     (await conversationConfigService.getRecord(conversationId))?.status === 'deleted',
 });
 
-registerSearchRoutes(app, () => conversations.values());
+registerSearchRoutes(
+  app,
+  () => conversations.values(),
+  async () => {
+    const store = await getBuddiesStore();
+    return (conversationId) => {
+      const kind = conversations.get(conversationId)?.kind;
+      return kind?.kind !== 'buddy' || store.getBuddy(kind.buddyId)?.status !== 'archived';
+    };
+  }
+);
 
 const isUnderKnownProject = createKnownProjectAuthorizer(() =>
   Array.from(conversations.values(), (conversation) => conversation.workingDirectory)
@@ -439,6 +543,18 @@ const paletteService = createPaletteService({
 paletteService.registerRoutes(app);
 
 registerUsageRoutes(app, Object.keys(providers) as ProviderName[]);
+app.get('/api/buddies/:buddyId/memory-reviews', async (req, res) => {
+  try {
+    const store = await getBuddiesStore();
+    if (!store.getBuddy(req.params.buddyId)) {
+      res.status(404).json({ error: 'Buddy not found' });
+      return;
+    }
+    res.json(memoryReviewer.list(req.params.buddyId));
+  } catch (error) {
+    sendBuddiesError(res, error, 500);
+  }
+});
 registerStaticClient(app, path.join(__dirname, '../../client/dist'));
 
 const DEV_CLIENT_PORT = 7489;
@@ -453,7 +569,8 @@ shutdownController = registerShutdownHandlers(
   },
   {
     conversations: () => conversations.values(),
-    activeSchedulerRuns: () => buddyScheduler?.health().activeRunIds.length ?? 0,
+    activeSchedulerRuns: () =>
+      (buddyScheduler?.health().activeRunIds.length ?? 0) + memoryReviewer.activeCount(),
     pauseScheduler: pauseBuddyScheduler,
     resumeScheduler: resumeBuddyScheduler,
     stopScheduler: stopBuddyScheduler,
@@ -488,8 +605,8 @@ const sessionLoader = createSessionLoader({
   configService: conversationConfigService,
   loadConversations: (options) =>
     loadAllConversations({ ...options, cache: normalizedSessionCache }),
-  pollConversations: (mtimes, activeIds) =>
-    pollForChanges(mtimes, activeIds, { cache: normalizedSessionCache }),
+  pollConversations: (mtimes, activeIds, options) =>
+    pollForChanges(mtimes, activeIds, { ...options, cache: normalizedSessionCache }),
   createConversation: (options) => new Conversation(options),
   createId: uuidv4,
   resolveBuddyConversation,
@@ -518,8 +635,25 @@ void runServerStartup(
     },
     startOptionalScheduler: async () => {
       try {
+        const coordinationPackage = await getBuddiesStore();
+        coordinationRuntimeStore = coordinationStore(coordinationPackage);
+        try {
+          await memoryReviewer.initialize();
+          memoryReviewer.start();
+        } catch (error) {
+          console.warn('[buddies] Memory reviewer unavailable:', error);
+        }
         buddyScheduler = new BuddyScheduler({
-          store: await getBuddiesStore(),
+          store: coordinationPackage,
+          memoryReviewAfterEachTurn: true,
+          pollIntervalMs: 1000,
+          coordination: new BuddyRunExecutor({
+            cancelLegacyRun: (id) => buddyScheduler?.cancel(id) ?? Promise.resolve(),
+            store: coordinationPackage,
+            getConversation: (id) => conversations.get(id),
+            createConversation: buddyCreationService.createServerBuddyConversation,
+            ensureConversationReady: buddyCreationService.ensureConversationReady,
+          }),
           createConversation: buddyCreationService.createAutomationConversation,
         });
         buddyScheduler.start();
@@ -540,7 +674,8 @@ void runServerStartup(
       return true;
     },
     abortStartup: () => shutdownController?.abortStartup(),
-    loadConversations: sessionLoader.loadExistingConversations,
+    loadConversations: () =>
+      conversationConfigStore.withSessionLookupIndex(sessionLoader.loadExistingConversations),
     startPolling: sessionLoader.startFilePolling,
   }
 )

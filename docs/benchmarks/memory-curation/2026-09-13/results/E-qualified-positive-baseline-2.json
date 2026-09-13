@@ -1,0 +1,179 @@
+{
+  "case": "E-qualified-positive",
+  "variant": "baseline",
+  "repeat": 2,
+  "rubric": [
+    "Preserves the confirmed tiny-data learning and measured improvement.",
+    "Retains poor held-out geometry and missing controlled scale evidence.",
+    "Does not conclude diffusion cannot learn or that generalization succeeded."
+  ],
+  "model": "gpt-5.6-luna",
+  "effort": "low",
+  "instructionsSha256": "3c56c97dc6eb4ba8a9643cb1fbc94b17991b785b885016821c37c936127e318f",
+  "toolDescriptionsSha256": "1fe1ca463feff7eb046c02dd160ef1a34b8c94cac1716c9bb20311a291c57a70",
+  "elapsedMs": 22742,
+  "before": {
+    "working": "Hypothesis: the tiny-data improvement might generalize; scale evidence is missing.",
+    "longTerm": "A tiny diffusion model learned the training examples: measured error fell from 0.29 to 0.04. Tiny memorization is established; generalization remains unverified.",
+    "note": {
+      "id": "knowledge_3bf82b07-6cc5-4486-ba35-17f8c9cabac8",
+      "ref": {
+        "targetBuddyId": "buddy_5090a5df-53cb-4012-ba4c-ddb9be7cc11a",
+        "scope": {
+          "kind": "owner_thread",
+          "conversationId": "curation-owner-fixture"
+        },
+        "kind": "note",
+        "name": "2026-09-13T04:29:07.016Z:b0736d9a-e105-4987-b8c0-f2b72de0f3b6"
+      },
+      "revision": 1,
+      "auditId": "audit_d1cfdc97-b27c-4f0c-968a-64fb3cab9b3a"
+    }
+  },
+  "after": {
+    "working": {
+      "id": "knowledge_b3cdce17-a108-4760-a4c0-3f11a4afec8a",
+      "ref": {
+        "targetBuddyId": "buddy_5090a5df-53cb-4012-ba4c-ddb9be7cc11a",
+        "kind": "working",
+        "scope": {
+          "kind": "owner_thread",
+          "conversationId": "curation-owner-fixture"
+        }
+      },
+      "revision": 2,
+      "content": "Held-out style inspection shows poor geometry, so the tiny-data improvement should not be treated as evidence of generalization. Earlier training-example learning remains supported; no controlled scale comparison has been run."
+    },
+    "longTerm": {
+      "id": "knowledge_60d0acce-e9ff-4085-8a77-d5c26d62033d",
+      "ref": {
+        "targetBuddyId": "buddy_5090a5df-53cb-4012-ba4c-ddb9be7cc11a",
+        "kind": "long_term",
+        "scope": {
+          "kind": "owner_thread",
+          "conversationId": "curation-owner-fixture"
+        }
+      },
+      "revision": 2,
+      "content": "A tiny diffusion model learned the training examples: measured error fell from 0.29 to 0.04. Tiny memorization is established. A held-out style inspection later showed poor geometry, so generalization is not supported by the current evidence; no controlled scale comparison has been performed."
+    },
+    "notes": [
+      {
+        "id": "knowledge_3bf82b07-6cc5-4486-ba35-17f8c9cabac8",
+        "ref": {
+          "targetBuddyId": "buddy_5090a5df-53cb-4012-ba4c-ddb9be7cc11a",
+          "scope": {
+            "kind": "owner_thread",
+            "conversationId": "curation-owner-fixture"
+          },
+          "kind": "note",
+          "name": "2026-09-13T04:29:07.016Z:b0736d9a-e105-4987-b8c0-f2b72de0f3b6"
+        },
+        "revision": 1,
+        "content": "{\"topic\":\"Tiny diffusion measurement\",\"body\":\"Saved tiny-data measurement: error 0.29 to 0.04 on training examples. No held-out style claim was established.\"}"
+      }
+    ]
+  },
+  "receipt": {
+    "id": "a60e899298e9e6d128560a05f0c2e73c7ee811aad665ad0a0c5820c8c2a65121",
+    "buddyId": "buddy_5090a5df-53cb-4012-ba4c-ddb9be7cc11a",
+    "workspaceId": "project_2e5339c7-d7b5-45cc-abbc-526d7075d497",
+    "conversationId": "curation-owner-fixture",
+    "attemptId": "fixture-attempt",
+    "completedAt": "2026-09-13T04:29:07.018Z",
+    "status": "complete",
+    "model": "gpt-5.6-luna",
+    "reasoningEffort": "low",
+    "writes": {
+      "working": 1,
+      "longTerm": 1,
+      "notes": 0
+    },
+    "finishedAt": "2026-09-13T04:29:29.661Z"
+  },
+  "calls": [
+    {
+      "operation": "get_memory",
+      "input": {
+        "doc": "long_term"
+      },
+      "result": {
+        "id": "knowledge_60d0acce-e9ff-4085-8a77-d5c26d62033d",
+        "ref": {
+          "targetBuddyId": "buddy_5090a5df-53cb-4012-ba4c-ddb9be7cc11a",
+          "scope": {
+            "kind": "owner_thread",
+            "conversationId": "curation-owner-fixture"
+          },
+          "kind": "long_term"
+        },
+        "revision": 1,
+        "content": "A tiny diffusion model learned the training examples: measured error fell from 0.29 to 0.04. Tiny memorization is established; generalization remains unverified."
+      }
+    },
+    {
+      "operation": "get_memory",
+      "input": {
+        "doc": "working"
+      },
+      "result": {
+        "id": "knowledge_b3cdce17-a108-4760-a4c0-3f11a4afec8a",
+        "ref": {
+          "targetBuddyId": "buddy_5090a5df-53cb-4012-ba4c-ddb9be7cc11a",
+          "scope": {
+            "kind": "owner_thread",
+            "conversationId": "curation-owner-fixture"
+          },
+          "kind": "working"
+        },
+        "revision": 1,
+        "content": "Hypothesis: the tiny-data improvement might generalize; scale evidence is missing."
+      }
+    },
+    {
+      "operation": "update_memory",
+      "input": {
+        "doc": "working",
+        "content": "Held-out style inspection shows poor geometry, so the tiny-data improvement should not be treated as evidence of generalization. Earlier training-example learning remains supported; no controlled scale comparison has been run.",
+        "reasoning": "New owner-thread evidence narrows the prior hypothesis: poor held-out geometry weakens generalization support, while explicitly preserving the earlier result and the unresolved scale comparison.",
+        "baseVersion": 1
+      },
+      "result": {
+        "id": "knowledge_b3cdce17-a108-4760-a4c0-3f11a4afec8a",
+        "ref": {
+          "targetBuddyId": "buddy_5090a5df-53cb-4012-ba4c-ddb9be7cc11a",
+          "scope": {
+            "kind": "owner_thread",
+            "conversationId": "curation-owner-fixture"
+          },
+          "kind": "working"
+        },
+        "revision": 2,
+        "auditId": "audit_f831435a-7676-4901-acbf-d88a7dcd08da"
+      }
+    },
+    {
+      "operation": "update_memory",
+      "input": {
+        "doc": "long_term",
+        "content": "A tiny diffusion model learned the training examples: measured error fell from 0.29 to 0.04. Tiny memorization is established. A held-out style inspection later showed poor geometry, so generalization is not supported by the current evidence; no controlled scale comparison has been performed.",
+        "reasoning": "Record the newer held-out evaluation without invalidating the established training-example result. Preserve the distinction between memorization and unverified generalization, and add the explicitly stated missing scale comparison.",
+        "baseVersion": 1
+      },
+      "result": {
+        "id": "knowledge_60d0acce-e9ff-4085-8a77-d5c26d62033d",
+        "ref": {
+          "targetBuddyId": "buddy_5090a5df-53cb-4012-ba4c-ddb9be7cc11a",
+          "scope": {
+            "kind": "owner_thread",
+            "conversationId": "curation-owner-fixture"
+          },
+          "kind": "long_term"
+        },
+        "revision": 2,
+        "auditId": "audit_6ed1bfb3-a4d0-41fa-9929-75c598c79a76"
+      }
+    }
+  ],
+  "modelReport": "Saved:\n- Updated working memory to record poor held-out geometry and missing scale comparison.\n- Updated long-term memory to preserve training-example learning while marking generalization unsupported."
+}

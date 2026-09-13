@@ -1,0 +1,66 @@
+.buddy-team-execution {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 1rem;
+  min-width: 0;
+}
+.buddy-team-execution__run {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: .65rem;
+  font-size: .9rem;
+  line-height: 1.5;
+  border: 1px solid var(--border-color);
+  border-radius: 8px;
+  padding: 1rem;
+  overflow-wrap: anywhere;
+}
+.buddy-team-execution__run header {
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: .5rem;
+}
+.buddy-team-execution__run form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .75rem;
+  align-items: end;
+}
+.buddy-team-execution__run label {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: .35rem;
+  flex: 1 1 220px;
+  max-width: 100%;
+  min-width: 0;
+}
+.buddy-team-execution__run input,
+.buddy-team-execution__run select {
+  width: 100%;
+  max-width: 100%;
+  min-height: 44px;
+}
+.buddy-team-execution button,
+.buddy-team-execution input,
+.buddy-team-execution select {
+  background: var(--bg-raised-3);
+  color: var(--text-primary);
+  border: 1px solid var(--border-color);
+  border-radius: 5px;
+  padding: .5rem .75rem;
+  font: inherit;
+}
+.buddy-team-execution nav {
+  display: flex;
+  gap: .5rem;
+}
+.buddy-team-execution details {
+  overflow-wrap: anywhere;
+}
+.buddy-team-execution details ul {
+  padding-left: 1.25rem;
+}
+.buddy-team-execution button {
+  min-height: 44px;
+}

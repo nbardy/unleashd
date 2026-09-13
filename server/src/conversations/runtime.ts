@@ -15,6 +15,7 @@ import type {
   ConversationConfigState,
   Conversation as ConversationData,
   ConversationKind,
+  ConversationPlacement,
   ConversationPurpose,
   Message,
   ModelId,
@@ -26,9 +27,12 @@ import type {
   SubAgent,
 } from '@unleashd/shared';
 import {
+  BUDDY_TEAM_CONTRACT_VERSION,
   buddyContextFromKind,
   buddyKindFromContext,
   conversationKindFromLegacy,
+  formatBuddyBuilderToolResult,
+  formatBuddyTeamConfigurationToolResult,
   isBuddyKind,
   matchConversationKind,
   mergeReviewDocPath,
@@ -40,7 +44,9 @@ import {
   BUDDY_AUTOMATION_CLAIM_TOKEN_ENV,
   buddyBuilderMcpServers,
   buddyMcpServers,
+  buddyOwnerMcpServers,
 } from '../buddies/mcp-config';
+import type { CompletedBuddyTurn } from '../buddies/memory-review';
 import { assertBuddyProviderSupportsMcp } from '../buddies/provider-capability';
 import {
   SWARM_POLL_INTERVAL_MS,
@@ -82,6 +88,20 @@ export type MergeChildMeta = {
   parentConversationId: string;
   reviewUuid: string;
 };
+
+class BuddyChatCapacityUnavailableError extends Error {
+  constructor() {
+    super('Conversation execution slot is unavailable');
+    this.name = 'BuddyChatCapacityUnavailableError';
+  }
+}
+
+function isBuddyChatCapacityUnavailable(error: unknown): boolean {
+  return (
+    error instanceof BuddyChatCapacityUnavailableError ||
+    (error instanceof Error && error.message === 'Conversation execution slot is unavailable')
+  );
+}
 
 interface ChunkData {
   type: 'chunk';
@@ -223,6 +243,11 @@ export interface ConversationRuntimeView {
   toJSON(): ConversationData;
 }
 
+type TurnInput = Readonly<{
+  origin: 'owner_input' | 'buddy_message' | 'schedule' | 'unknown';
+  inputId: string;
+}>;
+
 export interface ConversationRuntimeDependencies {
   broadcast(data: ConversationBroadcast): void;
   registerSessionAlias(sessionId: string | null | undefined, conversationId: string): void;
@@ -254,12 +279,40 @@ export interface ConversationRuntimeDependencies {
     | undefined;
   readLatestOompaRuntime(projectRoot: string): OompaRuntimeSnapshot;
   createSessionId(): string;
+  readCurrentBuddyContext?(context: BuddyContext): {
+    briefing: string;
+    memoryGeneration: string;
+    audienceKey?: string;
+  };
+  /** Enqueue memory maintenance only after a successful CLI exit and normalized event drain. */
+  reviewCompletedBuddyTurn?(turn: CompletedBuddyTurn): void;
+  beginBuddyChatRun?(
+    context: BuddyContext,
+    conversationId: string,
+    maxRuntimeMs: number
+  ): { id: string; claim_token: string; deadline: string };
+  finishBuddyChatRun?(
+    id: string,
+    token: string,
+    status: 'complete' | 'failed' | 'cancelled',
+    detail?: string
+  ): void;
   issueBuddyControlCapability?(
     context: BuddyContext,
     conversationId: string,
     automationClaimToken?: string
   ): Readonly<Record<string, string>>;
   revokeBuddyControlCapability?(conversationId: string): void;
+  issueOwnerControlCapability?(
+    input: Readonly<{ origin: 'owner_input'; inputId: string }>,
+    conversationId: string
+  ): Readonly<Record<string, string>>;
+  recordBuddyTurnOrigin?(
+    conversationId: string,
+    input: TurnInput,
+    context: BuddyContext | null,
+    contentHash: string
+  ): void;
   requestAutomationCancellation?(runId: string): Promise<unknown>;
   /** Test seam for the real provider boundary; production uses agent-cli directly. */
   executeTurn?: typeof executeCommand;
@@ -434,6 +487,7 @@ export interface ConversationOptions {
   buddyMemoryGeneration?: MemoryGenerationInput | null;
   /** Server-private automation ownership. Never serialized or placed in BuddyContext. */
   automationClaimToken?: string | null;
+  placement?: ConversationPlacement;
   purpose?: ConversationPurpose;
   kind?: ConversationKind | null;
   mergeParentMeta?: MergeParentMeta | null;
@@ -441,6 +495,7 @@ export interface ConversationOptions {
 }
 
 export interface ConversationRuntime extends EventEmitter, ConversationRuntimeView {
+  placement: ConversationPlacement;
   messages: Message[];
   process: ChildProcess | null;
   isStreaming: boolean;
@@ -465,14 +520,30 @@ export interface ConversationRuntime extends EventEmitter, ConversationRuntimeVi
   readonly memoryGeneration: string | null;
   readonly model: ModelId | undefined;
   readonly reasoningEffort: string | undefined;
-  sendMessage(content: string): void;
+  sendMessage(
+    content: string,
+    ownerInput?: Readonly<{ origin: 'owner_input'; inputId: string }>
+  ): void;
   sendAutomationMessage(content: string): void;
+  runCoordinationMessage(
+    content: string,
+    context: BuddyContext,
+    claimToken: string,
+    onDrained?: (status: 'complete' | 'failed', detail: string) => void
+  ): Promise<string>;
   spawnMergeReviewFork(content: string, forkSourceSessionId: string): void;
   stop(reason?: 'user_stop' | 'server_restart'): void;
+  expireCoordinationRun(): void;
   stopAutomationTurn(): void;
   resetProcess(): void;
-  enqueueMessage(content: string): void;
-  interruptAndSend(content: string): void;
+  enqueueMessage(
+    content: string,
+    ownerInput?: Readonly<{ origin: 'owner_input'; inputId: string }>
+  ): void;
+  interruptAndSend(
+    content: string,
+    ownerInput?: Readonly<{ origin: 'owner_input'; inputId: string }>
+  ): void;
   cancelQueuedMessage(messageId: string): void;
   clearQueue(): void;
   processQueue(): void;
@@ -506,6 +577,7 @@ export function buildFirstTurnCliContent(input: {
   buddyContext?: BuddyContext | null;
   buddyBriefing: string | null;
   buddyMemoryGeneration?: MemoryGenerationInput | null;
+  refreshBuddyContext?: boolean;
   swarmDebugPrefix: string | null;
   purpose?: ConversationPurpose;
 }): string {
@@ -522,7 +594,8 @@ export function buildFirstTurnCliContent(input: {
   // format is kept here for CLI backward compat but disk hydration no longer parses it for new writes.
   return matchConversationKind(effectiveKind, {
     buddy: (k) => {
-      if (!firstUnstartedTurn || input.buddyBriefing === null) return input.content;
+      if ((!firstUnstartedTurn && !input.refreshBuddyContext) || input.buddyBriefing === null)
+        return input.content;
       const ctx: BuddyContext = buddyContextFromKind(k);
       const encodedContext = Buffer.from(JSON.stringify(ctx), 'utf8').toString('base64url');
       const snapshot = createMemorySnapshot(
@@ -600,6 +673,7 @@ export function createConversationRuntime(
     // Debug prefix for swarm conversations — prepended to first CLI message.
     // Stays on the object (never cleared) so toJSON() includes it for client rendering.
     swarmDebugPrefix: string | null;
+    placement: ConversationPlacement;
     kind: ConversationKind;
     // Legacy compat: buddyContext/purpose are derived from kind. New code must use `kind` + `matchConversationKind`.
     // Kept as getters so old readers (buddies integration, client) keep working.
@@ -630,6 +704,7 @@ export function createConversationRuntime(
       return this._memorySnapshot?.briefing ?? null;
     }
     private _automationClaimToken: string | null;
+    private _coordinationExecution: { context: BuddyContext; claimToken: string } | null = null;
     // Merge feature: set on a "parent" thread that aggregates review docs from
     // N forked children. Children have mergeChildMeta instead.
     mergeParentMeta: MergeParentMeta | null;
@@ -675,6 +750,10 @@ export function createConversationRuntime(
     private _activeAttemptId: string | null = null;
     private _nextAttempt: { attemptId: string; queueMessageId?: string } | null = null;
     private _queuedAttemptIds = new Map<string, string>();
+    private _queuedOwnerInputs = new Map<
+      string,
+      Readonly<{ origin: 'owner_input'; inputId: string }>
+    >();
     private _terminalCauseHint: TurnTerminalCause | null = null;
     private _stopCause: 'user_stop' | 'server_restart' | null = null;
     private _lastAttemptActivityAt = 0;
@@ -731,6 +810,13 @@ export function createConversationRuntime(
           purpose: purpose ?? null,
           kind: null,
         });
+      this.placement =
+        opts.placement ??
+        (this.buddyContext?.automationRunId ||
+        buddyContext?.coordinationRunId ||
+        this.buddyContext?.delegatedByBuddyId
+          ? 'background'
+          : 'default');
       const isBuddyConversation = isBuddyKind(this.kind);
       this.isWorker = isBuddyConversation ? false : isWorker;
       this.swarmId = isBuddyConversation ? null : swarmId;
@@ -814,6 +900,7 @@ export function createConversationRuntime(
     }
 
     private _cancelQueuedAttempt(queueMessageId: string): void {
+      this._queuedOwnerInputs.delete(queueMessageId);
       const attemptId = this._queuedAttemptIds.get(queueMessageId);
       if (!attemptId) return;
       turnAttempts.terminal({
@@ -828,7 +915,8 @@ export function createConversationRuntime(
     private spawnForMessage(
       content: string,
       executionConfig: ResolvedExecutionConfig,
-      forkSourceSessionId?: string
+      forkSourceSessionId?: string,
+      turnInput: TurnInput = { origin: 'unknown', inputId: crypto.randomUUID() }
     ): void {
       if (this.process || this.isRunning) {
         console.warn(`[${this.id}] Already processing a message, ignoring`);
@@ -892,25 +980,110 @@ export function createConversationRuntime(
       };
       let turn: ReturnType<typeof executeCommand>;
       try {
+        if (
+          this.buddyContext &&
+          !this.buddyContext.automationRunId &&
+          !this._coordinationExecution &&
+          dependencies.beginBuddyChatRun
+        ) {
+          // Foreground tool authority must cover the provider's explicit runtime
+          // budget. Omitting it inherited claimBuddyRun's background default (600s),
+          // killing active owner chats on 2026-09-10 even with healthy heartbeats.
+          // Preserve this argument when refactoring or replacing the Buddy package.
+          // Guards: buddy-coordination.test.ts and conversation-runtime.test.ts;
+          // history: docs/incident-2026-09-10-buddy-chat-timeout.md.
+          const owned = dependencies.beginBuddyChatRun(
+            this.contextForInput(turnInput)!,
+            this.id,
+            TURN_MAX_RUNTIME_MS
+          );
+          this._coordinationExecution = {
+            context: { ...this.contextForInput(turnInput)!, coordinationRunId: owned.id },
+            claimToken: owned.claim_token,
+          };
+          const timer = setTimeout(
+            () => {
+              // Automatic expiry is max_runtime_timeout. stop() records user_stop
+              // and hid the 600s regression; retain timeout cleanup and joined drain.
+              this._handleTurnTimeout('max');
+            },
+            Math.max(0, Date.parse(owned.deadline) - Date.now())
+          );
+          const settle = (status: 'complete' | 'failed', detail: string) => {
+            clearTimeout(timer);
+            this.off('buddy-turn-complete', complete);
+            this.off('buddy-turn-failed', failed);
+            this._coordinationExecution = null;
+            try {
+              dependencies.finishBuddyChatRun?.(owned.id, owned.claim_token, status, detail);
+            } catch (error) {
+              console.error('[buddies] Could not settle owner turn', owned.id, error);
+            }
+          };
+          let pendingFailure: string | null = null;
+          const complete = (output: string) =>
+            settle(pendingFailure ? 'failed' : 'complete', pendingFailure ?? output);
+          const failed = (error: string) => {
+            if (this.process) {
+              pendingFailure = error;
+              return;
+            }
+            settle('failed', error);
+          };
+          this.once('buddy-turn-complete', complete);
+          this.on('buddy-turn-failed', failed);
+        }
+        const hasOwnerControls =
+          turnInput.origin === 'owner_input' &&
+          !!dependencies.issueOwnerControlCapability &&
+          this.kind.kind !== 'general';
+        let ownerControlEnv: Readonly<Record<string, string>> | undefined;
         const buddyServers = matchConversationKind(this.kind, {
           buddy: (kind) => {
-            const context = buddyContextFromKind(kind);
+            const context = this._coordinationExecution?.context ?? buddyContextFromKind(kind);
             return buddyMcpServers(context, this.id, undefined, {
+              UNLEASHD_BUDDY_OWNER_CONTROL_AVAILABLE: hasOwnerControls ? '1' : '0',
+              UNLEASHD_BUDDY_OWNER_CONTROL_CONTRACT: BUDDY_TEAM_CONTRACT_VERSION,
               ...dependencies.issueBuddyControlCapability?.(
                 context,
                 this.id,
-                this._automationClaimToken ?? undefined
+                this._coordinationExecution?.claimToken ?? this._automationClaimToken ?? undefined
               ),
-              ...(this._automationClaimToken
+              ...(this._coordinationExecution
+                ? {
+                    UNLEASHD_BUDDY_COORDINATION_RUN_ID:
+                      this._coordinationExecution.context.coordinationRunId!,
+                    [BUDDY_AUTOMATION_CLAIM_TOKEN_ENV]: this._coordinationExecution.claimToken,
+                  }
+                : {}),
+              ...(this._automationClaimToken && !this._coordinationExecution
                 ? {
                     [BUDDY_AUTOMATION_CLAIM_TOKEN_ENV]: this._automationClaimToken,
                   }
                 : {}),
             });
           },
-          buddy_builder: () => buddyBuilderMcpServers(this.id),
+          buddy_builder: () => {
+            if (!hasOwnerControls) return undefined;
+            ownerControlEnv = dependencies.issueOwnerControlCapability!(
+              { origin: 'owner_input', inputId: turnInput.inputId },
+              this.id
+            );
+            return buddyBuilderMcpServers(this.id, undefined, ownerControlEnv);
+          },
           general: () => undefined,
         });
+        if (buddyServers && hasOwnerControls)
+          Object.assign(
+            buddyServers,
+            buddyOwnerMcpServers(
+              ownerControlEnv ??
+                dependencies.issueOwnerControlCapability!(
+                  { origin: 'owner_input', inputId: turnInput.inputId },
+                  this.id
+                )
+            )
+          );
         if (buddyServers) assertBuddyProviderSupportsMcp(executionConfig.provider);
         const buddyRequest = buddyServers ? { mcpServers: buddyServers } : {};
 
@@ -945,6 +1118,18 @@ export function createConversationRuntime(
       } catch (error) {
         dependencies.revokeBuddyControlCapability?.(this.id);
         this._finishTurnAttempt('failed', 'spawn_failed');
+        if (isBuddyChatCapacityUnavailable(error)) {
+          // Owner turns do not share background capacity. If this still fires,
+          // surface one failed admission and preserve the submitted message;
+          // polling here previously created an unbounded spawn-failed storm.
+          broadcast({
+            type: 'conversation_updated',
+            reason: 'status',
+            conversation: this.toJSON(),
+          });
+          this.emit('buddy-turn-failed', 'Conversation execution slot is unavailable');
+          throw new BuddyChatCapacityUnavailableError();
+        }
         const message = error instanceof Error ? error.message : String(error);
         // An automation subscribes to this event before calling sendMessage(). A
         // provider/configuration failure can happen synchronously, before there
@@ -955,6 +1140,9 @@ export function createConversationRuntime(
         throw error;
       }
 
+      const memoryReviewAttemptId = this._activeAttemptId ?? crypto.randomUUID();
+      const memoryReviewStart = Math.max(0, this.messages.length - 1);
+      const memoryReviewContext = this.contextForInput(turnInput);
       this.process = turn.child;
       this._activeTurnStop = turn.stop;
       this.isRunning = true;
@@ -1011,6 +1199,16 @@ export function createConversationRuntime(
                 input: event.input,
                 displayText: event.displayText,
               });
+              break;
+            }
+            case 'tool.result': {
+              if (event.isError) break;
+              const content =
+                formatBuddyTeamConfigurationToolResult(event.output) ??
+                (this.kind.kind === 'buddy_builder'
+                  ? formatBuddyBuilderToolResult(event.output)
+                  : null);
+              if (content) this.handleOutput({ type: 'text_delta', text: `\n${content}\n` });
               break;
             }
             case 'turn.complete': {
@@ -1140,6 +1338,28 @@ export function createConversationRuntime(
               }
               this.emit('buddy-turn-failed', completionFailure);
             } else {
+              // The reviewer owns a separate process with no Buddy execution identity.
+              // Enqueue before completion listeners or processQueue can start another turn.
+              if (
+                memoryReviewContext &&
+                reason === 'success' &&
+                exitCode === 0 &&
+                !this._stopCause
+              ) {
+                try {
+                  dependencies.reviewCompletedBuddyTurn?.({
+                    attemptId: memoryReviewAttemptId,
+                    conversationId: this.id,
+                    context: { ...memoryReviewContext },
+                    completedAt: new Date().toISOString(),
+                    messages: this.messages
+                      .slice(memoryReviewStart)
+                      .map(({ role, content }) => ({ role, content })),
+                  });
+                } catch (error) {
+                  console.error('[buddies] Could not enqueue memory review', this.id, error);
+                }
+              }
               this._finishTurnAttempt('succeeded', 'provider_complete');
               const completedAssistant = [...this.messages]
                 .reverse()
@@ -1742,12 +1962,88 @@ export function createConversationRuntime(
       }
     }
 
-    sendMessage(content: string): void {
+    runCoordinationMessage(
+      content: string,
+      context: BuddyContext,
+      claimToken: string,
+      onDrained?: (status: 'complete' | 'failed', detail: string) => void
+    ): Promise<string> {
+      if (this.placement !== 'background') {
+        return Promise.reject(
+          new Error('Automated Buddy inputs require a background conversation')
+        );
+      }
+      if (this.process || this.isRunning || this._coordinationExecution || this.queue.length) {
+        return Promise.reject(new Error('Conversation is busy'));
+      }
+      if (
+        !context.coordinationRunId ||
+        !claimToken ||
+        context.buddyId !== this.buddyContext?.buddyId ||
+        context.workspaceId !== this.buddyContext?.workspaceId
+      ) {
+        return Promise.reject(new Error('Coordination identity or claim is missing'));
+      }
+      this._coordinationExecution = { context, claimToken };
+      return new Promise<string>((resolve, reject) => {
+        const cleanup = () => {
+          this.off('buddy-turn-complete', complete);
+          this.off('buddy-turn-failed', failed);
+          this._coordinationExecution = null;
+        };
+        let pendingFailure: string | null = null;
+        const complete = (output: string) => {
+          if (pendingFailure) {
+            failed(pendingFailure);
+            return;
+          }
+          try {
+            onDrained?.('complete', output);
+            cleanup();
+            resolve(output);
+          } catch (error) {
+            cleanup();
+            reject(error);
+          }
+        };
+        const failed = (reason: string) => {
+          if (this.process) {
+            pendingFailure = reason;
+            return;
+          }
+          try {
+            onDrained?.('failed', reason);
+          } catch (error) {
+            cleanup();
+            reject(error);
+            return;
+          }
+          cleanup();
+          reject(new Error(reason));
+        };
+        this.once('buddy-turn-complete', complete);
+        this.on('buddy-turn-failed', failed);
+        try {
+          this.sendMessageInternal(content, {
+            origin: 'buddy_message',
+            inputId: context.coordinationRunId!,
+          });
+        } catch (error) {
+          cleanup();
+          reject(error);
+        }
+      });
+    }
+
+    sendMessage(
+      content: string,
+      ownerInput?: Readonly<{ origin: 'owner_input'; inputId: string }>
+    ): void {
       if (this.buddyContext?.automationRunId) {
         this.refuseAutomationTranscript();
         return;
       }
-      this.sendMessageInternal(content);
+      this.sendMessageInternal(content, ownerInput);
     }
 
     /**
@@ -1772,7 +2068,10 @@ export function createConversationRuntime(
           `Automation memory writes are unsupported for provider "${this.provider}" or this run lacks an explicit memory-write capability.`
         );
       }
-      this.sendMessageInternal(content);
+      this.sendMessageInternal(content, {
+        origin: 'schedule',
+        inputId: this.buddyContext.automationRunId,
+      });
     }
 
     private refuseAutomationTranscript(message?: string): void {
@@ -1792,7 +2091,42 @@ export function createConversationRuntime(
       });
     }
 
-    private sendMessageInternal(content: string): void {
+    private _providerAudienceKey: string | null = null;
+    private contextForInput(input: TurnInput): BuddyContext | null {
+      if (this._coordinationExecution) {
+        const context = this._coordinationExecution.context;
+        return {
+          ...context,
+          knowledgeScope:
+            input.origin === 'owner_input'
+              ? { kind: 'owner_thread', conversationId: this.id }
+              : context.buddyProjectId
+                ? { kind: 'project', projectId: context.buddyProjectId }
+                : { kind: 'workspace', workspaceId: context.workspaceId },
+        };
+      }
+      if (!this.buddyContext) return null;
+      if (input.origin !== 'owner_input')
+        return {
+          ...this.buddyContext,
+          knowledgeScope: this.buddyContext.buddyProjectId
+            ? { kind: 'project', projectId: this.buddyContext.buddyProjectId }
+            : { kind: 'workspace', workspaceId: this.buddyContext.workspaceId },
+        };
+      // A new owner input gets a new foreground claim. Never rewrite a worker claim.
+      return {
+        ...this.buddyContext,
+        knowledgeScope: { kind: 'owner_thread', conversationId: this.id },
+        delegatedByBuddyId: null,
+        allowedBuddyOperations: undefined,
+        coordinationRunId: undefined,
+      };
+    }
+
+    private sendMessageInternal(
+      content: string,
+      input: TurnInput = { origin: 'unknown', inputId: crypto.randomUUID() }
+    ): void {
       console.log(
         `[${this.id}] sendMessage called, isRunning=${this.isRunning}, hasProcess=${this.process !== null}, queueDepth=${this.queue.length}, contentLen=${content.length}, preview="${formatLogPreview(content)}"`
       );
@@ -1800,6 +2134,24 @@ export function createConversationRuntime(
       if (this.process || this.isRunning) {
         console.warn(`[${this.id}] Already processing a message, ignoring`);
         return;
+      }
+
+      const turnBuddyContext = this.contextForInput(input);
+      const refreshBuddyContext = !!turnBuddyContext && !!dependencies.readCurrentBuddyContext;
+      if (turnBuddyContext && dependencies.readCurrentBuddyContext) {
+        const current = dependencies.readCurrentBuddyContext(turnBuddyContext);
+        if (current.audienceKey && current.audienceKey !== this._providerAudienceKey) {
+          // Unknown restored provider state is deliberately not resumed. Display
+          // history remains intact; only this audience's briefing enters the new session.
+          if (this._hasStartedSession) {
+            console.log(
+              `[${this.id}] Buddy context reset: reason=${this._providerAudienceKey === null ? 'restored_audience_unverified' : 'audience_changed'}, provider-session=${this.sessionId}`
+            );
+            this.resetProcess();
+          }
+          this._providerAudienceKey = current.audienceKey;
+        }
+        this._memorySnapshot = createMemorySnapshot(current.briefing, current.memoryGeneration);
       }
 
       // --- Chat Fork vs merge session-fork (easy to confuse) ---
@@ -1874,8 +2226,8 @@ export function createConversationRuntime(
       const executionConfig = this.preflightExecution();
       if (!executionConfig) return;
 
-      // UI/history retain clean user text. Only the first unstarted provider
-      // turn receives a hidden context prefix.
+      // UI/history retain clean user text. Buddy turns receive current bounded
+      // context; the persisted first-turn snapshot is historical evidence only.
       let cliContent = buildFirstTurnCliContent({
         content,
         messageCount: this.messages.length,
@@ -1883,12 +2235,13 @@ export function createConversationRuntime(
         kind: this.kind,
         buddyBriefing: this._buddyBriefing,
         buddyMemoryGeneration: this.memoryGeneration,
+        refreshBuddyContext,
         swarmDebugPrefix: this.swarmDebugPrefix,
       });
       // When provider-session inheritance ran above, skip first-turn briefing /
       // pasted-context prefixes — the CLI already has the source transcript.
       // Soft Chat Forks (no forkSourceSessionId) keep buildFirstTurnCliContent.
-      if (forkSourceSessionId) cliContent = content;
+      if (forkSourceSessionId && !refreshBuddyContext) cliContent = content;
 
       // Merge feature: on the very first user send of a merge parent thread,
       // inject a prefix containing the contents of each child's review doc.
@@ -1947,7 +2300,8 @@ export function createConversationRuntime(
           );
         }
         const mergePrefix = parts.join('\n\n');
-        cliContent = `<!-- unleashd:merge-prefix -->\n${mergePrefix}\n<!-- /unleashd:merge-prefix -->\n\n${content}`;
+        // Review documents may quote our delimiters; length keeps display recovery exact.
+        cliContent = `<!-- unleashd:merge-prefix-v1 ${mergePrefix.length} -->\n${mergePrefix}\n<!-- /unleashd:merge-prefix-v1 -->\n\n${content}`;
         this.mergeParentMeta.prefixInjected = true;
       }
 
@@ -1967,8 +2321,17 @@ export function createConversationRuntime(
         conversationId: this.id,
       });
 
-      // Spawn CLI process with possibly-prefixed content
-      this.spawnForMessage(cliContent, executionConfig, forkSourceSessionId);
+      if (this.kind.kind !== 'general')
+        dependencies.recordBuddyTurnOrigin?.(
+          this.id,
+          input,
+          turnBuddyContext,
+          crypto.createHash('sha256').update(content).digest('hex')
+        );
+      // Owner workflow guidance lives in the native MCP tool descriptions.
+      // Appending it here pollutes every provider input and its saved transcript.
+      // Spawn with input provenance supplied by the host producer, never transcript text.
+      this.spawnForMessage(cliContent, executionConfig, forkSourceSessionId, input);
     }
 
     private rejectFork(message: string): void {
@@ -2093,6 +2456,7 @@ export function createConversationRuntime(
     }
 
     stop(reason: 'user_stop' | 'server_restart' = 'user_stop'): void {
+      dependencies.revokeBuddyControlCapability?.(this.id);
       const automationRunId = this.buddyContext?.automationRunId;
       if (reason === 'user_stop' && automationRunId) {
         const requestCancellation = dependencies.requestAutomationCancellation;
@@ -2118,6 +2482,7 @@ export function createConversationRuntime(
      * agent_notes/2026-08-24_automation-execution-ownership-design.md.
      */
     stopAutomationTurn(): void {
+      dependencies.revokeBuddyControlCapability?.(this.id);
       if (!this.buddyContext?.automationRunId || !this._automationClaimToken) {
         throw new Error('Automation stop requires current server-private execution authority');
       }
@@ -2311,8 +2676,13 @@ export function createConversationRuntime(
       }
     }
 
+    expireCoordinationRun(): void {
+      this._handleTurnTimeout('max');
+    }
+
     private _handleTurnTimeout(kind: TurnTimeoutKind): void {
       if (!this.process || !this.isRunning) return;
+      dependencies.revokeBuddyControlCapability?.(this.id);
       const now = Date.now();
       const elapsedSec = Math.round((now - this._processStartTime) / 1000);
       const bridgeIdleSec = Math.round((now - this._lastBridgeEventAt) / 1000);
@@ -2477,7 +2847,10 @@ export function createConversationRuntime(
      * Add a message to the queue. If the conversation is ready and idle,
      * process immediately. Otherwise it sits until the next status/ready change.
      */
-    enqueueMessage(content: string): void {
+    enqueueMessage(
+      content: string,
+      ownerInput?: Readonly<{ origin: 'owner_input'; inputId: string }>
+    ): void {
       if (this.buddyContext?.automationRunId) {
         this.refuseAutomationTranscript();
         return;
@@ -2490,6 +2863,7 @@ export function createConversationRuntime(
         status: 'pending',
       };
       const attemptId = crypto.randomUUID();
+      if (ownerInput) this._queuedOwnerInputs.set(msg.id, Object.freeze({ ...ownerInput }));
       this._queuedAttemptIds.set(msg.id, attemptId);
       turnAttempts.queued({
         attemptId,
@@ -2509,7 +2883,10 @@ export function createConversationRuntime(
      * Atomically stop the active turn, flush pending queued work using server-side
      * state, and enqueue the user's final interruption message as the next task.
      */
-    interruptAndSend(content: string): void {
+    interruptAndSend(
+      content: string,
+      ownerInput?: Readonly<{ origin: 'owner_input'; inputId: string }>
+    ): void {
       if (this.buddyContext?.automationRunId) {
         this.refuseAutomationTranscript();
         return;
@@ -2530,7 +2907,7 @@ export function createConversationRuntime(
         this.stop();
       }
 
-      this.enqueueMessage(content);
+      this.enqueueMessage(content, ownerInput);
     }
 
     /**
@@ -2594,13 +2971,26 @@ export function createConversationRuntime(
       );
       this.broadcastQueue();
       try {
-        this.sendMessage(next.content);
+        const ownerInput = this._queuedOwnerInputs.get(next.id);
+        this.sendMessage(next.content, ownerInput);
+        // Keep trusted input provenance while preflight leaves this item pending.
+        // It is consumed only after provider admission, never serialized for restore.
+        if (this.process || this.isRunning) this._queuedOwnerInputs.delete(next.id);
       } catch (error) {
         // Provider admission can still fail synchronously at a future seam.
         // Never strand the queue head in "sending" when no process exists.
         if (this.queue[0] === next && next.status === 'sending') {
           next.status = 'pending';
           this.broadcastQueue();
+        }
+        if (error instanceof BuddyChatCapacityUnavailableError) {
+          // The user message was already accepted into conversation history.
+          // Remove the transport queue entry and fail once; a server-owned
+          // recovery signal wakes genuinely drained restart claims.
+          if (this.queue[0] === next) this.queue.shift();
+          this._queuedOwnerInputs.delete(next.id);
+          this.broadcastQueue();
+          throw error;
         }
         throw error;
       }
@@ -2695,6 +3085,7 @@ export function createConversationRuntime(
         kind: this.kind,
         buddyContext: this.buddyContext,
         purpose: this.purpose,
+        placement: this.placement,
         mergeParentMeta: this.mergeParentMeta,
         mergeChildMeta: this.mergeChildMeta,
       };

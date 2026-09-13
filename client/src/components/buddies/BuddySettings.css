@@ -1,0 +1,33 @@
+.buddy-settings {
+  max-width: 560px;
+  padding: 20px 0;
+}
+.buddy-settings h2 {
+  font-size: 16px;
+  margin: 0 0 12px;
+}
+.buddy-settings p {
+  color: var(--text-secondary);
+  line-height: 1.6;
+  margin: 0 0 16px;
+}
+.buddy-settings button {
+  min-height: 44px;
+  padding: 8px 16px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  cursor: pointer;
+}
+.buddy-settings .buddy-settings-delete {
+  color: var(--danger);
+}
+.buddy-settings button:disabled {
+  opacity: 0.5;
+  cursor: wait;
+}
+.buddy-settings-actions {
+  display: flex;
+  gap: 8px;
+}

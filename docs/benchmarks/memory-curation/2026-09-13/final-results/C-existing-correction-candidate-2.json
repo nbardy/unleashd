@@ -1,0 +1,187 @@
+{
+  "case": "C-existing-correction",
+  "variant": "candidate",
+  "repeat": 2,
+  "rubric": [
+    "Retrieves the existing correction and reconciles the obsolete compact setup claim.",
+    "Preserves preview-versus-execution distinction and removes transient pending status.",
+    "Reuses the existing note without duplicating it."
+  ],
+  "model": "gpt-5.6-luna",
+  "effort": "low",
+  "instructionsSha256": "a58682c6d7a549ef90339bfd08560111fa0cd8e825d1b9200b3f76a677ee4b67",
+  "toolDescriptionsSha256": "1fe1ca463feff7eb046c02dd160ef1a34b8c94cac1716c9bb20311a291c57a70",
+  "elapsedMs": 17908,
+  "before": {
+    "working": "Only the separate manual settings screen can bootstrap a team. Worker return pending.",
+    "longTerm": "Use real execution and returned evidence to establish that a worker ran.",
+    "note": {
+      "id": "knowledge_aebeb24e-47ec-441c-a6ba-ada349325cf3",
+      "ref": {
+        "targetBuddyId": "buddy_5a0a234d-9e1f-4a14-8d30-064b95cfebf0",
+        "scope": {
+          "kind": "owner_thread",
+          "conversationId": "curation-owner-fixture"
+        },
+        "kind": "note",
+        "name": "2026-09-13T04:33:19.851Z:d1f39318-f80b-4b91-a39c-5c17c6120718"
+      },
+      "revision": 1,
+      "auditId": "audit_7b24865a-f011-47f4-8d63-045238ca858d"
+    }
+  },
+  "after": {
+    "working": {
+      "id": "knowledge_bbdf147d-f149-430a-bbfb-e96ebc832165",
+      "ref": {
+        "targetBuddyId": "buddy_5a0a234d-9e1f-4a14-8d30-064b95cfebf0",
+        "kind": "working",
+        "scope": {
+          "kind": "owner_thread",
+          "conversationId": "curation-owner-fixture"
+        }
+      },
+      "revision": 2,
+      "content": "Native configure_team preview was observed to validate team setup in an owner conversation; the prior manual-settings-only limitation is superseded. This preview does not start workers or establish return delivery. Worker execution remains unverified; require real execution plus returned evidence. Evidence: note `2026-09-13T04:33:19.851Z:d1f39318-f80b-4b91-a39c-5c17c6120718` (Team setup capability correction)."
+    },
+    "longTerm": {
+      "id": "knowledge_06e74827-3cb2-4df9-8486-61ea810e5760",
+      "ref": {
+        "targetBuddyId": "buddy_5a0a234d-9e1f-4a14-8d30-064b95cfebf0",
+        "kind": "long_term",
+        "scope": {
+          "kind": "owner_thread",
+          "conversationId": "curation-owner-fixture"
+        }
+      },
+      "revision": 1,
+      "content": "Use real execution and returned evidence to establish that a worker ran."
+    },
+    "notes": [
+      {
+        "id": "knowledge_aebeb24e-47ec-441c-a6ba-ada349325cf3",
+        "ref": {
+          "targetBuddyId": "buddy_5a0a234d-9e1f-4a14-8d30-064b95cfebf0",
+          "scope": {
+            "kind": "owner_thread",
+            "conversationId": "curation-owner-fixture"
+          },
+          "kind": "note",
+          "name": "2026-09-13T04:33:19.851Z:d1f39318-f80b-4b91-a39c-5c17c6120718"
+        },
+        "revision": 1,
+        "content": "{\"topic\":\"Team setup capability correction\",\"body\":\"September 12 observed native configure_team preview validating setup in an owner conversation. The old manual-settings-only limitation is superseded. Preview does not start workers or establish return delivery. Native projects own current work state.\"}"
+      }
+    ]
+  },
+  "receipt": {
+    "id": "a60e899298e9e6d128560a05f0c2e73c7ee811aad665ad0a0c5820c8c2a65121",
+    "buddyId": "buddy_5a0a234d-9e1f-4a14-8d30-064b95cfebf0",
+    "workspaceId": "project_937a1134-c6a4-411b-93f4-5d1511baab42",
+    "conversationId": "curation-owner-fixture",
+    "attemptId": "fixture-attempt",
+    "completedAt": "2026-09-13T04:33:19.853Z",
+    "status": "complete",
+    "model": "gpt-5.6-luna",
+    "reasoningEffort": "low",
+    "writes": {
+      "working": 1,
+      "longTerm": 0,
+      "notes": 0
+    },
+    "finishedAt": "2026-09-13T04:33:37.714Z"
+  },
+  "calls": [
+    {
+      "operation": "get_memory",
+      "input": {
+        "doc": "long_term"
+      },
+      "result": {
+        "id": "knowledge_06e74827-3cb2-4df9-8486-61ea810e5760",
+        "ref": {
+          "targetBuddyId": "buddy_5a0a234d-9e1f-4a14-8d30-064b95cfebf0",
+          "scope": {
+            "kind": "owner_thread",
+            "conversationId": "curation-owner-fixture"
+          },
+          "kind": "long_term"
+        },
+        "revision": 1,
+        "content": "Use real execution and returned evidence to establish that a worker ran."
+      }
+    },
+    {
+      "operation": "recall",
+      "input": {
+        "pattern": "Team setup",
+        "limit": 8
+      },
+      "result": {
+        "pattern": "Team setup",
+        "matches": [
+          {
+            "id": "knowledge_aebeb24e-47ec-441c-a6ba-ada349325cf3",
+            "ref": {
+              "targetBuddyId": "buddy_5a0a234d-9e1f-4a14-8d30-064b95cfebf0",
+              "scope": {
+                "kind": "owner_thread",
+                "conversationId": "curation-owner-fixture"
+              },
+              "kind": "note",
+              "name": "2026-09-13T04:33:19.851Z:d1f39318-f80b-4b91-a39c-5c17c6120718"
+            },
+            "revision": 1,
+            "content": "{\"topic\":\"Team setup capability correction\",\"body\":\"September 12 observed native configure_team preview validating setup in an owner conversation. The old manual-settings-only limitation is superseded. Preview does not start workers or establish return delivery. Native projects own current work state.\"}",
+            "path": "2026-09-13T04:33:19.851Z:d1f39318-f80b-4b91-a39c-5c17c6120718",
+            "workspace_id": "project_937a1134-c6a4-411b-93f4-5d1511baab42",
+            "created_at": null
+          }
+        ],
+        "truncated": false
+      }
+    },
+    {
+      "operation": "get_memory",
+      "input": {
+        "doc": "working"
+      },
+      "result": {
+        "id": "knowledge_bbdf147d-f149-430a-bbfb-e96ebc832165",
+        "ref": {
+          "targetBuddyId": "buddy_5a0a234d-9e1f-4a14-8d30-064b95cfebf0",
+          "scope": {
+            "kind": "owner_thread",
+            "conversationId": "curation-owner-fixture"
+          },
+          "kind": "working"
+        },
+        "revision": 1,
+        "content": "Only the separate manual settings screen can bootstrap a team. Worker return pending."
+      }
+    },
+    {
+      "operation": "update_memory",
+      "input": {
+        "doc": "working",
+        "content": "Native configure_team preview was observed to validate team setup in an owner conversation; the prior manual-settings-only limitation is superseded. This preview does not start workers or establish return delivery. Worker execution remains unverified; require real execution plus returned evidence. Evidence: note `2026-09-13T04:33:19.851Z:d1f39318-f80b-4b91-a39c-5c17c6120718` (Team setup capability correction).",
+        "reasoning": "Corrected the stale manual-settings-only claim using the recalled material correction note, while preserving the unresolved worker-return uncertainty and exact evidence pointer.",
+        "baseVersion": 1
+      },
+      "result": {
+        "id": "knowledge_bbdf147d-f149-430a-bbfb-e96ebc832165",
+        "ref": {
+          "targetBuddyId": "buddy_5a0a234d-9e1f-4a14-8d30-064b95cfebf0",
+          "scope": {
+            "kind": "owner_thread",
+            "conversationId": "curation-owner-fixture"
+          },
+          "kind": "working"
+        },
+        "revision": 2,
+        "auditId": "audit_54aeb0bf-c51d-40ad-91da-c65db6d82522"
+      }
+    }
+  ],
+  "modelReport": "Saved:\n- Updated working memory to supersede the stale manual-settings limitation.\n- Preserved unresolved worker execution/return status and exact evidence pointer.\n\nLong-term memory and notes required no changes."
+}

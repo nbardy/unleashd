@@ -1,3 +1,9 @@
+import type {
+  BuddyEmployment,
+  BuddyMemorySnapshot,
+  BuddyMessage,
+  BuddyTeamState,
+} from '@unleashd/shared';
 export type WorkStatus =
   | 'backlog'
   | 'ready'
@@ -8,7 +14,15 @@ export type WorkStatus =
   | 'cancelled';
 
 export type TodoStatus = 'open' | 'in_progress' | 'blocked' | 'done' | 'cancelled';
-export type EmployeeTab = 'work' | 'conversations' | 'memory' | 'automations';
+export type EmployeeTab =
+  | 'team'
+  | 'work'
+  | 'mailbox'
+  | 'conversations'
+  | 'background'
+  | 'memory'
+  | 'automations'
+  | 'settings';
 
 export interface Workspace {
   id: string;
@@ -47,6 +61,7 @@ export interface BuddyTodo {
   definition_of_done?: string | null;
   next_action?: string | null;
   blocked_reason?: string | null;
+  completion_evidence?: string[];
 }
 
 export interface BuddyProject {
@@ -62,6 +77,8 @@ export interface BuddyProject {
   blocked_reason?: string | null;
   sprint_name?: string | null;
   updated_at: string;
+  revision?: number;
+  completion_evidence?: string[] | string;
   todos: BuddyTodo[];
 }
 
@@ -76,17 +93,9 @@ export interface ConversationLink {
   kind?: 'conversation' | 'review' | 'automation';
 }
 
-export interface BuddyMemory {
+export interface BuddyMemory extends BuddyMemorySnapshot {
   soulPath?: string | null;
   soul?: string;
-  summary: string;
-  recentJournal: Array<{ path: string; content: string }>;
-  /** v2 dense documents; omitted by the legacy endpoint during rollout. */
-  working?: string;
-  longTerm?: string;
-  workingRevision?: number;
-  longTermRevision?: number;
-  generation?: number;
   revisions?: Partial<Record<'working' | 'longTerm', BuddyMemoryRevision[]>>;
   notes?: BuddyMemoryNote[];
   operations?: {
@@ -178,10 +187,12 @@ export interface BuddyApprovalRequest {
 }
 
 export interface Buddy {
+  profile_revision?: number;
   id: string;
   name: string;
   role: string;
   status: string;
+  hire_quota?: number;
   manager_id?: string | null;
   team_size?: number;
   soul_path: string | null;
@@ -206,7 +217,7 @@ export interface Dashboard {
 
 export interface BuddyOverviewEmployee {
   buddy: Buddy;
-  managerId: string | null;
+  employment: BuddyEmployment;
   workspaces: Workspace[];
   team: Array<Pick<Buddy, 'id' | 'name' | 'role' | 'status'>>;
   currentWork: {
@@ -242,7 +253,8 @@ export interface EmployeeRecord {
   conversations: ConversationLink[];
   skills: Array<{ name: string; mode?: string; instruction_path?: string | null }>;
   manager: { id: string; name: string; role?: string } | null;
-  directReports: Array<{ id: string; name: string; role?: string }>;
+  directReports: BuddyTeamState['team'];
+  messages: BuddyMessage[];
   reviews: Array<{
     id: string;
     subject_buddy_id: string;
@@ -258,5 +270,11 @@ export interface EmployeeRecord {
 
 export type BuddyMutation = (key: string, action: () => Promise<unknown>) => Promise<void>;
 
-export const EMPTY_MEMORY: BuddyMemory = { summary: '', recentJournal: [] };
+export const EMPTY_MEMORY: BuddyMemory = {
+  working: '',
+  longTerm: '',
+  workingRevision: 0,
+  longTermRevision: 0,
+  generation: 0,
+};
 import type { BuddyAutomationRun as PublicBuddyAutomationRun } from '@unleashd/shared';

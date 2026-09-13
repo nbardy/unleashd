@@ -594,9 +594,10 @@
 /* ---- BuddyDetailMobile ---- */
 
 .mobile-buddy-detail__tabs {
-  display: flex;
-  gap: 6px;
-  padding: 10px 16px;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 4px;
+  padding: 10px 0;
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
   border-bottom: 1px solid var(--border-subtle);
@@ -609,8 +610,11 @@
 /* Anchors, not buttons — each tab is a URL, so Back returns to the previous
    tab instead of leaving the buddy. */
 .mobile-buddy-detail__tab {
-  flex-shrink: 0;
-  padding: 8px 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  padding: 8px 4px;
   border-radius: 999px;
   border: 1px solid transparent;
   background: transparent;

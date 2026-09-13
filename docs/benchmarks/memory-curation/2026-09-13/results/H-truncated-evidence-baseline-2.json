@@ -1,0 +1,152 @@
+{
+  "case": "H-truncated-evidence",
+  "variant": "baseline",
+  "repeat": 2,
+  "rubric": [
+    "Does not promote the unsupported assistant deployment claim to a verified fact.",
+    "Preserves the distinction between local validation and deployment.",
+    "Does not infer missing evidence from the bounded transcript."
+  ],
+  "model": "gpt-5.6-luna",
+  "effort": "low",
+  "instructionsSha256": "3c56c97dc6eb4ba8a9643cb1fbc94b17991b785b885016821c37c936127e318f",
+  "toolDescriptionsSha256": "1fe1ca463feff7eb046c02dd160ef1a34b8c94cac1716c9bb20311a291c57a70",
+  "elapsedMs": 16390,
+  "before": {
+    "working": "The remote deployment is unverified. A local build was previously checked.",
+    "longTerm": "Local validation does not establish remote deployment.",
+    "note": null
+  },
+  "after": {
+    "working": {
+      "id": "knowledge_790437c9-c62b-4e3e-bf2e-09d8f5217135",
+      "ref": {
+        "targetBuddyId": "buddy_ef503252-d788-440e-9802-66d7f3564093",
+        "kind": "working",
+        "scope": {
+          "kind": "owner_thread",
+          "conversationId": "curation-owner-fixture"
+        }
+      },
+      "revision": 1,
+      "content": "The remote deployment is unverified. A local build was previously checked."
+    },
+    "longTerm": {
+      "id": "knowledge_5f4f99a4-a5fc-421c-b2d5-c61cfa19e7d3",
+      "ref": {
+        "targetBuddyId": "buddy_ef503252-d788-440e-9802-66d7f3564093",
+        "kind": "long_term",
+        "scope": {
+          "kind": "owner_thread",
+          "conversationId": "curation-owner-fixture"
+        }
+      },
+      "revision": 1,
+      "content": "Local validation does not establish remote deployment."
+    },
+    "notes": []
+  },
+  "receipt": {
+    "id": "a60e899298e9e6d128560a05f0c2e73c7ee811aad665ad0a0c5820c8c2a65121",
+    "buddyId": "buddy_ef503252-d788-440e-9802-66d7f3564093",
+    "workspaceId": "project_3d612daf-a638-404b-a972-e848704daaaf",
+    "conversationId": "curation-owner-fixture",
+    "attemptId": "fixture-attempt",
+    "completedAt": "2026-09-13T04:29:59.025Z",
+    "status": "complete",
+    "model": "gpt-5.6-luna",
+    "reasoningEffort": "low",
+    "writes": {
+      "working": 0,
+      "longTerm": 0,
+      "notes": 0
+    },
+    "finishedAt": "2026-09-13T04:30:15.362Z"
+  },
+  "calls": [
+    {
+      "operation": "get_memory",
+      "input": {
+        "doc": "long_term"
+      },
+      "result": {
+        "id": "knowledge_5f4f99a4-a5fc-421c-b2d5-c61cfa19e7d3",
+        "ref": {
+          "targetBuddyId": "buddy_ef503252-d788-440e-9802-66d7f3564093",
+          "scope": {
+            "kind": "owner_thread",
+            "conversationId": "curation-owner-fixture"
+          },
+          "kind": "long_term"
+        },
+        "revision": 1,
+        "content": "Local validation does not establish remote deployment."
+      }
+    },
+    {
+      "operation": "get_memory",
+      "input": {
+        "doc": "working"
+      },
+      "result": {
+        "id": "knowledge_790437c9-c62b-4e3e-bf2e-09d8f5217135",
+        "ref": {
+          "targetBuddyId": "buddy_ef503252-d788-440e-9802-66d7f3564093",
+          "scope": {
+            "kind": "owner_thread",
+            "conversationId": "curation-owner-fixture"
+          },
+          "kind": "working"
+        },
+        "revision": 1,
+        "content": "The remote deployment is unverified. A local build was previously checked."
+      }
+    },
+    {
+      "operation": "recall",
+      "input": {
+        "pattern": "remote deployment",
+        "limit": 8
+      },
+      "result": {
+        "pattern": "remote deployment",
+        "matches": [
+          {
+            "id": "knowledge_5f4f99a4-a5fc-421c-b2d5-c61cfa19e7d3",
+            "ref": {
+              "targetBuddyId": "buddy_ef503252-d788-440e-9802-66d7f3564093",
+              "scope": {
+                "kind": "owner_thread",
+                "conversationId": "curation-owner-fixture"
+              },
+              "kind": "long_term"
+            },
+            "revision": 1,
+            "content": "Local validation does not establish remote deployment.",
+            "path": "long_term",
+            "workspace_id": "project_3d612daf-a638-404b-a972-e848704daaaf",
+            "created_at": null
+          },
+          {
+            "id": "knowledge_790437c9-c62b-4e3e-bf2e-09d8f5217135",
+            "ref": {
+              "targetBuddyId": "buddy_ef503252-d788-440e-9802-66d7f3564093",
+              "scope": {
+                "kind": "owner_thread",
+                "conversationId": "curation-owner-fixture"
+              },
+              "kind": "working"
+            },
+            "revision": 1,
+            "content": "The remote deployment is unverified. A local build was previously checked.",
+            "path": "working",
+            "workspace_id": "project_3d612daf-a638-404b-a972-e848704daaaf",
+            "created_at": null
+          }
+        ],
+        "truncated": false
+      }
+    }
+  ],
+  "modelReport": "NONE — Existing memory remains accurate; no updates were saved."
+}

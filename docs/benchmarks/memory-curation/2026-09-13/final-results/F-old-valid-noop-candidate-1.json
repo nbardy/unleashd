@@ -1,0 +1,134 @@
+{
+  "case": "F-old-valid-noop",
+  "variant": "candidate",
+  "repeat": 1,
+  "rubric": [
+    "Leaves useful, already concise older knowledge unchanged; creates no note."
+  ],
+  "model": "gpt-5.6-luna",
+  "effort": "low",
+  "instructionsSha256": "a58682c6d7a549ef90339bfd08560111fa0cd8e825d1b9200b3f76a677ee4b67",
+  "toolDescriptionsSha256": "1fe1ca463feff7eb046c02dd160ef1a34b8c94cac1716c9bb20311a291c57a70",
+  "elapsedMs": 14975,
+  "before": {
+    "working": "",
+    "longTerm": "Owner preference, August 1: use UTC timestamps and explicit measurement units. Preserve shared-branch history; use isolated branches for concurrent writers.",
+    "note": null
+  },
+  "after": {
+    "working": {
+      "id": "knowledge_585af901-cf2e-415e-8fe0-e2378a39db8a",
+      "ref": {
+        "targetBuddyId": "buddy_49bcfe4e-ab41-461f-ba07-a423b9f3e6f9",
+        "kind": "working",
+        "scope": {
+          "kind": "owner_thread",
+          "conversationId": "curation-owner-fixture"
+        }
+      },
+      "revision": 1,
+      "content": ""
+    },
+    "longTerm": {
+      "id": "knowledge_1feadc6a-10a5-4dfb-a2ff-71ada528132a",
+      "ref": {
+        "targetBuddyId": "buddy_49bcfe4e-ab41-461f-ba07-a423b9f3e6f9",
+        "kind": "long_term",
+        "scope": {
+          "kind": "owner_thread",
+          "conversationId": "curation-owner-fixture"
+        }
+      },
+      "revision": 1,
+      "content": "Owner preference, August 1: use UTC timestamps and explicit measurement units. Preserve shared-branch history; use isolated branches for concurrent writers."
+    },
+    "notes": []
+  },
+  "receipt": {
+    "id": "a60e899298e9e6d128560a05f0c2e73c7ee811aad665ad0a0c5820c8c2a65121",
+    "buddyId": "buddy_49bcfe4e-ab41-461f-ba07-a423b9f3e6f9",
+    "workspaceId": "project_c57ad6b2-3b4e-4187-bc43-b5f76144dd69",
+    "conversationId": "curation-owner-fixture",
+    "attemptId": "fixture-attempt",
+    "completedAt": "2026-09-13T04:32:21.619Z",
+    "status": "complete",
+    "model": "gpt-5.6-luna",
+    "reasoningEffort": "low",
+    "writes": {
+      "working": 0,
+      "longTerm": 0,
+      "notes": 0
+    },
+    "finishedAt": "2026-09-13T04:32:36.531Z"
+  },
+  "calls": [
+    {
+      "operation": "get_memory",
+      "input": {
+        "doc": "working"
+      },
+      "result": {
+        "id": "knowledge_585af901-cf2e-415e-8fe0-e2378a39db8a",
+        "ref": {
+          "targetBuddyId": "buddy_49bcfe4e-ab41-461f-ba07-a423b9f3e6f9",
+          "scope": {
+            "kind": "owner_thread",
+            "conversationId": "curation-owner-fixture"
+          },
+          "kind": "working"
+        },
+        "revision": 1,
+        "content": ""
+      }
+    },
+    {
+      "operation": "get_memory",
+      "input": {
+        "doc": "long_term"
+      },
+      "result": {
+        "id": "knowledge_1feadc6a-10a5-4dfb-a2ff-71ada528132a",
+        "ref": {
+          "targetBuddyId": "buddy_49bcfe4e-ab41-461f-ba07-a423b9f3e6f9",
+          "scope": {
+            "kind": "owner_thread",
+            "conversationId": "curation-owner-fixture"
+          },
+          "kind": "long_term"
+        },
+        "revision": 1,
+        "content": "Owner preference, August 1: use UTC timestamps and explicit measurement units. Preserve shared-branch history; use isolated branches for concurrent writers."
+      }
+    },
+    {
+      "operation": "recall",
+      "input": {
+        "pattern": "UTC",
+        "limit": 8
+      },
+      "result": {
+        "pattern": "UTC",
+        "matches": [
+          {
+            "id": "knowledge_1feadc6a-10a5-4dfb-a2ff-71ada528132a",
+            "ref": {
+              "targetBuddyId": "buddy_49bcfe4e-ab41-461f-ba07-a423b9f3e6f9",
+              "scope": {
+                "kind": "owner_thread",
+                "conversationId": "curation-owner-fixture"
+              },
+              "kind": "long_term"
+            },
+            "revision": 1,
+            "content": "Owner preference, August 1: use UTC timestamps and explicit measurement units. Preserve shared-branch history; use isolated branches for concurrent writers.",
+            "path": "long_term",
+            "workspace_id": "project_c57ad6b2-3b4e-4187-bc43-b5f76144dd69",
+            "created_at": null
+          }
+        ],
+        "truncated": false
+      }
+    }
+  ],
+  "modelReport": "NONE — Existing memory is accurate and no useful changes were needed."
+}

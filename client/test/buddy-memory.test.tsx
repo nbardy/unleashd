@@ -20,8 +20,6 @@ const BUDDY: Buddy = {
 const V2_MEMORY: BuddyMemory = {
   soul: 'Be precise.',
   soulPath: BUDDY.soul_path,
-  summary: 'Long-term operating knowledge.',
-  recentJournal: [],
   working: 'Investigate the current release boundary.',
   longTerm: 'Project state is authoritative for task status.',
   workingRevision: 7,
@@ -46,7 +44,8 @@ const V2_MEMORY: BuddyMemory = {
 function render(
   memory: BuddyMemory,
   variant: 'desktop' | 'mobile' = 'desktop',
-  error: string | null = null
+  error: string | null = null,
+  scoped = false
 ) {
   return renderToStaticMarkup(
     React.createElement(BuddyMemoryPanel, {
@@ -54,9 +53,9 @@ function render(
       memory,
       variant,
       error,
+      scoped,
       onRetry: () => {},
       onUpdate: async () => {},
-      onRememberLegacy: async () => {},
       onRememberNote: async () => {},
       onRecall: async ({ pattern }) => ({ pattern, matches: [], truncated: false }),
     })
@@ -77,19 +76,11 @@ test('memory panel renders independent v2 documents, revisions, generation, and 
   assert.doesNotMatch(html, /Curated memory/);
 });
 
-test('legacy payload remains a usable summary, journal, and remember form', () => {
-  const memory = normalizeBuddyMemory({
-    summary: 'Legacy summary',
-    recentJournal: [{ path: '/memory/journal/2026-08-29.md', content: 'Legacy entry' }],
-  });
-  const html = render(memory, 'mobile');
-
-  assert.match(html, /Curated memory/);
-  assert.match(html, /Legacy summary/);
-  assert.match(html, /Recent journal/);
-  assert.match(html, /Legacy entry/);
-  assert.match(html, /Remember/);
-  assert.doesNotMatch(html, /WORKING_MEMORY\.md/);
+test('retired memory payload fails visibly instead of exposing a legacy editor', () => {
+  assert.throws(
+    () => normalizeBuddyMemory({ summary: 'Old summary', recentJournal: [] }),
+    /Required/
+  );
 });
 
 test('stale CAS errors tell the editor which revision must be reloaded', () => {
@@ -109,4 +100,14 @@ test('mobile v2 markup stays within the mobile feature class boundary', () => {
   assert.match(html, /mobile-memory-v2/);
   assert.match(html, /aria-label="WORKING_MEMORY\.md content"/);
   assert.doesNotMatch(html, /buddy-memory-v2/);
+});
+
+test('scoped memory keeps edits and note search in the selected audience in both shells', () => {
+  for (const variant of ['desktop', 'mobile'] as const) {
+    const html = render(V2_MEMORY, variant, null, true);
+    assert.match(html, /WORKING_MEMORY.md/);
+    assert.match(html, /Append note/);
+    assert.match(html, /Recall notes/);
+    assert.doesNotMatch(html, /BUDDY_SOUL|aria-label="Note scope"|aria-label="Recall scope"/);
+  }
 });

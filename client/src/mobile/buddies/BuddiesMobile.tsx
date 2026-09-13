@@ -1,3 +1,5 @@
+import { useAtomValue } from 'jotai';
+import { archivedBuddyIdsAtom } from '../../atoms/buddy-visibility';
 import { type ReactNode, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { buddyApi } from '../../components/buddies/api';
@@ -13,9 +15,8 @@ import { MobileCardButton, MobileHeaderAction, MobilePage } from '../components/
  * - Data via GET /api/buddies/overview through buddyApi (components/buddies/api.ts).
  * - Shaping via components/buddies/buddies-shaping + ui-contract:
  *   selectDirectoryEmployees owns directory membership; buddyCardMetrics owns
- *   per-card stat projection. Relationship→manager/directReports is derived
- *   inside buddies-shaping (deriveBuddyHierarchy) and already folded into
- *   EmployeeRecord for detail — directory cards surface team size via shaping.
+ *   per-card stat projection. The server owns employment and team membership;
+ *   detail and directory cards consume that projection.
  * - Filter/sort via shaping helpers (directory list is sorted alphabetically;
  *   active filter uses plain string match over the shaped list — no raw field
  *   branching inside the handler).
@@ -37,6 +38,7 @@ type SortKey = 'name' | 'active';
 
 export function BuddiesMobile() {
   const navigate = useNavigate();
+  const archived = useAtomValue(archivedBuddyIdsAtom);
   const [overview, setOverview] = useState<BuddyOverview | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -62,7 +64,7 @@ export function BuddiesMobile() {
         if (!controller.signal.aborted) setLoading(false);
       });
     return () => controller.abort();
-  }, []);
+  }, [archived]);
 
   const employees = useMemo(() => {
     if (!overview) return [];
@@ -201,6 +203,7 @@ export function BuddiesMobile() {
       ) : (
         <ul className="mobile-buddies__grid">
           {sorted.map((entry) => {
+            if (archived.has(entry.buddy.id)) return null;
             const metrics = buddyCardMetrics(entry);
             return (
               <li key={entry.buddy.id}>

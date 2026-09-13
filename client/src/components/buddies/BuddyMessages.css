@@ -1,0 +1,58 @@
+.buddy-messages {
+  display: grid;
+  gap: 12px;
+  margin-block: 16px;
+  color: var(--text-primary);
+}
+.buddy-messages h2,
+.buddy-messages p {
+  margin: 0;
+}
+.buddy-messages__card {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid var(--border-color);
+  border-radius: 12px;
+  background: var(--bg-secondary);
+  overflow-wrap: anywhere;
+}
+.buddy-messages__heading {
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.buddy-messages__heading span {
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+.buddy-messages__body {
+  white-space: pre-wrap;
+}
+.buddy-messages__reply {
+  display: grid;
+  gap: 8px;
+  padding-left: 12px;
+  border-left: 2px solid var(--accent-primary);
+}
+.buddy-messages__decision form,
+.buddy-messages__decision label {
+  display: grid;
+  gap: 8px;
+}
+.buddy-messages__decision form {
+  margin-top: 12px;
+}
+.buddy-messages__decision textarea,
+.buddy-messages__decision input,
+.buddy-messages__decision button {
+  min-height: 44px;
+  padding: 10px;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font: inherit;
+}

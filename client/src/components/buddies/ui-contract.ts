@@ -24,7 +24,9 @@ import type { BuddyOverview, BuddyOverviewEmployee, BuddyProject } from './types
  *
  * Sorts a copy: `overview.topLevel` is shared with the sidebar and mobile.
  */
-export function selectDirectoryEmployees(overview: BuddyOverview | null | undefined): BuddyOverviewEmployee[] {
+export function selectDirectoryEmployees(
+  overview: BuddyOverview | null | undefined
+): BuddyOverviewEmployee[] {
   const employees = overview?.topLevel ?? [];
   if (!overview?.recentRuns?.length) return employees;
   const latestByBuddy = new Map<string, number>();
@@ -43,9 +45,34 @@ export function selectDirectoryEmployees(overview: BuddyOverview | null | undefi
   });
 }
 
+/**
+ * Apply the directory search without changing the server-owned ordering.
+ * Names, roles, statuses, workspaces, and report names are all useful ways
+ * to find a Buddy from the directory page.
+ */
+export function filterDirectoryEmployees(
+  employees: BuddyOverviewEmployee[],
+  query: string
+): BuddyOverviewEmployee[] {
+  const normalized = query.trim().toLowerCase();
+  if (!normalized) return employees;
+  return employees.filter((employee) => {
+    const haystack = [
+      employee.buddy.name,
+      employee.buddy.role,
+      employee.buddy.status,
+      ...employee.workspaces.map((workspace) => workspace.name),
+      ...employee.team.map((member) => `${member.name} ${member.role}`),
+    ]
+      .join(' ')
+      .toLowerCase();
+    return haystack.includes(normalized);
+  });
+}
+
 export function buddyCardMetrics(employee: BuddyOverviewEmployee) {
   return {
-    team: employee.team.length,
+    team: employee.team.filter((member) => member.status !== 'archived').length,
     open: employee.currentWork.open,
     active: employee.currentWork.active,
     blocked: employee.currentWork.blocked,

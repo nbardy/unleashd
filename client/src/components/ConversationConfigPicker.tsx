@@ -12,6 +12,8 @@ export interface ConversationConfigPickerProps {
   onChange: (config: ConversationConfig) => void;
   catalog: ProviderCatalog;
   disabled?: boolean;
+  providerDisabled?: boolean;
+  inlineDefaults?: boolean;
   providerFilter?: (provider: Provider) => boolean;
   showProvider?: boolean;
 }
@@ -30,6 +32,8 @@ export function ConversationConfigPicker({
   onChange,
   catalog,
   disabled = false,
+  providerDisabled = false,
+  inlineDefaults = false,
   providerFilter,
   showProvider = true,
 }: ConversationConfigPickerProps) {
@@ -103,8 +107,10 @@ export function ConversationConfigPicker({
     <>
       {showProvider && (
         <>
-          <div className="new-conv-label">Provider</div>
-          <div className="provider-selector">
+          <div className="new-conv-label" id={providerGroup}>
+            Harness
+          </div>
+          <div className="provider-selector" role="radiogroup" aria-labelledby={providerGroup}>
             {providers.map((option) => (
               <label
                 className={`provider-option ${value.provider === option.id ? 'selected' : ''}`}
@@ -115,7 +121,7 @@ export function ConversationConfigPicker({
                   name={providerGroup}
                   value={option.id}
                   checked={value.provider === option.id}
-                  disabled={disabled}
+                  disabled={disabled || providerDisabled}
                   onChange={() => updateProvider(option.id)}
                 />
                 {option.displayName}
@@ -125,18 +131,22 @@ export function ConversationConfigPicker({
         </>
       )}
 
-      <div className="new-conv-label">Model</div>
-      <div className="model-selector">
-        <label className={`model-option ${modelKey === 'default' ? 'selected' : ''}`}>
-          <input
-            type="radio"
-            name={modelGroup}
-            checked={modelKey === 'default'}
-            disabled={disabled}
-            onChange={() => onChange({ ...value, model: { mode: 'default' } })}
-          />
-          Provider default{defaultModel ? ` (${defaultModel.displayName})` : ''}
-        </label>
+      <div className="new-conv-label" id={modelGroup}>
+        Model
+      </div>
+      <div className="model-selector" role="radiogroup" aria-labelledby={modelGroup}>
+        {!inlineDefaults && (
+          <label className={`model-option ${modelKey === 'default' ? 'selected' : ''}`}>
+            <input
+              type="radio"
+              name={modelGroup}
+              checked={modelKey === 'default'}
+              disabled={disabled}
+              onChange={() => onChange({ ...value, model: { mode: 'default' } })}
+            />
+            Provider default{defaultModel ? ` (${defaultModel.displayName})` : ''}
+          </label>
+        )}
         {unavailableExplicitModel && (
           <label className="model-option selected unavailable">
             <input type="radio" name={modelGroup} checked disabled />
@@ -145,19 +155,31 @@ export function ConversationConfigPicker({
         )}
         {provider?.models.map((model) => {
           const key = `explicit:${model.id}`;
+          const isDefault = model.id === provider.defaultModelId;
+          const selected =
+            modelKey === key || (inlineDefaults && isDefault && modelKey === 'default');
           return (
-            <label key={model.id} className={`model-option ${modelKey === key ? 'selected' : ''}`}>
+            <label key={model.id} className={`model-option ${selected ? 'selected' : ''}`}>
               <input
                 type="radio"
                 name={modelGroup}
                 value={model.id}
-                checked={modelKey === key}
+                checked={selected}
                 disabled={disabled}
                 onChange={() =>
-                  onChange({ ...value, model: { mode: 'explicit', modelId: model.id } })
+                  onChange({
+                    ...value,
+                    model:
+                      inlineDefaults && isDefault
+                        ? { mode: 'default' }
+                        : { mode: 'explicit', modelId: model.id },
+                  })
                 }
               />
               {model.displayName}
+              {inlineDefaults && isDefault && (
+                <span className="chat-config-default-hint">default</span>
+              )}
             </label>
           );
         })}
@@ -186,24 +208,43 @@ export function ConversationConfigPicker({
         resolvedModel?.reasoning ||
         value.reasoning.mode === 'explicit') && (
         <>
-          <div className="new-conv-label">Reasoning</div>
-          <div className="model-selector">
-            {reasoningOptions.map((option) => (
-              <label
-                key={option.key}
-                className={`model-option ${reasoningKey === option.key ? 'selected' : ''}`}
-              >
-                <input
-                  type="radio"
-                  name={reasoningGroup}
-                  value={option.key}
-                  checked={reasoningKey === option.key}
-                  disabled={disabled}
-                  onChange={() => onChange({ ...value, reasoning: option.selection })}
-                />
-                {option.label}
-              </label>
-            ))}
+          <div className="new-conv-label" id={reasoningGroup}>
+            Thinking Level
+          </div>
+          <div className="model-selector" role="radiogroup" aria-labelledby={reasoningGroup}>
+            {reasoningOptions
+              .filter((option) => !inlineDefaults || option.key !== 'default')
+              .map((option) => {
+                const defaultKey = resolvedModel?.reasoning?.defaultEffort
+                  ? `explicit:${resolvedModel.reasoning.defaultEffort}`
+                  : 'disabled';
+                const isDefault = option.key === defaultKey;
+                const selected =
+                  reasoningKey === option.key ||
+                  (inlineDefaults && isDefault && reasoningKey === 'default');
+                return (
+                  <label key={option.key} className={`model-option ${selected ? 'selected' : ''}`}>
+                    <input
+                      type="radio"
+                      name={reasoningGroup}
+                      value={option.key}
+                      checked={selected}
+                      disabled={disabled}
+                      onChange={() =>
+                        onChange({
+                          ...value,
+                          reasoning:
+                            inlineDefaults && isDefault ? { mode: 'default' } : option.selection,
+                        })
+                      }
+                    />
+                    {option.label}
+                    {inlineDefaults && isDefault && (
+                      <span className="chat-config-default-hint">default</span>
+                    )}
+                  </label>
+                );
+              })}
           </div>
         </>
       )}
