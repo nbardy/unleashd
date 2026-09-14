@@ -8,6 +8,7 @@ import { Link } from 'react-router-dom';
 import { usePolledFetch } from '../../hooks/usePolledFetch';
 import { newId } from '../../utils/ids';
 import { buddyApi } from './api';
+import { BuddyTaskComments } from './BuddyTaskComments';
 import type { BuddyProject } from './types';
 
 interface CriteriaDraft {
@@ -327,6 +328,7 @@ export function BuddyProjectExecution({
           </button>
         </form>
       )}
+      <BuddyTaskComments projectId={project.id} />
       {notice && <output>{notice}</output>}
       {(failure || error) && (
         <div role="alert">

@@ -1,3 +1,4 @@
+import { resolveSessionTranscript } from './adapters/registry';
 import { execFileSync, execSync } from 'node:child_process';
 import http from 'node:http';
 import os from 'node:os';
@@ -69,7 +70,10 @@ import { auditLocalAgents } from './audit.js';
 import { BuddyBuilderService, type BuddyBuilderStore } from './buddies/builder';
 import { BuddyControlServer } from './buddies/control-server';
 import { ownerWorkspaceIds } from './buddies/owner-team-configuration';
-import { createBuddyDispatchService } from './buddies/dispatch-service';
+import {
+  createBuddyDispatchService,
+  createReturnConversationPreparer,
+} from './buddies/dispatch-service';
 import { createBuddiesIntegration } from './buddies/integration';
 import { registerBuddyRoutes } from './buddies/routes';
 import { BuddyScheduler, nextAutomationRunAt } from './buddies/scheduler';
@@ -224,6 +228,11 @@ const buddyCreationService: BuddyCreationService = createBuddyCreationService({
 
 const buddyDispatchService = createBuddyDispatchService({
   getStore: getBuddiesStore,
+  prepareReturnConversation: createReturnConversationPreparer({
+    getConversation: (id) => conversations.get(id),
+    configService: conversationConfigService,
+    createConversation: buddyCreationService.createServerBuddyConversation,
+  }),
   createConversation: buddyCreationService.createServerBuddyConversation,
   dispatchInitialMessage: (conversation, options) =>
     buddyCreationService.dispatchInitialMessageIfPending(
@@ -651,6 +660,15 @@ void runServerStartup(
             cancelLegacyRun: (id) => buddyScheduler?.cancel(id) ?? Promise.resolve(),
             store: coordinationPackage,
             getConversation: (id) => conversations.get(id),
+            getConversationRecord: (id) => conversationConfigService.getRecord(id),
+            getTranscriptReference: async (id) => {
+              const runtime = conversations.get(id);
+              const record = await conversationConfigService.getRecord(id);
+              const binding =
+                record?.currentSession ??
+                (runtime ? { provider: runtime.provider, sessionId: runtime.sessionId } : null);
+              return binding ? resolveSessionTranscript(binding.provider, binding.sessionId) : null;
+            },
             createConversation: buddyCreationService.createServerBuddyConversation,
             ensureConversationReady: buddyCreationService.ensureConversationReady,
           }),

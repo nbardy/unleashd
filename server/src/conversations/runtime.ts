@@ -32,6 +32,7 @@ import {
   buddyKindFromContext,
   conversationKindFromLegacy,
   formatBuddyBuilderToolResult,
+  formatBuddyWorkerToolResult,
   formatBuddyTeamConfigurationToolResult,
   isBuddyKind,
   matchConversationKind,
@@ -529,7 +530,11 @@ export interface ConversationRuntime extends EventEmitter, ConversationRuntimeVi
     content: string,
     context: BuddyContext,
     claimToken: string,
-    onDrained?: (status: 'complete' | 'failed', detail: string) => void
+    onDrained?: (
+      status: 'complete' | 'failed',
+      detail: string,
+      terminalCause?: TurnTerminalCause
+    ) => void
   ): Promise<string>;
   spawnMergeReviewFork(content: string, forkSourceSessionId: string): void;
   stop(reason?: 'user_stop' | 'server_restart'): void;
@@ -704,7 +709,11 @@ export function createConversationRuntime(
       return this._memorySnapshot?.briefing ?? null;
     }
     private _automationClaimToken: string | null;
-    private _coordinationExecution: { context: BuddyContext; claimToken: string } | null = null;
+    private _coordinationExecution: {
+      context: BuddyContext;
+      claimToken: string;
+      terminalCause?: TurnTerminalCause;
+    } | null = null;
     // Merge feature: set on a "parent" thread that aggregates review docs from
     // N forked children. Children have mergeChildMeta instead.
     mergeParentMeta: MergeParentMeta | null;
@@ -882,6 +891,8 @@ export function createConversationRuntime(
       state: 'succeeded' | 'failed' | 'cancelled' | 'interrupted',
       terminalCause: TurnTerminalCause
     ): void {
+      if (this._coordinationExecution && !this._coordinationExecution.terminalCause)
+        this._coordinationExecution.terminalCause = terminalCause;
       if (!this._activeAttemptId) return;
       turnAttempts.terminal({
         attemptId: this._activeAttemptId,
@@ -1204,6 +1215,7 @@ export function createConversationRuntime(
             case 'tool.result': {
               if (event.isError) break;
               const content =
+                formatBuddyWorkerToolResult(event.output) ??
                 formatBuddyTeamConfigurationToolResult(event.output) ??
                 (this.kind.kind === 'buddy_builder'
                   ? formatBuddyBuilderToolResult(event.output)
@@ -1966,7 +1978,11 @@ export function createConversationRuntime(
       content: string,
       context: BuddyContext,
       claimToken: string,
-      onDrained?: (status: 'complete' | 'failed', detail: string) => void
+      onDrained?: (
+        status: 'complete' | 'failed',
+        detail: string,
+        terminalCause?: TurnTerminalCause
+      ) => void
     ): Promise<string> {
       if (this.placement !== 'background') {
         return Promise.reject(
@@ -1998,7 +2014,7 @@ export function createConversationRuntime(
             return;
           }
           try {
-            onDrained?.('complete', output);
+            onDrained?.('complete', output, this._coordinationExecution?.terminalCause);
             cleanup();
             resolve(output);
           } catch (error) {
@@ -2012,7 +2028,7 @@ export function createConversationRuntime(
             return;
           }
           try {
-            onDrained?.('failed', reason);
+            onDrained?.('failed', reason, this._coordinationExecution?.terminalCause);
           } catch (error) {
             cleanup();
             reject(error);
@@ -2100,9 +2116,10 @@ export function createConversationRuntime(
           knowledgeScope:
             input.origin === 'owner_input'
               ? { kind: 'owner_thread', conversationId: this.id }
-              : context.buddyProjectId
-                ? { kind: 'project', projectId: context.buddyProjectId }
-                : { kind: 'workspace', workspaceId: context.workspaceId },
+              : (context.knowledgeScope ??
+                (context.buddyProjectId
+                  ? { kind: 'project', projectId: context.buddyProjectId }
+                  : { kind: 'workspace', workspaceId: context.workspaceId })),
         };
       }
       if (!this.buddyContext) return null;

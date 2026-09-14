@@ -68,7 +68,11 @@ test('restart recovery releases a drained foreground claim and wakes its convers
   }
 });
 
-async function backgroundWorkReturns(sourcePlacement: 'default' | 'background') {
+async function backgroundWorkReturns(
+  sourcePlacement: 'default' | 'background',
+  routeReturns = false
+) {
+  const returnThread = routeReturns ? 'background-owner-thread' : 'owner-thread';
   const raw = new BuddiesStore(':memory:');
   const store = coordinationStore(raw as unknown as BuddiesStorePort);
   const w = raw.createWorkspace({
@@ -135,7 +139,8 @@ async function backgroundWorkReturns(sourcePlacement: 'default' | 'background') 
         visits.push(current.conversationId);
         if (run.input_kind === 'message_reply') {
           returnTurns++;
-          assert.equal(current.conversationId, 'owner-thread');
+          assert.equal(current.conversationId, returnThread);
+          if (routeReturns) assert.match(String(request.prompt), /Original assignment/);
           assert.equal(
             run.policy.execution,
             undefined,
@@ -242,6 +247,7 @@ async function backgroundWorkReturns(sourcePlacement: 'default' | 'background') 
   });
   const dispatch = createBuddyDispatchService({
     getStore: async () => store,
+    getReturnConversationId: routeReturns ? () => returnThread : undefined,
     createConversation: async () => {
       throw new Error('durable producer must not start provider');
     },
@@ -282,11 +288,11 @@ async function backgroundWorkReturns(sourcePlacement: 'default' | 'background') 
       await new Promise((resolve) => setTimeout(resolve, 5));
     }
     assert.equal(workerTurns, 2);
-    assert.equal(returnTurns, sourcePlacement === 'background' ? 1 : 0);
+    assert.equal(returnTurns, routeReturns || sourcePlacement === 'background' ? 1 : 0);
     const delivery = store
       .listBuddyRuns({ limit: 100 })
       .find((run) => run.input_kind === 'message_reply')!;
-    if (sourcePlacement === 'default') {
+    if (sourcePlacement === 'default' && !routeReturns) {
       assert.equal(owner.messages.length, 0, 'mail must not append to a human transcript');
       assert.equal(owner.queue.length, 0);
       assert.equal(delivery.outcome, 'mailbox_only');
@@ -309,9 +315,19 @@ async function backgroundWorkReturns(sourcePlacement: 'default' | 'background') 
       assert.ok(delivery.acknowledged_at);
       assert.equal(messageExecution(store, first.data.message.id).delivery?.[0].mailboxOnly, false);
     }
-    assert.equal(conversations.size, 2);
-    assert.equal(new Set(visits.filter((id) => id !== 'owner-thread')).size, 1);
-    const worker = conversations.get(visits.find((id) => id !== 'owner-thread')!)!;
+    assert.equal(conversations.size, routeReturns ? 3 : 2);
+    if (routeReturns) {
+      assert.equal(owner.messages.length, 0);
+      assert.equal(owner.queue.length, 0);
+      assert.equal(conversations.get(returnThread)?.placement, 'background');
+    }
+    assert.equal(
+      new Set(visits.filter((id) => id !== 'owner-thread' && id !== returnThread)).size,
+      1
+    );
+    const worker = conversations.get(
+      visits.find((id) => id !== 'owner-thread' && id !== returnThread)!
+    )!;
     const requests = worker.messages.filter((message) => message.role === 'user');
     assert.equal(requests.length, 2, 'both attempts remain visible in the worker transcript');
     for (const request of requests) {
@@ -328,7 +344,7 @@ async function backgroundWorkReturns(sourcePlacement: 'default' | 'background') 
     assert.equal(execution.background?.runsUsed, 2);
     assert.equal(store.listBuddyRuns({ limit: 100 }).length, 3);
     assert.ok(store.listBuddyRuns({ limit: 100 }).every((run) => run.status === 'complete'));
-    if (sourcePlacement === 'default') {
+    if (sourcePlacement === 'default' && !routeReturns) {
       const source = store.beginBuddyChatRun({
         buddyId: buddy.id,
         workspaceId: w.id,
@@ -419,3 +435,6 @@ for (const placement of ['default', 'background'] as const) {
   test(`background self work returns to the ${placement === 'default' ? 'mailbox for a human chat' : 'original background thread'}`, () =>
     backgroundWorkReturns(placement));
 }
+
+test('chat-launched work wakes its separate background return thread', () =>
+  backgroundWorkReturns('default', true));

@@ -2,6 +2,8 @@ import { z } from 'zod';
 import { BuddyTeamStateSchema } from './buddy-team.js';
 import { ProviderSchema } from './provider-catalog.js';
 
+// Identity outlives Tasks and provider attempts; Worker mode reuses this Buddy model.
+// Core rationale: ../../product/buddies/CORE_DESIGN.md#data-model-and-authority
 export const BuddySummarySchema = z.object({
   id: z.string().min(1),
   project_id: z.string().min(1),
@@ -120,6 +122,46 @@ export function parseBuddyBuilderToolResult(value: unknown, depth = 0): BuddyBui
 export function formatBuddyBuilderToolResult(output: unknown): string | null {
   const event = parseBuddyBuilderToolResult(output);
   return event ? `<!--buddy_builder_result:${encodeURIComponent(JSON.stringify(event))}-->` : null;
+}
+
+/** Host-issued launch receipt, preserved in live and hydrated tool output. */
+export const BuddyWorkerThreadSchema = z.object({
+  conversationId: z.string().min(1),
+  buddyId: z.string().min(1),
+  label: z.string().min(1),
+});
+export type BuddyWorkerThread = z.infer<typeof BuddyWorkerThreadSchema>;
+
+export function formatBuddyWorkerToolResult(output: unknown): string | null {
+  const threads = new Map<string, BuddyWorkerThread>();
+  const visit = (value: unknown, depth = 0): void => {
+    if (depth > 10) return;
+    if (typeof value === 'string') {
+      try {
+        visit(JSON.parse(value), depth + 1);
+      } catch {
+        /* ordinary output */
+      }
+      return;
+    }
+    if (!value || typeof value !== 'object') return;
+    if (Array.isArray(value)) {
+      value.forEach((item) => visit(item, depth + 1));
+      return;
+    }
+    const record = value as Record<string, unknown>;
+    if (record.isError || record.is_error || record.error || record.preview) return;
+    const thread = BuddyWorkerThreadSchema.safeParse(record.buddyWorkerThread);
+    if (thread.success) threads.set(thread.data.conversationId, thread.data);
+    for (const key of ['structuredContent', 'content', 'text', 'result', 'data'])
+      if (key in record) visit(record[key], depth + 1);
+  };
+  visit(output);
+  return threads.size
+    ? [...threads.values()]
+        .map((thread) => `<!--buddy_worker_thread:${encodeURIComponent(JSON.stringify(thread))}-->`)
+        .join('\n')
+    : null;
 }
 
 /** Canonical dense documents; legacy file projections are not a second memory model. */

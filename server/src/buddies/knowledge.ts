@@ -61,15 +61,17 @@ export function knowledgeAuthority(
     !!context.automationRunId || !!context.delegatedByBuddyId || (run && run.input_kind !== 'chat');
   // Derive the audience from the actual run, never a requested document or prose.
   const projectId = run?.project_id ?? context.buddyProjectId;
-  const scope: BuddyKnowledgeScope = teamTurn
-    ? projectId
-      ? { kind: 'project', projectId }
-      : { kind: 'workspace', workspaceId: context.workspaceId }
-    : { kind: 'owner_thread', conversationId: context.conversationId ?? 'unbound' };
+  const scope: BuddyKnowledgeScope =
+    context.knowledgeScope ??
+    (teamTurn
+      ? projectId
+        ? { kind: 'project', projectId }
+        : { kind: 'workspace', workspaceId: context.workspaceId }
+      : { kind: 'owner_thread', conversationId: context.conversationId ?? 'unbound' });
   return {
     actor: context.buddyId,
     workspaceId: context.workspaceId,
-    conversationId: context.conversationId,
+    conversationId: scope.kind === 'owner_thread' ? scope.conversationId : context.conversationId,
     scope,
   };
 }

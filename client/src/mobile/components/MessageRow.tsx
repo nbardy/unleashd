@@ -1,3 +1,5 @@
+import { BuddyWorkerThreadBadge } from '../../components/buddies/BuddyWorkerThreadBadge';
+import type { BuddyWorkerThread } from '@unleashd/shared';
 import type { Message } from '@unleashd/shared';
 import { memo, useState } from 'react';
 import type { AssistantResponse } from '../../utils/chat-message-groups';
@@ -223,6 +225,7 @@ const MessageRowContent = memo(function MessageRowContent({ message }: { message
             if (seg.type === 'buddy_builder_result') {
               return <InlineBuddyBuilderResult key={idx} payload={seg.json} />;
             }
+            if (seg.type === 'buddy_worker_thread') return null;
             if (seg.type === 'buddy_team_configuration') {
               return <InlineBuddyTeamConfiguration key={idx} payload={seg.json} />;
             }
@@ -298,7 +301,12 @@ export const AssistantResponseRow = memo(function AssistantResponseRow({
       <div className="mobile-assistant-response__role">Assistant</div>
       {response.parts.map((part) =>
         part.type === 'tool_calls' ? (
-          <MobileToolActivity key={part.key} count={part.count} messages={part.messages} />
+          <MobileToolActivity
+            key={part.key}
+            count={part.count}
+            messages={part.messages}
+            workerThreads={part.workerThreads}
+          />
         ) : (
           <MessageRowContent key={part.key} message={part.message} />
         )
@@ -311,7 +319,11 @@ export const AssistantResponseRow = memo(function AssistantResponseRow({
   );
 });
 
-function MobileToolActivity({ count, messages }: { count: number; messages: Message[] }) {
+function MobileToolActivity({
+  count,
+  messages,
+  workerThreads,
+}: { count: number; messages: Message[]; workerThreads?: BuddyWorkerThread[] }) {
   const [expanded, setExpanded] = useState(false);
   return (
     <div className="mobile-response-activity">
@@ -322,8 +334,11 @@ function MobileToolActivity({ count, messages }: { count: number; messages: Mess
         onClick={() => setExpanded((value) => !value)}
       >
         <span aria-hidden="true">{expanded ? '▾' : '▸'}</span>
-        {count} tool {count === 1 ? 'call' : 'calls'}
+        {count ? `${count} tool ${count === 1 ? 'call' : 'calls'}` : 'Work launched'}
       </button>
+      {workerThreads?.map((thread) => (
+        <BuddyWorkerThreadBadge key={thread.conversationId} thread={thread} />
+      ))}
       {expanded &&
         messages.map((message, index) => <MessageRowContent key={index} message={message} />)}
     </div>

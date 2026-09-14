@@ -1,10 +1,11 @@
-import { observeBuddyTeam } from './team-observation';
-import { BuddyKnowledgeScopeSchema, type BuddyKnowledgeScope } from '@unleashd/shared';
-import { knowledgeStore, scopedDocumentOperation, scopedNote, recallKnowledge } from './knowledge';
-import { executeOwnerResource, type OwnerResourceName } from './owner-resources';
+import { type BuddyKnowledgeScope, BuddyKnowledgeScopeSchema } from '@unleashd/shared';
 import {
   BuddyProjectExecutionViewSchema,
   BuddyProjectRunInputSchema,
+  BuddyTaskCommentInputSchema,
+  BuddyTaskCommentSchema,
+  BuddyTaskCommentsPageSchema,
+  BuddyTaskCommentsQuerySchema,
   BuddyTeamAccessViewSchema,
   BuddyWorkProjectSchema,
 } from '@unleashd/shared';
@@ -13,14 +14,14 @@ import {
   type BuddyBuilderResults,
   type BuddyContext,
   BuddyMessageReplySchema,
-  BuddyWorkspaceActivitySchema,
-  parseTeamConfigurationProposal,
   type BuddyRun,
+  BuddyWorkspaceActivitySchema,
   ProviderSchema,
   isEffortValidForProvider,
   isModelIdValidForProvider,
   modelValidationHint,
   normalizeModelId,
+  parseTeamConfigurationProposal,
 } from '@unleashd/shared';
 import {
   BUDDY_SOUL_MAX_CHARACTERS,
@@ -31,22 +32,25 @@ import type { Express, Request, Response } from 'express';
 import { z } from 'zod';
 import type { BuddiesStorePort, BuddyAutomation, BuddyAutomationRun } from './contract';
 import { coordinationStore } from './coordination-store';
+import { knowledgeStore, recallKnowledge, scopedDocumentOperation, scopedNote } from './knowledge';
 import {
   type BuddyOperationContext,
   BuddyOperationInputSchemas,
   BuddyOperationsService,
   type PreparedBuddyMessage,
 } from './operations';
-import { assertBuddyProviderSupportsMcp } from './provider-capability';
-import { publicAutomationRun } from './public-automation-run';
-import { readBuddySoul, updateBuddySoul } from './soul';
-import { getTeamCapabilities, messageExecution, teamStore } from './team-access';
-import { visibleBuddyPayload } from './visibility';
+import { type OwnerResourceName, executeOwnerResource } from './owner-resources';
 import {
   configureOwnerTeam,
   getOwnerTeamConfiguration,
   ownerWorkspaceIds,
 } from './owner-team-configuration';
+import { assertBuddyProviderSupportsMcp } from './provider-capability';
+import { publicAutomationRun } from './public-automation-run';
+import { readBuddySoul, updateBuddySoul } from './soul';
+import { getTeamCapabilities, messageExecution, teamStore } from './team-access';
+import { observeBuddyTeam } from './team-observation';
+import { visibleBuddyPayload } from './visibility';
 
 export interface BuddyConversationView {
   id: string;
@@ -1107,12 +1111,12 @@ export function registerBuddyRoutes(app: Express, dependencies: BuddyRouteDepend
     const scope = memoryAudience(req);
     if (!scope) return void res.json(buddies.readBuddyMemory(req.params.buddyId));
     const { buddyId, workspaceId } = memoryHttpContext(buddies, req.params.buddyId, req);
-    const ledger = knowledgeStore(buddies),
-      authority = { actor: 'owner', workspaceId };
+    const ledger = knowledgeStore(buddies);
+    const authority = { actor: 'owner', workspaceId };
     const read = (kind: 'working' | 'long_term') =>
       ledger.readKnowledgeDocument({ targetBuddyId: buddyId, scope, kind }, authority);
-    const working = read('working'),
-      longTerm = read('long_term');
+    const working = read('working');
+    const longTerm = read('long_term');
     res.json({
       working: working.content,
       longTerm: longTerm.content,
@@ -1248,6 +1252,47 @@ export function registerBuddyRoutes(app: Express, dependencies: BuddyRouteDepend
         { actor: 'owner', key: req.get('Idempotency-Key') ?? optional.key ?? createId() }
       )
     );
+  });
+
+  route.get('/api/buddies/projects/:projectId/comments', 400, async (req, res) => {
+    const store = coordinationStore(await getStore());
+    const project = store.getBuddyProject(req.params.projectId) as { workspace_id: string } | null;
+    if (!project) {
+      res.status(404).json({ error: 'Project not found' });
+      return;
+    }
+    const query = BuddyTaskCommentsQuerySchema.parse({
+      limit: req.query.limit === undefined ? undefined : Number(req.query.limit),
+      cursor: req.query.cursor,
+    });
+    res.json(
+      BuddyTaskCommentsPageSchema.parse(
+        store.listTaskComments(
+          { ...query, projectId: req.params.projectId },
+          { actor: 'owner', workspaceId: project.workspace_id }
+        )
+      )
+    );
+  });
+
+  route.post('/api/buddies/projects/:projectId/comments', 400, async (req, res) => {
+    const store = coordinationStore(await getStore());
+    const project = store.getBuddyProject(req.params.projectId) as { workspace_id: string } | null;
+    if (!project) {
+      res.status(404).json({ error: 'Project not found' });
+      return;
+    }
+    const input = BuddyTaskCommentInputSchema.parse(req.body);
+    res
+      .status(201)
+      .json(
+        BuddyTaskCommentSchema.parse(
+          store.appendTaskComment(
+            { ...input, projectId: req.params.projectId },
+            { actor: 'owner', workspaceId: project.workspace_id }
+          )
+        )
+      );
   });
 
   route.patch('/api/buddies/projects/:projectId', 400, async (req, res) => {

@@ -140,7 +140,17 @@ export type ConversationPurpose = z.infer<typeof ConversationPurposeSchema>;
 export const ConversationPlacementSchema = z.enum(['default', 'background']);
 export type ConversationPlacement = z.infer<typeof ConversationPlacementSchema>;
 
+export const ConversationBranchSchema = z.object({
+  sourceConversationId: ConversationIdSchema,
+  throughMessageId: z.string().min(1),
+  audience: BuddyKnowledgeScopeSchema,
+  handoff: z.string().max(64000),
+  launches: z.record(z.string(), z.string().max(64000)).optional(),
+});
+export type ConversationBranch = z.infer<typeof ConversationBranchSchema>;
+
 export const ConversationCreationMetadataSchema = z.object({
+  branch: ConversationBranchSchema.optional(),
   commandId: z.string().min(1).optional(),
   fingerprint: z.string().min(1).optional(),
   placement: ConversationPlacementSchema.optional(),

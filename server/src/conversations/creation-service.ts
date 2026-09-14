@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import type {
   BuddyContext,
+  ConversationBranch,
   ConversationConfig,
   ConversationKind,
   ConversationPlacement,
@@ -18,6 +19,7 @@ export interface CreationFingerprintInput {
   buddyContext?: BuddyContext;
   purpose?: ConversationPurpose;
   placement?: ConversationPlacement;
+  branch?: ConversationBranch;
 }
 
 export interface CreateConversationInput extends CreationFingerprintInput {
@@ -47,6 +49,7 @@ export function creationFingerprint(input: CreationFingerprintInput): string {
         swarmDebugPrefix: input.swarmDebugPrefix ?? null,
         resumedFromConversationId: input.resumedFromConversationId ?? null,
         buddyContext: input.buddyContext ?? null,
+        ...(input.branch ? { branch: input.branch } : {}),
         ...(input.purpose === undefined ? {} : { purpose: input.purpose }),
       })
     )
@@ -74,6 +77,7 @@ export function createConversationService(ports: ConversationCreationPorts) {
         buddyContext: input.buddyContext,
         purpose: input.purpose,
         placement: input.placement,
+        branch: input.branch,
       },
     });
     // No await between lookup and register: concurrent matching callers reuse

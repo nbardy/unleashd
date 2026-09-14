@@ -1,5 +1,6 @@
 import type {
   BuddyContext,
+  ConversationBranch,
   ConversationConfig,
   ConversationPlacement,
   Provider,
@@ -31,6 +32,7 @@ export interface CreateServerBuddyConversationInput {
   /** Register/link the transcript but leave its first provider turn dormant. */
   deferInitialMessage?: boolean;
   placement?: ConversationPlacement;
+  branch?: ConversationBranch;
   ownerInput?: Readonly<{ origin: 'owner_input'; inputId: string }>;
 }
 
@@ -226,6 +228,7 @@ export function createBuddyCreationService(ports: BuddyCreationServicePorts): Bu
     initialMessage?: string;
     automationClaimToken?: string;
     placement?: ConversationPlacement;
+    branch?: ConversationBranch;
   }): Promise<ConversationRuntime> {
     const conversation = await createOrReuse({
       conversationId: input.conversationId,
@@ -233,6 +236,7 @@ export function createBuddyCreationService(ports: BuddyCreationServicePorts): Bu
       config: input.config,
       commandId: input.commandId,
       initialMessage: input.initialMessage,
+      branch: input.branch,
       buddyContext: input.resolved.context,
       placement:
         input.placement ??
@@ -318,6 +322,7 @@ export function createBuddyCreationService(ports: BuddyCreationServicePorts): Bu
       config: resolveConfig(resolved),
       commandId: input.commandId,
       initialMessage: input.initialMessage,
+      branch: input.branch,
       placement: input.placement,
     });
     if (!input.deferInitialMessage)

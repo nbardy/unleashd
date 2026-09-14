@@ -547,7 +547,8 @@
 }
 
 .chat-activity-toggle {
-  display: flex;
+  display: inline-flex;
+  vertical-align: middle;
   align-items: center;
   gap: 6px;
   min-height: 24px;

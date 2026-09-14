@@ -1162,6 +1162,7 @@ test('background deadline uses timeout classification and waits for provider dra
     NonNullable<ConversationRuntimeDependencies['finishBuddyChatRun']>
   >[] = [];
   let release = false;
+  let drainedCause: string | undefined;
   const fixture = runtimeFixture({
     turnAttempts: {
       queued: () => {},
@@ -1197,7 +1198,10 @@ test('background deadline uses timeout classification and waits for provider dra
     'Keep working',
     { buddyId: 'buddy-fixture', workspaceId: 'workspace-fixture', coordinationRunId: 'worker-run' },
     'worker-token',
-    (status, detail) => settlements.push(['worker-run', 'worker-token', status, detail])
+    (status, detail, terminalCause) => {
+      drainedCause = terminalCause;
+      settlements.push(['worker-run', 'worker-token', status, detail]);
+    }
   );
   const rejected = assert.rejects(execution, /maximum runtime/);
   await new Promise<void>((resolve) => setImmediate(resolve));
@@ -1220,6 +1224,7 @@ test('background deadline uses timeout classification and waits for provider dra
   assert.equal(conversation.hasActiveProcess(), false);
   assert.equal(settlements.length, 1);
   await rejected;
+  assert.equal(drainedCause, 'max_runtime_timeout');
   assert.equal(settlements[0][2], 'failed');
   assert.match(settlements[0][3] ?? '', /maximum runtime/);
 });

@@ -70,6 +70,7 @@ export const SendBuddyResourceSchema = z
       z
         .object({
           kind: z.literal('work'),
+          continueFrom: z.string().min(1).optional(),
           projectId: z.string().min(1),
           maxRuns: BuddyBackgroundExecutionSchema.shape.maxRuns,
           maxDurationSeconds: BuddyBackgroundExecutionSchema.shape.maxDurationSeconds,
@@ -86,6 +87,7 @@ export function buddySendOperation(input: unknown) {
     return {
       ...message,
       projectId: delivery.projectId,
+      continueFrom: delivery.continueFrom,
       expectsReply: true,
       execution: {
         mode: 'until_done' as const,

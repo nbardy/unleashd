@@ -16,6 +16,7 @@ export type StructuredMessageSegment =
   | { type: 'buddy_review_result'; json: string }
   | { type: 'buddy_builder_result'; json: string }
   | { type: 'buddy_team_configuration'; json: string }
+  | { type: 'buddy_worker_thread'; json: string }
   | { type: 'oompa_run' };
 
 interface SegmentMatch {
@@ -49,6 +50,7 @@ function collectMatches(
 
 export function splitStructuredMessageContent(content: string): StructuredMessageSegment[] {
   const matches = [
+    ...collectMatches(content, 'buddy_worker_thread', /<!--buddy_worker_thread:(.*?)-->/s, 1),
     ...collectMatches(content, 'ask_user_question', ASK_USER_QUESTION_RE, 1),
     ...collectMatches(content, 'buddy_review_result', BUDDY_REVIEW_RESULT_RE, 1),
     ...collectMatches(
@@ -78,7 +80,8 @@ export function splitStructuredMessageContent(content: string): StructuredMessag
     } else if (
       match.type === 'buddy_review_result' ||
       match.type === 'buddy_builder_result' ||
-      match.type === 'buddy_team_configuration'
+      match.type === 'buddy_team_configuration' ||
+      match.type === 'buddy_worker_thread'
     ) {
       segments.push({ type: match.type, json: match.payload ?? '' });
     } else {

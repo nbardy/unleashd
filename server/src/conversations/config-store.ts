@@ -410,6 +410,26 @@ export class ConversationConfigStore {
     }
   }
 
+  async appendBranchLaunch(conversationId: string, digest: string, handoff: string) {
+    return this.updateRecord(conversationId, (record) => {
+      const branch = record.creation?.branch;
+      if (record.status === 'deleted' || !branch) throw new Error('Launch branch unavailable');
+      if (digest === branch.throughMessageId || branch.launches?.[digest]) return record;
+      // Never silently discard launch context needed by an outstanding request.
+      if (Object.keys(branch.launches ?? {}).length >= 128)
+        throw new Error(
+          'Background review launch history is full; start another owner conversation'
+        );
+      return {
+        ...record,
+        creation: {
+          ...record.creation,
+          branch: { ...branch, launches: { ...branch.launches, [digest]: handoff } },
+        },
+      };
+    });
+  }
+
   async setCurrentSession(
     conversationId: string,
     currentSession: SessionBinding

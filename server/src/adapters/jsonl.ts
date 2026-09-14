@@ -32,6 +32,7 @@ import {
   BuddyContextSchema,
   ConversationKindSchema,
   formatBuddyBuilderToolResult,
+  formatBuddyWorkerToolResult,
 } from '@unleashd/shared';
 import {
   isCodexAgentMessageEvent,
@@ -465,12 +466,14 @@ export async function parseCodexJsonlFile(filePath: string): Promise<CodexSessio
     const isToolCall =
       outerType === 'response_item' &&
       (innerType === 'function_call' || innerType === 'custom_tool_call');
-    // Keep only Builder tool outputs; other large tool rows still skip JSON expansion.
-    const isBuilderOutput =
+    // Keep typed Buddy UI receipts; other large tool rows still skip JSON expansion.
+    const isBuddyOutput =
       outerType === 'response_item' &&
       (innerType === 'function_call_output' || innerType === 'custom_tool_call_output') &&
-      (line.includes('buddyBuilderEvent') || line.includes('homeWorkspace'));
-    if (!isMetadata && !isRetainedEvent && !isFallbackMessage && !isToolCall && !isBuilderOutput)
+      (line.includes('buddyBuilderEvent') ||
+        line.includes('homeWorkspace') ||
+        line.includes('buddyWorkerThread'));
+    if (!isMetadata && !isRetainedEvent && !isFallbackMessage && !isToolCall && !isBuddyOutput)
       continue;
 
     try {
@@ -518,7 +521,7 @@ export async function parseCodexJsonlFile(filePath: string): Promise<CodexSessio
       if (isCodexUserMessageEvent(entry) || isCodexAgentMessageEvent(entry)) {
         hasEventMessages = true;
         entries.push(entry);
-      } else if (isRetainedEvent || isToolCall || isBuilderOutput) {
+      } else if (isRetainedEvent || isToolCall || isBuddyOutput) {
         entries.push(entry);
       } else if (isFallbackMessage && isCodexResponseMessage(entry)) {
         const role = entry.payload.role;
@@ -634,7 +637,9 @@ function extractOpenCodeContent(
         contentParts.push(`${formattedTool} (${status})`);
       } else {
         contentParts.push(formattedTool);
-        const result = formatBuddyBuilderToolResult(part.toolOutput);
+        const result =
+          formatBuddyWorkerToolResult(part.toolOutput) ??
+          formatBuddyBuilderToolResult(part.toolOutput);
         if (result) contentParts.push(result);
       }
       continue;
@@ -973,7 +978,9 @@ export function extractMessagesFromEntries(entries: JsonlEntry[]): Message[] {
       if (Array.isArray(entry.message.content)) {
         for (const block of entry.message.content) {
           if (block.type !== 'tool_result' || !('content' in block) || block.is_error) continue;
-          const result = formatBuddyBuilderToolResult(block.content);
+          const result =
+            formatBuddyWorkerToolResult(block.content) ??
+            formatBuddyBuilderToolResult(block.content);
           if (result)
             messages.push({
               role: 'assistant',
@@ -1152,7 +1159,8 @@ export function extractMessagesFromCodexEntries(entries: CodexSessionEntry[]): M
       entry.type === 'response_item' &&
       (payload?.type === 'function_call_output' || payload?.type === 'custom_tool_call_output')
     ) {
-      const result = formatBuddyBuilderToolResult(payload.output);
+      const result =
+        formatBuddyWorkerToolResult(payload.output) ?? formatBuddyBuilderToolResult(payload.output);
       if (result)
         messages.push({
           role: 'assistant',
@@ -2133,7 +2141,9 @@ export async function parseMuseSessionFile(filePath: string): Promise<MuseSessio
         }
       } else if (eventKind === 'tool_result_batch_committed' && Array.isArray(event.results)) {
         for (const output of event.results) {
-          const result = formatBuddyBuilderToolResult(asObject(output)?.text);
+          const result =
+            formatBuddyWorkerToolResult(asObject(output)?.text) ??
+            formatBuddyBuilderToolResult(asObject(output)?.text);
           if (result) rawMessages.push({ role: 'assistant', content: result, timestamp: ts });
         }
       } else if (eventKind === 'reasoning_committed' && typeof event.text === 'string') {

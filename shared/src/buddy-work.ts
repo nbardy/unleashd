@@ -3,6 +3,33 @@ import { BuddyRunSchema } from './buddy-coordination.js';
 import { BuddyMessageSchema } from './buddy-message.js';
 
 export const BuddyWorkEvidenceSchema = z.array(z.string().trim().min(1).max(4000)).max(32);
+export const BuddyTaskCommentInputSchema = z
+  .object({
+    key: z.string().trim().min(1).max(200),
+    body: z.string().trim().min(1).max(32000),
+    evidence: BuddyWorkEvidenceSchema.default([]),
+  })
+  .strict();
+export const BuddyTaskCommentsQuerySchema = z
+  .object({
+    limit: z.number().int().min(1).max(100).default(20),
+    cursor: z.string().min(1).max(1000).optional(),
+  })
+  .strict();
+export const BuddyTaskCommentSchema = z.object({
+  id: z.string(),
+  project_id: z.string(),
+  author: z.string(),
+  body: z.string(),
+  evidence: BuddyWorkEvidenceSchema,
+  created_at: z.string(),
+});
+export const BuddyTaskCommentsPageSchema = z.object({
+  items: z.array(BuddyTaskCommentSchema),
+  nextCursor: z.string().nullable(),
+});
+export type BuddyTaskComment = z.infer<typeof BuddyTaskCommentSchema>;
+export type BuddyTaskCommentsPage = z.infer<typeof BuddyTaskCommentsPageSchema>;
 export const BuddyBackgroundExecutionSchema = z
   .object({
     mode: z.literal('until_done'),
@@ -65,6 +92,8 @@ export const BuddyWorkTodoSchema = z
     completion_evidence: storedEvidence,
   })
   .passthrough();
+// Product "Task" maps to this existing owned project, not a second work ledger.
+// Outcome and evidence outlive runs: ../../product/buddies/CORE_DESIGN.md#data-model-and-authority
 export const BuddyWorkProjectSchema = z
   .object({
     id: z.string(),

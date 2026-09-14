@@ -97,7 +97,13 @@ export function buddyMcpServers(
       // This is the Unleashd server directory, not the Buddy workspace:
       // source-mode launch needs it to resolve the tsx loader and MCP entrypoint.
       ...(launch.cwd ? { cwd: launch.cwd } : {}),
-      ...(launch.env || controlEnv ? { env: { ...launch.env, ...controlEnv } } : {}),
+      env: {
+        ...launch.env,
+        ...controlEnv,
+        ...(context.knowledgeScope
+          ? { UNLEASHD_BUDDY_KNOWLEDGE_SCOPE: JSON.stringify(context.knowledgeScope) }
+          : {}),
+      },
       // Employee state is an authority boundary. Never start a Buddy turn after
       // silently dropping this server.
       required: true,

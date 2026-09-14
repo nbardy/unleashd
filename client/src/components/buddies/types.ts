@@ -187,6 +187,7 @@ export interface BuddyApprovalRequest {
 }
 
 export interface Buddy {
+  employment_mode?: 'standing' | 'worker';
   profile_revision?: number;
   id: string;
   name: string;

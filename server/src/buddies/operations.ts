@@ -1,12 +1,14 @@
-import { BuddyCheckpointInputSchema, BuddyTeamObservationInputSchema } from '@unleashd/shared';
-import { observeBuddyTeam } from './team-observation';
 import { MEMORY_NOTE_MAX_BYTES } from '@nbardy/buddies';
+import { BuddyCheckpointInputSchema, BuddyTeamObservationInputSchema } from '@unleashd/shared';
 import { BuddyDocumentRefSchema } from '@unleashd/shared';
 import {
   BuddyBackgroundExecutionSchema,
+  BuddyKnowledgeScopeSchema,
   BuddyMessageReplySchema,
   BuddyRunSchema,
   BuddySoulUpdateSchema,
+  BuddyTaskCommentInputSchema,
+  BuddyTaskCommentsQuerySchema,
   TeamConfigurationProposalSchema,
   BuddyTodoOperationSchema as TodoOperationSchema,
   formatTeamConfigurationProposal,
@@ -35,9 +37,11 @@ import {
   teamAuthority,
   teamStore,
 } from './team-access';
+import { observeBuddyTeam } from './team-observation';
 import { inspectTeamReadiness } from './team-readiness';
 
 export const BuddyOperationContextSchema = z.object({
+  knowledgeScope: BuddyKnowledgeScopeSchema.optional(),
   ownerControlAvailable: z.boolean().optional(),
   ownerControlContractVersion: z.string().optional(),
   coordinationRunId: z.string().nullish(),
@@ -114,6 +118,8 @@ export const BuddyOperationInputSchemas = {
   ...DirectReportInputSchemas,
   'buddy.get_team_state': BuddyTeamObservationInputSchema,
   'buddy.checkpoint': BuddyCheckpointInputSchema,
+  'buddy.append_task_comment': BuddyTaskCommentInputSchema.extend({ projectId: z.string().min(1) }),
+  'buddy.list_task_comments': BuddyTaskCommentsQuerySchema.extend({ projectId: z.string().min(1) }),
   ...TeamOperationSchemas,
   'buddy.get_soul': z.object({ targetBuddyId: z.string().min(1).optional() }).strict(),
   'buddy.update_soul': BuddySoulUpdateSchema.extend({
@@ -355,7 +361,8 @@ export const MESSAGE_BUDDY_OPERATIONS: BuddyOperationName[] = [
   'buddy.get_message',
   'buddy.get_runs',
   'buddy.get_team_state',
-  'buddy.checkpoint',
+  'buddy.append_task_comment',
+  'buddy.list_task_comments',
   'buddy.new_project',
   'buddy.stop',
   'buddy.retry_run',
@@ -851,14 +858,31 @@ export class BuddyOperationsService {
         );
       }
       case 'buddy.checkpoint': {
-        const parsed = BuddyCheckpointInputSchema.parse(input);
-        if (!this.context.coordinationRunId)
-          throw new Error('A checkpoint requires an active coordinated attempt');
+        throw new Error(
+          'Checkpoint writes are retired. Save work in files and link it in Task comments or Mail. Historical checkpoints remain readable.'
+        );
+      }
+      case 'buddy.append_task_comment': {
+        const parsed = BuddyOperationInputSchemas[name].parse(input);
+        if (!this.projectInAudience(parsed.projectId))
+          throw new Error('Project is outside the conversation audience');
+        const comment = coordinationStore(this.store).appendTaskComment(parsed, {
+          actor: this.context.buddyId,
+          workspaceId: this.context.workspaceId,
+          runId: this.context.coordinationRunId ?? undefined,
+        });
+        return this.result(name, comment, { projectId: parsed.projectId, key: parsed.key });
+      }
+      case 'buddy.list_task_comments': {
+        const parsed = BuddyOperationInputSchemas[name].parse(input);
+        if (!this.projectInAudience(parsed.projectId))
+          throw new Error('Project is outside the conversation audience');
         return this.result(
           name,
-          coordinationStore(this.store).checkpointBuddyRun(this.context.coordinationRunId, {
-            ...parsed,
-            claimToken: this.authority.automationClaimToken,
+          coordinationStore(this.store).listTaskComments(parsed, {
+            actor: this.context.buddyId,
+            workspaceId: this.context.workspaceId,
+            runId: this.context.coordinationRunId ?? undefined,
           }),
           parsed
         );
@@ -1733,13 +1757,12 @@ export class BuddyOperationsService {
         !parsed.key ||
         !parsed.projectId ||
         parsed.to === 'owner' ||
-        parsed.continueFrom ||
         parsed.inReplyTo ||
         parsed.wait ||
         !parsed.expectsReply
       )
         throw new Error(
-          'Background execution requires a stable key, recipient-owned project, fresh route and final reply; it cannot wait synchronously.'
+          'Background execution requires a stable key, recipient-owned project and final reply; it cannot wait synchronously.'
         );
     }
     // Keep explicit null through MCP -> control server preparation. It starts a

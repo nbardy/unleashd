@@ -1,11 +1,17 @@
-import type { Message } from '@unleashd/shared';
+import { BuddyWorkerThreadSchema, type BuddyWorkerThread, type Message } from '@unleashd/shared';
 import { messageTranscriptContent } from './conversation-transcript';
 import { splitStructuredMessageContent } from './structured-message-segments';
 import { splitToolActivity } from './tool-activity-segments';
 
 export type AssistantResponsePart =
   | { type: 'content'; key: string; message: Message }
-  | { type: 'tool_calls'; key: string; messages: Message[]; count: number };
+  | {
+      type: 'tool_calls';
+      key: string;
+      messages: Message[];
+      count: number;
+      workerThreads?: BuddyWorkerThread[];
+    };
 
 export type AssistantResponse = {
   type: 'assistant';
@@ -65,21 +71,48 @@ export function groupChatMessages(messages: Message[], prefix: string | null): M
       groups.push(response);
     }
     response.messages.push(msg);
-    // Keep interactive payloads intact. Tool input is separate, literal data and
-    // must never be interpreted as prose or a widget marker.
-    if (splitStructuredMessageContent(msg.content).some((part) => part.type !== 'text')) {
-      appendPart(msg, `${index}:0`);
-    } else if (msg.toolCall) {
-      appendPart(msg, `${index}:0`, 1);
-    } else {
-      splitToolActivity(msg.content).forEach((part, partIndex) => {
-        appendPart(
-          { ...msg, content: part.content },
-          `${index}:${partIndex}`,
-          part.type === 'tool_calls' ? part.count : 0
-        );
-      });
+    const appendOrdinary = (fragment: Message, key: string) => {
+      // Tool input is literal data, never an interpreted widget.
+      if (fragment.toolCall) appendPart(fragment, key, 1);
+      else if (splitStructuredMessageContent(fragment.content).some((part) => part.type !== 'text'))
+        appendPart(fragment, key);
+      else
+        splitToolActivity(fragment.content).forEach((part, partIndex) => {
+          if (part.content.trim())
+            appendPart(
+              { ...fragment, content: part.content },
+              `${key}:${partIndex}`,
+              part.type === 'tool_calls' ? part.count : 0
+            );
+        });
+    };
+    if (msg.toolCall) {
+      appendOrdinary(msg, `${index}:0`);
+      return;
     }
+    const marker = /<!--buddy_worker_thread:(.*?)-->/gs;
+    let offset = 0;
+    for (const match of msg.content.matchAll(marker)) {
+      const start = match.index!;
+      if (start > offset)
+        appendOrdinary({ ...msg, content: msg.content.slice(offset, start) }, `${index}:${offset}`);
+      try {
+        const thread = BuddyWorkerThreadSchema.parse(JSON.parse(decodeURIComponent(match[1])));
+        let last = response.parts.at(-1);
+        if (last?.type !== 'tool_calls') {
+          last = { type: 'tool_calls', key: `${index}:${start}`, messages: [], count: 0 };
+          response.parts.push(last);
+        }
+        last.workerThreads ??= [];
+        if (!last.workerThreads.some((item) => item.conversationId === thread.conversationId))
+          last.workerThreads.push(thread);
+      } catch {
+        /* A malformed receipt must never become a link. */
+      }
+      offset = start + match[0].length;
+    }
+    if (offset < msg.content.length)
+      appendOrdinary({ ...msg, content: msg.content.slice(offset) }, `${index}:${offset}`);
   });
   finishResponse();
   return groups;

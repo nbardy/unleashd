@@ -1,5 +1,6 @@
 import type { BuddyCheckpoint, BuddyRecovery, BuddyTeamObservation } from '@unleashd/shared';
 import type { BuddyMessage, BuddyMessageExecution, BuddyRun } from '@unleashd/shared';
+import type { BuddyTaskComment, BuddyTaskCommentsPage } from '@unleashd/shared';
 import type { BuddiesStorePort } from './contract';
 
 export type PrivateBuddyRun = BuddyRun & {
@@ -7,6 +8,14 @@ export type PrivateBuddyRun = BuddyRun & {
   claim_expires_at: string | null;
 };
 export interface CoordinationStore extends BuddiesStorePort {
+  appendTaskComment(
+    input: { projectId: string; key: string; body: string; evidence?: string[] },
+    authority: { actor: string; workspaceId: string; runId?: string }
+  ): BuddyTaskComment;
+  listTaskComments(
+    input: { projectId: string; limit?: number; cursor?: string },
+    authority: { actor: string; workspaceId: string; runId?: string }
+  ): BuddyTaskCommentsPage;
   recordRunExecution(
     id: string,
     token: string,
@@ -19,6 +28,7 @@ export interface CoordinationStore extends BuddiesStorePort {
     id: string
   ): NonNullable<import('@unleashd/shared').BuddyMessageExecution['delivery']>;
   retryUndeliveredInputs(): void;
+  getCoordinatedMessageByKey?(actor: string, workspaceId: string, key: string): BuddyMessage | null;
   previewCoordinatedMessage(
     input: Record<string, unknown>,
     authority: Record<string, unknown>

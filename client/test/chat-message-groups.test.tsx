@@ -5,7 +5,9 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { type Conversation, type Message, MessageSchema } from '@unleashd/shared';
-import { createStore } from 'jotai';
+import { createStore, Provider } from 'jotai';
+import { formatBuddyWorkerToolResult } from '@unleashd/shared';
+import { groupChatMessages } from '../src/utils/chat-message-groups';
 // biome-ignore lint/correctness/noUnusedImports: tsx's test transform uses the classic JSX runtime.
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -353,4 +355,137 @@ test('saved freeform input reaches desktop and mobile as literal code, with comp
     undefined
   );
   assert.equal(conversation.messages[2].toolCall?.input, input);
+});
+
+test('worker launch receipts stay inline in collapsed tool rows on both shells', () => {
+  const thread = { conversationId: 'worker-thread', buddyId: 'engineer', label: 'Engineering' };
+  const receipt = formatBuddyWorkerToolResult({
+    content: [
+      {
+        type: 'text',
+        text: JSON.stringify({
+          operation: 'buddy.send',
+          data: { buddyWorkerThread: thread },
+        }),
+      },
+    ],
+  })!;
+  assert.ok(receipt);
+  assert.equal(
+    formatBuddyWorkerToolResult({ isError: true, data: { buddyWorkerThread: thread } }),
+    null
+  );
+  assert.equal(
+    formatBuddyWorkerToolResult({ preview: true, data: { buddyWorkerThread: thread } }),
+    null
+  );
+  for (const messages of [
+    [
+      {
+        ...message('assistant', '🔧 unleashd_buddy.send'),
+        toolCall: { name: 'unleashd_buddy.send' },
+      },
+      message('assistant', receipt),
+    ],
+    [message('assistant', `🔧 unleashd_buddy.send\n${receipt}\nDone dispatching.`)],
+  ]) {
+    const response = groupChatMessages(messages, null)[0];
+    assert.equal(response.type, 'assistant');
+    if (response.type !== 'assistant') throw new Error('Expected response');
+    assert.equal(response.parts[0].type, 'tool_calls');
+    for (const available of [true, false]) {
+      const store = createStore();
+      if (available)
+        store.set(
+          conversationsAtom,
+          new Map([
+            [
+              thread.conversationId,
+              {
+                id: thread.conversationId,
+                messages: [],
+                kind: { kind: 'general' },
+                workingDirectory: '/tmp',
+              } as unknown as Conversation,
+            ],
+          ])
+        );
+      for (const view of [
+        <VirtualizedGroup
+          key="desktop"
+          group={response}
+          isLastGroup
+          lastMessageRef={{ current: null }}
+          workingDirectory="/tmp"
+        />,
+        <AssistantResponseRow key="mobile" response={response} isLast />,
+      ]) {
+        const markup = renderToStaticMarkup(
+          <Provider store={store}>
+            <MemoryRouter>{view}</MemoryRouter>
+          </Provider>
+        );
+        assert.match(markup, /aria-expanded="false"/);
+        assert.match(markup, /Engineering/);
+        assert.equal(markup.includes('href="/chat/worker-thread"'), available);
+        assert.doesNotMatch(markup, /buddy_worker_thread:/);
+      }
+    }
+  }
+});
+
+test('persisted Codex launch tool output rehydrates the worker badge', async (t) => {
+  const directory = await fs.mkdtemp(path.join(tmpdir(), 'worker-link-transcript-'));
+  t.after(() => fs.rm(directory, { recursive: true, force: true }));
+  const file = path.join(directory, 'session.jsonl');
+  const output = {
+    content: [
+      {
+        type: 'text',
+        text: JSON.stringify({
+          operation: 'buddy.send',
+          data: {
+            buddyWorkerThread: {
+              conversationId: 'durable-worker',
+              buddyId: 'engineer',
+              label: 'Engineering',
+            },
+          },
+        }),
+      },
+    ],
+  };
+  await fs.writeFile(
+    file,
+    [
+      {
+        timestamp: timestamp.toISOString(),
+        type: 'response_item',
+        payload: {
+          type: 'function_call',
+          name: 'mcp__unleashd_buddy__send',
+          call_id: 'launch',
+          arguments: '{}',
+        },
+      },
+      {
+        timestamp: timestamp.toISOString(),
+        type: 'response_item',
+        payload: {
+          type: 'function_call_output',
+          call_id: 'launch',
+          output: JSON.stringify(output),
+        },
+      },
+    ]
+      .map((record) => JSON.stringify(record))
+      .join('\n')
+  );
+  const session = await getDiskAdapter('codex').parseFile(file);
+  const response = groupChatMessages(session.messages, null)[0];
+  assert.equal(response.type, 'assistant');
+  if (response.type !== 'assistant' || response.parts[0].type !== 'tool_calls')
+    throw new Error('Expected tool row');
+  assert.equal(response.parts[0].count, 1);
+  assert.equal(response.parts[0].workerThreads?.[0].conversationId, 'durable-worker');
 });

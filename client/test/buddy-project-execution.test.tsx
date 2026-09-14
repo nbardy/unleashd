@@ -44,6 +44,8 @@ test('background task panel keeps completion criteria with the project and indiv
   assert.match(html, />Edit criteria<\/button>/);
   assert.match(html, />Run in background<\/button>/);
   assert.match(html, /Execution limits/);
+  assert.match(html, /Task comments/);
+  assert.match(html, /Add comment/);
   assert.doesNotMatch(
     html,
     /href="\/chat\//,

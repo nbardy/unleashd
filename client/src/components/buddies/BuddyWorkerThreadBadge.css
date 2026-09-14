@@ -1,0 +1,19 @@
+.buddy-worker-thread-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 8px;
+  margin-inline-start: 6px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 999px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--text-secondary);
+  text-decoration: none;
+  vertical-align: middle;
+}
+
+a.buddy-worker-thread-badge:hover,
+a.buddy-worker-thread-badge:focus-visible {
+  color: var(--accent-primary);
+  border-color: var(--accent-primary);
+}

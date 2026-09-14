@@ -10,7 +10,7 @@ import { createBuddyDispatchService } from '../src/buddies/dispatch-service';
 import { createBuddyMcpServer } from '../src/buddies/mcp-server';
 import { BuddyOperationsService, MESSAGE_BUDDY_OPERATIONS } from '../src/buddies/operations';
 
-test('native exact preview, descendant observation, scoped checkpoint and branch recovery use one contract', async () => {
+test('native exact preview, descendant observation, historical checkpoint and branch recovery use one contract', async () => {
   const raw = new BuddiesStore(':memory:');
   const store = coordinationStore(raw as unknown as BuddiesStorePort);
   const w = raw.createWorkspace({ name: 'Observation', rootPath: '/tmp/coordination-observation' });
@@ -43,7 +43,8 @@ test('native exact preview, descendant observation, scoped checkpoint and branch
   try {
     const tools = await client.listTools();
     assert.ok(tools.tools.some((t) => t.name === 'get_team_state'));
-    assert.ok(tools.tools.some((t) => t.name === 'checkpoint'));
+    assert.ok(!tools.tools.some((t) => t.name === 'checkpoint'));
+    assert.ok(tools.tools.some((t) => t.name === 'append_task_comment'));
     const payload = {
       key: 'root',
       to: lead.id,
@@ -96,19 +97,48 @@ test('native exact preview, descendant observation, scoped checkpoint and branch
       },
       { automationClaimToken: 'worker' }
     );
-    workerOps.execute('buddy.checkpoint', {
+    // Seed pre-retirement history in this isolated fixture; production writes are retired.
+    const historicalCheckpoint = (input: {
+      key: string;
+      artifacts: Array<{ ref: string; version: string }>;
+      effects: string[];
+      resume: string;
+      visibility?: string;
+    }) => {
+      raw.db
+        .prepare(`INSERT INTO buddy_checkpoints
+        (id,run_id,buddy_id,workspace_id,project_id,message_id,root_message_id,created_at,artifacts,effects,resume,visibility)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`)
+        .run(
+          input.key,
+          run.id,
+          worker.id,
+          w.id,
+          run.project_id,
+          child.id,
+          run.root_message_id,
+          new Date().toISOString(),
+          JSON.stringify(input.artifacts),
+          JSON.stringify(input.effects),
+          input.resume,
+          input.visibility ?? 'participants'
+        );
+      return { id: input.key };
+    };
+    assert.throws(() => workerOps.execute('buddy.checkpoint', {}), /not allowed|retired/);
+    historicalCheckpoint({
       key: 'private-checkpoint',
       artifacts: [{ ref: 'PRIVATE_ARTIFACT', version: 'v1' }],
       effects: [],
       resume: 'PRIVATE_RESUME',
     });
-    const published = workerOps.execute('buddy.checkpoint', {
+    const published = historicalCheckpoint({
       key: 'team-checkpoint',
       visibility: 'team',
       artifacts: [{ ref: 'artifact:shared', version: 'sha:abc' }],
       effects: ['Local result saved'],
       resume: 'Review the saved result',
-    }).data as { id: string };
+    });
     const page = BuddyTeamObservationSchema.parse(
       await call('get_team_state', { targetBuddyId: worker.id, limit: 1 })
     );
@@ -133,7 +163,7 @@ test('native exact preview, descendant observation, scoped checkpoint and branch
       'causal oversight does not publish private transcript'
     );
     for (let i = 0; i < 4; i++)
-      workerOps.execute('buddy.checkpoint', {
+      historicalCheckpoint({
         key: `page-${i}`,
         visibility: 'team',
         artifacts: [{ ref: `artifact:page-${i}`, version: 'v1' }],
@@ -334,7 +364,10 @@ test('native retry of a legacy closed timeout creates one bounded successor and 
   };
   try {
     const view = await call('get_team_state', { targetBuddyId: worker.id });
-    assert.equal(view.items[0].recovery.mode, 'successor_request');
+    assert.equal(
+      view.items.find((row: { runId: string }) => row.runId === r.id).recovery.mode,
+      'successor_request'
+    );
     const args = {
       runId: r.id,
       key: 'recover-once',

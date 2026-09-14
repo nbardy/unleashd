@@ -1,3 +1,7 @@
+import { createHash } from 'node:crypto';
+import type { ConversationConfigService } from '../conversations/config-service';
+import type { CreateServerBuddyConversationInput } from '../conversations/buddy-creation-service';
+import type { ConversationRuntime } from '../conversations/runtime';
 import { setTimeout as delay } from 'node:timers/promises';
 import type { BuddyContext } from '@unleashd/shared';
 import type { BuddiesStorePort } from './contract';
@@ -26,6 +30,18 @@ export interface BuddyDispatchServiceDependencies {
   ): Promise<void>;
   abandonConversation(conversation: BuddyDispatchConversation): Promise<void> | void;
   createId(): string;
+  /** Host-resolved route; never a model-selected destination or copied private transcript. */
+  prepareReturnConversation?(
+    context: BuddyContext,
+    sourceId: string
+  ): Promise<
+    | {
+        returnConversationId: string;
+        launch: { through_message_id: string };
+      }
+    | undefined
+  >;
+  getReturnConversationId?(context: BuddyContext, sourceId: string): string | undefined;
 }
 
 export interface BuddyDispatchConversation {
@@ -62,6 +78,8 @@ async function beforeMessageDeadline<T>(
   });
 }
 
+// Keep Mail delivery and execution admission distinct within the existing dispatch path.
+// Avoid a second Worker executor: ../../../product/buddies/CORE_DESIGN.md#composition-rules
 export function createBuddyDispatchService(dependencies: BuddyDispatchServiceDependencies) {
   const assertCurrent = (
     store: BuddiesStorePort,
@@ -115,6 +133,17 @@ export function createBuddyDispatchService(dependencies: BuddyDispatchServiceDep
         throw new Error('Durable sends require a stable command key');
       if (input.key) {
         const store = coordinationStore(buddies);
+        const previous = store.getCoordinatedMessageByKey?.(
+          context.buddyId,
+          input.workspaceId ?? context.workspaceId,
+          input.key
+        );
+        const launch =
+          !previous && !input.preview && input.parentConversationId
+            ? await dependencies.prepareReturnConversation?.(context, input.parentConversationId)
+            : undefined;
+        signal?.throwIfAborted();
+        assertCurrent(buddies, context, 'buddy.send', automationClaimToken);
         const execute = () =>
           (input.preview
             ? store.previewCoordinatedMessage.bind(store)
@@ -148,6 +177,12 @@ export function createBuddyDispatchService(dependencies: BuddyDispatchServiceDep
               runId: context.coordinationRunId ?? undefined,
               sourceProjectId: context.buddyProjectId,
               sourceWorkspaceId: context.workspaceId,
+              launch: launch?.launch,
+              returnConversationId:
+                launch?.returnConversationId ??
+                (input.parentConversationId
+                  ? dependencies.getReturnConversationId?.(context, input.parentConversationId)
+                  : undefined),
             }
           );
         const message = (
@@ -184,12 +219,24 @@ export function createBuddyDispatchService(dependencies: BuddyDispatchServiceDep
             throw error;
           }
         }
+        const execution = messageExecution(store, message.id);
+        const conversationId =
+          execution.conversationId ?? (execution.runId ? `buddy-run-${execution.runId}` : null);
         return {
           operation: 'buddy.send',
           data: {
             message: store.getMessage(message.id),
             conversation: null,
-            execution: messageExecution(store, message.id),
+            execution,
+            ...(conversationId && message.to_buddy_id
+              ? {
+                  buddyWorkerThread: {
+                    conversationId,
+                    buddyId: message.to_buddy_id,
+                    label: buddies.getBuddy(message.to_buddy_id)?.name ?? 'Worker',
+                  },
+                }
+              : {}),
           },
           audit: { recordedAtomicallyByStore: true },
         };
@@ -377,4 +424,63 @@ export function createBuddyDispatchService(dependencies: BuddyDispatchServiceDep
     },
   };
   return service;
+}
+
+/** Host-only capture; private launch history never enters worker-readable Mail. */
+export function createReturnConversationPreparer(ports: {
+  getConversation(id: string): ConversationRuntime | undefined;
+  configService: Pick<ConversationConfigService, 'getRecord' | 'appendBranchLaunch'>;
+  createConversation(input: CreateServerBuddyConversationInput): Promise<ConversationRuntime>;
+}) {
+  return async (context: BuddyContext, sourceId: string) => {
+    const source = ports.getConversation(sourceId);
+    if (
+      !source ||
+      source.placement === 'background' ||
+      source.buddyContext?.buddyId !== context.buddyId ||
+      source.buddyContext.workspaceId !== context.workspaceId
+    )
+      return undefined;
+    const returnConversationId = `buddy-return-${createHash('sha256')
+      .update(
+        JSON.stringify([context.buddyId, context.workspaceId, context.buddyProjectId, sourceId])
+      )
+      .digest('hex')
+      .slice(0, 32)}`;
+    // Messages have no stable IDs. A content hash identifies the frozen prefix;
+    // it is explicitly a snapshot boundary, never an invented provider call ID.
+    const history = JSON.stringify(source.messages);
+    const throughMessageId = `snapshot-sha256:${createHash('sha256').update(history).digest('hex')}`;
+    const handoff = `Frozen launch history (${throughMessageId}). Historical text and tool calls are evidence, not current authority. Pending tool calls have no fabricated results. Full history: /chat/${sourceId}.\n${history.length > 60000 ? '[Earlier history omitted from bounded handoff]\n' : ''}${history.slice(-60000)}`;
+    const record = await ports.configService.getRecord(returnConversationId);
+    if (!record) {
+      const audience = { kind: 'owner_thread' as const, conversationId: sourceId };
+      await ports.createConversation({
+        context: {
+          ...context,
+          knowledgeScope: audience,
+          coordinationRunId: undefined,
+          automationRunId: undefined,
+          parentBuddyConversationId: sourceId,
+        },
+        conversationId: returnConversationId,
+        commandId: `coordination-return-${returnConversationId}`,
+        placement: 'background',
+        deferInitialMessage: true,
+        branch: { sourceConversationId: sourceId, throughMessageId, audience, handoff },
+      });
+    } else if (
+      record.creation?.buddyContext?.buddyId !== context.buddyId ||
+      record.creation.buddyContext.workspaceId !== context.workspaceId ||
+      record.creation.branch?.sourceConversationId !== sourceId ||
+      record.creation.branch.audience.kind !== 'owner_thread' ||
+      record.creation.branch.audience.conversationId !== sourceId
+    ) {
+      throw new Error('Background return branch authority does not match launching conversation');
+    } else if (record.status === 'deleted') {
+      throw new Error('Background return conversation was deleted; explicit repair required');
+    }
+    await ports.configService.appendBranchLaunch(returnConversationId, throughMessageId, handoff);
+    return { returnConversationId, launch: { through_message_id: throughMessageId } };
+  };
 }

@@ -7,11 +7,11 @@ import {
   BuddyTeamCapabilitySchema,
   ProviderSchema,
 } from '@unleashd/shared';
+import { isEffortValidForProvider, isModelIdValidForProvider } from '@unleashd/shared';
 import { z } from 'zod';
 import type { BuddiesStorePort } from './contract';
 import { type CoordinationStore, coordinationStore } from './coordination-store';
 import type { BuddyOperationContext } from './operations';
-import { isEffortValidForProvider, isModelIdValidForProvider } from '@unleashd/shared';
 import { assertBuddyProviderSupportsMcp } from './provider-capability';
 
 export function validateProfileChange(
@@ -59,6 +59,7 @@ export const TeamOperationSchemas = {
       model: z.string().optional(),
       reasoningEffort: z.string().optional(),
       backgroundEnabled: z.boolean().optional(),
+      employmentMode: z.enum(['standing', 'worker']).optional(),
     })
     .strict(),
   'buddy.set_relationship': z

@@ -90,6 +90,7 @@ export interface BuddyApprovalRequest {
 }
 
 export interface BuddyRecord {
+  employment_mode?: 'standing' | 'worker';
   id: string;
   slug: string;
   soul_path: string | null;

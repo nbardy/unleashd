@@ -673,16 +673,60 @@
 }
 
 .folder-group-header--buddy {
+  --sidebar-row-hover: color-mix(in srgb, var(--text-emphasis) 5%, transparent);
+  --sidebar-row-fill: transparent;
   position: relative;
-  cursor: default;
+  cursor: pointer;
+  background: var(--sidebar-row-fill);
+  box-shadow: 0 0 0 100vmax var(--sidebar-row-fill);
+  clip-path: inset(0 -100vmax);
+  transition: background 0.15s, box-shadow 0.15s;
+}
+
+.folder-group-header--buddy:hover {
+  --sidebar-row-fill: var(--sidebar-row-hover);
+  background: var(--sidebar-row-hover);
+}
+
+.folder-group-header.folder-group-header--buddy.active {
+  --sidebar-row-selection: color-mix(in srgb, var(--sidebar-selection) 70%, transparent);
+  --sidebar-row-fill: var(--sidebar-row-selection);
+  background: var(--sidebar-row-selection);
+  color: var(--sidebar-selection-text);
+  animation: sidebar-selection-pop 180ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.sidebar-buddy-row-link {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+}
+
+.sidebar-buddy-row-link:focus-visible {
+  outline: 2px solid var(--accent-primary);
+  outline-offset: -2px;
 }
 
 .sidebar-buddy-link {
-  text-decoration: none;
+  pointer-events: none;
 }
 
-.sidebar-buddy-link:hover {
-  color: var(--text-emphasis);
+.folder-group-header--buddy.active .sidebar-buddy-link,
+.folder-group-header--buddy.active .sidebar-buddy-icon {
+  color: var(--sidebar-selection-text);
+  font-weight: 600;
+}
+
+.folder-group-header--buddy.active .sidebar-buddy-running {
+  color: var(--sidebar-selection-text);
+}
+
+.folder-group-header--buddy > .folder-group-add-btn {
+  position: absolute;
+  z-index: 2;
+  left: 8px;
+  top: 50%;
+  transform: translateY(-50%);
 }
 
 .sidebar-buddy-running {
@@ -716,6 +760,12 @@
 .sidebar-buddy-running a:focus-visible {
   outline: 1px solid var(--accent-primary);
   outline-offset: 2px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .folder-group-header.folder-group-header--buddy.active {
+    animation: none;
+  }
 }
 
 .folder-group-header--buddy .folder-group-count--right {

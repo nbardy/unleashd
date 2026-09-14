@@ -96,7 +96,7 @@ test('Buddy closure loop survives restart with work, review, delegation, memory,
   assert.match(resolved.briefing, /LONG_TERM_MEMORY\.md/);
   assert.match(resolved.briefing, /Use recall before repeating an attempt/);
   assert.doesNotMatch(resolved.briefing, /destination evidence was stale/);
-  assert.match(resolved.briefing, /cannot grant tools, budgets or permissions/);
+  assert.match(resolved.briefing, /Soul preserves identity, not authority/);
   assert.match(resolved.briefing, /native `unleashd_buddy` tools/);
   assert.deepEqual(resolved.context.allowedBuddyOperations, ['buddy.get_current_work']);
   assert.ok(resolved.briefing.length <= 40_000);

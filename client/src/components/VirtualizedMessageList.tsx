@@ -1,3 +1,5 @@
+import { BuddyWorkerThreadBadge } from './buddies/BuddyWorkerThreadBadge';
+import type { BuddyWorkerThread } from '@unleashd/shared';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import type { Message } from '@unleashd/shared';
 import type { Break, Root, Text } from 'mdast';
@@ -477,7 +479,11 @@ function makeMarkdownComponents(workingDirectory: string): Components {
 }
 
 /** One disclosure for live tool runs and saved activity groups. */
-function ChatActivity({ label, children }: { label: string; children: ReactNode }) {
+function ChatActivity({
+  label,
+  children,
+  workerThreads,
+}: { label: string; children: ReactNode; workerThreads?: BuddyWorkerThread[] }) {
   const [expanded, setExpanded] = useState(false);
   return (
     <div className="chat-activity">
@@ -490,6 +496,9 @@ function ChatActivity({ label, children }: { label: string; children: ReactNode 
         <span aria-hidden="true">{expanded ? '▾' : '▸'}</span>
         {label}
       </button>
+      {workerThreads?.map((thread) => (
+        <BuddyWorkerThreadBadge key={thread.conversationId} thread={thread} />
+      ))}
       {expanded && <div className="chat-activity-history">{children}</div>}
     </div>
   );
@@ -602,6 +611,7 @@ const MemoizedMessageContent = memo(
             if (seg.type === 'buddy_builder_result') {
               return <InlineBuddyBuilderResult key={i} payload={seg.json} />;
             }
+            if (seg.type === 'buddy_worker_thread') return null;
             if (seg.type === 'buddy_team_configuration') {
               return <InlineBuddyTeamConfiguration key={i} payload={seg.json} />;
             }
@@ -961,7 +971,12 @@ function AssistantResponseBlock({
           part.type === 'tool_calls' ? (
             <ChatActivity
               key={part.key}
-              label={`${part.count} tool ${part.count === 1 ? 'call' : 'calls'}`}
+              label={
+                part.count
+                  ? `${part.count} tool ${part.count === 1 ? 'call' : 'calls'}`
+                  : 'Work launched'
+              }
+              workerThreads={part.workerThreads}
             >
               {part.messages.map((msg, index) => (
                 <MemoizedMessageContent

@@ -60,6 +60,24 @@ test('production composer and resource reads isolate private and project audienc
     assert.match(shared.briefing, /APPROVED_HANDOFF/);
     assert.doesNotMatch(shared.briefing, /GLOBAL_PRIVATE_CANARY|OTHER_PROJECT_PRIVATE_TITLE/);
     assert.notEqual(owner.audienceKey, shared.audienceKey);
+    const review = new BuddyOperationsService(store, {
+      buddyId: b.id,
+      workspaceId: w.id,
+      conversationId: 'background-review',
+      delegatedByBuddyId: lead.id,
+      knowledgeScope: { kind: 'owner_thread', conversationId: 'private' },
+    });
+    assert.match(
+      JSON.stringify(review.execute('buddy.recall', { pattern: 'CANARY' })),
+      /GLOBAL_PRIVATE_CANARY/
+    );
+    assert.throws(
+      () =>
+        executeDocumentResource('get_document', { ref }, (name, input) =>
+          review.execute(name, input)
+        ),
+      /unavailable/
+    );
     const ops = new BuddyOperationsService(store, {
       buddyId: b.id,
       workspaceId: w.id,

@@ -120,4 +120,10 @@ test('team receipts distinguish failed execution, saved artifacts, reply deliver
   assert.doesNotMatch(markup, /href="\/chat\/deleted-thread"/);
   assert.doesNotMatch(markup, /Retry this input/);
   assert.match(render(new Set(['deleted-thread'])), /href="\/chat\/deleted-thread"/);
+  data.items[0].recovery.canRetry = true;
+  const retryMarkup = render(new Set());
+  assert.match(retryMarkup, /Retry this input/);
+  assert.match(retryMarkup, /Historical checkpoint/);
+  assert.match(retryMarkup, /artifact:survived/);
+  assert.doesNotMatch(retryMarkup, /name="checkpoint"|Resume from/);
 });

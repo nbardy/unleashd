@@ -65,7 +65,7 @@ function BuddyTeamExecutionScope({
               })
             }
             onInspectRun={(runId) => setDetail({ runId, checkpointOffset: 0, deliveryOffset: 0 })}
-            onRetry={async (runId, reason, checkpointId) => {
+            onRetry={async (runId, reason) => {
               setSaving(true);
               setFailure(null);
               try {
@@ -75,7 +75,6 @@ function BuddyTeamExecutionScope({
                   body: JSON.stringify({
                     key: newId(),
                     reason,
-                    ...(checkpointId ? { checkpointId } : {}),
                   }),
                 });
                 refetch();
@@ -129,7 +128,7 @@ export function BuddyTeamExecutionList({
   onInspectRun?: (runId: string) => void;
   checkpointOffset?: number;
   deliveryOffset?: number;
-  onRetry: (runId: string, reason: string, checkpointId?: string) => Promise<void>;
+  onRetry: (runId: string, reason: string) => Promise<void>;
 }) {
   return (
     <>
@@ -251,7 +250,8 @@ export function BuddyTeamExecutionList({
           {run.checkpoints.map((checkpoint) => (
             <details key={checkpoint.id}>
               <summary>
-                Checkpoint {checkpoint.created_at} · {checkpoint.artifacts.length} saved references
+                Historical checkpoint {checkpoint.created_at} · {checkpoint.artifacts.length} saved
+                references
               </summary>
               <p>
                 Producer {checkpoint.buddy_id} · attempt {checkpoint.run_id} ·{' '}
@@ -296,30 +296,13 @@ export function BuddyTeamExecutionList({
               onSubmit={(event) => {
                 event.preventDefault();
                 const form = new FormData(event.currentTarget);
-                void onRetry(
-                  run.runId,
-                  String(form.get('reason')),
-                  String(form.get('checkpoint') || '') || undefined
-                );
+                void onRetry(run.runId, String(form.get('reason')));
               }}
             >
               <label>
                 Recovery reason after reviewing effects
                 <input name="reason" required disabled={saving} />
               </label>
-              {!!run.checkpoints.length && (
-                <label>
-                  Resume from
-                  <select name="checkpoint" disabled={saving}>
-                    <option value="">No checkpoint selected</option>
-                    {run.checkpoints.map((c) => (
-                      <option key={c.id} value={c.id}>
-                        {c.id}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              )}
               <button type="submit" disabled={saving}>
                 {run.recovery.mode === 'successor_request'
                   ? 'Recover closed timeout'

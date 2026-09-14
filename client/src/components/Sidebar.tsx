@@ -10,6 +10,15 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { createConversation } from '../atoms/actions';
 import {
+  type BuddySidebarItemData,
+  type BuddySidebarOverview,
+  buddyBuilderConversationsAtom,
+  buddySidebarCountAtom,
+  buddySidebarGroupsAtom,
+  buddySidebarOverviewAtom,
+  sidebarRunningCountByFolderAtom,
+} from '../atoms/buddy-sidebar';
+import {
   activeConversationIdAtom,
   allConversationsAtom,
   allPendingCreationsAtom,
@@ -29,15 +38,6 @@ import {
   setLastWorkingDirectory,
   toggleGalleryCollapsed,
 } from '../atoms/ui';
-import {
-  buddySidebarOverviewAtom,
-  buddySidebarGroupsAtom,
-  buddyBuilderConversationsAtom,
-  buddySidebarCountAtom,
-  sidebarRunningCountByFolderAtom,
-  type BuddySidebarOverview,
-  type BuddySidebarItemData,
-} from '../atoms/buddy-sidebar';
 import { usePolledFetch } from '../hooks/usePolledFetch';
 import { useProviderCatalog } from '../hooks/useProviderCatalog';
 import { folderGroupKey, normalizeFolderDirectory } from '../utils/directories';
@@ -46,8 +46,8 @@ import { formatTimeAgo, getConversationLastActivity, getMinutesElapsed } from '.
 import { ConversationConfigPicker } from './ConversationConfigPicker';
 import { PathAutocomplete } from './PathAutocomplete';
 import { SearchPalette } from './SearchPalette';
-import { createBuddyViaBuilder } from './buddies/create-buddy-builder';
 import { buddyTabPath } from './buddies/buddy-tabs';
+import { createBuddyViaBuilder } from './buddies/create-buddy-builder';
 import './Sidebar.css';
 
 const RECENT_CUTOFF_MS = 7 * 24 * 60 * 60 * 1000;
@@ -726,9 +726,21 @@ export function Sidebar() {
                         const convs = item.conversations;
                         const visibleConvs = isExpanded ? convs : convs.slice(0, 3);
                         const remaining = convs.length - visibleConvs.length;
+                        const buddyPath = `/buddies/${encodeURIComponent(item.buddyId)}`;
+                        const isBuddyActive =
+                          location.pathname === buddyPath ||
+                          location.pathname.startsWith(`${buddyPath}/`);
                         return (
                           <div key={item.buddyId} className="buddy-subgroup">
-                            <div className="folder-group-header folder-group-header--buddy">
+                            <div
+                              className={`folder-group-header folder-group-header--buddy ${isBuddyActive ? 'active' : ''}`}
+                            >
+                              <Link
+                                className="sidebar-buddy-row-link"
+                                to={buddyPath}
+                                aria-label={`Open ${item.buddyName}`}
+                                aria-current={isBuddyActive ? 'page' : undefined}
+                              />
                               <button
                                 type="button"
                                 className="folder-group-add-btn"
@@ -742,13 +754,12 @@ export function Sidebar() {
                                 +
                               </button>
                               <SidebarBuddyIcon />
-                              <Link
+                              <span
                                 className="folder-group-name sidebar-buddy-link"
-                                to={`/buddies/${item.buddyId}`}
                                 title={item.buddyName}
                               >
                                 {item.buddyName}
-                              </Link>
+                              </span>
                               <BuddyRunningStatus item={item} />
                             </div>
                             <>

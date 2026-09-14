@@ -12,7 +12,10 @@ export type TeamConfigurationProposal = z.infer<typeof TeamConfigurationProposal
 
 const TEAM_PROPOSAL_MARKER = '\n<!--buddy_team_proposal:';
 
-/** A typed attachment in an ordinary message, never an authorization credential. */
+/**
+ * A typed attachment in an ordinary message, never an authorization credential.
+ * Mail/authority boundary: ../../product/buddies/CORE_DESIGN.md#composition-rules
+ */
 export function formatTeamConfigurationProposal(
   body: string,
   proposal: TeamConfigurationProposal

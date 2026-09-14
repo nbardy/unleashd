@@ -309,3 +309,26 @@ export { getOpenCodeSessionMtime, OPENCODE_PART_DIR, getOpenCodeSessionMetadataI
 
 // Export adapter type for tests / extension points
 export type { DiskAdapter };
+
+/** Resolve only a parsed native identity, never a guessed filename or another session. */
+export async function resolveSessionTranscript(
+  provider: DiskAdapter['provider'],
+  sessionId: string,
+  adapter: DiskAdapter = getDiskAdapter(provider)
+): Promise<string | null> {
+  if (adapter.provider !== provider) return null;
+  try {
+    for (const file of await adapter.discoverFiles()) {
+      if (adapter.matchesSessionFile && !adapter.matchesSessionFile(file, sessionId)) continue;
+      try {
+        const parsed = await adapter.parseFile(file);
+        if (parsed?.provider === provider && parsed.sessionId === sessionId) return parsed.filePath;
+      } catch {
+        /* A disappearing or unreadable candidate is unavailable evidence. */
+      }
+    }
+  } catch {
+    /* Unsupported or inaccessible native storage has no readable reference. */
+  }
+  return null;
+}

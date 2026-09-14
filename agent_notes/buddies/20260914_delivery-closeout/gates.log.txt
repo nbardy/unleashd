@@ -1,0 +1,19 @@
+==> Gate G1: jotaiStore.set outside client/src/atoms/ — components call actions, never write atoms
+G1 PASS
+
+==> Gate G2: raw .buddyContext / .purpose reads in client/src/mobile/ — use getConversationKind()
+G2 PASS
+
+==> Gate G3: components/*.tsx imports in mobile/ — except components/buddies/*
+G3 PASS
+
+==> Gate G4: bare crypto.randomUUID() — secure-context only, undefined over plain-http LAN
+G4 PASS
+
+==> Gate G5: bare navigator.clipboard — same secure-context trap as G4
+G5 PASS
+
+==> Gate G6: one owner per CSS class — the same class defined in two .css files
+G6 PASS
+
+check-client-invariants: all 6 gates PASS

@@ -1376,7 +1376,8 @@
 }
 
 .mobile-response-activity__toggle {
-  display: flex;
+  display: inline-flex;
+  vertical-align: middle;
   align-items: center;
   gap: 6px;
   min-height: 32px;

@@ -66,7 +66,7 @@ test('Buddy MCP exposes scoped native tools and enforces completion evidence', a
 
     const listed = await client.listTools();
     assert.deepEqual(listed.tools.map((tool) => tool.name).sort(), [
-      'checkpoint',
+      'append_task_comment',
       'create_buddy',
       'get_automations',
       'get_capabilities',
@@ -80,6 +80,7 @@ test('Buddy MCP exposes scoped native tools and enforces completion evidence', a
       'get_team_state',
       'hire_direct_report',
       'list_buddies',
+      'list_task_comments',
       'new_project',
       'recall',
       'remember_note',
@@ -365,7 +366,7 @@ test('resolved stdio Buddy MCP entrypoint opens the current durable schema', asy
   fixtureDatabase.close();
   assert.equal(
     schemaVersion.user_version,
-    27,
+    30,
     'the vendored Buddy package must understand the live schema'
   );
 
