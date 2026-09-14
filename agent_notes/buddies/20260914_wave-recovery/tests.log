@@ -1,0 +1,168 @@
+(node:33793) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:33796) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:33797) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:33803) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:33804) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:33804) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:33804) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+[32m✔ failure returns survive restart, wake once in background, and respect incoming-work and stop gates [90m(185.524959ms)[39m[39m
+[32m✔ launch snapshots persist privately per request and reject another Buddy source [90m(53.954ms)[39m[39m
+[32m✔ native transcript resolver verifies parsed identity and exposes a readable file [90m(10.786916ms)[39m[39m
+[32m✔ timeout reporting branches the worker then delivers its report with the source failure [90m(194.891542ms)[39m[39m
+[32m✔ same-key send replay reuses persisted launch instead of capturing newer history [90m(13.937917ms)[39m[39m
+[32m✔ normal reply identifies its own worker attempt even after unrelated work [90m(130.133709ms)[39m[39m
+(node:33805) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:33805) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+[buddy-run-buddy_run_c9e30666-73c1-4f7a-af9d-b6829e0fccda] sendMessage called, isRunning=false, hasProcess=false, queueDepth=0, contentLen=446, preview="Message message_47e6ffb6-28f4-43c3-8952-ff42c2f9fecd. Purpose: deliver Build export Evidence: [] Completion is recorded on the project. Inco"
+[buddy-run-buddy_run_c9e30666-73c1-4f7a-af9d-b6829e0fccda] Spawning codex (mode=fresh, provider-session=buddy-ru...)
+[buddy-run-buddy_run_c9e30666-73c1-4f7a-af9d-b6829e0fccda] Message: "<!-- unleashd:buddy-context-v2 eyJidWRkeUlkIjoiYnV"
+[buddy-run-buddy_run_c9e30666-73c1-4f7a-af9d-b6829e0fccda] Creating NEW assistant message (msg #2)
+[buddy-run-buddy_run_c9e30666-73c1-4f7a-af9d-b6829e0fccda] Process closed with code 0 signal=none (reason=success) after 6ms
+(node:33805) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+[32m✔ restart recovery releases a drained foreground claim and wakes its conversation queue [90m(45.017042ms)[39m[39m
+[buddy-run-buddy_run_c9e30666-73c1-4f7a-af9d-b6829e0fccda] sendMessage called, isRunning=false, hasProcess=false, queueDepth=0, contentLen=446, preview="Message message_47e6ffb6-28f4-43c3-8952-ff42c2f9fecd. Purpose: deliver Build export Evidence: [] Completion is recorded on the project. Inco"
+[buddy-run-buddy_run_c9e30666-73c1-4f7a-af9d-b6829e0fccda] Spawning codex (mode=resume, provider-session=provider...)
+[buddy-run-buddy_run_c9e30666-73c1-4f7a-af9d-b6829e0fccda] Message: "<!-- unleashd:buddy-context-v2 eyJidWRkeUlkIjoiYnV"
+[buddy-run-buddy_run_c9e30666-73c1-4f7a-af9d-b6829e0fccda] Creating NEW assistant message (msg #4)
+[buddy-run-buddy_run_c9e30666-73c1-4f7a-af9d-b6829e0fccda] Process closed with code 0 signal=none (reason=success) after 7ms
+[buddy-run-buddy_run_47fbad02-763f-4f66-926c-49c2c7d81beb] sendMessage called, isRunning=false, hasProcess=false, queueDepth=0, contentLen=446, preview="Message message_b7ca79c9-baa7-47fb-8260-55ffcf1c5f6d. Purpose: deliver Build export Evidence: [] Completion is recorded on the project. Inco"
+[buddy-run-buddy_run_47fbad02-763f-4f66-926c-49c2c7d81beb] Spawning codex (mode=fresh, provider-session=buddy-ru...)
+[buddy-run-buddy_run_47fbad02-763f-4f66-926c-49c2c7d81beb] Message: "<!-- unleashd:buddy-context-v2 eyJidWRkeUlkIjoiYnV"
+[buddy-run-buddy_run_47fbad02-763f-4f66-926c-49c2c7d81beb] Creating NEW assistant message (msg #2)
+[buddy-run-buddy_run_47fbad02-763f-4f66-926c-49c2c7d81beb] Process closed with code 0 signal=none (reason=success) after 2ms
+[32m✔ background self work returns to the mailbox for a human chat [90m(124.818166ms)[39m[39m
+[buddy-run-buddy_run_47fbad02-763f-4f66-926c-49c2c7d81beb] sendMessage called, isRunning=false, hasProcess=false, queueDepth=0, contentLen=446, preview="Message message_b7ca79c9-baa7-47fb-8260-55ffcf1c5f6d. Purpose: deliver Build export Evidence: [] Completion is recorded on the project. Inco"
+[buddy-run-buddy_run_47fbad02-763f-4f66-926c-49c2c7d81beb] Spawning codex (mode=resume, provider-session=provider...)
+[buddy-run-buddy_run_47fbad02-763f-4f66-926c-49c2c7d81beb] Message: "<!-- unleashd:buddy-context-v2 eyJidWRkeUlkIjoiYnV"
+[buddy-run-buddy_run_47fbad02-763f-4f66-926c-49c2c7d81beb] Creating NEW assistant message (msg #4)
+[buddy-run-buddy_run_47fbad02-763f-4f66-926c-49c2c7d81beb] Process closed with code 0 signal=none (reason=success) after 2ms
+[owner-thread] sendMessage called, isRunning=false, hasProcess=false, queueDepth=0, contentLen=299, preview="Reply to request message_b7ca79c9-baa7-47fb-8260-55ffcf1c5f6d. Outcome: done Background work done. Evidence: ["fixture: both exported files "
+[owner-thread] Spawning codex (mode=fresh, provider-session=owner-th...)
+[owner-thread] Message: "<!-- unleashd:buddy-context-v2 eyJidWRkeUlkIjoiYnV"
+[owner-thread] Creating NEW assistant message (msg #2)
+[owner-thread] Process closed with code 0 signal=none (reason=success) after 0ms
+[buddy-run-buddy_run_7c303bad-b82c-491c-aeeb-213e9219d717] sendMessage called, isRunning=false, hasProcess=false, queueDepth=0, contentLen=446, preview="Message message_33bb1e07-2532-48d1-b7e9-c4709074a936. Purpose: deliver Build export Evidence: [] Completion is recorded on the project. Inco"
+[buddy-run-buddy_run_7c303bad-b82c-491c-aeeb-213e9219d717] Spawning codex (mode=fresh, provider-session=buddy-ru...)
+[buddy-run-buddy_run_7c303bad-b82c-491c-aeeb-213e9219d717] Message: "<!-- unleashd:buddy-context-v2 eyJidWRkeUlkIjoiYnV"
+[buddy-run-buddy_run_7c303bad-b82c-491c-aeeb-213e9219d717] Creating NEW assistant message (msg #2)
+[buddy-run-buddy_run_7c303bad-b82c-491c-aeeb-213e9219d717] Process closed with code 0 signal=none (reason=success) after 2ms
+[32m✔ background self work returns to the original background thread [90m(59.308417ms)[39m[39m
+[buddy-run-buddy_run_7c303bad-b82c-491c-aeeb-213e9219d717] sendMessage called, isRunning=false, hasProcess=false, queueDepth=0, contentLen=446, preview="Message message_33bb1e07-2532-48d1-b7e9-c4709074a936. Purpose: deliver Build export Evidence: [] Completion is recorded on the project. Inco"
+[buddy-run-buddy_run_7c303bad-b82c-491c-aeeb-213e9219d717] Spawning codex (mode=resume, provider-session=provider...)
+[buddy-run-buddy_run_7c303bad-b82c-491c-aeeb-213e9219d717] Message: "<!-- unleashd:buddy-context-v2 eyJidWRkeUlkIjoiYnV"
+[buddy-run-buddy_run_7c303bad-b82c-491c-aeeb-213e9219d717] Creating NEW assistant message (msg #4)
+[buddy-run-buddy_run_7c303bad-b82c-491c-aeeb-213e9219d717] Process closed with code 0 signal=none (reason=success) after 1ms
+[background-owner-thread] sendMessage called, isRunning=false, hasProcess=false, queueDepth=0, contentLen=2299, preview="Background return for originating request message_33bb1e07-2532-48d1-b7e9-c4709074a936 from conversation owner-thread. Original assignment: "
+[background-owner-thread] Spawning codex (mode=fresh, provider-session=backgrou...)
+[background-owner-thread] Message: "<!-- unleashd:buddy-context-v2 eyJidWRkeUlkIjoiYnV"
+[background-owner-thread] Creating NEW assistant message (msg #2)
+[background-owner-thread] Process closed with code 0 signal=none (reason=success) after 1ms
+[32m✔ chat-launched work wakes its separate background return thread [90m(41.323125ms)[39m[39m
+(node:33806) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:33806) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:33806) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+[32m✔ MCP diagnoses project scope and recovers blocked-success work on the same Task with explicit fresh bounds [90m(91.703125ms)[39m[39m
+(node:33807) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:33807) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:33807) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+[buddy-run-buddy_run_55d3640e-d8fe-4335-944e-54a0b9c34eff] sendMessage called, isRunning=false, hasProcess=false, queueDepth=0, contentLen=267, preview="Message message_a10e0aaa-f190-4885-ba9f-4e47ac4ba538. Purpose: ship Ship export Evidence: [] When the assignment is complete, use reply with"
+[buddy-run-buddy_run_55d3640e-d8fe-4335-944e-54a0b9c34eff] Spawning codex (mode=fresh, provider-session=buddy-ru...)
+[buddy-run-buddy_run_55d3640e-d8fe-4335-944e-54a0b9c34eff] Message: "<!-- unleashd:buddy-context-v2 eyJidWRkeUlkIjoiYnV"
+[buddy-run-buddy_run_55d3640e-d8fe-4335-944e-54a0b9c34eff] Creating NEW assistant message (msg #2)
+[buddy-run-buddy_run_55d3640e-d8fe-4335-944e-54a0b9c34eff] Process closed with code 0 signal=none (reason=success) after 10ms
+[buddy-run-buddy_run_778bc241-a470-48a7-9295-142788b05b43] sendMessage called, isRunning=false, hasProcess=false, queueDepth=0, contentLen=280, preview="Message message_85426259-b1bf-414e-8256-b12366648f16. Purpose: review Review export behavior Evidence: [] When the assignment is complete, u"
+[buddy-run-buddy_run_778bc241-a470-48a7-9295-142788b05b43] Spawning codex (mode=fresh, provider-session=buddy-ru...)
+[buddy-run-buddy_run_778bc241-a470-48a7-9295-142788b05b43] Message: "<!-- unleashd:buddy-context-v2 eyJidWRkeUlkIjoiYnV"
+[buddy-run-buddy_run_778bc241-a470-48a7-9295-142788b05b43] Creating NEW assistant message (msg #2)
+[buddy-run-buddy_run_778bc241-a470-48a7-9295-142788b05b43] Process closed with code 0 signal=none (reason=success) after 2ms
+[buddy-run-buddy_run_eaf8c758-83a4-4489-b9ee-e0f035044997] sendMessage called, isRunning=false, hasProcess=false, queueDepth=0, contentLen=273, preview="Message message_b8715e45-9c60-437b-983b-798087df459b. Purpose: build Implement export Evidence: [] When the assignment is complete, use repl"
+[buddy-run-buddy_run_eaf8c758-83a4-4489-b9ee-e0f035044997] Spawning codex (mode=fresh, provider-session=buddy-ru...)
+[buddy-run-buddy_run_eaf8c758-83a4-4489-b9ee-e0f035044997] Message: "<!-- unleashd:buddy-context-v2 eyJidWRkeUlkIjoiYnV"
+[buddy-run-buddy_run_eaf8c758-83a4-4489-b9ee-e0f035044997] Creating NEW assistant message (msg #2)
+[buddy-run-buddy_run_eaf8c758-83a4-4489-b9ee-e0f035044997] Process closed with code 0 signal=none (reason=success) after 1ms
+[buddy-run-buddy_run_55d3640e-d8fe-4335-944e-54a0b9c34eff] sendMessage called, isRunning=false, hasProcess=false, queueDepth=0, contentLen=233, preview="Reply to request message_85426259-b1bf-414e-8256-b12366648f16. Outcome: changes requested Cover the empty export Evidence: ["fixture:review""
+[buddy-run-buddy_run_55d3640e-d8fe-4335-944e-54a0b9c34eff] Spawning codex (mode=resume, provider-session=provider...)
+[buddy-run-buddy_run_55d3640e-d8fe-4335-944e-54a0b9c34eff] Message: "<!-- unleashd:buddy-context-v2 eyJidWRkeUlkIjoiYnV"
+[buddy-run-buddy_run_55d3640e-d8fe-4335-944e-54a0b9c34eff] Creating NEW assistant message (msg #4)
+[buddy-run-buddy_run_55d3640e-d8fe-4335-944e-54a0b9c34eff] Process closed with code 0 signal=none (reason=success) after 2ms
+[buddy-run-buddy_run_55d3640e-d8fe-4335-944e-54a0b9c34eff] sendMessage called, isRunning=false, hasProcess=false, queueDepth=0, contentLen=211, preview="Reply to request message_b8715e45-9c60-437b-983b-798087df459b. Outcome: done Implemented Evidence: ["fixture:engineer"] Read current work an"
+[buddy-run-buddy_run_55d3640e-d8fe-4335-944e-54a0b9c34eff] Spawning codex (mode=resume, provider-session=provider...)
+[buddy-run-buddy_run_55d3640e-d8fe-4335-944e-54a0b9c34eff] Message: "<!-- unleashd:buddy-context-v2 eyJidWRkeUlkIjoiYnV"
+[buddy-run-buddy_run_55d3640e-d8fe-4335-944e-54a0b9c34eff] Creating NEW assistant message (msg #6)
+[buddy-run-buddy_run_55d3640e-d8fe-4335-944e-54a0b9c34eff] Process closed with code 0 signal=none (reason=success) after 1ms
+[buddy-run-buddy_run_eaf8c758-83a4-4489-b9ee-e0f035044997] sendMessage called, isRunning=false, hasProcess=false, queueDepth=0, contentLen=280, preview="Message message_a5a1e968-4452-479a-8e96-d74d1dd2a9cc. Purpose: revise Cover the empty export Evidence: [] When the assignment is complete, u"
+[buddy-run-buddy_run_eaf8c758-83a4-4489-b9ee-e0f035044997] Spawning codex (mode=resume, provider-session=provider...)
+[buddy-run-buddy_run_eaf8c758-83a4-4489-b9ee-e0f035044997] Message: "<!-- unleashd:buddy-context-v2 eyJidWRkeUlkIjoiYnV"
+[buddy-run-buddy_run_eaf8c758-83a4-4489-b9ee-e0f035044997] Creating NEW assistant message (msg #4)
+[buddy-run-buddy_run_eaf8c758-83a4-4489-b9ee-e0f035044997] Process closed with code 0 signal=none (reason=success) after 1ms
+[buddy-run-buddy_run_55d3640e-d8fe-4335-944e-54a0b9c34eff] sendMessage called, isRunning=false, hasProcess=false, queueDepth=0, contentLen=211, preview="Reply to request message_a5a1e968-4452-479a-8e96-d74d1dd2a9cc. Outcome: done Implemented Evidence: ["fixture:engineer"] Read current work an"
+[buddy-run-buddy_run_55d3640e-d8fe-4335-944e-54a0b9c34eff] Spawning codex (mode=resume, provider-session=provider...)
+[buddy-run-buddy_run_55d3640e-d8fe-4335-944e-54a0b9c34eff] Message: "<!-- unleashd:buddy-context-v2 eyJidWRkeUlkIjoiYnV"
+[buddy-run-buddy_run_55d3640e-d8fe-4335-944e-54a0b9c34eff] Creating NEW assistant message (msg #8)
+[buddy-run-buddy_run_55d3640e-d8fe-4335-944e-54a0b9c34eff] Process closed with code 0 signal=none (reason=success) after 4ms
+[chief] sendMessage called, isRunning=false, hasProcess=false, queueDepth=0, contentLen=219, preview="Reply to request message_a10e0aaa-f190-4885-ba9f-4e47ac4ba538. Outcome: done Reviewed implementation Evidence: ["fixture:lead"] Read current"
+[chief] Spawning codex (mode=fresh, provider-session=chief...)
+[chief] Message: "<!-- unleashd:buddy-context-v2 eyJidWRkeUlkIjoiYnV"
+[chief] Creating NEW assistant message (msg #2)
+[chief] Queued message id=9de48c2e, queueDepth=0->1, contentLen=15, preview="Owner follow-up"
+[chief] Process closed with code 0 signal=none (reason=success) after 2ms
+[chief] processQueue sending id=9de48c2e, queueDepth=1, contentLen=15, preview="Owner follow-up"
+[chief] sendMessage called, isRunning=false, hasProcess=false, queueDepth=1, contentLen=15, preview="Owner follow-up"
+[chief] Spawning codex (mode=resume, provider-session=provider...)
+[chief] Message: "<!-- unleashd:buddy-context-v2 eyJidWRkeUlkIjoiYnV"
+[chief] Creating NEW assistant message (msg #4)
+[chief] Process closed with code 0 signal=none (reason=success) after 4ms
+[32m✔ real creation boundary delivers two-worker aggregate and retries a failed return before admission [90m(2255.956875ms)[39m[39m
+[32m✔ thread schedules coalesce missed ticks and hold missing destinations without creating a replacement [90m(25.253083ms)[39m[39m
+[32m✔ private capability commits durable sends once and rejects payload conflicts and revoked turns [90m(75.583334ms)[39m[39m
+[32m✔ packaged owner chats retain tool authority past ten minutes and honor their configured deadline [90m(13.036125ms)[39m[39m
+(node:33808) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:33808) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:33808) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+[32m✔ Buddy MCP exposes scoped native tools and enforces completion evidence [90m(59.746083ms)[39m[39m
+[32m✔ Buddy MCP specification binds trusted context outside tool input [90m(0.161084ms)[39m[39m
+[32m✔ Buddy MCP exposes memory-v2 tools and preserves structured memory errors [90m(3.031208ms)[39m[39m
+[32m✔ Buddy Builder MCP specification is required and conversation-scoped [90m(0.092625ms)[39m[39m
+[32m✔ Buddy conversations allow required-MCP harnesses and fail closed for the rest [90m(0.381708ms)[39m[39m
+[32m✔ resolved stdio Buddy MCP entrypoint opens the current durable schema [90m(223.456291ms)[39m[39m
+[32m✔ Buddy MCP server starts from a cwd without resolvable tooling [90m(188.735292ms)[39m[39m
+(node:33809) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:33809) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:33809) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+[32m✔ resource MCP adopts existing staff, imports revisioned handoffs, preserves replay and exact schema variants [90m(72.715708ms)[39m[39m
+(node:33810) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:33810) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:33810) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+[32m✔ runtime diagnostics survive package mismatch; owner controls release the original two requests [90m(112.916167ms)[39m[39m
+(node:33811) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:33811) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:33811) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+[32m✔ current MCP creates a Worker and dispatches two projects through the existing continuation boundary [90m(87.032333ms)[39m[39m
+[34mℹ tests 25[39m
+[34mℹ suites 0[39m
+[34mℹ pass 25[39m
+[34mℹ fail 0[39m
+[34mℹ cancelled 0[39m
+[34mℹ skipped 0[39m
+[34mℹ todo 0[39m
+[34mℹ duration_ms 2701.7325[39m

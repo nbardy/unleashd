@@ -972,6 +972,13 @@ export class BuddyOperationsService {
           throw new Error(
             'Only the original input sender or root requester can recover this branch'
           );
+        if (run.status === 'complete')
+          throw new Error(
+            'run_already_complete: retry_run recovers failed or cancelled attempts, not a completed attempt with blocked work. ' +
+              'Inspect the original message, Task and effects. After resolving the blocker, authorized further work uses ' +
+              'send with a new key, the same unfinished projectId and explicit fresh bounds, without continueFrom. ' +
+              'This creates a new request and allowance; it does not restore the old remaining budget. Do not replace live or held work.'
+          );
         return this.result(
           name,
           BuddyRunSchema.parse(
@@ -1778,15 +1785,32 @@ export class BuddyOperationsService {
       const workspace = parsed.workspaceId ?? this.context.workspaceId;
       if (!store.getCoordinationMembership(this.context.buddyId, workspace)?.dispatch)
         throw new Error('Workspace dispatch is not granted');
-      if (
-        projectId &&
-        (!this.projectInAudience(projectId) ||
-          (parsed.expectsReply
-            ? !store.canManageCoordinationProject(this.context.buddyId, projectId)
-            : !store.canReadCoordinationProject(this.context.buddyId, projectId) ||
-              (parsed.to !== 'owner' && !store.canReadCoordinationProject(parsed.to, projectId))))
-      )
-        throw new Error('Project is outside sender or recipient context scope');
+      if (projectId) {
+        if (!this.projectInAudience(projectId))
+          throw new Error(
+            'project_audience_mismatch: Project is outside this conversation project scope. ' +
+              'A manager relationship does not widen conversation scope. Use work in the current ' +
+              'project hierarchy, or ask the requester to dispatch the existing project from an authorized context.'
+          );
+        if (
+          parsed.expectsReply &&
+          !store.canManageCoordinationProject(this.context.buddyId, projectId)
+        )
+          throw new Error(
+            'project_manage_required: Sender cannot manage the requested project. ' +
+              'Ask its owner or an authorized manager to assign the work; inspect get_capabilities before resending.'
+          );
+        if (!parsed.expectsReply) {
+          if (!store.canReadCoordinationProject(this.context.buddyId, projectId))
+            throw new Error(
+              'project_sender_read_required: Sender cannot read this project. Ask its owner to resolve access before sharing it.'
+            );
+          if (parsed.to !== 'owner' && !store.canReadCoordinationProject(parsed.to, projectId))
+            throw new Error(
+              'project_recipient_read_required: Recipient cannot read this project. Ask its owner to resolve recipient access before sharing it.'
+            );
+        }
+      }
       return {
         ...parsed,
         projectId,

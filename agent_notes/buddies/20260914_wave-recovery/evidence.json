@@ -1,0 +1,18 @@
+{
+  "date": "2026-09-14",
+  "baseCommit": "aef62634020e03e738a579e55a72a32178434e80",
+  "files": {
+    "server/src/buddies/operations.ts": "58eae1532f9b9c72a333f1574b8f9b23b6805262548e99c283489e386e5f23ad",
+    "server/src/buddies/mcp-server.ts": "47727384b50eec42a9f3cc9c02cedc9ebf271710a5f0fd02c3e401a41ff497c7",
+    "server/test/buddy-blocked-recovery.test.ts": "4b2bd2b71d8e28cb79993794d6e3db95f0b46460136ee036068ef8102c385f01",
+    "server/test/buddy-resource-contract.test.ts": "93543f4c073035fd9c16a5c64204f18253e5aabd74c9d6f75ff9e381d89fefa6",
+    "product/buddies/TEAM_OPERATOR_GUIDE.md": "934f9f539ab2d7d989efe7030e43e94269a2d5b9ca166232576e224dbd560fbd",
+    "product/buddies/DESIGN_BACKGROUND_TASK_EXECUTION.md": "260385d6d7a82b7a573334904a7098a6c2b4da0c87d33c55c425a7fdc75dd196"
+  },
+  "tests": {
+    "focusedPassed": 25,
+    "serverTypecheck": "passed",
+    "newLiveProviderRun": false
+  },
+  "scope": "App diagnostics, native tool guidance, operator docs and boundary regression. No package lifecycle change or deployment."
+}

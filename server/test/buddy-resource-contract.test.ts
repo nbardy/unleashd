@@ -116,7 +116,7 @@ test('resource MCP adopts existing staff, imports revisioned handoffs, preserves
     assert.match(sendDescription, /outstanding child requests suspend the parent/);
     assert.match(sendDescription, /Do not schedule a parallel self-successor/);
     assert.match(sendDescription, /does not grant additional permissions/);
-    assert.doesNotMatch(sendDescription, /until_done|expectsReply|continueFrom/);
+    assert.doesNotMatch(sendDescription, /until_done|expectsReply/);
     assert.equal(
       (
         await client.callTool({

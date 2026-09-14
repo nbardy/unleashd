@@ -188,7 +188,7 @@ Send the returned project ID using a separate stable key:
 ```
 
 `send({..., preview: true})` validates the exact payload without committing it.
-Apply rechecks authority and admission. Retry the same intended project creation
+Apply rechecks authority and admission. A reporting line does not widen a project-scoped conversation: the destination project must be the current project or its descendant. If existing work is outside that hierarchy, ask its requester to dispatch it from an authorized context; do not duplicate the Task just to evade scope. Retry the same intended project creation
 and send with their original keys after a partial failure. Use `request` for one
 response and `inform` for information without a reply obligation; their examples
 are in [coordination](PLANNING_PRIMITIVES.md#send-and-reply); limit definitions
@@ -207,16 +207,26 @@ request. A project accepted before this request does not acknowledge the new
 message. Check acknowledgment, project acceptance, actual artifact contents,
 completion evidence and delivery history separately.
 
-Returns to an owner chat are saved in the Buddy's **Mailbox**, available in both
-desktop and mobile. Human chats do not automatically run a model or inject the
-return into their transcript. `mailboxOnly: true` on a completed delivery is
-successful mailbox delivery, not a missing worker start or proof the owner read
-the result. An executing background lead needs incoming work enabled and an
-available background route to continue on child results.
+New assignments launched from an owner chat register a separate background
+return thread for that Buddy and launch scope. Completion and failure returns
+wake it through ordinary admission; the human chat stays independent. The review
+receives the original assignment, returned evidence, execution state and available
+transcript references. The September 14 local implementation also supplies a bounded
+frozen launch-context handoff and a bounded timeout report or explicit fallback;
+this requires the running server/package to load that version. It does not claim
+a native provider-session fork. Incoming work must be enabled for the lead; held
+returns remain visible. Inspecting an actual artifact and recording a decision
+establishes review; delivery or a completed provider turn alone does not.
+
+Legacy assignments without a registered background return route still use the
+**Mailbox**. `mailboxOnly: true` means successful mailbox delivery, not a model
+review. An inline badge beside a launch tool call opens the worker conversation
+once available, on desktop and mobile; removed or not-yet-created threads have
+no navigation link.
 
 Outstanding child requests suspend managed parent work; the existing runtime
 continues it within its original limits. Do not schedule a parallel self-successor.
-For failure or timeout, inspect effects and recovery metadata before `retry_run`.
+For failure or timeout, inspect effects and recovery metadata before `retry_run`. A normally completed attempt with a blocked Task needs a new authorized bounded work send for that same Task after repair, without `continueFrom`; this creates fresh limits, not a transfer of unused allowance. Managed `continueFrom` is for a previous reply of `done`. Waiting consumes assignment elapsed time.
 Stopped roots stay stopped. The [background work contract](DESIGN_BACKGROUND_TASK_EXECUTION.md)
 explains bounded recovery and fresh-budget resumption.
 

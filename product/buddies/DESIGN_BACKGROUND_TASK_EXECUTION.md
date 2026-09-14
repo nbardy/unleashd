@@ -98,10 +98,25 @@ See `get_message` and `get_team_state` for delivery history and acceptance metad
 
 ## Recovery
 
-Save artifacts, then use `checkpoint` to record versioned refs, effects and resume
-instructions before long commands. Checkpoints attest saved references; verify
-current contents when resuming. Inspect `get_team_state` recovery metadata and
-original effects before `retry_run({runId, key, reason, checkpointId?})`.
+Save artifacts and useful resume instructions in ordinary files; link them from
+Task comments or Mail. Checkpoint writes are retired. Inspect `get_team_state`,
+the original receipt and actual effects before `retry_run({runId, key, reason})`.
+
+A provider attempt can complete normally while the Task is blocked. This is not a
+failed attempt and `retry_run` cannot recover it. After resolving the blocker,
+preview a new authorized `send` with a new stable key, the same unfinished
+`delivery.projectId`, explicit `maxRuns` and `maxDurationSeconds`, and no
+`continueFrom`. Apply the same payload/key after preview. This preserves the Task,
+comments and evidence, but creates a new request with fresh bounds and a separate
+execution conversation. Link the old receipt and artifact references in the body
+or evidence; inspect them before repeating effects. It does not transfer unused
+allowance or promise provider-session continuity. Do not replace live/held work
+or use this recipe to revive an explicitly stopped root.
+
+Managed `delivery.continueFrom` reuses a recipient thread only after the previous
+request replied `done`; it is not the blocked-work recovery operation. A manager
+must distinguish a delivered reply, a started review and an assessed outcome.
+Execution success alone does not satisfy Task completion criteria.
 
 Supported historical closed timeouts can create a linked successor while retaining
 the old failure and original remaining budget/policy. Stopped roots cannot resume;
