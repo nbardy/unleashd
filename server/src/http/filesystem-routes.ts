@@ -138,6 +138,7 @@ export function registerFilesystemRoutes(
         path: displayPathWithHomeAlias(resolvedPath, inputPath.startsWith('~')),
       });
     } catch (error) {
+      console.error('[filesystem] Failed to create directory:', error);
       res
         .status(500)
         .json({ error: error instanceof Error ? error.message : 'Failed to create directory' });
@@ -163,7 +164,7 @@ export function registerFilesystemRoutes(
       return;
     }
     res.sendFile(resolved, (error) => {
-      if (error && !res.headersSent) res.status(404).json({ error: 'File not found' });
+      handleSendFileError(error, res, resolved);
     });
   });
 
@@ -179,7 +180,18 @@ export function registerFilesystemRoutes(
       return;
     }
     res.sendFile(resolved, (error) => {
-      if (error && !res.headersSent) res.status(404).json({ error: 'File not found' });
+      handleSendFileError(error, res, resolved);
     });
+  });
+}
+
+function handleSendFileError(error: Error | undefined, response: Response, filePath: string): void {
+  if (!error) return;
+  const detail = error as Error & { code?: string; status?: number; statusCode?: number };
+  const missing = detail.code === 'ENOENT' || detail.status === 404 || detail.statusCode === 404;
+  if (!missing) console.error('[filesystem] Failed to send file', filePath, error);
+  if (response.headersSent) return;
+  response.status(missing ? 404 : 500).json({
+    error: missing ? 'File not found' : 'Failed to read file',
   });
 }

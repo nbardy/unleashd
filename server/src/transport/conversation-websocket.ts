@@ -137,6 +137,7 @@ export function registerConversationWebSocket(
                 ? await dependencies.resolveBuddyConversation(data.buddyContext)
                 : null;
             } catch (error) {
+              logger.error('Conversation creation failed', error);
               sendCommandRejected(socket, {
                 commandId: data.commandId,
                 conversationId: data.conversationId,
@@ -303,6 +304,7 @@ export function registerConversationWebSocket(
               });
               await dependencies.dispatchInitialMessage(conversation);
             } catch (error) {
+              logger.error('Conversation creation failed', error);
               sendCommandRejected(socket, {
                 commandId: data.commandId,
                 conversationId: data.conversationId,

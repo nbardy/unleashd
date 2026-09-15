@@ -2104,6 +2104,7 @@ export function createConversationRuntime(
         }
         void requestCancellation(automationRunId).catch((error) => {
           const detail = error instanceof Error ? error.message : String(error);
+          console.error('[buddies] Automation cancellation failed', automationRunId, error);
           this.refuseAutomationTranscript(`Automation cancellation failed: ${detail}`);
         });
         return;

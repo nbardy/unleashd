@@ -60,7 +60,8 @@ export function registerSwarmReadModelRoutes(app: Application, ports: SwarmReadM
           return { hash: parts[0], message: parts[1], date: parts[2], author: parts[3] };
         });
       response.json(entries);
-    } catch {
+    } catch (error) {
+      console.warn('[swarm-read-model] Failed to read git log:', error);
       response.json([]);
     }
   });
@@ -102,6 +103,7 @@ export function registerSwarmReadModelRoutes(app: Application, ports: SwarmReadM
       });
       response.json({ runs });
     } catch (error) {
+      console.error('[swarm-read-model] Failed to read swarm runs:', error);
       response.status(500).json({ error: errorMessage(error) });
     }
   });
@@ -139,7 +141,8 @@ export function registerSwarmReadModelRoutes(app: Application, ports: SwarmReadM
       const raw = ports.executeGit(args, projectRoot, 10_000).trim();
       const files = raw.split('\n').filter((line) => line.trim().length > 0);
       response.json({ count: files.length, files });
-    } catch {
+    } catch (error) {
+      console.warn('[swarm-read-model] Failed to list newly added swarm files:', error);
       response.json({ count: 0, files: [] });
     }
   });
@@ -166,6 +169,7 @@ export function registerSwarmReadModelRoutes(app: Application, ports: SwarmReadM
         response.status(404).json({ error: 'File not found' });
         return;
       }
+      console.error('[swarm-read-model] Failed to read file:', error);
       response.status(500).json({ error: errorMessage(error) });
     }
   });

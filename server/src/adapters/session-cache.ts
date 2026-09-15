@@ -72,6 +72,7 @@ export class NormalizedSessionCache {
       return { hit: true, session: parsed.data.session };
     } catch (error) {
       if (isMissingFile(error)) return { hit: false };
+      console.warn('[session-cache] Failed to read cached session:', error);
       return { hit: false };
     }
   }

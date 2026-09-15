@@ -37,6 +37,7 @@ export function registerSwarmRuntimeRoutes(
     try {
       response.json(JSON.parse(fs.readFileSync(configPath, 'utf-8')));
     } catch (error) {
+      console.error('[swarm] Failed to parse oompa.json:', error);
       response.status(500).json({ error: `Failed to parse oompa.json: ${errorMessage(error)}` });
     }
   });
@@ -103,7 +104,8 @@ export function registerSwarmRuntimeRoutes(
               fs.readFileSync(path.join(reviewsDirectory, file), 'utf-8')
             ) as OompaReviewLog,
           ];
-        } catch {
+        } catch (error) {
+          console.warn('[swarm] Failed to read review artifact', file, error);
           return [];
         }
       });
@@ -184,6 +186,7 @@ function handleSwarmSignal(
           : `SIGKILL sent to PID ${pid}. Swarm terminated.`,
     });
   } catch (error) {
+    console.error('[swarm] Failed to signal process:', error);
     response
       .status(500)
       .json({ ok: false, message: `Failed to send signal: ${errorMessage(error)}` });

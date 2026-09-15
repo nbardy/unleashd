@@ -194,7 +194,12 @@ export function createPaletteService(options: PaletteServiceOptions): PaletteSer
         parsed = JSON.parse(json) as Palette;
         validatePalette(parsed);
       } catch (error) {
-        console.error('[generate-palette] Raw stdout (first 500 chars):', stdout.substring(0, 500));
+        console.error(
+          '[generate-palette] Failed to parse provider response:',
+          error,
+          'Raw stdout (first 500 chars):',
+          stdout.substring(0, 500)
+        );
         const message = error instanceof Error ? error.message : 'Unknown parse error';
         sendError(500, `Failed to parse palette from ${provider} response: ${message}`);
         return;
@@ -213,6 +218,7 @@ export function createPaletteService(options: PaletteServiceOptions): PaletteSer
       response.json({ key, palette });
     } catch (error) {
       clearTimeout(timeout);
+      console.error('[generate-palette] Palette generation failed:', error);
       sendError(
         500,
         `Palette generation failed: ${error instanceof Error ? error.message : String(error)}`

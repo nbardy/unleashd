@@ -776,7 +776,13 @@ export class BuddyScheduler {
           lateConversation.finish(signal.aborted ? 'cancelled' : 'failed');
           lateConversation.stop();
         })
-        .catch(() => {});
+        .catch((lateError) => {
+          this.logger.warn(
+            `[buddies] Late automation conversation creation failed for ${run.id}: ${
+              lateError instanceof Error ? lateError.message : String(lateError)
+            }`
+          );
+        });
       throw error;
     } finally {
       if (timeout) clearTimeout(timeout);

@@ -67,7 +67,9 @@ function loadFileCatalogReasoning(): Map<string, Map<string, FileReasoning>> | n
         map.set(prov.id, mMap);
       }
       return map;
-    } catch {}
+    } catch (error) {
+      console.warn('[provider-catalog] Failed to read catalog', p, error);
+    }
   }
   return null;
 }

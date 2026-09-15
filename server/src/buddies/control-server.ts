@@ -58,6 +58,7 @@ export class BuddyControlServer {
   constructor(private readonly dependencies: BuddyControlServerDependencies) {
     this.server = http.createServer((request, response) => {
       void this.handle(request, response).catch((error) => {
+        console.error('[buddies-control] Unhandled request failure:', error);
         this.respond(response, 500, {
           error: error instanceof Error ? error.message : String(error),
         });

@@ -186,6 +186,7 @@ export function createBuddiesIntegration(dependencies: BuddiesIntegrationDepende
 
   function sendError(response: Response, error: unknown, fallbackStatus: number): void {
     const status = error instanceof BuddiesUnavailableError ? 503 : fallbackStatus;
+    if (status >= 500) console.error('[buddies] Request failed:', error);
     response.status(status).json({ error: error instanceof Error ? error.message : String(error) });
   }
 

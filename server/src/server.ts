@@ -10,7 +10,7 @@ import {
 } from '@unleashd/shared';
 
 import { executeCommand } from '@nbardy/agent-cli';
-import express from 'express';
+import express, { type ErrorRequestHandler } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import { WebSocketServer } from 'ws';
 import { loadAllConversations, pollForChanges } from './adapters/loader';
@@ -38,6 +38,7 @@ import { ConversationConfigStore } from './conversations/config-store';
 import { type ConversationRuntime, createConversationRuntime } from './conversations/runtime';
 import { registerConversationRoutes } from './http/conversation-routes';
 import { registerCoreRoutes } from './http/core-routes';
+import { registerErrorDiagnosticsRoutes } from './http/error-diagnostics-routes';
 import { registerFilesystemRoutes } from './http/filesystem-routes';
 import { createKnownProjectAuthorizer } from './http/known-projects';
 import { resolveDefaultWorkingDirectory, resolveWorkingDirectoryInput } from './http/path-utils';
@@ -52,7 +53,12 @@ import { runServerStartup } from './lifecycle/startup';
 import { registerStaticClient } from './lifecycle/static-client';
 import { registerMergeRoutes } from './merge/routes';
 import { resolveListenHost } from './network';
-import { TurnAttemptJournal, createJournalTurnAttemptObserver } from './observability';
+import {
+  ErrorJournal,
+  TurnAttemptJournal,
+  createJournalTurnAttemptObserver,
+  installConsoleErrorCapture,
+} from './observability';
 import { createPaletteService } from './palettes/palette-service';
 import { buildPalettePrompt } from './palettes/prompt';
 import { getProvider, providers } from './providers';
@@ -131,6 +137,10 @@ const conversationConfigService = new ConversationConfigService({
 const persistedServerState = new PersistedServerState(APP_DATA_DIR, setIgnorePatterns);
 const turnAttemptJournal = new TurnAttemptJournal({
   directory: path.join(APP_DATA_DIR, 'observability'),
+});
+const errorJournal = new ErrorJournal({
+  directory: path.join(APP_DATA_DIR, 'observability'),
+  serverBootId: turnAttemptJournal.serverBootId,
 });
 const turnAttemptObserver = createJournalTurnAttemptObserver(turnAttemptJournal);
 let buddyScheduler: BuddyScheduler | null = null;
@@ -327,6 +337,7 @@ registerUploadRoutes(app, UPLOADS_DIR);
 registerCoreRoutes(app, () => startupAuditResults);
 registerConversationRoutes(app, (id) => conversations.get(id));
 registerTurnDiagnosticsRoutes(app, turnAttemptJournal);
+registerErrorDiagnosticsRoutes(app, errorJournal);
 
 persistedServerState.registerRoutes(app);
 
@@ -441,6 +452,16 @@ paletteService.registerRoutes(app);
 registerUsageRoutes(app, Object.keys(providers) as ProviderName[]);
 registerStaticClient(app, path.join(__dirname, '../../client/dist'));
 
+const captureUnhandledHttpError: ErrorRequestHandler = (error, request, response, next) => {
+  console.error(`[http] Unhandled ${request.method} ${request.path}:`, error);
+  if (response.headersSent) {
+    next(error);
+    return;
+  }
+  response.status(500).json({ error: 'Internal server error' });
+};
+app.use(captureUnhandledHttpError);
+
 const DEV_CLIENT_PORT = 7489;
 const DEV_API_PORT = 7499;
 const PORT =
@@ -459,7 +480,7 @@ shutdownController = registerShutdownHandlers(
     stopScheduler: stopBuddyScheduler,
     flushState: async () => {
       persistedServerState.flushUIStateSync();
-      await turnAttemptJournal.flush();
+      await Promise.all([turnAttemptJournal.flush(), errorJournal.flush()]);
       await buddyControlServer.close();
     },
     broadcastMessage: (conversationId, content) => {
@@ -509,6 +530,8 @@ void runServerStartup(
   {
     server,
     initialize: async () => {
+      await errorJournal.initialize();
+      installConsoleErrorCapture(errorJournal);
       await buddyControlServer.start();
       startupAuditResults = auditLocalAgents();
       await normalizedSessionCache.initialize();

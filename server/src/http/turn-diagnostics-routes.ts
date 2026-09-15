@@ -20,7 +20,8 @@ export function registerTurnDiagnosticsRoutes(app: Application, journal: TurnAtt
         attempts,
         ...(recentEvents ? { recentEvents } : {}),
       });
-    } catch {
+    } catch (error) {
+      console.error('[turn-diagnostics] Failed to read turn diagnostics:', error);
       if (!response.headersSent) {
         response.status(500).json({ error: 'Failed to read turn diagnostics' });
       }

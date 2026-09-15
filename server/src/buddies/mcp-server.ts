@@ -205,7 +205,9 @@ async function main(): Promise<void> {
     const server = createBuddyBuilderMcpServer(store, requiredArgument('--conversation'));
     const transport = new StdioServerTransport();
     const close = async () => {
-      await server.close().catch(() => undefined);
+      await server
+        .close()
+        .catch((error) => console.error('[buddies-mcp] Failed to close owner server:', error));
       store.close();
     };
     process.once('SIGINT', () => void close().finally(() => process.exit(0)));
@@ -263,7 +265,9 @@ async function main(): Promise<void> {
   });
   const transport = new StdioServerTransport();
   const close = async () => {
-    await server.close().catch(() => undefined);
+    await server
+      .close()
+      .catch((error) => console.error('[buddies-mcp] Failed to close server:', error));
     store.close();
   };
   process.once('SIGINT', () => void close().finally(() => process.exit(0)));
