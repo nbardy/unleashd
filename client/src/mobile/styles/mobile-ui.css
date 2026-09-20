@@ -38,9 +38,9 @@
 
 .mobile-ui-page__title {
   margin: 0;
-  color: var(--text-primary);
-  font-size: 28px;
-  font-weight: 700;
+  color: var(--text-bright);
+  font-size: 32px;
+  font-weight: 600;
   line-height: 1.1;
   letter-spacing: -0.025em;
 }
@@ -107,7 +107,7 @@
   max-width: 100%;
   overflow: hidden;
   border: 1px solid var(--border-subtle);
-  border-radius: 14px;
+  border-radius: var(--ui-radius);
   background: var(--bg-raised-1);
   color: inherit;
 }
@@ -116,6 +116,7 @@
   display: block;
   padding: 14px;
   text-align: left;
+  text-decoration: none;
   font: inherit;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
@@ -146,7 +147,7 @@
   min-height: 20px;
   padding: 3px 7px;
   border: 1px solid var(--border-subtle);
-  border-radius: 999px;
+  border-radius: var(--ui-radius);
   background: var(--bg-raised-2);
   color: var(--text-muted);
   font-size: 10px;
@@ -186,7 +187,7 @@
   min-width: 0;
   padding: 26px 16px;
   border: 1px dashed var(--border-subtle);
-  border-radius: 14px;
+  border-radius: var(--ui-radius);
   color: var(--text-muted);
   font-size: 13px;
   line-height: 1.5;
@@ -215,7 +216,7 @@
   min-height: 44px;
   padding: 0 16px;
   border: 1px solid transparent;
-  border-radius: 999px;
+  border-radius: var(--ui-radius);
   background: var(--accent);
   color: var(--text-on-accent);
   font: inherit;
@@ -259,7 +260,7 @@
   overscroll-behavior: contain;
   border: 1px solid var(--border-subtle);
   border-bottom: none;
-  border-radius: 18px 18px 0 0;
+  border-radius: var(--ui-radius);
   background: var(--bg-raised-1);
   color: var(--text-primary);
 }
@@ -286,7 +287,7 @@
   align-self: center;
   width: 38px;
   height: 4px;
-  border-radius: 999px;
+  border-radius: var(--ui-radius);
   background: var(--border-strong);
 }
 
@@ -313,7 +314,7 @@
   width: 36px;
   height: 36px;
   border: 1px solid var(--border-subtle);
-  border-radius: 999px;
+  border-radius: var(--ui-radius);
   background: var(--bg-raised-2);
   color: var(--text-muted);
   font: inherit;
@@ -340,7 +341,7 @@
   /* 16px keeps iOS Safari from zooming the viewport on focus. */
   padding: 12px;
   border: 1px solid var(--border-subtle);
-  border-radius: 12px;
+  border-radius: var(--ui-radius);
   background: var(--bg-raised-2);
   color: var(--text-primary);
   font-family: var(--font-mono);
@@ -372,7 +373,7 @@
   min-width: 0;
   padding: 10px 12px;
   border: 1px solid var(--border-subtle);
-  border-radius: 12px;
+  border-radius: var(--ui-radius);
   background: var(--bg-raised-2);
   color: inherit;
   font: inherit;
@@ -417,7 +418,7 @@
 .mobile-sheet__error {
   padding: 10px 12px;
   border: 1px solid color-mix(in srgb, var(--theme-error, #ef4444) 45%, var(--border-subtle));
-  border-radius: 12px;
+  border-radius: var(--ui-radius);
   color: var(--theme-error, #ef4444);
   font-size: 13px;
   line-height: 1.4;
@@ -438,7 +439,7 @@
 .mobile-sheet__confirm {
   min-height: 48px;
   border: none;
-  border-radius: 14px;
+  border-radius: var(--ui-radius);
   background: var(--accent);
   color: var(--text-on-accent);
   font: inherit;
@@ -495,7 +496,9 @@
 }
 
 .mobile-chat__back {
+  display: inline-grid;
   flex: none;
+  place-items: center;
   min-width: 40px;
   min-height: 40px;
   border: none;
@@ -503,6 +506,7 @@
   color: var(--text-primary);
   font: inherit;
   font-size: 16px;
+  text-decoration: none;
   cursor: pointer;
 }
 
@@ -535,7 +539,7 @@
   min-height: 36px;
   padding: 0 12px;
   border: 1px solid var(--border-subtle);
-  border-radius: 999px;
+  border-radius: var(--ui-radius);
   background: var(--bg-raised-2);
   color: var(--text-primary);
   font: inherit;
@@ -650,7 +654,7 @@
 
 .mobile-markdown code {
   padding: 1px 5px;
-  border-radius: 5px;
+  border-radius: var(--ui-radius);
   background: var(--bg-raised-2);
   color: var(--text-primary);
   font-family: var(--font-mono);
@@ -663,7 +667,7 @@
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
   border: 1px solid var(--border-subtle);
-  border-radius: 10px;
+  border-radius: var(--ui-radius);
   background: var(--bg-page);
 }
 
@@ -735,8 +739,8 @@
   min-width: 0;
   padding: 3px 3px 3px 4px;
   border: 1px solid var(--border-subtle);
-  /* 10px, not a pill — enough to read as a field, not as a chat bubble. */
-  border-radius: 10px;
+  /* Same restrained geometry as desktop fields. */
+  border-radius: var(--ui-radius);
   background: var(--bg-page);
   transition: border-color 120ms ease;
 }
@@ -789,7 +793,7 @@
   height: 30px;
   padding: 0;
   border: none;
-  border-radius: 50%;
+  border-radius: var(--ui-radius);
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
   transition: transform 100ms ease, opacity 120ms ease;
@@ -834,29 +838,11 @@
 .mobile-composer__stop-glyph {
   width: 9px;
   height: 9px;
-  border-radius: 1px;
+  border-radius: var(--ui-radius);
   background: currentColor;
 }
 
-.mobile-composer__spinner {
-  width: 12px;
-  height: 12px;
-  border: 2px solid currentColor;
-  border-top-color: transparent;
-  border-radius: 50%;
-  animation: mobile-composer-spin 700ms linear infinite;
-}
-
-@keyframes mobile-composer-spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
 @media (prefers-reduced-motion: reduce) {
-  .mobile-composer__spinner {
-    animation-duration: 2s;
-  }
   .mobile-composer__btn {
     transition: none;
   }
@@ -902,7 +888,7 @@
   max-width: 100%;
   padding: 4px 6px;
   border: 1px solid var(--border-subtle);
-  border-radius: 8px;
+  border-radius: var(--ui-radius);
   background: var(--bg-raised-2);
   font-size: 12px;
   color: var(--text-secondary);
@@ -912,7 +898,7 @@
   width: 28px;
   height: 28px;
   object-fit: cover;
-  border-radius: 4px;
+  border-radius: var(--ui-radius);
   flex: none;
 }
 
@@ -936,7 +922,7 @@
   display: inline-grid;
   place-items: center;
   border: none;
-  border-radius: 4px;
+  border-radius: var(--ui-radius);
   background: color-mix(in srgb, var(--theme-danger) 18%, transparent);
   color: var(--theme-danger);
   font-size: 12px;
@@ -975,7 +961,7 @@
 .mobile-chat__config-error {
   padding: 6px 8px;
   border: 1px solid color-mix(in srgb, var(--theme-danger) 45%, var(--border-subtle));
-  border-radius: 8px;
+  border-radius: var(--ui-radius);
   color: var(--theme-danger);
   font-size: 11px;
 }
@@ -999,25 +985,12 @@
   gap: 6px;
 }
 
+/* Option appearance is shared in ui/controls.css. */
 .mobile-sheet__option {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  min-height: 40px;
-  padding: 0 14px;
-  border: 1px solid var(--border-subtle);
-  border-radius: 999px;
-  background: var(--bg-raised-2);
-  color: var(--text-primary);
-  font: inherit;
-  font-size: 13px;
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
-}
-
-.mobile-sheet__option--selected {
-  border-color: var(--accent);
-  color: var(--text-primary);
+  --ui-choice-height: 44px;
+  flex: 0 1 auto;
+  max-width: 100%;
+  white-space: nowrap;
 }
 
 .mobile-sheet__option-meta {
@@ -1048,7 +1021,7 @@
   margin-left: auto;
   padding: 0 10px;
   border: 1px solid var(--border-subtle);
-  border-radius: 999px;
+  border-radius: var(--ui-radius);
   background: transparent;
   color: var(--text-muted);
   font: inherit;
@@ -1092,7 +1065,7 @@
   max-width: 100%;
   padding: 4px 10px;
   border: 1px solid color-mix(in srgb, currentColor 35%, transparent);
-  border-radius: 999px;
+  border-radius: var(--ui-radius);
   background: color-mix(in srgb, currentColor 8%, transparent);
   color: var(--text-muted);
   font-size: 11px;
@@ -1276,7 +1249,7 @@
   justify-content: center;
   width: 22px;
   height: 22px;
-  border-radius: 6px;
+  border-radius: var(--ui-radius);
   background: color-mix(in srgb, var(--theme-danger) 14%, transparent);
   color: var(--theme-danger);
   font-size: 14px;
@@ -1328,7 +1301,7 @@
   gap: 8px;
   margin: 0 0 6px 0;
   padding: 8px 10px;
-  border-radius: 8px;
+  border-radius: var(--ui-radius);
   background: color-mix(in srgb, var(--theme-danger) 18%, transparent);
   color: var(--theme-danger);
   font-size: 13px;
@@ -1350,4 +1323,136 @@
   font-size: 18px;
   line-height: 1;
   cursor: pointer;
+}
+
+/* One assistant response owns text, tool activity, and one footer. */
+.mobile-assistant-response {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 10px 12px;
+}
+
+.mobile-assistant-response__role {
+  margin-bottom: 4px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--accent-primary);
+}
+
+.mobile-assistant-response > .mobile-message__footer {
+  margin-top: 4px;
+  font-size: 10px;
+  color: var(--text-muted);
+}
+
+.mobile-response-activity__toggle {
+  display: inline-flex;
+  vertical-align: middle;
+  align-items: center;
+  gap: 6px;
+  min-height: 32px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.mobile-response-activity__toggle:focus-visible {
+  outline: 1px solid var(--accent-primary);
+}
+
+.mobile-response-activity > .mobile-markdown {
+  margin: 4px 0;
+}
+
+/* Full-width editor with one action row; tools appear only on request. */
+.mobile-composer__box {
+  flex-direction: column;
+  align-items: stretch;
+  padding: 8px;
+  gap: 6px;
+}
+.mobile-composer__input {
+  width: 100%;
+  min-height: 52px;
+  box-sizing: border-box;
+}
+.mobile-composer__actions {
+  width: 100%;
+  justify-content: flex-end;
+  gap: 8px;
+}
+.mobile-composer__btn {
+  width: 44px;
+  height: 44px;
+}
+.mobile-composer__tools {
+  position: relative;
+  margin-right: auto;
+}
+.mobile-composer__tools > summary {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  color: var(--text-emphasis);
+  font-size: 24px;
+  cursor: pointer;
+  list-style: none;
+}
+.mobile-composer__tools > summary::-webkit-details-marker {
+  display: none;
+}
+.mobile-composer__tool-menu {
+  position: absolute;
+  bottom: calc(100% + 8px);
+  left: 0;
+  display: flex;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--ui-radius);
+  background: var(--bg-panel);
+  z-index: 5;
+}
+.mobile-composer__done {
+  display: none;
+  min-height: 44px;
+  padding: 0 10px;
+  border: 0;
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 13px;
+}
+.mobile-turn-status {
+  border: 0;
+  background: transparent;
+  padding: 2px 0;
+}
+.mobile-queue-disclosure {
+  flex: none;
+  max-height: 30%;
+  overflow: auto;
+  padding: 0 12px;
+  border-top: 1px solid var(--border-subtle);
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+.mobile-queue-disclosure > summary {
+  min-height: 36px;
+  padding: 8px 0;
+  cursor: pointer;
+}
+.mobile-queue-disclosure > button {
+  min-height: 44px;
+  border: 0;
+  background: transparent;
+  color: var(--text-secondary);
 }

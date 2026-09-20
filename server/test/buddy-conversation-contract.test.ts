@@ -135,7 +135,7 @@ test('empty Buddy WebSocket creation resolves and registers without sending a pr
       beginCommand: (command: { type: string }) =>
         command.type === 'create_conversation' || acceptsCommands ? () => undefined : null,
       configService: {
-        getRecord: async () => null,
+        getRecord: async (id: string) => (conversations.has(id) ? { status: 'active' } : null),
         delete: async () => true,
         createOrReplay: async (input: {
           conversationId: string;
@@ -176,7 +176,6 @@ test('empty Buddy WebSocket creation resolves and registers without sending a pr
       dispatchInitialMessage: async () => {
         initialDispatches += 1;
       },
-      creationFingerprint: () => 'fingerprint',
       broadcast: (message) => transportBroadcasts.push(message),
       broadcastExcept: (_socket, message) => transportBroadcasts.push(message),
       logger: { log: () => undefined, error: () => undefined },
@@ -189,6 +188,7 @@ test('empty Buddy WebSocket creation resolves and registers without sending a pr
     JSON.parse(socket.sent[0]) as { type?: string; summaries?: boolean; loading?: boolean },
     {
       type: 'init',
+      archivedBuddyIds: [],
       summaries: true,
       loading: true,
       conversations: [],
@@ -236,7 +236,7 @@ test('empty Buddy WebSocket creation resolves and registers without sending a pr
   assert.ok(conversation);
   assert.equal(runtimeCreations, 1);
   assert.equal(conversationLinks, 1);
-  assert.equal(initialDispatches, 1);
+  assert.equal(initialDispatches, 2, 'both replay callers check durable initial delivery');
   assert.equal(conversation.isRunning, false);
   assert.equal(conversation.process, null);
   assert.deepEqual(conversation.messages, []);
@@ -258,6 +258,106 @@ test('empty Buddy WebSocket creation resolves and registers without sending a pr
   await new Promise((resolve) => setImmediate(resolve));
   assert.equal(buddyCancellations, 1);
   assert.equal(conversations.has('00000000-0000-4000-8000-000000000123'), false);
+});
+
+test('existing hydrated Buddy messages repair the durable link before admission', async () => {
+  const calls: string[] = [];
+  const conversation = {
+    id: '00000000-0000-4000-8000-000000000456',
+    sessionId: 'provider-session',
+    provider: 'codex',
+    buddyContext,
+    kind: { kind: 'buddy', buddyId: buddyContext.buddyId },
+    sendMessage: () => calls.push('send'),
+    enqueueMessage: () => calls.push('queue'),
+    interruptAndSend: () => calls.push('interrupt'),
+    promoteQueuedMessage: (messageId: string) => calls.push(`promote:${messageId}`),
+    toJSON: () => ({
+      id: '00000000-0000-4000-8000-000000000456',
+      kind: { kind: 'buddy', buddyId: buddyContext.buddyId },
+    }),
+  };
+  class FakeSocket extends EventEmitter {
+    readyState = 1;
+    sent: string[] = [];
+    send(payload: string): void {
+      this.sent.push(payload);
+    }
+  }
+  const webSocketServer = new EventEmitter();
+  const registry = new Map([[conversation.id, conversation]]);
+  registerConversationWebSocket(
+    webSocketServer as never,
+    {
+      registry: {
+        get: (id: string) => registry.get(id),
+        set: (value: typeof conversation) => registry.set(value.id, value),
+        delete: (id: string) => registry.delete(id),
+        values: () => registry.values(),
+        keys: () => registry.keys(),
+      },
+      sessions: {
+        markDeleted: () => undefined,
+        aliasEntries: () => [][Symbol.iterator](),
+        unregisterConversationAliases: () => undefined,
+      },
+      externalActivity: { clear: () => undefined, has: () => false },
+      completionSuppression: { clear: () => undefined },
+      initialLoadComplete: Promise.resolve(),
+      isInitialLoadComplete: () => true,
+      beginCommand: () => () => undefined,
+      configService: {
+        getRecord: async () => ({ status: 'active' }),
+      },
+      getUIState: () => ({
+        activeConversationId: null,
+        lastWorkingDirectory: null,
+        galleryExpandedProjects: [],
+      }),
+      getDefaultWorkingDirectory: () => '/tmp',
+      resolveWorkingDirectory: (directory: string) => directory,
+      resolveBuddyConversation: async () => ({
+        context: buddyContext,
+        briefing: 'briefing',
+        workingDirectory: '/tmp',
+        provider: 'codex',
+      }),
+      createConversation: () => conversation,
+      createConversationLink: async () => {
+        calls.push('link');
+      },
+      isBuddyArchived: async () => false,
+      cancelBuddyConversation: () => undefined,
+      dispatchInitialMessage: async () => undefined,
+      broadcast: () => undefined,
+      broadcastExcept: () => undefined,
+      logger: { log: () => undefined, error: () => undefined },
+    } as never
+  );
+  const socket = new FakeSocket();
+  webSocketServer.emit('connection', socket);
+
+  for (const [type, commandId, messageId] of [
+    ['send_message', undefined, undefined],
+    ['queue_message', 'queue-command', undefined],
+    ['interrupt_and_send', 'interrupt-command', undefined],
+    ['promote_queued_message', undefined, 'queued-1'],
+  ] as const) {
+    socket.emit(
+      'message',
+      Buffer.from(
+        JSON.stringify({
+          type,
+          ...(commandId ? { commandId } : {}),
+          ...(messageId ? { messageId } : { content: type }),
+          conversationId: conversation.id,
+        })
+      )
+    );
+    await new Promise((resolve) => setImmediate(resolve));
+  }
+
+  assert.deepEqual(calls, ['link', 'send', 'queue', 'interrupt', 'promote:queued-1']);
 });
 
 test('replaying create_conversation reports the real failure, not a config mismatch', async () => {
@@ -306,7 +406,7 @@ test('replaying create_conversation reports the real failure, not a config misma
       isInitialLoadComplete: () => true,
       beginCommand: () => () => undefined,
       configService: {
-        getRecord: async () => null,
+        getRecord: async (id: string) => (conversations.has(id) ? { status: 'active' } : null),
         delete: async () => true,
         // A matching replay: createOrReplay succeeds, so the only thing left
         // to throw inside that try is dispatchInitialMessage.
@@ -331,7 +431,6 @@ test('replaying create_conversation reports the real failure, not a config misma
       dispatchInitialMessage: async () => {
         throw new Error(rejectionText);
       },
-      creationFingerprint: () => 'fingerprint',
       broadcast: () => undefined,
       broadcastExcept: () => undefined,
       logger: { log: () => undefined, error: () => undefined },

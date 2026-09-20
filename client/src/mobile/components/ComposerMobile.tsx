@@ -5,13 +5,17 @@ import { endConversation, interruptAndSend, queueMessage } from '../../atoms/act
 import { queueAtomFamily, streamingAtomFamily } from '../../atoms/conversations';
 import { useConversationDraft } from '../../hooks/useConversationDraft';
 import { usePendingAttachments } from '../../hooks/usePendingAttachments';
+import { useRestartRecovery } from '../../hooks/useRestartRecovery';
 import { useSavedPrompts } from '../../hooks/useSavedPrompts';
 import { useTurnDiagnostics } from '../../hooks/useTurnDiagnostics';
+import { RestartRecoveryPrompt } from '../../restart/RestartRecoveryPrompt';
 import {
   shouldPresentTurnAttempt,
   shouldShowTypingIndicator,
   turnDiagnosticsFromAttempt,
 } from '../../utils/turn-diagnostics';
+import { FullscreenComposer } from './FullscreenComposer';
+import { ComposerAttachments } from './ComposerAttachments';
 import { PromptPaletteMobile } from './PromptPaletteMobile';
 import { TurnStatusMobile } from './TurnStatusMobile';
 
@@ -60,11 +64,21 @@ export function ComposerMobile({
           }))
         : resolvedQueue;
 
+  const [expanded, setExpanded] = useState(false);
+  const closeEditor = useCallback(() => {
+    textareaRef.current?.blur();
+    setExpanded(false);
+  }, []);
   const [draft, setDraft] = useState('');
-  const [sending, setSending] = useState(false);
+  // Synchronous mirror of the composer text. React state lags a render behind,
+  // so guards must read this: after an optimistic clear it is already empty
+  // (no double-send), and after a keystroke-but-before-render it already has
+  // the new char (no lost trailing input on fast Cmd+Enter).
+  const draftRef = useRef('');
   const [error, setError] = useState<string | null>(null);
   const [showPalette, setShowPalette] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const toolbarPointerRef = useRef(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Prompt palette — thin wrapper over shared hook (logic in hooks/, UI here).
@@ -86,8 +100,14 @@ export function ComposerMobile({
     maxHeight: 120,
     autoFocus: false,
     controlled: true,
-    onDraftLoaded: (loaded) => setDraft(loaded),
-    onDraftChange: (value) => setDraft(value),
+    onDraftLoaded: (loaded) => {
+      draftRef.current = loaded;
+      setDraft(loaded);
+    },
+    onDraftChange: (value) => {
+      draftRef.current = value;
+      setDraft(value);
+    },
   });
 
   // Shared attachment lifecycle — same hook desktop Chat.tsx uses so both
@@ -118,6 +138,8 @@ export function ComposerMobile({
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'p') {
         e.preventDefault();
+        textareaRef.current?.blur();
+        setExpanded(false);
         if (onOpenPalette) onOpenPalette();
         else setShowPalette(true);
       }
@@ -175,6 +197,11 @@ export function ComposerMobile({
     conversationId || undefined,
     runtimeTurnActive
   );
+  const restartRecovery = useRestartRecovery(
+    conversationId,
+    composerTurnAttempt,
+    runtimeTurnActive
+  );
   const composerTurnDiagnostics =
     composerTurnAttempt && shouldPresentTurnAttempt(composerTurnAttempt, runtimeTurnActive)
       ? turnDiagnosticsFromAttempt(composerTurnAttempt)
@@ -198,41 +225,44 @@ export function ComposerMobile({
   const hasQueue = effectiveQueue.length > 0;
   const hasText = draft.trim().length > 0;
   const hasAttachments = pendingFiles.length > 0;
-  const canSend = (hasText || hasAttachments) && !sending;
+  const canSend = hasText || hasAttachments;
   // One label for the button and the hint below it, so they cannot disagree.
   const sendLabel = hasActiveTurn ? 'Interrupt' : hasQueue ? 'Queue' : 'Send';
 
+  // Optimistic send — same contract as desktop Chat.tsx: the server ack can
+  // lag seconds behind the tap (ensureReady + turn-spawn setup), so the text
+  // clears immediately instead of holding the composer disabled with the text
+  // still in the box. draftRef is synchronous, so a second tap reads empty
+  // and cannot double-send; the queue strip carries the in-flight state.
+  // Rejection restores the draft via handleSelectPrompt (text + focus +
+  // height, the same path palette selection uses).
   const handleSend = useCallback(async () => {
-    const text = draft.trim();
-    if ((!text && !hasAttachments) || sending) return;
-    setSending(true);
-    setError(null);
+    const text = draftRef.current.trim();
+    if (!text && !hasAttachments) return;
     const content = buildContent(text);
+    clearDraftPersisted();
+    setError(null);
+    closeEditor();
     try {
       if (hasActiveTurn) {
         await interruptAndSend(conversationId, content);
       } else {
         await queueMessage(conversationId, content);
       }
-      clearDraftPersisted();
       clearFiles();
-      if (textareaRef.current) {
-        textareaRef.current.style.height = 'auto';
-      }
     } catch (e) {
+      handleSelectPrompt(text);
       setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setSending(false);
     }
   }, [
     conversationId,
-    draft,
     hasActiveTurn,
     hasAttachments,
-    sending,
     buildContent,
     clearDraftPersisted,
     clearFiles,
+    closeEditor,
+    handleSelectPrompt,
   ]);
 
   // Desktop's only stop affordance is endConversation (clear_queue then
@@ -250,28 +280,27 @@ export function ComposerMobile({
   // interruptAndSend, which destroys the in-flight turn's partial progress —
   // "add a follow-up without killing the current turn" was impossible on mobile.
   const handleQueue = useCallback(async () => {
-    const text = draft.trim();
-    if ((!text && !hasAttachments) || sending) return;
-    setSending(true);
+    const text = draftRef.current.trim();
+    if (!text && !hasAttachments) return;
+    const content = buildContent(text);
+    clearDraftPersisted();
     setError(null);
+    closeEditor();
     try {
-      await queueMessage(conversationId, buildContent(text));
-      clearDraftPersisted();
+      await queueMessage(conversationId, content);
       clearFiles();
-      if (textareaRef.current) textareaRef.current.style.height = 'auto';
     } catch (e) {
+      handleSelectPrompt(text);
       setError(e instanceof Error ? e.message : String(e));
-    } finally {
-      setSending(false);
     }
   }, [
     conversationId,
-    draft,
     hasAttachments,
-    sending,
     buildContent,
     clearDraftPersisted,
     clearFiles,
+    closeEditor,
+    handleSelectPrompt,
   ]);
 
   const handleFilesSelected = useCallback(
@@ -292,6 +321,7 @@ export function ComposerMobile({
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'p') {
       e.preventDefault();
+      closeEditor();
       if (onOpenPalette) onOpenPalette();
       else setShowPalette(true);
       return;
@@ -314,170 +344,194 @@ export function ComposerMobile({
   const sendEnabled = canSend && !disabled;
 
   return (
-    <div className="mobile-composer">
-      {composerTurnDiagnostics ? (
-        <div className="mobile-composer__turn-status">
-          <TurnStatusMobile diagnostics={composerTurnDiagnostics} />
-        </div>
-      ) : null}
-      {composerShowTyping && !composerTurnDiagnostics ? (
-        <div className="mobile-composer__typing" aria-live="polite">
-          <span className="mobile-composer__typing-dot" />
-          <span className="mobile-composer__typing-dot" />
-          <span className="mobile-composer__typing-dot" />
-        </div>
-      ) : null}
-      {/* Upload failure — parity with desktop. A failed drop/paste must never
+    <FullscreenComposer expanded={expanded} onClose={closeEditor}>
+      <div
+        className="mobile-composer"
+        onPointerDownCapture={(event) => {
+          // Safari does not focus tapped buttons. Remember pointer intent so its
+          // textarea blur cannot collapse the editor before the button's click.
+          toolbarPointerRef.current = Boolean(
+            (event.target as HTMLElement).closest('button, summary')
+          );
+        }}
+      >
+        {restartRecovery ? <RestartRecoveryPrompt recovery={restartRecovery} /> : null}
+        {composerTurnDiagnostics ? (
+          <div className="mobile-composer__turn-status">
+            <TurnStatusMobile diagnostics={composerTurnDiagnostics} />
+          </div>
+        ) : null}
+        {hasActiveTurn && !composerTurnDiagnostics && !composerShowTyping ? (
+          <div className="mobile-composer__turn-status" role="status">
+            Running
+          </div>
+        ) : null}
+        {composerShowTyping && !composerTurnDiagnostics ? (
+          <div className="mobile-composer__typing" aria-live="polite">
+            <span className="mobile-composer__typing-dot" />
+            <span className="mobile-composer__typing-dot" />
+            <span className="mobile-composer__typing-dot" />
+          </div>
+        ) : null}
+        {/* Upload failure — parity with desktop. A failed drop/paste must never
           look like an ignored one; see usePendingAttachments' uploadError. */}
-      {uploadError && (
-        <div className="mobile-upload-error" role="alert">
-          <span className="mobile-upload-error__text">{uploadError}</span>
-          <button
-            type="button"
-            className="mobile-upload-error__dismiss"
-            onClick={dismissUploadError}
-            aria-label="Dismiss upload error"
-          >
-            ×
-          </button>
-        </div>
-      )}
-      {/* Pending attachments — same data as desktop, mobile-styled strip. */}
-      {pendingFiles.length > 0 && (
-        <div className="mobile-pending-files" aria-label="Attached files">
-          {pendingFiles.map((file) => (
-            <div key={file.absolutePath} className="mobile-pending-file">
-              {file.previewUrl ? (
-                <img
-                  className="mobile-pending-file__thumb"
-                  src={file.previewUrl}
-                  alt={file.originalName}
-                />
-              ) : (
-                <span className="mobile-pending-file__icon" aria-hidden="true">
-                  📄
-                </span>
-              )}
-              <span className="mobile-pending-file__name">{file.originalName}</span>
+        {uploadError && (
+          <div className="mobile-upload-error" role="alert">
+            <span className="mobile-upload-error__text">{uploadError}</span>
+            <button
+              type="button"
+              className="mobile-upload-error__dismiss"
+              onClick={dismissUploadError}
+              aria-label="Dismiss upload error"
+            >
+              ×
+            </button>
+          </div>
+        )}
+        <ComposerAttachments files={pendingFiles} onRemove={removeFile} />
+
+        {/* Hidden file input — triggered by the attach button. Same POST /api/upload
+          as desktop; accept any file, preview only for images. */}
+        <input
+          ref={fileInputRef}
+          type="file"
+          multiple
+          onChange={handleFilesSelected}
+          style={{ display: 'none' }}
+          aria-hidden="true"
+          tabIndex={-1}
+        />
+
+        <div
+          className={
+            disabled
+              ? 'mobile-composer__box mobile-composer__box--disabled'
+              : 'mobile-composer__box'
+          }
+        >
+          <textarea
+            ref={textareaRef}
+            value={draft}
+            onChange={handleInput}
+            onKeyDown={handleKeyDown}
+            onPaste={handlePaste}
+            onFocus={() => {
+              toolbarPointerRef.current = false;
+              setExpanded(true);
+            }}
+            onBlur={(event) => {
+              const toolbarInteraction = toolbarPointerRef.current;
+              toolbarPointerRef.current = false;
+              if (event.relatedTarget || toolbarInteraction) return;
+              requestAnimationFrame(() => {
+                if (document.activeElement === document.body) setExpanded(false);
+              });
+            }}
+            disabled={disabled}
+            placeholder={disabledReason ?? (hasActiveTurn ? 'Interrupt with message…' : 'Message…')}
+            rows={1}
+            className="mobile-composer__input"
+            aria-label="Message"
+          />
+          <div className="mobile-composer__actions">
+            <details className="mobile-composer__tools">
+              <summary aria-label="Composer tools">+</summary>
+              <div
+                className="mobile-composer__tool-menu"
+                onClick={(event) => {
+                  if ((event.target as HTMLElement).closest('button')) {
+                    event.currentTarget.closest('details')?.removeAttribute('open');
+                  }
+                }}
+              >
+                {/* Save prompt — mirrors desktop Chat.tsx save-prompt-btn (star). Thin UI, logic in hook. */}
+                <button
+                  type="button"
+                  onClick={handleSavePrompt}
+                  disabled={disabled || !hasText}
+                  className="mobile-composer__btn mobile-composer__btn--save"
+                  aria-label="Save prompt"
+                  title="Save prompt (prompt palette: Ctrl+P)"
+                >
+                  <span aria-hidden="true" style={{ fontSize: 14, lineHeight: 1 }}>
+                    ☆
+                  </span>
+                </button>
+                {/* Palette — mobile sheet trigger (desktop uses Ctrl+P only). */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    closeEditor();
+                    if (onOpenPalette) onOpenPalette();
+                    else setShowPalette(true);
+                  }}
+                  disabled={disabled}
+                  className="mobile-composer__btn mobile-composer__btn--palette"
+                  aria-label="Open prompt palette"
+                  title="Prompt palette (Ctrl+P)"
+                >
+                  <span aria-hidden="true" style={{ fontSize: 14, lineHeight: 1 }}>
+                    ☰
+                  </span>
+                </button>
+                {/* Attach — reuses desktop's upload path (same hook). */}
+                <button
+                  type="button"
+                  onClick={() => fileInputRef.current?.click()}
+                  disabled={disabled || isUploading}
+                  className="mobile-composer__btn mobile-composer__btn--attach"
+                  aria-label="Attach files"
+                  title="Attach files"
+                >
+                  <span aria-hidden="true" style={{ fontSize: 16, lineHeight: 1 }}>
+                    📎
+                  </span>
+                </button>
+              </div>
+            </details>
+            <button
+              type="button"
+              className="mobile-composer__done"
+              onClick={(event) => {
+                closeEditor();
+                event.currentTarget.blur();
+              }}
+            >
+              Done
+            </button>
+            {hasActiveTurn && !disabled && (
               <button
                 type="button"
-                className="mobile-pending-file__remove"
-                onClick={() => removeFile(file.absolutePath)}
-                aria-label={`Remove ${file.originalName}`}
-                title="Remove file"
+                onClick={handleStop}
+                className="mobile-composer__btn mobile-composer__btn--stop"
+                aria-label="Stop all work"
+                title="Stop all work (also clears queued messages)"
               >
-                ×
+                <span className="mobile-composer__stop-glyph" aria-hidden="true" />
               </button>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* Hidden file input — triggered by the attach button. Same POST /api/upload
-          as desktop; accept any file, preview only for images. */}
-      <input
-        ref={fileInputRef}
-        type="file"
-        multiple
-        onChange={handleFilesSelected}
-        style={{ display: 'none' }}
-        aria-hidden="true"
-        tabIndex={-1}
-      />
-
-      <div
-        className={
-          disabled ? 'mobile-composer__box mobile-composer__box--disabled' : 'mobile-composer__box'
-        }
-      >
-        <textarea
-          ref={textareaRef}
-          value={draft}
-          onChange={handleInput}
-          onKeyDown={handleKeyDown}
-          onPaste={handlePaste}
-          disabled={disabled}
-          placeholder={disabledReason ?? (hasActiveTurn ? 'Interrupt with message…' : 'Message…')}
-          rows={1}
-          className="mobile-composer__input"
-          aria-label="Message"
-        />
-        <div className="mobile-composer__actions">
-          {/* Save prompt — mirrors desktop Chat.tsx save-prompt-btn (star). Thin UI, logic in hook. */}
-          <button
-            type="button"
-            onClick={handleSavePrompt}
-            disabled={disabled || !hasText}
-            className="mobile-composer__btn mobile-composer__btn--save"
-            aria-label="Save prompt"
-            title="Save prompt (prompt palette: Ctrl+P)"
-          >
-            <span aria-hidden="true" style={{ fontSize: 14, lineHeight: 1 }}>
-              ☆
-            </span>
-          </button>
-          {/* Palette — mobile sheet trigger (desktop uses Ctrl+P only). */}
-          <button
-            type="button"
-            onClick={() => (onOpenPalette ? onOpenPalette() : setShowPalette(true))}
-            disabled={disabled}
-            className="mobile-composer__btn mobile-composer__btn--palette"
-            aria-label="Open prompt palette"
-            title="Prompt palette (Ctrl+P)"
-          >
-            <span aria-hidden="true" style={{ fontSize: 14, lineHeight: 1 }}>
-              ☰
-            </span>
-          </button>
-          {/* Attach — reuses desktop's upload path (same hook). */}
-          <button
-            type="button"
-            onClick={() => fileInputRef.current?.click()}
-            disabled={disabled || isUploading}
-            className="mobile-composer__btn mobile-composer__btn--attach"
-            aria-label="Attach files"
-            title="Attach files"
-          >
-            <span aria-hidden="true" style={{ fontSize: 16, lineHeight: 1 }}>
-              📎
-            </span>
-          </button>
-          {hasActiveTurn && !disabled && (
+            )}
+            {hasActiveTurn && !disabled && (
+              <button
+                type="button"
+                onClick={() => void handleQueue()}
+                disabled={!sendEnabled}
+                className="mobile-composer__btn mobile-composer__btn--queue"
+                aria-label="Queue message"
+                title="Queue after the current turn (does not interrupt)"
+              >
+                <span aria-hidden="true" style={{ fontSize: 15, lineHeight: 1 }}>
+                  ⏱
+                </span>
+              </button>
+            )}
             <button
               type="button"
-              onClick={handleStop}
-              className="mobile-composer__btn mobile-composer__btn--stop"
-              aria-label="Stop all work"
-              title="Stop all work (also clears queued messages)"
-            >
-              <span className="mobile-composer__stop-glyph" aria-hidden="true" />
-            </button>
-          )}
-          {hasActiveTurn && !disabled && (
-            <button
-              type="button"
-              onClick={() => void handleQueue()}
+              onClick={() => void handleSend()}
               disabled={!sendEnabled}
-              className="mobile-composer__btn mobile-composer__btn--queue"
-              aria-label="Queue message"
-              title="Queue after the current turn (does not interrupt)"
+              className="mobile-composer__btn mobile-composer__btn--send"
+              aria-label={sendLabel}
+              title={sendLabel}
             >
-              <span aria-hidden="true" style={{ fontSize: 15, lineHeight: 1 }}>
-                ⏱
-              </span>
-            </button>
-          )}
-          <button
-            type="button"
-            onClick={() => void handleSend()}
-            disabled={!sendEnabled}
-            className="mobile-composer__btn mobile-composer__btn--send"
-            aria-label={sendLabel}
-            title={sendLabel}
-          >
-            {sending ? (
-              <span className="mobile-composer__spinner" aria-hidden="true" />
-            ) : (
               <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false">
                 <path
                   d="M12 19V5M12 5l-6 6M12 5l6 6"
@@ -488,30 +542,30 @@ export function ComposerMobile({
                   strokeLinejoin="round"
                 />
               </svg>
-            )}
-          </button>
+            </button>
+          </div>
         </div>
-      </div>
 
-      {error && (
-        <div className="mobile-composer__error" role="alert">
-          {error}
-        </div>
-      )}
+        {error && (
+          <div className="mobile-composer__error" role="alert">
+            {error}
+          </div>
+        )}
 
-      {/* Prompt palette — mobile bottom-sheet (thin wrapper). When parent owns palette
+        {/* Prompt palette — mobile bottom-sheet (thin wrapper). When parent owns palette
           (ConversationView), this self palette is the fallback for standalone usage. */}
-      {!onOpenPalette && (
-        <PromptPaletteMobile
-          isOpen={showPalette}
-          onClose={() => setShowPalette(false)}
-          onSelect={handleSelectPrompt}
-          prompts={savedPrompts}
-          fuzzySearch={fuzzySearch}
-          incrementUsage={incrementUsage}
-          deletePrompt={deletePrompt}
-        />
-      )}
-    </div>
+        {!onOpenPalette && (
+          <PromptPaletteMobile
+            isOpen={showPalette}
+            onClose={() => setShowPalette(false)}
+            onSelect={handleSelectPrompt}
+            prompts={savedPrompts}
+            fuzzySearch={fuzzySearch}
+            incrementUsage={incrementUsage}
+            deletePrompt={deletePrompt}
+          />
+        )}
+      </div>
+    </FullscreenComposer>
   );
 }

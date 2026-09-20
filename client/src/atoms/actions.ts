@@ -2,17 +2,17 @@ import type {
   ClientMessage,
   Conversation,
   ConversationConfig,
-  QueuedMessage,
   ServerMessage,
 } from '@unleashd/shared';
-import { ConversationSchema } from '@unleashd/shared';
+import { ConversationSchema, getBuddyContext } from '@unleashd/shared';
 import { enableMapSet, produce } from 'immer';
 import { newId } from '../utils/ids';
+import { archivedBuddyIdsAtom, hideArchivedBuddy } from './buddy-visibility';
 import {
   activeConversationIdAtom,
+  chatMessageGroupsAtomFamily,
   childConversationsAtomFamily,
   conversationAtomFamily,
-  queueAtomFamily,
   conversationDetailsLoadedAtom,
   conversationDetailsLoadedAtomFamily,
   conversationLoadCompleteAtom,
@@ -22,6 +22,7 @@ import {
   pendingConfigCommandsAtom,
   pendingCreationAtomFamily,
   pendingCreationsAtom,
+  queueAtomFamily,
   sendFnAtom,
   streamingAtomFamily,
   streamingContentAtom,
@@ -47,6 +48,12 @@ import {
   removePendingConversation,
   resendPendingCreation,
 } from './pending-creations';
+import { invalidateBuddyResources } from './resources';
+import {
+  captureRestartRecoveryQueue,
+  clearRestartRecovery,
+  removeRestartRecoveryAtom,
+} from './restart-recovery';
 import { jotaiStore } from './store';
 import {
   DRAFT_KEY_PREFIX,
@@ -240,19 +247,6 @@ export async function createMergeConversations(args: {
   return res.json();
 }
 
-export function deleteConversation(id: string): void {
-  send({ type: 'delete_conversation', conversationId: id });
-}
-
-export function sendMessage(conversationId: string, content: string): Promise<void> {
-  const conv = jotaiStore.get(conversationsAtom).get(conversationId);
-  if (!conv) {
-    console.warn(`[Send] Cannot send message: conversation ${conversationId} not found`);
-    return Promise.reject(new Error(`Conversation ${conversationId} not found`));
-  }
-  return queueMessage(conversationId, content);
-}
-
 export function stopConversation(conversationId: string): void {
   const conv = jotaiStore.get(conversationsAtom).get(conversationId);
   if (!conv) return;
@@ -292,16 +286,23 @@ export function queueMessage(conversationId: string, content: string): Promise<v
   return sendAcknowledgedMessageCommand({ type: 'queue_message', conversationId, content });
 }
 
+export async function resumeInterruptedMessages(
+  conversationId: string,
+  messages: readonly string[]
+): Promise<void> {
+  for (const content of messages) await queueMessage(conversationId, content);
+}
+
 export function cancelQueuedMessage(conversationId: string, messageId: string): void {
   send({ type: 'cancel_queued_message', conversationId, messageId });
 }
 
-export function clearQueue(conversationId: string): void {
-  send({ type: 'clear_queue', conversationId });
+export function promoteQueuedMessage(conversationId: string, messageId: string): void {
+  send({ type: 'promote_queued_message', conversationId, messageId });
 }
 
-export function getQueue(conversationId: string): QueuedMessage[] {
-  return jotaiStore.get(conversationsAtom).get(conversationId)?.queue ?? [];
+export function clearQueue(conversationId: string): void {
+  send({ type: 'clear_queue', conversationId });
 }
 
 // =============================================================================
@@ -312,6 +313,7 @@ export function getQueue(conversationId: string): QueuedMessage[] {
 // =============================================================================
 
 function handleInit(data: Extract<ServerMessage, { type: 'init' }>): void {
+  jotaiStore.set(archivedBuddyIdsAtom, new Set(data.archivedBuddyIds ?? []));
   // A socket epoch ended without acknowledgements. Keep composer text and
   // let the user retry against the new authoritative server epoch.
   rejectPendingMessageCommands(new Error('Connection restarted before the message was accepted'));
@@ -330,6 +332,7 @@ function handleInit(data: Extract<ServerMessage, { type: 'init' }>): void {
   for (let i = 0; i < data.conversations.length; i++) {
     const conv = data.conversations[i];
     serverState.set(conv.id, conv);
+    captureRestartRecoveryQueue(conv.id, conv.queue);
   }
 
   // Reconcile client-owned pending creations without weakening the
@@ -392,6 +395,11 @@ function handleConversationCreated(
       draft.delete(data.conversation.id);
     }
   });
+  // A Buddy's detail bundle carries its conversation list, so a new Buddy
+  // thread makes every cached Buddy view one row out of date. Refreshing the
+  // cache in place is the whole update: subscribed panels re-render, and
+  // panels that are merely cached stay correct for the next visit.
+  if (getBuddyContext(data.conversation)) invalidateBuddyResources();
 }
 
 function handleConversationUpdated(
@@ -462,9 +470,13 @@ function handleSessionBound(data: Extract<ServerMessage, { type: 'session_bound'
 function handleConversationDeleted(
   data: Extract<ServerMessage, { type: 'conversation_deleted' }>
 ): void {
+  // Read before the delete: the Buddy views that cache this conversation can
+  // only be identified while the record is still here.
+  const deleted = jotaiStore.get(conversationsAtom).get(data.conversationId);
   mutate(conversationsAtom, (draft) => {
     draft.delete(data.conversationId);
   });
+  if (deleted && getBuddyContext(deleted)) invalidateBuddyResources();
   const loadedDetails = new Set(jotaiStore.get(conversationDetailsLoadedAtom));
   loadedDetails.delete(data.conversationId);
   jotaiStore.set(conversationDetailsLoadedAtom, loadedDetails);
@@ -478,11 +490,14 @@ function handleConversationDeleted(
   });
   localStorage.removeItem(`${DRAFT_KEY_PREFIX}${data.conversationId}`);
   localStorage.removeItem(`${PENDING_FILES_KEY_PREFIX}${data.conversationId}`);
+  clearRestartRecovery(data.conversationId);
+  removeRestartRecoveryAtom(data.conversationId);
   removeSeenIndex(data.conversationId);
   // §5 #10 — atomFamily memoizes per-ID atoms forever; deleted conversations
   // leak one atom per family. Remove all families keyed by this id.
   conversationAtomFamily.remove(data.conversationId);
   streamingAtomFamily.remove(data.conversationId);
+  chatMessageGroupsAtomFamily.remove(data.conversationId);
   conversationDetailsLoadedAtomFamily.remove(data.conversationId);
   pendingCreationAtomFamily.remove(data.conversationId);
   pendingConfigCommandAtomFamily.remove(data.conversationId);
@@ -566,10 +581,16 @@ function handleError(data: Extract<ServerMessage, { type: 'error' }>): void {
   rejectPendingMessageCommands(new Error(data.message));
 }
 
-function handleMessageComplete(_data: Extract<ServerMessage, { type: 'message_complete' }>): void {
+function handleMessageComplete(data: Extract<ServerMessage, { type: 'message_complete' }>): void {
   // Flush buffered chunks synchronously — message_complete can arrive in the same
   // event loop tick as the last chunk, before rAF fires.
   flushChunkBuffer();
+  const remaining = jotaiStore
+    .get(conversationsAtom)
+    .get(data.conversationId)
+    ?.queue.filter((message) => message.status === 'pending');
+  if (remaining?.length) captureRestartRecoveryQueue(data.conversationId, remaining);
+  else clearRestartRecovery(data.conversationId);
 }
 
 function handleConversationsUpdated(
@@ -642,6 +663,7 @@ function handleMergeChildStatus(
 }
 
 function handleQueueUpdated(data: Extract<ServerMessage, { type: 'queue_updated' }>): void {
+  captureRestartRecoveryQueue(data.conversationId, data.queue);
   mutate(conversationsAtom, (draft) => {
     const conv = draft.get(data.conversationId);
     if (conv) conv.queue = data.queue;
@@ -703,6 +725,10 @@ function handleSubagentComplete(data: Extract<ServerMessage, { type: 'subagent_c
 
 export function handleMessage(data: ServerMessage): void {
   switch (data.type) {
+    case 'buddy_archived':
+      return hideArchivedBuddy(data.buddyId);
+    case 'buddies_changed':
+      return invalidateBuddyResources();
     case 'init':
       return handleInit(data);
     case 'conversation_created':

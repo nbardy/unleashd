@@ -1,7 +1,6 @@
 // Solarized Dark theme for syntax highlighting - matches app aesthetic
 // highlight.js + katex stylesheets load lazily with their plugins —
 // see utils/lazyMarkdownPlugins.ts. Do not re-add a static CSS import here.
-import type { ConversationConfig } from '@unleashd/shared';
 import { getBuddyContext, isBuddyBuilderConversation } from '@unleashd/shared';
 import { useAtomValue } from 'jotai';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -12,12 +11,14 @@ import {
   clearQueue,
   interruptAndSend,
   loadConversationDetails,
+  promoteQueuedMessage,
   queueMessage,
   setActiveConversationId,
 } from '../atoms/actions';
 import type { QueuedMessage } from '../atoms/actions';
 import { setConversationConfig } from '../atoms/config-actions';
 import {
+  chatMessageGroupsAtomFamily,
   childConversationsAtomFamily,
   conversationAtomFamily,
   conversationCountAtom,
@@ -34,22 +35,24 @@ import { markMessagesSeen, setSavedActiveConversationId } from '../atoms/ui';
 import { useConversationDraft } from '../hooks/useConversationDraft';
 import { usePendingAttachments } from '../hooks/usePendingAttachments';
 import { useProviderCatalog } from '../hooks/useProviderCatalog';
+import { useRestartRecovery } from '../hooks/useRestartRecovery';
 import { useSavedPrompts } from '../hooks/useSavedPrompts';
 import { useTurnDiagnostics } from '../hooks/useTurnDiagnostics';
+import { RestartRecoveryPrompt } from '../restart/RestartRecoveryPrompt';
 import { copyText } from '../utils/clipboard';
 import { buildThreadTranscript } from '../utils/conversation-transcript';
 import { buildUnifiedSubAgents } from '../utils/subAgents';
 import { formatTimeAgo } from '../utils/time';
 import { BuddyConvoHeader } from './BuddyConvoHeader';
+import { ContextBreakdownMeter } from './ContextBreakdownMeter';
+import { ConversationConfigPicker } from './ConversationConfigPicker';
 import { MergeProgressStrip } from './MergeProgressStrip';
 import { PromptPalette } from './PromptPalette';
 import { ResumeThreadWidget } from './ResumeThreadWidget';
 import { SubAgentPanel } from './SubAgentPanel';
 import { SwarmConvoPrefix } from './SwarmConvoPrefix';
 import { TurnStatus } from './TurnStatus';
-import { VirtualizedMessageList, isToolCallOnlyMessage } from './VirtualizedMessageList';
-import type { MessageGroup } from './VirtualizedMessageList';
-import { BuddyBuilderResultCard } from './buddies/BuddyBuilderResultCard';
+import { VirtualizedMessageList } from './VirtualizedMessageList';
 import { effectiveSwarmDebugPrefix } from './buddies/ui-contract';
 import {
   shouldPresentTurnAttempt,
@@ -116,28 +119,28 @@ export function Chat() {
   const resumedFromConversationId = conversation?.resumedFromConversationId ?? '';
   const resumedFromConversation = useAtomValue(conversationAtomFamily(resumedFromConversationId));
 
-  const { catalog } = useProviderCatalog();
-  const [headerPickerOpen, setHeaderPickerOpen] = useState<
-    'provider' | 'model' | 'reasoning' | null
-  >(null);
+  const {
+    catalog,
+    isLoading: catalogIsLoading,
+    error: catalogError,
+    retry: retryCatalog,
+  } = useProviderCatalog();
   // Header shows a compact "Opus 5 · High" summary; the full provider/model/
   // reasoning pickers only mount once the summary is expanded.
   const [headerConfigExpanded, setHeaderConfigExpanded] = useState(false);
   const configPickerRef = useRef<HTMLDialogElement>(null);
 
-  // Click-outside / Escape closes the harness popup (and any open picker).
+  // Click-outside / Escape closes the harness popup.
   useEffect(() => {
-    if (!headerPickerOpen && !headerConfigExpanded) return;
+    if (!headerConfigExpanded) return;
     const handleClickOutside = (e: MouseEvent) => {
       const target = e.target as Node;
       if (configPickerRef.current && !configPickerRef.current.contains(target)) {
-        setHeaderPickerOpen(null);
         setHeaderConfigExpanded(false);
       }
     };
     const handleEscape = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
-        setHeaderPickerOpen(null);
         setHeaderConfigExpanded(false);
       }
     };
@@ -147,7 +150,7 @@ export function Chat() {
       document.removeEventListener('mousedown', handleClickOutside);
       document.removeEventListener('keydown', handleEscape);
     };
-  }, [headerPickerOpen, headerConfigExpanded]);
+  }, [headerConfigExpanded]);
 
   const {
     savePrompt,
@@ -162,7 +165,6 @@ export function Chat() {
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
   const [detailLoadError, setDetailLoadError] = useState<string | null>(null);
   const [submissionError, setSubmissionError] = useState<string | null>(null);
-  const [isSubmitting, setIsSubmitting] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const lastMessageRef = useRef<HTMLDivElement>(null);
 
@@ -206,6 +208,7 @@ export function Chat() {
   const isStreaming = conversation?.isStreaming ?? false;
   const runtimeTurnActive = isRunning || isStreaming;
   const { attempt: latestTurnAttempt } = useTurnDiagnostics(id, runtimeTurnActive);
+  const restartRecovery = useRestartRecovery(id ?? '', latestTurnAttempt, runtimeTurnActive);
   const turnDiagnostics =
     latestTurnAttempt && shouldPresentTurnAttempt(latestTurnAttempt, runtimeTurnActive)
       ? turnDiagnosticsFromAttempt(latestTurnAttempt)
@@ -292,10 +295,9 @@ export function Chat() {
 
   const getInputValue = () => getDraftValue() || textareaRef.current?.value || '';
 
-  const clearInput = () => {
+  const clearComposerText = () => {
     clearDraftValue();
     setHasInput(false);
-    clearPendingFiles();
   };
 
   const handleInput = () => {
@@ -326,17 +328,7 @@ export function Chat() {
 
   const timeAgo = useTimeAgo(lastMessageTime);
 
-  // Merge stable conversation messages with live streaming text for display.
-  // conversation.messages is stable during streaming; streamingText changes per chunk.
-  const conversationMessages = useMemo(() => {
-    if (!conversation) return [];
-    if (!streamingText) return conversation.messages;
-    const messages = conversation.messages.slice();
-    const last = messages[messages.length - 1];
-    if (last?.role !== 'assistant') return conversation.messages;
-    messages[messages.length - 1] = { ...last, content: last.content + streamingText };
-    return messages;
-  }, [conversation, streamingText]);
+  const messageGroups = useAtomValue(chatMessageGroupsAtomFamily(id ?? ''));
 
   const swarmDebugPrefix = conversation?.swarmDebugPrefix;
   // readBuddyContext derives a FRESH object from conversation.kind on every call, so
@@ -350,38 +342,6 @@ export function Chat() {
     swarmDebugPrefix,
     conversation?.kind ?? null
   );
-  const messageGroups = useMemo((): MessageGroup[] => {
-    const prefix = visibleSwarmDebugPrefix;
-    const groups: MessageGroup[] = [];
-    let toolCallRun: (typeof conversationMessages)[number][] = [];
-
-    const flushRun = () => {
-      if (toolCallRun.length >= 2) {
-        groups.push({ type: 'tool_calls', messages: toolCallRun });
-      } else {
-        for (const m of toolCallRun) groups.push({ type: 'single', messages: [m] });
-      }
-      toolCallRun = [];
-    };
-
-    conversationMessages.forEach((msg, i) => {
-      let displayMsg = msg;
-      if (i === 0 && msg.role === 'user' && prefix && msg.content.startsWith(prefix)) {
-        const stripped = msg.content.slice(prefix.length).replace(/^\n\n/, '');
-        displayMsg = { ...msg, content: stripped };
-      }
-      if (isToolCallOnlyMessage(displayMsg)) {
-        toolCallRun.push(displayMsg);
-      } else {
-        flushRun();
-        groups.push({ type: 'single', messages: [displayMsg] });
-      }
-    });
-
-    flushRun();
-    return groups;
-  }, [conversationMessages, visibleSwarmDebugPrefix]);
-
   const unifiedSubAgents = useMemo(() => {
     if (!conversation) return [];
     return buildUnifiedSubAgents(conversation, childSessionConversations);
@@ -507,42 +467,49 @@ export function Chat() {
       expectedRevision: conversation.configRevision,
       patch,
     });
-    setHeaderPickerOpen(null);
   };
 
+  // Optimistic send: the server only acknowledges after ensureReady plus
+  // turn-spawn setup, which can take seconds on a loaded box. Gating the
+  // textbox and Send button on that round trip froze the composer with no
+  // feedback. The text clears immediately (clear() is synchronous on both the
+  // draft ref and the textarea, so a second Enter reads empty and cannot
+  // double-send); the queue strip carries the in-flight state instead. A
+  // rejection restores the text — see message-command-ack.test.ts. Pending
+  // files stay in the tray until the ack so a failure keeps them.
   const handleQueue = async () => {
     const textContent = getInputValue().trim();
-    if ((!textContent && pendingFiles.length === 0) || !id || !canInput || isSubmitting) return;
+    if ((!textContent && pendingFiles.length === 0) || !id || !canInput) return;
 
     const content = buildAttachedContent(textContent);
 
-    setIsSubmitting(true);
+    clearComposerText();
     setSubmissionError(null);
     try {
       await queueMessage(id, content);
-      clearInput();
+      clearPendingFiles();
     } catch (error) {
+      setDraftValue(textContent);
+      setHasInput(textContent.length > 0);
       setSubmissionError(error instanceof Error ? error.message : String(error));
-    } finally {
-      setIsSubmitting(false);
     }
   };
 
   const handleInterrupt = async () => {
     const textContent = getInputValue().trim();
-    if ((!textContent && pendingFiles.length === 0) || !id || !confirmed || isSubmitting) return;
+    if ((!textContent && pendingFiles.length === 0) || !id || !confirmed) return;
 
     const content = buildAttachedContent(textContent);
 
-    setIsSubmitting(true);
+    clearComposerText();
     setSubmissionError(null);
     try {
       await interruptAndSend(id, content);
-      clearInput();
+      clearPendingFiles();
     } catch (error) {
+      setDraftValue(textContent);
+      setHasInput(textContent.length > 0);
       setSubmissionError(error instanceof Error ? error.message : String(error));
-    } finally {
-      setIsSubmitting(false);
     }
   };
 
@@ -550,6 +517,10 @@ export function Chat() {
 
   const handleRemoveFromQueue = (messageId: string) => {
     if (id) cancelQueuedMessage(id, messageId);
+  };
+
+  const handleSendNow = (messageId: string) => {
+    if (id) promoteQueuedMessage(id, messageId);
   };
 
   const handleClearQueue = () => {
@@ -599,7 +570,7 @@ export function Chat() {
               aria-expanded={headerConfigExpanded}
               aria-haspopup="dialog"
               onClick={() => {
-                setHeaderPickerOpen(null);
+                if (!headerConfigExpanded && !catalog && !catalogIsLoading) retryCatalog();
                 setHeaderConfigExpanded((open) => !open);
               }}
             >
@@ -615,7 +586,6 @@ export function Chat() {
               className="chat-config-modal-backdrop"
               onMouseDown={(event) => {
                 if (event.target === event.currentTarget) {
-                  setHeaderPickerOpen(null);
                   setHeaderConfigExpanded(false);
                 }
               }}
@@ -629,205 +599,75 @@ export function Chat() {
                 ref={configPickerRef}
               >
                 <div className="chat-config-modal__header">
-                  <span>Harness</span>
+                  <span>Conversation settings</span>
                   <button
                     type="button"
                     className="chat-config-modal__close"
                     aria-label="Close harness settings"
                     onClick={() => {
-                      setHeaderPickerOpen(null);
                       setHeaderConfigExpanded(false);
                     }}
                   >
                     ✕
                   </button>
                 </div>
-                {canChangeHarness ? (
-                  <div className="provider-picker">
-                    <button
-                      type="button"
-                      className={`provider-picker-trigger ${conversation.provider}`}
-                      disabled={!catalog || configIsSaving}
-                      onClick={() =>
-                        setHeaderPickerOpen((open) => (open === 'provider' ? null : 'provider'))
-                      }
-                    >
-                      {headerProvider?.displayName ?? conversation.provider}
-                      <span className="provider-picker-caret">&#x25BE;</span>
-                    </button>
-                    {headerPickerOpen === 'provider' && catalog && (
-                      <div className="provider-picker-menu">
-                        {(requiresBuddyMcp
-                          ? [
-                              // Keep the current selection visible so the user
-                              // sees WHY it fails instead of it vanishing.
-                              // The server gate (assertBuddyProviderSupportsMcp)
-                              // stays the enforcer; this menu only steers.
-                              ...(headerProvider && !headerProvider.supportsRequiredMcp
-                                ? [headerProvider]
-                                : []),
-                              ...catalog.providers.filter(
-                                (candidate) => candidate.supportsRequiredMcp
-                              ),
-                            ]
-                          : catalog.providers
-                        ).map((provider) => (
-                          <button
-                            key={provider.id}
-                            type="button"
-                            className={`provider-picker-option ${
-                              provider.id === conversation.provider ? 'selected' : ''
-                            }`}
-                            onClick={() =>
-                              updateHeaderConfig({ kind: 'set_provider', provider: provider.id })
-                            }
-                          >
-                            {provider.displayName}
-                            {requiresBuddyMcp && !provider.supportsRequiredMcp
-                              ? ' (unsupported for Buddy turns)'
-                              : ''}
-                          </button>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                ) : (
-                  <span className={`provider-badge provider-${conversation.provider}`}>
-                    {headerProvider?.displayName ?? conversation.provider}
-                  </span>
-                )}
-
-                {headerProvider && conversationConfig && (
-                  <div className="model-picker">
-                    <button
-                      type="button"
-                      className="model-picker-trigger"
-                      disabled={configIsSaving}
-                      onClick={() =>
-                        setHeaderPickerOpen((open) => (open === 'model' ? null : 'model'))
-                      }
-                    >
-                      {resolvedHeaderModel?.displayName ?? resolvedHeaderModelId ?? 'Default'}
-                      <span className="model-picker-caret">&#x25BE;</span>
-                    </button>
-                    {headerPickerOpen === 'model' && (
-                      <div className="model-picker-menu">
-                        <button
-                          type="button"
-                          className={`model-picker-option ${
-                            conversationConfig.model.mode === 'default' ? 'selected' : ''
-                          }`}
-                          onClick={() =>
-                            updateHeaderConfig({ kind: 'set_model', model: { mode: 'default' } })
-                          }
-                        >
-                          Provider default
-                          <span className="model-default-tag">{headerProvider.defaultModelId}</span>
+                {!catalog && (
+                  <div className="chat-config-note" role="status">
+                    {catalogIsLoading || !catalogError ? (
+                      'Loading harness options…'
+                    ) : (
+                      <>
+                        <p>Could not load harness options. Please try again.</p>
+                        <button type="button" onClick={retryCatalog}>
+                          Retry
                         </button>
-                        {headerProvider.models.map((model) => {
-                          const selected =
-                            conversationConfig.model.mode === 'explicit' &&
-                            conversationConfig.model.modelId === model.id;
-                          const currentEffort =
-                            conversationConfig.reasoning.mode === 'explicit'
-                              ? conversationConfig.reasoning.effort
-                              : null;
-                          const supportsCurrentEffort =
-                            !currentEffort || model.reasoning?.levels.includes(currentEffort);
-                          const nextConfig: ConversationConfig = {
-                            ...conversationConfig,
-                            model: { mode: 'explicit', modelId: model.id },
-                            reasoning: supportsCurrentEffort
-                              ? conversationConfig.reasoning
-                              : { mode: 'default' },
-                          };
-                          return (
-                            <button
-                              key={model.id}
-                              type="button"
-                              className={`model-picker-option ${selected ? 'selected' : ''}`}
-                              onClick={() =>
-                                updateHeaderConfig({ kind: 'replace', config: nextConfig })
-                              }
-                            >
-                              {model.displayName}
-                            </button>
-                          );
-                        })}
-                      </div>
+                      </>
                     )}
                   </div>
                 )}
-
-                {resolvedHeaderModel?.reasoning && conversationConfig && (
-                  <div className="model-picker">
-                    <button
-                      type="button"
-                      className="model-picker-trigger reasoning-picker-trigger"
+                {catalog && !conversationConfig && (
+                  <p className="chat-config-note" role="status">
+                    Conversation settings are unavailable. Reload the conversation to try again.
+                  </p>
+                )}
+                {catalog && conversationConfig && (
+                  <div className="chat-config-options">
+                    <ConversationConfigPicker
+                      value={conversationConfig}
+                      catalog={catalog}
                       disabled={configIsSaving}
-                      onClick={() =>
-                        setHeaderPickerOpen((open) => (open === 'reasoning' ? null : 'reasoning'))
+                      providerDisabled={!canChangeHarness}
+                      inlineDefaults
+                      providerFilter={(providerId) =>
+                        !requiresBuddyMcp ||
+                        providerId === conversation.provider ||
+                        catalog.providers.some(
+                          (provider) => provider.id === providerId && provider.supportsRequiredMcp
+                        )
                       }
-                    >
-                      {headerReasoningLabel}
-                      <span className="model-picker-caret">&#x25BE;</span>
-                    </button>
-                    {headerPickerOpen === 'reasoning' && (
-                      <div className="model-picker-menu reasoning-picker-menu">
-                        <button
-                          type="button"
-                          className={`model-picker-option ${
-                            conversationConfig.reasoning.mode === 'default' ? 'selected' : ''
-                          }`}
-                          onClick={() =>
-                            updateHeaderConfig({
-                              kind: 'set_reasoning',
-                              reasoning: { mode: 'default' },
-                            })
-                          }
-                        >
-                          Model default
-                          {resolvedHeaderModel.reasoning.defaultEffort && (
-                            <span className="model-default-tag">
-                              {resolvedHeaderModel.reasoning.defaultEffort}
-                            </span>
-                          )}
-                        </button>
-                        <button
-                          type="button"
-                          className={`model-picker-option ${
-                            conversationConfig.reasoning.mode === 'disabled' ? 'selected' : ''
-                          }`}
-                          onClick={() =>
-                            updateHeaderConfig({
-                              kind: 'set_reasoning',
-                              reasoning: { mode: 'disabled' },
-                            })
-                          }
-                        >
-                          No reasoning flag
-                        </button>
-                        {resolvedHeaderModel.reasoning.levels.map((effort) => (
-                          <button
-                            key={effort}
-                            type="button"
-                            className={`model-picker-option ${
-                              conversationConfig.reasoning.mode === 'explicit' &&
-                              conversationConfig.reasoning.effort === effort
-                                ? 'selected'
-                                : ''
-                            }`}
-                            onClick={() =>
-                              updateHeaderConfig({
-                                kind: 'set_reasoning',
-                                reasoning: { mode: 'explicit', effort },
-                              })
-                            }
-                          >
-                            {effort}
-                          </button>
-                        ))}
-                      </div>
+                      onChange={(config) => {
+                        const modelId =
+                          config.model.mode === 'explicit'
+                            ? config.model.modelId
+                            : headerProvider?.defaultModelId;
+                        const model = headerProvider?.models.find((item) => item.id === modelId);
+                        updateHeaderConfig({
+                          kind: 'replace',
+                          config: {
+                            ...config,
+                            reasoning:
+                              config.reasoning.mode === 'explicit' &&
+                              !model?.reasoning?.levels.includes(config.reasoning.effort)
+                                ? { mode: 'default' }
+                                : config.reasoning,
+                          },
+                        });
+                      }}
+                    />
+                    {!canChangeHarness && (
+                      <p className="chat-config-note">
+                        Harness is fixed once a conversation starts.
+                      </p>
                     )}
                   </div>
                 )}
@@ -848,10 +688,17 @@ export function Chat() {
             {dirDisplay}
           </Link>
           {timeAgo && <span className="chat-time-ago">{timeAgo}</span>}
+          {conversation.resumedFromConversationId && (
+            <ResumeThreadWidget
+              sourceConversationId={conversation.resumedFromConversationId}
+              sourceConversation={resumedFromConversation}
+            />
+          )}
           {isBuddyBuilder && (
             <span className="buddy-helper-kicker buddy-helper-kicker--header">Buddy Builder</span>
           )}
         </div>
+        {!buddyContext && <ContextBreakdownMeter conversationId={conversation.id} />}
         <div className="header-status">
           <button
             type="button"
@@ -926,28 +773,20 @@ export function Chat() {
 
       {conversation.mergeParentMeta && <MergeProgressStrip parentId={conversation.id} />}
 
-      {(unifiedSubAgents.length > 0 || conversation.resumedFromConversationId) && (
-        <div
-          className={`thread-context${unifiedSubAgents.length > 0 && conversation.resumedFromConversationId ? ' thread-context--combined' : ''}`}
-        >
-          {unifiedSubAgents.length > 0 && (
-            <SubAgentPanel
-              subAgents={unifiedSubAgents}
-              workingDirectory={conversation.workingDirectory}
-            />
-          )}
-          {conversation.resumedFromConversationId && (
-            <ResumeThreadWidget
-              sourceConversationId={conversation.resumedFromConversationId}
-              sourceConversation={resumedFromConversation}
-            />
-          )}
+      {unifiedSubAgents.length > 0 && (
+        <div className="thread-context">
+          <SubAgentPanel
+            subAgents={unifiedSubAgents}
+            workingDirectory={conversation.workingDirectory}
+          />
         </div>
       )}
 
       {conversation.messages.length === 0 ? (
         <div className="messages-container">
-          {buddyContext && <BuddyConvoHeader context={buddyContext} />}
+          {buddyContext && (
+            <BuddyConvoHeader context={buddyContext} conversationId={conversation.id} />
+          )}
           {visibleSwarmDebugPrefix && (
             <div style={{ paddingBottom: '24px' }}>
               <SwarmConvoPrefix
@@ -961,12 +800,13 @@ export function Chat() {
               <span className="buddy-helper-kicker">Buddy Builder · hire a Buddy or a team</span>
               <h2>Let’s build your team.</h2>
               <p>
-                Describe one Buddy or a whole team, their workspace, and what a good first outcome
-                looks like. I’ll create each Buddy here with its own role and working brief.
+                Describe one Buddy or a whole team, the workspace they should work in, and what a
+                good first outcome looks like. I’ll create each Buddy here with its own role and
+                working brief.
               </p>
-              <div className="buddy-helper-example" aria-label="Example Buddy brief">
-                “Create a research Buddy for unleashd who turns customer conversations into
-                prioritized product opportunities.”
+              <div className="buddy-helper-example" aria-label="Example team brief">
+                “Create a researcher, a designer, and an engineer for unleashd to turn customer
+                feedback into shipped product improvements.”
               </div>
               <div className="buddy-helper-prompts">
                 {BUDDY_STARTER_PROMPTS.map((prompt) => (
@@ -981,7 +821,7 @@ export function Chat() {
               {
                 confirmed
                   ? isBuddyBuilderConversation(conversation)
-                    ? 'Describe the Buddy you want to create.'
+                    ? 'Describe the Buddy or team you want to create.'
                     : 'Send a message to start the conversation.'
                   : `Waiting for ${conversation.provider || 'claude'} to be ready...` /* fallback 'claude' matches shared DEFAULT_PROVIDER */
               }
@@ -994,6 +834,7 @@ export function Chat() {
             key={id}
             messageGroups={messageGroups}
             isRunning={isStreaming}
+            isTurnActive={runtimeTurnActive}
             lastMessageRef={lastMessageRef}
             onScrollStateChange={handleScrollStateChange}
             conversationId={id!}
@@ -1005,18 +846,6 @@ export function Chat() {
             swarmId={conversation.swarmId ?? null}
             buddyContext={buddyContext}
           />
-          {isBuddyBuilderConversation(conversation) && (
-            <div className="buddy-builder-result-slot">
-              <BuddyBuilderResultCard
-                // Keyed so switching builder conversations remounts the card; without it
-                // the previous conversation's result (and its "Start conversation" button)
-                // leaks across navigation.
-                key={conversation.id}
-                conversationId={conversation.id}
-                isRunning={conversation.isRunning}
-              />
-            </div>
-          )}
           {shouldShowTypingIndicator(isStreaming, streamingText) && (
             <div className="typing-indicator-overlay">
               <span className="typing-dot" />
@@ -1038,6 +867,7 @@ export function Chat() {
       )}
 
       <div className="input-container">
+        {restartRecovery ? <RestartRecoveryPrompt recovery={restartRecovery} /> : null}
         {currentMessage && (
           <div className="current-message-indicator">
             <span className="current-message-label">Current message</span>
@@ -1063,6 +893,14 @@ export function Chat() {
                 <li key={qm.id} className="queued-message-item pending">
                   <span className="queued-message-content">{qm.content}</span>
                   <span className="queued-message-status">#{index + 1} in queue</span>
+                  <button
+                    type="button"
+                    className="queued-message-send-now"
+                    onClick={() => handleSendNow(qm.id)}
+                    title="Send now — run this next, interrupting the active turn"
+                  >
+                    Send now
+                  </button>
                   <button
                     type="button"
                     className="queued-message-remove"
@@ -1181,7 +1019,7 @@ export function Chat() {
                 type="button"
                 className={`send-btn ${hasActiveTurn ? 'interrupt-mode' : ''}`}
                 onClick={hasActiveTurn ? handleInterrupt : handleSend}
-                disabled={!confirmed || !hasContent || mergeGateBlocking || isSubmitting}
+                disabled={!confirmed || !hasContent || mergeGateBlocking}
                 title={
                   mergeGateBlocking
                     ? 'Waiting for review forks to finish'

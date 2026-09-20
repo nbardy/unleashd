@@ -1,17 +1,18 @@
 import type { QueuedMessage } from '@unleashd/shared';
 import { useAtomValue } from 'jotai';
-import { cancelQueuedMessage, clearQueue } from '../../atoms/actions';
+import { cancelQueuedMessage, clearQueue, promoteQueuedMessage } from '../../atoms/actions';
 import { queueAtomFamily } from '../../atoms/conversations';
-import { MobileBadge, MobileSection } from '../components/MobileUI';
+import { MobileBadge } from '../components/MobileUI';
 
 /**
- * MobileQueueStrip — per-item queue with cancel, mirroring desktop Chat.tsx.
+ * MobileQueueStrip — per-item queue with cancel + send-now, mirroring desktop Chat.tsx.
  *
  * Desktop renders `pendingQueue` (queue.filter pending) with per-item
- * cancelQueuedMessage + Clear All (clearQueue). Mobile was number-only
- * (queueLength) and could not cancel one item. This strip reuses the SAME
- * server-authoritative atoms (queueAtomFamily) and actions
- * (cancelQueuedMessage/clearQueue) — no new state.
+ * cancelQueuedMessage, promoteQueuedMessage (Send now) + Clear All
+ * (clearQueue). Mobile was number-only (queueLength) and could not cancel
+ * one item. This strip reuses the SAME server-authoritative atoms
+ * (queueAtomFamily) and actions
+ * (cancelQueuedMessage/promoteQueuedMessage/clearQueue) — no new state.
  *
  * Uses MobileBadge/MobileSection primitives (mobile-ui) per G3, and lives in
  * mobile/conversations so ConversationView + ComposerMobile can share it
@@ -35,13 +36,17 @@ export function MobileQueueStrip({
   // Pending items are the cancelable ones; 'sending' is the current turn's
   // message already being processed (desktop shows it separately as Current).
   const pendingQueue = queue.filter((m) => m.status === 'pending');
-  // If only 'sending' remains, still show it — but without a cancel button.
-  const showQueue = pendingQueue.length > 0 ? pendingQueue : queue;
+  // The current sending input is represented by turn status, not the queue.
+  const showQueue = pendingQueue;
 
-  if (!conversationId || queue.length === 0) return null;
+  if (!conversationId || showQueue.length === 0) return null;
 
   const handleCancel = (messageId: string) => {
     cancelQueuedMessage(conversationId, messageId);
+  };
+
+  const handleSendNow = (messageId: string) => {
+    promoteQueuedMessage(conversationId, messageId);
   };
 
   const handleClearAll = () => {
@@ -49,38 +54,11 @@ export function MobileQueueStrip({
   };
 
   return (
-    <MobileSection
-      title="Queued"
-      meta={
-        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}>
-          {/* Count what the list actually shows. Counting every status made the
-              badge disagree with the rows below it (one 'sending' + one
-              'pending' read "2 queued" above a single row) and diverged from
-              desktop, which counts pending only (Chat.tsx). */}
-          <MobileBadge tone="active">{showQueue.length} queued</MobileBadge>
-          {queue.length > 0 ? (
-            <button
-              type="button"
-              onClick={handleClearAll}
-              aria-label="Clear all queued messages"
-              title="Clear all queued messages"
-              style={{
-                border: 'none',
-                background: 'transparent',
-                color: 'var(--text-muted)',
-                fontSize: 11,
-                fontWeight: 600,
-                cursor: 'pointer',
-                padding: '2px 6px',
-                textDecoration: 'underline',
-              }}
-            >
-              Clear All
-            </button>
-          ) : null}
-        </span>
-      }
-    >
+    <details className="mobile-queue-disclosure">
+      <summary>{showQueue.length} queued</summary>
+      <button type="button" onClick={handleClearAll} aria-label="Clear all queued messages">
+        Clear queued messages
+      </button>
       <ul
         aria-label="Queued messages"
         style={{ display: 'grid', gap: 8, margin: 0, padding: 0, listStyle: 'none' }}
@@ -93,8 +71,8 @@ export function MobileQueueStrip({
               alignItems: 'center',
               gap: 8,
               padding: '10px 12px',
-              borderRadius: 10,
-              background: 'var(--bg-surface)',
+              borderRadius: 'var(--ui-radius)',
+              background: 'var(--bg-raised-1)',
               border: '1px solid var(--border-subtle)',
               minWidth: 0,
             }}
@@ -120,29 +98,54 @@ export function MobileQueueStrip({
               {qm.content || '(empty message)'}
             </span>
             {qm.status === 'pending' ? (
-              <button
-                type="button"
-                onClick={() => handleCancel(qm.id)}
-                aria-label={`Cancel queued message ${index + 1}`}
-                title="Cancel this message"
-                style={{
-                  flexShrink: 0,
-                  width: 28,
-                  height: 28,
-                  borderRadius: 8,
-                  border: '1px solid var(--border-subtle)',
-                  background: 'var(--bg-page)',
-                  color: 'var(--text-muted)',
-                  fontSize: 16,
-                  lineHeight: 1,
-                  cursor: 'pointer',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                }}
-              >
-                ×
-              </button>
+              <>
+                <button
+                  type="button"
+                  onClick={() => handleSendNow(qm.id)}
+                  aria-label={`Send queued message ${index + 1} now`}
+                  title="Send now — run this next, interrupting the active turn"
+                  style={{
+                    flexShrink: 0,
+                    height: 28,
+                    padding: '0 10px',
+                    borderRadius: 'var(--ui-radius)',
+                    border: '1px solid var(--border-subtle)',
+                    background: 'var(--bg-page)',
+                    color: 'var(--text-emphasis)',
+                    fontSize: 12,
+                    lineHeight: 1,
+                    cursor: 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  Send now
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleCancel(qm.id)}
+                  aria-label={`Cancel queued message ${index + 1}`}
+                  title="Cancel this message"
+                  style={{
+                    flexShrink: 0,
+                    width: 28,
+                    height: 28,
+                    borderRadius: 'var(--ui-radius)',
+                    border: '1px solid var(--border-subtle)',
+                    background: 'var(--bg-page)',
+                    color: 'var(--text-muted)',
+                    fontSize: 16,
+                    lineHeight: 1,
+                    cursor: 'pointer',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                  }}
+                >
+                  ×
+                </button>
+              </>
             ) : (
               <MobileBadge tone="accent" style={{ flexShrink: 0, fontSize: 10 }}>
                 sending
@@ -151,6 +154,6 @@ export function MobileQueueStrip({
           </li>
         ))}
       </ul>
-    </MobileSection>
+    </details>
   );
 }
