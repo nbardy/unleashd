@@ -6,6 +6,14 @@ Implementation record: package commits `dc4395b` (lists.js, schema v31) +
 `92feeca` (pack src/lists.js) on `codex/mailing-lists-20260921` from `21810ca`;
 app commit `8561931` on `feat/mailing-lists-2026-09-21`; archive SHA-256
 `1dcc221f6e436e1619f1236c9d001e8222b4daea4295c97eb1d2ce1b824afc4f`.
+Follow-up: package `29de35c` (publish `src/` by directory + packed-import
+test) re-vendored as archive SHA-256
+`2abc40046852a7a69683872277120496d510f9e1374cfd64594b962c8b1d417e`, and
+scenario 7 in `server/test/buddy-mailing-lists.test.ts` proves admission
+through the real MCP entrypoint process under both default run policies.
+Registration is not admission: the run policy is persisted by the long-lived
+server when a turn begins, so a server that has not reloaded rejects the
+tools its freshly spawned MCP child registers (observed 2026-09-21 16:58Z).
 Two deviations the spec did not anticipate: schema landed at user_version 31
 (22–30 were already taken) and the briefing line was shortened to fit the
 2,600-character budget. Scenario 6 ran as v30→v31 for the same reason.
