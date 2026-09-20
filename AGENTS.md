@@ -60,6 +60,18 @@ client/src/atoms/ui.ts             → persisted UI prefs (local+shared partitio
   `z.string()`; no shared enums, no value translation, server-side defaults.
 - Submodule commits: commit + push INSIDE `vendor/agent-cli-tool` first, then
   bump the outer pointer. Never push main unless the user asks.
+- Verify the COMMIT, not the working tree. `git` cannot stage part of a file
+  non-interactively, this repo forbids stashing, and the tree routinely carries
+  150+ dirty files from concurrent sessions — so a multi-file change can land
+  half-applied and still verify green, because the checks read the dirty tree
+  where the missing piece still exists uncommitted. 48724f4 committed
+  `conversation-routes.ts` importing two symbols while the file DEFINING them
+  stayed unstaged: at HEAD they had four consumers and zero definitions, and it
+  passed review anyway (repaired in afbcff3). Before calling anything verified,
+  either confirm `git status --porcelain` is empty (tree == HEAD, so the checks
+  you ran ARE checks of the commit) or check the commit directly with
+  `git grep <symbol> HEAD`. Stage file-by-file so concurrent sessions' work is
+  never swept in.
 - Never `git reset --hard`, `filter-branch`, `filter-repo`, or `rebase -i` on a shared branch — they orphaned 5a6cf40/79a8381 on 2026-08-20. Use `git stash` or a throwaway branch and ask. Guarded in `.claude/settings.local.json` (deny) + `~/.zshrc` wrapper.
 - Prefer one integration test through a real boundary over mock-heavy units;
   never assert on TSX/CSS source text.
