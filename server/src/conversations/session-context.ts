@@ -61,6 +61,37 @@ export interface SessionContextReading {
   compaction: CompactionMarker | null;
 }
 
+/**
+ * Parsed readings keyed by file path, invalidated on mtime — the same shape as
+ * usageFileCache in usage-routes.ts, and for the same reason.
+ *
+ * Without it every context-breakdown request re-read and re-parsed the whole
+ * transcript SYNCHRONOUSLY on the event loop: measured at 72-93ms on a real
+ * 28MB claude session, blocking every other request for that long. The meter
+ * fetches on mount rather than on a timer, so this was not a hot loop, but a
+ * chat open should not stall the server for ~80ms. Session logs are
+ * append-only, so mtime is a sound key.
+ */
+const readingCache = new Map<string, { mtimeMs: number; reading: SessionContextReading | null }>();
+
+/** Parse `filePath` unless its mtime is unchanged since the last parse. */
+function cachedRead(
+  filePath: string,
+  parse: (lines: string[]) => SessionContextReading | null
+): SessionContextReading | null {
+  let mtimeMs: number;
+  try {
+    mtimeMs = fs.statSync(filePath).mtimeMs;
+  } catch {
+    return null;
+  }
+  const hit = readingCache.get(filePath);
+  if (hit && hit.mtimeMs === mtimeMs) return hit.reading;
+  const reading = parse(readLines(filePath));
+  readingCache.set(filePath, { mtimeMs, reading });
+  return reading;
+}
+
 function readLines(filePath: string): string[] {
   return fs.readFileSync(filePath, 'utf-8').split('\n');
 }
@@ -96,14 +127,17 @@ function num(value: unknown): number | null {
 function readClaudeContext(sessionId: string): SessionContextReading | null {
   const found = findClaudeSessionFile(sessionId);
   if (!found) return null;
+  return cachedRead(found.path, parseClaudeLines);
+}
 
+function parseClaudeLines(lines: string[]): SessionContextReading | null {
   let contextTokens: number | null = null;
   let count = 0;
   let preTokens: number | null = null;
   let postTokens: number | null = null;
   let trigger: string | null = null;
 
-  for (const line of readLines(found.path)) {
+  for (const line of lines) {
     const entry = parseLine(line);
     if (!entry) continue;
 
@@ -155,12 +189,15 @@ function readClaudeContext(sessionId: string): SessionContextReading | null {
 function readCodexContext(sessionId: string): SessionContextReading | null {
   const filePath = findCodexSessionFile(sessionId);
   if (!filePath) return null;
+  return cachedRead(filePath, parseCodexLines);
+}
 
+function parseCodexLines(lines: string[]): SessionContextReading | null {
   let contextTokens: number | null = null;
   let contextWindow: number | null = null;
   let count = 0;
 
-  for (const line of readLines(filePath)) {
+  for (const line of lines) {
     const entry = parseLine(line);
     if (!entry) continue;
     const payload = entry.payload as Record<string, unknown> | undefined;
@@ -293,13 +330,16 @@ function museWindowFrom(strategy: Record<string, unknown> | undefined): number |
 function readMuseContext(sessionId: string): SessionContextReading | null {
   const filePath = findMuseSessionFile(sessionId);
   if (!filePath) return null;
+  return cachedRead(filePath, parseMuseLines);
+}
 
+function parseMuseLines(lines: string[]): SessionContextReading | null {
   let contextTokens: number | null = null;
   let contextWindow: number | null = null;
   let count = 0;
   let trigger: string | null = null;
 
-  for (const line of readLines(filePath)) {
+  for (const line of lines) {
     const entry = parseLine(line);
     if (!entry || entry.payload_type !== 'runtime.session') continue;
     const event = (entry.payload as Record<string, unknown> | undefined)?.event as
