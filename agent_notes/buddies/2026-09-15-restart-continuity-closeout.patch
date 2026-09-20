@@ -1,0 +1,194 @@
+--- a/server/src/conversations/creation-service.ts
++++ b/server/src/conversations/creation-service.ts
+@@ -84,17 +84,17 @@
+     // one runtime, including calls from different transports.
+     let conversation = ports.getConversation(input.conversationId);
+     if (!conversation) {
++      const currentSession =
++        creation.record.currentSession?.provider === creation.state.config.provider
++          ? creation.record.currentSession
++          : undefined;
+       conversation = ports.createConversation({
+         id: input.conversationId,
+         workingDirectory: creation.record.workingDirectory ?? input.workingDirectory,
+         configState: creation.state,
+         placement: creation.record.creation?.placement ?? input.placement,
+-        existingSessionId: creation.record.currentSession?.sessionId,
+-        existingSessionAudienceKey:
+-          creation.record.currentSession &&
+-          creation.record.currentSession.provider === creation.state.config.provider
+-            ? creation.record.currentSession.buddyAudienceKey
+-            : undefined,
++        existingSessionId: currentSession?.sessionId,
++        existingSessionAudienceKey: currentSession?.buddyAudienceKey,
+         swarmDebugPrefix: input.swarmDebugPrefix ?? null,
+         resumedFromConversationId: input.resumedFromConversationId ?? null,
+         kind: input.kind,
+--- a/server/src/lifecycle/session-loader.ts
++++ b/server/src/lifecycle/session-loader.ts
+@@ -277,17 +277,16 @@
+         .filter((message) => message.role === 'user')
+         .map((message) => extractBuddyMemorySnapshot(message.content))
+         .find((snapshot) => snapshot !== null) ?? null;
++    const resumableSession =
++      currentSession?.provider === hydratedConfig.state.config.provider
++        ? currentSession
++        : undefined;
+     const conversation = dependencies.createConversation({
+       id: hydratedConfig.record.conversationId,
+       workingDirectory: hydratedConfig.record.workingDirectory ?? source.workingDirectory,
+       configState: hydratedConfig.state,
+-      existingSessionId: sessionId,
+-      existingSessionAudienceKey:
+-        currentSession &&
+-        currentSession.provider === hydratedConfig.state.config.provider &&
+-        currentSession.sessionId === sessionId
+-          ? currentSession.buddyAudienceKey
+-          : undefined,
++      existingSessionId: resumableSession?.sessionId,
++      existingSessionAudienceKey: resumableSession?.buddyAudienceKey,
+       isWorker: source.isWorker,
+       swarmId: source.swarmId ?? null,
+       workerId: source.workerId ?? null,
+@@ -345,6 +344,10 @@
+             source: 'external_session',
+           },
+         });
++        const currentSession =
++          hydrated.record.currentSession?.provider === hydrated.state.config.provider
++            ? hydrated.record.currentSession
++            : undefined;
+         // A conversation with a current provider session is a resumed
+         // application conversation, not a new memory-generation boundary. It
+         // has no transcript snapshot to recover here, so do not inject the
+@@ -352,7 +355,7 @@
+         // started a provider session still need the latest generation for
+         // their pending initial message.
+         const recoveredBuddy =
+-          record.creation?.buddyContext && !record.currentSession
++          record.creation?.buddyContext && !currentSession
+             ? await dependencies
+                 .resolveBuddyConversation(record.creation.buddyContext)
+                 .catch((error) => {
+@@ -367,12 +370,8 @@
+           id: record.conversationId,
+           workingDirectory: record.workingDirectory,
+           configState: hydrated.state,
+-          existingSessionId: record.currentSession?.sessionId,
+-          existingSessionAudienceKey:
+-            record.currentSession &&
+-            record.currentSession.provider === hydrated.state.config.provider
+-              ? record.currentSession.buddyAudienceKey
+-              : undefined,
++          existingSessionId: currentSession?.sessionId,
++          existingSessionAudienceKey: currentSession?.buddyAudienceKey,
+           swarmDebugPrefix: record.creation?.swarmDebugPrefix ?? null,
+           resumedFromConversationId: record.creation?.resumedFromConversationId ?? null,
+           kind: recoveredBuddy?.context
+--- a/server/test/session-history-rotation.test.ts
++++ b/server/test/session-history-rotation.test.ts
+@@ -14,6 +14,7 @@
+ import {
+   type ConversationBroadcast,
+   type ConversationRuntime,
++  type ConversationRuntimeDependencies,
+   createConversationRuntime,
+ } from '../src/conversations/runtime';
+ import { createSessionLoader } from '../src/lifecycle/session-loader';
+@@ -123,10 +124,17 @@
+       completionSuppressionMs: 1,
+     });
+     const broadcasts: ConversationBroadcast[] = [];
+-    const persistCurrentSession = async (conversation: ConversationRuntime, sessionId: string) => {
++    const requests: Parameters<NonNullable<ConversationRuntimeDependencies['executeTurn']>>[0][] =
++      [];
++    const persistCurrentSession = async (
++      conversation: ConversationRuntime,
++      sessionId: string,
++      buddyAudienceKey?: string
++    ) => {
+       await store.setCurrentSession(conversation.id, {
+         provider: conversation.provider,
+         sessionId,
++        buddyAudienceKey,
+       });
+     };
+     const Conversation = createConversationRuntime({
+@@ -141,6 +149,24 @@
+       settleBuddyDelegation: () => {},
+       getConversation: context.registry.get,
+       readLatestOompaRuntime: () => ({ available: false, run: null, reason: 'fixture' }),
++      readCurrentBuddyContext: () => ({
++        briefing: 'CURRENT_BRIEFING',
++        memoryGeneration: 'updated-memory',
++        audienceKey: 'verified-owner',
++      }),
++      executeTurn: ((request) => {
++        requests.push(request);
++        const sessionId = request.resumeSessionId ?? 'fresh-session';
++        return {
++          child: { exitCode: 0 },
++          events: (async function* () {
++            yield { type: 'session.started' as const, sessionId };
++            yield { type: 'turn.complete' as const, reason: 'success' as const };
++          })(),
++          completed: Promise.resolve({ exitCode: 0, signal: null, reason: 'success' }),
++          stop: () => {},
++        };
++      }) as NonNullable<ConversationRuntimeDependencies['executeTurn']>,
+     });
+     let onPoll: (() => void) | undefined;
+     const loader = createSessionLoader({
+@@ -190,6 +216,7 @@
+       ...context,
+       loader,
+       broadcasts,
++      requests,
+       seed: (history: Message[]) => {
+         const live = new Conversation({
+           id: conversationId,
+@@ -327,4 +354,44 @@
+     live.messages.map((message) => message.content),
+     expected
+   );
++
++  // A verified Buddy binding must survive both transcript loading and recovery
++  // without files, including a current session inferred during hydration.
++  const saved = (await store.getByConversationId(conversationId))!;
++  const verified = { ...saved.currentSession!, buddyAudienceKey: 'verified-owner' };
++  await store.save({
++    ...saved,
++    creation: { buddyContext: { buddyId: 'buddy', workspaceId: 'workspace' } },
++    currentSession: verified,
++  });
++  for (const mode of ['transcript', 'no-transcript', 'inferred-session'] as const) {
++    if (mode === 'no-transcript') {
++      await fs.rm(transcriptRoot, { recursive: true });
++      await fs.mkdir(transcriptRoot);
++    }
++    if (mode === 'inferred-session') {
++      const record = (await store.getByConversationId(conversationId))!;
++      await store.save({ ...record, currentSession: undefined, sessionBindings: [verified] });
++    }
++    const restarted = boot();
++    await restarted.loader.loadExistingConversations();
++    const buddy = restarted.registry.get(conversationId)!;
++    assert.equal(buddy.sessionId, verified.sessionId, mode);
++    buddy.sendMessage('Continue', { origin: 'owner_input', inputId: mode });
++    await buddy.waitForTurnDrain();
++    assert.equal(restarted.requests[0].resumeSessionId, verified.sessionId, mode);
++    assert.match(restarted.requests[0].prompt, /CURRENT_BRIEFING/);
++    assert.doesNotMatch(restarted.requests[0].prompt, /Response 1|Unrelated private transcript/);
++    assert.deepEqual((await store.getByConversationId(conversationId))?.currentSession, verified);
++  }
++
++  // A mismatched saved provider must not restore either half of the binding.
++  const record = (await store.getByConversationId(conversationId))!;
++  await store.save({ ...record, config: { ...config, provider: 'claude' } });
++  for (const withTranscript of [false, true]) {
++    if (withTranscript) await writeTranscript(files[3], sessionIds[3], originalDate, messages[3]);
++    const restarted = boot();
++    await restarted.loader.loadExistingConversations();
++    assert.equal(restarted.registry.get(conversationId)?.hasStartedSession(), false);
++  }
+ });

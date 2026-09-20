@@ -1,0 +1,2642 @@
+{
+  "observedAt": "2026-09-15T14:02:26.208951+00:00",
+  "scope": "68 Lead-owned records plus two known supervised repair records; historical discovery snapshot",
+  "summaryInventory": [
+    {
+      "id": "buddy_project_37f2780f-f766-452b-991c-eb4ca4192a9b",
+      "workspace_id": "project_26fce156-5c5d-4dd9-a9d6-4b527a50af3c",
+      "buddy_id": "buddy_d3f11f11-d010-4383-bc72-940bfe6ef8cd",
+      "title": "Complete remaining Buddy repairs, reconcile backlog and deliver verified commits",
+      "revision": 14,
+      "status": "blocked",
+      "priority": 1,
+      "execution_state": "paused",
+      "updated_at": "2026-09-15T13:57:17.119Z",
+      "next_action": "Owner requested task review before implementation. Use the all-task disposition plan to reconcile later evidence against old open criteria. Preserve exhausted September 12 requests; do not retry them. New restart child buddy_project_6251118",
+      "blocked_reason": "Historical coordinator and UI/release requests remain failed with max_runtime_timeout. The recovery implementation is now loaded, but native get_team_state on 2026-09-13T03:11:08Z reports no successor and remainingSeconds=0 for all three or",
+      "todoCounts": {
+        "open": 0,
+        "in_progress": 1,
+        "blocked": 3,
+        "done": 1,
+        "cancelled": 0
+      },
+      "evidenceCount": 26,
+      "todoEvidenceCount": 6,
+      "truncatedFields": [
+        "next_action",
+        "blocked_reason"
+      ]
+    },
+    {
+      "id": "buddy_project_67c0de12-9b60-4748-ae8b-0a88792c2f74",
+      "workspace_id": "project_26fce156-5c5d-4dd9-a9d6-4b527a50af3c",
+      "buddy_id": "buddy_d3f11f11-d010-4383-bc72-940bfe6ef8cd",
+      "title": "Verify the efficiency workflow in UI, MCP and the loaded runtime",
+      "revision": 2,
+      "status": "backlog",
+      "priority": 0,
+      "execution_state": "paused",
+      "updated_at": "2026-09-15T13:57:16.859Z",
+      "next_action": "Owner requested task review before implementation. Prepare a stable acceptance matrix after review; accept slices independently, then verify composition. Reuse diagnostic, UI/history and release owners; distinguish temporary Buddy Workers f",
+      "blocked_reason": null,
+      "todoCounts": {
+        "open": 4,
+        "in_progress": 0,
+        "blocked": 0,
+        "done": 0,
+        "cancelled": 0
+      },
+      "evidenceCount": 0,
+      "todoEvidenceCount": 0,
+      "truncatedFields": [
+        "next_action"
+      ]
+    },
+    {
+      "id": "buddy_project_4f875aff-3481-4ba9-8aab-eb0ea62c1308",
+      "workspace_id": "project_26fce156-5c5d-4dd9-a9d6-4b527a50af3c",
+      "buddy_id": "buddy_d3f11f11-d010-4383-bc72-940bfe6ef8cd",
+      "title": "Coalesce redundant lead review wakeups while retaining every return",
+      "revision": 2,
+      "status": "backlog",
+      "priority": 0,
+      "execution_state": "paused",
+      "updated_at": "2026-09-15T13:57:16.815Z",
+      "next_action": "Owner requested task review before implementation. After return attribution and usage observations, reproduce current redundant attention. Choose maximum batching delay and urgent route through existing scheduling; preserve independent acce",
+      "blocked_reason": null,
+      "todoCounts": {
+        "open": 3,
+        "in_progress": 0,
+        "blocked": 0,
+        "done": 0,
+        "cancelled": 0
+      },
+      "evidenceCount": 0,
+      "todoEvidenceCount": 0,
+      "truncatedFields": [
+        "next_action"
+      ]
+    },
+    {
+      "id": "buddy_project_cdae619b-6e1d-4d5b-9c78-84308f418344",
+      "workspace_id": "project_26fce156-5c5d-4dd9-a9d6-4b527a50af3c",
+      "buddy_id": "buddy_d3f11f11-d010-4383-bc72-940bfe6ef8cd",
+      "title": "Report complete assignment usage and time with coverage",
+      "revision": 2,
+      "status": "backlog",
+      "priority": 0,
+      "execution_state": "paused",
+      "updated_at": "2026-09-15T13:57:16.796Z",
+      "next_action": "Owner requested task review before implementation. After assignment receipt qualification, inventory actual provider counters and causal IDs, define known/partial/unavailable coverage and time units, then implement the smallest reporting pa",
+      "blocked_reason": null,
+      "todoCounts": {
+        "open": 3,
+        "in_progress": 0,
+        "blocked": 0,
+        "done": 0,
+        "cancelled": 0
+      },
+      "evidenceCount": 0,
+      "todoEvidenceCount": 0,
+      "truncatedFields": [
+        "next_action"
+      ]
+    },
+    {
+      "id": "buddy_project_56ced029-2ce3-4897-b037-462d5a01e2ff",
+      "workspace_id": "project_26fce156-5c5d-4dd9-a9d6-4b527a50af3c",
+      "buddy_id": "buddy_d3f11f11-d010-4383-bc72-940bfe6ef8cd",
+      "title": "Add reliable incremental and actionable Buddy reads",
+      "revision": 2,
+      "status": "backlog",
+      "priority": 0,
+      "execution_state": "paused",
+      "updated_at": "2026-09-15T13:57:16.647Z",
+      "next_action": "Owner requested task review before implementation. After summary contract, assess existing filters, inclusive updatedSince and STALE_WORK_CURSOR behavior. Specify consistency/removal/access-change guarantees and whether explicit restart-on-",
+      "blocked_reason": null,
+      "todoCounts": {
+        "open": 3,
+        "in_progress": 0,
+        "blocked": 0,
+        "done": 0,
+        "cancelled": 0
+      },
+      "evidenceCount": 0,
+      "todoEvidenceCount": 0,
+      "truncatedFields": [
+        "next_action"
+      ]
+    },
+    {
+      "id": "buddy_project_4abf69fe-7981-4934-aaa0-7b4d2908906e",
+      "workspace_id": "project_26fce156-5c5d-4dd9-a9d6-4b527a50af3c",
+      "buddy_id": "buddy_d3f11f11-d010-4383-bc72-940bfe6ef8cd",
+      "title": "Verify and finish assignment model selection and admitted settings",
+      "revision": 2,
+      "status": "backlog",
+      "priority": 0,
+      "execution_state": "paused",
+      "updated_at": "2026-09-15T13:57:16.556Z",
+      "next_action": "Owner requested task review before implementation. Qualify the existing delivery.config resolver, pinnedAssignmentConfig and run-admission path. Read pass-through rules and exact changed source first; prove preview, queued defaults, continu",
+      "blocked_reason": null,
+      "todoCounts": {
+        "open": 3,
+        "in_progress": 0,
+        "blocked": 0,
+        "done": 0,
+        "cancelled": 0
+      },
+      "evidenceCount": 0,
+      "todoEvidenceCount": 0,
+      "truncatedFields": [
+        "next_action"
+      ]
+    },
+    {
+      "id": "buddy_project_075e367e-3442-474c-a58d-8094aec59e25",
+      "workspace_id": "project_26fce156-5c5d-4dd9-a9d6-4b527a50af3c",
+      "buddy_id": "buddy_d3f11f11-d010-4383-bc72-940bfe6ef8cd",
+      "title": "Verify and finish compact Buddy work and attention summaries",
+      "revision": 2,
+      "status": "ready",
+      "priority": 0,
+      "execution_state": "paused",
+      "updated_at": "2026-09-15T13:57:16.510Z",
+      "next_action": "Owner requested task review before implementation. Start from loaded 2026-09-15.1 and the existing passing summary fixture. Freeze source/build and representative consumer corpus, measure normalized/full-envelope size, verify all existing c",
+      "blocked_reason": null,
+      "todoCounts": {
+        "open": 3,
+        "in_progress": 0,
+        "blocked": 0,
+        "done": 0,
+        "cancelled": 0
+      },
+      "evidenceCount": 0,
+      "todoEvidenceCount": 0,
+      "truncatedFields": [
+        "next_action"
+      ]
+    },
+    {
+      "id": "buddy_project_6efaffd1-0415-4dcf-80a4-bb6599d924b7",
+      "workspace_id": "project_26fce156-5c5d-4dd9-a9d6-4b527a50af3c",
+      "buddy_id": "buddy_d3f11f11-d010-4383-bc72-940bfe6ef8cd",
+      "title": "Apply the Wave_sim coordination-efficiency handoff to existing Buddy APIs",
+      "revision": 3,
+      "status": "in_progress",
+      "priority": 0,
+      "execution_state": "paused",
+      "updated_at": "2026-09-15T13:57:16.466Z",
+      "next_action": "Owner requested task review before implementation. Review the dated all-task plan. After review: qualify existing summaries and assignment selection, settle cursor semantics, then usage and review coalescing. Existing integration/UI/release",
+      "blocked_reason": null,
+      "todoCounts": {
+        "open": 3,
+        "in_progress": 0,
+        "blocked": 0,
+        "done": 2,
+        "cancelled": 0
+      },
+      "evidenceCount": 0,
+      "todoEvidenceCount": 10,
+      "truncatedFields": [
+        "next_action"
+      ]
+    },
+    {
+      "id": "buddy_project_62511186-9ab4-4ec6-aece-4bdf39307527",
+      "workspace_id": "project_26fce156-5c5d-4dd9-a9d6-4b527a50af3c",
+      "buddy_id": "buddy_d3f11f11-d010-4383-bc72-940bfe6ef8cd",
+      "title": "Integrate the final restart-continuity corrections into the delivery candidate",
+      "revision": 2,
+      "status": "backlog",
+      "priority": 0,
+      "execution_state": "paused",
+      "updated_at": "2026-09-15T13:54:11.379Z",
+      "next_action": "Planning only: review with the owner before implementation. Then compare current main, the preserved closeout patch and any concurrent delivery; integrate only missing corrections and hand the candidate to the existing release task.",
+      "blocked_reason": null,
+      "todoCounts": {
+        "open": 3,
+        "in_progress": 0,
+        "blocked": 0,
+        "done": 0,
+        "cancelled": 0
+      },
+      "evidenceCount": 0,
+      "todoEvidenceCount": 0,
+      "truncatedFields": []
+    },
+    {
+      "id": "buddy_project_8638d8bf-f609-46f3-b991-a2d5232e55c4",
+      "workspace_id": "project_26fce156-5c5d-4dd9-a9d6-4b527a50af3c",
+      "buddy_id": "buddy_d3f11f11-d010-4383-bc72-940bfe6ef8cd",
+      "title": "Efficiency follow-ups: durable change feeds, provider usage and cross-request review policy",
+      "revision": 1,
+      "status": "backlog",
+      "priority": 0,
+      "execution_state": "enabled",
+      "updated_at": "2026-09-15T13:53:18.660Z",
+      "next_action": "Use the efficiency assessment to select a concrete follow-up when its consumer requirement is established; provider usage requires harness telemetry, and review batching requires authority/allowance semantics.",
+      "blocked_reason": null,
+      "todoCounts": {
+        "open": 3,
+        "in_progress": 0,
+        "blocked": 0,
+        "done": 0,
+        "cancelled": 0
+      },
+      "evidenceCount": 0,
+      "todoEvidenceCount": 0,
+      "truncatedFields": []
+    },
+    {
+      "id": "buddy_project_612461f5-631f-4fa9-950e-77f6d8cccc7c",
+      "workspace_id": "project_26fce156-5c5d-4dd9-a9d6-4b527a50af3c",
+      "buddy_id": "buddy_d3f11f11-d010-4383-bc72-940bfe6ef8cd",
+      "title": "Land verified Buddy stack on main",
+      "revision": 2,
+      "status": "done",
+      "priority": 1,
+      "execution_state": "enabled",
+      "updated_at": "2026-09-15T04:41:08.211Z",
+      "next_action": null,
+      "blocked_reason": null,
+      "todoCounts": {
+        "open": 0,
+        "in_progress": 0,
+        "blocked": 0,
+        "done": 4,
+        "cancelled": 0
+      },
+      "evidenceCount": 3,
+      "todoEvidenceCount": 12,
+      "truncatedFields": []
+    },
+    {
+      "id": "buddy_project_a1901054-80f9-40c6-a5d3-39d9ecb4304a",
+      "workspace_id": "project_26fce156-5c5d-4dd9-a9d6-4b527a50af3c",
+      "buddy_id": "buddy_d3f11f11-d010-4383-bc72-940bfe6ef8cd",
+      "title": "Preserve Buddy conversation context across server restarts",
+      "revision": 4,
+      "status": "done",
+      "priority": 0,
+      "execution_state": "enabled",
+      "updated_at": "2026-09-15T04:39:53.935Z",
+      "next_action": null,
+      "blocked_reason": null,
+      "todoCounts": {
+        "open": 0,
+        "in_progress": 0,
+        "blocked": 0,
+        "done": 0,
+        "cancelled": 0
+      },
+      "evidenceCount": 7,
+      "todoEvidenceCount": 0,
+      "truncatedFields": []
+    },
+    {
+      "id": "buddy_project_9ef2b573-f8fd-48d6-9218-c390c9035487",
+      "workspace_id": "project_26fce156-5c5d-4dd9-a9d6-4b527a50af3c",
+      "buddy_id": "buddy_d3f11f11-d010-4383-bc72-940bfe6ef8cd",
+      "title": "Clarify and verify Buddy blocked-work recovery",
+      "revision": 2,
+      "status": "blocked",
+      "priority": 0,
+      "execution_state": "enabled",
+      "updated_at": "2026-09-14T13:57:38.825Z",
+      "next_action": "Provide an authorized native route to Wave_sim CEO, then send the prepared response. No permission/transport bypass.",
+      "blocked_reason": "Implementation and verification complete; native permitted directory exposes no Wave_sim CEO contact or dispatch route. Response prepared but cannot deliver through current authority.",
+      "todoCounts": {
+        "open": 0,
+        "in_progress": 0,
+        "blocked": 0,
+        "done": 0,
+        "cancelled": 0
+      },
+      "evidenceCount": 4,
+      "todoEvidenceCount": 0,
+      "truncatedFields": []
+    },
+    {
+      "id": "buddy_project_b52b7f5b-cdbb-4236-a686-fa50d6e2b739",
+      "workspace_id": "project_26fce156-5c5d-4dd9-a9d6-4b527a50af3c",
+      "buddy_id": "buddy_d3f11f11-d010-4383-bc72-940bfe6ef8cd",
+      "title": "Close out the verified lean Worker delivery",
+      "revision": 2,
+      "status": "done",
+      "priority": 0,
+      "execution_state": "enabled",
+      "updated_at": "2026-09-14T10:48:42.488Z",
+      "next_action": null,
+      "blocked_reason": null,
+      "todoCounts": {
+        "open": 0,
+        "in_progress": 0,
+        "blocked": 0,
+        "done": 0,
+        "cancelled": 0
+      },
+      "evidenceCount": 5,
+      "todoEvidenceCount": 0,
+      "truncatedFields": []
+    },
+    {
+      "id": "buddy_project_6a53e400-601b-448c-9360-7fb3f2bdfbd7",
+      "workspace_id": "project_26fce156-5c5d-4dd9-a9d6-4b527a50af3c",
+      "buddy_id": "buddy_d3f11f11-d010-4383-bc72-940bfe6ef8cd",
+      "title": "Refactor verified Worker implementation with Astra",
+      "revision": 3,
+      "status": "cancelled",
+      "priority": 0,
+      "execution_state": "cancelled",
+      "updated_at": "2026-09-14T10:46:13.736Z",
+      "next_action": null,
+      "blocked_reason": null,
+      "todoCounts": {
+        "open": 0,
+        "in_progress": 0,
+        "blocked": 0,
+        "done": 1,
+        "cancelled": 2
+      },
+      "evidenceCount": 1,
+      "todoEvidenceCount": 5,
+      "truncatedFields": []
+    },
+    {
+      "id": "buddy_project_1caa3853-bb7e-473a-8e5e-1e5c6025f52c",
+      "workspace_id": "project_26fce156-5c5d-4dd9-a9d6-4b527a50af3c",
+      "buddy_id": "buddy_d3f11f11-d010-4383-bc72-940bfe6ef8cd",
+      "title": "Implement lean Workers, contextual returns and Task comments",
+      "revision": 2,
+      "status": "done",
+      "priority": 0,
+      "execution_state": "enabled",
+      "updated_at": "2026-09-14T10:37:42.007Z",
+      "next_action": null,
+      "blocked_reason": null,
+      "todoCounts": {
+        "open": 0,
+        "in_progress": 0,
+        "blocked": 0,
+        "done": 0,
+        "cancelled": 0
+      },
+      "evidenceCount": 6,
+      "todoEvidenceCount": 0,
+      "truncatedFields": []
+    },
+    {
+      "id": "buddy_project_ba6d40ba-f946-4d30-854a-f11e6e94d3e6",
+      "workspace_id": "project_26fce156-5c5d-4dd9-a9d6-4b527a50af3c",
+      "buddy_id": "buddy_d3f11f11-d010-4383-bc72-940bfe6ef8cd",
+      "title": "Background returns for chat-launched work and inline worker links",
+      "revision": 2,
+      "status": "done",
+      "priority": 0,
+      "execution_state": "enabled",
+      "updated_at": "2026-09-13T14:47:23.712Z",
+      "next_action": null,
+      "blocked_reason": null,
+      "todoCounts": {
+        "open": 0,
+        "in_progress": 0,
+        "blocked": 0,
+        "done": 0,
+        "cancelled": 0
+      },
+      "evidenceCount": 3,
+      "todoEvidenceCount": 0,
+      "truncatedFields": []
+    },
+    {
+      "id": "buddy_project_770218a6-eb98-4a94-b637-527de0a7a6c2",
+      "workspace_id": "project_26fce156-5c5d-4dd9-a9d6-4b527a50af3c",
+      "buddy_id": "buddy_d3f11f11-d010-4383-bc72-940bfe6ef8cd",
+      "title": "Redo Worker mode through existing Buddy primitives",
+      "revision": 2,
+      "status": "done",
+      "priority": 0,
+      "execution_state": "enabled",
+      "updated_at": "2026-09-13T11:19:30.897Z",
+      "next_action": null,
+      "blocked_reason": null,
+      "todoCounts": {
+        "open": 0,
+        "in_progress": 0,
+        "blocked": 0,
+        "done": 0,
+        "cancelled": 0
+      },
+      "evidenceCount": 4,
+      "todoEvidenceCount": 0,
+      "truncatedFields": []
+    },
+    {
+      "id": "buddy_project_b2d98a88-af3a-4f51-83c2-61f054c20279",
+      "workspace_id": "project_26fce156-5c5d-4dd9-a9d6-4b527a50af3c",
+      "buddy_id": "buddy_d3f11f11-d010-4383-bc72-940bfe6ef8cd",
+      "title": "Implement integrated Worker system with Luna and independent Astra review",
+      "revision": 8,
+      "status": "done",
+      "priority": 0,
+      "execution_state": "enabled",
+      "updated_at": "2026-09-13T10:33:49.810Z",
+      "next_action": null,
+      "blocked_reason": null,
+      "todoCounts": {
+        "open": 0,
+        "in_progress": 0,
+        "blocked": 0,
+        "done": 6,
+        "cancelled": 0
+      },
+      "evidenceCount": 22,
+      "todoEvidenceCount": 6,
+      "truncatedFields": []
+    },
+    {
+      "id": "buddy_project_98f532e7-27b7-4260-8243-56fdeda3eac9",
+      "workspace_id": "project_26fce156-5c5d-4dd9-a9d6-4b527a50af3c",
+      "buddy_id": "buddy_d3f11f11-d010-4383-bc72-940bfe6ef8cd",
+      "title": "Refine Worker design through v2 and owner files/Mail simplification",
+      "revision": 6,
+      "status": "done",
+      "priority": 0,
+      "execution_state": "enabled",
+      "updated_at": "2026-09-13T07:22:58.202Z",
+      "next_action": null,
+      "blocked_reason": null,
+      "todoCounts": {
+        "open": 0,
+        "in_progress": 0,
+        "blocked": 0,
+        "done": 6,
+        "cancelled": 0
+      },
+      "evidenceCount": 16,
+      "todoEvidenceCount": 14,
+      "truncatedFields": []
+    },
+    {
+      "id": "buddy_project_de5267b7-26f7-45c1-8819-cb0954ec1255",
+      "workspace_id": "project_26fce156-5c5d-4dd9-a9d6-4b527a50af3c",
+      "buddy_id": "buddy_d3f11f11-d010-4383-bc72-940bfe6ef8cd",
+      "title": "Validate memory curation beyond the September 13 tuning set",
+      "revision": 2,
+      "status": "backlog",
+      "priority": 0,
+      "execution_state": "enabled",
+      "updated_at": "2026-09-13T05:22:02.635Z",
+      "next_action": "Use the September 13 closeout corpus and benchmark runbook as regression material. Establish current selected-prompt production provenance first; do not tune further on these histories or launch unrelated repair work as part of thread closu",
+      "blocked_reason": null,
+      "todoCounts": {
+        "open": 4,
+        "in_progress": 0,
+        "blocked": 0,
+        "done": 0,
+        "cancelled": 0
+      },
+      "evidenceCount": 4,
+      "todoEvidenceCount": 0,
+      "truncatedFields": [
+        "next_action"
+      ]
+    },
+    {
+      "id": "buddy_project_acaeb801-5a82-4f45-b7fa-84e62f5799fd",
+      "workspace_id": "project_26fce156-5c5d-4dd9-a9d6-4b527a50af3c",
+      "buddy_id": "buddy_d3f11f11-d010-4383-bc72-940bfe6ef8cd",
+      "title": "Clarify Worker check-ins and maximum solo work sessions",
+      "revision": 2,
+      "status": "done",
+      "priority": 0,
+      "execution_state": "enabled",
+      "updated_at": "2026-09-13T05:09:43.835Z",
+      "next_action": null,
+      "blocked_reason": null,
+      "todoCounts": {
+        "open": 0,
+        "in_progress": 0,
+        "blocked": 0,
+        "done": 0,
+        "cancelled": 0
+      },
+      "evidenceCount": 5,
+      "todoEvidenceCount": 0,
+      "truncatedFields": []
+    },
+    {
+      "id": "buddy_project_9932101f-2703-4e68-b86c-12c59943c850",
+      "workspace_id": "project_26fce156-5c5d-4dd9-a9d6-4b527a50af3c",
+      "buddy_id": "buddy_d3f11f11-d010-4383-bc72-940bfe6ef8cd",
+      "title": "Clarify Documents, parent-owned Workers and Mail versus Prompt",
+      "revision": 2,
+      "status": "done",
+      "priority": 0,
+      "execution_state": "enabled",
+      "updated_at": "2026-09-13T05:04:50.827Z",
+      "next_action": null,
+      "blocked_reason": null,
+      "todoCounts": {
+        "open": 0,
+        "in_progress": 0,
+        "blocked": 0,
+        "done": 0,
+        "cancelled": 0
+      },
+      "evidenceCount": 7,
+      "todoEvidenceCount": 0,
+      "truncatedFields": []
+    },
+    {
+      "id": "buddy_project_a1615320-65d3-41f2-9fc6-c53fbfaadf60",
+      "workspace_id": "project_26fce156-5c5d-4dd9-a9d6-4b527a50af3c",
+      "buddy_id": "buddy_d3f11f11-d010-4383-bc72-940bfe6ef8cd",
+      "title": "Make the memory curation benchmark discoverable and reusable",
+      "revision": 2,
+      "status": "done",
+      "priority": 0,
+      "execution_state": "enabled",
+      "updated_at": "2026-09-13T04:58:57.268Z",
+      "next_action": null,
+      "blocked_reason": null,
+      "todoCounts": {
+        "open": 0,
+        "in_progress": 0,
+        "blocked": 0,
+        "done": 0,
+        "cancelled": 0
+      },
+      "evidenceCount": 5,
+      "todoEvidenceCount": 0,
+      "truncatedFields": []
+    },
+    {
+      "id": "buddy_project_00b60935-8fd1-4e6b-9808-3eae92557bfa",
+      "workspace_id": "project_26fce156-5c5d-4dd9-a9d6-4b527a50af3c",
+      "buddy_id": "buddy_d3f11f11-d010-4383-bc72-940bfe6ef8cd",
+      "title": "Incorporate pending handoff and consolidate Buddy limits and lead review",
+      "revision": 2,
+      "status": "done",
+      "priority": 0,
+      "execution_state": "enabled",
+      "updated_at": "2026-09-13T04:56:04.955Z",
+      "next_action": null,
+      "blocked_reason": null,
+      "todoCounts": {
+        "open": 0,
+        "in_progress": 0,
+        "blocked": 0,
+        "done": 0,
+        "cancelled": 0
+      },
+      "evidenceCount": 6,
+      "todoEvidenceCount": 0,
+      "truncatedFields": []
+    },
+    {
+      "id": "buddy_project_6003ef3a-c0e2-4661-ab7c-dfc9af8e6de6",
+      "workspace_id": "project_26fce156-5c5d-4dd9-a9d6-4b527a50af3c",
+      "buddy_id": "buddy_d3f11f11-d010-4383-bc72-940bfe6ef8cd",
+      "title": "Install and evaluate memory reviewer curation prompt",
+      "revision": 2,
+      "status": "done",
+      "priority": 1,
+      "execution_state": "enabled",
+      "updated_at": "2026-09-13T04:47:43.952Z",
+      "next_action": null,
+      "blocked_reason": null,
+      "todoCounts": {
+        "open": 0,
+        "in_progress": 0,
+        "blocked": 0,
+        "done": 0,
+        "cancelled": 0
+      },
+      "evidenceCount": 5,
+      "todoEvidenceCount": 0,
+      "truncatedFields": []
+    },
+    {
+      "id": "buddy_project_759eb0a3-1f97-481b-8d63-2718f43d8ec9",
+      "workspace_id": "project_26fce156-5c5d-4dd9-a9d6-4b527a50af3c",
+      "buddy_id": "buddy_d3f11f11-d010-4383-bc72-940bfe6ef8cd",
+      "title": "Formalize latest human design and compare three minimal Buddy designs",
+      "revision": 3,
+      "status": "done",
+      "priority": 0,
+      "execution_state": "enabled",
+      "updated_at": "2026-09-13T04:42:35.563Z",
+      "next_action": null,
+      "blocked_reason": null,
+      "todoCounts": {
+        "open": 0,
+        "in_progress": 0,
+        "blocked": 0,
+        "done": 0,
+        "cancelled": 0
+      },
+      "evidenceCount": 6,
+      "todoEvidenceCount": 0,
+      "truncatedFields": []
+    },
+    {
+      "id": "buddy_project_27e94431-4af5-4498-95c6-4644ca7e591c",
+      "workspace_id": "project_26fce156-5c5d-4dd9-a9d6-4b527a50af3c",
+      "buddy_id": "buddy_d3f11f11-d010-4383-bc72-940bfe6ef8cd",
+      "title": "Repair operator documentation and document capability discovery after Chief audit",
+      "revision": 2,
+      "status": "done",
+      "priority": 0,
+      "execution_state": "enabled",
+      "updated_at": "2026-09-13T03:50:20.503Z",
+      "next_action": null,
+      "blocked_reason": null,
+      "todoCounts": {
+        "open": 0,
+        "in_progress": 0,
+        "blocked": 0,
+        "done": 0,
+        "cancelled": 0
+      },
+      "evidenceCount": 5,
+      "todoEvidenceCount": 0,
+      "truncatedFields": []
+    },
+    {
+      "id": "buddy_project_19703c1b-e2ad-4499-adf5-7bb16b0b6fa9",
+      "workspace_id": "project_26fce156-5c5d-4dd9-a9d6-4b527a50af3c",
+      "buddy_id": "buddy_d3f11f11-d010-4383-bc72-940bfe6ef8cd",
+      "title": "Separate setup, work admission and return diagnostics; resolve authorized workspace names",
+      "revision": 1,
+      "status": "ready",
+      "priority": 0,
+      "execution_state": "enabled",
+      "updated_at": "2026-09-13T03:46:55.771Z",
+      "next_action": "Design an additive diagnostic projection over canonical predicates; preserve privacy and existing payload compatibility. Reproduce Chief's reported ambiguity in isolated fixtures before implementing.",
+      "blocked_reason": null,
+      "todoCounts": {
+        "open": 0,
+        "in_progress": 0,
+        "blocked": 0,
+        "done": 0,
+        "cancelled": 0
+      },
+      "evidenceCount": 0,
+      "todoEvidenceCount": 0,
+      "truncatedFields": []
+    },
+    {
+      "id": "buddy_project_87ee73ae-ec7e-4fea-b4af-5d41b128f503",
+      "workspace_id": "project_26fce156-5c5d-4dd9-a9d6-4b527a50af3c",
+      "buddy_id": "buddy_d3f11f11-d010-4383-bc72-940bfe6ef8cd",
+      "title": "Show foreground and background activity in Buddy sidebar",
+      "revision": 2,
+      "status": "done",
+      "priority": 0,
+      "execution_state": "enabled",
+      "updated_at": "2026-09-13T03:44:17.518Z",
+      "next_action": null,
+      "blocked_reason": null,
+      "todoCounts": {
+        "open": 0,
+        "in_progress": 0,
+        "blocked": 0,
+        "done": 0,
+        "cancelled": 0
+      },
+      "evidenceCount": 7,
+      "todoEvidenceCount": 0,
+      "truncatedFields": []
+    },
+    {
+      "id": "buddy_project_323a63ad-a0c6-476b-82ae-a4d2f20b312d",
+      "workspace_id": "project_26fce156-5c5d-4dd9-a9d6-4b527a50af3c",
+      "buddy_id": "buddy_d3f11f11-d010-4383-bc72-940bfe6ef8cd",
+      "title": "Keep Buddy mail out of human chats and expose the mailbox tab",
+      "revision": 2,
+      "status": "done",
+      "priority": 0,
+      "execution_state": "enabled",
+      "updated_at": "2026-09-13T03:33:35.015Z",
+      "next_action": null,
+      "blocked_reason": null,
+      "todoCounts": {
+        "open": 0,
+        "in_progress": 0,
+        "blocked": 0,
+        "done": 0,
+        "cancelled": 0
+      },
+      "evidenceCount": 9,
+      "todoEvidenceCount": 0,
+      "truncatedFields": []
+    },
+    {
+      "id": "buddy_project_2ce34a2c-ca4c-44d2-afaa-7f16ae3b2a06",
+      "workspace_id": "project_26fce156-5c5d-4dd9-a9d6-4b527a50af3c",
+      "buddy_id": "buddy_d3f11f11-d010-4383-bc72-940bfe6ef8cd",
+      "title": "Repair phantom workspace groups and missing Buddy identity in sidebar",
+      "revision": 2,
+      "status": "done",
+      "priority": 0,
+      "execution_state": "enabled",
+      "updated_at": "2026-09-13T03:15:32.120Z",
+      "next_action": null,
+      "blocked_reason": null,
+      "todoCounts": {
+        "open": 0,
+        "in_progress": 0,
+        "blocked": 0,
+        "done": 0,
+        "cancelled": 0
+      },
+      "evidenceCount": 5,
+      "todoEvidenceCount": 0,
+      "truncatedFields": []
+    },
+    {
+      "id": "buddy_project_9bb404ec-f197-4840-bf4c-8341a8729cbf",
+      "workspace_id": "project_26fce156-5c5d-4dd9-a9d6-4b527a50af3c",
+      "buddy_id": "buddy_d3f11f11-d010-4383-bc72-940bfe6ef8cd",
+      "title": "Wave_sim CEO workflow simulation and second implementation pass",
+      "revision": 3,
+      "status": "done",
+      "priority": 0,
+      "execution_state": "enabled",
+      "updated_at": "2026-09-12T17:25:13.441Z",
+      "next_action": null,
+      "blocked_reason": null,
+      "todoCounts": {
+        "open": 0,
+        "in_progress": 0,
+        "blocked": 0,
+        "done": 3,
+        "cancelled": 0
+      },
+      "evidenceCount": 8,
+      "todoEvidenceCount": 14,
+      "truncatedFields": []
+    },
+    {
+      "id": "buddy_project_9864f34e-b435-43b1-80b1-07cc51645fbe",
+      "workspace_id": "project_26fce156-5c5d-4dd9-a9d6-4b527a50af3c",
+      "buddy_id": "buddy_d3f11f11-d010-4383-bc72-940bfe6ef8cd",
+      "title": "Complete owner-to-team setup and operational readiness",
+      "revision": 20,
+      "status": "in_progress",
+      "priority": 0,
+      "execution_state": "enabled",
+      "updated_at": "2026-09-12T16:43:43.927Z",
+      "next_action": "A1–A7 are individually repaired and evidenced. The exact main7d9d117f browser check remains in repair child project f5e8e43a/UI child95592e35. Operational acceptance remains separate; preserve stopped production roots and require authorized",
+      "blocked_reason": null,
+      "todoCounts": {
+        "open": 0,
+        "in_progress": 0,
+        "blocked": 1,
+        "done": 13,
+        "cancelled": 0
+      },
+      "evidenceCount": 2,
+      "todoEvidenceCount": 33,
+      "truncatedFields": [
+        "next_action"
+      ]
+    },
+    {
+      "id": "buddy_project_f24b0cc3-e82e-40ab-b974-5f1bfc469950",
+      "workspace_id": "project_26fce156-5c5d-4dd9-a9d6-4b527a50af3c",
+      "buddy_id": "buddy_d3f11f11-d010-4383-bc72-940bfe6ef8cd",
+      "title": "Reliable team returns, attributed receipts and recovery",
+      "revision": 4,
+      "status": "done",
+      "priority": 1,
+      "execution_state": "enabled",
+      "updated_at": "2026-09-12T16:43:17.554Z",
+      "next_action": null,
+      "blocked_reason": null,
+      "todoCounts": {
+        "open": 0,
+        "in_progress": 0,
+        "blocked": 0,
+        "done": 4,
+        "cancelled": 0
+      },
+      "evidenceCount": 6,
+      "todoEvidenceCount": 14,
+      "truncatedFields": []
+    },
+    {
+      "id": "buddy_project_5a090ee9-d90f-4531-a610-5015f22857fc",
+      "workspace_id": "project_26fce156-5c5d-4dd9-a9d6-4b527a50af3c",
+      "buddy_id": "buddy_d3f11f11-d010-4383-bc72-940bfe6ef8cd",
+      "title": "Overhanging uncommitted work across three trees — at risk of being destroyed",
+      "revision": 2,
+      "status": "in_progress",
+      "priority": 1,
+      "execution_state": "enabled",
+      "updated_at": "2026-09-12T16:02:44.176Z",
+      "next_action": "Current owner has authorized tasks/background completion and repository preservation. Release child performs attributable current inventory and commits; the historical missing-origin blocker is resolved. Keep remaining artifact dispositions",
+      "blocked_reason": null,
+      "todoCounts": {
+        "open": 5,
+        "in_progress": 0,
+        "blocked": 0,
+        "done": 1,
+        "cancelled": 0
+      },
+      "evidenceCount": 0,
+      "todoEvidenceCount": 4,
+      "truncatedFields": [
+        "next_action"
+      ]
+    },
+    {
+      "id": "buddy_project_14923985-6366-4c5a-9d08-855832dcd35c",
+      "workspace_id": "project_26fce156-5c5d-4dd9-a9d6-4b527a50af3c",
+      "buddy_id": "buddy_d3f11f11-d010-4383-bc72-940bfe6ef8cd",
+      "title": "Vendoring strategy: give ~/git/buddies a remote, then switch to a submodule",
+      "revision": 2,
+      "status": "ready",
+      "priority": 3,
+      "execution_state": "enabled",
+      "updated_at": "2026-09-12T16:02:44.158Z",
+      "next_action": "Agent-cli-tool origin drift is repaired. The separate Buddies remote/tarball-versus-submodule choice and conversion criterion remain unresolved; coordinate any current package delivery with the release lane.",
+      "blocked_reason": null,
+      "todoCounts": {
+        "open": 2,
+        "in_progress": 0,
+        "blocked": 0,
+        "done": 1,
+        "cancelled": 0
+      },
+      "evidenceCount": 0,
+      "todoEvidenceCount": 2,
+      "truncatedFields": []
+    },
+    {
+      "id": "buddy_project_e780d7f1-bb29-4a5d-b7c2-bd9cde212ce7",
+      "workspace_id": "project_26fce156-5c5d-4dd9-a9d6-4b527a50af3c",
+      "buddy_id": "buddy_d3f11f11-d010-4383-bc72-940bfe6ef8cd",
+      "title": "Ephemeral sub-agents: collapse to a harness capability, not an operation",
+      "revision": 2,
+      "status": "ready",
+      "priority": 4,
+      "execution_state": "enabled",
+      "updated_at": "2026-09-12T16:02:10.486Z",
+      "next_action": "Only the exact historical blocking-versus-Workflow documentation criterion remains open. Current vocabulary, read-before Buddy guide entries and parent-identity attribution are documented; do not redesign an ephemeral Buddy operation.",
+      "blocked_reason": null,
+      "todoCounts": {
+        "open": 1,
+        "in_progress": 0,
+        "blocked": 0,
+        "done": 3,
+        "cancelled": 4
+      },
+      "evidenceCount": 0,
+      "todoEvidenceCount": 7,
+      "truncatedFields": []
+    },
+    {
+      "id": "buddy_project_545457c2-3c8a-4bc1-b792-702a6d3ffbb7",
+      "workspace_id": "project_26fce156-5c5d-4dd9-a9d6-4b527a50af3c",
+      "buddy_id": "buddy_d3f11f11-d010-4383-bc72-940bfe6ef8cd",
+      "title": "Finish the composable Buddy system and MCP workflow",
+      "revision": 9,
+      "status": "in_progress",
+      "priority": 0,
+      "execution_state": "enabled",
+      "updated_at": "2026-09-12T16:02:10.474Z",
+      "next_action": "Private/shared knowledge and A2/A3 repairs meet source-boundary criteria. Remaining actual work is live-provider setup/follow-up acceptance, the exact main-thread browser check in repair child f5e8e43a/UI child95592e35, and any separately r",
+      "blocked_reason": null,
+      "todoCounts": {
+        "open": 1,
+        "in_progress": 0,
+        "blocked": 1,
+        "done": 7,
+        "cancelled": 0
+      },
+      "evidenceCount": 2,
+      "todoEvidenceCount": 15,
+      "truncatedFields": [
+        "next_action"
+      ]
+    },
+    {
+      "id": "buddy_project_f5e8e43a-9c69-4dd2-82d1-c6c953e3549b",
+      "workspace_id": "project_26fce156-5c5d-4dd9-a9d6-4b527a50af3c",
+      "buddy_id": "buddy_d3f11f11-d010-4383-bc72-940bfe6ef8cd",
+      "title": "Repair remaining Buddy history, privacy and consistency gaps",
+      "revision": 8,
+      "status": "in_progress",
+      "priority": 0,
+      "execution_state": "enabled",
+      "updated_at": "2026-09-12T16:01:19.842Z",
+      "next_action": "Live API recovery and natural backend adoption are proven by 10:12 API/10:13 browser evidence; perform the remaining read-only main7d9d117f browser criterion through UI child project buddy_project_95592e35-f568-4868-9a93-03c8a8511597, then ",
+      "blocked_reason": null,
+      "todoCounts": {
+        "open": 1,
+        "in_progress": 0,
+        "blocked": 0,
+        "done": 7,
+        "cancelled": 0
+      },
+      "evidenceCount": 4,
+      "todoEvidenceCount": 22,
+      "truncatedFields": [
+        "next_action"
+      ]
+    },
+    {
+      "id": "buddy_project_d5172569-a7bd-4e9c-be5e-5eb9b8e56b82",
+      "workspace_id": "project_26fce156-5c5d-4dd9-a9d6-4b527a50af3c",
+      "buddy_id": "buddy_d3f11f11-d010-4383-bc72-940bfe6ef8cd",
+      "title": "Consolidate permission editing into Buddy team settings",
+      "revision": 3,
+      "status": "done",
+      "priority": 0,
+      "execution_state": "enabled",
+      "updated_at": "2026-09-12T15:40:51.345Z",
+      "next_action": null,
+      "blocked_reason": null,
+      "todoCounts": {
+        "open": 0,
+        "in_progress": 0,
+        "blocked": 0,
+        "done": 3,
+        "cancelled": 0
+      },
+      "evidenceCount": 7,
+      "todoEvidenceCount": 9,
+      "truncatedFields": []
+    },
+    {
+      "id": "buddy_project_b4dbb7eb-f76c-431d-a1bb-fc708470c6f8",
+      "workspace_id": "project_26fce156-5c5d-4dd9-a9d6-4b527a50af3c",
+      "buddy_id": "buddy_d3f11f11-d010-4383-bc72-940bfe6ef8cd",
+      "title": "Simplify Buddy team settings without widening permissions",
+      "revision": 2,
+      "status": "done",
+      "priority": 0,
+      "execution_state": "enabled",
+      "updated_at": "2026-09-12T14:01:28.302Z",
+      "next_action": null,
+      "blocked_reason": null,
+      "todoCounts": {
+        "open": 0,
+        "in_progress": 0,
+        "blocked": 0,
+        "done": 0,
+        "cancelled": 0
+      },
+      "evidenceCount": 4,
+      "todoEvidenceCount": 0,
+      "truncatedFields": []
+    },
+    {
+      "id": "buddy_project_5501935a-9512-4904-9e72-7ebbca7f53bc",
+      "workspace_id": "project_26fce156-5c5d-4dd9-a9d6-4b527a50af3c",
+      "buddy_id": "buddy_d3f11f11-d010-4383-bc72-940bfe6ef8cd",
+      "title": "Review repository, Markdown, commit state and live Wave_sim readiness",
+      "revision": 2,
+      "status": "done",
+      "priority": 0,
+      "execution_state": "enabled",
+      "updated_at": "2026-09-12T13:34:10.399Z",
+      "next_action": null,
+      "blocked_reason": null,
+      "todoCounts": {
+        "open": 0,
+        "in_progress": 0,
+        "blocked": 0,
+        "done": 0,
+        "cancelled": 0
+      },
+      "evidenceCount": 5,
+      "todoEvidenceCount": 0,
+      "truncatedFields": []
+    },
+    {
+      "id": "buddy_project_e81102c7-fef5-43c7-8896-3a16122cd3b9",
+      "workspace_id": "project_26fce156-5c5d-4dd9-a9d6-4b527a50af3c",
+      "buddy_id": "buddy_d3f11f11-d010-4383-bc72-940bfe6ef8cd",
+      "title": "Audit and repair hidden prompt boilerplate across Unleashd",
+      "revision": 2,
+      "status": "done",
+      "priority": 0,
+      "execution_state": "enabled",
+      "updated_at": "2026-09-12T13:22:46.107Z",
+      "next_action": null,
+      "blocked_reason": null,
+      "todoCounts": {
+        "open": 0,
+        "in_progress": 0,
+        "blocked": 0,
+        "done": 0,
+        "cancelled": 0
+      },
+      "evidenceCount": 5,
+      "todoEvidenceCount": 0,
+      "truncatedFields": []
+    },
+    {
+      "id": "buddy_project_3b820e9e-a708-4310-a145-9c9558bcc7b3",
+      "workspace_id": "project_26fce156-5c5d-4dd9-a9d6-4b527a50af3c",
+      "buddy_id": "buddy_d3f11f11-d010-4383-bc72-940bfe6ef8cd",
+      "title": "Remove repeated owner-controls text from Buddy inputs",
+      "revision": 2,
+      "status": "done",
+      "priority": 0,
+      "execution_state": "enabled",
+      "updated_at": "2026-09-12T11:47:52.709Z",
+      "next_action": null,
+      "blocked_reason": null,
+      "todoCounts": {
+        "open": 0,
+        "in_progress": 0,
+        "blocked": 0,
+        "done": 0,
+        "cancelled": 0
+      },
+      "evidenceCount": 4,
+      "todoEvidenceCount": 0,
+      "truncatedFields": []
+    },
+    {
+      "id": "buddy_project_df4b429d-c8c4-458c-9a4f-52322b4b9db8",
+      "workspace_id": "project_26fce156-5c5d-4dd9-a9d6-4b527a50af3c",
+      "buddy_id": "buddy_d3f11f11-d010-4383-bc72-940bfe6ef8cd",
+      "title": "Audit Buddy history loss and resource repair evidence",
+      "revision": 3,
+      "status": "done",
+      "priority": 0,
+      "execution_state": "enabled",
+      "updated_at": "2026-09-12T09:45:32.810Z",
+      "next_action": null,
+      "blocked_reason": null,
+      "todoCounts": {
+        "open": 0,
+        "in_progress": 0,
+        "blocked": 0,
+        "done": 3,
+        "cancelled": 0
+      },
+      "evidenceCount": 5,
+      "todoEvidenceCount": 11,
+      "truncatedFields": []
+    },
+    {
+      "id": "buddy_project_6e3057c7-a262-4fcb-8ada-0202f4378b2b",
+      "workspace_id": "project_26fce156-5c5d-4dd9-a9d6-4b527a50af3c",
+      "buddy_id": "buddy_d3f11f11-d010-4383-bc72-940bfe6ef8cd",
+      "title": "Run Buddy tasks in the background to evidence-backed completion",
+      "revision": 2,
+      "status": "done",
+      "priority": 0,
+      "execution_state": "enabled",
+      "updated_at": "2026-09-10T08:48:29.504Z",
+      "next_action": null,
+      "blocked_reason": null,
+      "todoCounts": {
+        "open": 0,
+        "in_progress": 0,
+        "blocked": 0,
+        "done": 4,
+        "cancelled": 0
+      },
+      "evidenceCount": 4,
+      "todoEvidenceCount": 0,
+      "truncatedFields": []
+    },
+    {
+      "id": "buddy_project_62906366-921c-4933-94b4-5fab10a13309",
+      "workspace_id": "project_26fce156-5c5d-4dd9-a9d6-4b527a50af3c",
+      "buddy_id": "buddy_d3f11f11-d010-4383-bc72-940bfe6ef8cd",
+      "title": "Run Luna memory review after each completed Buddy turn",
+      "revision": 5,
+      "status": "done",
+      "priority": 0,
+      "execution_state": "enabled",
+      "updated_at": "2026-09-10T08:29:04.454Z",
+      "next_action": null,
+      "blocked_reason": null,
+      "todoCounts": {
+        "open": 0,
+        "in_progress": 0,
+        "blocked": 0,
+        "done": 3,
+        "cancelled": 0
+      },
+      "evidenceCount": 4,
+      "todoEvidenceCount": 0,
+      "truncatedFields": []
+    },
+    {
+      "id": "buddy_project_9be738e3-328c-4608-ad15-6fc935530198",
+      "workspace_id": "project_26fce156-5c5d-4dd9-a9d6-4b527a50af3c",
+      "buddy_id": "buddy_d3f11f11-d010-4383-bc72-940bfe6ef8cd",
+      "title": "Buddy Maker: provision a resumable reporting team and initial work",
+      "revision": 2,
+      "status": "done",
+      "priority": 0,
+      "execution_state": "enabled",
+      "updated_at": "2026-09-10T04:00:09.804Z",
+      "next_action": null,
+      "blocked_reason": null,
+      "todoCounts": {
+        "open": 0,
+        "in_progress": 0,
+        "blocked": 0,
+        "done": 0,
+        "cancelled": 0
+      },
+      "evidenceCount": 7,
+      "todoEvidenceCount": 0,
+      "truncatedFields": []
+    },
+    {
+      "id": "buddy_project_55c07f98-5eb1-4121-b13f-b2b7133c815c",
+      "workspace_id": "project_26fce156-5c5d-4dd9-a9d6-4b527a50af3c",
+      "buddy_id": "buddy_d3f11f11-d010-4383-bc72-940bfe6ef8cd",
+      "title": "Whole-Buddy redesign: three composable architecture alternatives",
+      "revision": 2,
+      "status": "done",
+      "priority": 0,
+      "execution_state": "enabled",
+      "updated_at": "2026-09-09T08:05:47.857Z",
+      "next_action": null,
+      "blocked_reason": null,
+      "todoCounts": {
+        "open": 0,
+        "in_progress": 0,
+        "blocked": 0,
+        "done": 0,
+        "cancelled": 0
+      },
+      "evidenceCount": 5,
+      "todoEvidenceCount": 0,
+      "truncatedFields": []
+    },
+    {
+      "id": "buddy_project_06478480-876d-4230-b31e-bf6a5f015065",
+      "workspace_id": "project_26fce156-5c5d-4dd9-a9d6-4b527a50af3c",
+      "buddy_id": "buddy_d3f11f11-d010-4383-bc72-940bfe6ef8cd",
+      "title": "Buddy inbox notifications at tool and turn boundaries",
+      "revision": 1,
+      "status": "done",
+      "priority": 0,
+      "execution_state": "enabled",
+      "updated_at": "2026-09-09T06:01:12.804Z",
+      "next_action": null,
+      "blocked_reason": null,
+      "todoCounts": {
+        "open": 0,
+        "in_progress": 0,
+        "blocked": 0,
+        "done": 0,
+        "cancelled": 0
+      },
+      "evidenceCount": 0,
+      "todoEvidenceCount": 0,
+      "truncatedFields": []
+    },
+    {
+      "id": "buddy_project_2202cbf3-e230-484e-b55d-892e6c014501",
+      "workspace_id": "project_26fce156-5c5d-4dd9-a9d6-4b527a50af3c",
+      "buddy_id": "buddy_d3f11f11-d010-4383-bc72-940bfe6ef8cd",
+      "title": "Hide injected setup context in Buddy conversations",
+      "revision": 1,
+      "status": "done",
+      "priority": 0,
+      "execution_state": "enabled",
+      "updated_at": "2026-09-09T05:37:13.740Z",
+      "next_action": null,
+      "blocked_reason": null,
+      "todoCounts": {
+        "open": 0,
+        "in_progress": 0,
+        "blocked": 0,
+        "done": 0,
+        "cancelled": 0
+      },
+      "evidenceCount": 0,
+      "todoEvidenceCount": 0,
+      "truncatedFields": []
+    },
+    {
+      "id": "buddy_project_691c1c42-d265-4fe6-9640-f77d5a20c902",
+      "workspace_id": "project_26fce156-5c5d-4dd9-a9d6-4b527a50af3c",
+      "buddy_id": "buddy_d3f11f11-d010-4383-bc72-940bfe6ef8cd",
+      "title": "Show Buddy creation and updates inline in New Buddy chat",
+      "revision": 1,
+      "status": "done",
+      "priority": 0,
+      "execution_state": "enabled",
+      "updated_at": "2026-09-08T08:01:57.977Z",
+      "next_action": null,
+      "blocked_reason": null,
+      "todoCounts": {
+        "open": 0,
+        "in_progress": 0,
+        "blocked": 0,
+        "done": 0,
+        "cancelled": 0
+      },
+      "evidenceCount": 0,
+      "todoEvidenceCount": 0,
+      "truncatedFields": []
+    },
+    {
+      "id": "buddy_project_ab9ac786-cd9c-4e1a-bcb5-3cbf1d8446da",
+      "workspace_id": "project_26fce156-5c5d-4dd9-a9d6-4b527a50af3c",
+      "buddy_id": "buddy_d3f11f11-d010-4383-bc72-940bfe6ef8cd",
+      "title": "Create multiple Buddies from one New Buddy chat",
+      "revision": 1,
+      "status": "done",
+      "priority": 0,
+      "execution_state": "enabled",
+      "updated_at": "2026-09-08T04:47:26.519Z",
+      "next_action": null,
+      "blocked_reason": null,
+      "todoCounts": {
+        "open": 0,
+        "in_progress": 0,
+        "blocked": 0,
+        "done": 0,
+        "cancelled": 0
+      },
+      "evidenceCount": 0,
+      "todoEvidenceCount": 0,
+      "truncatedFields": []
+    },
+    {
+      "id": "buddy_project_5b3e3d6b-b336-4ac3-9d46-681aa56fc3f9",
+      "workspace_id": "project_26fce156-5c5d-4dd9-a9d6-4b527a50af3c",
+      "buddy_id": "buddy_d3f11f11-d010-4383-bc72-940bfe6ef8cd",
+      "title": "Implement Buddy memory v2 end to end",
+      "revision": 1,
+      "status": "done",
+      "priority": 10,
+      "execution_state": "enabled",
+      "updated_at": "2026-08-29T07:34:43.973Z",
+      "next_action": null,
+      "blocked_reason": null,
+      "todoCounts": {
+        "open": 0,
+        "in_progress": 0,
+        "blocked": 0,
+        "done": 8,
+        "cancelled": 0
+      },
+      "evidenceCount": 0,
+      "todoEvidenceCount": 0,
+      "truncatedFields": []
+    },
+    {
+      "id": "buddy_project_436197c1-18a6-46ff-abc9-795df780baba",
+      "workspace_id": "project_26fce156-5c5d-4dd9-a9d6-4b527a50af3c",
+      "buddy_id": "buddy_d3f11f11-d010-4383-bc72-940bfe6ef8cd",
+      "title": "Pre-implementation review: simplify Buddy memory architecture",
+      "revision": 1,
+      "status": "done",
+      "priority": 9,
+      "execution_state": "enabled",
+      "updated_at": "2026-08-22T07:55:26.404Z",
+      "next_action": "Owner decision: accept or revise the section 12 defaults, especially SQLite authority; then schedule Gate 0 package/provenance repair.",
+      "blocked_reason": null,
+      "todoCounts": {
+        "open": 0,
+        "in_progress": 0,
+        "blocked": 0,
+        "done": 6,
+        "cancelled": 0
+      },
+      "evidenceCount": 0,
+      "todoEvidenceCount": 0,
+      "truncatedFields": []
+    },
+    {
+      "id": "buddy_project_8a1f69b7-7734-47bb-853b-cf36d065e346",
+      "workspace_id": "project_26fce156-5c5d-4dd9-a9d6-4b527a50af3c",
+      "buddy_id": "buddy_d3f11f11-d010-4383-bc72-940bfe6ef8cd",
+      "title": "Minimal primitives: loops, schedules, goals, message passing — and the one missing wait",
+      "revision": 1,
+      "status": "ready",
+      "priority": 2,
+      "execution_state": "enabled",
+      "updated_at": "2026-08-20T17:16:43.605Z",
+      "next_action": "Owner decides Option A (loop-as-wait, free) vs Option B (blocking send). Design doc written 2026-08-21; nothing is implemented.",
+      "blocked_reason": null,
+      "todoCounts": {
+        "open": 10,
+        "in_progress": 0,
+        "blocked": 1,
+        "done": 0,
+        "cancelled": 1
+      },
+      "evidenceCount": 0,
+      "todoEvidenceCount": 0,
+      "truncatedFields": []
+    },
+    {
+      "id": "buddy_project_31d73904-2352-44a4-8e3f-8f1f101fc5f3",
+      "workspace_id": "project_26fce156-5c5d-4dd9-a9d6-4b527a50af3c",
+      "buddy_id": "buddy_d3f11f11-d010-4383-bc72-940bfe6ef8cd",
+      "title": "The Lead has no memory path, so every journal and curated entry is lost",
+      "revision": 1,
+      "status": "blocked",
+      "priority": 2,
+      "execution_state": "enabled",
+      "updated_at": "2026-08-20T16:53:13.543Z",
+      "next_action": "Owner: provision the Lead's profile directory, or confirm which existing profiles/ slug it should bind to",
+      "blocked_reason": "Owner action — provisioning a profile directory is not in the Lead's operation set, and writing it directly on the filesystem would bypass that boundary.",
+      "todoCounts": {
+        "open": 4,
+        "in_progress": 0,
+        "blocked": 1,
+        "done": 0,
+        "cancelled": 0
+      },
+      "evidenceCount": 0,
+      "todoEvidenceCount": 0,
+      "truncatedFields": []
+    },
+    {
+      "id": "buddy_project_36a70bf6-8ebd-403f-af7f-99cfa346bd88",
+      "workspace_id": "project_26fce156-5c5d-4dd9-a9d6-4b527a50af3c",
+      "buddy_id": "buddy_d3f11f11-d010-4383-bc72-940bfe6ef8cd",
+      "title": "Delegation readiness: the Lead has no manager edge, so every delegate call is refused",
+      "revision": 1,
+      "status": "blocked",
+      "priority": 1,
+      "execution_state": "enabled",
+      "updated_at": "2026-08-20T16:52:21.032Z",
+      "next_action": "Owner decision: grant manager edges to existing buddies (unblocks delegation today, zero new code) or wait for the hire feature to land",
+      "blocked_reason": "Requires an Owner action. Creating a manager edge or setting hire_quota is outside the Lead's operation set, and the HTTP/SQLite paths to both are bypasses of that boundary rather than alternatives to it.",
+      "todoCounts": {
+        "open": 4,
+        "in_progress": 0,
+        "blocked": 1,
+        "done": 0,
+        "cancelled": 0
+      },
+      "evidenceCount": 0,
+      "todoEvidenceCount": 0,
+      "truncatedFields": []
+    },
+    {
+      "id": "buddy_project_2bce3176-5b7c-4d67-982e-128c3d65df63",
+      "workspace_id": "project_26fce156-5c5d-4dd9-a9d6-4b527a50af3c",
+      "buddy_id": "buddy_d3f11f11-d010-4383-bc72-940bfe6ef8cd",
+      "title": "Verify and land the @nbardy/buddies store layer for direct reports",
+      "revision": 1,
+      "status": "in_progress",
+      "priority": 1,
+      "execution_state": "enabled",
+      "updated_at": "2026-08-20T16:51:54.205Z",
+      "next_action": "Review the uncommitted store diff against design sections 5.1, 7.5, 8.1, 8.4, 9.3 — the only unverified gate before commit + vendor",
+      "blocked_reason": null,
+      "todoCounts": {
+        "open": 6,
+        "in_progress": 1,
+        "blocked": 0,
+        "done": 3,
+        "cancelled": 0
+      },
+      "evidenceCount": 0,
+      "todoEvidenceCount": 0,
+      "truncatedFields": []
+    },
+    {
+      "id": "buddy_project_216ae739-a2ae-48a6-ae37-ec5d66b8d226",
+      "workspace_id": "project_26fce156-5c5d-4dd9-a9d6-4b527a50af3c",
+      "buddy_id": "buddy_d3f11f11-d010-4383-bc72-940bfe6ef8cd",
+      "title": "Work graph: task-to-task links and team membership on projects",
+      "revision": 1,
+      "status": "backlog",
+      "priority": 6,
+      "execution_state": "enabled",
+      "updated_at": "2026-08-20T14:16:37.157Z",
+      "next_action": "Do not start until direct reports lands; this is adjacent, not required by it",
+      "blocked_reason": null,
+      "todoCounts": {
+        "open": 9,
+        "in_progress": 0,
+        "blocked": 0,
+        "done": 0,
+        "cancelled": 0
+      },
+      "evidenceCount": 0,
+      "todoEvidenceCount": 0,
+      "truncatedFields": []
+    },
+    {
+      "id": "buddy_project_b55e2554-3dae-4b14-8b81-fcd1cfec3531",
+      "workspace_id": "project_26fce156-5c5d-4dd9-a9d6-4b527a50af3c",
+      "buddy_id": "buddy_d3f11f11-d010-4383-bc72-940bfe6ef8cd",
+      "title": "Direct reports: deliberately deferred backlog",
+      "revision": 1,
+      "status": "backlog",
+      "priority": 8,
+      "execution_state": "enabled",
+      "updated_at": "2026-08-20T13:47:43.842Z",
+      "next_action": "Review after direct reports ships; no action before then",
+      "blocked_reason": null,
+      "todoCounts": {
+        "open": 4,
+        "in_progress": 0,
+        "blocked": 0,
+        "done": 0,
+        "cancelled": 0
+      },
+      "evidenceCount": 0,
+      "todoEvidenceCount": 0,
+      "truncatedFields": []
+    },
+    {
+      "id": "buddy_project_3b1d5297-3db3-4d52-8a33-9c06ec4a8573",
+      "workspace_id": "project_26fce156-5c5d-4dd9-a9d6-4b527a50af3c",
+      "buddy_id": "buddy_d3f11f11-d010-4383-bc72-940bfe6ef8cd",
+      "title": "AI-OS as the cross-harness workflow layer",
+      "revision": 1,
+      "status": "backlog",
+      "priority": 5,
+      "execution_state": "enabled",
+      "updated_at": "2026-08-20T13:47:32.514Z",
+      "next_action": "Pick the canonical repo between ~/git/AI-OS and ~/git/ai-os_2",
+      "blocked_reason": null,
+      "todoCounts": {
+        "open": 4,
+        "in_progress": 0,
+        "blocked": 0,
+        "done": 0,
+        "cancelled": 0
+      },
+      "evidenceCount": 0,
+      "todoEvidenceCount": 0,
+      "truncatedFields": []
+    },
+    {
+      "id": "buddy_project_7023cc14-9c47-43bf-a610-b85fb981c067",
+      "workspace_id": "project_26fce156-5c5d-4dd9-a9d6-4b527a50af3c",
+      "buddy_id": "buddy_d3f11f11-d010-4383-bc72-940bfe6ef8cd",
+      "title": "Document the -p orchestration constraint and clean up stale sessions",
+      "revision": 1,
+      "status": "ready",
+      "priority": 2,
+      "execution_state": "enabled",
+      "updated_at": "2026-08-20T13:47:26.032Z",
+      "next_action": "Add the lifecycle note to AGENTS.md hard rules",
+      "blocked_reason": null,
+      "todoCounts": {
+        "open": 3,
+        "in_progress": 0,
+        "blocked": 0,
+        "done": 0,
+        "cancelled": 0
+      },
+      "evidenceCount": 0,
+      "todoEvidenceCount": 0,
+      "truncatedFields": []
+    },
+    {
+      "id": "buddy_project_743485e9-ea23-46bc-b537-82f271248745",
+      "workspace_id": "project_26fce156-5c5d-4dd9-a9d6-4b527a50af3c",
+      "buddy_id": "buddy_d3f11f11-d010-4383-bc72-940bfe6ef8cd",
+      "title": "Buddies security fixes that direct reports newly depend on",
+      "revision": 1,
+      "status": "ready",
+      "priority": 2,
+      "execution_state": "enabled",
+      "updated_at": "2026-08-20T13:47:11.961Z",
+      "next_action": "Land alongside the server layer",
+      "blocked_reason": null,
+      "todoCounts": {
+        "open": 4,
+        "in_progress": 0,
+        "blocked": 0,
+        "done": 0,
+        "cancelled": 0
+      },
+      "evidenceCount": 0,
+      "todoEvidenceCount": 0,
+      "truncatedFields": []
+    },
+    {
+      "id": "buddy_project_0334db8e-2dbc-4f60-891d-f8a3a3216bd7",
+      "workspace_id": "project_26fce156-5c5d-4dd9-a9d6-4b527a50af3c",
+      "buddy_id": "buddy_d3f11f11-d010-4383-bc72-940bfe6ef8cd",
+      "title": "Sub-buddies test suite: 16 cases on one real fixture",
+      "revision": 1,
+      "status": "backlog",
+      "priority": 4,
+      "execution_state": "enabled",
+      "updated_at": "2026-08-20T13:47:01.094Z",
+      "next_action": "Blocked until store and server layers land",
+      "blocked_reason": null,
+      "todoCounts": {
+        "open": 7,
+        "in_progress": 0,
+        "blocked": 0,
+        "done": 0,
+        "cancelled": 0
+      },
+      "evidenceCount": 0,
+      "todoEvidenceCount": 0,
+      "truncatedFields": []
+    },
+    {
+      "id": "buddy_project_d7c71266-2b44-4cd8-805b-cf0de53a6874",
+      "workspace_id": "project_26fce156-5c5d-4dd9-a9d6-4b527a50af3c",
+      "buddy_id": "buddy_d3f11f11-d010-4383-bc72-940bfe6ef8cd",
+      "title": "Sub-buddies client layer: delete deriveBuddyHierarchy, fix the team badge",
+      "revision": 1,
+      "status": "backlog",
+      "priority": 3,
+      "execution_state": "enabled",
+      "updated_at": "2026-08-20T13:46:55.171Z",
+      "next_action": "Blocked until the store layer lands (needs the employment sum in the overview projection)",
+      "blocked_reason": null,
+      "todoCounts": {
+        "open": 7,
+        "in_progress": 0,
+        "blocked": 0,
+        "done": 0,
+        "cancelled": 0
+      },
+      "evidenceCount": 0,
+      "todoEvidenceCount": 0,
+      "truncatedFields": []
+    },
+    {
+      "id": "buddy_project_816d7fa0-ffb5-4b11-aa03-cc8898fcf8f0",
+      "workspace_id": "project_26fce156-5c5d-4dd9-a9d6-4b527a50af3c",
+      "buddy_id": "buddy_d3f11f11-d010-4383-bc72-940bfe6ef8cd",
+      "title": "Sub-buddies server layer: operations, allowlist sum, profile route",
+      "revision": 1,
+      "status": "backlog",
+      "priority": 2,
+      "execution_state": "enabled",
+      "updated_at": "2026-08-20T13:46:48.128Z",
+      "next_action": "Blocked until the store layer is reviewed, committed and vendored",
+      "blocked_reason": null,
+      "todoCounts": {
+        "open": 6,
+        "in_progress": 0,
+        "blocked": 0,
+        "done": 0,
+        "cancelled": 0
+      },
+      "evidenceCount": 0,
+      "todoEvidenceCount": 0,
+      "truncatedFields": []
+    }
+  ],
+  "supervisedTaskIds": [
+    "buddy_project_95592e35-f568-4868-9a93-03c8a8511597",
+    "buddy_project_a2047be3-f8cb-4eed-ac2e-522e3831bee6"
+  ],
+  "sourceManifest": [
+    {
+      "path": "/Users/nicholasbardy/git/unleashd/agent_notes/buddies/2026-09-15-task-review-plan.md",
+      "sha256": "6ff70ac2f843b8086ad04881dbef5ede77cd59698b6081580ff555e6b4d592c5",
+      "bytes": 28525,
+      "modifiedAt": "2026-09-15T13:56:17.237621+00:00"
+    },
+    {
+      "path": "/Users/nicholasbardy/git/unleashd/agent_notes/buddies/2026-09-15-task-review.snapshot.json",
+      "sha256": "f99be908482b97f636f8ff5ff66b0b43a3f0fa478481f7459b4b6cf51476bbb5",
+      "bytes": 31993,
+      "modifiedAt": "2026-09-15T13:56:17.262772+00:00"
+    },
+    {
+      "path": "/Users/nicholasbardy/git/unleashd/agent_notes/buddies/2026-09-15-task-review.receipts.json",
+      "sha256": "f058437672d79e30efc75e460795f8d26c37e32c29bf1c1ad37e9e209a883a98",
+      "bytes": 6718,
+      "modifiedAt": "2026-09-15T13:58:16.385273+00:00"
+    },
+    {
+      "path": "/Users/nicholasbardy/git/unleashd/agent_notes/buddies/2026-09-15-efficiency-task-plan.md",
+      "sha256": "87631808fa923a9071ea976463bc7675985455c28d0917fa450545897cf64b7c",
+      "bytes": 13217,
+      "modifiedAt": "2026-09-15T13:38:12.864947+00:00"
+    },
+    {
+      "path": "/Users/nicholasbardy/git/unleashd/agent_notes/buddies/2026-09-15-efficiency-assessment.md",
+      "sha256": "37f16513a50595b172a4eecf0065a397c356c2ece65b165dbdd2c780d721c40a",
+      "bytes": 13413,
+      "modifiedAt": "2026-09-15T13:57:19.944435+00:00"
+    },
+    {
+      "path": "/Users/nicholasbardy/git/unleashd/agent_notes/buddies/2026-09-15-efficiency-sources.json",
+      "sha256": "0cf628e511a726dc1de2c52e431ac2191980ceb55932e12f8d37c25605fa4345",
+      "bytes": 79253,
+      "modifiedAt": "2026-09-15T13:34:33.603663+00:00"
+    },
+    {
+      "path": "/Users/nicholasbardy/git/unleashd/agent_notes/buddies/2026-09-15-progress-review.md",
+      "sha256": "878f6d63f64e935008ef53b869469a348119ac7b888a82c8c0afc38ddf5cc89c",
+      "bytes": 7348,
+      "modifiedAt": "2026-09-15T13:48:07.498008+00:00"
+    },
+    {
+      "path": "/Users/nicholasbardy/git/unleashd/agent_notes/buddies/2026-09-15-progress-review.evidence.json",
+      "sha256": "767f9b82772c0e1f92ab6389928a42ee59714c23dfef764797270528bd352bb6",
+      "bytes": 15173,
+      "modifiedAt": "2026-09-15T13:48:07.480000+00:00"
+    },
+    {
+      "path": "/Users/nicholasbardy/git/unleashd/agent_notes/buddies/2026-09-15-restart-continuity-closeout.md",
+      "sha256": "134afc8dd1685406e331974128735c39d45304c5c7133ad1e7c8eb2ad112d66c",
+      "bytes": 3494,
+      "modifiedAt": "2026-09-15T04:39:25.848115+00:00"
+    },
+    {
+      "path": "/Users/nicholasbardy/git/unleashd/agent_notes/buddies/2026-09-15-efficiency-verification/verification.json",
+      "sha256": "0a87d872afd54828354f8603740c84baa912a46c2d2eeddb530d4f10c4ff32d3",
+      "bytes": 5386,
+      "modifiedAt": "2026-09-15T13:58:26.360459+00:00"
+    },
+    {
+      "path": "/Users/nicholasbardy/git/unleashd/agent_notes/buddies/2026-09-15-efficiency-verification/server-test-command.json",
+      "sha256": "2368ce0ac3c5107b03428aa3a2f8b1ccb40df5792b34045d0b8007dbaf8d657f",
+      "bytes": 736,
+      "modifiedAt": "2026-09-15T13:55:09.708427+00:00"
+    },
+    {
+      "path": "/Users/nicholasbardy/git/unleashd/agent_notes/buddies/2026-09-15-efficiency-verification/server-tests.log",
+      "sha256": "68f2fbc0bbb7fe468dbe5d2d98c407af4711d9e5be066447f7245f369fe3c506",
+      "bytes": 32683,
+      "modifiedAt": "2026-09-15T13:55:09.707716+00:00"
+    }
+  ],
+  "uiBefore": {
+    "ok": true,
+    "data": {
+      "view": "full",
+      "items": [
+        {
+          "id": "buddy_project_95592e35-f568-4868-9a93-03c8a8511597",
+          "workspace_id": "project_26fce156-5c5d-4dd9-a9d6-4b527a50af3c",
+          "buddy_id": "buddy_e87e3e91-fe15-4759-9337-52a9636ed084",
+          "sprint_id": null,
+          "title": "Expose former-lead grant revocation and preserve permission drafts",
+          "objective": "Complete the two concrete remaining Team settings UI gaps from September 12 review.",
+          "definition_of_done": "Owner can discover and fully revoke saved grants held by archived or detached leads without reactivating them or broadening access. Background grant refresh preserves unsaved permission changes and clearly handles stale saves. Both shells use shared existing settings paths. Real HTTP/MCP and browser interaction evidence, relevant typechecks/invariants, attributable commits and historical decision note are delivered.",
+          "status": "blocked",
+          "priority": 1,
+          "next_action": "Preserve the existing isolated snapshot. Await supported native timeout recovery from project buddy_project_f24b0cc3-e82e-40ab-b974-5f1bfc469950, then resume this same prepared project in bounded attempts with durable checkpoints before 600 seconds.",
+          "blocked_reason": "Original managed attempt failed with max_runtime_timeout after 600 seconds and closed its request. Inspected native retry of the UI chain was refused with 'Request is no longer open'; all three original receipts are replied/failed. Resume only through a supported native recovery route after the existing reliability lane resolves/dispositions this case. No duplicate work chain created.",
+          "source_path": "/Users/nicholasbardy/git/unleashd/product/buddies/REVIEW_TEAM_SETTINGS_2026-09-12.md",
+          "external_key": null,
+          "created_at": "2026-09-12T15:57:04.246Z",
+          "updated_at": "2026-09-12T16:18:04.622Z",
+          "completed_at": null,
+          "parent_project_id": "buddy_project_37f2780f-f766-452b-991c-eb4ca4192a9b",
+          "revision": 5,
+          "execution_state": "enabled",
+          "execution_epoch": 1,
+          "pending_owner_id": null,
+          "completion_evidence": "[\"Recovery audit 2026-09-12T16:15Z: original run buddy_run_aedf24d1-3a9d-4fc1-b5af-81304ae74773 failed with max_runtime_timeout after 600 seconds; no todo completion or test result recorded.\",\"Read-only side-effect inspection: existing /Users/nicholasbardy/git/.codex-worktrees/unleashd/team-settings-ui-20260913 branch codex/team-settings-ui-20260913 at 743379dc8d607d6825f5080f41739a491e9bffb4 (snapshot: preserve September 12 settings implementation); no tracked modifications; untracked dependency paths node_modules, server/node_modules, shared/node_modules. This is inherited snapshot preservation, not verified repair completion.\",\"Observed 2026-09-12T16:14–16:17Z via native get_runs: coordinator buddy_run_c9bb49a7-f98d-4bbe-ae51-6b1f1a0b3ffd and UI/release buddy_run_aedf24d1-3a9d-4fc1-b5af-81304ae74773 / buddy_run_a2f53fd2-bc3a-4538-9d7a-a0c77b310fa6 all failed with max_runtime_timeout after 600 seconds despite work-chain durations of 21600/14400 seconds.\",\"After inspecting canonical projects and preserved isolated snapshot commits 743379dc8d607d6825f5080f41739a491e9bffb4 and 551db45df46b9cac89b26538ea220aa67392cffe, native retry_run(runId=buddy_run_aedf24d1-3a9d-4fc1-b5af-81304ae74773,key=buddy-timeout-retry-ui-20260912-v1) returned error 'Request is no longer open'. No retry was created and no alternate access path was used.\",\"Installed node_modules/@nbardy/buddies/src/coordination.js:712 rejects retry when message status is replied/cancelled or superseded. Timeout receipts are replied/failed. This is a concrete timeout recovery acceptance case for the existing reliability lane; preserve stopped-root fencing and original immutable permissions.\"]",
+          "accepted_by": "buddy_e87e3e91-fe15-4759-9337-52a9636ed084",
+          "accepted_at": "2026-09-12T16:06:10.987Z",
+          "workspace_name": "unleashd",
+          "workspace_slug": "unleashd",
+          "buddy_name": "Buddies UI Engineer",
+          "sprint_name": null,
+          "todos": [
+            {
+              "id": "todo_f3c4d46b-a43c-4388-a953-fe33d42854ab",
+              "buddy_project_id": "buddy_project_95592e35-f568-4868-9a93-03c8a8511597",
+              "title": "Reproduce and repair saved-grant discovery/revocation for former leads",
+              "status": "blocked",
+              "position": 0,
+              "definition_of_done": "Actual owner route/UI covers archived grantee, detached grantee, and former-target controls; revocation preserves inactive membership and never widens permissions. Preserve generic archive protections outside this precise owner flow.",
+              "next_action": null,
+              "blocked_reason": "Original managed attempt failed with max_runtime_timeout after 600 seconds and closed its request. Inspected native retry of the UI chain was refused with 'Request is no longer open'; all three original receipts are replied/failed. Resume only through a supported native recovery route after the existing reliability lane resolves/dispositions this case. No duplicate work chain created.",
+              "created_at": "2026-09-12T15:57:04.246Z",
+              "updated_at": "2026-09-12T16:18:04.622Z",
+              "completed_at": null,
+              "completion_evidence": []
+            },
+            {
+              "id": "todo_32fa48cb-6aaf-467e-a8d6-0abf8da48562",
+              "buddy_project_id": "buddy_project_95592e35-f568-4868-9a93-03c8a8511597",
+              "title": "Preserve dirty permission drafts across refetch and revision changes",
+              "status": "open",
+              "position": 1,
+              "definition_of_done": "Browser demonstrates user edits survive background refresh/reconnect, stale submit reports conflict without silent overwrite, target switch/reset is deliberate, successful save reflects authoritative revision.",
+              "next_action": null,
+              "blocked_reason": null,
+              "created_at": "2026-09-12T15:57:04.246Z",
+              "updated_at": "2026-09-12T15:57:04.246Z",
+              "completed_at": null,
+              "completion_evidence": []
+            },
+            {
+              "id": "todo_5f5674a0-83e5-4aa2-b9f8-ea1b01f2c5eb",
+              "buddy_project_id": "buddy_project_95592e35-f568-4868-9a93-03c8a8511597",
+              "title": "Validate both shells and deliver scoped commits",
+              "status": "open",
+              "position": 2,
+              "definition_of_done": "Meaningful boundary tests, client tsc -b, server applicable typecheck and client invariant gates pass; browser evidence with deterministic fixtures; report changed files/commits and integration instructions; no forced restart or main push.",
+              "next_action": null,
+              "blocked_reason": null,
+              "created_at": "2026-09-12T15:57:04.246Z",
+              "updated_at": "2026-09-12T15:57:04.246Z",
+              "completed_at": null,
+              "completion_evidence": []
+            },
+            {
+              "id": "todo_92aa7b2e-db85-4781-985d-1d8930b7c0e8",
+              "buddy_project_id": "buddy_project_95592e35-f568-4868-9a93-03c8a8511597",
+              "title": "Verify the restored original owner thread in the live browser",
+              "status": "open",
+              "position": 3,
+              "definition_of_done": "Read-only browser inspection of http://unleashd.localhost/chat/7d9d117f-7a13-46e2-bf6a-95da591d6e2b confirms original Sep9 discussion/five-defect review plus newest rows, with dated screenshots/DOM observations. Existing main-thread API evidence and different aca48e0e browser evidence are distinguished. No chat input or forced restart.",
+              "next_action": null,
+              "blocked_reason": null,
+              "created_at": "2026-09-12T16:00:21.511Z",
+              "updated_at": "2026-09-12T16:00:21.511Z",
+              "completed_at": null,
+              "completion_evidence": []
+            }
+          ]
+        }
+      ],
+      "nextCursor": null
+    },
+    "auditId": "audit_d5dc32d9-e850-4dbf-8337-c91b42b3fafa",
+    "contractVersion": "2026-09-15.1"
+  },
+  "recordingMutations": [
+    {
+      "projectId": "buddy_project_8638d8bf-f609-46f3-b991-a2d5232e55c4",
+      "result": {
+        "operation": "buddy.update_project",
+        "data": {
+          "id": "buddy_project_8638d8bf-f609-46f3-b991-a2d5232e55c4",
+          "workspace_id": "project_26fce156-5c5d-4dd9-a9d6-4b527a50af3c",
+          "buddy_id": "buddy_d3f11f11-d010-4383-bc72-940bfe6ef8cd",
+          "sprint_id": null,
+          "title": "Efficiency follow-ups: durable change feeds, provider usage and cross-request review policy",
+          "objective": "Retain the remaining September 15 proposals without treating unavailable telemetry or cross-root execution composition as implemented.",
+          "definition_of_done": "Each selected follow-up starts from current source and preserved rationale, extends existing authorities, and is accepted with real-boundary evidence. These are product/architecture follow-ups, not requests to resume stopped work or change budgets.",
+          "status": "backlog",
+          "priority": 0,
+          "next_action": "Lead review pending. Compare this follow-up's three criteria with existing incremental-read Task 56ced029, usage Task cdae619b and review-wakeup Task 4f875aff. Decide whether to merge duplicate criteria or retain only conditional future scope; preserve all source rationale and evidence. Do not start a second implementation track from this record.",
+          "blocked_reason": null,
+          "source_path": null,
+          "external_key": null,
+          "created_at": "2026-09-15T13:53:18.660Z",
+          "updated_at": "2026-09-15T14:02:57.785Z",
+          "completed_at": null,
+          "parent_project_id": "buddy_project_6efaffd1-0415-4dcf-80a4-bb6599d924b7",
+          "revision": 2,
+          "execution_state": "paused",
+          "execution_epoch": 2,
+          "pending_owner_id": null,
+          "completion_evidence": "[]",
+          "accepted_by": null,
+          "accepted_at": null,
+          "todos": [
+            {
+              "id": "todo_34ec0220-5376-4840-9948-0c8625c310d7",
+              "buddy_project_id": "buddy_project_8638d8bf-f609-46f3-b991-a2d5232e55c4",
+              "title": "Define and implement durable incremental read semantics when synchronization is required",
+              "status": "open",
+              "position": 0,
+              "definition_of_done": "An ordered canonical change source covers updates, closures, deletions, access changes and concurrent pagination. Current inclusive timestamp filters and stale-page detection are not presented as that feed.",
+              "next_action": null,
+              "blocked_reason": null,
+              "created_at": "2026-09-15T13:53:18.660Z",
+              "updated_at": "2026-09-15T13:53:18.660Z",
+              "completed_at": null,
+              "completion_evidence": []
+            },
+            {
+              "id": "todo_417c7d4d-2c72-4274-a8eb-5478377dfec5",
+              "buddy_project_id": "buddy_project_8638d8bf-f609-46f3-b991-a2d5232e55c4",
+              "title": "Capture normalized provider usage before assignment-tree cost totals",
+              "status": "open",
+              "position": 1,
+              "definition_of_done": "Provider adapters supply documented input/output/cache semantics and interrupted usage; existing run identity deduplicates retry/child/review aggregation; unknown remains null; measured cost differs from dated estimates.",
+              "next_action": null,
+              "blocked_reason": null,
+              "created_at": "2026-09-15T13:53:18.660Z",
+              "updated_at": "2026-09-15T13:53:18.660Z",
+              "completed_at": null,
+              "completion_evidence": []
+            },
+            {
+              "id": "todo_d431161a-5e0c-4909-87ac-de8a474ba5ed",
+              "buddy_project_id": "buddy_project_8638d8bf-f609-46f3-b991-a2d5232e55c4",
+              "title": "Resolve cross-request review batching policy before combining independent turns",
+              "status": "open",
+              "position": 2,
+              "definition_of_done": "One combined turn has explicit audience, originating-request attribution, governing allowed operations and limits, urgent-return behavior, and per-result disposition; stopped/expired roots cannot revive. Preserve existing managed-parent child-return coalescing.",
+              "next_action": null,
+              "blocked_reason": null,
+              "created_at": "2026-09-15T13:53:18.660Z",
+              "updated_at": "2026-09-15T13:53:18.660Z",
+              "completed_at": null,
+              "completion_evidence": []
+            }
+          ]
+        },
+        "audit": {
+          "id": "audit_6a473af8-7ce6-47b1-bd18-128189d3622e",
+          "buddy_id": "buddy_d3f11f11-d010-4383-bc72-940bfe6ef8cd",
+          "workspace_id": "project_26fce156-5c5d-4dd9-a9d6-4b527a50af3c",
+          "buddy_project_id": null,
+          "operation": "buddy.update_project",
+          "payload": {
+            "key": "review-recording-20260915-followup-hold-v1",
+            "baseRevision": 1,
+            "executionState": "paused",
+            "projectId": "buddy_project_8638d8bf-f609-46f3-b991-a2d5232e55c4",
+            "nextAction": "Lead review pending. Compare this follow-up's three criteria with existing incremental-read Task 56ced029, usage Task cdae619b and review-wakeup Task 4f875aff. Decide whether to merge duplicate criteria or retain only conditional future scope; preserve all source rationale and evidence. Do not start a second implementation track from this record.",
+            "conversation_id": "01a09f69-2b0c-72f2-9c6f-50a28ac72008",
+            "automation_run_id": null
+          },
+          "created_at": "2026-09-15T14:02:57.787Z"
+        }
+      }
+    },
+    {
+      "projectId": "buddy_project_95592e35-f568-4868-9a93-03c8a8511597",
+      "result": {
+        "operation": "buddy.update_project",
+        "data": {
+          "id": "buddy_project_95592e35-f568-4868-9a93-03c8a8511597",
+          "workspace_id": "project_26fce156-5c5d-4dd9-a9d6-4b527a50af3c",
+          "buddy_id": "buddy_e87e3e91-fe15-4759-9337-52a9636ed084",
+          "sprint_id": null,
+          "title": "Expose saved-grant revocation for inactive grantees and preserve permission drafts",
+          "objective": "Complete the two concrete remaining Team settings UI gaps from September 12 review.",
+          "definition_of_done": "Owner can discover and fully revoke saved grants held by archived or detached grantees without reactivating them or broadening access. Background grant refresh preserves unsaved permission changes and clearly handles stale saves. Both shells use shared existing settings paths. Real HTTP/MCP and browser interaction evidence, relevant typechecks/invariants, attributable commits and historical decision note are delivered.",
+          "status": "blocked",
+          "priority": 1,
+          "next_action": "Preserve the existing isolated snapshot. Await supported native timeout recovery from project buddy_project_f24b0cc3-e82e-40ab-b974-5f1bfc469950, then resume this same prepared project in bounded attempts with durable checkpoints before 600 seconds.",
+          "blocked_reason": "Original managed attempt failed with max_runtime_timeout after 600 seconds and closed its request. Inspected native retry of the UI chain was refused with 'Request is no longer open'; all three original receipts are replied/failed. Resume only through a supported native recovery route after the existing reliability lane resolves/dispositions this case. No duplicate work chain created.",
+          "source_path": "/Users/nicholasbardy/git/unleashd/product/buddies/REVIEW_TEAM_SETTINGS_2026-09-12.md",
+          "external_key": null,
+          "created_at": "2026-09-12T15:57:04.246Z",
+          "updated_at": "2026-09-15T14:02:57.795Z",
+          "completed_at": null,
+          "parent_project_id": "buddy_project_37f2780f-f766-452b-991c-eb4ca4192a9b",
+          "revision": 6,
+          "execution_state": "enabled",
+          "execution_epoch": 1,
+          "pending_owner_id": null,
+          "completion_evidence": "[]",
+          "accepted_by": "buddy_e87e3e91-fe15-4759-9337-52a9636ed084",
+          "accepted_at": "2026-09-12T16:06:10.987Z",
+          "todos": [
+            {
+              "id": "todo_f3c4d46b-a43c-4388-a953-fe33d42854ab",
+              "buddy_project_id": "buddy_project_95592e35-f568-4868-9a93-03c8a8511597",
+              "title": "Reproduce and repair saved-grant discovery/revocation for inactive grantees",
+              "status": "blocked",
+              "position": 0,
+              "definition_of_done": "Actual owner route/UI covers archived grantee, detached grantee, and former-target controls; revocation preserves inactive membership and never widens permissions. Preserve generic archive protections outside this precise owner flow.",
+              "next_action": null,
+              "blocked_reason": "Original managed attempt failed with max_runtime_timeout after 600 seconds and closed its request. Inspected native retry of the UI chain was refused with 'Request is no longer open'; all three original receipts are replied/failed. Resume only through a supported native recovery route after the existing reliability lane resolves/dispositions this case. No duplicate work chain created.",
+              "created_at": "2026-09-12T15:57:04.246Z",
+              "updated_at": "2026-09-15T14:02:57.795Z",
+              "completed_at": null,
+              "completion_evidence": []
+            },
+            {
+              "id": "todo_32fa48cb-6aaf-467e-a8d6-0abf8da48562",
+              "buddy_project_id": "buddy_project_95592e35-f568-4868-9a93-03c8a8511597",
+              "title": "Preserve dirty permission drafts across refetch and revision changes",
+              "status": "open",
+              "position": 1,
+              "definition_of_done": "Browser demonstrates user edits survive background refresh/reconnect, stale submit reports conflict without silent overwrite, target switch/reset is deliberate, successful save reflects authoritative revision.",
+              "next_action": null,
+              "blocked_reason": null,
+              "created_at": "2026-09-12T15:57:04.246Z",
+              "updated_at": "2026-09-12T15:57:04.246Z",
+              "completed_at": null,
+              "completion_evidence": []
+            },
+            {
+              "id": "todo_5f5674a0-83e5-4aa2-b9f8-ea1b01f2c5eb",
+              "buddy_project_id": "buddy_project_95592e35-f568-4868-9a93-03c8a8511597",
+              "title": "Validate both shells and deliver scoped commits",
+              "status": "open",
+              "position": 2,
+              "definition_of_done": "Meaningful boundary tests, client tsc -b, server applicable typecheck and client invariant gates pass; browser evidence with deterministic fixtures; report changed files/commits and integration instructions; no forced restart or main push.",
+              "next_action": null,
+              "blocked_reason": null,
+              "created_at": "2026-09-12T15:57:04.246Z",
+              "updated_at": "2026-09-12T15:57:04.246Z",
+              "completed_at": null,
+              "completion_evidence": []
+            },
+            {
+              "id": "todo_92aa7b2e-db85-4781-985d-1d8930b7c0e8",
+              "buddy_project_id": "buddy_project_95592e35-f568-4868-9a93-03c8a8511597",
+              "title": "Verify the restored original owner thread in the live browser",
+              "status": "open",
+              "position": 3,
+              "definition_of_done": "Read-only browser inspection of http://unleashd.localhost/chat/7d9d117f-7a13-46e2-bf6a-95da591d6e2b confirms original Sep9 discussion/five-defect review plus newest rows, with dated screenshots/DOM observations. Existing main-thread API evidence and different aca48e0e browser evidence are distinguished. No chat input or forced restart.",
+              "next_action": null,
+              "blocked_reason": null,
+              "created_at": "2026-09-12T16:00:21.511Z",
+              "updated_at": "2026-09-12T16:00:21.511Z",
+              "completed_at": null,
+              "completion_evidence": []
+            }
+          ]
+        },
+        "audit": {
+          "id": "audit_4b68cac0-8aff-43d2-9e91-653f83d51122",
+          "buddy_id": "buddy_d3f11f11-d010-4383-bc72-940bfe6ef8cd",
+          "workspace_id": "project_26fce156-5c5d-4dd9-a9d6-4b527a50af3c",
+          "buddy_project_id": null,
+          "operation": "buddy.update_project",
+          "payload": {
+            "key": "review-recording-20260915-grantee-wording-v1",
+            "baseRevision": 5,
+            "projectId": "buddy_project_95592e35-f568-4868-9a93-03c8a8511597",
+            "title": "Expose saved-grant revocation for inactive grantees and preserve permission drafts",
+            "definitionOfDone": "Owner can discover and fully revoke saved grants held by archived or detached grantees without reactivating them or broadening access. Background grant refresh preserves unsaved permission changes and clearly handles stale saves. Both shells use shared existing settings paths. Real HTTP/MCP and browser interaction evidence, relevant typechecks/invariants, attributable commits and historical decision note are delivered.",
+            "todoOperations": [
+              {
+                "operation": "update",
+                "todoId": "todo_f3c4d46b-a43c-4388-a953-fe33d42854ab",
+                "title": "Reproduce and repair saved-grant discovery/revocation for inactive grantees"
+              }
+            ],
+            "conversation_id": "01a09f69-2b0c-72f2-9c6f-50a28ac72008",
+            "automation_run_id": null
+          },
+          "created_at": "2026-09-15T14:02:57.798Z"
+        }
+      }
+    },
+    {
+      "projectId": "buddy_project_37f2780f-f766-452b-991c-eb4ca4192a9b",
+      "result": {
+        "operation": "buddy.update_project",
+        "data": {
+          "id": "buddy_project_37f2780f-f766-452b-991c-eb4ca4192a9b",
+          "workspace_id": "project_26fce156-5c5d-4dd9-a9d6-4b527a50af3c",
+          "buddy_id": "buddy_d3f11f11-d010-4383-bc72-940bfe6ef8cd",
+          "sprint_id": null,
+          "title": "Complete remaining Buddy repairs, reconcile backlog and deliver verified commits",
+          "objective": "Owner authorized background completion of remaining team returns/recovery, saved-grant revocation for archived or detached grantees, draft preservation, and backlog/repository delivery. Coordinate two reusable engineering reports and the already-running reliability lane.",
+          "definition_of_done": "Each scoped repair has implementation and meaningful boundary/browser evidence; existing reliability project is reconciled without duplicate implementation; stale own work records are updated from evidence; attributable implementation commits and integration verification are recorded; final results return to this owner thread with explicit unresolved limitations. Never mark completion from prose or test counts alone.",
+          "status": "blocked",
+          "priority": 1,
+          "next_action": "Owner requested task review before implementation. Use the all-task disposition plan to reconcile later evidence against old open criteria. Preserve exhausted September 12 requests; do not retry them. New restart child buddy_project_62511186-9ab4-4ec6-aece-4bdf39307527 feeds the existing release lane; UI child retains grant/draft/history acceptance.",
+          "blocked_reason": "Historical coordinator and UI/release requests remain failed with max_runtime_timeout. The recovery implementation is now loaded, but native get_team_state on 2026-09-13T03:11:08Z reports no successor and remainingSeconds=0 for all three original work envelopes; retry is unavailable because original managed work limits are exhausted.",
+          "source_path": null,
+          "external_key": null,
+          "created_at": "2026-09-12T15:56:41.873Z",
+          "updated_at": "2026-09-15T14:02:57.805Z",
+          "completed_at": null,
+          "parent_project_id": null,
+          "revision": 15,
+          "execution_state": "paused",
+          "execution_epoch": 2,
+          "pending_owner_id": null,
+          "completion_evidence": "[\"Owner team setup audit_2809be79-7d50-40b1-97c6-f5e05989c13a created two engineer reports; audit_f2976be2-719f-4b8c-a67c-5cbed828d6f4 enabled incoming/dispatch for both and Lead; activation had no prior queued work.\",\"Child UI project buddy_project_95592e35-f568-4868-9a93-03c8a8511597; release project buddy_project_a2047be3-f8cb-4eed-ac2e-522e3831bee6.\",\"Durable coordinator dispatch message_997e660d-2ee0-4363-9196-557b33f1b74b / run buddy_run_c9bb49a7-f98d-4bbe-ae51-6b1f1a0b3ffd; initial observed held active_run_limit, no provider start/acceptance claimed.\",\"Decision note knowledge_cdff6034-16ce-4fd5-b934-0f29862449f0: reusable persistent engineering reports with bounded ephemeral subagent review, no new Buddy lifetime.\",\"Ephemeral reconciliation updated seven native records; notes knowledge_2133161e-685d-4045-8054-94b90141468b and count correction knowledge_e2d4a02d-1a5b-4e97-b200-b3364b311dcc. Exact main-thread browser acceptance remains UI child criterion.\",\"Historical contract sources at 2026-09-12T16:03Z: PLANNING_PRIMITIVES.md SHA256 c61e272c3d5717669fd9eadef8f29c33613b509439cbc8db162441d16481a49c and PLANNING_SUB_BUDDIES.md SHA256 14719fd6c78c148b6fe9c745e7c27ee46522bc1a77a7fca5d13409a2c9f3cb4e; excerpt: ephemeral harness sub-agent is a separate mechanism and there is no third Buddy lifetime.\",\"2026-09-13 start: get_inbox read message_997e660d-2ee0-4363-9196-557b33f1b74b; get_current_work read parent revision 3 and five todos. Parent accepted with revision-checked update to revision 4.\",\"UI child dispatch receipt: message_dfb2d35c-6e35-42ab-9f7e-208be32e7ef5, command key buddy-ui-repairs-background-20260912-v1, run buddy_run_aedf24d1-3a9d-4fc1-b5af-81304ae74773; initial send returned queued/awaiting_admission, then get_message audit_172d5fbc-e424-413a-813d-29a57fa6dc71 observed active/running with conversation buddy-run-buddy_run_aedf24d1-3a9d-4fc1-b5af-81304ae74773, maxRuns 20 and maxDurationSeconds 14400.\",\"Release child dispatch receipt: message_e4165414-fbf5-440e-a6a7-956857076077, command key buddy-release-background-20260912-v1, run buddy_run_a2f53fd2-bc3a-4538-9d7a-a0c77b310fa6; initial send returned queued/awaiting_admission, then get_message audit_7d148013-90af-463c-be6e-7d6d0a63b428 observed active/running with conversation buddy-run-buddy_run_a2f53fd2-bc3a-4538-9d7a-a0c77b310fa6, maxRuns 20 and maxDurationSeconds 14400.\",\"get_runs audit_938ada1c-965d-41ad-ab9c-7de0e3f030e2 confirmed release run buddy_run_a2f53fd2-bc3a-4538-9d7a-a0c77b310fa6 status/running; UI get_runs likewise confirmed buddy_run_aedf24d1-3a9d-4fc1-b5af-81304ae74773 status/running.\",\"Native reliability scope boundary: get_current_work(projectId=buddy_project_f24b0cc3-e82e-40ab-b974-5f1bfc469950) and get_runs returned no readable records in this delegated Lead scope, audits audit_70e2d08b-46c2-443d-89a2-8e412a2c6063 and audit_244ff619-d8b9-4954-88ae-c7a65d57ad2a; no bypass used. Note knowledge_0d5bee7c-550a-4a6a-b2ac-a0d21e5d4e82.\",\"Ephemeral read-only reliability review agent 01a09661-bf04-7850-86f5-dc39ebb1116a completed without changes. Existing worktree HEAD 5e9480e6fe8b7e93759b30e35f30dfd67368af8d, parent 3ea36ad97dbfed535b0da9841519222040b074bc; source manifest SHA256 545c61e539e3df8c83289a1b223f31a72d11f52fc971e5161977914469bd0ac1; focused client 1 pass/0 fail; focused server coordination 20 pass/1 fail/2 skipped, sole failure buddy-team-access.test.ts from app contract 2026-09-12.1 vs package 2026-09-12.2 mismatch. Note knowledge_180e31e5-7e46-4f50-89e5-761581b9fd33.\",\"Observed 2026-09-12T16:14–16:17Z via native get_runs: coordinator buddy_run_c9bb49a7-f98d-4bbe-ae51-6b1f1a0b3ffd and UI/release buddy_run_aedf24d1-3a9d-4fc1-b5af-81304ae74773 / buddy_run_a2f53fd2-bc3a-4538-9d7a-a0c77b310fa6 all failed with max_runtime_timeout after 600 seconds despite work-chain durations of 21600/14400 seconds.\",\"After inspecting canonical projects and preserved isolated snapshot commits 743379dc8d607d6825f5080f41739a491e9bffb4 and 551db45df46b9cac89b26538ea220aa67392cffe, native retry_run(runId=buddy_run_aedf24d1-3a9d-4fc1-b5af-81304ae74773,key=buddy-timeout-retry-ui-20260912-v1) returned error 'Request is no longer open'. No retry was created and no alternate access path was used.\",\"Installed node_modules/@nbardy/buddies/src/coordination.js:712 rejects retry when message status is replied/cancelled or superseded. Timeout receipts are replied/failed. This is a concrete timeout recovery acceptance case for the existing reliability lane; preserve stopped-root fencing and original immutable permissions.\",\"Original owner return scope can read/update reliability project through native tools (get_current_work audit_8e6bb65b-40da-40d0-958a-ae63a642ed47; update_project audit_833197d6-4d0f-49e5-99a1-160515ba1abc revision 3), unlike earlier delegated project-only scope. Existing reliability design todo is done, implementation and acceptance remain open; get_runs in this scope returned no records, so no fresh reliability process heartbeat is claimed.\",\"2026-09-13 recovery: the release request message_e4165414-fbf5-440e-a6a7-956857076077 is replied/failed automatically with 'Turn reached its maximum runtime after 600s', evidence run buddy_run_a2f53fd2-bc3a-4538-9d7a-a0c77b310fa6; get_message audit confirms no completion evidence beyond the preserved snapshot audit.\",\"Manual native buddy.reply to message_e4165414-fbf5-440e-a6a7-956857076077 was attempted as required but denied with 'Message reply is outside this Buddy conversation scope'; no alternate access path, retry, or duplicate chain used. Note knowledge_63c885ae-0edf-46ee-8d8a-825ee78b0d9a.\",\"Child project records are authoritative: UI project revision 5 and Release project revision 4 are blocked with preserved snapshots 743379dc8d607d6825f5080f41739a491e9bffb4 and 551db45df46b9cac89b26538ea220aa67392cffe; neither published repair commits or acceptance tests before timeout.\",\"2026-09-13 recovery: UI request message_dfb2d35c-6e35-42ab-9f7e-208be32e7ef5 is replied/failed automatically after run buddy_run_aedf24d1-3a9d-4fc1-b5af-81304ae74773 reached the 600-second runtime limit; no repair, browser, or commit evidence was published.\",\"Manual native buddy.reply to message_dfb2d35c-6e35-42ab-9f7e-208be32e7ef5 was attempted as required but denied with 'Message reply is outside this Buddy conversation scope'; no alternate access path, retry, or duplicate chain used. Note knowledge_63f4012c-7745-4b66-8721-243b013370d2.\",\"2026-09-13 live native contract 2026-09-13.1 (audit_ba287db1-d358-44f4-8492-fe6aa24b5282); reliability project f24b0cc3 revision4 is done. Native team observation audit_f7ab7e7b-6117-44e0-bf05-84aa8cb50d59 returns all original work requests failed, successorRunId=null, remainingSeconds=0, canRetry=false, reason 'Original managed work limits are exhausted'.\",\"2026-09-13 current checkout verification: pnpm exec tsx --test server/test/buddy-coordination.test.ts server/test/buddy-coordination-observation.test.ts server/test/timeout-defaults.test.ts: 8 passed, 0 failed. No production work restarted by this investigation.\",\"2026-09-13 wrap-up note knowledge_f5a62f70-1616-410e-abf1-dc4a8156a6af / owner_thread c474d933-5a61-41c8-8e3b-327848d26c6e / note 2026-09-13T03:55:48.524Z:99ed820f-086b-4536-84d8-f579115f3ba2. Reliability project f24b0cc3 revision4 is done; implementation cb01fce/b24eb74 and verification b84347b/3f49a4d preserved locally. Fresh current boundary checks: 8 pass, 0 fail. Historical full suites/isolated live round trip remain versioned evidence; current shared tree has later changes, UI/release and production acceptance remain open.\",\"Owner-requested pending-work handoff 2026-09-13: /Users/nicholasbardy/git/unleashd/agent_notes/2026-09-13-buddy-pending-handoff.md SHA256 94c4c3e0a1b60936d17085bf874d0048e04db5d3528b9191484e2b61ef8d178f; appendix covers 22 open projects/95 unfinished todos; evidence snapshot preserves native revisions and source hashes. Native append-only note knowledge_74f50da2-6b34-4ea5-a1d5-c40907419d6e, owner_thread 01a095bb-db4c-7ae2-8663-992f09f62567, note 2026-09-13T04:05:33.304Z:21a68145-8235-42e3-950a-8a4715717f7f.\",\"Handoff current verification: 8/8 existing timeout/coordination checks passed; generic background fallback600s, fresh managed default derived from work duration up to3600s unless smaller policy cap, foreground24h. Reliability completion at revision12 preserved; original UI/release windows exhausted and remaining implementation/browser/release criteria stay open. No production dispatch or timeout configuration change.\"]",
+          "accepted_by": "buddy_d3f11f11-d010-4383-bc72-940bfe6ef8cd",
+          "accepted_at": "2026-09-12T16:04:31.656Z",
+          "todos": [
+            {
+              "id": "todo_9e25e4e6-eba4-45e2-8dfc-e80d6b48d46a",
+              "buddy_project_id": "buddy_project_37f2780f-f766-452b-991c-eb4ca4192a9b",
+              "title": "Complete saved-grant visibility for inactive grantees and preserve permission drafts",
+              "status": "blocked",
+              "position": 0,
+              "definition_of_done": "UI child project completes native HTTP/MCP and browser acceptance, scoped commits and integration handoff.",
+              "next_action": "Inspect preserved effects and establish fresh bounded assignments for the existing UI/release criteria before resumption or final completion.",
+              "blocked_reason": "The timeout recovery implementation is loaded, but the original coordinator/UI/release work windows have expired. No successor exists; native recovery reports remainingSeconds=0. Historical implementation-unavailable blocker is superseded.",
+              "created_at": "2026-09-12T15:56:41.873Z",
+              "updated_at": "2026-09-15T14:02:57.805Z",
+              "completed_at": null,
+              "completion_evidence": []
+            },
+            {
+              "id": "todo_b88c6ac1-acf3-4816-a1a2-1370a7e2ee93",
+              "buddy_project_id": "buddy_project_37f2780f-f766-452b-991c-eb4ca4192a9b",
+              "title": "Verify and integrate reliable team returns and recovery",
+              "status": "done",
+              "position": 1,
+              "definition_of_done": "Use existing project buddy_project_f24b0cc3-e82e-40ab-b974-5f1bfc469950 and running c474d933 owner thread; obtain its final implementation and round-trip evidence before integration; no duplicate implementation or revival of historical stopped production roots.",
+              "next_action": null,
+              "blocked_reason": null,
+              "created_at": "2026-09-12T15:56:41.873Z",
+              "updated_at": "2026-09-13T03:56:05.687Z",
+              "completed_at": "2026-09-13T03:56:05.687Z",
+              "completion_evidence": [
+                "2026-09-13 get_current_work reliability project revision4 audit_ba287db1-d358-44f4-8492-fe6aa24b5282; current get_team_state audit_f7ab7e7b-6117-44e0-bf05-84aa8cb50d59; current focused checks 8 pass. Historical original windows exhausted, no production retries.",
+                "2026-09-13 wrap-up note knowledge_f5a62f70-1616-410e-abf1-dc4a8156a6af / owner_thread c474d933-5a61-41c8-8e3b-327848d26c6e / note 2026-09-13T03:55:48.524Z:99ed820f-086b-4536-84d8-f579115f3ba2. Reliability project f24b0cc3 revision4 is done; implementation cb01fce/b24eb74 and verification b84347b/3f49a4d preserved locally. Fresh current boundary checks: 8 pass, 0 fail. Historical full suites/isolated live round trip remain versioned evidence; current shared tree has later changes, UI/release and production acceptance remain open."
+              ]
+            },
+            {
+              "id": "todo_5e614365-dc9c-4c48-a328-5b00af26fb3e",
+              "buddy_project_id": "buddy_project_37f2780f-f766-452b-991c-eb4ca4192a9b",
+              "title": "Reconcile stale own projects and history validation",
+              "status": "in_progress",
+              "position": 2,
+              "definition_of_done": "Own August and September open criteria compared with current source and dated evidence; revision-checked updates preserve unfulfilled criteria and decision history. Main-thread API history recovery and separate browser evidence are accurately distinguished; remaining exact browser check is performed if needed.",
+              "next_action": "The September 15 all-task planning review inventories 68 records and reads all 31 unfinished criteria. After owner plan review, validate the proposed per-criterion complete/superseded/remaining dispositions against exact source/browser evidence before changing completion.",
+              "blocked_reason": null,
+              "created_at": "2026-09-12T15:56:41.873Z",
+              "updated_at": "2026-09-15T13:57:17.119Z",
+              "completed_at": null,
+              "completion_evidence": [
+                "Read native inbox and 36 own project records across two pages with no remaining cursor; compared relevant August/September criteria with current read-before docs, submodule config and dated source/repair/browser evidence.",
+                "Updated repairf5e8e43a rev8 with live API recovery plus separate aca48e0e browser evidence; exact main7d9d117f UI check remains open. Parent9864f34e rev19 closes A1–A7 disposition todo; system545457c2 rev9 closes private/shared memory criterion and retains live-provider follow-up.",
+                "August ephemeral e780d7f1 rev2: vocabulary, guide index and parent-identity attribution done; precise historical blocking/Workflow documentation remains open. Vendoring14923985 rev2 and dirty-work5a090ee9 rev2 close missing-origin criterion; current repository disposition remains delegated/open.",
+                "Native correction knowledge_2133161e-685d-4045-8054-94b90141468b in owner_thread01a095bb-db4c-7ae2-8663-992f09f62567 preserves source hashes, old claims and exact limits."
+              ]
+            },
+            {
+              "id": "todo_337452eb-c5e4-403e-bf74-0b6b8888b412",
+              "buddy_project_id": "buddy_project_37f2780f-f766-452b-991c-eb4ca4192a9b",
+              "title": "Preserve and validate repository delivery",
+              "status": "blocked",
+              "position": 3,
+              "definition_of_done": "Release child inventories shared/app/submodule/package changes and records attributable commits without destroying concurrent work; integration checks pass on final assembled snapshot; no main push.",
+              "next_action": "Reconcile the later main delivery at 7f41bf5 and new restart-integration child 62511186 with the existing release child. Old request failure remains historical; this plan grants no renewed execution allowance.",
+              "blocked_reason": "The timeout recovery implementation is loaded, but the original coordinator/UI/release work windows have expired. No successor exists; native recovery reports remainingSeconds=0. Historical implementation-unavailable blocker is superseded.",
+              "created_at": "2026-09-12T15:56:41.873Z",
+              "updated_at": "2026-09-15T13:57:17.119Z",
+              "completed_at": null,
+              "completion_evidence": []
+            },
+            {
+              "id": "todo_f25710d1-9338-4062-963f-22bf4801f1e7",
+              "buddy_project_id": "buddy_project_37f2780f-f766-452b-991c-eb4ca4192a9b",
+              "title": "Return final review and evidence to the owner",
+              "status": "blocked",
+              "position": 4,
+              "definition_of_done": "Every preceding noncancelled todo carries concrete evidence; parent records final commits, behavior, tests and material unresolved limits; runtime delivers final disposition to original owner thread.",
+              "next_action": "Inspect preserved effects and establish fresh bounded assignments for the existing UI/release criteria before resumption or final completion.",
+              "blocked_reason": "The timeout recovery implementation is loaded, but the original coordinator/UI/release work windows have expired. No successor exists; native recovery reports remainingSeconds=0. Historical implementation-unavailable blocker is superseded.",
+              "created_at": "2026-09-12T15:56:41.873Z",
+              "updated_at": "2026-09-13T03:14:14.028Z",
+              "completed_at": null,
+              "completion_evidence": []
+            }
+          ]
+        },
+        "audit": {
+          "id": "audit_9d56e880-0769-4432-927d-e095302c3c9a",
+          "buddy_id": "buddy_d3f11f11-d010-4383-bc72-940bfe6ef8cd",
+          "workspace_id": "project_26fce156-5c5d-4dd9-a9d6-4b527a50af3c",
+          "buddy_project_id": null,
+          "operation": "buddy.update_project",
+          "payload": {
+            "key": "review-recording-20260915-parent-grantee-wording-v1",
+            "baseRevision": 14,
+            "projectId": "buddy_project_37f2780f-f766-452b-991c-eb4ca4192a9b",
+            "objective": "Owner authorized background completion of remaining team returns/recovery, saved-grant revocation for archived or detached grantees, draft preservation, and backlog/repository delivery. Coordinate two reusable engineering reports and the already-running reliability lane.",
+            "todoOperations": [
+              {
+                "operation": "update",
+                "todoId": "todo_9e25e4e6-eba4-45e2-8dfc-e80d6b48d46a",
+                "title": "Complete saved-grant visibility for inactive grantees and preserve permission drafts"
+              }
+            ],
+            "conversation_id": "01a09f69-2b0c-72f2-9c6f-50a28ac72008",
+            "automation_run_id": null
+          },
+          "created_at": "2026-09-15T14:02:57.809Z"
+        }
+      }
+    }
+  ],
+  "uiAfterOmittedEvidence": {
+    "ok": true,
+    "data": {
+      "view": "full",
+      "items": [
+        {
+          "id": "buddy_project_95592e35-f568-4868-9a93-03c8a8511597",
+          "workspace_id": "project_26fce156-5c5d-4dd9-a9d6-4b527a50af3c",
+          "buddy_id": "buddy_e87e3e91-fe15-4759-9337-52a9636ed084",
+          "sprint_id": null,
+          "title": "Expose saved-grant revocation for inactive grantees and preserve permission drafts",
+          "objective": "Complete the two concrete remaining Team settings UI gaps from September 12 review.",
+          "definition_of_done": "Owner can discover and fully revoke saved grants held by archived or detached grantees without reactivating them or broadening access. Background grant refresh preserves unsaved permission changes and clearly handles stale saves. Both shells use shared existing settings paths. Real HTTP/MCP and browser interaction evidence, relevant typechecks/invariants, attributable commits and historical decision note are delivered.",
+          "status": "blocked",
+          "priority": 1,
+          "next_action": "Preserve the existing isolated snapshot. Await supported native timeout recovery from project buddy_project_f24b0cc3-e82e-40ab-b974-5f1bfc469950, then resume this same prepared project in bounded attempts with durable checkpoints before 600 seconds.",
+          "blocked_reason": "Original managed attempt failed with max_runtime_timeout after 600 seconds and closed its request. Inspected native retry of the UI chain was refused with 'Request is no longer open'; all three original receipts are replied/failed. Resume only through a supported native recovery route after the existing reliability lane resolves/dispositions this case. No duplicate work chain created.",
+          "source_path": "/Users/nicholasbardy/git/unleashd/product/buddies/REVIEW_TEAM_SETTINGS_2026-09-12.md",
+          "external_key": null,
+          "created_at": "2026-09-12T15:57:04.246Z",
+          "updated_at": "2026-09-15T14:02:57.795Z",
+          "completed_at": null,
+          "parent_project_id": "buddy_project_37f2780f-f766-452b-991c-eb4ca4192a9b",
+          "revision": 6,
+          "execution_state": "enabled",
+          "execution_epoch": 1,
+          "pending_owner_id": null,
+          "completion_evidence": "[]",
+          "accepted_by": "buddy_e87e3e91-fe15-4759-9337-52a9636ed084",
+          "accepted_at": "2026-09-12T16:06:10.987Z",
+          "workspace_name": "unleashd",
+          "workspace_slug": "unleashd",
+          "buddy_name": "Buddies UI Engineer",
+          "sprint_name": null,
+          "todos": [
+            {
+              "id": "todo_f3c4d46b-a43c-4388-a953-fe33d42854ab",
+              "buddy_project_id": "buddy_project_95592e35-f568-4868-9a93-03c8a8511597",
+              "title": "Reproduce and repair saved-grant discovery/revocation for inactive grantees",
+              "status": "blocked",
+              "position": 0,
+              "definition_of_done": "Actual owner route/UI covers archived grantee, detached grantee, and former-target controls; revocation preserves inactive membership and never widens permissions. Preserve generic archive protections outside this precise owner flow.",
+              "next_action": null,
+              "blocked_reason": "Original managed attempt failed with max_runtime_timeout after 600 seconds and closed its request. Inspected native retry of the UI chain was refused with 'Request is no longer open'; all three original receipts are replied/failed. Resume only through a supported native recovery route after the existing reliability lane resolves/dispositions this case. No duplicate work chain created.",
+              "created_at": "2026-09-12T15:57:04.246Z",
+              "updated_at": "2026-09-15T14:02:57.795Z",
+              "completed_at": null,
+              "completion_evidence": []
+            },
+            {
+              "id": "todo_32fa48cb-6aaf-467e-a8d6-0abf8da48562",
+              "buddy_project_id": "buddy_project_95592e35-f568-4868-9a93-03c8a8511597",
+              "title": "Preserve dirty permission drafts across refetch and revision changes",
+              "status": "open",
+              "position": 1,
+              "definition_of_done": "Browser demonstrates user edits survive background refresh/reconnect, stale submit reports conflict without silent overwrite, target switch/reset is deliberate, successful save reflects authoritative revision.",
+              "next_action": null,
+              "blocked_reason": null,
+              "created_at": "2026-09-12T15:57:04.246Z",
+              "updated_at": "2026-09-12T15:57:04.246Z",
+              "completed_at": null,
+              "completion_evidence": []
+            },
+            {
+              "id": "todo_5f5674a0-83e5-4aa2-b9f8-ea1b01f2c5eb",
+              "buddy_project_id": "buddy_project_95592e35-f568-4868-9a93-03c8a8511597",
+              "title": "Validate both shells and deliver scoped commits",
+              "status": "open",
+              "position": 2,
+              "definition_of_done": "Meaningful boundary tests, client tsc -b, server applicable typecheck and client invariant gates pass; browser evidence with deterministic fixtures; report changed files/commits and integration instructions; no forced restart or main push.",
+              "next_action": null,
+              "blocked_reason": null,
+              "created_at": "2026-09-12T15:57:04.246Z",
+              "updated_at": "2026-09-12T15:57:04.246Z",
+              "completed_at": null,
+              "completion_evidence": []
+            },
+            {
+              "id": "todo_92aa7b2e-db85-4781-985d-1d8930b7c0e8",
+              "buddy_project_id": "buddy_project_95592e35-f568-4868-9a93-03c8a8511597",
+              "title": "Verify the restored original owner thread in the live browser",
+              "status": "open",
+              "position": 3,
+              "definition_of_done": "Read-only browser inspection of http://unleashd.localhost/chat/7d9d117f-7a13-46e2-bf6a-95da591d6e2b confirms original Sep9 discussion/five-defect review plus newest rows, with dated screenshots/DOM observations. Existing main-thread API evidence and different aca48e0e browser evidence are distinguished. No chat input or forced restart.",
+              "next_action": null,
+              "blocked_reason": null,
+              "created_at": "2026-09-12T16:00:21.511Z",
+              "updated_at": "2026-09-12T16:00:21.511Z",
+              "completed_at": null,
+              "completion_evidence": []
+            }
+          ]
+        }
+      ],
+      "nextCursor": null
+    },
+    "auditId": "audit_8ce8b104-3530-4102-a2cc-ce9e1e9aca64",
+    "contractVersion": "2026-09-15.1"
+  },
+  "restoration": {
+    "operation": "buddy.update_project",
+    "data": {
+      "id": "buddy_project_95592e35-f568-4868-9a93-03c8a8511597",
+      "workspace_id": "project_26fce156-5c5d-4dd9-a9d6-4b527a50af3c",
+      "buddy_id": "buddy_e87e3e91-fe15-4759-9337-52a9636ed084",
+      "sprint_id": null,
+      "title": "Expose saved-grant revocation for inactive grantees and preserve permission drafts",
+      "objective": "Complete the two concrete remaining Team settings UI gaps from September 12 review.",
+      "definition_of_done": "Owner can discover and fully revoke saved grants held by archived or detached grantees without reactivating them or broadening access. Background grant refresh preserves unsaved permission changes and clearly handles stale saves. Both shells use shared existing settings paths. Real HTTP/MCP and browser interaction evidence, relevant typechecks/invariants, attributable commits and historical decision note are delivered.",
+      "status": "blocked",
+      "priority": 1,
+      "next_action": "Preserve the existing isolated snapshot. Await supported native timeout recovery from project buddy_project_f24b0cc3-e82e-40ab-b974-5f1bfc469950, then resume this same prepared project in bounded attempts with durable checkpoints before 600 seconds.",
+      "blocked_reason": "Original managed attempt failed with max_runtime_timeout after 600 seconds and closed its request. Inspected native retry of the UI chain was refused with 'Request is no longer open'; all three original receipts are replied/failed. Resume only through a supported native recovery route after the existing reliability lane resolves/dispositions this case. No duplicate work chain created.",
+      "source_path": "/Users/nicholasbardy/git/unleashd/product/buddies/REVIEW_TEAM_SETTINGS_2026-09-12.md",
+      "external_key": null,
+      "created_at": "2026-09-12T15:57:04.246Z",
+      "updated_at": "2026-09-15T14:03:38.399Z",
+      "completed_at": null,
+      "parent_project_id": "buddy_project_37f2780f-f766-452b-991c-eb4ca4192a9b",
+      "revision": 7,
+      "execution_state": "enabled",
+      "execution_epoch": 1,
+      "pending_owner_id": null,
+      "completion_evidence": "[\"Recovery audit 2026-09-12T16:15Z: original run buddy_run_aedf24d1-3a9d-4fc1-b5af-81304ae74773 failed with max_runtime_timeout after 600 seconds; no todo completion or test result recorded.\",\"Read-only side-effect inspection: existing /Users/nicholasbardy/git/.codex-worktrees/unleashd/team-settings-ui-20260913 branch codex/team-settings-ui-20260913 at 743379dc8d607d6825f5080f41739a491e9bffb4 (snapshot: preserve September 12 settings implementation); no tracked modifications; untracked dependency paths node_modules, server/node_modules, shared/node_modules. This is inherited snapshot preservation, not verified repair completion.\",\"Observed 2026-09-12T16:14–16:17Z via native get_runs: coordinator buddy_run_c9bb49a7-f98d-4bbe-ae51-6b1f1a0b3ffd and UI/release buddy_run_aedf24d1-3a9d-4fc1-b5af-81304ae74773 / buddy_run_a2f53fd2-bc3a-4538-9d7a-a0c77b310fa6 all failed with max_runtime_timeout after 600 seconds despite work-chain durations of 21600/14400 seconds.\",\"After inspecting canonical projects and preserved isolated snapshot commits 743379dc8d607d6825f5080f41739a491e9bffb4 and 551db45df46b9cac89b26538ea220aa67392cffe, native retry_run(runId=buddy_run_aedf24d1-3a9d-4fc1-b5af-81304ae74773,key=buddy-timeout-retry-ui-20260912-v1) returned error 'Request is no longer open'. No retry was created and no alternate access path was used.\",\"Installed node_modules/@nbardy/buddies/src/coordination.js:712 rejects retry when message status is replied/cancelled or superseded. Timeout receipts are replied/failed. This is a concrete timeout recovery acceptance case for the existing reliability lane; preserve stopped-root fencing and original immutable permissions.\"]",
+      "accepted_by": "buddy_e87e3e91-fe15-4759-9337-52a9636ed084",
+      "accepted_at": "2026-09-12T16:06:10.987Z",
+      "todos": [
+        {
+          "id": "todo_f3c4d46b-a43c-4388-a953-fe33d42854ab",
+          "buddy_project_id": "buddy_project_95592e35-f568-4868-9a93-03c8a8511597",
+          "title": "Reproduce and repair saved-grant discovery/revocation for inactive grantees",
+          "status": "blocked",
+          "position": 0,
+          "definition_of_done": "Actual owner route/UI covers archived grantee, detached grantee, and former-target controls; revocation preserves inactive membership and never widens permissions. Preserve generic archive protections outside this precise owner flow.",
+          "next_action": null,
+          "blocked_reason": "Original managed attempt failed with max_runtime_timeout after 600 seconds and closed its request. Inspected native retry of the UI chain was refused with 'Request is no longer open'; all three original receipts are replied/failed. Resume only through a supported native recovery route after the existing reliability lane resolves/dispositions this case. No duplicate work chain created.",
+          "created_at": "2026-09-12T15:57:04.246Z",
+          "updated_at": "2026-09-15T14:02:57.795Z",
+          "completed_at": null,
+          "completion_evidence": []
+        },
+        {
+          "id": "todo_32fa48cb-6aaf-467e-a8d6-0abf8da48562",
+          "buddy_project_id": "buddy_project_95592e35-f568-4868-9a93-03c8a8511597",
+          "title": "Preserve dirty permission drafts across refetch and revision changes",
+          "status": "open",
+          "position": 1,
+          "definition_of_done": "Browser demonstrates user edits survive background refresh/reconnect, stale submit reports conflict without silent overwrite, target switch/reset is deliberate, successful save reflects authoritative revision.",
+          "next_action": null,
+          "blocked_reason": null,
+          "created_at": "2026-09-12T15:57:04.246Z",
+          "updated_at": "2026-09-12T15:57:04.246Z",
+          "completed_at": null,
+          "completion_evidence": []
+        },
+        {
+          "id": "todo_5f5674a0-83e5-4aa2-b9f8-ea1b01f2c5eb",
+          "buddy_project_id": "buddy_project_95592e35-f568-4868-9a93-03c8a8511597",
+          "title": "Validate both shells and deliver scoped commits",
+          "status": "open",
+          "position": 2,
+          "definition_of_done": "Meaningful boundary tests, client tsc -b, server applicable typecheck and client invariant gates pass; browser evidence with deterministic fixtures; report changed files/commits and integration instructions; no forced restart or main push.",
+          "next_action": null,
+          "blocked_reason": null,
+          "created_at": "2026-09-12T15:57:04.246Z",
+          "updated_at": "2026-09-12T15:57:04.246Z",
+          "completed_at": null,
+          "completion_evidence": []
+        },
+        {
+          "id": "todo_92aa7b2e-db85-4781-985d-1d8930b7c0e8",
+          "buddy_project_id": "buddy_project_95592e35-f568-4868-9a93-03c8a8511597",
+          "title": "Verify the restored original owner thread in the live browser",
+          "status": "open",
+          "position": 3,
+          "definition_of_done": "Read-only browser inspection of http://unleashd.localhost/chat/7d9d117f-7a13-46e2-bf6a-95da591d6e2b confirms original Sep9 discussion/five-defect review plus newest rows, with dated screenshots/DOM observations. Existing main-thread API evidence and different aca48e0e browser evidence are distinguished. No chat input or forced restart.",
+          "next_action": null,
+          "blocked_reason": null,
+          "created_at": "2026-09-12T16:00:21.511Z",
+          "updated_at": "2026-09-12T16:00:21.511Z",
+          "completed_at": null,
+          "completion_evidence": []
+        }
+      ]
+    },
+    "audit": {
+      "id": "audit_29fe815b-a8cd-4d1a-9e76-08b9de4a05e1",
+      "buddy_id": "buddy_d3f11f11-d010-4383-bc72-940bfe6ef8cd",
+      "workspace_id": "project_26fce156-5c5d-4dd9-a9d6-4b527a50af3c",
+      "buddy_project_id": null,
+      "operation": "buddy.update_project",
+      "payload": {
+        "key": "review-recording-20260915-restore-ui-evidence-v1",
+        "baseRevision": 6,
+        "projectId": "buddy_project_95592e35-f568-4868-9a93-03c8a8511597",
+        "evidence": [
+          "Recovery audit 2026-09-12T16:15Z: original run buddy_run_aedf24d1-3a9d-4fc1-b5af-81304ae74773 failed with max_runtime_timeout after 600 seconds; no todo completion or test result recorded.",
+          "Read-only side-effect inspection: existing /Users/nicholasbardy/git/.codex-worktrees/unleashd/team-settings-ui-20260913 branch codex/team-settings-ui-20260913 at 743379dc8d607d6825f5080f41739a491e9bffb4 (snapshot: preserve September 12 settings implementation); no tracked modifications; untracked dependency paths node_modules, server/node_modules, shared/node_modules. This is inherited snapshot preservation, not verified repair completion.",
+          "Observed 2026-09-12T16:14–16:17Z via native get_runs: coordinator buddy_run_c9bb49a7-f98d-4bbe-ae51-6b1f1a0b3ffd and UI/release buddy_run_aedf24d1-3a9d-4fc1-b5af-81304ae74773 / buddy_run_a2f53fd2-bc3a-4538-9d7a-a0c77b310fa6 all failed with max_runtime_timeout after 600 seconds despite work-chain durations of 21600/14400 seconds.",
+          "After inspecting canonical projects and preserved isolated snapshot commits 743379dc8d607d6825f5080f41739a491e9bffb4 and 551db45df46b9cac89b26538ea220aa67392cffe, native retry_run(runId=buddy_run_aedf24d1-3a9d-4fc1-b5af-81304ae74773,key=buddy-timeout-retry-ui-20260912-v1) returned error 'Request is no longer open'. No retry was created and no alternate access path was used.",
+          "Installed node_modules/@nbardy/buddies/src/coordination.js:712 rejects retry when message status is replied/cancelled or superseded. Timeout receipts are replied/failed. This is a concrete timeout recovery acceptance case for the existing reliability lane; preserve stopped-root fencing and original immutable permissions."
+        ],
+        "conversation_id": "01a09f69-2b0c-72f2-9c6f-50a28ac72008",
+        "automation_run_id": null
+      },
+      "created_at": "2026-09-15T14:03:38.401Z"
+    }
+  },
+  "restoredReadback": {
+    "ok": true,
+    "data": {
+      "view": "full",
+      "items": [
+        {
+          "id": "buddy_project_95592e35-f568-4868-9a93-03c8a8511597",
+          "workspace_id": "project_26fce156-5c5d-4dd9-a9d6-4b527a50af3c",
+          "buddy_id": "buddy_e87e3e91-fe15-4759-9337-52a9636ed084",
+          "sprint_id": null,
+          "title": "Expose saved-grant revocation for inactive grantees and preserve permission drafts",
+          "objective": "Complete the two concrete remaining Team settings UI gaps from September 12 review.",
+          "definition_of_done": "Owner can discover and fully revoke saved grants held by archived or detached grantees without reactivating them or broadening access. Background grant refresh preserves unsaved permission changes and clearly handles stale saves. Both shells use shared existing settings paths. Real HTTP/MCP and browser interaction evidence, relevant typechecks/invariants, attributable commits and historical decision note are delivered.",
+          "status": "blocked",
+          "priority": 1,
+          "next_action": "Preserve the existing isolated snapshot. Await supported native timeout recovery from project buddy_project_f24b0cc3-e82e-40ab-b974-5f1bfc469950, then resume this same prepared project in bounded attempts with durable checkpoints before 600 seconds.",
+          "blocked_reason": "Original managed attempt failed with max_runtime_timeout after 600 seconds and closed its request. Inspected native retry of the UI chain was refused with 'Request is no longer open'; all three original receipts are replied/failed. Resume only through a supported native recovery route after the existing reliability lane resolves/dispositions this case. No duplicate work chain created.",
+          "source_path": "/Users/nicholasbardy/git/unleashd/product/buddies/REVIEW_TEAM_SETTINGS_2026-09-12.md",
+          "external_key": null,
+          "created_at": "2026-09-12T15:57:04.246Z",
+          "updated_at": "2026-09-15T14:03:38.399Z",
+          "completed_at": null,
+          "parent_project_id": "buddy_project_37f2780f-f766-452b-991c-eb4ca4192a9b",
+          "revision": 7,
+          "execution_state": "enabled",
+          "execution_epoch": 1,
+          "pending_owner_id": null,
+          "completion_evidence": "[\"Recovery audit 2026-09-12T16:15Z: original run buddy_run_aedf24d1-3a9d-4fc1-b5af-81304ae74773 failed with max_runtime_timeout after 600 seconds; no todo completion or test result recorded.\",\"Read-only side-effect inspection: existing /Users/nicholasbardy/git/.codex-worktrees/unleashd/team-settings-ui-20260913 branch codex/team-settings-ui-20260913 at 743379dc8d607d6825f5080f41739a491e9bffb4 (snapshot: preserve September 12 settings implementation); no tracked modifications; untracked dependency paths node_modules, server/node_modules, shared/node_modules. This is inherited snapshot preservation, not verified repair completion.\",\"Observed 2026-09-12T16:14–16:17Z via native get_runs: coordinator buddy_run_c9bb49a7-f98d-4bbe-ae51-6b1f1a0b3ffd and UI/release buddy_run_aedf24d1-3a9d-4fc1-b5af-81304ae74773 / buddy_run_a2f53fd2-bc3a-4538-9d7a-a0c77b310fa6 all failed with max_runtime_timeout after 600 seconds despite work-chain durations of 21600/14400 seconds.\",\"After inspecting canonical projects and preserved isolated snapshot commits 743379dc8d607d6825f5080f41739a491e9bffb4 and 551db45df46b9cac89b26538ea220aa67392cffe, native retry_run(runId=buddy_run_aedf24d1-3a9d-4fc1-b5af-81304ae74773,key=buddy-timeout-retry-ui-20260912-v1) returned error 'Request is no longer open'. No retry was created and no alternate access path was used.\",\"Installed node_modules/@nbardy/buddies/src/coordination.js:712 rejects retry when message status is replied/cancelled or superseded. Timeout receipts are replied/failed. This is a concrete timeout recovery acceptance case for the existing reliability lane; preserve stopped-root fencing and original immutable permissions.\"]",
+          "accepted_by": "buddy_e87e3e91-fe15-4759-9337-52a9636ed084",
+          "accepted_at": "2026-09-12T16:06:10.987Z",
+          "workspace_name": "unleashd",
+          "workspace_slug": "unleashd",
+          "buddy_name": "Buddies UI Engineer",
+          "sprint_name": null,
+          "todos": [
+            {
+              "id": "todo_f3c4d46b-a43c-4388-a953-fe33d42854ab",
+              "buddy_project_id": "buddy_project_95592e35-f568-4868-9a93-03c8a8511597",
+              "title": "Reproduce and repair saved-grant discovery/revocation for inactive grantees",
+              "status": "blocked",
+              "position": 0,
+              "definition_of_done": "Actual owner route/UI covers archived grantee, detached grantee, and former-target controls; revocation preserves inactive membership and never widens permissions. Preserve generic archive protections outside this precise owner flow.",
+              "next_action": null,
+              "blocked_reason": "Original managed attempt failed with max_runtime_timeout after 600 seconds and closed its request. Inspected native retry of the UI chain was refused with 'Request is no longer open'; all three original receipts are replied/failed. Resume only through a supported native recovery route after the existing reliability lane resolves/dispositions this case. No duplicate work chain created.",
+              "created_at": "2026-09-12T15:57:04.246Z",
+              "updated_at": "2026-09-15T14:02:57.795Z",
+              "completed_at": null,
+              "completion_evidence": []
+            },
+            {
+              "id": "todo_32fa48cb-6aaf-467e-a8d6-0abf8da48562",
+              "buddy_project_id": "buddy_project_95592e35-f568-4868-9a93-03c8a8511597",
+              "title": "Preserve dirty permission drafts across refetch and revision changes",
+              "status": "open",
+              "position": 1,
+              "definition_of_done": "Browser demonstrates user edits survive background refresh/reconnect, stale submit reports conflict without silent overwrite, target switch/reset is deliberate, successful save reflects authoritative revision.",
+              "next_action": null,
+              "blocked_reason": null,
+              "created_at": "2026-09-12T15:57:04.246Z",
+              "updated_at": "2026-09-12T15:57:04.246Z",
+              "completed_at": null,
+              "completion_evidence": []
+            },
+            {
+              "id": "todo_5f5674a0-83e5-4aa2-b9f8-ea1b01f2c5eb",
+              "buddy_project_id": "buddy_project_95592e35-f568-4868-9a93-03c8a8511597",
+              "title": "Validate both shells and deliver scoped commits",
+              "status": "open",
+              "position": 2,
+              "definition_of_done": "Meaningful boundary tests, client tsc -b, server applicable typecheck and client invariant gates pass; browser evidence with deterministic fixtures; report changed files/commits and integration instructions; no forced restart or main push.",
+              "next_action": null,
+              "blocked_reason": null,
+              "created_at": "2026-09-12T15:57:04.246Z",
+              "updated_at": "2026-09-12T15:57:04.246Z",
+              "completed_at": null,
+              "completion_evidence": []
+            },
+            {
+              "id": "todo_92aa7b2e-db85-4781-985d-1d8930b7c0e8",
+              "buddy_project_id": "buddy_project_95592e35-f568-4868-9a93-03c8a8511597",
+              "title": "Verify the restored original owner thread in the live browser",
+              "status": "open",
+              "position": 3,
+              "definition_of_done": "Read-only browser inspection of http://unleashd.localhost/chat/7d9d117f-7a13-46e2-bf6a-95da591d6e2b confirms original Sep9 discussion/five-defect review plus newest rows, with dated screenshots/DOM observations. Existing main-thread API evidence and different aca48e0e browser evidence are distinguished. No chat input or forced restart.",
+              "next_action": null,
+              "blocked_reason": null,
+              "created_at": "2026-09-12T16:00:21.511Z",
+              "updated_at": "2026-09-12T16:00:21.511Z",
+              "completed_at": null,
+              "completion_evidence": []
+            }
+          ]
+        }
+      ],
+      "nextCursor": null
+    },
+    "auditId": "audit_9407bc6a-71a3-4502-9301-3ff0c0b4122a",
+    "contractVersion": "2026-09-15.1"
+  },
+  "consistencyTodo": {
+    "operation": "buddy.update_project",
+    "data": {
+      "id": "buddy_project_f5e8e43a-9c69-4dd2-82d1-c6c953e3549b",
+      "workspace_id": "project_26fce156-5c5d-4dd9-a9d6-4b527a50af3c",
+      "buddy_id": "buddy_d3f11f11-d010-4383-bc72-940bfe6ef8cd",
+      "sprint_id": null,
+      "title": "Repair remaining Buddy history, privacy and consistency gaps",
+      "objective": "Preserve the seven findings from the owner's parallel audit as bounded repair work. Keep original verified repairs distinct from new remaining cases and production validation.",
+      "definition_of_done": "A1-A7 each have desired-behavior regressions and code/document fixes or an evidence-backed explicit disposition; history recovery preserves privacy; targeted and broad checks pass; delivery and live-provider limits are stated without overstating deployment.",
+      "status": "in_progress",
+      "priority": 0,
+      "next_action": "Live API recovery and natural backend adoption are proven by 10:12 API/10:13 browser evidence; perform the remaining read-only main7d9d117f browser criterion through UI child project buddy_project_95592e35-f568-4868-9a93-03c8a8511597, then reconcile this final todo.",
+      "blocked_reason": null,
+      "source_path": "/Users/nicholasbardy/git/unleashd/product/buddies/AUDIT_HISTORY_AND_RESOURCES_2026-09-12.md",
+      "external_key": null,
+      "created_at": "2026-09-12T09:38:43.271Z",
+      "updated_at": "2026-09-15T14:03:38.406Z",
+      "completed_at": null,
+      "parent_project_id": "buddy_project_9864f34e-b435-43b1-80b1-07cc51645fbe",
+      "revision": 9,
+      "execution_state": "enabled",
+      "execution_epoch": 1,
+      "pending_owner_id": null,
+      "completion_evidence": "[\"product/buddies/IMPLEMENTATION_HISTORY_REPAIR_2026-09-12.md (SHA256 52dc7d9bf2d5a858c80a9bedf582c87df20f982df3654b4dbcaa343b761ae3e4)\",\"product/buddies/history-repair-2026-09-12/repair-manifest.json (SHA256 e9f6b11d0d212c20d4d98f7b1a6e5ec62a948db974941d8b01e683aa51ede532)\",\"A2:258f4ef; A4:5f38896; A5-A7:10605c9 on codex/buddy-readiness-repair-20260912 above labeled snapshot 4c6835b. All repair paths applied to shared checkout after baseline comparison; shared index and unrelated work preserved.\",\"Final isolated server suite:345 cases,342 pass,3 skip,0 fail. Shared build and server typecheck pass. All9new regression cases also pass in shared checkout after integration. No live-provider/reload acceptance claimed.\"]",
+      "accepted_by": "buddy_d3f11f11-d010-4383-bc72-940bfe6ef8cd",
+      "accepted_at": "2026-09-12T09:48:42.130Z",
+      "todos": [
+        {
+          "id": "todo_ff057c79-bab6-46ad-a9a0-4109c3871889",
+          "buddy_project_id": "buddy_project_f5e8e43a-9c69-4dd2-82d1-c6c953e3549b",
+          "title": "A1 P1: preserve older display history and durable date across session rotation, poll and restart",
+          "status": "done",
+          "position": 0,
+          "definition_of_done": "Actual runtime/config/loader/detail/WS boundary retains ordered deduplicated authorized history and original createdAt across rotations/reload, while new provider input excludes disallowed older context; retained original conversation can be recovered through supported application behavior.",
+          "next_action": null,
+          "blocked_reason": null,
+          "created_at": "2026-09-12T09:38:43.271Z",
+          "updated_at": "2026-09-12T10:07:43.155Z",
+          "completed_at": "2026-09-12T10:07:43.155Z",
+          "completion_evidence": [
+            "Nine desired-behavior runtime/loader tests passed, including full conversation update payloads and fresh provider privacy exclusion.",
+            "Actual registered-adapter capped startup restored1267rows/five bound native sources/originalID/Sep9date and current session in isolated temp store; product/buddies/history-repair-2026-09-12/real-history-verification.json.",
+            "329server tests passed,76client tests passed, builds/typechecks/invariants and compiled package smoke passed. Live adoption is a separate validation todo."
+          ]
+        },
+        {
+          "id": "todo_b15a463a-b8df-40e6-b498-a7e04cab9238",
+          "buddy_project_id": "buddy_project_f5e8e43a-9c69-4dd2-82d1-c6c953e3549b",
+          "title": "A2 P1: close private execution disclosure through get_capabilities readiness receipts",
+          "status": "done",
+          "position": 1,
+          "definition_of_done": "Native MCP get_capabilities on unrelated private message ID denies or fully redacts execution.error, conversation details and other private fields consistently with get_message/get_runs for project and workspace audiences.",
+          "next_action": null,
+          "blocked_reason": null,
+          "created_at": "2026-09-12T09:38:43.271Z",
+          "updated_at": "2026-09-12T15:11:01.547Z",
+          "completed_at": "2026-09-12T15:11:01.547Z",
+          "completion_evidence": [
+            "258f4ef on codex/buddy-readiness-repair-20260912, repair only above snapshot 4c6835b; four files safely applied to shared checkout.",
+            "server/test/buddy-readiness-privacy.test.ts: four native MCP audience cases; three failed before repair, all four passed after.",
+            "14 focused privacy/team/owner/resource tests passed; server tsc --noEmit passed.",
+            "product/buddies/IMPLEMENTATION_READINESS_PRIVACY_2026-09-12.md at commit 258f4ef."
+          ]
+        },
+        {
+          "id": "todo_66095b79-5bee-4a9b-a180-48dea4b34389",
+          "buddy_project_id": "buddy_project_f5e8e43a-9c69-4dd2-82d1-c6c953e3549b",
+          "title": "A3 P2: keep unrelated scheduler/topology changes out of provider continuity keys",
+          "status": "done",
+          "position": 2,
+          "definition_of_done": "Real runtime resumes after unrelated peer background_paused_reason and foreign-workspace relationship changes; genuine authority narrowing and published content retractions still rotate.",
+          "next_action": null,
+          "blocked_reason": null,
+          "created_at": "2026-09-12T09:38:43.271Z",
+          "updated_at": "2026-09-12T10:07:43.155Z",
+          "completed_at": "2026-09-12T10:07:43.155Z",
+          "completion_evidence": [
+            "Package commit234ff0f681d3f8ede511f048f74d632f23a3f49d packed reproducibly and installed;91package tests passed with revocation/retraction/grant expiry/access loss coverage.",
+            "product/buddies/history-repair-2026-09-12/continuity-verification.json: real runtime same native session after unchanged input, peer scheduler pause, foreign-workspace relationship."
+          ]
+        },
+        {
+          "id": "todo_50d2a745-b767-4762-8bc1-f218a68b7431",
+          "buddy_project_id": "buddy_project_f5e8e43a-9c69-4dd2-82d1-c6c953e3549b",
+          "title": "A4 provisional P2: fence deletion during asynchronous link readiness and admission",
+          "status": "done",
+          "position": 3,
+          "definition_of_done": "A real delete/stop/link/dispatch interleaving proves zero provider work after deletion, or bounded reproduction is falsified with documented production guard. Preserve original creation identity and deadline; handle registry/tombstone changes after awaits.",
+          "next_action": null,
+          "blocked_reason": null,
+          "created_at": "2026-09-12T09:38:43.271Z",
+          "updated_at": "2026-09-12T15:16:17.304Z",
+          "completed_at": "2026-09-12T15:16:17.304Z",
+          "completion_evidence": [
+            "server/test/buddy-delete-admission.test.ts: actual WebSocket delete/config/runtime/integration/executor with fixture provider; two negative cases fail before and pass after with zero provider calls; positive control completes once.",
+            "product/buddies/IMPLEMENTATION_DELETE_ADMISSION_2026-09-12.md on codex/buddy-readiness-repair-20260912; repair separately committed above baseline 4c6835b.",
+            "16 focused tests passed; full server suite 343 cases/340 pass/3 skip/0 fail; shared build and server typecheck passed."
+          ]
+        },
+        {
+          "id": "todo_776f2d56-47f1-49d8-ab47-4f5b20884644",
+          "buddy_project_id": "buddy_project_f5e8e43a-9c69-4dd2-82d1-c6c953e3549b",
+          "title": "A5 P3: make note size enforcement identical across document and remember_note paths",
+          "status": "done",
+          "position": 4,
+          "definition_of_done": "Chosen UTF-8 byte bound enforced by common store/resource boundary for both creation paths; oversized note test fails consistently; existing note replacement remains rejected as append-only.",
+          "next_action": null,
+          "blocked_reason": null,
+          "created_at": "2026-09-12T09:38:43.271Z",
+          "updated_at": "2026-09-12T15:23:59.165Z",
+          "completed_at": "2026-09-12T15:23:59.165Z",
+          "completion_evidence": [
+            "10605c9: common scoped resource validator applies the existing exported 16000 UTF-8 body cap to note document preview/apply, owner writes and scopedNote (including reviewer path). Metadata envelope is distinct from body.",
+            "server/test/buddy-note-contract.test.ts: 18000-byte Unicode rejection; exact 16000-byte acceptance both paths; rejected writes preserve revision; replacement remains append-only."
+          ]
+        },
+        {
+          "id": "todo_2ef29373-6796-4c83-95fa-809786b27996",
+          "buddy_project_id": "buddy_project_f5e8e43a-9c69-4dd2-82d1-c6c953e3549b",
+          "title": "A6 P3: reconcile advertised regex recall with actual scoped search behavior",
+          "status": "done",
+          "position": 5,
+          "definition_of_done": "Real MCP listTools advertises only supported inputs and callTool behavior matches; literal search stays tested and any supported regex mode is bounded and consistently handled.",
+          "next_action": null,
+          "blocked_reason": null,
+          "created_at": "2026-09-12T09:38:43.271Z",
+          "updated_at": "2026-09-12T15:23:59.165Z",
+          "completed_at": "2026-09-12T15:23:59.165Z",
+          "completion_evidence": [
+            "10605c9: native recall description/schema are literal-only; unsupported regex field rejected. Compatibility catalog/service retained.",
+            "server/test/buddy-note-contract.test.ts: real native listTools/callTool; literal a.*b matches literal note and excludes axxxb decoy; explicit regex rejected."
+          ]
+        },
+        {
+          "id": "todo_ea25c18b-90bd-489c-be38-2c4b5ff2fab4",
+          "buddy_project_id": "buddy_project_f5e8e43a-9c69-4dd2-82d1-c6c953e3549b",
+          "title": "A7 P3: update current send/wait planning documentation to typed delivery contract",
+          "status": "done",
+          "position": 6,
+          "definition_of_done": "Current read-before planning documentation uses exact current send delivery variants and receipt/lifecycle semantics; obsolete synchronous wait examples are labeled historical or removed from current instructions, preserving dated decision sources.",
+          "next_action": null,
+          "blocked_reason": null,
+          "created_at": "2026-09-12T09:38:43.271Z",
+          "updated_at": "2026-09-12T15:23:59.165Z",
+          "completed_at": "2026-09-12T15:23:59.165Z",
+          "completion_evidence": [
+            "10605c9: PLANNING_PRIMITIVES.md uses stable keys and exact inform/request/work delivery variants, durable receipt and managed continuation semantics, grant-checked staffing and original callback identity.",
+            "All three JSON send examples parse against SendBuddyResourceSchema. Earlier synchronous-wait text preserved at baseline 4c6835b; rationale in IMPLEMENTATION_NOTE_CONTRACT_2026-09-12.md."
+          ]
+        },
+        {
+          "id": "todo_4dc39b29-9dc8-4154-86d0-c4b999824f5c",
+          "buddy_project_id": "buddy_project_f5e8e43a-9c69-4dd2-82d1-c6c953e3549b",
+          "title": "Verify live history and date after safe idle backend reload",
+          "status": "open",
+          "position": 7,
+          "definition_of_done": "Running normal detail API/UI for conversation7d9d117f includes original Sep9 history and five-bug review, original createdAt, and newer session rows after watcher naturally adopts verified repair; preserve active provider operations.",
+          "next_action": "UI child project buddy_project_95592e35-f568-4868-9a93-03c8a8511597 owns a read-only browser traversal of main7d9d117f; capture original Sep9 history/five-defect review and newest rows. Existing aca48e0e browser traversal does not satisfy this exact target.",
+          "blocked_reason": null,
+          "created_at": "2026-09-12T10:07:43.155Z",
+          "updated_at": "2026-09-12T16:01:19.842Z",
+          "completed_at": null,
+          "completion_evidence": [
+            "At2026-09-12T10:02:36Z old backend still active,77rows/Sep12date. product/buddies/history-repair-2026-09-12/live-before-reload.json. No forced restart.",
+            "2026-09-12T10:12:10Z authenticated normal API: main7d9d117f has 1280 rows,50 user messages, original2026-09-09T04:45:02.313Z date and original five-defect review; aca48e0e has121rows/9users/seven-defect final. agent_notes/2026-09-12-history-live-recovery.json SHA256612e8f18e48b2fdf8f3fe3188168ec3694fd490371eb40d17f2807a286ff1ab3.",
+            "10:13 UTC appended browser audit independently verifies aca48e0e older and latest content and backend PID59549 replacing26438. It does not inspect main7d9d117f. agent_notes/2026-09-12-aca48e0e-client-audit.md SHA25688e438d3db47b068a96118fcf9153efe55b708bb53e56bb634f308131c09f8be.",
+            "Native correction knowledge_2133161e-685d-4045-8054-94b90141468b, owner_thread 01a095bb-db4c-7ae2-8663-992f09f62567; dated source hashes and exact evidence limits preserved."
+          ]
+        },
+        {
+          "id": "todo_0c08ebff-7e66-4034-a609-103cf7cd4e8f",
+          "buddy_project_id": "buddy_project_f5e8e43a-9c69-4dd2-82d1-c6c953e3549b",
+          "title": "Preserve supervised Task evidence when an update omits evidence",
+          "status": "open",
+          "position": 8,
+          "definition_of_done": "Reproduce the September 15 native supervised update: changing title/definitionOfDone/todo title without an evidence field changed five project evidence entries to [] at UI Task revision 5→6. Determine the canonical cause through the real native boundary; omitted evidence must preserve all prior project/todo evidence for self and supervised targets, while explicit replacement retains its documented semantics. Add a meaningful boundary regression and record source/build adoption separately. Evidence was restored with an explicit five-entry update at revision 7; restoration is not an implementation fix.",
+          "next_action": "Lead review this reproduced data-loss case alongside the existing consistency and release work; preserve original read/update/readback/restoration receipts.",
+          "blocked_reason": null,
+          "created_at": "2026-09-15T14:03:38.406Z",
+          "updated_at": "2026-09-15T14:03:38.406Z",
+          "completed_at": null,
+          "completion_evidence": []
+        }
+      ]
+    },
+    "audit": {
+      "id": "audit_9e5ac249-035b-4e12-be6a-3c4d113cd729",
+      "buddy_id": "buddy_d3f11f11-d010-4383-bc72-940bfe6ef8cd",
+      "workspace_id": "project_26fce156-5c5d-4dd9-a9d6-4b527a50af3c",
+      "buddy_project_id": null,
+      "operation": "buddy.update_project",
+      "payload": {
+        "key": "review-recording-20260915-supervised-evidence-regression-v1",
+        "baseRevision": 8,
+        "projectId": "buddy_project_f5e8e43a-9c69-4dd2-82d1-c6c953e3549b",
+        "todoOperations": [
+          {
+            "operation": "add",
+            "title": "Preserve supervised Task evidence when an update omits evidence",
+            "status": "open",
+            "definitionOfDone": "Reproduce the September 15 native supervised update: changing title/definitionOfDone/todo title without an evidence field changed five project evidence entries to [] at UI Task revision 5→6. Determine the canonical cause through the real native boundary; omitted evidence must preserve all prior project/todo evidence for self and supervised targets, while explicit replacement retains its documented semantics. Add a meaningful boundary regression and record source/build adoption separately. Evidence was restored with an explicit five-entry update at revision 7; restoration is not an implementation fix.",
+            "nextAction": "Lead review this reproduced data-loss case alongside the existing consistency and release work; preserve original read/update/readback/restoration receipts."
+          }
+        ],
+        "evidence": [
+          "product/buddies/IMPLEMENTATION_HISTORY_REPAIR_2026-09-12.md (SHA256 52dc7d9bf2d5a858c80a9bedf582c87df20f982df3654b4dbcaa343b761ae3e4)",
+          "product/buddies/history-repair-2026-09-12/repair-manifest.json (SHA256 e9f6b11d0d212c20d4d98f7b1a6e5ec62a948db974941d8b01e683aa51ede532)",
+          "A2:258f4ef; A4:5f38896; A5-A7:10605c9 on codex/buddy-readiness-repair-20260912 above labeled snapshot 4c6835b. All repair paths applied to shared checkout after baseline comparison; shared index and unrelated work preserved.",
+          "Final isolated server suite:345 cases,342 pass,3 skip,0 fail. Shared build and server typecheck pass. All9new regression cases also pass in shared checkout after integration. No live-provider/reload acceptance claimed."
+        ],
+        "conversation_id": "01a09f69-2b0c-72f2-9c6f-50a28ac72008",
+        "automation_run_id": null
+      },
+      "created_at": "2026-09-15T14:03:38.408Z"
+    }
+  }
+}

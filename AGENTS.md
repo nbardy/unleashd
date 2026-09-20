@@ -6,8 +6,14 @@ that area.
 ## Code tree map
 
 ```
-shared/src/index.ts                → Zod schemas, types, per-provider helpers
-server/src/server.ts               → Conversation class + WS router (state authority)
+shared/src/index.ts                → shared exports + WS Zod schemas/types
+shared/src/conversation-config.ts   → canonical selection intent, patches, resolution
+shared/src/provider-catalog.ts      → provider identities + catalog schemas
+server/src/server.ts               → application composition and startup
+server/src/conversations/runtime.ts → Conversation class + active turn state authority
+server/src/conversations/config-{service,store}.ts → durable configuration and revisions
+server/src/transport/conversation-websocket.ts → WS command routing
+server/src/observability/error-journal.ts → durable grouped server/client failures
 server/src/adapters/*              → registry/disk-adapter/loader: session persistence
 server/src/auth/*                  → shared-secret gate (policy/gate/express)
 server/src/providers/*             → thin Provider impls per CLI
@@ -15,7 +21,7 @@ vendor/agent-cli-tool/             → GIT SUBMODULE: canonical request → argv
                                      process → unified event stream. Thin wrapper;
                                      harness differences live at its edges only.
 client/src/atoms/*                 → jotai atoms, derived views, WS actions
-client/src/components/{Sidebar,Chat,ProviderModelPicker}.tsx → main desktop UI
+client/src/components/{Sidebar,Chat,ConversationConfigPicker}.tsx → main desktop UI
 client/src/mobile/*                → mobile view tree (second shell, same core)
 client/src/atoms/ui.ts             → persisted UI prefs (local+shared partition)
 ```
@@ -27,13 +33,20 @@ client/src/atoms/ui.ts             → persisted UI prefs (local+shared partitio
   `streamingContent`/streaming atoms, never `conversations.messages` mid-stream.
 - All hooks before any early `return`. New list views go in derived atoms, not
   component `useMemo`. Stable fallbacks are module constants.
-- One-shot data loads in components go through `usePolledFetch(source, 0)`,
-  never a bare `fetch(...).then(setState)` inside `useEffect`. The bare form has
-  no abort-on-change, so when the key changes quickly the SLOWEST response
-  wins, not the latest — seven panels showed the previous project's data after
-  a fast switch until 2026-09-06 (SwarmDetail, SwarmAnalytics, UsagePanel).
-  Pass a memoised `(signal) => Promise<T>` fetcher when one load fans out into
-  several requests; thread `signal` into every inner `fetch`.
+- Read-only server data goes through `usePolledFetch(source, intervalMs)`,
+  never a bare `fetch(...).then(setState)` inside `useEffect`. Results live in
+  the keyed cache in `client/src/atoms/resources.ts`, NOT in component state,
+  so a remount renders the cached value immediately and revalidates behind it —
+  that is what stopped every mobile page visit from waiting on a round trip.
+  The cache key is the identity of the DATA: a plain URL string, or
+  `resource(key, load)` when one load fans out into several requests (thread
+  `signal` into every inner `fetch`). A bare `(signal) => Promise<T>` fetcher is
+  rejected by the type — with no key there is nothing to cache under, and it is
+  the un-keyed form that made seven panels show the previous project's data
+  after a fast switch until 2026-09-06 (SwarmDetail, SwarmAnalytics,
+  UsagePanel). Keying supersedes the old abort-on-change guard: a late response
+  lands on its own key, which whoever switched away is no longer reading, so
+  never re-add a `data.id === currentId` check at a call site.
 - `jotaiStore.set` only inside `client/src/atoms/` (via `mutate()` for partial
   updates). Mobile never imports `components/*` except `components/buddies/`.
   Gates: `bash tools/check-client-invariants.sh`.
@@ -50,28 +63,47 @@ client/src/atoms/ui.ts             → persisted UI prefs (local+shared partitio
 - Never `git reset --hard`, `filter-branch`, `filter-repo`, or `rebase -i` on a shared branch — they orphaned 5a6cf40/79a8381 on 2026-08-20. Use `git stash` or a throwaway branch and ask. Guarded in `.claude/settings.local.json` (deny) + `~/.zshrc` wrapper.
 - Prefer one integration test through a real boundary over mock-heavy units;
   never assert on TSX/CSS source text.
+- Foreground Buddy deadlines must receive `TURN_MAX_RUNTIME_MS` explicitly;
+  never inherit the background claim's 600-second default. Automatic expiry
+  uses `max_runtime_timeout`, not `stop()` / `user_stop`. Preserve the packaged
+  authority and runtime regression tests when changing timers or Buddy versions.
+  History: `docs/incident-2026-09-10-buddy-chat-timeout.md` (distinct from the
+  August bridge-heartbeat fix).
 
 ## Read before touching
 
+For any Buddy model, tool or execution change, start with
+[the lean core design](product/buddies/CORE_DESIGN.md). Name the concrete workflow
+gap before adding a concept or controller; reuse its canonical authority and
+identify what existing code the change replaces. Historical proposals are not
+requirements to rebuild omitted machinery.
+
 | Area | Doc |
 |---|---|
+| Buddies: core model, motivating cases, rationale and scope | `product/buddies/CORE_DESIGN.md` |
 | Client state: subscriptions, mutations, perf, hook ordering | `docs/client-state.md` |
 | Mobile view tree, grep gates, DeviceKind, UI-state partition | `docs/mobile-view-tree.md` |
 | Mobile UI primitives, styling layers, extraction rules | `docs/mobile-ui.md` |
 | Architecture: provider seam, submodule rules, lifecycle | `docs/architecture.md` |
 | Auth: shared secret, bind policy, why plain-http LAN is the weak path | `docs/auth.md` |
 | Per-conversation settings + pass-through pattern (7-step checklist) | `docs/pass-through-pattern.md` |
-| WS contract surprises (`conversation_created` reused for updates, optimistic stubs) | `docs/ws-contract-surprises.md` |
+| WS contract: correlated creation/config commands, summaries, pending state | `docs/ws-contract-surprises.md` |
 | Submodule commit dance + `git status` cheatsheet | `docs/git-submodule-dance.md` |
 | Test strategy: useful vs overkill, lifecycle authority | `docs/test-strategy.md` |
-| Buddy automations: `job_kind` vs `schedule_kind`, the loop driver, known defects | `agent_notes/2026-08-21_buddy-automations-reference.md` |
-| Buddy coordination primitives: no review type, the missing wait | `product/buddies/PLANNING_PRIMITIVES.md` + `agent_notes/2026-08-21_primitives-and-the-wait-design.md` |
-| Direct reports (sub-buddies): hiring, `hire_quota`, threat model | `product/buddies/PLANNING_SUB_BUDDIES.md` + `agent_notes/2026-08-19_sub-buddies-design.md` |
-| Buddy memory: soul/long-term/working docs + append-only notes, two known defects | `product/buddies/PLANNING_MEMORY.md` (design) + `product/buddies/HANDOFF_MEMORY.md` (review handoff) + `agent_notes/2026-08-21_memory-architecture-research_buddies-development-lead.md` (evidence) + `agent_notes/2026-08-22_memory-implementation-handoff_buddies-development-lead.md` (write-timing evidence + the context-fence requirement) |
+| Error journal: capture policy, storage, inspection, acknowledgement | `docs/error-journal.md` |
+| Buddy automations: ownership, budgets, capture, cancellation | `product/buddies/AUTOMATION_OWNERSHIP.md` |
+| Buddy coordination: send/reply, bounded waiting, open purposes | `product/buddies/PLANNING_PRIMITIVES.md` |
+| Buddy team setup and operation: readiness, preview/apply, work and returns | `product/buddies/TEAM_OPERATOR_GUIDE.md` |
+| Direct reports: owner-granted staffing, relationships, retirement, threat model | `product/buddies/PLANNING_SUB_BUDDIES.md` |
+| Buddy memory: dense revisions, notes, capture, recall | `product/buddies/PLANNING_MEMORY.md` |
+| Memory reviewer benchmark: rerun, grade, extend, historical evidence (read before changing reviewer prompts/tools) | [Memory curation benchmark](server/test/fixtures/memory-curation/README.md) |
 | New provider integration protocol | `docs/agent_client_spec.md` |
 
 ## Misc
 
+- Inspect unresolved operational failures with `pnpm errors:list`; do not read or
+  mutate the JSONL journal directly. Its configured location and capture policy
+  are documented in `docs/error-journal.md`.
 - Adding a provider: harness (submodule) + `server/src/providers/{name}.ts` +
   `ProviderSchema` in shared + registry entry + disk adapter if persisted.
 - Buddy sections are ROUTES, not tab state: `/buddies/:buddyId/:tab` with
@@ -93,6 +125,13 @@ client/src/atoms/ui.ts             → persisted UI prefs (local+shared partitio
   `--tsconfig client/tsconfig.app.json` or JSX compiles with the classic
   runtime and every component throws `ReferenceError: React is not defined`.
   `pnpm test:client` passes it. See `docs/test-strategy.md`.
+  `client/test/` is NOT covered by `tsc -b` (the app project compiles `src`
+  only), so a test that passes props a component no longer accepts typechecks
+  clean and fails at runtime with something unrelated-looking — a renamed
+  `ConversationsTab` prop surfaced as `Cannot read properties of undefined
+  (reading 'flatMap')` inside a jotai atom on 2026-09-16. Run `pnpm test:client`
+  after renaming any prop a test constructs; a green typecheck proves nothing
+  about the tests.
 
 - Typecheck the client with `tsc -b`, never `tsc --noEmit`. `client/tsconfig.json`
   is a solution file (`"files": []` + project references), so plain

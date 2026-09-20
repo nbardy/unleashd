@@ -1,0 +1,212 @@
+{
+  "recordedAt": "2026-09-15",
+  "plannedUpdates": [
+    {
+      "id": "buddy_project_6efaffd1-0415-4dcf-80a4-bb6599d924b7",
+      "ok": true,
+      "revision": 3,
+      "state": "paused"
+    },
+    {
+      "id": "buddy_project_075e367e-3442-474c-a58d-8094aec59e25",
+      "ok": true,
+      "revision": 2,
+      "state": "paused"
+    },
+    {
+      "id": "buddy_project_4abf69fe-7981-4934-aaa0-7b4d2908906e",
+      "ok": true,
+      "revision": 2,
+      "state": "paused"
+    },
+    {
+      "id": "buddy_project_56ced029-2ce3-4897-b037-462d5a01e2ff",
+      "ok": true,
+      "revision": 2,
+      "state": "paused"
+    },
+    {
+      "id": "buddy_project_cdae619b-6e1d-4d5b-9c78-84308f418344",
+      "ok": true,
+      "revision": 2,
+      "state": "paused"
+    },
+    {
+      "id": "buddy_project_4f875aff-3481-4ba9-8aab-eb0ea62c1308",
+      "ok": true,
+      "revision": 2,
+      "state": "paused"
+    },
+    {
+      "id": "buddy_project_67c0de12-9b60-4748-ae8b-0a88792c2f74",
+      "ok": true,
+      "revision": 2,
+      "state": "paused"
+    },
+    {
+      "id": "buddy_project_37f2780f-f766-452b-991c-eb4ca4192a9b",
+      "ok": true,
+      "revision": 14,
+      "state": "paused"
+    }
+  ],
+  "restart": "buddy_project_62511186-9ab4-4ec6-aece-4bdf39307527",
+  "reviewComments": [
+    {
+      "id": "buddy_project_6efaffd1-0415-4dcf-80a4-bb6599d924b7",
+      "ok": true,
+      "commentId": "task_comment_d73db765-fd76-4ccc-85a8-03d236afebd4"
+    },
+    {
+      "id": "buddy_project_67c0de12-9b60-4748-ae8b-0a88792c2f74",
+      "ok": true,
+      "commentId": "task_comment_b09fd388-fa3a-450b-915c-e46e5b56afe7"
+    },
+    {
+      "id": "buddy_project_4f875aff-3481-4ba9-8aab-eb0ea62c1308",
+      "ok": true,
+      "commentId": "task_comment_bda6795b-f73c-4bf1-8115-f39504579a46"
+    },
+    {
+      "id": "buddy_project_cdae619b-6e1d-4d5b-9c78-84308f418344",
+      "ok": true,
+      "commentId": "task_comment_5ea67087-2d33-4619-8e9d-88bc5767ca7a"
+    },
+    {
+      "id": "buddy_project_4abf69fe-7981-4934-aaa0-7b4d2908906e",
+      "ok": true,
+      "commentId": "task_comment_bf72833e-3d4e-4854-ab98-88a9a9c59902"
+    },
+    {
+      "id": "buddy_project_56ced029-2ce3-4897-b037-462d5a01e2ff",
+      "ok": true,
+      "commentId": "task_comment_1981d900-1e6f-454e-b41f-ef45db26da9b"
+    },
+    {
+      "id": "buddy_project_075e367e-3442-474c-a58d-8094aec59e25",
+      "ok": true,
+      "commentId": "task_comment_f4ee153c-a8a5-4dc6-ab5a-c592c28a97e1"
+    },
+    {
+      "id": "buddy_project_9ef2b573-f8fd-48d6-9218-c390c9035487",
+      "ok": true,
+      "commentId": "task_comment_eb3b9eb7-2773-4f16-a6a1-ae8861834d10"
+    },
+    {
+      "id": "buddy_project_de5267b7-26f7-45c1-8819-cb0954ec1255",
+      "ok": true,
+      "commentId": "task_comment_ab265fd5-ec17-4add-b6b2-2ea28a170568"
+    },
+    {
+      "id": "buddy_project_37f2780f-f766-452b-991c-eb4ca4192a9b",
+      "ok": true,
+      "commentId": "task_comment_ffc1f552-052d-4207-bb7a-1526092c041b"
+    },
+    {
+      "id": "buddy_project_19703c1b-e2ad-4499-adf5-7bb16b0b6fa9",
+      "ok": true,
+      "commentId": "task_comment_a05b7468-66a7-4771-857e-c5d38eb25c3c"
+    },
+    {
+      "id": "buddy_project_9864f34e-b435-43b1-80b1-07cc51645fbe",
+      "ok": true,
+      "commentId": "task_comment_b1779109-3e11-4115-ba72-fd785547f726"
+    },
+    {
+      "id": "buddy_project_5a090ee9-d90f-4531-a610-5015f22857fc",
+      "ok": true,
+      "commentId": "task_comment_0e7f1836-3524-40c3-9962-705a4968dc3a"
+    },
+    {
+      "id": "buddy_project_14923985-6366-4c5a-9d08-855832dcd35c",
+      "ok": true,
+      "commentId": "task_comment_5c82aa14-127a-4ef6-96b8-cb56d599a877"
+    },
+    {
+      "id": "buddy_project_e780d7f1-bb29-4a5d-b7c2-bd9cde212ce7",
+      "ok": true,
+      "commentId": "task_comment_6c91e1df-4ab5-4fd2-97c4-32392e3fda8c"
+    },
+    {
+      "id": "buddy_project_545457c2-3c8a-4bc1-b792-702a6d3ffbb7",
+      "ok": true,
+      "commentId": "task_comment_e551fbb8-2e5f-4b2f-ba38-93f45b971b32"
+    },
+    {
+      "id": "buddy_project_f5e8e43a-9c69-4dd2-82d1-c6c953e3549b",
+      "ok": true,
+      "commentId": "task_comment_37d87174-a28e-42e1-9203-7479d7acd42e"
+    },
+    {
+      "id": "buddy_project_8a1f69b7-7734-47bb-853b-cf36d065e346",
+      "ok": true,
+      "commentId": "task_comment_33ae70bf-bfb7-43fc-877e-b5d854ae6556"
+    },
+    {
+      "id": "buddy_project_31d73904-2352-44a4-8e3f-8f1f101fc5f3",
+      "ok": true,
+      "commentId": "task_comment_4752342d-a6c4-40c2-ac02-b2fbab0a624b"
+    },
+    {
+      "id": "buddy_project_36a70bf6-8ebd-403f-af7f-99cfa346bd88",
+      "ok": true,
+      "commentId": "task_comment_6f513024-df01-4ca2-8f90-25686c9e1925"
+    },
+    {
+      "id": "buddy_project_2bce3176-5b7c-4d67-982e-128c3d65df63",
+      "ok": true,
+      "commentId": "task_comment_9bfd894b-0a70-417c-88ff-bcbfc5dd4656"
+    },
+    {
+      "id": "buddy_project_216ae739-a2ae-48a6-ae37-ec5d66b8d226",
+      "ok": true,
+      "commentId": "task_comment_b5a46809-684f-4d05-80b2-42284d4b059b"
+    },
+    {
+      "id": "buddy_project_b55e2554-3dae-4b14-8b81-fcd1cfec3531",
+      "ok": true,
+      "commentId": "task_comment_3b0b04f5-3321-42d5-831f-ae5c956b6cbb"
+    },
+    {
+      "id": "buddy_project_3b1d5297-3db3-4d52-8a33-9c06ec4a8573",
+      "ok": true,
+      "commentId": "task_comment_be5fe54d-4ba7-4961-b4f0-130a5329734d"
+    },
+    {
+      "id": "buddy_project_7023cc14-9c47-43bf-a610-b85fb981c067",
+      "ok": true,
+      "commentId": "task_comment_83757b12-2d13-46b8-bd50-3a21df2ae706"
+    },
+    {
+      "id": "buddy_project_743485e9-ea23-46bc-b537-82f271248745",
+      "ok": true,
+      "commentId": "task_comment_97084151-0df2-4250-ba7f-0b457ff2e705"
+    },
+    {
+      "id": "buddy_project_0334db8e-2dbc-4f60-891d-f8a3a3216bd7",
+      "ok": true,
+      "commentId": "task_comment_db61a028-a00d-478f-b487-e621c2875c5c"
+    },
+    {
+      "id": "buddy_project_d7c71266-2b44-4cd8-805b-cf0de53a6874",
+      "ok": true,
+      "commentId": "task_comment_6d2c3afe-1735-4173-9ad5-df173b2a30ba"
+    },
+    {
+      "id": "buddy_project_816d7fa0-ffb5-4b11-aa03-cc8898fcf8f0",
+      "ok": true,
+      "commentId": "task_comment_a2a26360-69f9-460e-b7de-cefa6923237f"
+    },
+    {
+      "id": "buddy_project_95592e35-f568-4868-9a93-03c8a8511597",
+      "ok": true,
+      "commentId": "task_comment_4586161f-cb07-400e-935d-9466049ec655"
+    },
+    {
+      "id": "buddy_project_a2047be3-f8cb-4eed-ac2e-522e3831bee6",
+      "ok": true,
+      "commentId": "task_comment_307d7622-ab16-4b25-98ce-584c07b09eda"
+    }
+  ],
+  "validation": "All nine selected planning/implementation records re-read as execution_state=paused. All 68 prior record IDs unique and present in plan. No implementation, tests or dispatch performed in planning turn."
+}

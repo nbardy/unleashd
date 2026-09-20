@@ -1,0 +1,17 @@
+{
+  "command": [
+    "pnpm",
+    "exec",
+    "tsx",
+    "--test",
+    "server/test/buddy-lean-controls.test.ts",
+    "server/test/buddy-readiness-privacy.test.ts",
+    "server/test/buddy-knowledge-context.test.ts",
+    "server/test/buddy-background-return.test.ts",
+    "server/test/buddy-efficiency-reads.test.ts",
+    "server/test/buddy-mcp.test.ts"
+  ],
+  "exitCode": 0,
+  "elapsedSeconds": 1.442,
+  "log": "lead-boundary-tests.log"
+}

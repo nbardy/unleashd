@@ -1,0 +1,354 @@
+--- a/server/src/buddies/team-readiness.ts
++++ b/server/src/buddies/team-readiness.ts
+@@ -283,14 +283,20 @@
+             `The original run policy excludes ${operation}.`,
+             'Keep the existing run restrictions. If broader work is authorized, finish or stop this attempt and explicitly dispatch a new bounded task.'
+           );
+-      if (message.expects_reply && message.from_buddy_id)
++      if (message.expects_reply && message.from_buddy_id) {
++        // Match enqueueMessageReply: owner-launched work returns to its background
++        // review conversation; the launching human chat may still be busy.
++        const returnPolicy = JSON.parse(
++          (message as BuddyMessage & { return_policy?: string }).return_policy || '{}'
++        );
+         admission(
+           message.from_buddy_id,
+           `messages.${message.id}.returnPath`,
+           message.source_workspace_id ?? message.workspace_id,
+           undefined,
+-          message.parent_conversation_id ?? undefined
+-        );
++          returnPolicy.return_conversation_id || message.parent_conversation_id || undefined
++        );
++      }
+     }
+   }
+   return {
+--- a/server/src/buddies/integration.ts
++++ b/server/src/buddies/integration.ts
+@@ -351,7 +351,11 @@
+       '',
+       'BUDDY OPERATIONS',
+       audience
+-        ? `Document audience: ${JSON.stringify(audience)}. Include this scope in document refs; global private memory is unavailable to team turns.`
++        ? `Document audience: ${JSON.stringify(audience)}. ${
++            audience.kind === 'owner_thread'
++              ? 'Include this scope in memory refs; omit scope for the portable soul used by this owner briefing. Scoped soul refs select published role context.'
++              : 'Include this scope in document refs; global private memory and portable soul are unavailable to team turns.'
++          }`
+         : '',
+       'Use the native `unleashd_buddy` tools for durable employee state whenever they are available.',
+       'Those tools are already bound to this employee, workspace, and selected project.',
+--- a/product/buddies/TEAM_OPERATOR_GUIDE.md
++++ b/product/buddies/TEAM_OPERATOR_GUIDE.md
+@@ -51,6 +51,13 @@
+ Inspect each blocker's `path`, `code`, `reason` and `remedy`; an old owner request
+ or a busy return route is not evidence that an unrelated configuration cannot be
+ saved. A queued receipt is not proof that a worker started.
++
++For a specific assignment, pass its original `messageIds`. Return readiness uses
++the registered background review destination, falling back to the original
++conversation for legacy messages. A busy launching human chat does not make a
++separate background return conversation busy. Local regression evidence is in
++`server/test/buddy-lean-controls.test.ts`; source verification does not establish
++that an already running host has adopted the correction.
+ 
+ ## 2. Preview and apply setup
+ 
+@@ -230,6 +237,17 @@
+ Stopped roots stay stopped. The [background work contract](DESIGN_BACKGROUND_TASK_EXECUTION.md)
+ explains bounded recovery and fresh-budget resumption.
+ 
++Choose the existing stop target deliberately: `stop({runId, key, reason})`
++cancels one attempt; `stop({rootMessageId, key, reason})` stops the whole chain,
++including siblings sharing that root. Separate sends from one managed turn can
++share a root. Inspect `get_team_state({rootMessageId})` before stopping it. A run
++stop is not permanent cancellation of the Task or all later attempts.
++
++Cancelling a Task also fences its descendants. When consolidating duplicate
++parent Tasks, keep an ancestor enabled until its retained children finish; close
++the duplicate afterward. Do not mark unfinished child work complete to tidy the
++backlog.
++
+ ## Contract discovery
+ 
+ Use the current native catalog for callable fields. `get_capabilities` still
+--- a/server/src/buddies/mcp-server.ts
++++ b/server/src/buddies/mcp-server.ts
+@@ -81,7 +81,7 @@
+   'buddy.get_memory':
+     'Read a working or long-term memory document with its revision. Another Buddy requires an explicit private-memory read grant. Team membership and project visibility do not grant private memory access.',
+   'buddy.stop':
+-    'Stop one own run or a work chain originally requested by this Buddy. Cancellation fences operations immediately and drains providers before releasing execution slots.',
++    'Choose runId to stop one attempt, or rootMessageId to stop the entire originating work chain, including sibling requests sharing that root. Inspect get_team_state for the selected root before stopping a chain. Cancellation fences operations immediately and drains providers before releasing execution slots.',
+   'buddy.retry_run':
+     'Recover a failed attempt after inspecting effects. A completed attempt with a blocked Task is not retryable: inspect effects, resolve the blocker, then use an authorized new work send for the same Task with a new key and explicit fresh bounds, without continueFrom. Original input sender or root requester may recover their branch across conversations, within current audience and original limits. Supply stable key and reason. Save progress in ordinary files and Task comments; checkpoint writes are retired. A legacy timeout already replied as failed creates a successor request, retaining the old reply and original remaining budget/policy. Stopped roots cannot resume.',
+   'buddy.list_buddies':
+--- a/product/buddies/CORE_DESIGN.md
++++ b/product/buddies/CORE_DESIGN.md
+@@ -145,6 +145,14 @@
+ discard or merge unnecessary work. Prefer a small correction in an existing
+ authority, deletion, documentation or no code change. Added surface must address
+ a demonstrated core workflow failure that the existing primitives cannot handle.
++
++Owner clarification · September 16, 2026.
++
++Any expansion of the design, API/MCP or data model requires manual owner review
++and explicit approval before implementation. Present the exact before/after,
++demonstrated need, alternative using existing primitives and code/schema impact.
++Changing an existing tool's output contract also counts. Existing-contract
++correctness repairs may proceed within the authorized work scope.
+ 
+ Workers reuse Buddy identity and memory. Conversations and runs retain the existing
+ context, execution and limit machinery. This principle guides their composition;
+--- /dev/null
++++ b/server/test/buddy-lean-controls.test.ts
+@@ -0,0 +1,248 @@
++import assert from 'node:assert/strict';
++import { mkdtempSync, rmSync } from 'node:fs';
++import { tmpdir } from 'node:os';
++import { join } from 'node:path';
++import test from 'node:test';
++import { Client } from '@modelcontextprotocol/sdk/client/index.js';
++import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
++import { BuddiesStore } from '@nbardy/buddies';
++import type { BuddiesStorePort } from '../src/buddies/contract';
++import { createBuddiesIntegration } from '../src/buddies/integration';
++import { createBuddyMcpServer } from '../src/buddies/mcp-server';
++import { MESSAGE_BUDDY_OPERATIONS } from '../src/buddies/operations';
++
++async function fixture() {
++  const root = mkdtempSync(join(tmpdir(), 'buddy-lean-controls-'));
++  const raw = new BuddiesStore(':memory:');
++  const store = raw as unknown as BuddiesStorePort;
++  const workspace = raw.createWorkspace({ name: 'Lean controls', rootPath: root });
++  const lead = raw.createBuddy({ project: workspace.id, name: 'Lead', role: 'Coordinate' });
++  const worker = raw.createBuddy({ project: workspace.id, name: 'Worker', role: 'Build' });
++  raw.setBuddyRelationship({ fromBuddy: lead.id, toBuddy: worker.id, kind: 'manager' });
++  for (const buddy of [lead, worker])
++    raw.setCoordinationMembership(buddy.id, workspace.id, { background_enabled: true });
++  const context = { buddyId: lead.id, workspaceId: workspace.id, conversationId: 'owner' };
++  const server = createBuddyMcpServer(store, context);
++  const client = new Client({ name: 'lean-controls', version: '1' });
++  const [a, b] = InMemoryTransport.createLinkedPair();
++  await Promise.all([client.connect(a), server.connect(b)]);
++  return {
++    raw,
++    store,
++    workspace,
++    lead,
++    worker,
++    context,
++    client,
++    async call(name: string, args: Record<string, unknown>) {
++      const result = await client.callTool({ name, arguments: args });
++      assert.ok(!result.isError, JSON.stringify(result));
++      return (result.structuredContent as any).data;
++    },
++    async close() {
++      await client.close();
++      await server.close();
++      raw.close();
++      rmSync(root, { recursive: true, force: true });
++    },
++  };
++}
++
++test('native readiness checks the actual background return route and retains legacy busy checks', async () => {
++  const f = await fixture();
++  try {
++    const policy = { allowed_operations: MESSAGE_BUDDY_OPERATIONS };
++    f.raw.beginBuddyChatRun({
++      buddyId: f.lead.id,
++      workspaceId: f.workspace.id,
++      conversationId: 'owner',
++      allowedOperations: MESSAGE_BUDDY_OPERATIONS,
++      maxRuntimeSeconds: 60,
++    });
++    const request = (key: string, background: boolean) =>
++      f.raw.sendCoordinatedMessage(
++        {
++          fromBuddy: f.lead.id,
++          to: f.worker.id,
++          workspace: f.workspace.id,
++          parentConversationId: 'owner',
++          key,
++          purpose: 'Build',
++          body: 'Save an artifact',
++        },
++        { policy, ...(background ? { returnConversationId: 'background-review' } : {}) }
++      );
++    const background = request('background', true);
++    const legacy = request('legacy', false);
++    const inspect = async (id: string) =>
++      (await f.call('get_capabilities', { messageIds: [id] })).readiness;
++    const ready = await inspect(background.id);
++    assert.equal(ready.ready, true, JSON.stringify(ready.blockers));
++    const legacyBusy = await inspect(legacy.id);
++    assert.ok(
++      legacyBusy.blockers.some(
++        (b: any) => b.code === 'conversation_busy' && b.path === `messages.${legacy.id}.returnPath`
++      )
++    );
++    const workerRun = f.raw.listBuddyRuns().find((r) => r.input_id === background.id)!;
++    assert.ok(
++      f.raw.claimBuddyRun(workerRun.id, {
++        claimToken: 'worker',
++        conversationId: 'worker',
++        maxRuntimeSeconds: 60,
++      })
++    );
++    f.raw.startBuddyRun(workerRun.id, 'worker');
++    f.raw.finishBuddyRun(workerRun.id, {
++      claimToken: 'worker',
++      status: 'complete',
++      outcome: 'Saved artifact',
++    });
++    f.raw.replyMessage(background.id, {
++      buddy: f.worker.id,
++      conversationId: 'worker',
++      outcome: 'complete',
++      body: 'Saved artifact',
++      evidence: ['artifact.md'],
++    });
++    const reply = f.raw
++      .listBuddyRuns()
++      .find((r) => r.input_kind === 'message_reply' && r.input_id === background.id)!;
++    assert.equal(
++      reply.conversation_id,
++      'background-review',
++      'Readiness and delivery choose the same route'
++    );
++    const claim = f.raw.claimBuddyRun(reply.id, {
++      claimToken: 'return',
++      conversationId: 'background-review',
++      maxRuntimeSeconds: 60,
++    });
++    assert.ok(claim, 'Busy owner chat does not block the background return');
++    const backgroundBusy = await inspect(background.id);
++    assert.ok(
++      backgroundBusy.blockers.some(
++        (b: any) =>
++          b.code === 'conversation_busy' && b.path === `messages.${background.id}.returnPath`
++      )
++    );
++  } finally {
++    await f.close();
++  }
++});
++
++test('native portable soul edit reaches the next owner briefing without changing scoped publications', async () => {
++  const f = await fixture();
++  try {
++    const scope = {
++      kind: 'project' as const,
++      projectId: f.raw.createCoordinatedProject(
++        {
++          workspaceId: f.workspace.id,
++          ownerId: f.lead.id,
++          title: 'Shared work',
++          definitionOfDone: 'Evidence',
++        },
++        { actor: f.lead.id, key: 'project' }
++      ).id,
++    };
++    f.raw.replaceKnowledgeDocument(
++      { kind: 'soul', targetBuddyId: f.lead.id, scope },
++      {
++        key: 'published',
++        baseRevision: 0,
++        content: 'PUBLISHED_ROLE_CANARY',
++        reason: 'Fixture disclosure',
++      },
++      { actor: 'owner', workspaceId: f.workspace.id }
++    );
++    const integration = createBuddiesIntegration({
++      store: f.store,
++      getConversation: () => undefined,
++    });
++    const ownerContext = {
++      ...f.context,
++      knowledgeScope: { kind: 'owner_thread' as const, conversationId: 'owner' },
++    };
++    const before = await integration.resolveConversation(ownerContext);
++    assert.match(before.briefing, /omit scope for the portable soul/);
++    const doc = await f.call('get_document', { ref: { kind: 'soul', targetBuddyId: f.lead.id } });
++    assert.equal(doc.ref.scope, undefined);
++    const edit = {
++      ref: doc.ref,
++      revision: doc.revision,
++      key: 'portable-edit',
++      content: 'OWNER_IDENTITY_CANARY',
++      reason: 'Owner requested identity correction',
++    };
++    await f.call('update_document', { ...edit, preview: true });
++    assert.doesNotMatch(
++      (await integration.resolveConversation(ownerContext)).briefing,
++      /OWNER_IDENTITY_CANARY/
++    );
++    await f.call('update_document', { ...edit, preview: false });
++    const after = await integration.resolveConversation(ownerContext);
++    assert.match(after.briefing, /OWNER_IDENTITY_CANARY/);
++    assert.doesNotMatch(after.briefing, /PUBLISHED_ROLE_CANARY/);
++    const shared = await integration.resolveConversation({
++      ...f.context,
++      buddyProjectId: scope.projectId,
++      knowledgeScope: scope,
++      delegatedByBuddyId: f.worker.id,
++    });
++    assert.match(shared.briefing, /PUBLISHED_ROLE_CANARY/);
++    assert.doesNotMatch(shared.briefing, /OWNER_IDENTITY_CANARY|omit scope for the portable soul/);
++    const stale = await f.client.callTool({
++      name: 'update_document',
++      arguments: { ...edit, key: 'stale', preview: false },
++    });
++    assert.equal(stale.isError, true, 'Revision enforcement remains unchanged');
++  } finally {
++    await f.close();
++  }
++});
++
++test('native run stop preserves siblings while root stop cancels the shared work chain', async () => {
++  const f = await fixture();
++  try {
++    const parent = f.raw.beginBuddyChatRun({
++      buddyId: f.lead.id,
++      workspaceId: f.workspace.id,
++      conversationId: 'owner',
++      allowedOperations: MESSAGE_BUDDY_OPERATIONS,
++      maxRuntimeSeconds: 60,
++    });
++    const messages = ['one', 'two'].map((key) =>
++      f.raw.sendCoordinatedMessage(
++        {
++          fromBuddy: f.lead.id,
++          to: f.worker.id,
++          workspace: f.workspace.id,
++          parentConversationId: 'owner',
++          key,
++          purpose: 'Build',
++          body: key,
++        },
++        { runId: parent.id, policy: { allowed_operations: MESSAGE_BUDDY_OPERATIONS } }
++      )
++    );
++    const runs = messages.map((m) => f.raw.listBuddyRuns().find((r) => r.input_id === m.id)!);
++    assert.equal(runs[0].root_message_id, runs[1].root_message_id);
++    await f.call('stop', { runId: runs[0].id, key: 'stop-one', reason: 'Stop only this attempt' });
++    assert.equal(f.raw.getBuddyRun(runs[0].id)!.status, 'cancelled');
++    assert.equal(f.raw.getBuddyRun(runs[1].id)!.status, 'queued');
++    await f.call('stop', {
++      rootMessageId: messages[0].id,
++      key: 'stop-chain',
++      reason: 'Stop the whole chain',
++    });
++    assert.equal(f.raw.getBuddyRun(runs[1].id)!.status, 'cancelled');
++    assert.equal(f.raw.getMessage(messages[1].id)!.status, 'cancelled');
++    assert.equal(
++      f.raw.claimBuddyRun(runs[1].id, { claimToken: 'late', maxRuntimeSeconds: 60 }),
++      null
++    );
++  } finally {
++    await f.close();
++  }
++});

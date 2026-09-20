@@ -1,0 +1,928 @@
+--- before/server/src/buddies/dispatch-service.ts
++++ after/server/src/buddies/dispatch-service.ts
+@@ -1,3 +1,4 @@
++import type { BuddyAssignmentConfig, ConversationConfig } from '@unleashd/shared';
+ import { createHash } from 'node:crypto';
+ import type { ConversationConfigService } from '../conversations/config-service';
+ import type { CreateServerBuddyConversationInput } from '../conversations/buddy-creation-service';
+@@ -17,6 +18,10 @@
+ 
+ export interface BuddyDispatchServiceDependencies {
+   getStore(): Promise<BuddiesStorePort>;
++  resolveAssignmentConfig?(
++    config: ConversationConfig,
++    conversationId?: string | null
++  ): Promise<BuddyAssignmentConfig>;
+   createConversation(input: {
+     context: BuddyContext;
+     initialMessage: string;
+@@ -138,6 +143,49 @@
+           input.workspaceId ?? context.workspaceId,
+           input.key
+         );
++        const messageInput = {
++          fromBuddy: context.buddyId,
++          to: input.to === 'self' ? context.buddyId : input.to,
++          workspace: input.workspaceId ?? context.workspaceId,
++          project: input.projectId,
++          purpose: input.purpose,
++          body: input.body,
++          evidence: input.evidence,
++          parentConversationId: input.parentConversationId,
++          key: input.key,
++          continueFrom: input.continueFrom,
++          inReplyTo: input.inReplyTo,
++          notBefore: input.notBefore,
++          expectsReply: input.expectsReply,
++          execution: input.execution,
++          visibility: input.visibility,
++          approval: input.approval,
++          waitUntil: input.wait ? new Date(deadline).toISOString() : undefined,
++        };
++        const preliminaryAuthority = {
++          policy: {
++            allowed_operations: MESSAGE_BUDDY_OPERATIONS.filter(
++              (op) => !context.allowedBuddyOperations || context.allowedBuddyOperations.includes(op)
++            ),
++          },
++          runId: context.coordinationRunId ?? undefined,
++          sourceProjectId: context.buddyProjectId,
++          sourceWorkspaceId: context.workspaceId,
++        };
++        let assignmentConfig: BuddyAssignmentConfig | undefined;
++        if (input.config && !previous) {
++          if (!dependencies.resolveAssignmentConfig)
++            throw new Error('This host does not support assignment configuration');
++          // Validate participant/project/continuation scope before looking up its config.
++          const route = store.previewCoordinatedMessage(messageInput, preliminaryAuthority) as {
++            conversationId?: string | null;
++          };
++          assignmentConfig = await beforeMessageDeadline(
++            dependencies.resolveAssignmentConfig(input.config, route.conversationId),
++            deadline,
++            signal
++          );
++        }
+         const launch =
+           !previous && !input.preview && input.parentConversationId
+             ? await dependencies.prepareReturnConversation?.(context, input.parentConversationId)
+@@ -148,25 +196,7 @@
+           (input.preview
+             ? store.previewCoordinatedMessage.bind(store)
+             : store.sendCoordinatedMessage.bind(store))(
+-            {
+-              fromBuddy: context.buddyId,
+-              to: input.to === 'self' ? context.buddyId : input.to,
+-              workspace: input.workspaceId ?? context.workspaceId,
+-              project: input.projectId,
+-              purpose: input.purpose,
+-              body: input.body,
+-              evidence: input.evidence,
+-              parentConversationId: input.parentConversationId,
+-              key: input.key,
+-              continueFrom: input.continueFrom,
+-              inReplyTo: input.inReplyTo,
+-              notBefore: input.notBefore,
+-              expectsReply: input.expectsReply,
+-              execution: input.execution,
+-              visibility: input.visibility,
+-              approval: input.approval,
+-              waitUntil: input.wait ? new Date(deadline).toISOString() : undefined,
+-            },
++            { ...messageInput, ...(input.config ? { config: input.config } : {}) },
+             {
+               policy: {
+                 allowed_operations: MESSAGE_BUDDY_OPERATIONS.filter(
+@@ -177,6 +207,7 @@
+               runId: context.coordinationRunId ?? undefined,
+               sourceProjectId: context.buddyProjectId,
+               sourceWorkspaceId: context.workspaceId,
++              assignmentConfig,
+               launch: launch?.launch,
+               returnConversationId:
+                 launch?.returnConversationId ??
+@@ -228,6 +259,9 @@
+             message: store.getMessage(message.id),
+             conversation: null,
+             execution,
++            assignmentConfig: execution.runId
++              ? (store.getBuddyRun(execution.runId)?.policy.assignment_config ?? null)
++              : null,
+             ...(conversationId && message.to_buddy_id
+               ? {
+                   buddyWorkerThread: {
+--- before/server/src/buddies/mcp-server.ts
++++ after/server/src/buddies/mcp-server.ts
+@@ -89,7 +89,7 @@
+   'buddy.get_message':
+     'Read a participant message, or an explicitly project-visible message in readable work. Includes durable run ID, admission state, blocker and remedy, acknowledgment, project acceptance and completion evidence.',
+   'buddy.get_team_state':
+-    'Read bounded coordination metadata for this workspace: own branches, requested root descendants and supervised work. Private chats, bodies and memory are excluded. Includes sourced project state, delivery history, effective limits and recovery controllers. Paginate with nextOffset.',
++    'Read coordination metadata (limit 1–50, default 20): own branches, requested root descendants and supervised work. view:summary omits checkpoint/delivery detail; expand by runId with view:full. states filters before pagination. Timing measures durable queue/claim intervals; provider usage and cost are explicitly unavailable. Private chats, bodies and memory are excluded. Includes sourced project state, delivery history, effective limits and recovery controllers. Paginate with nextOffset.',
+   'buddy.append_task_comment':
+     'Append progress, a question or a decision to an accessible Task/project. Supply a stable key and body; link saved files or commits in evidence when useful. Comments are shared with the Task audience and do not change its status or notify another Buddy. Retry the same key and payload safely.',
+   'buddy.list_task_comments':
+@@ -251,12 +251,14 @@
+       {
+         description:
+           operation === 'buddy.send' && options.publicContract !== 'legacy'
+-            ? `Send with a stable key and typed delivery. preview:true validates this exact payload and rolls back all writes; apply rechecks. Informs default to no destination project.  inform has no reply obligation; request asks for one response; work names a recipient-owned projectId and bounded maxRuns/maxDurationSeconds, continuing until evidence-backed completion or a terminal blocker. Use delivery.continueFrom only after the previous managed reply is done, to reuse its thread; it cannot resume blocked work. After resolving a terminal blocker, inspect effects and preview a new authorized work send with the same unfinished projectId, a new key and explicit fresh bounds, without continueFrom. This starts a new request/allowance, not a transfer of unused budget. Waiting consumes assignment elapsed time. Project-scoped conversations can dispatch only within their project hierarchy, even for direct reports. Original callback identity is host-bound. Inspect the durable receipt for actual start; queued is not running. No wait/boolean matrix or separate start primitive. ${BACKGROUND_SEND_GUIDANCE}`
+-            : operation === 'buddy.get_inbox' && options.publicContract !== 'legacy'
+-              ? 'Read bounded inbox summaries and blockers in the current audience. Follow nextCursor for more; previews are truncated. Expand a message with get_message and project criteria with get_current_work. Current project snapshots are separate from input acknowledgment. Read at the start of each managed attempt.'
+-              : operation === 'buddy.recall' && options.publicContract !== 'legacy'
+-                ? 'Run a bounded pull-only search over authorized Buddy notes. The pattern is one literal substring; regular expressions are unsupported.'
+-                : { ...TOOL_DESCRIPTIONS, ...LEGACY_COMPLETION_DESCRIPTIONS }[operation],
++            ? `Send with a stable key and typed delivery. request/work delivery.config accepts the canonical {provider,model:{mode:default|explicit,modelId?},reasoning:{mode:default|disabled|explicit,effort?}} selection. An explicit assignment resolves and pins defaults at send time without editing the Buddy profile; continuation must match the existing thread or returns a conflict. Preview shows assignmentConfig; get_team_state shows requestedExecution and actual execution. preview:true validates this exact payload and rolls back all writes; apply rechecks. Informs default to no destination project.  inform has no reply obligation; request asks for one response; work names a recipient-owned projectId and bounded maxRuns/maxDurationSeconds, continuing until evidence-backed completion or a terminal blocker. Use delivery.continueFrom only after the previous managed reply is done, to reuse its thread; it cannot resume blocked work. After resolving a terminal blocker, inspect effects and preview a new authorized work send with the same unfinished projectId, a new key and explicit fresh bounds, without continueFrom. This starts a new request/allowance, not a transfer of unused budget. Waiting consumes assignment elapsed time. Project-scoped conversations can dispatch only within their project hierarchy, even for direct reports. Original callback identity is host-bound. Inspect the durable receipt for actual start; queued is not running. No wait/boolean matrix or separate start primitive. ${BACKGROUND_SEND_GUIDANCE}`
++            : operation === 'buddy.get_current_work' && options.publicContract !== 'legacy'
++              ? 'Read current work (limit 1–99, default 20). Use view:summary for bounded discovery, statuses/order:recent/updatedSince for focused reads. Expand projectId with view:full and includeClosed:true before changing completion. Default full preserves existing clients. A stale pagination cursor requires restarting the read. updatedSince is inclusive and is not a deletion feed. Projects and todos are the authoritative goal and completion criteria; read current work and get_inbox at each background attempt.'
++              : operation === 'buddy.get_inbox' && options.publicContract !== 'legacy'
++                ? 'Read bounded inbox summaries and blockers (limit 1–50, default 20) in the current audience. filter:outstanding selects unanswered pending/active messages; order:recent sorts messages by last update; updatedSince is inclusive. Defaults retain attention order. Follow nextCursor for more; previews are truncated. Filters apply to messages; other sections remain current blockers. Expand a message with get_message and project criteria with get_current_work. Current project snapshots are separate from input acknowledgment. Read at the start of each managed attempt.'
++                : operation === 'buddy.recall' && options.publicContract !== 'legacy'
++                  ? 'Run a bounded pull-only search over authorized Buddy notes. The pattern is one literal substring; regular expressions are unsupported.'
++                  : { ...TOOL_DESCRIPTIONS, ...LEGACY_COMPLETION_DESCRIPTIONS }[operation],
+         inputSchema:
+           operation === 'buddy.get_inbox' && options.publicContract !== 'legacy'
+             ? GetBuddyInboxResourceSchema
+@@ -332,10 +334,14 @@
+                       : mcpOperationInput(BuddyOperationInputSchemas[operation], input)
+             );
+             if (operation === 'buddy.get_current_work' && options.publicContract !== 'legacy') {
+-              const envelope = result as { data: unknown[]; audit: { id: string } };
++              const envelope = result as {
++                data: unknown[];
++                audit: { id: string };
++                workSnapshot?: string;
++              };
+               result = {
+                 ok: true,
+-                data: workPage(envelope.data, input),
++                data: workPage(envelope.data, input, envelope.workSnapshot),
+                 auditId: envelope.audit.id,
+                 contractVersion: BUDDY_RESOURCE_CONTRACT_VERSION,
+               };
+@@ -358,7 +364,7 @@
+             }
+           }
+           return {
+-            content: [{ type: 'text' as const, text: JSON.stringify(result, null, 2) }],
++            content: [{ type: 'text' as const, text: JSON.stringify(result) }],
+             structuredContent: result,
+           };
+         } catch (error) {
+--- before/server/src/buddies/operations.ts
++++ after/server/src/buddies/operations.ts
+@@ -1,3 +1,6 @@
++import { ConversationConfigSchema } from '@unleashd/shared';
++import { GetBuddyWorkResourceSchema, GetBuddyInboxResourceSchema } from '@unleashd/shared';
++import { queryBuddyWork } from './work-query';
+ import { MEMORY_NOTE_MAX_BYTES } from '@nbardy/buddies';
+ import { BuddyCheckpointInputSchema, BuddyTeamObservationInputSchema } from '@unleashd/shared';
+ import { BuddyDocumentRefSchema } from '@unleashd/shared';
+@@ -127,19 +130,19 @@
+     key: z.string().min(1).max(200).optional(),
+     preview: z.boolean().optional(),
+   }),
+-  'buddy.get_current_work': z
+-    .object({
+-      targetBuddyId: z.string().min(1).optional(),
+-      workspaceId: z.string().min(1).optional(),
++  'buddy.get_current_work': GetBuddyWorkResourceSchema.omit({ cursor: true, view: true })
++    .extend({
+       buddyId: z.string().min(1).optional(),
+-      projectId: z.string().min(1).optional(),
+-      includeClosed: z.boolean().default(false),
+       limit: z.number().int().min(1).max(100).default(20),
+       offset: z.number().int().min(0).default(0),
++      snapshot: z
++        .string()
++        .regex(/^[a-f0-9]{32}$/)
++        .optional(),
+     })
+     .strict(),
+-  'buddy.get_inbox': z
+-    .object({
++  'buddy.get_inbox': GetBuddyInboxResourceSchema.omit({ cursor: true })
++    .extend({
+       limit: z.number().int().min(1).max(200).optional(),
+       offset: z.number().int().min(0).default(0),
+     })
+@@ -253,6 +256,7 @@
+     .strict(),
+   'buddy.send': z
+     .object({
++      config: ConversationConfigSchema.strict().optional(),
+       preview: z.boolean().optional(),
+       execution: BuddyBackgroundExecutionSchema.optional(),
+       teamConfiguration: TeamConfigurationProposalSchema.optional(),
+@@ -994,6 +998,16 @@
+       }
+       case 'buddy.get_current_work': {
+         const parsed = BuddyOperationInputSchemas[name].parse(input);
++        const pageResult = (rows: unknown[]) => {
++          const page = queryBuddyWork(rows, parsed, {
++            buddyId: this.context.buddyId,
++            workspaceId: this.context.workspaceId,
++            conversationId: this.context.conversationId,
++            projectId: this.context.buddyProjectId,
++            knowledgeScope: this.context.knowledgeScope,
++          });
++          return { ...this.result(name, page.items, parsed), workSnapshot: page.snapshot };
++        };
+         if (parsed.workspaceId || parsed.projectId || parsed.buddyId) {
+           const workspaceId = parsed.workspaceId ?? this.context.workspaceId;
+           const store = coordinationStore(this.store);
+@@ -1003,19 +1017,15 @@
+             workspace: workspaceId,
+             includeClosed: parsed.includeClosed,
+           }) as Array<{ id: string; buddy_id: string }>;
+-          return this.result(
+-            name,
+-            work
+-              .filter(
+-                (p) =>
+-                  (!parsed.projectId || p.id === parsed.projectId) &&
+-                  (!(parsed.targetBuddyId ?? parsed.buddyId) ||
+-                    p.buddy_id === (parsed.targetBuddyId ?? parsed.buddyId)) &&
+-                  store.canReadCoordinationProject(this.context.buddyId, p.id) &&
+-                  this.projectInAudience(p.id)
+-              )
+-              .slice(parsed.offset, parsed.offset + parsed.limit),
+-            parsed
++          return pageResult(
++            work.filter(
++              (p) =>
++                (!parsed.projectId || p.id === parsed.projectId) &&
++                (!(parsed.targetBuddyId ?? parsed.buddyId) ||
++                  p.buddy_id === (parsed.targetBuddyId ?? parsed.buddyId)) &&
++                store.canReadCoordinationProject(this.context.buddyId, p.id) &&
++                this.projectInAudience(p.id)
++            )
+           );
+         }
+         const targetBuddyId = parsed.targetBuddyId ?? this.context.buddyId;
+@@ -1033,8 +1043,7 @@
+           )?.read_all_work
+         )
+           this.requireReadableBuddy(targetBuddyId);
+-        return this.result(
+-          name,
++        return pageResult(
+           this.store
+             .listBuddyOwnedProjects({
+               buddy: targetBuddyId,
+@@ -1042,8 +1051,6 @@
+               includeClosed: parsed.includeClosed,
+             })
+             .filter((p) => this.projectInAudience((p as { id: string }).id))
+-            .slice(parsed.offset, parsed.offset + parsed.limit),
+-          parsed
+         );
+       }
+       case 'buddy.get_inbox': {
+@@ -1106,7 +1113,13 @@
+                 workspace: this.context.workspaceId,
+                 limit: parsed.limit,
+                 offset: parsed.offset,
+-                accept: (message) => this.messageInAudience(message),
++                order: parsed.order,
++                accept: (message) =>
++                  this.messageInAudience(message) &&
++                  (parsed.filter !== 'outstanding' ||
++                    ['pending', 'active'].includes(message.status)) &&
++                  (!parsed.updatedSince ||
++                    Date.parse(message.updated_at) >= Date.parse(parsed.updatedSince)),
+               })
+               .map((message) => ({
+                 ...message,
+@@ -1758,6 +1771,11 @@
+           'Encoded team proposal exceeds the 32 KiB message limit; use smaller scoped proposals.'
+         );
+     }
++    if (
++      parsed.config &&
++      (!parsed.key || !parsed.expectsReply || parsed.to === 'owner' || parsed.inReplyTo)
++    )
++      throw new Error('Assignment config requires a keyed request or work send to a Buddy.');
+     if (parsed.execution) {
+       teamStore(this.store);
+       if (
+--- before/server/src/buddies/owner-resources.ts
++++ after/server/src/buddies/owner-resources.ts
+@@ -1,3 +1,4 @@
++import { queryBuddyWork } from './work-query';
+ import { GetBuddyWorkResourceSchema, workPage, workPageInput } from '@unleashd/shared';
+ import { GetBuddyDocumentSchema, UpdateBuddyDocumentSchema } from '@unleashd/shared';
+ import { z } from 'zod';
+@@ -163,8 +164,8 @@
+         includeClosed: p.includeClosed,
+       })
+       .filter((project) => !p.projectId || (project as { id: string }).id === p.projectId);
+-    const page = workPageInput(p);
+-    return { ok: true, data: workPage(rows.slice(page.offset, page.offset + page.limit), p) };
++    const page = queryBuddyWork(rows, workPageInput(p), { owner: true, workspaceId });
++    return { ok: true, data: workPage(page.items, p, page.snapshot) };
+   }
+   if (name === 'new_project') {
+     const { key, ...p } = OwnerResourceSchemas.new_project.parse(input);
+--- before/server/src/buddies/resources.ts
++++ after/server/src/buddies/resources.ts
+@@ -145,7 +145,7 @@
+ /** Compact only the authorized operation result. Full messages remain expandable by ID. */
+ export function compactInbox(value: unknown, input: unknown) {
+   const result = unpack(value);
+-  const { limit } = GetBuddyInboxResourceSchema.parse(input);
++  const { limit, filter, order, updatedSince } = GetBuddyInboxResourceSchema.parse(input);
+   const { offset } = inboxPageInput(input);
+   let hasMore = false;
+   const data: Record<string, unknown> = {};
+@@ -169,10 +169,12 @@
+           created_at: entry.created_at,
+           updated_at: entry.updated_at,
+           bodyPreview: preview(entry.body),
++          bodyTruncated: typeof entry.body === 'string' && entry.body.length > 240,
+           evidenceCount: count(entry.evidence),
+           replied_at: entry.replied_at,
+           outcome: entry.outcome,
+           replyPreview: preview(entry.reply_body),
++          replyTruncated: typeof entry.reply_body === 'string' && entry.reply_body.length > 240,
+           replyEvidenceCount: count(entry.reply_evidence),
+           execution: execution
+             ? {
+@@ -232,6 +234,11 @@
+     auditId: result.audit?.id ?? null,
+     data: {
+       ...data,
++      messageQuery: {
++        filter,
++        order,
++        updatedSince: updatedSince ?? null,
++      },
+       observedAt: new Date().toISOString(),
+       nextCursor: hasMore ? `inbox:${offset + limit}` : null,
+       expansion: { message: 'get_message({messageId})', project: 'get_current_work({projectId})' },
+--- before/server/src/buddies/run-executor.ts
++++ after/server/src/buddies/run-executor.ts
+@@ -1,3 +1,5 @@
++import { BuddyAssignmentConfigSchema, type ConversationConfig } from '@unleashd/shared';
++import { assertAssignmentConfigMatches, pinnedAssignmentConfig } from './assignment-config';
+ import { createHash, randomUUID } from 'node:crypto';
+ import type {
+   BuddyContext,
+@@ -22,6 +24,7 @@
+   getConversation(id: string): ConversationRuntime | undefined;
+   ensureConversationReady?(conversation: ConversationRuntime): Promise<ConversationRuntime>;
+   createConversation(input: {
++    config?: ConversationConfig;
+     context: BuddyContext;
+     branch?: ConversationBranch;
+     initialMessage?: string;
+@@ -467,12 +470,16 @@
+         if (previous)
+           prompt += `\nRecovery checkpoint (producer attestation, not new authority): ${JSON.stringify(previous)}`;
+       }
++      const assignment = run.policy.assignment_config
++        ? BuddyAssignmentConfigSchema.parse(run.policy.assignment_config)
++        : undefined;
+       const existing = this.ports.getConversation(run.conversation_id!);
+       if (existing && this.settleHumanThreadDelivery(run, existing)) return;
+       const origin = this.creationOrigin(run);
+       const ready =
+         !existing || (origin && !returnSource)
+           ? this.ports.createConversation({
++              ...(assignment ? { config: pinnedAssignmentConfig(assignment) } : {}),
+               context: {
+                 buddyId: run.buddy_id,
+                 workspaceId: run.workspace_id,
+@@ -526,17 +533,7 @@
+       if (conversation.hasActiveProcess() || conversation.isRunning || conversation.queue.length)
+         throw new Error('Destination became busy during readiness');
+       const turnCapSeconds = Math.min(3600, Number(run.policy.max_runtime_seconds) || 600);
+-      this.store.recordRunExecution(run.id, token, {
+-        provider: conversation.provider,
+-        model: conversation.model ?? null,
+-        reasoningEffort: conversation.reasoningEffort ?? null,
+-        turnCapSeconds,
+-        deadline: run.deadline!,
+-        limitingSource:
+-          Date.parse(run.deadline!) < Date.parse(run.started_at!) + turnCapSeconds * 1000
+-            ? 'managed_envelope'
+-            : 'attempt_cap',
+-      });
++      let admissionErrorCode: string | undefined;
+       this.store.startBuddyRun(run.id, token);
+       execution.conversation = conversation;
+       timer = setTimeout(
+@@ -562,8 +559,32 @@
+             error: status === 'failed' ? detail : undefined,
+             errorCode:
+               status === 'failed'
+-                ? (terminalCause ?? (timedOut ? 'max_runtime_timeout' : 'execution_failed'))
++                ? (admissionErrorCode ??
++                  terminalCause ??
++                  (timedOut ? 'max_runtime_timeout' : 'execution_failed'))
+                 : undefined,
++          });
++        },
++        (actual) => {
++          if (assignment) {
++            try {
++              assertAssignmentConfigMatches(assignment.resolved, actual);
++            } catch (error) {
++              admissionErrorCode = 'assignment_config_conflict';
++              throw error;
++            }
++          }
++          this.store.recordRunExecution(run.id, token, {
++            provider: actual.provider,
++            model: actual.modelId,
++            reasoningEffort: actual.reasoningEffort ?? null,
++            ...(assignment ? { assignment } : {}),
++            turnCapSeconds,
++            deadline: run.deadline!,
++            limitingSource:
++              Date.parse(run.deadline!) < Date.parse(run.started_at!) + turnCapSeconds * 1000
++                ? 'managed_envelope'
++                : 'attempt_cap',
+           });
+         }
+       );
+--- before/server/src/buddies/team-observation.ts
++++ after/server/src/buddies/team-observation.ts
+@@ -1,5 +1,6 @@
+ import {
+   BuddyWorkProjectSchema,
++  BuddyAssignmentConfigSchema,
+   BuddyTeamObservationInputSchema,
+   BuddyTeamObservationSchema,
+   type BuddyMessage,
+@@ -27,7 +28,10 @@
+     const origin = run.input_kind === 'failure_notice' ? store.getBuddyRun(run.input_id) : run;
+     return origin ? store.getMessage(origin.input_id) : null;
+   };
++  const stateFor = (run: PrivateBuddyRun) =>
++    run.status === 'queued' && run.error ? 'held' : run.status;
+   const accept = (run: PrivateBuddyRun) => {
++    if (parsed.states && !parsed.states.includes(stateFor(run))) return false;
+     if (run.input_kind === 'chat' || (parsed.runId && parsed.runId !== run.id)) return false;
+     const message = messageFor(run);
+     if (!message) return false;
+@@ -53,14 +57,25 @@
+     limit: parsed.limit + 1,
+     offset: parsed.offset,
+   });
++  const observedAt = new Date().toISOString();
++  const duration = (start: string, end: string) => Math.max(0, Date.parse(end) - Date.parse(start));
+   return BuddyTeamObservationSchema.parse({
+-    observedAt: new Date().toISOString(),
++    observedAt,
++    view: parsed.view,
++    usageCoverage: {
++      tokens: null,
++      cost: null,
++      reason:
++        'The host event contract does not expose provider token/cache usage or billed cost; unknown is not zero.',
++      timing:
++        'Durable queue and claim intervals, not provider-active time. Concurrent claim intervals must not be presented as wall-clock latency.',
++    },
+     nextOffset: runs.length > parsed.limit ? parsed.offset + parsed.limit : null,
+     limitations: [
+       'Running is a durable claim; an independent process heartbeat is unavailable.',
+       'Checkpoints are producer attestations. Current file availability is not automatically verified.',
+       'GPU reservations are not host leases. Resource lease integration is unavailable.',
+-      'Per-assignment model overrides and metered token/cost enforcement are unavailable. Execution settings show the admitted snapshot.',
++      'Assignment configuration is pinned when explicitly requested. Token/cost metering and enforcement are unavailable. Execution settings show the actual admitted request.',
+       'Current project revisions are authoritative for work status; older memory and attempt history may describe earlier states.',
+     ],
+     items: runs.slice(0, parsed.limit).map((run) => {
+@@ -82,7 +97,7 @@
+         parsed.checkpointOffset + parsed.checkpointLimit
+       );
+       const recovery = store.getBuddyRunRecovery(run.id, context.owner ? 'owner' : context.buddyId);
+-      recovery.checkpointIds = checkpoints.map((c) => c.id);
++      recovery.checkpointIds = parsed.view === 'summary' ? [] : checkpoints.map((c) => c.id);
+       const deliveries = store.getMessageDeliveries(message.id).reverse();
+       const deliveryPage = deliveries.slice(
+         parsed.deliveryOffset,
+@@ -97,14 +112,24 @@
+         rootMessageId: run.root_message_id,
+         conversationId: direct ? run.conversation_id : null,
+         attempt: run.attempt,
+-        state: run.status === 'queued' && run.error ? 'held' : run.status,
++        state: stateFor(run),
+         createdAt: run.created_at,
+         startedAt: run.started_at,
+         acknowledgedAt: run.acknowledged_at ?? null,
+         endedAt: run.ended_at,
++        timing: {
++          queuedMs: duration(run.created_at, run.started_at ?? run.ended_at ?? observedAt),
++          claimedMs: run.started_at ? duration(run.started_at, run.ended_at ?? observedAt) : null,
++          elapsedMs: duration(run.created_at, run.ended_at ?? observedAt),
++        },
++        detailsOmitted: parsed.view === 'summary',
+         deadline: run.deadline,
+         errorCode: run.error_code,
+-        error: direct ? run.error : null,
++        error: direct
++          ? parsed.view === 'summary'
++            ? (run.error?.slice(0, 240) ?? null)
++            : run.error
++          : null,
+         project: project
+           ? {
+               id: project.id,
+@@ -122,14 +147,17 @@
+           outcome: direct ? message.outcome : null,
+           evidenceCount: message.reply_evidence.length,
+           deliveryStates: deliveryPage.map((d) => `${d.kind}: ${d.state}`),
+-          deliveries: deliveryPage.map((d) => ({ ...d, error: direct ? d.error : null })),
++          deliveries:
++            parsed.view === 'summary'
++              ? []
++              : deliveryPage.map((d) => ({ ...d, error: direct ? d.error : null })),
+           deliveryCount: deliveries.length,
+           deliveryNextOffset:
+             deliveries.length > parsed.deliveryOffset + parsed.deliveryLimit
+               ? parsed.deliveryOffset + parsed.deliveryLimit
+               : null,
+         },
+-        checkpoints,
++        checkpoints: parsed.view === 'summary' ? [] : checkpoints,
+         checkpointCount: visibleCheckpoints.length,
+         checkpointNextOffset:
+           visibleCheckpoints.length > parsed.checkpointOffset + parsed.checkpointLimit
+@@ -137,6 +165,9 @@
+             : null,
+         recovery,
+         execution: run.execution_snapshot ?? null,
++        requestedExecution: run.policy.assignment_config
++          ? BuddyAssignmentConfigSchema.parse(run.policy.assignment_config)
++          : null,
+         limits: {
+           turnCapSeconds:
+             run.execution_snapshot?.turnCapSeconds ??
+--- before/server/src/conversations/buddy-creation-service.ts
++++ after/server/src/conversations/buddy-creation-service.ts
+@@ -25,6 +25,7 @@
+ import type { CreationFingerprintInput } from './creation-service';
+ 
+ export interface CreateServerBuddyConversationInput {
++  config?: ConversationConfig;
+   context: BuddyContext;
+   initialMessage?: string;
+   commandId: string;
+@@ -325,7 +326,7 @@
+       conversationId: input.conversationId ?? ports.createId(),
+       workingDirectory: ports.resolveWorkingDirectory(resolved.workingDirectory),
+       resolved,
+-      config: resolveConfig(resolved),
++      config: input.config ?? resolveConfig(resolved),
+       commandId: input.commandId,
+       initialMessage: input.initialMessage,
+       branch: input.branch,
+--- before/server/src/server.ts
++++ after/server/src/server.ts
+@@ -1,4 +1,3 @@
+-import { resolveSessionTranscript } from './adapters/registry';
+ import { execFileSync, execSync } from 'node:child_process';
+ import http from 'node:http';
+ import os from 'node:os';
+@@ -9,6 +8,8 @@
+   buildMergeReviewPrompt,
+   providerSupportsFork,
+ } from '@unleashd/shared';
++import { resolveSessionTranscript } from './adapters/registry';
++import { resolveBuddyAssignmentConfig } from './buddies/assignment-config';
+ import { type CoordinationStore, coordinationStore } from './buddies/coordination-store';
+ import { BuddyOperationInputSchemas } from './buddies/operations';
+ import { BuddyRunExecutor } from './buddies/run-executor';
+@@ -42,6 +43,7 @@
+ import { type ConversationRuntime, createConversationRuntime } from './conversations/runtime';
+ import { registerConversationRoutes } from './http/conversation-routes';
+ import { registerCoreRoutes } from './http/core-routes';
++import { registerErrorDiagnosticsRoutes } from './http/error-diagnostics-routes';
+ import { registerFilesystemRoutes } from './http/filesystem-routes';
+ import { createKnownProjectAuthorizer } from './http/known-projects';
+ import { resolveDefaultWorkingDirectory, resolveWorkingDirectoryInput } from './http/path-utils';
+@@ -56,7 +58,12 @@
+ import { registerStaticClient } from './lifecycle/static-client';
+ import { registerMergeRoutes } from './merge/routes';
+ import { resolveListenHost } from './network';
+-import { TurnAttemptJournal, createJournalTurnAttemptObserver } from './observability';
++import {
++  ErrorJournal,
++  TurnAttemptJournal,
++  createJournalTurnAttemptObserver,
++  installConsoleErrorCapture,
++} from './observability';
+ import { createPaletteService } from './palettes/palette-service';
+ import { buildPalettePrompt } from './palettes/prompt';
+ import { getProvider, providers } from './providers';
+@@ -69,16 +76,16 @@
+ import { auditLocalAgents } from './audit.js';
+ import { BuddyBuilderService, type BuddyBuilderStore } from './buddies/builder';
+ import { BuddyControlServer } from './buddies/control-server';
+-import { ownerWorkspaceIds } from './buddies/owner-team-configuration';
+ import {
+   createBuddyDispatchService,
+   createReturnConversationPreparer,
+ } from './buddies/dispatch-service';
+ import { createBuddiesIntegration } from './buddies/integration';
++import { BuddyMemoryReviewer } from './buddies/memory-review';
++import { createMemoryReviewRunner } from './buddies/memory-review-runner';
++import { ownerWorkspaceIds } from './buddies/owner-team-configuration';
+ import { registerBuddyRoutes } from './buddies/routes';
+ import { BuddyScheduler, nextAutomationRunAt } from './buddies/scheduler';
+-import { BuddyMemoryReviewer } from './buddies/memory-review';
+-import { createMemoryReviewRunner } from './buddies/memory-review-runner';
+ 
+ let startupAuditResults: ReturnType<typeof auditLocalAgents> = [];
+ 
+@@ -142,6 +149,10 @@
+ const turnAttemptJournal = new TurnAttemptJournal({
+   directory: path.join(APP_DATA_DIR, 'observability'),
+ });
++const errorJournal = new ErrorJournal({
++  directory: path.join(APP_DATA_DIR, 'observability'),
++  serverBootId: turnAttemptJournal.serverBootId,
++});
+ const turnAttemptObserver = createJournalTurnAttemptObserver(turnAttemptJournal);
+ let buddyScheduler: BuddyScheduler | null = null;
+ let shutdownController: ShutdownController | null = null;
+@@ -228,6 +239,8 @@
+ 
+ const buddyDispatchService = createBuddyDispatchService({
+   getStore: getBuddiesStore,
++  resolveAssignmentConfig: (config, conversationId) =>
++    resolveBuddyAssignmentConfig(conversationConfigService, config, conversationId),
+   prepareReturnConversation: createReturnConversationPreparer({
+     getConversation: (id) => conversations.get(id),
+     configService: conversationConfigService,
+@@ -416,6 +429,7 @@
+ registerCoreRoutes(app, () => startupAuditResults);
+ registerConversationRoutes(app, (id) => conversations.get(id));
+ registerTurnDiagnosticsRoutes(app, turnAttemptJournal);
++registerErrorDiagnosticsRoutes(app, errorJournal);
+ 
+ persistedServerState.registerRoutes(app);
+ 
+@@ -585,7 +599,7 @@
+     stopScheduler: stopBuddyScheduler,
+     flushState: async () => {
+       persistedServerState.flushUIStateSync();
+-      await turnAttemptJournal.flush();
++      await Promise.all([turnAttemptJournal.flush(), errorJournal.flush()]);
+       await buddyControlServer.close();
+     },
+     broadcastMessage: (conversationId, content) => {
+@@ -635,6 +649,8 @@
+   {
+     server,
+     initialize: async () => {
++      await errorJournal.initialize();
++      installConsoleErrorCapture(errorJournal);
+       await buddyControlServer.start();
+       startupAuditResults = auditLocalAgents();
+       await normalizedSessionCache.initialize();
+--- before/shared/src/buddy-observation.ts
++++ after/shared/src/buddy-observation.ts
+@@ -1,3 +1,4 @@
++import { ConversationConfigSchema, ResolvedExecutionConfigSchema } from './conversation-config.js';
+ import { z } from 'zod';
+ import { BuddyDeliverySchema } from './buddy-access.js';
+ 
+@@ -44,7 +45,15 @@
+     .object({ operation: z.literal('retry_run'), runId: z.string(), requires: z.array(z.string()) })
+     .nullable(),
+ });
++export const BuddyAssignmentConfigSchema = z.object({
++  requested: ConversationConfigSchema,
++  resolved: ResolvedExecutionConfigSchema,
++  catalogRevision: z.string(),
++  source: z.enum(['assignment', 'continued_conversation']),
++});
++export type BuddyAssignmentConfig = z.infer<typeof BuddyAssignmentConfigSchema>;
+ export const BuddyExecutionSnapshotSchema = z.object({
++  assignment: BuddyAssignmentConfigSchema.optional(),
+   provider: z.string(),
+   model: z.string().nullable(),
+   reasoningEffort: z.string().nullable(),
+@@ -54,6 +63,23 @@
+ });
+ export const BuddyTeamObservationInputSchema = z
+   .object({
++    view: z.enum(['full', 'summary']).default('full'),
++    states: z
++      .array(
++        z.enum([
++          'queued',
++          'held',
++          'claimed',
++          'running',
++          'cancel_requested',
++          'complete',
++          'failed',
++          'cancelled',
++        ])
++      )
++      .min(1)
++      .max(8)
++      .optional(),
+     targetBuddyId: z.string().min(1).optional(),
+     runId: z.string().min(1).optional(),
+     checkpointOffset: z.number().int().min(0).default(0),
+@@ -67,6 +93,15 @@
+   .strict();
+ export const BuddyTeamObservationSchema = z.object({
+   observedAt: z.string(),
++  view: z.enum(['full', 'summary']).default('full'),
++  usageCoverage: z
++    .object({
++      tokens: z.null(),
++      cost: z.null(),
++      reason: z.string(),
++      timing: z.string(),
++    })
++    .optional(),
+   nextOffset: z.number().nullable(),
+   limitations: z.array(z.string()),
+   items: z.array(
+@@ -84,6 +119,14 @@
+       startedAt: z.string().nullable(),
+       acknowledgedAt: z.string().nullable(),
+       endedAt: z.string().nullable(),
++      timing: z
++        .object({
++          queuedMs: z.number().nonnegative(),
++          claimedMs: z.number().nonnegative().nullable(),
++          elapsedMs: z.number().nonnegative(),
++        })
++        .optional(),
++      detailsOmitted: z.boolean().default(false),
+       deadline: z.string().nullable(),
+       errorCode: z.string().nullable(),
+       error: z.string().nullable(),
+@@ -112,6 +155,7 @@
+       checkpointNextOffset: z.number().nullable().default(null),
+       recovery: BuddyRecoverySchema,
+       execution: BuddyExecutionSnapshotSchema.nullable(),
++      requestedExecution: BuddyAssignmentConfigSchema.nullable().optional(),
+       limits: z.object({
+         turnCapSeconds: z.number(),
+         maxActiveRuns: z.number().nullable(),
+--- before/shared/src/buddy-resources.ts
++++ after/shared/src/buddy-resources.ts
+@@ -1,13 +1,11 @@
++import { BuddyKnowledgeScopeSchema } from './buddy-knowledge-scope.js';
++import { ConversationConfigSchema } from './conversation-config.js';
+ import { z } from 'zod';
+-import { BuddyBackgroundExecutionSchema } from './buddy-work.js';
++import { BuddyBackgroundExecutionSchema, BuddyWorkProjectSchema } from './buddy-work.js';
+ 
+ /** Public resource projection; the underlying store retains its own revision counters. */
+-export const BUDDY_RESOURCE_CONTRACT_VERSION = '2026-09-13.1';
+-export const BuddyKnowledgeScopeSchema = z.discriminatedUnion('kind', [
+-  z.object({ kind: z.literal('owner_thread'), conversationId: z.string().min(1) }).strict(),
+-  z.object({ kind: z.literal('project'), projectId: z.string().min(1) }).strict(),
+-  z.object({ kind: z.literal('workspace'), workspaceId: z.string().min(1) }).strict(),
+-]);
++export const BUDDY_RESOURCE_CONTRACT_VERSION = '2026-09-15.1';
++export { BuddyKnowledgeScopeSchema } from './buddy-knowledge-scope.js';
+ export const BuddyMemoryAudienceSchema = z.object({
+   label: z.string(),
+   scope: BuddyKnowledgeScopeSchema.nullable(),
+@@ -63,6 +61,7 @@
+       z
+         .object({
+           kind: z.literal('request'),
++          config: ConversationConfigSchema.strict().optional(),
+           projectId,
+           continueFrom: z.string().min(1).optional(),
+         })
+@@ -70,6 +69,7 @@
+       z
+         .object({
+           kind: z.literal('work'),
++          config: ConversationConfigSchema.strict().optional(),
+           continueFrom: z.string().min(1).optional(),
+           projectId: z.string().min(1),
+           maxRuns: BuddyBackgroundExecutionSchema.shape.maxRuns,
+@@ -87,6 +87,7 @@
+     return {
+       ...message,
+       projectId: delivery.projectId,
++      config: delivery.config,
+       continueFrom: delivery.continueFrom,
+       expectsReply: true,
+       execution: {
+@@ -114,30 +115,80 @@
+     workspaceId: z.string().min(1).optional(),
+     projectId: z.string().min(1).optional(),
+     includeClosed: z.boolean().default(false),
++    view: z.enum(['full', 'summary']).default('full'),
++    order: z.enum(['priority', 'recent']).default('priority'),
++    statuses: z.array(BuddyWorkProjectSchema.shape.status).min(1).max(7).optional(),
++    updatedSince: z.string().datetime().optional(),
+     limit: z.number().int().min(1).max(99).default(20),
+     cursor: z
+       .string()
+-      .regex(/^work:[0-9]+$/)
++      .max(100)
++      .regex(/^work:(?:[a-f0-9]{32}:)?[0-9]+$/)
+       .optional(),
+   })
+   .strict();
+ export function workPageInput(input: unknown) {
+-  const { cursor, limit, ...scope } = GetBuddyWorkResourceSchema.parse(input);
+-  const offset = cursor ? Number(cursor.slice(5)) : 0;
++  const { cursor, limit, view: _view, ...scope } = GetBuddyWorkResourceSchema.parse(input);
++  const parts = cursor?.split(':');
++  const offset = parts ? Number(parts.at(-1)) : 0;
+   if (!Number.isSafeInteger(offset)) throw new Error('Invalid work cursor');
+-  return { ...scope, limit: limit + 1, offset };
+-}
+-export function workPage(items: unknown[], input: unknown) {
++  return {
++    ...scope,
++    limit: limit + 1,
++    offset,
++    snapshot: parts?.length === 3 ? parts[1] : undefined,
++  };
++}
++export function workPage(items: unknown[], input: unknown, snapshot?: string) {
+   const p = GetBuddyWorkResourceSchema.parse(input);
+-  const offset = p.cursor ? Number(p.cursor.slice(5)) : 0;
+-  return {
+-    items: items.slice(0, p.limit),
+-    nextCursor: items.length > p.limit ? `work:${offset + p.limit}` : null,
++  const { offset } = workPageInput(input);
++  return {
++    view: p.view,
++    items: items
++      .slice(0, p.limit)
++      .map((item) => (p.view === 'summary' ? summarizeBuddyWorkProject(item) : item)),
++    nextCursor:
++      items.length > p.limit ? `work:${snapshot ? `${snapshot}:` : ''}${offset + p.limit}` : null,
++    ...(p.view === 'summary'
++      ? { expansion: 'get_current_work({projectId,includeClosed:true,view:"full"})' }
++      : {}),
++  };
++}
++
++/** Discovery only. Criteria/evidence remain in the canonical full project. */
++export function summarizeBuddyWorkProject(value: unknown) {
++  const p = BuddyWorkProjectSchema.parse(value);
++  const truncatedFields: string[] = [];
++  const preview = (field: string, text: string | null | undefined) => {
++    if (text && text.length > 240) truncatedFields.push(field);
++    return text?.slice(0, 240) ?? null;
++  };
++  const todoCounts = { open: 0, in_progress: 0, blocked: 0, done: 0, cancelled: 0 };
++  for (const todo of p.todos) todoCounts[todo.status]++;
++  return {
++    id: p.id,
++    workspace_id: p.workspace_id,
++    buddy_id: p.buddy_id,
++    title: preview('title', p.title),
++    revision: p.revision,
++    status: p.status,
++    priority: p.priority,
++    execution_state: p.execution_state,
++    updated_at: p.updated_at,
++    next_action: preview('next_action', p.next_action),
++    blocked_reason: preview('blocked_reason', p.blocked_reason),
++    todoCounts,
++    evidenceCount: p.completion_evidence.length,
++    todoEvidenceCount: p.todos.reduce((count, todo) => count + todo.completion_evidence.length, 0),
++    truncatedFields,
+   };
+ }
+ 
+ export const GetBuddyInboxResourceSchema = z
+   .object({
++    filter: z.enum(['all', 'outstanding']).default('all'),
++    order: z.enum(['attention', 'recent']).default('attention'),
++    updatedSince: z.string().datetime().optional(),
+     limit: z.number().int().min(1).max(50).default(20),
+     cursor: z
+       .string()
+@@ -147,8 +198,8 @@
+   .strict();
+ 
+ export function inboxPageInput(input: unknown) {
+-  const { cursor, limit } = GetBuddyInboxResourceSchema.parse(input);
++  const { cursor, limit, ...filters } = GetBuddyInboxResourceSchema.parse(input);
+   const offset = cursor ? Number(cursor.slice(6)) : 0;
+   if (!Number.isSafeInteger(offset)) throw new Error('Invalid inbox cursor');
+-  return { limit: limit + 1, offset };
+-}
++  return { ...filters, limit: limit + 1, offset };
++}
+--- before/shared/src/conversation-config.ts
++++ after/shared/src/conversation-config.ts
+@@ -1,5 +1,5 @@
+ import { z } from 'zod';
+-import { BuddyKnowledgeScopeSchema } from './buddy-resources.js';
++import { BuddyKnowledgeScopeSchema } from './buddy-knowledge-scope.js';
+ import {
+   type Provider,
+   type ProviderCatalog,

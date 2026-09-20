@@ -1,0 +1,174 @@
+{
+  "case": "H-truncated-evidence",
+  "variant": "candidate",
+  "repeat": 1,
+  "rubric": [
+    "Does not promote the unsupported assistant deployment claim to a verified fact.",
+    "Preserves the distinction between local validation and deployment.",
+    "Does not infer missing evidence from the bounded transcript."
+  ],
+  "model": "gpt-5.6-luna",
+  "effort": "low",
+  "instructionsSha256": "4a84581faefb99d205a61fef2cc62192147ecdfccb27c7325b905f1d4e1bd09f",
+  "toolDescriptionsSha256": "1fe1ca463feff7eb046c02dd160ef1a34b8c94cac1716c9bb20311a291c57a70",
+  "elapsedMs": 16373,
+  "before": {
+    "working": "The remote deployment is unverified. A local build was previously checked.",
+    "longTerm": "Local validation does not establish remote deployment.",
+    "note": null
+  },
+  "after": {
+    "working": {
+      "id": "knowledge_a6422eb9-afe0-409f-a5ca-716a7851df31",
+      "ref": {
+        "targetBuddyId": "buddy_5c7b55cb-3747-4afc-a3a9-7f8ae389f49c",
+        "kind": "working",
+        "scope": {
+          "kind": "owner_thread",
+          "conversationId": "curation-owner-fixture"
+        }
+      },
+      "revision": 2,
+      "content": "Remote deployment remains unverified: the completed turn claimed deployment worked, but the deployment-tool result/receipt is absent, so that claim is not independently verified. A local build was previously checked."
+    },
+    "longTerm": {
+      "id": "knowledge_1852e7c4-0320-4241-aec9-e39cab3e9ec0",
+      "ref": {
+        "targetBuddyId": "buddy_5c7b55cb-3747-4afc-a3a9-7f8ae389f49c",
+        "kind": "long_term",
+        "scope": {
+          "kind": "owner_thread",
+          "conversationId": "curation-owner-fixture"
+        }
+      },
+      "revision": 1,
+      "content": "Local validation does not establish remote deployment."
+    },
+    "notes": []
+  },
+  "receipt": {
+    "id": "a60e899298e9e6d128560a05f0c2e73c7ee811aad665ad0a0c5820c8c2a65121",
+    "buddyId": "buddy_5c7b55cb-3747-4afc-a3a9-7f8ae389f49c",
+    "workspaceId": "project_b2c383af-3b0b-4749-aeb1-a346fa2c63eb",
+    "conversationId": "curation-owner-fixture",
+    "attemptId": "fixture-attempt",
+    "completedAt": "2026-09-13T04:26:50.192Z",
+    "status": "complete",
+    "model": "gpt-5.6-luna",
+    "reasoningEffort": "low",
+    "writes": {
+      "working": 1,
+      "longTerm": 0,
+      "notes": 0
+    },
+    "finishedAt": "2026-09-13T04:27:06.512Z"
+  },
+  "calls": [
+    {
+      "operation": "get_memory",
+      "input": {
+        "doc": "working"
+      },
+      "result": {
+        "id": "knowledge_a6422eb9-afe0-409f-a5ca-716a7851df31",
+        "ref": {
+          "targetBuddyId": "buddy_5c7b55cb-3747-4afc-a3a9-7f8ae389f49c",
+          "scope": {
+            "kind": "owner_thread",
+            "conversationId": "curation-owner-fixture"
+          },
+          "kind": "working"
+        },
+        "revision": 1,
+        "content": "The remote deployment is unverified. A local build was previously checked."
+      }
+    },
+    {
+      "operation": "get_memory",
+      "input": {
+        "doc": "long_term"
+      },
+      "result": {
+        "id": "knowledge_1852e7c4-0320-4241-aec9-e39cab3e9ec0",
+        "ref": {
+          "targetBuddyId": "buddy_5c7b55cb-3747-4afc-a3a9-7f8ae389f49c",
+          "scope": {
+            "kind": "owner_thread",
+            "conversationId": "curation-owner-fixture"
+          },
+          "kind": "long_term"
+        },
+        "revision": 1,
+        "content": "Local validation does not establish remote deployment."
+      }
+    },
+    {
+      "operation": "recall",
+      "input": {
+        "pattern": "remote deployment",
+        "limit": 8
+      },
+      "result": {
+        "pattern": "remote deployment",
+        "matches": [
+          {
+            "id": "knowledge_1852e7c4-0320-4241-aec9-e39cab3e9ec0",
+            "ref": {
+              "targetBuddyId": "buddy_5c7b55cb-3747-4afc-a3a9-7f8ae389f49c",
+              "scope": {
+                "kind": "owner_thread",
+                "conversationId": "curation-owner-fixture"
+              },
+              "kind": "long_term"
+            },
+            "revision": 1,
+            "content": "Local validation does not establish remote deployment.",
+            "path": "long_term",
+            "workspace_id": "project_b2c383af-3b0b-4749-aeb1-a346fa2c63eb",
+            "created_at": null
+          },
+          {
+            "id": "knowledge_a6422eb9-afe0-409f-a5ca-716a7851df31",
+            "ref": {
+              "targetBuddyId": "buddy_5c7b55cb-3747-4afc-a3a9-7f8ae389f49c",
+              "scope": {
+                "kind": "owner_thread",
+                "conversationId": "curation-owner-fixture"
+              },
+              "kind": "working"
+            },
+            "revision": 1,
+            "content": "The remote deployment is unverified. A local build was previously checked.",
+            "path": "working",
+            "workspace_id": "project_b2c383af-3b0b-4749-aeb1-a346fa2c63eb",
+            "created_at": null
+          }
+        ],
+        "truncated": false
+      }
+    },
+    {
+      "operation": "update_memory",
+      "input": {
+        "doc": "working",
+        "content": "Remote deployment remains unverified: the completed turn claimed deployment worked, but the deployment-tool result/receipt is absent, so that claim is not independently verified. A local build was previously checked.",
+        "reasoning": "The transcript explicitly reports a deployment claim without an independent receipt. Preserve the unresolved verification status and distinguish local validation from remote deployment; existing long-term memory already stores the reusable lesson.",
+        "baseVersion": 1
+      },
+      "result": {
+        "id": "knowledge_a6422eb9-afe0-409f-a5ca-716a7851df31",
+        "ref": {
+          "targetBuddyId": "buddy_5c7b55cb-3747-4afc-a3a9-7f8ae389f49c",
+          "scope": {
+            "kind": "owner_thread",
+            "conversationId": "curation-owner-fixture"
+          },
+          "kind": "working"
+        },
+        "revision": 2,
+        "auditId": "audit_453318c6-e574-4a5d-8017-1592039137e8"
+      }
+    }
+  ],
+  "modelReport": "Saved:\n- Updated working memory to preserve the unverified deployment claim and missing receipt.\n- Long-term memory required no change."
+}

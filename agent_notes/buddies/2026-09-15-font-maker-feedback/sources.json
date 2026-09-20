@@ -1,0 +1,25 @@
+{
+  "capturedAt": "2026-09-15T14:04:44.948099+00:00",
+  "sources": [
+    {
+      "source": "/Users/nicholasbardy/git/font_maker/CHIEF_SCIENTIST/2026-09-15_unleashd_buddies_product_feedback.md",
+      "copy": "2026-09-15_unleashd_buddies_product_feedback.md",
+      "sha256": "bf856e676af58e5234eb2747f35d4c7c8b879e299fae6de9a7a5eb2ee9115dff"
+    },
+    {
+      "source": "/Users/nicholasbardy/git/font_maker/CHIEF_SCIENTIST/2026-09-15_unleashd_buddies_feedback_evidence.json",
+      "copy": "2026-09-15_unleashd_buddies_feedback_evidence.json",
+      "sha256": "651b1aab1e5fb5d1464a9c6846a8a2c0e753cc16185e14f92acd4924fadb387d"
+    },
+    {
+      "source": "/Users/nicholasbardy/git/unleashd/product/buddies/CORE_DESIGN.md",
+      "copy": "CORE_DESIGN.md",
+      "sha256": "8b4a700ddbe940b0335bbf6feae02565dd56bc23283246e3ebc49ae7467e0646"
+    },
+    {
+      "source": "/Users/nicholasbardy/git/unleashd/product/buddies/DESIGN_PHILOSOPHY.md",
+      "copy": "DESIGN_PHILOSOPHY.md",
+      "sha256": "cd8bf34989c6b1c2deb2ff0b85dc2c6e816aa5bcc3c127d95acdd7fc19d939a2"
+    }
+  ]
+}

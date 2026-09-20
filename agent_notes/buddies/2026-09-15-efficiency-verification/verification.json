@@ -1,0 +1,68 @@
+{
+  "observedAt": "2026-09-15T13:55:39.333587+00:00",
+  "outerHead": "1187a8b6660b95c0c60bd8fada105f015b98cc39",
+  "outerWorkingTree": "Pre-existing broad modifications; this task does not claim them or commit them.",
+  "packageSourceCommit": "631829b62ae6a6f706e3fb9b171e85a387ccbebe",
+  "packageArchiveSha256": "961e14438ee1afea02252d5e030bbdbba377a140ca1b3f3c39431097f1d4db0f",
+  "installedPackageMatchesSource": true,
+  "sourceHashes": {
+    "shared/src/buddy-resources.ts": "aaa663fd70011a7166565bb27153bb675a8ad82cfd001f9a49ce64dc4b394da5",
+    "shared/src/buddy-observation.ts": "5a834b41876f3d27821fa1b3b4917902cb9ef757de981de0d39b43ab137c494d",
+    "shared/src/buddy-knowledge-scope.ts": "6ac8ee3e435a041cd8f72baa4cf5849b89bb8ce5d60a237fe58e477818ba1cf6",
+    "shared/src/conversation-config.ts": "ba5ad5e641cfa163132572f982ab9468d40b0e988ac039a7133119129ed28953",
+    "server/src/buddies/work-query.ts": "462ad5c98e81bc3058b712a0ab3ec82f0eecff9078e4d9815be490097395868d",
+    "server/src/buddies/resources.ts": "e040e0bdce5beafe3b84780019a08bd810141706fcc6a8318073d4e298bc8d30",
+    "server/src/buddies/assignment-config.ts": "99daaed25a7bc91aa07600029b92f2e9b6b4a81c4c2cd66518f9d4e54fb66025",
+    "server/src/buddies/operations.ts": "81735b680f955e3df4a6d975de1b798bb7c657c119d9dfb686a16682eedb5f9c",
+    "server/src/buddies/dispatch-service.ts": "737c9a5fd83abe602378fa8b1bce28105c32556762e77e0edd2bcd8e1e81db92",
+    "server/src/buddies/run-executor.ts": "84899a8e494ce7c88ca97ae6ce39344924dda8c2e90ebeacc2a42becaec3a513",
+    "server/src/buddies/mcp-server.ts": "d4ad474ed4f7830b71c3dfac935554e55f0745963be9e5e668a52bf1004d5d39",
+    "server/src/buddies/owner-resources.ts": "612db0f2fdf58c56f7fa44b7f8670a65c17a5fbc7e671c93fabbcb5af94252a0",
+    "server/src/buddies/team-observation.ts": "4a70848b0e6299af138e8edd45b46c98d5301758b70efee9cbda04cf94fe9d91",
+    "server/src/buddies/contract.ts": "a0683848b231b8631491e5aa6a1d6cf7e62be3a0e2cd7d0872d9db81389ef539",
+    "server/src/conversations/buddy-creation-service.ts": "dfe8d75fb566002e65c1f7d5f27015357f20913c176d38a768e23ae32408d688",
+    "server/src/conversations/runtime.ts": "0bd95b72a1485d849252e0e73dc85d4292f55191114fd5a6e0ea17f696e96b9f",
+    "server/src/server.ts": "a467f5ae3910bc00089dc55d1ea831a01a1b4edf58150a1e9b157b03b22a4304",
+    "server/test/buddy-efficiency-reads.test.ts": "21775d8ad1dee00843760477cee40cce943cf45f26afe64a21a8d439458ebe84",
+    "server/test/buddy-assignment-config.test.ts": "75a4b166a02d75d4e4097059a30584c16a6c27dceeb5f25864f78a99598a9c59",
+    "product/buddies/EFFICIENCY_API.md": "044adca7eb87bc1911cba268745ac9e682c3d95ad60b7a3345ae107deb6e9ab7",
+    "product/buddies/PLANNING_PRIMITIVES.md": "ba3d0d35a2e078088a34732791b423f1afe7591539ef11315f933d3de3e9afcd",
+    "pnpm-lock.yaml": "7299f995f7001ea2a43e1ed6ccd21040d03996e9c53152f049f2eb3892f08494",
+    "server/test/buddy-resource-contract.test.ts": "93543f4c073035fd9c16a5c64204f18253e5aabd74c9d6f75ff9e381d89fefa6",
+    "server/test/buddy-coordination-observation.test.ts": "8b4f40cc9324066628af9389e5a0b0432ffc1a1570f955fcf753c4feed0b89d1",
+    "server/test/buddy-background-runtime.test.ts": "150944921bb77271061cb39e67c40508366be4bde3f06281f9152582b43569ad",
+    "server/test/buddy-background-return.test.ts": "1f5b72667509bdbc71c2bd9cbf4a0e18da56443be11ac640db7212c8307e79b4",
+    "server/test/buddy-creation-service.test.ts": "54ad3b1e86dd847d65573305e1f22216f85ba1d822bcb6e93f6ed28244663a92",
+    "server/test/buddy-operations.test.ts": "e43ef15f3464e4f33c0e2008fc700a4741e11bbcd44c09230a91314d94441cd8",
+    "server/test/buddy-mcp.test.ts": "e47e62bb98799fd75b039e19f7c5ef5d5fa64785acaf20bf2b7cb2da47e1d341",
+    "server/test/buddy-dispatch-service.test.ts": "0367779893e528b4a7e9b07193fc4907c336441ce9d950aaccf6ac579bfac5d6",
+    "server/test/buddy-resource-consistency.test.ts": "3901601130464e89f0adbbc0631c81488b1d53df396d5c111918cfaed4f3d9ed",
+    "server/test/conversation-runtime.test.ts": "e911b9b95dd9355f54c127f1b3569180a3461b9c9013b53be45835d900b19ef8",
+    "server/test/buddy-conversation-contract.test.ts": "6400999ffa38394e40eee1a5a1a3261c20673e48679ed0c2c668918ef66aeaa0",
+    "agent_notes/buddies/2026-09-15-efficiency-assessment.md": "37f16513a50595b172a4eecf0065a397c356c2ece65b165dbdd2c780d721c40a"
+  },
+  "checks": {
+    "packageTests": {
+      "passed": 108,
+      "command": "node --test test/*.test.js",
+      "source": "/Users/nicholasbardy/git/.codex-worktrees/buddies/efficiency-20260915"
+    },
+    "sharedTypecheck": "tsc and tsc -p tsconfig.cjs.json passed",
+    "serverTypecheck": "pnpm -C server exec tsc --noEmit passed",
+    "clientTypecheck": "pnpm -C client exec tsc -b passed",
+    "format": "biome format checked 18 touched files without changes",
+    "diffCheck": "passed on changed tracked application files",
+    "serverTests": {
+      "passed": 66,
+      "commandFile": "server-test-command.json",
+      "log": "server-tests.log"
+    }
+  },
+  "limitations": [
+    "No live provider run or production reload verified",
+    "No gapless deletion/access-change feed",
+    "No provider token/cost accounting or enforcement",
+    "No cross-request review batching"
+  ],
+  "selectedDeltaScope": "Files backed up before this task\u2019s edits. Not a complete patch: runtime and contract pre-edit snapshots were not captured. Current source hashes/excerpts identify those changes."
+}

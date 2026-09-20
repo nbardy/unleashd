@@ -1,0 +1,43 @@
+[
+  {
+    "path": "server/src/buddies/team-readiness.ts",
+    "beforeSha256": "75df97eefdfedf2ab455317e451dfef303b2c105463363f02e8f6bf845d4c397",
+    "afterSha256": "7748c70f0807b2c1e3d374ae2e028c8da97672fc6b0bf76b8e9def94ce1dd525",
+    "added": 9,
+    "removed": 3
+  },
+  {
+    "path": "server/src/buddies/integration.ts",
+    "beforeSha256": "f6c282577ef269a99a9fc57e8dd1818088ff808c84c5d39d7bde4be8b14cfecb",
+    "afterSha256": "8ba935f9915088f8056b97ead4d534b13226bccb749e218543d7ab4ad51f0d54",
+    "added": 5,
+    "removed": 1
+  },
+  {
+    "path": "product/buddies/TEAM_OPERATOR_GUIDE.md",
+    "beforeSha256": "934f9f539ab2d7d989efe7030e43e94269a2d5b9ca166232576e224dbd560fbd",
+    "afterSha256": "0437dea71f0de850af9bd772870514045dce261980bf3602e18a99c2674fee25",
+    "added": 18,
+    "removed": 0
+  },
+  {
+    "path": "server/src/buddies/mcp-server.ts",
+    "beforeSha256": "bc93471f36c289649e7575f27dba4e2ee4df2812d674260b3ab2c3bccb8b7ae7",
+    "afterSha256": "ca6e365a86609e005c2f5dcee05f4fbec7800b7f57154f4f641013e4967bb03c",
+    "added": 1,
+    "removed": 1
+  },
+  {
+    "path": "product/buddies/CORE_DESIGN.md",
+    "beforeSha256": "1b37203c964c3fdc17b54ae28ebfc7d04090056893b21ba4fcfc70d6c1f43442",
+    "afterSha256": "f3332b7459bc4649e5eca00b01662073d956bebc11c26362f3a7b29f18d20bc0",
+    "added": 8,
+    "removed": 0
+  },
+  {
+    "path": "server/test/buddy-lean-controls.test.ts",
+    "afterSha256": "af0926365d7a3d50bf41c1115ab119ed445227e1607eee71cfdf43573ddcfbbf",
+    "added": 248,
+    "removed": 0
+  }
+]

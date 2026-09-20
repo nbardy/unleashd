@@ -1,0 +1,146 @@
+{
+  "case": "D-preview-boundary",
+  "variant": "baseline",
+  "repeat": 2,
+  "rubric": [
+    "Retains the reusable configuration-preview versus execution distinction.",
+    "Does not describe setup as applied, a worker as started, or delivery as verified.",
+    "Preserves the evidence preference."
+  ],
+  "model": "gpt-5.6-luna",
+  "effort": "low",
+  "instructionsSha256": "3c56c97dc6eb4ba8a9643cb1fbc94b17991b785b885016821c37c936127e318f",
+  "toolDescriptionsSha256": "1fe1ca463feff7eb046c02dd160ef1a34b8c94cac1716c9bb20311a291c57a70",
+  "elapsedMs": 15470,
+  "before": {
+    "working": "",
+    "longTerm": "Owner preference: provide evidence for claims.",
+    "note": null
+  },
+  "after": {
+    "working": {
+      "id": "knowledge_f79ec9d1-70b1-447f-8af1-e06a49d5de51",
+      "ref": {
+        "targetBuddyId": "buddy_eef415e7-37b7-450c-bdb9-1a70cdf657ca",
+        "kind": "working",
+        "scope": {
+          "kind": "owner_thread",
+          "conversationId": "curation-owner-fixture"
+        }
+      },
+      "revision": 2,
+      "content": "Evidence (owner conversation, 2026-09-13): native `configure_team` preview was verified to validate configuration. Owner explicitly said it was not applied; no worker was started and no result return was checked. Keep preview validity separate from execution/result success."
+    },
+    "longTerm": {
+      "id": "knowledge_c2354675-008e-4d5b-b7e0-8a59114aefb7",
+      "ref": {
+        "targetBuddyId": "buddy_eef415e7-37b7-450c-bdb9-1a70cdf657ca",
+        "kind": "long_term",
+        "scope": {
+          "kind": "owner_thread",
+          "conversationId": "curation-owner-fixture"
+        }
+      },
+      "revision": 1,
+      "content": "Owner preference: provide evidence for claims."
+    },
+    "notes": []
+  },
+  "receipt": {
+    "id": "a60e899298e9e6d128560a05f0c2e73c7ee811aad665ad0a0c5820c8c2a65121",
+    "buddyId": "buddy_eef415e7-37b7-450c-bdb9-1a70cdf657ca",
+    "workspaceId": "project_eece0898-f4b5-406e-9a34-eec48b79ed94",
+    "conversationId": "curation-owner-fixture",
+    "attemptId": "fixture-attempt",
+    "completedAt": "2026-09-13T04:28:47.894Z",
+    "status": "complete",
+    "model": "gpt-5.6-luna",
+    "reasoningEffort": "low",
+    "writes": {
+      "working": 1,
+      "longTerm": 0,
+      "notes": 0
+    },
+    "finishedAt": "2026-09-13T04:29:03.279Z"
+  },
+  "calls": [
+    {
+      "operation": "get_memory",
+      "input": {
+        "doc": "long_term"
+      },
+      "result": {
+        "id": "knowledge_c2354675-008e-4d5b-b7e0-8a59114aefb7",
+        "ref": {
+          "targetBuddyId": "buddy_eef415e7-37b7-450c-bdb9-1a70cdf657ca",
+          "scope": {
+            "kind": "owner_thread",
+            "conversationId": "curation-owner-fixture"
+          },
+          "kind": "long_term"
+        },
+        "revision": 1,
+        "content": "Owner preference: provide evidence for claims."
+      }
+    },
+    {
+      "operation": "get_memory",
+      "input": {
+        "doc": "working"
+      },
+      "result": {
+        "id": "knowledge_f79ec9d1-70b1-447f-8af1-e06a49d5de51",
+        "ref": {
+          "targetBuddyId": "buddy_eef415e7-37b7-450c-bdb9-1a70cdf657ca",
+          "scope": {
+            "kind": "owner_thread",
+            "conversationId": "curation-owner-fixture"
+          },
+          "kind": "working"
+        },
+        "revision": 1,
+        "content": ""
+      }
+    },
+    {
+      "operation": "get_soul",
+      "input": {},
+      "result": {
+        "id": null,
+        "ref": {
+          "targetBuddyId": "buddy_eef415e7-37b7-450c-bdb9-1a70cdf657ca",
+          "scope": {
+            "kind": "owner_thread",
+            "conversationId": "curation-owner-fixture"
+          },
+          "kind": "soul"
+        },
+        "revision": 1,
+        "content": "Use measured evidence."
+      }
+    },
+    {
+      "operation": "update_memory",
+      "input": {
+        "doc": "working",
+        "content": "Evidence (owner conversation, 2026-09-13): native `configure_team` preview was verified to validate configuration. Owner explicitly said it was not applied; no worker was started and no result return was checked. Keep preview validity separate from execution/result success.",
+        "reasoning": "Record the latest supported distinction and unresolved execution evidence for future reviews; no project status or completion claim is inferred.",
+        "baseVersion": 1
+      },
+      "result": {
+        "id": "knowledge_f79ec9d1-70b1-447f-8af1-e06a49d5de51",
+        "ref": {
+          "targetBuddyId": "buddy_eef415e7-37b7-450c-bdb9-1a70cdf657ca",
+          "scope": {
+            "kind": "owner_thread",
+            "conversationId": "curation-owner-fixture"
+          },
+          "kind": "working"
+        },
+        "revision": 2,
+        "auditId": "audit_aff5fbf3-0367-430a-9cf1-ad966468f58e"
+      }
+    }
+  ],
+  "modelReport": "Saved working memory update (revision 2) distinguishing preview validation from unverified execution. Long-term memory unchanged."
+}

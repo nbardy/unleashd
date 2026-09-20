@@ -1,0 +1,27 @@
+{
+  "observedAt": "2026-09-16T03:17:15.501607+00:00",
+  "serverTypecheck": {
+    "command": "pnpm -C server exec tsc --noEmit",
+    "exitCode": 0
+  },
+  "boundaryTests": {
+    "passed": 23,
+    "failed": 0,
+    "log": "lead-boundary-tests.log"
+  },
+  "sourceSha256": {
+    "server/test/buddy-efficiency-reads.test.ts": "83100326e1bbd8e7dbe015f7e3989b2a79b505d50e08edf8dcd85e0a2060fe2f",
+    "server/src/buddies/resources.ts": "e040e0bdce5beafe3b84780019a08bd810141706fcc6a8318073d4e298bc8d30",
+    "shared/src/buddy-resources.ts": "aaa663fd70011a7166565bb27153bb675a8ad82cfd001f9a49ce64dc4b394da5",
+    "shared/dist/buddy-resources.js": "509b97991d9ae23575ea45edf854968d58674434f6e6c28b5e044ca1d991351e",
+    "shared/dist/cjs/buddy-resources.js": "0258e35f47df17d0cc45d9e98b870a434022b12efe9a71d34c4f86aebf99f17c",
+    "vendor/nbardy-buddies-0.1.0.tgz": "961e14438ee1afea02252d5e030bbdbba377a140ca1b3f3c39431097f1d4db0f",
+    "vendor/nbardy-buddies-0.1.0.provenance.json": "3d0beb021d8cf7c4a4d498ecfd47f879d6bb0fe87db74ad241f3e80858b190a1",
+    "node_modules/@nbardy/buddies/src/store.js": "cd0c797aab2ef65bd9990b5cd651702e7a3162a40a43cc917408f991c68266d4"
+  },
+  "measurements": [
+    "Work fixture: full=564726, summary=3190 serialized characters",
+    "Work MCP transport: {\"full\":{\"envelopeCharacters\":1130548,\"elapsedMs\":12.965125},\"summary\":{\"envelopeCharacters\":6700,\"elapsedMs\":3.342290999999989}}"
+  ],
+  "limits": "Synthetic four-project high-history fixture plus four current permitted Lead records; neither is original Wave_sim corpus. Current native contract is 2026-09-15.1. No forced reload or claim of deployed code adoption."
+}

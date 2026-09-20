@@ -1,0 +1,22 @@
+{
+  "args": [
+    "pnpm",
+    "exec",
+    "tsx",
+    "--test",
+    "server/test/buddy-assignment-config.test.ts",
+    "server/test/buddy-efficiency-reads.test.ts",
+    "server/test/buddy-resource-contract.test.ts",
+    "server/test/buddy-coordination-observation.test.ts",
+    "server/test/buddy-background-runtime.test.ts",
+    "server/test/buddy-background-return.test.ts",
+    "server/test/buddy-creation-service.test.ts",
+    "server/test/buddy-operations.test.ts",
+    "server/test/buddy-mcp.test.ts",
+    "server/test/buddy-dispatch-service.test.ts",
+    "server/test/buddy-resource-consistency.test.ts",
+    "server/test/conversation-runtime.test.ts",
+    "server/test/buddy-conversation-contract.test.ts"
+  ],
+  "exitCode": 0
+}

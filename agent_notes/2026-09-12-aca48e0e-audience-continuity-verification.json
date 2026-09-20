@@ -1,0 +1,35 @@
+{
+  "kind": "desired-runtime-continuity-acceptance",
+  "actualAuthorityChangesReset": true,
+  "steps": [
+    {
+      "change": "first turn",
+      "resumeSessionId": null
+    },
+    {
+      "change": "unchanged",
+      "resumeSessionId": "native-0"
+    },
+    {
+      "change": "peer background_paused_reason",
+      "resumeSessionId": "native-0"
+    },
+    {
+      "change": "relationship wholly in another workspace",
+      "resumeSessionId": "native-0"
+    }
+  ],
+  "displayMessagesBeforePolling": 12,
+  "keys": {
+    "originalKey": "5257f9c3c514ef77c5a9bf68be6f68872a3fefd7aac109320e4688ae9512b862",
+    "pausedKey": "5257f9c3c514ef77c5a9bf68be6f68872a3fefd7aac109320e4688ae9512b862",
+    "unrelatedRelationKey": "5257f9c3c514ef77c5a9bf68be6f68872a3fefd7aac109320e4688ae9512b862"
+  },
+  "scopeStayedOwnerThread": true,
+  "scope": "isolated fixture; no production sessions or provider requests",
+  "package": {
+    "sourceCommit": "234ff0f681d3f8ede511f048f74d632f23a3f49d",
+    "archiveSha256": "2cbb98805d5281fa08d7a5d07bcb8599f0773c38f0fe11aa10bc87099cde07ba",
+    "installedArchiveMembersMatched": 25
+  }
+}

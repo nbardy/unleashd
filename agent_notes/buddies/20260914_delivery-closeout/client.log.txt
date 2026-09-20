@@ -1,0 +1,218 @@
+(node:13963) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:13965) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+> unleashd@1.1.0 test:client /Users/nicholasbardy/git/unleashd
+> pnpm exec tsx --tsconfig client/tsconfig.app.json --test client/test/*.test.ts client/test/*.test.tsx
+
+(node:13985) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14009) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14021) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14022) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14022) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+[32m✔ archived Buddy threads stay hidden despite stale overview and later conversation snapshots [90m(4.076292ms)[39m[39m
+[32m✔ Settings is a real Buddy route [90m(0.225584ms)[39m[39m
+(node:14023) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14023) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+[32m✔ background destination shows running work first, retains history and scopes links to workspace [90m(72.060333ms)[39m[39m
+(node:14024) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14024) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+[32m✔ background placement hides rows but preserves direct transcript access and visible owner chats [90m(7.368667ms)[39m[39m
+(node:14026) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14026) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+[32m✔ legacy purpose-only builder record still classifies as builder [90m(1.151083ms)[39m[39m
+[32m✔ explicit builder kind classifies as builder [90m(1.17625ms)[39m[39m
+[32m✔ general and buddy conversations are not builders [90m(1.626458ms)[39m[39m
+(node:14027) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14027) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+[32m✔ legacy Builder results still render creation and brief updates without team fields [90m(9.201917ms)[39m[39m
+[32m✔ saved reporting relationships link available staff without linking archived staff [90m(3.708458ms)[39m[39m
+[32m✔ saved work renders canonical blockers and the Work route without claiming a brief update [90m(58.069333ms)[39m[39m
+[32m✔ the compact result replaces only its adjacent generic MCP tool label [90m(97.284167ms)[39m[39m
+(node:14029) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14029) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+[32m✔ desktop automations tab links live automation threads and never links dead ones [90m(29.908375ms)[39m[39m
+[32m✔ mobile automations tab exposes explicit history and links only loaded live threads [90m(1.152334ms)[39m[39m
+[32m✔ mobile chats tab opens a conversation through an anchor, not an onClick [90m(1.300125ms)[39m[39m
+(node:14031) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14031) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+[32m✔ memory panel renders independent v2 documents, revisions, generation, and note controls [90m(201.834458ms)[39m[39m
+[32m✔ retired memory payload fails visibly instead of exposing a legacy editor [90m(0.7995ms)[39m[39m
+[32m✔ stale CAS errors tell the editor which revision must be reloaded [90m(0.236042ms)[39m[39m
+[32m✔ mobile v2 markup stays within the mobile feature class boundary [90m(0.710333ms)[39m[39m
+[32m✔ scoped memory keeps edits and note search in the selected audience in both shells [90m(1.125208ms)[39m[39m
+(node:14032) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14032) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+[32m✔ message inbox offers owner replies, preserves evidence, and links only available conversations [90m(6.5635ms)[39m[39m
+[32m✔ mailbox-only returns are visible without claiming a model read the reply [90m(135.530084ms)[39m[39m
+[32m✔ held incoming work offers an owner action without resending the request [90m(1.920292ms)[39m[39m
+[32m✔ a pending structured setup proposal offers its concrete owner workflow instead of a textual approval [90m(0.76625ms)[39m[39m
+(node:14034) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14034) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+[32m✔ background task panel keeps completion criteria with the project and individual task [90m(4.799084ms)[39m[39m
+[32m✔ completed task remains inspectable with evidence and offers no new background start [90m(52.111083ms)[39m[39m
+[32m✔ background disposition distinguishes exhausted work from a completed provider turn [90m(67.295833ms)[39m[39m
+(node:14045) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14045) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+[32m✔ Buddy directory exposes a search control in its rendered page [90m(4.44ms)[39m[39m
+[32m✔ Buddy directory search matches role, workspace, and report metadata [90m(0.320042ms)[39m[39m
+(node:14046) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14046) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+[32m✔ only roster memberships create workspace rows; orphan history remains accessible [90m(8.908042ms)[39m[39m
+[32m✔ sidebar groups memberships and scopes recency and threads to each project [90m(23.948917ms)[39m[39m
+[32m✔ Builder joins project recency ordering and moves when an older thread receives a message [90m(10.734125ms)[39m[39m
+[32m✔ sidebar exposes active process counts at project-folder scope [90m(0.423917ms)[39m[39m
+(node:14050) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14050) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+[32m✔ three-way soul merges preserve independent edits, deletions, identical edits and Markdown [90m(0.841334ms)[39m[39m
+[32m✔ overlaps stay unresolved until chosen; choosing one region preserves unrelated saved changes [90m(0.384208ms)[39m[39m
+[32m✔ delete versus edit and different inserts at the same location require resolution [90m(0.085542ms)[39m[39m
+(node:14051) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14051) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+[32m✔ task comments show durable authorship, body and ordinary file evidence [90m(109.74375ms)[39m[39m
+[32m✔ shared task comment panel offers append while loading and honest empty history [90m(3.521958ms)[39m[39m
+(node:14065) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14065) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+[32m✔ canonical owner tool result renders setup and unfinished original work in the same chat flow [90m(70.968834ms)[39m[39m
+[32m✔ saved receipt reports subsequent drift and readiness without implying reapplication [90m(3.247ms)[39m[39m
+[32m✔ primary roster setup keeps private access and admission explicit while preserving existing identities [90m(3.861333ms)[39m[39m
+[32m✔ team settings preserves independent permissions and exposes revocation for former members [90m(10.185792ms)[39m[39m
+(node:14066) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14066) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+[32m✔ team receipts distinguish failed execution, saved artifacts, reply delivery and current work [90m(21.802958ms)[39m[39m
+(node:14068) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14068) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+[32m✔ fork drafts continue the task without adding diagnostic rules or removing authored history [90m(3.380166ms)[39m[39m
+[32m✔ one assistant response contains all prose and widgets while streaming stays outside durable messages [90m(58.66475ms)[39m[39m
+[32m✔ response boundaries own one Copy action and preserve ordered tool runs and every completed answer [90m(65.399958ms)[39m[39m
+[32m✔ streamed tool runs and saved calls render the same compact disclosure without collapsing code or user text [90m(32.716625ms)[39m[39m
+[32m✔ saved freeform input reaches desktop and mobile as literal code, with compact list previews [90m(53.803416ms)[39m[39m
+[32m✔ worker launch receipts stay inline in collapsed tool rows on both shells [90m(28.004583ms)[39m[39m
+[32m✔ persisted Codex launch tool output rehydrates the worker badge [90m(4.676125ms)[39m[39m
+(node:14069) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14069) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+[32m✔ no new unstyled className in the mobile tree [90m(16.471709ms)[39m[39m
+[32m✔ UNSTYLED_BASELINE has no stale entries [90m(3.857ms)[39m[39m
+(node:14070) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14070) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+[32m✔ no new undefined CSS custom properties [90m(24.854833ms)[39m[39m
+[32m✔ the mobile tree defines every token it references [90m(8.7575ms)[39m[39m
+[32m✔ KNOWN_UNDEFINED has no stale entries [90m(1.669667ms)[39m[39m
+(node:14071) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14071) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+[32m✔ detail loading retries rather than replacing a newer live value [90m(3.78025ms)[39m[39m
+(node:14073) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14073) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+[32m✔ sibling worktrees of one repo collapse to a single sidebar group [90m(2.056125ms)[39m[39m
+[32m✔ a plain project directory is its own group [90m(0.230958ms)[39m[39m
+[32m✔ normalizeFolderDirectory does not fold worktrees [90m(0.121458ms)[39m[39m
+(node:14074) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14074) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+Server error: Backend reload is draining active turns; try again after reconnecting
+[32m✔ queued composer text waits for an exact server acknowledgement [90m(0.999417ms)[39m[39m
+[32m✔ draining rejection rejects the exact queued command so the composer can retain text [90m(0.935625ms)[39m[39m
+[32m✔ legacy uncorrelated server errors release pending composers without losing their draft [90m(0.230083ms)[39m[39m
+(node:14075) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14075) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+[32m✔ queueAtomFamily derives from conversationsAtom (no new state) [90m(16.934ms)[39m[39m
+[32m✔ queueAtomFamily updates when conversationsAtom queue changes [90m(1.555375ms)[39m[39m
+[32m✔ cancelQueuedMessage sends cancel_queued_message with same shape as desktop [90m(2.230959ms)[39m[39m
+[32m✔ clearQueue sends clear_queue with same shape as desktop [90m(0.322542ms)[39m[39m
+[32m✔ mobile and desktop read one shared queue — no second source of truth [90m(0.137708ms)[39m[39m
+[32m✔ endConversation clears the queue before stopping the turn [90m(0.099625ms)[39m[39m
+(node:14076) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14076) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+[32m✔ server lifecycle rejections are retryable after reconnect [90m(1.08225ms)[39m[39m
+[32m✔ legacy persisted draining rejection recovers without an error code [90m(0.073625ms)[39m[39m
+[32m✔ permanent creation rejection remains failed after reconnect [90m(0.048417ms)[39m[39m
+(node:14077) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14077) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+[32m✔ queue mirror retains the current and pending messages when the server queue disappears [90m(2.262834ms)[39m[39m
+[32m✔ resume resubmits the current message before requeueing later messages [90m(0.484375ms)[39m[39m
+[32m✔ restart prompt describes the optional replay and queued count [90m(3.137833ms)[39m[39m
+[32m✔ only a newer restart interruption surfaces the recovery offer [90m(0.143291ms)[39m[39m
+(node:14079) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14079) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+[32m✔ attempt projection preserves every nonterminal lifecycle state [90m(0.571667ms)[39m[39m
+[32m✔ active runtime suppresses a stale terminal attempt until the current attempt appears [90m(0.0535ms)[39m[39m
+[32m✔ diagnostics polling retries 404 with bounded exponential backoff [90m(0.054333ms)[39m[39m
+[32m✔ terminal projection remains distinct from active lifecycle states [90m(0.053416ms)[39m[39m
+[32m✔ terminal updates do not masquerade as provider activity [90m(0.07725ms)[39m[39m
+[32m✔ a turn with no bridge event does not invent provider activity from lifecycle time [90m(0.045291ms)[39m[39m
+[32m✔ maximum runtime and legacy timeout causes remain distinguishable [90m(0.035875ms)[39m[39m
+[32m✔ startup bridge heartbeat reports provider silence instead of generic activity [90m(0.106083ms)[39m[39m
+[32m✔ status component renders heartbeat-only startup as waiting, not generic activity [90m(3.110375ms)[39m[39m
+[32m✔ compact density drops routine activity text but never hides a stall [90m(0.415ms)[39m[39m
+[32m✔ native progress and visible output remain distinct [90m(0.069209ms)[39m[39m
+[32m✔ heartbeat-embedded native advancement is native progress, not a bridge-only heartbeat [90m(0.055792ms)[39m[39m
+[32m✔ typing indicator requires an actual text delta [90m(0.031084ms)[39m[39m
+(node:14080) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14080) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+[32m✔ an upload survives a drain that outlasts the first retry [90m(58.990708ms)[39m[39m
+[32m✔ a non-retryable rejection fails immediately instead of burning the backoff [90m(0.401583ms)[39m[39m
+[32m✔ a drain that never lifts gives up after the whole schedule [90m(0.181ms)[39m[39m
+[32m✔ an exhausted drain reports the reason instead of failing silently [90m(15.436916ms)[39m[39m
+[34mℹ tests 91[39m
+[34mℹ suites 0[39m
+[34mℹ pass 91[39m
+[34mℹ fail 0[39m
+[34mℹ cancelled 0[39m
+[34mℹ skipped 0[39m
+[34mℹ todo 0[39m
+[34mℹ duration_ms 3029.258917[39m

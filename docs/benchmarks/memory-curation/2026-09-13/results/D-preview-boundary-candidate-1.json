@@ -1,0 +1,177 @@
+{
+  "case": "D-preview-boundary",
+  "variant": "candidate",
+  "repeat": 1,
+  "rubric": [
+    "Retains the reusable configuration-preview versus execution distinction.",
+    "Does not describe setup as applied, a worker as started, or delivery as verified.",
+    "Preserves the evidence preference."
+  ],
+  "model": "gpt-5.6-luna",
+  "effort": "low",
+  "instructionsSha256": "4a84581faefb99d205a61fef2cc62192147ecdfccb27c7325b905f1d4e1bd09f",
+  "toolDescriptionsSha256": "1fe1ca463feff7eb046c02dd160ef1a34b8c94cac1716c9bb20311a291c57a70",
+  "elapsedMs": 23238,
+  "before": {
+    "working": "",
+    "longTerm": "Owner preference: provide evidence for claims.",
+    "note": null
+  },
+  "after": {
+    "working": {
+      "id": "knowledge_2c64c99f-d771-471d-b0ec-8d22e9a9a844",
+      "ref": {
+        "targetBuddyId": "buddy_00d1e821-3ab7-41e6-a46f-07c9579ff145",
+        "kind": "working",
+        "scope": {
+          "kind": "owner_thread",
+          "conversationId": "curation-owner-fixture"
+        }
+      },
+      "revision": 2,
+      "content": "Owner reported and verified that native configure_team preview validates configuration from an owner conversation. This supports preview validity only; it does not establish that configuration was applied, a worker started, or a result returned. Keep these execution claims unverified."
+    },
+    "longTerm": {
+      "id": "knowledge_053245bd-8cb0-4d44-9e27-652be63ea848",
+      "ref": {
+        "targetBuddyId": "buddy_00d1e821-3ab7-41e6-a46f-07c9579ff145",
+        "kind": "long_term",
+        "scope": {
+          "kind": "owner_thread",
+          "conversationId": "curation-owner-fixture"
+        }
+      },
+      "revision": 1,
+      "content": "Owner preference: provide evidence for claims."
+    },
+    "notes": [
+      {
+        "id": "knowledge_1a390927-b5ba-476b-879c-283fe77ba212",
+        "ref": {
+          "targetBuddyId": "buddy_00d1e821-3ab7-41e6-a46f-07c9579ff145",
+          "scope": {
+            "kind": "owner_thread",
+            "conversationId": "curation-owner-fixture"
+          },
+          "kind": "note",
+          "name": "2026-09-13T04:25:54.860Z:dbc982c8-422c-4a44-9bfa-9500aaa71005"
+        },
+        "revision": 1,
+        "content": "{\"topic\":\"configure_team preview versus execution\",\"body\":\"Owner reported: native configure_team preview now validates configuration from an owner conversation. Scope is preview validation only. Owner explicitly said configuration was not applied, no worker was started, and no result return was checked. Assistant correctly summarized the distinction: preview validity and execution success are separate claims. No existing note matched recall for “configure_team”.\"}"
+      }
+    ]
+  },
+  "receipt": {
+    "id": "a60e899298e9e6d128560a05f0c2e73c7ee811aad665ad0a0c5820c8c2a65121",
+    "buddyId": "buddy_00d1e821-3ab7-41e6-a46f-07c9579ff145",
+    "workspaceId": "project_7453d93d-3d03-4016-9b0a-24d77298694f",
+    "conversationId": "curation-owner-fixture",
+    "attemptId": "fixture-attempt",
+    "completedAt": "2026-09-13T04:25:36.272Z",
+    "status": "complete",
+    "model": "gpt-5.6-luna",
+    "reasoningEffort": "low",
+    "writes": {
+      "working": 1,
+      "longTerm": 0,
+      "notes": 1
+    },
+    "finishedAt": "2026-09-13T04:25:59.419Z"
+  },
+  "calls": [
+    {
+      "operation": "get_memory",
+      "input": {
+        "doc": "long_term"
+      },
+      "result": {
+        "id": "knowledge_053245bd-8cb0-4d44-9e27-652be63ea848",
+        "ref": {
+          "targetBuddyId": "buddy_00d1e821-3ab7-41e6-a46f-07c9579ff145",
+          "scope": {
+            "kind": "owner_thread",
+            "conversationId": "curation-owner-fixture"
+          },
+          "kind": "long_term"
+        },
+        "revision": 1,
+        "content": "Owner preference: provide evidence for claims."
+      }
+    },
+    {
+      "operation": "recall",
+      "input": {
+        "pattern": "configure_team",
+        "limit": 8
+      },
+      "result": {
+        "pattern": "configure_team",
+        "matches": [],
+        "truncated": false
+      }
+    },
+    {
+      "operation": "get_memory",
+      "input": {
+        "doc": "working"
+      },
+      "result": {
+        "id": "knowledge_2c64c99f-d771-471d-b0ec-8d22e9a9a844",
+        "ref": {
+          "targetBuddyId": "buddy_00d1e821-3ab7-41e6-a46f-07c9579ff145",
+          "scope": {
+            "kind": "owner_thread",
+            "conversationId": "curation-owner-fixture"
+          },
+          "kind": "working"
+        },
+        "revision": 1,
+        "content": ""
+      }
+    },
+    {
+      "operation": "update_memory",
+      "input": {
+        "doc": "working",
+        "content": "Owner reported and verified that native configure_team preview validates configuration from an owner conversation. This supports preview validity only; it does not establish that configuration was applied, a worker started, or a result returned. Keep these execution claims unverified.",
+        "reasoning": "Preserve the completed turn's useful uncertainty and prevent preview validation from being conflated with execution success.",
+        "baseVersion": 1
+      },
+      "result": {
+        "id": "knowledge_2c64c99f-d771-471d-b0ec-8d22e9a9a844",
+        "ref": {
+          "targetBuddyId": "buddy_00d1e821-3ab7-41e6-a46f-07c9579ff145",
+          "scope": {
+            "kind": "owner_thread",
+            "conversationId": "curation-owner-fixture"
+          },
+          "kind": "working"
+        },
+        "revision": 2,
+        "auditId": "audit_b3f3754f-8d08-47e7-968f-098ed6e4c48d"
+      }
+    },
+    {
+      "operation": "remember_note",
+      "input": {
+        "topic": "configure_team preview versus execution",
+        "body": "Owner reported: native configure_team preview now validates configuration from an owner conversation. Scope is preview validation only. Owner explicitly said configuration was not applied, no worker was started, and no result return was checked. Assistant correctly summarized the distinction: preview validity and execution success are separate claims. No existing note matched recall for “configure_team”."
+      },
+      "result": {
+        "id": "knowledge_1a390927-b5ba-476b-879c-283fe77ba212",
+        "ref": {
+          "targetBuddyId": "buddy_00d1e821-3ab7-41e6-a46f-07c9579ff145",
+          "scope": {
+            "kind": "owner_thread",
+            "conversationId": "curation-owner-fixture"
+          },
+          "kind": "note",
+          "name": "2026-09-13T04:25:54.860Z:dbc982c8-422c-4a44-9bfa-9500aaa71005"
+        },
+        "revision": 1,
+        "auditId": "audit_76df76a2-ae17-42c2-8f25-705d0fc2337b"
+      }
+    }
+  ],
+  "modelReport": "Saved:\n- Updated working memory with the preview-vs-execution distinction.\n- Added evidence note: `2026-09-13T04:25:54.860Z:dbc982c8-422c-4a44-9bfa-9500aaa71005`\n- Long-term memory unchanged."
+}

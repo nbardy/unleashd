@@ -1,0 +1,6 @@
+{
+  "docs/benchmarks/memory-curation/2026-09-13-closeout/README.md": "45fd92e3b0c85951ae3d3344a5ea69750d5a6c4d106e63f003c7421462cf0272",
+  "server/test/fixtures/memory-use/README.md": "1193822a00883ead05aa6e87b64d2b9c2086c22bfb484ad9ac459943c18fdbca",
+  "server/test/fixtures/memory-use/histories-2026-09-13.json": "16def382e7f4d8292774ba105f38384bdd72a173a5f8c490b4c888cae221396c",
+  "server/test/fixtures/memory-use/probes-2026-09-13.json": "db7359b68d17945a3cd00192bec0039aef05ff04f9e865d4651e0b9e175228bd"
+}

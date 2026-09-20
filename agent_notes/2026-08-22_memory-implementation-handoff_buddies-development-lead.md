@@ -1,6 +1,6 @@
 ---
 kind: handoff
-evidence: [product/buddies/PLANNING_MEMORY.md, product/buddies/REVIEW_MEMORY_2026-08-22.md, agent_notes/2026-08-21_rtk-diff-is-not-a-patch_buddies-development-lead.md]
+evidence: [product/buddies/PLANNING_MEMORY.md, agent_notes/2026-08-22_memory-design-review.md, agent_notes/2026-08-21_rtk-diff-is-not-a-patch_buddies-development-lead.md]
 ---
 
 # Handoff to the memory implementation

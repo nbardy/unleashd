@@ -1,0 +1,196 @@
+{
+  "case": "A-duplicate-cleanup",
+  "variant": "candidate",
+  "repeat": 2,
+  "rubric": [
+    "Consolidates duplicate UI behavior into one primary home even without a new fact.",
+    "Preserves shared row behavior, interleaved ordering, one Copy action and UTC preference.",
+    "Does not create a note merely to archive duplicate wording."
+  ],
+  "model": "gpt-5.6-luna",
+  "effort": "low",
+  "instructionsSha256": "4a84581faefb99d205a61fef2cc62192147ecdfccb27c7325b905f1d4e1bd09f",
+  "toolDescriptionsSha256": "1fe1ca463feff7eb046c02dd160ef1a34b8c94cac1716c9bb20311a291c57a70",
+  "elapsedMs": 21455,
+  "before": {
+    "working": "Tool history: streaming and completed tool calls share one expandable row. A response preserves interleaved prose/tool order and has one Copy action.",
+    "longTerm": "Owner-accepted UI behavior: streaming and completed tool calls share one expandable row. Each assistant response preserves interleaved prose/tool order and has one Copy action.\n\nTool-history lesson: use one expandable row for streaming and completed calls; preserve prose/tool order and one Copy action per response.\n\nOwner preference: use UTC timestamps.",
+    "note": null
+  },
+  "after": {
+    "working": {
+      "id": "knowledge_9c7f182c-1a31-4999-bb41-b54b7cab0eb0",
+      "ref": {
+        "targetBuddyId": "buddy_703805a8-70fa-4369-b924-91821583446c",
+        "kind": "working",
+        "scope": {
+          "kind": "owner_thread",
+          "conversationId": "curation-owner-fixture"
+        }
+      },
+      "revision": 2,
+      "content": ""
+    },
+    "longTerm": {
+      "id": "knowledge_2beddac6-7305-43cd-a890-2a409d4d5c72",
+      "ref": {
+        "targetBuddyId": "buddy_703805a8-70fa-4369-b924-91821583446c",
+        "kind": "long_term",
+        "scope": {
+          "kind": "owner_thread",
+          "conversationId": "curation-owner-fixture"
+        }
+      },
+      "revision": 2,
+      "content": "Owner-accepted UI behavior: streaming and completed tool calls share one expandable row. Each assistant response preserves interleaved prose/tool order and has one Copy action.\n\nOwner preference: use UTC timestamps."
+    },
+    "notes": []
+  },
+  "receipt": {
+    "id": "a60e899298e9e6d128560a05f0c2e73c7ee811aad665ad0a0c5820c8c2a65121",
+    "buddyId": "buddy_703805a8-70fa-4369-b924-91821583446c",
+    "workspaceId": "project_8492758c-2f5a-4743-9218-ba7bd63bb3f9",
+    "conversationId": "curation-owner-fixture",
+    "attemptId": "fixture-attempt",
+    "completedAt": "2026-09-13T04:27:40.996Z",
+    "status": "complete",
+    "model": "gpt-5.6-luna",
+    "reasoningEffort": "low",
+    "writes": {
+      "working": 1,
+      "longTerm": 1,
+      "notes": 0
+    },
+    "finishedAt": "2026-09-13T04:28:02.354Z"
+  },
+  "calls": [
+    {
+      "operation": "get_memory",
+      "input": {
+        "doc": "working"
+      },
+      "result": {
+        "id": "knowledge_9c7f182c-1a31-4999-bb41-b54b7cab0eb0",
+        "ref": {
+          "targetBuddyId": "buddy_703805a8-70fa-4369-b924-91821583446c",
+          "scope": {
+            "kind": "owner_thread",
+            "conversationId": "curation-owner-fixture"
+          },
+          "kind": "working"
+        },
+        "revision": 1,
+        "content": "Tool history: streaming and completed tool calls share one expandable row. A response preserves interleaved prose/tool order and has one Copy action."
+      }
+    },
+    {
+      "operation": "get_memory",
+      "input": {
+        "doc": "long_term"
+      },
+      "result": {
+        "id": "knowledge_2beddac6-7305-43cd-a890-2a409d4d5c72",
+        "ref": {
+          "targetBuddyId": "buddy_703805a8-70fa-4369-b924-91821583446c",
+          "scope": {
+            "kind": "owner_thread",
+            "conversationId": "curation-owner-fixture"
+          },
+          "kind": "long_term"
+        },
+        "revision": 1,
+        "content": "Owner-accepted UI behavior: streaming and completed tool calls share one expandable row. Each assistant response preserves interleaved prose/tool order and has one Copy action.\n\nTool-history lesson: use one expandable row for streaming and completed calls; preserve prose/tool order and one Copy action per response.\n\nOwner preference: use UTC timestamps."
+      }
+    },
+    {
+      "operation": "recall",
+      "input": {
+        "pattern": "streaming",
+        "limit": 8
+      },
+      "result": {
+        "pattern": "streaming",
+        "matches": [
+          {
+            "id": "knowledge_2beddac6-7305-43cd-a890-2a409d4d5c72",
+            "ref": {
+              "targetBuddyId": "buddy_703805a8-70fa-4369-b924-91821583446c",
+              "scope": {
+                "kind": "owner_thread",
+                "conversationId": "curation-owner-fixture"
+              },
+              "kind": "long_term"
+            },
+            "revision": 1,
+            "content": "Owner-accepted UI behavior: streaming and completed tool calls share one expandable row. Each assistant response preserves interleaved prose/tool order and has one Copy action.\n\nTool-history lesson: use one expandable row for streaming and completed calls; preserve prose/tool order and one Copy action per response.\n\nOwner preference: use UTC timestamps.",
+            "path": "long_term",
+            "workspace_id": "project_8492758c-2f5a-4743-9218-ba7bd63bb3f9",
+            "created_at": null
+          },
+          {
+            "id": "knowledge_9c7f182c-1a31-4999-bb41-b54b7cab0eb0",
+            "ref": {
+              "targetBuddyId": "buddy_703805a8-70fa-4369-b924-91821583446c",
+              "scope": {
+                "kind": "owner_thread",
+                "conversationId": "curation-owner-fixture"
+              },
+              "kind": "working"
+            },
+            "revision": 1,
+            "content": "Tool history: streaming and completed tool calls share one expandable row. A response preserves interleaved prose/tool order and has one Copy action.",
+            "path": "working",
+            "workspace_id": "project_8492758c-2f5a-4743-9218-ba7bd63bb3f9",
+            "created_at": null
+          }
+        ],
+        "truncated": false
+      }
+    },
+    {
+      "operation": "update_memory",
+      "input": {
+        "doc": "working",
+        "content": "",
+        "reasoning": "The completed turn contains only a brief courtesy exchange and adds no uncertainty or fragile context. The tool-history fact is already preserved as an owner-accepted enduring lesson in long-term memory, so remove its duplicate working copy.",
+        "baseVersion": 1
+      },
+      "result": {
+        "id": "knowledge_9c7f182c-1a31-4999-bb41-b54b7cab0eb0",
+        "ref": {
+          "targetBuddyId": "buddy_703805a8-70fa-4369-b924-91821583446c",
+          "scope": {
+            "kind": "owner_thread",
+            "conversationId": "curation-owner-fixture"
+          },
+          "kind": "working"
+        },
+        "revision": 2,
+        "auditId": "audit_0918988b-4c1f-4333-ba3c-42144140c63b"
+      }
+    },
+    {
+      "operation": "update_memory",
+      "input": {
+        "doc": "long_term",
+        "content": "Owner-accepted UI behavior: streaming and completed tool calls share one expandable row. Each assistant response preserves interleaved prose/tool order and has one Copy action.\n\nOwner preference: use UTC timestamps.",
+        "reasoning": "Consolidated the repeated tool-history lesson into the already owner-accepted UI behavior without changing its scope or attribution. Retained the unrelated durable UTC timestamp preference.",
+        "baseVersion": 1
+      },
+      "result": {
+        "id": "knowledge_2beddac6-7305-43cd-a890-2a409d4d5c72",
+        "ref": {
+          "targetBuddyId": "buddy_703805a8-70fa-4369-b924-91821583446c",
+          "scope": {
+            "kind": "owner_thread",
+            "conversationId": "curation-owner-fixture"
+          },
+          "kind": "long_term"
+        },
+        "revision": 2,
+        "auditId": "audit_9f556320-384c-4722-a08e-3cf8259f9aa6"
+      }
+    }
+  ],
+  "modelReport": "Saved:\n- Consolidated duplicate tool-history lesson in long-term memory.\n- Removed its duplicate from working memory.\n- Preserved the UTC timestamp preference.\n\nNo new notes were needed."
+}

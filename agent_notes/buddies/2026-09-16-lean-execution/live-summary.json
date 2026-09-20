@@ -1,0 +1,126 @@
+{
+  "observedAt": "2026-09-16T03:16Z",
+  "normalizedCharacters": 3416,
+  "envelopeCharacters": 7154,
+  "qualification": "Four current permitted Lead records, not the original Wave_sim corpus. Native contract observation does not identify loaded source commit.",
+  "result": {
+    "content": [
+      {
+        "type": "text",
+        "text": "{\"ok\":true,\"data\":{\"view\":\"summary\",\"items\":[{\"id\":\"buddy_project_b55e2554-3dae-4b14-8b81-fcd1cfec3531\",\"workspace_id\":\"project_26fce156-5c5d-4dd9-a9d6-4b527a50af3c\",\"buddy_id\":\"buddy_d3f11f11-d010-4383-bc72-940bfe6ef8cd\",\"title\":\"Direct reports: deliberately deferred backlog\",\"revision\":2,\"status\":\"backlog\",\"priority\":8,\"execution_state\":\"paused\",\"updated_at\":\"2026-09-16T03:11:09.178Z\",\"next_action\":\"Deferred by owner-selected lean scope, September 16. Keep OS containment, cumulative spend enforcement and new quotas outside this pass. Honest limitations remain visible. Existing conversation-bound automation behavior must be qualified be\",\"blocked_reason\":null,\"todoCounts\":{\"open\":4,\"in_progress\":0,\"blocked\":0,\"done\":0,\"cancelled\":0},\"evidenceCount\":0,\"todoEvidenceCount\":0,\"truncatedFields\":[\"next_action\"]},{\"id\":\"buddy_project_9864f34e-b435-43b1-80b1-07cc51645fbe\",\"workspace_id\":\"project_26fce156-5c5d-4dd9-a9d6-4b527a50af3c\",\"buddy_id\":\"buddy_d3f11f11-d010-4383-bc72-940bfe6ef8cd\",\"title\":\"Complete owner-to-team setup and operational readiness\",\"revision\":21,\"status\":\"in_progress\",\"priority\":0,\"execution_state\":\"enabled\",\"updated_at\":\"2026-09-16T03:11:09.104Z\",\"next_action\":\"Superseded by buddy_project_a2047be3-f8cb-4eed-ac2e-522e3831bee6. Fold remaining discovery/replay/receipt and live team acceptance into the same release scenario; preserve earlier setup evidence and original stopped production assignments. \",\"blocked_reason\":null,\"todoCounts\":{\"open\":0,\"in_progress\":0,\"blocked\":0,\"done\":13,\"cancelled\":1},\"evidenceCount\":2,\"todoEvidenceCount\":33,\"truncatedFields\":[\"next_action\"]},{\"id\":\"buddy_project_de5267b7-26f7-45c1-8819-cb0954ec1255\",\"workspace_id\":\"project_26fce156-5c5d-4dd9-a9d6-4b527a50af3c\",\"buddy_id\":\"buddy_d3f11f11-d010-4383-bc72-940bfe6ef8cd\",\"title\":\"Validate memory curation beyond the September 13 tuning set\",\"revision\":3,\"status\":\"backlog\",\"priority\":0,\"execution_state\":\"paused\",\"updated_at\":\"2026-09-16T03:11:09.098Z\",\"next_action\":\"Deferred by owner-selected lean scope, September 16. Defer the broad held-out memory benchmark program from this repair pass. Keep relevant existing memory/scope regressions. Revisit systematic quality evaluation when a specific memory-use \",\"blocked_reason\":null,\"todoCounts\":{\"open\":4,\"in_progress\":0,\"blocked\":0,\"done\":0,\"cancelled\":0},\"evidenceCount\":4,\"todoEvidenceCount\":0,\"truncatedFields\":[\"next_action\"]},{\"id\":\"buddy_project_4f875aff-3481-4ba9-8aab-eb0ea62c1308\",\"workspace_id\":\"project_26fce156-5c5d-4dd9-a9d6-4b527a50af3c\",\"buddy_id\":\"buddy_d3f11f11-d010-4383-bc72-940bfe6ef8cd\",\"title\":\"Coalesce redundant lead review wakeups while retaining every return\",\"revision\":3,\"status\":\"backlog\",\"priority\":0,\"execution_state\":\"paused\",\"updated_at\":\"2026-09-16T03:11:09.076Z\",\"next_action\":\"Deferred by owner-selected lean scope, September 16. Defer cross-request review batching. Managed parents already coalesce child returns; Task comments avoid unnecessary Mail. Repair duplicate replay only if reproduced, using existing IDs, \",\"blocked_reason\":null,\"todoCounts\":{\"open\":3,\"in_progress\":0,\"blocked\":0,\"done\":0,\"cancelled\":0},\"evidenceCount\":0,\"todoEvidenceCount\":0,\"truncatedFields\":[\"next_action\"]}],\"nextCursor\":\"work:37e39645988b3865a7f9ef559817921b:4\",\"expansion\":\"get_current_work({projectId,includeClosed:true,view:\\\"full\\\"})\"},\"auditId\":\"audit_edeb9bc3-ada5-42a4-aef7-8261edbb1361\",\"contractVersion\":\"2026-09-15.1\"}"
+      }
+    ],
+    "structuredContent": {
+      "ok": true,
+      "data": {
+        "view": "summary",
+        "items": [
+          {
+            "id": "buddy_project_b55e2554-3dae-4b14-8b81-fcd1cfec3531",
+            "workspace_id": "project_26fce156-5c5d-4dd9-a9d6-4b527a50af3c",
+            "buddy_id": "buddy_d3f11f11-d010-4383-bc72-940bfe6ef8cd",
+            "title": "Direct reports: deliberately deferred backlog",
+            "revision": 2,
+            "status": "backlog",
+            "priority": 8,
+            "execution_state": "paused",
+            "updated_at": "2026-09-16T03:11:09.178Z",
+            "next_action": "Deferred by owner-selected lean scope, September 16. Keep OS containment, cumulative spend enforcement and new quotas outside this pass. Honest limitations remain visible. Existing conversation-bound automation behavior must be qualified be",
+            "blocked_reason": null,
+            "todoCounts": {
+              "open": 4,
+              "in_progress": 0,
+              "blocked": 0,
+              "done": 0,
+              "cancelled": 0
+            },
+            "evidenceCount": 0,
+            "todoEvidenceCount": 0,
+            "truncatedFields": [
+              "next_action"
+            ]
+          },
+          {
+            "id": "buddy_project_9864f34e-b435-43b1-80b1-07cc51645fbe",
+            "workspace_id": "project_26fce156-5c5d-4dd9-a9d6-4b527a50af3c",
+            "buddy_id": "buddy_d3f11f11-d010-4383-bc72-940bfe6ef8cd",
+            "title": "Complete owner-to-team setup and operational readiness",
+            "revision": 21,
+            "status": "in_progress",
+            "priority": 0,
+            "execution_state": "enabled",
+            "updated_at": "2026-09-16T03:11:09.104Z",
+            "next_action": "Superseded by buddy_project_a2047be3-f8cb-4eed-ac2e-522e3831bee6. Fold remaining discovery/replay/receipt and live team acceptance into the same release scenario; preserve earlier setup evidence and original stopped production assignments. ",
+            "blocked_reason": null,
+            "todoCounts": {
+              "open": 0,
+              "in_progress": 0,
+              "blocked": 0,
+              "done": 13,
+              "cancelled": 1
+            },
+            "evidenceCount": 2,
+            "todoEvidenceCount": 33,
+            "truncatedFields": [
+              "next_action"
+            ]
+          },
+          {
+            "id": "buddy_project_de5267b7-26f7-45c1-8819-cb0954ec1255",
+            "workspace_id": "project_26fce156-5c5d-4dd9-a9d6-4b527a50af3c",
+            "buddy_id": "buddy_d3f11f11-d010-4383-bc72-940bfe6ef8cd",
+            "title": "Validate memory curation beyond the September 13 tuning set",
+            "revision": 3,
+            "status": "backlog",
+            "priority": 0,
+            "execution_state": "paused",
+            "updated_at": "2026-09-16T03:11:09.098Z",
+            "next_action": "Deferred by owner-selected lean scope, September 16. Defer the broad held-out memory benchmark program from this repair pass. Keep relevant existing memory/scope regressions. Revisit systematic quality evaluation when a specific memory-use ",
+            "blocked_reason": null,
+            "todoCounts": {
+              "open": 4,
+              "in_progress": 0,
+              "blocked": 0,
+              "done": 0,
+              "cancelled": 0
+            },
+            "evidenceCount": 4,
+            "todoEvidenceCount": 0,
+            "truncatedFields": [
+              "next_action"
+            ]
+          },
+          {
+            "id": "buddy_project_4f875aff-3481-4ba9-8aab-eb0ea62c1308",
+            "workspace_id": "project_26fce156-5c5d-4dd9-a9d6-4b527a50af3c",
+            "buddy_id": "buddy_d3f11f11-d010-4383-bc72-940bfe6ef8cd",
+            "title": "Coalesce redundant lead review wakeups while retaining every return",
+            "revision": 3,
+            "status": "backlog",
+            "priority": 0,
+            "execution_state": "paused",
+            "updated_at": "2026-09-16T03:11:09.076Z",
+            "next_action": "Deferred by owner-selected lean scope, September 16. Defer cross-request review batching. Managed parents already coalesce child returns; Task comments avoid unnecessary Mail. Repair duplicate replay only if reproduced, using existing IDs, ",
+            "blocked_reason": null,
+            "todoCounts": {
+              "open": 3,
+              "in_progress": 0,
+              "blocked": 0,
+              "done": 0,
+              "cancelled": 0
+            },
+            "evidenceCount": 0,
+            "todoEvidenceCount": 0,
+            "truncatedFields": [
+              "next_action"
+            ]
+          }
+        ],
+        "nextCursor": "work:37e39645988b3865a7f9ef559817921b:4",
+        "expansion": "get_current_work({projectId,includeClosed:true,view:\"full\"})"
+      },
+      "auditId": "audit_edeb9bc3-ada5-42a4-aef7-8261edbb1361",
+      "contractVersion": "2026-09-15.1"
+    }
+  }
+}

@@ -6,7 +6,8 @@ mobile tree instead of importing desktop TSX or desktop feature CSS.
 
 ## Layers
 
-1. `index.css` — palette and semantic tokens shared by every device.
+1. `index.css` — palette, semantic tokens and `--ui-radius` shared by every device.
+   `ui/controls.css` owns the shared `.ui-choice` appearance used by both model pickers.
 2. `mobile/styles/mobile.css` — shell, safe areas, tab bar, and legacy detail views.
 3. `mobile/styles/mobile-ui.css` — reusable mobile page and surface grammar.
 4. Feature CSS — only layout or states unique to that feature.
@@ -104,3 +105,31 @@ and the auto-reset. `failed` is a real state because `copyText` genuinely fails
 over plain-http LAN (see `docs/auth.md`); a button that silently stays on "Copy"
 reads as broken. Gate G3 forbids mobile importing `components/*`, so anything
 shared between the trees has to land in `hooks/`, `utils/`, or `atoms/`.
+
+## Shared appearance and focused composition
+
+Both view trees consume `--ui-radius` (2px) for controls, cards, menus and badges.
+Feature CSS owns layout, not a separate corner scale. Inline mobile styles use
+this token too. True circles (status dots and spinner rings) keep their geometry.
+Model choices use `.ui-choice` from `ui/controls.css`; desktop owns its compact
+row layout and mobile sets a 44px minimum touch height. Avoid new pill variants.
+
+`FullscreenComposer` owns an explicit editing mode, entered by focusing the textarea.
+It keeps the same textarea mounted and covers the entire app header and panels.
+Done, Escape, native input blur and successful send restore reading. Toolbar focus
+stays inside the editor; opening the prompt palette first leaves editing mode.
+
+The frame follows `visualViewport.height`, `width`, `offsetTop` and `offsetLeft`
+on resize and scroll, with `innerHeight/innerWidth` fallback. It does not subtract
+a keyboard inset from `dvh`. Body/root scrolling is locked and background branches
+are inert for the editing lifetime, with their previous state restored on exit.
+Safe-area padding accounts for viewport panning and drops the bottom inset when
+the keyboard shrinks the visual viewport. Text scrolls inside a bounded flex child;
+the action row cannot shrink. Do not remount/portal the textarea on focus or restore
+`:focus-within` pane expansion: both disturb native keyboard/focus behavior.
+
+`ComposerAttachments` presents one horizontally scrolling thumbnail row, with a
+bounded overlay of swipeable previews and explicit Remove controls. It reuses the
+shared attachment lifecycle and leaves the draft untouched. The tab bar retains an
+explicit `[hidden]` rule. Browser QA and native-device limits are recorded in
+`agent_notes/screenshots/fullscreen-composer-20260916/README.md`.

@@ -1,0 +1,1231 @@
+(node:13962) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:13964) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+
+> unleashd@1.1.0 test:server /Users/nicholasbardy/git/unleashd
+> pnpm exec tsx --test server/test/*.test.ts
+
+(node:14005) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14008) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14020) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14025) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14025) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+Discovering persisted conversation files...
+Discovered 7 persisted conversation sources in 1ms (sorted by mtime), parsing 1 with concurrency=3, in-flight source budget=256MB...
+Parse timing (1 files): min=14.4ms, avg=14.4ms, max=14.4ms
+[session-cache] 0/1 startup sources reused
+Loaded 1 conversations from 1 files in 64ms (discover: 1ms, parse: 63ms)
+Discovering persisted conversation files...
+Discovered 7 persisted conversation sources in 1ms (sorted by mtime), parsing 1 with concurrency=3, in-flight source budget=256MB...
+Parse timing (1 files): min=5.3ms, avg=5.3ms, max=5.3ms
+[session-cache] 1/1 startup sources reused
+Loaded 1 conversations from 1 files in 10ms (discover: 1ms, parse: 9ms)
+[32m✔ capped startup restores bound native siblings through registered adapters and cache [90m(389.662333ms)[39m[39m
+Discovering persisted conversation files...
+Discovered 4 persisted conversation sources in 1ms (sorted by mtime), parsing 2 with concurrency=2, in-flight source budget=1MB...
+Parse timing (2 files): min=6.1ms, avg=6.3ms, max=6.6ms
+Loaded 2 conversations from 2 files in 81ms (discover: 1ms, parse: 81ms)
+[32m✔ selected and related parses share the aggregate source byte budget [90m(166.9505ms)[39m[39m
+(node:14028) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14028) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+Discovering persisted conversation files...
+Discovered 3 persisted conversation sources in 0ms (sorted by mtime), parsing 1 with concurrency=10, in-flight source budget=256MB...
+Parse timing (1 files): min=47.3ms, avg=47.3ms, max=47.3ms
+Loaded 1 conversations from 1 files in 109ms (discover: 0ms, parse: 109ms)
+[32m✔ startup limit hydrates only the requested files but baselines every discovered source [90m(271.618959ms)[39m[39m
+Discovering persisted conversation files...
+Discovered 3 persisted conversation sources in 0ms (sorted by mtime), parsing 3 with concurrency=3, in-flight source budget=1MB...
+Parse timing (3 files): min=6.0ms, avg=9.1ms, max=13.9ms
+Loaded 3 conversations from 3 files in 30ms (discover: 0ms, parse: 29ms)
+[32m✔ startup parser respects the aggregate in-flight source byte budget [90m(44.317ms)[39m[39m
+Discovering persisted conversation files...
+Discovered 1 persisted conversation sources in 0ms (sorted by mtime), parsing 1 with concurrency=10, in-flight source budget=256MB...
+Parse timing (1 files): min=5.2ms, avg=5.2ms, max=5.2ms
+[session-cache] 0/1 startup sources reused
+Loaded 1 conversations from 1 files in 6ms (discover: 0ms, parse: 6ms)
+Discovering persisted conversation files...
+Discovered 1 persisted conversation sources in 0ms (sorted by mtime), parsing 1 with concurrency=10, in-flight source budget=256MB...
+Parse timing (1 files): min=17.7ms, avg=17.7ms, max=17.7ms
+[session-cache] 1/1 startup sources reused
+Loaded 1 conversations from 1 files in 18ms (discover: 0ms, parse: 18ms)
+Discovering persisted conversation files...
+Discovered 1 persisted conversation sources in 0ms (sorted by mtime), parsing 1 with concurrency=10, in-flight source budget=256MB...
+Parse timing (1 files): min=25.5ms, avg=25.5ms, max=25.5ms
+[session-cache] 0/1 startup sources reused
+Loaded 1 conversations from 1 files in 26ms (discover: 0ms, parse: 26ms)
+[32m✔ startup reuses normalized sessions while source identity is unchanged [90m(57.072042ms)[39m[39m
+Discovering persisted conversation files...
+Discovered 18 persisted conversation sources in 4ms (sorted by mtime), parsing 18 with concurrency=1, in-flight source budget=256MB...
+Parse timing (18 files): min=0.0ms, avg=0.0ms, max=0.0ms
+Loaded 18 conversations from 18 files in 5ms (discover: 4ms, parse: 1ms)
+[32m✔ startup emits a small first batch before returning to the steady batch size [90m(68.85625ms)[39m[39m
+(node:14030) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14030) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+[32m✔ application context owns conversation identity and session tracking [90m(1.394416ms)[39m[39m
+[32m✔ completion suppression expires deterministically [90m(0.739875ms)[39m[39m
+(node:14033) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14033) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+[server] (node:14043) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+[server] (node:14043) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+[server] (node:14043) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+▶ shared-secret auth (real server)
+  [32m✔ API data is not served without a credential [90m(32.989459ms)[39m[39m
+  [32m✔ bearer token unlocks the API [90m(9.978125ms)[39m[39m
+  [32m✔ a wrong key of a different length is rejected, not a crash [90m(8.415292ms)[39m[39m
+  [32m✔ the app shell itself is gated and answers with a login form [90m(5.976417ms)[39m[39m
+  [32m✔ ?token= establishes a cookie and strips itself from the URL [90m(6.917916ms)[39m[39m
+  [32m✔ the login form exchanges the key for a cookie [90m(24.560583ms)[39m[39m
+  [32m✔ GET /__auth/login answers 200, so a 401 redirect cannot loop [90m(1.442417ms)[39m[39m
+  [32m✔ a crafted redirectTo cannot turn the form into an open redirect [90m(1.229167ms)[39m[39m
+  [32m✔ the JSON login path tells a wrong key apart from an unreachable server [90m(6.273208ms)[39m[39m
+  [32m✔ the session cookie is persistent, not a session cookie [90m(3.481041ms)[39m[39m
+  [32m✔ the cookie is not marked Secure on a plain-http origin [90m(2.998792ms)[39m[39m
+  [32m✔ the WebSocket command channel refuses unauthenticated upgrades [90m(16.134041ms)[39m[39m
+[32m✔ shared-secret auth (real server) [90m(2242.24525ms)[39m[39m
+▶ auth policy resolution
+  [32m✔ refuses to start when bound off-loopback with no token [90m(0.353333ms)[39m[39m
+  [32m✔ loopback without a token stays open so localhost dev keeps working [90m(0.086708ms)[39m[39m
+  [32m✔ a too-short token is a startup error, not a weak accepted secret [90m(0.040167ms)[39m[39m
+  [32m✔ opting out off-loopback requires the explicit flag [90m(0.045666ms)[39m[39m
+[32m✔ auth policy resolution [90m(0.642917ms)[39m[39m
+(node:14035) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14035) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14035) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+[32m✔ optional Buddies loading is lazy, memoized, and classifies package failures [90m(0.574375ms)[39m[39m
+(node:14036) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14036) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14036) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+[32m✔ Delete archives durably, drains automation claims and removes public Buddy projections [90m(495.440334ms)[39m[39m
+(node:14037) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14037) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14037) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+[32m✔ failure returns survive restart, wake once in background, and respect incoming-work and stop gates [90m(413.12275ms)[39m[39m
+[32m✔ launch snapshots persist privately per request and reject another Buddy source [90m(83.811458ms)[39m[39m
+[32m✔ native transcript resolver verifies parsed identity and exposes a readable file [90m(25.078916ms)[39m[39m
+[32m✔ timeout reporting branches the worker then delivers its report with the source failure [90m(540.209542ms)[39m[39m
+[32m✔ same-key send replay reuses persisted launch instead of capturing newer history [90m(218.2975ms)[39m[39m
+[32m✔ normal reply identifies its own worker attempt even after unrelated work [90m(279.45925ms)[39m[39m
+(node:14038) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14038) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14038) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+[buddy-run-buddy_run_84407c77-1474-4618-89f3-8eff4b6d9e6d] sendMessage called, isRunning=false, hasProcess=false, queueDepth=0, contentLen=566, preview="Message message_3f6d3e5a-a27f-43f6-b312-d608264469e8. Purpose: project_work Work on this project until its current project and task completi"
+[buddy-run-buddy_run_84407c77-1474-4618-89f3-8eff4b6d9e6d] Spawning codex (mode=fresh, provider-session=buddy-ru...)
+[buddy-run-buddy_run_84407c77-1474-4618-89f3-8eff4b6d9e6d] Message: "Message message_3f6d3e5a-a27f-43f6-b312-d608264469"
+[buddy-run-buddy_run_84407c77-1474-4618-89f3-8eff4b6d9e6d] Creating NEW assistant message (msg #2)
+[buddy-run-buddy_run_84407c77-1474-4618-89f3-8eff4b6d9e6d] Process closed with code 0 signal=none (reason=success) after 145ms
+[32m✔ owner project start queues once, uses a separate self transcript, and exposes held and running work [90m(652.590125ms)[39m[39m
+[32m✔ owner background routes reject invalid limits, criteria edits and unrelated return destinations without queuing [90m(98.522875ms)[39m[39m
+(node:14039) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14039) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+[buddy-run-buddy_run_94b1fd88-1925-4d97-b9c3-71c62b820179] sendMessage called, isRunning=false, hasProcess=false, queueDepth=0, contentLen=446, preview="Message message_0c7d21dc-559c-4d65-8efa-4e4af78c48f0. Purpose: deliver Build export Evidence: [] Completion is recorded on the project. Inco"
+[buddy-run-buddy_run_94b1fd88-1925-4d97-b9c3-71c62b820179] Spawning codex (mode=fresh, provider-session=buddy-ru...)
+[buddy-run-buddy_run_94b1fd88-1925-4d97-b9c3-71c62b820179] Message: "<!-- unleashd:buddy-context-v2 eyJidWRkeUlkIjoiYnV"
+[buddy-run-buddy_run_94b1fd88-1925-4d97-b9c3-71c62b820179] Creating NEW assistant message (msg #2)
+[buddy-run-buddy_run_94b1fd88-1925-4d97-b9c3-71c62b820179] Process closed with code 0 signal=none (reason=success) after 52ms
+(node:14039) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+[32m✔ restart recovery releases a drained foreground claim and wakes its conversation queue [90m(408.665209ms)[39m[39m
+[buddy-run-buddy_run_94b1fd88-1925-4d97-b9c3-71c62b820179] sendMessage called, isRunning=false, hasProcess=false, queueDepth=0, contentLen=446, preview="Message message_0c7d21dc-559c-4d65-8efa-4e4af78c48f0. Purpose: deliver Build export Evidence: [] Completion is recorded on the project. Inco"
+[buddy-run-buddy_run_94b1fd88-1925-4d97-b9c3-71c62b820179] Spawning codex (mode=resume, provider-session=provider...)
+[buddy-run-buddy_run_94b1fd88-1925-4d97-b9c3-71c62b820179] Message: "<!-- unleashd:buddy-context-v2 eyJidWRkeUlkIjoiYnV"
+[buddy-run-buddy_run_94b1fd88-1925-4d97-b9c3-71c62b820179] Creating NEW assistant message (msg #4)
+[buddy-run-buddy_run_94b1fd88-1925-4d97-b9c3-71c62b820179] Process closed with code 0 signal=none (reason=success) after 1ms
+[buddy-run-buddy_run_3485a2c2-588b-4351-85d4-cc6e005193a9] sendMessage called, isRunning=false, hasProcess=false, queueDepth=0, contentLen=446, preview="Message message_c4fea143-63b5-4b84-8dde-d1c20b6cd907. Purpose: deliver Build export Evidence: [] Completion is recorded on the project. Inco"
+[buddy-run-buddy_run_3485a2c2-588b-4351-85d4-cc6e005193a9] Spawning codex (mode=fresh, provider-session=buddy-ru...)
+[buddy-run-buddy_run_3485a2c2-588b-4351-85d4-cc6e005193a9] Message: "<!-- unleashd:buddy-context-v2 eyJidWRkeUlkIjoiYnV"
+[buddy-run-buddy_run_3485a2c2-588b-4351-85d4-cc6e005193a9] Creating NEW assistant message (msg #2)
+[buddy-run-buddy_run_3485a2c2-588b-4351-85d4-cc6e005193a9] Process closed with code 0 signal=none (reason=success) after 181ms
+[32m✔ background self work returns to the mailbox for a human chat [90m(287.995542ms)[39m[39m
+[buddy-run-buddy_run_3485a2c2-588b-4351-85d4-cc6e005193a9] sendMessage called, isRunning=false, hasProcess=false, queueDepth=0, contentLen=446, preview="Message message_c4fea143-63b5-4b84-8dde-d1c20b6cd907. Purpose: deliver Build export Evidence: [] Completion is recorded on the project. Inco"
+[buddy-run-buddy_run_3485a2c2-588b-4351-85d4-cc6e005193a9] Spawning codex (mode=resume, provider-session=provider...)
+[buddy-run-buddy_run_3485a2c2-588b-4351-85d4-cc6e005193a9] Message: "<!-- unleashd:buddy-context-v2 eyJidWRkeUlkIjoiYnV"
+[buddy-run-buddy_run_3485a2c2-588b-4351-85d4-cc6e005193a9] Creating NEW assistant message (msg #4)
+[buddy-run-buddy_run_3485a2c2-588b-4351-85d4-cc6e005193a9] Process closed with code 0 signal=none (reason=success) after 2ms
+[owner-thread] sendMessage called, isRunning=false, hasProcess=false, queueDepth=0, contentLen=299, preview="Reply to request message_c4fea143-63b5-4b84-8dde-d1c20b6cd907. Outcome: done Background work done. Evidence: ["fixture: both exported files "
+[owner-thread] Spawning codex (mode=fresh, provider-session=owner-th...)
+[owner-thread] Message: "<!-- unleashd:buddy-context-v2 eyJidWRkeUlkIjoiYnV"
+[owner-thread] Creating NEW assistant message (msg #2)
+[owner-thread] Process closed with code 0 signal=none (reason=success) after 1ms
+[buddy-run-buddy_run_f6c8bd05-64da-452b-a613-2acede2529f6] sendMessage called, isRunning=false, hasProcess=false, queueDepth=0, contentLen=446, preview="Message message_a49ad7dd-6040-4668-97dd-410a19042733. Purpose: deliver Build export Evidence: [] Completion is recorded on the project. Inco"
+[buddy-run-buddy_run_f6c8bd05-64da-452b-a613-2acede2529f6] Spawning codex (mode=fresh, provider-session=buddy-ru...)
+[buddy-run-buddy_run_f6c8bd05-64da-452b-a613-2acede2529f6] Message: "<!-- unleashd:buddy-context-v2 eyJidWRkeUlkIjoiYnV"
+[buddy-run-buddy_run_f6c8bd05-64da-452b-a613-2acede2529f6] Creating NEW assistant message (msg #2)
+[buddy-run-buddy_run_f6c8bd05-64da-452b-a613-2acede2529f6] Process closed with code 0 signal=none (reason=success) after 2ms
+[32m✔ background self work returns to the original background thread [90m(228.986167ms)[39m[39m
+[buddy-run-buddy_run_f6c8bd05-64da-452b-a613-2acede2529f6] sendMessage called, isRunning=false, hasProcess=false, queueDepth=0, contentLen=446, preview="Message message_a49ad7dd-6040-4668-97dd-410a19042733. Purpose: deliver Build export Evidence: [] Completion is recorded on the project. Inco"
+[buddy-run-buddy_run_f6c8bd05-64da-452b-a613-2acede2529f6] Spawning codex (mode=resume, provider-session=provider...)
+[buddy-run-buddy_run_f6c8bd05-64da-452b-a613-2acede2529f6] Message: "<!-- unleashd:buddy-context-v2 eyJidWRkeUlkIjoiYnV"
+[buddy-run-buddy_run_f6c8bd05-64da-452b-a613-2acede2529f6] Creating NEW assistant message (msg #4)
+[buddy-run-buddy_run_f6c8bd05-64da-452b-a613-2acede2529f6] Process closed with code 0 signal=none (reason=success) after 2ms
+[background-owner-thread] sendMessage called, isRunning=false, hasProcess=false, queueDepth=0, contentLen=2299, preview="Background return for originating request message_a49ad7dd-6040-4668-97dd-410a19042733 from conversation owner-thread. Original assignment: "
+[background-owner-thread] Spawning codex (mode=fresh, provider-session=backgrou...)
+[background-owner-thread] Message: "<!-- unleashd:buddy-context-v2 eyJidWRkeUlkIjoiYnV"
+[background-owner-thread] Creating NEW assistant message (msg #2)
+[background-owner-thread] Process closed with code 0 signal=none (reason=success) after 1ms
+[32m✔ chat-launched work wakes its separate background return thread [90m(406.376125ms)[39m[39m
+(node:14040) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14040) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14040) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+[32m✔ Builder saves the eight-person wave_sim team, initial work and relationships without starting work [90m(1802.975375ms)[39m[39m
+(node:14042) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14042) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14042) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+[32m✔ Builder MCP creates a team, retries each hire and recovers scoped results across restart [90m(733.318667ms)[39m[39m
+[32m✔ owner PUT soul stages text and rejects oversize payloads [90m(62.681875ms)[39m[39m
+[32m✔ blank Builder purpose is durable before a provider transcript exists [90m(5.612834ms)[39m[39m
+(node:14047) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14047) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14047) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+[32m✔ conversation closure settles delegation and structured review exactly once [90m(146.782042ms)[39m[39m
+[32m✔ review closure requires evidence and failure cancels the draft review [90m(41.366166ms)[39m[39m
+(node:14064) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14064) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14064) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+[32m✔ Buddy control capabilities are scoped, rotate per turn, and bypass no public route [90m(323.746417ms)[39m[39m
+(node:14067) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14067) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+[32m✔ empty Buddy conversation construction is inert and suppresses incompatible Swarm state [90m(11.472042ms)[39m[39m
+[32m✔ empty Buddy WebSocket creation resolves and registers without sending a provider turn [90m(4.752625ms)[39m[39m
+[32m✔ replaying create_conversation reports the real failure, not a config mismatch [90m(2.311084ms)[39m[39m
+[32m✔ hidden Buddy briefing is injected exactly once and never on resumed turns [90m(0.932208ms)[39m[39m
+[32m✔ disk hydration restores Buddy ownership, removes hidden briefing, and remains non-Swarm [90m(1.6ms)[39m[39m
+(node:14072) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14072) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14072) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+[32m✔ native exact preview, descendant observation, historical checkpoint and branch recovery use one contract [90m(287.91325ms)[39m[39m
+[32m✔ native retry of a legacy closed timeout creates one bounded successor and keeps the old failure [90m(47.877875ms)[39m[39m
+(node:14078) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14078) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14078) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+[buddy-run-buddy_run_72ed758e-62e9-4199-b224-00583bb422bd] sendMessage called, isRunning=false, hasProcess=false, queueDepth=0, contentLen=267, preview="Message message_312827c6-87b8-46db-916e-aba3f9cab532. Purpose: ship Ship export Evidence: [] When the assignment is complete, use reply with"
+[buddy-run-buddy_run_72ed758e-62e9-4199-b224-00583bb422bd] Spawning codex (mode=fresh, provider-session=buddy-ru...)
+[buddy-run-buddy_run_72ed758e-62e9-4199-b224-00583bb422bd] Message: "<!-- unleashd:buddy-context-v2 eyJidWRkeUlkIjoiYnV"
+[buddy-run-buddy_run_72ed758e-62e9-4199-b224-00583bb422bd] Creating NEW assistant message (msg #2)
+[buddy-run-buddy_run_72ed758e-62e9-4199-b224-00583bb422bd] Process closed with code 0 signal=none (reason=success) after 8ms
+[buddy-run-buddy_run_4542582e-e501-4ee9-af96-2b81abaab60c] sendMessage called, isRunning=false, hasProcess=false, queueDepth=0, contentLen=280, preview="Message message_c35c262a-e816-446e-a054-9902722b6f27. Purpose: review Review export behavior Evidence: [] When the assignment is complete, u"
+[buddy-run-buddy_run_4542582e-e501-4ee9-af96-2b81abaab60c] Spawning codex (mode=fresh, provider-session=buddy-ru...)
+[buddy-run-buddy_run_4542582e-e501-4ee9-af96-2b81abaab60c] Message: "<!-- unleashd:buddy-context-v2 eyJidWRkeUlkIjoiYnV"
+[buddy-run-buddy_run_4542582e-e501-4ee9-af96-2b81abaab60c] Creating NEW assistant message (msg #2)
+[buddy-run-buddy_run_4542582e-e501-4ee9-af96-2b81abaab60c] Process closed with code 0 signal=none (reason=success) after 2ms
+[buddy-run-buddy_run_d8ed8f74-d76d-4a1d-bb7c-159b37fc64c4] sendMessage called, isRunning=false, hasProcess=false, queueDepth=0, contentLen=273, preview="Message message_0bb00744-5bc4-4f9f-9cb7-fb67ba7b6ecc. Purpose: build Implement export Evidence: [] When the assignment is complete, use repl"
+[buddy-run-buddy_run_d8ed8f74-d76d-4a1d-bb7c-159b37fc64c4] Spawning codex (mode=fresh, provider-session=buddy-ru...)
+[buddy-run-buddy_run_d8ed8f74-d76d-4a1d-bb7c-159b37fc64c4] Message: "<!-- unleashd:buddy-context-v2 eyJidWRkeUlkIjoiYnV"
+[buddy-run-buddy_run_d8ed8f74-d76d-4a1d-bb7c-159b37fc64c4] Creating NEW assistant message (msg #2)
+[buddy-run-buddy_run_d8ed8f74-d76d-4a1d-bb7c-159b37fc64c4] Process closed with code 0 signal=none (reason=success) after 1ms
+[buddy-run-buddy_run_72ed758e-62e9-4199-b224-00583bb422bd] sendMessage called, isRunning=false, hasProcess=false, queueDepth=0, contentLen=233, preview="Reply to request message_c35c262a-e816-446e-a054-9902722b6f27. Outcome: changes requested Cover the empty export Evidence: ["fixture:review""
+[buddy-run-buddy_run_72ed758e-62e9-4199-b224-00583bb422bd] Spawning codex (mode=resume, provider-session=provider...)
+[buddy-run-buddy_run_72ed758e-62e9-4199-b224-00583bb422bd] Message: "<!-- unleashd:buddy-context-v2 eyJidWRkeUlkIjoiYnV"
+[buddy-run-buddy_run_72ed758e-62e9-4199-b224-00583bb422bd] Creating NEW assistant message (msg #4)
+[buddy-run-buddy_run_72ed758e-62e9-4199-b224-00583bb422bd] Process closed with code 0 signal=none (reason=success) after 2ms
+[buddy-run-buddy_run_72ed758e-62e9-4199-b224-00583bb422bd] sendMessage called, isRunning=false, hasProcess=false, queueDepth=0, contentLen=211, preview="Reply to request message_0bb00744-5bc4-4f9f-9cb7-fb67ba7b6ecc. Outcome: done Implemented Evidence: ["fixture:engineer"] Read current work an"
+[buddy-run-buddy_run_72ed758e-62e9-4199-b224-00583bb422bd] Spawning codex (mode=resume, provider-session=provider...)
+[buddy-run-buddy_run_72ed758e-62e9-4199-b224-00583bb422bd] Message: "<!-- unleashd:buddy-context-v2 eyJidWRkeUlkIjoiYnV"
+[buddy-run-buddy_run_72ed758e-62e9-4199-b224-00583bb422bd] Creating NEW assistant message (msg #6)
+[buddy-run-buddy_run_72ed758e-62e9-4199-b224-00583bb422bd] Process closed with code 0 signal=none (reason=success) after 0ms
+[buddy-run-buddy_run_d8ed8f74-d76d-4a1d-bb7c-159b37fc64c4] sendMessage called, isRunning=false, hasProcess=false, queueDepth=0, contentLen=280, preview="Message message_06b2ed56-f83d-42d3-99c8-7c02d9baab32. Purpose: revise Cover the empty export Evidence: [] When the assignment is complete, u"
+[buddy-run-buddy_run_d8ed8f74-d76d-4a1d-bb7c-159b37fc64c4] Spawning codex (mode=resume, provider-session=provider...)
+[buddy-run-buddy_run_d8ed8f74-d76d-4a1d-bb7c-159b37fc64c4] Message: "<!-- unleashd:buddy-context-v2 eyJidWRkeUlkIjoiYnV"
+[buddy-run-buddy_run_d8ed8f74-d76d-4a1d-bb7c-159b37fc64c4] Creating NEW assistant message (msg #4)
+[buddy-run-buddy_run_d8ed8f74-d76d-4a1d-bb7c-159b37fc64c4] Process closed with code 0 signal=none (reason=success) after 1ms
+[buddy-run-buddy_run_72ed758e-62e9-4199-b224-00583bb422bd] sendMessage called, isRunning=false, hasProcess=false, queueDepth=0, contentLen=211, preview="Reply to request message_06b2ed56-f83d-42d3-99c8-7c02d9baab32. Outcome: done Implemented Evidence: ["fixture:engineer"] Read current work an"
+[buddy-run-buddy_run_72ed758e-62e9-4199-b224-00583bb422bd] Spawning codex (mode=resume, provider-session=provider...)
+[buddy-run-buddy_run_72ed758e-62e9-4199-b224-00583bb422bd] Message: "<!-- unleashd:buddy-context-v2 eyJidWRkeUlkIjoiYnV"
+[buddy-run-buddy_run_72ed758e-62e9-4199-b224-00583bb422bd] Creating NEW assistant message (msg #8)
+[buddy-run-buddy_run_72ed758e-62e9-4199-b224-00583bb422bd] Process closed with code 0 signal=none (reason=success) after 1ms
+[chief] sendMessage called, isRunning=false, hasProcess=false, queueDepth=0, contentLen=219, preview="Reply to request message_312827c6-87b8-46db-916e-aba3f9cab532. Outcome: done Reviewed implementation Evidence: ["fixture:lead"] Read current"
+[chief] Spawning codex (mode=fresh, provider-session=chief...)
+[chief] Message: "<!-- unleashd:buddy-context-v2 eyJidWRkeUlkIjoiYnV"
+[chief] Creating NEW assistant message (msg #2)
+[chief] Queued message id=29161a2f, queueDepth=0->1, contentLen=15, preview="Owner follow-up"
+[chief] Process closed with code 0 signal=none (reason=success) after 1ms
+[chief] processQueue sending id=29161a2f, queueDepth=1, contentLen=15, preview="Owner follow-up"
+[chief] sendMessage called, isRunning=false, hasProcess=false, queueDepth=1, contentLen=15, preview="Owner follow-up"
+[chief] Spawning codex (mode=resume, provider-session=provider...)
+[chief] Message: "<!-- unleashd:buddy-context-v2 eyJidWRkeUlkIjoiYnV"
+[chief] Creating NEW assistant message (msg #4)
+[chief] Process closed with code 0 signal=none (reason=success) after 2ms
+[32m✔ real creation boundary delivers two-worker aggregate and retries a failed return before admission [90m(2204.858458ms)[39m[39m
+[32m✔ thread schedules coalesce missed ticks and hold missing destinations without creating a replacement [90m(48.68325ms)[39m[39m
+[32m✔ private capability commits durable sends once and rejects payload conflicts and revoked turns [90m(341.026417ms)[39m[39m
+[32m✔ packaged owner chats retain tool authority past ten minutes and honor their configured deadline [90m(55.427166ms)[39m[39m
+(node:14082) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14082) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+[32m✔ creation fingerprint is stable and covers message intent [90m(0.425083ms)[39m[39m
+[32m✔ server Buddy creation persists, registers, broadcasts, links, and dispatches once [90m(3.59525ms)[39m[39m
+(node:14084) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14084) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14084) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+[32m✔ real Buddy creation and WebSocket deletion fence admission: delete-during-link [90m(139.472ms)[39m[39m
+[32m✔ real Buddy creation and WebSocket deletion fence admission: remove-after-readiness [90m(114.028458ms)[39m[39m
+[buddy-run-buddy_run_4a430666-ada1-4d84-860c-7e52a28d0a4c] sendMessage called, isRunning=false, hasProcess=false, queueDepth=0, contentLen=276, preview="Message message_dcd6e328-7d9e-41f7-82ba-9df037691673. Purpose: Inspect Read this fixture Evidence: [] When the assignment is complete, use r"
+[buddy-run-buddy_run_4a430666-ada1-4d84-860c-7e52a28d0a4c] Spawning codex (mode=fresh, provider-session=buddy-ru...)
+[buddy-run-buddy_run_4a430666-ada1-4d84-860c-7e52a28d0a4c] Message: "<!-- unleashd:buddy-context-v2 eyJidWRkeUlkIjoiYnV"
+[buddy-run-buddy_run_4a430666-ada1-4d84-860c-7e52a28d0a4c] Creating NEW assistant message (msg #2)
+[buddy-run-buddy_run_4a430666-ada1-4d84-860c-7e52a28d0a4c] Process closed with code 0 signal=none (reason=success) after 2ms
+[32m✔ real Buddy creation and WebSocket deletion fence admission: normal [90m(88.726709ms)[39m[39m
+(node:14091) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14091) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14091) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+[32m✔ manager tools create reports without quotas, preserve retirement memory, and respect restricted assignments [90m(171.932333ms)[39m[39m
+[32m✔ owner profile rejects obsolete quotas and detail exposes canonical reporting relationships [90m(86.838ms)[39m[39m
+(node:14092) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14092) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14092) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+[32m✔ a completed research handoff can start fresh recipient work and retains its source project [90m(75.03525ms)[39m[39m
+[32m✔ message enqueue checks current automation ownership after async conversation creation [90m(77.902417ms)[39m[39m
+(node:14093) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14093) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14093) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+[32m✔ real MCP directory searches only permitted routes with stable cursor and compatible legacy arrays [90m(65.3825ms)[39m[39m
+[32m✔ real MCP advertises all automation actions and validates their canonical combinations [90m(48.766625ms)[39m[39m
+[32m✔ document previews expose only the requested document, require current revision and write no content [90m(36.375333ms)[39m[39m
+[32m✔ typed owner proposal survives MCP dispatch exactly once and cannot configure or leak foreign identities [90m(34.679917ms)[39m[39m
+[32m✔ readiness reports simultaneous team, admission, immutable policy and return blockers without changing original work [90m(30.331667ms)[39m[39m
+(node:14094) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14094) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14094) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+[32m✔ native inbox pages older audience-visible work compactly and expands exact evidence [90m(589.795583ms)[39m[39m
+(node:14095) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14095) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14095) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+[32m✔ review parser accepts one raw delimited payload and ignores arbitrary embedded JSON [90m(1.256209ms)[39m[39m
+[32m✔ terminal integration settles delegated work and structured reviews but leaves ordinary JSON inert [90m(39.688709ms)[39m[39m
+[32m✔ failed review conversation cancels its draft without requiring a result block [90m(48.034708ms)[39m[39m
+(node:14111) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14111) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14111) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+[32m✔ production composer and resource reads isolate private and project audiences, including compatibility tools [90m(114.919625ms)[39m[39m
+(node:14112) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14112) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14112) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+[32m✔ explicit retry of a fresh Buddy creation: before persistence [90m(161.621041ms)[39m[39m
+[32m✔ explicit retry of a fresh Buddy creation: after persistence [90m(86.898416ms)[39m[39m
+[32m✔ explicit retry of a fresh Buddy creation: after registration [90m(107.37525ms)[39m[39m
+[32m✔ explicit retry of a fresh Buddy creation: deleted before retry [90m(139.226583ms)[39m[39m
+[32m✔ explicit retry of a fresh Buddy creation: registered then deleted [90m(174.411541ms)[39m[39m
+(node:14113) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14113) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14113) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+[32m✔ Buddy closure loop survives restart with work, review, delegation, memory, and recent run [90m(217.299917ms)[39m[39m
+(node:14114) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14114) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14114) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+[32m✔ mailbox adapter preserves unknown delivery and reconciles without resending [90m(31.459ms)[39m[39m
+(node:14115) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14115) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14115) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+[32m✔ Buddy MCP exposes scoped native tools and enforces completion evidence [90m(190.022292ms)[39m[39m
+[32m✔ Buddy MCP specification binds trusted context outside tool input [90m(0.150041ms)[39m[39m
+[32m✔ Buddy MCP exposes memory-v2 tools and preserves structured memory errors [90m(1.962625ms)[39m[39m
+[32m✔ Buddy Builder MCP specification is required and conversation-scoped [90m(0.071584ms)[39m[39m
+[32m✔ Buddy conversations allow required-MCP harnesses and fail closed for the rest [90m(0.337833ms)[39m[39m
+[32m✔ resolved stdio Buddy MCP entrypoint opens the current durable schema [90m(438.21475ms)[39m[39m
+[32m✔ Buddy MCP server starts from a cwd without resolvable tooling [90m(423.2455ms)[39m[39m
+(node:14116) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14116) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14116) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+[32m✔ automation memory capture: save [90m(57.148625ms)[39m[39m
+[32m✔ automation memory capture: none [90m(29.279709ms)[39m[39m
+[32m✔ automation memory capture: fail [90m(31.317709ms)[39m[39m
+[32m✔ automation memory capture: no-permission [90m(29.468667ms)[39m[39m
+[32m✔ automation memory capture: no-budget [90m(33.151542ms)[39m[39m
+[32m✔ automation memory capture: cancel [90m(23.174917ms)[39m[39m
+[32m✔ automation memory capture: independent [90m(29.948166ms)[39m[39m
+[32m✔ briefing keeps full memory and final authority instructions with large work records [90m(33.508667ms)[39m[39m
+[32m✔ note schema enforces the store byte cap for Unicode as well as ASCII [90m(0.374833ms)[39m[39m
+[32m✔ stale tool writes return the current document so three verbs suffice for retry [90m(25.435583ms)[39m[39m
+(node:14125) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14125) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14125) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+[90m﹣ live curation comparison through the real scoped reviewer [90m(0.321333ms)[39m # SKIP[39m
+(node:14126) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14126) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14126) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+[32m✔ memory MCP source entrypoint connects over stdio with a scoped capability [90m(596.259459ms)[39m[39m
+[32m✔ review MCP preserves concurrent edits and cannot act as a Buddy or change soul [90m(213.73875ms)[39m[39m
+[32m✔ queued reviews survive restart, serialize per Buddy, and revoke writes on cancellation [90m(51.507875ms)[39m[39m
+[32m✔ no-op review verifies tools; missing tools fail; partial writes survive later failure [90m(146.486625ms)[39m[39m
+[32m✔ completed review sends evidence as input and reviewer rules through one instruction file [90m(35.784167ms)[39m[39m
+[32m✔ review runner keeps process ownership until completion and event drain on cancellation [90m(37.777125ms)[39m[39m
+[32m✔ source memory restrictions are retained by the independent reviewer [90m(57.491084ms)[39m[39m
+[90m﹣ live Luna low uses memory tools to preserve dense context and evidence pointers [90m(0.074709ms)[39m # SKIP[39m
+[32m✔ memory review receives current scoped project revisions without work tools or private sibling evidence [90m(40.038708ms)[39m[39m
+(node:14127) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14127) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14127) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+[32m✔ private send waits for its assigned reply, times out durably, and releases waits on disconnect or turn revocation [90m(1259.013584ms)[39m[39m
+[32m✔ message dispatch deadlines cover deferred creation and prevent late enqueue after cancellation [90m(1058.6675ms)[39m[39m
+[32m✔ legacy private dispatch binds the trusted parent and cannot enqueue after capability revocation [90m(61.3745ms)[39m[39m
+(node:14128) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14128) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14128) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+[32m✔ native and owner note resources enforce the same UTF-8 body bound as remember_note [90m(92.982625ms)[39m[39m
+[32m✔ native recall advertises literal matching and treats regex metacharacters literally [90m(121.955542ms)[39m[39m
+(node:14143) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14143) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14143) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+[32m✔ scoped Buddy operations close work, remember, delegate, review, and audit [90m(84.171042ms)[39m[39m
+[32m✔ automation-scoped operations enforce the durable allowlist and create a real approval [90m(90.439333ms)[39m[39m
+[32m✔ automation schedule validation leaves durable definitions unchanged on failure [90m(95.656ms)[39m[39m
+[32m✔ memory-v2 operations use typed inputs, trusted workspace scope, and CAS errors [90m(3.56575ms)[39m[39m
+(node:14144) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14144) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14144) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+[32m✔ owner MCP uses a real active-turn capability and rejects employee, maintenance, stale, spoofed and foreign scopes [90m(315.42175ms)[39m[39m
+[32m✔ cancellation while owner control awaits the store fences the configuration commit [90m(75.258209ms)[39m[39m
+[32m✔ legacy Builder control requires a host-issued full owner Builder turn and revokes writes after drain [90m(42.454458ms)[39m[39m
+[32m✔ owner proposal HTTP applies its exact attachment and repairs interrupted acknowledgement on replay [90m(68.466375ms)[39m[39m
+(node:14145) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14145) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14145) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+[owner-input-fixture] sendMessage called, isRunning=false, hasProcess=false, queueDepth=0, contentLen=18, preview="Configure my team."
+[owner-input-fixture] Spawning codex (mode=fresh, provider-session=owner-in...)
+[owner-input-fixture] Message: "<!-- unleashd:buddy-context-v2 eyJidWRkeUlkIjoiYnV"
+[owner-input-fixture] Creating NEW assistant message (msg #2)
+[owner-input-fixture] Queued message id=55d908cd, queueDepth=0->1, contentLen=21, preview="Update the same team."
+[owner-input-fixture] Process closed with code 0 signal=none (reason=success) after 95ms
+[owner-input-fixture] processQueue sending id=55d908cd, queueDepth=1, contentLen=21, preview="Update the same team."
+[owner-input-fixture] sendMessage called, isRunning=false, hasProcess=false, queueDepth=1, contentLen=21, preview="Update the same team."
+[owner-input-fixture] Spawning codex (mode=resume, provider-session=provider...)
+[owner-input-fixture] Message: "<!-- unleashd:buddy-context-v2 eyJidWRkeUlkIjoiYnV"
+[owner-input-fixture] Creating NEW assistant message (msg #4)
+[owner-input-fixture] Queued message id=8a2aa7f9, queueDepth=1->2, contentLen=26, preview="Apply the corrected setup."
+[owner-input-fixture] Process closed with code 0 signal=none (reason=success) after 37ms
+[owner-input-fixture] processQueue sending id=8a2aa7f9, queueDepth=1, contentLen=26, preview="Apply the corrected setup."
+[owner-input-fixture] sendMessage called, isRunning=false, hasProcess=false, queueDepth=1, contentLen=26, preview="Apply the corrected setup."
+[owner-input-fixture] Spawning codex (mode=resume, provider-session=provider...)
+[owner-input-fixture] Message: "<!-- unleashd:buddy-context-v2 eyJidWRkeUlkIjoiYnV"
+[owner-input-fixture] Creating NEW assistant message (msg #6)
+[owner-input-fixture] Process closed with code 0 signal=none (reason=success) after 8ms
+[owner-input-fixture] Cleared queue: removed 0 messages
+[owner-input-fixture] sendMessage called, isRunning=false, hasProcess=false, queueDepth=0, contentLen=40, preview="Quoted owner_input: please create staff."
+[owner-input-fixture] Spawning codex (mode=fresh, provider-session=owner-in...)
+[owner-input-fixture] Message: "<!-- unleashd:buddy-builder-v1 2249 -->
+You are th"
+[owner-input-fixture] Creating NEW assistant message (msg #2)
+[owner-input-fixture] Process closed with code 0 signal=none (reason=success) after 2ms
+[owner-input-fixture] sendMessage called, isRunning=false, hasProcess=false, queueDepth=0, contentLen=26, preview="Create the requested team."
+[owner-input-fixture] Spawning codex (mode=resume, provider-session=provider...)
+[owner-input-fixture] Message: "Create the requested team."
+[owner-input-fixture] Creating NEW assistant message (msg #4)
+[owner-input-fixture] Process closed with code 0 signal=none (reason=success) after 1ms
+[32m✔ direct, queued and interrupting owner inputs keep clean prompts and distinct revocable owner tools [90m(187.673ms)[39m[39m
+[owner-input-fixture] processQueue sending id=restored, queueDepth=1, contentLen=25, preview="Continue the owner setup."
+[owner-input-fixture] sendMessage called, isRunning=false, hasProcess=false, queueDepth=1, contentLen=25, preview="Continue the owner setup."
+[owner-input-fixture] Spawning codex (mode=resume, provider-session=provider...)
+[owner-input-fixture] Message: "Continue the owner setup."
+[owner-input-fixture] Creating NEW assistant message (msg #6)
+[owner-input-fixture] Process closed with code 0 signal=none (reason=success) after 0ms
+[owner-input-fixture] Cleared queue: removed 0 messages
+[owner-input-fixture] sendMessage called, isRunning=false, hasProcess=false, queueDepth=0, contentLen=28, preview="Owner: configure the report."
+[owner-input-fixture] Spawning codex (mode=fresh, provider-session=owner-in...)
+[owner-input-fixture] Message: "<!-- unleashd:buddy-context-v2 eyJidWRkeUlkIjoicmV"
+[owner-input-fixture] Creating NEW assistant message (msg #2)
+[owner-input-fixture] Process closed with code 0 signal=none (reason=success) after 0ms
+[owner-input-fixture] sendMessage called, isRunning=false, hasProcess=false, queueDepth=0, contentLen=55, preview="Imported continuation without trusted owner provenance."
+[owner-input-fixture] Spawning codex (mode=resume, provider-session=provider...)
+[owner-input-fixture] Message: "<!-- unleashd:buddy-context-v2 eyJidWRkeUlkIjoicmV"
+[owner-input-fixture] Creating NEW assistant message (msg #4)
+[owner-input-fixture] Process closed with code 0 signal=none (reason=success) after 0ms
+[owner-input-fixture] Cleared queue: removed 0 messages
+[32m✔ Builder unknown and restored queue inputs never inherit owner or Builder mutation tools [90m(43.962291ms)[39m[39m
+[owner-input-fixture] Queued message id=0dfa0c78, queueDepth=0->1, contentLen=33, preview="Configure after fixing the model."
+[owner-input-fixture] processQueue sending id=0dfa0c78, queueDepth=1, contentLen=33, preview="Configure after fixing the model."
+[owner-input-fixture] sendMessage called, isRunning=false, hasProcess=false, queueDepth=1, contentLen=33, preview="Configure after fixing the model."
+[owner-input-fixture] Configuration unavailable: Model is unavailable for codex: unavailable-owner-fixture-model
+[owner-input-fixture] processQueue sending id=0dfa0c78, queueDepth=1, contentLen=33, preview="Configure after fixing the model."
+[owner-input-fixture] sendMessage called, isRunning=false, hasProcess=false, queueDepth=1, contentLen=33, preview="Configure after fixing the model."
+[owner-input-fixture] Spawning codex (mode=fresh, provider-session=owner-in...)
+[owner-input-fixture] Message: "<!-- unleashd:buddy-context-v2 eyJidWRkeUlkIjoiYnV"
+[owner-input-fixture] Creating NEW assistant message (msg #3)
+[owner-input-fixture] Process closed with code 0 signal=none (reason=success) after 0ms
+[owner-input-fixture] Cleared queue: removed 0 messages
+[32m✔ a fresh owner input clears delegated restrictions for that turn and preserves the thread restrictions afterward [90m(1.278958ms)[39m[39m
+[32m✔ retrying an owner queue item after configuration preflight failure retains its trusted input [90m(0.788125ms)[39m[39m
+(node:14161) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14161) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14161) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+[90m﹣ live provider configures isolated staff and delivers a bounded completion to the lead [90m(0.452ms)[39m # SKIP[39m
+(node:14162) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14162) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14162) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+[owner-thread] sendMessage called, isRunning=false, hasProcess=false, queueDepth=0, contentLen=75, preview="Attach my engineer and authorize onboarding while incoming work stays held."
+[owner-thread] Spawning codex (mode=fresh, provider-session=owner-th...)
+[owner-thread] Message: "<!-- unleashd:buddy-context-v2 eyJidWRkeUlkIjoiYnV"
+[owner-thread] Creating NEW assistant message (msg #2)
+[owner-thread] Process closed with code 0 signal=none (reason=success) after 154ms
+[owner-thread] sendMessage called, isRunning=false, hasProcess=false, queueDepth=0, contentLen=60, preview="Configure my lead and engineer and release the queued audit."
+[owner-thread] Spawning codex (mode=resume, provider-session=provider...)
+[owner-thread] Message: "<!-- unleashd:buddy-context-v2 eyJidWRkeUlkIjoiYnV"
+[owner-thread] Creating NEW assistant message (msg #4)
+[owner-thread] Process closed with code 0 signal=none (reason=success) after 110ms
+[buddy-run-buddy_run_b38e27ff-31ee-4b3a-929d-21949d351af2] sendMessage called, isRunning=false, hasProcess=false, queueDepth=0, contentLen=446, preview="Message message_6accc6b5-590a-4695-91f7-10a663374a27. Purpose: deliver Build export Evidence: [] Completion is recorded on the project. Inco"
+[buddy-run-buddy_run_b38e27ff-31ee-4b3a-929d-21949d351af2] Spawning codex (mode=fresh, provider-session=buddy-ru...)
+[buddy-run-buddy_run_b38e27ff-31ee-4b3a-929d-21949d351af2] Message: "<!-- unleashd:buddy-context-v2 eyJidWRkeUlkIjoiYnV"
+[buddy-run-buddy_run_b38e27ff-31ee-4b3a-929d-21949d351af2] Creating NEW assistant message (msg #2)
+[buddy-run-buddy_run_b38e27ff-31ee-4b3a-929d-21949d351af2] Process closed with code 0 signal=none (reason=success) after 3ms
+[buddy-run-buddy_run_b38e27ff-31ee-4b3a-929d-21949d351af2] sendMessage called, isRunning=false, hasProcess=false, queueDepth=0, contentLen=446, preview="Message message_6accc6b5-590a-4695-91f7-10a663374a27. Purpose: deliver Build export Evidence: [] Completion is recorded on the project. Inco"
+[buddy-run-buddy_run_b38e27ff-31ee-4b3a-929d-21949d351af2] Spawning codex (mode=resume, provider-session=provider...)
+[buddy-run-buddy_run_b38e27ff-31ee-4b3a-929d-21949d351af2] Message: "<!-- unleashd:buddy-context-v2 eyJidWRkeUlkIjoiYnV"
+[buddy-run-buddy_run_b38e27ff-31ee-4b3a-929d-21949d351af2] Creating NEW assistant message (msg #4)
+[buddy-run-buddy_run_b38e27ff-31ee-4b3a-929d-21949d351af2] Process closed with code 0 signal=none (reason=success) after 2ms
+[32m✔ owner MCP configures unconfigured staff, releases original work, and completes worker-to-lead without owner authority [90m(360.154667ms)[39m[39m
+(node:14164) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14164) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14164) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+[32m✔ native readiness receipts respect the workspace message audience [90m(127.374708ms)[39m[39m
+[32m✔ native readiness receipts respect the project message audience [90m(89.85025ms)[39m[39m
+[32m✔ native readiness receipts respect the owner message audience [90m(109.673583ms)[39m[39m
+[32m✔ native readiness receipts respect the addressed-request message audience [90m(33.836041ms)[39m[39m
+(node:14166) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14166) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14166) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+[32m✔ owner memory resolution preserves inherited context, discovers reviewer notes and retains audience continuity [90m(127.995708ms)[39m[39m
+[32m✔ private messages stay private and work pagination uses the active audience [90m(77.135875ms)[39m[39m
+[32m✔ run history filters before paginating the active project audience [90m(120.500666ms)[39m[39m
+[32m✔ workspace run history omits private failures from every execution field [90m(71.297ms)[39m[39m
+[32m✔ Memory HTTP selects the same owner-thread head and notes as document tools, with scoped CAS [90m(169.427375ms)[39m[39m
+(node:14181) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14181) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14181) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+[32m✔ resource MCP adopts existing staff, imports revisioned handoffs, preserves replay and exact schema variants [90m(99.078375ms)[39m[39m
+(node:14182) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14182) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14182) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+[32m✔ Buddy overview route forwards the optional cutoff and returns one projection [90m(47.91125ms)[39m[39m
+[32m✔ workspace activity exposes foreground, delegated and automation jobs without credentials [90m(24.31275ms)[39m[39m
+[32m✔ Buddy detail classifies review and automation conversations for separate UI surfaces [90m(10.454625ms)[39m[39m
+[32m✔ automation routes validate before persistence and keep claim credentials private [90m(12.555292ms)[39m[39m
+[32m✔ human approval routes list pending requests and persist one terminal owner decision [90m(119.175791ms)[39m[39m
+[32m✔ manager review request dispatches one least-privilege reviewer conversation [90m(166.365458ms)[39m[39m
+[32m✔ memory-v2 HTTP routes use the Buddy operation authority boundary [90m(12.013416ms)[39m[39m
+(node:14183) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14183) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+[buddies] Could not record memory capture for run-1: TypeError: this.store.recordAuditEvent is not a function
+(node:14183) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+[32m✔ nextAutomationRunAt handles intervals and timezone-aware cron [90m(20.144375ms)[39m[39m
+[32m✔ cron follows standard OR semantics when day-of-month and weekday are both restricted [90m(58.73925ms)[39m[39m
+[32m✔ cron rejects impossible calendar combinations before the minute scan [90m(0.729042ms)[39m[39m
+[32m✔ automation completion requires structured JSON [90m(1.325125ms)[39m[39m
+[32m✔ Buddy context is typed conversation metadata independent of swarm state [90m(7.707792ms)[39m[39m
+[32m✔ Buddy sentinel hydration restores metadata and keeps the visible user prompt clean [90m(0.257166ms)[39m[39m
+[32m✔ scheduler executes bounded loop and records each iteration once [90m(8.668083ms)[39m[39m
+[32m✔ scheduler fails a bounded loop that exhausts iterations without structured completion [90m(6.046333ms)[39m[39m
+[buddies] Could not record memory capture for run-overdue: TypeError: this.store.recordAuditEvent is not a function
+[32m✔ scheduler rejects a sequence that exceeds its immutable run iteration policy [90m(6.217792ms)[39m[39m
+[buddies] Could not record memory capture for run-startup-catch-up: TypeError: this.store.recordAuditEvent is not a function
+[32m✔ overdue intervals schedule from now instead of replaying missed ticks [90m(7.169125ms)[39m[39m
+[32m✔ scheduler start immediately coalesces an overdue definition into one catch-up run [90m(7.328125ms)[39m[39m
+[32m✔ scheduler health records poll failures, isolates a bad claim, and reports recovery [90m(6.082667ms)[39m[39m
+[32m✔ scheduler durably fails and advances a run when provider startup fails [90m(38.204792ms)[39m[39m
+[32m✔ scheduler fails and advances a run interrupted by process restart [90m(0.189375ms)[39m[39m
+[32m✔ scheduler cancellation stops the active conversation and preserves cancelled state [90m(6.974417ms)[39m[39m
+[32m✔ terminal persistence failure keeps local ownership and exposes degraded health [90m(6.239917ms)[39m[39m
+[32m✔ cancellation during conversation creation terminalizes a late conversation [90m(6.000417ms)[39m[39m
+[32m✔ scheduler interrupts an expired run without creating a replacement executor [90m(35.734208ms)[39m[39m
+[32m✔ startup recovery terminalizes disabled manual and cancellation-requested runs without replay [90m(0.372167ms)[39m[39m
+[32m✔ a recovered cancellation retains ownership and retries a failed terminal write [90m(0.164625ms)[39m[39m
+(node:14191) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14191) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14191) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(node:14191) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14191) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(node:14191) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14191) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+[32m✔ two independent SQLite connections racing the same soul revision have exactly one winner [90m(109.767708ms)[39m[39m
+[32m✔ competing HTTP/MCP soul edits preserve all changes through repeated revision conflicts [90m(269.490166ms)[39m[39m
+(node:14192) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14192) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14192) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+[32m✔ owner chat soul edits persist, reject stale writes and refresh new conversation identity [90m(76.925917ms)[39m[39m
+(node:14193) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14193) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14193) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+[32m✔ Task comments share one durable contract across native tools and owner HTTP [90m(280.88575ms)[39m[39m
+(node:14194) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14194) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14194) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+[32m✔ one lead MCP onboards four existing identities, imports one, assigns and verifies bounded work without duplicate effects [90m(240.307833ms)[39m[39m
+(node:14195) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14195) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14195) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+[32m✔ owner team settings preserve independent saved permissions, expiry and revocation through HTTP [90m(214.108542ms)[39m[39m
+(node:14196) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14196) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14196) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+[32m✔ runtime diagnostics survive package mismatch; owner controls release the original two requests [90m(495.189ms)[39m[39m
+(node:14204) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14204) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14204) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+[32m✔ current MCP creates a Worker and dispatches two projects through the existing continuation boundary [90m(85.584875ms)[39m[39m
+(node:14205) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14205) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14205) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+[90m﹣ live worker writes artifact and contextual background lead reads and accepts it [90m(3.490416ms)[39m # SKIP[39m
+(node:14206) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14206) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+Discovering persisted conversation files...
+Discovered 1 persisted conversation sources in 7ms (sorted by mtime), parsing 1 with concurrency=10, in-flight source budget=256MB...
+Parse timing (1 files): min=7.7ms, avg=7.7ms, max=7.7ms
+[session-cache] 0/1 startup sources reused
+Loaded 1 conversations from 1 files in 16ms (discover: 7ms, parse: 9ms)
+Discovering persisted conversation files...
+Discovered 1 persisted conversation sources in 0ms (sorted by mtime), parsing 1 with concurrency=10, in-flight source budget=256MB...
+Parse timing (1 files): min=1.9ms, avg=1.9ms, max=1.9ms
+[session-cache] 1/1 startup sources reused
+Loaded 1 conversations from 1 files in 3ms (discover: 0ms, parse: 3ms)
+Discovering persisted conversation files...
+Discovered 1 persisted conversation sources in 1ms (sorted by mtime), parsing 1 with concurrency=10, in-flight source budget=256MB...
+Parse timing (1 files): min=25.4ms, avg=25.4ms, max=25.4ms
+[session-cache] 0/1 startup sources reused
+Loaded 1 conversations from 1 files in 27ms (discover: 1ms, parse: 26ms)
+[32m✔ Codex app import hides setup on every turn and recovers the Buddy behind it, including cached reloads [90m(73.246958ms)[39m[39m
+[32m✔ Buddy cleanup strips envelopes beyond the first message without overriding durable identity [90m(0.546167ms)[39m[39m
+[32m✔ durable Builder and swarm identity does not bypass hidden setup cleanup [90m(0.396834ms)[39m[39m
+[32m✔ legacy merge cleanup preserves ambiguous or incomplete reserved wrappers [90m(0.161166ms)[39m[39m
+(node:14207) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14207) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+[32m✔ CODEX_MODEL_REGISTRY includes the expected base entries with shared thinking options [90m(1.123583ms)[39m[39m
+[32m✔ CodexModelSchema accepts only the configured base IDs (no composites) [90m(0.474375ms)[39m[39m
+[32m✔ ModelIdSchema is an opaque wire string; provider catalogs enforce compatibility [90m(0.340083ms)[39m[39m
+[32m✔ CreateConversationCommand carries canonical model and reasoning selections [90m(0.634791ms)[39m[39m
+[32m✔ SetConversationConfigCommand structurally accepts opaque non-empty model IDs [90m(0.206208ms)[39m[39m
+[32m✔ isModelIdValidForProvider accepts base IDs for codex, rejects composites [90m(0.107708ms)[39m[39m
+[32m✔ isModelIdValidForProvider rejects codex IDs for other providers [90m(0.196166ms)[39m[39m
+[32m✔ modelValidationHint for codex mentions sol, gpt-5.4, and spark [90m(0.084833ms)[39m[39m
+[32m✔ buildCommand: base model + reasoning composes correctly [90m(0.163584ms)[39m[39m
+[32m✔ buildCommand: base model without reasoning emits no effort flag [90m(0.576666ms)[39m[39m
+[32m✔ buildCommand: spark + reasoning composes correctly [90m(0.456ms)[39m[39m
+[32m✔ buildCommand: suffix-looking opaque model IDs pass through unchanged [90m(0.213583ms)[39m[39m
+[32m✔ listModels returns exactly the configured base IDs [90m(0.853584ms)[39m[39m
+[32m✔ listModels has exactly one default and it matches DEFAULT_CODEX_MODEL_ID [90m(0.084416ms)[39m[39m
+[32m✔ reasoning defaults follow the selected provider and Codex model [90m(0.074291ms)[39m[39m
+[32m✔ create command distinguishes provider default from explicit no-effort [90m(0.120917ms)[39m[39m
+[32m✔ fromCodexModelId decomposes legacy composites [90m(0.119334ms)[39m[39m
+[32m✔ fromCodexModelId returns base as-is when no effort suffix present [90m(0.040375ms)[39m[39m
+[32m✔ to/fromCodexModelId round-trips through composite strings [90m(0.117209ms)[39m[39m
+[32m✔ buildCommand: resume uses exec resume <sessionId> [90m(0.093333ms)[39m[39m
+[32m✔ buildCommand: codex includes --skip-git-repo-check [90m(0.056625ms)[39m[39m
+[32m✔ inferProviderFromModel maps base codex IDs to codex [90m(0.060625ms)[39m[39m
+(node:14208) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14208) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+[32m✔ Codex spawned sub-agent session maps to parentConversationId [90m(36.717708ms)[39m[39m
+(node:14209) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14209) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+Discovering persisted conversation files...
+Discovered 1 persisted conversation sources in 0ms (sorted by mtime), parsing 1 with concurrency=10, in-flight source budget=256MB...
+Parse timing (1 files): min=47.9ms, avg=47.9ms, max=47.9ms
+[session-cache] 0/1 startup sources reused
+Loaded 1 conversations from 1 files in 51ms (discover: 0ms, parse: 51ms)
+Discovering persisted conversation files...
+Discovered 1 persisted conversation sources in 0ms (sorted by mtime), parsing 1 with concurrency=10, in-flight source budget=256MB...
+Parse timing (1 files): min=34.6ms, avg=34.6ms, max=34.6ms
+[session-cache] 0/1 startup sources reused
+Loaded 1 conversations from 1 files in 35ms (discover: 0ms, parse: 35ms)
+Discovering persisted conversation files...
+Discovered 1 persisted conversation sources in 0ms (sorted by mtime), parsing 1 with concurrency=10, in-flight source budget=256MB...
+Parse timing (1 files): min=1.7ms, avg=1.7ms, max=1.7ms
+[session-cache] 1/1 startup sources reused
+Loaded 1 conversations from 1 files in 2ms (discover: 0ms, parse: 2ms)
+Discovering persisted conversation files...
+Discovered 1 persisted conversation sources in 1ms (sorted by mtime), parsing 1 with concurrency=10, in-flight source budget=256MB...
+Parse timing (1 files): min=9.6ms, avg=9.6ms, max=9.6ms
+[session-cache] 0/1 startup sources reused
+Loaded 1 conversations from 1 files in 11ms (discover: 1ms, parse: 10ms)
+[32m✔ Codex event history retains tool calls through completion and cached reloads [90m(120.596417ms)[39m[39m
+Discovering persisted conversation files...
+Discovered 1 persisted conversation sources in 0ms (sorted by mtime), parsing 1 with concurrency=10, in-flight source budget=256MB...
+Parse timing (1 files): min=3.4ms, avg=3.4ms, max=3.4ms
+[session-cache] 0/1 startup sources reused
+Loaded 1 conversations from 1 files in 4ms (discover: 0ms, parse: 4ms)
+Discovering persisted conversation files...
+Discovered 1 persisted conversation sources in 0ms (sorted by mtime), parsing 1 with concurrency=10, in-flight source budget=256MB...
+Parse timing (1 files): min=4.6ms, avg=4.6ms, max=4.6ms
+[session-cache] 0/1 startup sources reused
+Loaded 1 conversations from 1 files in 5ms (discover: 0ms, parse: 5ms)
+Discovering persisted conversation files...
+Discovered 1 persisted conversation sources in 0ms (sorted by mtime), parsing 1 with concurrency=10, in-flight source budget=256MB...
+Parse timing (1 files): min=1.5ms, avg=1.5ms, max=1.5ms
+[session-cache] 1/1 startup sources reused
+Loaded 1 conversations from 1 files in 2ms (discover: 0ms, parse: 2ms)
+Discovering persisted conversation files...
+Discovered 1 persisted conversation sources in 1ms (sorted by mtime), parsing 1 with concurrency=10, in-flight source budget=256MB...
+Parse timing (1 files): min=23.0ms, avg=23.0ms, max=23.0ms
+[session-cache] 0/1 startup sources reused
+Loaded 1 conversations from 1 files in 24ms (discover: 1ms, parse: 23ms)
+[32m✔ Codex response history retains tool calls through completion and cached reloads [90m(61.437792ms)[39m[39m
+(node:14210) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14210) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+[32m✔ Codex lifecycle projects completed turns with authoritative payload timing [90m(1.398208ms)[39m[39m
+[32m✔ Codex lifecycle preserves explicit abort cause and open recovery state [90m(0.462167ms)[39m[39m
+[32m✔ abort reason classification distinguishes restart and failure observability [90m(0.113125ms)[39m[39m
+[32m✔ recovery explicitly terminalizes open turns without guessing during extraction [90m(0.101083ms)[39m[39m
+[32m✔ Codex disk hydration surfaces explicit aborts but not genuinely open turns [90m(15.127542ms)[39m[39m
+[32m✔ Codex disk hydration skips non-display rows and preserves response-message fallback [90m(11.59375ms)[39m[39m
+(node:14211) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14211) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+[32m✔ pure provider transition resets dependent selections and enforces lifecycle [90m(0.71225ms)[39m[39m
+[32m✔ create, update, fork, and hydrate preserve selection intent and revisions [90m(67.374ms)[39m[39m
+[32m✔ Fable session hydration recovers reported model names and preserves saved selections [90m(77.4445ms)[39m[39m
+[32m✔ matching create replay recovers crash metadata without duplicating the record [90m(24.979ms)[39m[39m
+[32m✔ current session rotation is authoritative and tombstones block hydration [90m(45.498542ms)[39m[39m
+[32m✔ updates reject stale revisions and unavailable combinations without persisting [90m(28.887ms)[39m[39m
+[32m✔ create and fork require a currently resolved configuration [90m(2.225125ms)[39m[39m
+[32m✔ legacy migration is deterministic and confines composite decoding to known models [90m(2.599958ms)[39m[39m
+(node:14212) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14212) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+[32m✔ config store round-trips durable selection intent and resolves session bindings [90m(34.486ms)[39m[39m
+[32m✔ config store rekeys opaque legacy application IDs without losing session identity [90m(19.782542ms)[39m[39m
+[32m✔ legacy v1 records parse as active without inventing a current session [90m(0.2775ms)[39m[39m
+[32m✔ config store serializes concurrent revision checks [90m(10.912125ms)[39m[39m
+[32m✔ session binding rotation removes the old index and lookup repairs a missing index [90m(47.730709ms)[39m[39m
+[32m✔ bulk session lookups scan once while imports, rotations, tombstones, and rekeys update the index [90m(400.548875ms)[39m[39m
+[32m✔ bulk lookup repairs stale indexes, reads current records, and releases its scope after failure [90m(63.051958ms)[39m[39m
+[32m✔ bulk lookup includes writes and purges committed while its initial record scan is pending [90m(19.881708ms)[39m[39m
+[32m✔ one failing bulk lookup does not release an overlapping import scope [90m(8.108666ms)[39m[39m
+[32m✔ deleting a config persists a tombstone and keeps session identity across restart [90m(20.339ms)[39m[39m
+[32m✔ current session rotation preserves historical aliases without ambiguous resume state [90m(25.018ms)[39m[39m
+[32m✔ concurrent session rotations retain every alias through record-level CAS [90m(23.757209ms)[39m[39m
+[32m✔ creation recovery metadata and initial-message delivery marker are durable [90m(46.264834ms)[39m[39m
+[32m✔ corrupt records are quarantined once and do not prevent loading valid records [90m(9.487833ms)[39m[39m
+[32m✔ future-version records are preserved and never quarantined or overwritten [90m(18.345584ms)[39m[39m
+[32m✔ store rejects relative app-data roots [90m(0.417458ms)[39m[39m
+(node:14213) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14213) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+[32m✔ provider catalog enforces relational invariants [90m(0.585417ms)[39m[39m
+[32m✔ default model and reasoning resolve together at the execution boundary [90m(0.364041ms)[39m[39m
+[32m✔ disabled reasoning omits the CLI flag and explicit values pass through unchanged [90m(0.056458ms)[39m[39m
+[32m✔ unavailable explicit selections are retained and return structured errors [90m(0.054417ms)[39m[39m
+[32m✔ provider transition atomically resets model and reasoning intent [90m(0.068458ms)[39m[39m
+[32m✔ invalid explicit reasoning for a new model rejects the whole transition [90m(0.063959ms)[39m[39m
+[32m✔ legacy Codex adapter only decomposes a supplied known combination [90m(0.094708ms)[39m[39m
+[32m✔ v2 command and event schemas preserve correlation and revisions [90m(0.279459ms)[39m[39m
+[32m✔ v2 client schema rejects every removed v1 command [90m(0.187542ms)[39m[39m
+[32m✔ v2 creation acknowledgement requires command correlation [90m(0.194375ms)[39m[39m
+[32m✔ v2 init requires explicit protocol metadata [90m(0.056583ms)[39m[39m
+(node:14214) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14214) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+[startup] Parsed 1/1 files (1 conversations)...
+[dddddddd-0000-4000-8000-000000000004] sendMessage called, isRunning=false, hasProcess=false, queueDepth=0, contentLen=18, preview="Follow-up question"
+[dddddddd-0000-4000-8000-000000000004] Buddy context reset: reason=restored_audience_unverified, provider-session=eeeeeeee-0000-4000-8000-000000000005
+[dddddddd-0000-4000-8000-000000000004] Reset session: eeeeeeee... -> ffffffff...
+[dddddddd-0000-4000-8000-000000000004] Spawning codex (mode=fresh, provider-session=ffffffff...)
+[dddddddd-0000-4000-8000-000000000004] Message: "<!-- unleashd:buddy-context-v2 eyJidWRkeUlkIjoiZml"
+[dddddddd-0000-4000-8000-000000000004] Creating NEW assistant message (msg #4)
+[dddddddd-0000-4000-8000-000000000004] Process closed with code 0 signal=none (reason=success) after 189ms
+[startup] Parsed 2/2 files (1 conversations)...
+[32m✔ privacy rotation retains display history and durable birth date through poll and reload [90m(326.890625ms)[39m[39m
+[startup] Parsed 2/2 files (1 conversations)...
+[32m✔ inherited transcript prefixes are deduplicated while repeated messages retain multiplicity [90m(88.333166ms)[39m[39m
+[startup] Parsed 2/2 files (1 conversations)...
+[32m✔ late historical-session polling enriches display without rolling back current execution metadata [90m(56.05725ms)[39m[39m
+[startup] Parsed 1/1 files (1 conversations)...
+[32m✔ a missing historical transcript preserves available history and durable creation time [90m(23.673333ms)[39m[39m
+[startup] Parsed 1/1 files (0 conversations)...
+[32m✔ a missing current transcript restores bound historical messages without resuming an obsolete session [90m(25.614708ms)[39m[39m
+[startup] Parsed 1/1 files (1 conversations)...
+[32m✔ one selected current transcript hydrates its attached bound history without extra conversation rows [90m(23.484ms)[39m[39m
+[startup] Parsed 1/1 files (1 conversations)...
+[32m✔ a discovered sidecar keeps the transcript birth date instead of its later import date [90m(17.154958ms)[39m[39m
+[startup] Parsed 1/1 files (1 conversations)...
+[32m✔ an application-created fork keeps its durable birth date when the inherited native source is older [90m(46.298083ms)[39m[39m
+[startup] Parsed 1/1 files (1 conversations)...
+[dddddddd-0000-4000-8000-000000000004] sendMessage called, isRunning=false, hasProcess=false, queueDepth=0, contentLen=18, preview="Follow-up question"
+[dddddddd-0000-4000-8000-000000000004] Buddy context reset: reason=restored_audience_unverified, provider-session=eeeeeeee-0000-4000-8000-000000000005
+[dddddddd-0000-4000-8000-000000000004] Reset session: eeeeeeee... -> ffffffff...
+[dddddddd-0000-4000-8000-000000000004] Spawning codex (mode=fresh, provider-session=ffffffff...)
+[dddddddd-0000-4000-8000-000000000004] Message: "<!-- unleashd:buddy-context-v2 eyJidWRkeUlkIjoiZml"
+[dddddddd-0000-4000-8000-000000000004] Creating NEW assistant message (msg #4)
+[startup] Parsed 2/2 files (1 conversations)...
+[dddddddd-0000-4000-8000-000000000004] Process closed with code 0 signal=none (reason=success) after 127ms
+[32m✔ startup hydration and historical polling cannot replace an active runtime transcript or session [90m(146.458084ms)[39m[39m
+(node:14215) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14215) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+[merge-parent] sendMessage called, isRunning=false, hasProcess=false, queueDepth=0, contentLen=89, preview="Combine the reviews. Preserve this literal: <!-- /unleashd:merge-prefix-v1 --> After it."
+[merge-parent] Spawning codex (mode=fresh, provider-session=merge-pa...)
+[merge-parent] Message: "<!-- unleashd:merge-prefix-v1 302 -->
+This is a me"
+[merge-parent] Process closed with code 0 signal=none (reason=success) after 9ms
+Discovering persisted conversation files...
+Discovered 1 persisted conversation sources in 1ms (sorted by mtime), parsing 1 with concurrency=10, in-flight source budget=256MB...
+Parse timing (1 files): min=6.9ms, avg=6.9ms, max=6.9ms
+[session-cache] 0/1 startup sources reused
+Loaded 1 conversations from 1 files in 9ms (discover: 1ms, parse: 8ms)
+Discovering persisted conversation files...
+Discovered 1 persisted conversation sources in 2ms (sorted by mtime), parsing 1 with concurrency=10, in-flight source budget=256MB...
+Parse timing (1 files): min=1.6ms, avg=1.6ms, max=1.6ms
+[session-cache] 1/1 startup sources reused
+Loaded 1 conversations from 1 files in 4ms (discover: 2ms, parse: 2ms)
+[restored-buddy] sendMessage called, isRunning=false, hasProcess=false, queueDepth=0, contentLen=14, preview="First followup"
+[restored-buddy] Buddy context reset: reason=restored_audience_unverified, provider-session=unverified-restored-session
+[restored-buddy] Reset session: unverifi... -> rotated-...
+[restored-buddy] Spawning codex (mode=fresh, provider-session=rotated-...)
+[restored-buddy] Message: "<!-- unleashd:buddy-context-v2 eyJidWRkeUlkIjoiYnV"
+[restored-buddy] Session captured: native-1
+[restored-buddy] Creating NEW assistant message (msg #4)
+[restored-buddy] Process closed with code 0 signal=none (reason=success) after 3ms
+[32m✔ merge context reaches the provider but stays out of live and cached imported user messages [90m(89.742125ms)[39m[39m
+[restored-buddy] sendMessage called, isRunning=false, hasProcess=false, queueDepth=0, contentLen=15, preview="Second followup"
+[restored-buddy] Spawning codex (mode=resume, provider-session=native-1...)
+[restored-buddy] Message: "<!-- unleashd:buddy-context-v2 eyJidWRkeUlkIjoiYnV"
+[restored-buddy] Creating NEW assistant message (msg #6)
+[restored-buddy] Process closed with code 0 signal=none (reason=success) after 2ms
+[restored-buddy] sendMessage called, isRunning=false, hasProcess=false, queueDepth=0, contentLen=14, preview="Third followup"
+[restored-buddy] Buddy context reset: reason=audience_changed, provider-session=native-1
+[restored-buddy] Reset session: native-1... -> rotated-...
+[restored-buddy] Spawning codex (mode=fresh, provider-session=rotated-...)
+[restored-buddy] Message: "<!-- unleashd:buddy-context-v2 eyJidWRkeUlkIjoiYnV"
+[restored-buddy] Session captured: native-3
+[restored-buddy] Creating NEW assistant message (msg #8)
+[restored-buddy] Process closed with code 0 signal=none (reason=success) after 1ms
+[conversation-id] sendMessage called, isRunning=false, hasProcess=false, queueDepth=0, contentLen=12, preview="Run the turn"
+[conversation-id] Spawning codex (mode=fresh, provider-session=conversa...)
+[conversation-id] Message: "Run the turn"
+[conversation-id] Session captured: provider-session
+[conversation-id] Creating NEW assistant message (msg #2)
+[conversation-id] Process closed with code 0 signal=none (reason=success) after 90ms
+[32m✔ retained Buddy display history stays out of fresh provider context across audience resets [90m(22.482541ms)[39m[39m
+[conversation-id] sendMessage called, isRunning=false, hasProcess=false, queueDepth=0, contentLen=12, preview="Run the turn"
+[conversation-id] Spawning codex (mode=fresh, provider-session=conversa...)
+[conversation-id] Message: "Run the turn"
+[conversation-id] Creating NEW assistant message (msg #2)
+[conversation-id] Event stream error: event stream failed after completion marker
+[conversation-id] Provider error: event stream failed after completion marker
+[conversation-id] Process closed with code 0 signal=none (reason=success) after 12ms
+[32m✔ provider completion waits for the normalized event stream and session persistence [90m(93.729833ms)[39m[39m
+[conversation-id] sendMessage called, isRunning=false, hasProcess=false, queueDepth=0, contentLen=19, preview="Remember our result"
+[conversation-id] Spawning codex (mode=fresh, provider-session=conversa...)
+[conversation-id] Message: "Remember our result"
+[conversation-id] Creating NEW assistant message (msg #2)
+[conversation-id] Process closed with code 0 signal=none (reason=success) after 1ms
+[32m✔ event-stream failure after turn.complete fails automation after joined drain [90m(12.920333ms)[39m[39m
+[conversation-id] sendMessage called, isRunning=false, hasProcess=false, queueDepth=0, contentLen=19, preview="Remember our result"
+[conversation-id] Spawning codex (mode=fresh, provider-session=conversa...)
+[conversation-id] Message: "Remember our result"
+[conversation-id] Creating NEW assistant message (msg #2)
+[conversation-id] Process closed with code 1 signal=none (reason=error) after 2ms
+[conversation-id] sendMessage called, isRunning=false, hasProcess=false, queueDepth=0, contentLen=19, preview="Remember our result"
+[conversation-id] Spawning codex (mode=fresh, provider-session=conversa...)
+[conversation-id] Message: "Remember our result"
+[conversation-id] Creating NEW assistant message (msg #2)
+[conversation-id] Process closed with code 0 signal=none (reason=success) after 1ms
+[conversation-id] sendMessage called, isRunning=false, hasProcess=false, queueDepth=0, contentLen=19, preview="Remember our result"
+[conversation-id] Spawning codex (mode=fresh, provider-session=conversa...)
+[conversation-id] Message: "Remember our result"
+[conversation-id] Creating NEW assistant message (msg #2)
+[conversation-id] Process closed with code 0 signal=none (reason=success) after 3ms
+[conversation-id] sendMessage called, isRunning=false, hasProcess=false, queueDepth=0, contentLen=17, preview="Run an automation"
+[conversation-id] sendMessage called, isRunning=false, hasProcess=false, queueDepth=0, contentLen=17, preview="Run an automation"
+[conversation-id] Spawning codex (mode=fresh, provider-session=conversa...)
+[conversation-id] Message: "Run an automation"
+[gemini-buddy] Queued message id=b2aa51a5, queueDepth=0->1, contentLen=11, preview="Hello Buddy"
+[gemini-buddy] processQueue sending id=b2aa51a5, queueDepth=1, contentLen=11, preview="Hello Buddy"
+[gemini-buddy] sendMessage called, isRunning=false, hasProcess=false, queueDepth=1, contentLen=11, preview="Hello Buddy"
+[conversation-id] Configuration unavailable: Model is unavailable for codex: model-that-does-not-exist
+[gemini-buddy] Provider "gemini" cannot start Buddy conversations because its harness cannot guarantee required Buddy state tools.
+[conversation-id] Queued message id=08a3d29c, queueDepth=0->1, contentLen=27, preview="Preserve this owner message"
+[conversation-id] processQueue sending id=08a3d29c, queueDepth=1, contentLen=27, preview="Preserve this owner message"
+[conversation-id] sendMessage called, isRunning=false, hasProcess=false, queueDepth=1, contentLen=27, preview="Preserve this owner message"
+[conversation-id] Spawning codex (mode=fresh, provider-session=conversa...)
+[conversation-id] Message: "Preserve this owner message"
+[child-conversation] Queued message id=08116843, queueDepth=0->1, contentLen=47, preview="Continue the original objective from this fork."
+[child-conversation] processQueue sending id=08116843, queueDepth=1, contentLen=47, preview="Continue the original objective from this fork."
+[child-conversation] sendMessage called, isRunning=false, hasProcess=false, queueDepth=1, contentLen=47, preview="Continue the original objective from this fork."
+[child-buddy-conversation] Queued message id=f3e57341, queueDepth=0->1, contentLen=29, preview="Continue with current memory."
+[child-buddy-conversation] processQueue sending id=f3e57341, queueDepth=1, contentLen=29, preview="Continue with current memory."
+[child-buddy-conversation] sendMessage called, isRunning=false, hasProcess=false, queueDepth=1, contentLen=29, preview="Continue with current memory."
+[child-buddy-conversation] Soft fork codex -> codex (harness cannot fork sessions, memory generation changed so native session inheritance is disabled), using string context handoff (no provider session fork)
+[muse-child] Queued message id=5ac91570, queueDepth=0->1, contentLen=47, preview="Continue the original objective from this fork."
+[muse-child] processQueue sending id=5ac91570, queueDepth=1, contentLen=47, preview="Continue the original objective from this fork."
+[muse-child] sendMessage called, isRunning=false, hasProcess=false, queueDepth=1, contentLen=47, preview="Continue the original objective from this fork."
+[muse-child] Soft fork muse -> muse (harness cannot fork sessions), using string context handoff (no provider session fork)
+[conversation-id] Reset session: conversa... -> rotated-...
+[conversation-id] Turn stalled: no provider event or native-session advancement for 3600s (no assistant text or tool output reached Unleashd) | timeoutKind=provider terminalCause=provider_idle_timeout sawMeaningfulOutput=false elapsed=7140s bridgeIdle=60s providerIdle=3600s lastActivitySource=agent_cli_heartbeat lastProviderEvent=progress stderr=no
+[conversation-id] Provider error: Turn stalled: no provider event or native-session advancement for 3600s (no assistant text or tool output reached Unleashd)
+[conversation-id] Turn event bridge stalled: no unified event or bridge heartbeat for 120s (no assistant text or tool output reached Unleashd) | timeoutKind=bridge terminalCause=bridge_timeout sawMeaningfulOutput=false elapsed=120s bridgeIdle=120s providerIdle=120s lastActivitySource=none lastProviderEvent=none stderr=no
+[conversation-id] Provider error: Turn event bridge stalled: no unified event or bridge heartbeat for 120s (no assistant text or tool output reached Unleashd)
+[foreground-timeout] sendMessage called, isRunning=false, hasProcess=false, queueDepth=0, contentLen=12, preview="Keep working"
+[foreground-timeout] Spawning codex (mode=fresh, provider-session=foregrou...)
+[foreground-timeout] Message: "Keep working"
+[foreground-timeout] Creating NEW assistant message (msg #2)
+[32m✔ only a successfully exited Buddy turn schedules memory review [90m(84.530583ms)[39m[39m
+[32m✔ preflight failure immediately rejects an automation turn listener [90m(0.418166ms)[39m[39m
+[32m✔ synchronous provider startup failure notifies automation listeners [90m(0.391833ms)[39m[39m
+[32m✔ unsupported Buddy provider leaves a queued message retryable [90m(1.210458ms)[39m[39m
+[32m✔ foreground Buddy capacity rejection fails once without hiding the owner message [90m(5.012041ms)[39m[39m
+[32m✔ historical automation transcripts refuse every user turn-admission path [90m(2.557292ms)[39m[39m
+[32m✔ public stop delegates automation cancellation without killing provider authority directly [90m(0.278417ms)[39m[39m
+[32m✔ first message in a user fork inherits the native source session without copying history [90m(0.318125ms)[39m[39m
+[32m✔ first Buddy prompt carries a recoverable immutable memory snapshot [90m(0.161625ms)[39m[39m
+[32m✔ native session fork falls back to a fresh handoff when memory generation changes [90m(0.238458ms)[39m[39m
+[32m✔ automation memory-write policy is explicit and provider-scoped [90m(0.073917ms)[39m[39m
+[32m✔ same-provider fork on a fork-incapable harness falls back to string handoff [90m(0.171ms)[39m[39m
+[32m✔ conversation runtime binds server capabilities without importing server orchestration [90m(0.108458ms)[39m[39m
+[32m✔ timer-only heartbeats cannot mask provider idleness, while native advancement can [90m(0.836792ms)[39m[39m
+[32m✔ bridge watchdog terminates when neither unified events nor heartbeats arrive [90m(0.175333ms)[39m[39m
+[32m✔ turn activity distinguishes bridge heartbeats from provider events [90m(0.09125ms)[39m[39m
+[32m✔ timeout diagnostics classify bridge, provider-idle, and hard-cap failures separately [90m(0.035833ms)[39m[39m
+[32m✔ first-turn markers are kind-exclusive: builder, buddy, general [90m(0.079417ms)[39m[39m
+[foreground-timeout] Turn reached its maximum runtime after 1s | timeoutKind=max terminalCause=max_runtime_timeout sawMeaningfulOutput=true elapsed=1s bridgeIdle=1s providerIdle=1s lastActivitySource=provider_event lastProviderEvent=text.delta stderr=no
+[foreground-timeout] Provider error: Turn reached its maximum runtime after 1s
+[foreground-timeout] Process closed with code null signal=SIGTERM (reason=killed) after 1000ms
+[foreground-timeout] sendMessage called, isRunning=false, hasProcess=false, queueDepth=0, contentLen=12, preview="Keep working"
+[foreground-timeout] Spawning codex (mode=fresh, provider-session=foregrou...)
+[foreground-timeout] Message: "Keep working"
+[foreground-timeout] Creating NEW assistant message (msg #2)
+[32m✔ foreground Buddy deadline uses the conversation budget and reports timeout after joined drain [90m(10.122667ms)[39m[39m
+[foreground-timeout] Turn reached its maximum runtime after 0s | timeoutKind=max terminalCause=max_runtime_timeout sawMeaningfulOutput=true elapsed=0s bridgeIdle=0s providerIdle=0s lastActivitySource=provider_event lastProviderEvent=text.delta stderr=no
+[foreground-timeout] Provider error: Turn reached its maximum runtime after 0s
+[foreground-timeout] Process closed with code null signal=SIGTERM (reason=killed) after 0ms
+[32m✔ background deadline uses timeout classification and waits for provider drain [90m(3.39325ms)[39m[39m
+(node:14216) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14216) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+[32m✔ summarizeConversation keeps metadata, message count, and a bounded last-message preview [90m(0.404875ms)[39m[39m
+(node:14217) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14217) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+[32m✔ climbs out of the server package to the workspace root [90m(0.4105ms)[39m[39m
+[32m✔ a cwd already at the workspace root is unchanged [90m(0.053041ms)[39m[39m
+[32m✔ UNLEASHD_DEFAULT_CWD overrides the workspace root [90m(0.053458ms)[39m[39m
+[32m✔ falls back to cwd outside a workspace — a global install keeps old behaviour [90m(0.041541ms)[39m[39m
+[32m✔ does not climb past the search depth into an unrelated parent [90m(0.0505ms)[39m[39m
+(node:14218) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14218) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+[32m✔ known-project authorizer accepts project roots and descendants [90m(0.361792ms)[39m[39m
+[32m✔ known-project authorizer rejects sibling prefix collisions and traversal [90m(0.069375ms)[39m[39m
+[32m✔ known-project authorizer reads fresh roots for every request [90m(0.062083ms)[39m[39m
+(node:14219) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14219) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+[startup] Parsed 3/3 files (1 conversations)...
+
+Port 3000 is already in use.
+Killing... ✓ Done
+
+[32m✔ progressive loader broadcasts only hydrated values accepted by the live registry [90m(0.834875ms)[39m[39m
+[32m✔ file poller delegates application updates and external status through ports [90m(2.71725ms)[39m[39m
+[32m✔ file poller coalesces overlapping cycles [90m(0.209208ms)[39m[39m
+[32m✔ file poller preserves dirty baselines until an active session can be reconciled [90m(0.1795ms)[39m[39m
+▶ parsed updates survive runtime activity after parsing and retry once at idle
+  [32m✔ poll, newer update false [90m(1.24425ms)[39m[39m
+  [32m✔ apply, newer update false [90m(0.155041ms)[39m[39m
+  [32m✔ poll, newer update true [90m(0.1225ms)[39m[39m
+[32m✔ parsed updates survive runtime activity after parsing and retry once at idle [90m(1.7915ms)[39m[39m
+[32m✔ port guard kills an approved listener and verifies release [90m(0.203416ms)[39m[39m
+(node:14220) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14220) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+[32m✔ shared model schemas accept practical OpenCode ids [90m(0.925584ms)[39m[39m
+[32m✔ shared model wire schema accepts opaque ids and rejects only empty strings [90m(0.2565ms)[39m[39m
+[32m✔ server provider/model compatibility validation works per provider [90m(0.478041ms)[39m[39m
+[32m✔ disk hydration rejects a globally valid model from the wrong provider [90m(0.344959ms)[39m[39m
+[32m✔ OpenCode shared CLI builder normalizes model IDs [90m(0.178709ms)[39m[39m
+[32m✔ OpenCode listModels remains dropdown-friendly with one default [90m(0.251125ms)[39m[39m
+[32m✔ OpenCode shared CLI builder uses --session + --continue only for valid resume IDs [90m(0.058666ms)[39m[39m
+(node:14221) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14221) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+[32m✔ path containment accepts a root and its actual descendants [90m(0.347458ms)[39m[39m
+[32m✔ path containment rejects prefix collisions and parent traversal [90m(0.067875ms)[39m[39m
+[32m✔ path containment can reject the root for child-only storage [90m(0.046542ms)[39m[39m
+[32m✔ server binding defaults to loopback and requires an explicit override [90m(0.052709ms)[39m[39m
+(node:14222) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14222) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+Discovering persisted conversation files...
+Discovered 5 persisted conversation sources in 1ms (sorted by mtime), parsing 1 with concurrency=1, in-flight source budget=256MB...
+[startup] Parsed 1/1 files (1 conversations)...
+Parse timing (1 files): min=4.5ms, avg=4.5ms, max=4.5ms
+[session-cache] 0/1 startup sources reused
+Loaded 1 conversations from 1 files in 48ms (discover: 1ms, parse: 47ms)
+Discovering persisted conversation files...
+Discovered 5 persisted conversation sources in 1ms (sorted by mtime), parsing 1 with concurrency=1, in-flight source budget=256MB...
+[startup] Parsed 1/1 files (1 conversations)...
+Parse timing (1 files): min=16.5ms, avg=16.5ms, max=16.5ms
+[session-cache] 0/1 startup sources reused
+Loaded 1 conversations from 1 files in 40ms (discover: 1ms, parse: 39ms)
+Discovering persisted conversation files...
+Discovered 4 persisted conversation sources in 1ms (sorted by mtime), parsing 1 with concurrency=1, in-flight source budget=256MB...
+[startup] Parsed 1/1 files (1 conversations)...
+Parse timing (1 files): min=1.0ms, avg=1.0ms, max=1.0ms
+[session-cache] 1/1 startup sources reused
+Loaded 1 conversations from 1 files in 11ms (discover: 1ms, parse: 11ms)
+[32m✔ bound native sessions retain display history across capped startup, polling and restart [90m(373.845ms)[39m[39m
+(node:14223) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14223) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+[32m✔ missing middle sessions survive while native turns replace live rows with shifted timestamps [90m(0.934625ms)[39m[39m
+[32m✔ identical prompts use ordered nearest turns and preserve genuinely missing occurrences [90m(0.1725ms)[39m[39m
+[32m✔ exact inherited rows deduplicate without collapsing repeated tool occurrences [90m(0.079209ms)[39m[39m
+[32m✔ host-only system notices survive matched native turns and repeated merges [90m(0.109583ms)[39m[39m
+[32m✔ a partial user-only native flush does not erase the completed runtime answer [90m(0.049125ms)[39m[39m
+[32m✔ polling an old native source preserves the live tail when the current file is missing [90m(0.0575ms)[39m[39m
+[32m✔ native event order survives corrected or backward timestamps [90m(0.043625ms)[39m[39m
+(node:14224) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14224) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+[startup] Parsed 1/1 files (1 conversations)...
+[startup] Parsed 1/1 files (1 conversations)...
+[startup] Parsed 1/1 files (1 conversations)...
+[startup] Parsed 0/0 files (0 conversations)...
+[startup] Parsed 0/0 files (0 conversations)...
+[startup] Parsed 0/0 files (0 conversations)...
+[32m✔ durable creation.buddyContext wins over a transcript-derived general kind [90m(3.143583ms)[39m[39m
+[32m✔ hydration retains the memory snapshot embedded at application-conversation creation [90m(0.539084ms)[39m[39m
+[32m✔ a conversation with no durable buddy context stays general [90m(0.147083ms)[39m[39m
+[32m✔ one unrecoverable record does not abort the whole startup hydration [90m(0.534542ms)[39m[39m
+[32m✔ externally-discovered records are not recovered as empty conversations [90m(0.11975ms)[39m[39m
+[32m✔ a recovered conversation keeps the durable record createdAt [90m(0.104583ms)[39m[39m
+[32m✔ polling cannot demote a durable Buddy kind when the provider reports general [90m(5.534667ms)[39m[39m
+[32m✔ polling can still promote a general runtime when the provider reports a Buddy kind [90m(4.61775ms)[39m[39m
+(node:14225) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14225) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+SIGTERM — stopping active turns and shutting down
+Backend reload queued: keeping current backend available for 1 active operation(s)
+[32m✔ SIGTERM claims shutdown before its single flush can be re-entered [90m(0.949958ms)[39m[39m
+Backend reload queued: keeping current backend available for 1 active operation(s)
+[32m✔ reload waits for active turns and coalesces repeated requests [90m(551.987292ms)[39m[39m
+Backend reload queued: keeping current backend available for 1 active operation(s)
+[32m✔ reload drains an admitted mutation before exit [90m(1103.080416ms)[39m[39m
+Backend reload queued: keeping current backend available for 1 active operation(s)
+[32m✔ reload drains the automation run beyond its individual provider turn [90m(1102.082208ms)[39m[39m
+Backend reload queued: keeping current backend available for 2 active operation(s)
+[32m✔ a pending reload remains fully available without interrupting its live turn [90m(1202.82125ms)[39m[39m
+Backend reload queued: keeping current backend available for 0 active operation(s)
+[32m✔ pending reload waits for admitted mutations and active automation wrappers [90m(1753.264417ms)[39m[39m
+Backend reload queued: keeping current backend available for 1 active operation(s)
+[32m✔ reload resumes the scheduler when pausing reveals newly active work [90m(551.876417ms)[39m[39m
+SIGTERM — stopping active turns and shutting down
+[32m✔ hot reload preserves a real detached provider process until an idle boundary [90m(1265.7985ms)[39m[39m
+State flush did not settle within 200ms; exiting anyway
+SIGTERM — stopping active turns and shutting down
+[32m✔ a state flush that never settles still exits the process [90m(351.418042ms)[39m[39m
+Backend force-draining after 300ms grace (1 operation(s) still active)
+[32m✔ shutdown force-exits on the shutdown grace, not the reload grace [90m(452.216291ms)[39m[39m
+(node:14226) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14226) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+Server running on http://localhost:0 (frontend on http://localhost:7489)
+Loading conversations before accepting WebSocket commands...
+Initial load complete; WebSocket handlers unblocked
+File polling started (5s interval)
+Server running on http://localhost:0 (frontend on http://localhost:7489)
+Loading conversations before accepting WebSocket commands...
+Server running on http://localhost:0 (frontend on http://localhost:7489)
+Loading conversations before accepting WebSocket commands...
+[32m✔ startup exposes one authoritative hydration barrier before polling [90m(1.55175ms)[39m[39m
+[32m✔ startup does not release readiness or background work after hydration fails [90m(0.494458ms)[39m[39m
+[32m✔ reload during scheduler startup pauses the scheduler before aborting readiness [90m(0.265917ms)[39m[39m
+(node:14227) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14227) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+[32m✔ missing API routes return JSON while Buddy navigation receives the SPA [90m(66.275875ms)[39m[39m
+(node:14228) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14228) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+[32m✔ extractCodexCollabToolInput preserves phase, receiver ids, and per-child agent states [90m(0.711333ms)[39m[39m
+[32m✔ normalizeCodexSubagentStatus folds codex runtime states into shared UI statuses [90m(0.078375ms)[39m[39m
+[32m✔ getCodexSubagentCurrentAction prefers child messages and otherwise returns human-readable fallbacks [90m(0.071458ms)[39m[39m
+[32m✔ isCodexCollabToolName recognizes the codex native sub-agent control tools [90m(0.044334ms)[39m[39m
+(node:14229) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14229) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+[32m✔ summary synthesis derives worker outcomes from cycles and reviews [90m(17.040208ms)[39m[39m
+[32m✔ read-model routes reject unknown projects before commands or file reads [90m(34.611416ms)[39m[39m
+[32m✔ swarm-new-files rejects run-directory traversal before invoking git [90m(14.443125ms)[39m[39m
+(node:14230) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14230) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+[32m✔ runtime derives live worker state through injected process liveness [90m(22.800709ms)[39m[39m
+[32m✔ stopped event is authoritative over a still-live pid [90m(7.94775ms)[39m[39m
+[32m✔ a finished error cycle does not mark a live mid-cycle worker dead [90m(38.53775ms)[39m[39m
+[32m✔ legacy run without worker state files: live run renders finished-cycle workers as running [90m(11.517792ms)[39m[39m
+(node:14231) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14231) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+[32m✔ plain server startup separates bridge failure from provider inactivity [90m(0.41425ms)[39m[39m
+[32m✔ the independent hard turn cap remains 24 hours [90m(0.064167ms)[39m[39m
+(node:14232) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14232) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+[32m✔ formatToolUse normalizes codex shell oompa launch with env prefix [90m(0.733917ms)[39m[39m
+[32m✔ formatToolUse detects oompa launch through bash -c wrapper [90m(0.098292ms)[39m[39m
+[32m✔ formatToolUse detects oompa launch across command chains and paths [90m(0.1005ms)[39m[39m
+[32m✔ formatToolUse does not mark non-launch oompa commands as launch [90m(0.06ms)[39m[39m
+[32m✔ formatToolUse does not mark oompa dry-run or help commands as launch [90m(0.063333ms)[39m[39m
+[32m✔ formatToolUse falls back to displayText command for shell tools [90m(0.062708ms)[39m[39m
+[32m✔ isCompletionOnlyToolUse suppresses codex completion-only shell events [90m(0.062417ms)[39m[39m
+(node:14233) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14233) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+[90m﹣ live Claude tool output matches the persisted session parser [90m(0.257875ms)[39m # SKIP[39m
+(node:14234) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:14234) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+[32m✔ structured logger preserves privacy-safe stream and native progress diagnostics [90m(1.704417ms)[39m[39m
+[32m✔ journal records state, identifiers, terminal cause, and query projections [90m(5.663333ms)[39m[39m
+[32m✔ new boot interrupts attempts left running by a prior boot [90m(4.060917ms)[39m[39m
+[32m✔ journal rotation keeps a bounded number of privacy-safe JSONL files [90m(8.060542ms)[39m[39m
+[32m✔ runtime observer preserves async ordering and queue/provider correlation [90m(4.278625ms)[39m[39m
+[32m✔ legacy source-less activity remains readable without treating terminal time as activity [90m(1.697542ms)[39m[39m
+[32m✔ preflight failure can terminate an attempt before process startup [90m(1.028583ms)[39m[39m
+[32m✔ initialization separates a partial trailing JSONL record from new events [90m(1.411959ms)[39m[39m
+[34mℹ tests 365[39m
+[34mℹ suites 2[39m
+[34mℹ pass 360[39m
+[34mℹ fail 0[39m
+[34mℹ cancelled 0[39m
+[34mℹ skipped 5[39m
+[34mℹ todo 0[39m
+[34mℹ duration_ms 14999.010834[39m

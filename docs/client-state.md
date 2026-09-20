@@ -1,120 +1,207 @@
 # Client state patterns
 
-(Moved out of AGENTS.md to keep startup context small.)
+The state atoms and derived conversation views live in
+[atoms/conversations.ts](../client/src/atoms/conversations.ts). Components call
+exported actions; all `jotaiStore.set` calls stay inside `client/src/atoms/`.
 
-## Writing state subscriptions
+## Subscriptions
 
-**Before subscribing to any store, identify what you need:**
+| UI needs | Subscribe to |
+|---|---|
+| One server conversation | `conversationAtomFamily(id)` |
+| A sorted or filtered collection | A derived view in `atoms/conversations.ts` |
+| Conversation IDs | `allConversationIdsAtom` or a derived ID list such as `chatConversationIdsAtom` |
+| Chat response blocks, including live text | `chatMessageGroupsAtomFamily(id)` |
+| Live text for one conversation | `streamingAtomFamily(id)` |
+| Pending creation or config command | `pendingCreationAtomFamily(id)` or `pendingConfigCommandAtomFamily(id)` |
+| Whether full history is hydrated | `conversationDetailsLoadedAtomFamily(id)` |
+| Persisted UI preference | A per-field atom from `atoms/ui.ts` |
+| Any read-only server view (Buddy panels, swarm runs, catalog, git log) | `usePolledFetch` over the keyed cache in `atoms/resources.ts` |
+| Buddy directory / detail / automations | `useBuddyOverview`, `useBuddyDetailData`, `useBuddyAutomations` in `hooks/useBuddyData.ts` — both shells |
+| A Buddy page's derived model + `talk` / open-project actions | `useBuddyPage` in `hooks/useBuddyData.ts` — the shells only render |
 
-### Single conversation by ID → `conversationAtomFamily`
-```ts
-const conv = useAtomValue(conversationAtomFamily(id));
-```
+Never call `useAtomValue(conversationsAtom)` in a component. For lists, subscribe
+the parent to the appropriate derived ID view and have each row subscribe to its
+own conversation. Structural sharing preserves unaffected conversation objects;
+`React.memo` can then skip rows whose props and selected conversation are unchanged.
 
-### A list of conversations (sorted, filtered, grouped) → `allConversationsAtom` / `derived atoms`
-
-**Option A — simple, re-renders all items on any structural change:**
-```ts
-const list = useAtomValue(allConversationsAtom);
-// then apply UI-state filters inline with useMemo
-```
-
-**Option B — per-item subscriptions, true subtree pruning (use for large lists):**
-```ts
-// Parent: only re-renders when list membership/order changes
-const ids = useAtomValue(allConversationIdsAtom);
-return ids.map(id => <Item key={id} id={id} />);
-
-// Item: React.memo + per-ID selector = only re-renders when THIS conv changes
-const Item = React.memo(function Item({ id }: { id: string }) {
-  const conv = useAtomValue(conversationAtomFamily(id));
-  ...
-});
-```
-Why it works: `conversations.get(otherId)` returns the same reference when a different
-conversation changes. React.memo sees no prop change → skips render. This is structural
-sharing doing real work — no library required.
-
-### Active streaming text → `streamingAtomFamily`
-```ts
-const text = useAtomValue(streamingAtomFamily(id));
-// merge with conversation.messages at render time, not in the store
-```
-
-### Persisted UI state → `atoms/ui.ts`
-```ts
-const pref = useAtomValue(yourPreferenceAtom);   // per-field derived atom
-setYourPreference(value);                        // plain exported action fn
-```
-Local fields persist via `atomWithStorage('unleashd-ui-local')`; shared fields
-debounce-POST to `/api/ui-state` (gated until WS-init hydration). Subscribe to
-the per-field atoms, never the slice atoms; mutate only via the action
-functions (G1: `jotaiStore.set` stays inside `atoms/`).
-
-**Red flag:** if you wrote `useAtomValue(conversationsAtom)` — stop.
-That subscribes to every structural event across all conversations.
-Use one of the patterns above instead.
-
----
-
-## Writing state mutations
-
-### Structural update (new message, status change, queue, conversation added/deleted)
-→ update `conversationsAtom.conversations`
-→ `derived atoms` recomputes automatically via subscribe
-
-### Chunk / streaming update
-→ update `conversationsAtom.streamingContent` ONLY
-→ never update `conversations.messages` during streaming
-→ flush streamingContent → conversations in `status(isStreaming=false)` handler
-
-### High-frequency state you're adding (>10Hz)
-→ add a new `Map<string, T>` to `conversationsAtom` (like `streamingContent`)
-→ never add it to `conversations` entries
-→ document the flush boundary (when does it merge into `conversations`?)
-
----
-
-## Adding a new collection view
-
-All sorted/filtered lists of conversations go in `derived atoms.ts` — not in component `useMemo`.
+Keep sorting, filtering, and grouping in derived atoms, not component `useMemo`:
 
 ```ts
 // client/src/atoms/conversations.ts
-
-export const yourViewAtom = atom((get) => {
-  const all = get(conversationsAtom);
-  // ... compute your view
-});
+export const runningConversationIdsAtom = atom((get) =>
+  get(allConversationsAtom)
+    .filter((conversation) => conversation.isRunning)
+    .map((conversation) => conversation.id)
+);
 ```
 
-Then in the component: `useAtomValue(yourViewAtom)`.
+## Mutations and state ownership
 
----
+These are separate atoms, not fields of one combined state object:
 
-## React hook ordering
+- `conversationsAtom`: `Map<string, Conversation>` of server snapshots.
+- `streamingContentAtom`: `Map<string, string>` of transient live text.
+- `pendingCreationsAtom`: client-owned creation commands, separate from conversations.
+- `pendingConfigCommandsAtom`: pending revision-checked config writes and errors.
+- `restartRecoveryAtomFamily`: per-conversation local mirror of the accepted
+  in-flight message and server queue, retained only for optional restart replay.
 
-ALL hooks must appear before any early `return` statement.
-Hooks after early returns crash React when the condition flips (null → non-null).
+Use [mutate](../client/src/atoms/mutate.ts) for partial collection updates inside
+atom modules; scalar or complete replacements can use `jotaiStore.set` there.
+Add a separate atom for new high-frequency state and document its clearing or
+commit boundary. Do not put it into each authoritative conversation entry.
+
+Restart recovery is deliberately client-owned. Non-empty `queue_updated`
+snapshots are mirrored under `restartRecovery:{conversationId}` in localStorage;
+an empty queue does not erase them because that is also what a replacement
+server reports after losing its runtime queue. A successful `message_complete`,
+an observed non-restart terminal attempt, explicit dismissal, or conversation
+deletion clears the mirror. The UI only offers replay when diagnostics prove a
+newer attempt ended with `server_restart`, then resubmits the former current
+message before its queued successors through acknowledged queue commands.
+
+[actions.ts](../client/src/atoms/actions.ts) owns the single WebSocket message
+spine. Creation and config actions live in
+[pending-creations.ts](../client/src/atoms/pending-creations.ts) and
+[config-actions.ts](../client/src/atoms/config-actions.ts). Pending commands do
+not fabricate `Conversation` stubs or overwrite authoritative config optimistically.
+See [WS contract notes](ws-contract-surprises.md) for replay and reconciliation.
+
+## Streaming and hydration boundaries
+
+`chunk` events accumulate in a buffer outside React state. The animation-frame
+flush writes only `streamingContentAtom`; the chat renders that alongside the
+conversation snapshot. Never append individual chunks to `conversation.messages`.
+
+`message_complete` flushes buffered chunks synchronously. When `status` says
+streaming ended, its handler flushes pending chunks and clears transient text.
+Committed message content comes from authoritative `conversations_updated`
+snapshots, not by copying the transient buffer into the conversation on status.
+
+Summary snapshots contain previews rather than complete transcripts. Detail
+loading uses `loadConversationDetails` and tracks hydrated IDs in
+`conversationDetailsLoadedAtom`. Preserve loaded messages when a summary batch
+arrives; the existing detail-loader guards stale requests and reconnect epochs.
+
+## Server resources: one keyed local store
+
+Conversations arrive over the WebSocket and live in `conversationsAtom`. Every
+OTHER read-only server view — Buddy panels, swarm runs, git log, usage — goes
+through the keyed cache in
+[atoms/resources.ts](../client/src/atoms/resources.ts), read via
+`usePolledFetch`. Desktop and mobile share it; there is no second mechanism.
+
+A `Resource<T>` is `{ key, load(signal) }`. The key is the identity of the
+DATA, not of the component asking:
 
 ```ts
-// GOOD (the BAD version early-returns before useMemo — crashes when conv flips)
-function Chat() {
-  const conv = useAtomValue(conversationAtomFamily(id));
-  const x = useMemo(() => {
-    if (!conv) return null;          // guard inside memo, not a return
-    return compute(conv);
-  }, [conv]);
-  if (!conv) return <Loading />;     // early return AFTER all hooks
-}
+usePolledFetch<Overview>('/api/buddies/overview', 30_000);        // URL is the key
+usePolledFetch(resource(`buddy-detail:${buddyId}`, load), 0);     // multi-request load
 ```
 
----
+Why this and not component `useState`:
 
-## Performance checklist before committing
+- **Remount is free.** A cached key renders immediately and revalidates behind
+  the scenes. `loading` is true only when there is genuinely nothing to show,
+  so navigation never blanks — the mobile "every page makes me wait" symptom.
+- **One request per key.** Two panels on the same key share one fetch.
+- **Cross-key races are unrepresentable.** A late response for buddy A lands on
+  buddy A's key; a component showing buddy B reads B's entry and cannot see it.
+  This replaced three hand-rolled "is this response mine?" guards
+  (`RoutedBuddyData` in `useBuddyDetailData`, `live.data.key === result.key` in
+  `BuddyTeamConfiguration`, `data.cursor === cursor` in `BuddyTaskComments`).
+  Do not add a fourth — put the varying input in the key instead.
+- **The effect keys on the KEY, not the source object**, so an unstable inline
+  resource no longer refetches every render.
 
-- [ ] No `useAtomValue(conversationsAtom)` in new components
-- [ ] New list/sorted/filtered views added to `derived atoms.ts`, not component `useMemo`
-- [ ] High-frequency updates go to `streamingContent` or a dedicated Map, not `conversations`
-- [ ] Stable fallback references are module-level constants, not inline `[]` or `{}`
-- [ ] No hooks after early returns
+The cache entry is a sum, not `{data, loading, error}`:
+
+| Variant | Meaning | `usePolledFetch` reports |
+|---|---|---|
+| `idle` | no resource requested (disabled / null source) | no data, not loading |
+| `loading` | first load, nothing cached | loading |
+| `ready` | value in hand | data |
+| `failed` | failed with nothing cached | error |
+| `stale` | failed refresh over a value we still hold | data AND error |
+
+`stale` is why `useSwarmProjects` no longer keeps a `prevProjectsRef` shadow
+copy: retaining the last-known value across a failed refresh is the cache's job,
+and the error is still reported rather than silently swallowed.
+
+Every Buddy read model is declared once in
+[hooks/useBuddyData.ts](../client/src/hooks/useBuddyData.ts) and consumed by
+both shells. `BuddiesDashboard` (desktop) and `BuddyDetailMobile` used to each
+carry a private copy of the three-request detail assembly plus generation
+counters; the Sidebar, SearchPalette, BuddiesMobile and BuddiesDashboard each
+fetched `/api/buddies/overview` their own way. Now they share one key each.
+The same applies to `useProviderCatalog` (was a hand-rolled
+`useSyncExternalStore` cache) and `useSwarmRuntimeSnapshots` (SwarmDetailMobile
+now uses the desktop hook rather than its own URL). If you add a Buddy read,
+add it there — not as a `fetch` in a component.
+
+`useBuddyPage` goes one step further: the ~80 lines of memos, `talk` and
+`openProjectConversation` that both shells derived from the detail bundle live
+there once. The shell passes its own `openConversation` (mobile threads route
+state through it) and renders what comes back.
+
+Push invalidation (`invalidateResources`) refreshes MOUNTED keys only. A remount
+always revalidates, so touching retained-but-unmounted keys would only turn a
+burst of WS events into a request storm against every cached Buddy.
+
+Keys are retained up to a bound (LRU, mounted keys exempt) so a long-lived PWA
+session cannot grow without limit, and the per-key atom is removed on eviction.
+
+### Prefetching and push invalidation
+
+`init` ships conversation SUMMARIES, so the first open of each chat costs a
+round trip. [atoms/prefetch.ts](../client/src/atoms/prefetch.ts) warms the most
+recent chats once the server reports its load complete — idle-scheduled and
+concurrency-bounded, because a burst of parallel GETs from a phone is slower
+than a lazy load. It reuses `loadConversationDetails`, so a warm request that
+collides with the user opening that chat joins it rather than racing it.
+
+`invalidateResources(predicate)` re-runs the loaders for matching MOUNTED keys
+in place, so subscribed panels update with no spinner. `invalidateBuddyResources()`
+is the named predicate for Buddy data. It fires from the WS spine on
+`buddies_changed` — the server's debounced change feed
+(`server/src/buddies/change-feed.ts`), which announces every Buddy-store write
+whether it came from an owner route, an owner MCP tool, a Buddy's MCP tool or
+the scheduler — and on create/delete of a Buddy-context conversation, which the
+client already knows about. **Add new push refreshes here, not at call
+sites** — that is the whole reason the cache is keyed centrally.
+
+## Assistant response model
+
+`Message` records are provider transcript fragments. The derived
+`chatMessageGroupsAtomFamily` projects consecutive assistant records into one
+`AssistantResponse`: ordered content/tool parts, original records, and full
+`copyText`. The response is one virtual item, one message container, one heading,
+and one Copy action. User or system records end it; completion metadata and
+interactive widgets do not. Every prose part remains visible. Consecutive tools
+collapse within the response and preserve their full inputs.
+
+Desktop chat, worker chat panes and mobile consume this same projection. Live
+embedded tool lines and hydrated separate tool records normalize to the same
+part types. The projection never rewrites persisted records or commits stream
+buffers into the conversation snapshot.
+
+## Persisted UI state
+
+[atoms/ui.ts](../client/src/atoms/ui.ts) separates local and shared preferences.
+Local fields persist via `atomWithStorage` under `unleashd-ui-local`; shared fields
+debounce-POST to `/api/ui-state`, gated until server hydration. Subscribe to
+per-field atoms and mutate through exported actions, never the slice atoms.
+See [mobile view tree](mobile-view-tree.md) for the field partition and migration.
+
+## Hook ordering and stable values
+
+All hooks must run before any early return. Guard unavailable data inside a hook
+callback, then return a loading/empty state after the hooks. Keep fallback arrays,
+objects, and sets as module constants so missing data does not allocate a new
+subscription value every render.
+
+Before committing, check per-conversation subscriptions, derived collection
+views, isolated streaming state, stable fallbacks, and hook order. Run
+`pnpm check:client-invariants` plus the relevant client checks from
+[test strategy](test-strategy.md).

@@ -1,0 +1,177 @@
+{
+  "case": "D-preview-boundary",
+  "variant": "candidate",
+  "repeat": 1,
+  "rubric": [
+    "Retains the reusable configuration-preview versus execution distinction.",
+    "Does not describe setup as applied, a worker as started, or delivery as verified.",
+    "Preserves the evidence preference."
+  ],
+  "model": "gpt-5.6-luna",
+  "effort": "low",
+  "instructionsSha256": "640dc8de6c1ad2e03a6515df7715893683288e87b8c0261a2e9e3949260307a5",
+  "toolDescriptionsSha256": "1fe1ca463feff7eb046c02dd160ef1a34b8c94cac1716c9bb20311a291c57a70",
+  "elapsedMs": 21643,
+  "before": {
+    "working": "",
+    "longTerm": "Owner preference: provide evidence for claims.",
+    "note": null
+  },
+  "after": {
+    "working": {
+      "id": "knowledge_a6f8a6c4-41f0-4dfb-b0f8-1fa71e7a18f1",
+      "ref": {
+        "targetBuddyId": "buddy_bf5c6101-4c9f-4f30-9076-f2b89b0e1bf2",
+        "kind": "working",
+        "scope": {
+          "kind": "owner_thread",
+          "conversationId": "curation-owner-fixture"
+        }
+      },
+      "revision": 1,
+      "content": ""
+    },
+    "longTerm": {
+      "id": "knowledge_49a7a419-bb10-4cda-9658-8cbd1fd0449a",
+      "ref": {
+        "targetBuddyId": "buddy_bf5c6101-4c9f-4f30-9076-f2b89b0e1bf2",
+        "kind": "long_term",
+        "scope": {
+          "kind": "owner_thread",
+          "conversationId": "curation-owner-fixture"
+        }
+      },
+      "revision": 2,
+      "content": "Owner preference: provide evidence for claims.\n\nConfirmed lesson: Treat native configure_team preview validation as distinct from execution success; preview validation does not establish that configuration was applied, a worker started, or a result returned. Detailed evidence: note 2026-09-13T04:40:35.073Z:f87cc271-75c1-49a0-9785-a04c72e2c072."
+    },
+    "notes": [
+      {
+        "id": "knowledge_09807579-6672-4100-9607-3c2b083ba8d5",
+        "ref": {
+          "targetBuddyId": "buddy_bf5c6101-4c9f-4f30-9076-f2b89b0e1bf2",
+          "scope": {
+            "kind": "owner_thread",
+            "conversationId": "curation-owner-fixture"
+          },
+          "kind": "note",
+          "name": "2026-09-13T04:40:35.073Z:f87cc271-75c1-49a0-9785-a04c72e2c072"
+        },
+        "revision": 1,
+        "content": "{\"topic\":\"configure_team preview versus execution\",\"body\":\"Owner-accepted evidence from conversation curation-owner-fixture (completed 2026-09-13): owner reported that native configure_team preview validates configuration from an owner conversation. Scope is preview validity only; owner explicitly said it was not applied, no worker was started, and no result return was checked. Reusable lesson: do not infer application, startup, or returned-result success from preview validation. Assistant also stated that preview validity and execution success are separate claims.\"}"
+      }
+    ]
+  },
+  "receipt": {
+    "id": "a60e899298e9e6d128560a05f0c2e73c7ee811aad665ad0a0c5820c8c2a65121",
+    "buddyId": "buddy_bf5c6101-4c9f-4f30-9076-f2b89b0e1bf2",
+    "workspaceId": "project_f3afb085-1384-4a14-88d8-ac81c17f07e7",
+    "conversationId": "curation-owner-fixture",
+    "attemptId": "fixture-attempt",
+    "completedAt": "2026-09-13T04:40:21.579Z",
+    "status": "complete",
+    "model": "gpt-5.6-luna",
+    "reasoningEffort": "low",
+    "writes": {
+      "working": 0,
+      "longTerm": 1,
+      "notes": 1
+    },
+    "finishedAt": "2026-09-13T04:40:43.125Z"
+  },
+  "calls": [
+    {
+      "operation": "recall",
+      "input": {
+        "pattern": "configure_team",
+        "limit": 8
+      },
+      "result": {
+        "pattern": "configure_team",
+        "matches": [],
+        "truncated": false
+      }
+    },
+    {
+      "operation": "get_memory",
+      "input": {
+        "doc": "working"
+      },
+      "result": {
+        "id": "knowledge_a6f8a6c4-41f0-4dfb-b0f8-1fa71e7a18f1",
+        "ref": {
+          "targetBuddyId": "buddy_bf5c6101-4c9f-4f30-9076-f2b89b0e1bf2",
+          "scope": {
+            "kind": "owner_thread",
+            "conversationId": "curation-owner-fixture"
+          },
+          "kind": "working"
+        },
+        "revision": 1,
+        "content": ""
+      }
+    },
+    {
+      "operation": "get_memory",
+      "input": {
+        "doc": "long_term"
+      },
+      "result": {
+        "id": "knowledge_49a7a419-bb10-4cda-9658-8cbd1fd0449a",
+        "ref": {
+          "targetBuddyId": "buddy_bf5c6101-4c9f-4f30-9076-f2b89b0e1bf2",
+          "scope": {
+            "kind": "owner_thread",
+            "conversationId": "curation-owner-fixture"
+          },
+          "kind": "long_term"
+        },
+        "revision": 1,
+        "content": "Owner preference: provide evidence for claims."
+      }
+    },
+    {
+      "operation": "remember_note",
+      "input": {
+        "topic": "configure_team preview versus execution",
+        "body": "Owner-accepted evidence from conversation curation-owner-fixture (completed 2026-09-13): owner reported that native configure_team preview validates configuration from an owner conversation. Scope is preview validity only; owner explicitly said it was not applied, no worker was started, and no result return was checked. Reusable lesson: do not infer application, startup, or returned-result success from preview validation. Assistant also stated that preview validity and execution success are separate claims."
+      },
+      "result": {
+        "id": "knowledge_09807579-6672-4100-9607-3c2b083ba8d5",
+        "ref": {
+          "targetBuddyId": "buddy_bf5c6101-4c9f-4f30-9076-f2b89b0e1bf2",
+          "scope": {
+            "kind": "owner_thread",
+            "conversationId": "curation-owner-fixture"
+          },
+          "kind": "note",
+          "name": "2026-09-13T04:40:35.073Z:f87cc271-75c1-49a0-9785-a04c72e2c072"
+        },
+        "revision": 1,
+        "auditId": "audit_96ae43b5-5661-471e-bcad-a7fd15ce636b"
+      }
+    },
+    {
+      "operation": "update_memory",
+      "input": {
+        "doc": "long_term",
+        "content": "Owner preference: provide evidence for claims.\n\nConfirmed lesson: Treat native configure_team preview validation as distinct from execution success; preview validation does not establish that configuration was applied, a worker started, or a result returned. Detailed evidence: note 2026-09-13T04:40:35.073Z:f87cc271-75c1-49a0-9785-a04c72e2c072.",
+        "reasoning": "Add a confirmed reusable evidence-handling lesson from the completed owner conversation, preserving the existing owner preference and pointing to the detailed note.",
+        "baseVersion": 1
+      },
+      "result": {
+        "id": "knowledge_49a7a419-bb10-4cda-9658-8cbd1fd0449a",
+        "ref": {
+          "targetBuddyId": "buddy_bf5c6101-4c9f-4f30-9076-f2b89b0e1bf2",
+          "scope": {
+            "kind": "owner_thread",
+            "conversationId": "curation-owner-fixture"
+          },
+          "kind": "long_term"
+        },
+        "revision": 2,
+        "auditId": "audit_918bfa4e-e339-4127-94de-38c7ba3be86a"
+      }
+    }
+  ],
+  "modelReport": "Saved:\n- Detailed evidence note: `2026-09-13T04:40:35.073Z:f87cc271-75c1-49a0-9785-a04c72e2c072`\n- Updated long-term memory to distinguish preview validation from execution success."
+}

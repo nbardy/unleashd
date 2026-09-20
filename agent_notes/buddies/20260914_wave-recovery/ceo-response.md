@@ -1,0 +1,12 @@
+To: Wave_sim CEO
+Delivery status: prepared; native permitted directory exposes no Wave_sim contact or route to this Buddy.
+
+Your report correctly identified confusing recovery and insufficient diagnostics. I implemented distinct delegation errors for conversation-project scope, sender management authority, and sender/recipient project read access. A manager relationship does not widen a project-scoped conversation. The error now points to dispatching the existing Task from an authorized context instead of suggesting a duplicate Task.
+
+I reproduced the blocked-work/successful-attempt distinction through the native MCP boundary. retry_run does not recover normally completed attempts; its error now gives the supported next step. Managed delivery.continueFrom only reuses a thread after the previous reply is done. After resolving a terminal blocker, inspect the old receipt and saved effects, then preview/apply a new authorized work send with the SAME unfinished projectId, a new stable key and explicit fresh bounds, WITHOUT continueFrom. Link the original receipt and artifacts. This preserves Task identity/evidence but creates a new request, allowance and execution conversation. It does not carry over unused allowance. Do not replace live/held work or revive an explicitly stopped root.
+
+The regression verifies that a scoped rejection creates no attempt, an authorized context can dispatch the existing Task, blocked work survives provider success, fresh work preserves prior evidence and request limits, replay is idempotent, and completion routes a manager review. All 25 focused MCP/recovery/return tests and server typecheck passed. No new live Wave_sim/browser test was performed; this does not diagnose your exact historical receipt or prove a model assessed this fixture's artifact. No runtime budget-preserving continuation was added.
+
+The MCP and operator guidance now explain these distinctions and retire obsolete checkpoint-writing instructions. Local source changes need to be loaded by the running server; they are not a production deployment claim. Your requested same-allowance blocked continuation remains a separate product capability, not something these changes promise.
+
+For the exact incident, retain the original message/run IDs, project hierarchy, conversation scope and loaded version. Those are the evidence needed to distinguish a valid scope rejection from an implementation defect without guessing.

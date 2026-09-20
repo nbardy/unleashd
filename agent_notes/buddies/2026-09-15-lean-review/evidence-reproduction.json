@@ -1,0 +1,46 @@
+{
+  "observedAt": "2026-09-15T14:59:55.819Z",
+  "boundary": "real native MCP over disposable BuddiesStore(:memory:)",
+  "observations": [
+    {
+      "label": "self",
+      "before": {
+        "project": "[\"saved-project-artifact\"]",
+        "todo": [
+          "saved-step-artifact"
+        ]
+      },
+      "titleOnly": {
+        "project": "[\"saved-project-artifact\"]",
+        "todo": [
+          "saved-step-artifact"
+        ]
+      },
+      "after": {
+        "project": "[]",
+        "todo": []
+      },
+      "evidencePreserved": false
+    },
+    {
+      "label": "supervised",
+      "before": {
+        "project": "[\"saved-project-artifact\"]",
+        "todo": [
+          "saved-step-artifact"
+        ]
+      },
+      "titleOnly": {
+        "project": "[\"saved-project-artifact\"]",
+        "todo": [
+          "saved-step-artifact"
+        ]
+      },
+      "after": {
+        "project": "[]",
+        "todo": []
+      },
+      "evidencePreserved": false
+    }
+  ]
+}

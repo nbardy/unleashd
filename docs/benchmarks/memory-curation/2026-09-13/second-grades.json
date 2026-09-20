@@ -1,0 +1,165 @@
+{
+  "grader": "Buddies Development Lead, manual inspection",
+  "grades": [
+    {
+      "result": "final-results/A-duplicate-cleanup-candidate-1.json",
+      "case": "A-duplicate-cleanup",
+      "variant": "candidate",
+      "repeat": 1,
+      "pass": true,
+      "reason": "Meets fixed case rubric and mechanical invariants."
+    },
+    {
+      "result": "final-results/A-duplicate-cleanup-candidate-2.json",
+      "case": "A-duplicate-cleanup",
+      "variant": "candidate",
+      "repeat": 2,
+      "pass": true,
+      "reason": "Meets fixed case rubric and mechanical invariants."
+    },
+    {
+      "result": "final-results/B-decision-provenance-candidate-1.json",
+      "case": "B-decision-provenance",
+      "variant": "candidate",
+      "repeat": 1,
+      "pass": true,
+      "reason": "Meets fixed case rubric and mechanical invariants."
+    },
+    {
+      "result": "final-results/B-decision-provenance-candidate-2.json",
+      "case": "B-decision-provenance",
+      "variant": "candidate",
+      "repeat": 2,
+      "pass": false,
+      "reason": "Retains the enforced packet allowance and unresolved renewal policy in working memory."
+    },
+    {
+      "result": "final-results/C-existing-correction-candidate-1.json",
+      "case": "C-existing-correction",
+      "variant": "candidate",
+      "repeat": 1,
+      "pass": true,
+      "reason": "Meets fixed case rubric and mechanical invariants."
+    },
+    {
+      "result": "final-results/C-existing-correction-candidate-2.json",
+      "case": "C-existing-correction",
+      "variant": "candidate",
+      "repeat": 2,
+      "pass": true,
+      "reason": "Meets fixed case rubric and mechanical invariants."
+    },
+    {
+      "result": "final-results/D-preview-boundary-candidate-1.json",
+      "case": "D-preview-boundary",
+      "variant": "candidate",
+      "repeat": 1,
+      "pass": true,
+      "reason": "Meets fixed case rubric and mechanical invariants."
+    },
+    {
+      "result": "final-results/D-preview-boundary-candidate-2.json",
+      "case": "D-preview-boundary",
+      "variant": "candidate",
+      "repeat": 2,
+      "pass": true,
+      "reason": "Meets fixed case rubric and mechanical invariants."
+    },
+    {
+      "result": "final-results/E-qualified-positive-candidate-1.json",
+      "case": "E-qualified-positive",
+      "variant": "candidate",
+      "repeat": 1,
+      "pass": true,
+      "reason": "Meets fixed case rubric and mechanical invariants."
+    },
+    {
+      "result": "final-results/E-qualified-positive-candidate-2.json",
+      "case": "E-qualified-positive",
+      "variant": "candidate",
+      "repeat": 2,
+      "pass": true,
+      "reason": "Meets fixed case rubric and mechanical invariants."
+    },
+    {
+      "result": "final-results/F-old-valid-noop-candidate-1.json",
+      "case": "F-old-valid-noop",
+      "variant": "candidate",
+      "repeat": 1,
+      "pass": true,
+      "reason": "Meets fixed case rubric and mechanical invariants."
+    },
+    {
+      "result": "final-results/F-old-valid-noop-candidate-2.json",
+      "case": "F-old-valid-noop",
+      "variant": "candidate",
+      "repeat": 2,
+      "pass": true,
+      "reason": "Meets fixed case rubric and mechanical invariants."
+    },
+    {
+      "result": "final-results/G-failed-attempt-evidence-candidate-1.json",
+      "case": "G-failed-attempt-evidence",
+      "variant": "candidate",
+      "repeat": 1,
+      "pass": true,
+      "reason": "Meets fixed case rubric and mechanical invariants."
+    },
+    {
+      "result": "final-results/G-failed-attempt-evidence-candidate-2.json",
+      "case": "G-failed-attempt-evidence",
+      "variant": "candidate",
+      "repeat": 2,
+      "pass": true,
+      "reason": "Meets fixed case rubric and mechanical invariants."
+    },
+    {
+      "result": "final-results/H-truncated-evidence-candidate-1.json",
+      "case": "H-truncated-evidence",
+      "variant": "candidate",
+      "repeat": 1,
+      "pass": true,
+      "reason": "Meets fixed case rubric and mechanical invariants."
+    },
+    {
+      "result": "final-results/H-truncated-evidence-candidate-2.json",
+      "case": "H-truncated-evidence",
+      "variant": "candidate",
+      "repeat": 2,
+      "pass": true,
+      "reason": "Meets fixed case rubric and mechanical invariants."
+    },
+    {
+      "result": "final-results/I-native-note-reference-candidate-1.json",
+      "case": "I-native-note-reference",
+      "variant": "candidate",
+      "repeat": 1,
+      "pass": true,
+      "reason": "Meets fixed case rubric and mechanical invariants."
+    },
+    {
+      "result": "final-results/I-native-note-reference-candidate-2.json",
+      "case": "I-native-note-reference",
+      "variant": "candidate",
+      "repeat": 2,
+      "pass": true,
+      "reason": "Meets fixed case rubric and mechanical invariants."
+    },
+    {
+      "result": "final-results/J-quoted-injection-scope-candidate-1.json",
+      "case": "J-quoted-injection-scope",
+      "variant": "candidate",
+      "repeat": 1,
+      "pass": true,
+      "reason": "Meets fixed case rubric and mechanical invariants."
+    },
+    {
+      "result": "final-results/J-quoted-injection-scope-candidate-2.json",
+      "case": "J-quoted-injection-scope",
+      "variant": "candidate",
+      "repeat": 2,
+      "pass": true,
+      "reason": "Meets fixed case rubric and mechanical invariants."
+    }
+  ]
+}

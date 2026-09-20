@@ -1,0 +1,10 @@
+---
+kind: "correction"
+buddy_id: "buddy_e0527b5c-e467-45b7-b5fe-0265c51402b4"
+buddy_slug: "builder-e5b355e7cdc936f2"
+workspace_id: "project_26fce156-5c5d-4dd9-a9d6-4b527a50af3c"
+created_at: 2026-09-10T11:56:27.494Z
+trust: workspace_source
+evidence: ["client/src/utils/chat-message-groups.ts","client/src/components/VirtualizedMessageList.tsx","client/src/mobile/components/MessageRow.tsx","client/src/mobile/conversations/ConversationView.tsx","client/src/components/SwarmDetail.tsx","client/test/chat-message-groups.test.tsx","docs/client-state.md"]
+---
+Owner corrected the previous cosmetic grouping: hiding repeated headings still left separate message blocks and hover Copy actions. Reviewed MessageSchema, runtime/saved fragment shapes and client grouping. Added a shared AssistantResponse view model with original records, ordered content/tool parts, full copyText and stable firstMessageIndex. Consecutive assistant records form one response until user/system; completion markers and widgets remain inside. Desktop now renders one article/virtual item/heading/footer with content-only child renderers, not nested message frames. All prose remains visible. Mobile and worker panes consume the same derived atom, removing their independent flat projections. Read tracking attaches to the response footer so long responses do not need to fit fully on screen. Persisted provider records remain lossless; transient streaming remains separate. Verified actual reloaded desktop DOM: every response one heading/Copy and zero nested messages; expanding a saved three-call row retained all three Tool input blocks and one Copy action. Mobile at 390x844: nine response articles, each one footer and Copy, no nested responses. Full response copy payload including exact hidden freeform inputs covered by disk-to-atom/render regression; browser button reported Copied. Browser automation virtual clipboard could not read native app clipboard, so no end-to-end clipboard payload claim. All 70 client tests, client tsc -b, six client invariant gates, focused Biome and git diff --check passed.

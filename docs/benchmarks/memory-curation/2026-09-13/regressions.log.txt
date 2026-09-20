@@ -1,0 +1,183 @@
+(node:90397) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:90401) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:90403) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:90414) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:90415) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:90415) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:90415) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+[90m﹣ live curation comparison through the real scoped reviewer [90m(0.316875ms)[39m # SKIP[39m
+(node:90416) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:90416) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:90416) ExperimentalWarning: SQLite is an experimental feature and might change at any time
+[32m✔ memory MCP source entrypoint connects over stdio with a scoped capability [90m(259.735875ms)[39m[39m
+[32m✔ review MCP preserves concurrent edits and cannot act as a Buddy or change soul [90m(112.619792ms)[39m[39m
+[32m✔ queued reviews survive restart, serialize per Buddy, and revoke writes on cancellation [90m(41.273459ms)[39m[39m
+[32m✔ no-op review verifies tools; missing tools fail; partial writes survive later failure [90m(86.630542ms)[39m[39m
+[32m✔ completed review sends evidence as input and reviewer rules through one instruction file [90m(28.534333ms)[39m[39m
+[32m✔ review runner keeps process ownership until completion and event drain on cancellation [90m(31.9355ms)[39m[39m
+[32m✔ source memory restrictions are retained by the independent reviewer [90m(21.180875ms)[39m[39m
+[90m﹣ live Luna low uses memory tools to preserve dense context and evidence pointers [90m(0.103083ms)[39m # SKIP[39m
+[32m✔ memory review receives current scoped project revisions without work tools or private sibling evidence [90m(31.334417ms)[39m[39m
+(node:90417) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+(node:90417) Warning: The 'NO_COLOR' env is ignored due to the 'FORCE_COLOR' env being set.
+(Use `node --trace-warnings ...` to show where the warning was created)
+[merge-parent] sendMessage called, isRunning=false, hasProcess=false, queueDepth=0, contentLen=89, preview="Combine the reviews. Preserve this literal: <!-- /unleashd:merge-prefix-v1 --> After it."
+[merge-parent] Spawning codex (mode=fresh, provider-session=merge-pa...)
+[merge-parent] Message: "<!-- unleashd:merge-prefix-v1 302 -->
+This is a me"
+[merge-parent] Process closed with code 0 signal=none (reason=success) after 3ms
+Discovering persisted conversation files...
+Discovered 1 persisted conversation sources in 0ms (sorted by mtime), parsing 1 with concurrency=10, in-flight source budget=256MB...
+Parse timing (1 files): min=2.9ms, avg=2.9ms, max=2.9ms
+[session-cache] 0/1 startup sources reused
+Loaded 1 conversations from 1 files in 4ms (discover: 0ms, parse: 4ms)
+Discovering persisted conversation files...
+Discovered 1 persisted conversation sources in 0ms (sorted by mtime), parsing 1 with concurrency=10, in-flight source budget=256MB...
+Parse timing (1 files): min=0.9ms, avg=0.9ms, max=0.9ms
+[session-cache] 1/1 startup sources reused
+Loaded 1 conversations from 1 files in 1ms (discover: 0ms, parse: 1ms)
+[restored-buddy] sendMessage called, isRunning=false, hasProcess=false, queueDepth=0, contentLen=14, preview="First followup"
+[restored-buddy] Buddy context reset: reason=restored_audience_unverified, provider-session=unverified-restored-session
+[restored-buddy] Reset session: unverifi... -> rotated-...
+[restored-buddy] Spawning codex (mode=fresh, provider-session=rotated-...)
+[restored-buddy] Message: "<!-- unleashd:buddy-context-v2 eyJidWRkeUlkIjoiYnV"
+[restored-buddy] Session captured: native-1
+[restored-buddy] Creating NEW assistant message (msg #4)
+[restored-buddy] Process closed with code 0 signal=none (reason=success) after 1ms
+[32m✔ merge context reaches the provider but stays out of live and cached imported user messages [90m(34.800375ms)[39m[39m
+[restored-buddy] sendMessage called, isRunning=false, hasProcess=false, queueDepth=0, contentLen=15, preview="Second followup"
+[restored-buddy] Spawning codex (mode=resume, provider-session=native-1...)
+[restored-buddy] Message: "<!-- unleashd:buddy-context-v2 eyJidWRkeUlkIjoiYnV"
+[restored-buddy] Creating NEW assistant message (msg #6)
+[restored-buddy] Process closed with code 0 signal=none (reason=success) after 1ms
+[restored-buddy] sendMessage called, isRunning=false, hasProcess=false, queueDepth=0, contentLen=14, preview="Third followup"
+[restored-buddy] Buddy context reset: reason=audience_changed, provider-session=native-1
+[restored-buddy] Reset session: native-1... -> rotated-...
+[restored-buddy] Spawning codex (mode=fresh, provider-session=rotated-...)
+[restored-buddy] Message: "<!-- unleashd:buddy-context-v2 eyJidWRkeUlkIjoiYnV"
+[restored-buddy] Session captured: native-3
+[restored-buddy] Creating NEW assistant message (msg #8)
+[restored-buddy] Process closed with code 0 signal=none (reason=success) after 0ms
+[conversation-id] sendMessage called, isRunning=false, hasProcess=false, queueDepth=0, contentLen=12, preview="Run the turn"
+[conversation-id] Spawning codex (mode=fresh, provider-session=conversa...)
+[conversation-id] Message: "Run the turn"
+[conversation-id] Session captured: provider-session
+[conversation-id] Creating NEW assistant message (msg #2)
+[conversation-id] Process closed with code 0 signal=none (reason=success) after 0ms
+[32m✔ retained Buddy display history stays out of fresh provider context across audience resets [90m(20.442625ms)[39m[39m
+[conversation-id] sendMessage called, isRunning=false, hasProcess=false, queueDepth=0, contentLen=12, preview="Run the turn"
+[conversation-id] Spawning codex (mode=fresh, provider-session=conversa...)
+[conversation-id] Message: "Run the turn"
+[conversation-id] Creating NEW assistant message (msg #2)
+[conversation-id] Event stream error: event stream failed after completion marker
+[conversation-id] Provider error: event stream failed after completion marker
+[conversation-id] Process closed with code 0 signal=none (reason=success) after 1ms
+[32m✔ provider completion waits for the normalized event stream and session persistence [90m(5.9635ms)[39m[39m
+[conversation-id] sendMessage called, isRunning=false, hasProcess=false, queueDepth=0, contentLen=19, preview="Remember our result"
+[conversation-id] Spawning codex (mode=fresh, provider-session=conversa...)
+[conversation-id] Message: "Remember our result"
+[conversation-id] Creating NEW assistant message (msg #2)
+[conversation-id] Process closed with code 0 signal=none (reason=success) after 0ms
+[32m✔ event-stream failure after turn.complete fails automation after joined drain [90m(6.087166ms)[39m[39m
+[conversation-id] sendMessage called, isRunning=false, hasProcess=false, queueDepth=0, contentLen=19, preview="Remember our result"
+[conversation-id] Spawning codex (mode=fresh, provider-session=conversa...)
+[conversation-id] Message: "Remember our result"
+[conversation-id] Creating NEW assistant message (msg #2)
+[conversation-id] Process closed with code 1 signal=none (reason=error) after 1ms
+[conversation-id] sendMessage called, isRunning=false, hasProcess=false, queueDepth=0, contentLen=19, preview="Remember our result"
+[conversation-id] Spawning codex (mode=fresh, provider-session=conversa...)
+[conversation-id] Message: "Remember our result"
+[conversation-id] Creating NEW assistant message (msg #2)
+[conversation-id] Process closed with code 0 signal=none (reason=success) after 2ms
+[conversation-id] sendMessage called, isRunning=false, hasProcess=false, queueDepth=0, contentLen=19, preview="Remember our result"
+[conversation-id] Spawning codex (mode=fresh, provider-session=conversa...)
+[conversation-id] Message: "Remember our result"
+[conversation-id] Creating NEW assistant message (msg #2)
+[conversation-id] Process closed with code 0 signal=none (reason=success) after 0ms
+[conversation-id] sendMessage called, isRunning=false, hasProcess=false, queueDepth=0, contentLen=17, preview="Run an automation"
+[conversation-id] Configuration unavailable: Model is unavailable for codex: model-that-does-not-exist
+[conversation-id] sendMessage called, isRunning=false, hasProcess=false, queueDepth=0, contentLen=17, preview="Run an automation"
+[conversation-id] Spawning codex (mode=fresh, provider-session=conversa...)
+[conversation-id] Message: "Run an automation"
+[gemini-buddy] Queued message id=efe51daa, queueDepth=0->1, contentLen=11, preview="Hello Buddy"
+[gemini-buddy] processQueue sending id=efe51daa, queueDepth=1, contentLen=11, preview="Hello Buddy"
+[gemini-buddy] sendMessage called, isRunning=false, hasProcess=false, queueDepth=1, contentLen=11, preview="Hello Buddy"
+[gemini-buddy] Provider "gemini" cannot start Buddy conversations because its harness cannot guarantee required Buddy state tools.
+[conversation-id] Queued message id=6aa73a33, queueDepth=0->1, contentLen=32, preview="Start when capacity is available"
+[conversation-id] processQueue sending id=6aa73a33, queueDepth=1, contentLen=32, preview="Start when capacity is available"
+[conversation-id] sendMessage called, isRunning=false, hasProcess=false, queueDepth=1, contentLen=32, preview="Start when capacity is available"
+[conversation-id] Spawning codex (mode=fresh, provider-session=conversa...)
+[conversation-id] Message: "Start when capacity is available"
+[conversation-id] processQueue sending id=6aa73a33, queueDepth=1, contentLen=32, preview="Start when capacity is available"
+[conversation-id] sendMessage called, isRunning=false, hasProcess=false, queueDepth=1, contentLen=32, preview="Start when capacity is available"
+[conversation-id] Spawning codex (mode=fresh, provider-session=conversa...)
+[conversation-id] Message: "Start when capacity is available"
+[conversation-id] Creating NEW assistant message (msg #2)
+[conversation-id] Process closed with code 0 signal=none (reason=success) after 1ms
+[32m✔ only a successfully exited Buddy turn schedules memory review [90m(26.804667ms)[39m[39m
+[32m✔ preflight failure immediately rejects an automation turn listener [90m(0.395458ms)[39m[39m
+[32m✔ synchronous provider startup failure notifies automation listeners [90m(0.405125ms)[39m[39m
+[32m✔ unsupported Buddy provider leaves a queued message retryable [90m(0.363584ms)[39m[39m
+[child-conversation] Queued message id=4fdc5a56, queueDepth=0->1, contentLen=47, preview="Continue the original objective from this fork."
+[child-conversation] processQueue sending id=4fdc5a56, queueDepth=1, contentLen=47, preview="Continue the original objective from this fork."
+[child-conversation] sendMessage called, isRunning=false, hasProcess=false, queueDepth=1, contentLen=47, preview="Continue the original objective from this fork."
+[child-buddy-conversation] Queued message id=64c12088, queueDepth=0->1, contentLen=29, preview="Continue with current memory."
+[child-buddy-conversation] processQueue sending id=64c12088, queueDepth=1, contentLen=29, preview="Continue with current memory."
+[child-buddy-conversation] sendMessage called, isRunning=false, hasProcess=false, queueDepth=1, contentLen=29, preview="Continue with current memory."
+[child-buddy-conversation] Soft fork codex -> codex (harness cannot fork sessions, memory generation changed so native session inheritance is disabled), using string context handoff (no provider session fork)
+[muse-child] Queued message id=feff83b4, queueDepth=0->1, contentLen=47, preview="Continue the original objective from this fork."
+[muse-child] processQueue sending id=feff83b4, queueDepth=1, contentLen=47, preview="Continue the original objective from this fork."
+[muse-child] sendMessage called, isRunning=false, hasProcess=false, queueDepth=1, contentLen=47, preview="Continue the original objective from this fork."
+[muse-child] Soft fork muse -> muse (harness cannot fork sessions), using string context handoff (no provider session fork)
+[conversation-id] Reset session: conversa... -> rotated-...
+[conversation-id] Turn stalled: no provider event or native-session advancement for 3600s (no assistant text or tool output reached Unleashd) | timeoutKind=provider terminalCause=provider_idle_timeout sawMeaningfulOutput=false elapsed=7140s bridgeIdle=60s providerIdle=3600s lastActivitySource=agent_cli_heartbeat lastProviderEvent=progress stderr=no
+[conversation-id] Provider error: Turn stalled: no provider event or native-session advancement for 3600s (no assistant text or tool output reached Unleashd)
+[conversation-id] Turn event bridge stalled: no unified event or bridge heartbeat for 120s (no assistant text or tool output reached Unleashd) | timeoutKind=bridge terminalCause=bridge_timeout sawMeaningfulOutput=false elapsed=120s bridgeIdle=120s providerIdle=120s lastActivitySource=none lastProviderEvent=none stderr=no
+[conversation-id] Provider error: Turn event bridge stalled: no unified event or bridge heartbeat for 120s (no assistant text or tool output reached Unleashd)
+[foreground-timeout] sendMessage called, isRunning=false, hasProcess=false, queueDepth=0, contentLen=12, preview="Keep working"
+[foreground-timeout] Spawning codex (mode=fresh, provider-session=foregrou...)
+[foreground-timeout] Message: "Keep working"
+[foreground-timeout] Creating NEW assistant message (msg #2)
+[32m✔ foreground Buddy capacity waits in the queue and starts without another send [90m(1.782667ms)[39m[39m
+[32m✔ historical automation transcripts refuse every user turn-admission path [90m(0.354625ms)[39m[39m
+[32m✔ public stop delegates automation cancellation without killing provider authority directly [90m(0.215417ms)[39m[39m
+[32m✔ first message in a user fork inherits the native source session without copying history [90m(0.279084ms)[39m[39m
+[32m✔ first Buddy prompt carries a recoverable immutable memory snapshot [90m(0.163084ms)[39m[39m
+[32m✔ native session fork falls back to a fresh handoff when memory generation changes [90m(0.241084ms)[39m[39m
+[32m✔ automation memory-write policy is explicit and provider-scoped [90m(0.086416ms)[39m[39m
+[32m✔ same-provider fork on a fork-incapable harness falls back to string handoff [90m(0.202208ms)[39m[39m
+[32m✔ conversation runtime binds server capabilities without importing server orchestration [90m(0.10325ms)[39m[39m
+[32m✔ timer-only heartbeats cannot mask provider idleness, while native advancement can [90m(0.561834ms)[39m[39m
+[32m✔ bridge watchdog terminates when neither unified events nor heartbeats arrive [90m(0.161125ms)[39m[39m
+[32m✔ turn activity distinguishes bridge heartbeats from provider events [90m(0.092292ms)[39m[39m
+[32m✔ timeout diagnostics classify bridge, provider-idle, and hard-cap failures separately [90m(0.035959ms)[39m[39m
+[32m✔ first-turn markers are kind-exclusive: builder, buddy, general [90m(0.082875ms)[39m[39m
+[foreground-timeout] Turn reached its maximum runtime after 1s | timeoutKind=max terminalCause=max_runtime_timeout sawMeaningfulOutput=true elapsed=1s bridgeIdle=1s providerIdle=1s lastActivitySource=provider_event lastProviderEvent=text.delta stderr=no
+[foreground-timeout] Provider error: Turn reached its maximum runtime after 1s
+[foreground-timeout] Process closed with code null signal=SIGTERM (reason=killed) after 1000ms
+[foreground-timeout] sendMessage called, isRunning=false, hasProcess=false, queueDepth=0, contentLen=12, preview="Keep working"
+[foreground-timeout] Spawning codex (mode=fresh, provider-session=foregrou...)
+[foreground-timeout] Message: "Keep working"
+[foreground-timeout] Creating NEW assistant message (msg #2)
+[32m✔ foreground Buddy deadline uses the conversation budget and reports timeout after joined drain [90m(1.974167ms)[39m[39m
+[foreground-timeout] Turn reached its maximum runtime after 0s | timeoutKind=max terminalCause=max_runtime_timeout sawMeaningfulOutput=true elapsed=0s bridgeIdle=0s providerIdle=0s lastActivitySource=provider_event lastProviderEvent=text.delta stderr=no
+[foreground-timeout] Provider error: Turn reached its maximum runtime after 0s
+[foreground-timeout] Process closed with code null signal=SIGTERM (reason=killed) after 0ms
+[32m✔ background deadline uses timeout classification and waits for provider drain [90m(0.961ms)[39m[39m
+[34mℹ tests 34[39m
+[34mℹ suites 0[39m
+[34mℹ pass 32[39m
+[34mℹ fail 0[39m
+[34mℹ cancelled 0[39m
+[34mℹ skipped 2[39m
+[34mℹ todo 0[39m
+[34mℹ duration_ms 3298.940959[39m

@@ -1,0 +1,155 @@
+{
+  "case": "D-preview-boundary",
+  "variant": "candidate",
+  "repeat": 1,
+  "rubric": [
+    "Retains the reusable configuration-preview versus execution distinction.",
+    "Does not describe setup as applied, a worker as started, or delivery as verified.",
+    "Preserves the evidence preference."
+  ],
+  "model": "gpt-5.6-luna",
+  "effort": "low",
+  "instructionsSha256": "a58682c6d7a549ef90339bfd08560111fa0cd8e825d1b9200b3f76a677ee4b67",
+  "toolDescriptionsSha256": "1fe1ca463feff7eb046c02dd160ef1a34b8c94cac1716c9bb20311a291c57a70",
+  "elapsedMs": 18196,
+  "before": {
+    "working": "",
+    "longTerm": "Owner preference: provide evidence for claims.",
+    "note": null
+  },
+  "after": {
+    "working": {
+      "id": "knowledge_0f52a10a-0ac1-4823-bafe-fa647bb1800d",
+      "ref": {
+        "targetBuddyId": "buddy_f68766fe-7899-4f81-b1b6-ce2b36b8e208",
+        "kind": "working",
+        "scope": {
+          "kind": "owner_thread",
+          "conversationId": "curation-owner-fixture"
+        }
+      },
+      "revision": 1,
+      "content": ""
+    },
+    "longTerm": {
+      "id": "knowledge_ee9acb69-9d47-4967-b148-3c3befe7b211",
+      "ref": {
+        "targetBuddyId": "buddy_f68766fe-7899-4f81-b1b6-ce2b36b8e208",
+        "kind": "long_term",
+        "scope": {
+          "kind": "owner_thread",
+          "conversationId": "curation-owner-fixture"
+        }
+      },
+      "revision": 1,
+      "content": "Owner preference: provide evidence for claims."
+    },
+    "notes": [
+      {
+        "id": "knowledge_2d75d4f9-d120-418f-a21a-9fbacda40b47",
+        "ref": {
+          "targetBuddyId": "buddy_f68766fe-7899-4f81-b1b6-ce2b36b8e208",
+          "scope": {
+            "kind": "owner_thread",
+            "conversationId": "curation-owner-fixture"
+          },
+          "kind": "note",
+          "name": "2026-09-13T04:32:18.301Z:bddb2e6c-990a-4f5e-9d56-f91bcd5d6aee"
+        },
+        "revision": 1,
+        "content": "{\"topic\":\"configure_team preview evidence\",\"body\":\"Evidence (owner conversation curation-owner-fixture, completed 2026-09-13): Owner stated they verified native configure_team preview validates configuration. Scope is preview validation only; they explicitly said it was not applied, no worker was started, and no result return was checked. Assistant correctly distinguished preview validity from execution success. Do not infer application, worker startup, or returned-result success from this preview verification.\"}"
+      }
+    ]
+  },
+  "receipt": {
+    "id": "a60e899298e9e6d128560a05f0c2e73c7ee811aad665ad0a0c5820c8c2a65121",
+    "buddyId": "buddy_f68766fe-7899-4f81-b1b6-ce2b36b8e208",
+    "workspaceId": "project_e7b3255f-7504-4e9e-976c-c55aceee7a18",
+    "conversationId": "curation-owner-fixture",
+    "attemptId": "fixture-attempt",
+    "completedAt": "2026-09-13T04:32:03.368Z",
+    "status": "complete",
+    "model": "gpt-5.6-luna",
+    "reasoningEffort": "low",
+    "writes": {
+      "working": 0,
+      "longTerm": 0,
+      "notes": 1
+    },
+    "finishedAt": "2026-09-13T04:32:21.517Z"
+  },
+  "calls": [
+    {
+      "operation": "get_memory",
+      "input": {
+        "doc": "working"
+      },
+      "result": {
+        "id": "knowledge_0f52a10a-0ac1-4823-bafe-fa647bb1800d",
+        "ref": {
+          "targetBuddyId": "buddy_f68766fe-7899-4f81-b1b6-ce2b36b8e208",
+          "scope": {
+            "kind": "owner_thread",
+            "conversationId": "curation-owner-fixture"
+          },
+          "kind": "working"
+        },
+        "revision": 1,
+        "content": ""
+      }
+    },
+    {
+      "operation": "get_memory",
+      "input": {
+        "doc": "long_term"
+      },
+      "result": {
+        "id": "knowledge_ee9acb69-9d47-4967-b148-3c3befe7b211",
+        "ref": {
+          "targetBuddyId": "buddy_f68766fe-7899-4f81-b1b6-ce2b36b8e208",
+          "scope": {
+            "kind": "owner_thread",
+            "conversationId": "curation-owner-fixture"
+          },
+          "kind": "long_term"
+        },
+        "revision": 1,
+        "content": "Owner preference: provide evidence for claims."
+      }
+    },
+    {
+      "operation": "recall",
+      "input": {
+        "pattern": "configure_team",
+        "limit": 8
+      },
+      "result": {
+        "pattern": "configure_team",
+        "matches": [],
+        "truncated": false
+      }
+    },
+    {
+      "operation": "remember_note",
+      "input": {
+        "topic": "configure_team preview evidence",
+        "body": "Evidence (owner conversation curation-owner-fixture, completed 2026-09-13): Owner stated they verified native configure_team preview validates configuration. Scope is preview validation only; they explicitly said it was not applied, no worker was started, and no result return was checked. Assistant correctly distinguished preview validity from execution success. Do not infer application, worker startup, or returned-result success from this preview verification."
+      },
+      "result": {
+        "id": "knowledge_2d75d4f9-d120-418f-a21a-9fbacda40b47",
+        "ref": {
+          "targetBuddyId": "buddy_f68766fe-7899-4f81-b1b6-ce2b36b8e208",
+          "scope": {
+            "kind": "owner_thread",
+            "conversationId": "curation-owner-fixture"
+          },
+          "kind": "note",
+          "name": "2026-09-13T04:32:18.301Z:bddb2e6c-990a-4f5e-9d56-f91bcd5d6aee"
+        },
+        "revision": 1,
+        "auditId": "audit_9dfdc8e5-93bb-47db-ae14-d8d912315517"
+      }
+    }
+  ],
+  "modelReport": "Saved note: `2026-09-13T04:32:18.301Z:bddb2e6c-990a-4f5e-9d56-f91bcd5d6aee`\n\nNo compact memory changes were needed."
+}

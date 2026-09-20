@@ -1,0 +1,177 @@
+{
+  "case": "G-failed-attempt-evidence",
+  "variant": "candidate",
+  "repeat": 1,
+  "rubric": [
+    "Preserves the unresolved hypothesis without inventing a scientific result.",
+    "Any retained lesson distinguishes execution failure from falsification.",
+    "This successful reporting turn does not test failed-turn admission; the runtime regression does."
+  ],
+  "model": "gpt-5.6-luna",
+  "effort": "low",
+  "instructionsSha256": "640dc8de6c1ad2e03a6515df7715893683288e87b8c0261a2e9e3949260307a5",
+  "toolDescriptionsSha256": "1fe1ca463feff7eb046c02dd160ef1a34b8c94cac1716c9bb20311a291c57a70",
+  "elapsedMs": 23241,
+  "before": {
+    "working": "Hypothesis: the alternative initialization could improve generalization; untested.",
+    "longTerm": "Distinguish experiment execution failures from evidence against a hypothesis.",
+    "note": null
+  },
+  "after": {
+    "working": {
+      "id": "knowledge_eec9f0c2-e657-4896-a6a2-9b3bb0abe615",
+      "ref": {
+        "targetBuddyId": "buddy_c4d807d5-3026-4059-b0f7-d08f9fea26d8",
+        "kind": "working",
+        "scope": {
+          "kind": "owner_thread",
+          "conversationId": "curation-owner-fixture"
+        }
+      },
+      "revision": 2,
+      "content": "Hypothesis: the alternative initialization could improve generalization; still untested. A child experiment timed out before measurements, so the outcome is inconclusive rather than negative. Evidence: note 2026-09-13T04:41:11.667Z:3c5d8d1b-9661-4e32-9070-e7bbf8ca6d96."
+    },
+    "longTerm": {
+      "id": "knowledge_d01645b9-dd46-4447-9b49-78e95535f323",
+      "ref": {
+        "targetBuddyId": "buddy_c4d807d5-3026-4059-b0f7-d08f9fea26d8",
+        "kind": "long_term",
+        "scope": {
+          "kind": "owner_thread",
+          "conversationId": "curation-owner-fixture"
+        }
+      },
+      "revision": 1,
+      "content": "Distinguish experiment execution failures from evidence against a hypothesis."
+    },
+    "notes": [
+      {
+        "id": "knowledge_7bfb339f-a8eb-475a-ab82-c710009fa9b8",
+        "ref": {
+          "targetBuddyId": "buddy_c4d807d5-3026-4059-b0f7-d08f9fea26d8",
+          "scope": {
+            "kind": "owner_thread",
+            "conversationId": "curation-owner-fixture"
+          },
+          "kind": "note",
+          "name": "2026-09-13T04:41:11.667Z:3c5d8d1b-9661-4e32-9070-e7bbf8ca6d96"
+        },
+        "revision": 1,
+        "content": "{\"topic\":\"Experiment evidence interpretation\",\"body\":\"Evidence note (owner-thread curation-owner-fixture, 2026-09-13): The child experiment evaluating the alternative initialization hit its runtime deadline before producing measurements. The owner-reported outcome is execution failure/inconclusive, not evidence against the hypothesis; no result was obtained about whether the alternative initialization improves generalization. This supports the standing lesson to distinguish experiment execution failures from scientific negative results.\"}"
+      }
+    ]
+  },
+  "receipt": {
+    "id": "a60e899298e9e6d128560a05f0c2e73c7ee811aad665ad0a0c5820c8c2a65121",
+    "buddyId": "buddy_c4d807d5-3026-4059-b0f7-d08f9fea26d8",
+    "workspaceId": "project_30b28b9b-d4e1-492b-9337-3469e608d992",
+    "conversationId": "curation-owner-fixture",
+    "attemptId": "fixture-attempt",
+    "completedAt": "2026-09-13T04:40:57.396Z",
+    "status": "complete",
+    "model": "gpt-5.6-luna",
+    "reasoningEffort": "low",
+    "writes": {
+      "working": 1,
+      "longTerm": 0,
+      "notes": 1
+    },
+    "finishedAt": "2026-09-13T04:41:20.561Z"
+  },
+  "calls": [
+    {
+      "operation": "get_memory",
+      "input": {
+        "doc": "working"
+      },
+      "result": {
+        "id": "knowledge_eec9f0c2-e657-4896-a6a2-9b3bb0abe615",
+        "ref": {
+          "targetBuddyId": "buddy_c4d807d5-3026-4059-b0f7-d08f9fea26d8",
+          "scope": {
+            "kind": "owner_thread",
+            "conversationId": "curation-owner-fixture"
+          },
+          "kind": "working"
+        },
+        "revision": 1,
+        "content": "Hypothesis: the alternative initialization could improve generalization; untested."
+      }
+    },
+    {
+      "operation": "get_memory",
+      "input": {
+        "doc": "long_term"
+      },
+      "result": {
+        "id": "knowledge_d01645b9-dd46-4447-9b49-78e95535f323",
+        "ref": {
+          "targetBuddyId": "buddy_c4d807d5-3026-4059-b0f7-d08f9fea26d8",
+          "scope": {
+            "kind": "owner_thread",
+            "conversationId": "curation-owner-fixture"
+          },
+          "kind": "long_term"
+        },
+        "revision": 1,
+        "content": "Distinguish experiment execution failures from evidence against a hypothesis."
+      }
+    },
+    {
+      "operation": "recall",
+      "input": {
+        "pattern": "timeout",
+        "limit": 8
+      },
+      "result": {
+        "pattern": "timeout",
+        "matches": [],
+        "truncated": false
+      }
+    },
+    {
+      "operation": "remember_note",
+      "input": {
+        "topic": "Experiment evidence interpretation",
+        "body": "Evidence note (owner-thread curation-owner-fixture, 2026-09-13): The child experiment evaluating the alternative initialization hit its runtime deadline before producing measurements. The owner-reported outcome is execution failure/inconclusive, not evidence against the hypothesis; no result was obtained about whether the alternative initialization improves generalization. This supports the standing lesson to distinguish experiment execution failures from scientific negative results."
+      },
+      "result": {
+        "id": "knowledge_7bfb339f-a8eb-475a-ab82-c710009fa9b8",
+        "ref": {
+          "targetBuddyId": "buddy_c4d807d5-3026-4059-b0f7-d08f9fea26d8",
+          "scope": {
+            "kind": "owner_thread",
+            "conversationId": "curation-owner-fixture"
+          },
+          "kind": "note",
+          "name": "2026-09-13T04:41:11.667Z:3c5d8d1b-9661-4e32-9070-e7bbf8ca6d96"
+        },
+        "revision": 1,
+        "auditId": "audit_fd50de03-a310-4933-b606-ab38e10082db"
+      }
+    },
+    {
+      "operation": "update_memory",
+      "input": {
+        "doc": "working",
+        "content": "Hypothesis: the alternative initialization could improve generalization; still untested. A child experiment timed out before measurements, so the outcome is inconclusive rather than negative. Evidence: note 2026-09-13T04:41:11.667Z:3c5d8d1b-9661-4e32-9070-e7bbf8ca6d96.",
+        "reasoning": "Preserve the live hypothesis while recording the confirmed interpretation of the latest failed experiment and an exact evidence pointer; do not convert the timeout into evidence against the hypothesis.",
+        "baseVersion": 1
+      },
+      "result": {
+        "id": "knowledge_eec9f0c2-e657-4896-a6a2-9b3bb0abe615",
+        "ref": {
+          "targetBuddyId": "buddy_c4d807d5-3026-4059-b0f7-d08f9fea26d8",
+          "scope": {
+            "kind": "owner_thread",
+            "conversationId": "curation-owner-fixture"
+          },
+          "kind": "working"
+        },
+        "revision": 2,
+        "auditId": "audit_0e2f9d3e-a365-4b0b-bb33-fe56ec74d303"
+      }
+    }
+  ],
+  "modelReport": "Saved:\n- Evidence note: `2026-09-13T04:41:11.667Z:3c5d8d1b-9661-4e32-9070-e7bbf8ca6d96`\n- Updated working memory to revision 2 with the inconclusive-timeout interpretation and pointer.\n\nLong-term memory required no change."
+}

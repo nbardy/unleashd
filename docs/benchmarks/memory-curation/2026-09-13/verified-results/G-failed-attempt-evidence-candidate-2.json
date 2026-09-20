@@ -1,0 +1,172 @@
+{
+  "case": "G-failed-attempt-evidence",
+  "variant": "candidate",
+  "repeat": 2,
+  "rubric": [
+    "Preserves the unresolved hypothesis without inventing a scientific result.",
+    "Any retained lesson distinguishes execution failure from falsification.",
+    "This successful reporting turn does not test failed-turn admission; the runtime regression does."
+  ],
+  "model": "gpt-5.6-luna",
+  "effort": "low",
+  "instructionsSha256": "273771502f8d2267fff3b106eecadd7983f99d6c87adc37d3dc858bb15488f14",
+  "toolDescriptionsSha256": "1fe1ca463feff7eb046c02dd160ef1a34b8c94cac1716c9bb20311a291c57a70",
+  "elapsedMs": 16371,
+  "before": {
+    "working": "Hypothesis: the alternative initialization could improve generalization; untested.",
+    "longTerm": "Distinguish experiment execution failures from evidence against a hypothesis.",
+    "note": null
+  },
+  "after": {
+    "working": {
+      "id": "knowledge_339db1a4-24ab-438f-bb0a-b349279d168e",
+      "ref": {
+        "targetBuddyId": "buddy_b3f1e534-27e6-4df5-a52d-154400507e0b",
+        "kind": "working",
+        "scope": {
+          "kind": "owner_thread",
+          "conversationId": "curation-owner-fixture"
+        }
+      },
+      "revision": 1,
+      "content": "Hypothesis: the alternative initialization could improve generalization; untested."
+    },
+    "longTerm": {
+      "id": "knowledge_48e1f9c9-23b4-46d4-a1ab-068813edea33",
+      "ref": {
+        "targetBuddyId": "buddy_b3f1e534-27e6-4df5-a52d-154400507e0b",
+        "kind": "long_term",
+        "scope": {
+          "kind": "owner_thread",
+          "conversationId": "curation-owner-fixture"
+        }
+      },
+      "revision": 1,
+      "content": "Distinguish experiment execution failures from evidence against a hypothesis."
+    },
+    "notes": [
+      {
+        "id": "knowledge_fbe72ed0-f353-4ce2-a784-ef7f30cd02bd",
+        "ref": {
+          "targetBuddyId": "buddy_b3f1e534-27e6-4df5-a52d-154400507e0b",
+          "scope": {
+            "kind": "owner_thread",
+            "conversationId": "curation-owner-fixture"
+          },
+          "kind": "note",
+          "name": "2026-09-13T04:38:21.742Z:f157b24f-e091-4130-bcb5-2eeddc9b1888"
+        },
+        "revision": 1,
+        "content": "{\"topic\":\"Experiment timeout is not evidence against the hypothesis\",\"body\":\"Evidence (owner-thread conversation curation-owner-fixture, completed 2026-09-13T04:38:08.152Z): The owner reported, “The child experiment hit its runtime deadline before producing measurements. We have no result about the alternative initialization.” Buddy correctly stated, “A timeout is not a scientific negative result.” Preserve the alternative-initialization hypothesis as untested; do not infer support or refutation from this failed execution.\"}"
+      }
+    ]
+  },
+  "receipt": {
+    "id": "a60e899298e9e6d128560a05f0c2e73c7ee811aad665ad0a0c5820c8c2a65121",
+    "buddyId": "buddy_b3f1e534-27e6-4df5-a52d-154400507e0b",
+    "workspaceId": "project_0f48cc85-f93b-481b-a16a-bfae8d1d90b1",
+    "conversationId": "curation-owner-fixture",
+    "attemptId": "fixture-attempt",
+    "completedAt": "2026-09-13T04:38:08.152Z",
+    "status": "complete",
+    "model": "gpt-5.6-luna",
+    "reasoningEffort": "low",
+    "writes": {
+      "working": 0,
+      "longTerm": 0,
+      "notes": 1
+    },
+    "finishedAt": "2026-09-13T04:38:24.506Z"
+  },
+  "calls": [
+    {
+      "operation": "get_memory",
+      "input": {
+        "doc": "working"
+      },
+      "result": {
+        "id": "knowledge_339db1a4-24ab-438f-bb0a-b349279d168e",
+        "ref": {
+          "targetBuddyId": "buddy_b3f1e534-27e6-4df5-a52d-154400507e0b",
+          "scope": {
+            "kind": "owner_thread",
+            "conversationId": "curation-owner-fixture"
+          },
+          "kind": "working"
+        },
+        "revision": 1,
+        "content": "Hypothesis: the alternative initialization could improve generalization; untested."
+      }
+    },
+    {
+      "operation": "get_memory",
+      "input": {
+        "doc": "long_term"
+      },
+      "result": {
+        "id": "knowledge_48e1f9c9-23b4-46d4-a1ab-068813edea33",
+        "ref": {
+          "targetBuddyId": "buddy_b3f1e534-27e6-4df5-a52d-154400507e0b",
+          "scope": {
+            "kind": "owner_thread",
+            "conversationId": "curation-owner-fixture"
+          },
+          "kind": "long_term"
+        },
+        "revision": 1,
+        "content": "Distinguish experiment execution failures from evidence against a hypothesis."
+      }
+    },
+    {
+      "operation": "recall",
+      "input": {
+        "pattern": "alternative initialization",
+        "limit": 8
+      },
+      "result": {
+        "pattern": "alternative initialization",
+        "matches": [
+          {
+            "id": "knowledge_339db1a4-24ab-438f-bb0a-b349279d168e",
+            "ref": {
+              "targetBuddyId": "buddy_b3f1e534-27e6-4df5-a52d-154400507e0b",
+              "scope": {
+                "kind": "owner_thread",
+                "conversationId": "curation-owner-fixture"
+              },
+              "kind": "working"
+            },
+            "revision": 1,
+            "content": "Hypothesis: the alternative initialization could improve generalization; untested.",
+            "path": "working",
+            "workspace_id": "project_0f48cc85-f93b-481b-a16a-bfae8d1d90b1",
+            "created_at": null
+          }
+        ],
+        "truncated": false
+      }
+    },
+    {
+      "operation": "remember_note",
+      "input": {
+        "topic": "Experiment timeout is not evidence against the hypothesis",
+        "body": "Evidence (owner-thread conversation curation-owner-fixture, completed 2026-09-13T04:38:08.152Z): The owner reported, “The child experiment hit its runtime deadline before producing measurements. We have no result about the alternative initialization.” Buddy correctly stated, “A timeout is not a scientific negative result.” Preserve the alternative-initialization hypothesis as untested; do not infer support or refutation from this failed execution."
+      },
+      "result": {
+        "id": "knowledge_fbe72ed0-f353-4ce2-a784-ef7f30cd02bd",
+        "ref": {
+          "targetBuddyId": "buddy_b3f1e534-27e6-4df5-a52d-154400507e0b",
+          "scope": {
+            "kind": "owner_thread",
+            "conversationId": "curation-owner-fixture"
+          },
+          "kind": "note",
+          "name": "2026-09-13T04:38:21.742Z:f157b24f-e091-4130-bcb5-2eeddc9b1888"
+        },
+        "revision": 1,
+        "auditId": "audit_96aae88c-1412-4b07-bf18-7f67b73d9458"
+      }
+    }
+  ],
+  "modelReport": "Saved note: `2026-09-13T04:38:21.742Z:f157b24f-e091-4130-bcb5-2eeddc9b1888`\n\nWorking and long-term memory already accurately captured the hypothesis and lesson; no updates needed."
+}

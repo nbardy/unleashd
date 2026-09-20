@@ -1,0 +1,27 @@
+{
+  "capturedAt": "2026-09-10T14:22:19.621875+00:00",
+  "packageCommit": "55c7681f1e4b19664c116308f2329445e4df70e2",
+  "scope": "uncommitted implementation evidence; not an authorization or live team state",
+  "sha256": {
+    "server/src/buddies/owner-team-configuration.ts": "8f7aee5060e9d02c6230e85edbc347a5debf85d3ef8d334eedeeebe93d01df36",
+    "server/src/buddies/owner-mcp.ts": "700dd82de073b3e23a3c5d6c32104b62f9fa1436104a1b1e2cefd43f0b67e1fc",
+    "server/src/buddies/control-server.ts": "8646b6bee2954a9d392c3e9bbd521c7238235c5c9a479e0480925fd3c01dad3f",
+    "server/src/buddies/builder-mcp-server.ts": "0c66bd1e13ae65e77e528e8a8dc946b0a5c5980d7e4acde16acde74d5092c7cc",
+    "server/src/buddies/operations.ts": "f21cbefa5635c3874ce960e58f5b1b310b9f6f3e3fb36bd9e361de08b6e93676",
+    "server/src/buddies/team-readiness.ts": "8a31f6a977ae1078618abac94cd9c1b6790b7fcb962be53a7e3ad2091d77f366",
+    "server/src/buddies/mcp-server.ts": "48f25fcd6324e9bbbac3f5974a7a8a9aaaa1def8ab6932b0a26124f48f92a028",
+    "server/src/conversations/runtime.ts": "844867551240fb7ad10f38a6b65c4289333525f93f5caf322a233e570bf6a356",
+    "server/src/transport/conversation-websocket.ts": "793d3a152149502496b61f6a12fbae4dcd21c9f2e39b766d66d6c1ec42f528ac",
+    "shared/src/buddy-team-configuration.ts": "a96c2e95343aab4d6e79e50794e34c4786dc2d44f47fcaa624cc54eb9339595f",
+    "shared/src/buddy-message.ts": "5197e6e9178b4e3a42ac33e2bc6ec3893f90113872556dc2ba9c28163cee638b",
+    "client/src/components/buddies/BuddyTeamConfiguration.tsx": "c785700ac6a005efae40da21f565dbbddddc2928aaaee44b98682208c6189671",
+    "product/buddies/DESIGN_OWNER_TEAM_SETUP.md": "268207019f847e0d0df38f9d8bb8d0feae32675227fe6f12c76a157233f59271",
+    "agent_notes/2026-09-10_owner-team-setup-implementation-handoff.md": "83f391558f72ff8828ecc66dcdddc692160a48d400e58dda57ddc10ab81ba61b",
+    "server/test/buddy-owner-live.test.ts": "74e81fb52a26768d1fd28e6135db3cd6fd7b73653a4b9268801f8fe1f342d6a9"
+  },
+  "logs": {
+    "/tmp/buddy-owner-live.log": "7a29c1b4dcc2867f4f6637bb05b9e2ec983a593affdecbb9d20d89fb58ed1a57",
+    "/tmp/buddy-owner-server-final.log": "860ec37f517e4878ba203880aa26d16644a5e5c3432f7cb3855b7234674740af",
+    "/tmp/buddy-owner-client-final.log": "a5b98a0922bc21ae5257490a704f031ec35fb3564d3b6868b4d663accb0357f4"
+  }
+}

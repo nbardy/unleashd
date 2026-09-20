@@ -8,7 +8,9 @@ the AGENTS.md code tree map; this doc is the why behind the layout.
 Provider-specific CLI details are expressed through a shared contract, split
 between the build-time contract in `agent-cli-tool` (harnesses + builder +
 types), the server provider runtime (`server/src/providers/*`), and shared
-provider IDs in `shared/src/index.ts`.
+provider IDs/catalog schemas in `shared/src/provider-catalog.ts` (re-exported
+through `shared/src/index.ts`). Selection intent, patches, and resolution share
+`shared/src/conversation-config.ts`; see [pass-through pattern](pass-through-pattern.md).
 
 ## 1.5) Shared agent CLI stays a thin wrapper
 
@@ -20,8 +22,8 @@ The `vendor/agent-cli-tool` submodule is deliberately small. Its job is:
 4. parse harness-specific stdout/stderr
 5. emit one unified event stream
 
-Which file owns which step is in the AGENTS.md code tree map
-(build.ts / process-runner.ts / parsers / execute.ts / runtime-types.ts).
+The submodule implementation lives in `src/build.ts`, `src/process-runner.ts`,
+`src/parsers/`, `src/execute.ts`, and `src/runtime-types.ts`.
 
 ### Core rules for `vendor/agent-cli-tool`
 
@@ -74,6 +76,15 @@ Adding a provider means adding:
 - a server provider,
 - a disk adapter (if persisted artifacts are needed).
 
+Startup imports use `ConversationConfigStore.withSessionLookupIndex` to scan
+saved configuration identities once. Without it, every unfamiliar native session
+can trigger two full record scans, even when its transcript hits the session cache.
+The temporary index maps session IDs to conversation IDs; every hit still reads
+the authoritative record, and store writes update the index during the import.
+The index is released on completion or failure. Normal lookup and index repair
+resume afterward; unindexed writes from another process are discovered then.
+This optimization preserves the existing hydration/readiness barrier.
+
 ### 2.0) A config record is not a conversation
 
 Startup hydrates only the newest `STARTUP_INITIAL_LOAD_LIMIT` (500) transcripts;
@@ -103,15 +114,40 @@ an empty transcript anyway.
 
 Regression guard: `server/test/session-loader-hydration.test.ts`.
 
+Stable tool instructions belong in native tool descriptions or the dedicated
+model instruction channel. Keep authored text intact; scope generated workflow
+context to the selected operation. Display cleanup runs independently of durable
+identity: Builder, Buddy, swarm and merge envelopes must not become user messages
+after reload. Merge envelopes written from September 12 use a length field so
+review documents can quote closing markers; ambiguous legacy copies are preserved.
+Complete reserved envelopes pasted at the start of user text remain ambiguous.
+Tests cover live provider input, imported/cached display and literal user quotes;
+see `product/buddies/AUDIT_PROMPT_PLACEMENT_2026-09-12.md` for rationale and limits.
+
 Codex app transcripts can store `AGENTS.md` and environment setup as user-role
 `response_item` messages ahead of the real prompt, and again on resumed turns.
 The adapter filters their `content_item_kinds` provenance tags before extracting
 visible text; do not hide actual user text based on an `AGENTS.md` prefix.
+The same filter removes `plugins.recommendations`. Codex 0.146 predates those
+tags: recognize its complete three-block recommendations/AGENTS/environment
+bundle only at startup, with turn metadata and no provenance tags. Preserve
+explicit user text, standalone pastes, and later untagged messages. Cache v6
+reparses old projections so resumed history no longer becomes a plugin-list title.
 Buddy envelope removal runs independently of durable identity and checks every
 user message, since the briefing need not occupy the first row. Durable kind
 still wins over recovered marker identity. Parser changes must invalidate the
 normalized session cache so unchanged older transcripts are repaired on reload.
 Regression guard: `server/test/codex-buddy-transcript.test.ts`.
+
+Codex tool calls must survive both the event-message and response-message history
+paths. Retain function/freeform calls in transcript order and deduplicate them by
+call identity, not their formatted text. Otherwise polling replaces the live tool
+activity with a prose-only transcript. Preserve commands, JSON arguments and
+freeform scripts in `Message.toolCall.input`; formatting just the tool name loses
+the information the expanded history should show. Render input as literal code
+and omit it from bounded sidebar summaries. Cache v5 reparses earlier projections
+to restore those details. Guards: `server/test/codex-tool-history.test.ts` and the
+disk-to-desktop/mobile render case in `client/test/chat-message-groups.test.tsx`.
 
 ### 2.1) Rehydration: the durable record owns Buddy identity
 
@@ -142,7 +178,7 @@ buddy MCP scoping while their link row stayed live. The visible symptom was
 Regression guard: `server/test/session-loader-hydration.test.ts`.
 
 Related: link rows are never deleted — deletion only flips status to `cancelled`
-(`server.ts`), which is also what a stopped or killed turn writes
+(`transport/conversation-websocket.ts`), which is also what a stopped or killed turn writes
 (`runtime.ts`). **Never filter the Buddies page on link status** — it would hide
 live conversations. `GET /api/buddies/:buddyId` instead asks the config store
 for a tombstone (`isConversationDeleted`), the only unambiguous "this is gone"
@@ -151,16 +187,28 @@ conversation record to tombstone them against.
 
 ## 3) Conversation lifecycle and state authority
 
-Authoritative in-memory model is `Conversation` in `server/src/server.ts`.
+The `Conversation` class is created by `createConversationRuntime` in
+`server/src/conversations/runtime.ts`. `server/src/server.ts` composes its
+dependencies and registers `server/src/transport/conversation-websocket.ts`.
+Durable config and revision checks belong to `conversations/config-service.ts`
+and `conversations/config-store.ts`.
 
 Flow is:
-1. Client creates conversation.
-2. Server validates + spawns provider process.
-3. Chunk + message events are streamed into buffers/state.
-4. On completion/close, queue/status/message boundaries are reconciled and broadcast.
+1. Client sends creation intent with stable command and conversation IDs.
+2. Server validates and persists config, materializes the runtime, and acknowledges creation.
+3. Sending a message (including an initial message) resolves an execution snapshot and spawns the provider.
+4. Events update runtime state and stream to the client; completion reconciles and broadcasts authoritative snapshots.
 
 `server` state remains authoritative while the provider process is active.
 Poller/loader merges skip active in-memory IDs.
+
+Buddy provider-session bindings also persist the host-resolved disclosure audience.
+On restart, the runtime compares that saved key with freshly resolved access before
+resuming. Matching access preserves native conversation context and still receives
+the current briefing and MCP configuration. Changed access or legacy bindings with
+no saved audience start a fresh session while retaining display history. Memory
+revision changes alone do not reset a session. Audience metadata is written when
+the provider confirms its session ID, never inferred from transcript text.
 
 ### Two things are called "fork"
 
@@ -191,10 +239,13 @@ process-lifecycle authority. States: `starting → idle`, and `starting|idle →
 reloading → exiting`.
 
 **`reloading` is absorbing — so a source reload must not enter it while work is
-active.** A reload request remains pending while the old backend stays in
-`starting|idle`, fully accepts mutations, and retains sole ownership of every
-provider stream and automation wrapper. At an observed idle boundary the
-controller pauses the scheduler, synchronously rechecks all work counters, and
+active.** A reload request remains pending while the old backend retains sole
+ownership of every provider stream and automation wrapper. Its current admission
+policy stays in effect: `idle` accepts mutations; `starting` admits only WebSocket
+`create_conversation`. Other WS commands await the startup barrier, and HTTP
+mutations (including New Buddy's builder request) receive `503 server_starting`
+until `idle`. At an observed idle boundary the controller pauses the scheduler,
+synchronously rechecks all work counters, and
 only then enters `reloading` and exits. If work appeared, it resumes the
 scheduler and keeps waiting. Hot reload has no force/quiesce deadline: such a
 deadline must either kill admitted work or strand the app read-only. Provider
@@ -242,5 +293,10 @@ Streaming is separated from structural state:
 - Structural: `conversationsAtom`, `allConversationsAtom`, IDs.
 - High-frequency stream text: dedicated stream buffers / streaming atoms.
 
-Details and code patterns: AGENTS.md "Writing state subscriptions" /
-"Writing state mutations".
+`streamingContentAtom` is separate from `conversationsAtom`. Pending creation
+and config commands also have separate atoms; they are not partial server
+conversations. Summary transport projections do not replace the durable/runtime
+record; full transcripts hydrate through the detail route.
+
+Details and code patterns: [client state](client-state.md) and
+[WS contract notes](ws-contract-surprises.md).

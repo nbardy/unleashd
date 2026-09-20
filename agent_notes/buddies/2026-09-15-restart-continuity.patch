@@ -1,0 +1,192 @@
+--- a/shared/src/conversation-config.ts
++++ b/shared/src/conversation-config.ts
+@@ -105,6 +105,9 @@
+ export const ConversationSessionBindingSchema = z.object({
+   provider: ProviderSchema,
+   sessionId: z.string().min(1),
++  // Host-verified disclosure audience for this exact native session. Legacy
++  // bindings without it must establish a fresh Buddy context before reuse.
++  buddyAudienceKey: z.string().min(1).optional(),
+ });
+ export type ConversationSessionBinding = z.infer<typeof ConversationSessionBindingSchema>;
+ 
+--- a/server/src/conversations/runtime.ts
++++ b/server/src/conversations/runtime.ts
+@@ -259,7 +259,11 @@
+   clearExternalRunningStatus(...ids: Array<string | null | undefined>): void;
+   clearLocalCompletionSuppression(...ids: Array<string | null | undefined>): void;
+   markLocalCompletionSuppression(...ids: Array<string | null | undefined>): void;
+-  persistCurrentSession(conversation: ConversationRuntimeView, sessionId: string): Promise<void>;
++  persistCurrentSession(
++    conversation: ConversationRuntimeView,
++    sessionId: string,
++    buddyAudienceKey?: string
++  ): Promise<void>;
+   updateBuddyStatus(
+     conversation: ConversationRuntimeView,
+     status: 'active' | 'complete' | 'failed' | 'cancelled'
+@@ -474,6 +478,8 @@
+   workingDirectory?: string | null;
+   configState: ConversationConfigState;
+   existingSessionId?: string;
++  /** Host-owned metadata from the matching durable provider-session binding. */
++  existingSessionAudienceKey?: string;
+   isWorker?: boolean;
+   swarmId?: string | null;
+   workerId?: string | null;
+@@ -838,6 +844,8 @@
+       this._memorySnapshot = isBuddyConversation
+         ? createMemorySnapshot(buddyBriefing, buddyMemoryGeneration)
+         : null;
++      this._providerAudienceKey =
++        isBuddyConversation && existingSessionId ? (opts.existingSessionAudienceKey ?? null) : null;
+       this._automationClaimToken = automationClaimToken;
+       this.mergeParentMeta = mergeParentMeta;
+       this.mergeChildMeta = mergeChildMeta;
+@@ -1186,7 +1194,11 @@
+                 unregisterSessionAlias(oldSessionId, { keepKnown: true });
+               }
+               registerSessionAlias(event.sessionId, this.id);
+-              await persistCurrentConversationSession(this, event.sessionId);
++              await persistCurrentConversationSession(
++                this,
++                event.sessionId,
++                this._providerAudienceKey ?? undefined
++              );
+               if (this._activeAttemptId) {
+                 turnAttempts.bindProviderSession(this._activeAttemptId, event.sessionId);
+               }
+@@ -2158,8 +2170,8 @@
+       if (turnBuddyContext && dependencies.readCurrentBuddyContext) {
+         const current = dependencies.readCurrentBuddyContext(turnBuddyContext);
+         if (current.audienceKey && current.audienceKey !== this._providerAudienceKey) {
+-          // Unknown restored provider state is deliberately not resumed. Display
+-          // history remains intact; only this audience's briefing enters the new session.
++          // Resume restored sessions only when their saved audience still matches.
++          // Legacy/unknown state and changed access start fresh; display history remains.
+           if (this._hasStartedSession) {
+             console.log(
+               `[${this.id}] Buddy context reset: reason=${this._providerAudienceKey === null ? 'restored_audience_unverified' : 'audience_changed'}, provider-session=${this.sessionId}`
+@@ -2565,6 +2577,7 @@
+       // Generate new session ID for fresh context
+       const oldSessionId = this.sessionId;
+       this.sessionId = createSessionId();
++      this._providerAudienceKey = null;
+       unregisterSessionAlias(oldSessionId, { keepKnown: true });
+       registerSessionAlias(this.sessionId, this.id);
+       // This UUID is provisional until the provider confirms it. Persisting it
+--- a/server/src/conversations/config-store.ts
++++ b/server/src/conversations/config-store.ts
+@@ -438,7 +438,9 @@
+     return this.updateRecord(conversationId, (record) => {
+       if (
+         record.currentSession?.provider === parsedSession.provider &&
+-        record.currentSession.sessionId === parsedSession.sessionId
++        record.currentSession.sessionId === parsedSession.sessionId &&
++        (parsedSession.buddyAudienceKey === undefined ||
++          record.currentSession.buddyAudienceKey === parsedSession.buddyAudienceKey)
+       ) {
+         return record;
+       }
+--- a/server/src/conversations/buddy-creation-service.ts
++++ b/server/src/conversations/buddy-creation-service.ts
+@@ -79,7 +79,11 @@
+ export interface BuddyCreationService {
+   ensureConversationReady(conversation: ConversationRuntime): Promise<ConversationRuntime>;
+   creationFingerprint(input: CreationFingerprintInput): string;
+-  persistCurrentSession(conversation: ConversationRuntimeView, sessionId: string): Promise<void>;
++  persistCurrentSession(
++    conversation: ConversationRuntimeView,
++    sessionId: string,
++    buddyAudienceKey?: string
++  ): Promise<void>;
+   dispatchInitialMessageIfPending(
+     conversation: ConversationRuntime,
+     options?: InitialMessageDispatchOptions
+@@ -106,12 +110,14 @@
+ 
+   async function persistCurrentSession(
+     conversation: ConversationRuntimeView,
+-    sessionId: string
++    sessionId: string,
++    buddyAudienceKey?: string
+   ): Promise<void> {
+     try {
+       await ports.configService.setCurrentSession(conversation.id, {
+         provider: conversation.config.provider,
+         sessionId,
++        ...(buddyAudienceKey ? { buddyAudienceKey } : {}),
+       });
+     } catch (error) {
+       logger.warn(
+--- a/server/src/conversations/creation-service.ts
++++ b/server/src/conversations/creation-service.ts
+@@ -90,6 +90,11 @@
+         configState: creation.state,
+         placement: creation.record.creation?.placement ?? input.placement,
+         existingSessionId: creation.record.currentSession?.sessionId,
++        existingSessionAudienceKey:
++          creation.record.currentSession &&
++          creation.record.currentSession.provider === creation.state.config.provider
++            ? creation.record.currentSession.buddyAudienceKey
++            : undefined,
+         swarmDebugPrefix: input.swarmDebugPrefix ?? null,
+         resumedFromConversationId: input.resumedFromConversationId ?? null,
+         kind: input.kind,
+--- a/server/src/lifecycle/session-loader.ts
++++ b/server/src/lifecycle/session-loader.ts
+@@ -282,6 +282,12 @@
+       workingDirectory: hydratedConfig.record.workingDirectory ?? source.workingDirectory,
+       configState: hydratedConfig.state,
+       existingSessionId: sessionId,
++      existingSessionAudienceKey:
++        currentSession &&
++        currentSession.provider === hydratedConfig.state.config.provider &&
++        currentSession.sessionId === sessionId
++          ? currentSession.buddyAudienceKey
++          : undefined,
+       isWorker: source.isWorker,
+       swarmId: source.swarmId ?? null,
+       workerId: source.workerId ?? null,
+@@ -362,6 +368,11 @@
+           workingDirectory: record.workingDirectory,
+           configState: hydrated.state,
+           existingSessionId: record.currentSession?.sessionId,
++          existingSessionAudienceKey:
++            record.currentSession &&
++            record.currentSession.provider === hydrated.state.config.provider
++              ? record.currentSession.buddyAudienceKey
++              : undefined,
+           swarmDebugPrefix: record.creation?.swarmDebugPrefix ?? null,
+           resumedFromConversationId: record.creation?.resumedFromConversationId ?? null,
+           kind: recoveredBuddy?.context
+--- a/server/src/server.ts
++++ b/server/src/server.ts
+@@ -295,8 +295,8 @@
+   clearExternalRunningStatus: applicationContext.externalActivity.clear,
+   clearLocalCompletionSuppression: applicationContext.completionSuppression.clear,
+   markLocalCompletionSuppression: applicationContext.completionSuppression.mark,
+-  persistCurrentSession: (conversation, sessionId) =>
+-    buddyCreationService.persistCurrentSession(conversation, sessionId),
++  persistCurrentSession: (conversation, sessionId, buddyAudienceKey) =>
++    buddyCreationService.persistCurrentSession(conversation, sessionId, buddyAudienceKey),
+   updateBuddyStatus: updateBuddyConversationLink,
+   settleBuddyDelegation,
+   getConversation: (id) => conversations.get(id),
+--- a/docs/architecture.md
++++ b/docs/architecture.md
+@@ -202,6 +202,14 @@
+ `server` state remains authoritative while the provider process is active.
+ Poller/loader merges skip active in-memory IDs.
+ 
++Buddy provider-session bindings also persist the host-resolved disclosure audience.
++On restart, the runtime compares that saved key with freshly resolved access before
++resuming. Matching access preserves native conversation context and still receives
++the current briefing and MCP configuration. Changed access or legacy bindings with
++no saved audience start a fresh session while retaining display history. Memory
++revision changes alone do not reset a session. Audience metadata is written when
++the provider confirms its session ID, never inferred from transcript text.
++
+ ### Two things are called "fork"
+ 
+ | | Chat "Fork" (soft handoff) | Merge session-fork |

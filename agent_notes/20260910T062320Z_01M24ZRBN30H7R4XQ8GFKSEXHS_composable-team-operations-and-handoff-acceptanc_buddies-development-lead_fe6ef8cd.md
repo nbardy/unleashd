@@ -1,0 +1,10 @@
+---
+kind: "decision"
+buddy_id: "buddy_d3f11f11-d010-4383-bc72-940bfe6ef8cd"
+buddy_slug: "builder-878fecca0a2ba9fe"
+workspace_id: "project_26fce156-5c5d-4dd9-a9d6-4b527a50af3c"
+created_at: 2026-09-10T06:23:20.739Z
+trust: workspace_source
+evidence: ["product/buddies/DESIGN_TEAM_OPERATIONS.md","agent_notes/2026-09-10_buddy-team-operations-return-handoff.md","server/test/buddy-team-access.test.ts","server/test/buddy-coordination.test.ts","/Users/nicholasbardy/git/.codex-worktrees/buddies/system-finish-20260910@2a47847","/Users/nicholasbardy/git/font_maker/CHIEF_SCIENTIST/2026-09-10_buddy_team_missing_capabilities_handoff.md"]
+---
+Decision on 2026-09-10: address the Font Maker Chief Scientist and specialist-onboarding handoffs with ordinary Buddy identities + reporting/consulting relationships + exact-target owner grants + existing versioned soul/memory documents + existing projects/messages/runs. Reject a separate onboarding job, assignment table, hiring quota, or new dispatch queue. Reason: missing relationships and permissions were being confused with missing execution; composable operations with inspectable receipts cover both. Manager relationships authorize work supervision; explicit grants authorize private document/profile changes, scheduling and incoming execution. Stable keys + revision checks + grant checks on replay preserve identity, reject stale edits and prevent revoked access from replaying private results. Completion is not inferred from a successful send: recipient acceptance and completion evidence appear in an execution projection. Evidence at this checkpoint: 64 package tests pass; one MCP fixture attaches four existing identities, imports one, updates profiles/soul/memory, assigns four projects, records acceptance/completion, checks duplicate-free replay and revocation. Existing Chief→Lead→Engineer→Lead→Chief runtime chain passes. This is source/fixture evidence, not a claim that either live team or current MCP session has been upgraded. Design and dated return handoff carry the evolving contract and release evidence.

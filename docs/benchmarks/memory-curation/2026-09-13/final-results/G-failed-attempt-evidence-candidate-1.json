@@ -1,0 +1,119 @@
+{
+  "case": "G-failed-attempt-evidence",
+  "variant": "candidate",
+  "repeat": 1,
+  "rubric": [
+    "Preserves the unresolved hypothesis without inventing a scientific result.",
+    "Any retained lesson distinguishes execution failure from falsification.",
+    "This successful reporting turn does not test failed-turn admission; the runtime regression does."
+  ],
+  "model": "gpt-5.6-luna",
+  "effort": "low",
+  "instructionsSha256": "a58682c6d7a549ef90339bfd08560111fa0cd8e825d1b9200b3f76a677ee4b67",
+  "toolDescriptionsSha256": "1fe1ca463feff7eb046c02dd160ef1a34b8c94cac1716c9bb20311a291c57a70",
+  "elapsedMs": 12142,
+  "before": {
+    "working": "Hypothesis: the alternative initialization could improve generalization; untested.",
+    "longTerm": "Distinguish experiment execution failures from evidence against a hypothesis.",
+    "note": null
+  },
+  "after": {
+    "working": {
+      "id": "knowledge_78b46774-3154-4fa9-bcc8-b6b082aa9688",
+      "ref": {
+        "targetBuddyId": "buddy_3fc790f8-61cc-41e4-87e9-f81e98669cde",
+        "kind": "working",
+        "scope": {
+          "kind": "owner_thread",
+          "conversationId": "curation-owner-fixture"
+        }
+      },
+      "revision": 1,
+      "content": "Hypothesis: the alternative initialization could improve generalization; untested."
+    },
+    "longTerm": {
+      "id": "knowledge_a8cc89f1-d3cf-40d0-839d-3d995b0d0417",
+      "ref": {
+        "targetBuddyId": "buddy_3fc790f8-61cc-41e4-87e9-f81e98669cde",
+        "kind": "long_term",
+        "scope": {
+          "kind": "owner_thread",
+          "conversationId": "curation-owner-fixture"
+        }
+      },
+      "revision": 1,
+      "content": "Distinguish experiment execution failures from evidence against a hypothesis."
+    },
+    "notes": []
+  },
+  "receipt": {
+    "id": "a60e899298e9e6d128560a05f0c2e73c7ee811aad665ad0a0c5820c8c2a65121",
+    "buddyId": "buddy_3fc790f8-61cc-41e4-87e9-f81e98669cde",
+    "workspaceId": "project_af662581-3b27-4a25-84e4-3ac16464d995",
+    "conversationId": "curation-owner-fixture",
+    "attemptId": "fixture-attempt",
+    "completedAt": "2026-09-13T04:32:33.429Z",
+    "status": "complete",
+    "model": "gpt-5.6-luna",
+    "reasoningEffort": "low",
+    "writes": {
+      "working": 0,
+      "longTerm": 0,
+      "notes": 0
+    },
+    "finishedAt": "2026-09-13T04:32:45.542Z"
+  },
+  "calls": [
+    {
+      "operation": "get_memory",
+      "input": {
+        "doc": "long_term"
+      },
+      "result": {
+        "id": "knowledge_a8cc89f1-d3cf-40d0-839d-3d995b0d0417",
+        "ref": {
+          "targetBuddyId": "buddy_3fc790f8-61cc-41e4-87e9-f81e98669cde",
+          "scope": {
+            "kind": "owner_thread",
+            "conversationId": "curation-owner-fixture"
+          },
+          "kind": "long_term"
+        },
+        "revision": 1,
+        "content": "Distinguish experiment execution failures from evidence against a hypothesis."
+      }
+    },
+    {
+      "operation": "recall",
+      "input": {
+        "pattern": "timeout",
+        "limit": 8
+      },
+      "result": {
+        "pattern": "timeout",
+        "matches": [],
+        "truncated": false
+      }
+    },
+    {
+      "operation": "get_memory",
+      "input": {
+        "doc": "working"
+      },
+      "result": {
+        "id": "knowledge_78b46774-3154-4fa9-bcc8-b6b082aa9688",
+        "ref": {
+          "targetBuddyId": "buddy_3fc790f8-61cc-41e4-87e9-f81e98669cde",
+          "scope": {
+            "kind": "owner_thread",
+            "conversationId": "curation-owner-fixture"
+          },
+          "kind": "working"
+        },
+        "revision": 1,
+        "content": "Hypothesis: the alternative initialization could improve generalization; untested."
+      }
+    }
+  ],
+  "modelReport": "NONE — reviewed working memory, long-term memory, and recalled notes; no material update was needed."
+}

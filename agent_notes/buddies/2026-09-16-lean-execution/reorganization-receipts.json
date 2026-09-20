@@ -1,0 +1,337 @@
+{
+  "observedAt": "2026-09-16T03:11Z",
+  "receipts": [
+    {
+      "id": "buddy_project_37f2780f-f766-452b-991c-eb4ca4192a9b",
+      "revision": 17,
+      "action": "canonical",
+      "audit": "audit_3b424791-82ad-4852-905a-41352d0c6b8b"
+    },
+    {
+      "id": "buddy_project_6efaffd1-0415-4dcf-80a4-bb6599d924b7",
+      "revision": 11,
+      "action": "canonical",
+      "audit": "audit_0390baad-df7a-44aa-942c-812aec41651e"
+    },
+    {
+      "id": "buddy_project_f5e8e43a-9c69-4dd2-82d1-c6c953e3549b",
+      "revision": 10,
+      "action": "canonical",
+      "audit": "audit_8bd8b67f-ef52-4026-ac4e-f4bcc0c4dafc"
+    },
+    {
+      "id": "buddy_project_075e367e-3442-474c-a58d-8094aec59e25",
+      "revision": 4,
+      "action": "canonical",
+      "audit": "audit_86c867db-2c54-469e-b79d-4fce18b66ec5"
+    },
+    {
+      "id": "buddy_project_8638d8bf-f609-46f3-b991-a2d5232e55c4",
+      "action": "cut",
+      "closureDeferredForChildren": false,
+      "revision": 5,
+      "status": "cancelled",
+      "audit": "audit_42bd2145-5375-4808-8304-355978489c0a"
+    },
+    {
+      "id": "buddy_project_37f2780f-f766-452b-991c-eb4ca4192a9b",
+      "action": "merge",
+      "closureDeferredForChildren": true,
+      "revision": 18,
+      "status": "in_progress",
+      "audit": "audit_a1985d73-e3c4-4138-b8ae-09fde97d0f51"
+    },
+    {
+      "id": "buddy_project_cdae619b-6e1d-4d5b-9c78-84308f418344",
+      "action": "defer",
+      "closureDeferredForChildren": false,
+      "revision": 4,
+      "status": "backlog",
+      "audit": "audit_272da5cd-1aa9-4b86-aeb3-eaeaab8106af"
+    },
+    {
+      "id": "buddy_project_67c0de12-9b60-4748-ae8b-0a88792c2f74",
+      "action": "merge",
+      "closureDeferredForChildren": false,
+      "revision": 4,
+      "status": "cancelled",
+      "audit": "audit_0c223444-944f-47a7-865e-860a43f9bda5"
+    },
+    {
+      "id": "buddy_project_19703c1b-e2ad-4499-adf5-7bb16b0b6fa9",
+      "action": "merge",
+      "closureDeferredForChildren": false,
+      "revision": 3,
+      "status": "cancelled",
+      "audit": "audit_386aee0c-e1ca-4103-b9d8-96ac77be3677"
+    },
+    {
+      "id": "buddy_project_556cc4a6-0776-4089-852d-e7814b199c83",
+      "action": "defer",
+      "closureDeferredForChildren": false,
+      "revision": 3,
+      "status": "backlog",
+      "audit": "audit_a46354f4-3042-4d66-b627-fa9a1e9b028d"
+    },
+    {
+      "id": "buddy_project_9c34e327-13d8-4764-86eb-10ffcf3c05ca",
+      "action": "merge",
+      "closureDeferredForChildren": false,
+      "revision": 3,
+      "status": "cancelled",
+      "audit": "audit_9008c5c5-bd6f-48c3-8fbf-246c4473abc4"
+    },
+    {
+      "id": "buddy_project_9bae6183-8f35-4c34-8727-529c90777cb5",
+      "action": "merge",
+      "closureDeferredForChildren": false,
+      "revision": 3,
+      "status": "cancelled",
+      "audit": "audit_d4523dc1-8dbe-4dd1-b1a7-262546e31265"
+    },
+    {
+      "id": "buddy_project_4f875aff-3481-4ba9-8aab-eb0ea62c1308",
+      "action": "defer",
+      "closureDeferredForChildren": false,
+      "revision": 3,
+      "status": "backlog",
+      "audit": "audit_02f3821b-4e66-44ba-b92e-ff9b5bdd4e36"
+    },
+    {
+      "id": "buddy_project_56ced029-2ce3-4897-b037-462d5a01e2ff",
+      "action": "merge",
+      "closureDeferredForChildren": false,
+      "revision": 3,
+      "status": "cancelled",
+      "audit": "audit_d2fec572-e199-46ef-90e3-cc0949cfc9d9"
+    },
+    {
+      "id": "buddy_project_62511186-9ab4-4ec6-aece-4bdf39307527",
+      "action": "merge",
+      "closureDeferredForChildren": false,
+      "revision": 3,
+      "status": "cancelled",
+      "audit": "audit_eae475eb-03d0-4dbe-bb4d-073fccfd6de6"
+    },
+    {
+      "id": "buddy_project_de5267b7-26f7-45c1-8819-cb0954ec1255",
+      "action": "defer",
+      "closureDeferredForChildren": false,
+      "revision": 3,
+      "status": "backlog",
+      "audit": "audit_1b0b1db8-a147-4412-a9b6-cd8e6a9dc0d7"
+    },
+    {
+      "id": "buddy_project_9864f34e-b435-43b1-80b1-07cc51645fbe",
+      "action": "merge",
+      "closureDeferredForChildren": true,
+      "revision": 21,
+      "status": "in_progress",
+      "audit": "audit_ae9382d5-f6af-4bd7-b0fc-14a802fe18ae"
+    },
+    {
+      "id": "buddy_project_5a090ee9-d90f-4531-a610-5015f22857fc",
+      "action": "merge",
+      "closureDeferredForChildren": false,
+      "revision": 3,
+      "status": "cancelled",
+      "audit": "audit_603d4076-abb2-41ef-a1be-71012bf4f5b2"
+    },
+    {
+      "id": "buddy_project_14923985-6366-4c5a-9d08-855832dcd35c",
+      "action": "cut",
+      "closureDeferredForChildren": false,
+      "revision": 3,
+      "status": "cancelled",
+      "audit": "audit_459423ee-9a5c-4b15-83f1-3efff40e6766"
+    },
+    {
+      "id": "buddy_project_e780d7f1-bb29-4a5d-b7c2-bd9cde212ce7",
+      "action": "merge",
+      "closureDeferredForChildren": false,
+      "revision": 3,
+      "status": "cancelled",
+      "audit": "audit_1334b5a1-ae95-45be-9077-ef0fb18c6b1d"
+    },
+    {
+      "id": "buddy_project_545457c2-3c8a-4bc1-b792-702a6d3ffbb7",
+      "action": "merge",
+      "closureDeferredForChildren": false,
+      "revision": 10,
+      "status": "cancelled",
+      "audit": "audit_0996209b-e030-43d2-8172-d89495fe0f7a"
+    },
+    {
+      "id": "buddy_project_8a1f69b7-7734-47bb-853b-cf36d065e346",
+      "action": "cut",
+      "closureDeferredForChildren": false,
+      "revision": 2,
+      "status": "cancelled",
+      "audit": "audit_3fd9c7f1-2eb6-4b13-848b-0d3b7ef7d9a1"
+    },
+    {
+      "id": "buddy_project_31d73904-2352-44a4-8e3f-8f1f101fc5f3",
+      "action": "merge",
+      "closureDeferredForChildren": false,
+      "revision": 2,
+      "status": "cancelled",
+      "audit": "audit_f02eed46-bbb5-4d41-b362-60108fadff7e"
+    },
+    {
+      "id": "buddy_project_36a70bf6-8ebd-403f-af7f-99cfa346bd88",
+      "action": "merge",
+      "closureDeferredForChildren": false,
+      "revision": 2,
+      "status": "cancelled",
+      "audit": "audit_4831c65b-b5b6-4c3d-9fec-a42e29e84c14"
+    },
+    {
+      "id": "buddy_project_2bce3176-5b7c-4d67-982e-128c3d65df63",
+      "action": "merge",
+      "closureDeferredForChildren": false,
+      "revision": 2,
+      "status": "cancelled",
+      "audit": "audit_42e261fa-ce69-4aa2-9bc6-97b4988cd4c0"
+    },
+    {
+      "id": "buddy_project_216ae739-a2ae-48a6-ae37-ec5d66b8d226",
+      "action": "cut",
+      "closureDeferredForChildren": false,
+      "revision": 2,
+      "status": "cancelled",
+      "audit": "audit_30395c3a-c49d-498e-9c6b-04517a9e18bc"
+    },
+    {
+      "id": "buddy_project_b55e2554-3dae-4b14-8b81-fcd1cfec3531",
+      "action": "defer",
+      "closureDeferredForChildren": false,
+      "revision": 2,
+      "status": "backlog",
+      "audit": "audit_71b92af3-7b18-4596-a7f7-f84a3511bb70"
+    },
+    {
+      "id": "buddy_project_3b1d5297-3db3-4d52-8a33-9c06ec4a8573",
+      "action": "cut",
+      "closureDeferredForChildren": false,
+      "revision": 2,
+      "status": "cancelled",
+      "audit": "audit_f8df0762-d2a2-471e-9f5b-d4d487901e0c"
+    },
+    {
+      "id": "buddy_project_7023cc14-9c47-43bf-a610-b85fb981c067",
+      "action": "cut",
+      "closureDeferredForChildren": false,
+      "revision": 2,
+      "status": "cancelled",
+      "audit": "audit_d79a5191-9003-4fe6-8c44-fba3aa967301"
+    },
+    {
+      "id": "buddy_project_743485e9-ea23-46bc-b537-82f271248745",
+      "action": "merge",
+      "closureDeferredForChildren": false,
+      "revision": 2,
+      "status": "cancelled",
+      "audit": "audit_b17a9914-fef6-4a0c-9d9e-762b3af1f6d1"
+    },
+    {
+      "id": "buddy_project_0334db8e-2dbc-4f60-891d-f8a3a3216bd7",
+      "action": "merge",
+      "closureDeferredForChildren": false,
+      "revision": 2,
+      "status": "cancelled",
+      "audit": "audit_b38d7c3c-4fce-44cc-a0e0-5e2df3fd54c9"
+    },
+    {
+      "id": "buddy_project_d7c71266-2b44-4cd8-805b-cf0de53a6874",
+      "action": "merge",
+      "closureDeferredForChildren": false,
+      "revision": 2,
+      "status": "cancelled",
+      "audit": "audit_5a2251ba-6998-44f0-8c15-b133e2b0ae5d"
+    },
+    {
+      "id": "buddy_project_816d7fa0-ffb5-4b11-aa03-cc8898fcf8f0",
+      "action": "merge",
+      "closureDeferredForChildren": false,
+      "revision": 2,
+      "status": "cancelled",
+      "audit": "audit_3532ec4c-a39b-42c3-9839-96b46c72e125"
+    }
+  ],
+  "dispatches": [
+    {
+      "background": {
+        "mode": "until_done",
+        "disposition": "queued",
+        "maxRuns": 5,
+        "maxDurationSeconds": 5400,
+        "runsUsed": 0,
+        "startedAt": null,
+        "deadline": null,
+        "waitingMessageIds": []
+      },
+      "messageId": "message_e893523a-c451-4ad3-8cda-7ca48c1860d8",
+      "runId": "buddy_run_436e0b59-4502-4125-82b2-25d8a59ec995",
+      "projectId": "buddy_project_95592e35-f568-4868-9a93-03c8a8511597",
+      "state": "queued",
+      "code": "awaiting_admission",
+      "reason": "Accepted; waiting for an available executor and conversation slot.",
+      "remedy": "Wait for the active turn to drain; inspect scheduler health if this persists.",
+      "conversationId": null,
+      "acknowledgedAt": null,
+      "acknowledgedRunId": null,
+      "acceptedBy": null,
+      "acceptedAt": null,
+      "completionEvidence": [],
+      "projectSnapshot": {
+        "id": "buddy_project_95592e35-f568-4868-9a93-03c8a8511597",
+        "revision": 8,
+        "status": "ready",
+        "updatedAt": "2026-09-16T03:10:31.234Z",
+        "acceptedBy": "buddy_e87e3e91-fe15-4759-9337-52a9636ed084",
+        "acceptedAt": "2026-09-12T16:06:10.987Z",
+        "evidenceCount": 5
+      },
+      "delivery": [],
+      "outcome": null,
+      "error": null
+    },
+    {
+      "background": {
+        "mode": "until_done",
+        "disposition": "queued",
+        "maxRuns": 6,
+        "maxDurationSeconds": 7200,
+        "runsUsed": 0,
+        "startedAt": null,
+        "deadline": null,
+        "waitingMessageIds": []
+      },
+      "messageId": "message_97fe5467-e747-4e03-aaee-36774714ea95",
+      "runId": "buddy_run_a6681dc3-49db-4057-b744-a8c3296c4975",
+      "projectId": "buddy_project_a2047be3-f8cb-4eed-ac2e-522e3831bee6",
+      "state": "queued",
+      "code": "awaiting_admission",
+      "reason": "Accepted; waiting for an available executor and conversation slot.",
+      "remedy": "Wait for the active turn to drain; inspect scheduler health if this persists.",
+      "conversationId": null,
+      "acknowledgedAt": null,
+      "acknowledgedRunId": null,
+      "acceptedBy": null,
+      "acceptedAt": null,
+      "completionEvidence": [],
+      "projectSnapshot": {
+        "id": "buddy_project_a2047be3-f8cb-4eed-ac2e-522e3831bee6",
+        "revision": 5,
+        "status": "ready",
+        "updatedAt": "2026-09-16T03:10:31.253Z",
+        "acceptedBy": "buddy_247e963c-a7d8-48e7-a601-9309ea8b448f",
+        "acceptedAt": "2026-09-12T16:05:17.994Z",
+        "evidenceCount": 5
+      },
+      "delivery": [],
+      "outcome": null,
+      "error": null
+    }
+  ]
+}

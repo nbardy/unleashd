@@ -1,0 +1,657 @@
+{
+  "observedDate": "2026-09-15",
+  "scope": "Font Maker Chief Scientist retrospective; read-only native checks",
+  "contracts": {
+    "buddy": "2026-09-15.1",
+    "owner": "2026-09-12.2"
+  },
+  "assignment": {
+    "messageId": "message_d811ddb5-0077-45dd-a265-2be866572d71",
+    "createdAt": "2026-09-15T13:50:32.282Z",
+    "acknowledgedAt": "2026-09-15T13:50:33.252Z",
+    "projectSnapshot": {
+      "id": "buddy_project_634d5f86-f895-4f95-a220-a638ec5968a4",
+      "revision": 3,
+      "status": "in_progress",
+      "updatedAt": "2026-09-15T13:56:06.629Z",
+      "acceptedBy": "buddy_f4940aaa-059d-4105-aa0c-0eb1fd4de3b5",
+      "acceptedAt": "2026-09-15T13:50:56.803Z",
+      "evidenceCount": 0
+    },
+    "runId": "buddy_run_bf224900-477e-4a73-ab72-58bbcd826ed7",
+    "background": {
+      "mode": "until_done",
+      "disposition": "running",
+      "maxRuns": 6,
+      "maxDurationSeconds": 14400,
+      "runsUsed": 1,
+      "startedAt": "2026-09-15T13:50:33.229Z",
+      "deadline": "2026-09-15T17:50:33.229Z",
+      "waitingMessageIds": []
+    },
+    "completionReplyPresent": false,
+    "auditId": "audit_549b31ae-8126-4c73-ac22-4ff10f00197f"
+  },
+  "teamObservation": {
+    "operation": "buddy.get_team_state",
+    "data": {
+      "observedAt": "2026-09-15T13:55:55.423Z",
+      "view": "summary",
+      "usageCoverage": {
+        "tokens": null,
+        "cost": null,
+        "reason": "The host event contract does not expose provider token/cache usage or billed cost; unknown is not zero.",
+        "timing": "Durable queue and claim intervals, not provider-active time. Concurrent claim intervals must not be presented as wall-clock latency."
+      },
+      "nextOffset": null,
+      "limitations": [
+        "Running is a durable claim; an independent process heartbeat is unavailable.",
+        "Checkpoints are producer attestations. Current file availability is not automatically verified.",
+        "GPU reservations are not host leases. Resource lease integration is unavailable.",
+        "Assignment configuration is pinned when explicitly requested. Token/cost metering and enforcement are unavailable. Execution settings show the actual admitted request.",
+        "Current project revisions are authoritative for work status; older memory and attempt history may describe earlier states."
+      ],
+      "items": [
+        {
+          "runId": "buddy_run_bf224900-477e-4a73-ab72-58bbcd826ed7",
+          "buddyId": "buddy_f4940aaa-059d-4105-aa0c-0eb1fd4de3b5",
+          "buddyName": "Pixel Diffusion Research Lead",
+          "inputKind": "message_request",
+          "messageId": "message_d811ddb5-0077-45dd-a265-2be866572d71",
+          "rootMessageId": "message_d811ddb5-0077-45dd-a265-2be866572d71",
+          "conversationId": "buddy-run-buddy_run_bf224900-477e-4a73-ab72-58bbcd826ed7",
+          "attempt": 1,
+          "state": "running",
+          "createdAt": "2026-09-15T13:50:32.284Z",
+          "startedAt": "2026-09-15T13:50:33.229Z",
+          "acknowledgedAt": "2026-09-15T13:50:33.252Z",
+          "endedAt": null,
+          "timing": {
+            "queuedMs": 945,
+            "claimedMs": 322194,
+            "elapsedMs": 323139
+          },
+          "detailsOmitted": true,
+          "deadline": "2026-09-15T14:50:33.229Z",
+          "errorCode": null,
+          "error": null,
+          "project": {
+            "id": "buddy_project_634d5f86-f895-4f95-a220-a638ec5968a4",
+            "revision": 2,
+            "status": "in_progress",
+            "updatedAt": "2026-09-15T13:50:56.795Z",
+            "evidenceCount": 0
+          },
+          "reply": {
+            "persistedAt": null,
+            "outcome": null,
+            "evidenceCount": 0,
+            "deliveryStates": [],
+            "deliveries": [],
+            "deliveryCount": 0,
+            "deliveryNextOffset": null
+          },
+          "checkpoints": [],
+          "checkpointCount": 0,
+          "checkpointNextOffset": null,
+          "recovery": {
+            "controllerBuddyIds": [
+              "buddy_b2ff0a7e-591c-4e76-9cc1-0cda8d171ec3"
+            ],
+            "mode": "attempt",
+            "successorRunId": null,
+            "canRetry": false,
+            "reason": "Only failed or cancelled attempts can be retried",
+            "remainingRuns": 5,
+            "remainingSeconds": 14077,
+            "checkpointIds": [],
+            "action": null
+          },
+          "execution": {
+            "provider": "codex",
+            "model": "gpt-5.6-luna",
+            "reasoningEffort": "high",
+            "turnCapSeconds": 3600,
+            "deadline": "2026-09-15T14:50:33.229Z",
+            "limitingSource": "attempt_cap"
+          },
+          "requestedExecution": null,
+          "limits": {
+            "turnCapSeconds": 3600,
+            "maxActiveRuns": 2,
+            "backgroundEnabled": true,
+            "pausedReason": null
+          }
+        },
+        {
+          "runId": "buddy_run_bb662919-1297-4ef3-baae-173406eb8e57",
+          "buddyId": "buddy_f4940aaa-059d-4105-aa0c-0eb1fd4de3b5",
+          "buddyName": "Pixel Diffusion Research Lead",
+          "inputKind": "message_request",
+          "messageId": "message_367bfbfb-e28e-426c-9206-a39b99fdb887",
+          "rootMessageId": "message_367bfbfb-e28e-426c-9206-a39b99fdb887",
+          "conversationId": null,
+          "attempt": 1,
+          "state": "cancelled",
+          "createdAt": "2026-09-10T07:06:28.645Z",
+          "startedAt": null,
+          "acknowledgedAt": null,
+          "endedAt": "2026-09-15T13:47:44.070Z",
+          "timing": {
+            "queuedMs": 456075425,
+            "claimedMs": null,
+            "elapsedMs": 456075425
+          },
+          "detailsOmitted": true,
+          "deadline": null,
+          "errorCode": "held",
+          "error": "Background execution is disabled",
+          "project": null,
+          "reply": {
+            "persistedAt": null,
+            "outcome": null,
+            "evidenceCount": 0,
+            "deliveryStates": [],
+            "deliveries": [],
+            "deliveryCount": 0,
+            "deliveryNextOffset": null
+          },
+          "checkpoints": [],
+          "checkpointCount": 0,
+          "checkpointNextOffset": null,
+          "recovery": {
+            "controllerBuddyIds": [
+              "buddy_b2ff0a7e-591c-4e76-9cc1-0cda8d171ec3"
+            ],
+            "mode": "attempt",
+            "successorRunId": null,
+            "canRetry": false,
+            "reason": "Stopped roots cannot be retried",
+            "remainingRuns": null,
+            "remainingSeconds": null,
+            "checkpointIds": [],
+            "action": null
+          },
+          "execution": null,
+          "requestedExecution": null,
+          "limits": {
+            "turnCapSeconds": 600,
+            "maxActiveRuns": 2,
+            "backgroundEnabled": true,
+            "pausedReason": null
+          }
+        }
+      ]
+    },
+    "audit": {
+      "id": "audit_dba6e111-74ee-4f65-b2ff-fb5d8b2a3d09",
+      "buddy_id": "buddy_b2ff0a7e-591c-4e76-9cc1-0cda8d171ec3",
+      "workspace_id": "project_2f0a65f3-42a0-4527-92bf-686c29ed037a",
+      "buddy_project_id": null,
+      "operation": "buddy.get_team_state",
+      "payload": {
+        "view": "summary",
+        "targetBuddyId": "buddy_f4940aaa-059d-4105-aa0c-0eb1fd4de3b5",
+        "checkpointOffset": 0,
+        "checkpointLimit": 3,
+        "deliveryOffset": 0,
+        "deliveryLimit": 3,
+        "limit": 10,
+        "offset": 0,
+        "conversation_id": "1be773df-1f2b-4ce1-b46b-3ee707e27166",
+        "automation_run_id": null
+      },
+      "created_at": "2026-09-15T13:55:55.433Z"
+    }
+  },
+  "workerComments": {
+    "operation": "buddy.list_task_comments",
+    "data": {
+      "items": [
+        {
+          "id": "task_comment_4ff3e79a-2bb1-4956-8c69-e147b8b65cfa",
+          "project_id": "buddy_project_634d5f86-f895-4f95-a220-a638ec5968a4",
+          "author": "buddy_f4940aaa-059d-4105-aa0c-0eb1fd4de3b5",
+          "body": "Live audit: process group 41378 remains healthy (uv 41378 → supervisor 41379 → curated baker 41384), with baker CPU activity and no warning/error/retry/skip lines. The existing 93-shard local cache is unchanged. R2 promotion has reached at least shard 000025; the Google prefix remains untouched. Independent checks pass: Python 11/11 and Rust 5/5.",
+          "evidence": [
+            "font_dataset_generation/hidream_2x_pipeline/status.json",
+            "logs/hidream_2x_pipeline.log",
+            "logs/8chan_rust_hidream_curated_20k_2x_12438e3f.log",
+            "scripts/tests/test_hidream_2x_pipeline.py"
+          ],
+          "created_at": "2026-09-15T13:55:55.281Z"
+        },
+        {
+          "id": "task_comment_e88c2feb-c2b8-4e37-a54b-808fa869fc23",
+          "project_id": "buddy_project_634d5f86-f895-4f95-a220-a638ec5968a4",
+          "author": "buddy_b2ff0a7e-591c-4e76-9cc1-0cda8d171ec3",
+          "body": "Chief independently verified handoff at 13:53:47 UTC: assignment message_d811ddb5-0077-45dd-a265-2be866572d71 is running (started 13:50:33 UTC); project revision 2 is in_progress and accepted by Pixel at 13:50:56 UTC. Curated log shows 23/93 cached shards promoted, so full data completion is still pending. Chief soul revision doc:1de1a312e3b81098306349a6:3 now prefers delegated implementation with native tasks, verified acceptance and evidence review. Pixel remains accountable for this dataset pipeline; dedicated Data Engineer creation is pending the owner's staffing answer.",
+          "evidence": [
+            "CHIEF_SCIENTIST/2026-09-15_pixel_data_engineering_handoff.md",
+            "audit_afedc190-927a-4c2e-8b2e-20a9580a40c9",
+            "audit_2802437b-e02c-4051-8a87-4202d58bda43"
+          ],
+          "created_at": "2026-09-15T13:54:45.655Z"
+        },
+        {
+          "id": "task_comment_dc78a76e-addd-4989-8c9f-d775193f0b5a",
+          "project_id": "buddy_project_634d5f86-f895-4f95-a220-a638ec5968a4",
+          "author": "buddy_f4940aaa-059d-4105-aa0c-0eb1fd4de3b5",
+          "body": "Accepted ownership of the native-2x publication project. Starting with a read-only audit of the existing process group 41378 (supervisor 41379, curated baker 41384), logs, local inventory and live R2. I will not launch a duplicate or interrupt healthy work.",
+          "evidence": [
+            "CHIEF_SCIENTIST/2026-09-15_pixel_data_engineering_handoff.md",
+            "CHIEF_SCIENTIST/2026-09-15_native_2x_pipeline_resume.md",
+            "DATA_DETAILS.md"
+          ],
+          "created_at": "2026-09-15T13:50:56.835Z"
+        }
+      ],
+      "nextCursor": null
+    },
+    "audit": {
+      "id": "audit_1590e7cc-919e-41a4-86bc-54331416ca5b",
+      "buddy_id": "buddy_b2ff0a7e-591c-4e76-9cc1-0cda8d171ec3",
+      "workspace_id": "project_2f0a65f3-42a0-4527-92bf-686c29ed037a",
+      "buddy_project_id": null,
+      "operation": "buddy.list_task_comments",
+      "payload": {
+        "limit": 15,
+        "projectId": "buddy_project_634d5f86-f895-4f95-a220-a638ec5968a4",
+        "conversation_id": "1be773df-1f2b-4ce1-b46b-3ee707e27166",
+        "automation_run_id": null
+      },
+      "created_at": "2026-09-15T13:55:55.385Z"
+    }
+  },
+  "readiness": {
+    "ok": true,
+    "contractVersion": "2026-09-15.1",
+    "auditId": "audit_331daccc-fb20-4d5e-a8db-371b0da992a8",
+    "data": {
+      "workspaceId": "project_2f0a65f3-42a0-4527-92bf-686c29ed037a",
+      "ownerControls": {
+        "available": true,
+        "compatible": true,
+        "contractVersion": "2026-09-12.2",
+        "code": null,
+        "remedy": null
+      },
+      "documentOperationMapping": {
+        "get_document": {
+          "soul": "get_soul",
+          "working": "get_memory",
+          "long_term": "get_memory",
+          "shared": "get_memory",
+          "note": "get_memory"
+        },
+        "update_document": {
+          "soul": "update_soul",
+          "working": "update_memory",
+          "long_term": "update_memory",
+          "shared": "update_memory",
+          "note": "update_memory"
+        }
+      },
+      "targets": [
+        {
+          "targetBuddyId": "buddy_f4940aaa-059d-4105-aa0c-0eb1fd4de3b5",
+          "execution": {
+            "backgroundEnabled": true,
+            "pausedReason": null,
+            "maxActiveRuns": 2
+          },
+          "relationships": [
+            {
+              "id": "relationship_b0156db4-a2a8-40df-b9e5-6d23d278a3cb",
+              "from_buddy_id": "buddy_b2ff0a7e-591c-4e76-9cc1-0cda8d171ec3",
+              "to_buddy_id": "buddy_f4940aaa-059d-4105-aa0c-0eb1fd4de3b5",
+              "kind": "manager",
+              "created_at": "2026-09-15T13:47:23.236Z",
+              "from_buddy_name": "Chief Scientist",
+              "to_buddy_name": "Pixel Diffusion Research Lead"
+            }
+          ],
+          "allowedOperations": [
+            "new_project",
+            "get_current_work",
+            "send",
+            "set_automation.configure_disabled"
+          ],
+          "deniedOperations": {
+            "get_profile": {
+              "code": "owner_grant_required",
+              "reason": "No owner grant for profile.read on this target.",
+              "remedy": "Owner can grant this capability for the exact target in Team access."
+            },
+            "update_profile": {
+              "code": "owner_grant_required",
+              "reason": "No owner grant for profile.read on this target.",
+              "remedy": "Owner can grant this capability for the exact target in Team access."
+            },
+            "get_soul": {
+              "code": "owner_grant_required",
+              "reason": "No owner grant for soul.read on this target.",
+              "remedy": "Owner can grant this capability for the exact target in Team access."
+            },
+            "update_soul": {
+              "code": "owner_grant_required",
+              "reason": "No owner grant for soul.read on this target.",
+              "remedy": "Owner can grant this capability for the exact target in Team access."
+            },
+            "get_memory": {
+              "code": "owner_grant_required",
+              "reason": "No owner grant for memory.read on this target.",
+              "remedy": "Owner can grant this capability for the exact target in Team access."
+            },
+            "update_memory": {
+              "code": "owner_grant_required",
+              "reason": "No owner grant for memory.read on this target.",
+              "remedy": "Owner can grant this capability for the exact target in Team access."
+            },
+            "create_buddy": {
+              "code": "owner_grant_required",
+              "reason": "No owner grant for staff.create on this target.",
+              "remedy": "Owner can grant this capability for the exact target in Team access."
+            },
+            "hire_direct_report": {
+              "code": "owner_grant_required",
+              "reason": "No owner grant for staff.create on this target.",
+              "remedy": "Owner can grant this capability for the exact target in Team access."
+            },
+            "set_relationship": {
+              "code": "owner_grant_required",
+              "reason": "No owner grant for relationship.write on this target.",
+              "remedy": "Owner can grant this capability for the exact target in Team access."
+            },
+            "set_automation": {
+              "code": "owner_grant_required",
+              "reason": "No owner grant for schedule.manage on this target.",
+              "remedy": "Owner can grant this capability for the exact target in Team access."
+            },
+            "update_profile.backgroundEnabled": {
+              "code": "owner_grant_required",
+              "reason": "No owner grant for profile.read on this target.",
+              "remedy": "Owner can grant this capability for the exact target in Team access."
+            },
+            "set_automation.enable": {
+              "code": "owner_grant_required",
+              "reason": "No owner grant for schedule.manage on this target.",
+              "remedy": "Owner can grant this capability for the exact target in Team access."
+            },
+            "retire_direct_report": {
+              "code": "owner_grant_required",
+              "reason": "No owner grant for profile.write on this target.",
+              "remedy": "Owner can grant this capability for the exact target in Team access."
+            }
+          }
+        },
+        {
+          "targetBuddyId": "buddy_ef2ab261-bb31-4ed0-a3d9-4d5d9bd28bd2",
+          "execution": {
+            "backgroundEnabled": false,
+            "pausedReason": null,
+            "maxActiveRuns": 2
+          },
+          "relationships": [],
+          "allowedOperations": [
+            "send"
+          ],
+          "deniedOperations": {
+            "get_profile": {
+              "code": "owner_grant_required",
+              "reason": "No owner grant for profile.read on this target.",
+              "remedy": "Owner can grant this capability for the exact target in Team access."
+            },
+            "update_profile": {
+              "code": "owner_grant_required",
+              "reason": "No owner grant for profile.read on this target.",
+              "remedy": "Owner can grant this capability for the exact target in Team access."
+            },
+            "get_soul": {
+              "code": "owner_grant_required",
+              "reason": "No owner grant for soul.read on this target.",
+              "remedy": "Owner can grant this capability for the exact target in Team access."
+            },
+            "update_soul": {
+              "code": "owner_grant_required",
+              "reason": "No owner grant for soul.read on this target.",
+              "remedy": "Owner can grant this capability for the exact target in Team access."
+            },
+            "get_memory": {
+              "code": "owner_grant_required",
+              "reason": "No owner grant for memory.read on this target.",
+              "remedy": "Owner can grant this capability for the exact target in Team access."
+            },
+            "update_memory": {
+              "code": "owner_grant_required",
+              "reason": "No owner grant for memory.read on this target.",
+              "remedy": "Owner can grant this capability for the exact target in Team access."
+            },
+            "create_buddy": {
+              "code": "owner_grant_required",
+              "reason": "No owner grant for staff.create on this target.",
+              "remedy": "Owner can grant this capability for the exact target in Team access."
+            },
+            "hire_direct_report": {
+              "code": "owner_grant_required",
+              "reason": "No owner grant for staff.create on this target.",
+              "remedy": "Owner can grant this capability for the exact target in Team access."
+            },
+            "set_relationship": {
+              "code": "owner_grant_required",
+              "reason": "No owner grant for relationship.write on this target.",
+              "remedy": "Owner can grant this capability for the exact target in Team access."
+            },
+            "new_project": {
+              "code": "scope_denied",
+              "reason": "Project ownership or a direct reporting relationship is required; per-project gates still apply.",
+              "remedy": "Owner can inspect workspace membership and reporting relationships."
+            },
+            "get_current_work": {
+              "code": "scope_denied",
+              "reason": "Owned, supervised or explicitly shared projects are readable.",
+              "remedy": "Owner can inspect workspace membership and reporting relationships."
+            },
+            "set_automation": {
+              "code": "owner_grant_required",
+              "reason": "No owner grant for schedule.manage on this target.",
+              "remedy": "Owner can grant this capability for the exact target in Team access."
+            },
+            "update_profile.backgroundEnabled": {
+              "code": "owner_grant_required",
+              "reason": "No owner grant for profile.read on this target.",
+              "remedy": "Owner can grant this capability for the exact target in Team access."
+            },
+            "set_automation.enable": {
+              "code": "owner_grant_required",
+              "reason": "No owner grant for schedule.manage on this target.",
+              "remedy": "Owner can grant this capability for the exact target in Team access."
+            },
+            "retire_direct_report": {
+              "code": "owner_grant_required",
+              "reason": "No owner grant for profile.write on this target.",
+              "remedy": "Owner can grant this capability for the exact target in Team access."
+            },
+            "set_automation.configure_disabled": {
+              "code": "scope_denied",
+              "reason": "Direct owner conversations can prepare disabled schedules; restricted runs require schedule.manage.",
+              "remedy": "Owner can inspect workspace membership and reporting relationships."
+            }
+          }
+        }
+      ],
+      "readiness": {
+        "intent": "coordinate",
+        "state": "evaluated",
+        "ready": false,
+        "blockers": [
+          {
+            "path": "targets.buddy_ef2ab261-bb31-4ed0-a3d9-4d5d9bd28bd2.operations.new_project.project.write",
+            "code": "scope_denied",
+            "reason": "Project ownership or a direct reporting relationship is required; per-project gates still apply.",
+            "remedy": "Owner can inspect workspace membership and reporting relationships.",
+            "resolvableBy": "owner"
+          },
+          {
+            "path": "targets.buddy_ef2ab261-bb31-4ed0-a3d9-4d5d9bd28bd2.operations.get_current_work.project.read",
+            "code": "scope_denied",
+            "reason": "Owned, supervised or explicitly shared projects are readable.",
+            "remedy": "Owner can inspect workspace membership and reporting relationships.",
+            "resolvableBy": "owner"
+          },
+          {
+            "path": "targets.buddy_ef2ab261-bb31-4ed0-a3d9-4d5d9bd28bd2.operations.set_relationship.relationship.write",
+            "code": "owner_grant_required",
+            "reason": "No owner grant for relationship.write on this target.",
+            "remedy": "Owner can grant this capability for the exact target in Team access.",
+            "resolvableBy": "owner"
+          },
+          {
+            "path": "targets.buddy_ef2ab261-bb31-4ed0-a3d9-4d5d9bd28bd2.relationship",
+            "code": "manager_workspace_scope",
+            "reason": "Appointment also affects a workspace the actor cannot inspect.",
+            "remedy": "Owner must explicitly admit the manager in every report workspace.",
+            "resolvableBy": "owner"
+          },
+          {
+            "path": "targets.buddy_ef2ab261-bb31-4ed0-a3d9-4d5d9bd28bd2.operations.update_profile.backgroundEnabled.profile.read",
+            "code": "owner_grant_required",
+            "reason": "No owner grant for profile.read on this target.",
+            "remedy": "Owner can grant this capability for the exact target in Team access.",
+            "resolvableBy": "owner"
+          },
+          {
+            "path": "targets.buddy_ef2ab261-bb31-4ed0-a3d9-4d5d9bd28bd2.operations.update_profile.backgroundEnabled.execution.manage",
+            "code": "owner_grant_required",
+            "reason": "No owner grant for execution.manage on this target.",
+            "remedy": "Owner can grant this capability for the exact target in Team access.",
+            "resolvableBy": "owner"
+          },
+          {
+            "path": "targets.buddy_ef2ab261-bb31-4ed0-a3d9-4d5d9bd28bd2.admission",
+            "code": "background_disabled",
+            "reason": "Background execution is disabled.",
+            "remedy": "Enable incoming work for this participant.",
+            "resolvableBy": "owner"
+          },
+          {
+            "path": "messages.message_d811ddb5-0077-45dd-a265-2be866572d71.returnPath",
+            "code": "conversation_busy",
+            "reason": "The destination conversation has an active turn.",
+            "remedy": "Wait for that turn to drain.",
+            "resolvableBy": "runtime"
+          }
+        ],
+        "messages": [
+          {
+            "messageId": "message_d811ddb5-0077-45dd-a265-2be866572d71",
+            "execution": {
+              "background": {
+                "mode": "until_done",
+                "disposition": "running",
+                "maxRuns": 6,
+                "maxDurationSeconds": 14400,
+                "runsUsed": 1,
+                "startedAt": "2026-09-15T13:50:33.229Z",
+                "deadline": "2026-09-15T17:50:33.229Z",
+                "waitingMessageIds": []
+              },
+              "messageId": "message_d811ddb5-0077-45dd-a265-2be866572d71",
+              "runId": "buddy_run_bf224900-477e-4a73-ab72-58bbcd826ed7",
+              "projectId": "buddy_project_634d5f86-f895-4f95-a220-a638ec5968a4",
+              "state": "running",
+              "code": null,
+              "reason": null,
+              "remedy": null,
+              "conversationId": "buddy-run-buddy_run_bf224900-477e-4a73-ab72-58bbcd826ed7",
+              "acknowledgedAt": "2026-09-15T13:50:33.252Z",
+              "acknowledgedRunId": "buddy_run_bf224900-477e-4a73-ab72-58bbcd826ed7",
+              "acceptedBy": null,
+              "acceptedAt": null,
+              "completionEvidence": [],
+              "projectSnapshot": {
+                "id": "buddy_project_634d5f86-f895-4f95-a220-a638ec5968a4",
+                "revision": 2,
+                "status": "in_progress",
+                "updatedAt": "2026-09-15T13:50:56.795Z",
+                "acceptedBy": "buddy_f4940aaa-059d-4105-aa0c-0eb1fd4de3b5",
+                "acceptedAt": "2026-09-15T13:50:56.803Z",
+                "evidenceCount": 0
+              },
+              "delivery": [],
+              "outcome": null,
+              "error": null
+            }
+          }
+        ],
+        "runtimeObservation": "Inspect original message/run receipts for actual starts; runtime health is not inferred from configuration."
+      }
+    }
+  },
+  "soulComparison": {
+    "portable": {
+      "ref": {
+        "kind": "soul",
+        "targetBuddyId": "buddy_b2ff0a7e-591c-4e76-9cc1-0cda8d171ec3"
+      },
+      "revision": "doc:006618fdccf94fbaccc30043:2",
+      "hasDelegationSection": false,
+      "auditId": "audit_744434d3-a2ad-40b6-959e-c5fac3a6e478"
+    },
+    "scoped": {
+      "ref": {
+        "kind": "soul",
+        "targetBuddyId": "buddy_b2ff0a7e-591c-4e76-9cc1-0cda8d171ec3",
+        "scope": {
+          "kind": "owner_thread",
+          "conversationId": "1be773df-1f2b-4ce1-b46b-3ee707e27166"
+        }
+      },
+      "revision": "doc:1de1a312e3b81098306349a6:3",
+      "hasDelegationSection": true,
+      "auditId": "audit_a169d901-3093-4c38-83a0-3adf54aff97c"
+    },
+    "briefingObservation": "User-provided runtime briefing contains the older portable soul without Delegation and ownership; it also publishes the owner_thread scoped soul ref."
+  },
+  "recall": {
+    "arguments": {
+      "pattern": "team",
+      "limit": 30,
+      "scope": "current"
+    },
+    "matches": 30,
+    "totalContentCharacters": 141572,
+    "sourcePaths": [
+      "2026-09-15T13:55:23.334Z:ed564c1a-16d0-4d61-bf19-55e29a9d86d8",
+      "soul",
+      "2026-09-12T15:57:09.168Z:f858e7e4-9766-4f20-9f9b-8e429a3108d1",
+      "/Users/nicholasbardy/git/font_maker/agent_notes/thinking_sessions/2026-06-26_value_head_mixed_diffusion_swarm/round_02/03_completion_audit.md",
+      "/Users/nicholasbardy/git/font_maker/agent_notes/thinking_sessions/2026-06-26_value_head_mixed_diffusion_swarm/round_02/01_cross_review_matrix.md",
+      "/Users/nicholasbardy/git/font_maker/agent_notes/thinking_sessions/2026-06-26_value_head_mixed_diffusion_swarm/round_02/00_cross_review_prompt.md",
+      "/Users/nicholasbardy/git/font_maker/agent_notes/thinking_sessions/2026-06-26_value_head_mixed_diffusion_swarm/round_01/07_red_team_and_disagreements.md",
+      "/Users/nicholasbardy/git/font_maker/agent_notes/thinking_sessions/2026-06-26_value_head_mixed_diffusion_swarm/round_01/01_researcher_prompts.md",
+      "/Users/nicholasbardy/git/font_maker/agent_notes/thinking_sessions/2026-06-26_value_head_mixed_diffusion_swarm/round_01/00_session_charter.md",
+      "/Users/nicholasbardy/git/font_maker/agent_notes/thinking_sessions/2026-06-26_value_head_mixed_diffusion_swarm/README.md",
+      "/Users/nicholasbardy/git/font_maker/agent_notes/thinking_sessions/2026-06-18_130617_adversarial_truth_swarm/06_swarm_operating_protocol.md",
+      "/Users/nicholasbardy/git/font_maker/agent_notes/thinking_sessions/2026-06-18_130617_adversarial_truth_swarm/03_cross_examination_matrix.md",
+      "/Users/nicholasbardy/git/font_maker/agent_notes/thinking_sessions/2026-06-18_130617_adversarial_truth_swarm/02_researcher_memos.md",
+      "/Users/nicholasbardy/git/font_maker/agent_notes/thinking_sessions/2026-06-18_130617_adversarial_truth_swarm/01_researcher_prompts.md",
+      "/Users/nicholasbardy/git/font_maker/agent_notes/thinking_sessions/2026-06-18_130617_adversarial_truth_swarm/00_session_charter.md",
+      "/Users/nicholasbardy/git/font_maker/agent_notes/meetings/jun_28th_next_direction/powWow/round4_agent_a_critiques.md",
+      "/Users/nicholasbardy/git/font_maker/agent_notes/meetings/jun_28th_next_direction/pow_wow/02_crit_scratch_on_scratch.md",
+      "/Users/nicholasbardy/git/font_maker/agent_notes/meetings/jun_28th_next_direction/pow_wow/02_crit_scaler_on_scaler.md",
+      "/Users/nicholasbardy/git/font_maker/agent_notes/meetings/jun_28th_next_direction/pow_wow/02_crit_realist_on_realist.md",
+      "/Users/nicholasbardy/git/font_maker/agent_notes/meetings/jun_28th_next_direction/pow_wow/02_crit_dynamicist_on_dynamicist.md",
+      "/Users/nicholasbardy/git/font_maker/agent_notes/meetings/jun_28th_next_direction/pow_wow/02_crit_architect_on_architect.md",
+      "/Users/nicholasbardy/git/font_maker/agent_notes/meetings/jun_28th_next_direction/final_drafts/round3_agent_a_final_diagnostics_gate.md",
+      "/Users/nicholasbardy/git/font_maker/agent_notes/meetings/jun_28th_next_direction/final_drafts/agent_b_final_resolution_data_curriculum.md",
+      "/Users/nicholasbardy/git/font_maker/agent_notes/meetings/jun_28th_next_direction/final_drafts/03_final_scratch.md",
+      "/Users/nicholasbardy/git/font_maker/agent_notes/meetings/jun_28th_next_direction/final_drafts/03_final_scaler.md",
+      "/Users/nicholasbardy/git/font_maker/agent_notes/meetings/jun_28th_next_direction/final_drafts/03_final_realist.md",
+      "/Users/nicholasbardy/git/font_maker/agent_notes/meetings/jun_28th_next_direction/final_drafts/03_final_dynamicist.md",
+      "/Users/nicholasbardy/git/font_maker/agent_notes/meetings/jun_28th_next_direction/00_README.md",
+      "/Users/nicholasbardy/git/font_maker/agent_notes/gpu_credits/THREADS.md",
+      "/Users/nicholasbardy/git/font_maker/agent_notes/gpu_credits/2026-09-15_gerardo_reply_sent.md"
+    ]
+  }
+}

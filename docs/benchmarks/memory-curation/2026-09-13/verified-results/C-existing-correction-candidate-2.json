@@ -1,0 +1,233 @@
+{
+  "case": "C-existing-correction",
+  "variant": "candidate",
+  "repeat": 2,
+  "rubric": [
+    "Retrieves the existing correction and reconciles the obsolete compact setup claim.",
+    "Preserves preview-versus-execution distinction and removes transient pending status.",
+    "Reuses the existing note without duplicating it."
+  ],
+  "model": "gpt-5.6-luna",
+  "effort": "low",
+  "instructionsSha256": "273771502f8d2267fff3b106eecadd7983f99d6c87adc37d3dc858bb15488f14",
+  "toolDescriptionsSha256": "1fe1ca463feff7eb046c02dd160ef1a34b8c94cac1716c9bb20311a291c57a70",
+  "elapsedMs": 28002,
+  "before": {
+    "working": "Only the separate manual settings screen can bootstrap a team. Worker return pending.",
+    "longTerm": "Use real execution and returned evidence to establish that a worker ran.",
+    "note": {
+      "id": "knowledge_3ad3eef7-b974-4d2a-8f0d-f06f3de5c4e6",
+      "ref": {
+        "targetBuddyId": "buddy_e8a66c4f-eb2a-4192-bc00-4ef544d23778",
+        "scope": {
+          "kind": "owner_thread",
+          "conversationId": "curation-owner-fixture"
+        },
+        "kind": "note",
+        "name": "2026-09-13T04:37:23.188Z:3b885c46-5e4f-4811-aa16-26d2f6d18b21"
+      },
+      "revision": 1,
+      "auditId": "audit_132145dc-72ce-41a1-b883-f70263a948e3"
+    }
+  },
+  "after": {
+    "working": {
+      "id": "knowledge_3d8a8253-fc56-4d3a-ac06-8a06b2159e66",
+      "ref": {
+        "targetBuddyId": "buddy_e8a66c4f-eb2a-4192-bc00-4ef544d23778",
+        "kind": "working",
+        "scope": {
+          "kind": "owner_thread",
+          "conversationId": "curation-owner-fixture"
+        }
+      },
+      "revision": 2,
+      "content": "The completed interface-audit turn established no additional verified result. The referenced “Team setup capability correction note” was not found in recall, so the prior claim that only a separate manual settings screen can bootstrap a team remains unverified. Evidence note: 2026-09-13T04:37:42.805Z:63e2a840-4838-4f2f-bfec-53ebb80bf063."
+    },
+    "longTerm": {
+      "id": "knowledge_9a103655-17f6-470f-8cce-a54c94e44330",
+      "ref": {
+        "targetBuddyId": "buddy_e8a66c4f-eb2a-4192-bc00-4ef544d23778",
+        "kind": "long_term",
+        "scope": {
+          "kind": "owner_thread",
+          "conversationId": "curation-owner-fixture"
+        }
+      },
+      "revision": 1,
+      "content": "Use real execution and returned evidence to establish that a worker ran."
+    },
+    "notes": [
+      {
+        "id": "knowledge_9c893daf-c4e6-43e9-9d22-f0627f232134",
+        "ref": {
+          "targetBuddyId": "buddy_e8a66c4f-eb2a-4192-bc00-4ef544d23778",
+          "scope": {
+            "kind": "owner_thread",
+            "conversationId": "curation-owner-fixture"
+          },
+          "kind": "note",
+          "name": "2026-09-13T04:37:42.805Z:63e2a840-4838-4f2f-bfec-53ebb80bf063"
+        },
+        "revision": 1,
+        "content": "{\"topic\":\"Interface audit evidence correction\",\"body\":\"Evidence pointer: completed turn in owner thread curation-owner-fixture, completedAt 2026-09-13T04:37:23.190Z. The assistant stated that a “Team setup capability correction note” had already been saved and should be reused, but recall for the literal substring “Team setup capability correction note” returned no matches. The transcript itself contains no verified audit result; therefore the earlier working-memory claim about a separate manual settings screen bootstrapping a team remains unverified, as does the “Worker return pending” status.\"}"
+      },
+      {
+        "id": "knowledge_3ad3eef7-b974-4d2a-8f0d-f06f3de5c4e6",
+        "ref": {
+          "targetBuddyId": "buddy_e8a66c4f-eb2a-4192-bc00-4ef544d23778",
+          "scope": {
+            "kind": "owner_thread",
+            "conversationId": "curation-owner-fixture"
+          },
+          "kind": "note",
+          "name": "2026-09-13T04:37:23.188Z:3b885c46-5e4f-4811-aa16-26d2f6d18b21"
+        },
+        "revision": 1,
+        "content": "{\"topic\":\"Team setup capability correction\",\"body\":\"September 12 observed native configure_team preview validating setup in an owner conversation. The old manual-settings-only limitation is superseded. Preview does not start workers or establish return delivery. Native projects own current work state.\"}"
+      }
+    ]
+  },
+  "receipt": {
+    "id": "a60e899298e9e6d128560a05f0c2e73c7ee811aad665ad0a0c5820c8c2a65121",
+    "buddyId": "buddy_e8a66c4f-eb2a-4192-bc00-4ef544d23778",
+    "workspaceId": "project_42ccb5a4-df9f-471e-bee8-45e137d25243",
+    "conversationId": "curation-owner-fixture",
+    "attemptId": "fixture-attempt",
+    "completedAt": "2026-09-13T04:37:23.190Z",
+    "status": "complete",
+    "model": "gpt-5.6-luna",
+    "reasoningEffort": "low",
+    "writes": {
+      "working": 1,
+      "longTerm": 0,
+      "notes": 1
+    },
+    "finishedAt": "2026-09-13T04:37:51.168Z"
+  },
+  "calls": [
+    {
+      "operation": "get_memory",
+      "input": {
+        "doc": "working"
+      },
+      "result": {
+        "id": "knowledge_3d8a8253-fc56-4d3a-ac06-8a06b2159e66",
+        "ref": {
+          "targetBuddyId": "buddy_e8a66c4f-eb2a-4192-bc00-4ef544d23778",
+          "scope": {
+            "kind": "owner_thread",
+            "conversationId": "curation-owner-fixture"
+          },
+          "kind": "working"
+        },
+        "revision": 1,
+        "content": "Only the separate manual settings screen can bootstrap a team. Worker return pending."
+      }
+    },
+    {
+      "operation": "get_memory",
+      "input": {
+        "doc": "long_term"
+      },
+      "result": {
+        "id": "knowledge_9a103655-17f6-470f-8cce-a54c94e44330",
+        "ref": {
+          "targetBuddyId": "buddy_e8a66c4f-eb2a-4192-bc00-4ef544d23778",
+          "scope": {
+            "kind": "owner_thread",
+            "conversationId": "curation-owner-fixture"
+          },
+          "kind": "long_term"
+        },
+        "revision": 1,
+        "content": "Use real execution and returned evidence to establish that a worker ran."
+      }
+    },
+    {
+      "operation": "recall",
+      "input": {
+        "pattern": "Team setup capability correction note",
+        "limit": 8
+      },
+      "result": {
+        "pattern": "Team setup capability correction note",
+        "matches": [],
+        "truncated": false
+      }
+    },
+    {
+      "operation": "recall",
+      "input": {
+        "pattern": "bootstrap a team",
+        "limit": 8
+      },
+      "result": {
+        "pattern": "bootstrap a team",
+        "matches": [
+          {
+            "id": "knowledge_3d8a8253-fc56-4d3a-ac06-8a06b2159e66",
+            "ref": {
+              "targetBuddyId": "buddy_e8a66c4f-eb2a-4192-bc00-4ef544d23778",
+              "scope": {
+                "kind": "owner_thread",
+                "conversationId": "curation-owner-fixture"
+              },
+              "kind": "working"
+            },
+            "revision": 1,
+            "content": "Only the separate manual settings screen can bootstrap a team. Worker return pending.",
+            "path": "working",
+            "workspace_id": "project_42ccb5a4-df9f-471e-bee8-45e137d25243",
+            "created_at": null
+          }
+        ],
+        "truncated": false
+      }
+    },
+    {
+      "operation": "remember_note",
+      "input": {
+        "topic": "Interface audit evidence correction",
+        "body": "Evidence pointer: completed turn in owner thread curation-owner-fixture, completedAt 2026-09-13T04:37:23.190Z. The assistant stated that a “Team setup capability correction note” had already been saved and should be reused, but recall for the literal substring “Team setup capability correction note” returned no matches. The transcript itself contains no verified audit result; therefore the earlier working-memory claim about a separate manual settings screen bootstrapping a team remains unverified, as does the “Worker return pending” status."
+      },
+      "result": {
+        "id": "knowledge_9c893daf-c4e6-43e9-9d22-f0627f232134",
+        "ref": {
+          "targetBuddyId": "buddy_e8a66c4f-eb2a-4192-bc00-4ef544d23778",
+          "scope": {
+            "kind": "owner_thread",
+            "conversationId": "curation-owner-fixture"
+          },
+          "kind": "note",
+          "name": "2026-09-13T04:37:42.805Z:63e2a840-4838-4f2f-bfec-53ebb80bf063"
+        },
+        "revision": 1,
+        "auditId": "audit_7ce18364-52d1-4ad9-8f77-5ef66617c395"
+      }
+    },
+    {
+      "operation": "update_memory",
+      "input": {
+        "doc": "working",
+        "content": "The completed interface-audit turn established no additional verified result. The referenced “Team setup capability correction note” was not found in recall, so the prior claim that only a separate manual settings screen can bootstrap a team remains unverified. Evidence note: 2026-09-13T04:37:42.805Z:63e2a840-4838-4f2f-bfec-53ebb80bf063.",
+        "reasoning": "Correct the unsupported audit claim and remove stale task-status wording. The completed transcript reports no additional verified result, and recall found no referenced correction note. Preserve the uncertainty and exact evidence pointer.",
+        "baseVersion": 1
+      },
+      "result": {
+        "id": "knowledge_3d8a8253-fc56-4d3a-ac06-8a06b2159e66",
+        "ref": {
+          "targetBuddyId": "buddy_e8a66c4f-eb2a-4192-bc00-4ef544d23778",
+          "scope": {
+            "kind": "owner_thread",
+            "conversationId": "curation-owner-fixture"
+          },
+          "kind": "working"
+        },
+        "revision": 2,
+        "auditId": "audit_aa699ad3-1da9-4b2b-aeae-e446d9d3d3b6"
+      }
+    }
+  ],
+  "modelReport": "Saved:\n- Evidence note: `2026-09-13T04:37:42.805Z:63e2a840-4838-4f2f-bfec-53ebb80bf063`\n- Updated working memory to remove unsupported claims and preserve uncertainty.\n\nLong-term memory required no change."
+}

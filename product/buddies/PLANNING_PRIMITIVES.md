@@ -1,70 +1,165 @@
-# PLANNING_BUDDY_PRIMITIVES.md — minimal primitives for Buddy coordination
+# Buddy coordination primitives
 
-*Date: 2026-08-21 · Status: intent locked, mechanism proposed · Owner: repo owner*
-*Companions: `agent_notes/2026-08-21_primitives-and-the-wait-design.md` (design),*
-*`agent_notes/2026-08-21_buddy-automations-reference.md` (as-built reference)*
+Current contract · updated 2026-09-13
 
-## 1. Goal
+For the full setup-to-result workflow, start with the
+[team operator guide](TEAM_OPERATOR_GUIDE.md).
 
-Buddies coordinate through a **small, open-ended** set of primitives. Anything specific — a
-review, an approval, a sign-off, a QA pass — is expressed by *composing* those primitives and
-naming the intent in prose, never by adding a type, an operation, or an enum variant.
-
-## 2. The primitive set
-
-| primitive | status today |
+| Capability | Implementation |
 |---|---|
-| **Schedules** (`cron`, `interval`) | ships |
-| **Loops** (`job_kind: loop`) | ships in code; **never run in production** |
-| **Goals** (`termination.condition`, free text) | ships |
-| **Message passing** (async: dispatch, reply lands in an inbox) | ships |
-| **The wait** (send and block for the reply) | **missing — the one real gap** |
+| Native send variants and revisioned work resources | `shared/src/buddy-resources.ts`, `buddy-work.ts` |
+| Durable requests, returns, claims and bounded work chains | Package coordination/background-work store |
+| Shared creation and input admission | `creation-service.ts`, `run-executor.ts`, `dispatch-service.ts` |
+| MCP and owner HTTP access | `mcp-server.ts`, `owner-resources.ts`, `routes.ts` |
+| Inbox, replies and project execution in both shells | Shared Buddy components and mobile shell |
+| Scheduling and cancellation | [Ownership contract](AUTOMATION_OWNERSHIP.md) |
 
-## 3. Decisions (locked)
+Buddy messages use the local durable message store. They do not require an
+external email account. External mailbox integration is a separate adapter and
+authorized effect scope.
 
-| Topic | Decision |
-|---|---|
-| **No review type** | "Review" is a category/description, open-ended. It must never appear as a variant in a sum, an enum, or a dedicated termination kind. A proposal to add `{kind:'review_passed'}` was made and **withdrawn** on 2026-08-21. |
-| **Categories pass through** | Intent travels as an open-ended string, consistent with the existing hard rule that provider-bespoke values pass through verbatim as `z.string()` with no shared enums. |
-| **Sub-agents are a harness capability** | A Buddy asks for them in prose; `claude`/`codex` spawn them. No operation, no schema, no depth rule, no quota. Two caveats: they must be **blocking** calls (`Workflow` dies at turn end), and they act with the **parent Buddy's identity**, so audit attribution is coarse. |
-| **No third Buddy type** | Goal-scoped workers are ordinary Buddies running a `loop` automation. Do not invent a lifetime between "ephemeral sub-agent" and "direct report". |
-| **Reviewer identity is already solved** | `delegate` creates a fresh conversation for a real Buddy with its own soul and memory. "Reviewer with personality, memory, and fresh context" needs no new work — only the wait. |
-| **Hiring is not required for review** | The reviewer is an existing Buddy. This whole line of work is independent of `hire_direct_report`. |
+## Efficient reads and per-assignment settings
 
-## 4. Non-goals
+The [September 15 API extension](EFFICIENCY_API.md) documents opt-in compact work
+and team summaries, recent/outstanding inbox reads, stale work-cursor detection,
+assignment-scoped configuration and truthful timing/usage coverage. Existing
+full-read and unconfigured-send defaults remain compatible.
 
-* A review workflow engine, a state machine, or reviewer-assignment logic.
-* A generic RPC layer between Buddies. The wait is one primitive, not a framework.
-* Bundling the operation-surface consolidation (6 send/reply ops → ~2 generic ones) with the
-  wait. Related, separately decided.
+## Send and reply
 
-## 5. Why this is lean
+Native `send` requires `key`, `to`, `purpose`, `body` and `delivery`. Optional outer
+fields are `evidence`, `workspaceId` and `notBefore`. The sender identity, source
+run and original callback conversation come from trusted host context. The stable
+key makes retries idempotent; retry the same intended send with the same key.
 
-The specific capability the Owner asked for — *"run a sub buddy and wait; we just want a review
-with a fresh context; nice if the reviewer has a personality and memory"* — decomposes entirely
-into things that already exist **plus one wait**:
+`delivery` selects exactly one variant:
 
-* fresh context → `delegate` already creates a new conversation
-* personality + memory → the target is a real Buddy with a soul and `memory/`
-* repeat-until-done → `job_kind: loop` with a goal
-* on a schedule → `schedule_kind`
-* **wait for the reply → missing**
+| Kind | Fields inside delivery | Behavior |
+|---|---|---|
+| `inform` | optional `projectId`, `inReplyTo` | Information with no reply obligation |
+| `request` | optional `projectId`, `continueFrom` | Request one durable response |
+| `work` | required `projectId`; optional `maxRuns`, `maxDurationSeconds` | Continue recipient-owned work until evidence-backed completion or a terminal disposition |
 
-No new noun. No new table. No new lifetime.
+```json
+{"key":"finding-1","to":"buddy-recipient","purpose":"inform","body":"The export fixture passes.","evidence":["test:export"],"delivery":{"kind":"inform"}}
+```
 
-## 6. Known gaps this direction inherits
+```json
+{"key":"review-1","to":"buddy-recipient","purpose":"review","body":"Review the export and return evidence.","delivery":{"kind":"request"}}
+```
 
-* **Iterations cap at 10 and *throw* on exhaustion**, so "repeat until all tasks are done" fails
-  rather than checkpointing. Must become a resumable checkpoint.
-* **`done` is self-reported** with no evidence requirement, unlike `complete_assignment`.
-* **Malformed completion output silently reads as `done:false`** — a silent fallback that makes a
-  finished Buddy redo its work.
-* **No continuity across scheduled runs** — each run gets a fresh conversation, so memory is the
-  only carrier, and provisioning it is currently broken on the Lead itself.
-* **Spend is not enforced.** `tokens_used`/`cost_usd` are zero across all 22 historical runs.
+```json
+{"key":"export-work-1","to":"buddy-recipient","purpose":"implementation","body":"Complete the project criteria and record the evidence.","delivery":{"kind":"work","projectId":"buddy-project-recipient-owned","maxRuns":3,"maxDurationSeconds":900}}
+```
 
-## 7. Blocked on the Owner
+Create recipient-owned work first with `new_project`, a stable key, concrete
+`definitionOfDone` and bounded todos. Then send its project ID with `delivery.kind`
+`work`. A reporting line authorizes ordinary supervision; a project reference
+alone does not grant dispatch, membership or private-content access. Self-owned
+background work uses `to: "self"` and the same work variant.
 
-Nothing here is exercisable until relationship edges exist. `delegate` requires a
-`manager`/`reports_to` edge; `request_review` requires a `reviews` edge. The Buddies Development
-Lead has **zero** rows in `buddy_relationships`, so every dispatch is refused.
+Defaults, maxima, clock meanings and enforcement limits are defined once in
+[budgets and limits — implemented behavior](BUDGETS_AND_LIMITS.md#implemented-behavior).
+The example above selects explicit bounds; it is not a default policy.
+
+`continueFrom` identifies an earlier message from the same sender to the same
+recipient in that workspace, retaining its destination. `inReplyTo` is an
+informational return from the original recipient to the original sender in the
+source workspace. These are message IDs, not caller-selected conversation IDs.
+Stopped roots and missing destinations require explicit inspection and repair;
+repeating a send does not authorize revival of stopped work.
+
+`reply({messageId, outcome, body, evidence})` records the addressed recipient's
+response. Purposes and outcomes are open strings. Only the owner can answer
+owner-directed messages. Sending an approval request does not grant permission;
+the exact action requires an explicit owner response.
+
+## Admission, continuation and completion
+
+A successful send returns durable message and execution receipts. It does not
+prove that a provider has started. Use `get_message`, `get_runs` and
+`get_capabilities` to inspect actual admission, blockers, acknowledgment and
+completion evidence. Readiness settings are prerequisites, not a process
+heartbeat. Message receipts are constrained by the current conversation audience;
+participating in private mail under the same identity does not publish it to an
+unrelated team turn.
+
+Fresh recipient work uses inert shared conversation creation and linking, then
+claimed input admission. Creation itself does not execute a prompt. Requests
+with valid background continuation routes reuse their established destinations.
+Human chats (`placement: default`) are owner control points. New work sent from
+one records a host-selected background return route for that launching Buddy,
+thread and scope. Replies, failure notices and directed informational returns
+wake that background context through existing admission, with the original
+assignment and returned evidence. The human transcript receives no automatic
+turn. Legacy messages without that route still settle as `mailbox_only`.
+Incoming-work limits, scope checks and stopped roots still apply; a saved return
+is not proof that review started. Work requests and schedules require a background destination. The
+runtime enforces this boundary again immediately before automated input.
+The routed Mailbox tab (`/buddies/:buddyId/mailbox`) exposes messages, replies,
+evidence and owner decisions in both shells. Source
+restrictions narrow the host's `MESSAGE_BUDDY_OPERATIONS` policy. Team tools can
+be present while particular actions remain denied: creation requires staffing
+authority, attaching existing identities requires relationship authority, and
+private documents have separate scope checks. There is no hiring quota or blanket
+recipient hiring prohibition.
+
+For managed work, the recipient reads `get_current_work` and `get_inbox` on each
+attempt and accepts work with a revision-checked `update_project`. Record progress,
+blockers and evidence on the project and its todos. Every non-cancelled todo must
+be done with evidence before the project is complete. A manual final reply cannot
+complete unfinished managed work; the runtime returns the final disposition to
+the original requester.
+
+The native send call returns a receipt without synchronously waiting for the
+recipient to finish. Outstanding child requests suspend a managed parent work
+chain; replies allow the existing runtime to reconcile and continue it within the
+original limits. Do not schedule a parallel self-successor for managed work.
+Failure, cancellation, a terminal blocker or exhausted limits remain visible;
+late replies do not revive terminal runs. `stop` fences authority and drains owned
+provider work. `retry_run` requires inspecting effects, an explicit reason and a
+stable key.
+
+A persistent Buddy has its own identity and durable work. Harness sub-agents are
+turn-scoped provider capabilities under the parent's identity. They introduce no
+additional employee type or public coordination operation.
+
+## Observation and recovery
+
+Native `get_inbox({limit,cursor})` returns compact summaries in the current audience.
+Follow `nextCursor`; expand an exact body/evidence with `get_message({messageId})`
+and project criteria with `get_current_work({projectId})`. Previews are bounded,
+not complete work instructions. Audience filtering precedes message pagination.
+The legacy full service response remains available to existing HTTP consumers.
+
+`get_team_state` provides authorized execution metadata, current project snapshots,
+published checkpoints, effective limits and recovery controllers. Optional `runId`,
+`rootMessageId`, `targetBuddyId`, `offset` and `limit` narrow the page. Checkpoint
+and delivery histories have independent offsets/limits and next-page fields.
+Structured deliveries retain run IDs, admission timestamps and retry ancestry.
+Recorded execution configuration takes precedence over policy estimates; a missing
+historical snapshot remains explicit. Neither delivery completion nor a current
+project's acceptance proves consumer review of a particular artifact/version.
+
+Save files before `checkpoint({key,artifacts,effects,resume,visibility})`. A
+team-visible checkpoint shares its complete payload with authorized observers;
+it attests saved references, not current file existence. Recover only after
+inspecting effects, using `retry_run({runId,key,reason,checkpointId?})`. A historical
+closed timeout can create one linked successor within the original envelope;
+its old failure stays recorded. Controller identity is not tied to the old
+conversation, but current audience, membership, supervision and stopped/deleted
+fences still apply. See the [CEO workflow simulation](wave-sim-second-pass-2026-09-13/02-workflow-simulation.md)
+and [second-pass decision](wave-sim-second-pass-2026-09-13/03-second-pass-decision.md).
+
+## Historical contract
+
+The earlier synchronous `wait` / `timeoutSeconds`, `expectsReply` and `execution`
+arguments are compatibility/service inputs, not fields in the current native
+send schema. Do not copy those examples into native MCP calls. The September 8
+version of this document is preserved at commit
+`4c6835b53190a64650c8948ac67f7fd6badbf1ed`; it stated “Waiting is part of send” and
+incorrectly described all recipient hiring as excluded. The current typed
+resource contract supersedes those claims without deleting the earlier design
+history. See the [historical wait design](../../agent_notes/2026-08-21_primitives-and-the-wait-design.md)
+and the [September 12 note/contract repair successor](IMPLEMENTATION_NOTE_CONTRACT_2026-09-12.md)
+for the rationale.

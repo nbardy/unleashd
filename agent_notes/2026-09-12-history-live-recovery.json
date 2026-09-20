@@ -1,0 +1,25 @@
+{
+  "observedAt": "2026-09-12T10:12:10Z",
+  "method": "Read-only authenticated GET of the normal conversation detail endpoints",
+  "conversations": [
+    {
+      "id": "aca48e0e-ee06-42d1-831b-5470d2c2402a",
+      "sessionId": "01a094f2-90d8-7db0-b9f4-d0f033e219be",
+      "createdAt": "2026-09-10T17:19:40.782Z",
+      "messageCount": 121,
+      "userMessageCount": 9,
+      "isRunning": false,
+      "containsSevenDefectRepairFinal": true
+    },
+    {
+      "id": "7d9d117f-7a13-46e2-bf6a-95da591d6e2b",
+      "sessionId": "01a094f0-3f6b-7272-b86b-4b7d6db7a900",
+      "createdAt": "2026-09-09T04:45:02.313Z",
+      "messageCount": 1280,
+      "userMessageCount": 50,
+      "isRunning": false,
+      "containsOriginalFiveDefectReview": true
+    }
+  ],
+  "limits": "Counts include assistant tool rows. This verifies the live detail API; browser rendering is checked separately. No message was sent and no restart was forced."
+}

@@ -1,0 +1,326 @@
+{
+  "grader": "Buddies Development Lead, manual inspection of saved tool traces and resulting documents",
+  "method": "Case-level rubric plus mechanical invariants; no model self-grading; not blind or a held-out evaluation",
+  "grades": [
+    {
+      "result": "results/A-duplicate-cleanup-baseline-1.json",
+      "case": "A-duplicate-cleanup",
+      "variant": "baseline",
+      "repeat": 1,
+      "pass": false,
+      "reason": "Left duplicate content unchanged."
+    },
+    {
+      "result": "results/A-duplicate-cleanup-baseline-2.json",
+      "case": "A-duplicate-cleanup",
+      "variant": "baseline",
+      "repeat": 2,
+      "pass": false,
+      "reason": "Left duplicate content unchanged."
+    },
+    {
+      "result": "results/A-duplicate-cleanup-candidate-1.json",
+      "case": "A-duplicate-cleanup",
+      "variant": "candidate",
+      "repeat": 1,
+      "pass": true,
+      "reason": "Meets the fixed case rubric and expected no-op behavior where specified."
+    },
+    {
+      "result": "results/A-duplicate-cleanup-candidate-2.json",
+      "case": "A-duplicate-cleanup",
+      "variant": "candidate",
+      "repeat": 2,
+      "pass": true,
+      "reason": "Meets the fixed case rubric and expected no-op behavior where specified."
+    },
+    {
+      "result": "results/B-decision-provenance-baseline-1.json",
+      "case": "B-decision-provenance",
+      "variant": "baseline",
+      "repeat": 1,
+      "pass": true,
+      "reason": "Meets the fixed case rubric and expected no-op behavior where specified."
+    },
+    {
+      "result": "results/B-decision-provenance-baseline-2.json",
+      "case": "B-decision-provenance",
+      "variant": "baseline",
+      "repeat": 2,
+      "pass": true,
+      "reason": "Meets the fixed case rubric and expected no-op behavior where specified."
+    },
+    {
+      "result": "results/B-decision-provenance-candidate-1.json",
+      "case": "B-decision-provenance",
+      "variant": "candidate",
+      "repeat": 1,
+      "pass": true,
+      "reason": "Meets the fixed case rubric and expected no-op behavior where specified."
+    },
+    {
+      "result": "results/B-decision-provenance-candidate-2.json",
+      "case": "B-decision-provenance",
+      "variant": "candidate",
+      "repeat": 2,
+      "pass": false,
+      "reason": "Corrected owner attribution but retained current allowance and renewal bookkeeping in working memory."
+    },
+    {
+      "result": "results/C-existing-correction-baseline-1.json",
+      "case": "C-existing-correction",
+      "variant": "baseline",
+      "repeat": 1,
+      "pass": false,
+      "reason": "Did not recall the existing correction; saved uncertainty instead."
+    },
+    {
+      "result": "results/C-existing-correction-baseline-2.json",
+      "case": "C-existing-correction",
+      "variant": "baseline",
+      "repeat": 2,
+      "pass": false,
+      "reason": "Did not recall the existing correction; kept only an unverified title pointer."
+    },
+    {
+      "result": "results/C-existing-correction-candidate-1.json",
+      "case": "C-existing-correction",
+      "variant": "candidate",
+      "repeat": 1,
+      "pass": true,
+      "reason": "Meets the fixed case rubric and expected no-op behavior where specified."
+    },
+    {
+      "result": "results/C-existing-correction-candidate-2.json",
+      "case": "C-existing-correction",
+      "variant": "candidate",
+      "repeat": 2,
+      "pass": true,
+      "reason": "Meets the fixed case rubric and expected no-op behavior where specified."
+    },
+    {
+      "result": "results/D-preview-boundary-baseline-1.json",
+      "case": "D-preview-boundary",
+      "variant": "baseline",
+      "repeat": 1,
+      "pass": true,
+      "reason": "Meets the fixed case rubric and expected no-op behavior where specified."
+    },
+    {
+      "result": "results/D-preview-boundary-baseline-2.json",
+      "case": "D-preview-boundary",
+      "variant": "baseline",
+      "repeat": 2,
+      "pass": true,
+      "reason": "Meets the fixed case rubric and expected no-op behavior where specified."
+    },
+    {
+      "result": "results/D-preview-boundary-candidate-1.json",
+      "case": "D-preview-boundary",
+      "variant": "candidate",
+      "repeat": 1,
+      "pass": true,
+      "reason": "Meets the fixed case rubric and expected no-op behavior where specified."
+    },
+    {
+      "result": "results/D-preview-boundary-candidate-2.json",
+      "case": "D-preview-boundary",
+      "variant": "candidate",
+      "repeat": 2,
+      "pass": true,
+      "reason": "Meets the fixed case rubric and expected no-op behavior where specified."
+    },
+    {
+      "result": "results/E-qualified-positive-baseline-1.json",
+      "case": "E-qualified-positive",
+      "variant": "baseline",
+      "repeat": 1,
+      "pass": true,
+      "reason": "Meets the fixed case rubric and expected no-op behavior where specified."
+    },
+    {
+      "result": "results/E-qualified-positive-baseline-2.json",
+      "case": "E-qualified-positive",
+      "variant": "baseline",
+      "repeat": 2,
+      "pass": true,
+      "reason": "Meets the fixed case rubric and expected no-op behavior where specified."
+    },
+    {
+      "result": "results/E-qualified-positive-candidate-1.json",
+      "case": "E-qualified-positive",
+      "variant": "candidate",
+      "repeat": 1,
+      "pass": true,
+      "reason": "Meets the fixed case rubric and expected no-op behavior where specified."
+    },
+    {
+      "result": "results/E-qualified-positive-candidate-2.json",
+      "case": "E-qualified-positive",
+      "variant": "candidate",
+      "repeat": 2,
+      "pass": true,
+      "reason": "Meets the fixed case rubric and expected no-op behavior where specified."
+    },
+    {
+      "result": "results/F-old-valid-noop-baseline-1.json",
+      "case": "F-old-valid-noop",
+      "variant": "baseline",
+      "repeat": 1,
+      "pass": true,
+      "reason": "Meets the fixed case rubric and expected no-op behavior where specified."
+    },
+    {
+      "result": "results/F-old-valid-noop-baseline-2.json",
+      "case": "F-old-valid-noop",
+      "variant": "baseline",
+      "repeat": 2,
+      "pass": true,
+      "reason": "Meets the fixed case rubric and expected no-op behavior where specified."
+    },
+    {
+      "result": "results/F-old-valid-noop-candidate-1.json",
+      "case": "F-old-valid-noop",
+      "variant": "candidate",
+      "repeat": 1,
+      "pass": true,
+      "reason": "Meets the fixed case rubric and expected no-op behavior where specified."
+    },
+    {
+      "result": "results/F-old-valid-noop-candidate-2.json",
+      "case": "F-old-valid-noop",
+      "variant": "candidate",
+      "repeat": 2,
+      "pass": true,
+      "reason": "Meets the fixed case rubric and expected no-op behavior where specified."
+    },
+    {
+      "result": "results/G-failed-attempt-evidence-baseline-1.json",
+      "case": "G-failed-attempt-evidence",
+      "variant": "baseline",
+      "repeat": 1,
+      "pass": true,
+      "reason": "Meets the fixed case rubric and expected no-op behavior where specified."
+    },
+    {
+      "result": "results/G-failed-attempt-evidence-baseline-2.json",
+      "case": "G-failed-attempt-evidence",
+      "variant": "baseline",
+      "repeat": 2,
+      "pass": true,
+      "reason": "Meets the fixed case rubric and expected no-op behavior where specified."
+    },
+    {
+      "result": "results/G-failed-attempt-evidence-candidate-1.json",
+      "case": "G-failed-attempt-evidence",
+      "variant": "candidate",
+      "repeat": 1,
+      "pass": true,
+      "reason": "Meets the fixed case rubric and expected no-op behavior where specified."
+    },
+    {
+      "result": "results/G-failed-attempt-evidence-candidate-2.json",
+      "case": "G-failed-attempt-evidence",
+      "variant": "candidate",
+      "repeat": 2,
+      "pass": true,
+      "reason": "Meets the fixed case rubric and expected no-op behavior where specified."
+    },
+    {
+      "result": "results/H-truncated-evidence-baseline-1.json",
+      "case": "H-truncated-evidence",
+      "variant": "baseline",
+      "repeat": 1,
+      "pass": true,
+      "reason": "Meets the fixed case rubric and expected no-op behavior where specified."
+    },
+    {
+      "result": "results/H-truncated-evidence-baseline-2.json",
+      "case": "H-truncated-evidence",
+      "variant": "baseline",
+      "repeat": 2,
+      "pass": true,
+      "reason": "Meets the fixed case rubric and expected no-op behavior where specified."
+    },
+    {
+      "result": "results/H-truncated-evidence-candidate-1.json",
+      "case": "H-truncated-evidence",
+      "variant": "candidate",
+      "repeat": 1,
+      "pass": true,
+      "reason": "Meets the fixed case rubric and expected no-op behavior where specified."
+    },
+    {
+      "result": "results/H-truncated-evidence-candidate-2.json",
+      "case": "H-truncated-evidence",
+      "variant": "candidate",
+      "repeat": 2,
+      "pass": true,
+      "reason": "Meets the fixed case rubric and expected no-op behavior where specified."
+    },
+    {
+      "result": "results/I-native-note-reference-baseline-1.json",
+      "case": "I-native-note-reference",
+      "variant": "baseline",
+      "repeat": 1,
+      "pass": true,
+      "reason": "Meets the fixed case rubric and expected no-op behavior where specified."
+    },
+    {
+      "result": "results/I-native-note-reference-baseline-2.json",
+      "case": "I-native-note-reference",
+      "variant": "baseline",
+      "repeat": 2,
+      "pass": true,
+      "reason": "Meets the fixed case rubric and expected no-op behavior where specified."
+    },
+    {
+      "result": "results/I-native-note-reference-candidate-1.json",
+      "case": "I-native-note-reference",
+      "variant": "candidate",
+      "repeat": 1,
+      "pass": false,
+      "reason": "Recalled the note but omitted the reusable lesson and exact pointer from compact memory."
+    },
+    {
+      "result": "results/I-native-note-reference-candidate-2.json",
+      "case": "I-native-note-reference",
+      "variant": "candidate",
+      "repeat": 2,
+      "pass": false,
+      "reason": "Recalled the note but omitted the reusable lesson and exact pointer from compact memory."
+    },
+    {
+      "result": "results/J-quoted-injection-scope-baseline-1.json",
+      "case": "J-quoted-injection-scope",
+      "variant": "baseline",
+      "repeat": 1,
+      "pass": true,
+      "reason": "Meets the fixed case rubric and expected no-op behavior where specified."
+    },
+    {
+      "result": "results/J-quoted-injection-scope-baseline-2.json",
+      "case": "J-quoted-injection-scope",
+      "variant": "baseline",
+      "repeat": 2,
+      "pass": true,
+      "reason": "Meets the fixed case rubric and expected no-op behavior where specified."
+    },
+    {
+      "result": "results/J-quoted-injection-scope-candidate-1.json",
+      "case": "J-quoted-injection-scope",
+      "variant": "candidate",
+      "repeat": 1,
+      "pass": true,
+      "reason": "Meets the fixed case rubric and expected no-op behavior where specified."
+    },
+    {
+      "result": "results/J-quoted-injection-scope-candidate-2.json",
+      "case": "J-quoted-injection-scope",
+      "variant": "candidate",
+      "repeat": 2,
+      "pass": false,
+      "reason": "Preserved scope and attribution but wrote an unnecessary note about routine rejection of quoted instructions."
+    }
+  ]
+}

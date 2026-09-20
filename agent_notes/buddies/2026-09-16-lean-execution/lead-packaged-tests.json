@@ -1,0 +1,16 @@
+{
+  "observedAt": "2026-09-16T03:22:18.822705+00:00",
+  "command": [
+    "pnpm",
+    "exec",
+    "tsx",
+    "--test",
+    "server/test/buddy-evidence-preservation.test.ts",
+    "server/test/buddy-lean-controls.test.ts",
+    "server/test/buddy-efficiency-reads.test.ts"
+  ],
+  "exitCode": 1,
+  "elapsedSeconds": 0.679,
+  "archiveSha256": "369fc7d2f66dd063e89e7d992abdabbe383a1eb34ac088a29833ffaa02ac2aea",
+  "installedStoreSha256": "1456501aa6be03d0213440eae8b31ab6de0171b5d65bccce3e3bfd1821c6068b"
+}
