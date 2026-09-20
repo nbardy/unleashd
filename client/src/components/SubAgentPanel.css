@@ -8,7 +8,7 @@
 .subagent-panel {
   background: color-mix(in srgb, var(--bg-panel) 52%, transparent);
   border: 1px solid color-mix(in srgb, var(--border-subtle) 78%, transparent);
-  border-radius: 4px;
+  border-radius: var(--ui-radius);
   margin: 0;
   font-family: var(--font-mono);
   font-size: 13px;

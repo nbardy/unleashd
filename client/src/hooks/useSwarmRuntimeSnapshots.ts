@@ -1,11 +1,13 @@
 import type { OompaRuntimeSnapshot } from '@unleashd/shared';
-import { useCallback, useEffect, useMemo, useState } from 'react';
-import { usePolledFetch } from './usePolledFetch';
+import { useMemo } from 'react';
+import { resource, usePolledFetch } from './usePolledFetch';
 
 interface UseSwarmRuntimeSnapshotsOptions {
   pollMs?: number;
   enabled?: boolean;
 }
+
+const EMPTY_SNAPSHOTS: Record<string, OompaRuntimeSnapshot> = {};
 
 const makeUnavailable = (reason: string): OompaRuntimeSnapshot => ({
   available: false,
@@ -24,68 +26,59 @@ export function useSwarmRuntimeSnapshots(
   );
   const hasRoots = normalizedProjectRoots.length > 0;
 
-  // Multi-URL fetcher (one /api/swarm-runtime per project root, merged into a
-  // single Record) — usePolledFetch's `PolledSource` accepts this in place of
-  // a plain URL string. The shared AbortSignal it receives is threaded to
-  // every underlying fetch, so a superseded cycle (new poll tick, unmount,
-  // roots changed) aborts all in-flight requests together.
-  const fetchRuntimeSnapshots = useCallback(
-    async (signal: AbortSignal): Promise<Record<string, OompaRuntimeSnapshot>> => {
-      const entries = await Promise.all(
-        normalizedProjectRoots.map(async (projectRoot) => {
-          // Server requires an absolute path. Skip relative paths (e.g. Gemini
-          // sessions whose .project_root file is missing — workingDirectory
-          // falls back to a directory basename, not an absolute path).
-          if (!projectRoot.startsWith('/')) {
-            return { projectRoot, snapshot: makeUnavailable('No project root available') };
-          }
-          try {
-            const response = await fetch(
-              `/api/swarm-runtime?dir=${encodeURIComponent(projectRoot)}`,
-              { signal }
-            );
-            if (!response.ok) {
-              return { projectRoot, snapshot: makeUnavailable(`HTTP ${response.status}`) };
-            }
-            const snapshot = (await response.json()) as OompaRuntimeSnapshot;
-            return { projectRoot, snapshot };
-          } catch (e) {
-            // A superseded cycle aborts this signal — rethrow so usePolledFetch's
-            // shared AbortError handling drops the whole cycle rather than us
-            // reporting a spurious per-root failure for a request we cancelled.
-            if (signal.aborted) throw e;
-            return { projectRoot, snapshot: makeUnavailable('Failed to load runtime snapshot') };
-          }
-        })
-      );
-      const next: Record<string, OompaRuntimeSnapshot> = {};
-      for (const entry of entries) next[entry.projectRoot] = entry.snapshot;
-      return next;
-    },
+  // Multi-request resource: one /api/swarm-runtime per project root, merged
+  // into a single Record. The root set is the cache key, so a snapshot read
+  // back here always belongs to the roots currently being asked about — the
+  // mirror-into-local-state this hook used to keep, purely to force `{}` when
+  // the roots changed or the hook was disabled, is now the cache's `idle`
+  // variant. The shared AbortSignal is still threaded to every inner fetch.
+  const source = useMemo(
+    () =>
+      resource(
+        `swarm-runtime:${normalizedProjectRoots.join('|')}`,
+        async (signal: AbortSignal): Promise<Record<string, OompaRuntimeSnapshot>> => {
+          const entries = await Promise.all(
+            normalizedProjectRoots.map(async (projectRoot) => {
+              // Server requires an absolute path. Skip relative paths (e.g. Gemini
+              // sessions whose .project_root file is missing — workingDirectory
+              // falls back to a directory basename, not an absolute path).
+              if (!projectRoot.startsWith('/')) {
+                return { projectRoot, snapshot: makeUnavailable('No project root available') };
+              }
+              try {
+                const response = await fetch(
+                  `/api/swarm-runtime?dir=${encodeURIComponent(projectRoot)}`,
+                  { signal }
+                );
+                if (!response.ok) {
+                  return { projectRoot, snapshot: makeUnavailable(`HTTP ${response.status}`) };
+                }
+                const snapshot = (await response.json()) as OompaRuntimeSnapshot;
+                return { projectRoot, snapshot };
+              } catch (e) {
+                // An aborted cycle must fail the whole request rather than
+                // report a spurious per-root failure for something we cancelled.
+                if (signal.aborted) throw e;
+                return {
+                  projectRoot,
+                  snapshot: makeUnavailable('Failed to load runtime snapshot'),
+                };
+              }
+            })
+          );
+          const next: Record<string, OompaRuntimeSnapshot> = {};
+          for (const entry of entries) next[entry.projectRoot] = entry.snapshot;
+          return next;
+        }
+      ),
     [normalizedProjectRoots]
   );
 
   const { data } = usePolledFetch<Record<string, OompaRuntimeSnapshot>>(
-    enabled && hasRoots ? fetchRuntimeSnapshots : null,
+    enabled && hasRoots ? source : null,
     pollMs,
     enabled
   );
 
-  // usePolledFetch retains its last `data` when its source goes to null
-  // (mobile relies on that to avoid a flash-to-empty on brief WS hiccups).
-  // This hook's contract is stricter: disabled or no roots must present as
-  // {} immediately, not the previous project's stale snapshot — so mirror
-  // `data` into local state and reset it explicitly on the early-out.
-  const [runtimeSnapshots, setRuntimeSnapshots] = useState<Record<string, OompaRuntimeSnapshot>>(
-    {}
-  );
-  useEffect(() => {
-    if (!enabled || !hasRoots) {
-      setRuntimeSnapshots({});
-      return;
-    }
-    if (data) setRuntimeSnapshots(data);
-  }, [enabled, hasRoots, data]);
-
-  return runtimeSnapshots;
+  return data ?? EMPTY_SNAPSHOTS;
 }

@@ -114,7 +114,7 @@
   right: 0;
   background: var(--bg-elevated);
   border: 1px solid var(--border-subtle);
-  border-radius: 4px;
+  border-radius: var(--ui-radius);
   padding: 8px 12px;
   font-size: 11px;
   color: var(--text-secondary);
@@ -298,7 +298,7 @@
 .worker-pane-provider {
   font-size: 10px;
   padding: 2px 6px;
-  border-radius: 4px;
+  border-radius: var(--ui-radius);
   font-weight: 600;
   text-transform: uppercase;
 }
@@ -337,7 +337,7 @@
   text-transform: uppercase;
   letter-spacing: 0.5px;
   padding: 2px 6px;
-  border-radius: 3px;
+  border-radius: var(--ui-radius);
 }
 
 .pane-label.cyan {
@@ -491,7 +491,7 @@
 .config-model-badge {
   font-size: 10px;
   padding: 2px 8px;
-  border-radius: 4px;
+  border-radius: var(--ui-radius);
   font-weight: 600;
   background: color-mix(in srgb, var(--primary) 15%, transparent);
   color: var(--primary-bright);
@@ -519,7 +519,7 @@
   margin: 4px 0 8px 16px;
   padding: 8px 12px;
   background: var(--bg-panel);
-  border-radius: 2px;
+  border-radius: var(--ui-radius);
   border-left: 2px solid var(--ai-dim);
   font-size: 11px;
   font-family: var(--font-mono);
@@ -546,7 +546,7 @@
 .role-badge {
   display: inline-block;
   padding: 1px 6px;
-  border-radius: 3px;
+  border-radius: var(--ui-radius);
   font-size: 9px;
   font-weight: 700;
   text-transform: uppercase;
@@ -591,7 +591,7 @@
 .roster-review-count {
   font-size: 9px;
   padding: 1px 4px;
-  border-radius: 3px;
+  border-radius: var(--ui-radius);
   background: color-mix(in srgb, var(--meta) 15%, transparent);
   color: var(--meta);
   font-weight: 600;
@@ -666,7 +666,7 @@
 /* Verdict badges */
 .verdict-badge {
   padding: 2px 8px;
-  border-radius: 4px;
+  border-radius: var(--ui-radius);
   font-size: 10px;
   font-weight: 700;
   letter-spacing: 0.5px;
@@ -733,7 +733,7 @@
 
 .runs-selector::-webkit-scrollbar-thumb {
   background: var(--border-subtle);
-  border-radius: 2px;
+  border-radius: var(--ui-radius);
 }
 
 .run-selector-btn {
@@ -742,7 +742,7 @@
   gap: 6px;
   padding: 6px 12px;
   border: 1px solid var(--border-subtle);
-  border-radius: 2px;
+  border-radius: var(--ui-radius);
   background: var(--bg-card);
   color: var(--text-secondary);
   font-size: 12px;
@@ -769,7 +769,7 @@
 
 .run-status-badge {
   padding: 1px 6px;
-  border-radius: 3px;
+  border-radius: var(--ui-radius);
   font-size: 10px;
   font-weight: 600;
   background: var(--bg-elevated);
@@ -784,7 +784,7 @@
 .run-summary {
   background: var(--bg-card);
   border: 1px solid var(--border-subtle);
-  border-radius: 2px;
+  border-radius: var(--ui-radius);
   padding: 16px;
 }
 
@@ -812,7 +812,7 @@
   margin-bottom: 16px;
   padding: 12px;
   background: var(--bg-elevated);
-  border-radius: 2px;
+  border-radius: var(--ui-radius);
 }
 
 .run-stat {
@@ -975,7 +975,7 @@
 .run-reviews {
   background: var(--bg-card);
   border: 1px solid var(--border-subtle);
-  border-radius: 2px;
+  border-radius: var(--ui-radius);
   padding: 16px;
 }
 .run-reviews h4 {
@@ -992,7 +992,7 @@
 
 .run-review-entry {
   border: 1px solid var(--border-subtle);
-  border-radius: 2px;
+  border-radius: var(--ui-radius);
   overflow: hidden;
 }
 
@@ -1054,7 +1054,7 @@
 
 .swarm-debug-btn {
   padding: 3px 10px;
-  border-radius: 4px;
+  border-radius: var(--ui-radius);
   font-size: 11px;
   font-weight: 500;
   cursor: pointer;

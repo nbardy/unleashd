@@ -5,7 +5,7 @@
   min-width: 0;
   padding: 3px 8px;
   border: 1px solid color-mix(in oklab, currentColor 35%, transparent);
-  border-radius: 999px;
+  border-radius: var(--ui-radius);
   background: color-mix(in oklab, currentColor 8%, transparent);
   color: var(--theme-base0);
   font-size: 11px;

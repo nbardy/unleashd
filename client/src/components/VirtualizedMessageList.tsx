@@ -1,3 +1,5 @@
+import { BuddyWorkerThreadBadge } from './buddies/BuddyWorkerThreadBadge';
+import type { BuddyWorkerThread } from '@unleashd/shared';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import type { Message } from '@unleashd/shared';
 import type { Break, Root, Text } from 'mdast';
@@ -21,17 +23,21 @@ import type { BuddyContext } from '../atoms/pending-creations';
 import type { CopyState } from '../hooks/useCopyAction';
 import { COPY_LABEL, useCopyAction } from '../hooks/useCopyAction';
 import { parseBuddyReviewRequest, parseBuddyReviewResult } from '../utils/buddy-review-message';
+import { messageTranscriptContent } from '../utils/conversation-transcript';
+import { execInputPreview } from '../utils/tool-call-preview';
 import { useLazyMarkdownPlugins } from '../utils/lazyMarkdownPlugins';
-import {
-  OOMPA_RUN_TOOL_FRAGMENT_RE,
-  splitStructuredMessageContent,
-} from '../utils/structured-message-segments';
+import { splitStructuredMessageContent } from '../utils/structured-message-segments';
+import { splitToolActivity } from '../utils/tool-activity-segments';
+import type { AssistantResponse, MessageGroup } from '../utils/chat-message-groups';
+export type { MessageGroup } from '../utils/chat-message-groups';
 import { AskUserQuestionWidget, parseAskUserQuestion } from './AskUserQuestion';
 import { BuddyConvoHeader } from './BuddyConvoHeader';
 import { BuddyReviewRequestCard, BuddyReviewResultCard } from './BuddyReviewMessage';
 import { FilePreview, getPreviewType, getPreviewableLocalHref } from './FilePreview';
 import { InlineSwarmRunWidget } from './InlineSwarmRunWidget';
 import { SwarmConvoPrefix } from './SwarmConvoPrefix';
+import { InlineBuddyBuilderResult } from './buddies/BuddyBuilderResultCard';
+import { InlineBuddyTeamConfiguration } from './buddies/BuddyTeamConfiguration';
 import { effectiveSwarmDebugPrefix } from './buddies/ui-contract';
 
 // =============================================================================
@@ -146,73 +152,6 @@ function normalizeLatexDelimiters(markdown: string): string {
 // - Instant scroll on conversation mount (useLayoutEffect avoids flash)
 // - overscan: 3 items for smooth scrolling without excessive DOM
 // =============================================================================
-
-// =============================================================================
-// Tool Line Collapsing
-//
-// Tool use lines from providers arrive as emoji + filename text chunks embedded
-// in the assistant message content (e.g. "📖 train.py\n✏️ objectives.py\n").
-// When there are many consecutive tool lines, they create an ugly "brick" of
-// noise. This preprocessor detects runs of 3+ consecutive tool lines and
-// collapses them into a single summary line like "🔧 8 tool uses".
-//
-// The collapsed summary preserves the full list as a tooltip (title attribute)
-// via a custom markdown paragraph component.
-// =============================================================================
-
-// Matches lines that are tool-emoji labels from our providers.
-// Pattern: emoji (possibly with variation selector) + space + text
-const TOOL_LINE_RE = /^(?:📖|✍️|✏️|⚡|💻|📂|🔍|🌐|📓|📝|🔧|▶️|📦|🔀|📁|🔒|🗑️|❌)\s+\S/;
-
-/** Minimum consecutive tool lines before collapsing */
-const COLLAPSE_THRESHOLD = 3;
-
-/**
- * Pre-process message content to collapse long runs of tool-use lines.
- * Runs of COLLAPSE_THRESHOLD+ consecutive tool lines are replaced with
- * a summary. Shorter runs are left as-is.
- */
-function collapseToolLines(content: string): string {
-  const lines = content.split('\n');
-  const result: string[] = [];
-  let toolRun: string[] = [];
-
-  const flushRun = () => {
-    if (toolRun.length >= COLLAPSE_THRESHOLD) {
-      // Count by emoji type for a richer summary
-      const counts = new Map<string, number>();
-      for (const line of toolRun) {
-        // Extract first emoji (may be multi-codepoint)
-        const emojiMatch = line.match(/^(\S+)\s/);
-        const emoji = emojiMatch?.[1] ?? '🔧';
-        counts.set(emoji, (counts.get(emoji) ?? 0) + 1);
-      }
-      const parts: string[] = [];
-      for (const [emoji, count] of counts) {
-        parts.push(`${emoji}×${count}`);
-      }
-      result.push(`\`${parts.join(' ')}\` ${toolRun.length} tool uses`);
-    } else {
-      result.push(...toolRun);
-    }
-    toolRun = [];
-  };
-
-  for (const line of lines) {
-    // Keep oompa run widget trigger lines visible (not collapsed into summaries).
-    const isOompaRun = OOMPA_RUN_TOOL_FRAGMENT_RE.test(line);
-
-    if (!isOompaRun && TOOL_LINE_RE.test(line)) {
-      toolRun.push(line);
-    } else {
-      flushRun();
-      result.push(line);
-    }
-  }
-  flushRun();
-
-  return result.join('\n');
-}
 
 // =============================================================================
 // Code Content Classification
@@ -539,35 +478,88 @@ function makeMarkdownComponents(workingDirectory: string): Components {
   };
 }
 
+/** One disclosure for live tool runs and saved activity groups. */
+function ChatActivity({
+  label,
+  children,
+  workerThreads,
+}: { label: string; children: ReactNode; workerThreads?: BuddyWorkerThread[] }) {
+  const [expanded, setExpanded] = useState(false);
+  return (
+    <div className="chat-activity">
+      <button
+        type="button"
+        className="chat-activity-toggle"
+        aria-expanded={expanded}
+        onClick={() => setExpanded((value) => !value)}
+      >
+        <span aria-hidden="true">{expanded ? '▾' : '▸'}</span>
+        {label}
+      </button>
+      {workerThreads?.map((thread) => (
+        <BuddyWorkerThreadBadge key={thread.conversationId} thread={thread} />
+      ))}
+      {expanded && <div className="chat-activity-history">{children}</div>}
+    </div>
+  );
+}
+
+function MessageMarkdown({
+  content,
+  collapseTools,
+  ...props
+}: Omit<ComponentPropsWithoutRef<typeof Markdown>, 'children'> & {
+  content: string;
+  collapseTools: boolean;
+}) {
+  const segments = useMemo(
+    () => (collapseTools ? splitToolActivity(content) : []),
+    [content, collapseTools]
+  );
+  if (!segments.some((segment) => segment.type === 'tool_calls')) {
+    return <Markdown {...props}>{content}</Markdown>;
+  }
+  return segments.map((segment, index) =>
+    segment.type === 'tool_calls' ? (
+      <ChatActivity
+        key={index}
+        label={`${segment.count} tool ${segment.count === 1 ? 'call' : 'calls'}`}
+      >
+        <Markdown {...props}>{segment.content}</Markdown>
+      </ChatActivity>
+    ) : (
+      <Markdown key={index} {...props}>
+        {segment.content}
+      </Markdown>
+    )
+  );
+}
+
 // =============================================================================
 // Memoized Message Rendering
 // =============================================================================
 
-interface MemoizedMessageProps {
+interface MessageContentProps {
   msg: Message;
-  className: string;
-  forwardedRef?: React.RefObject<HTMLDivElement | null>;
+  collapseTools?: boolean;
   workingDirectory: string;
 }
 
-const MemoizedMessage = memo(
-  function MemoizedMessage({
+const MemoizedMessageContent = memo(
+  function MemoizedMessageContent({
     msg,
-    className,
-    forwardedRef,
+    collapseTools = true,
     workingDirectory,
-  }: MemoizedMessageProps) {
+  }: MessageContentProps) {
     // katex + highlight.js arrive asynchronously; markdown renders immediately
     // with the remark plugins and re-renders once the chunk lands.
     const rehypePlugins = useLazyMarkdownPlugins();
 
-    // Collapse consecutive tool-emoji lines in assistant messages to reduce noise.
-    // User/system messages pass through unchanged.
-    const displayContent = useMemo(() => {
-      const content =
-        msg.role === 'assistant' ? collapseToolLines(msg.content || '...') : msg.content || '...';
-      return normalizeLatexDelimiters(content);
-    }, [msg.content, msg.role]);
+    const displayContent = useMemo(
+      () => normalizeLatexDelimiters(msg.content || '...'),
+      [msg.content]
+    );
+    const collapseToolActivity = collapseTools && msg.role === 'assistant' && !msg.toolCall;
 
     const reviewRequest = useMemo(
       () => (msg.role === 'user' ? parseBuddyReviewRequest(displayContent) : null),
@@ -579,15 +571,8 @@ const MemoizedMessage = memo(
       () => (reviewRequest ? [] : splitStructuredMessageContent(displayContent)),
       [displayContent, reviewRequest]
     );
-    const hasCopyableContent = (msg.content ?? '').trim().length > 0;
+    const execPreview = execInputPreview(msg.toolCall);
     const hasWidget = segments.some((s) => s.type !== 'text');
-    const hasReviewResult = segments.some((s) => s.type === 'buddy_review_result');
-    const roleLabel = reviewRequest
-      ? 'review request'
-      : hasReviewResult && segments.every((segment) => segment.type === 'buddy_review_result')
-        ? 'review response'
-        : msg.role;
-
     // Memoize markdown components keyed on workingDirectory so react-markdown
     // gets a stable reference and doesn't re-mount its component tree.
     const mdComponents = useMemo(
@@ -596,65 +581,71 @@ const MemoizedMessage = memo(
     );
 
     return (
-      <div className={className} ref={forwardedRef}>
-        {msg.role !== 'system' && <div className={`message-role ${msg.role}`}>{roleLabel}</div>}
-        <div className="message-content">
-          {reviewRequest ? (
-            <BuddyReviewRequestCard request={reviewRequest} />
-          ) : hasWidget ? (
-            // Mixed content: interleave Markdown and interactive widgets
-            segments.map((seg, i) => {
-              if (seg.type === 'text') {
-                const trimmed = seg.content.trim();
-                if (!trimmed) return null;
-                return (
-                  <Markdown
-                    key={i}
-                    remarkPlugins={[remarkGfm, remarkMath, remarkBreaks]}
-                    rehypePlugins={rehypePlugins}
-                    components={mdComponents}
-                  >
-                    {trimmed}
-                  </Markdown>
-                );
-              }
-              if (seg.type === 'oompa_run') {
-                return <InlineSwarmRunWidget key={i} workingDirectory={workingDirectory} />;
-              }
-              if (seg.type === 'buddy_review_result') {
-                const result = parseBuddyReviewResult(seg.json);
-                return result ? (
-                  <BuddyReviewResultCard key={i} result={result} />
-                ) : (
-                  <code key={i}>Buddy review result (parse error)</code>
-                );
-              }
-              // AskUserQuestion widget
-              try {
-                const data = parseAskUserQuestion(seg.json);
-                return <AskUserQuestionWidget key={i} data={data} />;
-              } catch {
-                // Malformed JSON — render raw marker as text
-                return <code key={i}>AskUserQuestion (parse error)</code>;
-              }
-            })
-          ) : (
-            // Fast path: no widgets, render as pure Markdown
-            <Markdown
-              remarkPlugins={[remarkGfm, remarkMath, remarkBreaks]}
-              rehypePlugins={rehypePlugins}
-              components={mdComponents}
-            >
-              {displayContent}
-            </Markdown>
-          )}
-        </div>
-        {/* Copies the raw content, not `displayContent` — the latter has had
-            tool lines collapsed and LaTeX delimiters rewritten for display. */}
-        {hasCopyableContent && (
-          <div className="message-actions">
-            <CopyButton text={msg.content} className="message-action-btn" />
-          </div>
+      <div className="message-content">
+        {execPreview !== null ? (
+          <p>
+            🔧 exec <code>{execPreview}</code>
+          </p>
+        ) : reviewRequest ? (
+          <BuddyReviewRequestCard request={reviewRequest} />
+        ) : hasWidget ? (
+          // Mixed content: interleave Markdown and interactive widgets
+          segments.map((seg, i) => {
+            if (seg.type === 'text') {
+              const trimmed = seg.content.trim();
+              if (!trimmed) return null;
+              return (
+                <MessageMarkdown
+                  key={i}
+                  content={trimmed}
+                  collapseTools={collapseToolActivity}
+                  remarkPlugins={[remarkGfm, remarkMath, remarkBreaks]}
+                  rehypePlugins={rehypePlugins}
+                  components={mdComponents}
+                />
+              );
+            }
+            if (seg.type === 'oompa_run') {
+              return <InlineSwarmRunWidget key={i} workingDirectory={workingDirectory} />;
+            }
+            if (seg.type === 'buddy_builder_result') {
+              return <InlineBuddyBuilderResult key={i} payload={seg.json} />;
+            }
+            if (seg.type === 'buddy_worker_thread') return null;
+            if (seg.type === 'buddy_team_configuration') {
+              return <InlineBuddyTeamConfiguration key={i} payload={seg.json} />;
+            }
+            if (seg.type === 'buddy_review_result') {
+              const result = parseBuddyReviewResult(seg.json);
+              return result ? (
+                <BuddyReviewResultCard key={i} result={result} />
+              ) : (
+                <code key={i}>Buddy review result (parse error)</code>
+              );
+            }
+            // AskUserQuestion widget
+            try {
+              const data = parseAskUserQuestion(seg.json);
+              return <AskUserQuestionWidget key={i} data={data} />;
+            } catch {
+              // Malformed JSON — render raw marker as text
+              return <code key={i}>AskUserQuestion (parse error)</code>;
+            }
+          })
+        ) : (
+          // Fast path: no widgets, render as pure Markdown
+          <MessageMarkdown
+            content={displayContent}
+            collapseTools={collapseToolActivity}
+            remarkPlugins={[remarkGfm, remarkMath, remarkBreaks]}
+            rehypePlugins={rehypePlugins}
+            components={mdComponents}
+          />
+        )}
+        {msg.toolCall?.input !== undefined && (
+          <pre aria-label="Tool input">
+            <code>{msg.toolCall.input}</code>
+          </pre>
         )}
       </div>
     );
@@ -663,43 +654,54 @@ const MemoizedMessage = memo(
     return (
       prev.msg.content === next.msg.content &&
       prev.msg.role === next.msg.role &&
-      prev.className === next.className &&
-      prev.forwardedRef === next.forwardedRef &&
+      prev.msg.toolCall?.name === next.msg.toolCall?.name &&
+      prev.msg.toolCall?.input === next.msg.toolCall?.input &&
+      prev.collapseTools === next.collapseTools &&
       prev.workingDirectory === next.workingDirectory
     );
   }
 );
 
+function StandaloneMessage({
+  msg,
+  forwardedRef,
+  workingDirectory,
+}: {
+  msg: Message;
+  forwardedRef?: React.RefObject<HTMLDivElement | null>;
+  workingDirectory: string;
+}) {
+  const reviewRequest = msg.role === 'user' && parseBuddyReviewRequest(msg.content);
+  const roleLabel = reviewRequest
+    ? 'review request'
+    : msg.role === 'user'
+      ? 'You'
+      : msg.role === 'assistant'
+        ? 'Assistant'
+        : msg.role;
+  return (
+    <div className={`message ${msg.role}`} ref={forwardedRef}>
+      {msg.role !== 'system' && <div className={`message-role ${msg.role}`}>{roleLabel}</div>}
+      <MemoizedMessageContent msg={msg} workingDirectory={workingDirectory} />
+      {messageTranscriptContent(msg).trim() && (
+        <div className="message-actions">
+          <CopyButton text={messageTranscriptContent(msg)} className="message-action-btn" />
+        </div>
+      )}
+    </div>
+  );
+}
+
 // =============================================================================
 // Message Group Types
 // =============================================================================
 
-export type MessageGroup =
-  | { type: 'single'; messages: Message[] }
-  /** Two or more consecutive assistant messages that are purely tool-call lines */
-  | { type: 'tool_calls'; messages: Message[] };
-
-/**
- * Returns true if the message is an assistant turn consisting entirely of
- * tool-emoji lines (no explanatory prose). Used to group consecutive tool-only
- * turns into a single collapsible block. Oompa launch lines are excluded so
- * the inline swarm widget stays visible instead of disappearing into the
- * generic "N tool calls" accordion.
- */
-export function isToolCallOnlyMessage(msg: Message): boolean {
-  if (msg.role !== 'assistant') return false;
-  const content = msg.content?.trim() ?? '';
-  if (!content) return false;
-  if (OOMPA_RUN_TOOL_FRAGMENT_RE.test(content)) return false;
-  return content
-    .split('\n')
-    .filter((l) => l.trim().length > 0)
-    .every((l) => TOOL_LINE_RE.test(l.trim()));
-}
-
 interface VirtualizedMessageListProps {
   messageGroups: MessageGroup[];
   isRunning: boolean;
+  /** Owning turn still active (isRunning || isStreaming at the call site).
+      Feeds the in-bubble working indicator on the live assistant response. */
+  isTurnActive?: boolean;
   lastMessageRef: React.RefObject<HTMLDivElement | null>;
   onScrollStateChange: (isNearBottom: boolean, showScrollButton: boolean) => void;
   conversationId: string;
@@ -715,21 +717,29 @@ interface VirtualizedMessageListProps {
 
 // Estimate height based on content — rough approximation before measurement
 function estimateGroupSize(group: MessageGroup): number {
-  if (group.type === 'tool_calls') return 36; // collapsed button height
-
-  let totalHeight = 0;
-  for (const msg of group.messages) {
-    const contentLength = msg.content?.length ?? 0;
-    // Rough estimate: ~50px base + 20px per 100 chars
-    const estimatedHeight = 80 + Math.ceil(contentLength / 100) * 20;
-    totalHeight += Math.min(estimatedHeight, 600); // Cap at reasonable max
+  if (group.type === 'assistant') {
+    return (
+      48 +
+      group.parts.reduce(
+        (height, part) =>
+          height +
+          (part.type === 'tool_calls'
+            ? 24
+            : Math.min(40 + Math.ceil(part.message.content.length / 100) * 20, 600)),
+        0
+      )
+    );
   }
-  return Math.max(totalHeight, 60);
+  return group.messages.reduce(
+    (height, msg) => height + Math.min(80 + Math.ceil(msg.content.length / 100) * 20, 600),
+    0
+  );
 }
 
 export function VirtualizedMessageList({
   messageGroups,
   isRunning,
+  isTurnActive,
   lastMessageRef,
   onScrollStateChange,
   conversationId,
@@ -759,6 +769,10 @@ export function VirtualizedMessageList({
 
   const virtualizer = useVirtualizer({
     count: totalItems,
+    getItemKey: (index) =>
+      index < contextItemCount
+        ? `context-${index}`
+        : `message-${messageGroups[index - contextItemCount].firstMessageIndex ?? index}`,
     getScrollElement: () => parentRef.current,
     // Conversations open at the newest message. Starting the virtualizer at
     // offset zero briefly rendered the oldest item before the layout effect
@@ -864,7 +878,7 @@ export function VirtualizedMessageList({
     >
       {totalItems === 0 ? null : (
         <div
-          className="virtual-list-inner"
+          className="virtual-list-inner chat-reading-column"
           style={{
             height: `${virtualizer.getTotalSize()}px`,
             width: '100%',
@@ -934,6 +948,7 @@ export function VirtualizedMessageList({
                   isLastGroup={isLastGroup}
                   lastMessageRef={lastMessageRef}
                   workingDirectory={workingDirectory}
+                  isLiveTurn={isTurnActive}
                 />
               </div>
             );
@@ -944,54 +959,69 @@ export function VirtualizedMessageList({
   );
 }
 
-// =============================================================================
-// CollapsedToolCallsGroup: Shows N tool-only assistant messages as a single
-// collapsible row. Collapsed by default to reduce noise.
-// =============================================================================
-
-interface CollapsedToolCallsGroupProps {
-  messages: Message[];
-  isLastGroup: boolean;
-  lastMessageRef: React.RefObject<HTMLDivElement | null>;
-  workingDirectory: string;
-}
-
-function CollapsedToolCallsGroup({
-  messages,
-  isLastGroup,
-  lastMessageRef,
+function AssistantResponseBlock({
+  response,
+  forwardedRef,
   workingDirectory,
-}: CollapsedToolCallsGroupProps) {
-  const [expanded, setExpanded] = useState(false);
-
+  isLive,
+}: {
+  response: AssistantResponse;
+  forwardedRef?: React.RefObject<HTMLDivElement | null>;
+  workingDirectory: string;
+  /** The turn that owns this response is still active. Shows a working
+      affordance when the response has no renderable parts yet — otherwise a
+      silent provider phase leaves a blank "Assistant" bubble (the server
+      creates the empty placeholder at turn.started, before any output). */
+  isLive?: boolean;
+}) {
+  const showWorking = isLive === true && response.parts.length === 0;
   return (
-    <div className="tool-calls-group">
-      <button
-        type="button"
-        className={`tool-calls-toggle-btn${expanded ? ' expanded' : ''}`}
-        onClick={() => setExpanded((e) => !e)}
-      >
-        <span className="tool-calls-icon">⚡</span>
-        <span className="tool-calls-count">{messages.length} tool calls</span>
-        <span className="tool-calls-chevron">{expanded ? '▲' : '▼'}</span>
-      </button>
-      {expanded && (
-        <div className="tool-calls-expanded">
-          {messages.map((msg, mi) => {
-            const isLastMessage = isLastGroup && mi === messages.length - 1;
-            return (
-              <MemoizedMessage
-                key={mi}
-                msg={msg}
-                className={`message ${msg.role}`}
-                forwardedRef={isLastMessage ? lastMessageRef : undefined}
-                workingDirectory={workingDirectory}
-              />
-            );
-          })}
-        </div>
-      )}
-    </div>
+    <article className="message assistant chat-assistant-response" aria-label="Assistant response">
+      <div className="message-role assistant">Assistant</div>
+      <div className="chat-response-parts">
+        {showWorking && (
+          <div className="chat-response-working" aria-live="polite">
+            <span>Thinking…</span>
+            <span className="typing-dot" aria-hidden="true" />
+            <span className="typing-dot" aria-hidden="true" />
+            <span className="typing-dot" aria-hidden="true" />
+          </div>
+        )}
+        {response.parts.map((part) =>
+          part.type === 'tool_calls' ? (
+            <ChatActivity
+              key={part.key}
+              label={
+                part.count
+                  ? `${part.count} tool ${part.count === 1 ? 'call' : 'calls'}`
+                  : 'Work launched'
+              }
+              workerThreads={part.workerThreads}
+            >
+              {part.messages.map((msg, index) => (
+                <MemoizedMessageContent
+                  key={index}
+                  msg={msg}
+                  collapseTools={false}
+                  workingDirectory={workingDirectory}
+                />
+              ))}
+            </ChatActivity>
+          ) : (
+            <MemoizedMessageContent
+              key={part.key}
+              msg={part.message}
+              workingDirectory={workingDirectory}
+            />
+          )
+        )}
+      </div>
+      <div className="message-actions" ref={forwardedRef}>
+        {response.copyText.trim() && (
+          <CopyButton text={response.copyText} className="message-action-btn" />
+        )}
+      </div>
+    </article>
   );
 }
 
@@ -1004,22 +1034,25 @@ interface VirtualizedGroupProps {
   isLastGroup: boolean;
   lastMessageRef: React.RefObject<HTMLDivElement | null>;
   workingDirectory: string;
+  /** Owning turn still active — only the last group can be the live one. */
+  isLiveTurn?: boolean;
 }
 
-const VirtualizedGroup = memo(
+export const VirtualizedGroup = memo(
   function VirtualizedGroup({
     group,
     isLastGroup,
     lastMessageRef,
     workingDirectory,
+    isLiveTurn,
   }: VirtualizedGroupProps) {
-    if (group.type === 'tool_calls') {
+    if (group.type === 'assistant') {
       return (
-        <CollapsedToolCallsGroup
-          messages={group.messages}
-          isLastGroup={isLastGroup}
-          lastMessageRef={lastMessageRef}
+        <AssistantResponseBlock
+          response={group}
+          forwardedRef={isLastGroup ? lastMessageRef : undefined}
           workingDirectory={workingDirectory}
+          isLive={isLiveTurn === true && isLastGroup}
         />
       );
     }
@@ -1029,10 +1062,9 @@ const VirtualizedGroup = memo(
         {group.messages.map((msg, mi) => {
           const isLastMessage = isLastGroup && mi === group.messages.length - 1;
           return (
-            <MemoizedMessage
+            <StandaloneMessage
               key={mi}
               msg={msg}
-              className={`message ${msg.role}`}
               forwardedRef={isLastMessage ? lastMessageRef : undefined}
               workingDirectory={workingDirectory}
             />
@@ -1045,6 +1077,7 @@ const VirtualizedGroup = memo(
     if (prev.group !== next.group) return false;
     if (prev.isLastGroup !== next.isLastGroup) return false;
     if (prev.workingDirectory !== next.workingDirectory) return false;
+    if (prev.isLiveTurn !== next.isLiveTurn) return false;
     return true;
   }
 );

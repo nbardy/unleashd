@@ -71,6 +71,8 @@ const SHARED_DEFAULTS: SharedSlice = {
 //                            WebSocket init (non-React context).
 // pendingFiles:{conversationId} — Serialized array of files awaiting send
 //                            (images only, previewUrl omitted — object URL).
+// restartRecovery:{conversationId} — Last server queue mirror retained across
+//                            restart so interrupted work can be optionally replayed.
 // ---------------------------------------------------------------------------
 export const DRAFT_KEY_PREFIX = 'draft:';
 export const PENDING_CONVERSATIONS_KEY = 'pendingConversations';
@@ -323,10 +325,6 @@ export function promoteWorker(conversationId: string): void {
       ? {}
       : { promotedWorkers: [...s.promotedWorkers, conversationId] }
   );
-}
-
-export function demoteToWorker(conversationId: string): void {
-  setShared((s) => ({ promotedWorkers: s.promotedWorkers.filter((id) => id !== conversationId) }));
 }
 
 export function markMessagesSeen(conversationId: string, messageIndex: number): void {

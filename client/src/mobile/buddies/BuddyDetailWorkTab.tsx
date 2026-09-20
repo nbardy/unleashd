@@ -1,6 +1,7 @@
 import { useAtomValue } from 'jotai';
 import { useMemo } from 'react';
 import { allConversationIdsAtom } from '../../atoms/conversations';
+import { BuddyProjectExecution } from '../../components/buddies/BuddyProjectExecution';
 import type {
   BuddyProject,
   ConversationLink,
@@ -9,6 +10,7 @@ import type {
   Workspace,
 } from '../../components/buddies/types';
 import { buddyProjectTodoProgress } from '../../components/buddies/ui-contract';
+import { buddyWorkGroupsAtom } from '../../atoms/buddy-work';
 import { EmptyState } from '../components/EmptyState';
 
 // ---------------------------------------------------------------------------
@@ -19,7 +21,6 @@ export function WorkTab({
   employee,
   workspace,
   workspaces,
-  selectedWorkspaceId: _selectedWorkspaceId,
   onSelectWorkspace,
   workspaceProjects,
   legacyWork,
@@ -31,7 +32,6 @@ export function WorkTab({
   employee: EmployeeRecord;
   workspace: Workspace | undefined;
   workspaces: Workspace[];
-  selectedWorkspaceId: string;
   onSelectWorkspace: (id: string) => void;
   workspaceProjects: BuddyProject[];
   legacyWork: LegacyWorkItem[];
@@ -43,10 +43,49 @@ export function WorkTab({
   const availableIds = useAtomValue(allConversationIdsAtom);
   const availableSet = useMemo(() => new Set(availableIds), [availableIds]);
 
+  const groupsAtom = useMemo(() => buddyWorkGroupsAtom(workspaceProjects), [workspaceProjects]);
+  const groups = useAtomValue(groupsAtom);
+
+  const renderProject = (project: BuddyProject) => {
+    const progress = buddyProjectTodoProgress(project);
+    const hasConversation = employee.conversations.some((conversation) => {
+      const conversationId = conversation.conversation_id ?? conversation.unleashd_conversation_id;
+      return (
+        conversation.buddy_project_id === project.id &&
+        Boolean(conversationId && availableSet.has(conversationId))
+      );
+    });
+    return (
+      <details key={project.id} className="mobile-buddy-work-item">
+        <summary className="mobile-buddy-work-item__summary">
+          <strong>{project.title}</strong>
+          <span>
+            {project.status.replaceAll('_', ' ')} · {progress.done}/{progress.total} todos
+          </span>
+        </summary>
+        <div className="mobile-buddy-work-item__body">
+          <p className="mobile-muted">Next action: {project.next_action ?? 'Not set'}</p>
+          {project.blocked_reason && (
+            <p className="mobile-buddy-work-card__blocker">Blocker: {project.blocked_reason}</p>
+          )}
+          <BuddyProjectExecution project={project} availableConversationIds={availableSet} />
+          <button
+            type="button"
+            disabled={!workspace}
+            className="mobile-cta"
+            onClick={() => workspace && onOpenProjectConversation(workspace, project.id)}
+          >
+            {hasConversation ? 'Open conversation' : 'Start conversation'}
+          </button>
+        </div>
+      </details>
+    );
+  };
+
   return (
     <section className="mobile-buddy-section" aria-label="Work">
       <label className="mobile-buddy-section__label">
-        Workspace
+        Project
         <select
           value={workspace?.id ?? ''}
           onChange={(event) => onSelectWorkspace(event.target.value)}
@@ -59,7 +98,6 @@ export function WorkTab({
           ))}
         </select>
       </label>
-      {workspace && <p className="mobile-muted">{workspace.root_path}</p>}
 
       <div className="mobile-buddy-summary">
         <div className="mobile-buddy-summary__row">
@@ -76,62 +114,17 @@ export function WorkTab({
         </div>
       </div>
 
-      <h2 className="mobile-buddy-section__heading">
-        Current tasks ·{' '}
-        {
-          workspaceProjects.filter((project) => !['done', 'cancelled'].includes(project.status))
-            .length
-        }{' '}
-        open
-      </h2>
-
+      <h2 className="mobile-buddy-section__heading">Current tasks · {groups.current.length}</h2>
       <div className="mobile-buddy-work-list">
-        {workspaceProjects
-          .filter((project) => !['done', 'cancelled'].includes(project.status))
-          .map((project) => {
-            const progress = buddyProjectTodoProgress(project);
-            const hasConversation = employee.conversations.some((conversation) => {
-              const conversationId =
-                conversation.conversation_id ?? conversation.unleashd_conversation_id;
-              return (
-                conversation.buddy_project_id === project.id &&
-                Boolean(conversationId && availableSet.has(conversationId))
-              );
-            });
-            return (
-              <article
-                key={project.id}
-                className={`mobile-buddy-work-card mobile-buddy-work-card--${project.status}`}
-              >
-                <div className="mobile-buddy-work-card__header">
-                  <h3>{project.title}</h3>
-                  <span className={`mobile-badge mobile-badge--${project.status}`}>
-                    {project.status}
-                  </span>
-                </div>
-                <p className="mobile-muted">Next action: {project.next_action ?? 'Not set'}</p>
-                {project.blocked_reason && (
-                  <p className="mobile-buddy-work-card__blocker">
-                    Blocker: {project.blocked_reason}
-                  </p>
-                )}
-                <p className="mobile-muted">
-                  Todos: {progress.done}/{progress.total}
-                </p>
-                <button
-                  type="button"
-                  disabled={!workspace}
-                  className="mobile-cta"
-                  onClick={() => workspace && onOpenProjectConversation(workspace, project.id)}
-                >
-                  {hasConversation ? 'Open conversation' : 'Start conversation'}
-                </button>
-              </article>
-            );
-          })}
-        {workspaceProjects.filter((project) => !['done', 'cancelled'].includes(project.status))
-          .length === 0 && <EmptyState message="No open tasks for this workspace." />}
+        {groups.current.map(renderProject)}
+        {groups.current.length === 0 && <EmptyState message="No open tasks for this workspace." />}
       </div>
+      {groups.completed.length > 0 && (
+        <details className="mobile-buddy-history">
+          <summary>Completed & cancelled · {groups.completed.length}</summary>
+          <div className="mobile-buddy-work-list">{groups.completed.map(renderProject)}</div>
+        </details>
+      )}
 
       {legacyWork.length > 0 && (
         <>

@@ -99,7 +99,7 @@
   background: rgba(255, 255, 255, 0.06);
   color: #eaeef8;
   padding: 8px 10px;
-  border-radius: 12px;
+  border-radius: var(--ui-radius);
   font-size: 12px;
   cursor: pointer;
   transition: transform 0.08s ease, background 0.2s ease, border-color 0.2s ease;

@@ -6,7 +6,7 @@
   padding: 8px 12px;
   margin: 0 0 8px 0;
   border: 1px solid color-mix(in oklab, var(--theme-violet) 40%, transparent);
-  border-radius: 4px;
+  border-radius: var(--ui-radius);
   background: color-mix(in oklab, var(--theme-violet) 6%, transparent);
 }
 
@@ -26,7 +26,7 @@
   gap: 4px;
   padding: 3px 8px;
   font-size: 10px;
-  border-radius: 10px;
+  border-radius: var(--ui-radius);
   border: 1px solid transparent;
   cursor: default;
 }
@@ -87,7 +87,7 @@
   background: var(--theme-base02);
   color: var(--theme-base0);
   border: 1px solid var(--theme-base01);
-  border-radius: 4px;
+  border-radius: var(--ui-radius);
   padding: 8px 10px;
   font-size: 11px;
   font-family: var(--font-mono, monospace);

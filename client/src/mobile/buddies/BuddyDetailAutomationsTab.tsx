@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { asArray, buddyApi } from '../../components/buddies/api';
 import { conversationPath } from '../../components/buddies/buddy-tabs';
 import type {
@@ -7,6 +7,7 @@ import type {
   BuddyAutomation,
   ConversationLink,
 } from '../../components/buddies/types';
+import { mobileConversationRouteState } from '../../utils/conversation-route-state';
 import { EmptyState } from '../components/EmptyState';
 
 // Automation ITEM routes are not buddy-scoped: the server registers
@@ -37,6 +38,8 @@ function OpenConversationLink({
   available: boolean;
   className: string;
 }) {
+  const location = useLocation();
+  const routeState = mobileConversationRouteState(location);
   if (!available) {
     return (
       <span aria-disabled="true" className={className}>
@@ -45,7 +48,7 @@ function OpenConversationLink({
     );
   }
   return (
-    <Link className={className} to={conversationPath(conversationId)}>
+    <Link className={className} to={conversationPath(conversationId)} state={routeState}>
       Open →
     </Link>
   );
@@ -265,6 +268,7 @@ export function AutomationsTab({
   return (
     <section className="mobile-buddy-section" aria-label="Automations">
       <div className="mobile-buddy-section__toolbar">
+        <h2>Automations</h2>
         <button type="button" className="mobile-cta mobile-cta--secondary" onClick={onRefresh}>
           Refresh
         </button>

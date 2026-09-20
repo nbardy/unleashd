@@ -5,7 +5,7 @@
   background: color-mix(in srgb, var(--bg-content) 92%, transparent);
   border: 1px solid var(--border-subtle);
   border-left: 3px solid var(--ai);
-  border-radius: 2px;
+  border-radius: var(--ui-radius);
   color: var(--text-emphasis);
 }
 

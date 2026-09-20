@@ -1,0 +1,102 @@
+.buddy-messages {
+  display: grid;
+  gap: 12px;
+  margin-block: 16px;
+  color: var(--text-primary);
+}
+.buddy-messages h2,
+.buddy-messages p {
+  margin: 0;
+}
+.buddy-messages__card {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+  padding: 16px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--ui-radius);
+  background: var(--bg-secondary);
+  overflow-wrap: anywhere;
+}
+.buddy-messages__heading {
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.buddy-messages__heading span {
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+.buddy-messages__body {
+  white-space: pre-wrap;
+}
+.buddy-messages__reply {
+  display: grid;
+  gap: 8px;
+  padding-left: 12px;
+  border-left: 2px solid var(--accent-primary);
+}
+.buddy-messages__decision form,
+.buddy-messages__decision label {
+  display: grid;
+  gap: 8px;
+}
+.buddy-messages__decision form {
+  margin-top: 12px;
+}
+.buddy-messages__decision textarea,
+.buddy-messages__decision input,
+.buddy-messages__decision button {
+  min-height: 44px;
+  padding: 10px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--ui-radius);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font: inherit;
+}
+
+.buddy-messages > p {
+  color: var(--text-secondary);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.buddy-messages__card {
+  background: var(--bg-raised-1);
+  border-color: var(--border-subtle);
+  border-radius: var(--ui-radius);
+}
+.buddy-messages__heading strong {
+  color: var(--text-bright);
+  font-size: 16px;
+  font-weight: 600;
+  text-transform: capitalize;
+}
+.buddy-messages__body {
+  color: var(--text-emphasis);
+  font-size: 14px;
+  line-height: 1.65;
+}
+.buddy-messages__participants,
+.buddy-messages__receipt {
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.5;
+}
+.buddy-messages__receipt summary,
+.buddy-messages__decision summary {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  cursor: pointer;
+}
+.buddy-messages__receipt summary::after,
+.buddy-messages__decision summary::after {
+  content: "+";
+  margin-left: auto;
+}
+.buddy-messages__receipt[open] summary::after,
+.buddy-messages__decision[open] summary::after {
+  content: "−";
+}

@@ -21,7 +21,7 @@
   min-height: 40px;
   padding: 0 12px 0 8px;
   border: 1px solid var(--border-subtle);
-  border-radius: 999px;
+  border-radius: var(--ui-radius);
   background: var(--bg-raised-2);
   color: var(--text-primary);
   font: inherit;
@@ -66,7 +66,7 @@
   min-height: 40px;
   padding: 0 14px;
   border: 1px solid var(--border-subtle);
-  border-radius: 999px;
+  border-radius: var(--ui-radius);
   background: var(--bg-raised-2);
   color: var(--text-primary);
   font: inherit;
@@ -104,7 +104,7 @@
   gap: 8px;
   padding: 10px 12px;
   border: 1px solid color-mix(in srgb, var(--theme-danger) 40%, var(--border-subtle));
-  border-radius: 12px;
+  border-radius: var(--ui-radius);
   color: var(--text-primary);
   font-size: 13px;
 }
@@ -112,7 +112,7 @@
 .mobile-swarm-detail__error {
   padding: 10px 12px;
   border: 1px solid color-mix(in srgb, var(--theme-danger) 45%, var(--border-subtle));
-  border-radius: 10px;
+  border-radius: var(--ui-radius);
   color: var(--theme-danger);
   font-size: 13px;
 }
@@ -120,7 +120,7 @@
 .mobile-swarm-detail__empty {
   padding: 26px 16px;
   border: 1px dashed var(--border-subtle);
-  border-radius: 14px;
+  border-radius: var(--ui-radius);
   color: var(--text-muted);
   font-size: 13px;
   text-align: center;
@@ -144,11 +144,12 @@
   min-width: 0;
   padding: 12px 14px;
   border: 1px solid var(--border-subtle);
-  border-radius: 12px;
+  border-radius: var(--ui-radius);
   background: var(--bg-raised-1);
   color: inherit;
   font: inherit;
   text-align: left;
+  text-decoration: none;
   cursor: pointer;
 }
 
@@ -170,7 +171,7 @@
   gap: 8px;
   padding: 14px;
   border: 1px solid var(--border-subtle);
-  border-radius: 14px;
+  border-radius: var(--ui-radius);
   background: var(--bg-raised-1);
 }
 
@@ -231,7 +232,7 @@
   gap: 6px;
   padding: 12px 14px;
   border: 1px solid var(--border-subtle);
-  border-radius: 12px;
+  border-radius: var(--ui-radius);
   background: var(--bg-raised-1);
 }
 
@@ -253,13 +254,13 @@
 .mobile-stat-card__bar {
   height: 6px;
   overflow: hidden;
-  border-radius: 999px;
+  border-radius: var(--ui-radius);
   background: var(--bg-raised-2);
 }
 
 .mobile-stat-card__fill {
   height: 100%;
-  border-radius: 999px;
+  border-radius: var(--ui-radius);
   background: var(--accent);
 }
 
@@ -315,7 +316,7 @@
   width: 100%;
   max-height: 80vh;
   padding: 12px 16px calc(20px + env(safe-area-inset-bottom));
-  border-radius: 18px 18px 0 0;
+  border-radius: var(--ui-radius);
   background: var(--bg-raised-1);
 }
 
@@ -359,7 +360,7 @@
   min-height: 20px;
   padding: 3px 8px;
   border: 1px solid var(--border-subtle);
-  border-radius: 999px;
+  border-radius: var(--ui-radius);
   color: var(--text-muted);
   font-size: 10px;
   font-weight: 700;
@@ -391,7 +392,7 @@
   min-height: 20px;
   padding: 2px 8px;
   border: 1px solid var(--border-subtle);
-  border-radius: 999px;
+  border-radius: var(--ui-radius);
   color: var(--text-muted);
   font-size: 10px;
   font-weight: 700;
@@ -402,6 +403,6 @@
   flex: none;
   min-width: 3px;
   height: 100%;
-  border-radius: 2px;
+  border-radius: var(--ui-radius);
   background: var(--accent);
 }

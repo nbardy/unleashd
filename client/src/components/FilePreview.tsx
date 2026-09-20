@@ -18,10 +18,11 @@
  */
 
 import type { ReactNode } from 'react';
-import { useEffect, useRef, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
+import { resource, usePolledFetch } from '../hooks/usePolledFetch';
 import './FilePreview.css';
 
 const IMAGE_EXTENSIONS = /\.(png|jpg|jpeg|gif|svg|webp)$/i;
@@ -147,29 +148,18 @@ export function FilePreview({ path, type, workingDirectory, linkLabel }: FilePre
   const triggerRef = useRef<HTMLSpanElement>(null);
   const [hovered, setHovered] = useState(false);
   const [position, setPosition] = useState<PopupPosition | null>(null);
-  const [markdownContent, setMarkdownContent] = useState<string | null>(null);
-  const [markdownError, setMarkdownError] = useState<string | null>(null);
-
-  useEffect(() => {
-    if (!hovered || type !== 'markdown' || markdownContent !== null || markdownError) return;
-
-    const controller = new AbortController();
-
-    fetch(fileUrl, { signal: controller.signal })
-      .then(async (response) => {
-        if (!response.ok) {
-          throw new Error(`HTTP ${response.status}`);
-        }
-        const text = await response.text();
-        setMarkdownContent(text);
-      })
-      .catch((error: unknown) => {
-        if ((error as Error).name === 'AbortError') return;
-        setMarkdownError(error instanceof Error ? error.message : 'Failed to load markdown');
-      });
-
-    return () => controller.abort();
-  }, [fileUrl, hovered, markdownContent, markdownError, type]);
+  const markdownSource = useMemo(
+    () =>
+      resource(`text:${fileUrl}`, async (signal: AbortSignal) => {
+        const response = await fetch(fileUrl, { signal });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        return response.text();
+      }),
+    [fileUrl]
+  );
+  const markdown = usePolledFetch<string>(markdownSource, 0, hovered && type === 'markdown');
+  const markdownContent = markdown.data;
+  const markdownError = markdown.error?.message ?? null;
 
   const handleMouseEnter = () => {
     const rect = triggerRef.current!.getBoundingClientRect();

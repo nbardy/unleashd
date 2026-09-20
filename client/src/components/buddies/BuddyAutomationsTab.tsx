@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
+import { mobileConversationRouteState } from '../../utils/conversation-route-state';
 import { asArray, buddyApi } from './api';
 import { conversationPath } from './buddy-tabs';
 import type { AutomationRun, BuddyApprovalRequest, BuddyAutomation, BuddyMutation } from './types';
@@ -33,6 +34,8 @@ function OpenConversationLink({
   available: boolean;
   className: string;
 }) {
+  const location = useLocation();
+  const routeState = mobileConversationRouteState(location);
   if (!available) {
     return (
       <span aria-disabled="true" className={`${className} ${className}--unavailable`}>
@@ -41,7 +44,7 @@ function OpenConversationLink({
     );
   }
   return (
-    <Link className={className} to={conversationPath(conversationId)}>
+    <Link className={className} to={conversationPath(conversationId)} state={routeState}>
       Open →
     </Link>
   );

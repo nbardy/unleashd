@@ -13,6 +13,30 @@ import { DRAFT_KEY_PREFIX } from '../atoms/ui';
 const DRAFT_SAVE_DELAY_MS = 500;
 
 /**
+ * Write a draft to the conversation it belongs to. Addressed by id, never by
+ * "whichever conversation the hook is bound to right now" — see
+ * useComposerSubmission.ts for the reconnect case that distinction fixes.
+ */
+function readDraftFor(conversationId: string): string {
+  try {
+    return localStorage.getItem(`${DRAFT_KEY_PREFIX}${conversationId}`) ?? '';
+  } catch {
+    // quota / private-mode — caller keeps its in-memory draft
+    return '';
+  }
+}
+
+function writeDraftFor(conversationId: string, value: string): void {
+  try {
+    const key = `${DRAFT_KEY_PREFIX}${conversationId}`;
+    if (value) localStorage.setItem(key, value);
+    else localStorage.removeItem(key);
+  } catch {
+    // quota / private-mode — never take down caller
+  }
+}
+
+/**
  * Portable draft persistence + focus — merging desktop Chat.tsx and mobile
  * ComposerMobile.tsx into one clean path.
  *
@@ -61,6 +85,8 @@ export interface UseConversationDraftReturn {
   clear: () => void;
   setDraft: (value: string) => void;
   getDraft: () => string;
+  /** Addressed restore — see useComposerSubmission.ts. */
+  restoreDraft: (conversationId: string, value: string) => void;
 }
 
 export function useConversationDraft(
@@ -77,7 +103,7 @@ export function useConversationDraft(
   } = options;
 
   const draftRef = useRef('');
-  const keyRef = useRef('');
+  const conversationIdRef = useRef('');
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const onDraftLoadedRef = useRef(onDraftLoaded);
   const onDraftChangeRef = useRef(onDraftChange);
@@ -85,14 +111,7 @@ export function useConversationDraft(
   onDraftChangeRef.current = onDraftChange;
 
   const writeDraft = useCallback(() => {
-    const key = keyRef.current;
-    if (!key) return;
-    try {
-      if (draftRef.current) localStorage.setItem(key, draftRef.current);
-      else localStorage.removeItem(key);
-    } catch {
-      // quota / private-mode — never take down caller
-    }
+    if (conversationIdRef.current) writeDraftFor(conversationIdRef.current, draftRef.current);
   }, []);
 
   const applyToTextarea = useCallback(
@@ -161,14 +180,7 @@ export function useConversationDraft(
       clearTimeout(timerRef.current);
       timerRef.current = null;
     }
-    const key = keyRef.current;
-    if (key) {
-      try {
-        localStorage.removeItem(key);
-      } catch {
-        // ignore
-      }
-    }
+    if (conversationIdRef.current) writeDraftFor(conversationIdRef.current, '');
     const ta = textareaRef.current;
     if (ta) {
       ta.value = '';
@@ -176,18 +188,29 @@ export function useConversationDraft(
     }
   }, [textareaRef]);
 
-  const getDraft = useCallback(() => draftRef.current, []);
+  // Authoritative read. Uncontrolled (desktop) keeps the text in the DOM, so the
+  // textarea wins there; controlled (mobile) keeps it in the ref. Callers never
+  // re-implement this fallback.
+  const getDraft = useCallback(
+    () => (controlled ? draftRef.current : (textareaRef.current?.value ?? draftRef.current)),
+    [controlled, textareaRef]
+  );
+
+  /** Put `value` back on `conversationId`'s draft, and onto the textarea only if that is what is showing. */
+  const restoreDraft = useCallback(
+    (conversationId: string, value: string) => {
+      writeDraftFor(conversationId, value);
+      if (conversationId === conversationIdRef.current) setDraft(value);
+    },
+    [setDraft]
+  );
 
   // Single helper — read persisted draft, push to refs + textarea + owner,
   // then rAF re-apply + focus. Used by mount, HMR, and visibility-visible.
   const syncFromStorage = useCallback(() => {
-    let saved = draftRef.current;
-    try {
-      const k = keyRef.current;
-      if (k) saved = localStorage.getItem(k) ?? saved;
-    } catch {
-      // quota / private-mode — keep in-memory draft
-    }
+    const saved = conversationIdRef.current
+      ? readDraftFor(conversationIdRef.current)
+      : draftRef.current;
     draftRef.current = saved;
     applyToTextarea(saved);
     onDraftLoadedRef.current?.(saved);
@@ -201,18 +224,12 @@ export function useConversationDraft(
   // back-navigation and HMR unmount keep the draft.
   useEffect(() => {
     if (!conversationId) {
-      keyRef.current = '';
+      conversationIdRef.current = '';
       draftRef.current = '';
       return;
     }
-    const key = `${DRAFT_KEY_PREFIX}${conversationId}`;
-    let saved = '';
-    try {
-      saved = localStorage.getItem(key) ?? '';
-    } catch {
-      saved = '';
-    }
-    keyRef.current = key;
+    const saved = readDraftFor(conversationId);
+    conversationIdRef.current = conversationId;
     draftRef.current = saved;
     onDraftLoadedRef.current?.(saved);
     applyToTextarea(saved);
@@ -262,5 +279,5 @@ export function useConversationDraft(
   }, [flush, syncFromStorage]);
 
   // Public imperative handle for container to call on send
-  return { flush, clear, setDraft, getDraft };
+  return { flush, clear, setDraft, getDraft, restoreDraft };
 }

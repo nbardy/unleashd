@@ -1,4 +1,5 @@
 import type { ButtonHTMLAttributes, HTMLAttributes, PropsWithChildren, ReactNode } from 'react';
+import { Link, type LinkProps } from 'react-router-dom';
 
 function classes(...values: Array<string | false | null | undefined>) {
   return values.filter(Boolean).join(' ');
@@ -60,6 +61,14 @@ export function MobileCardButton({
     >
       {children}
     </button>
+  );
+}
+
+export function MobileCardLink({ className, children, ...props }: LinkProps) {
+  return (
+    <Link {...props} className={classes('mobile-ui-card', 'mobile-ui-card--button', className)}>
+      {children}
+    </Link>
   );
 }
 

@@ -1,11 +1,12 @@
 import { useAtom, useAtomValue } from 'jotai';
 import { useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { conversationAtomFamily } from '../../atoms/conversations';
+import { mobileConversationRouteState } from '../../utils/conversation-route-state';
 import { formatTimeAgo, getConversationLastActivity } from '../../utils/time';
 import { mobileSearchResultsAtom, mobileSearchStateAtom } from '../atoms/search';
 import {
-  MobileCardButton,
+  MobileCardLink,
   MobileEmptyPanel,
   MobilePage,
   MobileSection,
@@ -34,7 +35,13 @@ interface GroupedHit {
   latestTs: number;
 }
 
-function ClientResultRow({ id, onOpen }: { id: string; onOpen: (id: string) => void }) {
+function ClientResultRow({
+  id,
+  routeState,
+}: {
+  id: string;
+  routeState: Record<string, unknown>;
+}) {
   const conv = useAtomValue(conversationAtomFamily(id));
   if (!conv) return null;
   const lastMsg = conv.messages[conv.messages.length - 1];
@@ -43,7 +50,11 @@ function ClientResultRow({ id, onOpen }: { id: string; onOpen: (id: string) => v
   const timeAgo = formatTimeAgo(getConversationLastActivity(conv));
   const shortDir = conv.workingDirectory.replace(/^\/Users\/[^/]+/, '~') || conv.id.slice(0, 8);
   return (
-    <MobileCardButton className="mobile-search-row" onClick={() => onOpen(conv.id)}>
+    <MobileCardLink
+      className="mobile-search-row"
+      to={`/chat/${encodeURIComponent(conv.id)}`}
+      state={routeState}
+    >
       <div className="mobile-search-row__top">
         <span className="mobile-search-row__dir" title={conv.workingDirectory}>
           {shortDir}
@@ -52,26 +63,26 @@ function ClientResultRow({ id, onOpen }: { id: string; onOpen: (id: string) => v
         <span className="mobile-search-row__time">{timeAgo}</span>
       </div>
       <div className="mobile-search-row__snippet">{preview}</div>
-    </MobileCardButton>
+    </MobileCardLink>
   );
 }
 
 function ServerGroupCard({
   group,
-  onOpen,
+  routeState,
 }: {
   group: GroupedHit;
-  onOpen: (id: string) => void;
+  routeState: Record<string, unknown>;
 }) {
   const timeAgo = formatTimeAgo(new Date(group.latestTs));
   const shortDir =
     group.workingDirectory.replace(/^\/Users\/[^/]+/, '~') || group.conversationId.slice(0, 8);
   return (
     <MobileSurface className="mobile-search-group">
-      <button
-        type="button"
+      <Link
         className="mobile-search-group__header"
-        onClick={() => onOpen(group.conversationId)}
+        to={`/chat/${encodeURIComponent(group.conversationId)}`}
+        state={routeState}
       >
         <span className="mobile-search-group__dir" title={group.workingDirectory}>
           {shortDir}
@@ -80,18 +91,18 @@ function ServerGroupCard({
           {group.hits.length} hit{group.hits.length !== 1 ? 's' : ''}
         </span>
         <span className="mobile-search-group__time">{timeAgo}</span>
-      </button>
+      </Link>
       <div className="mobile-search-group__hits">
         {group.hits.slice(0, 3).map((h, idx) => (
-          <button
+          <Link
             key={idx}
-            type="button"
             className="mobile-search-hit"
-            onClick={() => onOpen(h.conversationId)}
+            to={`/chat/${encodeURIComponent(h.conversationId)}`}
+            state={routeState}
           >
             <span className="mobile-search-hit__role">{h.role}</span>
             <span className="mobile-search-hit__snippet">{h.snippet}</span>
-          </button>
+          </Link>
         ))}
         {group.hits.length > 3 && (
           <span className="mobile-search-hit__more">+{group.hits.length - 3} more</span>
@@ -104,7 +115,8 @@ function ServerGroupCard({
 export function SearchMobile() {
   const [searchState, setSearchState] = useAtom(mobileSearchStateAtom);
   const clientResults = useAtomValue(mobileSearchResultsAtom);
-  const navigate = useNavigate();
+  const location = useLocation();
+  const routeState = useMemo(() => mobileConversationRouteState(location), [location]);
 
   const query = searchState.kind === 'searching' ? searchState.query : '';
 
@@ -164,8 +176,6 @@ export function SearchMobile() {
     return Array.from(map.values()).sort((a, b) => b.latestTs - a.latestTs);
   }, [serverHits]);
 
-  const handleOpen = (id: string) => navigate(`/chat/${id}`);
-
   const onInputChange = (value: string) => {
     if (value.trim().length === 0) {
       setSearchState({ kind: 'idle' });
@@ -223,7 +233,7 @@ export function SearchMobile() {
         ) : (
           <div className="mobile-search__list">
             {clientResults.slice(0, visibleClientLimit).map((conv) => (
-              <ClientResultRow key={conv.id} id={conv.id} onOpen={handleOpen} />
+              <ClientResultRow key={conv.id} id={conv.id} routeState={routeState} />
             ))}
             {hiddenClientCount > 0 && (
               <div className="mobile-search__limit-note">
@@ -249,7 +259,11 @@ export function SearchMobile() {
           ) : (
             <div className="mobile-search__list">
               {groupedServerHits.slice(0, DEEP_RESULT_LIMIT).map((g) => (
-                <ServerGroupCard key={g.conversationId} group={g} onOpen={handleOpen} />
+                <ServerGroupCard
+                  key={g.conversationId}
+                  group={g}
+                  routeState={routeState}
+                />
               ))}
             </div>
           )}

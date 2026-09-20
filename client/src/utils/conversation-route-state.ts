@@ -1,0 +1,115 @@
+import {
+  getBuddyContext,
+  isBuddyBuilderConversation,
+  type Conversation,
+} from '@unleashd/shared';
+
+export type MobilePrimarySection = 'chats' | 'swarms' | 'buddies' | 'search';
+
+export interface MobileConversationOrigin {
+  section: MobilePrimarySection;
+  pathname: string;
+  search: string;
+  hash: string;
+}
+
+export interface MobileConversationRouteState {
+  mobileConversationOrigin: MobileConversationOrigin;
+}
+
+type RouteLocation = {
+  pathname: string;
+  search?: string;
+  hash?: string;
+  state?: unknown;
+};
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+function isInternalPathname(pathname: string): boolean {
+  return pathname.startsWith('/') && !pathname.startsWith('//');
+}
+
+export function mobilePrimarySectionForPath(pathname: string): MobilePrimarySection {
+  if (pathname === '/buddies' || pathname.startsWith('/buddies/')) return 'buddies';
+  if (pathname === '/workers' || pathname.startsWith('/workers/')) return 'swarms';
+  if (pathname === '/search' || pathname.startsWith('/search/')) return 'search';
+  return 'chats';
+}
+
+export function readMobileConversationOrigin(state: unknown): MobileConversationOrigin | null {
+  if (!isRecord(state) || !isRecord(state.mobileConversationOrigin)) return null;
+  const origin = state.mobileConversationOrigin;
+  if (
+    typeof origin.pathname !== 'string' ||
+    !isInternalPathname(origin.pathname) ||
+    typeof origin.search !== 'string' ||
+    typeof origin.hash !== 'string' ||
+    !['chats', 'swarms', 'buddies', 'search'].includes(String(origin.section))
+  )
+    return null;
+  const section = origin.section as MobilePrimarySection;
+  if (mobilePrimarySectionForPath(origin.pathname) !== section) return null;
+  return {
+    section,
+    pathname: origin.pathname,
+    search: origin.search,
+    hash: origin.hash,
+  };
+}
+
+/**
+ * Carries a transient return location into `/chat/:id` without introducing a
+ * second persisted active-route authority. Forks keep the original source.
+ */
+export function mobileConversationRouteState(location: RouteLocation): Record<string, unknown> {
+  const currentState = isRecord(location.state) ? location.state : {};
+  const inherited = readMobileConversationOrigin(location.state);
+  const origin =
+    location.pathname.startsWith('/chat/') && inherited
+      ? inherited
+      : {
+          section: mobilePrimarySectionForPath(location.pathname),
+          pathname: location.pathname,
+          search: location.search ?? '',
+          hash: location.hash ?? '',
+        };
+  return { ...currentState, mobileConversationOrigin: origin };
+}
+
+export interface MobileConversationDestination {
+  path: string;
+  section: MobilePrimarySection;
+}
+
+export function fallbackMobileConversationDestination(
+  conversation: Conversation | null | undefined
+): MobileConversationDestination {
+  if (isBuddyBuilderConversation(conversation)) {
+    return { path: '/buddies', section: 'buddies' };
+  }
+  const context = getBuddyContext(conversation);
+  if (context) {
+    const tab = conversation?.placement === 'background' ? 'background' : 'conversations';
+    return {
+      path: `/buddies/${encodeURIComponent(context.buddyId)}/${tab}`,
+      section: 'buddies',
+    };
+  }
+  if (conversation?.isWorker) return { path: '/workers', section: 'swarms' };
+  return { path: '/', section: 'chats' };
+}
+
+export function resolveMobileConversationDestination(
+  state: unknown,
+  conversation: Conversation | null | undefined
+): MobileConversationDestination {
+  const origin = readMobileConversationOrigin(state);
+  if (!origin) return fallbackMobileConversationDestination(conversation);
+  return {
+    path: `${origin.pathname}${origin.search}${origin.hash}`,
+    section: origin.section,
+  };
+}

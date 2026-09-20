@@ -16,7 +16,7 @@
   gap: 8px;
   padding: 6px 14px;
   border: 1px solid var(--primary-dim);
-  border-radius: 2px;
+  border-radius: var(--ui-radius);
   background: color-mix(in srgb, var(--primary) 8%, var(--bg-card));
   color: var(--text-secondary);
   font-size: 12px;
@@ -32,7 +32,7 @@
 }
 
 .swarm-prefix-token.expanded {
-  border-radius: 2px 2px 0 0;
+  border-radius: var(--ui-radius);
   position: relative;
   z-index: 1;
   margin-bottom: -1px;
@@ -52,7 +52,7 @@
   letter-spacing: 0.8px;
   color: var(--primary);
   padding: 1px 6px;
-  border-radius: 3px;
+  border-radius: var(--ui-radius);
   background: color-mix(in srgb, var(--primary) 15%, transparent);
   flex-shrink: 0;
 }
@@ -74,7 +74,7 @@
   font-size: 10px;
   font-weight: 600;
   padding: 1px 6px;
-  border-radius: 3px;
+  border-radius: var(--ui-radius);
 }
 
 .swarm-stat-chip.chip-neutral {
@@ -108,7 +108,7 @@
 
 .swarm-prefix-content {
   border: 1px solid var(--primary-dim);
-  border-radius: 0 0 2px 2px;
+  border-radius: var(--ui-radius);
   background: var(--bg-card);
   padding: 12px 16px;
   display: flex;
@@ -157,7 +157,7 @@ code.swarm-prefix-val {
   gap: 16px;
   padding: 10px 12px;
   background: var(--bg-elevated);
-  border-radius: 2px;
+  border-radius: var(--ui-radius);
 }
 
 .swarm-prefix-stat {
@@ -229,7 +229,7 @@ code.swarm-prefix-val {
 
 .swarm-prefix-status {
   padding: 1px 5px;
-  border-radius: 3px;
+  border-radius: var(--ui-radius);
   font-size: 10px;
   font-weight: 600;
 }
@@ -277,7 +277,7 @@ code.swarm-prefix-val {
   margin: 8px 0 0;
   padding: 10px 12px;
   background: var(--bg-base);
-  border-radius: 4px;
+  border-radius: var(--ui-radius);
   font-size: 11px;
   font-family: var(--font-mono);
   line-height: 1.5;

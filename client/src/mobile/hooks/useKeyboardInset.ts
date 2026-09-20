@@ -29,6 +29,7 @@ export function useKeyboardInset(): boolean {
       // resizing, so the covered strip is what is left below it.
       const covered = Math.max(0, window.innerHeight - viewport.height - viewport.offsetTop);
       root.style.setProperty('--mobile-keyboard-inset', `${Math.round(covered)}px`);
+      root.style.setProperty('--mobile-viewport-height', `${Math.round(viewport.height)}px`);
       setKeyboardOpen(covered > KEYBOARD_THRESHOLD_PX);
     };
 
@@ -39,6 +40,7 @@ export function useKeyboardInset(): boolean {
       viewport.removeEventListener('resize', update);
       viewport.removeEventListener('scroll', update);
       root.style.removeProperty('--mobile-keyboard-inset');
+      root.style.removeProperty('--mobile-viewport-height');
     };
   }, []);
 

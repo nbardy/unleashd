@@ -1,10 +1,18 @@
 import type { Conversation, SubAgent } from '@unleashd/shared';
 import { getBuddyContext, isBuddyBuilderConversation } from '@unleashd/shared';
 import { useAtomValue } from 'jotai';
-import { type ReactNode, useEffect, useMemo, useRef, useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import {
+  type MouseEventHandler,
+  type ReactNode,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
+import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { loadConversationDetails, setActiveConversationId } from '../../atoms/actions';
 import {
+  chatMessageGroupsAtomFamily,
   childConversationsAtomFamily,
   conversationAtomFamily,
   conversationDetailsLoadedAtomFamily,
@@ -17,13 +25,13 @@ import {
 import { forkConversation } from '../../atoms/fork-actions';
 import { mergeChildErrorAtomFamily, mergeChildStatusAtomFamily } from '../../atoms/mergeAtoms';
 import { markMessagesSeen, setSavedActiveConversationId } from '../../atoms/ui';
-import { BuddyBuilderResultCard } from '../../components/buddies/BuddyBuilderResultCard';
 import { effectiveSwarmDebugPrefix } from '../../components/buddies/ui-contract';
 import { useCopyAction } from '../../hooks/useCopyAction';
 import { useProviderCatalog } from '../../hooks/useProviderCatalog';
 import { useSavedPrompts } from '../../hooks/useSavedPrompts';
 import { useTurnDiagnostics } from '../../hooks/useTurnDiagnostics';
 import { buildThreadTranscript } from '../../utils/conversation-transcript';
+import { mobileConversationRouteState } from '../../utils/conversation-route-state';
 import { buildUnifiedSubAgents } from '../../utils/subAgents';
 import { parseStatsFromPrefix } from '../../utils/swarmConvoParsers';
 import {
@@ -32,11 +40,10 @@ import {
   turnDiagnosticsFromAttempt,
 } from '../../utils/turn-diagnostics';
 import { ComposerMobile } from '../components/ComposerMobile';
-import { MessageRow } from '../components/MessageRow';
+import { AssistantResponseRow, MessageRow } from '../components/MessageRow';
 import { MobileBadge, MobileSection, MobileSurface } from '../components/MobileUI';
 import { ModelSheetMobile, modelSummary } from '../components/ModelSheetMobile';
 import { PromptPaletteMobile } from '../components/PromptPaletteMobile';
-import { TurnStatusMobile } from '../components/TurnStatusMobile';
 import { MobileQueueStrip } from './MobileQueueStrip';
 
 /**
@@ -83,6 +90,7 @@ function CopyThreadButton({ conversation }: { conversation: Conversation }) {
 
 function ForkButton({ conversation }: { conversation: Conversation }) {
   const navigate = useNavigate();
+  const location = useLocation();
   const [error, setError] = useState<string | null>(null);
 
   // A conversation the server has not confirmed yet has no config to fork from.
@@ -105,7 +113,7 @@ function ForkButton({ conversation }: { conversation: Conversation }) {
             setError('Cannot fork yet — conversation is still being created.');
             return;
           }
-          navigate(`/chat/${forkedId}`);
+          navigate(`/chat/${forkedId}`, { state: mobileConversationRouteState(location) });
         }}
       >
         Fork
@@ -265,6 +273,7 @@ function MobileResumeWidget({
   sourceConversationId: string;
   sourceConversation: Conversation | null;
 }) {
+  const location = useLocation();
   const displayId = sourceConversation?.id?.substring(0, 8) ?? sourceConversationId.substring(0, 8);
   const provider = sourceConversation?.provider ?? 'claude';
   const folder = sourceConversation?.workingDirectory?.replace(/^\/Users\/[^/]+/, '~');
@@ -272,6 +281,7 @@ function MobileResumeWidget({
     <MobileSection title="Resumed from">
       <Link
         to={`/chat/${sourceConversationId}`}
+        state={mobileConversationRouteState(location)}
         style={{ textDecoration: 'none', color: 'inherit' }}
       >
         <MobileSurface
@@ -403,7 +413,7 @@ function MobileSwarmPrefix({ prefix, swarmId }: { prefix: string; swarmId: strin
                 style={{
                   marginTop: 8,
                   padding: 8,
-                  borderRadius: 8,
+                  borderRadius: 'var(--ui-radius)',
                   background: 'var(--bg-page)',
                   fontSize: 10,
                   lineHeight: 1.4,
@@ -481,17 +491,21 @@ function SwarmStat({ label, value }: { label: string; value: string }) {
 
 export function ConversationView({
   conversationId,
+  backTo,
   onBack,
   headerAside,
 }: {
   conversationId: string;
   /** Omit to render no back control (embedded use). */
-  onBack?: () => void;
+  backTo?: string;
+  onBack?: MouseEventHandler<HTMLAnchorElement>;
   headerAside?: ReactNode;
 }) {
   const conversation = useAtomValue(conversationAtomFamily(conversationId));
   const detailsLoaded = useAtomValue(conversationDetailsLoadedAtomFamily(conversationId));
   const streamingText = useAtomValue(streamingAtomFamily(conversationId));
+  const messageGroups = useAtomValue(chatMessageGroupsAtomFamily(conversationId));
+  const totalMessageCount = conversation?.messages.length ?? 0;
   const pendingCreation = useAtomValue(pendingCreationAtomFamily(conversationId));
   const conversationLoadComplete = useAtomValue(conversationLoadCompleteAtom);
   const pendingConfigCommand = useAtomValue(pendingConfigCommandAtomFamily(conversationId));
@@ -549,17 +563,6 @@ export function ConversationView({
     };
   }, [conversationId, conversation, detailsLoaded]);
 
-  // Merge streaming at render time — never write messages mid-stream
-  const messages = useMemo(() => {
-    if (!conversation) return [];
-    if (!streamingText) return conversation.messages;
-    const msgs = conversation.messages.slice();
-    const last = msgs[msgs.length - 1];
-    if (last?.role !== 'assistant') return conversation.messages;
-    msgs[msgs.length - 1] = { ...last, content: last.content + streamingText };
-    return msgs;
-  }, [conversation, streamingText]);
-
   // Same derivation as Chat.tsx: unified sub-agents + swarm prefix + resume lineage.
   // Reuses shared utils so desktop and mobile cannot drift.
   const unifiedSubAgents = useMemo(() => {
@@ -586,14 +589,14 @@ export function ConversationView({
 
   // Mark seen when last message becomes visible (IntersectionObserver plumbing §4)
   useEffect(() => {
-    if (messages.length === 0) return;
+    if (messageGroups.length === 0) return;
     const el = lastMessageRef.current;
     if (!el) return;
     const observer = new IntersectionObserver(
       (entries) => {
         for (const entry of entries) {
           if (entry.isIntersecting) {
-            markMessagesSeen(conversationId, messages.length - 1);
+            markMessagesSeen(conversationId, totalMessageCount - 1);
           }
         }
       },
@@ -601,7 +604,7 @@ export function ConversationView({
     );
     observer.observe(el);
     return () => observer.disconnect();
-  }, [conversationId, messages.length]);
+  }, [conversationId, totalMessageCount, messageGroups.length]);
 
   // Prompt palette: Ctrl+P / Cmd+P at the pane level (matches desktop Chat.tsx).
   // Owned here so hardware keyboards work even when composer textarea is not focused.
@@ -625,7 +628,7 @@ export function ConversationView({
     if (nearBottom) {
       el.scrollTop = el.scrollHeight;
     }
-  }, [messages.length, streamingText]);
+  }, [messageGroups, streamingText]);
 
   const handlePaletteSelect = (content: string) => {
     // Push into composer via prop (primary) + event bridge (fallback if composer remounts)
@@ -673,15 +676,16 @@ export function ConversationView({
       <div className="mobile-chat">
         <div className="mobile-chat__header">
           <div className="mobile-chat__titlebar">
-            {onBack ? (
-              <button
-                type="button"
+            {backTo ? (
+              <Link
+                to={backTo}
+                replace
                 className="mobile-chat__back"
                 onClick={onBack}
-                aria-label="Back to chats"
+                aria-label="Back"
               >
                 ←
-              </button>
+              </Link>
             ) : null}
             <div className="mobile-chat__heading">
               <div className="mobile-chat__dir" title={pendingCreation.workingDirectory}>
@@ -700,9 +704,11 @@ export function ConversationView({
             <div className="mobile-chat__creation-error" role="alert">
               <p>Could not create this conversation.</p>
               <p className="mobile-chat__creation-error-detail">{pendingCreation.error}</p>
-              <Link to="/" className="mobile-chat__back-link">
-                ← Back to chats
-              </Link>
+              {backTo ? (
+                <Link to={backTo} replace className="mobile-chat__back-link" onClick={onBack}>
+                  ← Back
+                </Link>
+              ) : null}
             </div>
           ) : (
             `Starting ${pendingCreation.config.provider} in ${pendingDir}…`
@@ -733,11 +739,13 @@ export function ConversationView({
     }
     return (
       <div className="mobile-chat__notice">
-        <div style={{ marginBottom: 12 }}>
-          <Link to="/" className="mobile-chat__back-link">
-            ← Back to chats
-          </Link>
-        </div>
+        {backTo ? (
+          <div style={{ marginBottom: 12 }}>
+            <Link to={backTo} replace className="mobile-chat__back-link" onClick={onBack}>
+              ← Back
+            </Link>
+          </div>
+        ) : null}
         Conversation not found. It may have been deleted.
       </div>
     );
@@ -748,15 +756,16 @@ export function ConversationView({
       <div className="mobile-chat">
         <div className="mobile-chat__header">
           <div className="mobile-chat__titlebar">
-            {onBack ? (
-              <button
-                type="button"
+            {backTo ? (
+              <Link
+                to={backTo}
+                replace
                 className="mobile-chat__back"
                 onClick={onBack}
-                aria-label="Back to chats"
+                aria-label="Back"
               >
                 ←
-              </button>
+              </Link>
             ) : null}
             <span style={{ fontSize: 13, fontWeight: 600 }}>{conversationId.slice(0, 8)}</span>
           </div>
@@ -769,6 +778,13 @@ export function ConversationView({
   const dirDisplay = conversation.workingDirectory.replace(/^\/Users\/[^/]+/, '~');
   const isRunning = conversation.isRunning ?? false;
   const isStreaming = conversation.isStreaming ?? false;
+  const turnActive = isRunning || isStreaming;
+  // The live assistant bubble hosts its own working indicator when it has no
+  // renderable parts yet; the standalone row below covers every other shape
+  // (user-last transcripts, non-empty responses) so the two never double up.
+  const lastGroup = messageGroups.length > 0 ? messageGroups[messageGroups.length - 1] : null;
+  const liveBubbleHostsWorking =
+    !!lastGroup && lastGroup.type === 'assistant' && lastGroup.parts.length === 0 && turnActive;
   // queue already derived via queueAtomFamily before early returns — keeps hook order
   const configSaving = !!pendingConfigCommand && !pendingConfigCommand.error;
   const configError = pendingConfigCommand?.error ?? null;
@@ -780,15 +796,16 @@ export function ConversationView({
     <div className="mobile-chat">
       <div className="mobile-chat__header">
         <div className="mobile-chat__titlebar">
-          {onBack ? (
-            <button
-              type="button"
+          {backTo ? (
+            <Link
+              to={backTo}
+              replace
               className="mobile-chat__back"
               onClick={onBack}
-              aria-label="Back to chats"
+              aria-label="Back"
             >
               ←
-            </button>
+            </Link>
           ) : null}
           <div className="mobile-chat__heading">
             <div className="mobile-chat__dir" title={conversation.workingDirectory}>
@@ -801,16 +818,8 @@ export function ConversationView({
               {/* One compact line: status + model. The model used to be three
                   always-visible dropdown chips that wrapped onto two or three
                   rows on a phone and ate a third of the screen. */}
-              {isRunning || isStreaming ? (
-                <span className="mobile-chat__status--running">● running</span>
-              ) : queue.length > 0 ? (
-                <span>{queue.length} queued</span>
-              ) : (
-                <span>idle</span>
-              )}
               {conversation.config ? (
                 <>
-                  {' · '}
                   <button
                     type="button"
                     className="mobile-chat__model"
@@ -838,11 +847,6 @@ export function ConversationView({
         {configError ? (
           <div className="mobile-chat__config-error" role="alert">
             {configError}
-          </div>
-        ) : null}
-        {turnDiagnostics ? (
-          <div className="mobile-chat__turn-status-row">
-            <TurnStatusMobile diagnostics={turnDiagnostics} />
           </div>
         ) : null}
       </div>
@@ -875,30 +879,33 @@ export function ConversationView({
 
       {/* Flat message list — not virtualized, iOS momentum-scroll (§10 Phase 1) */}
       <div ref={scrollRef} className="mobile-chat__messages">
-        {messages.length === 0 ? (
+        {messageGroups.length === 0 ? (
           <div className="mobile-chat__empty">
             {isBuddyBuilderConversation(conversation)
               ? 'Describe a Buddy or a whole team, their workspace, and what they should accomplish.'
               : 'No messages yet. Send a message to start.'}
           </div>
         ) : (
-          messages.map((msg, idx) => (
-            <MessageRow
-              key={`${idx}-${msg.timestamp ? new Date(msg.timestamp).getTime() : idx}`}
-              message={msg}
-              isLast={idx === messages.length - 1}
-              lastMessageRef={lastMessageRef}
-            />
-          ))
+          messageGroups.map((group, index) =>
+            group.type === 'assistant' ? (
+              <AssistantResponseRow
+                key={group.firstMessageIndex}
+                response={group}
+                isLast={index === messageGroups.length - 1}
+                lastMessageRef={lastMessageRef}
+                isLive={turnActive && index === messageGroups.length - 1}
+              />
+            ) : (
+              <MessageRow
+                key={group.firstMessageIndex}
+                message={group.messages[0]}
+                isLast={index === messageGroups.length - 1}
+                lastMessageRef={lastMessageRef}
+              />
+            )
+          )
         )}
-        {isBuddyBuilderConversation(conversation) && (
-          <BuddyBuilderResultCard
-            key={conversation.id}
-            conversationId={conversation.id}
-            isRunning={isRunning}
-          />
-        )}
-        {(isRunning || isStreaming) && !streamingText && !turnDiagnostics && (
+        {turnActive && !streamingText && !turnDiagnostics && !liveBubbleHostsWorking && (
           <div className="mobile-chat__thinking">Thinking…</div>
         )}
         {showTyping && (

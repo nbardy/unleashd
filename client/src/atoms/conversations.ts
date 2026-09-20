@@ -1,3 +1,5 @@
+import { getBuddyContext, getConversationKind, isBuddyKind } from '@unleashd/shared';
+import { archivedBuddyIdsAtom } from './buddy-visibility';
 import type {
   BuddyContext,
   ClientMessage,
@@ -8,6 +10,7 @@ import type {
 } from '@unleashd/shared';
 import { atom } from 'jotai';
 import { atomFamily } from 'jotai-family';
+import { groupChatMessages, type MessageGroup } from '../utils/chat-message-groups';
 import { normalizeFolderDirectory } from '../utils/directories';
 import { isWorktreeDirectory } from '../utils/swarmUtils';
 import { getConversationLastActivity } from '../utils/time';
@@ -86,7 +89,11 @@ export const sendFnAtom = atom<{ send: (msg: ClientMessage) => void }>({
 
 // Single conversation by ID — use instead of s.conversations.get(id)
 export const conversationAtomFamily = atomFamily((id: string) =>
-  atom((get) => get(conversationsAtom).get(id) ?? null)
+  atom((get) => {
+    const conversation = get(conversationsAtom).get(id);
+    const buddyId = conversation && getBuddyContext(conversation)?.buddyId;
+    return buddyId && get(archivedBuddyIdsAtom).has(buddyId) ? null : (conversation ?? null);
+  })
 );
 
 export const conversationDetailsLoadedAtomFamily = atomFamily((id: string) =>
@@ -109,6 +116,28 @@ export const pendingConfigCommandAtomFamily = atomFamily((conversationId: string
 // Live streaming text for one conversation — use for Chat.tsx merge display
 export const streamingAtomFamily = atomFamily((id: string) =>
   atom((get) => get(streamingContentAtom).get(id) ?? '')
+);
+
+const EMPTY_CHAT_GROUPS: MessageGroup[] = [];
+
+// Shared response projection; streaming content never enters the durable snapshot.
+export const chatMessageGroupsAtomFamily = atomFamily((id: string) =>
+  atom((get) => {
+    const conversation = get(conversationAtomFamily(id));
+    if (!conversation) return EMPTY_CHAT_GROUPS;
+    const streamingText = get(streamingAtomFamily(id));
+    let messages = conversation.messages;
+    const last = messages[messages.length - 1];
+    if (streamingText && last?.role === 'assistant') {
+      messages = messages.slice();
+      messages[messages.length - 1] = { ...last, content: last.content + streamingText };
+    }
+    const prefix =
+      isBuddyKind(getConversationKind(conversation)) || getBuddyContext(conversation)
+        ? null
+        : (conversation.swarmDebugPrefix ?? null);
+    return groupChatMessages(messages, prefix);
+  })
 );
 
 // Child sessions for sub-agent panel (Chat.tsx) — scoped by parent ID
@@ -152,11 +181,17 @@ export const queueAtomFamily = atomFamily((id: string) =>
 // last message timestamp when present, otherwise conversation creation time.
 export const allConversationsAtom = atom((get) => {
   const map = get(conversationsAtom);
-  return Array.from(map.values()).sort((a, b) => {
-    const aTime = getConversationLastActivity(a).getTime();
-    const bTime = getConversationLastActivity(b).getTime();
-    return bTime - aTime;
-  });
+  const archived = get(archivedBuddyIdsAtom);
+  return Array.from(map.values())
+    .filter((conversation) => {
+      const buddyId = getBuddyContext(conversation)?.buddyId;
+      return !buddyId || !archived.has(buddyId);
+    })
+    .sort((a, b) => {
+      const aTime = getConversationLastActivity(a).getTime();
+      const bTime = getConversationLastActivity(b).getTime();
+      return bTime - aTime;
+    });
 });
 
 // Stable sorted ID list — only changes on add/delete/reorder.
@@ -205,6 +240,7 @@ function isNestedWorktreeDirectory(workingDirectory: string): boolean {
 
 function isUserChatConversation(conversation: Conversation): boolean {
   return (
+    conversation.placement !== 'background' &&
     !conversation.isWorker &&
     !conversation.parentConversationId &&
     !isNestedWorktreeDirectory(conversation.workingDirectory) &&
@@ -262,19 +298,4 @@ export const workersByProjectAtom = atom((get) => {
     group.push(conv);
   }
   return groups;
-});
-
-// Just the project roots that have workers (for project picker dropdowns).
-export const workerProjectRootsAtom = atom((get) => {
-  return Array.from(get(workersByProjectAtom).keys()).sort();
-});
-
-// All worker IDs — stable list for per-item subscriptions on worker list views.
-export const workerIdsAtom = atom((get) => {
-  const convs = get(conversationsAtom);
-  const ids: string[] = [];
-  for (const conv of convs.values()) {
-    if (conv.isWorker) ids.push(conv.id);
-  }
-  return ids;
 });

@@ -24,104 +24,8 @@
  * (`utils/` + `components/buddies/*`) must stay CSS-free.
  */
 
-import {
-  type BuddyContext,
-  buddyContextFromKind,
-  getConversationKind,
-  matchConversationKind,
-} from '@unleashd/shared';
+import type { BuddyContext } from '@unleashd/shared';
 import type { BuddyProject, ConversationLink, LegacyWorkItem, Workspace } from './types';
-
-// ---------------------------------------------------------------------------
-// Relationship → manager / directReports (BuddiesDashboard.tsx:100-126)
-// ---------------------------------------------------------------------------
-
-export interface BuddyRelationship {
-  from_buddy_id: string;
-  to_buddy_id: string;
-  kind: string;
-  from_buddy_name?: string;
-  to_buddy_name?: string;
-}
-
-export interface BuddyHierarchyMember {
-  id: string;
-  name: string;
-  role?: string;
-}
-
-export interface BuddyHierarchy {
-  manager: BuddyHierarchyMember | null;
-  directReports: BuddyHierarchyMember[];
-}
-
-/**
- * Derive the manager for `buddyId` from the raw relationships array.
- * Mirrors BuddiesDashboard.tsx:100-104 (reportsTo) + 139-147 (manager mapping).
- */
-export function deriveBuddyManager(
-  relationships: BuddyRelationship[],
-  buddyId: string
-): BuddyHierarchyMember | null {
-  const reportsTo = relationships.find(
-    (relationship) =>
-      (relationship.from_buddy_id === buddyId && relationship.kind === 'reports_to') ||
-      (relationship.to_buddy_id === buddyId && relationship.kind === 'manager')
-  );
-  if (!reportsTo) return null;
-  return {
-    id: reportsTo.kind === 'reports_to' ? reportsTo.to_buddy_id : reportsTo.from_buddy_id,
-    name:
-      (reportsTo.kind === 'reports_to' ? reportsTo.to_buddy_name : reportsTo.from_buddy_name) ??
-      'Manager',
-  };
-}
-
-/**
- * Derive direct reports for `buddyId` (deduplicated by id).
- * Mirrors BuddiesDashboard.tsx:105-126.
- */
-export function deriveBuddyDirectReports(
-  relationships: BuddyRelationship[],
-  buddyId: string
-): BuddyHierarchyMember[] {
-  const reportRelationships = relationships.filter(
-    (relationship) =>
-      (relationship.to_buddy_id === buddyId && relationship.kind === 'reports_to') ||
-      (relationship.from_buddy_id === buddyId && relationship.kind === 'manager')
-  );
-  return Array.from(
-    new Map(
-      reportRelationships.map((relationship) => {
-        const report: BuddyHierarchyMember = {
-          id:
-            relationship.kind === 'reports_to'
-              ? relationship.from_buddy_id
-              : relationship.to_buddy_id,
-          name:
-            (relationship.kind === 'reports_to'
-              ? relationship.from_buddy_name
-              : relationship.to_buddy_name) ?? 'Direct report',
-        };
-        return [report.id, report] as const;
-      })
-    ).values()
-  );
-}
-
-/**
- * Combined hierarchy helper — one call for manager + directReports.
- * Mobile (BuddyDetailMobile) can call this once per buddy detail load.
- */
-export function deriveBuddyHierarchy(
-  relationships: BuddyRelationship[],
-  buddyId: string
-): BuddyHierarchy {
-  return {
-    manager: deriveBuddyManager(relationships, buddyId),
-    directReports: deriveBuddyDirectReports(relationships, buddyId),
-  };
-}
 
 // ---------------------------------------------------------------------------
 // Workspace / project shaping (BuddiesDashboard.tsx:244-260)
@@ -159,38 +63,8 @@ export function selectPrimaryProject(workspaceProjects: BuddyProject[]): BuddyPr
 }
 
 // ---------------------------------------------------------------------------
-// Conversation link filter / sort (BuddiesDashboard.tsx:261-304)
+// Conversation link projections
 // ---------------------------------------------------------------------------
-
-/**
- * Visible conversations: exclude automations, optionally hide reviews, then
- * sort by availability (available ids first) then recency (last_active_at).
- * Mirrors BuddiesDashboard.tsx:261-282.
- */
-export function filterVisibleConversations(
-  conversations: ConversationLink[],
-  showReviewConversations: boolean,
-  availableConversationIds: Set<string>
-): ConversationLink[] {
-  return [...conversations]
-    .filter(
-      (conversation) =>
-        conversation.kind !== 'automation' &&
-        (showReviewConversations || conversation.kind !== 'review')
-    )
-    .sort((left, right) => {
-      const leftId = left.conversation_id ?? left.unleashd_conversation_id;
-      const rightId = right.conversation_id ?? right.unleashd_conversation_id;
-      const availabilityDifference =
-        Number(Boolean(rightId && availableConversationIds.has(rightId))) -
-        Number(Boolean(leftId && availableConversationIds.has(leftId)));
-      if (availabilityDifference !== 0) return availabilityDifference;
-      return (
-        new Date(right.last_active_at ?? 0).getTime() -
-        new Date(left.last_active_at ?? 0).getTime()
-      );
-    });
-}
 
 export function countReviewConversations(conversations: ConversationLink[]): number {
   return conversations.filter((conversation) => conversation.kind === 'review').length;
@@ -215,8 +89,7 @@ export function getLatestWorkspaceConversation(
     .filter((conversation) => conversation.workspace_id === workspaceId)
     .sort(
       (left, right) =>
-        new Date(right.last_active_at ?? 0).getTime() -
-        new Date(left.last_active_at ?? 0).getTime()
+        new Date(right.last_active_at ?? 0).getTime() - new Date(left.last_active_at ?? 0).getTime()
     )[0];
 }
 
@@ -239,40 +112,4 @@ export function buildBuddyContextForTalk(params: {
     workspaceId: params.workspaceId,
     buddyProjectId: params.buddyProjectId ?? null,
   };
-}
-
-/**
- * Extract BuddyContext from any Conversation-shaped value via the canonical
- * kind dispatcher. Never reads `.buddyContext` directly.
- *
- * Uses: getConversationKind → matchConversationKind → buddyContextFromKind
- */
-export function getBuddyContextFromConversation(value: {
-  kind?: unknown | null;
-  buddyContext?: unknown | null;
-  purpose?: string | null;
-}): BuddyContext | null {
-  const kind = getConversationKind(
-    value as { kind?: null; buddyContext?: BuddyContext | null; purpose?: string | null }
-  );
-  return matchConversationKind<BuddyContext | null>(kind, {
-    general: () => null,
-    buddy: (b) => buddyContextFromKind(b),
-    buddy_builder: () => null,
-  });
-}
-
-/**
- * True if the value is a buddy conversation (via getConversationKind).
- * Convenience for mobile filters that previously checked `.buddyContext != null`.
- */
-export function isBuddyConversationKind(value: {
-  kind?: unknown | null;
-  buddyContext?: unknown | null;
-  purpose?: string | null;
-}): boolean {
-  const kind = getConversationKind(
-    value as { kind?: null; buddyContext?: BuddyContext | null; purpose?: string | null }
-  );
-  return kind.kind === 'buddy';
 }

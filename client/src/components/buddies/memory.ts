@@ -1,3 +1,4 @@
+import { BuddyMemorySnapshotSchema } from '@unleashd/shared';
 import type {
   BuddyMemory,
   BuddyMemoryDocumentKind,
@@ -6,22 +7,12 @@ import type {
   BuddyMemoryRevision,
 } from './types';
 
-const EMPTY_JOURNAL: BuddyMemory['recentJournal'] = [];
-
 function asRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === 'object' ? (value as Record<string, unknown>) : null;
 }
 
-function asString(value: unknown, fallback = ''): string {
-  return typeof value === 'string' ? value : fallback;
-}
-
 function asNonNegativeInteger(value: unknown, fallback = 0): number {
   return typeof value === 'number' && Number.isInteger(value) && value >= 0 ? value : fallback;
-}
-
-function hasOwn(record: Record<string, unknown>, key: string): boolean {
-  return Object.prototype.hasOwnProperty.call(record, key);
 }
 
 function normalizeRevision(value: unknown): BuddyMemoryRevision | null {
@@ -72,7 +63,7 @@ function normalizeRevisions(
   return Object.keys(result).length > 0 ? result : undefined;
 }
 
-/** Accepts the current legacy response and the locked v2 response. */
+/** Normalize the current package response at the HTTP boundary. */
 export function normalizeBuddyMemory(
   payload: unknown,
   soul?: string,
@@ -87,23 +78,12 @@ export function normalizeBuddyMemory(
       candidate && typeof candidate.id === 'string' && typeof candidate.content === 'string'
     );
   });
-  const hasV2Document = hasOwn(record, 'working') || hasOwn(record, 'longTerm');
-  const working = hasV2Document ? asString(record.working) : undefined;
-  const longTerm = hasV2Document ? asString(record.longTerm, asString(record.summary)) : undefined;
-  const workingRevision = hasV2Document
-    ? asNonNegativeInteger(record.workingRevision ?? record.working_revision)
-    : undefined;
-  const longTermRevision = hasV2Document
-    ? asNonNegativeInteger(record.longTermRevision ?? record.long_term_revision)
-    : undefined;
-  const generation = hasV2Document ? asNonNegativeInteger(record.generation) : undefined;
+  const snapshot = BuddyMemorySnapshotSchema.parse(payload);
   const revisions = normalizeRevisions(record.revisions);
   return {
     ...(typeof soul === 'string' ? { soul } : {}),
     ...(typeof soulPath === 'string' || soulPath === null ? { soulPath } : {}),
-    summary: asString(record.summary, longTerm ?? ''),
-    recentJournal: Array.isArray(record.recentJournal) ? record.recentJournal : EMPTY_JOURNAL,
-    ...(hasV2Document ? { working, longTerm, workingRevision, longTermRevision, generation } : {}),
+    ...snapshot,
     ...(revisions ? { revisions } : {}),
     ...(notes.length > 0 ? { notes } : {}),
     ...(rawOperations
@@ -122,24 +102,20 @@ export function normalizeBuddyMemory(
   };
 }
 
-export function hasV2Memory(memory: BuddyMemory): boolean {
-  return memory.working !== undefined || memory.longTerm !== undefined;
-}
-
 export function memoryDocument(
   memory: BuddyMemory,
   kind: BuddyMemoryDocumentKind
 ): { body: string; revision: number; label: string } {
   if (kind === 'working') {
     return {
-      body: memory.working ?? '',
-      revision: memory.workingRevision ?? 0,
+      body: memory.working,
+      revision: memory.workingRevision,
       label: 'WORKING_MEMORY.md',
     };
   }
   return {
-    body: memory.longTerm ?? memory.summary,
-    revision: memory.longTermRevision ?? 0,
+    body: memory.longTerm,
+    revision: memory.longTermRevision,
     label: 'LONG_TERM_MEMORY.md',
   };
 }

@@ -1,0 +1,67 @@
+.fullscreen-composer {
+  flex: none;
+  min-width: 0;
+}
+.fullscreen-composer--expanded {
+  position: fixed;
+  z-index: 1000;
+  isolation: isolate;
+  box-sizing: border-box;
+  overflow: hidden;
+  overscroll-behavior: none;
+  background: var(--bg-page);
+  padding: max(0px, calc(env(safe-area-inset-top) - var(--composer-viewport-top, 0px)))
+    env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left);
+}
+.fullscreen-composer--expanded[data-keyboard="true"] {
+  padding-bottom: 0;
+}
+.fullscreen-composer--expanded .mobile-composer {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+  padding: 0;
+  overflow: hidden;
+}
+.fullscreen-composer--expanded .mobile-composer__box {
+  /* Keep the clipped editor painted when the sibling attachment overlay opens.
+     Geometry/hit testing alone passed while Chromium dropped this paint layer. */
+  transform: translateZ(0);
+  flex: 1 1 0;
+  min-height: 0;
+  border: 0;
+  background: var(--bg-page);
+}
+.fullscreen-composer--expanded .mobile-composer__input {
+  flex: 1 1 0;
+  height: 0 !important;
+  min-height: 0;
+  max-height: none;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  line-height: 1.5;
+}
+.fullscreen-composer--expanded .mobile-composer__actions {
+  flex: none;
+}
+.fullscreen-composer--expanded .mobile-composer__done {
+  display: block;
+}
+.fullscreen-composer--expanded .mobile-composer__turn-status,
+.fullscreen-composer--expanded .mobile-composer__typing {
+  display: none;
+}
+.fullscreen-composer--expanded .mobile-composer__error,
+.fullscreen-composer--expanded .mobile-upload-error {
+  flex: none;
+  max-height: 20%;
+  overflow: auto;
+}
+
+.fullscreen-composer--expanded .composer-attachments__gallery {
+  top: 100%;
+  bottom: auto;
+  max-height: calc(var(--composer-visible-height, 100dvh) - 140px);
+  overflow-y: auto;
+}

@@ -18,7 +18,7 @@
   min-height: 44px;
   padding: 0 16px;
   border: 1px solid transparent;
-  border-radius: 999px;
+  border-radius: var(--ui-radius);
   background: var(--accent);
   color: var(--text-on-accent);
   font: inherit;
@@ -109,7 +109,7 @@
   min-height: 20px;
   padding: 3px 8px;
   border: 1px solid var(--border-subtle);
-  border-radius: 999px;
+  border-radius: var(--ui-radius);
   background: var(--bg-raised-2);
   color: var(--text-muted);
   font-size: 10px;
@@ -174,7 +174,7 @@
   min-width: 0;
   padding: 10px 12px;
   border: 1px solid var(--border-subtle);
-  border-radius: 10px;
+  border-radius: var(--ui-radius);
   background: var(--bg-raised-2);
   color: var(--text-primary);
   font-family: inherit;
@@ -207,7 +207,7 @@
 .mobile-error {
   padding: 10px 12px;
   border: 1px solid color-mix(in srgb, var(--theme-danger) 45%, var(--border-subtle));
-  border-radius: 10px;
+  border-radius: var(--ui-radius);
   color: var(--theme-danger);
   font-size: 13px;
   line-height: 1.45;
@@ -219,7 +219,7 @@
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
   border: 1px solid var(--border-subtle);
-  border-radius: 10px;
+  border-radius: var(--ui-radius);
   background: var(--bg-page);
   color: var(--text-primary);
   font-family: var(--font-mono);

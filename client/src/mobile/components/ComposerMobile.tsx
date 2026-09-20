@@ -3,6 +3,7 @@ import { useAtomValue } from 'jotai';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { endConversation, interruptAndSend, queueMessage } from '../../atoms/actions';
 import { queueAtomFamily, streamingAtomFamily } from '../../atoms/conversations';
+import { useComposerSubmission } from '../../hooks/useComposerSubmission';
 import { useConversationDraft } from '../../hooks/useConversationDraft';
 import { usePendingAttachments } from '../../hooks/usePendingAttachments';
 import { useRestartRecovery } from '../../hooks/useRestartRecovery';
@@ -69,13 +70,9 @@ export function ComposerMobile({
     textareaRef.current?.blur();
     setExpanded(false);
   }, []);
+  // Mirrors the draft hook for rendering only. The send path reads the hook's
+  // own authoritative getDraft(), never this lagging copy.
   const [draft, setDraft] = useState('');
-  // Synchronous mirror of the composer text. React state lags a render behind,
-  // so guards must read this: after an optimistic clear it is already empty
-  // (no double-send), and after a keystroke-but-before-render it already has
-  // the new char (no lost trailing input on fast Cmd+Enter).
-  const draftRef = useRef('');
-  const [error, setError] = useState<string | null>(null);
   const [showPalette, setShowPalette] = useState(false);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const toolbarPointerRef = useRef(false);
@@ -94,25 +91,21 @@ export function ComposerMobile({
 
   // Portable draft persistence — same hook desktop Chat.tsx uses.
   // Fork handoff seeds `draft:<newId>`; this hook loads it and debounces saves.
-  const { setDraft: setDraftPersisted, clear: clearDraftPersisted } = useConversationDraft({
+  const draftHandle = useConversationDraft({
     conversationId,
     textareaRef,
     maxHeight: 120,
     autoFocus: false,
     controlled: true,
-    onDraftLoaded: (loaded) => {
-      draftRef.current = loaded;
-      setDraft(loaded);
-    },
-    onDraftChange: (value) => {
-      draftRef.current = value;
-      setDraft(value);
-    },
+    onDraftLoaded: setDraft,
+    onDraftChange: setDraft,
   });
+  const { setDraft: setDraftPersisted } = draftHandle;
 
   // Shared attachment lifecycle — same hook desktop Chat.tsx uses so both
   // trees share upload (POST /api/upload), object-URL previews, framing,
   // and localStorage key `pendingFiles:{conversationId}`.
+  const attachments = usePendingAttachments(conversationId);
   const {
     pendingFiles,
     isUploading,
@@ -120,10 +113,11 @@ export function ComposerMobile({
     uploadError,
     dismissUploadError,
     removeFile,
-    clearFiles,
-    buildContent,
     handlePaste,
-  } = usePendingAttachments(conversationId);
+  } = attachments;
+
+  // One send path, shared with desktop. See hooks/useComposerSubmission.ts.
+  const { submit, error } = useComposerSubmission(conversationId, draftHandle, attachments);
 
   const updateDraft = useCallback(
     (value: string) => {
@@ -229,41 +223,13 @@ export function ComposerMobile({
   // One label for the button and the hint below it, so they cannot disagree.
   const sendLabel = hasActiveTurn ? 'Interrupt' : hasQueue ? 'Queue' : 'Send';
 
-  // Optimistic send — same contract as desktop Chat.tsx: the server ack can
-  // lag seconds behind the tap (ensureReady + turn-spawn setup), so the text
-  // clears immediately instead of holding the composer disabled with the text
-  // still in the box. draftRef is synchronous, so a second tap reads empty
-  // and cannot double-send; the queue strip carries the in-flight state.
-  // Rejection restores the draft via handleSelectPrompt (text + focus +
-  // height, the same path palette selection uses).
+  // Optimistic send — same contract as desktop Chat.tsx: the server ack can lag
+  // seconds behind the tap (ensureReady + turn-spawn setup), so the composer
+  // empties immediately and the queue strip carries the in-flight state.
   const handleSend = useCallback(async () => {
-    const text = draftRef.current.trim();
-    if (!text && !hasAttachments) return;
-    const content = buildContent(text);
-    clearDraftPersisted();
-    setError(null);
     closeEditor();
-    try {
-      if (hasActiveTurn) {
-        await interruptAndSend(conversationId, content);
-      } else {
-        await queueMessage(conversationId, content);
-      }
-      clearFiles();
-    } catch (e) {
-      handleSelectPrompt(text);
-      setError(e instanceof Error ? e.message : String(e));
-    }
-  }, [
-    conversationId,
-    hasActiveTurn,
-    hasAttachments,
-    buildContent,
-    clearDraftPersisted,
-    clearFiles,
-    closeEditor,
-    handleSelectPrompt,
-  ]);
+    await submit(hasActiveTurn ? interruptAndSend : queueMessage);
+  }, [submit, hasActiveTurn, closeEditor]);
 
   // Desktop's only stop affordance is endConversation (clear_queue then
   // stop_conversation, Sidebar.tsx). Mobile called bare stopConversation, so
@@ -280,28 +246,9 @@ export function ComposerMobile({
   // interruptAndSend, which destroys the in-flight turn's partial progress —
   // "add a follow-up without killing the current turn" was impossible on mobile.
   const handleQueue = useCallback(async () => {
-    const text = draftRef.current.trim();
-    if (!text && !hasAttachments) return;
-    const content = buildContent(text);
-    clearDraftPersisted();
-    setError(null);
     closeEditor();
-    try {
-      await queueMessage(conversationId, content);
-      clearFiles();
-    } catch (e) {
-      handleSelectPrompt(text);
-      setError(e instanceof Error ? e.message : String(e));
-    }
-  }, [
-    conversationId,
-    hasAttachments,
-    buildContent,
-    clearDraftPersisted,
-    clearFiles,
-    closeEditor,
-    handleSelectPrompt,
-  ]);
+    await submit(queueMessage);
+  }, [submit, closeEditor]);
 
   const handleFilesSelected = useCallback(
     async (e: React.ChangeEvent<HTMLInputElement>) => {

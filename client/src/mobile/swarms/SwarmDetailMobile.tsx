@@ -1,11 +1,12 @@
 import type { Conversation, OompaRuntimeWorker, SwarmRunSummary } from '@unleashd/shared';
 import { useAtomValue } from 'jotai';
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { createConversation } from '../../atoms/actions';
 import { conversationAtomFamily, workersByProjectAtom } from '../../atoms/conversations';
 import { promotedWorkersAtom } from '../../atoms/ui';
-import { usePolledFetch } from '../../hooks/usePolledFetch';
+import { useSwarmRuntimeSnapshots } from '../../hooks/useSwarmRuntimeSnapshots';
+import { mobileConversationRouteState } from '../../utils/conversation-route-state';
 import { getProjectRoot } from '../../utils/swarmUtils';
 import { getWorkerVisibilitySummary } from '../../utils/swarmWorkerVisibility';
 import { formatTimeAgo, getLastMessageTime } from '../../utils/time';
@@ -123,17 +124,21 @@ interface ExecGroup {
 
 function WorkerRow({
   conversationId,
-  onOpen,
+  routeState,
 }: {
   conversationId: string;
-  onOpen: (id: string) => void;
+  routeState: Record<string, unknown>;
 }) {
   const conv = useAtomValue(conversationAtomFamily(conversationId));
   if (!conv) return null;
   const model = shortModelName(conv.modelName);
   const running = conv.isRunning;
   return (
-    <button type="button" className="mobile-worker-row" onClick={() => onOpen(conv.id)}>
+    <Link
+      className="mobile-worker-row"
+      to={`/chat/${encodeURIComponent(conv.id)}`}
+      state={routeState}
+    >
       <span className={`mobile-worker-row__dot ${running ? 'running' : 'idle'}`} aria-hidden />
       <span className="mobile-worker-row__id">{conv.workerId ?? conv.id.slice(0, 8)}</span>
       {model && <span className="mobile-worker-row__model">{model}</span>}
@@ -144,7 +149,7 @@ function WorkerRow({
       <span className={`mobile-worker-row__state ${running ? 'state-running' : 'state-idle'}`}>
         {running ? 'Running' : 'Idle'}
       </span>
-    </button>
+    </Link>
   );
 }
 
@@ -152,27 +157,17 @@ export function SwarmDetailMobile() {
   const [searchParams] = useSearchParams();
   const projectRoot = searchParams.get('project') ?? '';
   const navigate = useNavigate();
+  const location = useLocation();
+  const chatRouteState = useMemo(() => mobileConversationRouteState(location), [location]);
 
   const rawWorkersByProject = useAtomValue(workersByProjectAtom);
   const promotedWorkers = useAtomValue(promotedWorkersAtom);
   const promotedSet = useMemo(() => new Set(promotedWorkers), [promotedWorkers]);
 
-  // Runtime snapshot polled via usePolledFetch (10s, visibility-aware)
-  const { data: runtimeData } = usePolledFetch<
-    | { snapshot: import('@unleashd/shared').OompaRuntimeSnapshot }
-    | import('@unleashd/shared').OompaRuntimeSnapshot
-  >(
-    projectRoot ? `/api/swarm-runtime?dir=${encodeURIComponent(projectRoot)}` : null,
-    10_000,
-    !!projectRoot
-  );
-  const runtimeSnapshot = useMemo(() => {
-    if (!runtimeData) return null;
-    if ('snapshot' in (runtimeData as Record<string, unknown>))
-      return (runtimeData as { snapshot: import('@unleashd/shared').OompaRuntimeSnapshot })
-        .snapshot;
-    return runtimeData as import('@unleashd/shared').OompaRuntimeSnapshot;
-  }, [runtimeData]);
+  // Runtime snapshot: the same hook and cache key desktop SwarmDetail uses, so
+  // the two shells share one polled entry per project (10s, visibility-aware).
+  const runtimeSnapshots = useSwarmRuntimeSnapshots(projectRoot ? [projectRoot] : []);
+  const runtimeSnapshot = projectRoot ? (runtimeSnapshots[projectRoot] ?? null) : null;
 
   const runtimeWorkerStates = useMemo(() => {
     const map = new Map<string, OompaRuntimeWorker>();
@@ -200,8 +195,6 @@ export function SwarmDetailMobile() {
 
   const [confirmAction, setConfirmAction] = useState<'stop' | 'kill' | null>(null);
   const [signalError, setSignalError] = useState<string | null>(null);
-
-  const handleOpenChat = useCallback((id: string) => navigate(`/chat/${id}`), [navigate]);
 
   const handleStartDebugConversation = useCallback(async () => {
     const swarmId = runtimeSnapshot?.available
@@ -237,8 +230,8 @@ export function SwarmDetailMobile() {
       config: { provider: 'claude', model: { mode: 'default' }, reasoning: { mode: 'default' } },
       swarmDebugPrefix: prefix,
     });
-    navigate(`/chat/${id}`);
-  }, [projectRoot, runtimeSnapshot, navigate]);
+    navigate(`/chat/${id}`, { state: chatRouteState });
+  }, [chatRouteState, projectRoot, runtimeSnapshot, navigate]);
 
   // Build exec groups — stacked single-pane (no side-by-side)
   const { execGroups, allWorkers } = useMemo(() => {
@@ -412,7 +405,7 @@ export function SwarmDetailMobile() {
             const snippet = lastMsg ? lastMsg.content.slice(0, 140) : '— no messages —';
             return (
               <div key={group.exec.id} className="mobile-exec-group">
-                <WorkerRow conversationId={group.exec.id} onOpen={handleOpenChat} />
+                <WorkerRow conversationId={group.exec.id} routeState={chatRouteState} />
                 {verdict && verdict !== 'pending' && (
                   <span className={`mobile-exec-group__verdict verdict-${verdict}`}>{verdict}</span>
                 )}
@@ -423,7 +416,7 @@ export function SwarmDetailMobile() {
                       {group.reviews.length} review{group.reviews.length !== 1 ? 's' : ''} paired
                     </div>
                     {group.reviews.map((r) => (
-                      <WorkerRow key={r.id} conversationId={r.id} onOpen={handleOpenChat} />
+                      <WorkerRow key={r.id} conversationId={r.id} routeState={chatRouteState} />
                     ))}
                   </div>
                 )}

@@ -2,7 +2,7 @@
   margin: 0 16px 24px;
   border: 1px solid var(--border-default);
   border-left: 4px solid var(--ai);
-  border-radius: 2px;
+  border-radius: var(--ui-radius);
   background: var(--bg-card);
 }
 

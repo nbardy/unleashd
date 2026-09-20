@@ -1,6 +1,6 @@
 import { useAtomValue } from 'jotai';
-import { memo, useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { memo, useEffect, useMemo, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import {
   allConversationIdsAtom,
   chatConversationIdsAtom,
@@ -9,9 +9,10 @@ import {
 } from '../../atoms/conversations';
 import { doneConversationsAtom, hasUnseenMessages, lastSeenMessageIndexAtom } from '../../atoms/ui';
 import { formatTimeAgo, getConversationLastActivity } from '../../utils/time';
+import { mobileConversationRouteState } from '../../utils/conversation-route-state';
 import {
   MobileBadge,
-  MobileCardButton,
+  MobileCardLink,
   MobileEmptyPanel,
   MobileHeaderAction,
   MobilePage,
@@ -29,13 +30,14 @@ function useTimeTick(ms = 30_000) {
 
 const ConversationListItem = memo(function ConversationListItem({
   id,
+  routeState,
 }: {
   id: string;
+  routeState: Record<string, unknown>;
 }) {
   const conv = useAtomValue(conversationAtomFamily(id));
   const lastSeenMessageIndex = useAtomValue(lastSeenMessageIndexAtom);
   const doneConversations = useAtomValue(doneConversationsAtom);
-  const navigate = useNavigate();
   const done = doneConversations.includes(id);
 
   if (!conv) return null;
@@ -51,8 +53,9 @@ const ConversationListItem = memo(function ConversationListItem({
   const dirDisplay = conv.workingDirectory.replace(/^\/Users\/[^/]+/, '~');
   const folderName = conv.workingDirectory.split('/').filter(Boolean).pop() ?? dirDisplay;
   return (
-    <MobileCardButton
-      onClick={() => navigate(`/chat/${conv.id}`)}
+    <MobileCardLink
+      to={`/chat/${encodeURIComponent(conv.id)}`}
+      state={routeState}
       className="mobile-conversation-item"
     >
       <div className="mobile-conversation-item__top">
@@ -80,7 +83,7 @@ const ConversationListItem = memo(function ConversationListItem({
         {preview}
       </div>
       <MobilePath>{dirDisplay}</MobilePath>
-    </MobileCardButton>
+    </MobileCardLink>
   );
 });
 
@@ -91,6 +94,8 @@ export function ConversationListMobile({
 }) {
   const ids = useAtomValue(scope === 'chats' ? chatConversationIdsAtom : allConversationIdsAtom);
   const chatInbox = useAtomValue(chatConversationInboxAtom);
+  const location = useLocation();
+  const routeState = useMemo(() => mobileConversationRouteState(location), [location]);
   const [showCreate, setShowCreate] = useState(false);
   useTimeTick();
 
@@ -102,7 +107,7 @@ export function ConversationListMobile({
     ) : (
       <div className="mobile-ui-stack mobile-conversation-list">
         {ids.map((id) => (
-          <ConversationListItem key={id} id={id} />
+          <ConversationListItem key={id} id={id} routeState={routeState} />
         ))}
       </div>
     );

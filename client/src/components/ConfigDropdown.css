@@ -10,7 +10,7 @@
   height: 36px;
   background: transparent;
   border: none;
-  border-radius: 2px;
+  border-radius: var(--ui-radius);
   color: var(--text-secondary);
   cursor: pointer;
   transition: all 0.2s;
@@ -29,7 +29,7 @@
   min-width: 220px;
   background: var(--bg-panel);
   border: 1px solid var(--border-default);
-  border-radius: 2px;
+  border-radius: var(--ui-radius);
   padding: 4px;
   box-shadow: 0 8px 24px color-mix(in srgb, var(--bg-darkest) 30%, transparent);
   z-index: 1000;
@@ -43,7 +43,7 @@
   padding: 10px 12px;
   background: transparent;
   border: none;
-  border-radius: 2px;
+  border-radius: var(--ui-radius);
   color: var(--text-primary);
   cursor: pointer;
   text-align: left;

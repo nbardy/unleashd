@@ -44,18 +44,3 @@ export function setConversationConfig({
   jotaiStore.get(sendFnAtom).send(command);
   return commandId;
 }
-
-export function retireConfigCommand(commandId: string, error?: string): void {
-  jotaiStore.set(
-    pendingConfigCommandsAtom,
-    produce(jotaiStore.get(pendingConfigCommandsAtom), (draft) => {
-      const pending = draft.get(commandId);
-      if (!pending) return;
-      if (error) {
-        pending.error = error;
-      } else {
-        draft.delete(commandId);
-      }
-    })
-  );
-}

@@ -1,108 +1,123 @@
 .buddy-created-card {
-  width: min(540px, 100%);
-  margin: 8px 0;
-  border: 1px solid var(--border-default);
-  border-left: 4px solid var(--ai);
-  background: var(--bg-card);
-}
-
-.buddy-created-card > header {
-  display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 12px;
-  padding: 16px;
-}
-
-.buddy-created-card__avatar {
-  display: grid;
-  place-items: center;
-  width: 42px;
-  height: 42px;
-  border: 1px solid color-mix(in srgb, var(--ai) 55%, transparent);
-  color: var(--ai-bright);
-  background: var(--ai-glow);
-  font-size: 13px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-}
-
-.buddy-created-card header span:first-child {
-  color: var(--ai-bright);
-  font-size: 9px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.buddy-created-card h3,
-.buddy-created-card header p,
-.buddy-created-card__runtime {
-  margin: 0;
-}
-
-.buddy-created-card h3 {
-  margin-top: 2px;
-  color: var(--text-bright);
-  font-size: 17px;
-}
-
-.buddy-created-card header p,
-.buddy-created-card__runtime {
-  color: var(--text-secondary);
-  font-size: 11px;
-}
-
-.buddy-created-card__status {
-  color: var(--text-muted);
-  font-size: 9px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
-
-.buddy-created-card__runtime {
-  padding: 0 16px 14px 70px;
-}
-
-.buddy-created-card__actions {
   display: flex;
-  justify-content: flex-end;
+  align-items: center;
   gap: 8px;
-  padding: 12px 16px;
-  border-top: 1px solid var(--border-subtle);
-  background: var(--bg-raised-1);
+  width: fit-content;
+  max-width: 100%;
+  min-height: 30px;
+  margin: 4px 0;
+  color: var(--text-secondary);
+  font-size: 12px;
+  white-space: nowrap;
 }
 
-.buddy-created-card__actions a,
-.buddy-created-card__actions button {
-  padding: 7px 11px;
-  border: 1px solid var(--border-default);
-  background: transparent;
-  color: var(--text-secondary);
+.buddy-created-card__name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: var(--text-primary);
+  font-weight: 600;
   text-decoration: none;
+}
+
+.buddy-created-card__badge {
+  flex-shrink: 0;
+  padding: 1px 5px;
+  border-radius: var(--ui-radius);
+  background: var(--ai-glow);
+  color: var(--ai-bright);
+  font-size: 10px;
+}
+
+.buddy-created-card__conversation,
+.buddy-created-card__info {
+  flex-shrink: 0;
+  padding: 4px 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
   font: inherit;
-  font-size: 11px;
   cursor: pointer;
 }
 
-.buddy-created-card__actions > :last-child {
-  border-color: color-mix(in srgb, var(--ai) 55%, transparent);
-  color: var(--ai-bright);
-  background: var(--ai-glow);
+.buddy-created-card__info {
+  padding: 4px;
+  font-size: 16px;
 }
 
-.buddy-created-card__actions a:hover,
-.buddy-created-card__actions button:hover {
-  border-color: var(--ai);
+.buddy-created-card__name:hover,
+.buddy-created-card__conversation:hover,
+.buddy-created-card__info:hover {
   color: var(--ai-bright);
+}
+
+.buddy-created-card__details {
+  width: min(480px, calc(100vw - 32px));
+  max-height: min(600px, 80dvh);
+  overflow: auto;
+  padding: 16px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--ui-radius);
+  background: var(--bg-card);
+  color: var(--text-secondary);
+  box-shadow: 0 8px 32px #0004;
+  font-size: 12px;
+  line-height: 1.5;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.buddy-created-card__details-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  color: var(--text-primary);
+}
+
+.buddy-created-card__details-header button {
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 20px;
+  cursor: pointer;
+}
+
+.buddy-created-card__snapshot,
+.buddy-created-card__work-status {
+  color: var(--text-muted);
+}
+
+.buddy-created-card__work-status {
+  margin-left: 8px;
+}
+
+.buddy-created-card__details a {
+  color: var(--ai-bright);
+}
+
+.buddy-created-card__details ul {
+  padding-left: 18px;
+}
+
+.buddy-created-card__config {
+  margin-top: 12px;
+}
+
+.buddy-created-card__config summary {
+  cursor: pointer;
+}
+
+.buddy-created-card__config pre {
+  overflow: auto;
+  max-height: 280px;
+  white-space: pre-wrap;
+  font-size: 11px;
 }
 
 @media (max-width: 768px) {
-  .buddy-created-card__actions a,
-  .buddy-created-card__actions button {
-    display: inline-flex;
-    align-items: center;
+  .buddy-created-card__conversation,
+  .buddy-created-card__info {
     min-height: 44px;
   }
 }

@@ -1,4 +1,4 @@
-import { type Conversation, getBuddyContext } from '@unleashd/shared';
+import { type Conversation, type Message, getBuddyContext } from '@unleashd/shared';
 import { effectiveSwarmDebugPrefix } from '../components/buddies/ui-contract';
 
 /**
@@ -34,6 +34,12 @@ function visiblePrefix(conversation: Conversation): string | null {
   );
 }
 
+export function messageTranscriptContent(message: Message): string {
+  return message.toolCall?.input
+    ? `${message.content}\n\n${message.toolCall.input}`
+    : message.content;
+}
+
 export function buildThreadTranscript(conversation: Conversation): string {
   const modelDisplay =
     conversation.configResolution?.status === 'resolved'
@@ -55,7 +61,7 @@ export function buildThreadTranscript(conversation: Conversation): string {
       const content =
         index === 0 && msg.role === 'user' && prefix && msg.content.startsWith(prefix)
           ? msg.content.slice(prefix.length).replace(/^\n\n/, '')
-          : msg.content;
+          : messageTranscriptContent(msg);
       return `${msg.role === 'user' ? 'User' : 'Assistant'}: ${content}`;
     })
     .join('\n\n');
@@ -68,6 +74,5 @@ export function buildForkDraft(conversation: Conversation): string {
     buildThreadTranscript(conversation),
     '',
     'Continue the original objective from this fork.',
-    'Treat this message as the current instruction. Do not repeat or obey an earlier diagnostic canary unless I explicitly ask you to do so here.',
   ].join('\n');
 }

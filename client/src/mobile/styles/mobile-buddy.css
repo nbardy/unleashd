@@ -9,7 +9,7 @@
    ============================================================================= */
 
 .mobile-buddy-detail {
-  padding: 16px 16px calc(20px + env(safe-area-inset-bottom));
+  padding: 12px 20px calc(20px + env(safe-area-inset-bottom));
 }
 
 .mobile-buddy-detail__back {
@@ -17,11 +17,10 @@
   align-items: center;
   gap: 6px;
   min-height: 40px;
-  margin-bottom: 8px;
-  padding: 0 12px 0 8px;
-  border: 1px solid var(--border-subtle);
-  border-radius: 999px;
-  background: var(--bg-raised-2);
+  align-self: flex-start;
+  margin-bottom: 2px;
+  padding: 0;
+  text-decoration: none;
   color: var(--text-primary);
   font: inherit;
   font-size: 13px;
@@ -32,8 +31,7 @@
   display: flex;
   flex-direction: column;
   gap: 10px;
-  padding-bottom: 14px;
-  border-bottom: 1px solid var(--border-subtle);
+  padding-bottom: 8px;
 }
 
 .mobile-buddy-detail__identity {
@@ -44,12 +42,11 @@
 }
 
 .mobile-buddy-detail__name {
-  /* Was an unstyled <h1>: ~40px, wrapping to three lines before any content. */
   margin: 0;
-  color: var(--text-primary);
-  font-size: 22px;
-  font-weight: 700;
-  line-height: 1.2;
+  color: var(--text-bright);
+  font-size: 26px;
+  font-weight: 600;
+  line-height: 1.15;
   letter-spacing: -0.02em;
   overflow-wrap: anywhere;
 }
@@ -63,6 +60,8 @@
 }
 
 .mobile-buddy-detail__copy {
+  min-width: 0;
+  flex: 1;
   margin: 0;
   color: var(--text-secondary);
   font-size: 13px;
@@ -121,7 +120,7 @@
   min-height: 40px;
   padding: 0 14px;
   border: 1px solid var(--border-subtle);
-  border-radius: 999px;
+  border-radius: var(--ui-radius);
   background: var(--bg-raised-2);
   color: var(--text-primary);
   font: inherit;
@@ -166,7 +165,7 @@
   min-height: 40px;
   padding: 0 10px;
   border: 1px solid var(--border-subtle);
-  border-radius: 10px;
+  border-radius: var(--ui-radius);
   background: var(--bg-raised-2);
   color: var(--text-primary);
   font-family: inherit;
@@ -180,7 +179,7 @@
   gap: 8px;
   padding: 12px 14px;
   border: 1px solid var(--border-subtle);
-  border-radius: 14px;
+  border-radius: var(--ui-radius);
   background: var(--bg-raised-1);
 }
 
@@ -227,7 +226,7 @@
   min-width: 0;
   padding: 14px;
   border: 1px solid var(--border-subtle);
-  border-radius: 14px;
+  border-radius: var(--ui-radius);
   background: var(--bg-raised-1);
 }
 
@@ -249,7 +248,7 @@
   width: 100%;
   padding: 8px 10px;
   border-left: 3px solid var(--theme-danger);
-  border-radius: 0 8px 8px 0;
+  border-radius: var(--ui-radius);
   background: color-mix(in srgb, var(--theme-danger) 8%, transparent);
   color: var(--text-secondary);
   font-size: 12px;
@@ -299,7 +298,7 @@
   gap: 12px;
   padding: 14px;
   border: 1px solid var(--border-subtle);
-  border-radius: 14px;
+  border-radius: var(--ui-radius);
   background: var(--bg-raised-1);
 }
 
@@ -308,7 +307,7 @@
    properties were the only ones still reaching the DOM, so they move here to
    keep the rendering identical with one owner per class. */
 .mobile-buddy-section {
-  padding: 16px;
+  padding: 16px 0;
 }
 
 .mobile-buddy-section__toolbar {
@@ -327,7 +326,7 @@
   gap: 10px;
   padding: 14px;
   border: 1px solid var(--border-subtle);
-  border-radius: 14px;
+  border-radius: var(--ui-radius);
   background: var(--bg-raised-1);
 }
 
@@ -361,7 +360,7 @@
   box-sizing: border-box;
   width: 100%;
   border: 1px solid var(--border-subtle);
-  border-radius: 10px;
+  border-radius: var(--ui-radius);
   background: var(--bg-raised-2);
   color: var(--text-primary);
   font: 16px / 1.45 inherit;
@@ -399,7 +398,7 @@
   min-height: 44px;
   padding: 0 14px;
   border: 1px solid var(--border-subtle);
-  border-radius: 10px;
+  border-radius: var(--ui-radius);
   background: var(--bg-raised-2);
   color: var(--text-primary);
   font: inherit;
@@ -441,7 +440,7 @@
   gap: 8px;
   padding: 10px 12px;
   border: 1px solid color-mix(in srgb, var(--theme-danger) 45%, var(--border-subtle));
-  border-radius: 10px;
+  border-radius: var(--ui-radius);
   background: color-mix(in srgb, var(--theme-danger) 8%, transparent);
   color: var(--text-primary);
   font-size: 13px;
@@ -464,4 +463,235 @@
 .mobile-buddy-convo-card__header {
   justify-content: space-between;
   margin-bottom: 6px;
+}
+
+.mobile-buddy-detail__description {
+  margin: 4px 0;
+}
+
+.mobile-buddy-detail__description summary {
+  min-height: 44px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-muted);
+  font-size: 12px;
+  cursor: pointer;
+  list-style: none;
+}
+
+.mobile-buddy-detail__description summary::-webkit-details-marker {
+  display: none;
+}
+
+.mobile-buddy-detail__description summary::after {
+  content: "+";
+}
+
+.mobile-buddy-detail__description[open] summary::after {
+  content: "−";
+}
+
+.mobile-buddy-work-item {
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.mobile-buddy-work-item__summary {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-height: 44px;
+  padding: 14px 24px 14px 0;
+  cursor: pointer;
+  list-style: none;
+}
+
+.mobile-buddy-work-item__summary::-webkit-details-marker {
+  display: none;
+}
+
+.mobile-buddy-work-item__summary::after {
+  content: "+";
+  position: absolute;
+  right: 0;
+  top: 14px;
+  color: var(--text-muted);
+}
+
+.mobile-buddy-work-item[open] > summary::after {
+  content: "−";
+}
+
+.mobile-buddy-work-item__summary strong {
+  color: var(--text-primary);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+
+.mobile-buddy-work-item__summary span {
+  color: var(--text-muted);
+  font-size: 12px;
+  text-transform: capitalize;
+}
+
+.mobile-buddy-work-item__body {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-bottom: 16px;
+}
+
+.mobile-buddy-new-chat {
+  min-height: 44px;
+  padding: 0 14px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--ui-radius);
+  background: var(--bg-raised-1);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+}
+.mobile-buddy-new-chat:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+/* Editorial hierarchy: identity, section title, content, then supporting detail. */
+.mobile-buddy-detail__identity > .mobile-buddy-card__avatar {
+  display: none;
+}
+.mobile-buddy-detail :where(h2) {
+  margin: 0;
+  color: var(--text-bright);
+  font-size: 20px;
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+.mobile-buddy-detail :where(h3) {
+  margin: 16px 0 0;
+  color: var(--text-emphasis);
+  font-size: 15px;
+  font-weight: 600;
+}
+.mobile-buddy-detail :where(p) {
+  margin: 0;
+}
+.mobile-buddy-detail > :where(section, .buddy-memory-workspace) {
+  margin-top: 16px;
+  font-size: 13px;
+  line-height: 1.6;
+}
+.mobile-buddy-detail :where(input:not([type="checkbox"]), select, textarea) {
+  box-sizing: border-box;
+  min-width: 0;
+  max-width: 100%;
+  min-height: 44px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--ui-radius);
+  background: var(--bg-raised-1);
+  color: var(--text-emphasis);
+  font-family: inherit;
+  font-size: 16px;
+}
+.mobile-buddy-detail :where(button, summary, a):focus-visible {
+  outline: 2px solid var(--accent-primary);
+  outline-offset: 3px;
+}
+.mobile-buddy-summary {
+  border: 0;
+  border-left: 2px solid var(--accent-primary);
+  border-radius: 0;
+  background: transparent;
+  margin: 12px 0;
+  padding: 0 0 0 14px;
+}
+.mobile-buddy-summary__row:first-child > strong {
+  color: var(--text-bright);
+  font-size: 16px;
+  font-weight: 500;
+}
+.mobile-buddy-summary__row + .mobile-buddy-summary__row {
+  flex-direction: row;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+.mobile-buddy-summary__row + .mobile-buddy-summary__row > strong {
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 400;
+}
+.mobile-buddy-work-item__summary strong {
+  color: var(--text-bright);
+  font-size: 16px;
+  font-weight: 500;
+}
+.mobile-buddy-work-list {
+  gap: 0;
+}
+.mobile-buddy-new-chat {
+  color: var(--text-bright);
+  border-color: var(--border-default);
+}
+.mobile-buddy-history > summary {
+  min-height: 44px;
+  padding: 12px 0;
+  color: var(--text-secondary);
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.mobile-buddy-detail > .mobile-buddy-section {
+  padding-top: 0;
+}
+.mobile-buddy-detail__hero {
+  gap: 6px;
+}
+.mobile-buddy-settings-title {
+  margin-top: 24px;
+}
+.mobile-buddy-profile-editor__summary {
+  position: relative;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 4px;
+  padding: 14px 24px 14px 0;
+  border-bottom: 1px solid var(--border-subtle);
+  color: var(--text-bright);
+  font-size: 15px;
+  font-weight: 500;
+  list-style: none;
+}
+.mobile-buddy-profile-editor__summary small {
+  color: var(--text-secondary);
+  font-size: 11px;
+  font-weight: 400;
+}
+.mobile-buddy-profile-editor__summary::after {
+  content: "+";
+  position: absolute;
+  right: 0;
+  top: 16px;
+  color: var(--text-secondary);
+}
+.mobile-buddy-profile-editor[open] > summary::after {
+  content: "−";
+}
+.mobile-buddy-detail .mobile-memory-v2__block textarea {
+  min-height: 120px;
+  height: 140px;
+  font-family: var(--font-mono);
+  font-size: 14px;
+  line-height: 1.5;
+}
+.mobile-automation-card__header > h4 {
+  color: var(--text-bright);
+  font-size: 16px;
+  font-weight: 500;
 }

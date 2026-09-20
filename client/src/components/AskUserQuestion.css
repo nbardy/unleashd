@@ -15,7 +15,7 @@
 .ask-question-card {
   background: var(--bg-content);
   border: 1px solid var(--border-subtle);
-  border-radius: 2px;
+  border-radius: var(--ui-radius);
   padding: 14px 16px;
 }
 
@@ -28,7 +28,7 @@
   color: var(--ai);
   background: var(--ai-dim);
   padding: 2px 8px;
-  border-radius: 4px;
+  border-radius: var(--ui-radius);
   margin-bottom: 8px;
 }
 
@@ -53,7 +53,7 @@
   padding: 10px 14px;
   background: var(--bg-secondary);
   border: 1px solid var(--border-subtle);
-  border-radius: 2px;
+  border-radius: var(--ui-radius);
   cursor: pointer;
   text-align: left;
   font-family: inherit;

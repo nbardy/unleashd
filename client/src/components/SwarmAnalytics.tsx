@@ -5,7 +5,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { workersByProjectAtom } from '../atoms/conversations';
 import { promotedWorkersAtom } from '../atoms/ui';
-import { usePolledFetch } from '../hooks/usePolledFetch';
+import { resource, usePolledFetch } from '../hooks/usePolledFetch';
 import { getProjectColor } from '../utils/projectColors';
 import {
   type IterationSpan,
@@ -395,48 +395,56 @@ export function SwarmAnalytics() {
   const [selectedProject, setSelectedProject] = useState<string | null>(null);
   const [selectedSwarmId, setSelectedSwarmId] = useState<string | null>(null);
 
-  // Run data: one fetch per project, aborted if the project changes first.
-  // Memoised on selectedProject because usePolledFetch keys its effect on
-  // source identity — an inline closure would refetch on every render. Null
-  // when no project is selected, which disables the hook.
+  // Run data: one keyed resource per project, cached in atoms/resources.ts so
+  // revisiting a project is instant. Null when no project is selected, which
+  // disables the hook. (The memo is now only to avoid rebuilding the closure;
+  // usePolledFetch keys its effect on the resource KEY, not on this identity.)
   const fetchRunsData = useMemo(() => {
     if (!selectedProject) return null;
     const project = selectedProject;
-    return async (signal: AbortSignal): Promise<Map<string, RunData>> => {
-      const response = await fetch(`/api/swarm-runs?dir=${encodeURIComponent(project)}`, {
-        signal,
-      });
-      if (!response.ok) throw new Error(`HTTP ${response.status}`);
-      const body = (await response.json()) as {
-        runs: Array<{ swarmId: string; run: SwarmRunLog | null; summary: SwarmRunSummary | null }>;
-      };
-      // Reviews for every run in parallel. The effect this replaces awaited
-      // them one at a time inside .then(), so twenty runs meant twenty serial
-      // round trips — and switching project mid-loop let the OLD project's
-      // loop run to completion and overwrite the new project's state.
-      const entries = await Promise.all(
-        body.runs.map(async (run): Promise<RunData> => {
-          const reviews = await fetch(
-            `/api/swarm-reviews?dir=${encodeURIComponent(project)}&swarmId=${encodeURIComponent(run.swarmId)}`,
-            { signal }
-          )
-            .then((r) => r.json() as Promise<{ reviews?: RunData['reviews'] }>)
-            .then((json) => json.reviews ?? [])
-            .catch((error: unknown) => {
-              // An abort must propagate so the hook drops the whole cycle; any
-              // other per-run failure degrades to "no reviews", as before.
-              if ((error as Error).name === 'AbortError') throw error;
-              return [];
-            });
-          return { swarmId: run.swarmId, run: run.run, summary: run.summary, reviews };
-        })
-      );
-      return new Map(entries.map((entry) => [entry.swarmId, entry]));
-    };
+    return resource(
+      `swarm-analytics-runs:${project}`,
+      async (signal: AbortSignal): Promise<Map<string, RunData>> => {
+        const response = await fetch(`/api/swarm-runs?dir=${encodeURIComponent(project)}`, {
+          signal,
+        });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const body = (await response.json()) as {
+          runs: Array<{
+            swarmId: string;
+            run: SwarmRunLog | null;
+            summary: SwarmRunSummary | null;
+          }>;
+        };
+        // Reviews for every run in parallel. The effect this replaces awaited
+        // them one at a time inside .then(), so twenty runs meant twenty serial
+        // round trips — and switching project mid-loop let the OLD project's
+        // loop run to completion and overwrite the new project's state.
+        const entries = await Promise.all(
+          body.runs.map(async (run): Promise<RunData> => {
+            const reviews = await fetch(
+              `/api/swarm-reviews?dir=${encodeURIComponent(project)}&swarmId=${encodeURIComponent(run.swarmId)}`,
+              { signal }
+            )
+              .then((r) => r.json() as Promise<{ reviews?: RunData['reviews'] }>)
+              .then((json) => json.reviews ?? [])
+              .catch((error: unknown) => {
+                // An abort must propagate so the hook drops the whole cycle; any
+                // other per-run failure degrades to "no reviews", as before.
+                if ((error as Error).name === 'AbortError') throw error;
+                return [];
+              });
+            return { swarmId: run.swarmId, run: run.run, summary: run.summary, reviews };
+          })
+        );
+        return new Map(entries.map((entry) => [entry.swarmId, entry]));
+      }
+    );
   }, [selectedProject]);
   const runsFetch = usePolledFetch<Map<string, RunData>>(fetchRunsData, 0);
-  // While a new project loads, data still holds the previous project's map. The
-  // spinner branch below hides it, and the project <select> resets selectedSwarmId.
+  // The project is in the cache key, so this is either this project's map or
+  // nothing — never the previously selected project's data. A project visited
+  // earlier in the session renders from cache with no spinner at all.
   const runsData = runsFetch.data ?? NO_RUNS_DATA;
   const loading = runsFetch.loading;
 

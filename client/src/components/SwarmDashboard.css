@@ -38,7 +38,7 @@
 /* Project card — each project with workers gets one of these */
 .swarm-project-card {
   background: var(--bg-card);
-  border-radius: 2px;
+  border-radius: var(--ui-radius);
   padding: 20px 24px;
   border: 1px solid var(--border-subtle);
   border-left: 4px solid transparent;
@@ -129,7 +129,7 @@
   padding: 8px 18px;
   background: color-mix(in srgb, var(--primary) 15%, transparent);
   border: 1px solid color-mix(in srgb, var(--primary) 40%, transparent);
-  border-radius: 2px;
+  border-radius: var(--ui-radius);
   color: var(--primary-bright);
   font-size: 13px;
   font-weight: 500;

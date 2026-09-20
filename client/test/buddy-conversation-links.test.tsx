@@ -19,11 +19,16 @@
  */
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import type { Conversation } from '@unleashd/shared';
+import { Provider, createStore } from 'jotai';
 // biome-ignore lint/style/useImportType: tsx's test transform uses the classic JSX runtime.
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { MemoryRouter } from 'react-router-dom';
+import { conversationsAtom } from '../src/atoms/conversations';
 import { BuddyAutomationsTab } from '../src/components/buddies/BuddyAutomationsTab';
+import { BuddyConversationList } from '../src/components/buddies/BuddyConversationList';
+import { BuddySectionNav } from '../src/components/buddies/BuddySectionNav';
 import type { BuddyAutomation, ConversationLink } from '../src/components/buddies/types';
 import { AutomationsTab } from '../src/mobile/buddies/BuddyDetailAutomationsTab';
 import { ConversationsTab } from '../src/mobile/buddies/BuddyDetailConversationsTab';
@@ -122,18 +127,89 @@ test('mobile automations tab exposes explicit history and links only loaded live
 });
 
 test('mobile chats tab opens a conversation through an anchor, not an onClick', () => {
+  // Availability is derived from the store (allConversationIdsAtom) rather than
+  // passed in, so the tab needs a store holding exactly the live conversation.
+  const store = createStore();
+  store.set(
+    conversationsAtom,
+    new Map([[LIVE, { id: LIVE, messages: [] } as unknown as Conversation]])
+  );
   const html = render(
-    <ConversationsTab
-      visibleConversations={[link(LIVE, 'conversation'), link(DEAD, 'conversation')]}
-      reviewCount={0}
-      showReviewConversations={false}
-      onToggleReviews={() => {}}
-      workspace={undefined}
-      onTalk={() => {}}
-      availableIds={AVAILABLE}
-    />
+    <Provider store={store}>
+      <ConversationsTab
+        conversations={[link(LIVE, 'conversation'), link(DEAD, 'conversation')]}
+        reviewCount={0}
+        showReviewConversations={false}
+        onToggleReviews={() => {}}
+        workspace={undefined}
+        onTalk={() => {}}
+      />
+    </Provider>
   );
 
   assert.deepEqual(chatHrefs(html), [`/chat/${LIVE}`]);
   assert.ok(!html.includes(`/chat/${DEAD}`), 'a dead conversation must not be linked');
+});
+
+test('Buddy conversations show real previews, sort running first, and react to completion', () => {
+  const store = createStore();
+  const running = {
+    id: LIVE,
+    messages: [
+      { role: 'user', content: 'Review the launch plan', timestamp: new Date('2026-09-15') },
+    ],
+    isRunning: true,
+    createdAt: new Date('2026-09-15'),
+  } as Conversation;
+  const recent = {
+    id: 'recent',
+    messages: [
+      { role: 'assistant', content: 'The rollout is ready', timestamp: new Date('2026-09-16') },
+    ],
+    isRunning: false,
+    createdAt: new Date('2026-09-16'),
+  } as Conversation;
+  store.set(
+    conversationsAtom,
+    new Map([
+      [LIVE, running],
+      ['recent', recent],
+    ])
+  );
+  const links = [
+    link('recent', 'conversation'),
+    link(LIVE, 'conversation'),
+    link(LIVE, 'conversation'),
+    link(DEAD, 'conversation'),
+  ];
+  const renderList = () =>
+    render(
+      <Provider store={store}>
+        <BuddyConversationList links={links} availableIds={new Set([LIVE, 'recent'])} />
+      </Provider>
+    );
+  const html = renderList();
+  assert.deepEqual(chatHrefs(html), [`/chat/${LIVE}`, '/chat/recent']);
+  assert.ok(html.includes('Review the launch plan'));
+  assert.ok(html.includes('The rollout is ready'));
+  assert.ok(html.includes('Running'));
+  assert.ok(html.includes('Unavailable'));
+  store.set(
+    conversationsAtom,
+    new Map([
+      [LIVE, { ...running, isRunning: false }],
+      ['recent', recent],
+    ])
+  );
+  const completed = renderList();
+  assert.deepEqual(chatHrefs(completed), ['/chat/recent', `/chat/${LIVE}`]);
+  assert.ok(!completed.includes('Running'));
+});
+
+test('Buddy navigation keeps secondary sections reachable as real routes', () => {
+  const html = render(<BuddySectionNav buddyId="buddy-1" activeTab="memory" />);
+  assert.ok(html.includes('href="/buddies/buddy-1/conversations"'));
+  const memoryLink = html.match(/<a[^>]*href="\/buddies\/buddy-1\/memory"[^>]*>/)?.[0];
+  assert.ok(memoryLink?.includes('aria-current="page"'));
+  assert.ok(html.includes('href="/buddies/buddy-1/settings"'));
 });

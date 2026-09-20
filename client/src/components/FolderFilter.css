@@ -28,7 +28,7 @@
   padding: 4px 10px;
   background: var(--bg-content);
   border: 1px solid var(--border-default);
-  border-radius: 2px;
+  border-radius: var(--ui-radius);
   color: var(--text-primary);
   font-size: 12px;
   outline: none;
@@ -54,7 +54,7 @@
   padding: 4px 12px;
   background: var(--bg-panel); /* Tier 3 */
   border: 1px solid var(--border-subtle);
-  border-radius: 16px;
+  border-radius: var(--ui-radius);
   color: var(--text-secondary);
   font-size: 12px;
   cursor: pointer;
@@ -104,7 +104,7 @@
   padding: 4px 10px;
   background: transparent;
   border: 1px solid var(--border-default);
-  border-radius: 4px;
+  border-radius: var(--ui-radius);
   color: var(--text-secondary);
   font-size: 11px;
   cursor: pointer;
@@ -153,7 +153,7 @@
   padding: 4px 10px;
   background: var(--bg-panel);
   border: 1px solid var(--border-subtle);
-  border-radius: 2px;
+  border-radius: var(--ui-radius);
   color: var(--text-secondary);
   font-size: 12px;
   cursor: pointer;

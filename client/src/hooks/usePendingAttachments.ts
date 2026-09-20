@@ -190,6 +190,8 @@ export interface UsePendingAttachmentsReturn {
   dismissUploadError: () => void;
   removeFile: (absolutePath: string) => void;
   clearFiles: () => void;
+  /** Addressed restore — see useComposerSubmission.ts. */
+  restoreFiles: (conversationId: string, files: PendingFile[]) => void;
   buildContent: (textContent: string) => string;
   handlePaste: (e: React.ClipboardEvent) => Promise<void>;
 }
@@ -281,14 +283,23 @@ export function usePendingAttachments(
       for (const file of prev) if (file.previewUrl) URL.revokeObjectURL(file.previewUrl);
       return EMPTY_PENDING;
     });
-    if (conversationId) {
-      try {
-        localStorage.removeItem(`${PENDING_FILES_KEY_PREFIX}${conversationId}`);
-      } catch {
-        // ignore
-      }
-    }
+    if (conversationId) persistPendingFiles(conversationId, EMPTY_PENDING);
   }, [conversationId]);
+
+  /**
+   * Put `files` back on the conversation they were attached to, and onto the
+   * tray only if that conversation is what is showing. Reloading through
+   * loadStoredPendingFiles is deliberate: clearFiles() already revoked the
+   * object URLs, so the stored form (previewUrl: null) is the only valid one.
+   */
+  const restoreFiles = useCallback(
+    (targetConversationId: string, files: PendingFile[]) => {
+      persistPendingFiles(targetConversationId, files);
+      if (targetConversationId === conversationId)
+        setPendingFiles(loadStoredPendingFiles(targetConversationId));
+    },
+    [conversationId]
+  );
 
   const buildContent = useCallback(
     (textContent: string) => buildAttachedContent(textContent, pendingFiles),
@@ -315,6 +326,7 @@ export function usePendingAttachments(
     dismissUploadError,
     removeFile,
     clearFiles,
+    restoreFiles,
     buildContent,
     handlePaste,
   };

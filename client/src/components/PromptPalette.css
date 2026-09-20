@@ -15,7 +15,7 @@
 .prompt-palette {
   background: var(--bg-panel);
   border: 1px solid var(--bg-hover);
-  border-radius: 12px;
+  border-radius: var(--ui-radius);
   width: 100%;
   max-width: 600px;
   max-height: 400px;
@@ -85,7 +85,7 @@
   border: none;
   background: color-mix(in srgb, var(--danger) 25%, transparent);
   color: var(--accent-error);
-  border-radius: 4px;
+  border-radius: var(--ui-radius);
   cursor: pointer;
   font-size: 14px;
   font-weight: bold;

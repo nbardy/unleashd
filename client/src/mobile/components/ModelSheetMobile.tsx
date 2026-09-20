@@ -108,11 +108,7 @@ export function ModelSheetMobile({
                 <button
                   key={p.id}
                   type="button"
-                  className={
-                    p.id === config.provider
-                      ? 'mobile-sheet__option mobile-sheet__option--selected'
-                      : 'mobile-sheet__option'
-                  }
+                  className="ui-choice mobile-sheet__option"
                   aria-pressed={p.id === config.provider}
                   onClick={() =>
                     apply({
@@ -132,11 +128,7 @@ export function ModelSheetMobile({
                 <div className="mobile-sheet__options">
                   <button
                     type="button"
-                    className={
-                      config.model.mode === 'default'
-                        ? 'mobile-sheet__option mobile-sheet__option--selected'
-                        : 'mobile-sheet__option'
-                    }
+                    className="ui-choice mobile-sheet__option"
                     aria-pressed={config.model.mode === 'default'}
                     onClick={() => apply({ kind: 'set_model', model: { mode: 'default' } })}
                   >
@@ -156,11 +148,7 @@ export function ModelSheetMobile({
                       <button
                         key={m.id}
                         type="button"
-                        className={
-                          selected
-                            ? 'mobile-sheet__option mobile-sheet__option--selected'
-                            : 'mobile-sheet__option'
-                        }
+                        className="ui-choice mobile-sheet__option"
                         aria-pressed={selected}
                         onClick={() => {
                           // Switching to a model that lacks the current effort must
@@ -197,11 +185,7 @@ export function ModelSheetMobile({
                 <div className="mobile-sheet__options">
                   <button
                     type="button"
-                    className={
-                      config.reasoning.mode === 'default'
-                        ? 'mobile-sheet__option mobile-sheet__option--selected'
-                        : 'mobile-sheet__option'
-                    }
+                    className="ui-choice mobile-sheet__option"
                     aria-pressed={config.reasoning.mode === 'default'}
                     onClick={() => apply({ kind: 'set_reasoning', reasoning: { mode: 'default' } })}
                   >
@@ -214,11 +198,7 @@ export function ModelSheetMobile({
                   </button>
                   <button
                     type="button"
-                    className={
-                      config.reasoning.mode === 'disabled'
-                        ? 'mobile-sheet__option mobile-sheet__option--selected'
-                        : 'mobile-sheet__option'
-                    }
+                    className="ui-choice mobile-sheet__option"
                     aria-pressed={config.reasoning.mode === 'disabled'}
                     onClick={() =>
                       apply({ kind: 'set_reasoning', reasoning: { mode: 'disabled' } })
@@ -230,11 +210,7 @@ export function ModelSheetMobile({
                     <button
                       key={effort}
                       type="button"
-                      className={
-                        config.reasoning.mode === 'explicit' && config.reasoning.effort === effort
-                          ? 'mobile-sheet__option mobile-sheet__option--selected'
-                          : 'mobile-sheet__option'
-                      }
+                      className="ui-choice mobile-sheet__option"
                       aria-pressed={
                         config.reasoning.mode === 'explicit' && config.reasoning.effort === effort
                       }

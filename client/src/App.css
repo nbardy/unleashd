@@ -21,6 +21,7 @@ body {
 }
 
 .app {
+  --app-toolbar-height: 56px;
   display: flex;
   height: 100vh;
 }
@@ -52,7 +53,7 @@ body {
 
 ::-webkit-scrollbar-thumb {
   background: var(--border-color);
-  border-radius: 4px;
+  border-radius: var(--ui-radius);
 }
 
 ::-webkit-scrollbar-thumb:hover {
@@ -83,7 +84,7 @@ body {
 .provider-badge {
   display: inline-block;
   padding: 2px 8px;
-  border-radius: 4px;
+  border-radius: var(--ui-radius);
   font-size: 10px;
   font-weight: 600;
   text-transform: uppercase;
@@ -113,4 +114,77 @@ body {
 .provider-badge.provider-worker {
   background: color-mix(in srgb, var(--primary) 20%, transparent);
   color: var(--primary);
+}
+/* Optional recovery for client-mirrored work interrupted by a server restart. */
+.restart-recovery {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin: 0 0 10px;
+  padding: 10px 12px;
+  border: 1px solid color-mix(in srgb, var(--warning) 38%, transparent);
+  border-left: 3px solid var(--warning);
+  border-radius: var(--ui-radius);
+  background: color-mix(in srgb, var(--warning) 9%, var(--bg-panel));
+  color: var(--text-emphasis);
+}
+
+.restart-recovery__copy {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+  font-size: 12px;
+}
+
+.restart-recovery__message {
+  overflow: hidden;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.restart-recovery__count {
+  color: var(--text-secondary);
+}
+
+.restart-recovery__error {
+  color: var(--accent-error);
+}
+
+.restart-recovery__actions {
+  flex-shrink: 0;
+  display: flex;
+  gap: 6px;
+}
+
+.restart-recovery__actions button {
+  padding: 5px 9px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--ui-radius);
+  background: var(--bg-elevated);
+  color: var(--text-emphasis);
+  cursor: pointer;
+}
+
+.restart-recovery__actions button:first-child {
+  border-color: color-mix(in srgb, var(--warning) 60%, var(--border-color));
+}
+
+.restart-recovery__actions button:disabled {
+  cursor: default;
+  opacity: 0.6;
+}
+
+@media (max-width: 700px) {
+  .restart-recovery {
+    align-items: stretch;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .restart-recovery__actions button {
+    flex: 1;
+  }
 }

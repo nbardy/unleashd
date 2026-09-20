@@ -17,6 +17,10 @@
    ============================================================================= */
 
 :root {
+  /* Shared geometry for both shells; circles are reserved for actual indicators. */
+  --ui-radius: 2px;
+  --ui-choice-height: 32px;
+
   /* =========================================
      THEME TOKENS — set by applyPalette().
      Default: Solarized Dark.
@@ -267,13 +271,83 @@ body {
   min-height: 100vh;
 }
 
+.client-error-fallback {
+  box-sizing: border-box;
+  display: flex;
+  min-height: 100vh;
+  max-width: 560px;
+  margin: 0 auto;
+  padding: 48px 24px;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 12px;
+}
+
+.client-error-fallback h1,
+.client-error-fallback p {
+  margin: 0;
+}
+
+.client-error-fallback h1 {
+  font-size: 1.5rem;
+}
+
+.client-error-fallback p {
+  color: var(--text-secondary);
+  line-height: 1.5;
+}
+
+/* `.client-error-fallback p` above is more specific than a bare class, so the
+   message rule has to carry the element too or it renders muted like body copy. */
+.client-error-fallback p.client-error-fallback-message {
+  align-self: stretch;
+  font-family: var(--font-mono);
+  font-size: 0.85rem;
+  color: var(--accent-error);
+  word-break: break-word;
+}
+
+.client-error-fallback-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.client-error-fallback-details {
+  align-self: stretch;
+  min-width: 0;
+  color: var(--text-secondary);
+}
+
+.client-error-fallback-details summary {
+  cursor: pointer;
+  font-size: 0.85rem;
+  padding: 4px 0;
+}
+
+.client-error-fallback-details pre {
+  margin: 4px 0 0;
+  padding: 12px;
+  max-height: 45vh;
+  overflow: auto;
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  background: var(--bg-elevated);
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  word-break: break-word;
+  user-select: text;
+}
+
 h1 {
   font-size: 3.2em;
   line-height: 1.1;
 }
 
 button {
-  border-radius: 8px;
+  border-radius: var(--ui-radius);
   border: 1px solid transparent;
   padding: 0.6em 1.2em;
   font-size: 1em;

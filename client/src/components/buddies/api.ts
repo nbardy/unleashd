@@ -12,6 +12,13 @@ export class BuddyApiError extends Error {
 
 export async function buddyApi<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, init);
+  if (!response.headers.get('content-type')?.includes('application/json')) {
+    throw new BuddyApiError(
+      'This feature is unavailable on the running server. It will retry after the server updates.',
+      response.status,
+      null
+    );
+  }
   const payload = await response.json().catch(() => ({}));
   if (!response.ok) {
     throw new BuddyApiError(

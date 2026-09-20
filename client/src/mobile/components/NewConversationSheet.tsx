@@ -1,11 +1,12 @@
+import { type ConversationConfig, createDefaultConversationConfig } from '@unleashd/shared';
 import { useAtomValue } from 'jotai';
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useLocation, useNavigate } from 'react-router-dom';
 import { defaultCwdAtom, recentDirectoriesAtom, wsStatusAtom } from '../../atoms/conversations';
 import { lastWorkingDirectoryAtom } from '../../atoms/ui';
-import { createDefaultDraft } from '../../domain/conversation-config-draft';
 import { useProviderCatalog } from '../../hooks/useProviderCatalog';
 import { normalizeFolderDirectory } from '../../utils/directories';
+import { mobileConversationRouteState } from '../../utils/conversation-route-state';
 import { type MobileCreateKind, createFromRequest } from '../atoms/create';
 
 /**
@@ -40,6 +41,8 @@ export function NewConversationSheet({
   onClose: () => void;
 }) {
   const navigate = useNavigate();
+  const location = useLocation();
+  const chatRouteState = useMemo(() => mobileConversationRouteState(location), [location]);
   const recentDirectories = useAtomValue(recentDirectoriesAtom);
   const lastWorkingDirectory = useAtomValue(lastWorkingDirectoryAtom);
   const defaultCwd = useAtomValue(defaultCwdAtom);
@@ -78,14 +81,12 @@ export function NewConversationSheet({
         kind,
         workingDirectory: resolvedDirectory,
         // Catalog-derived default; 'claude' fallback matches shared DEFAULT_PROVIDER.
-        config: createDefaultDraft(
-          (catalog?.providers[0]?.id ?? 'claude') as ReturnType<
-            typeof createDefaultDraft
-          >['provider']
+        config: createDefaultConversationConfig(
+          (catalog?.providers[0]?.id ?? 'claude') as ConversationConfig['provider']
         ),
       });
       onClose();
-      navigate(`/chat/${conversationId}`);
+      navigate(`/chat/${conversationId}`, { state: chatRouteState });
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : String(cause));
       setBusy(false);

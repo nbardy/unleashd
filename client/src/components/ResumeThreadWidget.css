@@ -1,123 +1,63 @@
-/* ResumeThreadWidget — compact banner that links a forked thread back to its source. */
-
+/* Fork lineage lives in the header; details appear on hover or focus. */
 .resume-thread-widget {
-  display: flex;
-  align-items: center;
-  min-height: 44px;
-  gap: 10px;
-  padding: 7px 9px 7px 10px;
-  border: 1px solid color-mix(in srgb, var(--border-subtle) 78%, transparent);
-  border-left: 3px solid color-mix(in srgb, var(--meta) 62%, transparent);
-  border-radius: 4px;
-  background: color-mix(in srgb, var(--bg-panel) 52%, transparent);
+  position: relative;
+  display: inline-flex;
+  flex-shrink: 0;
 }
 
-.resume-thread-widget__icon {
-  flex-shrink: 0;
+.resume-thread-widget__trigger {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
-  border-radius: 50%;
-  background: color-mix(in srgb, var(--meta) 13%, transparent);
-  color: var(--meta);
-}
-
-.resume-thread-widget__body {
-  min-width: 0;
-  flex: 1;
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.resume-thread-widget__title {
-  display: flex;
-  align-items: baseline;
-  gap: 5px;
-  color: var(--text-primary);
-  font-size: 12px;
-  white-space: nowrap;
-}
-
-.resume-thread-widget__title span {
-  color: var(--text-secondary);
-}
-
-.resume-thread-widget__title a {
-  color: var(--meta);
-  font-family: var(--font-mono);
-  font-weight: 650;
-  text-decoration: none;
-}
-
-.resume-thread-widget__title a:hover {
-  text-decoration: underline;
-}
-
-.resume-thread-widget__meta {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
+  width: 26px;
+  height: 26px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--ui-radius);
+  background: transparent;
   color: var(--text-muted);
-  font-size: 11px;
+  cursor: pointer;
 }
 
-.resume-thread-widget__provider {
-  display: inline-flex;
-  align-items: center;
-  padding: 1px 6px;
-  border-radius: 3px;
-  font-size: 9px;
-  font-weight: 650;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  background: color-mix(in srgb, var(--meta) 12%, transparent);
-  color: var(--meta);
+.resume-thread-widget__trigger:hover,
+.resume-thread-widget__trigger:focus-visible {
+  color: var(--text-primary);
+  background: var(--bg-hover);
 }
 
-.resume-thread-widget__folder {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.resume-thread-widget__trigger:focus-visible {
+  outline: 1px solid var(--text-secondary);
+  outline-offset: 2px;
 }
 
-.resume-thread-widget__link {
-  flex-shrink: 0;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 3px;
-  padding: 5px 6px 5px 9px;
-  border-radius: 3px;
-  border: 1px solid transparent;
+.resume-thread-widget__tooltip {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  z-index: 100;
+  display: none;
+  flex-direction: column;
+  gap: 5px;
+  width: max-content;
+  max-width: min(300px, 80vw);
+  padding: 10px 12px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--ui-radius);
+  background: var(--bg-card);
+  box-shadow: 0 4px 12px rgb(0 0 0 / 18%);
   color: var(--text-secondary);
-  text-decoration: none;
   font-size: 11px;
-  font-weight: 600;
-  transition: color 0.15s ease, background 0.15s ease, border-color 0.15s ease;
+  font-weight: 400;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
 }
 
-.resume-thread-widget__link:hover {
-  color: var(--meta);
-  border-color: color-mix(in srgb, var(--meta) 28%, transparent);
-  background: color-mix(in srgb, var(--meta) 8%, transparent);
+.resume-thread-widget__tooltip strong {
+  color: var(--text-primary);
+  font-weight: 500;
 }
 
-@media (max-width: 700px) {
-  .resume-thread-widget__body {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 2px;
-  }
-
-  .resume-thread-widget__folder {
-    max-width: 40vw;
-  }
-
-  .resume-thread-widget__link span {
-    display: none;
-  }
+.resume-thread-widget:hover .resume-thread-widget__tooltip,
+.resume-thread-widget:focus-within .resume-thread-widget__tooltip {
+  display: flex;
 }

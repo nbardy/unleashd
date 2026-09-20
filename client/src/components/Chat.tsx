@@ -32,6 +32,7 @@ import { forkConversation } from '../atoms/fork-actions';
 import { allMergeChildrenSettledAtomFamily } from '../atoms/mergeAtoms';
 import type { BuddyContext } from '../atoms/pending-creations';
 import { markMessagesSeen, setSavedActiveConversationId } from '../atoms/ui';
+import { useComposerSubmission } from '../hooks/useComposerSubmission';
 import { useConversationDraft } from '../hooks/useConversationDraft';
 import { usePendingAttachments } from '../hooks/usePendingAttachments';
 import { useProviderCatalog } from '../hooks/useProviderCatalog';
@@ -164,28 +165,26 @@ export function Chat() {
   const [showPalette, setShowPalette] = useState(false);
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
   const [detailLoadError, setDetailLoadError] = useState<string | null>(null);
-  const [submissionError, setSubmissionError] = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const lastMessageRef = useRef<HTMLDivElement>(null);
 
   // Portable draft persistence — same hook mobile uses (localStorage `draft:{id}`).
   // Handles debounced save, flush on pagehide/visibility/HMR, and focus restore
   // without stale-closure bug (refs only).
-  const {
-    setDraft: setDraftValue,
-    clear: clearDraftValue,
-    getDraft: getDraftValue,
-  } = useConversationDraft({
+  const draft = useConversationDraft({
     conversationId: id,
     textareaRef,
     maxHeight: 300,
     autoFocus: true,
-    onDraftLoaded: (draft) => setHasInput(draft.trim().length > 0),
+    onDraftLoaded: (value) => setHasInput(value.trim().length > 0),
+    onDraftChange: (value) => setHasInput(value.trim().length > 0),
   });
+  const { setDraft: setDraftValue } = draft;
 
   // Shared attachment lifecycle — same hook mobile ComposerMobile uses so
   // pending files survive refresh, framing is identical, and upload goes
   // through one path (POST /api/upload). See hooks/usePendingAttachments.ts.
+  const attachments = usePendingAttachments(id);
   const {
     pendingFiles,
     isUploading,
@@ -193,10 +192,16 @@ export function Chat() {
     uploadError,
     dismissUploadError,
     removeFile: removePendingFile,
-    clearFiles: clearPendingFiles,
-    buildContent: buildAttachedContent,
     handlePaste: handlePasteFromHook,
-  } = usePendingAttachments(id);
+  } = attachments;
+
+  // One send path, shared with mobile. Owns take/clear/deliver/restore and the
+  // rejection message; see hooks/useComposerSubmission.ts.
+  const {
+    submit,
+    error: submissionError,
+    setError: setSubmissionError,
+  } = useComposerSubmission(id, draft, attachments);
 
   const confirmed = conversation?.confirmed ?? false;
   // Persistent Builder identity — canonical kind, never the transient
@@ -293,24 +298,10 @@ export function Chat() {
 
   const scrollToBottomRef = useRef<(() => void) | null>(null);
 
-  const getInputValue = () => getDraftValue() || textareaRef.current?.value || '';
-
-  const clearComposerText = () => {
-    clearDraftValue();
-    setHasInput(false);
-  };
-
+  // setDraft auto-heights the textarea and reports hasInput via onDraftChange.
   const handleInput = () => {
     const textarea = textareaRef.current;
-    if (!textarea) return;
-
-    textarea.style.height = 'auto';
-    textarea.style.height = `${Math.min(textarea.scrollHeight, 300)}px`;
-    const value = textarea.value;
-    setDraftValue(value);
-
-    const has = value.trim().length > 0;
-    if (has !== hasInput) setHasInput(has);
+    if (textarea) setDraftValue(textarea.value);
   };
 
   // Delegate to shared hook — same framing as mobile so paste in either
@@ -367,7 +358,7 @@ export function Chat() {
     }
     setThreadCopied(true);
     setTimeout(() => setThreadCopied(false), 2000);
-  }, [threadCopyText]);
+  }, [threadCopyText, setSubmissionError]);
 
   // Chat "Fork": new conversation + resumedFromConversationId + draft context.
   // Does not call CLI --fork / emulateFork. That is merge-only
@@ -472,47 +463,11 @@ export function Chat() {
   // Optimistic send: the server only acknowledges after ensureReady plus
   // turn-spawn setup, which can take seconds on a loaded box. Gating the
   // textbox and Send button on that round trip froze the composer with no
-  // feedback. The text clears immediately (clear() is synchronous on both the
-  // draft ref and the textarea, so a second Enter reads empty and cannot
-  // double-send); the queue strip carries the in-flight state instead. A
-  // rejection restores the text — see message-command-ack.test.ts. Pending
-  // files stay in the tray until the ack so a failure keeps them.
-  const handleQueue = async () => {
-    const textContent = getInputValue().trim();
-    if ((!textContent && pendingFiles.length === 0) || !id || !canInput) return;
-
-    const content = buildAttachedContent(textContent);
-
-    clearComposerText();
-    setSubmissionError(null);
-    try {
-      await queueMessage(id, content);
-      clearPendingFiles();
-    } catch (error) {
-      setDraftValue(textContent);
-      setHasInput(textContent.length > 0);
-      setSubmissionError(error instanceof Error ? error.message : String(error));
-    }
-  };
-
-  const handleInterrupt = async () => {
-    const textContent = getInputValue().trim();
-    if ((!textContent && pendingFiles.length === 0) || !id || !confirmed) return;
-
-    const content = buildAttachedContent(textContent);
-
-    clearComposerText();
-    setSubmissionError(null);
-    try {
-      await interruptAndSend(id, content);
-      clearPendingFiles();
-    } catch (error) {
-      setDraftValue(textContent);
-      setHasInput(textContent.length > 0);
-      setSubmissionError(error instanceof Error ? error.message : String(error));
-    }
-  };
-
+  // feedback, so the composer empties on submit and the queue strip carries
+  // the in-flight state. Admission (`confirmed`, mergeGateBlocking) is enforced
+  // at the two entry points below — the Send button and handleKeyDown.
+  const handleQueue = () => submit(queueMessage);
+  const handleInterrupt = () => submit(interruptAndSend);
   const handleSend = handleQueue;
 
   const handleRemoveFromQueue = (messageId: string) => {
@@ -545,7 +500,7 @@ export function Chat() {
   };
 
   const handleSavePrompt = () => {
-    const content = getInputValue().trim();
+    const content = draft.getDraft().trim();
     if (content) savePrompt(content);
   };
 
@@ -687,6 +642,10 @@ export function Chat() {
           >
             {dirDisplay}
           </Link>
+          {/* One home for context usage: beside the folder, for buddy and plain
+              threads alike. It used to live inside BuddyConvoHeader for buddy
+              conversations, so the same number sat in two different places. */}
+          <ContextBreakdownMeter conversationId={conversation.id} />
           {timeAgo && <span className="chat-time-ago">{timeAgo}</span>}
           {conversation.resumedFromConversationId && (
             <ResumeThreadWidget
@@ -698,7 +657,6 @@ export function Chat() {
             <span className="buddy-helper-kicker buddy-helper-kicker--header">Buddy Builder</span>
           )}
         </div>
-        {!buddyContext && <ContextBreakdownMeter conversationId={conversation.id} />}
         <div className="header-status">
           <button
             type="button"
@@ -784,9 +742,7 @@ export function Chat() {
 
       {conversation.messages.length === 0 ? (
         <div className="messages-container">
-          {buddyContext && (
-            <BuddyConvoHeader context={buddyContext} conversationId={conversation.id} />
-          )}
+          {buddyContext && <BuddyConvoHeader context={buddyContext} />}
           {visibleSwarmDebugPrefix && (
             <div style={{ paddingBottom: '24px' }}>
               <SwarmConvoPrefix

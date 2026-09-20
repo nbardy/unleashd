@@ -1,46 +1,19 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import type { BuddyContext } from '../atoms/pending-creations';
+import { useBuddyDetailData } from '../hooks/useBuddyData';
 import './BuddyConvoHeader.css';
 
-interface BuddyHeaderRecord {
-  buddy?: { id: string; name?: string; role?: string };
-  projects?: Array<{
-    id: string;
-    title?: string;
-    status?: string;
-    todos?: Array<{ status?: string }>;
-  }>;
-  workspaces?: Array<{ id: string; name?: string }>;
-}
-
 export function BuddyConvoHeader({ context }: { context: BuddyContext }) {
-  const [record, setRecord] = useState<BuddyHeaderRecord | null>(null);
+  // Same `buddy-detail:` entry the Buddy page reads, so "Open employee →"
+  // lands on a page that is already in cache. The local response type this
+  // header used to declare was a third shape for the same payload.
+  const { data } = useBuddyDetailData(context.buddyId);
+  const record = data?.employee;
   const [expanded, setExpanded] = useState(false);
 
-  useEffect(() => {
-    let cancelled = false;
-    fetch(`/api/buddies/${encodeURIComponent(context.buddyId)}`)
-      .then(async (response) => {
-        if (!response.ok) throw new Error(`HTTP ${response.status}`);
-        return (await response.json()) as BuddyHeaderRecord;
-      })
-      .then((payload) => {
-        if (!cancelled) setRecord(payload);
-      })
-      .catch(() => {
-        if (!cancelled) setRecord({});
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [context.buddyId]);
-
-  const project = useMemo(
-    () => record?.projects?.find((candidate) => candidate.id === context.buddyProjectId),
-    [context.buddyProjectId, record?.projects]
-  );
-  const workspace = record?.workspaces?.find((candidate) => candidate.id === context.workspaceId);
+  const project = record?.projects.find((candidate) => candidate.id === context.buddyProjectId);
+  const workspace = record?.workspaces.find((candidate) => candidate.id === context.workspaceId);
   const todos = project?.todos ?? [];
   const doneTodos = todos.filter((todo) => todo.status === 'done').length;
 
@@ -54,7 +27,7 @@ export function BuddyConvoHeader({ context }: { context: BuddyContext }) {
       >
         <span className="buddy-convo-header__mark">BUDDY</span>
         <span className="buddy-convo-header__identity">
-          <strong>{record?.buddy?.name ?? 'Buddy'}</strong>
+          <strong>{record?.buddy.name ?? 'Buddy'}</strong>
           <span>·</span>
           <span>{workspace?.name ?? 'Workspace'}</span>
         </span>
@@ -71,7 +44,7 @@ export function BuddyConvoHeader({ context }: { context: BuddyContext }) {
       </button>
       {expanded && (
         <div className="buddy-convo-header__details">
-          <span>{record?.buddy?.role ?? 'Persistent employee conversation'}</span>
+          <span>{record?.buddy.role ?? 'Persistent employee conversation'}</span>
           <Link to={`/buddies/${context.buddyId}`}>Open employee →</Link>
         </div>
       )}

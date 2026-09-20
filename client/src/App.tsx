@@ -3,6 +3,7 @@ import { type ComponentType, type ReactElement, useCallback, useEffect, useRef }
 import { BrowserRouter, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { handleMessage, setSendFn, setWsStatus } from './atoms/actions';
 import { allConversationsAtom, conversationsAtom } from './atoms/conversations';
+import { startConversationPrefetch } from './atoms/prefetch';
 import { jotaiStore } from './atoms/store';
 import { savedActiveConversationIdAtom } from './atoms/ui';
 import { BuddiesDashboard } from './components/BuddiesDashboard';
@@ -18,6 +19,7 @@ import { ShellMobile } from './mobile/components/ShellMobile';
 import { type DeviceKind, useDeviceKind } from './mobile/hooks/useDeviceKind';
 import { initSettings } from './stores/settingsStore';
 import './App.css';
+import './components/buddies/BuddyDetail.css';
 
 // =============================================================================
 // κ: location.protocol → ws:// | wss://  (exhaustive D3, no silent fallback)
@@ -50,6 +52,12 @@ function useWebSocketBridge() {
   useEffect(() => {
     setWsStatus(status);
   }, [status]);
+
+  // Warm recent chat history once the server reports its load complete, so
+  // navigating between conversations reads the local store instead of waiting
+  // on a round trip. Lives beside the socket because that is where "the
+  // snapshot has landed" is known; the work itself is idle-scheduled.
+  useEffect(() => startConversationPrefetch(), []);
 }
 
 /**
@@ -122,6 +130,7 @@ function useRestoreOnLoad(device: DeviceKind) {
 // =============================================================================
 type RouteDef = { path: string; desktop: () => ReactElement; mobile: () => ReactElement };
 
+import { BuddyWorkspaceActivity } from './components/buddies/BuddyWorkspaceActivity';
 import { BuddiesMobile } from './mobile/buddies/BuddiesMobile';
 import { BuddyDetailMobile } from './mobile/buddies/BuddyDetailMobile';
 import { ChatMobile } from './mobile/conversations/ChatMobile';
@@ -139,6 +148,11 @@ const ROUTES: RouteDef[] = [
   },
   { path: '/chat/:id', desktop: () => <Chat />, mobile: () => <ChatMobile /> },
   { path: '/buddies', desktop: () => <BuddiesDashboard />, mobile: () => <BuddiesMobile /> },
+  {
+    path: '/buddies/workspaces/:workspaceId',
+    desktop: () => <BuddyWorkspaceActivity />,
+    mobile: () => <BuddyWorkspaceActivity />,
+  },
   {
     path: '/buddies/:buddyId',
     desktop: () => <BuddiesDashboard />,

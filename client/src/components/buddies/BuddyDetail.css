@@ -1,0 +1,203 @@
+.buddy-detail-nav {
+  display: flex;
+  align-items: stretch;
+  gap: 24px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.buddy-detail-nav > a,
+.buddy-detail-nav__more > summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-height: 44px;
+  border-bottom: 2px solid transparent;
+  color: var(--text-muted);
+  text-decoration: none;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  list-style: none;
+}
+.buddy-detail-nav [aria-current] {
+  color: var(--text-bright);
+  border-bottom-color: var(--accent-primary);
+}
+.buddy-detail-nav__more {
+  position: relative;
+  margin-left: auto;
+}
+.buddy-detail-nav__more > summary::-webkit-details-marker {
+  display: none;
+}
+.buddy-detail-nav__menu {
+  position: absolute;
+  right: 0;
+  top: 100%;
+  z-index: 10;
+  width: 190px;
+  padding: 6px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--ui-radius);
+  background: var(--bg-raised-1);
+  box-shadow: 0 8px 24px #0003;
+}
+.buddy-detail-nav__menu a {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 12px;
+  color: var(--text-secondary);
+  text-decoration: none;
+  font-size: 13px;
+  border-radius: var(--ui-radius);
+}
+.buddy-detail-nav__menu a:hover {
+  background: var(--bg-raised-2);
+}
+.buddy-thread-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.buddy-thread-list > li + li {
+  border-top: 1px solid var(--border-subtle);
+}
+.buddy-thread-list__row {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 16px 28px 16px 0;
+  text-decoration: none;
+  min-width: 0;
+}
+.buddy-thread-list__row:hover {
+  background: var(--bg-raised-1);
+}
+.buddy-thread-list__row[aria-disabled] {
+  opacity: 0.5;
+}
+.buddy-thread-list__title {
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow-wrap: anywhere;
+  color: var(--text-bright);
+  font-size: 16px;
+  font-weight: 500;
+  line-height: 1.45;
+}
+.buddy-thread-list__meta {
+  display: flex;
+  gap: 10px;
+  color: var(--text-secondary);
+  font-size: 11px;
+}
+.buddy-thread-list__running {
+  color: var(--accent-primary);
+}
+.buddy-thread-list__running::before {
+  content: "●";
+  margin-right: 5px;
+  font-size: 8px;
+}
+.buddy-thread-list__arrow {
+  position: absolute;
+  right: 2px;
+  top: 18px;
+  color: var(--text-muted);
+  font-size: 14px;
+}
+.buddy-thread-list__empty {
+  padding: 24px 0;
+  color: var(--text-muted);
+  font-size: 14px;
+}
+.buddy-detail-nav a:focus-visible,
+.buddy-detail-nav summary:focus-visible,
+.buddy-thread-list__row:focus-visible {
+  outline: 2px solid var(--accent-primary);
+  outline-offset: 3px;
+}
+
+.buddy-detail-about > summary {
+  display: flex;
+  align-items: center;
+  min-height: 36px;
+  color: var(--text-secondary);
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.buddy-memory-workspace {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+.buddy-memory-workspace > label {
+  display: grid;
+  gap: 6px;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+.buddy-memory-workspace > label select {
+  width: 100%;
+  min-width: 0;
+  min-height: 44px;
+  padding: 8px 12px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--ui-radius);
+  background: var(--bg-raised-1);
+  color: var(--text-emphasis);
+  font: inherit;
+  font-size: 16px;
+}
+.buddy-memory-workspace > p {
+  color: var(--text-secondary);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.buddy-work-disclosure {
+  border-bottom: 1px solid var(--border-subtle);
+}
+.buddy-work-disclosure > summary {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  position: relative;
+  padding: 18px 28px 18px 0;
+  min-height: 44px;
+  cursor: pointer;
+  list-style: none;
+}
+.buddy-work-disclosure > summary::-webkit-details-marker {
+  display: none;
+}
+.buddy-work-disclosure > summary strong {
+  color: var(--text-bright);
+  font-size: 16px;
+  font-weight: 500;
+}
+.buddy-work-disclosure > summary span {
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+.buddy-work-disclosure > summary::after {
+  content: "+";
+  position: absolute;
+  right: 0;
+  top: 18px;
+  color: var(--text-secondary);
+}
+.buddy-work-disclosure[open] > summary::after {
+  content: "−";
+}
+.buddy-work-history > summary {
+  padding: 16px 0;
+  min-height: 44px;
+  color: var(--text-secondary);
+  font-size: 13px;
+  cursor: pointer;
+}

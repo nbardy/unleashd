@@ -1,4 +1,11 @@
-import { NavLink, Outlet, useLocation } from 'react-router-dom';
+import { useAtomValue } from 'jotai';
+import { NavLink, Outlet, matchPath, useLocation } from 'react-router-dom';
+import { conversationAtomFamily } from '../../atoms/conversations';
+import {
+  mobilePrimarySectionForPath,
+  resolveMobileConversationDestination,
+  type MobilePrimarySection,
+} from '../../utils/conversation-route-state';
 import { useKeyboardInset } from '../hooks/useKeyboardInset';
 import '../styles/mobile.css';
 import '../styles/mobile-ui.css';
@@ -14,6 +21,7 @@ import '../styles/mobile-swarm.css';
  */
 
 type TabDef = {
+  section: MobilePrimarySection;
   label: string;
   to: string;
   end?: boolean;
@@ -24,14 +32,29 @@ type TabDef = {
 // Tabs map to the RouteTable leaves (§3). Chats is the non-worker inbox at "/".
 // Search lives at /search (query param variant is handled inside SearchMobile).
 const TABS: readonly TabDef[] = [
-  { label: 'Chats', to: '/', end: true, icon: '◈', ariaLabel: 'Chats' },
-  { label: 'Swarms', to: '/workers', icon: '⬡', ariaLabel: 'Swarms' },
-  { label: 'Buddies', to: '/buddies', icon: '◎', ariaLabel: 'Buddies' },
-  { label: 'Search', to: '/search', icon: '⌕', ariaLabel: 'Search' },
+  { section: 'chats', label: 'Chats', to: '/', end: true, icon: '◈', ariaLabel: 'Chats' },
+  {
+    section: 'swarms',
+    label: 'Swarms',
+    to: '/workers',
+    icon: '⬡',
+    ariaLabel: 'Swarms',
+  },
+  {
+    section: 'buddies',
+    label: 'Buddies',
+    to: '/buddies',
+    icon: '◎',
+    ariaLabel: 'Buddies',
+  },
+  { section: 'search', label: 'Search', to: '/search', icon: '⌕', ariaLabel: 'Search' },
 ] as const;
 
 export function ShellMobile() {
-  const { pathname } = useLocation();
+  const location = useLocation();
+  const { pathname } = location;
+  const chatId = matchPath('/chat/:id', pathname)?.params.id ?? '';
+  const conversation = useAtomValue(conversationAtomFamily(chatId));
   // Two layout modes, and they are genuinely different documents:
   //   - list routes scroll as a page (content taller than the shell)
   //   - the conversation route is a fixed-height PANE that scrolls internally,
@@ -40,6 +63,9 @@ export function ShellMobile() {
   // the composer ended up thousands of pixels below the tab bar. See the layout
   // contract in ConversationView.tsx.
   const isPaneRoute = pathname.startsWith('/chat/');
+  const activeSection = isPaneRoute
+    ? resolveMobileConversationDestination(location.state, conversation).section
+    : mobilePrimarySectionForPath(pathname);
   // Publishes --mobile-keyboard-inset and tells us when the keyboard is up, so
   // the shell can shrink to the visual viewport and hand that space to the
   // composer instead of leaving it under the keyboard.
@@ -61,8 +87,9 @@ export function ShellMobile() {
             to={tab.to}
             end={tab.end}
             aria-label={tab.ariaLabel}
-            className={({ isActive }) =>
-              isActive ? 'mobile-tab mobile-tab--active' : 'mobile-tab'
+            aria-current={activeSection === tab.section ? 'page' : undefined}
+            className={
+              activeSection === tab.section ? 'mobile-tab mobile-tab--active' : 'mobile-tab'
             }
           >
             <span className="mobile-tab__icon" aria-hidden="true">
