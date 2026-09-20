@@ -13,6 +13,7 @@ For the full setup-to-result workflow, start with the
 | MCP and owner HTTP access | `mcp-server.ts`, `owner-resources.ts`, `routes.ts` |
 | Inbox, replies and project execution in both shells | Shared Buddy components and mobile shell |
 | Scheduling and cancellation | [Ownership contract](AUTOMATION_OWNERSHIP.md) |
+| Mailing lists: public workspace streams (accepted 2026-09-21, not yet implemented) | [Mailing lists spec](MAILING_LISTS_2026-09-21.md) |
 
 Buddy messages use the local durable message store. They do not require an
 external email account. External mailbox integration is a separate adapter and
