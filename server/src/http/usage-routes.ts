@@ -307,6 +307,26 @@ function parseCodexTokenTotals(filePath: string): { input: number; output: numbe
 }
 
 /**
+ * Recover a codex session id from its rollout filename.
+ *
+ * Codex writes `rollout-<timestamp>-<sessionId>.jsonl`, and has used two
+ * timestamp shapes (`...T11-22-44-` and an older `...T11-14-43-024Z-`).
+ * Stripping only the extension left the whole `rollout-<timestamp>-` prefix
+ * glued to the id, so UsagePanel's `sessionId.slice(0, 8)` rendered the
+ * literal string "rollout-" for EVERY codex row instead of its id. Anchoring
+ * on the trailing UUID resolves both shapes; a bare `<sessionId>.jsonl` (the
+ * form `findCodexSessionFile` also accepts) passes through unchanged.
+ */
+const CODEX_ROLLOUT_NAME =
+  /^rollout-.+-([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$/;
+
+export function codexSessionIdFromFilename(fileName: string): string {
+  const base = fileName.replace(/\.jsonl$/, '');
+  const rollout = base.match(CODEX_ROLLOUT_NAME);
+  return rollout ? rollout[1] : base;
+}
+
+/**
  * Locate a codex rollout by session id. Exported so the context reader
  * (conversations/session-context.ts) asks the same question one way: that file
  * carries BOTH the cumulative totals this module bills from and the
@@ -549,7 +569,7 @@ export function registerUsageRoutes(app: Express, providerNames: readonly Provid
               // Only parse for usage if within the query window
               if (dateMs < cutoffMs) continue;
 
-              const sessionId = file.replace('.jsonl', '');
+              const sessionId = codexSessionIdFromFilename(file);
               let inputTokens = 0;
               let outputTokens = 0;
 
