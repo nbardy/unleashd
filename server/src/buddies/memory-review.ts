@@ -9,25 +9,35 @@ import { MEMORY_REVIEW_TOOLS, type MemoryReviewTool } from './memory-review-tool
 
 /** One reviewer launch identity. Recorded on the receipt, so a fallback is data, never a silent swap. */
 export interface MemoryReviewModelChoice {
-  readonly harness: 'codex' | 'muse';
+  readonly harness: 'codex' | 'muse' | 'claude';
   readonly model: string;
   readonly reasoningEffort: string;
 }
 
 /**
- * Ordered reviewer ladder. Entry 0 is the intended reviewer; a later entry runs
- * ONLY when the previous one ended with the provider's credit-exhaustion reason
- * (`out_of_tokens`). Codex Luna credits ran out on 2026-09-16 and every
+ * Ordered reviewer ladder. Entry 0 is the intended reviewer; each later entry
+ * runs ONLY when the previous one ended with the provider's credit-exhaustion
+ * reason (`out_of_tokens`). Codex Luna credits ran out on 2026-09-16 and every
  * background review failed from then on — 395 receipts reading
  * `Memory reviewer exited: out_of_tokens (1)` — so Buddy memory stopped being
- * curated while the product looked healthy. Muse bills a different provider, so
- * it is a real fallback rather than a retry of the same empty balance.
+ * curated while the product looked healthy.
+ *
+ * Every rung bills a DIFFERENT provider, which is the whole point: retrying the
+ * same empty balance answers nothing. Order is deliberate:
+ *   0. Luna — the reviewer the curation benchmark is calibrated on.
+ *   1. Muse — separate Meta billing, so it competes with nothing else here.
+ *   2. Claude — last on purpose. It shares the quota that foreground Buddy
+ *      sessions run on, and starving live work to curate memory in the
+ *      background is a worse trade than a late review.
+ * Only harnesses with fail-closed required MCP can host a reviewer, which rules
+ * out gemini and cursor (`mcpCapability: 'none'`) and opencode (`'inject'`).
  */
 export const MEMORY_REVIEW_MODELS: readonly MemoryReviewModelChoice[] = [
   { harness: 'codex', model: 'gpt-5.6-luna', reasoningEffort: 'low' },
   // Deliberately the non-contributor build: contributor variants may train on
   // what they read, and a reviewer reads the whole Buddy transcript.
   { harness: 'muse', model: 'muse-spark-1.3', reasoningEffort: 'low' },
+  { harness: 'claude', model: 'sonnet', reasoningEffort: 'low' },
 ];
 
 export const MEMORY_REVIEW_MODEL = MEMORY_REVIEW_MODELS[0].model;

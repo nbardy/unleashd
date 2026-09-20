@@ -140,14 +140,28 @@ review with reasoning effort `low`, after shared CLI process exit **and** normal
 event drain. Failed, cancelled and ordinary non-Buddy turns do not queue reviews.
 The snapshot is taken before completion listeners can start another work turn.
 
-### The reviewer ladder (why there is a second model)
+### The reviewer ladder (why there is more than one model)
 
 `MEMORY_REVIEW_MODELS` in `memory-review.ts` is an ordered list, not a single
-constant. Entry 0 is Luna; entry 1 is `muse-spark-1.3` on the muse harness, and
-it runs **only** when the previous entry ends with the provider's
+constant. Each rung runs **only** when the previous one ends with the provider's
 credit-exhaustion reason (`out_of_tokens`). Any other failure — a tool violation,
 a crash, "model is at capacity" — ends the review on the model that hit it,
-because a second provider cannot fix those and would just double the spend.
+because another provider cannot fix those and would just multiply the spend.
+
+| # | Harness | Model | Why here |
+|---|---|---|---|
+| 0 | codex | `gpt-5.6-luna` | The reviewer the curation benchmark is calibrated on. |
+| 1 | muse | `muse-spark-1.3` | Separate Meta billing; competes with nothing else in the product. |
+| 2 | claude | `sonnet` | Last on purpose — it shares the quota foreground Buddy sessions run on. |
+
+Every rung bills a **different provider**; that is the invariant that makes the
+ladder mean anything, and `buddy-memory-review.test.ts` asserts the harnesses are
+distinct. Claude is deliberately last: starving live Buddy work to curate memory
+in the background is a worse trade than a late review.
+
+Only a harness with fail-closed required MCP can host a reviewer, so the
+candidate set is small — `gemini` and `cursor` are `mcpCapability: 'none'` and
+`opencode` is `'inject'`, leaving codex, muse and claude as the only options.
 
 This exists because credit exhaustion was invisible. Luna credits ran out on
 2026-09-16 and every background review failed from then on: 395 receipts under
@@ -158,15 +172,22 @@ fallback now also logs through `console.warn`, which the error journal captures
 (`pnpm errors:list`), so an exhausted primary stays visible even though the review
 lands.
 
-Two things about the fallback are load-bearing and easy to break:
+Things about the fallbacks that are load-bearing and easy to break:
 
 - **Muse 1.3, never `muse-spark-1.3-contributor`** (which is muse's own default).
   Contributor builds may train on what they read, and a reviewer reads the entire
   Buddy transcript.
-- **The curation contract rides in the prompt for muse.** Codex takes it as a
-  separate `model_instructions_file`; `muse exec` has no counterpart, so the
+- **Each harness delivers the curation contract differently.** Codex takes it as
+  a separate `model_instructions_file`; claude takes it as a real
+  `--system-prompt`; `muse exec` has no counterpart at all, so for muse the
   instructions are prepended ahead of the evidence, which stays fenced behind its
-  `EVIDENCE_JSON:` marker. Drop that and the fallback reviews with no rules.
+  `EVIDENCE_JSON:` marker. Drop that and the muse rung reviews with no rules.
+- **Claude's `--allowedTools` governs approval, not availability.** Measured on
+  Claude Code 2.1.267: an allow-listed run still called `ToolSearch` before the
+  MCP tool, which the event guard correctly reads as a non-memory tool and kills
+  the review over. `--disallowedTools` denies the built-ins by name, leaving
+  exactly one `tool.use` on the wire, so that rung needs no guard exception.
+  `--setting-sources ''` is claude's `--ignore-user-config`/`--ignore-rules`.
 
 The muse event guard has its own trap. Muse emits three `tool.use`-shaped records
 per MCP call — measured on Muse Code 1.3.0: `model.meta.response` (model step
@@ -179,11 +200,40 @@ first model step.
 
 Receipts record what actually ran: `model`/`reasoningEffort` name the attempt that
 performed the writes (and supply their provenance), and `fallbackFrom` names the
-model whose credits ran out. Verified end to end on 2026-09-20 against the real
-`muse` binary with Luna genuinely out of credits — the review fell back, wrote
-working + long-term + one note, left the soul untouched under a quoted
-prompt-injection line, and correctly wrote nothing on a follow-up turn with no new
-learning.
+model whose credits ran out.
+
+Verified end to end, not just in fakes:
+
+- **Rung 1 (muse)**, 2026-09-20 against the real `muse` binary with Luna genuinely
+  out of credits — the review fell back, wrote working + long-term + one note,
+  left the soul untouched under a quoted prompt-injection line, and correctly
+  wrote nothing on a follow-up turn with no new learning.
+- **Rung 2 (claude)**, 2026-09-21, by forcing both providers above it to report
+  exhaustion (`UNLEASHD_LIVE_MEMORY_REVIEW_LADDER=1`, the live test in
+  `buddy-memory-review.test.ts`). The last rung is the one that can never be
+  exercised on demand, so it is worth spending the quota to know it works before
+  the day both providers are actually empty.
+
+### Why there is no credit pre-check
+
+Codex writes a `rate_limits` record into its session JSONL carrying
+`credits.has_credits`, `credits.balance`, `primary.used_percent` and `resets_at`,
+so "check the balance before launching" looks available. It is not trustworthy as
+a gate, for two independent reasons measured on 2026-09-21:
+
+- **It reads false when things are fine.** With Luna succeeding on every review,
+  that record said `has_credits: false, balance: "0"` — the Pro plan's weekly
+  window (`used_percent: 1.0`) was carrying the work. Gating on `has_credits`
+  would have skipped Luna permanently, for no reason, and silently downgraded
+  every review to a fallback.
+- **It is stale by construction.** Reviews run `--ephemeral`, so they never write
+  a session file. The signal only refreshes when some *other* codex run happens;
+  the freshest record on disk was eight hours old.
+
+The attempt itself is ground truth and an exhausted provider fails in about a
+second, so the ladder reacts to the real answer instead of guessing from a stale
+one. If a pre-check ever becomes worthwhile it needs a live balance endpoint, not
+this file.
 
 The reviewer is a fresh maintenance process, not the Buddy or a goal executor.
 It receives current soul, working/long-term documents and the recent conversation

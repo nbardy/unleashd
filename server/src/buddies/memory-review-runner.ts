@@ -155,9 +155,64 @@ const museHandler: ReviewHarnessHandler = {
     ),
 };
 
+/**
+ * Claude's built-in tools stay reachable even when `--allowedTools` names only
+ * the MCP ones: that flag governs approval, not availability. Measured on Claude
+ * Code 2.1.267, an allow-listed run still called `ToolSearch` before the MCP
+ * tool, which the event guard correctly reads as a non-memory tool and kills the
+ * review over. Denying the built-ins by name leaves exactly one tool.use on the
+ * wire — the MCP call — so this rung needs no guard exception at all.
+ */
+const CLAUDE_DENIED_TOOLS = [
+  'ToolSearch',
+  'Bash',
+  'Read',
+  'Write',
+  'Edit',
+  'Glob',
+  'Grep',
+  'WebFetch',
+  'WebSearch',
+  'Task',
+  'Agent',
+  'NotebookEdit',
+  'TodoWrite',
+  'Skill',
+];
+
+const claudeHandler: ReviewHarnessHandler = {
+  request: ({ choice, evidence, directory, memoryServer }) => ({
+    harness: 'claude',
+    mode: 'conversation',
+    model: choice.model,
+    reasoningEffort: choice.reasoningEffort,
+    cwd: directory,
+    prompt: evidence,
+    yolo: false,
+    detached: true,
+    mcpServers: { [MEMORY_MCP_SERVER]: memoryServer },
+    extraArgs: [
+      // The only rung that can deliver the contract as a real system prompt;
+      // codex needs a file and muse has no counterpart at all.
+      '--system-prompt',
+      MEMORY_REVIEW_INSTRUCTIONS,
+      // Load no user, project or local settings — the CLAUDE.md equivalent of
+      // codex's --ignore-user-config/--ignore-rules.
+      '--setting-sources',
+      '',
+      '--allowedTools',
+      ...[...MEMORY_TOOL_NAMES].map((name) => `${MEMORY_TOOL_PREFIX}${name}`),
+      '--disallowedTools',
+      ...CLAUDE_DENIED_TOOLS,
+    ],
+  }),
+  authorizes: (toolName) => isMemoryTool(toolName),
+};
+
 const REVIEW_HARNESSES: Record<MemoryReviewModelChoice['harness'], ReviewHarnessHandler> = {
   codex: codexHandler,
   muse: museHandler,
+  claude: claudeHandler,
 };
 
 type AttemptOutcome =
