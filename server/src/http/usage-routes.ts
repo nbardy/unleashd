@@ -323,11 +323,20 @@ export function findCodexSessionFile(sessionId: string): string | null {
         const monthPath = path.join(yearPath, month.name);
         for (const day of fs.readdirSync(monthPath, { withFileTypes: true })) {
           if (!day.isDirectory()) continue;
-          const candidate = path.join(monthPath, day.name, `${sessionId}.jsonl`);
+          const dayPath = path.join(monthPath, day.name);
+          // Codex names rollouts `rollout-<timestamp>-<sessionId>.jsonl`, NOT
+          // `<sessionId>.jsonl`. Probing the bare name matched zero files on a
+          // real ~/.codex/sessions tree, so this lookup silently never
+          // resolved and every codex thread fell back to estimates.
           try {
-            if (fs.statSync(candidate).isFile()) return candidate;
+            for (const file of fs.readdirSync(dayPath)) {
+              if (!file.endsWith('.jsonl')) continue;
+              if (file === `${sessionId}.jsonl` || file.endsWith(`-${sessionId}.jsonl`)) {
+                return path.join(dayPath, file);
+              }
+            }
           } catch {
-            /* not in this day dir */
+            /* day dir may vanish between readdir and read */
           }
         }
       }

@@ -151,10 +151,18 @@ const codexTokenCount = (last: number, total: number, window = 258_400) => ({
 
 test('codex: context is last_token_usage, NOT the cumulative total_token_usage', async () => {
   const reading = await withHome(async (home) => {
-    writeLines(path.join(home, '.codex', 'sessions', '2026', '09', '20', 'sess-codex.jsonl'), [
-      codexTokenCount(25_246, 25_246),
-      codexTokenCount(35_747, 250_000),
-    ]);
+    writeLines(
+      path.join(
+        home,
+        '.codex',
+        'sessions',
+        '2026',
+        '09',
+        '20',
+        'rollout-2026-09-20T18-39-16-sess-codex.jsonl'
+      ),
+      [codexTokenCount(25_246, 25_246), codexTokenCount(35_747, 250_000)]
+    );
     return readContext('sess-codex');
   });
   // Reading total_token_usage is the original bug: 250,000 would show the
@@ -165,13 +173,27 @@ test('codex: context is last_token_usage, NOT the cumulative total_token_usage',
 
 test('codex: the input_tokens:0 reset sentinel after a boundary is skipped', async () => {
   const reading = await withHome(async (home) => {
-    writeLines(path.join(home, '.codex', 'sessions', '2026', '09', '20', 'sess-sentinel.jsonl'), [
-      codexTokenCount(232_954, 232_954),
-      { type: 'response_item', payload: { type: 'compacted', replacement_history: [] } },
-      // Observed at every real boundary: a zeroed token_count that is a reset
-      // record, not a request. Honouring it flatlines the meter for a tick.
-      codexTokenCount(0, 232_954),
-    ]);
+    writeLines(
+      path.join(
+        home,
+        '.codex',
+        'sessions',
+        '2026',
+        '09',
+        '20',
+        'rollout-2026-09-20T18-39-16-sess-sentinel.jsonl'
+      ),
+      [
+        codexTokenCount(232_954, 232_954),
+        // Real shape: `compacted` is tagged at the TOP level. Nesting it under
+        // payload (as this fixture originally did) silently found zero of the 21
+        // boundaries in a real rollout while the test still passed.
+        { type: 'compacted', payload: { replacement_history: [], window_number: 1 } },
+        // Observed at every real boundary: a zeroed token_count that is a reset
+        // record, not a request. Honouring it flatlines the meter for a tick.
+        codexTokenCount(0, 232_954),
+      ]
+    );
     return readContext('sess-sentinel');
   });
   assert.equal(reading?.contextTokens, 232_954, 'holds the last REAL request');
@@ -198,7 +220,7 @@ test('muse: usage comes from the durable log, and the window from its own thresh
           event: {
             kind: 'context_compaction_candidate',
             trigger: 'soft_threshold_async',
-            status: 'completed',
+            status: 'succeeded',
             strategy: {
               target_budget_tokens: 384_000,
               config_fingerprint: 'soft=0.7500,hard=0.9000',
@@ -272,4 +294,64 @@ test('muse: a candidate that never completed is not a compaction', async () => {
 test('an unknown session id yields null rather than a fabricated reading', async () => {
   const reading = await withHome(async () => readContext('no-such-session'));
   assert.equal(reading, null);
+});
+
+test('codex rollouts are found by their real `rollout-<ts>-<id>.jsonl` name', async () => {
+  const reading = await withHome(async (home) => {
+    // This is how codex actually names files. Probing for a bare
+    // `<sessionId>.jsonl` matched ZERO files on a real ~/.codex/sessions tree,
+    // so every codex thread silently fell back to the chars/4 estimate.
+    writeLines(
+      path.join(
+        home,
+        '.codex',
+        'sessions',
+        '2026',
+        '07',
+        '26',
+        'rollout-2026-07-26T18-39-16-019f9dcb-05e0-76f1-96b5-5d62406c62d6.jsonl'
+      ),
+      [codexTokenCount(38_666, 500_000)]
+    );
+    return readContext('019f9dcb-05e0-76f1-96b5-5d62406c62d6');
+  });
+  assert.equal(reading?.contextTokens, 38_666);
+});
+
+test('muse: a FAILED compaction candidate dropped no history and is not counted', async () => {
+  const reading = await withHome(async (home) => {
+    const dir = path.join(
+      home,
+      '.local',
+      'share',
+      'muse',
+      'sessions',
+      '2026',
+      '09',
+      '20',
+      'sess-failed'
+    );
+    writeLines(path.join(dir, 'session.jsonl'), [
+      {
+        payload_type: 'runtime.session',
+        payload: {
+          event: {
+            kind: 'context_compaction_candidate',
+            status: 'failed',
+            strategy: {
+              target_budget_tokens: 384_000,
+              config_fingerprint: 'soft=0.7500,hard=0.9000',
+            },
+          },
+        },
+      },
+      {
+        payload_type: 'runtime.session',
+        payload: { event: { kind: 'model_completed', usage: { input_tokens: 350_000 } } },
+      },
+    ]);
+    return readContext('sess-failed');
+  });
+  assert.equal(reading?.compaction, null, 'a failed candidate is not a compaction');
+  assert.equal(reading?.contextWindow, 512_000, 'the window is still recoverable from it');
 });

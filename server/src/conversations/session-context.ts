@@ -164,7 +164,10 @@ function readCodexContext(sessionId: string): SessionContextReading | null {
     const entry = parseLine(line);
     if (!entry) continue;
     const payload = entry.payload as Record<string, unknown> | undefined;
-    if (payload?.type === 'compacted') {
+    // `compacted` is tagged at the TOP level, not inside payload -- the payload
+    // holds replacement_history / window_number / latest_token_usage_record.
+    // Checking payload.type found 0 of the 21 boundaries in a real rollout.
+    if (entry.type === 'compacted') {
       count += 1;
       continue;
     }
@@ -313,9 +316,11 @@ function readMuseContext(sessionId: string): SessionContextReading | null {
     if (event.kind === 'context_compaction_candidate') {
       const strategy = event.strategy as Record<string, unknown> | undefined;
       contextWindow = museWindowFrom(strategy) ?? contextWindow;
-      // A candidate is only a compaction once it actually finished; the log
-      // also carries running and superseded candidates.
-      if (event.status === 'completed' || event.status === 'applied') {
+      // A candidate is only a compaction once it actually finished. Observed
+      // statuses on a real durable log are `running`, `failed` and
+      // `succeeded` -- counting anything else reports a compaction that never
+      // happened, and `failed` in particular dropped no history at all.
+      if (event.status === 'succeeded') {
         count += 1;
         trigger = typeof event.trigger === 'string' ? event.trigger : trigger;
       }
