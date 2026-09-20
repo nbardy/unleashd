@@ -289,3 +289,90 @@ test('a provider-side compaction drops the meter instead of pushing it past 100%
   assert.ok(Math.abs(stacked - 52_704) <= 5, `stack ${stacked} should sum to the measured total`);
   assert.equal(result.residualTokens, 0);
 });
+
+// --- session-file path: the retroactive numerator and first-class markers ---
+//
+// The live `usage` event only covers turns taken since we started listening.
+// These pin the behaviour that makes an EXISTING thread read correctly, and
+// the preference for the harness's own compaction record over our arithmetic.
+
+/** ~40k chars of history => ~10k estimated tokens, enough to scale against. */
+function bigConversation() {
+  return conversation({
+    messages: [{ role: 'user', content: 'x'.repeat(40_000) }],
+  });
+}
+
+test('session-file context is used when the live usage event has not run', () => {
+  const result = buildContextBreakdown(bigConversation(), null, null, null, WINDOW_200K, {
+    contextTokens: 52_704,
+    contextWindow: null,
+    compaction: null,
+  });
+  // Without the file path this thread would show the chars/4 estimate and stay
+  // wrong until it happened to take another turn.
+  assert.equal(result.readingSource, 'measured');
+  assert.equal(result.totalTokens, 52_704);
+});
+
+test('the live usage event outranks the session file when both are present', () => {
+  const convo = conversation({
+    messages: [{ role: 'user', content: 'x'.repeat(40_000) }],
+    providerUsage: { contextTokens: 99_000 },
+  });
+  const result = buildContextBreakdown(convo, null, null, null, WINDOW_200K, {
+    contextTokens: 52_704,
+    contextWindow: null,
+    compaction: null,
+  });
+  // The file lags a turn behind; preferring it would show a stale number.
+  assert.equal(result.totalTokens, 99_000);
+});
+
+test('a harness compaction marker is reported even when the ratio would not fire', () => {
+  // measured sits just UNDER the estimate -- nowhere near the 0.9 ratio -- so
+  // inference alone would miss a compaction the harness explicitly recorded.
+  const result = buildContextBreakdown(bigConversation(), null, null, null, WINDOW_200K, {
+    contextTokens: 9_900,
+    contextWindow: null,
+    compaction: { count: 3, preTokens: 968_884, postTokens: 10_737, trigger: 'auto' },
+  });
+  assert.equal(result.compaction?.detected, true);
+  assert.equal(result.compaction?.source, 'marker');
+  assert.equal(result.compaction?.count, 3);
+  assert.equal(result.compaction?.preTokens, 968_884);
+  assert.equal(result.compaction?.trigger, 'auto');
+});
+
+test('without a marker the ratio heuristic still fires, and says so', () => {
+  const result = buildContextBreakdown(bigConversation(), null, null, null, WINDOW_200K, {
+    contextTokens: 1_000,
+    contextWindow: null,
+    compaction: null,
+  });
+  assert.equal(result.compaction?.detected, true);
+  assert.equal(result.compaction?.source, 'inferred');
+  // An inferred detection cannot report counts it never observed.
+  assert.equal(result.compaction?.count, null);
+  assert.equal(result.compaction?.preTokens, null);
+});
+
+test('sections never sum above the measured context', () => {
+  const result = buildContextBreakdown(bigConversation(), null, null, null, WINDOW_200K, {
+    contextTokens: 2_000,
+    contextWindow: null,
+    compaction: { count: 1, preTokens: null, postTokens: null, trigger: null },
+  });
+  const summed =
+    result.sections.history.tokensScaled +
+    result.sections.briefing.tokensScaled +
+    result.sections.memory.tokensScaled +
+    result.sections.mcp.tokensScaled +
+    result.sections.handoff.tokensScaled;
+  assert.ok(
+    summed <= result.totalTokens,
+    `sections ${summed} exceed measured ${result.totalTokens}`
+  );
+  assert.equal(result.residualTokens, 0, 'nothing left over when the bands were scaled down');
+  assert.ok(result.pctOfBudget < 100, 'a compacted thread must not read over full');
+});

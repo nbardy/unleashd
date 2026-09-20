@@ -306,7 +306,13 @@ function parseCodexTokenTotals(filePath: string): { input: number; output: numbe
   }
 }
 
-function findCodexSessionFile(sessionId: string): string | null {
+/**
+ * Locate a codex rollout by session id. Exported so the context reader
+ * (conversations/session-context.ts) asks the same question one way: that file
+ * carries BOTH the cumulative totals this module bills from and the
+ * per-request `last_token_usage` the context meter needs.
+ */
+export function findCodexSessionFile(sessionId: string): string | null {
   const codexDir = path.join(os.homedir(), '.codex', 'sessions');
   try {
     for (const year of fs.readdirSync(codexDir, { withFileTypes: true })) {
@@ -333,6 +339,31 @@ function findCodexSessionFile(sessionId: string): string | null {
 }
 
 /**
+ * Locate a claude transcript by session id. The basename IS the session id, but
+ * the project directory is a lossy encoding of the cwd, so the only reliable
+ * lookup is a scan across project dirs. Exported for the same reason as
+ * findCodexSessionFile.
+ */
+export function findClaudeSessionFile(sessionId: string): { path: string; stat: fs.Stats } | null {
+  const claudeDir = path.join(os.homedir(), '.claude', 'projects');
+  try {
+    for (const project of fs.readdirSync(claudeDir, { withFileTypes: true })) {
+      if (!project.isDirectory()) continue;
+      const candidate = path.join(claudeDir, project.name, `${sessionId}.jsonl`);
+      try {
+        const stat = fs.statSync(candidate);
+        if (stat.isFile()) return { path: candidate, stat };
+      } catch {
+        /* not in this project dir */
+      }
+    }
+  } catch {
+    /* ~/.claude/projects may not exist */
+  }
+  return null;
+}
+
+/**
  * Provider usage for one CLI session id, reusing the aggregate usage parsers
  * (Claude assistant usage, Codex latest token_count totals, OpenCode assistant
  * tokens). Returns null when no provider file matches — the meter then shows
@@ -342,32 +373,19 @@ export function lookupProviderUsageForSession(sessionId: string): SessionProvide
   if (!sessionId) return null;
 
   // Claude: file basename is the session id.
-  try {
-    const claudeDir = path.join(os.homedir(), '.claude', 'projects');
-    for (const project of fs.readdirSync(claudeDir, { withFileTypes: true })) {
-      if (!project.isDirectory()) continue;
-      const candidate = path.join(claudeDir, project.name, `${sessionId}.jsonl`);
-      try {
-        const stat = fs.statSync(candidate);
-        if (stat.isFile()) {
-          const data = parseClaudeSession(candidate, stat);
-          return {
-            sessionId,
-            provider: 'claude',
-            model: data.model,
-            inputTokens: data.inputTokens,
-            outputTokens: data.outputTokens,
-            cacheReadTokens: data.cacheReadTokens,
-            cacheWriteTokens: data.cacheWriteTokens,
-            cumulativeInputTokens: data.inputTokens + data.cacheReadTokens + data.cacheWriteTokens,
-          };
-        }
-      } catch {
-        /* not in this project dir */
-      }
-    }
-  } catch {
-    /* ~/.claude/projects may not exist */
+  const claudeFile = findClaudeSessionFile(sessionId);
+  if (claudeFile) {
+    const data = parseClaudeSession(claudeFile.path, claudeFile.stat);
+    return {
+      sessionId,
+      provider: 'claude',
+      model: data.model,
+      inputTokens: data.inputTokens,
+      outputTokens: data.outputTokens,
+      cacheReadTokens: data.cacheReadTokens,
+      cacheWriteTokens: data.cacheWriteTokens,
+      cumulativeInputTokens: data.inputTokens + data.cacheReadTokens + data.cacheWriteTokens,
+    };
   }
 
   // Codex: latest token_count totals are already cumulative for the session.

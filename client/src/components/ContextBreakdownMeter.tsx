@@ -24,7 +24,17 @@ export interface ContextBreakdownData {
   readingSource: 'measured' | 'estimated';
   totalTokens: number;
   residualTokens: number;
-  compaction: { detected: boolean; historyTokensEst: number; measuredTokens: number } | null;
+  compaction: {
+    detected: boolean;
+    /** 'marker' = the harness recorded the boundary; 'inferred' = our arithmetic. */
+    source: 'marker' | 'inferred';
+    historyTokensEst: number;
+    measuredTokens: number;
+    count: number | null;
+    preTokens: number | null;
+    postTokens: number | null;
+    trigger: string | null;
+  } | null;
   sections: {
     history: ContextBreakdownSection;
     briefing: ContextBreakdownSection;
@@ -154,9 +164,25 @@ export function ContextBreakdownView({ data }: { data: ContextBreakdownData }) {
         </p>
         {data.compaction?.detected && (
           <output className="ctx-breakdown__compaction">
-            compacted provider-side: we still hold ~
-            {formatBreakdownTokens(data.compaction.historyTokensEst)} tok of history, the provider
-            is carrying {formatBreakdownTokens(data.compaction.measuredTokens)}.
+            compacted provider-side
+            {data.compaction.count !== null && data.compaction.count > 1
+              ? ` ${data.compaction.count}x`
+              : ''}
+            : we still hold ~{formatBreakdownTokens(data.compaction.historyTokensEst)} tok of
+            history, the provider is carrying{' '}
+            {formatBreakdownTokens(data.compaction.measuredTokens)}.
+            {/* Only a harness marker carries real pre/post counts; an inferred
+                detection has nothing to show and must not invent any. */}
+            {data.compaction.preTokens !== null && (
+              <>
+                {' '}
+                Last boundary dropped {formatBreakdownTokens(data.compaction.preTokens)} to{' '}
+                {data.compaction.postTokens === null
+                  ? 'a summary'
+                  : `${formatBreakdownTokens(data.compaction.postTokens)} tok`}
+                {data.compaction.trigger ? ` (${data.compaction.trigger})` : ''}.
+              </>
+            )}
           </output>
         )}
         <div
