@@ -11,7 +11,6 @@ import { BuddyControlServer } from '../src/buddies/control-server';
 import { knowledgeStore, scopedNote } from '../src/buddies/knowledge';
 import {
   BuddyMemoryReviewer,
-  MEMORY_REVIEW_EFFORT,
   MEMORY_REVIEW_INSTRUCTIONS,
   MEMORY_REVIEW_MODEL,
 } from '../src/buddies/memory-review';
@@ -154,6 +153,16 @@ async function evaluateCase(
       await new Promise((resolve) => setTimeout(resolve, 100));
     }
     const [receipt] = reviewer.list(buddy.id);
+    // This benchmark varies ONE thing: the instruction text. If the reviewer
+    // ladder fell back to another provider mid-run the comparison is measuring
+    // two models, and the baseline variant would also have lost its instruction
+    // override (that rewrites codex's model_instructions_file, which muse has
+    // no counterpart for). Fail loudly rather than publish a mislabelled result.
+    assert.equal(
+      receipt.fallbackFrom,
+      undefined,
+      `${MEMORY_REVIEW_MODEL} is out of credits; top up before benchmarking instead of measuring ${receipt.model}`
+    );
     const working = ledger.readKnowledgeDocument(ref('working'), authority);
     const longTerm = ledger.readKnowledgeDocument(ref('long_term'), authority);
     const notes = ledger.listKnowledgeDocuments(
@@ -165,8 +174,8 @@ async function evaluateCase(
       variant,
       repeat,
       rubric: example.rubric,
-      model: MEMORY_REVIEW_MODEL,
-      effort: MEMORY_REVIEW_EFFORT,
+      model: receipt.model,
+      effort: receipt.reasoningEffort,
       instructionsSha256: sha256(
         variant === 'baseline' ? readFileSync(baselinePath, 'utf8') : MEMORY_REVIEW_INSTRUCTIONS
       ),

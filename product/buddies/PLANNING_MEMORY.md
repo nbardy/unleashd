@@ -140,6 +140,51 @@ review with reasoning effort `low`, after shared CLI process exit **and** normal
 event drain. Failed, cancelled and ordinary non-Buddy turns do not queue reviews.
 The snapshot is taken before completion listeners can start another work turn.
 
+### The reviewer ladder (why there is a second model)
+
+`MEMORY_REVIEW_MODELS` in `memory-review.ts` is an ordered list, not a single
+constant. Entry 0 is Luna; entry 1 is `muse-spark-1.3` on the muse harness, and
+it runs **only** when the previous entry ends with the provider's
+credit-exhaustion reason (`out_of_tokens`). Any other failure — a tool violation,
+a crash, "model is at capacity" — ends the review on the model that hit it,
+because a second provider cannot fix those and would just double the spend.
+
+This exists because credit exhaustion was invisible. Luna credits ran out on
+2026-09-16 and every background review failed from then on: 395 receipts under
+`~/.agent-viewer/memory-reviews/` reading `Memory reviewer exited:
+out_of_tokens (1)`. Nothing in the product surfaces a background review, so Buddy
+memory simply stopped being curated while every other surface looked healthy. The
+fallback now also logs through `console.warn`, which the error journal captures
+(`pnpm errors:list`), so an exhausted primary stays visible even though the review
+lands.
+
+Two things about the fallback are load-bearing and easy to break:
+
+- **Muse 1.3, never `muse-spark-1.3-contributor`** (which is muse's own default).
+  Contributor builds may train on what they read, and a reviewer reads the entire
+  Buddy transcript.
+- **The curation contract rides in the prompt for muse.** Codex takes it as a
+  separate `model_instructions_file`; `muse exec` has no counterpart, so the
+  instructions are prepended ahead of the evidence, which stays fenced behind its
+  `EVIDENCE_JSON:` marker. Drop that and the fallback reviews with no rules.
+
+The muse event guard has its own trap. Muse emits three `tool.use`-shaped records
+per MCP call — measured on Muse Code 1.3.0: `model.meta.response` (model step
+lifecycle), `tool:mcp__unleashd_memory__<tool>` (task lifecycle for the call) and
+`mcp__unleashd_memory__<tool>` (the call itself). Only the last is an invocation;
+the first two come from `task.lifecycle.*` records that the muse parser reshapes
+into `tool.use`. The runner's "reviewer touched a non-memory tool → kill the run"
+guard must allow the first two by shape or it kills every fallback review on its
+first model step.
+
+Receipts record what actually ran: `model`/`reasoningEffort` name the attempt that
+performed the writes (and supply their provenance), and `fallbackFrom` names the
+model whose credits ran out. Verified end to end on 2026-09-20 against the real
+`muse` binary with Luna genuinely out of credits — the review fell back, wrote
+working + long-term + one note, left the soul untouched under a quoted
+prompt-injection line, and correctly wrote nothing on a follow-up turn with no new
+learning.
+
 The reviewer is a fresh maintenance process, not the Buddy or a goal executor.
 It receives current soul, working/long-term documents and the recent conversation
 tail (48,000 UTF-8 bytes, with omissions marked). Injected Buddy briefings are

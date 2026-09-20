@@ -7,8 +7,31 @@ import { coordinationStore } from './coordination-store';
 import { knowledgeStore, recallKnowledge, scopedNote } from './knowledge';
 import { MEMORY_REVIEW_TOOLS, type MemoryReviewTool } from './memory-review-tools';
 
-export const MEMORY_REVIEW_MODEL = 'gpt-5.6-luna';
-export const MEMORY_REVIEW_EFFORT = 'low';
+/** One reviewer launch identity. Recorded on the receipt, so a fallback is data, never a silent swap. */
+export interface MemoryReviewModelChoice {
+  readonly harness: 'codex' | 'muse';
+  readonly model: string;
+  readonly reasoningEffort: string;
+}
+
+/**
+ * Ordered reviewer ladder. Entry 0 is the intended reviewer; a later entry runs
+ * ONLY when the previous one ended with the provider's credit-exhaustion reason
+ * (`out_of_tokens`). Codex Luna credits ran out on 2026-09-16 and every
+ * background review failed from then on — 395 receipts reading
+ * `Memory reviewer exited: out_of_tokens (1)` — so Buddy memory stopped being
+ * curated while the product looked healthy. Muse bills a different provider, so
+ * it is a real fallback rather than a retry of the same empty balance.
+ */
+export const MEMORY_REVIEW_MODELS: readonly MemoryReviewModelChoice[] = [
+  { harness: 'codex', model: 'gpt-5.6-luna', reasoningEffort: 'low' },
+  // Deliberately the non-contributor build: contributor variants may train on
+  // what they read, and a reviewer reads the whole Buddy transcript.
+  { harness: 'muse', model: 'muse-spark-1.3', reasoningEffort: 'low' },
+];
+
+export const MEMORY_REVIEW_MODEL = MEMORY_REVIEW_MODELS[0].model;
+export const MEMORY_REVIEW_EFFORT = MEMORY_REVIEW_MODELS[0].reasoningEffort;
 export const MEMORY_REVIEW_TIMEOUT_MS = 120_000;
 
 export interface CompletedBuddyTurn {
@@ -28,8 +51,11 @@ export interface MemoryReviewReceipt {
   attemptId: string;
   completedAt: string;
   status: ReviewStatus;
+  /** The model that actually ran, which is not always `MEMORY_REVIEW_MODELS[0]`. */
   model: string;
   reasoningEffort: string;
+  /** Set when the ladder advanced: the model whose credits ran out first. */
+  fallbackFrom?: string;
   writes: { working: number; longTerm: number; notes: number };
   error?: string;
   finishedAt?: string;
@@ -40,6 +66,12 @@ export interface MemoryReviewRequest {
   prompt: string;
   signal: AbortSignal;
   executeTool(operation: string, input: unknown): unknown;
+  /**
+   * Announce the model this attempt is about to use. The reviewer stamps it on
+   * the receipt and on every memory write the attempt performs, so provenance
+   * names the model that actually wrote rather than the one we hoped for.
+   */
+  beginAttempt(choice: MemoryReviewModelChoice): void;
 }
 export type MemoryReviewRunner = (request: MemoryReviewRequest) => Promise<unknown>;
 
@@ -359,8 +391,8 @@ export class BuddyMemoryReviewer {
                 provenance: {
                   conversationId: job.conversationId,
                   attemptId: job.attemptId,
-                  model: MEMORY_REVIEW_MODEL,
-                  reasoningEffort: MEMORY_REVIEW_EFFORT,
+                  model: job.model,
+                  reasoningEffort: job.reasoningEffort,
                 },
               });
           job.writes[change.doc === 'working' ? 'working' : 'longTerm'] += 1;
@@ -397,7 +429,7 @@ export class BuddyMemoryReviewer {
                   conversationId: job.conversationId,
                   attemptId: job.attemptId,
                   reviewId: job.id,
-                  model: MEMORY_REVIEW_MODEL,
+                  model: job.model,
                 },
               ],
             });
@@ -406,7 +438,13 @@ export class BuddyMemoryReviewer {
         this.save(job);
         return result;
       };
-      await this.options.run({ prompt, signal, executeTool });
+      const beginAttempt = (choice: MemoryReviewModelChoice): void => {
+        if (job.model !== choice.model) job.fallbackFrom = job.model;
+        job.model = choice.model;
+        job.reasoningEffort = choice.reasoningEffort;
+        this.save(job);
+      };
+      await this.options.run({ prompt, signal, executeTool, beginAttempt });
       signal.throwIfAborted();
       if (!memoryRead)
         throw new Error(

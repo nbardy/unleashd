@@ -439,6 +439,7 @@ test('review runner keeps process ownership until completion and event drain on 
       prompt: 'Fixture',
       signal: controller.signal,
       executeTool: () => ({}),
+      beginAttempt: () => {},
     }).finally(() => {
       finished = true;
     });
@@ -608,6 +609,134 @@ test('memory review receives current scoped project revisions without work tools
     });
     const [receipt] = await settled(reviewer, f.buddy.id);
     assert.equal(receipt.status, 'complete', receipt.error);
+  } finally {
+    reviewer.stop();
+    await f.close();
+  }
+});
+
+// Regression guard for the 2026-09-16 silent memory outage: Codex Luna credits
+// ran out and 395 consecutive background reviews died with
+// `Memory reviewer exited: out_of_tokens (1)`, so Buddy memory stopped being
+// curated while every other surface looked healthy. Without this test a future
+// edit can quietly collapse the ladder back to one model, or re-break the muse
+// event guard, and nothing else in the suite would notice.
+test('credit exhaustion on Luna re-runs the review on Muse 1.3 and records the fallback', async () => {
+  const f = fixture();
+  await f.control.start();
+  const requests: Array<Record<string, unknown>> = [];
+  const run = createMemoryReviewRunner(
+    f.control,
+    ((request) => {
+      requests.push(request as unknown as Record<string, unknown>);
+      if (request.harness === 'codex')
+        return {
+          events: (async function* () {
+            yield { type: 'out_of_tokens' as const, message: 'Out of tokens: credit balance' };
+          })(),
+          completed: Promise.resolve({
+            reason: 'out_of_tokens',
+            exitCode: 1,
+            signal: null,
+            sessionId: 'luna',
+          }),
+          stop: () => {},
+        };
+      const env = request.mcpServers!.unleashd_memory.env!;
+      return {
+        events: (async function* () {
+          // The three tool.use-shaped records muse actually emits per MCP call;
+          // only the last is an invocation (measured on Muse Code 1.3.0).
+          yield { type: 'tool.use' as const, name: 'model.meta.response', input: {} };
+          yield {
+            type: 'tool.use' as const,
+            name: 'tool:mcp__unleashd_memory__get_memory',
+            input: {},
+          };
+          yield { type: 'tool.use' as const, name: 'mcp__unleashd_memory__get_memory', input: {} };
+          const response = await fetch(env[MEMORY_REVIEW_URL_ENV], {
+            method: 'POST',
+            headers: {
+              authorization: `Bearer ${env[MEMORY_REVIEW_TOKEN_ENV]}`,
+              'content-type': 'application/json',
+            },
+            body: JSON.stringify({ operation: 'get_memory', input: { doc: 'working' } }),
+          });
+          assert.equal(response.status, 200);
+          yield { type: 'turn.complete' as const, reason: 'success' as const };
+        })(),
+        completed: Promise.resolve({
+          reason: 'success',
+          exitCode: 0,
+          signal: null,
+          sessionId: 'muse',
+        }),
+        stop: () => {},
+      };
+    }) as typeof executeCommand,
+    { warn: () => {} }
+  );
+  const reviewer = f.create(run);
+  try {
+    await reviewer.initialize();
+    reviewer.start();
+    reviewer.enqueue(f.source);
+    const [receipt] = await settled(reviewer, f.buddy.id);
+    assert.equal(receipt.status, 'complete', receipt.error);
+    assert.equal(receipt.model, 'muse-spark-1.3');
+    assert.equal(receipt.fallbackFrom, 'gpt-5.6-luna');
+    assert.equal(requests.length, 2);
+    assert.equal(requests[0].harness, 'codex');
+    assert.equal(requests[0].model, 'gpt-5.6-luna');
+    assert.equal(requests[1].harness, 'muse');
+    // The contributor build may train on what it reads, and a reviewer reads
+    // the whole transcript — the fallback must stay on the plain 1.3.
+    assert.equal(requests[1].model, 'muse-spark-1.3');
+    // Muse has no instructions-file flag, so the contract must ride in the
+    // prompt ahead of the evidence or the fallback reviews with no rules.
+    const musePrompt = requests[1].prompt as string;
+    assert.ok(musePrompt.startsWith(MEMORY_REVIEW_INSTRUCTIONS));
+    assert.ok(musePrompt.includes('EVIDENCE_JSON:\n'));
+    assert.ok(!(requests[1].extraArgs as string[]).includes('--yolo'));
+  } finally {
+    reviewer.stop();
+    await f.close();
+  }
+});
+
+test('a non-credit reviewer failure stays on the primary model instead of spending the fallback', async () => {
+  const f = fixture();
+  await f.control.start();
+  let invocations = 0;
+  const run = createMemoryReviewRunner(
+    f.control,
+    (() => {
+      invocations++;
+      return {
+        events: (async function* () {
+          yield { type: 'error' as const, message: 'Selected model is at capacity' };
+        })(),
+        completed: Promise.resolve({
+          reason: 'error',
+          exitCode: 1,
+          signal: null,
+          sessionId: 'luna',
+        }),
+        stop: () => {},
+      };
+    }) as typeof executeCommand,
+    { warn: () => {} }
+  );
+  const reviewer = f.create(run);
+  try {
+    await reviewer.initialize();
+    reviewer.start();
+    reviewer.enqueue(f.source);
+    const [receipt] = await settled(reviewer, f.buddy.id);
+    assert.equal(receipt.status, 'failed');
+    assert.equal(receipt.model, 'gpt-5.6-luna');
+    assert.equal(receipt.fallbackFrom, undefined);
+    assert.equal(invocations, 1);
   } finally {
     reviewer.stop();
     await f.close();

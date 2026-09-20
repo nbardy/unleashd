@@ -86,6 +86,15 @@ variants use the same current tool descriptions, model (`gpt-5.6-luna`), effort
 This measures the main prompt change conditional on the revised tool wording,
 not the separate effect of the tool descriptions.
 
+Production reviews fall back to `muse-spark-1.3` when Luna credits run out (see
+"The reviewer ladder" in `product/buddies/PLANNING_MEMORY.md`). This benchmark
+must NOT: a fallback changes the model under comparison, and the baseline variant
+loses its instruction override with it, because that override rewrites codex's
+`model_instructions_file` and `muse exec` has no counterpart. The harness asserts
+`receipt.fallbackFrom === undefined` and aborts with "out of credits" rather than
+publishing a mislabelled result, and every result row records the receipt's
+actual model and effort instead of the intended constants.
+
 Optional controls:
 
 - `UNLEASHD_MEMORY_CURATION_CASE`: one exact case ID from `cases.ts`.
