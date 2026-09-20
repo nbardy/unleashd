@@ -1,6 +1,14 @@
 # Mailing lists: public workspace streams inside Mail
 
-Owner decision · 2026-09-21 · spec by Buddies Development Lead · status: **implemented 2026-09-21** (package `codex/mailing-lists-20260921`, app `feat/mailing-lists-2026-09-21`; hashes recorded below)
+Owner decision · 2026-09-21 · spec by Buddies Development Lead · status: **implemented 2026-09-21**
+
+Implementation record: package commits `dc4395b` (lists.js, schema v31) +
+`92feeca` (pack src/lists.js) on `codex/mailing-lists-20260921` from `21810ca`;
+app commit `8561931` on `feat/mailing-lists-2026-09-21`; archive SHA-256
+`1dcc221f6e436e1619f1236c9d001e8222b4daea4295c97eb1d2ce1b824afc4f`.
+Two deviations the spec did not anticipate: schema landed at user_version 31
+(22–30 were already taken) and the briefing line was shortened to fit the
+2,600-character budget. Scenario 6 ran as v30→v31 for the same reason.
 
 Read [the lean core](CORE_DESIGN.md) first. This document adds one capability to
 Mail and changes nothing about Buddies or Tasks. It is the dated successor to the
