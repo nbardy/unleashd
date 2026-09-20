@@ -21,6 +21,7 @@ import type {
   ModelId,
   OompaRuntimeSnapshot,
   Provider as ProviderName,
+  ProviderTurnUsage,
   QueuedMessage,
   ResolvedExecutionConfig,
   ServerMessage,
@@ -284,6 +285,16 @@ export interface ConversationRuntimeDependencies {
     | undefined;
   readLatestOompaRuntime(projectRoot: string): OompaRuntimeSnapshot;
   createSessionId(): string;
+  /**
+   * Durably record provider-counted usage against a session. Optional because
+   * the meter is observability: a host that omits it still runs turns, and the
+   * session-file parser remains the fallback source.
+   */
+  persistSessionUsage?(
+    conversationId: string,
+    sessionId: string,
+    usage: ProviderTurnUsage
+  ): Promise<void>;
   readCurrentBuddyContext?(context: BuddyContext): {
     briefing: string;
     memoryGeneration: string;
@@ -499,6 +510,8 @@ export interface ConversationOptions {
   kind?: ConversationKind | null;
   mergeParentMeta?: MergeParentMeta | null;
   mergeChildMeta?: MergeChildMeta | null;
+  /** Usage restored from the persisted session binding on reload. */
+  existingProviderUsage?: ProviderTurnUsage | null;
 }
 
 export interface ConversationRuntime extends EventEmitter, ConversationRuntimeView {
@@ -520,6 +533,7 @@ export interface ConversationRuntime extends EventEmitter, ConversationRuntimeVi
   swarmDebugPrefix: string | null;
   mergeParentMeta: MergeParentMeta | null;
   mergeChildMeta: MergeChildMeta | null;
+  providerUsage: ProviderTurnUsage | null;
   purpose: ConversationPurpose;
   subAgents: SubAgent[];
   queue: QueuedMessage[];
@@ -727,6 +741,14 @@ export function createConversationRuntime(
     // N forked children. Children have mergeChildMeta instead.
     mergeParentMeta: MergeParentMeta | null;
     mergeChildMeta: MergeChildMeta | null;
+    // Provider-counted usage for the latest request on the CURRENT session.
+    // Written from `usage` events during the turn and flushed to the session
+    // binding when the turn ends, so a reload does not have to re-parse the
+    // transcript. Cleared on session reset: a new session is a new context.
+    providerUsage: ProviderTurnUsage | null;
+    // Set when `providerUsage` changed during the active turn and has not yet
+    // been persisted. Avoids a CAS write per streamed usage event.
+    private _providerUsageDirty = false;
     // Sub-agent tracking
     subAgents: SubAgent[];
     // Server-owned message queue — persists across client navigation/refresh.
@@ -852,6 +874,7 @@ export function createConversationRuntime(
       this._automationClaimToken = automationClaimToken;
       this.mergeParentMeta = mergeParentMeta;
       this.mergeChildMeta = mergeChildMeta;
+      this.providerUsage = opts.existingProviderUsage ?? null;
       this.subAgents = [];
       this.queue = [];
       this._pendingTaskTools = new Map();
@@ -1288,6 +1311,20 @@ export function createConversationRuntime(
               this._ensureAssistantMessage();
               break;
             }
+            case 'usage': {
+              // Provider-counted truth for the request that just completed.
+              // agent-cli already canonicalised the per-harness conventions and
+              // excluded claude's turn-aggregate `result` usage and its subagent
+              // measurements, so take this verbatim — re-deriving it here would
+              // reintroduce exactly the double-counting those parsers avoid.
+              //
+              // Last write wins within a turn: a turn can issue several requests
+              // (tool loops), and the latest is the live context size. It can go
+              // DOWN when the provider compacts; that is the signal, not a bug.
+              this.providerUsage = { ...event.usage, observedAt: new Date().toISOString() };
+              this._providerUsageDirty = true;
+              break;
+            }
             default:
               break;
           }
@@ -1325,6 +1362,26 @@ export function createConversationRuntime(
             await persistCurrentConversationSession(this, sessionId);
             if (this._activeAttemptId) {
               turnAttempts.bindProviderSession(this._activeAttemptId, sessionId);
+            }
+          }
+
+          // Flush once per turn rather than per usage event: a tool loop emits
+          // one per request, and each write is a CAS round-trip on the config
+          // record. Persisted against the session id settled just above, so a
+          // mid-turn session rotation files the usage under the session that
+          // actually holds that context.
+          if (this._providerUsageDirty && this.providerUsage) {
+            this._providerUsageDirty = false;
+            try {
+              await dependencies.persistSessionUsage?.(this.id, this.sessionId, this.providerUsage);
+            } catch (error) {
+              // The meter is observability. Losing a usage write must never
+              // fail a turn that otherwise succeeded; the session-file parser
+              // still covers this session on the next read.
+              console.warn(
+                `[${this.id}] Failed to persist provider usage:`,
+                error instanceof Error ? error.message : String(error)
+              );
             }
           }
 
@@ -2587,6 +2644,10 @@ export function createConversationRuntime(
       const oldSessionId = this.sessionId;
       this.sessionId = createSessionId();
       this._providerAudienceKey = null;
+      // A reset starts an empty provider context. Carrying the old session's
+      // token count forward would show a full meter on a fresh thread.
+      this.providerUsage = null;
+      this._providerUsageDirty = false;
       unregisterSessionAlias(oldSessionId, { keepKnown: true });
       registerSessionAlias(this.sessionId, this.id);
       // This UUID is provisional until the provider confirms it. Persisting it
@@ -2918,7 +2979,9 @@ export function createConversationRuntime(
     private retireInFlightHead(): void {
       const head = this.queue[0];
       if (head && head.status === 'sending') {
-        console.log(`[${this.id}] Retiring interrupted in-flight message id=${head.id.substring(0, 8)}`);
+        console.log(
+          `[${this.id}] Retiring interrupted in-flight message id=${head.id.substring(0, 8)}`
+        );
         this.queue.shift();
       }
     }
@@ -3178,6 +3241,7 @@ export function createConversationRuntime(
         placement: this.placement,
         mergeParentMeta: this.mergeParentMeta,
         mergeChildMeta: this.mergeChildMeta,
+        providerUsage: this.providerUsage,
       };
     }
   };

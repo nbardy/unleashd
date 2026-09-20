@@ -17,6 +17,7 @@ import {
   ConversationPlacementSchema,
   ConversationPurposeSchema,
   ModelIdSchema,
+  ProviderTurnUsageSchema,
 } from './conversation-config.js';
 import { ConversationKindSchema } from './conversation-kind.js';
 import {
@@ -564,6 +565,12 @@ export const ConversationSchema = z.object({
       reviewUuid: z.string().uuid(),
     })
     .nullish(),
+
+  // Provider-counted tokens for the latest request on the current session.
+  // Null before the first turn reports usage, and on harnesses that report
+  // none (muse emits no token fields on stdout). Never an estimate — the
+  // chars/4 estimate lives in the context-breakdown route and is labelled so.
+  providerUsage: ProviderTurnUsageSchema.nullish(),
 });
 
 export type Conversation = z.infer<typeof ConversationSchema>;

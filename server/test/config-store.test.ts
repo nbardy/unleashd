@@ -161,6 +161,201 @@ test('session binding rotation removes the old index and lookup repairs a missin
   });
 });
 
+test('bulk session lookups scan once while imports, rotations, tombstones, and rekeys update the index', async () => {
+  await withStore(async (store) => {
+    const list = store.list.bind(store);
+    let scans = 0;
+    store.list = async (options) => {
+      scans += 1;
+      return list(options);
+    };
+
+    await store.withSessionLookupIndex(async () => {
+      for (let i = 0; i < 12; i += 1) {
+        const sessionId = `session-${i}`;
+        assert.equal(await store.findBySession('codex', sessionId), undefined);
+        assert.equal(await store.findBySession('codex', sessionId), undefined);
+        await store.create({
+          conversationId: `import-${i}`,
+          currentSession: { provider: 'codex', sessionId },
+          config: CONFIG,
+          provenance: 'legacy_inferred',
+        });
+        // Exercise the transient fallback, not just the normal durable index.
+        await rm(store.sessionDirectory, { recursive: true, force: true });
+        assert.equal(
+          (await store.findBySession('codex', sessionId))?.conversationId,
+          `import-${i}`
+        );
+      }
+
+      await store.setCurrentSession('import-0', { provider: 'codex', sessionId: 'rotated' });
+      await store.delete('import-0');
+      await store.rekeyConversation('import-1', CONVERSATION_ID);
+      await store.purge('import-2');
+      await rm(store.sessionDirectory, { recursive: true, force: true });
+      assert.equal((await store.findBySession('codex', 'session-0'))?.status, 'deleted');
+      assert.equal((await store.findBySession('codex', 'rotated'))?.status, 'deleted');
+      assert.equal(
+        (await store.findBySession('codex', 'session-1'))?.conversationId,
+        CONVERSATION_ID
+      );
+      assert.equal(await store.findBySession('codex', 'session-2'), undefined);
+      await store.withSessionLookupIndex(async () => {
+        assert.equal(await store.findBySession('codex', 'nested-miss'), undefined);
+      });
+      assert.equal(scans, 1);
+    });
+
+    assert.equal(await store.findBySession('codex', 'ordinary-miss'), undefined);
+    assert.equal(scans, 2, 'ordinary lookup resumes scanning after the import');
+  });
+});
+
+test('bulk lookup repairs stale indexes, reads current records, and releases its scope after failure', async () => {
+  await withStore(async (store, root) => {
+    const binding = { provider: 'codex' as const, sessionId: 'native-session' };
+    await store.create({
+      conversationId: CONVERSATION_ID,
+      currentSession: binding,
+      config: CONFIG,
+      provenance: 'user',
+    });
+    await store.create({
+      conversationId: OTHER_CONVERSATION_ID,
+      config: CONFIG,
+      provenance: 'user',
+    });
+    const indexPath = path.join(
+      store.sessionDirectory,
+      'codex',
+      `${Buffer.from(binding.sessionId).toString('base64url')}.json`
+    );
+    const otherStore = new ConversationConfigStore({ appDataRoot: root });
+
+    await assert.rejects(
+      store.withSessionLookupIndex(async () => {
+        await writeFile(
+          indexPath,
+          JSON.stringify({ version: 1, conversationId: OTHER_CONVERSATION_ID })
+        );
+        assert.equal(
+          (await store.findBySession('codex', binding.sessionId))?.conversationId,
+          CONVERSATION_ID
+        );
+        assert.equal(JSON.parse(await readFile(indexPath, 'utf8')).conversationId, CONVERSATION_ID);
+
+        await otherStore.delete(CONVERSATION_ID);
+        await rm(store.sessionDirectory, { recursive: true, force: true });
+        assert.equal((await store.findBySession('codex', binding.sessionId))?.status, 'deleted');
+
+        await otherStore.create({
+          conversationId: 'external-record',
+          currentSession: { provider: 'codex', sessionId: 'external-session' },
+          config: CONFIG,
+          provenance: 'user',
+        });
+        assert.equal(
+          (await store.findBySession('codex', 'external-session'))?.conversationId,
+          'external-record'
+        );
+        assert.equal(await store.findBySession('codex', 'future-unindexed-session'), undefined);
+        throw new Error('import failed');
+      }),
+      /import failed/
+    );
+
+    await otherStore.setCurrentSession('external-record', {
+      provider: 'codex',
+      sessionId: 'future-unindexed-session',
+    });
+    await rm(store.sessionDirectory, { recursive: true, force: true });
+    assert.equal(
+      (await store.findBySession('codex', 'future-unindexed-session'))?.conversationId,
+      'external-record'
+    );
+  });
+});
+
+test('bulk lookup includes writes and purges committed while its initial record scan is pending', async () => {
+  await withStore(async (store) => {
+    await store.create({
+      conversationId: CONVERSATION_ID,
+      currentSession: { provider: 'codex', sessionId: 'removed-during-scan' },
+      config: CONFIG,
+      provenance: 'user',
+    });
+    let releaseScan!: () => void;
+    let markScanned!: () => void;
+    const resumeScan = new Promise<void>((resolve) => {
+      releaseScan = resolve;
+    });
+    const scanned = new Promise<void>((resolve) => {
+      markScanned = resolve;
+    });
+    const list = store.list.bind(store);
+    store.list = async (options) => {
+      const records = await list(options);
+      markScanned();
+      await resumeScan;
+      return records;
+    };
+
+    const loading = store.withSessionLookupIndex(async () => {
+      assert.equal(await store.findBySession('codex', 'removed-during-scan'), undefined);
+      assert.equal(
+        (await store.findBySession('codex', 'created-during-scan'))?.conversationId,
+        OTHER_CONVERSATION_ID
+      );
+    });
+    await scanned;
+    try {
+      await store.purge(CONVERSATION_ID);
+      await store.create({
+        conversationId: OTHER_CONVERSATION_ID,
+        currentSession: { provider: 'codex', sessionId: 'created-during-scan' },
+        config: CONFIG,
+        provenance: 'user',
+      });
+      await rm(store.sessionDirectory, { recursive: true, force: true });
+    } finally {
+      releaseScan();
+    }
+    await loading;
+  });
+});
+
+test('one failing bulk lookup does not release an overlapping import scope', async () => {
+  await withStore(async (store) => {
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    const list = store.list.bind(store);
+    let scans = 0;
+    store.list = async (options) => {
+      scans += 1;
+      return list(options);
+    };
+    const importing = store.withSessionLookupIndex(() => held);
+    try {
+      await assert.rejects(
+        store.withSessionLookupIndex(async () => {
+          throw new Error('other import failed');
+        }),
+        /other import failed/
+      );
+      assert.equal(await store.findBySession('codex', 'still-importing'), undefined);
+      assert.equal(scans, 1);
+    } finally {
+      release();
+      await importing;
+    }
+    assert.equal(await store.findBySession('codex', 'finished-importing'), undefined);
+    assert.equal(scans, 2);
+  });
+});
+
 test('deleting a config persists a tombstone and keeps session identity across restart', async () => {
   await withStore(async (store, root) => {
     await store.create({
@@ -351,4 +546,85 @@ test('store rejects relative app-data roots', () => {
     () => new ConversationConfigStore({ appDataRoot: 'relative/path' }),
     /must be absolute/
   );
+});
+
+// The context meter's whole value is that it survives a restart: without this
+// round-trip a reload falls back to the chars/4 estimate until the next turn
+// reports usage, which is exactly the wrong number to show on a long thread.
+test('provider usage persists on the current session and survives a reopen', async () => {
+  await withStore(async (store, root) => {
+    await store.create({
+      conversationId: CONVERSATION_ID,
+      sessionBindings: [],
+      config: CONFIG,
+      provenance: 'user',
+    });
+    await store.setCurrentSession(CONVERSATION_ID, { provider: 'codex', sessionId: 'sess-a' });
+    await store.setCurrentSessionUsage(CONVERSATION_ID, 'sess-a', {
+      contextTokens: 30_735,
+      outputTokens: 412,
+      cachedInputTokens: 30_080,
+      contextWindow: 258_400,
+      observedAt: '2026-09-20T00:00:00.000Z',
+    });
+
+    // Reopen from disk exactly as a restarted server would.
+    const reopened = new ConversationConfigStore({ appDataRoot: root });
+    const record = await reopened.getByConversationId(CONVERSATION_ID);
+    assert.equal(record?.currentSession?.latestUsage?.contextTokens, 30_735);
+    assert.equal(record?.currentSession?.latestUsage?.contextWindow, 258_400);
+  });
+});
+
+// Usage belongs to the session that produced it. A late write from a turn that
+// finished after the session rotated must not be filed against its successor —
+// that would show the old thread's full context on a brand-new one.
+test('usage for a superseded session is dropped, not filed against the new one', async () => {
+  await withStore(async (store) => {
+    await store.create({
+      conversationId: CONVERSATION_ID,
+      sessionBindings: [],
+      config: CONFIG,
+      provenance: 'user',
+    });
+    await store.setCurrentSession(CONVERSATION_ID, { provider: 'codex', sessionId: 'sess-a' });
+    await store.setCurrentSession(CONVERSATION_ID, { provider: 'codex', sessionId: 'sess-b' });
+    await store.setCurrentSessionUsage(CONVERSATION_ID, 'sess-a', {
+      contextTokens: 900_000,
+      outputTokens: 1,
+      observedAt: '2026-09-20T00:00:00.000Z',
+    });
+
+    const record = await store.getByConversationId(CONVERSATION_ID);
+    assert.equal(record?.currentSession?.sessionId, 'sess-b');
+    assert.equal(record?.currentSession?.latestUsage, undefined);
+  });
+});
+
+// Re-binding the SAME session (an audience-key change on a Buddy thread) is not
+// a new provider context, so it must not throw the measured count away.
+test('re-binding the same session keeps its measured usage', async () => {
+  await withStore(async (store) => {
+    await store.create({
+      conversationId: CONVERSATION_ID,
+      sessionBindings: [],
+      config: CONFIG,
+      provenance: 'user',
+    });
+    await store.setCurrentSession(CONVERSATION_ID, { provider: 'codex', sessionId: 'sess-a' });
+    await store.setCurrentSessionUsage(CONVERSATION_ID, 'sess-a', {
+      contextTokens: 12_345,
+      outputTokens: 7,
+      observedAt: '2026-09-20T00:00:00.000Z',
+    });
+    await store.setCurrentSession(CONVERSATION_ID, {
+      provider: 'codex',
+      sessionId: 'sess-a',
+      buddyAudienceKey: 'audience-2',
+    });
+
+    const record = await store.getByConversationId(CONVERSATION_ID);
+    assert.equal(record?.currentSession?.buddyAudienceKey, 'audience-2');
+    assert.equal(record?.currentSession?.latestUsage?.contextTokens, 12_345);
+  });
 });

@@ -8,6 +8,8 @@ import {
   PersistedConversationConfigRecordSchema,
   type Provider,
   ProviderSchema,
+  type ProviderTurnUsage,
+  ProviderTurnUsageSchema,
   type ResolvedExecutionConfig,
 } from '@unleashd/shared';
 import { z } from 'zod';
@@ -70,6 +72,14 @@ export type ConfigRecordExpectation =
   | 'missing'
   | { configRevision: number; recordRevision: number };
 
+interface SessionLookupIndex {
+  scopes: number;
+  ready: Promise<void>;
+  bySession: Map<string, Set<string>>;
+  byConversation: Map<string, readonly string[]>;
+  pending?: Map<string, readonly string[]>;
+}
+
 export class ConfigRevisionConflictError extends Error {
   constructor(
     readonly expectedRevision: number,
@@ -110,6 +120,7 @@ export class ConversationConfigStore {
   private readonly logger?: ConfigStoreLogger;
   private readonly durableWrites: boolean;
   private readonly locks = new Map<string, Promise<void>>();
+  private sessionLookupIndex: SessionLookupIndex | undefined;
 
   constructor(options: ConversationConfigStoreOptions) {
     if (!path.isAbsolute(options.appDataRoot)) {
@@ -131,6 +142,38 @@ export class ConversationConfigStore {
     return this.readRecord(filePath);
   }
 
+  /**
+   * Amortize missing-session lookup during a bulk import. The index contains only
+   * identities; every hit still reads its authoritative record from disk. Writes
+   * through this store maintain it, including writes while the initial scan runs.
+   * Normal scan-and-repair behavior resumes when the last overlapping scope ends.
+   * Unindexed writes by another process are discovered after the scope ends.
+   */
+  async withSessionLookupIndex<T>(operation: () => Promise<T>): Promise<T> {
+    let index = this.sessionLookupIndex;
+    if (!index) {
+      index = {
+        scopes: 0,
+        ready: Promise.resolve(),
+        bySession: new Map(),
+        byConversation: new Map(),
+        pending: new Map(),
+      };
+      this.sessionLookupIndex = index;
+      index.ready = this.buildSessionLookupIndex(index);
+    }
+    index.scopes += 1;
+    try {
+      await index.ready;
+      return await operation();
+    } finally {
+      index.scopes -= 1;
+      if (index.scopes === 0 && this.sessionLookupIndex === index) {
+        this.sessionLookupIndex = undefined;
+      }
+    }
+  }
+
   async findBySession(
     provider: Provider,
     sessionId: string
@@ -148,6 +191,31 @@ export class ConversationConfigStore {
       ) {
         return indexed;
       }
+    }
+
+    const index = this.sessionLookupIndex;
+    if (index) {
+      await index.ready;
+      const candidates = index.bySession.get(bindingKey({ provider, sessionId }));
+      for (const conversationId of candidates ?? []) {
+        let record: PersistedConversationConfigRecord | undefined;
+        try {
+          record = await this.getByConversationId(conversationId);
+        } catch (error) {
+          if (error instanceof UnsupportedConfigRecordVersionError) continue;
+          throw error;
+        }
+        if (
+          record &&
+          recordSessionBindings(record).some(
+            (binding) => binding.provider === provider && binding.sessionId === sessionId
+          )
+        ) {
+          await this.writeSessionIndex({ provider, sessionId }, record.conversationId);
+          return record;
+        }
+      }
+      return undefined;
     }
 
     const records = await this.list();
@@ -227,6 +295,7 @@ export class ConversationConfigStore {
       const previousBindings = existing ? recordSessionBindings(existing) : [];
       const recordPath = this.conversationPath(parsed.conversationId);
       await this.atomicWriteJson(recordPath, parsed);
+      this.trackSessionBindings(parsed.conversationId, recordSessionBindings(parsed));
 
       try {
         await this.reconcileSessionIndexes(
@@ -304,6 +373,7 @@ export class ConversationConfigStore {
       if (!existing) return false;
 
       await rm(this.conversationPath(conversationId), { force: true });
+      this.trackSessionBindings(conversationId, []);
       try {
         await this.reconcileSessionIndexes(conversationId, recordSessionBindings(existing), []);
       } catch (error) {
@@ -342,6 +412,26 @@ export class ConversationConfigStore {
     }
   }
 
+  async appendBranchLaunch(conversationId: string, digest: string, handoff: string) {
+    return this.updateRecord(conversationId, (record) => {
+      const branch = record.creation?.branch;
+      if (record.status === 'deleted' || !branch) throw new Error('Launch branch unavailable');
+      if (digest === branch.throughMessageId || branch.launches?.[digest]) return record;
+      // Never silently discard launch context needed by an outstanding request.
+      if (Object.keys(branch.launches ?? {}).length >= 128)
+        throw new Error(
+          'Background review launch history is full; start another owner conversation'
+        );
+      return {
+        ...record,
+        creation: {
+          ...record.creation,
+          branch: { ...branch, launches: { ...branch.launches, [digest]: handoff } },
+        },
+      };
+    });
+  }
+
   async setCurrentSession(
     conversationId: string,
     currentSession: SessionBinding
@@ -350,7 +440,9 @@ export class ConversationConfigStore {
     return this.updateRecord(conversationId, (record) => {
       if (
         record.currentSession?.provider === parsedSession.provider &&
-        record.currentSession.sessionId === parsedSession.sessionId
+        record.currentSession.sessionId === parsedSession.sessionId &&
+        (parsedSession.buddyAudienceKey === undefined ||
+          record.currentSession.buddyAudienceKey === parsedSession.buddyAudienceKey)
       ) {
         return record;
       }
@@ -365,7 +457,41 @@ export class ConversationConfigStore {
       return {
         ...record,
         sessionBindings: historical,
-        currentSession: parsedSession,
+        // Re-binding the SAME session (an audience-key change) must not discard
+        // its measured usage; only a genuine session change starts a fresh
+        // provider context and therefore a fresh count.
+        currentSession:
+          record.currentSession?.sessionId === parsedSession.sessionId
+            ? {
+                ...parsedSession,
+                ...(record.currentSession.latestUsage
+                  ? { latestUsage: record.currentSession.latestUsage }
+                  : {}),
+              }
+            : parsedSession,
+        updatedAt: this.now().toISOString(),
+      };
+    });
+  }
+
+  /**
+   * Attach provider-counted usage to the CURRENT session binding.
+   *
+   * Deliberately a no-op when the record has no current session, or when its
+   * session id has moved on: usage belongs to the session that produced it, and
+   * a late write from a finished turn must not be filed against its successor.
+   */
+  async setCurrentSessionUsage(
+    conversationId: string,
+    sessionId: string,
+    latestUsage: ProviderTurnUsage
+  ): Promise<PersistedConversationConfigRecord | undefined> {
+    const parsedUsage = ProviderTurnUsageSchema.parse(latestUsage);
+    return this.updateRecord(conversationId, (record) => {
+      if (record.currentSession?.sessionId !== sessionId) return record;
+      return {
+        ...record,
+        currentSession: { ...record.currentSession, latestUsage: parsedUsage },
         updatedAt: this.now().toISOString(),
       };
     });
@@ -505,6 +631,54 @@ export class ConversationConfigStore {
     await rm(this.sessionDirectory, { recursive: true, force: true });
     await rename(rebuiltRoot, this.sessionDirectory);
     return count;
+  }
+
+  private async buildSessionLookupIndex(index: SessionLookupIndex): Promise<void> {
+    const records = await this.list();
+    for (const record of records) {
+      this.updateSessionLookupIndex(
+        index,
+        record.conversationId,
+        recordSessionBindings(record).map(bindingKey)
+      );
+    }
+    // A write may have committed after readdir/readRecord captured the scan.
+    // Replay its latest bindings so the scan cannot undo a creation or purge.
+    for (const [conversationId, keys] of index.pending ?? []) {
+      this.updateSessionLookupIndex(index, conversationId, keys);
+    }
+    index.pending = undefined;
+  }
+
+  private trackSessionBindings(conversationId: string, bindings: readonly SessionBinding[]): void {
+    const index = this.sessionLookupIndex;
+    if (!index) return;
+    const keys = bindings.map(bindingKey);
+    if (index.pending) {
+      index.pending.set(conversationId, keys);
+    } else {
+      this.updateSessionLookupIndex(index, conversationId, keys);
+    }
+  }
+
+  private updateSessionLookupIndex(
+    index: SessionLookupIndex,
+    conversationId: string,
+    keys: readonly string[]
+  ): void {
+    for (const key of index.byConversation.get(conversationId) ?? []) {
+      const candidates = index.bySession.get(key);
+      candidates?.delete(conversationId);
+      if (candidates?.size === 0) index.bySession.delete(key);
+    }
+    index.byConversation.delete(conversationId);
+    if (keys.length === 0) return;
+    index.byConversation.set(conversationId, keys);
+    for (const key of keys) {
+      const candidates = index.bySession.get(key) ?? new Set<string>();
+      candidates.add(conversationId);
+      index.bySession.set(key, candidates);
+    }
   }
 
   private async readRecord(

@@ -3,9 +3,11 @@ import type {
   Conversation as ConversationData,
   DiscoveredConversation,
   Message,
+  PersistedConversationConfigRecord,
 } from '@unleashd/shared';
 import { conversationKindFromLegacy } from '@unleashd/shared';
 import { validate as isUuid } from 'uuid';
+import type { SessionHistorySource } from '../adapters/disk-adapter';
 import type { loadAllConversations, pollForChanges } from '../adapters/loader';
 import type {
   CompletionSuppression,
@@ -29,6 +31,7 @@ import { extractBuddyMemorySnapshot } from '../conversations/runtime';
 import { summarizeConversation } from '../conversations/serialization';
 import { createFilePoller } from './file-poller';
 import { loadProgressively } from './progressive-loader';
+import { mergeSessionMessages } from './session-history';
 
 export interface SessionLoaderOptions {
   startupLimit: number;
@@ -78,6 +81,66 @@ function normalizeMemoryGeneration(value: MemoryGenerationInput | null | undefin
 export function createSessionLoader(dependencies: SessionLoaderDependencies): SessionLoader {
   const logger = dependencies.logger ?? console;
   let fileMtimes = new Map<string, number>();
+  const nativeSources = new Map<string, DiscoveredConversation>();
+  const boundSessionIds = new Map<string, Set<string>>();
+  const startupRuntimes = new WeakSet<ConversationRuntime>();
+
+  function sourceKey(source: { provider: string; sessionId: string }): string {
+    return `${source.provider}:${source.sessionId}`;
+  }
+
+  function rememberSources(source: SessionHistorySource): void {
+    for (const related of source.boundSessionSources ?? [])
+      nativeSources.set(sourceKey(related), related);
+    const { boundSessionSources: _related, ...current } = source;
+    nativeSources.set(sourceKey(source), current);
+  }
+
+  async function resolveSessionBindings(source: DiscoveredConversation) {
+    const record = await dependencies.configStore.findBySession(source.provider, source.sessionId);
+    if (!record || record.status !== 'active') return [];
+    return rememberBindings(record);
+  }
+
+  function rememberBindings(record: PersistedConversationConfigRecord) {
+    const bindings = [
+      ...record.sessionBindings,
+      ...(record.currentSession ? [record.currentSession] : []),
+    ];
+    const unique = [...new Map(bindings.map((binding) => [sourceKey(binding), binding])).values()];
+    boundSessionIds.set(record.conversationId, new Set(unique.map((binding) => binding.sessionId)));
+    return unique;
+  }
+
+  function restoreDisplayHistory(
+    conversation: ConversationRuntime,
+    record: PersistedConversationConfigRecord,
+    source: DiscoveredConversation
+  ): void {
+    const bindings = rememberBindings(record);
+    const sources = bindings
+      .map((binding) => nativeSources.get(sourceKey(binding)))
+      .filter((entry): entry is DiscoveredConversation => entry !== undefined);
+    if (sources.length === 0) sources.push(source);
+    // Native rows replace matching live turns. Unmatched turns survive when
+    // a bound transcript is missing or its latest provider flush is partial.
+    conversation.messages = mergeSessionMessages(
+      sources.map((entry) => entry.messages),
+      conversation.messages
+    );
+    // Discovered sidecars historically used import time. The earliest native
+    // birth corrects those records, while an app-created durable date survives rotation.
+    conversation.createdAt =
+      record.provenance === 'external_discovered'
+        ? new Date(
+            Math.min(
+              ...[record.createdAt, ...sources.map((entry) => entry.createdAt)]
+                .map((date) => new Date(date).getTime())
+                .filter(Number.isFinite)
+            )
+          )
+        : new Date(record.createdAt);
+  }
 
   function findBySessionId(sessionId: string): ConversationRuntime | undefined {
     const direct = dependencies.registry.get(sessionId);
@@ -114,9 +177,14 @@ export function createSessionLoader(dependencies: SessionLoaderDependencies): Se
     return findBySessionId(parentSessionId)?.id ?? parentSessionId;
   }
 
-  async function hydrate(source: DiscoveredConversation): Promise<ConversationRuntime | null> {
+  async function hydrate(source: SessionHistorySource): Promise<ConversationRuntime | null> {
+    rememberSources(source);
     const sessionId = source.sessionId;
     const existingRecord = await dependencies.configStore.findBySession(source.provider, sessionId);
+    const currentSource =
+      existingRecord?.currentSession && nativeSources.get(sourceKey(existingRecord.currentSession));
+    if (currentSource && sourceKey(currentSource) !== sourceKey(source))
+      return hydrate(currentSource);
     let conversationId =
       existingRecord?.conversationId ?? (isUuid(sessionId) ? sessionId : dependencies.createId());
     if (existingRecord?.status === 'active' && !isUuid(existingRecord.conversationId)) {
@@ -148,11 +216,22 @@ export function createSessionLoader(dependencies: SessionLoaderDependencies): Se
     }
 
     const currentSession = hydratedConfig.record.currentSession;
+    rememberBindings(hydratedConfig.record);
+    const existing = dependencies.registry.get(hydratedConfig.record.conversationId);
+    if (existing && (!startupRuntimes.has(existing) || existing.hasActiveProcess())) return null;
     if (
       currentSession &&
       (currentSession.provider !== source.provider || currentSession.sessionId !== sessionId)
     ) {
+      if (existing) {
+        restoreDisplayHistory(existing, hydratedConfig.record, source);
+        return existing;
+      }
       return null;
+    }
+    if (existing) {
+      restoreDisplayHistory(existing, hydratedConfig.record, source);
+      return existing;
     }
     if (hydratedConfig.migrated && hydratedConfig.diagnostics.length > 0) {
       logger.warn(
@@ -198,11 +277,20 @@ export function createSessionLoader(dependencies: SessionLoaderDependencies): Se
         .filter((message) => message.role === 'user')
         .map((message) => extractBuddyMemorySnapshot(message.content))
         .find((snapshot) => snapshot !== null) ?? null;
+    const resumableSession =
+      currentSession?.provider === hydratedConfig.state.config.provider
+        ? currentSession
+        : undefined;
     const conversation = dependencies.createConversation({
       id: hydratedConfig.record.conversationId,
       workingDirectory: hydratedConfig.record.workingDirectory ?? source.workingDirectory,
       configState: hydratedConfig.state,
-      existingSessionId: sessionId,
+      existingSessionId: resumableSession?.sessionId,
+      existingSessionAudienceKey: resumableSession?.buddyAudienceKey,
+      // Provider-counted context size measured before the restart. Restoring it
+      // is what keeps the meter honest across a reload instead of falling back
+      // to the chars/4 estimate until the next turn reports usage.
+      existingProviderUsage: resumableSession?.latestUsage ?? null,
       isWorker: source.isWorker,
       swarmId: source.swarmId ?? null,
       workerId: source.workerId ?? null,
@@ -216,14 +304,15 @@ export function createSessionLoader(dependencies: SessionLoaderDependencies): Se
       mergeParentMeta: source.mergeParentMeta ?? null,
       mergeChildMeta: source.mergeChildMeta ?? null,
       kind: kindForHydrate,
+      placement: hydratedConfig.record.creation?.placement ?? source.placement,
       buddyContext: source.buddyContext ?? hydratedConfig.record.creation?.buddyContext ?? null,
       purpose: source.purpose ?? hydratedConfig.record.creation?.purpose ?? 'general',
       buddyBriefing: memorySnapshot?.briefing ?? null,
       buddyMemoryGeneration: memorySnapshot?.generation ?? null,
     });
-    conversation.messages = source.messages;
-    conversation.createdAt = source.createdAt;
+    restoreDisplayHistory(conversation, hydratedConfig.record, source);
     conversation.subAgents = source.subAgents;
+    startupRuntimes.add(conversation);
     return conversation;
   }
 
@@ -241,7 +330,10 @@ export function createSessionLoader(dependencies: SessionLoaderDependencies): Se
       // sidebar's recent-folder groups. Only app-created records (`user` /
       // `legacy_inferred`) may become a conversation without a transcript —
       // those are the ones that genuinely have nothing on disk yet.
-      if (record.provenance === 'external_discovered') continue;
+      const availableSource = rememberBindings(record)
+        .map((binding) => nativeSources.get(sourceKey(binding)))
+        .find((source) => source !== undefined);
+      if (record.provenance === 'external_discovered' && !availableSource) continue;
       // Per-record isolation is required, not defensive: this loop runs inside the
       // startup barrier, so an unreadable or future-versioned record used to throw
       // all the way out to handleStartupFailure() and exit the process — one bad
@@ -256,6 +348,10 @@ export function createSessionLoader(dependencies: SessionLoaderDependencies): Se
             source: 'external_session',
           },
         });
+        const currentSession =
+          hydrated.record.currentSession?.provider === hydrated.state.config.provider
+            ? hydrated.record.currentSession
+            : undefined;
         // A conversation with a current provider session is a resumed
         // application conversation, not a new memory-generation boundary. It
         // has no transcript snapshot to recover here, so do not inject the
@@ -263,7 +359,7 @@ export function createSessionLoader(dependencies: SessionLoaderDependencies): Se
         // started a provider session still need the latest generation for
         // their pending initial message.
         const recoveredBuddy =
-          record.creation?.buddyContext && !record.currentSession
+          record.creation?.buddyContext && !currentSession
             ? await dependencies
                 .resolveBuddyConversation(record.creation.buddyContext)
                 .catch((error) => {
@@ -278,7 +374,9 @@ export function createSessionLoader(dependencies: SessionLoaderDependencies): Se
           id: record.conversationId,
           workingDirectory: record.workingDirectory,
           configState: hydrated.state,
-          existingSessionId: record.currentSession?.sessionId,
+          existingSessionId: currentSession?.sessionId,
+          existingSessionAudienceKey: currentSession?.buddyAudienceKey,
+          existingProviderUsage: currentSession?.latestUsage ?? null,
           swarmDebugPrefix: record.creation?.swarmDebugPrefix ?? null,
           resumedFromConversationId: record.creation?.resumedFromConversationId ?? null,
           kind: recoveredBuddy?.context
@@ -313,12 +411,17 @@ export function createSessionLoader(dependencies: SessionLoaderDependencies): Se
           buddyBriefing: recoveredBuddy?.briefing ?? null,
           buddyMemoryGeneration: normalizeMemoryGeneration(recoveredBuddy?.memoryGeneration),
           purpose: record.creation?.purpose ?? 'general',
+          placement: record.creation?.placement,
         });
         // The record's createdAt is the conversation's real birth time. Leaving
         // the runtime's `new Date()` default made every recovered conversation
         // look like it was created at boot, sorting the oldest history to the
         // top of the sidebar as "1m ago".
         recovered.createdAt = new Date(record.createdAt);
+        if (availableSource) restoreDisplayHistory(recovered, record, availableSource);
+        // Awaited hydration must not replace a runtime created while startup was loading.
+        if (dependencies.registry.has(record.conversationId)) continue;
+        startupRuntimes.add(recovered);
         dependencies.registry.set(recovered);
         await dependencies.dispatchInitialMessage(recovered);
       } catch (error) {
@@ -361,12 +464,13 @@ export function createSessionLoader(dependencies: SessionLoaderDependencies): Se
           logEveryFiles: dependencies.options.startupLogEveryFiles,
         },
         {
-          load: dependencies.loadConversations,
+          load: (options) => dependencies.loadConversations({ ...options, resolveSessionBindings }),
           hydrate,
           // Creation is allowed while old history hydrates. A live runtime
           // created after discovery is authoritative and must never be replaced
           // by the older disk snapshot.
           store: (conversation) => {
+            if (dependencies.registry.get(conversation.id) === conversation) return true;
             if (dependencies.registry.has(conversation.id)) return false;
             dependencies.registry.set(conversation);
             return true;
@@ -396,6 +500,7 @@ export function createSessionLoader(dependencies: SessionLoaderDependencies): Se
       if (!conversation.hasActiveProcess()) continue;
       activeIds.add(id);
       activeIds.add(conversation.sessionId);
+      for (const sessionId of boundSessionIds.get(id) ?? []) activeIds.add(sessionId);
     }
     return activeIds;
   }
@@ -435,9 +540,20 @@ export function createSessionLoader(dependencies: SessionLoaderDependencies): Se
 
   async function applyPolledUpdate(
     sessionId: string,
-    source: DiscoveredConversation
+    source: SessionHistorySource
   ): Promise<ConversationData | null> {
+    rememberSources(source);
+    const record = await dependencies.configStore.findBySession(source.provider, sessionId);
+    if (record?.status === 'deleted') return null;
     let existing = findByCurrentSessionId(sessionId);
+    const boundExisting = record && dependencies.registry.get(record.conversationId);
+    if (!existing && boundExisting && record) {
+      if (boundExisting.hasActiveProcess()) return null;
+      restoreDisplayHistory(boundExisting, record, source);
+      // Older native sessions can gain history, but cannot change current
+      // runtime metadata, model selection, session identity or running status.
+      return boundExisting.toJSON();
+    }
     if (!existing) {
       const reconciled = findBootstrapMatch(sessionId, source);
       if (reconciled) {
@@ -457,15 +573,9 @@ export function createSessionLoader(dependencies: SessionLoaderDependencies): Se
 
     if (existing && !existing.hasActiveProcess()) {
       dependencies.sessions.registerAlias(sessionId, existing.id);
-      const trailingSystemMessages = existing.messages.filter(
-        (message, index) => message.role === 'system' && index >= source.messages.length
-      );
-      existing.messages =
-        trailingSystemMessages.length > 0
-          ? [...source.messages, ...trailingSystemMessages]
-          : source.messages;
+      if (record) restoreDisplayHistory(existing, record, source);
+      else existing.messages = mergeSessionMessages([source.messages], existing.messages);
       existing.subAgents = source.subAgents;
-      existing.createdAt = source.createdAt;
       existing.isWorker = source.isWorker;
       existing.swarmId = source.swarmId ?? null;
       existing.workerId = source.workerId ?? null;
@@ -508,6 +618,8 @@ export function createSessionLoader(dependencies: SessionLoaderDependencies): Se
     }
     const conversation = await hydrate(source);
     if (!conversation) return null;
+    const liveWinner = dependencies.registry.get(conversation.id);
+    if (liveWinner && liveWinner !== conversation) return null;
     dependencies.registry.set(conversation);
     const serialized = conversation.toJSON();
     if (dependencies.externalActivity.has(sessionId)) serialized.isRunning = true;
@@ -531,7 +643,8 @@ export function createSessionLoader(dependencies: SessionLoaderDependencies): Se
           fileMtimes = mtimes;
         },
         collectActiveIds,
-        poll: dependencies.pollConversations,
+        poll: (mtimes, activeIds) =>
+          dependencies.pollConversations(mtimes, activeIds, { resolveSessionBindings }),
         pruneCompletionSuppressions: (now) => dependencies.completionSuppression.prune(now),
         isCompletionSuppressed: (sessionId, now) =>
           dependencies.completionSuppression.isSuppressed(sessionId, now),

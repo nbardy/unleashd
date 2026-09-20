@@ -1,0 +1,203 @@
+.ctx-breakdown {
+  position: relative;
+  display: inline-flex;
+  flex-direction: column;
+  min-width: 0;
+  flex-shrink: 0;
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+/* Bar only, no digits: the header row already carries the model chip, the
+   folder and the turn clock, and a fourth number there read as clutter. The
+   trigger has no click behaviour — it exists to be hovered and focused, so
+   `help` is the honest cursor. The vertical padding is hover target, not
+   spacing: a bare 6px bar is a hard thing to point at. */
+.ctx-breakdown__trigger {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 0;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: help;
+}
+
+.ctx-breakdown__track {
+  display: block;
+  width: 64px;
+  height: 6px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: color-mix(in srgb, var(--text-muted) 28%, transparent);
+}
+
+.ctx-breakdown__fill {
+  display: block;
+  height: 100%;
+  /* A fresh thread is ~1-2% of budget; without a floor the fill rounds to a
+     hairline and the bar reads as broken rather than empty. The floor also
+     keeps the tone colour (teal/amber/red) legible at a glance. */
+  min-width: 4px;
+  border-radius: 999px;
+}
+
+.ctx-breakdown__trigger:focus-visible .ctx-breakdown__track {
+  outline: 2px solid var(--ai-bright);
+  outline-offset: 3px;
+}
+
+/* Anchored popover, not an in-flow block: the meter now sits in the one-line
+   chat header, so expanding it in flow would grow the toolbar and re-wrap the
+   folder name and model chip under it. */
+.ctx-breakdown__details {
+  display: none;
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 1000;
+  padding: 10px 12px;
+  border: 1px solid var(--border-default);
+  border-radius: 8px;
+  /* 340px keeps each legend row ("history  3872 chars · ~968 tok est.") on one
+     line in the header's mono font; 280px wrapped every one of them. */
+  min-width: 340px;
+  max-width: 420px;
+  background: var(--bg-panel);
+  box-shadow: 0 8px 24px color-mix(in srgb, var(--bg-darkest) 30%, transparent);
+  /* The card is a panel, not header chrome: it must not inherit .chat-title's
+     --text-secondary. Ranks below use real tokens — opacity fades stacked on
+     top of an already-dim inherited colour are what washed this out. */
+  color: var(--text-primary);
+}
+
+/* Hover (and keyboard focus) is the only way in, so the card must survive the
+   pointer travelling into it: :hover on the wrapper follows the element tree,
+   and ::before bridges the visible gap the pointer crosses on the way. */
+.ctx-breakdown:hover .ctx-breakdown__details,
+.ctx-breakdown:focus-within .ctx-breakdown__details {
+  display: block;
+}
+
+.ctx-breakdown__details::before {
+  content: "";
+  position: absolute;
+  top: -10px;
+  left: 0;
+  right: 0;
+  height: 10px;
+}
+
+/* Contrast on this panel (bg rgb(9, 57, 70)) measured with a canvas probe:
+   --text-bright 6.8:1, --text-primary 5.0:1, but --text-secondary 2.5:1 and
+   --text-muted 2.5:1 — both fail AA here even though they read fine against
+   the app canvas. So rank the card by size and weight and keep every line on
+   a passing colour; do not reach for the dim tokens on a raised surface. */
+.ctx-breakdown__headline {
+  margin: 0;
+  color: var(--text-bright);
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.ctx-breakdown__note {
+  margin: 4px 0 0;
+  color: var(--text-primary);
+  font-size: 11px;
+}
+
+.ctx-breakdown__stacked {
+  margin-top: 8px;
+  display: flex;
+  height: 10px;
+  border-radius: 999px;
+  overflow: hidden;
+  background: var(--border-default);
+}
+
+.ctx-breakdown__seg {
+  height: 100%;
+}
+
+.ctx-seg-history {
+  background: var(--ai);
+}
+.ctx-seg-briefing {
+  background: #6aa9ff;
+}
+.ctx-seg-memory {
+  background: #b589e8;
+}
+.ctx-seg-mcp {
+  background: #7bc47f;
+}
+.ctx-seg-handoff {
+  background: var(--warning);
+}
+/* Measured-but-unmodelled: the harness's own system prompt and tool schemas.
+   Deliberately neutral so it reads as "accounted for, not attributable" rather
+   than competing with the five modelled sections. */
+.ctx-seg-residual {
+  background: color-mix(in srgb, var(--text-muted) 45%, transparent);
+}
+.ctx-breakdown__swatch {
+  display: inline-block;
+  width: 10px;
+  height: 10px;
+  border-radius: 2px;
+}
+
+.ctx-breakdown__legend {
+  list-style: none;
+  margin: 8px 0 0;
+  padding: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.ctx-breakdown__legend li {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.ctx-breakdown__seg-name {
+  font-weight: 600;
+}
+
+.ctx-breakdown__seg-values {
+  margin-left: auto;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-primary);
+}
+
+.ctx-breakdown__provider {
+  margin: 8px 0 0;
+  color: var(--text-primary);
+}
+
+.ctx-breakdown__provider--none {
+  color: var(--text-primary);
+  font-style: italic;
+}
+
+.ctx-breakdown__alert {
+  margin: 8px 0 0;
+  color: var(--warning);
+}
+
+.ctx-breakdown__expansion {
+  margin: 8px 0 0;
+  color: var(--text-primary);
+  font-size: 11px;
+}
+
+/* Provider-side compaction is information, not a fault: the thread is fine and
+   the meter just dropped. Styled as a quiet status line, not an alert. */
+.ctx-breakdown__compaction {
+  /* <output> is inline by default; the card wants it on its own line. */
+  display: block;
+  margin: 6px 0 0;
+  color: var(--text-primary);
+  font-size: 11px;
+}
