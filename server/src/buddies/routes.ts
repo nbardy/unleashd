@@ -724,6 +724,82 @@ export function registerBuddyRoutes(app: Express, dependencies: BuddyRouteDepend
     );
   });
 
+  // Mailing lists are public workspace streams. Owner reads move no read mark;
+  // writes act through the sender Buddy in the body, as /messages already does.
+  route.get('/api/buddies/lists', 400, async (req, res) => {
+    const buddies = await getStore();
+    const input = z
+      .object({ workspaceId: z.string().min(1) })
+      .strict()
+      .parse(req.query);
+    res.json(buddies.listLists({ workspace: input.workspaceId }));
+  });
+
+  route.post('/api/buddies/lists', 400, async (req, res) => {
+    const buddies = await getStore();
+    const input = z
+      .object({
+        workspaceId: z.string().min(1),
+        buddyId: z.string().min(1),
+        key: z.string().trim().min(1).max(200),
+        name: z.string().trim().min(1).max(80),
+        purpose: z.string().trim().min(1).max(400),
+      })
+      .strict()
+      .parse(req.body);
+    res
+      .status(201)
+      .json(buddies.createList({ workspace: input.workspaceId, buddy: input.buddyId, ...input }));
+  });
+
+  route.get('/api/buddies/lists/:listId/posts', 400, async (req, res) => {
+    const buddies = await getStore();
+    const list = buddies.getList(req.params.listId);
+    if (!list) {
+      res.status(404).json({ error: 'Mailing list not found' });
+      return;
+    }
+    const input = z
+      .object({
+        limit: z.coerce.number().int().min(1).max(50).optional(),
+        offset: z.coerce.number().int().min(0).optional(),
+      })
+      .strict()
+      .parse(req.query);
+    res.json(buddies.listPosts({ list: list.id, ...input }));
+  });
+
+  route.post('/api/buddies/lists/:listId/posts', 400, async (req, res) => {
+    const buddies = await getStore();
+    const list = buddies.getList(req.params.listId);
+    if (!list) {
+      res.status(404).json({ error: 'Mailing list not found' });
+      return;
+    }
+    const input = z
+      .object({
+        buddyId: z.string().min(1),
+        key: z.string().trim().min(1).max(200),
+        purpose: z.string().trim().min(1).max(200),
+        body: z.string().trim().min(1).max(32000),
+        evidence: z.array(z.string().trim().min(1).max(4000)).max(32).optional(),
+        projectId: z.string().min(1).nullable().optional(),
+      })
+      .strict()
+      .parse(req.body);
+    res.status(201).json(
+      buddies.createPost({
+        list: list.id,
+        buddy: input.buddyId,
+        key: input.key,
+        purpose: input.purpose,
+        body: input.body,
+        evidence: input.evidence ?? [],
+        project: input.projectId ?? null,
+      })
+    );
+  });
+
   // The attachment is untrusted proposal data; the authenticated click supplies authority.
   // A configuration receipt commits before the normal reply. Repeating repairs a lost
   // acknowledgement without applying configuration twice or enqueueing a second reply.

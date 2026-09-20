@@ -60,6 +60,9 @@ const TOOL_NAMES = [
   'buddy.recall',
   'buddy.send',
   'buddy.reply',
+  'buddy.new_list',
+  'buddy.post',
+  'buddy.get_list',
   'buddy.hire_direct_report',
   'buddy.retire_direct_report',
 ] as const satisfies readonly BuddyOperationName[];
@@ -121,6 +124,12 @@ const TOOL_DESCRIPTIONS: Record<(typeof TOOL_NAMES)[number], string> = {
   'buddy.send': `Send a bounded message to a Buddy or owner. Supply a stable key for durable queued execution. projectId defaults to current work; set projectId:null for a new work scope, retaining source provenance. continueFrom follows up in an existing recipient thread; inReplyTo sends informational progress with expectsReply false. For independent background work, pass execution:{mode:"until_done",maxRuns:20,maxDurationSeconds:3600}, an explicit recipient-owned projectId, stable key and expectsReply:true. It creates a separate worker transcript, including for self sends, and continues until recorded project/task completion, a blocker, failure or limit. To reuse a Worker after completed work, set continueFrom to the completed message ID. It cannot combine with wait or inReplyTo. ${BACKGROUND_SEND_GUIDANCE} Ordinary self sends require a bounded source run and expectsReply false. notBefore delays admission. Destination workspace membership and dispatch grant are required. Purpose is free text. Set wait to block for a durable reply, at most timeoutSeconds (1–600; default 120). A timeout leaves the message available for later reply; read get_inbox. Owner-directed messages never grant permission by themselves.`,
   'buddy.reply':
     'Reply to a message assigned to this Buddy conversation with a free-text outcome, body, and concrete evidence references. A manual final reply cannot complete unfinished managed background work; record progress and evidence through update_project, and the runtime returns its final disposition. Only the owner can answer owner-directed messages.',
+  'buddy.new_list':
+    'Create a public mailing list in this workspace with a stable key, unique name and purpose. Everyone in the workspace can read and post; there is no membership. Replaying the key returns the same list.',
+  'buddy.post':
+    'Post to a mailing list with a stable key. Posts are public to the workspace, immutable, wake nobody and carry no reply obligation. Use purpose for the kind of post (standup, handoff, announcement, decision). Link a Task with projectId; discussion about a Task belongs on the Task. Anything needing action still goes through send or update_project.',
+  'buddy.get_list':
+    'Read one mailing list newest-first (limit 1–50, default 20). A read without a cursor marks the list read up to the newest post returned; follow nextCursor to page into history without moving that mark.',
   'buddy.hire_direct_report':
     'Compatibility composition of create_buddy and set_relationship under the same staffing grant. Requires a stable key; never reactivates archived identities or adds workspace membership. Prefer the two atoms. Unavailable in restricted conversations.',
   'buddy.retire_direct_report':
@@ -255,7 +264,7 @@ export function createBuddyMcpServer(
             : operation === 'buddy.get_current_work' && options.publicContract !== 'legacy'
               ? 'Read current work (limit 1–99, default 20). Use view:summary for bounded discovery, statuses/order:recent/updatedSince for focused reads. Expand projectId with view:full and includeClosed:true before changing completion. Default full preserves existing clients. A stale pagination cursor requires restarting the read. updatedSince is inclusive and is not a deletion feed. Projects and todos are the authoritative goal and completion criteria; read current work and get_inbox at each background attempt.'
               : operation === 'buddy.get_inbox' && options.publicContract !== 'legacy'
-                ? 'Read bounded inbox summaries and blockers (limit 1–50, default 20) in the current audience. filter:outstanding selects unanswered pending/active messages; order:recent sorts messages by last update; updatedSince is inclusive. Defaults retain attention order. Follow nextCursor for more; previews are truncated. Filters apply to messages; other sections remain current blockers. Expand a message with get_message and project criteria with get_current_work. Current project snapshots are separate from input acknowledgment. Read at the start of each managed attempt.'
+                ? 'Read bounded inbox summaries and blockers (limit 1–50, default 20) in the current audience. filter:outstanding selects unanswered pending/active messages; order:recent sorts messages by last update; updatedSince is inclusive. Defaults retain attention order. Follow nextCursor for more; previews are truncated. Filters apply to messages; other sections remain current blockers. Expand a message with get_message and project criteria with get_current_work. Current project snapshots are separate from input acknowledgment. Read at the start of each managed attempt. lists shows each workspace mailing list with your unread post count; read one with get_list.'
                 : operation === 'buddy.recall' && options.publicContract !== 'legacy'
                   ? 'Run a bounded pull-only search over authorized Buddy notes. The pattern is one literal substring; regular expressions are unsupported.'
                   : { ...TOOL_DESCRIPTIONS, ...LEGACY_COMPLETION_DESCRIPTIONS }[operation],
@@ -283,7 +292,7 @@ export function createBuddyMcpServer(
         annotations: {
           readOnlyHint:
             operation === 'buddy.list_task_comments' ||
-            operation.startsWith('buddy.get_') ||
+            (operation.startsWith('buddy.get_') && operation !== 'buddy.get_list') ||
             operation === 'buddy.list_buddies' ||
             operation === 'buddy.get_current_work' ||
             operation === 'buddy.get_inbox' ||
@@ -297,6 +306,9 @@ export function createBuddyMcpServer(
           idempotentHint:
             operation === 'buddy.list_task_comments' ||
             operation === 'buddy.append_task_comment' ||
+            operation === 'buddy.new_list' ||
+            operation === 'buddy.post' ||
+            operation === 'buddy.get_list' ||
             operation.startsWith('buddy.get_') ||
             operation === 'buddy.list_buddies' ||
             operation === 'buddy.get_current_work' ||

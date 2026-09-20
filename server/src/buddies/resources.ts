@@ -189,6 +189,16 @@ export function compactInbox(value: unknown, input: unknown) {
             : null,
         };
       }
+      if (section === 'lists') {
+        // Mailing list rows are already bounded summaries (no post bodies);
+        // keep the unread counts intact through compaction.
+        return {
+          listId: entry.listId,
+          name: typeof entry.name === 'string' ? entry.name.slice(0, 240) : entry.name,
+          unread: entry.unread,
+          latestPostAt: entry.latestPostAt ?? null,
+        };
+      }
       // Historical queues and blockers retain IDs/status, without policy, document
       // bodies, nested audits or repeatedly copied project evidence.
       const summary: Record<string, unknown> = {};

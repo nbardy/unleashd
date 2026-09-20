@@ -72,6 +72,7 @@ test('Buddy MCP exposes scoped native tools and enforces completion evidence', a
       'get_capabilities',
       'get_current_work',
       'get_inbox',
+      'get_list',
       'get_memory',
       'get_message',
       'get_profile',
@@ -81,7 +82,9 @@ test('Buddy MCP exposes scoped native tools and enforces completion evidence', a
       'hire_direct_report',
       'list_buddies',
       'list_task_comments',
+      'new_list',
       'new_project',
+      'post',
       'recall',
       'remember_note',
       'reply',
@@ -366,7 +369,7 @@ test('resolved stdio Buddy MCP entrypoint opens the current durable schema', asy
   fixtureDatabase.close();
   assert.equal(
     schemaVersion.user_version,
-    30,
+    31,
     'the vendored Buddy package must understand the live schema'
   );
 

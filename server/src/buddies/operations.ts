@@ -293,6 +293,33 @@ export const BuddyOperationInputSchemas = {
     })
     .strict(),
   'buddy.reply': BuddyMessageReplySchema.extend({ messageId: z.string().min(1) }),
+  'buddy.new_list': z
+    .object({
+      key: z.string().trim().min(1).max(200),
+      name: z.string().trim().min(1).max(80),
+      purpose: z.string().trim().min(1).max(400),
+    })
+    .strict(),
+  'buddy.post': z
+    .object({
+      key: z.string().trim().min(1).max(200),
+      listId: z.string().min(1),
+      purpose: z.string().trim().min(1).max(200),
+      body: z.string().trim().min(1).max(32000),
+      evidence: z.array(z.string().trim().min(1).max(4000)).max(32).default([]),
+      projectId: z.string().min(1).nullable().optional(),
+    })
+    .strict(),
+  'buddy.get_list': z
+    .object({
+      listId: z.string().min(1),
+      limit: z.number().int().min(1).max(50).default(20),
+      cursor: z
+        .string()
+        .regex(/^list:[0-9]+$/)
+        .optional(),
+    })
+    .strict(),
   'buddy.delegate': z.object({
     toBuddyId: z.string().min(1),
     purpose: z.string().min(1),
@@ -380,6 +407,9 @@ export const MESSAGE_BUDDY_OPERATIONS: BuddyOperationName[] = [
   'buddy.recall',
   'buddy.send',
   'buddy.reply',
+  'buddy.new_list',
+  'buddy.post',
+  'buddy.get_list',
 ];
 
 export type PreparedBuddyDelegation = {
@@ -1195,6 +1225,10 @@ export class BuddyOperationsService {
               if (latest?.status !== 'failed') return [];
               return [{ automation, latestRun: publicAutomationRun(latest) }];
             }),
+            lists: this.store.listUnread({
+              buddy: this.context.buddyId,
+              workspace: this.context.workspaceId,
+            }),
           },
           parsed
         );
@@ -1593,6 +1627,71 @@ export class BuddyOperationsService {
           data: replied,
           audit: { recordedAtomicallyByStore: true },
         });
+      }
+      case 'buddy.new_list': {
+        this.requireActiveBuddy();
+        const parsed = BuddyOperationInputSchemas[name].parse(input);
+        return this.result(
+          name,
+          this.store.createList({
+            workspace: this.context.workspaceId,
+            buddy: this.context.buddyId,
+            ...parsed,
+          }),
+          parsed
+        );
+      }
+      case 'buddy.post': {
+        this.requireActiveBuddy();
+        const parsed = BuddyOperationInputSchemas[name].parse(input);
+        const list = this.store.getList(parsed.listId);
+        if (!list || list.workspaceId !== this.context.workspaceId)
+          throw Object.assign(new Error('Mailing list is unavailable in this workspace'), {
+            code: 'list_outside_workspace',
+          });
+        return this.result(
+          name,
+          this.store.createPost({
+            list: list.id,
+            buddy: this.context.buddyId,
+            key: parsed.key,
+            purpose: parsed.purpose,
+            body: parsed.body,
+            evidence: parsed.evidence,
+            project: parsed.projectId ?? null,
+          }),
+          parsed
+        );
+      }
+      case 'buddy.get_list': {
+        const parsed = BuddyOperationInputSchemas[name].parse(input);
+        const list = this.store.getList(parsed.listId);
+        if (!list || list.workspaceId !== this.context.workspaceId)
+          throw Object.assign(new Error('Mailing list is unavailable in this workspace'), {
+            code: 'list_outside_workspace',
+          });
+        const offset = parsed.cursor ? Number(parsed.cursor.slice(5)) : 0;
+        if (!Number.isSafeInteger(offset)) throw new Error('Invalid list cursor');
+        const overfetch = parsed.limit < 50;
+        const rows = this.store.listPosts({
+          list: list.id,
+          limit: overfetch ? parsed.limit + 1 : parsed.limit,
+          offset,
+        });
+        const hasMore = overfetch ? rows.length > parsed.limit : rows.length === parsed.limit;
+        const posts = overfetch && hasMore ? rows.slice(0, parsed.limit) : rows;
+        // A read from the top marks the list read; paging into history moves nothing.
+        if (!parsed.cursor && posts.length > 0)
+          this.store.markListRead({
+            buddy: this.context.buddyId,
+            list: list.id,
+            post: posts[0].id,
+          });
+        return this.result(
+          name,
+          { list, posts, nextCursor: hasMore ? `list:${offset + parsed.limit}` : null },
+          parsed
+        );
       }
       case 'buddy.delegate': {
         const parsed = this.prepareDelegation(input);
@@ -2089,12 +2188,16 @@ export class BuddyOperationsService {
             workspace_id?: string;
           }>;
           blockedProjects: Array<{ id: string }>;
+          lists?: unknown[];
         };
         data = {
           messages: inbox.messages.filter((m) => this.messageInAudience(m)),
           blockedProjects: inbox.blockedProjects.filter((p) =>
             this.projectInAudience((p as { id: string }).id)
           ),
+          // Mailing lists are public to the workspace by definition; the only
+          // boundary is the workspace, already applied by listUnread.
+          lists: inbox.lists ?? [],
         };
       }
     }

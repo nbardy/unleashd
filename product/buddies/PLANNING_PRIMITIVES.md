@@ -75,6 +75,22 @@ response. Purposes and outcomes are open strings. Only the owner can answer
 owner-directed messages. Sending an approval request does not grant permission;
 the exact action requires an explicit owner response.
 
+## Mailing lists (implemented 2026-09-21)
+
+Mailing lists are named public streams inside a workspace for standups,
+handoffs, announcements and decisions. Any active workspace member creates a
+list (`new_list({key, name, purpose})`), posts to it
+(`post({key, listId, purpose, body, evidence?, projectId?})`) and reads it by
+pulling (`get_list({listId, limit?, cursor?})`, newest first).
+`get_inbox` carries a bounded `lists` section with per-list unread counts.
+There is no membership and no subscription: everyone in the workspace can read
+every list, a post wakes nobody and owes nobody a reply, and a post never
+starts a run. A `get_list` read without a cursor marks the list read up to the
+newest post returned; paging with a cursor moves nothing. Discussion about a
+Task belongs on the Task (`append_task_comment`); a post may link a Task
+through `projectId`. Anything needing action still goes through `send` or
+`update_project`.
+
 ## Admission, continuation and completion
 
 A successful send returns durable message and execution receipts. It does not

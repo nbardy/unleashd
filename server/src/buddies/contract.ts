@@ -151,6 +151,39 @@ interface BuddyLegacyWorkItem {
   project_id: string;
 }
 
+export interface BuddyMailingList {
+  id: string;
+  workspaceId: string;
+  name: string;
+  purpose: string;
+  createdByBuddyId: string;
+  createdAt: string;
+}
+
+export interface BuddyMailingListSummary extends BuddyMailingList {
+  postCount: number;
+  latestPostAt: string | null;
+}
+
+export interface BuddyMailingListPost {
+  id: string;
+  listId: string;
+  workspaceId: string;
+  fromBuddyId: string;
+  purpose: string;
+  body: string;
+  evidence: string[];
+  projectId: string | null;
+  createdAt: string;
+}
+
+export interface BuddyMailingListUnread {
+  listId: string;
+  name: string;
+  unread: number;
+  latestPostAt: string | null;
+}
+
 export type BuddyMemoryDocumentKind = 'working' | 'long_term';
 
 export interface BuddyMemoryRevision {
@@ -455,6 +488,27 @@ export interface BuddiesStorePort {
   ): BuddyApprovalRequest;
   newProject(input: Record<string, unknown>): unknown;
   updateProject(id: string, changes: Record<string, unknown>): unknown;
+  createList(input: {
+    workspace: string;
+    buddy: string;
+    key: string;
+    name: string;
+    purpose: string;
+  }): { list: BuddyMailingList };
+  getList(id: string): BuddyMailingList | null;
+  listLists(input: { workspace: string }): BuddyMailingListSummary[];
+  createPost(input: {
+    list: string;
+    buddy: string;
+    key: string;
+    purpose: string;
+    body: string;
+    evidence?: string[];
+    project?: string | null;
+  }): { post: BuddyMailingListPost };
+  listPosts(input: { list: string; limit?: number; offset?: number }): BuddyMailingListPost[];
+  listUnread(input: { buddy: string; workspace: string }): BuddyMailingListUnread[];
+  markListRead(input: { buddy: string; list: string; post: string }): unknown;
   createAutomation(input: Record<string, unknown>): BuddyAutomation;
   getAutomation(id: string): BuddyAutomation | null;
   updateAutomation(id: string, changes: Record<string, unknown>): BuddyAutomation;

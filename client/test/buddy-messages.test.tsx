@@ -210,3 +210,43 @@ test('a pending structured setup proposal offers its concrete owner workflow ins
     />Send reply<|>Apply this team setup<|placeholder="For example: approved/
   );
 });
+
+test('mailbox lists section renders cached list chips and the shared empty state', async () => {
+  const { Provider } = await import('jotai');
+  const { jotaiStore } = await import('../src/atoms/store');
+  const { loadResource } = await import('../src/atoms/resources');
+  await loadResource({
+    key: '/api/buddies/lists?workspaceId=ws-cached',
+    load: async () => [
+      {
+        id: 'list_1',
+        workspaceId: 'ws-cached',
+        name: 'Standups',
+        purpose: 'Daily notes',
+        createdByBuddyId: 'lead',
+        createdAt: '2026-09-21T00:00:00.000Z',
+        postCount: 2,
+        latestPostAt: '2026-09-21T01:00:00.000Z',
+      },
+    ],
+  });
+  const render = (workspaceId: string) =>
+    renderToStaticMarkup(
+      <MemoryRouter>
+        <Provider store={jotaiStore}>
+          <BuddyMessages
+            messages={[]}
+            availableConversationIds={new Set()}
+            onReply={async () => {}}
+            workspaceId={workspaceId}
+          />
+        </Provider>
+      </MemoryRouter>
+    );
+  const cached = render('ws-cached');
+  assert.match(cached, /aria-label="Lists"/);
+  assert.match(cached, /Standups · 2/);
+  const empty = render('ws-empty');
+  assert.match(empty, /aria-label="Lists"/);
+  assert.match(empty, /class="empty-state">No lists yet/);
+});

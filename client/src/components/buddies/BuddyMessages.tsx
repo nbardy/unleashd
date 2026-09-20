@@ -2,6 +2,7 @@ import type { BuddyMessage } from '@unleashd/shared';
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { usePolledFetch } from '../../hooks/usePolledFetch';
+import { newId } from '../../utils/ids';
 import { BuddyTeamConfigurationRequest } from './BuddyTeamConfiguration';
 import { buddyApi } from './api';
 
@@ -19,12 +20,14 @@ export function BuddyMessages({
   messages,
   availableConversationIds,
   onReply,
+  workspaceId,
 }: {
   buddyId?: string;
   buddyNames?: Readonly<Record<string, string>>;
   messages: BuddyMessage[];
   availableConversationIds: ReadonlySet<string>;
   onReply(messageId: string, reply: BuddyOwnerReply): Promise<void>;
+  workspaceId?: string;
 }) {
   const { data, error, refetch } = usePolledFetch<BuddyMessage[]>(
     buddyId ? `/api/buddies/messages?buddyId=${encodeURIComponent(buddyId)}` : null,
@@ -50,7 +53,184 @@ export function BuddyMessages({
           }}
         />
       ))}
+      <BuddyListsSection workspaceId={workspaceId} buddyId={buddyId} buddyNames={buddyNames} />
     </section>
+  );
+}
+
+interface BuddyMailingListSummary {
+  id: string;
+  workspaceId: string;
+  name: string;
+  purpose: string;
+  createdByBuddyId: string;
+  createdAt: string;
+  postCount: number;
+  latestPostAt: string | null;
+}
+
+interface BuddyMailingListPost {
+  id: string;
+  listId: string;
+  workspaceId: string;
+  fromBuddyId: string;
+  purpose: string;
+  body: string;
+  evidence: string[];
+  projectId: string | null;
+  createdAt: string;
+}
+
+function BuddyListsSection({
+  workspaceId,
+  buddyId,
+  buddyNames,
+}: {
+  workspaceId?: string;
+  buddyId?: string;
+  buddyNames: Readonly<Record<string, string>>;
+}) {
+  const { data, error, refetch } = usePolledFetch<BuddyMailingListSummary[]>(
+    workspaceId ? `/api/buddies/lists?workspaceId=${encodeURIComponent(workspaceId)}` : null,
+    5000
+  );
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const selected = data?.find((list) => list.id === selectedId) ?? null;
+  return (
+    <section className="buddy-messages-list-section" aria-label="Lists">
+      <h3>Lists</h3>
+      <p>Public workspace streams for standups, handoffs, and announcements.</p>
+      {error && <p role="alert">Lists could not refresh: {error.message}</p>}
+      {!data || data.length === 0 ? (
+        <p className="empty-state">No lists yet.</p>
+      ) : (
+        <ul className="buddy-messages-list-chips">
+          {data.map((list) => (
+            <li key={list.id}>
+              <button
+                type="button"
+                aria-pressed={selected?.id === list.id}
+                onClick={() => setSelectedId(selected?.id === list.id ? null : list.id)}
+              >
+                {list.name} · {list.postCount}
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      {selected && (
+        <BuddyListFeed
+          key={selected.id}
+          list={selected}
+          buddyId={buddyId}
+          buddyNames={buddyNames}
+          onPosted={refetch}
+        />
+      )}
+    </section>
+  );
+}
+
+function BuddyListFeed({
+  list,
+  buddyId,
+  buddyNames,
+  onPosted,
+}: {
+  list: BuddyMailingListSummary;
+  buddyId?: string;
+  buddyNames: Readonly<Record<string, string>>;
+  onPosted(): void;
+}) {
+  const { data, error, refetch } = usePolledFetch<BuddyMailingListPost[]>(
+    `/api/buddies/lists/${encodeURIComponent(list.id)}/posts?limit=20`,
+    5000
+  );
+  const [purpose, setPurpose] = useState('standup');
+  const [body, setBody] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [problem, setProblem] = useState<string | null>(null);
+  return (
+    <article className="buddy-messages-list-feed">
+      <h4>{list.name}</h4>
+      <p>{list.purpose}</p>
+      {error && <p role="alert">Posts could not refresh: {error.message}</p>}
+      {!data || data.length === 0 ? (
+        <p className="empty-state">No posts yet.</p>
+      ) : (
+        <ul className="buddy-messages-list-posts">
+          {data.map((post) => (
+            <li key={post.id} className="buddy-messages-list-post">
+              <div className="buddy-messages-list-post-heading">
+                <strong>{post.purpose}</strong>
+                <span>
+                  <Link to={`/buddies/${encodeURIComponent(post.fromBuddyId)}`}>
+                    {buddyNames[post.fromBuddyId] ?? post.fromBuddyId}
+                  </Link>
+                  {' · '}
+                  {new Date(post.createdAt).toLocaleString()}
+                </span>
+              </div>
+              <p>{post.body}</p>
+            </li>
+          ))}
+        </ul>
+      )}
+      {buddyId && (
+        <form
+          className="buddy-messages-list-composer"
+          onSubmit={(event) => {
+            event.preventDefault();
+            setBusy(true);
+            setProblem(null);
+            void buddyApi(`/api/buddies/lists/${encodeURIComponent(list.id)}/posts`, {
+              method: 'POST',
+              headers: { 'content-type': 'application/json' },
+              body: JSON.stringify({
+                buddyId,
+                key: newId(),
+                purpose: purpose.trim(),
+                body: body.trim(),
+              }),
+            })
+              .then(() => {
+                setBody('');
+                refetch();
+                onPosted();
+              })
+              .catch((cause: unknown) => {
+                setProblem(cause instanceof Error ? cause.message : String(cause));
+              })
+              .finally(() => setBusy(false));
+          }}
+        >
+          <label>
+            Kind
+            <input
+              required
+              value={purpose}
+              maxLength={200}
+              onChange={(event) => setPurpose(event.target.value)}
+              disabled={busy}
+              placeholder="standup, handoff, announcement, decision"
+            />
+          </label>
+          <label>
+            Post
+            <textarea
+              required
+              value={body}
+              onChange={(event) => setBody(event.target.value)}
+              disabled={busy}
+            />
+          </label>
+          <button type="submit" disabled={busy || !purpose.trim() || !body.trim()}>
+            {busy ? 'Posting…' : 'Post'}
+          </button>
+        </form>
+      )}
+      {problem && <p role="alert">{problem}</p>}
+    </article>
   );
 }
 

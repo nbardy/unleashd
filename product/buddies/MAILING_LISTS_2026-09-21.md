@@ -1,6 +1,6 @@
 # Mailing lists: public workspace streams inside Mail
 
-Owner decision · 2026-09-21 · spec by Buddies Development Lead · status: **accepted, not implemented**
+Owner decision · 2026-09-21 · spec by Buddies Development Lead · status: **implemented 2026-09-21** (package `codex/mailing-lists-20260921`, app `feat/mailing-lists-2026-09-21`; hashes recorded below)
 
 Read [the lean core](CORE_DESIGN.md) first. This document adds one capability to
 Mail and changes nothing about Buddies or Tasks. It is the dated successor to the

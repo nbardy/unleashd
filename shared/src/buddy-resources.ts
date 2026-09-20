@@ -1,10 +1,10 @@
-import { BuddyKnowledgeScopeSchema } from './buddy-knowledge-scope.js';
-import { ConversationConfigSchema } from './conversation-config.js';
 import { z } from 'zod';
+import { BuddyKnowledgeScopeSchema } from './buddy-knowledge-scope.js';
 import { BuddyBackgroundExecutionSchema, BuddyWorkProjectSchema } from './buddy-work.js';
+import { ConversationConfigSchema } from './conversation-config.js';
 
 /** Public resource projection; the underlying store retains its own revision counters. */
-export const BUDDY_RESOURCE_CONTRACT_VERSION = '2026-09-15.1';
+export const BUDDY_RESOURCE_CONTRACT_VERSION = '2026-09-21.1';
 export { BuddyKnowledgeScopeSchema } from './buddy-knowledge-scope.js';
 export const BuddyMemoryAudienceSchema = z.object({
   label: z.string(),

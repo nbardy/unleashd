@@ -3,9 +3,9 @@
   "package": "@nbardy/buddies",
   "version": "0.1.0",
   "archive": "vendor/nbardy-buddies-0.1.0.tgz",
-  "sha256": "9df25d35008f4ae6b060004c6865619c5a383e4452b4f81f9a55f3e6d5823f33",
+  "sha256": "1dcc221f6e436e1619f1236c9d001e8222b4daea4295c97eb1d2ce1b824afc4f",
   "reproduciblePack": true,
-  "sourceCommit": "21810caec173e2eec79ef2df90edcc05b935d62e",
+  "sourceCommit": "92feeca64797797208d07c4e88ebd8d515207147",
   "sourceDirty": false,
   "sourceStatus": [],
   "manifest": {
@@ -34,7 +34,8 @@
       "src/background-work.js",
       "src/knowledge.js",
       "src/mailbox.js",
-      "src/coordination-receipts.js"
+      "src/coordination-receipts.js",
+      "src/lists.js"
     ],
     "packedFiles": [
       "README.md",
@@ -59,6 +60,7 @@
       "src/index.d.ts",
       "src/index.js",
       "src/knowledge.js",
+      "src/lists.js",
       "src/mailbox.js",
       "src/store.js",
       "src/team-access.js",
@@ -67,7 +69,7 @@
     "ignoredFiles": [],
     "untrackedFiles": [],
     "runtimeFiles": [],
-    "sha256": "ef0777b9a88f8a639d9461dad9764ad6a2195e38b221f760fdfcb5a3da904c10"
+    "sha256": "e02e4f6c8d69c1c779cd9154d846ed1de8734e47239ecc4382eb13571de0810c"
   },
   "releaseReady": true
 }
