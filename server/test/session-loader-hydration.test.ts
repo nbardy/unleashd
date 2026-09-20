@@ -274,6 +274,7 @@ async function recoverAll(input: {
           createdAt: '2026-01-01T00:00:00.000Z',
           ...entry,
           config: { provider: 'claude' },
+          sessionBindings: [],
           currentSession: null,
           creation: undefined,
           lastResolvedConfig: undefined,
@@ -492,7 +493,7 @@ async function pollExistingKind(input: {
       isSuppressed: () => false,
       prune: () => {},
     },
-    configStore: {} as ConversationConfigStore,
+    configStore: { findBySession: async () => null } as unknown as ConversationConfigStore,
     configService: {} as ConversationConfigService,
     loadConversations: async () => ({ mtimes: new Map<string, number>() }),
     pollConversations: async () => ({

@@ -1,5 +1,10 @@
 import type { DiskAdapter, ParsedSession } from './disk-adapter';
-import { MUSE_SESSIONS_DIR, getMuseSessionFiles, parseMuseSessionFile } from './jsonl';
+import {
+  MUSE_SESSIONS_DIR,
+  extractMuseSessionIdFromFilePath,
+  getMuseSessionFiles,
+  parseMuseSessionFile,
+} from './jsonl';
 
 /**
  * Muse adapter — reads ~/.local/share/muse/sessions/YYYY/MM/DD/{sessionId}/session.jsonl
@@ -14,6 +19,8 @@ import { MUSE_SESSIONS_DIR, getMuseSessionFiles, parseMuseSessionFile } from './
  */
 export const museAdapter: DiskAdapter = {
   provider: 'muse',
+  matchesSessionFile: (filePath, sessionId) =>
+    extractMuseSessionIdFromFilePath(filePath) === sessionId,
 
   async discoverFiles(): Promise<string[]> {
     return getMuseSessionFiles(MUSE_SESSIONS_DIR);

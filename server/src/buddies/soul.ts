@@ -38,7 +38,6 @@ export function updateBuddySoul(
     );
   if (head.revision !== parsed.baseVersion) throw conflict(head);
   if (!buddy.soul_path) {
-    if (!buddy.slug) throw new Error('Buddy has no slug for its soul path');
     // Set only the pointer. The store materializes the file AFTER committing
     // the revision; a stale write must never replace the on-disk projection.
     store.updateBuddy(buddyId, { soulPath: buddySoulRelativePath(buddy.slug) });

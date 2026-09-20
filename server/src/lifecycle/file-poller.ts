@@ -42,6 +42,10 @@ export function createFilePoller<TUpdate, TBroadcast>(
   ports: FilePollerPorts<TUpdate, TBroadcast>
 ): FilePoller {
   let inFlight: Promise<void> | null = null;
+  // A runtime may become active after its file was parsed. The mtime has
+  // already advanced, so retain that parsed update until an idle application
+  // boundary instead of waiting for another disk write that may never happen.
+  const pendingUpdates = new Map<string, TUpdate>();
 
   async function pollOnce(): Promise<void> {
     try {
@@ -58,6 +62,7 @@ export function createFilePoller<TUpdate, TBroadcast>(
         else nextMtimes.set(dirtyPath, previousMtime);
       }
       ports.setMtimes(nextMtimes);
+      for (const [sessionId, update] of updated) pendingUpdates.set(sessionId, update);
 
       const activeIds = ports.collectActiveIds();
       for (const activeId of activeIdsAtPollStart) activeIds.add(activeId);
@@ -91,13 +96,19 @@ export function createFilePoller<TUpdate, TBroadcast>(
       }
 
       ports.pruneTracking();
-      if (updated.size === 0) return;
-      if (options.verbose) console.log(`[Poll] ${updated.size} conversation(s) changed`);
+      if (pendingUpdates.size === 0) return;
+      if (options.verbose)
+        console.log(`[Poll] ${pendingUpdates.size} conversation update(s) pending`);
 
       const changed: TBroadcast[] = [];
-      for (const [sessionId, update] of updated) {
-        if (activeIds.has(sessionId)) continue;
+      for (const [sessionId, update] of pendingUpdates) {
+        if (activeIds.has(sessionId) || ports.collectActiveIds().has(sessionId)) continue;
         const broadcast = await ports.applyUpdate(sessionId, update);
+        // applyUpdate can await durable identity lookup before checking runtime
+        // ownership. An active rejection is retryable; an idle null (including
+        // a tombstone or deliberately ignored source) is terminal.
+        if (ports.collectActiveIds().has(sessionId)) continue;
+        pendingUpdates.delete(sessionId);
         if (broadcast) changed.push(broadcast);
       }
       if (changed.length > 0) ports.broadcastUpdates(changed);

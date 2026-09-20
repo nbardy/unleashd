@@ -305,6 +305,10 @@ export class ConversationConfigService {
     await this.store.addSessionBinding(conversationId, binding);
   }
 
+  appendBranchLaunch(conversationId: string, digest: string, handoff: string) {
+    return this.store.appendBranchLaunch(conversationId, digest, handoff);
+  }
+
   async setCurrentSession(conversationId: string, binding: SessionBinding): Promise<void> {
     await this.store.setCurrentSession(conversationId, binding);
   }

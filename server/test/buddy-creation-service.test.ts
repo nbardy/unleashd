@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import test from 'node:test';
-import { createDefaultConversationConfig } from '@unleashd/shared';
+import { type BuddyContext, createDefaultConversationConfig } from '@unleashd/shared';
 import {
   type BuddyCreationServicePorts,
   createBuddyCreationService,
@@ -36,6 +36,7 @@ test('server Buddy creation persists, registers, broadcasts, links, and dispatch
   const creates: unknown[] = [];
   const conversationOptions: ConversationOptions[] = [];
   let claimed = false;
+  let nextId = 0;
 
   class FakeConversation extends EventEmitter {
     readonly id: string;
@@ -62,10 +63,12 @@ test('server Buddy creation persists, registers, broadcasts, links, and dispatch
 
   const config = createDefaultConversationConfig('codex');
   const ports = {
+    getConversation: (id: string) => registered.find((c) => c.id === id),
     configService: {
       async createOrReplay(input: unknown) {
         creates.push(input);
         return {
+          record: {},
           state: {
             config,
             revision: 0,
@@ -105,8 +108,8 @@ test('server Buddy creation persists, registers, broadcasts, links, and dispatch
       },
       async setCurrentSession() {},
     },
-    resolveBuddyConversation: async () => ({
-      context,
+    resolveBuddyConversation: async (requested: BuddyContext) => ({
+      context: { ...context, ...requested },
       briefing: 'briefing',
       workingDirectory: '/workspace',
       provider: 'codex' as const,
@@ -114,7 +117,7 @@ test('server Buddy creation persists, registers, broadcasts, links, and dispatch
     }),
     resolveWorkingDirectory: (directory: string) => directory,
     isProviderAvailable: () => true,
-    createId: () => 'conversation-1',
+    createId: () => `conversation-${++nextId}`,
     createConversation: (options: ConversationOptions) => {
       conversationOptions.push(options);
       return new FakeConversation(options) as unknown as ConversationRuntime;
@@ -159,7 +162,7 @@ test('server Buddy creation persists, registers, broadcasts, links, and dispatch
         max_iterations: 1,
         max_tokens: 1,
         max_cost_usd: 1,
-        allowed_operations: ['buddy.get_current_work'],
+        allowed_operations: ['buddy.get_current_work', 'buddy.update_memory'],
       },
       enabled: true,
       next_run_at: null,
@@ -195,6 +198,11 @@ test('server Buddy creation persists, registers, broadcasts, links, and dispatch
   );
   assert.equal(conversationOptions.at(-1)?.automationClaimToken, 'private-claim-token');
   assert.equal('automationClaimToken' in (conversationOptions.at(-1) ?? {}), true);
+  assert.deepEqual(
+    conversationOptions.at(-1)?.buddyContext?.allowedBuddyOperations,
+    ['buddy.get_current_work'],
+    'the immutable run policy, not the current definition, controls post-turn memory review'
+  );
 
   claimed = false;
   const queuedBeforeDormantCreate = queued.length;

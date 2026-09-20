@@ -356,30 +356,34 @@ export function registerConversationWebSocket(
             break;
           }
 
-          case 'queue_message': {
-            const conversation = dependencies.registry.get(data.conversationId);
-            if (conversation) {
-              await createOrReuse.ensureReady(conversation);
-              conversation.enqueueMessage(data.content, {
-                origin: 'owner_input',
-                inputId: crypto.randomUUID(),
-              });
-            }
-            sendCommandAccepted(socket, {
-              commandId: data.commandId,
-              conversationId: data.conversationId,
-            });
-            break;
-          }
+          // Both owner sends share one admission. A missing runtime is a
+          // REJECTION, never an acceptance: the composer empties on submit
+          // (client optimistic send), so acknowledging a message the server
+          // never admitted discards the user's text with no error anywhere.
+          // The old `registry.get(id)?.enqueue(...)` + unconditional accept
+          // was exactly that silent drop.
+          case 'queue_message':
           case 'interrupt_and_send': {
             const conversation = dependencies.registry.get(data.conversationId);
-            if (conversation) {
-              await createOrReuse.ensureReady(conversation);
-              conversation.interruptAndSend(data.content, {
-                origin: 'owner_input',
-                inputId: crypto.randomUUID(),
+            if (!conversation) {
+              sendCommandRejected(socket, {
+                commandId: data.commandId,
+                conversationId: data.conversationId,
+                error: {
+                  code: 'conversation_not_found',
+                  message: `Conversation ${data.conversationId} is not open on this server`,
+                },
               });
+              break;
             }
+            await createOrReuse.ensureReady(conversation);
+            const ownerInput = {
+              origin: 'owner_input',
+              inputId: crypto.randomUUID(),
+            } as const;
+            if (data.type === 'queue_message')
+              conversation.enqueueMessage(data.content, ownerInput);
+            else conversation.interruptAndSend(data.content, ownerInput);
             sendCommandAccepted(socket, {
               commandId: data.commandId,
               conversationId: data.conversationId,

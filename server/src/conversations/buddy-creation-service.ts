@@ -1,8 +1,8 @@
-import crypto from 'node:crypto';
 import type {
   BuddyContext,
+  ConversationBranch,
   ConversationConfig,
-  ConversationPurpose,
+  ConversationPlacement,
   Provider,
 } from '@unleashd/shared';
 import { normalizeModelId } from '@unleashd/shared';
@@ -19,26 +19,26 @@ import type {
   ConversationRuntimeView,
 } from './runtime';
 
-export interface CreationFingerprintInput {
-  workingDirectory: string;
-  config: ConversationConfig;
-  initialMessage?: string;
-  swarmDebugPrefix?: string;
-  resumedFromConversationId?: string;
-  buddyContext?: BuddyContext;
-  purpose?: ConversationPurpose;
-}
+import { createConversationService, creationFingerprint } from './creation-service';
+export { creationFingerprint } from './creation-service';
+export type { CreationFingerprintInput } from './creation-service';
+import type { CreationFingerprintInput } from './creation-service';
 
 export interface CreateServerBuddyConversationInput {
+  config?: ConversationConfig;
   context: BuddyContext;
-  initialMessage: string;
+  initialMessage?: string;
   commandId: string;
   conversationId?: string;
   /** Register/link the transcript but leave its first provider turn dormant. */
   deferInitialMessage?: boolean;
+  placement?: ConversationPlacement;
+  branch?: ConversationBranch;
+  ownerInput?: Readonly<{ origin: 'owner_input'; inputId: string }>;
 }
 
 export interface InitialMessageDispatchOptions {
+  ownerInput?: Readonly<{ origin: 'owner_input'; inputId: string }>;
   /**
    * Run the synchronous enqueue inside the caller's authority transaction.
    * Throwing leaves the child dormant and disables automatic retry.
@@ -65,6 +65,7 @@ export interface BuddyCreationServicePorts {
   resolveWorkingDirectory(input: string): string;
   isProviderAvailable(provider: Provider): boolean;
   createId(): string;
+  getConversation(id: string): ConversationRuntime | undefined;
   createConversation(options: ConversationOptions): ConversationRuntime;
   registerConversation(conversation: ConversationRuntime): void;
   createConversationLink(conversation: ConversationRuntime): Promise<void>;
@@ -77,8 +78,13 @@ export interface BuddyCreationServicePorts {
 }
 
 export interface BuddyCreationService {
+  ensureConversationReady(conversation: ConversationRuntime): Promise<ConversationRuntime>;
   creationFingerprint(input: CreationFingerprintInput): string;
-  persistCurrentSession(conversation: ConversationRuntimeView, sessionId: string): Promise<void>;
+  persistCurrentSession(
+    conversation: ConversationRuntimeView,
+    sessionId: string,
+    buddyAudienceKey?: string
+  ): Promise<void>;
   dispatchInitialMessageIfPending(
     conversation: ConversationRuntime,
     options?: InitialMessageDispatchOptions
@@ -95,25 +101,9 @@ export interface BuddyCreationService {
   ): Promise<ConversationRuntime>;
 }
 
-export function creationFingerprint(input: CreationFingerprintInput): string {
-  return crypto
-    .createHash('sha256')
-    .update(
-      JSON.stringify({
-        workingDirectory: input.workingDirectory,
-        config: input.config,
-        initialMessage: input.initialMessage ?? null,
-        swarmDebugPrefix: input.swarmDebugPrefix ?? null,
-        resumedFromConversationId: input.resumedFromConversationId ?? null,
-        buddyContext: input.buddyContext ?? null,
-        ...(input.purpose === undefined ? {} : { purpose: input.purpose }),
-      })
-    )
-    .digest('hex');
-}
-
 export function createBuddyCreationService(ports: BuddyCreationServicePorts): BuddyCreationService {
   const logger = ports.logger ?? console;
+  const createOrReuse = createConversationService(ports);
   const dispatchRetryTimers = new Map<string, NodeJS.Timeout>();
   const dispatchOptions = new Map<string, InitialMessageDispatchOptions>();
 
@@ -121,12 +111,14 @@ export function createBuddyCreationService(ports: BuddyCreationServicePorts): Bu
 
   async function persistCurrentSession(
     conversation: ConversationRuntimeView,
-    sessionId: string
+    sessionId: string,
+    buddyAudienceKey?: string
   ): Promise<void> {
     try {
       await ports.configService.setCurrentSession(conversation.id, {
         provider: conversation.config.provider,
         sessionId,
+        ...(buddyAudienceKey ? { buddyAudienceKey } : {}),
       });
     } catch (error) {
       logger.warn(
@@ -161,8 +153,9 @@ export function createBuddyCreationService(ports: BuddyCreationServicePorts): Bu
         (message) => message.role === 'user' && message.content === initialMessage
       );
       if (!alreadyVisible) {
-        const enqueue = () => conversation.enqueueMessage(initialMessage);
         const currentOptions = dispatchOptions.get(conversation.id);
+        const enqueue = () =>
+          conversation.enqueueMessage(initialMessage, currentOptions?.ownerInput);
         if (currentOptions?.enqueueAuthorized) {
           try {
             // The authority check, any durable binding, and enqueue are one
@@ -241,34 +234,27 @@ export function createBuddyCreationService(ports: BuddyCreationServicePorts): Bu
     commandId: string;
     initialMessage?: string;
     automationClaimToken?: string;
+    placement?: ConversationPlacement;
+    branch?: ConversationBranch;
   }): Promise<ConversationRuntime> {
-    const fingerprint = creationFingerprint({
-      workingDirectory: input.workingDirectory,
-      config: input.config,
-      initialMessage: input.initialMessage,
-      buddyContext: input.resolved.context,
-    });
-    const creation = await ports.configService.createOrReplay({
+    const conversation = await createOrReuse({
       conversationId: input.conversationId,
+      workingDirectory: input.workingDirectory,
       config: input.config,
-      workingDirectory: input.workingDirectory,
-      creation: {
-        commandId: input.commandId,
-        fingerprint,
-        ...(input.initialMessage === undefined ? {} : { initialMessage: input.initialMessage }),
-        buddyContext: input.resolved.context,
-      },
-    });
-    const conversation = ports.createConversation({
-      id: input.conversationId,
-      workingDirectory: input.workingDirectory,
-      configState: creation.state,
+      commandId: input.commandId,
+      initialMessage: input.initialMessage,
+      branch: input.branch,
       buddyContext: input.resolved.context,
+      placement:
+        input.placement ??
+        (input.resolved.context.coordinationRunId ||
+        input.resolved.context.automationRunId ||
+        input.resolved.context.delegatedByBuddyId
+          ? 'background'
+          : 'default'),
       buddyBriefing: input.resolved.briefing,
       automationClaimToken: input.automationClaimToken,
     });
-    ports.registerConversation(conversation);
-    await ports.createConversationLink(conversation);
     ports.broadcast({
       type: 'conversations_updated',
       conversations: [conversation.toJSON()],
@@ -288,6 +274,7 @@ export function createBuddyCreationService(ports: BuddyCreationServicePorts): Bu
       workspaceId: automation.workspace_id,
       buddyProjectId: automation.buddy_project_id,
       automationRunId: run.id,
+      allowedBuddyOperations: [...run.policy.allowed_operations],
     });
     const config = resolveConfig(resolved);
     const conversationId = ports.createId();
@@ -339,11 +326,17 @@ export function createBuddyCreationService(ports: BuddyCreationServicePorts): Bu
       conversationId: input.conversationId ?? ports.createId(),
       workingDirectory: ports.resolveWorkingDirectory(resolved.workingDirectory),
       resolved,
-      config: resolveConfig(resolved),
+      config: input.config ?? resolveConfig(resolved),
       commandId: input.commandId,
       initialMessage: input.initialMessage,
+      branch: input.branch,
+      placement: input.placement,
     });
-    if (!input.deferInitialMessage) await dispatchInitialMessageIfPending(conversation);
+    if (!input.deferInitialMessage)
+      await dispatchInitialMessageIfPending(
+        conversation,
+        input.ownerInput ? { ownerInput: input.ownerInput } : undefined
+      );
     return conversation;
   }
 
@@ -358,31 +351,16 @@ export function createBuddyCreationService(ports: BuddyCreationServicePorts): Bu
     const purpose = 'buddy_builder' as const;
     const config = configFromProviderPreferences({
       provider: 'codex',
-      model: 'gpt-5.6-luna',
-      reasoningEffort: 'high',
+      model: 'gpt-6-astra',
+      reasoningEffort: 'low',
     });
-    const fingerprint = creationFingerprint({
-      workingDirectory,
-      config,
-      purpose,
-    });
-    const creation = await ports.configService.createOrReplay({
+    const conversation = await createOrReuse({
       conversationId,
+      workingDirectory,
       config,
-      workingDirectory,
-      creation: {
-        commandId: input.commandId,
-        fingerprint,
-        purpose,
-      },
-    });
-    const conversation = ports.createConversation({
-      id: conversationId,
-      workingDirectory,
-      configState: creation.state,
       purpose,
+      commandId: input.commandId,
     });
-    ports.registerConversation(conversation);
     ports.broadcast({
       type: 'conversations_updated',
       conversations: [conversation.toJSON()],
@@ -391,6 +369,7 @@ export function createBuddyCreationService(ports: BuddyCreationServicePorts): Bu
   }
 
   return {
+    ensureConversationReady: createOrReuse.ensureReady,
     creationFingerprint,
     persistCurrentSession,
     dispatchInitialMessageIfPending,

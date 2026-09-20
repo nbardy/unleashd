@@ -18,7 +18,14 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import type { DiscoveredConversation } from '@unleashd/shared';
 import { shouldIgnoreWorkingDirectory } from '../config';
-import type { DiskAdapter, LoadProgressCallback, LoadResult, PollResult } from './disk-adapter';
+import type {
+  DiskAdapter,
+  LoadProgressCallback,
+  LoadResult,
+  PollResult,
+  SessionHistoryOptions,
+  SessionHistorySource,
+} from './disk-adapter';
 import { sessionToConversation } from './disk-adapter';
 import { extractCodexSessionIdFromFilename, extractMuseSessionIdFromFilePath } from './jsonl';
 import { diskAdapters } from './registry';
@@ -103,6 +110,87 @@ async function discoverAll(adapters: DiskAdapter[]): Promise<DiscoveredFile[]> {
   return files;
 }
 
+function createHistoryReader(
+  options: SessionHistoryOptions & { cache?: NormalizedSessionCache },
+  discover: () => Promise<DiscoveredFile[]>,
+  readSource = (file: DiscoveredFile) => parseOneFile(file, options.cache)
+): (source: DiscoveredConversation) => Promise<SessionHistorySource> {
+  let discovered: Promise<DiscoveredFile[]> | undefined;
+  return async (source) => {
+    const bindings = await options.resolveSessionBindings?.(source);
+    const related = bindings?.filter(
+      (binding) => binding.provider !== source.provider || binding.sessionId !== source.sessionId
+    );
+    if (!related?.length) return source;
+    // Startup's limit selects conversations. Older files bound to a selected
+    // conversation still belong to its history, without importing unrelated rows.
+    discovered ??= discover();
+    const files = await discovered;
+    const boundSessionSources: DiscoveredConversation[] = [];
+    for (const binding of related) {
+      // Native path layouts belong to adapters. Gemini uses shortened ids and
+      // Muse uses a parent directory; hints never establish conversation identity.
+      const candidates = files.filter((file) =>
+        file.adapter.matchesSessionFile
+          ? file.adapter.matchesSessionFile(file.filePath, binding.sessionId)
+          : path.basename(file.filePath, path.extname(file.filePath)) === binding.sessionId
+      );
+      for (const candidate of candidates) {
+        const parsed = await readSource(candidate);
+        if (
+          parsed.conversation?.provider === binding.provider &&
+          parsed.conversation.sessionId === binding.sessionId
+        ) {
+          boundSessionSources.push(parsed.conversation);
+          break;
+        }
+      }
+    }
+    return { ...source, boundSessionSources };
+  };
+}
+
+/** Share the byte budget between selected sources and their older bound sources. */
+function createBoundedSourceReader(
+  maxInFlightWeight: number,
+  cache?: NormalizedSessionCache
+): (file: DiscoveredFile) => Promise<ParsedResult> {
+  let availableWeight = maxInFlightWeight;
+  const waiters: Array<{ weight: number; resolve: () => void }> = [];
+  const inFlight = new Map<string, Promise<ParsedResult>>();
+
+  function drainWaiters(): void {
+    while (waiters.length > 0 && waiters[0].weight <= availableWeight) {
+      const waiter = waiters.shift();
+      if (!waiter) return;
+      availableWeight -= waiter.weight;
+      waiter.resolve();
+    }
+  }
+
+  return (file) => {
+    const key = `${file.adapter.provider}\0${file.filePath}`;
+    const pending = inFlight.get(key);
+    if (pending) return pending;
+    const weight = Math.min(maxInFlightWeight, Math.max(1, Math.ceil(file.sizeBytes)));
+    const result = (async () => {
+      await new Promise<void>((resolve) => {
+        waiters.push({ weight, resolve });
+        drainWaiters();
+      });
+      try {
+        return await parseOneFile(file, cache);
+      } finally {
+        availableWeight += weight;
+        inFlight.delete(key);
+        drainWaiters();
+      }
+    })();
+    inFlight.set(key, result);
+    return result;
+  };
+}
+
 // =============================================================================
 // Parallel processing helper
 // =============================================================================
@@ -118,42 +206,14 @@ async function discoverAll(adapters: DiskAdapter[]): Promise<DiscoveredFile[]> {
 async function forEachWithConcurrency<T>(
   items: T[],
   concurrency: number,
-  maxInFlightWeight: number,
-  getWeight: (item: T) => number,
   fn: (item: T) => Promise<void>
 ): Promise<void> {
   let nextIndex = 0;
-  let availableWeight = maxInFlightWeight;
-  const waiters: Array<{ weight: number; resolve: () => void }> = [];
-
-  function drainWaiters(): void {
-    while (waiters.length > 0 && waiters[0].weight <= availableWeight) {
-      const waiter = waiters.shift();
-      if (!waiter) return;
-      availableWeight -= waiter.weight;
-      waiter.resolve();
-    }
-  }
-
-  async function acquire(weight: number): Promise<void> {
-    await new Promise<void>((resolve) => {
-      waiters.push({ weight, resolve });
-      drainWaiters();
-    });
-  }
 
   async function worker(): Promise<void> {
     while (nextIndex < items.length) {
       const index = nextIndex++;
-      const item = items[index];
-      const weight = Math.min(maxInFlightWeight, Math.max(1, Math.ceil(getWeight(item))));
-      await acquire(weight);
-      try {
-        await fn(item);
-      } finally {
-        availableWeight += weight;
-        drainWaiters();
-      }
+      await fn(items[index]);
     }
   }
 
@@ -286,7 +346,7 @@ async function parseOneFile(
  * @returns conversations + mtime index for subsequent polling
  */
 export async function loadAllConversations(
-  options: {
+  options: SessionHistoryOptions & {
     onProgress?: LoadProgressCallback;
     limit?: number;
     offset?: number;
@@ -332,6 +392,8 @@ export async function loadAllConversations(
   const discoverStart = performance.now();
   console.log('Discovering persisted conversation files...');
   const files = await discoverAll([...adapters]);
+  const readSource = createBoundedSourceReader(normalizedMaxInFlightParseBytes, cache);
+  const readHistory = createHistoryReader(options, async () => files, readSource);
   const discoverTimeMs = performance.now() - discoverStart;
 
   const startIndex = Math.min(normalizedOffset, files.length);
@@ -368,40 +430,37 @@ export async function loadAllConversations(
 
   const parseStart = performance.now();
 
-  await forEachWithConcurrency(
-    filesToParse,
-    normalizedConcurrency,
-    normalizedMaxInFlightParseBytes,
-    (file) => file.sizeBytes,
-    async (file) => {
-      const result = await parseOneFile(file, cache);
+  await forEachWithConcurrency(filesToParse, normalizedConcurrency, async (file) => {
+    // Release the source-byte budget before loading its siblings; retaining
+    // that reservation while waiting on an older source can deadlock startup.
+    const result = await readSource(file);
 
-      const t = result.parseTimeMs;
-      if (t < parseTimeMin) parseTimeMin = t;
-      if (t > parseTimeMax) parseTimeMax = t;
-      parseTimeSum += t;
-      parseTimeCount++;
-      if (result.cacheHit) cacheHits++;
+    const t = result.parseTimeMs;
+    if (t < parseTimeMin) parseTimeMin = t;
+    if (t > parseTimeMax) parseTimeMax = t;
+    parseTimeSum += t;
+    parseTimeCount++;
+    if (result.cacheHit) cacheHits++;
 
-      if (result.conversation) {
-        conversations?.set(result.conversation.sessionId, result.conversation);
-        batchBuffer.push(result.conversation);
-        conversationCount++;
-      }
-
-      filesProcessed++;
-
-      const nextBatchSize =
-        conversationCount <= batchBuffer.length ? normalizedInitialBatchSize : normalizedBatchSize;
-      if (onProgress && batchBuffer.length >= nextBatchSize) {
-        // Detach the full batch before awaiting the consumer. Other parser
-        // workers may complete while hydration is in progress.
-        const batch = batchBuffer;
-        batchBuffer = [];
-        await onProgress(batch, { loaded: filesProcessed, total: filesToParse.length });
-      }
+    if (result.conversation) {
+      const conversation = await readHistory(result.conversation);
+      conversations?.set(conversation.sessionId, conversation);
+      batchBuffer.push(conversation);
+      conversationCount++;
     }
-  );
+
+    filesProcessed++;
+
+    const nextBatchSize =
+      conversationCount <= batchBuffer.length ? normalizedInitialBatchSize : normalizedBatchSize;
+    if (onProgress && batchBuffer.length >= nextBatchSize) {
+      // Detach the full batch before awaiting the consumer. Other parser
+      // workers may complete while hydration is in progress.
+      const batch = batchBuffer;
+      batchBuffer = [];
+      await onProgress(batch, { loaded: filesProcessed, total: filesToParse.length });
+    }
+  });
 
   // Emit any remaining conversations in the final batch
   if (onProgress && batchBuffer.length > 0) {
@@ -450,7 +509,10 @@ export async function loadAllConversations(
 export async function pollForChanges(
   prevMtimes: Map<string, number>,
   activeIds: Set<string>,
-  options: { cache?: NormalizedSessionCache } = {}
+  options: SessionHistoryOptions & {
+    cache?: NormalizedSessionCache;
+    adapters?: readonly DiskAdapter[];
+  } = {}
 ): Promise<PollResult> {
   const updated = new Map<string, DiscoveredConversation>();
   const deferredDirtyPaths = new Set<string>();
@@ -458,8 +520,10 @@ export async function pollForChanges(
   // Any path absent from this poll's discovery is deleted on disk and falls out naturally,
   // preventing the map from accumulating dead paths forever.
   const mtimes = new Map<string, number>();
+  const adapters = options.adapters ?? diskAdapters;
+  const readHistory = createHistoryReader(options, () => discoverAll([...adapters]));
 
-  for (const adapter of diskAdapters) {
+  for (const adapter of adapters) {
     let paths: string[];
     try {
       paths = await adapter.discoverFiles();
@@ -571,7 +635,7 @@ export async function pollForChanges(
         }
         if (conversation.messages.length === 0) continue;
 
-        updated.set(conversation.sessionId, conversation);
+        updated.set(conversation.sessionId, await readHistory(conversation));
       } catch (error: unknown) {
         // A failed parse did not observe an authoritative new state. Preserve
         // the prior baseline so the same dirty file is retried next poll.

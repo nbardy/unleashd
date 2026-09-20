@@ -1,0 +1,133 @@
+{
+  "schemaVersion": 1,
+  "evaluationStatus": "prepared; not executed",
+  "histories": [
+    {
+      "id": "K-qualified-selection",
+      "working": "",
+      "longTerm": "",
+      "messages": [
+        {
+          "id": "K-qualified-selection-m1",
+          "role": "user",
+          "content": "Use revision Cedar. It is shorter than the later alternatives. Keep the model and tools fixed."
+        },
+        {
+          "id": "K-qualified-selection-m2",
+          "role": "assistant",
+          "content": "Cedar is 3,100 characters; the original is 2,000; the later alternatives are 3,450 and 3,700. Cedar passed 9/10 and the original 7/10. Four variants were tuned on the same five scenarios, twice each. A bookkeeping miss remains. I recommend an unseen evaluation before any rewrite."
+        },
+        {
+          "id": "K-qualified-selection-m3",
+          "role": "user",
+          "content": "Leave Cedar in place for now. Save the correction and the evidence."
+        }
+      ],
+      "partition": "development-regression",
+      "origin": "synthetic; created from thread lessons with changed names, values and circumstances"
+    },
+    {
+      "id": "L-production-provenance",
+      "working": "The new reviewer may be active.",
+      "longTerm": "",
+      "messages": [
+        {
+          "id": "L-production-provenance-m1",
+          "role": "assistant",
+          "content": "The candidate is saved in source and passed an isolated disposable-store test. The service has older completed review receipts. Newer receipts record model and effort but no prompt hash or loaded build identity. No runtime restart or loaded-module check was observed."
+        },
+        {
+          "id": "L-production-provenance-m2",
+          "role": "user",
+          "content": "Keep the distinction between existing review activity and this candidate's production activation."
+        }
+      ],
+      "partition": "development-regression",
+      "origin": "synthetic; created from thread lessons with changed names, values and circumstances"
+    },
+    {
+      "id": "M-repair-qualified-history",
+      "working": "The acceptance claim was reopened after three defects were reproduced.",
+      "longTerm": "Prefer integration tests through the real boundary.",
+      "notes": [
+        {
+          "name": "2026-08-03T12:00:00Z:repair-report",
+          "body": "The dated repair report says all three original defects and an adjacent variant now have passing controlled regressions. It records a package commit. Live activation and a fresh production journey were not tested. This qualifies the earlier defect finding; it does not erase it."
+        }
+      ],
+      "messages": [
+        {
+          "id": "M-repair-qualified-history-m1",
+          "role": "user",
+          "content": "We saved the later repair report in this audience. Preserve the earlier finding and its successor accurately."
+        }
+      ],
+      "partition": "development-regression",
+      "origin": "synthetic; created from thread lessons with changed names, values and circumstances"
+    },
+    {
+      "id": "N-durable-number-policy",
+      "working": "An assistant assigned 3 runs and 900 seconds to yesterday's repair.",
+      "longTerm": "",
+      "messages": [
+        {
+          "id": "N-durable-number-policy-m1",
+          "role": "user",
+          "content": "I did not choose the 900-second task allowance. Keep that historical choice in the work record. Separately, our enduring safety policy is that the kiln must never exceed 840 degrees Celsius. Preserve that exact limit across future conversations."
+        },
+        {
+          "id": "N-durable-number-policy-m2",
+          "role": "assistant",
+          "content": "The assistant-chosen task allowance and the owner's standing kiln limit have different authority and lifetimes."
+        }
+      ],
+      "partition": "development-regression",
+      "origin": "synthetic; created from thread lessons with changed names, values and circumstances"
+    },
+    {
+      "id": "O-apply-rationale",
+      "working": "",
+      "longTerm": "",
+      "notes": [
+        {
+          "name": "2026-08-04T09:00:00Z:canal-labels",
+          "body": "Owner accepted blue square labels for canal-gate inspections because the dusk camera cannot reliably distinguish red from amber. A validated replacement camera that separates those colors is the reconsideration condition. The assistant's earlier amber-triangle suggestion was rejected."
+        }
+      ],
+      "messages": [
+        {
+          "id": "O-apply-rationale-m1",
+          "role": "user",
+          "content": "Use the accepted canal-label decision in the saved note when planning future inspections."
+        }
+      ],
+      "partition": "development-regression",
+      "origin": "synthetic; created from thread lessons with changed names, values and circumstances"
+    },
+    {
+      "id": "P-reuse-and-noop",
+      "working": "Use signed release manifests to tie claimed deployment to an artifact. Evidence: 2026-08-05T09:00:00Z:release-proof.",
+      "longTerm": "",
+      "notes": [
+        {
+          "name": "2026-08-05T09:00:00Z:release-proof",
+          "body": "A green local build did not prove deployment. The reusable lesson is to tie deployed artifact identity to a signed release manifest. The current work record owns the rollout status."
+        }
+      ],
+      "messages": [
+        {
+          "id": "P-reuse-and-noop-m1",
+          "role": "user",
+          "content": "Nothing has changed since that release-proof lesson; retain the useful knowledge."
+        },
+        {
+          "id": "P-reuse-and-noop-m2",
+          "role": "assistant",
+          "content": "The existing note and compact lesson already cover it."
+        }
+      ],
+      "partition": "development-regression",
+      "origin": "synthetic; created from thread lessons with changed names, values and circumstances"
+    }
+  ]
+}

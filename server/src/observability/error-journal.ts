@@ -10,6 +10,7 @@ export interface ErrorJournalContext {
   attemptId?: string;
   providerSessionId?: string;
   origin?: string;
+  route?: string;
 }
 
 export interface ErrorOccurrence {
@@ -470,6 +471,7 @@ function normalizeContext(
       ? { providerSessionId: redactAndBound(context.providerSessionId, 200) }
       : {}),
     ...(context.origin ? { origin: redactAndBound(context.origin, 200) } : {}),
+    ...(context.route ? { route: redactAndBound(context.route, 500) } : {}),
   };
   return Object.keys(normalized).length > 0 ? normalized : undefined;
 }

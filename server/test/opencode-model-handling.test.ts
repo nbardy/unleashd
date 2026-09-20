@@ -50,6 +50,7 @@ test('shared model wire schema accepts opaque ids and rejects only empty strings
   assert.equal(ModelIdSchema.safeParse('gpt-5.6-sol').success, true);
   assert.equal(ModelIdSchema.safeParse('gpt-5.6-terra').success, true);
   assert.equal(ModelIdSchema.safeParse('gpt-5.6-luna').success, true);
+  assert.equal(ModelIdSchema.safeParse('gpt-6-astra').success, true);
   assert.equal(ModelIdSchema.safeParse('gpt-5.5').success, true);
   assert.equal(ModelIdSchema.safeParse('gpt-5.4').success, true);
   assert.equal(ModelIdSchema.safeParse('gpt-5.4-high').success, true);
@@ -66,6 +67,7 @@ test('server provider/model compatibility validation works per provider', () => 
   assert.equal(isModelIdValidForProvider('codex', 'gpt-5.6-sol'), true);
   assert.equal(isModelIdValidForProvider('codex', 'gpt-5.6-terra'), true);
   assert.equal(isModelIdValidForProvider('codex', 'gpt-5.6-luna'), true);
+  assert.equal(isModelIdValidForProvider('codex', 'gpt-6-astra'), true);
   assert.equal(isModelIdValidForProvider('codex', 'gpt-5.5'), true);
   assert.equal(isModelIdValidForProvider('codex', 'gpt-5.4'), true);
   assert.equal(isModelIdValidForProvider('codex', 'gpt-5.4-medium'), false);

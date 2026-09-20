@@ -19,6 +19,9 @@ export const SHUTDOWN_FLUSH_GRACE_MS = readPositiveIntEnv('CWV_SHUTDOWN_FLUSH_GR
 // tool without emitting user-visible output. The shared agent CLI emits liveness
 // heartbeats during those gaps; this watchdog is the fallback for a broken event
 // bridge, not a normal turn-duration limit.
+// The 2026-08-04 incident fixed missing heartbeat coverage during active work.
+// Keep bridge liveness, provider inactivity, and total runtime separate; see
+// docs/incident-2026-08-04-codex-bridge-idle-timeout.md.
 export const DEFAULT_TURN_BRIDGE_TIMEOUT_MS = 2 * 60_000;
 export const TURN_BRIDGE_TIMEOUT_MS = readPositiveIntEnv(
   'CWV_TURN_BRIDGE_TIMEOUT_MS',
@@ -34,6 +37,10 @@ export const TURN_PROVIDER_IDLE_TIMEOUT_MS = readPositiveIntEnv(
 // inactivity, never absence of the wrapper's synthetic heartbeat.
 export const DEFAULT_TURN_IDLE_TIMEOUT_MS = DEFAULT_TURN_PROVIDER_IDLE_TIMEOUT_MS;
 export const TURN_IDLE_TIMEOUT_MS = TURN_PROVIDER_IDLE_TIMEOUT_MS;
+// Foreground Buddy claims must receive this same budget, including env overrides.
+// A separate claim default of 600s killed active chats despite healthy heartbeats
+// on 2026-09-10. Raising idle limits cannot fix an earlier absolute deadline.
+// See docs/incident-2026-09-10-buddy-chat-timeout.md and buddy-coordination.test.ts.
 export const TURN_MAX_RUNTIME_MS = readPositiveIntEnv('CWV_TURN_MAX_RUNTIME_MS', 24 * 60 * 60_000);
 export const TURN_TIMEOUT_KILL_GRACE_MS = readPositiveIntEnv(
   'CWV_TURN_TIMEOUT_KILL_GRACE_MS',

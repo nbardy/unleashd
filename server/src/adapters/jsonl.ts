@@ -28,7 +28,12 @@ import type {
   Provider,
   SubAgent,
 } from '@unleashd/shared';
-import { BuddyContextSchema, ConversationKindSchema } from '@unleashd/shared';
+import {
+  BuddyContextSchema,
+  ConversationKindSchema,
+  formatBuddyBuilderToolResult,
+  formatBuddyWorkerToolResult,
+} from '@unleashd/shared';
 import {
   isCodexAgentMessageEvent,
   isCodexResponseMessage,
@@ -378,6 +383,7 @@ interface OpenCodeParsedPart {
   text: string | null;
   tool: string | null;
   toolStatus: string | null;
+  toolOutput: unknown;
   patchFiles: string[];
   order: number;
   id: string;
@@ -432,7 +438,6 @@ function codexLineTypes(line: string): [string | null, string | null] {
  */
 export async function parseCodexJsonlFile(filePath: string): Promise<CodexSession> {
   const entries: CodexSessionEntry[] = [];
-  const fallbackMessageEntries: CodexSessionEntry[] = [];
   let hasEventMessages = false;
   let sessionId = '';
   let workingDirectory = '';
@@ -458,7 +463,18 @@ export async function parseCodexJsonlFile(filePath: string): Promise<CodexSessio
       outerType === 'event_msg' && innerType !== null && CODEX_RETAINED_EVENT_TYPES.has(innerType);
     const isFallbackMessage =
       !hasEventMessages && outerType === 'response_item' && innerType === 'message';
-    if (!isMetadata && !isRetainedEvent && !isFallbackMessage) continue;
+    const isToolCall =
+      outerType === 'response_item' &&
+      (innerType === 'function_call' || innerType === 'custom_tool_call');
+    // Keep typed Buddy UI receipts; other large tool rows still skip JSON expansion.
+    const isBuddyOutput =
+      outerType === 'response_item' &&
+      (innerType === 'function_call_output' || innerType === 'custom_tool_call_output') &&
+      (line.includes('buddyBuilderEvent') ||
+        line.includes('homeWorkspace') ||
+        line.includes('buddyWorkerThread'));
+    if (!isMetadata && !isRetainedEvent && !isFallbackMessage && !isToolCall && !isBuddyOutput)
+      continue;
 
     try {
       const entry = JSON.parse(line) as CodexSessionEntry;
@@ -503,23 +519,18 @@ export async function parseCodexJsonlFile(filePath: string): Promise<CodexSessio
       }
 
       if (isCodexUserMessageEvent(entry) || isCodexAgentMessageEvent(entry)) {
-        if (!hasEventMessages) {
-          hasEventMessages = true;
-          fallbackMessageEntries.length = 0;
-        }
+        hasEventMessages = true;
         entries.push(entry);
-      } else if (isRetainedEvent) {
+      } else if (isRetainedEvent || isToolCall || isBuddyOutput) {
         entries.push(entry);
       } else if (isFallbackMessage && isCodexResponseMessage(entry)) {
         const role = entry.payload.role;
-        if (role === 'user' || role === 'assistant') fallbackMessageEntries.push(entry);
+        if (role === 'user' || role === 'assistant') entries.push(entry);
       }
     } catch {
       skippedLines++;
     }
   }
-
-  if (!hasEventMessages) entries.push(...fallbackMessageEntries);
 
   if (skippedLines > 0) {
     console.warn(
@@ -539,7 +550,9 @@ export async function parseCodexJsonlFile(filePath: string): Promise<CodexSessio
     parentSessionId,
     createdAt: createdAt ?? new Date(),
     modifiedAt: modifiedAt ?? new Date(),
-    entries,
+    // Keep transcript order, including calls and messages sharing a timestamp.
+    // Event prose takes precedence over response-message duplicates, never tools.
+    entries: hasEventMessages ? entries.filter((entry) => !isCodexResponseMessage(entry)) : entries,
   };
 }
 
@@ -603,14 +616,15 @@ function extractOpenCodeContent(
   parts: OpenCodeParsedPart[],
   summaryTitle: string | null
 ): string {
-  const textParts: string[] = [];
-  const toolParts: string[] = [];
+  const contentParts: string[] = [];
+  const hasTools =
+    role === 'assistant' && parts.some((part) => part.type === 'tool' || part.type === 'patch');
 
   for (const part of parts) {
     if (part.type === 'text' && part.text) {
       const normalizedText = decodeOpenCodeText(part.text);
       if (normalizedText.length > 0) {
-        textParts.push(normalizedText);
+        contentParts.push(normalizedText);
       }
       continue;
     }
@@ -620,9 +634,13 @@ function extractOpenCodeContent(
       const status = part.toolStatus;
       const formattedTool = formatToolUse(toolName);
       if (status && status !== 'completed' && status !== 'done') {
-        toolParts.push(`${formattedTool} (${status})`);
+        contentParts.push(`${formattedTool} (${status})`);
       } else {
-        toolParts.push(formattedTool);
+        contentParts.push(formattedTool);
+        const result =
+          formatBuddyWorkerToolResult(part.toolOutput) ??
+          formatBuddyBuilderToolResult(part.toolOutput);
+        if (result) contentParts.push(result);
       }
       continue;
     }
@@ -630,17 +648,15 @@ function extractOpenCodeContent(
     if (role === 'assistant' && part.type === 'patch') {
       const fileCount = part.patchFiles.length;
       if (fileCount > 0) {
-        toolParts.push(`[Patch: ${fileCount} file${fileCount === 1 ? '' : 's'}]`);
+        contentParts.push(`[Patch: ${fileCount} file${fileCount === 1 ? '' : 's'}]`);
       } else {
-        toolParts.push('[Patch]');
+        contentParts.push('[Patch]');
       }
     }
   }
 
-  const text = textParts.join('');
-  if (text && toolParts.length === 0) return text;
-  if (!text && toolParts.length > 0) return toolParts.join('\n');
-  if (text && toolParts.length > 0) return `${text}\n${toolParts.join('\n')}`;
+  const content = contentParts.join(hasTools ? '\n' : '');
+  if (content) return content;
 
   if (role === 'user' && summaryTitle) {
     return summaryTitle.trim();
@@ -676,6 +692,7 @@ async function parseOpenCodePartFiles(
       text: asString(partData.text),
       tool: asString(partData.tool),
       toolStatus: asString(state?.status),
+      toolOutput: state?.output,
       patchFiles,
       order,
       id: path.basename(partFilePath, '.json'),
@@ -957,6 +974,21 @@ export function extractMessagesFromEntries(entries: JsonlEntry[]): Message[] {
 
   for (const entry of entries) {
     if (isJsonlUserEntry(entry)) {
+      // Claude persists MCP results as user-role transport blocks, not user prose.
+      if (Array.isArray(entry.message.content)) {
+        for (const block of entry.message.content) {
+          if (block.type !== 'tool_result' || !('content' in block) || block.is_error) continue;
+          const result =
+            formatBuddyWorkerToolResult(block.content) ??
+            formatBuddyBuilderToolResult(block.content);
+          if (result)
+            messages.push({
+              role: 'assistant',
+              content: result,
+              timestamp: parseTimestamp(entry.timestamp) ?? new Date(),
+            });
+        }
+      }
       const content = extractUserContent(entry);
       // Skip tool result messages that are just internal tool communication
       if (content && !content.startsWith('[Tool result:')) {
@@ -1027,9 +1059,13 @@ function extractCodexContentText(content: unknown): string {
 const CODEX_SETUP_CONTENT_KINDS = new Set([
   'agents_md.instructions',
   'environments.environment_context',
+  'plugins.recommendations',
 ]);
 
-function extractCodexUserContent(payload: { content: unknown }): string {
+function extractCodexUserContent(
+  payload: { content: unknown },
+  beforeFirstMessage: boolean
+): string {
   const metadata = asObject(asObject(payload)?.internal_chat_message_metadata_passthrough);
   const kinds = metadata?.content_item_kinds;
   const content = payload.content;
@@ -1040,6 +1076,32 @@ function extractCodexUserContent(payload: { content: unknown }): string {
     return extractCodexContentText(
       content.filter((_, index) => !CODEX_SETUP_CONTENT_KINDS.has(kinds[index]))
     );
+  }
+  // Codex 0.146 did not tag its initial recommendations/AGENTS/environment
+  // bundle. Recognize only that complete three-block startup envelope, never
+  // arbitrary plugin mentions, single pastes, later messages, or tagged user text.
+  if (
+    beforeFirstMessage &&
+    kinds === undefined &&
+    typeof metadata?.turn_id === 'string' &&
+    Array.isArray(content) &&
+    content.length === 3 &&
+    content.every((block) => asObject(block)?.type === 'input_text')
+  ) {
+    const [recommendations, instructions, environment] = content.map((block) =>
+      extractCodexContentText([block])
+    );
+    if (
+      /^<recommended_plugins>\nHere is a list of plugins that are available but not installed\.\n\n(?:- [^\n]+\n)+<\/recommended_plugins>$/.test(
+        recommendations
+      ) &&
+      /^# AGENTS\.md instructions for [^\n]+\n\n<INSTRUCTIONS>\n[\s\S]*\n<\/INSTRUCTIONS>$/.test(
+        instructions
+      ) &&
+      /^<environment_context>\n[\s\S]*\n<\/environment_context>$/.test(environment)
+    ) {
+      return '';
+    }
   }
   return extractCodexContentText(content);
 }
@@ -1054,79 +1116,99 @@ function extractCodexUserContent(payload: { content: unknown }): string {
  */
 export function extractMessagesFromCodexEntries(entries: CodexSessionEntry[]): Message[] {
   const messages: Message[] = [];
+  const seenToolCalls = new Set<string>();
 
   const hasEventMessages = entries.some(
     (entry) => isCodexUserMessageEvent(entry) || isCodexAgentMessageEvent(entry)
   );
 
-  if (hasEventMessages) {
-    for (const entry of entries) {
-      if (isCodexUserMessageEvent(entry)) {
-        const content = entry.payload.message;
-        if (content) {
-          messages.push({
-            role: 'user',
-            content,
-            timestamp: parseTimestamp(entry.timestamp) ?? new Date(),
-          });
-        }
-      } else if (isCodexAgentMessageEvent(entry)) {
-        const content = entry.payload.message;
-        if (content) {
-          const completedAt = parseTimestamp(entry.timestamp) ?? new Date();
-          const startedAt =
-            messages.length > 0 ? messages[messages.length - 1].timestamp : completedAt;
-          messages.push({
-            role: 'assistant',
-            content,
-            timestamp: startedAt,
-            completedAt,
-            completionReason: 'success', // assume success for historical
-          });
+  for (const entry of entries) {
+    const payload = asObject((entry as { payload?: unknown }).payload);
+    if (
+      entry.type === 'response_item' &&
+      (payload?.type === 'function_call' || payload?.type === 'custom_tool_call')
+    ) {
+      const name = asString(payload.name);
+      if (!name) continue;
+      const callId = asString(payload.call_id) ?? asString(payload.id);
+      if (callId && seenToolCalls.has(callId)) continue;
+      if (callId) seenToolCalls.add(callId);
+      let input: unknown = payload.arguments ?? payload.input;
+      let inputText = typeof input === 'string' ? input : JSON.stringify(input, null, 2);
+      if (payload.type === 'function_call' && typeof input === 'string') {
+        try {
+          input = JSON.parse(input);
+          inputText = JSON.stringify(input, null, 2);
+        } catch {
+          // Retain malformed arguments as text so the saved call is inspectable.
         }
       }
-    }
-    return dedupeConsecutiveMessages(messages);
-  }
-
-  for (const entry of entries) {
-    if (!isCodexResponseMessage(entry)) {
-      continue;
-    }
-
-    const role = entry.payload.role;
-    if (role !== 'user' && role !== 'assistant') {
-      continue;
-    }
-
-    const content =
-      role === 'user'
-        ? extractCodexUserContent(entry.payload)
-        : extractCodexContentText(entry.payload.content);
-    if (!content) {
-      continue;
-    }
-
-    if (role === 'assistant') {
-      const completedAt = parseTimestamp(entry.timestamp) ?? new Date();
-      const startedAt = messages.length > 0 ? messages[messages.length - 1].timestamp : completedAt;
+      // Native shell calls use function names; the live CLI stream calls them shell.
+      const toolName = name.replace(/^functions\./, '');
+      const displayName =
+        toolName === 'exec_command' || toolName === 'shell_command' ? 'shell' : name;
       messages.push({
-        role,
-        content,
-        timestamp: startedAt,
-        completedAt,
-        completionReason: 'success',
-      });
-    } else {
-      messages.push({
-        role,
-        content,
+        role: 'assistant',
+        content: formatToolUse(displayName, input),
+        toolCall: { name, ...(inputText === undefined ? {} : { input: inputText }) },
         timestamp: parseTimestamp(entry.timestamp) ?? new Date(),
       });
+      continue;
     }
+    if (
+      entry.type === 'response_item' &&
+      (payload?.type === 'function_call_output' || payload?.type === 'custom_tool_call_output')
+    ) {
+      const result =
+        formatBuddyWorkerToolResult(payload.output) ?? formatBuddyBuilderToolResult(payload.output);
+      if (result)
+        messages.push({
+          role: 'assistant',
+          content: result,
+          timestamp: parseTimestamp(entry.timestamp) ?? new Date(),
+        });
+      continue;
+    }
+
+    let role: 'user' | 'assistant';
+    let content: string;
+    if (hasEventMessages) {
+      if (isCodexUserMessageEvent(entry)) {
+        role = 'user';
+        content = entry.payload.message;
+      } else if (isCodexAgentMessageEvent(entry)) {
+        role = 'assistant';
+        content = entry.payload.message;
+      } else continue;
+    } else {
+      if (!isCodexResponseMessage(entry)) continue;
+      if (entry.payload.role !== 'user' && entry.payload.role !== 'assistant') continue;
+      role = entry.payload.role;
+      content =
+        role === 'user'
+          ? extractCodexUserContent(entry.payload, messages.length === 0)
+          : extractCodexContentText(entry.payload.content);
+    }
+    if (!content) continue;
+    const previous = messages[messages.length - 1];
+    if (previous?.role === role && previous.content === content) continue;
+    const timestamp = parseTimestamp(entry.timestamp) ?? new Date();
+    messages.push(
+      role === 'assistant'
+        ? {
+            role,
+            content,
+            timestamp: messages.length > 0 ? messages[messages.length - 1].timestamp : timestamp,
+            completedAt: timestamp,
+            completionReason: 'success',
+          }
+        : { role, content, timestamp }
+    );
   }
 
-  return dedupeConsecutiveMessages(messages);
+  // Calls are deduplicated by identity above. Different calls with identical
+  // summaries (common for MCP/freeform tools) are separate history entries.
+  return messages;
 }
 
 // =============================================================================
@@ -1340,6 +1422,11 @@ export function extractWorkerMetadata(messages: Message[]): WorkerMetadata {
  */
 const SWARM_DEBUG_PREFIX_RE =
   /^<!-- unleashd:swarm-prefix -->\n([\s\S]*?)\n<!-- \/unleashd:swarm-prefix -->\n\n/;
+const MERGE_PREFIX_RE =
+  /^<!-- unleashd:merge-prefix -->\n[\s\S]*?\n<!-- \/unleashd:merge-prefix -->\n\n/;
+const MERGE_PREFIX_SUFFIX = '\n<!-- /unleashd:merge-prefix -->\n\n';
+const MERGE_PREFIX_V1_HEADER_RE = /^<!-- unleashd:merge-prefix-v1 ([0-9]+) -->\n/;
+const MERGE_PREFIX_V1_SUFFIX = '\n<!-- /unleashd:merge-prefix-v1 -->\n\n';
 
 const BUDDY_CONTEXT_RE =
   /^<!-- unleashd:buddy-context (.+) -->\n[\s\S]*?\n<!-- \/unleashd:buddy-context -->\n\n/;
@@ -1431,6 +1518,36 @@ export function extractSwarmDebugPrefix(messages: Message[]): string | null {
   // Strip the sentinel block; leave only the user's actual message content.
   firstUserMsg.content = firstUserMsg.content.slice(match[0].length);
   return match[1];
+}
+
+/** Merge reviews are provider context, not the parent's authored first message. */
+export function stripMergePrefix(messages: Message[]): void {
+  const firstUserMsg = messages.find((message) => message.role === 'user');
+  if (!firstUserMsg) return;
+  const header = firstUserMsg.content.match(MERGE_PREFIX_V1_HEADER_RE);
+  if (header) {
+    const length = Number.parseInt(header[1], 10);
+    const suffixStart = header[0].length + length;
+    if (
+      Number.isSafeInteger(length) &&
+      firstUserMsg.content.startsWith(MERGE_PREFIX_V1_SUFFIX, suffixStart)
+    ) {
+      firstUserMsg.content = firstUserMsg.content.slice(
+        suffixStart + MERGE_PREFIX_V1_SUFFIX.length
+      );
+    }
+    return;
+  }
+  const match = firstUserMsg.content.match(MERGE_PREFIX_RE);
+  // Old envelopes have no length. Preserve ambiguous copies rather than guess
+  // which delimiter belongs to a review and which belongs to authored text.
+  if (
+    match &&
+    firstUserMsg.content.lastIndexOf(MERGE_PREFIX_SUFFIX) ===
+      match[0].length - MERGE_PREFIX_SUFFIX.length
+  ) {
+    firstUserMsg.content = firstUserMsg.content.slice(match[0].length);
+  }
 }
 
 // jsonlSessionToConversation, codexSessionToConversation, openCodeSessionToConversation,
@@ -2021,6 +2138,13 @@ export async function parseMuseSessionFile(filePath: string): Promise<MuseSessio
         }
         if (parts.length > 0) {
           rawMessages.push({ role: 'assistant', content: parts.join('\n'), timestamp: ts });
+        }
+      } else if (eventKind === 'tool_result_batch_committed' && Array.isArray(event.results)) {
+        for (const output of event.results) {
+          const result =
+            formatBuddyWorkerToolResult(asObject(output)?.text) ??
+            formatBuddyBuilderToolResult(asObject(output)?.text);
+          if (result) rawMessages.push({ role: 'assistant', content: result, timestamp: ts });
         }
       } else if (eventKind === 'reasoning_committed' && typeof event.text === 'string') {
         const text = (event.text as string).trim();

@@ -14,7 +14,7 @@ import {
   buddyMcpServers,
   resolveBuddyMcpLaunch,
 } from '../src/buddies/mcp-config';
-import { createBuddyMcpServer } from '../src/buddies/mcp-server';
+import { createLegacyBuddyMcpServer as createBuddyMcpServer } from '../src/buddies/mcp-server';
 import { assertBuddyProviderSupportsMcp } from '../src/conversations/runtime';
 
 test('Buddy MCP exposes scoped native tools and enforces completion evidence', async () => {
@@ -35,11 +35,29 @@ test('Buddy MCP exposes scoped native tools and enforces completion evidence', a
     todos: [{ title: 'Record evidence', status: 'in_progress' }],
   });
 
-  const server = createBuddyMcpServer(store as unknown as BuddiesStorePort, {
-    buddyId: lead.id,
-    workspaceId: workspace.id,
-    buddyProjectId: project.id,
-  });
+  const server = createBuddyMcpServer(
+    store as unknown as BuddiesStorePort,
+    {
+      buddyId: lead.id,
+      workspaceId: workspace.id,
+      buddyProjectId: project.id,
+    },
+    {
+      dispatchMessage: async (input) => ({
+        data: {
+          message: store.sendMessage({
+            fromBuddy: lead.id,
+            to: input.to,
+            workspace: workspace.id,
+            project: input.projectId,
+            purpose: input.purpose,
+            body: input.body,
+            evidence: input.evidence,
+          }),
+        },
+      }),
+    }
+  );
   const client = new Client({ name: 'buddy-mcp-test', version: '1.0.0' });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
 
@@ -48,30 +66,61 @@ test('Buddy MCP exposes scoped native tools and enforces completion evidence', a
 
     const listed = await client.listTools();
     assert.deepEqual(listed.tools.map((tool) => tool.name).sort(), [
-      'compact_memory',
-      'complete_assignment',
-      'complete_delegation',
-      'delegate',
+      'append_task_comment',
+      'create_buddy',
       'get_automations',
+      'get_capabilities',
       'get_current_work',
       'get_inbox',
+      'get_memory',
+      'get_message',
+      'get_profile',
+      'get_runs',
+      'get_soul',
+      'get_team_state',
+      'hire_direct_report',
+      'list_buddies',
+      'list_task_comments',
       'new_project',
       'recall',
-      'remember',
       'remember_note',
-      'request_human_approval',
-      'request_review',
+      'reply',
+      'retire_direct_report',
+      'retry_run',
+      'send',
       'set_automation',
-      'submit_review',
+      'set_relationship',
+      'stop',
       'update_memory',
+      'update_profile',
       'update_project',
+      'update_soul',
     ]);
+
+    const sendSchema = listed.tools.find((tool) => tool.name === 'send')!.inputSchema;
+    assert.match(JSON.stringify(sendSchema), /until_done/);
+    assert.match(JSON.stringify(sendSchema), /maxDurationSeconds/);
+    const updateSchema = listed.tools.find((tool) => tool.name === 'update_project')!.inputSchema;
+    assert.match(JSON.stringify(updateSchema), /definitionOfDone/);
+    assert.match(JSON.stringify(updateSchema), /evidence/);
+    const descriptions = new Map(listed.tools.map((tool) => [tool.name, tool.description ?? '']));
+    assert.match(
+      descriptions.get('get_current_work')!,
+      /authoritative goal and completion criteria/
+    );
+    assert.match(descriptions.get('update_project')!, /baseRevision and a stable key/);
+    assert.match(descriptions.get('update_project')!, /read records use definition_of_done/);
+    assert.match(descriptions.get('update_project')!, /every non-cancelled todo is done/);
+    assert.match(descriptions.get('update_project')!, /blockedReason/);
+    assert.match(descriptions.get('send')!, /outstanding child requests suspend the parent/);
+    assert.match(descriptions.get('send')!, /Do not schedule a parallel self-successor/);
+    assert.match(descriptions.get('reply')!, /manual final reply cannot complete unfinished/);
 
     const current = await client.callTool({
       name: 'get_current_work',
       arguments: {},
     });
-    assert.equal(current.isError, undefined);
+    assert.equal(current.isError, undefined, JSON.stringify(current.content));
     assert.match(JSON.stringify(current.structuredContent), /Close proof loop/);
 
     const inbox = await client.callTool({
@@ -110,17 +159,18 @@ test('Buddy MCP exposes scoped native tools and enforces completion evidence', a
     assert.equal(store.getBuddyProject(project.id)?.status, 'done');
 
     const approval = await client.callTool({
-      name: 'request_human_approval',
+      name: 'send',
       arguments: {
-        action: 'Publish the proof',
-        reason: 'The local evidence is complete.',
-        risk: 'Publishing changes public state.',
+        to: 'owner',
+        key: 'approval-1',
+        purpose: 'approval',
+        body: 'Publish the proof; changes public state. Local evidence is complete.',
         projectId: project.id,
       },
     });
     assert.equal(approval.isError, undefined);
     assert.match(JSON.stringify(approval.structuredContent), /"status":"pending"/);
-    assert.equal(store.listApprovalRequests({ status: 'pending' }).length, 1);
+    assert.equal(store.listMessages({ toOwner: true }).length, 1);
     assert.equal(store.listAuditEvents({ buddy: lead.id }).length, 4);
   } finally {
     await client.close();
@@ -209,7 +259,6 @@ test('Buddy MCP exposes memory-v2 tools and preserves structured memory errors',
   const server = createBuddyMcpServer(store, {
     buddyId: 'buddy-1',
     workspaceId: 'workspace-1',
-    conversationId: 'conversation-1',
   });
   const client = new Client({ name: 'memory-v2-mcp-test', version: '1.0.0' });
   const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
@@ -317,12 +366,16 @@ test('resolved stdio Buddy MCP entrypoint opens the current durable schema', asy
   fixtureDatabase.close();
   assert.equal(
     schemaVersion.user_version,
-    19,
+    30,
     'the vendored Buddy package must understand the live schema'
   );
 
+  // The child belongs to this fixture, not the Buddy run executing this test.
   const env = Object.fromEntries(
-    Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined)
+    Object.entries(process.env).filter(
+      (entry): entry is [string, string] =>
+        entry[1] !== undefined && !entry[0].startsWith('UNLEASHD_BUDDY_')
+    )
   );
   env.BUDDIES_HOME = home;
   const launch = resolveBuddyMcpLaunch();
@@ -346,7 +399,7 @@ test('resolved stdio Buddy MCP entrypoint opens the current durable schema', asy
   try {
     await client.connect(transport);
     const current = await client.callTool({ name: 'get_current_work', arguments: {} });
-    assert.equal(current.isError, undefined);
+    assert.equal(current.isError, undefined, JSON.stringify(current.content));
     assert.match(JSON.stringify(current.structuredContent), /Durable MCP project/);
   } finally {
     await client.close();
@@ -378,8 +431,12 @@ test('Buddy MCP server starts from a cwd without resolvable tooling', async () =
   store.close();
 
   mkdirSync(bareCwd, { recursive: true });
+  // The child belongs to this fixture, not the Buddy run executing this test.
   const env = Object.fromEntries(
-    Object.entries(process.env).filter((entry): entry is [string, string] => entry[1] !== undefined)
+    Object.entries(process.env).filter(
+      (entry): entry is [string, string] =>
+        entry[1] !== undefined && !entry[0].startsWith('UNLEASHD_BUDDY_')
+    )
   );
   env.BUDDIES_HOME = home;
   const launch = resolveBuddyMcpLaunch();
@@ -403,7 +460,7 @@ test('Buddy MCP server starts from a cwd without resolvable tooling', async () =
   try {
     await client.connect(transport);
     const current = await client.callTool({ name: 'get_current_work', arguments: {} });
-    assert.equal(current.isError, undefined);
+    assert.equal(current.isError, undefined, JSON.stringify(current.content));
     assert.match(JSON.stringify(current.structuredContent), /Bare cwd project/);
   } finally {
     await client.close();

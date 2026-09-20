@@ -154,6 +154,53 @@ test('error diagnostics API lists and acknowledges an unresolved group', async (
   assert.equal((await journal.queryGroups({ status: 'acknowledged' })).length, 1);
 });
 
+test('error diagnostics API bounds and rate-limits client reports into the shared journal', async (t) => {
+  const directory = await temporaryDirectory(t);
+  const journal = new ErrorJournal({ directory, serverBootId: 'client-api-boot' });
+  await journal.initialize();
+  const app = express();
+  app.use(express.json());
+  registerErrorDiagnosticsRoutes(app, journal, { clientReportLimit: 1 });
+  const server = http.createServer(app);
+  await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+  t.after(() => server.close());
+  const address = server.address();
+  assert.ok(address && typeof address === 'object');
+  const url = `http://127.0.0.1:${address.port}/api/diagnostics/errors/client`;
+
+  const invalid = await fetch(url, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ source: 'console-warn', message: 'Expected noise' }),
+  });
+  assert.equal(invalid.status, 400);
+
+  const accepted = await fetch(url, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      source: 'react-boundary',
+      message: 'Render failed token=private',
+      stack: 'Error: Render failed\n    at Chat (/client/src/Chat.tsx:10:2)',
+      route: '/chat/token=private',
+    }),
+  });
+  assert.equal(accepted.status, 202);
+
+  const limited = await fetch(url, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ source: 'browser-error', message: 'A second failure' }),
+  });
+  assert.equal(limited.status, 429);
+
+  const [group] = await journal.queryGroups();
+  assert.equal(group?.component, 'client.react-boundary');
+  assert.equal(group?.message, 'Render failed token=[REDACTED]');
+  assert.equal(group?.context?.origin, 'client');
+  assert.equal(group?.context?.route, '/chat/token=[REDACTED]');
+});
+
 async function temporaryDirectory(t: test.TestContext): Promise<string> {
   const directory = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'unleashd-errors-'));
   t.after(() => fs.promises.rm(directory, { recursive: true, force: true }));

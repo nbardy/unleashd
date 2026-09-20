@@ -15,6 +15,8 @@ const buddyContext = { buddyId: 'buddy-1', workspaceId: 'workspace-1' };
 const instructions =
   '# AGENTS.md instructions for /tmp/project\n\n<INSTRUCTIONS>\nSETUP\n</INSTRUCTIONS>';
 const environment = '<environment_context>\n<cwd>/tmp/project</cwd>\n</environment_context>';
+const recommendations =
+  '<recommended_plugins>\nHere is a list of plugins that are available but not installed.\n\n- Airtable (airtable@openai-curated-remote)\n</recommended_plugins>';
 const prompt = 'Can buddies message each other?';
 
 function briefing(content: string): string {
@@ -35,9 +37,10 @@ function response(role: string, texts: string[], kinds?: string[]) {
       type: 'message',
       role,
       content: texts.map((text) => ({ type: 'input_text', text })),
-      ...(kinds && {
-        internal_chat_message_metadata_passthrough: { content_item_kinds: kinds },
-      }),
+      internal_chat_message_metadata_passthrough: {
+        turn_id: 'turn-1',
+        ...(kinds && { content_item_kinds: kinds }),
+      },
     },
   };
 }
@@ -50,10 +53,12 @@ test('Codex app import hides setup on every turn and recovers the Buddy behind i
     source,
     [
       { timestamp, type: 'session_meta', payload: { id: 'session', cwd: '/tmp/project' } },
+      // Codex 0.146 saved this startup bundle without content provenance tags.
+      response('user', [recommendations, instructions, environment]),
       response(
         'user',
-        [instructions, environment],
-        ['agents_md.instructions', 'environments.environment_context']
+        [recommendations, instructions, environment],
+        ['plugins.recommendations', 'agents_md.instructions', 'environments.environment_context']
       ),
       response('user', [briefing(prompt)], ['user.text']),
       response('assistant', ['Yes.']),
@@ -61,11 +66,13 @@ test('Codex app import hides setup on every turn and recovers the Buddy behind i
       response('user', [instructions], ['agents_md.instructions']),
       response(
         'user',
-        [environment, 'What should we change?'],
-        ['environments.environment_context', 'user.text']
+        [recommendations, environment, 'What should we change?'],
+        ['plugins.recommendations', 'environments.environment_context', 'user.text']
       ),
       // Explicit user pastes and untagged older messages must not be hidden by text heuristics.
       response('user', [instructions], ['user.text']),
+      response('user', [recommendations], ['user.text']),
+      response('user', [recommendations, instructions, environment]),
       response('user', ['Older untagged prompt.']),
     ]
       .map((entry) => JSON.stringify(entry))
@@ -77,13 +84,13 @@ test('Codex app import hides setup on every turn and recovers the Buddy behind i
 
   for (let pass = 0; pass < 3; pass++) {
     if (pass === 2) {
-      // An unchanged v1 source must be reparsed: that cache already lost the
-      // provenance tags, so transcript cleanup cannot repair its setup rows.
+      // An unchanged v5 source must be reparsed: it retained the startup
+      // recommendations and already lost the content-block boundaries.
       const [cacheFile] = await fs.readdir(cacheDirectory);
       const cachePath = path.join(cacheDirectory, cacheFile);
       const stale = JSON.parse(await fs.readFile(cachePath, 'utf8'));
-      stale.version = 1;
-      stale.session.messages = [{ role: 'user', content: instructions, timestamp }];
+      stale.version = 5;
+      stale.session.messages = [{ role: 'user', content: recommendations, timestamp }];
       await fs.writeFile(cachePath, JSON.stringify(stale));
     }
     const loaded = await loadAllConversations({ adapters: [adapter], cache });
@@ -93,7 +100,15 @@ test('Codex app import hides setup on every turn and recovers the Buddy behind i
     assert.equal(conversation.buddyContext?.buddyId, buddyContext.buddyId);
     assert.deepEqual(
       conversation.messages.map((message) => message.content),
-      [prompt, 'Yes.', 'What should we change?', instructions, 'Older untagged prompt.']
+      [
+        prompt,
+        'Yes.',
+        'What should we change?',
+        instructions,
+        recommendations,
+        [recommendations, instructions, environment].join('\n'),
+        'Older untagged prompt.',
+      ]
     );
   }
 });
@@ -125,5 +140,67 @@ test('Buddy cleanup strips envelopes beyond the first message without overriding
       conversation.messages.map((message) => message.content),
       ['Earlier user message.', prompt, 'Yes.', 'Follow-up.']
     );
+  }
+});
+
+test('durable Builder and swarm identity does not bypass hidden setup cleanup', () => {
+  for (const builder of [true, false]) {
+    const kind = builder ? ({ kind: 'buddy_builder' } as const) : ({ kind: 'general' } as const);
+    const swarmDebugPrefix = builder ? null : 'Internal swarm debugging context';
+    const content = buildFirstTurnCliContent({
+      content: prompt,
+      messageCount: 0,
+      hasStartedSession: false,
+      kind,
+      buddyBriefing: null,
+      swarmDebugPrefix,
+    });
+    for (const durable of [true, false]) {
+      const conversation = sessionToConversation({
+        sessionId: 'session',
+        filePath: '/tmp/session.jsonl',
+        workingDirectory: '/tmp/project',
+        provider: 'codex',
+        model: 'unknown',
+        createdAt: new Date(timestamp),
+        modifiedAt: new Date(timestamp),
+        kind: durable ? kind : undefined,
+        purpose: builder ? 'buddy_builder' : undefined,
+        swarmDebugPrefix,
+        messages: [{ role: 'user', content, timestamp: new Date(timestamp) }],
+      });
+      assert.ok(conversation);
+      assert.equal(conversation.messages[0].content, prompt);
+      assert.equal(conversation.kind?.kind, kind.kind);
+      assert.equal(conversation.swarmDebugPrefix, swarmDebugPrefix);
+    }
+  }
+});
+
+test('legacy merge cleanup preserves ambiguous or incomplete reserved wrappers', () => {
+  const suffix = '\n<!-- /unleashd:merge-prefix -->\n\n';
+  const legacy = `<!-- unleashd:merge-prefix -->\nReview context${suffix}${prompt}`;
+  const adjacent = `<!-- unleashd:merge-prefix -->\nReview context${suffix}${suffix.slice(1)}${prompt}`;
+  for (const [content, expected] of [
+    [legacy, prompt],
+    [adjacent, adjacent],
+    [`${legacy}${suffix}Literal second delimiter`, `${legacy}${suffix}Literal second delimiter`],
+    ['<!-- unleashd:merge-prefix -->\nIncomplete', '<!-- unleashd:merge-prefix -->\nIncomplete'],
+    [
+      '<!-- unleashd:merge-prefix-v1 999 -->\nIncomplete',
+      '<!-- unleashd:merge-prefix-v1 999 -->\nIncomplete',
+    ],
+  ]) {
+    const conversation = sessionToConversation({
+      sessionId: 'session',
+      filePath: '/tmp/session.jsonl',
+      workingDirectory: '/tmp/project',
+      provider: 'codex',
+      model: 'unknown',
+      createdAt: new Date(timestamp),
+      modifiedAt: new Date(timestamp),
+      messages: [{ role: 'user', content, timestamp: new Date(timestamp) }],
+    });
+    assert.equal(conversation?.messages[0].content, expected);
   }
 });
