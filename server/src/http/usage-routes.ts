@@ -85,7 +85,9 @@ interface UsageResponse {
 }
 const usageResponseCache = new Map<number, { time: number; data: UsageResponse }>();
 // Parse a single Claude JSONL file. Returns cached result if mtime unchanged.
-function parseClaudeSession(
+// Exported for the per-conversation context-breakdown meter (same parser,
+// scoped to one session id instead of aggregated across all sessions).
+export function parseClaudeSession(
   filePath: string,
   stat: fs.Stats
 ): UsageEntry & { timestampedTokens: { ts: number; tokens: number }[] } {
@@ -259,6 +261,162 @@ function parseOpenCodeSessionUsage(
 
   openCodeUsageCache.set(sessionDirPath, { mtimeMs: maxMtimeMs, data });
   return data;
+}
+
+export interface SessionProviderUsage {
+  sessionId: string;
+  provider: ProviderName;
+  model: string;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+  /** Provider-priced cumulative input (re-read across turns, not one turn's stack). */
+  cumulativeInputTokens: number;
+}
+
+function parseCodexTokenTotals(filePath: string): { input: number; output: number } | null {
+  try {
+    const content = fs.readFileSync(filePath, 'utf-8');
+    let input = 0;
+    let output = 0;
+    let found = false;
+    for (const line of content.split('\n')) {
+      if (!line.trim()) continue;
+      try {
+        const entry = JSON.parse(line);
+        if (
+          entry.type === 'event_msg' &&
+          entry.payload?.type === 'token_count' &&
+          entry.payload.info?.total_token_usage
+        ) {
+          const u = entry.payload.info.total_token_usage;
+          // token_count events carry latest totals — the last one wins.
+          input = u.input_tokens ?? 0;
+          output = u.output_tokens ?? 0;
+          found = true;
+        }
+      } catch {
+        /* skip malformed lines */
+      }
+    }
+    return found ? { input, output } : null;
+  } catch {
+    return null;
+  }
+}
+
+function findCodexSessionFile(sessionId: string): string | null {
+  const codexDir = path.join(os.homedir(), '.codex', 'sessions');
+  try {
+    for (const year of fs.readdirSync(codexDir, { withFileTypes: true })) {
+      if (!year.isDirectory()) continue;
+      const yearPath = path.join(codexDir, year.name);
+      for (const month of fs.readdirSync(yearPath, { withFileTypes: true })) {
+        if (!month.isDirectory()) continue;
+        const monthPath = path.join(yearPath, month.name);
+        for (const day of fs.readdirSync(monthPath, { withFileTypes: true })) {
+          if (!day.isDirectory()) continue;
+          const candidate = path.join(monthPath, day.name, `${sessionId}.jsonl`);
+          try {
+            if (fs.statSync(candidate).isFile()) return candidate;
+          } catch {
+            /* not in this day dir */
+          }
+        }
+      }
+    }
+  } catch {
+    /* ~/.codex/sessions may not exist */
+  }
+  return null;
+}
+
+/**
+ * Provider usage for one CLI session id, reusing the aggregate usage parsers
+ * (Claude assistant usage, Codex latest token_count totals, OpenCode assistant
+ * tokens). Returns null when no provider file matches — the meter then shows
+ * only our estimated stack. Never throws; never recomputes pricing.
+ */
+export function lookupProviderUsageForSession(sessionId: string): SessionProviderUsage | null {
+  if (!sessionId) return null;
+
+  // Claude: file basename is the session id.
+  try {
+    const claudeDir = path.join(os.homedir(), '.claude', 'projects');
+    for (const project of fs.readdirSync(claudeDir, { withFileTypes: true })) {
+      if (!project.isDirectory()) continue;
+      const candidate = path.join(claudeDir, project.name, `${sessionId}.jsonl`);
+      try {
+        const stat = fs.statSync(candidate);
+        if (stat.isFile()) {
+          const data = parseClaudeSession(candidate, stat);
+          return {
+            sessionId,
+            provider: 'claude',
+            model: data.model,
+            inputTokens: data.inputTokens,
+            outputTokens: data.outputTokens,
+            cacheReadTokens: data.cacheReadTokens,
+            cacheWriteTokens: data.cacheWriteTokens,
+            cumulativeInputTokens: data.inputTokens + data.cacheReadTokens + data.cacheWriteTokens,
+          };
+        }
+      } catch {
+        /* not in this project dir */
+      }
+    }
+  } catch {
+    /* ~/.claude/projects may not exist */
+  }
+
+  // Codex: latest token_count totals are already cumulative for the session.
+  const codexFile = findCodexSessionFile(sessionId);
+  if (codexFile) {
+    const totals = parseCodexTokenTotals(codexFile);
+    if (totals) {
+      return {
+        sessionId,
+        provider: 'codex',
+        model: 'codex',
+        inputTokens: totals.input,
+        outputTokens: totals.output,
+        cacheReadTokens: 0,
+        cacheWriteTokens: 0,
+        cumulativeInputTokens: totals.input,
+      };
+    }
+  }
+
+  // OpenCode: session dir holds per-message assistant token usage.
+  try {
+    const sessionDir = path.join(
+      os.homedir(),
+      '.local',
+      'share',
+      'opencode',
+      'storage',
+      'message',
+      sessionId
+    );
+    const usage = parseOpenCodeSessionUsage(sessionDir);
+    if (usage) {
+      return {
+        sessionId,
+        provider: 'opencode',
+        model: usage.model,
+        inputTokens: usage.inputTokens,
+        outputTokens: usage.outputTokens,
+        cacheReadTokens: usage.cacheReadTokens,
+        cacheWriteTokens: usage.cacheWriteTokens,
+        cumulativeInputTokens: usage.inputTokens + usage.cacheReadTokens + usage.cacheWriteTokens,
+      };
+    }
+  } catch {
+    /* opencode storage may not exist */
+  }
+
+  return null;
 }
 
 export function registerUsageRoutes(app: Express, providerNames: readonly ProviderName[]): void {
