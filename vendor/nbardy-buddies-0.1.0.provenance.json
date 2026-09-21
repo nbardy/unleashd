@@ -3,9 +3,9 @@
   "package": "@nbardy/buddies",
   "version": "0.1.0",
   "archive": "vendor/nbardy-buddies-0.1.0.tgz",
-  "sha256": "2abc40046852a7a69683872277120496d510f9e1374cfd64594b962c8b1d417e",
+  "sha256": "065e7fda734906a7c1c8909633e30c3919a7e98546ecec4d9e91ee686302fb3f",
   "reproduciblePack": true,
-  "sourceCommit": "29de35c2e4d24a25b9263b75c20c49e5eaf4a0cb",
+  "sourceCommit": "71b4a2886eb0a2a10ab5c94fd9a4aba8330a05b4",
   "sourceDirty": false,
   "sourceStatus": [],
   "manifest": {
