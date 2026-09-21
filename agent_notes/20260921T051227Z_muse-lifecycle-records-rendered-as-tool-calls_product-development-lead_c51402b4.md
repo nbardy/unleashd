@@ -113,8 +113,55 @@ left describing behaviour that is no longer true.
   `model.meta.response` as a `tool.use` still passes — which is the guard
   exceptions doing their defense-in-depth job.
 
-## Not verified
+## Confirmed: 10 rendered rows became 3
 
-The before/after was not watched in a live muse thread in the browser. The claim
-that these rows land in the client's "▸ N tool calls" grouping follows from
-`tool.use` reaching the UI, but was not confirmed visually.
+The "▸ N tool calls" claim was initially an assumption. It is now measured
+end-to-end through the real code, not the browser.
+
+A `tool.use` does not reach the client as a structured part. The server renders
+it to a line of markdown via `formatToolUse` and appends it to the assistant
+message (`server/src/conversations/runtime.ts:1840-1893`,
+`server/src/adapters/tool-format.ts:330-388`). The client then counts N by
+regex over those lines — `TOOL_LINE_RE` in
+`client/src/utils/tool-activity-segments.ts:3`, a fixed emoji-prefix set —
+inside `splitToolActivity` (`count = tools.length`, line 21), rendered at
+`client/src/components/VirtualizedMessageList.tsx:526` and
+`client/src/mobile/components/MessageRow.tsx:315`.
+
+Feeding the old names through the real formatter and the real client regex:
+
+| tool.use name | rendered line | counted in N |
+|---|---|---|
+| `model.meta.response` | `🔧 model.meta.response` | yes |
+| `tool:bash` | `🔧 tool:bash` | yes |
+| `bash` (new) | `🔧 bash` | yes |
+
+Unknown names fall through to the default 🔧 (`tool-format.ts:306-308`), so
+nothing filtered muse's bookkeeping out downstream. Replaying the fixture
+through the old and new parsers:
+
+    BEFORE  10 tool.use  [model.meta.response, tool:bash, bash, model.meta.response, ...]
+    AFTER    3 tool.use  [bash, bash, bash]
+    actual tool calls in that turn: 3
+
+Self-reminders were already suppressed by the old `.includes('reminder')` check,
+so the 10 is 4 model steps + 3 intents + 3 results.
+
+`progress` is confirmed server-only: `runtime.ts:1296-1310` logs it with no
+`broadcast`, and `ServerMessageSchema` (`shared/src/index.ts:1077-1101`) has no
+`progress` variant, so it could not be parsed client-side even if sent. It
+reaches the UI only as polled turn diagnostics over HTTP
+(`client/src/hooks/useTurnDiagnostics.ts`), never into the transcript.
+
+One seam checked while here: muse tool names are now bare (`bash`, not
+`tool:bash`), and the server matches spawn-tool names to build sub-agent cards.
+`isSubagentSpawnTool` (`server/src/subagent-tools.ts:50-56`) is provider-gated —
+gemini and codex names only, plus `Task` for any provider — and muse has no
+entry, so nothing muse emits changes branch.
+
+## Still not verified
+
+Not watched in a browser against a live muse thread. The path above is confirmed
+by executing the real formatter and the real client regex, which is stronger
+than a screenshot for the counting question, but it is not a visual check of the
+rendered UI.

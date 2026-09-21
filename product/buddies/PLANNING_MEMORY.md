@@ -207,6 +207,13 @@ The guard's exceptions are kept anyway as defense-in-depth — its failure mode 
 killing a review mid-write, so tolerating a known non-invocation is cheap
 insurance against muse's event shape moving again.
 
+Effect on the transcript, replaying that fixture through both parsers: a turn
+with three real tool calls rendered **10** `▸ N tool calls` rows before (4 model
+steps + 3 intents + 3 results) and **3** after. The client counts those rows by
+regex over rendered lines (`TOOL_LINE_RE`,
+`client/src/utils/tool-activity-segments.ts:3`) and unknown names fall through
+to a default 🔧, so nothing downstream was filtering muse's bookkeeping out.
+
 Measured on a live `muse exec --json` turn that ran three bash commands
 (2026-09-21, 100 stdout records, fixture at
 `vendor/agent-cli-tool/test/fixtures/muse-1.3-three-bash-calls.jsonl`): only
