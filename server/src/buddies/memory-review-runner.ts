@@ -104,14 +104,21 @@ const codexHandler: ReviewHarnessHandler = {
 };
 
 /**
- * Muse emits THREE tool.use-shaped records per MCP call. Measured on Muse Code
- * 1.3.0 for one `muse exec --json` turn that called one MCP tool:
- *   tool.use:model.meta.response                  (model step lifecycle)
- *   tool.use:tool:mcp__unleashd_memory__echo      (task lifecycle for the call)
- *   tool.use:mcp__unleashd_memory__echo           (the call itself)
- * Only the last is an invocation; the first two come from `task.lifecycle.*`
- * records that the muse parser reshapes into tool.use. Treating them as
- * unauthorized tools would kill every fallback review on its first model step.
+ * Muse USED TO emit three tool.use-shaped records per MCP call -- the model
+ * step (`model.meta.response`), the task lifecycle for the call
+ * (`tool:mcp__unleashd_memory__echo`) and the call itself. Only the last was an
+ * invocation; the other two were `task.lifecycle.*` bookkeeping that the muse
+ * parser reshaped into tool.use, and treating them as unauthorized tools killed
+ * every fallback review on its first model step.
+ *
+ * The parser now classifies them at the source: model steps leave as hidden
+ * `progress`, and a `tool:` intent becomes the single bare-named tool.use for
+ * that call. So these two exceptions should no longer fire.
+ *
+ * They are kept deliberately. This guard's failure mode is killing a review
+ * mid-write over muse's own bookkeeping, so tolerating a shape we know is not
+ * an invocation costs nothing, while dropping the exceptions would re-arm that
+ * failure the next time muse's event shape moves under us.
  */
 const MUSE_MODEL_STEP = /^model\./;
 const MUSE_LIFECYCLE_TOOL_PREFIX = 'tool:';

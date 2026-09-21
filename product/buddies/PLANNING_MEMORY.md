@@ -189,14 +189,30 @@ Things about the fallbacks that are load-bearing and easy to break:
   exactly one `tool.use` on the wire, so that rung needs no guard exception.
   `--setting-sources ''` is claude's `--ignore-user-config`/`--ignore-rules`.
 
-The muse event guard has its own trap. Muse emits three `tool.use`-shaped records
-per MCP call — measured on Muse Code 1.3.0: `model.meta.response` (model step
-lifecycle), `tool:mcp__unleashd_memory__<tool>` (task lifecycle for the call) and
-`mcp__unleashd_memory__<tool>` (the call itself). Only the last is an invocation;
-the first two come from `task.lifecycle.*` records that the muse parser reshapes
-into `tool.use`. The runner's "reviewer touched a non-memory tool → kill the run"
-guard must allow the first two by shape or it kills every fallback review on its
-first model step.
+The muse event guard has its own trap, now defused at the source. Muse used to
+produce three `tool.use`-shaped records per MCP call — measured on Muse Code
+1.3.0: `model.meta.response` (model step lifecycle),
+`tool:mcp__unleashd_memory__<tool>` (task lifecycle for the call) and
+`mcp__unleashd_memory__<tool>` (the call itself). Only the last was an
+invocation; the first two came from `task.lifecycle.*` records that the muse
+parser reshaped into `tool.use`, and the runner's "reviewer touched a non-memory
+tool → kill the run" guard had to allow them by shape or it killed every
+fallback review on its first model step.
+
+The parser now classifies muse's `operation` names instead of forwarding them
+all as tools: `model.*` leaves as hidden `progress`, a `tool:<name>` intent
+becomes the one bare-named `tool.use` for that call, and the duplicate copy that
+`tool.result` used to synthesize is suppressed when the start was already seen.
+The guard's exceptions are kept anyway as defense-in-depth — its failure mode is
+killing a review mid-write, so tolerating a known non-invocation is cheap
+insurance against muse's event shape moving again.
+
+Measured on a live `muse exec --json` turn that ran three bash commands
+(2026-09-21, 100 stdout records, fixture at
+`vendor/agent-cli-tool/test/fixtures/muse-1.3-three-bash-calls.jsonl`): only
+`task.lifecycle.side_effect_intent` carries an `operation` at all — the
+proposed/accepted/scheduled/started/completed records, 70 of the 100, carry
+none. So a record without an `operation` is not a tool and never was.
 
 Receipts record what actually ran: `model`/`reasoningEffort` name the attempt that
 performed the writes (and supply their provenance), and `fallbackFrom` names the
