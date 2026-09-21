@@ -15,7 +15,12 @@ import { knowledgeStore } from './knowledge';
 const BUDDIES_PACKAGE_NAME: string = '@nbardy/buddies';
 const BUDDY_BRIEFING_MAX_CHARACTERS = 40_000;
 const BUDDY_BRIEFING_PREFIX_MAX_CHARACTERS = 1_600;
-const BUDDY_BRIEFING_SUFFIX_MAX_CHARACTERS = 2_600;
+// The suffix is static text plus a JSON audience carrying a real conversation
+// UUID. It sat at 2,609 chars against a 2,600 budget on 2026-09-21 after the
+// mailing-lists line landed, so every owner-thread Buddy turn threw at compose
+// time while tests with short placeholder ids stayed green. Measure with a real
+// UUID before adding a line; guard: buddies-integration.test.ts.
+const BUDDY_BRIEFING_SUFFIX_MAX_CHARACTERS = 3_000;
 const BUDDY_SOUL_MAX_CHARACTERS = 10_000;
 const BUDDY_RELATIONSHIPS_MAX_CHARACTERS = 4_000;
 const BUDDY_SKILLS_MAX_CHARACTERS = 8_000;
