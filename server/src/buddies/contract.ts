@@ -512,6 +512,7 @@ export interface BuddiesStorePort {
   }): { post: BuddyMailingListPost };
   listPosts(input: {
     list?: string;
+    workspace?: string | null;
     project?: string | null;
     limit?: number;
     offset?: number;

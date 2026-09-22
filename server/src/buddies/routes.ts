@@ -826,7 +826,12 @@ export function registerBuddyRoutes(app: Express, dependencies: BuddyRouteDepend
     }
     res.json(
       buddies
-        .listPosts({ project: project.id, limit: input.limit, offset: input.offset })
+        .listPosts({
+          workspace: input.workspaceId,
+          project: project.id,
+          limit: input.limit,
+          offset: input.offset,
+        })
         .map(withPostProvenanceFields)
     );
   });
