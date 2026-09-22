@@ -17,7 +17,12 @@ import {
 } from '@unleashd/shared';
 import { z } from 'zod';
 import { isReadOnlyBuddyOperation, notifyBuddiesChanged } from './change-feed';
-import { type BuddiesStorePort, type BuddyAutomation, BuddyMemoryOperationError } from './contract';
+import {
+  type BuddiesStorePort,
+  type BuddyAutomation,
+  type BuddyMailingListPost,
+  BuddyMemoryOperationError,
+} from './contract';
 import { type PrivateBuddyRun, coordinationStore } from './coordination-store';
 import { DirectReportInputSchemas, executeDirectReportOperation } from './direct-reports';
 import { BuddyDirectoryInputSchema, listBuddyContacts } from './directory';
@@ -548,6 +553,20 @@ export const BuddyOperationResultSchema = z.object({
   audit: z.unknown(),
 });
 export type BuddyOperationResult = z.infer<typeof BuddyOperationResultSchema>;
+
+// Rows written before the provenance migration (or read through an older
+// store) carry no sender stamp; reads surface them as null, never undefined.
+export function withPostProvenanceFields(post: BuddyMailingListPost): BuddyMailingListPost {
+  return {
+    ...post,
+    senderConversationId: post.senderConversationId ?? null,
+    senderRunId: post.senderRunId ?? null,
+  };
+}
+
+function withPostProvenance<T extends { post: BuddyMailingListPost }>(result: T): T {
+  return { ...result, post: withPostProvenanceFields(result.post) };
+}
 
 export class BuddyOperationsService {
   readonly context: BuddyOperationContext;
@@ -1670,15 +1689,21 @@ export class BuddyOperationsService {
           });
         return this.result(
           name,
-          this.store.createPost({
-            list: list.id,
-            buddy: this.context.buddyId,
-            key: parsed.key,
-            purpose: parsed.purpose,
-            body: parsed.body,
-            evidence: parsed.evidence,
-            project: parsed.projectId ?? null,
-          }),
+          withPostProvenance(
+            this.store.createPost({
+              list: list.id,
+              buddy: this.context.buddyId,
+              key: parsed.key,
+              purpose: parsed.purpose,
+              body: parsed.body,
+              evidence: parsed.evidence,
+              project: parsed.projectId ?? null,
+              // Provenance is server-stamped from the operation context only;
+              // the input schema carries no caller-supplied ids to trust.
+              conversationId: this.context.conversationId ?? null,
+              runId: this.context.coordinationRunId ?? null,
+            })
+          ),
           parsed
         );
       }
@@ -1698,7 +1723,9 @@ export class BuddyOperationsService {
           offset,
         });
         const hasMore = overfetch ? rows.length > parsed.limit : rows.length === parsed.limit;
-        const posts = overfetch && hasMore ? rows.slice(0, parsed.limit) : rows;
+        const posts = (overfetch && hasMore ? rows.slice(0, parsed.limit) : rows).map(
+          withPostProvenanceFields
+        );
         // A read from the top marks the list read; paging into history moves nothing.
         if (!parsed.cursor && posts.length > 0)
           this.store.markListRead({

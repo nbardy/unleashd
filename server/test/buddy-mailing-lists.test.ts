@@ -567,3 +567,267 @@ test('real MCP boundary: default owner-thread and delegated policies admit new_l
     rmSync(home, { recursive: true, force: true });
   }
 });
+
+test('instance provenance: two conversations as one buddy stamp distinguishable ids', async () => {
+  const home = mkdtempSync(join(tmpdir(), 'buddies-lists-provenance-'));
+  const raw = new BuddiesStore(join(home, 'buddies.sqlite'));
+  const store = coordinationStore(raw as unknown as BuddiesStorePort);
+  const w = raw.createWorkspace({ name: 'Team', rootPath: home });
+  const a = raw.createBuddy({ project: w.id, name: 'Author', role: 'Write' });
+  store.setCoordinationMembership(a.id, w.id, { background_enabled: true });
+  const projectA = ownProject(raw, a.id, w.id, 'A work');
+  const opsFor = (conversationId: string) =>
+    new BuddyOperationsService(store, {
+      buddyId: a.id,
+      workspaceId: w.id,
+      conversationId,
+      allowedOperations: MESSAGE_BUDDY_OPERATIONS,
+    });
+  const opsOne = opsFor('conv-one');
+  const opsTwo = opsFor('conv-two');
+  try {
+    const { list } = opsOne.execute('buddy.new_list', {
+      key: 'l',
+      name: 'Standups',
+      purpose: 'Notes',
+    }).data as { list: Id };
+    const postOne = (
+      opsOne.execute('buddy.post', {
+        key: 'p1',
+        listId: list.id,
+        purpose: 'standup',
+        body: 'One',
+        projectId: projectA,
+      }).data as { post: Id }
+    ).post;
+    const postTwo = (
+      opsTwo.execute('buddy.post', {
+        key: 'p2',
+        listId: list.id,
+        purpose: 'standup',
+        body: 'Two',
+      }).data as { post: Id }
+    ).post;
+    type Stamped = { id: string; senderConversationId: string | null; senderRunId: string | null };
+    const posts = (
+      opsOne.execute('buddy.get_list', { listId: list.id }).data as { posts: Stamped[] }
+    ).posts;
+    const byId = new Map(posts.map((post) => [post.id, post]));
+    assert.equal(byId.get(postOne.id)?.senderConversationId, 'conv-one');
+    assert.equal(byId.get(postTwo.id)?.senderConversationId, 'conv-two');
+    assert.equal(byId.get(postOne.id)?.senderRunId, null);
+    assert.equal(byId.get(postTwo.id)?.senderRunId, null);
+    // Caller-supplied ids are never trusted: the input schema stays strict.
+    assert.throws(
+      () =>
+        opsOne.execute('buddy.post', {
+          key: 'p3',
+          listId: list.id,
+          purpose: 'standup',
+          body: 'Three',
+          senderConversationId: 'forged',
+        }),
+      /Unrecognized key/
+    );
+
+    // The run stamp flows from the real MCP boundary: server-stamped from the
+    // spawned turn context, never from the tool arguments.
+    const run = store.beginBuddyChatRun({
+      buddyId: a.id,
+      workspaceId: w.id,
+      conversationId: 'prov-conv',
+      allowedOperations: Object.keys(BuddyOperationInputSchemas),
+      maxRuntimeSeconds: 600,
+    }) as unknown as { id: string; claim_token: string };
+    const launch = resolveBuddyMcpLaunch();
+    const baseEnv = Object.fromEntries(
+      Object.entries(process.env).filter(
+        (entry): entry is [string, string] =>
+          entry[1] !== undefined && !entry[0].startsWith('UNLEASHD_BUDDY_')
+      )
+    );
+    const transport = new StdioClientTransport({
+      command: launch.command,
+      args: [...launch.args, '--buddy', a.id, '--workspace', w.id, '--conversation', 'prov-conv'],
+      cwd: launch.cwd,
+      env: {
+        ...baseEnv,
+        ...launch.env,
+        BUDDIES_HOME: home,
+        UNLEASHD_BUDDY_COORDINATION_RUN_ID: run.id,
+        [BUDDY_AUTOMATION_CLAIM_TOKEN_ENV]: run.claim_token,
+      },
+      stderr: 'pipe',
+    });
+    const client = new Client({ name: 'lists-provenance', version: '1' });
+    await client.connect(transport);
+    try {
+      const posted = await client.callTool({
+        name: 'post',
+        arguments: { key: 'p-run', listId: list.id, purpose: 'standup', body: 'Run post' },
+      });
+      assert.equal(posted.isError, undefined, JSON.stringify(posted));
+      const stamped = (posted.structuredContent as { data: { post: Stamped } }).data.post;
+      assert.equal(stamped.senderConversationId, 'prov-conv');
+      assert.equal(stamped.senderRunId, run.id);
+    } finally {
+      await client.close();
+    }
+
+    // Owner HTTP posts carry no conversation context: reads return nulls.
+    const app = routeTestApp(store);
+    const server = app.listen(0, '127.0.0.1');
+    try {
+      await new Promise<void>((resolve, reject) => {
+        server.once('listening', resolve);
+        server.once('error', reject);
+      });
+      const { port } = server.address() as AddressInfo;
+      const created = await fetch(`http://127.0.0.1:${port}/api/buddies/lists/${list.id}/posts`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          buddyId: a.id,
+          key: 'p-owner',
+          purpose: 'note',
+          body: 'Owner note',
+        }),
+      });
+      assert.equal(created.status, 201);
+      const ownerPost = (await created.json()) as { post: Stamped };
+      assert.equal(ownerPost.post.senderConversationId, null);
+      assert.equal(ownerPost.post.senderRunId, null);
+      const response = await fetch(`http://127.0.0.1:${port}/api/buddies/lists/${list.id}/posts`);
+      assert.equal(response.status, 200);
+      const wire = (await response.json()) as Stamped[];
+      for (const post of wire) {
+        assert.ok('senderConversationId' in post);
+        assert.ok('senderRunId' in post);
+      }
+      const wireById = new Map(wire.map((post) => [post.id, post]));
+      assert.equal(wireById.get(postOne.id)?.senderConversationId, 'conv-one');
+    } finally {
+      await new Promise<void>((resolve, reject) =>
+        server.close((error) => (error ? reject(error) : resolve()))
+      );
+    }
+  } finally {
+    raw.close();
+    rmSync(home, { recursive: true, force: true });
+  }
+});
+
+test('task channel feed: project posts across lists, newest-first, owner reads unmarked', async () => {
+  const { raw, store, w, a, b } = fixture();
+  try {
+    const projectA = ownProject(raw, a.id, w.id, 'A work');
+    const projectB = ownProject(raw, b.id, w.id, 'B work');
+    const ops = new BuddyOperationsService(store, {
+      buddyId: a.id,
+      workspaceId: w.id,
+      conversationId: 'chat-a',
+      allowedOperations: MESSAGE_BUDDY_OPERATIONS,
+    });
+    const reader = new BuddyOperationsService(store, {
+      buddyId: b.id,
+      workspaceId: w.id,
+      conversationId: 'chat-b',
+      allowedOperations: MESSAGE_BUDDY_OPERATIONS,
+    });
+    const first = ops.execute('buddy.new_list', {
+      key: 'one',
+      name: 'One',
+      purpose: 'First',
+    }).data as { list: Id };
+    const second = ops.execute('buddy.new_list', {
+      key: 'two',
+      name: 'Two',
+      purpose: 'Second',
+    }).data as { list: Id };
+    ops.execute('buddy.post', {
+      key: 'linked-old',
+      listId: first.list.id,
+      purpose: 'standup',
+      body: 'Linked old',
+      projectId: projectA,
+    });
+    ops.execute('buddy.post', {
+      key: 'linked-new',
+      listId: second.list.id,
+      purpose: 'standup',
+      body: 'Linked new',
+      projectId: projectA,
+    });
+    ops.execute('buddy.post', {
+      key: 'other-task',
+      listId: first.list.id,
+      purpose: 'standup',
+      body: 'Other task',
+      projectId: projectB,
+    });
+    ops.execute('buddy.post', {
+      key: 'unlinked',
+      listId: first.list.id,
+      purpose: 'standup',
+      body: 'No task',
+    });
+    const unreadBefore = (
+      reader.execute('buddy.get_inbox', {}).data as { lists: Array<{ unread: number }> }
+    ).lists.reduce((sum, row) => sum + row.unread, 0);
+
+    const app = routeTestApp(store);
+    const server = app.listen(0, '127.0.0.1');
+    try {
+      await new Promise<void>((resolve, reject) => {
+        server.once('listening', resolve);
+        server.once('error', reject);
+      });
+      const { port } = server.address() as AddressInfo;
+      const get = (query: string) => fetch(`http://127.0.0.1:${port}/api/buddies/posts${query}`);
+      const response = await get(`?workspaceId=${w.id}&projectId=${projectA}`);
+      assert.equal(response.status, 200);
+      const feed = (await response.json()) as Array<{
+        body: string;
+        projectId: string | null;
+        listId: string;
+        senderConversationId: string | null;
+        senderRunId: string | null;
+      }>;
+      assert.deepEqual(
+        feed.map((post) => post.body),
+        ['Linked new', 'Linked old']
+      );
+      assert.ok(feed.every((post) => post.projectId === projectA));
+      assert.deepEqual(
+        feed.map((post) => post.listId).sort(),
+        [first.list.id, second.list.id].sort()
+      );
+      for (const post of feed) {
+        assert.equal(post.senderConversationId, 'chat-a');
+        assert.equal(post.senderRunId, null);
+      }
+      const limited = await get(`?workspaceId=${w.id}&projectId=${projectA}&limit=1`);
+      assert.equal(limited.status, 200);
+      assert.equal(((await limited.json()) as unknown[]).length, 1);
+      const other = await get(`?workspaceId=${w.id}&projectId=${projectB}`);
+      assert.equal(other.status, 200);
+      assert.deepEqual(
+        ((await other.json()) as Array<{ body: string }>).map((post) => post.body),
+        ['Other task']
+      );
+      const missing = await get(`?workspaceId=${w.id}&projectId=project_missing`);
+      assert.equal(missing.status, 404);
+      // Owner feed reads move no read mark.
+      const unreadAfter = (
+        reader.execute('buddy.get_inbox', {}).data as { lists: Array<{ unread: number }> }
+      ).lists.reduce((sum, row) => sum + row.unread, 0);
+      assert.equal(unreadAfter, unreadBefore);
+    } finally {
+      await new Promise<void>((resolve, reject) =>
+        server.close((error) => (error ? reject(error) : resolve()))
+      );
+    }
+  } finally {
+    raw.close();
+  }
+});

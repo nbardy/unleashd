@@ -174,6 +174,8 @@ export interface BuddyMailingListPost {
   body: string;
   evidence: string[];
   projectId: string | null;
+  senderConversationId: string | null;
+  senderRunId: string | null;
   createdAt: string;
 }
 
@@ -505,8 +507,15 @@ export interface BuddiesStorePort {
     body: string;
     evidence?: string[];
     project?: string | null;
+    conversationId?: string | null;
+    runId?: string | null;
   }): { post: BuddyMailingListPost };
-  listPosts(input: { list: string; limit?: number; offset?: number }): BuddyMailingListPost[];
+  listPosts(input: {
+    list?: string;
+    project?: string | null;
+    limit?: number;
+    offset?: number;
+  }): BuddyMailingListPost[];
   listUnread(input: { buddy: string; workspace: string }): BuddyMailingListUnread[];
   markListRead(input: { buddy: string; list: string; post: string }): unknown;
   createAutomation(input: Record<string, unknown>): BuddyAutomation;
