@@ -39,6 +39,7 @@ import {
   BuddyOperationsService,
   type PreparedBuddyMessage,
   dropEmptyEvidenceArrays,
+  withPostProvenanceFields,
 } from './operations';
 import { type OwnerResourceName, executeOwnerResource } from './owner-resources';
 import {
@@ -767,7 +768,7 @@ export function registerBuddyRoutes(app: Express, dependencies: BuddyRouteDepend
       })
       .strict()
       .parse(req.query);
-    res.json(buddies.listPosts({ list: list.id, ...input }));
+    res.json(buddies.listPosts({ list: list.id, ...input }).map(withPostProvenanceFields));
   });
 
   route.post('/api/buddies/lists/:listId/posts', 400, async (req, res) => {
@@ -797,7 +798,36 @@ export function registerBuddyRoutes(app: Express, dependencies: BuddyRouteDepend
         body: input.body,
         evidence: input.evidence ?? [],
         project: input.projectId ?? null,
+        // Owner HTTP posts carry no conversation context: provenance stays null.
+        conversationId: null,
+        runId: null,
       })
+    );
+  });
+
+  // Task channel feed: newest-first posts across every workspace list linked
+  // to one Task. Owner reads move no read mark; Buddy MCP reads keep the
+  // single-list get_list cursor rule, so there is no MCP equivalent.
+  route.get('/api/buddies/posts', 400, async (req, res) => {
+    const buddies = await getStore();
+    const input = z
+      .object({
+        workspaceId: z.string().min(1),
+        projectId: z.string().min(1),
+        limit: z.coerce.number().int().min(1).max(50).optional(),
+        offset: z.coerce.number().int().min(0).optional(),
+      })
+      .strict()
+      .parse(req.query);
+    const project = buddies.getBuddyProject(input.projectId);
+    if (!project || project.workspace_id !== input.workspaceId) {
+      res.status(404).json({ error: 'Task project not found in this workspace' });
+      return;
+    }
+    res.json(
+      buddies
+        .listPosts({ project: project.id, limit: input.limit, offset: input.offset })
+        .map(withPostProvenanceFields)
     );
   });
 
