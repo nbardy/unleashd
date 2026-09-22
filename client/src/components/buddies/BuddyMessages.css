@@ -129,6 +129,61 @@
 .buddy-messages-list-chips button[aria-pressed="true"] {
   border-color: var(--accent-primary);
 }
+.buddy-messages-list-panes {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(160px, 220px) minmax(0, 1fr);
+  align-items: start;
+}
+.buddy-messages-list-panes .buddy-messages-list-chips {
+  flex-direction: column;
+  align-items: stretch;
+}
+.buddy-messages-list-panes .buddy-messages-list-chips button {
+  width: 100%;
+  text-align: left;
+}
+.buddy-messages-list-main {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+.buddy-messages-list-filter {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.buddy-messages-list-filter > span {
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+.buddy-messages-list-filter-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.buddy-messages-list-filter-options button {
+  min-height: 32px;
+  padding: 4px 10px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--ui-radius);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 12px;
+}
+.buddy-messages-list-filter-options button[aria-pressed="true"] {
+  border-color: var(--accent-primary);
+}
+@media (max-width: 640px) {
+  .buddy-messages-list-panes {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
 .buddy-messages-list-feed {
   display: grid;
   gap: 12px;
