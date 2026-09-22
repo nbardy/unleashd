@@ -1,5 +1,5 @@
 import type { BuddyMessage } from '@unleashd/shared';
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { usePolledFetch } from '../../hooks/usePolledFetch';
 import { newId } from '../../utils/ids';
@@ -53,7 +53,12 @@ export function BuddyMessages({
           }}
         />
       ))}
-      <BuddyListsSection workspaceId={workspaceId} buddyId={buddyId} buddyNames={buddyNames} />
+      <BuddyListsSection
+        workspaceId={workspaceId}
+        buddyId={buddyId}
+        buddyNames={buddyNames}
+        availableConversationIds={availableConversationIds}
+      />
     </section>
   );
 }
@@ -79,53 +84,62 @@ interface BuddyMailingListPost {
   evidence: string[];
   projectId: string | null;
   createdAt: string;
+  senderConversationId?: string | null;
+  senderRunId?: string | null;
 }
 
 function BuddyListsSection({
   workspaceId,
   buddyId,
   buddyNames,
+  availableConversationIds,
 }: {
   workspaceId?: string;
   buddyId?: string;
   buddyNames: Readonly<Record<string, string>>;
+  availableConversationIds: ReadonlySet<string>;
 }) {
   const { data, error, refetch } = usePolledFetch<BuddyMailingListSummary[]>(
     workspaceId ? `/api/buddies/lists?workspaceId=${encodeURIComponent(workspaceId)}` : null,
     5000
   );
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const selected = data?.find((list) => list.id === selectedId) ?? null;
+  const selected = data?.find((list) => list.id === selectedId) ?? data?.[0] ?? null;
   return (
-    <section className="buddy-messages-list-section" aria-label="Lists">
-      <h3>Lists</h3>
+    <section className="buddy-messages-list-section" aria-label="Channels">
+      <h3>Channels</h3>
       <p>Public workspace streams for standups, handoffs, and announcements.</p>
-      {error && <p role="alert">Lists could not refresh: {error.message}</p>}
+      {error && <p role="alert">Channels could not refresh: {error.message}</p>}
       {!data || data.length === 0 ? (
-        <p className="empty-state">No lists yet.</p>
+        <p className="empty-state">No channels yet.</p>
       ) : (
-        <ul className="buddy-messages-list-chips">
-          {data.map((list) => (
-            <li key={list.id}>
-              <button
-                type="button"
-                aria-pressed={selected?.id === list.id}
-                onClick={() => setSelectedId(selected?.id === list.id ? null : list.id)}
-              >
-                {list.name} · {list.postCount}
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
-      {selected && (
-        <BuddyListFeed
-          key={selected.id}
-          list={selected}
-          buddyId={buddyId}
-          buddyNames={buddyNames}
-          onPosted={refetch}
-        />
+        <div className="buddy-messages-list-panes">
+          <ul className="buddy-messages-list-chips" aria-label="Channels">
+            {data.map((list) => (
+              <li key={list.id}>
+                <button
+                  type="button"
+                  aria-pressed={selected?.id === list.id}
+                  onClick={() => setSelectedId(list.id)}
+                >
+                  {list.name} · {list.postCount}
+                </button>
+              </li>
+            ))}
+          </ul>
+          <div className="buddy-messages-list-main">
+            {selected && (
+              <BuddyListFeed
+                key={selected.id}
+                list={selected}
+                buddyId={buddyId}
+                buddyNames={buddyNames}
+                availableConversationIds={availableConversationIds}
+                onPosted={refetch}
+              />
+            )}
+          </div>
+        </div>
       )}
     </section>
   );
@@ -135,11 +149,13 @@ function BuddyListFeed({
   list,
   buddyId,
   buddyNames,
+  availableConversationIds,
   onPosted,
 }: {
   list: BuddyMailingListSummary;
   buddyId?: string;
   buddyNames: Readonly<Record<string, string>>;
+  availableConversationIds: ReadonlySet<string>;
   onPosted(): void;
 }) {
   const { data, error, refetch } = usePolledFetch<BuddyMailingListPost[]>(
@@ -150,16 +166,62 @@ function BuddyListFeed({
   const [body, setBody] = useState('');
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
+  const [projectFilter, setProjectFilter] = useState<string | null>(null);
+  const sortedPosts = useMemo(
+    () =>
+      [...(data ?? [])].sort(
+        (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+      ),
+    [data]
+  );
+  const projectIds = useMemo(
+    () => [
+      ...new Set(
+        sortedPosts.map((post) => post.projectId).filter((id): id is string => id !== null)
+      ),
+    ],
+    [sortedPosts]
+  );
+  const visiblePosts = projectFilter
+    ? sortedPosts.filter((post) => post.projectId === projectFilter)
+    : sortedPosts;
   return (
     <article className="buddy-messages-list-feed">
       <h4>{list.name}</h4>
       <p>{list.purpose}</p>
       {error && <p role="alert">Posts could not refresh: {error.message}</p>}
-      {!data || data.length === 0 ? (
+      {projectIds.length > 0 && (
+        <div className="buddy-messages-list-filter">
+          <span>Task</span>
+          <ul className="buddy-messages-list-filter-options">
+            <li key="all">
+              <button
+                type="button"
+                aria-pressed={projectFilter === null}
+                onClick={() => setProjectFilter(null)}
+              >
+                All
+              </button>
+            </li>
+            {projectIds.map((projectId) => (
+              <li key={projectId}>
+                <button
+                  type="button"
+                  aria-pressed={projectFilter === projectId}
+                  onClick={() => setProjectFilter(projectId)}
+                >
+                  {projectId}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {visiblePosts.length === 0 ? (
         <p className="empty-state">No posts yet.</p>
       ) : (
         <ul className="buddy-messages-list-posts">
-          {data.map((post) => (
+          {visiblePosts.map((post) => (
             <li key={post.id} className="buddy-messages-list-post">
               <div className="buddy-messages-list-post-heading">
                 <strong>{post.purpose}</strong>
@@ -167,8 +229,20 @@ function BuddyListFeed({
                   <Link to={`/buddies/${encodeURIComponent(post.fromBuddyId)}`}>
                     {buddyNames[post.fromBuddyId] ?? post.fromBuddyId}
                   </Link>
+                  {post.senderConversationId && (
+                    <> · conv {post.senderConversationId.slice(0, 8)}</>
+                  )}
                   {' · '}
                   {new Date(post.createdAt).toLocaleString()}
+                  {post.senderConversationId &&
+                    availableConversationIds.has(post.senderConversationId) && (
+                      <>
+                        {' · '}
+                        <Link to={`/chat/${encodeURIComponent(post.senderConversationId)}`}>
+                          Open conversation
+                        </Link>
+                      </>
+                    )}
                 </span>
               </div>
               <p>{post.body}</p>
