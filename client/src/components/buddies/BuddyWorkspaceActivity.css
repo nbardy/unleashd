@@ -245,3 +245,102 @@ a.buddy-workspace-job:hover {
     grid-column: 3;
   }
 }
+
+.buddy-workspace-channels-open {
+  display: inline-block;
+  padding: 7px 12px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--ui-radius);
+  color: var(--text-primary);
+  font: 600 11px / 1 var(--font-mono);
+  text-decoration: none;
+}
+
+.buddy-workspace-channels-open:hover {
+  color: var(--ai-bright);
+}
+
+.buddy-workspace-slack {
+  display: grid;
+  grid-template-columns: minmax(200px, 250px) minmax(0, 1fr);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--ui-radius);
+  background: color-mix(in srgb, var(--bg-panel) 45%, transparent);
+  overflow: hidden;
+}
+
+.buddy-workspace-slack-sidebar {
+  padding: 16px 12px;
+  border-right: 1px solid color-mix(in srgb, var(--border-subtle) 70%, transparent);
+}
+
+.buddy-workspace-slack-back {
+  color: var(--text-muted);
+  font: 500 11px / 1 var(--font-mono);
+  text-decoration: none;
+}
+
+.buddy-workspace-slack-back:hover {
+  color: var(--text-primary);
+}
+
+.buddy-workspace-slack-name {
+  margin: 10px 0 4px;
+  color: var(--text-emphasis);
+  font-size: 18px;
+  line-height: 1.2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.buddy-workspace-slack-channels {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.buddy-workspace-slack-channels button {
+  width: 100%;
+  padding: 7px 9px;
+  border: 0;
+  border-radius: var(--ui-radius);
+  background: transparent;
+  color: var(--text-muted);
+  font: 500 12px / 1.4 var(--font-mono);
+  text-align: left;
+  cursor: pointer;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.buddy-workspace-slack-channels button:hover {
+  color: var(--text-primary);
+}
+
+.buddy-workspace-slack-channels button[aria-pressed="true"] {
+  background: color-mix(in srgb, var(--text-emphasis) 7%, transparent);
+  color: var(--text-emphasis);
+}
+
+.buddy-workspace-slack-main {
+  min-width: 0;
+  padding: 16px;
+}
+
+.buddy-workspace-slack-main .buddy-messages-list-feed {
+  gap: 10px;
+}
+
+@media (max-width: 768px) {
+  .buddy-workspace-slack {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .buddy-workspace-slack-sidebar {
+    border-right: 0;
+    border-bottom: 1px solid color-mix(in srgb, var(--border-subtle) 70%, transparent);
+  }
+}

@@ -131,6 +131,7 @@ function useRestoreOnLoad(device: DeviceKind) {
 type RouteDef = { path: string; desktop: () => ReactElement; mobile: () => ReactElement };
 
 import { BuddyWorkspaceActivity } from './components/buddies/BuddyWorkspaceActivity';
+import { WorkspaceSlack } from './components/buddies/ChannelBrowser';
 import { BuddiesMobile } from './mobile/buddies/BuddiesMobile';
 import { BuddyDetailMobile } from './mobile/buddies/BuddyDetailMobile';
 import { ChatMobile } from './mobile/conversations/ChatMobile';
@@ -152,6 +153,11 @@ const ROUTES: RouteDef[] = [
     path: '/buddies/workspaces/:workspaceId',
     desktop: () => <BuddyWorkspaceActivity />,
     mobile: () => <BuddyWorkspaceActivity />,
+  },
+  {
+    path: '/buddies/workspaces/:workspaceId/channels',
+    desktop: () => <WorkspaceSlack />,
+    mobile: () => <WorkspaceSlack />,
   },
   {
     path: '/buddies/:buddyId',

@@ -1,12 +1,12 @@
-import { type BuddyWorkspaceActiveJob, BuddyWorkspaceActivitySchema } from '@unleashd/shared';
+import type { BuddyWorkspaceActiveJob } from '@unleashd/shared';
 import { useAtomValue } from 'jotai';
 import { useMemo } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { allConversationIdsAtom, conversationAtomFamily } from '../../atoms/conversations';
-import { resource, usePolledFetch } from '../../hooks/usePolledFetch';
+import { usePolledFetch } from '../../hooks/usePolledFetch';
 import { formatTimeAgo } from '../../utils/time';
 import './BuddyWorkspaceActivity.css';
-import { ChannelBrowser } from './ChannelBrowser';
+import { workspaceActivityResource } from './ChannelBrowser';
 
 const NO_CONVERSATION_ID = '__workspace_job_without_conversation__';
 
@@ -74,26 +74,12 @@ export function BuddyWorkspaceActivity() {
   const { workspaceId } = useParams();
   const conversationIds = useAtomValue(allConversationIdsAtom);
   const availableConversationIds = useMemo(() => new Set(conversationIds), [conversationIds]);
-  const loadActivity = useMemo(() => {
-    if (!workspaceId) return null;
-    const path = `/api/buddies/workspaces/${encodeURIComponent(workspaceId)}/activity`;
-    return resource(path, async (signal: AbortSignal) => {
-      const response = await fetch(path, { signal });
-      if (!response.ok) {
-        const payload = (await response.json().catch(() => ({}))) as { error?: string };
-        throw new Error(
-          payload.error ?? `Unable to load workspace activity (HTTP ${response.status})`
-        );
-      }
-      return BuddyWorkspaceActivitySchema.parse(await response.json());
-    });
-  }, [workspaceId]);
+  const loadActivity = useMemo(
+    () => (workspaceId ? workspaceActivityResource(workspaceId) : null),
+    [workspaceId]
+  );
   const { data, loading, error, refetch } = usePolledFetch(loadActivity, 2_000);
   const activeCount = data?.members.reduce((sum, member) => sum + member.jobs.length, 0) ?? 0;
-  const buddyNames = useMemo(
-    () => Object.fromEntries((data?.members ?? []).map((member) => [member.id, member.name])),
-    [data]
-  );
 
   return (
     <main className="buddy-workspace-page">
@@ -114,6 +100,16 @@ export function BuddyWorkspaceActivity() {
             </div>
           )}
         </div>
+        {workspaceId && (
+          <p>
+            <Link
+              className="buddy-workspace-channels-open"
+              to={`/buddies/workspaces/${encodeURIComponent(workspaceId)}/channels`}
+            >
+              Open channels
+            </Link>
+          </p>
+        )}
       </header>
 
       {loading && !data && <p className="buddy-workspace-state">Loading workspace activity…</p>}
@@ -159,13 +155,6 @@ export function BuddyWorkspaceActivity() {
             </article>
           ))}
         </section>
-      )}
-      {workspaceId && (
-        <ChannelBrowser
-          workspaceId={workspaceId}
-          buddyNames={buddyNames}
-          availableConversationIds={availableConversationIds}
-        />
       )}
     </main>
   );

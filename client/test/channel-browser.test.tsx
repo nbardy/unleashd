@@ -4,7 +4,7 @@ import test from 'node:test';
 // biome-ignore lint/correctness/noUnusedImports: tsx's test transform uses the classic JSX runtime.
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { MemoryRouter } from 'react-router-dom';
+import { MemoryRouter, Route, Routes } from 'react-router-dom';
 register(
   `data:text/javascript,${encodeURIComponent(`
     export async function load(url, context, nextLoad) {
@@ -14,7 +14,7 @@ register(
   `)}`,
   import.meta.url
 );
-const { ChannelBrowser } = await import('../src/components/buddies/ChannelBrowser');
+const { ChannelBrowser, WorkspaceSlack } = await import('../src/components/buddies/ChannelBrowser');
 const { Provider } = await import('jotai');
 const { jotaiStore } = await import('../src/atoms/store');
 const { loadResource } = await import('../src/atoms/resources');
@@ -66,29 +66,51 @@ async function seed() {
       },
     ],
   });
+  await loadResource({
+    key: '/api/buddies/workspaces/ws-slack/activity',
+    load: async () => ({
+      generatedAt: '2026-09-22T00:00:00.000Z',
+      workspace: { id: 'ws-slack', name: 'unleashd', rootPath: '~/git/unleashd' },
+      members: [
+        {
+          id: 'lead',
+          name: 'Lead',
+          role: 'Own the work',
+          status: 'active',
+          jobs: [],
+        },
+        {
+          id: 'dev',
+          name: 'Dev',
+          role: 'Build the work',
+          status: 'active',
+          jobs: [],
+        },
+      ],
+    }),
+  });
 }
 
-function render() {
-  return renderToStaticMarkup(
+test('channel browser lays out sidebar channels beside conversation panels', async () => {
+  await seed();
+  const html = renderToStaticMarkup(
     <MemoryRouter>
       <Provider store={jotaiStore}>
         <ChannelBrowser
           workspaceId="ws-slack"
+          workspaceName="unleashd"
           buddyNames={{ lead: 'Lead', dev: 'Dev' }}
           availableConversationIds={new Set(['conv-aaaa111122223333'])}
         />
       </Provider>
     </MemoryRouter>
   );
-}
-
-test('workspace channel browser renders the slack-like feed without a composer', async () => {
-  await seed();
-  const html = render();
   assert.match(html, /aria-label="Channels"/);
-  assert.match(html, /<h3>Channels<\/h3>/);
-  assert.match(html, /Standups · 2/);
-  assert.match(html, /buddy-messages-list-panes/);
+  assert.match(html, /buddy-workspace-slack-sidebar/);
+  assert.match(html, /buddy-workspace-slack-main/);
+  assert.match(html, /<h1 class="buddy-workspace-slack-name">unleashd<\/h1>/);
+  assert.match(html, /href="\/buddies\/workspaces\/ws-slack"/);
+  assert.match(html, /# Standups · 2/);
   const newerAt = html.indexOf('Newer handoff without a live thread.');
   const olderAt = html.indexOf('Older update from the first run.');
   assert.ok(newerAt !== -1 && olderAt !== -1, 'all posts render');
@@ -101,7 +123,24 @@ test('workspace channel browser renders the slack-like feed without a composer',
   assert.doesNotMatch(html, /buddy-messages-list-composer/);
 });
 
-test('workspace channel browser shows the shared empty state without channels', async () => {
+test('workspace slack page resolves the workspace name and member names', async () => {
+  await seed();
+  const html = renderToStaticMarkup(
+    <MemoryRouter initialEntries={['/buddies/workspaces/ws-slack/channels']}>
+      <Provider store={jotaiStore}>
+        <Routes>
+          <Route path="/buddies/workspaces/:workspaceId/channels" element={<WorkspaceSlack />} />
+        </Routes>
+      </Provider>
+    </MemoryRouter>
+  );
+  assert.match(html, /<h1 class="buddy-workspace-slack-name">unleashd<\/h1>/);
+  assert.match(html, /# Standups · 2/);
+  assert.match(html, /Older update from the first run./);
+  assert.match(html, /Lead/);
+});
+
+test('channel browser shows the shared empty state without channels', async () => {
   await loadResource({
     key: '/api/buddies/lists?workspaceId=ws-bare',
     load: async () => [],
@@ -109,7 +148,11 @@ test('workspace channel browser shows the shared empty state without channels', 
   const html = renderToStaticMarkup(
     <MemoryRouter>
       <Provider store={jotaiStore}>
-        <ChannelBrowser workspaceId="ws-bare" availableConversationIds={new Set()} />
+        <ChannelBrowser
+          workspaceId="ws-bare"
+          workspaceName="bare"
+          availableConversationIds={new Set()}
+        />
       </Provider>
     </MemoryRouter>
   );
