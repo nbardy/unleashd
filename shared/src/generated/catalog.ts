@@ -1,9 +1,9 @@
 // DO NOT EDIT - generated from catalog.jsonc
-// Source: vendor/agent-cli-tool/catalog.jsonc (revision 2026-09-22.opus-5-5)
+// Source: vendor/agent-cli-tool/catalog.jsonc (revision 2026-09-23.opus-5-5-default)
 // Generator: shared/scripts/gen-catalog.ts
 // Run: pnpm --filter @unleashd/shared gen:catalog
 
-export const CLAUDE_MODEL_IDS = ["fable","opus","claude-opus-5-5","sonnet","haiku"] as const;
+export const CLAUDE_MODEL_IDS = ["fable","claude-opus-5-5","sonnet","haiku"] as const;
 export const GEMINI_MODEL_IDS = ["gemini-3.1-pro-preview","gemini-2.5-pro","gemini-2.5-flash","gemini-2.0-flash"] as const;
 export const MUSE_MODEL_IDS = ["muse-spark-1.1","muse-spark-1.2-contributor","muse-spark-1.3","muse-spark-1.3-contributor"] as const;
 

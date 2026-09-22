@@ -60,7 +60,8 @@ test('shared model wire schema accepts opaque ids and rejects only empty strings
 });
 
 test('server provider/model compatibility validation works per provider', () => {
-  assert.equal(isModelIdValidForProvider('claude', 'opus'), true);
+  assert.equal(isModelIdValidForProvider('claude', 'claude-opus-5-5'), true);
+  assert.equal(isModelIdValidForProvider('claude', 'opus'), false); // retired 2026-09-23
   assert.equal(isModelIdValidForProvider('claude', 'fable'), true);
   assert.equal(isModelIdValidForProvider('claude', 'opencode/gpt-5'), false);
 

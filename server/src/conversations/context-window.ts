@@ -3,7 +3,7 @@
  * meter.
  *
  * This replaces a hardcoded 200_000, which was the single largest source of
- * error in the meter: Opus 5, Fable 5.1 and Sonnet 5 all carry 1M windows, so a
+ * error in the meter: Opus 5.5, Fable 5.1 and Sonnet 5 all carry 1M windows, so a
  * thread reading "220k / 200k" was actually at 22% of its real budget. Only
  * Haiku 4.5 is genuinely a 200K model.
  *
@@ -46,7 +46,10 @@ const TOKENS_200K = 200_000;
  */
 const CLAUDE_ALIAS_WINDOWS: Readonly<Record<string, number>> = {
   fable: TOKENS_1M,
+  // Retired 2026-09-23 (superseded by claude-opus-5-5): kept so stored
+  // explicit `opus` configs still resolve instead of dropping to the floor.
   opus: TOKENS_1M,
+  'claude-opus-5-5': TOKENS_1M,
   sonnet: TOKENS_1M,
   haiku: TOKENS_200K,
 };
