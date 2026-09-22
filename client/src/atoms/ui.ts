@@ -244,18 +244,46 @@ function setShared(recipe: (s: SharedSlice) => Partial<SharedSlice>): void {
 /**
  * Apply server state. Merges ONLY the shared slice — local fields are
  * device-owned and never overwritten by another client's values. Called on
- * WS init. Syncs back afterward so pre-hydration mutations aren't lost if
- * the server restarts before the next user-initiated mutation.
+ * every WS init, including reconnects after a server restart.
+ *
+ * The merge (not overwrite) is load-bearing: `init` can arrive while the
+ * client's own debounced POST is still pending, or after a restart whose
+ * debounced disk write never landed — in both cases the snapshot is older
+ * than this tab's in-memory state. Overwriting dropped those unflushed
+ * client writes, un-hiding conversations the user just marked done, and the
+ * sync-back below then cemented the loss server-side. Union the
+ * accumulative lists, take the max seen index per conversation, and keep the
+ * client's working directory unless it has none. Add-wins errs toward
+ * hidden on genuine conflicts; the opposite bias is the reported bug.
+ * Syncs back afterward so the merged state repairs a stale server copy.
  */
 export function hydrateUiFromServer(serverState: UIState): void {
+  const current = jotaiStore.get(uiSharedAtom);
+  const seen: Record<string, number> = { ...serverState.lastSeenMessageIndex };
+  for (const [id, index] of Object.entries(current.lastSeenMessageIndex)) {
+    seen[id] = Math.max(seen[id] ?? Number.NEGATIVE_INFINITY, index);
+  }
   jotaiStore.set(uiSharedAtom, {
-    doneConversations: serverState.doneConversations,
-    promotedWorkers: serverState.promotedWorkers,
-    lastSeenMessageIndex: serverState.lastSeenMessageIndex,
-    lastWorkingDirectory: serverState.lastWorkingDirectory,
+    doneConversations: unionOrdered(serverState.doneConversations, current.doneConversations),
+    promotedWorkers: unionOrdered(serverState.promotedWorkers, current.promotedWorkers),
+    lastSeenMessageIndex: seen,
+    lastWorkingDirectory: current.lastWorkingDirectory ?? serverState.lastWorkingDirectory,
   });
   hydrated = true;
   scheduleSharedSync();
+}
+
+/** Order-preserving union: server order first, client-only entries appended. */
+function unionOrdered(server: string[], client: string[]): string[] {
+  const known = new Set(server);
+  const merged = [...server];
+  for (const id of client) {
+    if (!known.has(id)) {
+      known.add(id);
+      merged.push(id);
+    }
+  }
+  return merged;
 }
 
 // ---------------------------------------------------------------------------
