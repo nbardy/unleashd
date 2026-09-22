@@ -44,6 +44,21 @@ export interface CoordinationStore extends BuddiesStorePort {
   getBuddyRun(id: string): PrivateBuddyRun | null;
   listBuddyRuns(filter?: Record<string, unknown>): PrivateBuddyRun[];
   enqueueBuddyRun(input: Record<string, unknown>): PrivateBuddyRun;
+  inspectBuddyAdmission(input: {
+    buddyId: string;
+    workspaceId: string;
+    runId?: string;
+    conversationId?: string;
+  }): {
+    allowed: boolean;
+    blockers: Array<{
+      path: string;
+      code: string;
+      reason: string;
+      remedy: string;
+      resolvableBy: 'owner' | 'lead' | 'runtime';
+    }>;
+  };
   claimBuddyRun(id: string, input: Record<string, unknown>): PrivateBuddyRun | null;
   startBuddyRun(id: string, token: string): PrivateBuddyRun;
   finishBuddyRun(id: string, input: Record<string, unknown>): PrivateBuddyRun;

@@ -695,6 +695,114 @@ test('packaged owner chats retain tool authority past ten minutes and honor thei
   }
 });
 
+test('executor holds paused ancestor and cancelled project runs quietly, then admits after resume', async (t) => {
+  const raw = new BuddiesStore(':memory:');
+  const store = coordinationStore(raw as unknown as BuddiesStorePort);
+  const warnings = t.mock.method(console, 'warn', () => {});
+  const claims = t.mock.method(store, 'claimBuddyRun');
+  try {
+    const workspace = raw.createWorkspace({
+      name: 'Project gates',
+      rootPath: '/tmp/project-gates',
+    });
+    const buddy = raw.createBuddy({ project: workspace.id, name: 'Lead', role: 'Coordinate' });
+    store.setCoordinationMembership(buddy.id, workspace.id, { background_enabled: true });
+    const parent = raw.createCoordinatedProject(
+      { workspaceId: workspace.id, title: 'Parent', definitionOfDone: 'Evidence' },
+      { actor: buddy.id, key: 'parent' }
+    );
+    const child = raw.createCoordinatedProject(
+      {
+        workspaceId: workspace.id,
+        parentProjectId: parent.id,
+        title: 'Child',
+        definitionOfDone: 'Evidence',
+      },
+      { actor: buddy.id, key: 'child' }
+    );
+    let turns = 0;
+    const conversation = {
+      placement: 'background',
+      buddyContext: { buddyId: buddy.id, workspaceId: workspace.id },
+      hasActiveProcess: () => false,
+      isRunning: false,
+      queue: [],
+      runCoordinationMessage: async (_prompt, _context, _token, settle) => {
+        turns++;
+        settle('complete', 'Fixture completed');
+      },
+    } as unknown as ConversationRuntime;
+    const executor = new BuddyRunExecutor({
+      store,
+      getConversation: () => conversation,
+      createConversation: async () => {
+        throw new Error('Existing destination must be reused');
+      },
+    });
+    const definition = raw.createAutomation({
+      buddy: buddy.id,
+      workspace: workspace.id,
+      name: 'Project check',
+      scheduleKind: 'interval',
+      scheduleExpression: '300',
+      timezone: 'UTC',
+      jobKind: 'prompt',
+      jobPayload: { prompt: 'Check project', conversationId: 'project-thread' } as never,
+      enabled: true,
+    });
+    const enqueue = (key: string) =>
+      store.enqueueBuddyRun({
+        inputKey: key,
+        inputKind: 'schedule',
+        inputId: definition.id,
+        buddyId: buddy.id,
+        workspaceId: workspace.id,
+        projectId: child.id,
+        conversationId: 'project-thread',
+        policy: { allowed_operations: [], prompt: 'Check project' },
+      });
+    const run = enqueue('paused-run');
+    const update = (projectId: string, executionState: string, key: string) =>
+      raw.updateCoordinatedProject(
+        projectId,
+        { baseRevision: raw.getBuddyProject(projectId)!.revision, executionState },
+        { actor: 'owner', key }
+      );
+    update(parent.id, 'paused', 'pause');
+    executor.poll();
+    executor.poll();
+    assert.equal(turns, 0);
+    assert.equal(store.getBuddyRun(run.id)!.status, 'queued');
+    assert.equal(store.getBuddyRun(run.id)!.error_code, 'held');
+    assert.match(store.getBuddyRun(run.id)!.error!, /paused or cancelled/);
+    assert.equal(warnings.mock.callCount(), 0, 'project holds are expected, not server errors');
+    assert.equal(claims.mock.callCount(), 0, 'blocked runs must not reach claim');
+
+    update(parent.id, 'enabled', 'resume');
+    await until(
+      () => store.getBuddyRun(run.id)!.status === 'complete',
+      () => executor.poll()
+    );
+    assert.equal(turns, 1);
+    assert.equal(claims.mock.callCount(), 1);
+
+    const cancelled = enqueue('cancelled-run');
+    update(child.id, 'cancelled', 'cancel');
+    assert.equal(store.getBuddyRun(cancelled.id)!.status, 'cancelled');
+    // A late input can still reach the queue after project cancellation.
+    const late = enqueue('late-cancelled-run');
+    executor.poll();
+    executor.poll();
+    assert.equal(store.getBuddyRun(late.id)!.status, 'queued');
+    assert.match(store.getBuddyRun(late.id)!.error!, /paused or cancelled/);
+    assert.equal(turns, 1);
+    assert.equal(claims.mock.callCount(), 1);
+    assert.equal(warnings.mock.callCount(), 0);
+  } finally {
+    raw.close();
+  }
+});
+
 test('executor recovery poll pages live runs only, never the full run history', () => {
   // Regression guard (2026-09-19): the per-second recovery scan paginated the
   // whole buddy_runs table and hydrated every historical row — 2,252ms at

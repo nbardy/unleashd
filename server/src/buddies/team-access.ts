@@ -164,21 +164,6 @@ export interface TeamStore extends CoordinationStore {
     authority: TeamAuthority
   ): unknown;
   getMessageExecution(messageId: string): BuddyMessageExecution;
-  inspectBuddyAdmission(input: {
-    buddyId: string;
-    workspaceId: string;
-    runId?: string;
-    conversationId?: string;
-  }): {
-    allowed: boolean;
-    blockers: Array<{
-      path: string;
-      code: string;
-      reason: string;
-      remedy: string;
-      resolvableBy: 'owner' | 'lead' | 'runtime';
-    }>;
-  };
 }
 /** Reads remain diagnostic even when an old package cannot perform team mutations. */
 export function inspectTeamContract(store: BuddiesStorePort) {

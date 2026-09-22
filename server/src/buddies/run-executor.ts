@@ -200,6 +200,23 @@ export class BuddyRunExecutor {
         );
         continue;
       }
+      // Held runs stay queued so an explicit project resume can release them.
+      // Ask the package authority about ancestors and epochs before attempting
+      // a claim; project gates are expected holds, not per-tick claim failures.
+      if (candidate.project_id && candidate.policy.foreground !== true) {
+        const projectGate = this.store
+          .inspectBuddyAdmission({
+            buddyId: candidate.buddy_id,
+            workspaceId: candidate.workspace_id,
+            runId: candidate.id,
+          })
+          .blockers.find((blocker) => blocker.code === 'project_gate');
+        if (projectGate) {
+          if (candidate.error_code !== 'held' || candidate.error !== projectGate.reason)
+            this.store.holdBuddyRun(candidate.id, projectGate.reason);
+          continue;
+        }
+      }
       if (candidate.input_kind === 'schedule') {
         const schedule = this.store.getAutomation(candidate.input_id);
         const payload = schedule?.job_payload as
