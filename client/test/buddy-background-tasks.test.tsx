@@ -69,3 +69,58 @@ test('background destination shows running work first, retains history and scope
   store.set(conversationsAtom, remaining);
   assert.deepEqual(hrefs(render()), ['/chat/past']);
 });
+
+test('empty workspace param means all workspaces; a workspace with no runs offers to show all', () => {
+  // Regression: the sidebar built `?workspace=` for buddies with no workspace
+  // row, which the tab read as a workspace literally named "" — zero rows
+  // while the badge counts showed work, and the Conversations tab hides
+  // background placement by design, so the threads looked hidden everywhere.
+  const store = createStore();
+  const make = (id: string, overrides: Partial<Conversation> = {}) =>
+    ({
+      id,
+      kind: { kind: 'buddy', buddyId: 'lead', workspaceId: 'wave' },
+      placement: 'background',
+      createdAt: new Date('2026-09-13T00:00:00Z'),
+      messages: [],
+      provider: 'codex',
+      isRunning: false,
+      ...overrides,
+    }) as Conversation;
+  store.set(
+    conversationsAtom,
+    new Map(
+      [
+        make('past'),
+        make('active', { isRunning: true }),
+        make('other-workspace', {
+          kind: { kind: 'buddy', buddyId: 'lead', workspaceId: 'other' },
+        }),
+      ].map((conversation) => [conversation.id, conversation])
+    )
+  );
+  store.set(conversationLoadCompleteAtom, true);
+  const render = (query: string) =>
+    renderToStaticMarkup(
+      <Provider store={store}>
+        <MemoryRouter initialEntries={[`${buddyTabPath('lead', 'background')}${query}`]}>
+          <BuddyBackgroundTasks
+            buddyId="lead"
+            workspaces={[
+              { id: 'wave', name: 'Wave', root_path: '/wave' },
+              { id: 'other', name: 'Other', root_path: '/other' },
+            ]}
+          />
+        </MemoryRouter>
+      </Provider>
+    );
+  const hrefs = (html: string) => [...html.matchAll(/href="(\/chat\/[^"]+)"/g)].map((m) => m[1]);
+  assert.deepEqual(hrefs(render('?workspace=')), [
+    '/chat/active',
+    '/chat/past',
+    '/chat/other-workspace',
+  ]);
+  const empty = render('?workspace=missing');
+  assert.match(empty, /No background conversations yet/);
+  assert.match(empty, /Show all workspaces \(3\)/);
+});

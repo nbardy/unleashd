@@ -29,6 +29,10 @@
   font-size: 13px;
 }
 
+.buddy-background-tasks-empty p {
+  margin: 0 0 8px;
+}
+
 .buddy-background-tasks-heading label {
   display: flex;
   align-items: center;

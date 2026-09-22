@@ -18,9 +18,18 @@ export function BuddyBackgroundTasks({
   const [searchParams, setSearchParams] = useSearchParams();
   const location = useLocation();
   const routeState = mobileConversationRouteState(location);
-  const workspaceId = searchParams.get('workspace');
+  // An empty `?workspace=` (sidebar link for a buddy with no workspace) is
+  // "All workspaces", not a workspace literally named "". Without this,
+  // the filter matches nothing and the tab reads empty while the badge
+  // counts show work — background threads look hidden everywhere, since the
+  // Conversations tab hides background placement by design.
+  const workspaceParam = searchParams.get('workspace');
+  const workspaceId = workspaceParam ? workspaceParam : null;
   const { conversations, runningCount } = useAtomValue(
     buddyBackgroundConversationsAtomFamily({ buddyId, workspaceId })
+  );
+  const unfiltered = useAtomValue(
+    buddyBackgroundConversationsAtomFamily({ buddyId, workspaceId: null })
   );
   const availableIds = useAtomValue(allConversationIdsAtom);
   const loaded = useAtomValue(conversationLoadCompleteAtom);
@@ -55,9 +64,21 @@ export function BuddyBackgroundTasks({
         </label>
       </div>
       {conversations.length === 0 ? (
-        <p className="buddy-background-tasks-empty">
-          {loaded ? 'No background conversations yet.' : 'Loading background conversations…'}
-        </p>
+        <div className="buddy-background-tasks-empty">
+          <p>{loaded ? 'No background conversations yet.' : 'Loading background conversations…'}</p>
+          {loaded && workspaceId && unfiltered.conversations.length > 0 && (
+            <button
+              type="button"
+              onClick={() => {
+                const next = new URLSearchParams(searchParams);
+                next.delete('workspace');
+                setSearchParams(next);
+              }}
+            >
+              Show all workspaces ({unfiltered.conversations.length})
+            </button>
+          )}
+        </div>
       ) : (
         <ul className="buddy-background-tasks-list">
           {conversations.map((conversation) => {
