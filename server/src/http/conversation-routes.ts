@@ -223,11 +223,27 @@ export function buildContextBreakdown(
   // Two provider-truth paths, same question. The live `usage` event is freshest
   // but only exists for turns taken since we started listening; the harness's
   // own session log is retroactive and covers every turn ever taken (and is the
-  // ONLY source for muse, whose stdout carries no token fields at all). Live
-  // wins when present; the file is what makes an idle thread read correctly
-  // instead of falling back to chars/4.
+  // ONLY source for codex and muse, whose stdout carries no per-request token
+  // fields at all). Live wins when present; the file is what makes an idle
+  // thread read correctly instead of falling back to chars/4.
+  //
+  // A live reading that exceeds a KNOWN window is not a context size at all --
+  // it is a cumulative aggregate a parser passed through (2026-09-22: codex
+  // exec stdout reported the session total 16,062,762 as the context on a
+  // 258,400 window). A real per-request context cannot pass the window the
+  // provider enforces, so the implausible live value is dropped and the file
+  // (or the estimate) answers instead. This also heals sessions whose stored
+  // binding still carries a pre-fix aggregate. Operator budgets and
+  // unknown-model floors are excluded: exceeding a configured budget is
+  // meaningful over-budget signal, and a floor is a display guess, not physics.
+  const liveTokens = conversation.providerUsage?.contextTokens ?? null;
+  const livePlausible =
+    liveTokens === null ||
+    contextWindow.source === 'operator' ||
+    contextWindow.source === 'unknown' ||
+    liveTokens <= contextWindow.tokens;
   const measuredTokens =
-    conversation.providerUsage?.contextTokens ?? sessionContext?.contextTokens ?? null;
+    (livePlausible ? liveTokens : null) ?? sessionContext?.contextTokens ?? null;
   const budgetTokens = contextWindow.tokens;
 
   // Two readings, two clean paths. Measured: sections keep their estimate and

@@ -329,6 +329,57 @@ test('the live usage event outranks the session file when both are present', () 
   assert.equal(result.totalTokens, 99_000);
 });
 
+// REGRESSION 2026-09-22 (unleashd "16M tokens" meter bug): `codex exec
+// --json` reported the session-cumulative total as the turn usage, and the
+// live path outranked the correct file reading. A per-request context cannot
+// exceed a known window, so the aggregate is dropped and the file answers.
+test('a live reading past a known window is an aggregate, not a context size', () => {
+  const convo = conversation({
+    provider: 'codex',
+    model: 'gpt-6-astra',
+    modelName: 'gpt-6-astra',
+    // Stored binding from a pre-fix turn: the session total, not a context.
+    providerUsage: {
+      contextTokens: 16_062_762,
+      outputTokens: 39_152,
+      cachedInputTokens: 15_811_968,
+      observedAt: '2026-09-22T05:39:45.907Z',
+    },
+  });
+  const window: ContextWindow = { source: 'provider', tokens: 258_400 };
+  const result = buildContextBreakdown(convo, null, null, null, window, {
+    contextTokens: 244_247,
+    contextWindow: 258_400,
+    compaction: null,
+  });
+  assert.equal(result.readingSource, 'measured');
+  assert.equal(result.totalTokens, 244_247);
+  assert.ok(result.pctOfBudget < 100, `expected a real meter, got ${result.pctOfBudget}`);
+});
+
+test('an over-budget live reading against an operator budget still shows', () => {
+  const convo = conversation({
+    providerUsage: { contextTokens: 150_000 },
+  });
+  const window: ContextWindow = { source: 'operator', tokens: 100_000 };
+  const result = buildContextBreakdown(convo, null, null, null, window, null);
+  // Exceeding a configured budget is the signal, not an error: the meter must
+  // read over 100%, not fall back to the estimate.
+  assert.equal(result.totalTokens, 150_000);
+  assert.ok(result.pctOfBudget > 100);
+});
+
+test('the unknown-model floor never discards a live reading', () => {
+  const convo = conversation({
+    providerUsage: { contextTokens: 500_000 },
+  });
+  const window: ContextWindow = { source: 'unknown', tokens: 200_000, modelId: null };
+  const result = buildContextBreakdown(convo, null, null, null, window, null);
+  // The 200k floor is a display guess for an unrecognised model, not physics:
+  // a real 1M-window model at 500k must show, not fall back to chars/4.
+  assert.equal(result.totalTokens, 500_000);
+});
+
 test('a harness compaction marker is reported even when the ratio would not fire', () => {
   // measured sits just UNDER the estimate -- nowhere near the 0.9 ratio -- so
   // inference alone would miss a compaction the harness explicitly recorded.
