@@ -498,6 +498,8 @@ export interface ConversationOptions {
   parentConversationId?: string | null;
   resumedFromConversationId?: string | null;
   modelName?: string | null;
+  /** Provider-generated label (Claude ai-title/custom-title) restored on hydration. */
+  title?: string | null;
   swarmDebugPrefix?: string | null;
   buddyContext?: BuddyContext | null;
   buddyBriefing?: string | null;
@@ -530,6 +532,8 @@ export interface ConversationRuntime extends EventEmitter, ConversationRuntimeVi
   parentConversationId: string | null;
   resumedFromConversationId: string | null;
   modelName: string | null;
+  /** Provider-generated conversation label. Undefined until observed. */
+  title: string | undefined;
   swarmDebugPrefix: string | null;
   mergeParentMeta: MergeParentMeta | null;
   mergeChildMeta: MergeChildMeta | null;
@@ -697,6 +701,10 @@ export function createConversationRuntime(
     resumedFromConversationId: string | null;
     // Full model name from CLI (e.g., "claude-sonnet-4-5-20250929") — more specific than provider.
     modelName: string | null;
+    // Provider-generated conversation label (Claude ai-title/custom-title).
+    // Undefined until observed; the sidebar falls back to first-message text.
+    title: string | undefined;
+    private _titleSource: 'ai' | 'custom' | null = null;
     // Debug prefix for swarm conversations — prepended to first CLI message.
     // Stays on the object (never cleared) so toJSON() includes it for client rendering.
     swarmDebugPrefix: string | null;
@@ -817,6 +825,7 @@ export function createConversationRuntime(
         parentConversationId = null,
         resumedFromConversationId = null,
         modelName = null,
+        title = null,
         swarmDebugPrefix = null,
         buddyContext = null,
         buddyBriefing = null,
@@ -865,6 +874,10 @@ export function createConversationRuntime(
       this.parentConversationId = parentConversationId;
       this.resumedFromConversationId = resumedFromConversationId;
       this.modelName = modelName;
+      this.title = title ?? undefined;
+      // A hydrated title already resolved custom-over-ai precedence in the
+      // file backfill, so it is sticky: live ai noise must not overwrite it.
+      this._titleSource = this.title !== undefined ? 'custom' : null;
       this.swarmDebugPrefix = isBuddyConversation ? null : swarmDebugPrefix;
       this._memorySnapshot = isBuddyConversation
         ? createMemorySnapshot(buddyBriefing, buddyMemoryGeneration)
@@ -1235,6 +1248,26 @@ export function createConversationRuntime(
                 conversationId: this.id,
                 sessionId: this.sessionId,
               });
+              break;
+            }
+            case 'session.title': {
+              // Provider-generated label (Claude ai-title/custom-title).
+              // Custom (user-set) always wins; auto titles never overwrite a
+              // custom one. Hydrated titles count as custom-sticky: the file
+              // backfill already resolved precedence, so live ai noise must
+              // not clobber it — only a live custom event can.
+              const next = event.title.trim();
+              if (!next) break;
+              if (event.source === 'custom' || this._titleSource !== 'custom') {
+                if (this.title !== next) {
+                  this.title = next;
+                  this._titleSource = event.source;
+                  broadcast({
+                    type: 'conversations_updated',
+                    conversations: [this.toJSON()],
+                  });
+                }
+              }
               break;
             }
             case 'text.delta': {
@@ -3234,6 +3267,7 @@ export function createConversationRuntime(
         parentConversationId: this.parentConversationId,
         resumedFromConversationId: this.resumedFromConversationId,
         modelName: this.modelName,
+        title: this.title,
         swarmDebugPrefix: this.swarmDebugPrefix,
         kind: this.kind,
         buddyContext: this.buddyContext,

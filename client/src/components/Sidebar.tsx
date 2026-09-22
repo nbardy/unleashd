@@ -47,6 +47,7 @@ import { PathAutocomplete } from './PathAutocomplete';
 import { SearchPalette } from './SearchPalette';
 import { buddyTabPath } from './buddies/buddy-tabs';
 import { createBuddyViaBuilder } from './buddies/create-buddy-builder';
+import { getConversationTitle } from './conversation-title';
 import './Sidebar.css';
 
 const RECENT_CUTOFF_MS = 7 * 24 * 60 * 60 * 1000;
@@ -998,7 +999,12 @@ export function Sidebar() {
 }
 
 function BuddyRunningStatus({ item }: { item: BuddySidebarItemData }) {
-  const backgroundPath = `${buddyTabPath(item.buddyId, 'background')}?workspace=${encodeURIComponent(item.workspaceId)}`;
+  // No `?workspace=` when the row has none: BuddyBackgroundTasks reads an
+  // empty value as "All workspaces", and a literal `?workspace=` used to
+  // filter the tab down to zero rows.
+  const backgroundPath = item.workspaceId
+    ? `${buddyTabPath(item.buddyId, 'background')}?workspace=${encodeURIComponent(item.workspaceId)}`
+    : buddyTabPath(item.buddyId, 'background');
   return (
     <span className="sidebar-buddy-running">
       <Link
@@ -1055,19 +1061,8 @@ function FolderRunningStatus({ count }: { count: number }) {
   );
 }
 
-/**
- * Title derived from first user message, single-line, stripped of oompa prefix.
- * Falls back to first message or placeholder. Title > most-recent preview per spec.
- */
-function getConversationTitle(conversation: Conversation): string {
-  const userMsg = conversation.messages.find((m) => m.role === 'user');
-  const source = userMsg ?? conversation.messages[0];
-  if (!source) return 'New conversation';
-  const firstLine = source.content.split('\n')[0]?.trim() ?? '';
-  if (!firstLine) return 'New conversation';
-  const cleaned = firstLine.replace(/^\[oompa[^\]]*\]\s*/i, '').trim() || firstLine;
-  return cleaned.length > 80 ? `${cleaned.substring(0, 77)}…` : cleaned;
-}
+/** Re-exported pure (CSS-free, unit-tested) for external callers. */
+export { getConversationTitle };
 
 /**
  * Extracted conversation item — avoids duplicating JSX across list/grouped modes.

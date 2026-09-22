@@ -276,6 +276,8 @@ export interface JsonlSession {
   modifiedAt: Date;
   /** All parsed entries (for message extraction) */
   entries: JsonlEntry[];
+  /** Provider-generated label (Claude ai-title/custom-title). Null when unobserved. */
+  title?: string | null;
 }
 
 // =============================================================================

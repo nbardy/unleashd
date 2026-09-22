@@ -58,6 +58,8 @@ export interface ParsedSession {
   messages: Message[];
   subAgents?: SubAgent[]; // Claude only — extracted from JSONL entries
   parentSessionId?: string | null; // Codex only — for nested thread display
+  /** Provider-generated label (Claude ai-title/custom-title). Null when unobserved. */
+  title?: string | null;
   // Canonical kind — new sessions set this directly. Legacy sessions may only have
   // buddyContext/purpose + hidden HTML prefix; we migrate via conversationKindFromLegacy.
   kind?: ConversationKind | null;
@@ -224,6 +226,7 @@ export function sessionToConversation(session: ParsedSession): DiscoveredConvers
     workerId: worker.workerId ?? null,
     workerRole: worker.workerRole ?? null,
     parentConversationId: session.parentSessionId ?? null,
+    title: session.title ?? undefined,
     modelName: session.model !== 'unknown' ? session.model : null,
     swarmDebugPrefix: swarmDebugPrefix ?? null,
     resumedFromConversationId,

@@ -527,6 +527,11 @@ export const ConversationSchema = z.object({
   // The actual model name from the CLI (e.g., "claude-sonnet-4-5-20250929").
   // More specific than `provider` which is just "claude", "codex", or "opencode".
   modelName: z.string().nullish(),
+  // Provider-generated conversation label (Claude ai-title/custom-title from
+  // the session JSONL; Codex threads.name is sqlite-only and not yet read).
+  // Absent means no provider title was observed — UI falls back to the
+  // first-user-message derivation. Never an estimate; only verbatim provider text.
+  title: z.string().optional(),
   // Debug prefix for swarm conversations — prepended to first CLI message.
   // UI sees clean user content; CLI process gets the prefix + content.
   // Stays on the object so toJSON() includes it for client rendering.

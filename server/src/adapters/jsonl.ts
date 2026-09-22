@@ -292,6 +292,8 @@ export async function parseJsonlFile(filePath: string): Promise<JsonlSession> {
   });
 
   let skippedLines = 0;
+  let aiTitle: string | null = null;
+  let customTitle: string | null = null;
 
   for await (const line of rl) {
     if (!line.trim()) continue;
@@ -299,6 +301,17 @@ export async function parseJsonlFile(filePath: string): Promise<JsonlSession> {
     try {
       const entry = JSON.parse(line) as JsonlEntry;
       entries.push(entry);
+      // Provider-generated conversation labels (Claude only). ai-title is
+      // auto-generated and re-emitted per turn; custom-title is user-set via
+      // /rename or --name and wins. Last observation of each kind wins.
+      if (entry.type === 'ai-title' || entry.type === 'custom-title') {
+        const raw = entry as unknown as Record<string, unknown>;
+        const value = entry.type === 'ai-title' ? raw.aiTitle : raw.customTitle;
+        if (typeof value === 'string' && value.trim()) {
+          if (entry.type === 'ai-title') aiTitle = value.trim();
+          else customTitle = value.trim();
+        }
+      }
 
       // Extract metadata from entries
       if (isJsonlUserEntry(entry) || isJsonlAssistantEntry(entry)) {
@@ -354,6 +367,7 @@ export async function parseJsonlFile(filePath: string): Promise<JsonlSession> {
     createdAt: createdAt ?? new Date(),
     modifiedAt: modifiedAt ?? new Date(),
     entries,
+    title: customTitle ?? aiTitle,
   };
 }
 

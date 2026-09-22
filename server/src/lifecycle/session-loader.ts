@@ -301,6 +301,7 @@ export function createSessionLoader(dependencies: SessionLoaderDependencies): Se
         hydratedConfig.record.creation?.resumedFromConversationId ??
         null,
       modelName: source.modelName ?? null,
+      title: source.title ?? null,
       mergeParentMeta: source.mergeParentMeta ?? null,
       mergeChildMeta: source.mergeChildMeta ?? null,
       kind: kindForHydrate,
@@ -603,6 +604,9 @@ export function createSessionLoader(dependencies: SessionLoaderDependencies): Se
         existing.kind = specificPolledKind;
       }
       existing.modelName = source.modelName ?? source.model ?? null;
+      // Idle-only path (active processes return earlier): the file backfill
+      // already resolved custom-over-ai precedence, so last file wins here.
+      if (source.title !== undefined) existing.title = source.title;
       existing.refreshConfigResolution();
       const serialized = existing.toJSON();
       if (dependencies.externalActivity.has(sessionId)) serialized.isRunning = true;

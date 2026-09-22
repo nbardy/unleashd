@@ -86,6 +86,7 @@ const claudeAdapter: DiskAdapter = {
       messages,
       subAgents,
       parentSessionId: null,
+      title: session.title ?? null,
     };
   },
 };
