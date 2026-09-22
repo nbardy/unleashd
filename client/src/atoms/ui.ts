@@ -179,15 +179,64 @@ export const lastWorkingDirectoryAtom = atom((get) => get(uiSharedAtom).lastWork
 let syncTimer: ReturnType<typeof setTimeout> | null = null;
 let hydrated = false;
 
+/**
+ * Last server-acknowledged snapshot. POSTs carry only the keys whose
+ * references differ from this snapshot — the server merges partials
+ * (`{...uiState, ...partial}`), so omitting a key preserves it, including
+ * keys written concurrently by another tab. This also keeps the unload
+ * flush small: `keepalive` caps the body at 64KB and the full slice is
+ * hundreds of KB on large workspaces (1.2k dones + 11k seen entries measured
+ * 2026-09-23), so a full-slice flush is rejected and the write dies with the
+ * page. A failed POST leaves lastSynced behind, so the next scheduled sync —
+ * including the post-reconnect sync-back in hydrateUiFromServer — retries
+ * exactly the unacknowledged keys.
+ */
+let lastSynced: SharedSlice | null = null;
+
+/** Keys changed since the last acknowledgement, by reference. Null when clean. */
+function sharedDelta(current: SharedSlice): Partial<SharedSlice> | null {
+  if (!lastSynced) return { ...current };
+  const delta: Partial<SharedSlice> = {};
+  // setShared preserves the references of untouched keys, so a changed
+  // reference means a local mutation the server has not acknowledged —
+  // except across hydrateUiFromServer, which rebuilds arrays and therefore
+  // resends them once. Converges either way: the server merges.
+  if (current.doneConversations !== lastSynced.doneConversations) {
+    delta.doneConversations = current.doneConversations;
+  }
+  if (current.promotedWorkers !== lastSynced.promotedWorkers) {
+    delta.promotedWorkers = current.promotedWorkers;
+  }
+  if (current.lastSeenMessageIndex !== lastSynced.lastSeenMessageIndex) {
+    delta.lastSeenMessageIndex = current.lastSeenMessageIndex;
+  }
+  if (current.lastWorkingDirectory !== lastSynced.lastWorkingDirectory) {
+    delta.lastWorkingDirectory = current.lastWorkingDirectory;
+  }
+  return Object.keys(delta).length > 0 ? delta : null;
+}
+
 function postSharedState(keepalive: boolean): void {
+  if (!hydrated) return;
+  const current = jotaiStore.get(uiSharedAtom);
+  const delta = sharedDelta(current);
+  if (!delta) return;
+  // Snapshot what was sent, not what is current at response time: a mutation
+  // that lands mid-flight differs from this snapshot by reference, so it is
+  // still resent by the next sync instead of being marked acknowledged.
+  const sent = current;
   fetch('/api/ui-state', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(jotaiStore.get(uiSharedAtom)),
+    body: JSON.stringify(delta),
     keepalive,
   })
     .then((res) => {
-      if (!res.ok) console.warn(`[UI State] Sync failed: ${res.status} ${res.statusText}`);
+      if (!res.ok) {
+        console.warn(`[UI State] Sync failed: ${res.status} ${res.statusText}`);
+        return;
+      }
+      lastSynced = sent;
     })
     .catch((err) => console.warn('[UI State] Sync error:', err));
 }
@@ -202,20 +251,21 @@ function scheduleSharedSync(): void {
 }
 
 /**
- * Send a PENDING shared write now, bypassing the debounce. No-op when nothing
- * is pending, so backgrounding a tab does not spam the server.
+ * Sync unacknowledged shared writes now, bypassing the debounce. No-op when
+ * clean, so backgrounding a tab does not spam the server.
  *
  * Why: marking a conversation done and then closing the tab inside the 500ms
  * window lost the write — the timer died with the document. The draft hook
  * (useConversationDraft.ts) flushes on the same three events for the same
  * reason; beforeunload is the one that reliably fires on a hard refresh.
  * `keepalive` lets the request outlive the page. It caps the body at 64KB,
- * which the four shared fields stay far under.
+ * so this flushes the delta (small), never the full slice.
  */
 export function flushSharedSync(): void {
-  if (!syncTimer) return;
-  clearTimeout(syncTimer);
-  syncTimer = null;
+  if (syncTimer) {
+    clearTimeout(syncTimer);
+    syncTimer = null;
+  }
   if (!hydrated) return;
   postSharedState(true);
 }

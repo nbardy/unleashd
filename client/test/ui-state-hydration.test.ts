@@ -4,6 +4,7 @@ import { UIStateSchema } from '@unleashd/shared';
 import { jotaiStore } from '../src/atoms/store';
 import {
   doneConversationsAtom,
+  flushSharedSync,
   hydrateUiFromServer,
   lastSeenMessageIndexAtom,
   lastWorkingDirectoryAtom,
@@ -14,9 +15,15 @@ import {
   setLastWorkingDirectory,
 } from '../src/atoms/ui';
 
-// The merge below is asserted in memory; the debounced POST it schedules must
-// never touch the network under test.
-globalThis.fetch = (async () => ({ ok: true })) as typeof fetch;
+// Syncs are asserted via captured POST bodies; they must never touch the
+// network under test.
+const postedBodies: unknown[] = [];
+globalThis.fetch = (async (_url: unknown, init?: { body?: unknown }) => {
+  if (typeof init?.body === 'string') postedBodies.push(JSON.parse(init.body));
+  return { ok: true };
+}) as typeof fetch;
+
+const sleep = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
 
 /**
  * Regression: hidden (done) conversations flashed back to visible after a
@@ -66,4 +73,30 @@ test('promoted workers union and a set client directory beats the snapshot', () 
   assert.ok(workers.includes('w-local'), 'unflushed local promotion survives');
   assert.ok(workers.includes('w-server'), 'server-side promotion is adopted');
   assert.equal(jotaiStore.get(lastWorkingDirectoryAtom), '/client/dir');
+});
+
+/**
+ * The unload flush rides on `keepalive`, capped at 64KB — the full slice is
+ * ~570KB on a large workspace, so flushing everything is rejected and a
+ * refresh inside the debounce window loses the hide. Deltas keep the flush
+ * to the changed keys only.
+ */
+test('unload flush sends only the changed keys, never the full slice', async () => {
+  await sleep(650); // drain debounced syncs from the tests above
+  postedBodies.length = 0;
+  markDone('delta-done-Z');
+  flushSharedSync();
+  await sleep(20); // let the stubbed fetch settle
+  assert.equal(postedBodies.length, 1);
+  const body = postedBodies[0] as Record<string, unknown>;
+  assert.deepEqual(Object.keys(body), ['doneConversations']);
+  assert.ok((body.doneConversations as string[]).includes('delta-done-Z'));
+});
+
+test('acknowledged state is not resent on a clean flush', async () => {
+  await sleep(650); // settle the flush above: success advances lastSynced
+  postedBodies.length = 0;
+  flushSharedSync();
+  await sleep(20);
+  assert.equal(postedBodies.length, 0);
 });
