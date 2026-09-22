@@ -244,9 +244,105 @@ test('mailbox lists section renders cached list chips and the shared empty state
       </MemoryRouter>
     );
   const cached = render('ws-cached');
-  assert.match(cached, /aria-label="Lists"/);
+  assert.match(cached, /aria-label="Channels"/);
   assert.match(cached, /Standups · 2/);
   const empty = render('ws-empty');
-  assert.match(empty, /aria-label="Lists"/);
-  assert.match(empty, /class="empty-state">No lists yet/);
+  assert.match(empty, /aria-label="Channels"/);
+  assert.match(empty, /class="empty-state">No channels yet/);
+});
+
+test('channel feed renders newest-first with project filter and sender instance labels', async () => {
+  const { Provider } = await import('jotai');
+  const { jotaiStore } = await import('../src/atoms/store');
+  const { loadResource } = await import('../src/atoms/resources');
+  await loadResource({
+    key: '/api/buddies/lists?workspaceId=ws-channels',
+    load: async () => [
+      {
+        id: 'list_a',
+        workspaceId: 'ws-channels',
+        name: 'Standups',
+        purpose: 'Daily notes',
+        createdByBuddyId: 'lead',
+        createdAt: '2026-09-21T00:00:00.000Z',
+        postCount: 3,
+        latestPostAt: '2026-09-21T03:00:00.000Z',
+      },
+    ],
+  });
+  await loadResource({
+    key: '/api/buddies/lists/list_a/posts?limit=20',
+    load: async () => [
+      {
+        id: 'post_old',
+        listId: 'list_a',
+        workspaceId: 'ws-channels',
+        fromBuddyId: 'lead',
+        purpose: 'standup',
+        body: 'Older update from the first run.',
+        evidence: [],
+        projectId: 'task-alpha',
+        createdAt: '2026-09-21T01:00:00.000Z',
+        senderConversationId: 'conv-aaaa111122223333',
+        senderRunId: 'run-aaa',
+      },
+      {
+        id: 'post_new',
+        listId: 'list_a',
+        workspaceId: 'ws-channels',
+        fromBuddyId: 'lead',
+        purpose: 'standup',
+        body: 'Newer update from the second run.',
+        evidence: [],
+        projectId: 'task-beta',
+        createdAt: '2026-09-21T03:00:00.000Z',
+        senderConversationId: 'conv-bbbb444455556666',
+        senderRunId: 'run-bbb',
+      },
+      {
+        id: 'post_legacy',
+        listId: 'list_a',
+        workspaceId: 'ws-channels',
+        fromBuddyId: 'lead',
+        purpose: 'announcement',
+        body: 'Pre-migration post without stamped ids.',
+        evidence: [],
+        projectId: null,
+        createdAt: '2026-09-21T02:00:00.000Z',
+        senderConversationId: null,
+        senderRunId: null,
+      },
+    ],
+  });
+  const html = renderToStaticMarkup(
+    <MemoryRouter>
+      <Provider store={jotaiStore}>
+        <BuddyMessages
+          buddyId="lead"
+          messages={[]}
+          availableConversationIds={new Set(['conv-aaaa111122223333'])}
+          onReply={async () => {}}
+          workspaceId="ws-channels"
+          buddyNames={{ lead: 'Lead' }}
+        />
+      </Provider>
+    </MemoryRouter>
+  );
+  assert.match(html, /aria-label="Channels"/);
+  assert.match(html, /<h3>Channels<\/h3>/);
+  assert.match(html, /Standups · 3/);
+  assert.match(html, /buddy-messages-list-panes/);
+  const newerAt = html.indexOf('Newer update from the second run.');
+  const legacyAt = html.indexOf('Pre-migration post without stamped ids.');
+  const olderAt = html.indexOf('Older update from the first run.');
+  assert.ok(newerAt !== -1 && legacyAt !== -1 && olderAt !== -1, 'all posts render');
+  assert.ok(newerAt < legacyAt && legacyAt < olderAt, 'posts render newest-first');
+  assert.match(html, />All<\/button>/);
+  assert.match(html, /task-alpha/);
+  assert.match(html, /task-beta/);
+  assert.match(html, /conv conv-aaa/);
+  assert.match(html, /conv conv-bbb/);
+  assert.match(html, /href="\/chat\/conv-aaaa111122223333"/);
+  assert.doesNotMatch(html, /href="\/chat\/conv-bbbb444455556666"/);
+  assert.match(html, /Lead/);
 });
