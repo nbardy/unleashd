@@ -178,6 +178,15 @@ export const buddySidebarProjectsAtom = atom((get) => {
   );
 });
 
+// Workspaces with a channel browser: one top-level Channels row each.
+// Derived here (not a component useMemo) so every sidebar reads one list.
+export const buddySidebarChannelsAtom = atom((get) => {
+  const projects = get(buddySidebarProjectsAtom);
+  return projects
+    .filter((project) => project.workspaceId)
+    .map((project) => ({ workspaceId: project.workspaceId, name: project.name }));
+});
+
 // Live non-Buddy conversations grouped exactly like the desktop sidebar.
 // Keep this as a derived collection view so components do not rebuild a
 // running-process index during render. Buddy runs are counted by

@@ -12,6 +12,7 @@ import { createConversation } from '../atoms/actions';
 import {
   type BuddySidebarItemData,
   buddyBuilderConversationsAtom,
+  buddySidebarChannelsAtom,
   buddySidebarCountAtom,
   buddySidebarGroupsAtom,
   buddySidebarOverviewAtom,
@@ -231,6 +232,7 @@ export function Sidebar() {
   }, [buddyOverview, setBuddyOverview]);
   const buddySidebarGroups = useAtomValue(buddySidebarGroupsAtom);
   const buddyCount = useAtomValue(buddySidebarCountAtom);
+  const channelsWorkspaces = useAtomValue(buddySidebarChannelsAtom);
   const runningCountByFolder = useAtomValue(sidebarRunningCountByFolderAtom);
   const [expandedBuddies, setExpandedBuddies] = useState<Set<string>>(() => new Set());
   const [expandedDirectories, setExpandedDirectories] = useState<Set<string>>(() => new Set());
@@ -816,6 +818,50 @@ export function Sidebar() {
               })}
           </div>
         </div>
+        {channelsWorkspaces.length > 0 && (
+          <div className="sidebar-section">
+            <div className="folder-group">
+              <div
+                className="folder-group-header"
+                onClick={() => toggleGalleryCollapsed('__channels__')}
+              >
+                <button
+                  type="button"
+                  className="folder-group-name folder-group-name-button"
+                  onClick={(event) => {
+                    event.stopPropagation();
+                    navigate(
+                      `/buddies/workspaces/${encodeURIComponent(channelsWorkspaces[0].workspaceId)}/channels`
+                    );
+                  }}
+                >
+                  Channels
+                </button>
+                <span className="folder-group-count">{channelsWorkspaces.length || ''}</span>
+              </div>
+              {!collapsedSet.has('__channels__') &&
+                channelsWorkspaces.map((project) => {
+                  const path = `/buddies/workspaces/${encodeURIComponent(project.workspaceId)}/channels`;
+                  const isActive = location.pathname === path;
+                  return (
+                    <div
+                      key={project.workspaceId}
+                      className={`folder-group-header sidebar-channels-row ${isActive ? 'active' : ''}`}
+                    >
+                      <Link
+                        className="folder-group-name sidebar-project-link"
+                        to={path}
+                        aria-current={isActive ? 'page' : undefined}
+                        title={`${project.name} channels`}
+                      >
+                        <span className="folder-group-name"># {project.name}</span>
+                      </Link>
+                    </div>
+                  );
+                })}
+            </div>
+          </div>
+        )}
         {
           <>
             {recentGroups.length > 0 && (

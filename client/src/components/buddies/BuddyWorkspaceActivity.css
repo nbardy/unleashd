@@ -246,6 +246,12 @@ a.buddy-workspace-job:hover {
   }
 }
 
+.buddy-workspace-slack-page {
+  width: calc(100% - 48px);
+  margin: 0 auto;
+  padding: 24px 0 56px;
+}
+
 .buddy-workspace-channels-open {
   display: inline-block;
   padding: 7px 12px;
@@ -335,6 +341,11 @@ a.buddy-workspace-job:hover {
 }
 
 @media (max-width: 768px) {
+  .buddy-workspace-slack-page {
+    width: auto;
+    padding: 16px 14px 40px;
+  }
+
   .buddy-workspace-slack {
     grid-template-columns: minmax(0, 1fr);
   }

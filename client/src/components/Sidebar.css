@@ -878,6 +878,14 @@
   position: relative;
 }
 
+.folder-group-header.sidebar-channels-row.active {
+  background: color-mix(in srgb, var(--text-emphasis) 7%, transparent);
+}
+
+.folder-group-header.sidebar-channels-row.active .folder-group-name {
+  color: var(--text-emphasis);
+}
+
 .sidebar-folder-icon,
 .sidebar-buddy-icon {
   display: block;

@@ -100,7 +100,7 @@ export function WorkspaceSlack() {
     [data]
   );
   return (
-    <main className="buddy-workspace-page">
+    <main className="buddy-workspace-slack-page">
       <ChannelBrowser
         workspaceId={workspaceId}
         workspaceName={data?.workspace.name}
