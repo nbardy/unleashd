@@ -6,7 +6,7 @@ import type { BuddiesStorePort } from './contract';
 import { coordinationStore } from './coordination-store';
 import { previewBuddyDocument } from './document-preview';
 import { scopedDocumentOperation } from './knowledge';
-import { BuddyOperationInputSchemas } from './operations';
+import { BuddyOperationInputSchemas, dropEmptyEvidenceArrays } from './operations';
 import type { OwnerTeamAuthority } from './owner-team-configuration';
 import { executeDocumentResource } from './resources';
 import { readBuddySoul, updateBuddySoul } from './soul';
@@ -188,12 +188,9 @@ function runOwnerResource(
     const saved = store.createCoordinatedProject(p, { actor: 'owner', key }) as { id: string };
     return { ok: true, data: store.getBuddyProject(saved.id) };
   }
-  const {
-    key,
-    projectId,
-    workspaceId: _workspace,
-    ...changes
-  } = OwnerResourceSchemas.update_project.parse(input);
+  const projectUpdate = OwnerResourceSchemas.update_project.parse(input);
+  dropEmptyEvidenceArrays(projectUpdate);
+  const { key, projectId, workspaceId: _workspace, ...changes } = projectUpdate;
   const project = store.getBuddyProject(projectId);
   if (!project || project.workspace_id !== workspaceId)
     throw new Error('Project is unavailable in this workspace');

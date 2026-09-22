@@ -379,6 +379,24 @@ export const BuddyOperationInputSchemas = {
 } as const;
 
 export type BuddyOperationName = keyof typeof BuddyOperationInputSchemas;
+export type BuddyUpdateProjectChanges = z.infer<
+  (typeof BuddyOperationInputSchemas)['buddy.update_project']
+>;
+
+/**
+ * Empty evidence arrays carry no new proof, so they must never replace stored
+ * completion evidence: the store treats an explicit [] as a replacement and
+ * wipes prior entries, while an omitted field preserves them. Only a
+ * non-empty array replaces; omitted or empty preserves on both the project
+ * and its todo operations.
+ */
+export function dropEmptyEvidenceArrays(changes: BuddyUpdateProjectChanges): void {
+  if (changes.evidence !== undefined && changes.evidence.length === 0) changes.evidence = undefined;
+  for (const operation of changes.todoOperations ?? []) {
+    if (operation.evidence !== undefined && operation.evidence.length === 0)
+      operation.evidence = undefined;
+  }
+}
 export type BuddyOperationContext = z.infer<typeof BuddyOperationContextSchema>;
 export type PreparedBuddyMessage = z.infer<(typeof BuddyOperationInputSchemas)['buddy.send']> & {
   parentConversationId?: string;
@@ -1431,6 +1449,7 @@ export class BuddyOperationsService {
       }
       case 'buddy.update_project': {
         const parsed = BuddyOperationInputSchemas[name].parse(input);
+        dropEmptyEvidenceArrays(parsed);
         if (this.context.coordinationRunId && !parsed.key)
           throw new Error('Updating work requires a stable command key and baseRevision');
         const projectId = parsed.projectId ?? this.context.buddyProjectId ?? undefined;

@@ -38,6 +38,7 @@ import {
   BuddyOperationInputSchemas,
   BuddyOperationsService,
   type PreparedBuddyMessage,
+  dropEmptyEvidenceArrays,
 } from './operations';
 import { type OwnerResourceName, executeOwnerResource } from './owner-resources';
 import {
@@ -1387,6 +1388,7 @@ export function registerBuddyRoutes(app: Express, dependencies: BuddyRouteDepend
     const project = buddies.getBuddyProject(req.params.projectId) as { revision: number } | null;
     if (!project) throw new Error('Project not found');
     const changes = BuddyOperationInputSchemas['buddy.update_project'].parse(req.body ?? {});
+    dropEmptyEvidenceArrays(changes);
     res.json(
       coordinationStore(buddies).updateCoordinatedProject(
         req.params.projectId,

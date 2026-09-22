@@ -207,7 +207,9 @@ The worker reads its inbox and current work on each attempt, accepts with
 `update_project({projectId, baseRevision, key, status: "in_progress"})`, and records
 each todo's evidence. It marks the project done only when every non-cancelled
 todo meets its criteria and has evidence, with project-level evidence for the
-final deliverable. A manual reply cannot finish incomplete managed work.
+final deliverable. An update that omits evidence, or sends an empty array,
+preserves the stored entries on both the project and its todos; only a
+non-empty array replaces them. A manual reply cannot finish incomplete managed work.
 
 Inspect `get_message({messageId})`, `get_runs` and `get_team_state` for the original
 request. A project accepted before this request does not acknowledge the new
