@@ -1,5 +1,6 @@
 import type { BuddyMessage } from '@unleashd/shared';
 import { useMemo, useState } from 'react';
+import type { ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { usePolledFetch } from '../../hooks/usePolledFetch';
 import { newId } from '../../utils/ids';
@@ -63,7 +64,7 @@ export function BuddyMessages({
   );
 }
 
-interface BuddyMailingListSummary {
+export interface BuddyMailingListSummary {
   id: string;
   workspaceId: string;
   name: string;
@@ -74,7 +75,7 @@ interface BuddyMailingListSummary {
   latestPostAt: string | null;
 }
 
-interface BuddyMailingListPost {
+export interface BuddyMailingListPost {
   id: string;
   listId: string;
   workspaceId: string;
@@ -153,22 +154,58 @@ export function taskChannelFeedUrl(workspaceId: string, projectId: string): stri
   return `/api/buddies/posts?workspaceId=${encodeURIComponent(workspaceId)}&projectId=${encodeURIComponent(projectId)}&limit=50`;
 }
 
-function BuddyListFeed({
+export function ChannelPostItem({
+  post,
+  channelName,
+  buddyNames,
+  availableConversationIds,
+}: {
+  post: BuddyMailingListPost;
+  channelName: string | null;
+  buddyNames: Readonly<Record<string, string>>;
+  availableConversationIds: ReadonlySet<string>;
+}) {
+  return (
+    <li className="buddy-messages-list-post">
+      <div className="buddy-messages-list-post-heading">
+        <strong>{post.purpose}</strong>
+        {channelName && <span> · #{channelName}</span>}
+        <span>
+          <Link to={`/buddies/${encodeURIComponent(post.fromBuddyId)}`}>
+            {buddyNames[post.fromBuddyId] ?? post.fromBuddyId}
+          </Link>
+          {post.senderConversationId && <> · conv {post.senderConversationId.slice(0, 8)}</>}
+          {' · '}
+          {new Date(post.createdAt).toLocaleString()}
+          {post.senderConversationId && availableConversationIds.has(post.senderConversationId) && (
+            <>
+              {' · '}
+              <Link to={`/chat/${encodeURIComponent(post.senderConversationId)}`}>
+                Open conversation
+              </Link>
+            </>
+          )}
+        </span>
+      </div>
+      <p>{post.body}</p>
+    </li>
+  );
+}
+
+export function ChannelFeed({
   list,
   workspaceId,
   channelNameById,
-  buddyId,
   buddyNames,
   availableConversationIds,
-  onPosted,
+  composer,
 }: {
   list: BuddyMailingListSummary;
   workspaceId?: string;
   channelNameById: ReadonlyMap<string, string>;
-  buddyId?: string;
   buddyNames: Readonly<Record<string, string>>;
   availableConversationIds: ReadonlySet<string>;
-  onPosted(): void;
+  composer?: (refetch: () => void) => ReactNode;
 }) {
   const [projectFilter, setProjectFilter] = useState<string | null>(null);
   const { data, error, refetch } = usePolledFetch<BuddyMailingListPost[]>(
@@ -177,10 +214,6 @@ function BuddyListFeed({
       : `/api/buddies/lists/${encodeURIComponent(list.id)}/posts?limit=20`,
     5000
   );
-  const [purpose, setPurpose] = useState('standup');
-  const [body, setBody] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [problem, setProblem] = useState<string | null>(null);
   const sortedPosts = useMemo(
     () =>
       [...(data ?? [])].sort(
@@ -236,92 +269,131 @@ function BuddyListFeed({
       ) : (
         <ul className="buddy-messages-list-posts">
           {visiblePosts.map((post) => (
-            <li key={post.id} className="buddy-messages-list-post">
-              <div className="buddy-messages-list-post-heading">
-                <strong>{post.purpose}</strong>
-                {projectFilter && (
-                  <span> · #{channelNameById.get(post.listId) ?? post.listId}</span>
-                )}
-                <span>
-                  <Link to={`/buddies/${encodeURIComponent(post.fromBuddyId)}`}>
-                    {buddyNames[post.fromBuddyId] ?? post.fromBuddyId}
-                  </Link>
-                  {post.senderConversationId && (
-                    <> · conv {post.senderConversationId.slice(0, 8)}</>
-                  )}
-                  {' · '}
-                  {new Date(post.createdAt).toLocaleString()}
-                  {post.senderConversationId &&
-                    availableConversationIds.has(post.senderConversationId) && (
-                      <>
-                        {' · '}
-                        <Link to={`/chat/${encodeURIComponent(post.senderConversationId)}`}>
-                          Open conversation
-                        </Link>
-                      </>
-                    )}
-                </span>
-              </div>
-              <p>{post.body}</p>
-            </li>
+            <ChannelPostItem
+              key={post.id}
+              post={post}
+              channelName={projectFilter ? (channelNameById.get(post.listId) ?? post.listId) : null}
+              buddyNames={buddyNames}
+              availableConversationIds={availableConversationIds}
+            />
           ))}
         </ul>
       )}
-      {buddyId && (
-        <form
-          className="buddy-messages-list-composer"
-          onSubmit={(event) => {
-            event.preventDefault();
-            setBusy(true);
-            setProblem(null);
-            void buddyApi(`/api/buddies/lists/${encodeURIComponent(list.id)}/posts`, {
-              method: 'POST',
-              headers: { 'content-type': 'application/json' },
-              body: JSON.stringify({
-                buddyId,
-                key: newId(),
-                purpose: purpose.trim(),
-                body: body.trim(),
-              }),
-            })
-              .then(() => {
-                setBody('');
-                refetch();
-                onPosted();
-              })
-              .catch((cause: unknown) => {
-                setProblem(cause instanceof Error ? cause.message : String(cause));
-              })
-              .finally(() => setBusy(false));
-          }}
-        >
-          <label>
-            Kind
-            <input
-              required
-              value={purpose}
-              maxLength={200}
-              onChange={(event) => setPurpose(event.target.value)}
-              disabled={busy}
-              placeholder="standup, handoff, announcement, decision"
-            />
-          </label>
-          <label>
-            Post
-            <textarea
-              required
-              value={body}
-              onChange={(event) => setBody(event.target.value)}
-              disabled={busy}
-            />
-          </label>
-          <button type="submit" disabled={busy || !purpose.trim() || !body.trim()}>
-            {busy ? 'Posting…' : 'Post'}
-          </button>
-        </form>
-      )}
-      {problem && <p role="alert">{problem}</p>}
+      {composer?.(refetch)}
     </article>
+  );
+}
+
+function ChannelComposer({
+  list,
+  buddyId,
+  onPosted,
+  refetch,
+}: {
+  list: BuddyMailingListSummary;
+  buddyId: string;
+  onPosted(): void;
+  refetch(): void;
+}) {
+  const [purpose, setPurpose] = useState('standup');
+  const [body, setBody] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [problem, setProblem] = useState<string | null>(null);
+  return (
+    <>
+      <form
+        className="buddy-messages-list-composer"
+        onSubmit={(event) => {
+          event.preventDefault();
+          setBusy(true);
+          setProblem(null);
+          void buddyApi(`/api/buddies/lists/${encodeURIComponent(list.id)}/posts`, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({
+              buddyId,
+              key: newId(),
+              purpose: purpose.trim(),
+              body: body.trim(),
+            }),
+          })
+            .then(() => {
+              setBody('');
+              refetch();
+              onPosted();
+            })
+            .catch((cause: unknown) => {
+              setProblem(cause instanceof Error ? cause.message : String(cause));
+            })
+            .finally(() => setBusy(false));
+        }}
+      >
+        <label>
+          Kind
+          <input
+            required
+            value={purpose}
+            maxLength={200}
+            onChange={(event) => setPurpose(event.target.value)}
+            disabled={busy}
+            placeholder="standup, handoff, announcement, decision"
+          />
+        </label>
+        <label>
+          Post
+          <textarea
+            required
+            value={body}
+            onChange={(event) => setBody(event.target.value)}
+            disabled={busy}
+          />
+        </label>
+        <button type="submit" disabled={busy || !purpose.trim() || !body.trim()}>
+          {busy ? 'Posting…' : 'Post'}
+        </button>
+      </form>
+      {problem && <p role="alert">{problem}</p>}
+    </>
+  );
+}
+
+function BuddyListFeed({
+  list,
+  workspaceId,
+  channelNameById,
+  buddyId,
+  buddyNames,
+  availableConversationIds,
+  onPosted,
+}: {
+  list: BuddyMailingListSummary;
+  workspaceId?: string;
+  channelNameById: ReadonlyMap<string, string>;
+  buddyId?: string;
+  buddyNames: Readonly<Record<string, string>>;
+  availableConversationIds: ReadonlySet<string>;
+  onPosted(): void;
+}) {
+  return (
+    <ChannelFeed
+      list={list}
+      workspaceId={workspaceId}
+      channelNameById={channelNameById}
+      buddyNames={buddyNames}
+      availableConversationIds={availableConversationIds}
+      composer={
+        buddyId
+          ? (refetch) => (
+              <ChannelComposer
+                list={list}
+                buddyId={buddyId}
+                onPosted={onPosted}
+                refetch={refetch}
+              />
+            )
+          : undefined
+      }
+    />
   );
 }
 

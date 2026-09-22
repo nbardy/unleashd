@@ -6,6 +6,7 @@ import { allConversationIdsAtom, conversationAtomFamily } from '../../atoms/conv
 import { resource, usePolledFetch } from '../../hooks/usePolledFetch';
 import { formatTimeAgo } from '../../utils/time';
 import './BuddyWorkspaceActivity.css';
+import { ChannelBrowser } from './ChannelBrowser';
 
 const NO_CONVERSATION_ID = '__workspace_job_without_conversation__';
 
@@ -89,6 +90,10 @@ export function BuddyWorkspaceActivity() {
   }, [workspaceId]);
   const { data, loading, error, refetch } = usePolledFetch(loadActivity, 2_000);
   const activeCount = data?.members.reduce((sum, member) => sum + member.jobs.length, 0) ?? 0;
+  const buddyNames = useMemo(
+    () => Object.fromEntries((data?.members ?? []).map((member) => [member.id, member.name])),
+    [data]
+  );
 
   return (
     <main className="buddy-workspace-page">
@@ -154,6 +159,13 @@ export function BuddyWorkspaceActivity() {
             </article>
           ))}
         </section>
+      )}
+      {workspaceId && (
+        <ChannelBrowser
+          workspaceId={workspaceId}
+          buddyNames={buddyNames}
+          availableConversationIds={availableConversationIds}
+        />
       )}
     </main>
   );
