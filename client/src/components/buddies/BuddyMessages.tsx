@@ -132,6 +132,8 @@ function BuddyListsSection({
               <BuddyListFeed
                 key={selected.id}
                 list={selected}
+                workspaceId={workspaceId}
+                channelNameById={new Map(data.map((entry) => [entry.id, entry.name]))}
                 buddyId={buddyId}
                 buddyNames={buddyNames}
                 availableConversationIds={availableConversationIds}
@@ -145,28 +147,40 @@ function BuddyListsSection({
   );
 }
 
+// A Task filter reads the workspace-wide feed so one Task's discussion is
+// visible across every channel, not just the selected one.
+export function taskChannelFeedUrl(workspaceId: string, projectId: string): string {
+  return `/api/buddies/posts?workspaceId=${encodeURIComponent(workspaceId)}&projectId=${encodeURIComponent(projectId)}&limit=50`;
+}
+
 function BuddyListFeed({
   list,
+  workspaceId,
+  channelNameById,
   buddyId,
   buddyNames,
   availableConversationIds,
   onPosted,
 }: {
   list: BuddyMailingListSummary;
+  workspaceId?: string;
+  channelNameById: ReadonlyMap<string, string>;
   buddyId?: string;
   buddyNames: Readonly<Record<string, string>>;
   availableConversationIds: ReadonlySet<string>;
   onPosted(): void;
 }) {
+  const [projectFilter, setProjectFilter] = useState<string | null>(null);
   const { data, error, refetch } = usePolledFetch<BuddyMailingListPost[]>(
-    `/api/buddies/lists/${encodeURIComponent(list.id)}/posts?limit=20`,
+    projectFilter && workspaceId
+      ? taskChannelFeedUrl(workspaceId, projectFilter)
+      : `/api/buddies/lists/${encodeURIComponent(list.id)}/posts?limit=20`,
     5000
   );
   const [purpose, setPurpose] = useState('standup');
   const [body, setBody] = useState('');
   const [busy, setBusy] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
-  const [projectFilter, setProjectFilter] = useState<string | null>(null);
   const sortedPosts = useMemo(
     () =>
       [...(data ?? [])].sort(
@@ -225,6 +239,9 @@ function BuddyListFeed({
             <li key={post.id} className="buddy-messages-list-post">
               <div className="buddy-messages-list-post-heading">
                 <strong>{post.purpose}</strong>
+                {projectFilter && (
+                  <span> · #{channelNameById.get(post.listId) ?? post.listId}</span>
+                )}
                 <span>
                   <Link to={`/buddies/${encodeURIComponent(post.fromBuddyId)}`}>
                     {buddyNames[post.fromBuddyId] ?? post.fromBuddyId}

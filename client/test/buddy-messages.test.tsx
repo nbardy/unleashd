@@ -15,7 +15,20 @@ register(
   `)}`,
   import.meta.url
 );
-const { BuddyMessages } = await import('../src/components/buddies/BuddyMessages');
+const { BuddyMessages, taskChannelFeedUrl } = await import(
+  '../src/components/buddies/BuddyMessages'
+);
+
+test('task channel feed URL matches the server cross-list route contract', () => {
+  assert.equal(
+    taskChannelFeedUrl('ws-1', 'task-9'),
+    '/api/buddies/posts?workspaceId=ws-1&projectId=task-9&limit=50'
+  );
+  assert.equal(
+    taskChannelFeedUrl('ws a', 'task/b'),
+    '/api/buddies/posts?workspaceId=ws%20a&projectId=task%2Fb&limit=50'
+  );
+});
 
 const message: BuddyMessage = {
   id: 'message-owner',
