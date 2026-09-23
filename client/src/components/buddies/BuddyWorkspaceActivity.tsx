@@ -6,7 +6,7 @@ import { allConversationIdsAtom, conversationAtomFamily } from '../../atoms/conv
 import { usePolledFetch } from '../../hooks/usePolledFetch';
 import { formatTimeAgo } from '../../utils/time';
 import './BuddyWorkspaceActivity.css';
-import { workspaceActivityResource } from './ChannelBrowser';
+import { workspaceActivityResource } from './channel-data';
 
 const NO_CONVERSATION_ID = '__workspace_job_without_conversation__';
 

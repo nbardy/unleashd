@@ -5,6 +5,7 @@ import remarkGfm from 'remark-gfm';
 import { useLazyMarkdownPlugins } from '../../utils/lazyMarkdownPlugins';
 import { remarkBreaks } from '../../utils/remark-breaks';
 import { type ChannelTask, isVideoSource, mediaUrl, parseChannelLink } from './channel-text';
+import './ChannelContent.css';
 
 // Channel post bodies: markdown (GFM, soft breaks, highlighted code; raw HTML
 // stays disabled) with three app-level extensions, all ordinary markdown:
@@ -151,5 +152,16 @@ export function ChannelMarkdown({
         {body}
       </Markdown>
     </div>
+  );
+}
+
+/** Three pulsing dots: "is replying" / "is checking". Respects reduced motion. */
+export function TypingDots() {
+  return (
+    <span className="channel-typing-dots" aria-hidden="true">
+      <span />
+      <span />
+      <span />
+    </span>
   );
 }

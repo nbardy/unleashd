@@ -14,9 +14,8 @@ register(
   `)}`,
   import.meta.url
 );
-const { ChannelBrowser, WorkspaceSlack, channelRows } = await import(
-  '../src/components/buddies/ChannelBrowser'
-);
+const { ChannelBrowser, WorkspaceSlack } = await import('../src/components/buddies/ChannelBrowser');
+const { channelRows } = await import('../src/components/buddies/channel-data');
 const { Provider } = await import('jotai');
 const { jotaiStore } = await import('../src/atoms/store');
 const { loadResource } = await import('../src/atoms/resources');

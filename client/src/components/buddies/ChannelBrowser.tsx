@@ -1,123 +1,39 @@
-import { type BuddyWorkspaceActivity, BuddyWorkspaceActivitySchema } from '@unleashd/shared';
 import { useAtomValue } from 'jotai';
 import { type UIEvent, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { buddySidebarChannelsAtom } from '../../atoms/buddy-sidebar';
 import { allConversationIdsAtom } from '../../atoms/conversations';
-import { resource, usePolledFetch } from '../../hooks/usePolledFetch';
+import { usePolledFetch } from '../../hooks/usePolledFetch';
 import { newId } from '../../utils/ids';
 import {
   type BuddyListAuthor,
   type BuddyMailingListPost,
   type BuddyMailingListSummary,
   PostAuthor,
-  authorKey,
   taskChannelFeedUrl,
 } from './BuddyMessages';
 import { BuddyRailRow } from './BuddyRailRow';
 import { BuddySigil } from './BuddySigil';
 import { ChannelComposer, type PostResult } from './ChannelComposer';
-import { ChannelMarkdown } from './ChannelMarkdown';
+import { ChannelMarkdown, TypingDots } from './ChannelMarkdown';
 import { buddyApi } from './api';
 import {
-  type ChannelReference,
-  type ChannelTask,
-  plainChannelText,
-  workspaceTasksUrl,
-} from './channel-text';
+  CONVERSATIONAL_PURPOSES,
+  type ChannelMember,
+  type ChannelRow,
+  type ChannelThread,
+  channelPostsUrl,
+  channelReferences,
+  channelRows,
+  clockTime,
+  joinNames,
+  listsUrl,
+  threadUrl,
+  useChannelResponding,
+  useWorkspaceDirectory,
+} from './channel-data';
+import { type ChannelReference, type ChannelTask, plainChannelText } from './channel-text';
 import './ChannelBrowser.css';
-
-export function workspaceActivityResource(workspaceId: string) {
-  const path = `/api/buddies/workspaces/${encodeURIComponent(workspaceId)}/activity`;
-  return resource(path, async (signal: AbortSignal) => {
-    const response = await fetch(path, { signal });
-    if (!response.ok) {
-      const payload = (await response.json().catch(() => ({}))) as { error?: string };
-      throw new Error(
-        payload.error ?? `Unable to load workspace activity (HTTP ${response.status})`
-      );
-    }
-    return BuddyWorkspaceActivitySchema.parse(await response.json());
-  });
-}
-
-export function channelPostsUrl(listId: string): string {
-  return `/api/buddies/lists/${encodeURIComponent(listId)}/posts?limit=50`;
-}
-
-function threadUrl(listId: string, rootId: string): string {
-  return `/api/buddies/lists/${encodeURIComponent(listId)}/threads/${encodeURIComponent(rootId)}`;
-}
-
-function respondingUrl(listId: string): string {
-  return `/api/buddies/lists/${encodeURIComponent(listId)}/responding`;
-}
-
-function listsUrl(workspaceId: string): string {
-  return `/api/buddies/lists?workspaceId=${encodeURIComponent(workspaceId)}`;
-}
-
-// Every workspace member names posts (archived authors included); only active
-// ones appear in the rail and the @ menu.
-export type ChannelMember = { id: string; name: string; role: string; status: string };
-
-type ChannelThread = { root: BuddyMailingListPost; replies: BuddyMailingListPost[] };
-type ChannelResponse = { threadRootId: string; buddyId: string; conversationId: string };
-
-// =============================================================================
-// Transcript rows: D = Day ⊕ Lead ⊕ Continuation.
-// A Lead opens a sender run (avatar + name); a Continuation is a later post by
-// the same instance (Buddy AND conversation) within GROUP_WINDOW_MS, so two
-// concurrent conversations running as one Buddy never merge into one run.
-// =============================================================================
-type ChannelRow =
-  | { kind: 'day'; key: string; label: string }
-  | { kind: 'lead'; key: string; post: BuddyMailingListPost }
-  | { kind: 'continuation'; key: string; post: BuddyMailingListPost };
-
-const GROUP_WINDOW_MS = 5 * 60_000;
-
-function dayKey(iso: string): string {
-  return new Date(iso).toDateString();
-}
-
-function sameInstance(a: BuddyMailingListPost, b: BuddyMailingListPost): boolean {
-  return (
-    authorKey(a.author) === authorKey(b.author) && a.senderConversationId === b.senderConversationId
-  );
-}
-
-// Posts arrive newest-first; a Slack transcript reads oldest-first with the
-// newest message at the bottom, next to the composer.
-export function channelRows(newestFirst: readonly BuddyMailingListPost[]): ChannelRow[] {
-  const posts = [...newestFirst].sort(
-    (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
-  );
-  const rows: ChannelRow[] = [];
-  let previous: BuddyMailingListPost | null = null;
-  for (const post of posts) {
-    const newDay = previous === null || dayKey(previous.createdAt) !== dayKey(post.createdAt);
-    if (newDay) {
-      rows.push({
-        kind: 'day',
-        key: `day:${dayKey(post.createdAt)}`,
-        label: new Date(post.createdAt).toLocaleDateString([], {
-          weekday: 'long',
-          month: 'long',
-          day: 'numeric',
-        }),
-      });
-    }
-    const continues =
-      previous !== null &&
-      !newDay &&
-      sameInstance(previous, post) &&
-      new Date(post.createdAt).getTime() - new Date(previous.createdAt).getTime() < GROUP_WINDOW_MS;
-    rows.push({ kind: continues ? 'continuation' : 'lead', key: post.id, post });
-    previous = post;
-  }
-  return rows;
-}
 
 function initials(name: string): string {
   return name
@@ -128,17 +44,9 @@ function initials(name: string): string {
     .join('');
 }
 
-function clockTime(iso: string): string {
-  return new Date(iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
-}
-
 function shortTaskId(projectId: string): string {
   return projectId.replace(/^buddy_project_/, '').slice(0, 8);
 }
-
-// Conversational purposes read as plain chat; every other purpose (standup,
-// handoff, decision, reply_failed…) is a label worth showing.
-const CONVERSATIONAL_PURPOSES: ReadonlySet<string> = new Set(['message', 'reply']);
 
 // Where a row renders decides what its thread affordance does:
 // D = Channel(open a thread, show who is replying) ⊕ Thread(already inside one).
@@ -217,20 +125,10 @@ function authorName(author: BuddyListAuthor, buddyNames: Readonly<Record<string,
   }
 }
 
-function joinNames(names: readonly string[]): string {
-  return names.length <= 2
-    ? names.join(' and ')
-    : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
-}
-
 function Replying({ names }: { names: readonly string[] }) {
   return (
     <span className="channel-browser-replying" aria-live="polite">
-      <span className="channel-browser-replying-dots" aria-hidden="true">
-        <span />
-        <span />
-        <span />
-      </span>
+      <TypingDots />
       {joinNames(names)} {names.length === 1 ? 'is' : 'are'} replying…
     </span>
   );
@@ -454,6 +352,7 @@ function ThreadPane({
         threadRootId={rootId}
         placeholder={root ? `Reply to ${plainChannelText(root.body).slice(0, 40)}…` : 'Reply…'}
         references={references}
+        submit="enter"
         onPosted={() => {
           follow.pin();
           void thread.refetch();
@@ -493,7 +392,7 @@ function ChannelPane({
     taskFilter ? taskChannelFeedUrl(workspaceId, taskFilter) : null,
     5000
   );
-  const responding = usePolledFetch<ChannelResponse[]>(respondingUrl(list.id), 2500);
+  const responding = useChannelResponding(list.id);
   const shown = taskFilter ? taskFeed : channelFeed;
   const rows = useMemo(() => channelRows(shown.data ?? []), [shown.data]);
   // Task options come from the channel itself so the picker never offers a
@@ -508,14 +407,9 @@ function ChannelPane({
     ],
     [channelFeed.data]
   );
-  const respondingByRoot = useMemo(() => {
-    const byRoot = new Map<string, string[]>();
-    for (const row of responding.data ?? [])
-      byRoot.set(row.threadRootId, [...(byRoot.get(row.threadRootId) ?? []), row.buddyId]);
-    return byRoot;
-  }, [responding.data]);
+  const respondingByRoot = responding.byRoot;
   // When a reply finishes, its post already exists: refresh reply counts now.
-  const respondingCount = responding.data?.length ?? 0;
+  const respondingCount = responding.count;
   const previousResponding = useRef(respondingCount);
   useEffect(() => {
     if (respondingCount < previousResponding.current) void channelFeed.refetch();
@@ -597,6 +491,7 @@ function ChannelPane({
           threadRootId={null}
           placeholder={`Message #${list.name}`}
           references={references}
+          submit="enter"
           onPosted={(result: PostResult) => {
             follow.pin();
             void channelFeed.refetch();
@@ -784,47 +679,6 @@ function NewChannelForm({
   );
 }
 
-const TASK_STATUS_LABELS: Readonly<Record<string, string>> = {
-  backlog: 'Backlog',
-  ready: 'Ready',
-  in_progress: 'In progress',
-  review: 'In review',
-  blocked: 'Blocked',
-  done: 'Done',
-  cancelled: 'Cancelled',
-};
-
-// The universal @ menu: Buddies first by name, then Tasks by title; the fuzzy
-// ranker orders them together by match quality.
-function channelReferences(
-  members: readonly ChannelMember[],
-  tasks: readonly ChannelTask[]
-): ChannelReference[] {
-  return [
-    ...members
-      .filter((member) => member.status === 'active')
-      .map(
-        (member): ChannelReference => ({
-          kind: 'buddy',
-          id: member.id,
-          label: member.name,
-          detail: member.role,
-        })
-      ),
-    ...tasks
-      .filter((task) => task.status !== 'cancelled')
-      .map(
-        (task): ChannelReference => ({
-          kind: 'task',
-          id: task.id,
-          label: task.title,
-          status: task.status,
-          detail: `${TASK_STATUS_LABELS[task.status] ?? task.status} · ${task.ownerName}`,
-        })
-      ),
-  ];
-}
-
 // Full-screen Slack layout. Mounted OUTSIDE the app shell (see App.tsx): the
 // channel rail replaces the conversations sidebar instead of nesting beside
 // it. Selection lives in the URL (?channel=, ?task=, ?thread=) so reload and
@@ -974,31 +828,18 @@ export function ChannelBrowser({
   );
 }
 
-const NO_TASKS: readonly ChannelTask[] = [];
-
+// The desktop route: the full-screen Slack surface for one workspace.
 export function WorkspaceSlack() {
   const { workspaceId = '' } = useParams();
   const conversationIds = useAtomValue(allConversationIdsAtom);
   const availableConversationIds = useMemo(() => new Set(conversationIds), [conversationIds]);
-  const loadActivity = useMemo(() => workspaceActivityResource(workspaceId), [workspaceId]);
-  const { data } = usePolledFetch<BuddyWorkspaceActivity>(loadActivity, 10_000);
-  const tasks = usePolledFetch<ChannelTask[]>(workspaceTasksUrl(workspaceId), 15_000);
-  const members = useMemo(
-    () =>
-      (data?.members ?? []).map((member) => ({
-        id: member.id,
-        name: member.name,
-        role: member.role,
-        status: member.status,
-      })),
-    [data]
-  );
+  const directory = useWorkspaceDirectory(workspaceId);
   return (
     <ChannelBrowser
       workspaceId={workspaceId}
-      workspaceName={data?.workspace.name ?? 'Channels'}
-      members={members}
-      tasks={tasks.data ?? NO_TASKS}
+      workspaceName={directory.workspaceName}
+      members={directory.members}
+      tasks={directory.tasks}
       availableConversationIds={availableConversationIds}
     />
   );

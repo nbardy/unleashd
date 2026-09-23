@@ -11,6 +11,7 @@ import {
   mediaMarkdown,
   rankReferences,
 } from './channel-text';
+import './ChannelComposer.css';
 
 export type MentionDispatch =
   | { buddyId: string; status: 'started'; conversationId: string }
@@ -27,17 +28,24 @@ const MAX_TEXTAREA_HEIGHT = 240;
 // (which starts that Buddy's reply), a Task becomes a live chip. Pasted or
 // dropped images/videos upload into the channel and are inserted as inline
 // markdown at the caret.
+//
+// submit: 'enter' (desktop — Enter sends, Shift+Enter breaks a line) or
+// 'button' (touch — Return is a newline, as in Slack mobile; Send sends).
+export type ComposerSubmit = 'enter' | 'button';
+
 export function ChannelComposer({
   listId,
   placeholder,
   threadRootId,
   references,
+  submit,
   onPosted,
 }: {
   listId: string;
   placeholder: string;
   threadRootId: string | null;
   references: readonly ChannelReference[];
+  submit: ComposerSubmit;
   onPosted(result: PostResult): void;
 }) {
   const [text, setText] = useState('');
@@ -215,7 +223,12 @@ export function ChannelComposer({
               return;
             }
           }
-          if (event.key === 'Enter' && !event.shiftKey && !event.nativeEvent.isComposing) {
+          if (
+            submit === 'enter' &&
+            event.key === 'Enter' &&
+            !event.shiftKey &&
+            !event.nativeEvent.isComposing
+          ) {
             event.preventDefault();
             send();
           }
@@ -250,9 +263,7 @@ export function ChannelComposer({
           ) : uploading > 0 ? (
             'Uploading…'
           ) : (
-            <>
-              <kbd>@</kbd> mention a Buddy or Task · <kbd>⇧⏎</kbd> new line
-            </>
+            <SubmitHint submit={submit} />
           )}
         </span>
         <button
@@ -280,6 +291,23 @@ function ReferenceIcon({ reference }: { reference: ChannelReference }) {
         >
           {reference.status === 'done' ? '✓' : '◇'}
         </span>
+      );
+  }
+}
+
+function SubmitHint({ submit }: { submit: ComposerSubmit }) {
+  switch (submit) {
+    case 'enter':
+      return (
+        <>
+          <kbd>@</kbd> mention a Buddy or Task · <kbd>⇧⏎</kbd> new line
+        </>
+      );
+    case 'button':
+      return (
+        <>
+          <kbd>@</kbd> mention a Buddy or Task
+        </>
       );
   }
 }
