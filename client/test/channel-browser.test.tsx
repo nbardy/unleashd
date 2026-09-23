@@ -107,7 +107,11 @@ test('channel browser renders a Slack transcript, oldest first, with instance ta
         <ChannelBrowser
           workspaceId="ws-slack"
           workspaceName="unleashd"
-          buddyNames={{ lead: 'Lead', dev: 'Dev' }}
+          members={[
+            { id: 'lead', name: 'Lead', role: 'Own the work', status: 'active' },
+            { id: 'dev', name: 'Dev', role: 'Build the work', status: 'active' },
+          ]}
+          tasks={[]}
           availableConversationIds={new Set(['conv-aaaa111122223333'])}
         />
       </Provider>
@@ -134,7 +138,7 @@ test('concurrent conversations of one Buddy start separate message groups', () =
     id,
     listId: 'list_a',
     workspaceId: 'ws',
-    author: { kind: 'buddy', buddyId: 'lead' },
+    author: { kind: 'buddy' as const, buddyId: 'lead' },
     threadRootId: null,
     replyCount: 0,
     latestReplyAt: null,
@@ -187,11 +191,104 @@ test('channel browser shows an empty state without channels', async () => {
         <ChannelBrowser
           workspaceId="ws-bare"
           workspaceName="bare"
-          buddyNames={{}}
+          members={[]}
+          tasks={[]}
           availableConversationIds={new Set()}
         />
       </Provider>
     </MemoryRouter>
   );
   assert.match(html, /No channels yet/);
+});
+
+// The body is markdown with app links: an owner mention, a live Task chip and
+// inline media must each render as their own element — a regression to plain
+// text would show raw `[@Lead](buddy:lead)` tokens and absolute file paths.
+test('posts render markdown mentions, live Task chips, inline media and thread summaries', async () => {
+  await loadResource({
+    key: '/api/buddies/lists?workspaceId=ws-rich',
+    load: async () => [
+      {
+        id: 'list_rich',
+        workspaceId: 'ws-rich',
+        name: 'general',
+        purpose: 'Team chat',
+        createdBy: { kind: 'owner' },
+        createdAt: '2026-09-23T00:00:00.000Z',
+        postCount: 1,
+        latestPostAt: '2026-09-23T01:00:00.000Z',
+      },
+    ],
+  });
+  await loadResource({
+    key: '/api/buddies/lists/list_rich/posts?limit=50',
+    load: async () => [
+      {
+        id: 'post_ask',
+        listId: 'list_rich',
+        workspaceId: 'ws-rich',
+        author: { kind: 'owner' },
+        threadRootId: null,
+        replyCount: 2,
+        latestReplyAt: '2026-09-23T01:05:00.000Z',
+        purpose: 'message',
+        body: '[@Lead](buddy:lead) is [Ship channels](task:task-ship) done?\n\n![login](/Users/me/.agent-viewer/uploads/channels/list_rich/abc.png)\n![demo](/Users/me/.agent-viewer/uploads/channels/list_rich/def.mp4)',
+        evidence: [],
+        projectId: null,
+        createdAt: '2026-09-23T01:00:00.000Z',
+        senderConversationId: null,
+        senderRunId: null,
+      },
+    ],
+  });
+  await loadResource({ key: '/api/buddies/lists/list_rich/responding', load: async () => [] });
+  const html = renderToStaticMarkup(
+    <MemoryRouter>
+      <Provider store={jotaiStore}>
+        <ChannelBrowser
+          workspaceId="ws-rich"
+          workspaceName="rich"
+          members={[
+            { id: 'lead', name: 'Lead', role: 'Own the work', status: 'active' },
+            { id: 'gone', name: 'Gone', role: 'Retired', status: 'archived' },
+          ]}
+          tasks={[
+            {
+              id: 'task-ship',
+              title: 'Ship channels',
+              status: 'in_progress',
+              ownerBuddyId: 'lead',
+              ownerName: 'Lead',
+              todosDone: 3,
+              todosTotal: 5,
+              nextAction: 'Wire the composer',
+              updatedAt: '2026-09-23T00:30:00.000Z',
+            },
+          ]}
+          availableConversationIds={new Set()}
+        />
+      </Provider>
+    </MemoryRouter>
+  );
+  assert.match(html, /class="channel-browser-author">You</);
+  assert.match(html, /<a class="channel-mention" href="\/buddies\/lead"[^>]*>@Lead<\/a>/);
+  assert.doesNotMatch(html, /buddy:lead/);
+  // Live chip: in-progress tone, links to the owner's work, hover card carries progress.
+  assert.match(
+    html,
+    /class="channel-task-chip" data-tone="active"[^>]*href="\/buddies\/lead\/work"/
+  );
+  assert.match(html, /3\/5 todos/);
+  assert.match(html, /Wire the composer/);
+  // Local media goes through the authenticated file route; .mp4 is a player.
+  assert.match(
+    html,
+    /<img class="channel-media" src="\/api\/files\?path=%2FUsers%2Fme%2F[^"]*abc\.png"/
+  );
+  assert.match(html, /<video class="channel-media" src="\/api\/files\?path=[^"]*def\.mp4"/);
+  assert.match(html, /<strong>2 replies<\/strong>/);
+  // The composer posts to this channel; archived Buddies stay out of the rail.
+  assert.match(html, /placeholder="Message #general"/);
+  assert.match(html, /channel-browser-buddies/);
+  assert.doesNotMatch(html, />Gone</);
 });

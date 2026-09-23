@@ -1,8 +1,6 @@
-import { BuddyWorkerThreadBadge } from './buddies/BuddyWorkerThreadBadge';
-import type { BuddyWorkerThread } from '@unleashd/shared';
 import { useVirtualizer } from '@tanstack/react-virtual';
+import type { BuddyWorkerThread } from '@unleashd/shared';
 import type { Message } from '@unleashd/shared';
-import type { Break, Root, Text } from 'mdast';
 import type { ComponentPropsWithoutRef, ReactNode } from 'react';
 import {
   isValidElement,
@@ -18,17 +16,18 @@ import Markdown from 'react-markdown';
 import type { Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
-import type { Plugin } from 'unified';
 import type { BuddyContext } from '../atoms/pending-creations';
 import type { CopyState } from '../hooks/useCopyAction';
 import { COPY_LABEL, useCopyAction } from '../hooks/useCopyAction';
 import { parseBuddyReviewRequest, parseBuddyReviewResult } from '../utils/buddy-review-message';
+import type { AssistantResponse, MessageGroup } from '../utils/chat-message-groups';
 import { messageTranscriptContent } from '../utils/conversation-transcript';
-import { execInputPreview } from '../utils/tool-call-preview';
 import { useLazyMarkdownPlugins } from '../utils/lazyMarkdownPlugins';
+import { remarkBreaks } from '../utils/remark-breaks';
 import { splitStructuredMessageContent } from '../utils/structured-message-segments';
 import { splitToolActivity } from '../utils/tool-activity-segments';
-import type { AssistantResponse, MessageGroup } from '../utils/chat-message-groups';
+import { execInputPreview } from '../utils/tool-call-preview';
+import { BuddyWorkerThreadBadge } from './buddies/BuddyWorkerThreadBadge';
 export type { MessageGroup } from '../utils/chat-message-groups';
 import { AskUserQuestionWidget, parseAskUserQuestion } from './AskUserQuestion';
 import { BuddyConvoHeader } from './BuddyConvoHeader';
@@ -39,44 +38,6 @@ import { SwarmConvoPrefix } from './SwarmConvoPrefix';
 import { InlineBuddyBuilderResult } from './buddies/BuddyBuilderResultCard';
 import { InlineBuddyTeamConfiguration } from './buddies/BuddyTeamConfiguration';
 import { effectiveSwarmDebugPrefix } from './buddies/ui-contract';
-
-// =============================================================================
-// remarkBreaks — inline remark plugin (replaces the `remark-breaks` npm package)
-//
-// Standard Markdown collapses single newlines into spaces within a paragraph.
-// This means plain-text output (e.g. file path lists NOT in code fences) renders
-// as one long run-on line. This plugin converts soft newlines to <br> hard breaks
-// in the mdast, matching chat-UI expectations where each \n is a visual line break.
-//
-// SCOPE: Only affects text nodes inside paragraphs/lists/blockquotes. Does NOT
-// affect code blocks — those are `code` nodes in mdast with a `value` string
-// (no children), so this visitor skips them. Code block whitespace is preserved
-// by the <pre> element's `white-space: pre` CSS.
-//
-// WHY INLINE: The `remark-breaks` npm package does the same thing, but pnpm
-// workspace install was broken by an unrelated server dependency. This is ~20
-// lines and has zero external deps.
-// =============================================================================
-const remarkBreaks: Plugin<[], Root> = () => (tree) => {
-  const visit = (node: Root | Root['children'][number]) => {
-    if (!('children' in node)) return;
-    const next: Root['children'] = [];
-    for (const child of node.children) {
-      if (child.type === 'text') {
-        const lines = (child as Text).value.split('\n');
-        for (let i = 0; i < lines.length; i++) {
-          if (i > 0) next.push({ type: 'break' } as Break);
-          if (lines[i]) next.push({ type: 'text', value: lines[i] } as Text);
-        }
-      } else {
-        visit(child as Root['children'][number]);
-        next.push(child);
-      }
-    }
-    node.children = next as typeof node.children;
-  };
-  visit(tree);
-};
 
 /**
  * remark-math recognizes $...$ and $$...$$, while model output commonly uses
