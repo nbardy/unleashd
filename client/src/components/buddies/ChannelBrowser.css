@@ -380,19 +380,12 @@
 }
 
 .channel-browser-avatar {
-  /* Per-Buddy accent is set inline from the Buddy id; this is the default. */
-  --channel-avatar: var(--theme-ai);
-  display: grid;
-  place-items: center;
+  /* Generated per-Buddy sigil (buddy-sigil.ts), seeded by the Buddy name. */
+  display: block;
   width: 36px;
   height: 36px;
   margin-top: 2px;
   border-radius: 8px;
-  background: color-mix(in oklch, var(--channel-avatar) 30%, var(--bg-base));
-  color: color-mix(in oklch, var(--channel-avatar) 60%, var(--pole-fg-pop));
-  font-size: 13px;
-  font-weight: 700;
-  letter-spacing: 0.02em;
 }
 
 .channel-browser-gutter-time {

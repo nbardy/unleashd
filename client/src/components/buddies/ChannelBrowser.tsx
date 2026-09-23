@@ -1,6 +1,6 @@
 import { type BuddyWorkspaceActivity, BuddyWorkspaceActivitySchema } from '@unleashd/shared';
 import { useAtomValue } from 'jotai';
-import { type CSSProperties, useEffect, useMemo, useRef } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { buddySidebarChannelsAtom } from '../../atoms/buddy-sidebar';
 import { allConversationIdsAtom } from '../../atoms/conversations';
@@ -10,6 +10,7 @@ import {
   type BuddyMailingListSummary,
   taskChannelFeedUrl,
 } from './BuddyMessages';
+import { buddySigilUrl } from './buddy-sigil';
 import './ChannelBrowser.css';
 
 export function workspaceActivityResource(workspaceId: string) {
@@ -81,22 +82,6 @@ export function channelRows(newestFirst: readonly BuddyMailingListPost[]): Chann
     previous = post;
   }
   return rows;
-}
-
-const AVATAR_ACCENTS = [
-  'var(--theme-ai)',
-  'var(--theme-user)',
-  'var(--theme-primary)',
-  'var(--theme-meta)',
-  'var(--theme-warning)',
-  'var(--theme-success)',
-  'var(--theme-queue)',
-];
-
-function avatarAccent(buddyId: string): string {
-  let hash = 0;
-  for (const char of buddyId) hash = (hash * 31 + char.charCodeAt(0)) >>> 0;
-  return AVATAR_ACCENTS[hash % AVATAR_ACCENTS.length];
 }
 
 function initials(name: string): string {
@@ -172,13 +157,7 @@ function LeadRow({ post, context }: { post: BuddyMailingListPost; context: RowCo
   const name = context.buddyNames[post.fromBuddyId] ?? post.fromBuddyId;
   return (
     <li className="channel-browser-message channel-browser-message--lead">
-      <span
-        className="channel-browser-avatar"
-        style={{ '--channel-avatar': avatarAccent(post.fromBuddyId) } as CSSProperties}
-        aria-hidden="true"
-      >
-        {initials(name)}
-      </span>
+      <img className="channel-browser-avatar" src={buddySigilUrl(name)} alt="" />
       <div className="channel-browser-message-content">
         <div className="channel-browser-message-heading">
           <Link
