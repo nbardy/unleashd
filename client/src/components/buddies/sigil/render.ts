@@ -42,6 +42,8 @@ uniform vec4 u_bands;        // frequency, angle, noiseFrequency, gain
 uniform vec4 u_post;         // amount, levels, softness, -
 uniform vec4 u_contour;      // width px, count, -, -
 uniform vec4 u_mask;         // amount, radius, exponent, softness
+uniform vec4 u_maskShape;    // aspect, warp, warpFrequency, warpPhase
+uniform vec2 u_profile;      // angle, bias
 uniform vec4 u_finish;       // grain, vignette, seed, -
 uniform vec4 u_w1[12];       // input i → neurons 0-3 at [2i], 4-7 at [2i+1]
 uniform vec4 u_w2[18];       // hidden j (and bias j = 8) likewise
@@ -90,11 +92,33 @@ float field(vec2 p0, float k) {
   vec2 p = mix(p0, fold(p0, k, u_sym.z), u_sym.y);
   p += u_warp.x * (vec2(fbm(p * u_warp.y + u_warp.zw), fbm(p * u_warp.y + u_warp.wz + 5.2)) - 0.5) * 2.0;
   float n = fbm(p * u_bands.z + 3.7);
-  float c = cppn(p, length(p), superellipse(p, u_mask.z), n);
+  float c = cppn(p, length(p), superellipse(p * vec2(1.0 / u_maskShape.x, u_maskShape.x), u_mask.z), n);
   float rings = sin(length(p - u_rings.zw) * u_rings.x + u_rings.y);
   float bands = sin(dot(p, vec2(cos(u_bands.y), sin(u_bands.y))) * u_bands.x);
   float f = u_mix.x * c + u_mix.y * rings + u_mix.z * (n * 2.0 - 1.0) * 1.6 + u_mix.w * bands;
   return 0.5 + 0.5 * tanh(u_bands.w * f);
+}
+
+// Seamless noise around the unit circle: sampling on (cos θ, sin θ) closes
+// the loop, so the warped outline never shows a seam at θ = ±π.
+float radialNoise(float theta) {
+  vec2 c = vec2(cos(theta), sin(theta)) * u_maskShape.z + u_maskShape.w;
+  float s = 0.0, a = 0.5;
+  for (int i = 0; i < 3; i++) { s += a * vnoise(c); c = c * 2.1 + 7.3; a *= 0.45; }
+  return s / 0.7 * 2.0 - 1.0;
+}
+
+// Central figure: a superellipse whose aspect and squareness move together
+// (tall rectangle ↔ wide oval), its radius modulated by radial noise weighted
+// toward the profile side. Returns coverage in [0, 1].
+float figureMask(vec2 q) {
+  float d = superellipse(q * vec2(1.0 / u_maskShape.x, u_maskShape.x), u_mask.z);
+  float theta = atan(q.y, q.x);
+  float side = smoothstep(-0.3, 1.0, cos(theta - u_profile.x));
+  float weight = mix(1.0, side, u_profile.y);
+  float radius = u_mask.y * (1.0 + u_maskShape.y * weight * radialNoise(theta));
+  float aa = fwidth(d);
+  return 1.0 - smoothstep(radius - u_mask.w - aa, radius + u_mask.w + aa, d);
 }
 
 // Symmetry order is continuous: crossfade the two neighbouring integer folds.
@@ -109,10 +133,7 @@ void main() {
   vec2 p = rot((q - u_frame.yz) * u_frame.x, u_frame.w);
   float t = fieldAt(p);
 
-  float md = superellipse(q, u_mask.z);
-  float maa = fwidth(md);
-  float inside = 1.0 - smoothstep(u_mask.y - u_mask.w - maa, u_mask.y + u_mask.w + maa, md);
-  float figure = mix(1.0, inside, u_mask.x);
+  float figure = mix(1.0, figureMask(q), u_mask.x);
 
   if (u_mode == 0) {
     float e = floor(t * 65535.0);
@@ -274,7 +295,13 @@ function setUniforms(device: Gpu, g: SigilGenome, background: Rgb, ink: Rgb): vo
   gl.uniform4f(u('u_bands'), g.bands.frequency, g.bands.angle, g.noiseFrequency, g.gain);
   gl.uniform4f(u('u_post'), g.posterize.amount, g.posterize.levels, g.posterize.softness, 0);
   gl.uniform4f(u('u_contour'), g.contour.width, g.contour.count, 0, 0);
-  gl.uniform4f(u('u_mask'), g.mask.amount, g.mask.radius, g.mask.exponent, g.mask.softness);
+  // Kernel 0 → tall rectangle (narrow, squarish), 1 → wide oval (round).
+  const k = g.mask.kernel;
+  const aspect = 0.72 + (1.3 - 0.72) * k;
+  const exponent = 6 + (2 - 6) * k;
+  gl.uniform4f(u('u_mask'), g.mask.amount, g.mask.radius, exponent, g.mask.softness);
+  gl.uniform4f(u('u_maskShape'), aspect, g.mask.warp, g.mask.warpFrequency, g.mask.warpPhase);
+  gl.uniform2f(u('u_profile'), g.mask.profileAngle, g.mask.profileBias);
   gl.uniform4f(u('u_finish'), g.finish.grain, g.finish.vignette, g.strokes.seed % 1000, 0);
   gl.uniform4fv(u('u_w1'), g.cppn.layer1);
   gl.uniform4fv(u('u_w2'), g.cppn.layer2);
@@ -327,6 +354,12 @@ function drawStrokes(ctx: CanvasRenderingContext2D, g: SigilGenome, field: Field
   };
   const step = 1.2;
   const steps = Math.max(2, Math.round(s.length / step));
+  // Gradient span in sigil px. ±1px read mostly 16-bit quantization noise on
+  // low-frequency fields, which turned every stroke into a scribble.
+  const span = 4;
+  const steer = 40;
+  const turnCos = Math.cos(s.flow * (Math.PI / 2));
+  const turnSin = Math.sin(s.flow * (Math.PI / 2));
   ctx.lineCap = 'round';
 
   for (let i = 0; i < s.count; i++) {
@@ -342,12 +375,21 @@ function drawStrokes(ctx: CanvasRenderingContext2D, g: SigilGenome, field: Field
     const [r, gr, b] = base.map((v) => Math.round((v + (toward - v) * amount) * 255));
     ctx.strokeStyle = `rgba(${r}, ${gr}, ${b}, ${s.alpha.toFixed(3)})`;
 
+    // Momentum: the heading starts on the global bias and is pulled by the
+    // (rotated) field gradient in proportion to its strength, so flat regions
+    // keep a coherent direction instead of jittering.
+    let dx = Math.cos(s.bias);
+    let dy = Math.sin(s.bias);
     for (let k = 0; k < steps; k++) {
-      const gx = at(field.t, x + 1, y) - at(field.t, x - 1, y);
-      const gy = at(field.t, x, y + 1) - at(field.t, x, y - 1);
-      const angle = Math.atan2(gy, gx) + s.flow * (Math.PI / 2) + s.bias;
-      const nx = x + Math.cos(angle) * step;
-      const ny = y + Math.sin(angle) * step;
+      const gx = at(field.t, x + span, y) - at(field.t, x - span, y);
+      const gy = at(field.t, x, y + span) - at(field.t, x, y - span);
+      dx += (gx * turnCos - gy * turnSin) * steer;
+      dy += (gx * turnSin + gy * turnCos) * steer;
+      const length = Math.hypot(dx, dy);
+      dx /= length;
+      dy /= length;
+      const nx = x + dx * step;
+      const ny = y + dy * step;
       ctx.lineWidth = 0.3 + s.width * Math.sin((Math.PI * (k + 0.5)) / steps);
       ctx.beginPath();
       ctx.moveTo(x, y);

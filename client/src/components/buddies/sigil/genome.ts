@@ -16,7 +16,7 @@
 // decoder, its seed, or the ORDER of `take()` calls redraws every Buddy — bump
 // SIGIL_VERSION when you do it on purpose.
 
-export const SIGIL_VERSION = 2;
+export const SIGIL_VERSION = 3;
 export const LATENT_DIM = 32;
 
 export type Latent = readonly number[];
@@ -43,7 +43,21 @@ export type SigilGenome = {
   gain: number;
   posterize: { amount: number; levels: number; softness: number };
   contour: { width: number; count: number; ink: number };
-  mask: { amount: number; radius: number; exponent: number; softness: number };
+  // The central figure. `kernel` runs continuously from a tall rectangle (0)
+  // to a wide oval (1); its outline is pushed in and out by radial noise,
+  // weighted toward `profileAngle` so bumps gather on one side like a face
+  // in profile (brow, nose, chin).
+  mask: {
+    amount: number;
+    radius: number;
+    kernel: number;
+    softness: number;
+    warp: number;
+    warpFrequency: number;
+    warpPhase: number;
+    profileAngle: number;
+    profileBias: number; // 0 = warp all around … 1 = warp on the profile side only
+  };
   finish: { grain: number; vignette: number };
   strokes: {
     seed: number;
@@ -52,7 +66,7 @@ export type SigilGenome = {
     width: number;
     alpha: number;
     flow: number; // 0 = along the field gradient, 1 = along its contours
-    bias: number;
+    bias: number; // heading where the field is flat
     colorShift: number;
     tone: number; // −1 darken … +1 lighten
   };
@@ -164,7 +178,7 @@ export function decodeGenome(z: Latent, seed: number): SigilGenome {
   };
 
   const frame = {
-    zoom: lerp(0.6, 1.8, sig(0.9 * busy + 0.6 * take())),
+    zoom: lerp(0.5, 1.3, sig(0.9 * busy + 0.6 * take())),
     centerX: 0.25 * Math.tanh(take()),
     centerY: 0.25 * Math.tanh(take()),
     rotation: Math.PI * Math.tanh(take()),
@@ -176,7 +190,7 @@ export function decodeGenome(z: Latent, seed: number): SigilGenome {
   };
   const warp = {
     amount: lerp(0, 0.6, sig(-1.8 * geometric + 0.8 * take() - 0.8)),
-    frequency: lerp(0.4, 1.6, sig(take())),
+    frequency: lerp(0.3, 1.1, sig(take())),
     offsetX: 10 * take(),
     offsetY: 10 * take(),
   };
@@ -194,16 +208,16 @@ export function decodeGenome(z: Latent, seed: number): SigilGenome {
     bands: weights.bands / total,
   };
   const rings = {
-    frequency: lerp(3, 16, sig(0.8 * busy + 0.6 * take())),
+    frequency: lerp(2, 9, sig(0.8 * busy + 0.6 * take())),
     phase: Math.PI * take(),
     centerX: 0.5 * Math.tanh(take()),
     centerY: 0.5 * Math.tanh(take()),
   };
   const bands = {
-    frequency: lerp(2, 12, sig(0.8 * busy + 0.6 * take())),
+    frequency: lerp(1.5, 6, sig(0.8 * busy + 0.6 * take())),
     angle: Math.PI * take(),
   };
-  const noiseFrequency = lerp(0.4, 1.8, sig(0.7 * busy + 0.6 * take()));
+  const noiseFrequency = lerp(0.3, 1.2, sig(0.7 * busy + 0.6 * take()));
   const gain = lerp(1.2, 4, sig(take()));
   const posterize = {
     amount: sig(2 * geometric + 0.8 * take() + 0.3),
@@ -212,14 +226,19 @@ export function decodeGenome(z: Latent, seed: number): SigilGenome {
   };
   const contour = {
     width: Math.max(0, lerp(-1.5, 3, sig(take()))),
-    count: lerp(2, 10, sig(0.7 * busy + 0.6 * take())),
+    count: lerp(2, 6, sig(0.7 * busy + 0.6 * take())),
     ink: sig(1.5 * take()),
   };
   const mask = {
     amount: sig(1.2 * geometric + 0.8 * take() + 0.8),
-    radius: lerp(0.55, 0.85, sig(take())),
-    exponent: Math.exp(lerp(Math.log(0.9), Math.log(5), sig(take()))),
-    softness: lerp(0.005, 0.06, sig(-geometric + take() - 1)),
+    radius: lerp(0.5, 0.7, sig(take())),
+    kernel: sig(1.2 * take()),
+    softness: lerp(0.005, 0.05, sig(-geometric + take() - 1)),
+    warp: lerp(0.06, 0.38, sig(-0.6 * geometric + take())),
+    warpFrequency: lerp(0.9, 2.4, sig(take())),
+    warpPhase: 10 * take(),
+    profileAngle: Math.PI * Math.tanh(take()),
+    profileBias: sig(1.5 * take() + 0.5),
   };
   const finish = {
     grain: lerp(0, 0.05, sig(take() - 0.5)),
@@ -227,7 +246,7 @@ export function decodeGenome(z: Latent, seed: number): SigilGenome {
   };
   const strokes = {
     seed,
-    count: Math.floor(400 * sig(1.8 * strokey - 1.2 + 0.4 * take()) ** 1.5),
+    count: Math.floor(260 * sig(1.8 * strokey - 1.2 + 0.4 * take()) ** 1.5),
     length: lerp(12, 60, sig(take() - 0.5 * busy)),
     width: lerp(0.8, 3.2, sig(take() - 0.4 * busy)),
     alpha: lerp(0.35, 0.95, sig(take())),
@@ -238,12 +257,12 @@ export function decodeGenome(z: Latent, seed: number): SigilGenome {
   };
 
   cursor = 64;
-  const layer1Scale = 1.6 * (1 + 0.3 * Math.tanh(busy));
+  const layer1Scale = 1.1 * (1 + 0.3 * Math.tanh(busy));
   const layer1 = Float32Array.from({ length: 6 * 8 }, () => take() * layer1Scale);
   const layer2 = Float32Array.from({ length: 9 * 8 }, () => take() * 1.2);
   const out = Float32Array.from({ length: 9 }, () => take() * 1.5);
   const activation = Float32Array.from({ length: 8 }, () => sig(1.5 * take()));
-  const cppn = { layer1, layer2, out, activation, frequency: lerp(1, 3, sig(z[6])) };
+  const cppn = { layer1, layer2, out, activation, frequency: lerp(0.8, 2, sig(z[6])) };
 
   return {
     palette,
