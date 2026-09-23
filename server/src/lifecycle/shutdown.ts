@@ -274,6 +274,11 @@ export function registerShutdownHandlers(
     }
   };
   process.on('message', handleProcessMessage);
+  // A backend must not outlive the dev runner that spawned it: an orphan keeps
+  // the port and serves whatever code it booted with. One started 01:31 on
+  // 2026-09-23 outlived a supervisor replacement and served a stale post shape
+  // for hours. Without an IPC channel (production) there is no parent to lose.
+  process.on('disconnect', controller.handleSigterm);
   const disposeController = controller.dispose;
   return {
     get state() {
@@ -290,6 +295,7 @@ export function registerShutdownHandlers(
       process.off('SIGINT', controller.handleSigint);
       process.off('SIGTERM', controller.handleSigterm);
       process.off('message', handleProcessMessage);
+      process.off('disconnect', controller.handleSigterm);
       disposeController();
     },
   };

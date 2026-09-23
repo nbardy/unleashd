@@ -276,15 +276,26 @@ forever with no reply. Recovery of durable records is per-record fault-isolated
 for the same reason — it runs inside the barrier, so an unreadable record used to
 reach `handleStartupFailure()` and exit the process.
 
-**Watcher contract** (`tools/watch-server.mjs`): the watcher keeps a backend
-running. A close it did not orchestrate — including a clean `exit(0)` from a
-manual `kill`, and any signal — is a **restart**, bounded by
-`unexpectedExitStreak` (escalates after 3 lives that never reach
-`HEALTHY_UPTIME_MS`). Treating those as fatal is what made a single `kill` set
-`process.exitCode = 1` and let `concurrently --kill-others-on-fail` tear down
-shared-esm/shared-cjs/cli/client (incident 2026-08-20,
-`agent_notes/2026-08-20_reload-drain-and-watcher-teardown.md`). Quick failures
-(<3s, or an esbuild Transform error) keep their own separate retry budget.
+**Watcher contract** (`tools/watch-server.mjs`): keep exactly one backend
+running the code on disk.
+
+- **What to watch is derived, never configured.** The backend runs with Node's
+  `WATCH_REPORT_DEPENDENCIES` protocol and reports every file it loads —
+  `server/src`, `shared/dist`, and `node_modules` alike — and one recursive
+  watch on the repository is filtered against that set. The hand-written list it
+  replaced omitted `node_modules`, so a vendored Buddies upgrade never reloaded
+  the backend (2026-09-23).
+- **New code must build before the old backend is asked to drain.** One esbuild
+  bundle of `src/server.ts` (~60ms) catches syntax errors and missing exports;
+  on failure the current backend keeps serving.
+- **Any exit it did not request is a restart**, with backoff doubling to 30s and
+  resetting after 30s of healthy uptime. It never gives up: giving up is what let
+  `concurrently --kill-others-on-fail` tear down the whole dev runtime after a
+  single `kill` (incident 2026-08-20,
+  `agent_notes/2026-08-20_reload-drain-and-watcher-teardown.md`).
+- **The backend never outlives the watcher.** `shutdown.ts` treats losing the
+  IPC channel as SIGTERM; an orphan from 01:31 on 2026-09-23 kept the port and
+  served stale code after its supervisor was replaced.
 
 ## 4) Client state frequency budget
 

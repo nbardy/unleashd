@@ -364,6 +364,43 @@ test('hot reload preserves a real detached provider process until an idle bounda
 });
 
 /**
+ * Incident 2026-09-23: a backend started at 01:31 outlived the dev runner that
+ * spawned it, kept the port, and served a stale Buddies package for hours.
+ * Losing the parent's IPC channel must shut the backend down.
+ */
+test('a backend exits when its dev runner goes away', async (t) => {
+  const shutdownModule = join(__dirname, '..', 'src', 'lifecycle', 'shutdown.ts');
+  const backend = spawn(
+    process.execPath,
+    [
+      '--import',
+      'tsx',
+      '-e',
+      `const { registerShutdownHandlers } = require(${JSON.stringify(shutdownModule)});
+       const controller = registerShutdownHandlers({ forceExitGraceMs: 1000, flushGraceMs: 1000 }, {
+         conversations: () => [], activeSchedulerRuns: () => 0, pauseScheduler() {},
+         resumeScheduler() {}, stopScheduler() {}, flushState() {}, broadcastMessage() {},
+         exit: (code) => process.exit(code),
+       });
+       controller.completeStartup();
+       setInterval(() => {}, 1000);
+       process.send('ready');`,
+    ],
+    { stdio: ['ignore', 'ignore', 'inherit', 'ipc'] }
+  );
+  t.after(() => {
+    if (backend.exitCode === null) backend.kill('SIGKILL');
+  });
+  await new Promise<void>((resolve) => backend.once('message', () => resolve()));
+  const exited = new Promise<number | null>((resolve) =>
+    backend.once('exit', (code) => resolve(code))
+  );
+  backend.disconnect();
+  const code = await Promise.race([exited, sleep(5000).then(() => 'still running' as const)]);
+  assert.equal(code, 0);
+});
+
+/**
  * Incident 2026-08-20. exitOnce() clears every drain timer before awaiting
  * flushState(), so a flush that never settles left the process alive in
  * `exiting` with nothing armed to rescue it — same user-visible symptom, but
