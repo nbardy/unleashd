@@ -81,7 +81,6 @@ function dayKey(iso: string): string {
 }
 
 function sameInstance(a: BuddyMailingListPost, b: BuddyMailingListPost): boolean {
-  if (!a.author || !b.author) return false;
   return (
     authorKey(a.author) === authorKey(b.author) && a.senderConversationId === b.senderConversationId
   );
@@ -208,11 +207,7 @@ function PostMeta({ post, context }: { post: BuddyMailingListPost; context: RowC
   );
 }
 
-function authorName(
-  author: BuddyListAuthor | undefined,
-  buddyNames: Readonly<Record<string, string>>
-) {
-  if (!author) return 'Unknown';
+function authorName(author: BuddyListAuthor, buddyNames: Readonly<Record<string, string>>) {
   switch (author.kind) {
     case 'owner':
       return 'You';

@@ -110,11 +110,10 @@ export function PostAuthor({
   buddyNames,
   className,
 }: {
-  author: BuddyListAuthor | undefined;
+  author: BuddyListAuthor;
   buddyNames: Readonly<Record<string, string>>;
   className?: string;
 }) {
-  if (!author) return <span className={className}>Unknown</span>;
   switch (author.kind) {
     case 'owner':
       return <span className={className}>You</span>;
