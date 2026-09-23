@@ -367,11 +367,11 @@ test('resolved stdio Buddy MCP entrypoint opens the current durable schema', asy
     user_version: number;
   };
   fixtureDatabase.close();
-  // Pinned to the v32 provenance migration (sender columns + project feed
-  // index); move this with the next package schema bump.
+  // Pinned to the v33 list-author/thread migration; move this with the next
+  // package schema bump.
   assert.equal(
     schemaVersion.user_version,
-    32,
+    33,
     'the vendored Buddy package must understand the live schema'
   );
 

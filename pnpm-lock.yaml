@@ -535,7 +535,7 @@ packages:
         optional: true
 
   '@nbardy/buddies@file:vendor/nbardy-buddies-0.1.0.tgz':
-    resolution: {integrity: sha512-Ot8XmCHZYRnM7kKD2+P7i5SvkupWRg8x2i1jXNWNViRj/WurJdGui50f/TgSU6RYAG5FIWhkdkhWOS+hRbfoeg==, tarball: file:vendor/nbardy-buddies-0.1.0.tgz}
+    resolution: {integrity: sha512-Dly9PTA7JppUq8vLiZqgOYypAwXDpY5QVZXHbqqzacOszb684SdAk1oEmR5rfqLJnRuu3n++PjyF/cnS0HswUw==, tarball: file:vendor/nbardy-buddies-0.1.0.tgz}
     version: 0.1.0
     engines: {node: '>=22.5'}
     hasBin: true

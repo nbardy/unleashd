@@ -313,11 +313,13 @@ export const BuddyOperationInputSchemas = {
       body: z.string().trim().min(1).max(32000),
       evidence: z.array(z.string().trim().min(1).max(4000)).max(32).default([]),
       projectId: z.string().min(1).nullable().optional(),
+      threadId: z.string().min(1).nullable().optional(),
     })
     .strict(),
   'buddy.get_list': z
     .object({
       listId: z.string().min(1),
+      threadId: z.string().min(1).optional(),
       limit: z.number().int().min(1).max(50).default(20),
       cursor: z
         .string()
@@ -1673,7 +1675,7 @@ export class BuddyOperationsService {
           name,
           this.store.createList({
             workspace: this.context.workspaceId,
-            buddy: this.context.buddyId,
+            author: { kind: 'buddy', buddyId: this.context.buddyId },
             ...parsed,
           }),
           parsed
@@ -1692,12 +1694,13 @@ export class BuddyOperationsService {
           withPostProvenance(
             this.store.createPost({
               list: list.id,
-              buddy: this.context.buddyId,
+              author: { kind: 'buddy', buddyId: this.context.buddyId },
               key: parsed.key,
               purpose: parsed.purpose,
               body: parsed.body,
               evidence: parsed.evidence,
               project: parsed.projectId ?? null,
+              threadRoot: parsed.threadId ?? null,
               // Provenance is server-stamped from the operation context only;
               // the input schema carries no caller-supplied ids to trust.
               conversationId: this.context.conversationId ?? null,
@@ -1714,6 +1717,19 @@ export class BuddyOperationsService {
           throw Object.assign(new Error('Mailing list is unavailable in this workspace'), {
             code: 'list_outside_workspace',
           });
+        if (parsed.threadId) {
+          const thread = this.store.listThread({ root: parsed.threadId });
+          if (thread.root.listId !== list.id) throw new Error('Thread is not in this list');
+          return this.result(
+            name,
+            {
+              list,
+              root: withPostProvenanceFields(thread.root),
+              replies: thread.replies.map(withPostProvenanceFields),
+            },
+            parsed
+          );
+        }
         const offset = parsed.cursor ? Number(parsed.cursor.slice(5)) : 0;
         if (!Number.isSafeInteger(offset)) throw new Error('Invalid list cursor');
         const overfetch = parsed.limit < 50;
@@ -1726,13 +1742,12 @@ export class BuddyOperationsService {
         const posts = (overfetch && hasMore ? rows.slice(0, parsed.limit) : rows).map(
           withPostProvenanceFields
         );
-        // A read from the top marks the list read; paging into history moves nothing.
-        if (!parsed.cursor && posts.length > 0)
-          this.store.markListRead({
-            buddy: this.context.buddyId,
-            list: list.id,
-            post: posts[0].id,
-          });
+        // A read from the top marks the list read, up to the newest post
+        // anywhere in it (thread replies included: the feed shows their
+        // roots' replyCount/latestReplyAt). Paging into history moves nothing.
+        const newest = parsed.cursor ? null : this.store.newestListPost({ list: list.id });
+        if (newest)
+          this.store.markListRead({ buddy: this.context.buddyId, list: list.id, post: newest.id });
         return this.result(
           name,
           { list, posts, nextCursor: hasMore ? `list:${offset + parsed.limit}` : null },

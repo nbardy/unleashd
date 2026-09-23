@@ -54,6 +54,11 @@ import { getTeamCapabilities, messageExecution, teamStore } from './team-access'
 import { observeBuddyTeam } from './team-observation';
 import { visibleBuddyPayload } from './visibility';
 
+const ListAuthorSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('owner') }).strict(),
+  z.object({ kind: z.literal('buddy'), buddyId: z.string().min(1) }).strict(),
+]);
+
 export interface BuddyConversationView {
   id: string;
   toJSON(): unknown;
@@ -726,8 +731,9 @@ export function registerBuddyRoutes(app: Express, dependencies: BuddyRouteDepend
     );
   });
 
-  // Mailing lists are public workspace streams. Owner reads move no read mark;
-  // writes act through the sender Buddy in the body, as /messages already does.
+  // Mailing lists are public workspace streams. Owner reads move no read mark.
+  // Writes name their author: the owner as themself, or a chosen Buddy (the
+  // Mailbox tab's composer posts as the Buddy being viewed).
   route.get('/api/buddies/lists', 400, async (req, res) => {
     const buddies = await getStore();
     const input = z
@@ -742,16 +748,15 @@ export function registerBuddyRoutes(app: Express, dependencies: BuddyRouteDepend
     const input = z
       .object({
         workspaceId: z.string().min(1),
-        buddyId: z.string().min(1),
+        author: ListAuthorSchema,
         key: z.string().trim().min(1).max(200),
         name: z.string().trim().min(1).max(80),
         purpose: z.string().trim().min(1).max(400),
       })
       .strict()
       .parse(req.body);
-    res
-      .status(201)
-      .json(buddies.createList({ workspace: input.workspaceId, buddy: input.buddyId, ...input }));
+    const { workspaceId, ...rest } = input;
+    res.status(201).json(buddies.createList({ workspace: workspaceId, ...rest }));
   });
 
   route.get('/api/buddies/lists/:listId/posts', 400, async (req, res) => {
@@ -771,6 +776,20 @@ export function registerBuddyRoutes(app: Express, dependencies: BuddyRouteDepend
     res.json(buddies.listPosts({ list: list.id, ...input }).map(withPostProvenanceFields));
   });
 
+  route.get('/api/buddies/lists/:listId/threads/:postId', 400, async (req, res) => {
+    const buddies = await getStore();
+    const root = buddies.getPost(req.params.postId);
+    if (!root || root.listId !== req.params.listId) {
+      res.status(404).json({ error: 'Thread not found in this list' });
+      return;
+    }
+    const thread = buddies.listThread({ root: root.id });
+    res.json({
+      root: withPostProvenanceFields(thread.root),
+      replies: thread.replies.map(withPostProvenanceFields),
+    });
+  });
+
   route.post('/api/buddies/lists/:listId/posts', 400, async (req, res) => {
     const buddies = await getStore();
     const list = buddies.getList(req.params.listId);
@@ -780,24 +799,26 @@ export function registerBuddyRoutes(app: Express, dependencies: BuddyRouteDepend
     }
     const input = z
       .object({
-        buddyId: z.string().min(1),
+        author: ListAuthorSchema,
         key: z.string().trim().min(1).max(200),
         purpose: z.string().trim().min(1).max(200),
         body: z.string().trim().min(1).max(32000),
         evidence: z.array(z.string().trim().min(1).max(4000)).max(32).optional(),
         projectId: z.string().min(1).nullable().optional(),
+        threadRootId: z.string().min(1).nullable().optional(),
       })
       .strict()
       .parse(req.body);
     res.status(201).json(
       buddies.createPost({
         list: list.id,
-        buddy: input.buddyId,
+        author: input.author,
         key: input.key,
         purpose: input.purpose,
         body: input.body,
         evidence: input.evidence ?? [],
         project: input.projectId ?? null,
+        threadRoot: input.threadRootId ?? null,
         // Owner HTTP posts carry no conversation context: provenance stays null.
         conversationId: null,
         runId: null,

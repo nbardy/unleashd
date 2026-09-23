@@ -687,7 +687,7 @@ test('instance provenance: two conversations as one buddy stamp distinguishable 
         method: 'POST',
         headers: { 'content-type': 'application/json' },
         body: JSON.stringify({
-          buddyId: a.id,
+          author: { kind: 'buddy', buddyId: a.id },
           key: 'p-owner',
           purpose: 'note',
           body: 'Owner note',

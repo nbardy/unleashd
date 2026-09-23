@@ -64,12 +64,15 @@ export function BuddyMessages({
   );
 }
 
+// Author = Buddy | Owner (the owner posts as themself, never as a stand-in Buddy).
+export type BuddyListAuthor = { kind: 'buddy'; buddyId: string } | { kind: 'owner' };
+
 export interface BuddyMailingListSummary {
   id: string;
   workspaceId: string;
   name: string;
   purpose: string;
-  createdByBuddyId: string;
+  createdBy: BuddyListAuthor;
   createdAt: string;
   postCount: number;
   latestPostAt: string | null;
@@ -79,14 +82,48 @@ export interface BuddyMailingListPost {
   id: string;
   listId: string;
   workspaceId: string;
-  fromBuddyId: string;
+  author: BuddyListAuthor;
+  // null: a top-level channel post. Threads are one level deep.
+  threadRootId: string | null;
+  replyCount: number;
+  latestReplyAt: string | null;
   purpose: string;
   body: string;
   evidence: string[];
   projectId: string | null;
   createdAt: string;
-  senderConversationId?: string | null;
-  senderRunId?: string | null;
+  senderConversationId: string | null;
+  senderRunId: string | null;
+}
+
+export function authorKey(author: BuddyListAuthor): string {
+  switch (author.kind) {
+    case 'owner':
+      return 'owner';
+    case 'buddy':
+      return author.buddyId;
+  }
+}
+
+export function PostAuthor({
+  author,
+  buddyNames,
+  className,
+}: {
+  author: BuddyListAuthor;
+  buddyNames: Readonly<Record<string, string>>;
+  className?: string;
+}) {
+  switch (author.kind) {
+    case 'owner':
+      return <span className={className}>You</span>;
+    case 'buddy':
+      return (
+        <Link className={className} to={`/buddies/${encodeURIComponent(author.buddyId)}`}>
+          {buddyNames[author.buddyId] ?? author.buddyId}
+        </Link>
+      );
+  }
 }
 
 function BuddyListsSection({
@@ -171,9 +208,7 @@ export function ChannelPostItem({
         <strong>{post.purpose}</strong>
         {channelName && <span> · #{channelName}</span>}
         <span>
-          <Link to={`/buddies/${encodeURIComponent(post.fromBuddyId)}`}>
-            {buddyNames[post.fromBuddyId] ?? post.fromBuddyId}
-          </Link>
+          <PostAuthor author={post.author} buddyNames={buddyNames} />
           {post.senderConversationId && <> · conv {post.senderConversationId.slice(0, 8)}</>}
           {' · '}
           {new Date(post.createdAt).toLocaleString()}
@@ -311,7 +346,7 @@ function ChannelComposer({
             method: 'POST',
             headers: { 'content-type': 'application/json' },
             body: JSON.stringify({
-              buddyId,
+              author: { kind: 'buddy', buddyId },
               key: newId(),
               purpose: purpose.trim(),
               body: body.trim(),

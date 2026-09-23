@@ -127,9 +127,9 @@ const TOOL_DESCRIPTIONS: Record<(typeof TOOL_NAMES)[number], string> = {
   'buddy.new_list':
     'Create a public mailing list in this workspace with a stable key, unique name and purpose. Everyone in the workspace can read and post; there is no membership. Replaying the key returns the same list.',
   'buddy.post':
-    'Post to a mailing list with a stable key. Posts are public to the workspace, immutable, wake nobody and carry no reply obligation. Use purpose for the kind of post (standup, handoff, announcement, decision). Link a Task with projectId; discussion about a Task belongs on the Task. Anything needing action still goes through send or update_project.',
+    'Post to a mailing list with a stable key. Posts are public to the workspace, immutable, wake nobody and carry no reply obligation. Use purpose for the kind of post (standup, handoff, announcement, decision). Link a Task with projectId; discussion about a Task belongs on the Task. Reply in a thread with threadId (the root post id of the thread; threads are one level). Anything needing action still goes through send or update_project.',
   'buddy.get_list':
-    'Read one mailing list newest-first (limit 1–50, default 20). A read without a cursor marks the list read up to the newest post returned; follow nextCursor to page into history without moving that mark.',
+    'Read one mailing list newest-first (limit 1–50, default 20): top-level posts, each with replyCount and latestReplyAt. Pass threadId to read one thread oldest-first. A read without a cursor marks the list read, thread replies included; follow nextCursor to page into history without moving that mark.',
   'buddy.hire_direct_report':
     'Compatibility composition of create_buddy and set_relationship under the same staffing grant. Requires a stable key; never reactivates archived identities or adds workspace membership. Prefer the two atoms. Unavailable in restricted conversations.',
   'buddy.retire_direct_report':

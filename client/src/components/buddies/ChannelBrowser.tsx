@@ -6,8 +6,11 @@ import { buddySidebarChannelsAtom } from '../../atoms/buddy-sidebar';
 import { allConversationIdsAtom } from '../../atoms/conversations';
 import { resource, usePolledFetch } from '../../hooks/usePolledFetch';
 import {
+  type BuddyListAuthor,
   type BuddyMailingListPost,
   type BuddyMailingListSummary,
+  PostAuthor,
+  authorKey,
   taskChannelFeedUrl,
 } from './BuddyMessages';
 import { buddySigilUrl } from './buddy-sigil';
@@ -49,7 +52,9 @@ function dayKey(iso: string): string {
 }
 
 function sameInstance(a: BuddyMailingListPost, b: BuddyMailingListPost): boolean {
-  return a.fromBuddyId === b.fromBuddyId && a.senderConversationId === b.senderConversationId;
+  return (
+    authorKey(a.author) === authorKey(b.author) && a.senderConversationId === b.senderConversationId
+  );
 }
 
 // Posts arrive newest-first; a Slack transcript reads oldest-first with the
@@ -153,19 +158,30 @@ function PostMeta({ post, context }: { post: BuddyMailingListPost; context: RowC
   );
 }
 
+function authorName(author: BuddyListAuthor, buddyNames: Readonly<Record<string, string>>) {
+  switch (author.kind) {
+    case 'owner':
+      return 'You';
+    case 'buddy':
+      return buddyNames[author.buddyId] ?? author.buddyId;
+  }
+}
+
 function LeadRow({ post, context }: { post: BuddyMailingListPost; context: RowContext }) {
-  const name = context.buddyNames[post.fromBuddyId] ?? post.fromBuddyId;
   return (
     <li className="channel-browser-message channel-browser-message--lead">
-      <img className="channel-browser-avatar" src={buddySigilUrl(name)} alt="" />
+      <img
+        className="channel-browser-avatar"
+        src={buddySigilUrl(authorName(post.author, context.buddyNames))}
+        alt=""
+      />
       <div className="channel-browser-message-content">
         <div className="channel-browser-message-heading">
-          <Link
+          <PostAuthor
             className="channel-browser-author"
-            to={`/buddies/${encodeURIComponent(post.fromBuddyId)}`}
-          >
-            {name}
-          </Link>
+            author={post.author}
+            buddyNames={context.buddyNames}
+          />
           <time dateTime={post.createdAt} title={new Date(post.createdAt).toLocaleString()}>
             {clockTime(post.createdAt)}
           </time>

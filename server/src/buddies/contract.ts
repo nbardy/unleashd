@@ -151,12 +151,16 @@ interface BuddyLegacyWorkItem {
   project_id: string;
 }
 
+// Author = Buddy | Owner. The owner writes as themself; only host (owner HTTP)
+// code constructs the owner variant, never employee MCP.
+export type BuddyListAuthor = { kind: 'buddy'; buddyId: string } | { kind: 'owner' };
+
 export interface BuddyMailingList {
   id: string;
   workspaceId: string;
   name: string;
   purpose: string;
-  createdByBuddyId: string;
+  createdBy: BuddyListAuthor;
   createdAt: string;
 }
 
@@ -169,7 +173,11 @@ export interface BuddyMailingListPost {
   id: string;
   listId: string;
   workspaceId: string;
-  fromBuddyId: string;
+  author: BuddyListAuthor;
+  // null: a top-level channel post. Threads are one level deep.
+  threadRootId: string | null;
+  replyCount: number;
+  latestReplyAt: string | null;
   purpose: string;
   body: string;
   evidence: string[];
@@ -492,7 +500,7 @@ export interface BuddiesStorePort {
   updateProject(id: string, changes: Record<string, unknown>): unknown;
   createList(input: {
     workspace: string;
-    buddy: string;
+    author: BuddyListAuthor;
     key: string;
     name: string;
     purpose: string;
@@ -501,12 +509,13 @@ export interface BuddiesStorePort {
   listLists(input: { workspace: string }): BuddyMailingListSummary[];
   createPost(input: {
     list: string;
-    buddy: string;
+    author: BuddyListAuthor;
     key: string;
     purpose: string;
     body: string;
     evidence?: string[];
     project?: string | null;
+    threadRoot?: string | null;
     conversationId?: string | null;
     runId?: string | null;
   }): { post: BuddyMailingListPost };
@@ -517,6 +526,12 @@ export interface BuddiesStorePort {
     limit?: number;
     offset?: number;
   }): BuddyMailingListPost[];
+  getPost(id: string): BuddyMailingListPost | null;
+  listThread(input: { root: string; limit?: number }): {
+    root: BuddyMailingListPost;
+    replies: BuddyMailingListPost[];
+  };
+  newestListPost(input: { list: string }): BuddyMailingListPost | null;
   listUnread(input: { buddy: string; workspace: string }): BuddyMailingListUnread[];
   markListRead(input: { buddy: string; list: string; post: string }): unknown;
   createAutomation(input: Record<string, unknown>): BuddyAutomation;
