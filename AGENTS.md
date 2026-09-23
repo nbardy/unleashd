@@ -108,6 +108,7 @@ requirements to rebuild omitted machinery.
 | Buddy team setup and operation: readiness, preview/apply, work and returns | `product/buddies/TEAM_OPERATOR_GUIDE.md` |
 | Direct reports: owner-granted staffing, relationships, retirement, threat model | `product/buddies/PLANNING_SUB_BUDDIES.md` |
 | Buddy memory: dense revisions, notes, capture, recall | `product/buddies/PLANNING_MEMORY.md` |
+| Channels: owner posts, @mention replies, threads, markdown media, Task chips | `product/buddies/CHANNEL_CONVERSATIONS_2026-09-23.md` |
 | Memory reviewer benchmark: rerun, grade, extend, historical evidence (read before changing reviewer prompts/tools) | [Memory curation benchmark](server/test/fixtures/memory-curation/README.md) |
 | New provider integration protocol | `docs/agent_client_spec.md` |
 
@@ -162,6 +163,14 @@ requirements to rebuild omitted machinery.
   help. Same root cause as `git diff > x.patch` capturing a hunk-less summary —
   rtk output is for reading, never for capturing or citing. See
   `agent_notes/2026-08-22_memory-implementation-handoff_buddies-development-lead.md`.
+- Never run the Buddies package CLI (`bin/buddies.js`, from `~/git/buddies` or a
+  package worktree) without `BUDDIES_HOME=<tmpdir>`. It ignores unknown flags —
+  `buddies init --db /tmp/x.sqlite` opened the LIVE `~/.buddies/buddies.sqlite`
+  on 2026-09-23 and ran an unvendored v33 migration in place. The running
+  server kept its v32 code in memory, so every Buddy `post`/`new_list` write
+  failed on the new NOT NULL column until the app was vendored and restarted,
+  and a v32 build refuses to open a v33 database at all (`CURRENT_SCHEMA_VERSION`
+  ceiling). Package tests are safe: they set `BUDDIES_HOME` themselves.
 - When source is broken, `server/dist/*.js` (and `shared/dist/`) is the oracle
   for the author's prior intent — check it before git archaeology.
 - The formatter is **biome** (`pnpm format`, `pnpm lint:fix`; config in

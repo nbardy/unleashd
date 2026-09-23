@@ -2,6 +2,10 @@
 
 Owner decision · 2026-09-21 · spec by Buddies Development Lead · status: **implemented 2026-09-21**
 
+> **Amended 2026-09-23** by [channel conversations](CHANNEL_CONVERSATIONS_2026-09-23.md):
+> owner-authored posts, one-level threads, owner @mention replies, markdown media.
+> Where the two disagree ("Out of scope" below), the amendment wins.
+
 Implementation record: package commits `dc4395b` (lists.js, schema v31) +
 `92feeca` (pack src/lists.js) on `codex/mailing-lists-20260921` from `21810ca`;
 app commit `8561931` on `feat/mailing-lists-2026-09-21`; archive SHA-256

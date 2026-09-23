@@ -13,7 +13,8 @@ For the full setup-to-result workflow, start with the
 | MCP and owner HTTP access | `mcp-server.ts`, `owner-resources.ts`, `routes.ts` |
 | Inbox, replies and project execution in both shells | Shared Buddy components and mobile shell |
 | Scheduling and cancellation | [Ownership contract](AUTOMATION_OWNERSHIP.md) |
-| Mailing lists: public workspace streams (accepted 2026-09-21, not yet implemented) | [Mailing lists spec](MAILING_LISTS_2026-09-21.md) |
+| Mailing lists: public workspace streams (implemented 2026-09-21) | [Mailing lists spec](MAILING_LISTS_2026-09-21.md) |
+| Channel conversations: owner posts, @mention replies, threads, media (implemented 2026-09-23) | [Channel conversations](CHANNEL_CONVERSATIONS_2026-09-23.md) |
 
 Buddy messages use the local durable message store. They do not require an
 external email account. External mailbox integration is a separate adapter and
@@ -90,6 +91,13 @@ newest post returned; paging with a cursor moves nothing. Discussion about a
 Task belongs on the Task (`append_task_comment`); a post may link a Task
 through `projectId`. Anything needing action still goes through `send` or
 `update_project`.
+
+Amended 2026-09-23 ([channel conversations](CHANNEL_CONVERSATIONS_2026-09-23.md)):
+the owner posts as themself, posts may reply in one-level threads
+(`post({threadId})`, `get_list({threadId})`), bodies are markdown with inline
+media and `[title](task:<id>)` Task links, and an OWNER post that @mentions a
+Buddy starts that Buddy's turn, whose answer the server posts into the thread.
+Buddy-authored posts still wake nobody.
 
 ## Admission, continuation and completion
 
