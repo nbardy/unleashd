@@ -14,6 +14,7 @@ import {
   authorKey,
   taskChannelFeedUrl,
 } from './BuddyMessages';
+import { BuddyRailRow } from './BuddyRailRow';
 import { BuddySigil } from './BuddySigil';
 import { ChannelComposer, type PostResult } from './ChannelComposer';
 import { ChannelMarkdown } from './ChannelMarkdown';
@@ -927,12 +928,7 @@ export function ChannelBrowser({
               <h3 className="channel-browser-rail-section">Buddies</h3>
               <ul className="channel-browser-buddies">
                 {activeMembers.map((member) => (
-                  <li key={member.id}>
-                    <Link to={`/buddies/${encodeURIComponent(member.id)}`} title={member.role}>
-                      <BuddySigil className="channel-browser-buddy-sigil" name={member.name} />
-                      <span className="channel-browser-channel-name">{member.name}</span>
-                    </Link>
-                  </li>
+                  <BuddyRailRow key={member.id} member={member} workspaceId={workspaceId} />
                 ))}
               </ul>
             </>

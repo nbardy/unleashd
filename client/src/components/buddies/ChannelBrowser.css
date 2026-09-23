@@ -178,7 +178,7 @@
 }
 
 .channel-browser-channels button,
-.channel-browser-buddies a {
+.channel-browser-buddy-link {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -199,7 +199,7 @@
 }
 
 .channel-browser-channels button:hover,
-.channel-browser-buddies a:hover {
+.channel-browser-buddy-link:hover {
   background: color-mix(in srgb, var(--text-emphasis) 6%, transparent);
   color: var(--text-emphasis);
 }
@@ -546,6 +546,80 @@ a.channel-browser-instance:hover {
 }
 
 /* ── Rail: section header with add, Buddies, new-channel form ──────── */
+
+/* A Buddy row: name link fills the row; DM / Wake appear on hover (and on
+   keyboard focus) over its right edge; wake progress sits just left of them. */
+.channel-browser-buddy {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.channel-browser-buddy-link {
+  flex: 1;
+  min-width: 0;
+}
+
+.channel-browser-buddy[data-failed] .channel-browser-channel-name {
+  color: var(--theme-warning);
+}
+
+.channel-browser-buddy-actions {
+  position: absolute;
+  top: 50%;
+  right: 4px;
+  display: flex;
+  gap: 2px;
+  transform: translateY(-50%);
+  visibility: hidden;
+}
+
+.channel-browser-buddy:hover .channel-browser-buddy-actions,
+.channel-browser-buddy:focus-within .channel-browser-buddy-actions {
+  visibility: visible;
+}
+
+.channel-browser-buddy-actions button {
+  display: grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: 6px;
+  background: var(--bg-sidebar);
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.channel-browser-buddy-actions button:hover {
+  background: color-mix(in srgb, var(--text-emphasis) 10%, var(--bg-sidebar));
+  color: var(--text-bright);
+}
+
+.channel-browser-buddy-actions button:disabled {
+  opacity: 0.5;
+  cursor: progress;
+}
+
+.channel-browser-buddy-status {
+  position: absolute;
+  right: 12px;
+  display: inline-flex;
+  align-items: center;
+  color: var(--text-muted);
+  pointer-events: none;
+}
+
+.channel-browser-buddy:hover .channel-browser-buddy-status {
+  visibility: hidden;
+}
+
+a.channel-browser-buddy-done {
+  color: var(--theme-success);
+  font-size: 12px;
+  text-decoration: none;
+  pointer-events: auto;
+}
 
 .channel-browser-rail-section-row {
   display: flex;
