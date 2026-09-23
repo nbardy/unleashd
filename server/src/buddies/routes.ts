@@ -30,6 +30,7 @@ import {
 } from '@unleashd/shared';
 import type { Express, Request, Response } from 'express';
 import { z } from 'zod';
+import { ListAuthorSchema } from './channel-routes';
 import type { BuddiesStorePort, BuddyAutomation, BuddyAutomationRun } from './contract';
 import { coordinationStore } from './coordination-store';
 import { knowledgeStore, recallKnowledge, scopedDocumentOperation, scopedNote } from './knowledge';
@@ -53,11 +54,6 @@ import { readBuddySoul, updateBuddySoul } from './soul';
 import { getTeamCapabilities, messageExecution, teamStore } from './team-access';
 import { observeBuddyTeam } from './team-observation';
 import { visibleBuddyPayload } from './visibility';
-
-const ListAuthorSchema = z.discriminatedUnion('kind', [
-  z.object({ kind: z.literal('owner') }).strict(),
-  z.object({ kind: z.literal('buddy'), buddyId: z.string().min(1) }).strict(),
-]);
 
 export interface BuddyConversationView {
   id: string;
@@ -790,41 +786,8 @@ export function registerBuddyRoutes(app: Express, dependencies: BuddyRouteDepend
     });
   });
 
-  route.post('/api/buddies/lists/:listId/posts', 400, async (req, res) => {
-    const buddies = await getStore();
-    const list = buddies.getList(req.params.listId);
-    if (!list) {
-      res.status(404).json({ error: 'Mailing list not found' });
-      return;
-    }
-    const input = z
-      .object({
-        author: ListAuthorSchema,
-        key: z.string().trim().min(1).max(200),
-        purpose: z.string().trim().min(1).max(200),
-        body: z.string().trim().min(1).max(32000),
-        evidence: z.array(z.string().trim().min(1).max(4000)).max(32).optional(),
-        projectId: z.string().min(1).nullable().optional(),
-        threadRootId: z.string().min(1).nullable().optional(),
-      })
-      .strict()
-      .parse(req.body);
-    res.status(201).json(
-      buddies.createPost({
-        list: list.id,
-        author: input.author,
-        key: input.key,
-        purpose: input.purpose,
-        body: input.body,
-        evidence: input.evidence ?? [],
-        project: input.projectId ?? null,
-        threadRoot: input.threadRootId ?? null,
-        // Owner HTTP posts carry no conversation context: provenance stays null.
-        conversationId: null,
-        runId: null,
-      })
-    );
-  });
+  // POST /api/buddies/lists/:listId/posts lives in channel-routes.ts: owner
+  // posts canonicalize media and dispatch @mentions, which need the responder.
 
   // Task channel feed: newest-first posts across every workspace list linked
   // to one Task. Owner reads move no read mark; Buddy MCP reads keep the

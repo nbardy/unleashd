@@ -3,6 +3,7 @@ import { createRequire } from 'node:module';
 import path from 'node:path';
 import type { McpServerSpec } from '@nbardy/agent-cli';
 import type { BuddyContext } from '@unleashd/shared';
+import { APP_DATA_DIR_ENV, appDataDirectory } from '../app-data';
 
 export const BUDDY_MCP_SERVER_NAME = 'unleashd_buddy';
 export const BUDDY_AUTOMATION_CLAIM_TOKEN_ENV = 'UNLEASHD_BUDDY_AUTOMATION_CLAIM_TOKEN';
@@ -100,6 +101,8 @@ export function buddyMcpServers(
       env: {
         ...launch.env,
         ...controlEnv,
+        // Channel media lands under the server's uploads directory; see app-data.ts.
+        [APP_DATA_DIR_ENV]: appDataDirectory(),
         ...(context.knowledgeScope
           ? { UNLEASHD_BUDDY_KNOWLEDGE_SCOPE: JSON.stringify(context.knowledgeScope) }
           : {}),

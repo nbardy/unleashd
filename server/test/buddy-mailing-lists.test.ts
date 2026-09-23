@@ -10,6 +10,8 @@ import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { BuddiesStore } from '@nbardy/buddies';
 import express from 'express';
+import { createChannelResponder } from '../src/buddies/channel-responder';
+import { registerChannelRoutes } from '../src/buddies/channel-routes';
 import type { BuddiesStorePort } from '../src/buddies/contract';
 import { coordinationStore } from '../src/buddies/coordination-store';
 import { BUDDY_AUTOMATION_CLAIM_TOKEN_ENV, resolveBuddyMcpLaunch } from '../src/buddies/mcp-config';
@@ -110,6 +112,26 @@ function routeTestApp(store: BuddiesStorePort) {
     getNextAutomationRunAt: () => new Date().toISOString(),
     createId: () => 'test-id',
     isConversationDeleted: async () => false,
+  });
+  registerChannelRoutes(app, {
+    getStore: async () => store,
+    uploadsRoot: mkdtempSync(join(tmpdir(), 'lists-uploads-')),
+    sendError(response, error, fallbackStatus) {
+      response
+        .status(fallbackStatus)
+        .json({ error: error instanceof Error ? error.message : String(error) });
+    },
+    responder: createChannelResponder({
+      getStore: async () => store,
+      getConversation: () => undefined,
+      ensureConversationReady: async () => {
+        throw new Error('not used');
+      },
+      createConversation: async () => {
+        throw new Error('not used');
+      },
+      uploadsRoot: () => tmpdir(),
+    }),
   });
   return app;
 }

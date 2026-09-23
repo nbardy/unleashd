@@ -16,7 +16,9 @@ import {
   formatTeamConfigurationProposal,
 } from '@unleashd/shared';
 import { z } from 'zod';
+import { uploadsDirectory } from '../app-data';
 import { isReadOnlyBuddyOperation, notifyBuddiesChanged } from './change-feed';
+import { requireCanonicalPostMedia } from './channel-media';
 import {
   type BuddiesStorePort,
   type BuddyAutomation,
@@ -1697,7 +1699,12 @@ export class BuddyOperationsService {
               author: { kind: 'buddy', buddyId: this.context.buddyId },
               key: parsed.key,
               purpose: parsed.purpose,
-              body: parsed.body,
+              // Local ![](path) media is copied into the channel before the
+              // write; a bad reference rejects the post so the Buddy can fix it.
+              body: requireCanonicalPostMedia(parsed.body, {
+                uploadsRoot: uploadsDirectory(),
+                listId: list.id,
+              }),
               evidence: parsed.evidence,
               project: parsed.projectId ?? null,
               threadRoot: parsed.threadId ?? null,

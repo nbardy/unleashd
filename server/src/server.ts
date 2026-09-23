@@ -1,6 +1,5 @@
 import { execFileSync, execSync } from 'node:child_process';
 import http from 'node:http';
-import os from 'node:os';
 import path from 'node:path';
 import type { Provider as ProviderName } from '@unleashd/shared';
 import {
@@ -20,6 +19,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { WebSocketServer } from 'ws';
 import { loadAllConversations, pollForChanges } from './adapters/loader';
 import { NormalizedSessionCache } from './adapters/session-cache';
+import { appDataDirectory, uploadsDirectory } from './app-data';
 import { createConversationApplicationContext } from './application/context';
 import { registerAuthRoutes } from './auth/express';
 import { authorizeUpgrade } from './auth/gate';
@@ -76,6 +76,8 @@ import { registerConversationWebSocket } from './transport/conversation-websocke
 import { auditLocalAgents } from './audit.js';
 import { BuddyBuilderService, type BuddyBuilderStore } from './buddies/builder';
 import { onBuddiesChanged, registerBuddyMutationFeed } from './buddies/change-feed';
+import { createChannelResponder } from './buddies/channel-responder';
+import { registerChannelRoutes } from './buddies/channel-routes';
 import { BuddyControlServer } from './buddies/control-server';
 import {
   createBuddyDispatchService,
@@ -94,9 +96,7 @@ const VERBOSE = process.env.VERBOSE === '1' || process.argv.includes('--verbose'
 
 const app = express();
 const server = http.createServer(app);
-const APP_DATA_DIR = path.resolve(
-  process.env.UNLEASHD_DATA_DIR ?? path.join(os.homedir(), '.agent-viewer')
-);
+const APP_DATA_DIR = appDataDirectory();
 const LISTEN_HOST = resolveListenHost();
 
 const authResolution = resolveAuthPolicy({
@@ -435,7 +435,7 @@ app.use((request, response, next) => {
   next();
 });
 
-const UPLOADS_DIR = path.join(APP_DATA_DIR, 'uploads');
+const UPLOADS_DIR = uploadsDirectory();
 registerUploadRoutes(app, UPLOADS_DIR);
 registerCoreRoutes(app, () => startupAuditResults);
 registerConversationRoutes(app, (id) => conversations.get(id), {
@@ -503,6 +503,21 @@ registerBuddyRoutes(app, {
   // tombstone hides a link row.
   isConversationDeleted: async (conversationId) =>
     (await conversationConfigService.getRecord(conversationId))?.status === 'deleted',
+});
+
+registerChannelRoutes(app, {
+  getStore: getBuddiesStore,
+  uploadsRoot: UPLOADS_DIR,
+  sendError: sendBuddiesError,
+  responder: createChannelResponder({
+    getStore: getBuddiesStore,
+    getConversation: (id) => applicationContext.registry.get(id),
+    ensureConversationReady: buddyCreationService.ensureConversationReady,
+    // Owner-origin creation: the mention IS owner input, so the thread gets
+    // owner-thread knowledge scope and owner-control MCP, like a talk() chat.
+    createConversation: (input) => buddyCreationService.createServerBuddyConversation(input),
+    uploadsRoot: () => UPLOADS_DIR,
+  }),
 });
 
 registerSearchRoutes(

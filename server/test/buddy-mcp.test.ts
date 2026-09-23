@@ -8,6 +8,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { BuddiesStore } from '@nbardy/buddies';
+import { appDataDirectory } from '../src/app-data';
 import type { BuddiesStorePort } from '../src/buddies/contract';
 import {
   buddyBuilderMcpServers,
@@ -231,6 +232,8 @@ test('Buddy MCP specification binds trusted context outside tool input', () => {
       env: {
         UNLEASHD_BUDDY_CONTROL_URL: 'http://127.0.0.1:9999',
         UNLEASHD_BUDDY_CONTROL_TOKEN: 'scoped-token',
+        // The child copies channel media under the server's uploads root.
+        UNLEASHD_DATA_DIR: appDataDirectory(),
       },
       required: true,
     },
