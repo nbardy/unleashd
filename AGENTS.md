@@ -151,9 +151,8 @@ requirements to rebuild omitted machinery.
   `tsc --noEmit` checks ZERO files and exits 0 on a broken tree — it reported
   success on three `ReferenceError`-grade unresolved identifiers on 2026-08-20.
   `vite build` does not catch them either (esbuild strips types, no scope
-  analysis). `pnpm typecheck` (dev-supervisor) runs `tsc -b`; when the
-  supervisor lock is held by another session, run `pnpm -C client exec tsc -b`
-  directly rather than falling back to `--noEmit`.
+  analysis). `pnpm typecheck` runs `tsc -b` and takes no lock, so it is safe
+  while a dev runtime runs; never fall back to `--noEmit`.
 - Recursive `rg` output is rewritten by rtk and is NOT safe to cite. The hook
   turns directory-target searches into `rtk rg`, which substitutes tokens
   silently (`compact_memory` reads back as `n_memory`, `compactProject` as

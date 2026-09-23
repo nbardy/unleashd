@@ -14,7 +14,9 @@
 // node_modules, which the old hand-written watch list did not cover, and the
 // backend kept serving the v32 post shape for hours.
 import { spawn } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import { realpathSync, watch } from 'node:fs';
+import { readFile } from 'node:fs/promises';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -24,6 +26,17 @@ const SETTLE_MS = 300;
 const INITIAL_BACKOFF_MS = 1_000;
 const MAX_BACKOFF_MS = 30_000;
 const HEALTHY_UPTIME_MS = 30_000;
+
+async function digest(file) {
+  try {
+    return createHash('sha1')
+      .update(await readFile(file))
+      .digest('base64');
+  } catch (error) {
+    if (error.code === 'ENOENT') return 'missing';
+    throw error;
+  }
+}
 
 function describeExit(code, signal) {
   return signal ? `signal ${signal}` : `exit ${code}`;
@@ -66,7 +79,8 @@ export function createBackendRunner({
 }) {
   const root = realpathSync(watchRoot);
   let state = { kind: 'down', timer: undefined };
-  let loaded = new Set();
+  // Loaded file → digest of the content the backend loaded.
+  let loaded = new Map();
   let backoffMs = initialBackoffMs;
   let settleTimer;
   let watcher;
@@ -80,13 +94,25 @@ export function createBackendRunner({
     for (const key of ['watch:require', 'watch:import']) {
       for (const entry of message?.[key] ?? []) {
         if (typeof entry !== 'string') continue;
-        loaded.add(entry.startsWith('file:') ? fileURLToPath(entry) : entry);
+        const file = entry.startsWith('file:') ? fileURLToPath(entry) : entry;
+        loaded.set(file, digest(file));
       }
     }
   }
 
+  // A clean build (pnpm typecheck / build) rewrites shared/dist byte-for-byte;
+  // only a real content change may restart the backend. 'missing' is a file
+  // mid-rewrite: the write that completes it fires its own event.
+  async function onFileEvent(file) {
+    const current = await digest(file);
+    if (current === 'missing' || current === (await loaded.get(file))) return;
+    loaded.set(file, current);
+    clearTimeout(settleTimer);
+    settleTimer = setTimeout(() => void onSourceChanged(), settleMs);
+  }
+
   function spawnBackend() {
-    loaded = new Set();
+    loaded = new Map();
     const child = spawn(command, args, {
       cwd,
       env: { ...process.env, ...env, WATCH_REPORT_DEPENDENCIES: '1' },
@@ -155,9 +181,8 @@ export function createBackendRunner({
 
   function start() {
     watcher = watch(root, { recursive: true }, (_event, filename) => {
-      if (!filename || !loaded.has(path.join(root, filename))) return;
-      clearTimeout(settleTimer);
-      settleTimer = setTimeout(() => void onSourceChanged(), settleMs);
+      const file = filename && path.join(root, filename);
+      if (file && loaded.has(file)) void onFileEvent(file);
     });
     spawnBackend();
   }

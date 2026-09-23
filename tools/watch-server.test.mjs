@@ -79,6 +79,19 @@ test('editing a loaded node_modules package reloads the backend', async (t) => {
   assert.equal(second.pkg, 2);
 });
 
+test('rewriting loaded files with identical content does not restart the backend', async (t) => {
+  // `pnpm typecheck` and `pnpm build` clean-rebuild shared/dist byte-for-byte
+  // while dev runs; each rebuild must not cost a backend restart.
+  const { root, runner, boots } = fixture(t);
+  runner.start();
+  await until(() => boots().length === 1);
+  const file = path.join(root, 'node_modules', 'pkg', 'index.js');
+  rmSync(file);
+  writeFileSync(file, 'module.exports = { value: 1 };\n');
+  await new Promise((resolve) => setTimeout(resolve, 600));
+  assert.equal(boots().length, 1);
+});
+
 test('code that does not build keeps the current backend until it is fixed', async (t) => {
   const { root, runner, boots } = fixture(t);
   runner.start();

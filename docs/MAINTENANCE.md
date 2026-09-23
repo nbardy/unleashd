@@ -19,9 +19,9 @@ which boundaries need coverage and how client component tests run.
 | Published package or public API | `pnpm build`, then `pnpm test:package` and `pnpm test:api` |
 
 `pnpm test` runs the full suite defined in [package.json](../package.json).
-If another session holds the supervisor lock, check the client directly with
-`pnpm -C client exec tsc -b`. The client solution config requires `tsc -b`;
-`tsc --noEmit` at the client root checks no source files.
+`pnpm typecheck` and `pnpm build` take no lock and are safe while `pnpm dev`
+runs; only dev tasks claim the one-runtime lock. The client solution config
+requires `tsc -b`; `tsc --noEmit` at the client root checks no source files.
 
 Use Biome for formatting and linting, scoped to the files you changed. The root
 configuration excludes `vendor/`; keep provider submodule changes within its
