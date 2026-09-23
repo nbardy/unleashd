@@ -26,6 +26,13 @@ export interface ShutdownOptions {
   flushGraceMs: number;
 }
 
+// A source reload NEVER interrupts a running turn. This is what lets agents
+// develop Unleashd from inside Unleashd: they edit the server that runs them,
+// and the reload waits for their turns to finish instead of killing them. The
+// old backend stays fully available and owns every provider stream until work
+// is idle, then exits and tools/watch-server.mjs starts the new one. Do not add
+// a reload deadline or interrupt path here; only explicit shutdown
+// (SIGINT/SIGTERM, dev:replace) may stop running turns.
 const DRAIN_POLL_INTERVAL_MS = 500;
 
 export type ShutdownState = 'starting' | 'idle' | 'reloading' | 'shutting_down' | 'exiting';

@@ -1,6 +1,12 @@
 #!/usr/bin/env node
 // Keeps exactly one dev backend running the code that is on disk.
 //
+// A reload must never break agent runs the harness launched: agents build
+// Unleashd with Unleashd, so their own edits trigger these reloads. The runner
+// only ASKS the backend to reload; the backend finishes every active turn first
+// (server/src/lifecycle/shutdown.ts), and code that does not build never
+// replaces a working backend.
+//
 // State = Running(child) ⊕ Draining(child) ⊕ Down(retry timer) ⊕ Stopping(child) ⊕ Stopped
 //   source change → Running:  build-check, then ask the backend to drain → Draining
 //                   Down:     build-check, then start now
