@@ -46,6 +46,8 @@ import { formatTimeAgo, getConversationLastActivity, getMinutesElapsed } from '.
 import { ConversationConfigPicker } from './ConversationConfigPicker';
 import { PathAutocomplete } from './PathAutocomplete';
 import { SearchPalette } from './SearchPalette';
+import { DmIcon, WakeIcon, WakeIndicator } from './buddies/WakeIndicator';
+import { useBuddyDirectActions } from './buddies/buddy-direct-actions';
 import { buddyTabPath } from './buddies/buddy-tabs';
 import { createBuddyViaBuilder } from './buddies/create-buddy-builder';
 import { getConversationTitle } from './conversation-title';
@@ -760,6 +762,7 @@ export function Sidebar() {
                                 {item.buddyName}
                               </span>
                               <BuddyRunningStatus item={item} />
+                              <SidebarBuddyActions item={item} />
                             </div>
                             <>
                               {visibleConvs.length > 0 ? (
@@ -1041,6 +1044,60 @@ export function Sidebar() {
         }
       </div>
     </div>
+  );
+}
+
+// DM + Wake on hover, after the running counts so those links stay clickable.
+// DM opens the ongoing owner chat with this Buddy (history kept); Wake has it
+// catch up on the workspace channels inside that chat (buddy-direct-actions.ts).
+function SidebarBuddyActions({ item }: { item: BuddySidebarItemData }) {
+  const navigate = useNavigate();
+  const direct = useBuddyDirectActions(item.buddyId, item.workspaceId);
+  const { action } = direct;
+  return (
+    <>
+      {direct.woken && (
+        <WakeIndicator
+          key={direct.woken.attempt}
+          conversationId={direct.woken.conversationId}
+          name={item.buddyName}
+          className="sidebar-buddy-wake"
+          doneClassName="sidebar-buddy-wake-done"
+        />
+      )}
+      <span
+        className="sidebar-buddy-actions"
+        data-failed={action.kind === 'failed' || undefined}
+        title={action.kind === 'failed' ? action.message : undefined}
+      >
+        <button
+          type="button"
+          aria-label={`Message ${item.buddyName}`}
+          title={`Message ${item.buddyName}`}
+          disabled={action.kind === 'pending'}
+          onClick={(event) => {
+            event.stopPropagation();
+            direct.openDm((conversationId) =>
+              navigate(`/chat/${encodeURIComponent(conversationId)}`)
+            );
+          }}
+        >
+          <DmIcon />
+        </button>
+        <button
+          type="button"
+          aria-label={`Wake ${item.buddyName}`}
+          title={`Wake ${item.buddyName}: catch up on the channels and act`}
+          disabled={action.kind === 'pending'}
+          onClick={(event) => {
+            event.stopPropagation();
+            direct.wake();
+          }}
+        >
+          <WakeIcon />
+        </button>
+      </span>
+    </>
   );
 }
 

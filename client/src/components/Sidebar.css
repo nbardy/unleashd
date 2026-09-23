@@ -729,6 +729,66 @@
   transform: translateY(-50%);
 }
 
+/* DM + Wake: hidden until the row is hovered or focused, then take their
+   width after the running counts (the name ellipsizes a little further).
+   z-index lifts them above .sidebar-buddy-row-link, the row's click overlay. */
+.sidebar-buddy-actions {
+  position: relative;
+  z-index: 2;
+  display: none;
+  flex: none;
+  gap: 2px;
+  margin-left: 4px;
+}
+
+.folder-group-header--buddy:hover .sidebar-buddy-actions,
+.folder-group-header--buddy:focus-within .sidebar-buddy-actions {
+  display: inline-flex;
+}
+
+.sidebar-buddy-actions button {
+  display: grid;
+  place-items: center;
+  width: 20px;
+  height: 20px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--ui-radius);
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.sidebar-buddy-actions button:hover {
+  background: color-mix(in srgb, var(--text-emphasis) 10%, transparent);
+  color: var(--text-emphasis);
+}
+
+.sidebar-buddy-actions button:disabled {
+  opacity: 0.5;
+  cursor: progress;
+}
+
+.sidebar-buddy-actions[data-failed] button {
+  color: var(--danger-bright);
+}
+
+.sidebar-buddy-wake {
+  position: relative;
+  z-index: 2;
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  margin-left: 6px;
+  color: var(--text-muted);
+}
+
+a.sidebar-buddy-wake-done {
+  color: var(--success-bright);
+  font-size: 11px;
+  text-decoration: none;
+}
+
 .sidebar-buddy-running {
   display: inline-flex;
   align-items: center;
