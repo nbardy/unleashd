@@ -3,7 +3,8 @@
 // There are no style categories. A name hashes to a Gaussian latent z ∈ R^32;
 // a FIXED decoder expands z into every parameter the renderer takes: palette,
 // symmetry, warp, the weights of a small CPPN (compositional pattern-producing
-// network), posterization, contours, figure mask and brush strokes. Nearby
+// network), posterization, contours, the figure and its inner pattern, and
+// brush strokes. Nearby
 // latents draw nearby pictures, so any latent source works — a text embedding
 // of the Buddy's role could replace `nameLatent` without touching the decoder.
 //
@@ -16,7 +17,7 @@
 // decoder, its seed, or the ORDER of `take()` calls redraws every Buddy — bump
 // SIGIL_VERSION when you do it on purpose.
 
-export const SIGIL_VERSION = 3;
+export const SIGIL_VERSION = 4;
 export const LATENT_DIM = 32;
 
 export type Latent = readonly number[];
@@ -48,7 +49,6 @@ export type SigilGenome = {
   // weighted toward `profileAngle` so bumps gather on one side like a face
   // in profile (brow, nose, chin).
   mask: {
-    amount: number;
     radius: number;
     kernel: number;
     softness: number;
@@ -57,6 +57,21 @@ export type SigilGenome = {
     warpPhase: number;
     profileAngle: number;
     profileBias: number; // 0 = warp all around … 1 = warp on the profile side only
+  };
+  // Two patterns per sigil: the main field fills OUTSIDE the figure; INSIDE is
+  // an almost-solid silhouette carrying a second, independent pattern faded to
+  // `strength`, so the figure reads as a shape first and a texture second.
+  inner: {
+    // Kept near the ground end so the silhouette contrasts with the pattern;
+    // mid-palette fills dissolved into it.
+    fill: number; // 0 = the ground colour (a cut-out) … 1 = a palette ink
+    fillTone: number; // palette position of that ink
+    strength: number; // how much of the inner pattern shows through
+    zoom: number;
+    rotation: number;
+    offsetX: number;
+    offsetY: number;
+    mix: { cppn: number; rings: number; noise: number; bands: number }; // sums to 1
   };
   finish: { grain: number; vignette: number };
   strokes: {
@@ -133,7 +148,8 @@ export function lerpLatent(a: Latent, b: Latent, t: number): Latent {
 // The fixed decoder: DECODER_ROWS seeded random directions in latent space.
 // Each parameter reads one row's projection, so all 32 dimensions shape it.
 const CPPN_WEIGHT_COUNT = 6 * 8 + 9 * 8 + 9 + 8;
-const DECODER_ROWS = 64 + CPPN_WEIGHT_COUNT;
+const NAMED_ROWS = 80;
+const DECODER_ROWS = NAMED_ROWS + CPPN_WEIGHT_COUNT;
 const DECODER = (() => {
   const next = gaussianStream(hash32('buddy-sigil-decoder-v2'));
   const scale = 1 / Math.sqrt(LATENT_DIM);
@@ -144,6 +160,17 @@ const DECODER = (() => {
 
 const sig = (x: number) => 1 / (1 + Math.exp(-x));
 const lerp = (lo: number, hi: number, t: number) => lo + (hi - lo) * t;
+
+// Softmax-style blend of the four field bases; geometric pieces lean on
+// rings and bands, organic ones on the CPPN and noise.
+function basisMix(geometric: number, take: () => number): SigilGenome['mix'] {
+  const cppn = Math.exp(-1.2 * geometric + 0.8 * take());
+  const rings = Math.exp(1.0 * geometric + 0.8 * take() - 0.3);
+  const noise = Math.exp(-0.6 * geometric + 0.8 * take() - 1.6);
+  const bands = Math.exp(0.8 * geometric + 0.8 * take() - 0.6);
+  const total = cppn + rings + noise + bands;
+  return { cppn: cppn / total, rings: rings / total, noise: noise / total, bands: bands / total };
+}
 
 export function decodeGenome(z: Latent, seed: number): SigilGenome {
   const projected = DECODER.map((row) => row.reduce((sum, w, i) => sum + w * z[i], 0));
@@ -160,7 +187,9 @@ export function decodeGenome(z: Latent, seed: number): SigilGenome {
 
   const hue = ((Math.atan2(z[1], z[0]) * 180) / Math.PI + 360) % 360;
   const chroma = lerp(0.08, 0.21, sig(0.9 * luminous + 0.6 * take()));
-  const lightLow = lerp(0.28, 0.5, sig(take()));
+  // Floor sits well above the ground so the outer pattern always separates
+  // from a ground-coloured silhouette.
+  const lightLow = lerp(0.42, 0.58, sig(take()));
   const palette = {
     hue,
     spread: 200 * Math.tanh(0.7 * take()),
@@ -169,7 +198,9 @@ export function decodeGenome(z: Latent, seed: number): SigilGenome {
     chromaMid: lerp(-0.4, 0.8, sig(take())),
     lightLow,
     lightHigh: Math.min(0.96, lightLow + lerp(0.35, 0.6, sig(take() + 0.5 * luminous))),
-    polarity: sig(1.3 * take() - 1.6),
+    // Steep but continuous: at polarity ≈ 0.5 the ground and inks all meet at
+    // mid lightness and the silhouette vanishes, so pieces rarely sit there.
+    polarity: sig(4 * take() - 4.5),
   };
   const background = {
     lightness: lerp(lerp(0.13, 0.24, sig(take())), lerp(0.86, 0.95, sig(take())), palette.polarity),
@@ -194,19 +225,7 @@ export function decodeGenome(z: Latent, seed: number): SigilGenome {
     offsetX: 10 * take(),
     offsetY: 10 * take(),
   };
-  const weights = {
-    cppn: Math.exp(-1.2 * geometric + 0.8 * take()),
-    rings: Math.exp(1.0 * geometric + 0.8 * take() - 0.3),
-    noise: Math.exp(-0.6 * geometric + 0.8 * take() - 1.6),
-    bands: Math.exp(0.8 * geometric + 0.8 * take() - 0.6),
-  };
-  const total = weights.cppn + weights.rings + weights.noise + weights.bands;
-  const mix = {
-    cppn: weights.cppn / total,
-    rings: weights.rings / total,
-    noise: weights.noise / total,
-    bands: weights.bands / total,
-  };
+  const mix = basisMix(geometric, take);
   const rings = {
     frequency: lerp(2, 9, sig(0.8 * busy + 0.6 * take())),
     phase: Math.PI * take(),
@@ -230,15 +249,24 @@ export function decodeGenome(z: Latent, seed: number): SigilGenome {
     ink: sig(1.5 * take()),
   };
   const mask = {
-    amount: sig(1.2 * geometric + 0.8 * take() + 0.8),
     radius: lerp(0.5, 0.7, sig(take())),
     kernel: sig(1.2 * take()),
-    softness: lerp(0.005, 0.05, sig(-geometric + take() - 1)),
+    softness: lerp(0.002, 0.012, sig(-geometric + take() - 1)),
     warp: lerp(0.06, 0.38, sig(-0.6 * geometric + take())),
     warpFrequency: lerp(0.9, 2.4, sig(take())),
     warpPhase: 10 * take(),
     profileAngle: Math.PI * Math.tanh(take()),
     profileBias: sig(1.5 * take() + 0.5),
+  };
+  const inner = {
+    fill: lerp(0, 0.6, sig(1.3 * take() - 1)),
+    fillTone: lerp(0, 0.35, sig(1.5 * take())),
+    strength: lerp(0.05, 0.2, sig(take())),
+    zoom: lerp(0.6, 1.6, sig(take())),
+    rotation: Math.PI * Math.tanh(take()),
+    offsetX: 2 * take(),
+    offsetY: 2 * take(),
+    mix: basisMix(-geometric, take),
   };
   const finish = {
     grain: lerp(0, 0.05, sig(take() - 0.5)),
@@ -256,7 +284,7 @@ export function decodeGenome(z: Latent, seed: number): SigilGenome {
     tone: Math.tanh(take()),
   };
 
-  cursor = 64;
+  cursor = NAMED_ROWS;
   const layer1Scale = 1.1 * (1 + 0.3 * Math.tanh(busy));
   const layer1 = Float32Array.from({ length: 6 * 8 }, () => take() * layer1Scale);
   const layer2 = Float32Array.from({ length: 9 * 8 }, () => take() * 1.2);
@@ -278,6 +306,7 @@ export function decodeGenome(z: Latent, seed: number): SigilGenome {
     posterize,
     contour,
     mask,
+    inner,
     finish,
     strokes,
     cppn,

@@ -4,7 +4,8 @@
 //   1. A WebGL2 fragment shader evaluates a scalar field t(p) ∈ [0, 1] — a
 //      weighted blend of a CPPN, rings, fbm noise and bands after symmetry
 //      folding and domain warp — and colours it through a palette LUT with
-//      continuous posterization, contour lines and a figure mask.
+//      continuous posterization and contour lines OUTSIDE the figure. Inside,
+//      an almost-solid silhouette carries a second, faded field.
 //   2. Canvas 2D brush strokes steered by the SAME field: pass 0 writes t and
 //      the mask into the framebuffer, we read it back, and strokes follow its
 //      gradient or contours. Nothing about the field is duplicated in JS.
@@ -31,17 +32,19 @@ precision highp float;
 uniform vec2 u_res;
 uniform int u_mode;          // 0 = field readback, 1 = colour
 uniform sampler2D u_palette;
-uniform vec3 u_bg;
 uniform vec3 u_ink;
 uniform vec4 u_frame;        // zoom, centerX, centerY, rotation
 uniform vec4 u_sym;          // order, amount, mirror, -
 uniform vec4 u_warp;         // amount, frequency, offsetX, offsetY
-uniform vec4 u_mix;          // cppn, rings, noise, bands
+uniform vec4 u_mix;          // cppn, rings, noise, bands (outer pattern)
+uniform vec4 u_innerMix;     // same, inner pattern
+uniform vec4 u_innerFrame;   // zoom, offsetX, offsetY, rotation
+uniform vec4 u_fill;         // silhouette rgb, inner pattern strength
 uniform vec4 u_rings;        // frequency, phase, centerX, centerY
 uniform vec4 u_bands;        // frequency, angle, noiseFrequency, gain
 uniform vec4 u_post;         // amount, levels, softness, -
 uniform vec4 u_contour;      // width px, count, -, -
-uniform vec4 u_mask;         // amount, radius, exponent, softness
+uniform vec4 u_mask;         // -, radius, exponent, softness
 uniform vec4 u_maskShape;    // aspect, warp, warpFrequency, warpPhase
 uniform vec2 u_profile;      // angle, bias
 uniform vec4 u_finish;       // grain, vignette, seed, -
@@ -88,14 +91,14 @@ vec2 fold(vec2 p, float k, float mirror) {
   return length(p) * vec2(cos(af), sin(af));
 }
 
-float field(vec2 p0, float k) {
+float field(vec2 p0, float k, vec4 w) {
   vec2 p = mix(p0, fold(p0, k, u_sym.z), u_sym.y);
   p += u_warp.x * (vec2(fbm(p * u_warp.y + u_warp.zw), fbm(p * u_warp.y + u_warp.wz + 5.2)) - 0.5) * 2.0;
   float n = fbm(p * u_bands.z + 3.7);
   float c = cppn(p, length(p), superellipse(p * vec2(1.0 / u_maskShape.x, u_maskShape.x), u_mask.z), n);
   float rings = sin(length(p - u_rings.zw) * u_rings.x + u_rings.y);
   float bands = sin(dot(p, vec2(cos(u_bands.y), sin(u_bands.y))) * u_bands.x);
-  float f = u_mix.x * c + u_mix.y * rings + u_mix.z * (n * 2.0 - 1.0) * 1.6 + u_mix.w * bands;
+  float f = w.x * c + w.y * rings + w.z * (n * 2.0 - 1.0) * 1.6 + w.w * bands;
   return 0.5 + 0.5 * tanh(u_bands.w * f);
 }
 
@@ -122,18 +125,17 @@ float figureMask(vec2 q) {
 }
 
 // Symmetry order is continuous: crossfade the two neighbouring integer folds.
-float fieldAt(vec2 p) {
+float fieldAt(vec2 p, vec4 w) {
   float k0 = floor(u_sym.x);
-  float w = smoothstep(0.35, 0.65, fract(u_sym.x));
-  return mix(field(p, k0), field(p, k0 + 1.0), w);
+  float blend = smoothstep(0.35, 0.65, fract(u_sym.x));
+  return mix(field(p, k0, w), field(p, k0 + 1.0, w), blend);
 }
 
 void main() {
   vec2 q = (gl_FragCoord.xy / u_res - 0.5) * 2.0;
   vec2 p = rot((q - u_frame.yz) * u_frame.x, u_frame.w);
-  float t = fieldAt(p);
-
-  float figure = mix(1.0, figureMask(q), u_mask.x);
+  float t = fieldAt(p, u_mix);
+  float figure = figureMask(q);
 
   if (u_mode == 0) {
     float e = floor(t * 65535.0);
@@ -153,7 +155,10 @@ void main() {
   float line = 1.0 - clamp(px - u_contour.x * 0.5, 0.0, 1.0);
   col = mix(col, u_ink, line * step(0.01, u_contour.x));
 
-  col = mix(u_bg, col, figure);
+  vec2 pi = rot((q - u_innerFrame.yz) * u_innerFrame.x, u_innerFrame.w);
+  vec3 innerPattern = texture(u_palette, vec2(fieldAt(pi, u_innerMix), 0.5)).rgb;
+  vec3 silhouette = mix(u_fill.rgb, innerPattern, u_fill.w);
+  col = mix(col, silhouette, figure);
   col *= 1.0 - u_finish.y * dot(q, q) * 0.35;
   col += (hash(gl_FragCoord.xy + u_finish.z) - 0.5) * u_finish.x;
   outColor = vec4(col, 1.0);
@@ -191,6 +196,10 @@ function paletteRgb(genome: SigilGenome, t: number): Rgb {
   const l = lightness + (1.15 - 2 * lightness) * p.polarity;
   const c = Math.max(0, p.chroma * (1 + p.chromaMid * Math.sin(Math.PI * t)));
   return oklchToRgb(l, c, hue);
+}
+
+function mixRgb(a: Rgb, b: Rgb, t: number): Rgb {
+  return [a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t];
 }
 
 function paletteLut(genome: SigilGenome): Uint8Array {
@@ -280,17 +289,22 @@ function uniform({ uniforms }: Gpu, name: string): WebGLUniformLocation {
   return location;
 }
 
-function setUniforms(device: Gpu, g: SigilGenome, background: Rgb, ink: Rgb): void {
+type Inks = { background: Rgb; ink: Rgb; fill: Rgb };
+
+function setUniforms(device: Gpu, g: SigilGenome, { ink, fill }: Inks): void {
   const { gl } = device;
   const u = (name: string) => uniform(device, name);
   gl.uniform2f(u('u_res'), GL_SIZE, GL_SIZE);
   gl.uniform1i(u('u_palette'), 0);
-  gl.uniform3f(u('u_bg'), ...background);
   gl.uniform3f(u('u_ink'), ...ink);
   gl.uniform4f(u('u_frame'), g.frame.zoom, g.frame.centerX, g.frame.centerY, g.frame.rotation);
   gl.uniform4f(u('u_sym'), g.symmetry.order, g.symmetry.amount, g.symmetry.mirror, 0);
   gl.uniform4f(u('u_warp'), g.warp.amount, g.warp.frequency, g.warp.offsetX, g.warp.offsetY);
   gl.uniform4f(u('u_mix'), g.mix.cppn, g.mix.rings, g.mix.noise, g.mix.bands);
+  const im = g.inner.mix;
+  gl.uniform4f(u('u_innerMix'), im.cppn, im.rings, im.noise, im.bands);
+  gl.uniform4f(u('u_innerFrame'), g.inner.zoom, g.inner.offsetX, g.inner.offsetY, g.inner.rotation);
+  gl.uniform4f(u('u_fill'), ...fill, g.inner.strength);
   gl.uniform4f(u('u_rings'), g.rings.frequency, g.rings.phase, g.rings.centerX, g.rings.centerY);
   gl.uniform4f(u('u_bands'), g.bands.frequency, g.bands.angle, g.noiseFrequency, g.gain);
   gl.uniform4f(u('u_post'), g.posterize.amount, g.posterize.levels, g.posterize.softness, 0);
@@ -299,7 +313,7 @@ function setUniforms(device: Gpu, g: SigilGenome, background: Rgb, ink: Rgb): vo
   const k = g.mask.kernel;
   const aspect = 0.72 + (1.3 - 0.72) * k;
   const exponent = 6 + (2 - 6) * k;
-  gl.uniform4f(u('u_mask'), g.mask.amount, g.mask.radius, exponent, g.mask.softness);
+  gl.uniform4f(u('u_mask'), 0, g.mask.radius, exponent, g.mask.softness);
   gl.uniform4f(u('u_maskShape'), aspect, g.mask.warp, g.mask.warpFrequency, g.mask.warpPhase);
   gl.uniform2f(u('u_profile'), g.mask.profileAngle, g.mask.profileBias);
   gl.uniform4f(u('u_finish'), g.finish.grain, g.finish.vignette, g.strokes.seed % 1000, 0);
@@ -365,8 +379,8 @@ function drawStrokes(ctx: CanvasRenderingContext2D, g: SigilGenome, field: Field
   for (let i = 0; i < s.count; i++) {
     let x = next() * SIGIL_SIZE;
     let y = next() * SIGIL_SIZE;
-    const keep = 1 + (at(field.figure, x, y) - 1) * g.mask.amount;
-    if (next() > keep) continue;
+    // Strokes belong to the outer pattern; keep the silhouette clean.
+    if (next() < at(field.figure, x, y)) continue;
 
     const t0 = Math.min(1, Math.max(0, at(field.t, x, y) + s.colorShift));
     const base = paletteRgb(g, t0);
@@ -417,6 +431,8 @@ export async function renderSigil(genome: SigilGenome): Promise<string> {
     genome.background.hue
   );
   const ink = genome.contour.ink > 0.5 ? paletteRgb(genome, 1) : background;
+  const tone = paletteRgb(genome, genome.inner.fillTone);
+  const fill = mixRgb(background, tone, genome.inner.fill);
 
   gl.activeTexture(gl.TEXTURE0);
   gl.bindTexture(gl.TEXTURE_2D, device.palette);
@@ -431,7 +447,7 @@ export async function renderSigil(genome: SigilGenome): Promise<string> {
     gl.UNSIGNED_BYTE,
     paletteLut(genome)
   );
-  setUniforms(device, genome, background, ink);
+  setUniforms(device, genome, { background, ink, fill });
 
   gl.uniform1i(uniform(device, 'u_mode'), 0);
   gl.drawArrays(gl.TRIANGLES, 0, 3);
