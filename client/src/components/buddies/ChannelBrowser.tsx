@@ -13,7 +13,7 @@ import {
   authorKey,
   taskChannelFeedUrl,
 } from './BuddyMessages';
-import { buddySigilUrl } from './buddy-sigil';
+import { BuddySigil } from './BuddySigil';
 import './ChannelBrowser.css';
 
 export function workspaceActivityResource(workspaceId: string) {
@@ -170,10 +170,9 @@ function authorName(author: BuddyListAuthor, buddyNames: Readonly<Record<string,
 function LeadRow({ post, context }: { post: BuddyMailingListPost; context: RowContext }) {
   return (
     <li className="channel-browser-message channel-browser-message--lead">
-      <img
+      <BuddySigil
         className="channel-browser-avatar"
-        src={buddySigilUrl(authorName(post.author, context.buddyNames))}
-        alt=""
+        name={authorName(post.author, context.buddyNames)}
       />
       <div className="channel-browser-message-content">
         <div className="channel-browser-message-heading">

@@ -380,7 +380,7 @@
 }
 
 .channel-browser-avatar {
-  /* Generated per-Buddy sigil (buddy-sigil.ts), seeded by the Buddy name. */
+  /* Generated per-Buddy sigil (BuddySigil.tsx), seeded by the Buddy name. */
   display: block;
   width: 36px;
   height: 36px;
