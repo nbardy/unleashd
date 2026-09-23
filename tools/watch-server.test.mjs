@@ -65,12 +65,20 @@ async function until(predicate, timeoutMs = 5000) {
   }
 }
 
+// macOS starts a recursive fs.watch stream asynchronously and drops writes made
+// in its first few milliseconds (measured: 1 in 10 at 0ms, none after 50ms).
+// A real backend takes seconds to boot; this fixture boots in milliseconds.
+async function firstBoot(boots) {
+  await until(() => boots().length === 1);
+  await new Promise((resolve) => setTimeout(resolve, 300));
+}
+
 test('editing a loaded node_modules package reloads the backend', async (t) => {
   // Regression, 2026-09-23: a vendored package upgrade was invisible to the
   // hand-written watch list and the backend served the old code for hours.
   const { root, runner, boots } = fixture(t);
   runner.start();
-  await until(() => boots().length === 1);
+  await firstBoot(boots);
   writeFileSync(
     path.join(root, 'node_modules', 'pkg', 'index.js'),
     'module.exports = { value: 2 };\n'
@@ -84,7 +92,7 @@ test('rewriting loaded files with identical content does not restart the backend
   // while dev runs; each rebuild must not cost a backend restart.
   const { root, runner, boots } = fixture(t);
   runner.start();
-  await until(() => boots().length === 1);
+  await firstBoot(boots);
   const file = path.join(root, 'node_modules', 'pkg', 'index.js');
   rmSync(file);
   writeFileSync(file, 'module.exports = { value: 1 };\n');
@@ -95,7 +103,7 @@ test('rewriting loaded files with identical content does not restart the backend
 test('code that does not build keeps the current backend until it is fixed', async (t) => {
   const { root, runner, boots } = fixture(t);
   runner.start();
-  await until(() => boots().length === 1);
+  await firstBoot(boots);
   writeFileSync(path.join(root, 'local.cjs'), 'module.exports = { value: ;\n');
   await new Promise((resolve) => setTimeout(resolve, 600));
   assert.equal(boots().length, 1);

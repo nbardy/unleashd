@@ -15,8 +15,7 @@
 // backend kept serving the v32 post shape for hours.
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { realpathSync, watch } from 'node:fs';
-import { readFile } from 'node:fs/promises';
+import { readFileSync, realpathSync, watch } from 'node:fs';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -27,11 +26,12 @@ const INITIAL_BACKOFF_MS = 1_000;
 const MAX_BACKOFF_MS = 30_000;
 const HEALTHY_UPTIME_MS = 30_000;
 
-async function digest(file) {
+// Synchronous on purpose: the baseline must be read the moment the backend
+// reports a file. An async read let an edit land first, become the baseline,
+// and hide the change.
+function digest(file) {
   try {
-    return createHash('sha1')
-      .update(await readFile(file))
-      .digest('base64');
+    return createHash('sha1').update(readFileSync(file)).digest('base64');
   } catch (error) {
     if (error.code === 'ENOENT') return 'missing';
     throw error;
@@ -103,9 +103,9 @@ export function createBackendRunner({
   // A clean build (pnpm typecheck / build) rewrites shared/dist byte-for-byte;
   // only a real content change may restart the backend. 'missing' is a file
   // mid-rewrite: the write that completes it fires its own event.
-  async function onFileEvent(file) {
-    const current = await digest(file);
-    if (current === 'missing' || current === (await loaded.get(file))) return;
+  function onFileEvent(file) {
+    const current = digest(file);
+    if (current === 'missing' || current === loaded.get(file)) return;
     loaded.set(file, current);
     clearTimeout(settleTimer);
     settleTimer = setTimeout(() => void onSourceChanged(), settleMs);
@@ -182,7 +182,7 @@ export function createBackendRunner({
   function start() {
     watcher = watch(root, { recursive: true }, (_event, filename) => {
       const file = filename && path.join(root, filename);
-      if (file && loaded.has(file)) void onFileEvent(file);
+      if (file && loaded.has(file)) onFileEvent(file);
     });
     spawnBackend();
   }
