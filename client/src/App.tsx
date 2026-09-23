@@ -155,11 +155,6 @@ const ROUTES: RouteDef[] = [
     mobile: () => <BuddyWorkspaceActivity />,
   },
   {
-    path: '/buddies/workspaces/:workspaceId/channels',
-    desktop: () => <WorkspaceSlack />,
-    mobile: () => <WorkspaceSlack />,
-  },
-  {
     path: '/buddies/:buddyId',
     desktop: () => <BuddiesDashboard />,
     mobile: () => <BuddyDetailMobile />,
@@ -198,6 +193,10 @@ function AppRoutes({ device }: { device: DeviceKind }) {
   return (
     <Routes>
       <Route path="/robot" element={<RobotLoader />} />
+      {/* Channels is a full-screen surface OUTSIDE the shell: its channel rail
+          replaces the conversations sidebar. Inside the shell it rendered as a
+          second sidebar nested beside the first (owner feedback 2026-09-23). */}
+      <Route path="/buddies/workspaces/:workspaceId/channels" element={<WorkspaceSlack />} />
       <Route element={<Shell />}>
         {ROUTES.map((r) => (
           <Route key={r.path} path={r.path} element={pick(r)} />

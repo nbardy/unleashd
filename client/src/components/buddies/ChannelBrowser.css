@@ -1,0 +1,559 @@
+/* Full-screen channel browser. Mounted outside the app shell, so it owns the
+   whole viewport: rail on the left, one channel pane filling the rest. */
+
+.channel-browser {
+  --channel-rail-width: 264px;
+  --channel-header-height: 60px;
+  display: grid;
+  grid-template-columns: var(--channel-rail-width) minmax(0, 1fr);
+  height: 100vh;
+  height: 100dvh;
+  background: var(--bg-base);
+  color: var(--text-primary);
+}
+
+/* ── Rail ─────────────────────────────────────────────────────────────── */
+
+.channel-browser-rail {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  background: var(--bg-sidebar);
+  border-right: 1px solid var(--border-subtle);
+}
+
+.channel-browser-rail-header {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 4px;
+  min-height: var(--channel-header-height);
+  padding: 10px 18px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.channel-browser-exit {
+  color: var(--text-muted);
+  font: 500 11px / 1 var(--font-mono);
+  text-decoration: none;
+}
+
+.channel-browser-exit:hover {
+  color: var(--text-primary);
+}
+
+.channel-browser-workspace {
+  color: var(--text-bright);
+  text-decoration: none;
+}
+
+.channel-browser-workspace h1 {
+  margin: 0;
+  overflow: hidden;
+  font-size: 17px;
+  font-weight: 700;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.channel-browser-workspace:hover h1 {
+  text-decoration: underline;
+  text-decoration-color: var(--border-emphasis);
+  text-underline-offset: 3px;
+}
+
+.channel-browser-rail-scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 14px 10px 24px;
+}
+
+.channel-browser-rail-section {
+  margin: 0 0 6px;
+  padding: 0 8px;
+  color: var(--text-muted);
+  font: 600 11px / 1.6 var(--font-mono);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.channel-browser-rail-section:not(:first-child) {
+  margin-top: 22px;
+}
+
+.channel-browser-rail-empty {
+  margin: 0;
+  padding: 4px 8px;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.channel-browser-channels,
+.channel-browser-workspaces {
+  display: grid;
+  gap: 1px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.channel-browser-channels button,
+.channel-browser-workspaces a {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  height: 30px;
+  padding: 0 8px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-secondary);
+  font-family: inherit;
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1;
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.channel-browser-channels button:hover,
+.channel-browser-workspaces a:hover {
+  background: color-mix(in srgb, var(--text-emphasis) 6%, transparent);
+  color: var(--text-emphasis);
+}
+
+.channel-browser-channels button[aria-current="page"] {
+  background: color-mix(in srgb, var(--theme-user) 28%, transparent);
+  color: var(--text-bright);
+}
+
+.channel-browser-hash {
+  width: 14px;
+  color: var(--text-muted);
+  font-size: 15px;
+  text-align: center;
+}
+
+.channel-browser-channels button[aria-current="page"] .channel-browser-hash {
+  color: inherit;
+}
+
+.channel-browser-channel-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.channel-browser-count {
+  color: var(--text-muted);
+  font: 500 11px / 1 var(--font-mono);
+}
+
+.channel-browser-channels button[aria-current="page"] .channel-browser-count {
+  color: inherit;
+  opacity: 0.75;
+}
+
+.channel-browser-workspaces a[aria-current="page"] {
+  color: var(--text-bright);
+}
+
+.channel-browser-workspace-mark {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--text-emphasis) 12%, transparent);
+  color: var(--text-emphasis);
+  font-size: 10px;
+  font-weight: 700;
+}
+
+/* ── Channel pane ─────────────────────────────────────────────────────── */
+
+.channel-browser-main {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+}
+
+.channel-browser-pane {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+}
+
+.channel-browser-pane-header {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 16px;
+  min-height: var(--channel-header-height);
+  padding: 10px 24px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.channel-browser-pane-title {
+  flex: 1;
+  min-width: 0;
+}
+
+.channel-browser-pane-title h2 {
+  display: flex;
+  gap: 4px;
+  margin: 0;
+  color: var(--text-bright);
+  font-size: 16px;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.channel-browser-pane-title h2 span {
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.channel-browser-pane-title p {
+  margin: 2px 0 0;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 12.5px;
+  line-height: 1.4;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.channel-browser-task-filter {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-muted);
+  font: 500 11px / 1 var(--font-mono);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.channel-browser-task-filter select {
+  height: 28px;
+  padding: 0 8px;
+  border: 1px solid var(--border-default);
+  border-radius: 6px;
+  background: var(--bg-content);
+  color: var(--text-primary);
+  font: 500 12px / 1 var(--font-mono);
+  text-transform: none;
+  cursor: pointer;
+}
+
+.channel-browser-filter-banner {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 6px;
+  padding: 8px 24px;
+  border-bottom: 1px solid var(--border-subtle);
+  background: color-mix(in srgb, var(--theme-user) 10%, transparent);
+  color: var(--text-secondary);
+  font-size: 12.5px;
+}
+
+.channel-browser-filter-banner code {
+  color: var(--text-emphasis);
+  font-family: var(--font-mono);
+}
+
+.channel-browser-filter-banner button {
+  margin-left: auto;
+  padding: 3px 10px;
+  border: 1px solid var(--border-default);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-primary);
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.channel-browser-filter-banner button:hover {
+  color: var(--text-bright);
+  border-color: var(--border-emphasis);
+}
+
+.channel-browser-scroll {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.channel-browser-error {
+  margin: 12px 24px 0;
+  color: var(--theme-danger);
+  font-size: 12.5px;
+}
+
+.channel-browser-empty {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  height: 100%;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.channel-browser-empty strong {
+  color: var(--text-emphasis);
+  font-size: 15px;
+}
+
+/* ── Messages ─────────────────────────────────────────────────────────── */
+
+.channel-browser-messages {
+  /* Anchor a short channel to the bottom, beside the footer, like Slack. */
+  margin: auto 0 0;
+  padding: 12px 0 20px;
+  list-style: none;
+}
+
+.channel-browser-day {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  margin: 10px 0 2px;
+  padding: 4px 24px;
+  /* Solid band: when stuck, the rule must not draw across scrolled text. */
+  background: var(--bg-base);
+}
+
+.channel-browser-day::before {
+  content: "";
+  position: absolute;
+  inset: 50% 24px auto;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.channel-browser-day span {
+  position: relative;
+  margin: 0 auto;
+  padding: 3px 12px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 999px;
+  background: var(--bg-base);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.channel-browser-message {
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr);
+  column-gap: 12px;
+  padding: 2px 24px;
+}
+
+.channel-browser-message:hover {
+  background: color-mix(in srgb, var(--text-emphasis) 4%, transparent);
+}
+
+.channel-browser-message--lead {
+  margin-top: 10px;
+  padding-top: 6px;
+  padding-bottom: 4px;
+}
+
+.channel-browser-avatar {
+  /* Per-Buddy accent is set inline from the Buddy id; this is the default. */
+  --channel-avatar: var(--theme-ai);
+  display: grid;
+  place-items: center;
+  width: 36px;
+  height: 36px;
+  margin-top: 2px;
+  border-radius: 8px;
+  background: color-mix(in oklch, var(--channel-avatar) 30%, var(--bg-base));
+  color: color-mix(in oklch, var(--channel-avatar) 60%, var(--pole-fg-pop));
+  font-size: 13px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+}
+
+.channel-browser-gutter-time {
+  align-self: start;
+  padding-top: 3px;
+  color: var(--text-muted);
+  font: 500 10px / 1.6 var(--font-mono);
+  text-align: right;
+  white-space: nowrap;
+  visibility: hidden;
+}
+
+.channel-browser-message--continuation:hover .channel-browser-gutter-time {
+  visibility: visible;
+}
+
+.channel-browser-message-content {
+  min-width: 0;
+  max-width: 960px;
+}
+
+.channel-browser-message-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 4px 8px;
+  line-height: 1.4;
+}
+
+.channel-browser-message--continuation {
+  padding-top: 4px;
+  padding-bottom: 4px;
+}
+
+.channel-browser-inline-meta {
+  display: inline-flex;
+  gap: 6px;
+  margin-right: 8px;
+  vertical-align: 1px;
+}
+
+.channel-browser-author {
+  color: var(--text-bright);
+  font-size: 14.5px;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.channel-browser-author:hover {
+  text-decoration: underline;
+}
+
+.channel-browser-message-heading time {
+  color: var(--text-muted);
+  font-size: 11.5px;
+}
+
+.channel-browser-purpose,
+.channel-browser-channel-tag,
+.channel-browser-instance {
+  padding: 1px 6px;
+  border-radius: 4px;
+  font: 500 10.5px / 1.5 var(--font-mono);
+}
+
+.channel-browser-purpose {
+  background: color-mix(in srgb, var(--theme-ai) 14%, transparent);
+  color: var(--ai-bright);
+}
+
+.channel-browser-channel-tag {
+  background: color-mix(in srgb, var(--text-emphasis) 8%, transparent);
+  color: var(--text-secondary);
+}
+
+.channel-browser-instance {
+  border: 1px solid var(--border-subtle);
+  color: var(--text-muted);
+  text-decoration: none;
+}
+
+a.channel-browser-instance:hover {
+  border-color: var(--border-emphasis);
+  color: var(--text-bright);
+}
+
+.channel-browser-body {
+  margin: 2px 0 0;
+  color: var(--text-primary);
+  font-size: 14.5px;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.channel-browser-footer {
+  flex: none;
+  margin: 0 24px 18px;
+  padding: 11px 14px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.channel-browser-footer code {
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+}
+
+/* ── Narrow screens: the rail becomes a top strip of channel chips ──── */
+
+@media (max-width: 768px) {
+  .channel-browser {
+    grid-template-columns: minmax(0, 1fr);
+    grid-template-rows: auto minmax(0, 1fr);
+  }
+
+  .channel-browser-rail {
+    border-right: 0;
+    border-bottom: 1px solid var(--border-subtle);
+  }
+
+  .channel-browser-rail-header {
+    min-height: 0;
+    padding: 10px 14px;
+    border-bottom: 0;
+  }
+
+  .channel-browser-rail-scroll {
+    overflow-x: auto;
+    padding: 0 10px 10px;
+  }
+
+  .channel-browser-rail-section,
+  .channel-browser-workspaces {
+    display: none;
+  }
+
+  .channel-browser-channels {
+    display: flex;
+    gap: 6px;
+  }
+
+  .channel-browser-channels button {
+    width: auto;
+    white-space: nowrap;
+  }
+
+  .channel-browser-pane-header,
+  .channel-browser-filter-banner,
+  .channel-browser-message {
+    padding-right: 14px;
+    padding-left: 14px;
+  }
+
+  .channel-browser-pane-title p {
+    display: none;
+  }
+
+  .channel-browser-footer {
+    margin: 0 14px 12px;
+  }
+}

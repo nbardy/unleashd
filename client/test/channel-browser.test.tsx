@@ -14,7 +14,9 @@ register(
   `)}`,
   import.meta.url
 );
-const { ChannelBrowser, WorkspaceSlack } = await import('../src/components/buddies/ChannelBrowser');
+const { ChannelBrowser, WorkspaceSlack, channelRows } = await import(
+  '../src/components/buddies/ChannelBrowser'
+);
 const { Provider } = await import('jotai');
 const { jotaiStore } = await import('../src/atoms/store');
 const { loadResource } = await import('../src/atoms/resources');
@@ -36,7 +38,7 @@ async function seed() {
     ],
   });
   await loadResource({
-    key: '/api/buddies/lists/list_a/posts?limit=20',
+    key: '/api/buddies/lists/list_a/posts?limit=50',
     load: async () => [
       {
         id: 'post_old',
@@ -91,7 +93,7 @@ async function seed() {
   });
 }
 
-test('channel browser lays out sidebar channels beside conversation panels', async () => {
+test('channel browser renders a Slack transcript, oldest first, with instance tags', async () => {
   await seed();
   const html = renderToStaticMarkup(
     <MemoryRouter>
@@ -105,22 +107,48 @@ test('channel browser lays out sidebar channels beside conversation panels', asy
       </Provider>
     </MemoryRouter>
   );
-  assert.match(html, /aria-label="Channels"/);
-  assert.match(html, /buddy-workspace-slack-sidebar/);
-  assert.match(html, /buddy-workspace-slack-main/);
-  assert.match(html, /<h1 class="buddy-workspace-slack-name">unleashd<\/h1>/);
-  assert.match(html, /href="\/buddies\/workspaces\/ws-slack"/);
-  assert.match(html, /# Standups · 2/);
+  assert.match(html, /<h1>unleashd<\/h1>/);
+  assert.match(html, /channel-browser-channel-name">Standups</);
   const newerAt = html.indexOf('Newer handoff without a live thread.');
   const olderAt = html.indexOf('Older update from the first run.');
   assert.ok(newerAt !== -1 && olderAt !== -1, 'all posts render');
-  assert.ok(newerAt < olderAt, 'posts render newest-first');
-  assert.match(html, /task-alpha/);
-  assert.match(html, /conv conv-aaa/);
-  assert.match(html, /href="\/chat\/conv-aaaa111122223333"/);
-  assert.match(html, /Lead/);
-  assert.match(html, /Dev/);
+  assert.ok(olderAt < newerAt, 'transcript reads oldest-first, newest at the bottom');
+  // A held thread is a link; a post without provenance carries no instance tag.
+  assert.match(html, /href="\/chat\/conv-aaaa111122223333"[^>]*>conv conv-aaa</);
+  assert.equal(html.match(/channel-browser-instance/g)?.length, 1);
+  assert.match(html, /<option value="task-alpha"/);
   assert.doesNotMatch(html, /buddy-messages-list-composer/);
+});
+
+// Regression guard for the instance-uuid feature: two conversations running
+// as the SAME Buddy must never collapse into one sender group, or the reader
+// loses which instance said what.
+test('concurrent conversations of one Buddy start separate message groups', () => {
+  const post = (id: string, conversation: string, minute: number) => ({
+    id,
+    listId: 'list_a',
+    workspaceId: 'ws',
+    fromBuddyId: 'lead',
+    purpose: 'standup',
+    body: id,
+    evidence: [],
+    projectId: null,
+    createdAt: new Date(Date.UTC(2026, 8, 21, 12, minute)).toISOString(),
+    senderConversationId: conversation,
+    senderRunId: null,
+  });
+  const kinds = (posts: ReturnType<typeof post>[]) =>
+    channelRows(posts)
+      .filter((row) => row.kind !== 'day')
+      .map((row) => row.kind);
+  assert.deepEqual(
+    kinds([post('c', 'conv-one', 2), post('b', 'conv-two', 1), post('a', 'conv-one', 0)]),
+    ['lead', 'lead', 'lead']
+  );
+  assert.deepEqual(kinds([post('b', 'conv-one', 1), post('a', 'conv-one', 0)]), [
+    'lead',
+    'continuation',
+  ]);
 });
 
 test('workspace slack page resolves the workspace name and member names', async () => {
@@ -134,13 +162,12 @@ test('workspace slack page resolves the workspace name and member names', async 
       </Provider>
     </MemoryRouter>
   );
-  assert.match(html, /<h1 class="buddy-workspace-slack-name">unleashd<\/h1>/);
-  assert.match(html, /# Standups · 2/);
+  assert.match(html, /<h1>unleashd<\/h1>/);
   assert.match(html, /Older update from the first run./);
-  assert.match(html, /Lead/);
+  assert.match(html, /channel-browser-author[^>]*>Lead</);
 });
 
-test('channel browser shows the shared empty state without channels', async () => {
+test('channel browser shows an empty state without channels', async () => {
   await loadResource({
     key: '/api/buddies/lists?workspaceId=ws-bare',
     load: async () => [],
@@ -151,11 +178,11 @@ test('channel browser shows the shared empty state without channels', async () =
         <ChannelBrowser
           workspaceId="ws-bare"
           workspaceName="bare"
+          buddyNames={{}}
           availableConversationIds={new Set()}
         />
       </Provider>
     </MemoryRouter>
   );
-  assert.match(html, /aria-label="Channels"/);
-  assert.match(html, /class="empty-state">No channels yet/);
+  assert.match(html, /No channels yet/);
 });
