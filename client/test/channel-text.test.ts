@@ -50,3 +50,21 @@ test('fuzzy ranking favours word-start matches', () => {
   );
   assert.deepEqual(rankReferences('zzz', references), []);
 });
+
+// Live workspaces carry dozens of done Tasks; without the penalty they crowd
+// the eight picker slots ahead of the live work you are trying to mention.
+test('finished Tasks sink below live ones with the same match', () => {
+  const task = (id: string, status: string): ChannelReference => ({
+    kind: 'task',
+    id,
+    label: 'Preserve context',
+    detail: '',
+    status,
+  });
+  assert.deepEqual(
+    rankReferences('pres', [task('done', 'done'), task('live', 'in_progress')]).map(
+      (reference) => reference.id
+    ),
+    ['live', 'done']
+  );
+});

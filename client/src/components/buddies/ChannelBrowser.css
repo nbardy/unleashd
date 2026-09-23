@@ -580,6 +580,7 @@ a.channel-browser-instance:hover {
 }
 
 .channel-browser-buddy-actions button {
+  padding: 0; /* the global button padding would crush this icon square */
   display: grid;
   place-items: center;
   width: 24px;
@@ -633,6 +634,7 @@ a.channel-browser-buddy-done {
 }
 
 .channel-browser-rail-add {
+  padding: 0; /* the global button padding would crush this icon square */
   display: grid;
   place-items: center;
   width: 22px;
@@ -888,6 +890,7 @@ a.channel-browser-buddy-done {
 }
 
 .channel-thread-header button {
+  padding: 0; /* the global button padding would crush this icon square */
   width: 28px;
   height: 28px;
   border: 0;
@@ -977,6 +980,7 @@ a.channel-browser-buddy-done {
 }
 
 .channel-composer-attach {
+  padding: 0; /* the global button padding would crush this icon square */
   display: grid;
   place-items: center;
   width: 26px;

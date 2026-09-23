@@ -45,13 +45,29 @@ export function fuzzyScore(query: string, text: string): number | null {
   return score - haystack.length * 0.05;
 }
 
+// Finished Tasks stay findable but sink below live ones with a similar match.
+const SETTLED_TASK_PENALTY = 12;
+
+function referenceScore(query: string, reference: ChannelReference): number | null {
+  const score = fuzzyScore(query, reference.label);
+  if (score === null) return null;
+  switch (reference.kind) {
+    case 'buddy':
+      return score;
+    case 'task':
+      return reference.status === 'done' || reference.status === 'cancelled'
+        ? score - SETTLED_TASK_PENALTY
+        : score;
+  }
+}
+
 export function rankReferences(
   query: string,
   references: readonly ChannelReference[],
   limit = 8
 ): ChannelReference[] {
   return references
-    .map((reference) => ({ reference, score: fuzzyScore(query, reference.label) }))
+    .map((reference) => ({ reference, score: referenceScore(query, reference) }))
     .filter(
       (entry): entry is { reference: ChannelReference; score: number } => entry.score !== null
     )
