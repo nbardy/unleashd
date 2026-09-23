@@ -71,12 +71,17 @@ const MAX_CONTEXT_POSTS = 40;
 const MAX_POST_CHARS = 4000;
 const MAX_REPLY_BYTES = 32000;
 
-// Stable UUID-shaped id per (thread, Buddy) so every mention in a thread
-// lands in the same transcript, across restarts.
-export function channelConversationId(threadRootId: string, buddyId: string): string {
-  const hex = createHash('sha256').update(`channel:${threadRootId}:${buddyId}`).digest('hex');
+// UUID-shaped id derived from a seed, so a (purpose, Buddy, …) tuple always
+// names the same transcript across restarts without storing a mapping.
+export function stableConversationId(seed: string): string {
+  const hex = createHash('sha256').update(seed).digest('hex');
   const variant = ((Number.parseInt(hex[16], 16) & 0x3) | 0x8).toString(16);
   return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-5${hex.slice(13, 16)}-${variant}${hex.slice(17, 20)}-${hex.slice(20, 32)}`;
+}
+
+// One transcript per (thread, Buddy): every mention in a thread continues it.
+export function channelConversationId(threadRootId: string, buddyId: string): string {
+  return stableConversationId(`channel:${threadRootId}:${buddyId}`);
 }
 
 function authorLabel(author: BuddyListAuthor, store: BuddiesStorePort): string {

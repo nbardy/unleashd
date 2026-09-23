@@ -2,6 +2,7 @@ import fs from 'node:fs';
 import type { Express, Request, Response } from 'express';
 import multer from 'multer';
 import { z } from 'zod';
+import type { BuddyDirect } from './buddy-direct';
 import {
   CHANNEL_IMAGE_EXTENSIONS,
   CHANNEL_MEDIA_MAX_BYTES,
@@ -15,12 +16,13 @@ import { withPostProvenanceFields } from './operations';
 
 // Owner-facing channel routes: posting (with media canonicalization and
 // @mention dispatch), who is replying, the workspace Task index for chips and
-// the @ picker, and channel media upload. Reads of lists/posts/threads stay in
+// the @ picker, channel media upload, and a Buddy's DM / wake-up. Reads of lists/posts/threads stay in
 // routes.ts; this module owns everything that needs the responder or disk.
 
 export interface ChannelRouteDependencies {
   getStore(): Promise<BuddiesStorePort>;
   responder: ChannelResponder;
+  direct: BuddyDirect;
   uploadsRoot: string;
   sendError(response: Response, error: unknown, fallbackStatus: number): void;
 }
@@ -93,7 +95,7 @@ function extensionOf(name: string): string {
 }
 
 export function registerChannelRoutes(app: Express, dependencies: ChannelRouteDependencies): void {
-  const { getStore, responder, uploadsRoot, sendError } = dependencies;
+  const { getStore, responder, direct, uploadsRoot, sendError } = dependencies;
   const handle =
     (fallback: number, handler: (req: Request, res: Response) => Promise<void>) =>
     (req: Request, res: Response) =>
@@ -126,6 +128,25 @@ export function registerChannelRoutes(app: Express, dependencies: ChannelRouteDe
       const mentions =
         input.author.kind === 'owner' ? await responder.respondToOwnerPost(list, post) : [];
       res.status(201).json({ post: withPostProvenanceFields(post), mentions });
+    })
+  );
+
+  // DM: the one ongoing owner conversation with a Buddy (buddy-direct.ts).
+  const DirectSchema = z.object({ workspaceId: z.string().min(1) }).strict();
+  app.post(
+    '/api/buddies/:buddyId/direct',
+    handle(400, async (req, res) => {
+      const { workspaceId } = DirectSchema.parse(req.body);
+      res.json(await direct.open(req.params.buddyId, workspaceId));
+    })
+  );
+
+  // Wake: the Buddy catches up on the channels inside its DM and decides what to do.
+  app.post(
+    '/api/buddies/:buddyId/wake',
+    handle(400, async (req, res) => {
+      const { workspaceId } = DirectSchema.parse(req.body);
+      res.status(202).json(await direct.wake(req.params.buddyId, workspaceId));
     })
   );
 

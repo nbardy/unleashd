@@ -74,6 +74,7 @@ import { isProcessAlive, readLatestSwarmRuntime } from './swarm/runtime';
 import { registerConversationWebSocket } from './transport/conversation-websocket';
 
 import { auditLocalAgents } from './audit.js';
+import { createBuddyDirect } from './buddies/buddy-direct';
 import { BuddyBuilderService, type BuddyBuilderStore } from './buddies/builder';
 import { onBuddiesChanged, registerBuddyMutationFeed } from './buddies/change-feed';
 import { createChannelResponder } from './buddies/channel-responder';
@@ -517,6 +518,14 @@ registerChannelRoutes(app, {
     // owner-thread knowledge scope and owner-control MCP, like a talk() chat.
     createConversation: (input) => buddyCreationService.createServerBuddyConversation(input),
     uploadsRoot: () => UPLOADS_DIR,
+  }),
+  direct: createBuddyDirect({
+    getStore: getBuddiesStore,
+    getConversation: (id) => applicationContext.registry.get(id),
+    ensureConversationReady: buddyCreationService.ensureConversationReady,
+    createConversation: (input) => buddyCreationService.createServerBuddyConversation(input),
+    isConversationDeleted: async (conversationId) =>
+      (await conversationConfigService.getRecord(conversationId))?.status === 'deleted',
   }),
 });
 

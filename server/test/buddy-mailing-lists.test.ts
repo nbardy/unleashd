@@ -10,6 +10,7 @@ import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { BuddiesStore } from '@nbardy/buddies';
 import express from 'express';
+import { createBuddyDirect } from '../src/buddies/buddy-direct';
 import { createChannelResponder } from '../src/buddies/channel-responder';
 import { registerChannelRoutes } from '../src/buddies/channel-routes';
 import type { BuddiesStorePort } from '../src/buddies/contract';
@@ -131,6 +132,17 @@ function routeTestApp(store: BuddiesStorePort) {
         throw new Error('not used');
       },
       uploadsRoot: () => tmpdir(),
+    }),
+    direct: createBuddyDirect({
+      getStore: async () => store,
+      getConversation: () => undefined,
+      ensureConversationReady: async () => {
+        throw new Error('not used');
+      },
+      createConversation: async () => {
+        throw new Error('not used');
+      },
+      isConversationDeleted: async () => false,
     }),
   });
   return app;
@@ -773,6 +785,9 @@ test('task channel feed: project posts across lists, newest-first, owner reads u
       body: 'Linked old',
       projectId: projectA,
     });
+    // Same-millisecond posts tie on created_at and fall back to random-id order,
+    // which made this newest-first assertion flaky; step the clock first.
+    for (const start = Date.now(); Date.now() === start; ) {}
     ops.execute('buddy.post', {
       key: 'linked-new',
       listId: second.list.id,

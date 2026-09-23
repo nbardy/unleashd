@@ -7,6 +7,7 @@ import { join } from 'node:path';
 import test from 'node:test';
 import { BuddiesStore } from '@nbardy/buddies';
 import express from 'express';
+import { WAKE_MESSAGE, createBuddyDirect } from '../src/buddies/buddy-direct';
 import { createChannelResponder } from '../src/buddies/channel-responder';
 import { registerChannelRoutes } from '../src/buddies/channel-routes';
 import type { BuddiesStorePort, BuddyMailingListPost } from '../src/buddies/contract';
@@ -23,6 +24,7 @@ class FakeTurnRuntime extends EventEmitter {
   isRunning = false;
   queue: unknown[] = [];
   prompts: Array<{ content: string; ownerInput: unknown }> = [];
+  enqueued: Array<{ content: string; ownerInput: unknown }> = [];
   constructor(readonly id: string) {
     super();
   }
@@ -32,6 +34,9 @@ class FakeTurnRuntime extends EventEmitter {
   async waitForTurnDrain() {}
   sendMessage(content: string, ownerInput: unknown) {
     this.prompts.push({ content, ownerInput });
+  }
+  enqueueMessage(content: string, ownerInput: unknown) {
+    this.enqueued.push({ content, ownerInput });
   }
 }
 
@@ -56,6 +61,14 @@ function harness() {
   const uploadsRoot = join(scratch, 'uploads');
   const runtimes = new Map<string, FakeTurnRuntime>();
   const created: string[] = [];
+  const deleted = new Set<string>();
+  const createRuntime = async (input: { conversationId: string }) => {
+    created.push(input.conversationId);
+    const runtime = new FakeTurnRuntime(input.conversationId);
+    runtimes.set(input.conversationId, runtime);
+    return runtime as unknown as ConversationRuntime;
+  };
+  const getRuntime = (id: string) => runtimes.get(id) as unknown as ConversationRuntime | undefined;
   const app = express();
   app.use(express.json());
   const sendError = (response: express.Response, error: unknown, fallbackStatus: number) =>
@@ -79,19 +92,32 @@ function harness() {
     sendError,
     responder: createChannelResponder({
       getStore: async () => store,
-      getConversation: (id) => runtimes.get(id) as unknown as ConversationRuntime | undefined,
+      getConversation: getRuntime,
       ensureConversationReady: async (conversation) => conversation,
-      createConversation: async (input) => {
-        created.push(input.conversationId);
-        const runtime = new FakeTurnRuntime(input.conversationId);
-        runtimes.set(input.conversationId, runtime);
-        return runtime as unknown as ConversationRuntime;
-      },
+      createConversation: createRuntime,
       uploadsRoot: () => uploadsRoot,
       logger: { warn: () => undefined },
     }),
+    direct: createBuddyDirect({
+      getStore: async () => store,
+      getConversation: getRuntime,
+      ensureConversationReady: async (conversation) => conversation,
+      createConversation: createRuntime,
+      isConversationDeleted: async (id) => deleted.has(id),
+    }),
   });
-  return { raw, workspace, lead, outsider, scratch, uploadsRoot, runtimes, created, app };
+  return {
+    raw,
+    workspace,
+    lead,
+    outsider,
+    scratch,
+    uploadsRoot,
+    runtimes,
+    created,
+    deleted,
+    app,
+  };
 }
 
 test('owner @mention runs one turn per thread and the answer lands in the thread with its media', async () => {
@@ -223,6 +249,54 @@ test('owner @mention runs one turn per thread and the answer lands in the thread
     });
     assert.equal(missing.status, 400);
     assert.match(missing.json.error, /missing/);
+  } finally {
+    server.close();
+    h.raw.close();
+    rmSync(h.scratch, { recursive: true, force: true });
+  }
+});
+
+// DM + wake: one ongoing owner conversation per Buddy, reopened with its
+// history; wake queues the catch-up instruction there as owner input. Deleting
+// the DM must not strand the Buddy — the next open starts a fresh one.
+test('DM reopens one conversation, wake queues the catch-up there, and a deleted DM is replaced', async () => {
+  const h = harness();
+  const server = h.app.listen(0, '127.0.0.1');
+  try {
+    await new Promise<void>((resolve) => server.once('listening', resolve));
+    const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+    const post = async (path: string, body: unknown) => {
+      const response = await fetch(`${base}${path}`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      return { status: response.status, json: (await response.json()) as any };
+    };
+    const workspace = { workspaceId: h.workspace.id };
+    const first = await post(`/api/buddies/${h.lead.id}/direct`, workspace);
+    const again = await post(`/api/buddies/${h.lead.id}/direct`, workspace);
+    assert.equal(first.status, 200, JSON.stringify(first.json));
+    assert.equal(again.json.conversationId, first.json.conversationId);
+    assert.deepEqual(h.created, [first.json.conversationId]);
+
+    const woken = await post(`/api/buddies/${h.lead.id}/wake`, workspace);
+    assert.equal(woken.status, 202);
+    assert.equal(woken.json.conversationId, first.json.conversationId);
+    const [queued] = h.runtimes.get(first.json.conversationId)?.enqueued ?? [];
+    assert.equal(queued.content, WAKE_MESSAGE);
+    assert.equal((queued.ownerInput as { origin: string }).origin, 'owner_input');
+
+    // The owner deletes the DM: its id is tombstoned, the next open is new.
+    h.runtimes.delete(first.json.conversationId);
+    h.deleted.add(first.json.conversationId);
+    const replacement = await post(`/api/buddies/${h.lead.id}/direct`, workspace);
+    assert.notEqual(replacement.json.conversationId, first.json.conversationId);
+    assert.equal(h.created.length, 2);
+
+    const outsider = await post(`/api/buddies/${h.outsider.id}/wake`, workspace);
+    assert.equal(outsider.status, 400);
+    assert.match(outsider.json.error, /outside this workspace/);
   } finally {
     server.close();
     h.raw.close();
