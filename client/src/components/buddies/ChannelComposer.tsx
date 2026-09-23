@@ -1,6 +1,6 @@
+import { type BuddyOwnerPostResult, BuddyOwnerPostResultSchema } from '@unleashd/shared';
 import { useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { newId } from '../../utils/ids';
-import type { BuddyMailingListPost } from './BuddyMessages';
 import { BuddySigil } from './BuddySigil';
 import { buddyApi } from './api';
 import {
@@ -12,12 +12,6 @@ import {
   rankReferences,
 } from './channel-text';
 import './ChannelComposer.css';
-
-export type MentionDispatch =
-  | { buddyId: string; status: 'started'; conversationId: string }
-  | { buddyId: string; status: 'rejected'; reason: string };
-
-export type PostResult = { post: BuddyMailingListPost; mentions: MentionDispatch[] };
 
 type UploadedFile = { originalName: string; absolutePath: string };
 
@@ -46,7 +40,7 @@ export function ChannelComposer({
   threadRootId: string | null;
   references: readonly ChannelReference[];
   submit: ComposerSubmit;
-  onPosted(result: PostResult): void;
+  onPosted(result: BuddyOwnerPostResult): void;
 }) {
   const [text, setText] = useState('');
   const [caret, setCaret] = useState(0);
@@ -126,7 +120,7 @@ export function ChannelComposer({
     if (!body || sending || uploading > 0) return;
     setSending(true);
     setProblem(null);
-    void buddyApi<PostResult>(`/api/buddies/lists/${encodeURIComponent(listId)}/posts`, {
+    void buddyApi(`/api/buddies/lists/${encodeURIComponent(listId)}/posts`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
@@ -137,7 +131,8 @@ export function ChannelComposer({
         threadRootId,
       }),
     })
-      .then((result) => {
+      .then((response) => {
+        const result = BuddyOwnerPostResultSchema.parse(response);
         setText('');
         setCaret(0);
         setPicked([]);

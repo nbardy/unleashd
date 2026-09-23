@@ -1,35 +1,34 @@
+import type { BuddyListAuthor, BuddyMailingListPost, BuddyOwnerPostResult } from '@unleashd/shared';
 import { useAtomValue } from 'jotai';
-import { type UIEvent, useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { buddySidebarChannelsAtom } from '../../atoms/buddy-sidebar';
 import { allConversationIdsAtom } from '../../atoms/conversations';
 import { usePolledFetch } from '../../hooks/usePolledFetch';
-import { newId } from '../../utils/ids';
 import {
-  type BuddyListAuthor,
-  type BuddyMailingListPost,
   type BuddyMailingListSummary,
   PostAuthor,
+  postsResource,
   taskChannelFeedUrl,
 } from './BuddyMessages';
 import { BuddyRailRow } from './BuddyRailRow';
 import { BuddySigil } from './BuddySigil';
-import { ChannelComposer, type PostResult } from './ChannelComposer';
+import { ChannelComposer } from './ChannelComposer';
 import { ChannelMarkdown, TypingDots } from './ChannelMarkdown';
-import { buddyApi } from './api';
 import {
   CONVERSATIONAL_PURPOSES,
   type ChannelMember,
   type ChannelRow,
-  type ChannelThread,
-  channelPostsUrl,
+  channelPostsResource,
   channelReferences,
   channelRows,
+  channelThreadResource,
   clockTime,
+  createChannel,
   joinNames,
   listsUrl,
-  threadUrl,
   useChannelResponding,
+  useFollowBottom,
   useWorkspaceDirectory,
 } from './channel-data';
 import { type ChannelReference, type ChannelTask, plainChannelText } from './channel-text';
@@ -261,27 +260,6 @@ function renderRow(row: ChannelRow, context: RowContext) {
   }
 }
 
-// Pin to the newest message on open, and keep following new posts only while
-// the reader is already at the bottom — never yank someone reading history
-// back down on a poll.
-function useFollowBottom(rowCount: number, version: unknown) {
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const followRef = useRef(true);
-  // biome-ignore lint/correctness/useExhaustiveDependencies: version is the re-pin trigger
-  useEffect(() => {
-    const node = scrollRef.current;
-    if (node && followRef.current && rowCount > 0) node.scrollTop = node.scrollHeight;
-  }, [rowCount, version]);
-  const onScroll = (event: UIEvent<HTMLDivElement>) => {
-    const node = event.currentTarget;
-    followRef.current = node.scrollHeight - node.scrollTop - node.clientHeight < 48;
-  };
-  const pin = () => {
-    followRef.current = true;
-  };
-  return { scrollRef, onScroll, pin };
-}
-
 function ThreadPane({
   list,
   rootId,
@@ -297,7 +275,7 @@ function ThreadPane({
   replying: readonly string[];
   onClose(): void;
 }) {
-  const thread = usePolledFetch<ChannelThread>(threadUrl(list.id, rootId), 3000);
+  const thread = usePolledFetch(channelThreadResource(list.id, rootId), 3000);
   const replyRows = useMemo(() => channelRows(thread.data?.replies ?? []), [thread.data]);
   const follow = useFollowBottom(replyRows.length + replying.length, thread.data);
   // A reply that just finished is already written; fetch it now, not on the next poll.
@@ -387,9 +365,9 @@ function ChannelPane({
   threadId: string | null;
   onThread: (rootId: string | null) => void;
 }) {
-  const channelFeed = usePolledFetch<BuddyMailingListPost[]>(channelPostsUrl(list.id), 5000);
-  const taskFeed = usePolledFetch<BuddyMailingListPost[]>(
-    taskFilter ? taskChannelFeedUrl(workspaceId, taskFilter) : null,
+  const channelFeed = usePolledFetch(channelPostsResource(list.id), 5000);
+  const taskFeed = usePolledFetch(
+    taskFilter ? postsResource(taskChannelFeedUrl(workspaceId, taskFilter)) : null,
     5000
   );
   const responding = useChannelResponding(list.id);
@@ -492,7 +470,7 @@ function ChannelPane({
           placeholder={`Message #${list.name}`}
           references={references}
           submit="enter"
-          onPosted={(result: PostResult) => {
+          onPosted={(result: BuddyOwnerPostResult) => {
             follow.pin();
             void channelFeed.refetch();
             void responding.refetch();
@@ -622,18 +600,8 @@ function NewChannelForm({
         if (!cleanName || !purpose.trim()) return;
         setBusy(true);
         setProblem(null);
-        void buddyApi<{ list: { id: string } }>('/api/buddies/lists', {
-          method: 'POST',
-          headers: { 'content-type': 'application/json' },
-          body: JSON.stringify({
-            workspaceId,
-            author: { kind: 'owner' },
-            key: newId(),
-            name: cleanName,
-            purpose: purpose.trim(),
-          }),
-        })
-          .then((result) => onCreated(result.list.id))
+        void createChannel(workspaceId, cleanName, purpose.trim())
+          .then(onCreated)
           .catch((cause: unknown) =>
             setProblem(cause instanceof Error ? cause.message : String(cause))
           )

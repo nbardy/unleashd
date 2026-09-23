@@ -1,8 +1,13 @@
-import type { BuddyMessage } from '@unleashd/shared';
+import {
+  type BuddyListAuthor,
+  type BuddyMailingListPost,
+  BuddyMailingListPostsSchema,
+  type BuddyMessage,
+} from '@unleashd/shared';
 import { useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
 import { Link } from 'react-router-dom';
-import { usePolledFetch } from '../../hooks/usePolledFetch';
+import { resource, usePolledFetch } from '../../hooks/usePolledFetch';
 import { newId } from '../../utils/ids';
 import { BuddyTeamConfigurationRequest } from './BuddyTeamConfiguration';
 import { buddyApi } from './api';
@@ -64,9 +69,6 @@ export function BuddyMessages({
   );
 }
 
-// Author = Buddy | Owner (the owner posts as themself, never as a stand-in Buddy).
-export type BuddyListAuthor = { kind: 'buddy'; buddyId: string } | { kind: 'owner' };
-
 export interface BuddyMailingListSummary {
   id: string;
   workspaceId: string;
@@ -78,22 +80,13 @@ export interface BuddyMailingListSummary {
   latestPostAt: string | null;
 }
 
-export interface BuddyMailingListPost {
-  id: string;
-  listId: string;
-  workspaceId: string;
-  author: BuddyListAuthor;
-  // null: a top-level channel post. Threads are one level deep.
-  threadRootId: string | null;
-  replyCount: number;
-  latestReplyAt: string | null;
-  purpose: string;
-  body: string;
-  evidence: string[];
-  projectId: string | null;
-  createdAt: string;
-  senderConversationId: string | null;
-  senderRunId: string | null;
+// Every post read goes through here: the fetch boundary parses the v33 wire
+// shape once, so a stale or foreign server surfaces as the view's refresh
+// error instead of a crash (or a silent "Unknown") deep in rendering.
+export function postsResource(path: string) {
+  return resource(path, async (signal: AbortSignal) =>
+    BuddyMailingListPostsSchema.parse(await buddyApi(path, { signal }))
+  );
 }
 
 export function authorKey(author: BuddyListAuthor): string {
@@ -243,10 +236,12 @@ export function ChannelFeed({
   composer?: (refetch: () => void) => ReactNode;
 }) {
   const [projectFilter, setProjectFilter] = useState<string | null>(null);
-  const { data, error, refetch } = usePolledFetch<BuddyMailingListPost[]>(
-    projectFilter && workspaceId
-      ? taskChannelFeedUrl(workspaceId, projectFilter)
-      : `/api/buddies/lists/${encodeURIComponent(list.id)}/posts?limit=20`,
+  const { data, error, refetch } = usePolledFetch(
+    postsResource(
+      projectFilter && workspaceId
+        ? taskChannelFeedUrl(workspaceId, projectFilter)
+        : `/api/buddies/lists/${encodeURIComponent(list.id)}/posts?limit=20`
+    ),
     5000
   );
   const sortedPosts = useMemo(

@@ -6,10 +6,17 @@
  * Tasks, @ references) and who is replying. No JSX, no CSS — mobile may import
  * it (gate G3 allows components/buddies/).
  */
-import { type BuddyWorkspaceActivity, BuddyWorkspaceActivitySchema } from '@unleashd/shared';
-import { useMemo } from 'react';
+import {
+  BuddyChannelThreadSchema,
+  type BuddyMailingListPost,
+  type BuddyWorkspaceActivity,
+  BuddyWorkspaceActivitySchema,
+} from '@unleashd/shared';
+import { type UIEvent, useEffect, useMemo, useRef } from 'react';
 import { resource, usePolledFetch } from '../../hooks/usePolledFetch';
-import { type BuddyMailingListPost, authorKey } from './BuddyMessages';
+import { newId } from '../../utils/ids';
+import { authorKey, postsResource } from './BuddyMessages';
+import { buddyApi } from './api';
 import { type ChannelReference, type ChannelTask, workspaceTasksUrl } from './channel-text';
 
 export function workspaceActivityResource(workspaceId: string) {
@@ -30,12 +37,15 @@ export function listsUrl(workspaceId: string): string {
   return `/api/buddies/lists?workspaceId=${encodeURIComponent(workspaceId)}`;
 }
 
-export function channelPostsUrl(listId: string): string {
-  return `/api/buddies/lists/${encodeURIComponent(listId)}/posts?limit=50`;
+export function channelPostsResource(listId: string) {
+  return postsResource(`/api/buddies/lists/${encodeURIComponent(listId)}/posts?limit=50`);
 }
 
-export function threadUrl(listId: string, rootId: string): string {
-  return `/api/buddies/lists/${encodeURIComponent(listId)}/threads/${encodeURIComponent(rootId)}`;
+export function channelThreadResource(listId: string, rootId: string) {
+  const path = `/api/buddies/lists/${encodeURIComponent(listId)}/threads/${encodeURIComponent(rootId)}`;
+  return resource(path, async (signal: AbortSignal) =>
+    BuddyChannelThreadSchema.parse(await buddyApi(path, { signal }))
+  );
 }
 
 export function respondingUrl(listId: string): string {
@@ -46,7 +56,6 @@ export function respondingUrl(listId: string): string {
 // ones appear in the rail and the @ menu.
 export type ChannelMember = { id: string; name: string; role: string; status: string };
 
-export type ChannelThread = { root: BuddyMailingListPost; replies: BuddyMailingListPost[] };
 export type ChannelResponse = { threadRootId: string; buddyId: string; conversationId: string };
 
 // =============================================================================
@@ -206,4 +215,39 @@ export function useChannelResponding(listId: string) {
     return map;
   }, [responding.data]);
   return { byRoot, count: responding.data?.length ?? 0, refetch: responding.refetch };
+}
+
+// Pin to the newest message on open, and keep following new posts only while
+// the reader is already at the bottom — never yank someone reading history
+// back down on a poll.
+export function useFollowBottom(rowCount: number, version: unknown) {
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const followRef = useRef(true);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: version is the re-pin trigger
+  useEffect(() => {
+    const node = scrollRef.current;
+    if (node && followRef.current && rowCount > 0) node.scrollTop = node.scrollHeight;
+  }, [rowCount, version]);
+  const onScroll = (event: UIEvent<HTMLDivElement>) => {
+    const node = event.currentTarget;
+    followRef.current = node.scrollHeight - node.scrollTop - node.clientHeight < 48;
+  };
+  const pin = () => {
+    followRef.current = true;
+  };
+  return { scrollRef, onScroll, pin };
+}
+
+/** Create a channel as the owner; resolves to the new list id. */
+export async function createChannel(
+  workspaceId: string,
+  name: string,
+  purpose: string
+): Promise<string> {
+  const result = await buddyApi<{ list: { id: string } }>('/api/buddies/lists', {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ workspaceId, author: { kind: 'owner' }, key: newId(), name, purpose }),
+  });
+  return result.list.id;
 }
