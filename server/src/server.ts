@@ -13,6 +13,7 @@ import { BuddyOperationInputSchemas } from './buddies/operations';
 import { BuddyRunExecutor } from './buddies/run-executor';
 
 import { executeCommand } from '@nbardy/agent-cli';
+import compression from 'compression';
 import express, { type ErrorRequestHandler } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import { WebSocketServer } from 'ws';
@@ -122,7 +123,23 @@ console.log(`[auth] ${describePolicy(AUTH_POLICY)}`);
 // `new WebSocketServer({ server })` accepts every upgrade before any of our
 // code runs, so the socket — which carries the full command surface — would
 // stay open to anyone who can reach the port.
-const wss = new WebSocketServer({ noServer: true });
+//
+// permessage-deflate: the `init` snapshot is ~2.4 MB of JSON for a real
+// history (~190 KB deflated), which over a LAN/phone link was the dominant
+// cost of opening the app. Browsers offer the extension on every WebSocket
+// handshake, so enabling it here is the whole change; `handleUpgrade` does the
+// negotiation, so noServer + the gated upgrade handler below are unaffected.
+// Frames under `threshold` (streaming deltas, acks) are sent uncompressed.
+// Context takeover stays ON: consecutive streaming deltas share most of their
+// bytes, and the per-connection cost (~200 KB of zlib state at memLevel 7) is
+// trivial for the handful of tabs this server ever has open.
+const wss = new WebSocketServer({
+  noServer: true,
+  perMessageDeflate: {
+    threshold: 1024,
+    zlibDeflateOptions: { memLevel: 7 },
+  },
+});
 server.on('upgrade', (request, socket, head) => {
   const gateRequest = {
     method: request.method ?? 'GET',
@@ -416,6 +433,13 @@ registerConversationWebSocket(wss, {
 // Auth first: every route below (API, uploads, and the static app shell) is
 // unreachable without the shared secret.
 registerAuthRoutes(app, AUTH_POLICY);
+
+// gzip/deflate every compressible response over 1 KB (JSON API, the app
+// shell's JS/CSS). Mounted AFTER the gate so an unauthenticated caller costs
+// no compression work. /api/conversations/:id reaches 1.36 MB for a long
+// thread. There are no streaming (SSE / chunked res.write) routes; if one is
+// added it must call `res.flush()` after each write or compression buffers it.
+app.use(compression({ threshold: 1024 }));
 
 // JSON body parser for API routes.
 // Default limit is 100kb which is far too small — queue-message, merge, and
