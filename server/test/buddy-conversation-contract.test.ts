@@ -150,11 +150,6 @@ test('empty Buddy WebSocket creation resolves and registers without sending a pr
           },
         }),
       },
-      getUIState: () => ({
-        activeConversationId: null,
-        lastWorkingDirectory: null,
-        galleryExpandedProjects: [],
-      }),
       getDefaultWorkingDirectory: () => '/tmp',
       resolveWorkingDirectory: (directory: string) => directory,
       resolveBuddyConversation: async () => ({
@@ -193,11 +188,6 @@ test('empty Buddy WebSocket creation resolves and registers without sending a pr
       loading: true,
       conversations: [],
       defaultCwd: '/tmp',
-      uiState: {
-        activeConversationId: null,
-        lastWorkingDirectory: null,
-        galleryExpandedProjects: [],
-      },
       protocol: {
         version: 2,
         capabilities: ['conversation_config', 'conversation_updated', 'structured_command_errors'],
@@ -309,11 +299,6 @@ test('existing hydrated Buddy messages repair the durable link before admission'
       configService: {
         getRecord: async () => ({ status: 'active' }),
       },
-      getUIState: () => ({
-        activeConversationId: null,
-        lastWorkingDirectory: null,
-        galleryExpandedProjects: [],
-      }),
       getDefaultWorkingDirectory: () => '/tmp',
       resolveWorkingDirectory: (directory: string) => directory,
       resolveBuddyConversation: async () => ({
@@ -412,11 +397,6 @@ test('replaying create_conversation reports the real failure, not a config misma
         // to throw inside that try is dispatchInitialMessage.
         createOrReplay: async () => ({ record: { workingDirectory: '/tmp' }, replayed: true }),
       },
-      getUIState: () => ({
-        activeConversationId: null,
-        lastWorkingDirectory: null,
-        galleryExpandedProjects: [],
-      }),
       getDefaultWorkingDirectory: () => '/tmp',
       resolveWorkingDirectory: (directory: string) => directory,
       resolveBuddyConversation: async () => ({

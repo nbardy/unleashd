@@ -63,16 +63,22 @@ three now routes through `mobile/atoms/create.ts`:
 `PathAutocomplete` — it replaced a local `useMemo` in `Sidebar.tsx` so the two
 trees cannot drift on what counts as a recent folder.
 
-### UI state partition
+### UI state
 
-`atoms/ui.ts` holds the shared/local partition (folded from the former
-zustand `stores/uiStore.ts` — the post-v1 `atomWithStorage` migration from
-`PLANNING_MOBILE.md` §4 is done):
+`atoms/ui.ts` holds device-local state only. Nothing in it syncs to the server:
 
-- **shared** (debounced POST to `POST /api/ui-state`, gated until WS-init hydration) — `{ doneConversations, promotedWorkers, lastSeenMessageIndex, lastWorkingDirectory }` (4)
-- **local** (`atomWithStorage` under `localStorage['unleashd-ui-local']`, same blob shape as v1 so old data loads as-is) — `{ activeConversationId, galleryExpandedProjects, galleryCollapsedProjects, showTempSessions, showDoneConversations, showWorkerConversations, sidebarViewMode }` (7)
+- **prefs** (`atomWithStorage` under `localStorage['unleashd-ui-local']`) — `{ activeConversationId, galleryExpandedProjects, galleryCollapsedProjects, showTempSessions, showDoneConversations, showWorkerConversations, sidebarViewMode, lastWorkingDirectory, promotedWorkers }`
+- **seen** (`localStorage['unleashd-seen-message-index']`) — NEW-badge message index per conversation, its own key because it changes on every viewed message
 
-Storage reads go through `UIStateSchema.partial().safeParse` (discard whole
+Done (hidden) is not UI state: it is `conversation.done`, stored on the
+server's conversation record and changed with the `set_conversation_done`
+WebSocket command. Until 2026-09-24 it lived with the NEW-badge indexes in a
+server-synced blob (`ui-state.json`, debounced `POST /api/ui-state`) keyed by
+`sessionId ?? id`. The server rotates sessionId, and the snapshot POST lost
+writes on refresh and reconnect, so hidden conversations kept reappearing.
+The server retires that file on first start (`retireLegacyUiState`).
+
+Storage reads go through `DeviceUiPrefsSchema.partial().safeParse` (discard whole
 blob on failure — no silent half-merge). Subscribe via per-field derived atoms
 (`savedActiveConversationIdAtom`, `promotedWorkersAtom`, ...); mutate only via
 exported action functions. Phone never mutates desktop-local fields. The

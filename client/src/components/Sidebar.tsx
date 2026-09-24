@@ -8,7 +8,7 @@ import {
 import { useAtom, useAtomValue } from 'jotai';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { createConversation } from '../atoms/actions';
+import { createConversation, setConversationDone } from '../atoms/actions';
 import {
   type BuddySidebarItemData,
   buddyBuilderConversationsAtom,
@@ -28,12 +28,10 @@ import {
 } from '../atoms/conversations';
 import { mergeModeAtom, mergeSelectionAtom } from '../atoms/mergeAtoms';
 import {
-  doneConversationsAtom,
   galleryCollapsedProjectsAtom,
   hasUnseenMessages,
   lastSeenMessageIndexAtom,
   lastWorkingDirectoryAtom,
-  markDone,
   promotedWorkersAtom,
   setLastWorkingDirectory,
   toggleGalleryCollapsed,
@@ -122,7 +120,6 @@ export function Sidebar() {
   const [, setMergeSelection] = useAtom(mergeSelectionAtom);
 
   const lastWorkingDirectory = useAtomValue(lastWorkingDirectoryAtom);
-  const doneConversations = useAtomValue(doneConversationsAtom);
   const lastSeenMessageIndex = useAtomValue(lastSeenMessageIndexAtom);
   const promotedWorkers = useAtomValue(promotedWorkersAtom);
   const galleryCollapsedProjects = useAtomValue(galleryCollapsedProjectsAtom);
@@ -135,8 +132,6 @@ export function Sidebar() {
   }, []);
 
   const promotedSet = useMemo(() => new Set(promotedWorkers), [promotedWorkers]);
-  // O(1) lookup instead of O(n) Array.includes — avoids O(n*m) in visibleConversations filter
-  const doneSet = useMemo(() => new Set(doneConversations), [doneConversations]);
   // allConversations is already sorted newest-first by allConversationsAtom
   // Done conversations stay in the list for stable sort order — filtered at render time.
   // This prevents group/item order thrashing when marking conversations done.
@@ -391,14 +386,12 @@ export function Sidebar() {
 
   const handleDone = (conv: Conversation, e: React.MouseEvent) => {
     e.stopPropagation();
-    // Use sessionId when available — it's stable across server restarts.
-    // conv.id is a UUID in-session but becomes sessionId after the server reloads
-    // from disk, so sessionId is the consistent key for persisted done state.
-    markDone(conv.sessionId ?? conv.id);
+    setConversationDone(conv.id, true);
     if (location.pathname.includes(conv.id)) {
       navigate('/');
     }
   };
+  const onDone = wsStatus === 'connected' ? handleDone : null;
 
   return (
     <div className={`sidebar ${mergeMode ? 'sidebar--merge-mode' : ''}`}>
@@ -635,14 +628,14 @@ export function Sidebar() {
                           +
                         </button>
                         <span className="folder-group-count">
-                          {builderConversations.filter((c) => !doneSet.has(c.sessionId ?? c.id))
+                          {builderConversations.filter((c) => !c.done)
                             .length || ''}
                         </span>
                       </div>
                       {!collapsedSet.has('__builder__') &&
                         (() => {
                           const builderActive = builderConversations.filter(
-                            (c) => !doneSet.has(c.sessionId ?? c.id)
+                            (c) => !c.done
                           );
                           if (builderActive.length === 0) return null;
                           const isBuilderExpanded = expandedDirectories.has('__builder__');
@@ -664,7 +657,7 @@ export function Sidebar() {
                                   )}
                                   showFolderBadge={false}
                                   onSelect={handleSelectConversation}
-                                  onDone={handleDone}
+                                  onDone={onDone}
                                 />
                               ))}
                               {builderActive.length > 3 && (
@@ -778,7 +771,7 @@ export function Sidebar() {
                                     )}
                                     showFolderBadge={false}
                                     onSelect={handleSelectConversation}
-                                    onDone={handleDone}
+                                    onDone={onDone}
                                   />
                                 ))
                               ) : item.pendingCreation ? (
@@ -876,7 +869,7 @@ export function Sidebar() {
                   const runningCount = runningCountByFolder.get(group.directory) ?? 0;
                   // Filter done at render time — group position stays stable
                   const activeConvs = group.conversations.filter(
-                    (c) => !doneSet.has(c.sessionId ?? c.id)
+                    (c) => !c.done
                   );
 
                   return (
@@ -958,7 +951,7 @@ export function Sidebar() {
                                   )}
                                   showFolderBadge={false}
                                   onSelect={handleSelectConversation}
-                                  onDone={handleDone}
+                                  onDone={onDone}
                                 />
                               ))}
                               {activeConvs.length > 3 && (
@@ -993,7 +986,7 @@ export function Sidebar() {
 
             {(() => {
               const olderActive = olderConversations
-                .filter((conv) => !doneSet.has(conv.sessionId ?? conv.id))
+                .filter((conv) => !conv.done)
                 .sort(
                   (left, right) =>
                     getConversationLastActivity(right).getTime() -
@@ -1018,7 +1011,7 @@ export function Sidebar() {
                       )}
                       showFolderBadge
                       onSelect={handleSelectConversation}
-                      onDone={handleDone}
+                      onDone={onDone}
                     />
                   ))}
                   {olderActive.length > 3 && (
@@ -1191,7 +1184,8 @@ function ConversationItem({
   hasUnseen: boolean;
   showFolderBadge: boolean;
   onSelect: (id: string) => void;
-  onDone: (conv: Conversation, e: React.MouseEvent) => void;
+  /** Null while disconnected: the command would be dropped, so the button is disabled. */
+  onDone: ((conv: Conversation, e: React.MouseEvent) => void) | null;
   mergeMode?: boolean;
   mergeSelected?: boolean;
   mergeDisabled?: boolean;
@@ -1274,7 +1268,13 @@ function ConversationItem({
         )}
       </div>
       {!mergeMode && (
-        <button type="button" className="done-btn" onClick={(e) => onDone(conv, e)}>
+        <button
+          type="button"
+          className="done-btn"
+          disabled={onDone === null}
+          title={onDone === null ? 'Reconnecting to the server' : undefined}
+          onClick={(e) => onDone?.(conv, e)}
+        >
           Done
         </button>
       )}

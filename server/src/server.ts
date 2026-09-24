@@ -40,6 +40,7 @@ import {
 } from './conversations/buddy-creation-service';
 import { ConversationConfigService } from './conversations/config-service';
 import { ConversationConfigStore } from './conversations/config-store';
+import { retireLegacyUiState } from './conversations/legacy-ui-state';
 import { type ConversationRuntime, createConversationRuntime } from './conversations/runtime';
 import { registerConversationRoutes } from './http/conversation-routes';
 import { registerCoreRoutes } from './http/core-routes';
@@ -379,7 +380,6 @@ registerConversationWebSocket(wss, {
   beginCommand: (command) =>
     beginMutation({ allowDuringStartup: command.type === 'create_conversation' }),
   configService: conversationConfigService,
-  getUIState: () => persistedServerState.getUIState(),
   isBuddyArchived: async (buddyId) =>
     (await getBuddiesStore()).getBuddy(buddyId)?.status === 'archived',
   getArchivedBuddyIds: async () =>
@@ -589,7 +589,8 @@ registerSwarmReadModelRoutes(app, {
 registerMergeRoutes(app, {
   getConversation: (id) => conversations.get(id),
   createAndAddConversation(options) {
-    const conversation = new Conversation(options);
+    // Merge parents and review children are brand-new records.
+    const conversation = new Conversation({ ...options, done: false });
     conversations.set(conversation);
     return conversation;
   },
@@ -659,7 +660,6 @@ shutdownController = registerShutdownHandlers(
     resumeScheduler: resumeBuddyScheduler,
     stopScheduler: stopBuddyScheduler,
     flushState: async () => {
-      persistedServerState.flushUIStateSync();
       await Promise.all([turnAttemptJournal.flush(), errorJournal.flush()]);
       await buddyControlServer.close();
     },
@@ -717,6 +717,8 @@ void runServerStartup(
       await normalizedSessionCache.initialize();
       await turnAttemptJournal.initialize();
       await persistedServerState.initialize();
+      // Before any conversation loads: runtimes copy record.done at construction.
+      await retireLegacyUiState({ dataDirectory: APP_DATA_DIR, store: conversationConfigStore });
       await paletteService.initialize();
     },
     startOptionalScheduler: async () => {

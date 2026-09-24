@@ -205,6 +205,12 @@ export const PersistedConversationConfigRecordSchema = z.object({
   sessionBindings: z.array(ConversationSessionBindingSchema),
   currentSession: ConversationSessionBindingSchema.optional(),
   status: ConversationLifecycleStatusSchema.default('active'),
+  // Owner marked this conversation done: hidden from working lists, still
+  // loaded and resumable. It lives here, keyed by the stable conversationId,
+  // because the retired client-synced list keyed hides by provider sessionId,
+  // which the server rotates (session.started, reset, resume) — every rotation
+  // silently un-hid the conversation. Absent on older records = never marked.
+  done: z.boolean().default(false),
   workingDirectory: z.string().min(1).optional(),
   creation: ConversationCreationMetadataSchema.optional(),
   deletedAt: z.string().datetime().optional(),

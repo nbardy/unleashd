@@ -92,6 +92,7 @@ export function createConversationService(ports: ConversationCreationPorts) {
         id: input.conversationId,
         workingDirectory: creation.record.workingDirectory ?? input.workingDirectory,
         configState: creation.state,
+        done: creation.record.done,
         placement: creation.record.creation?.placement ?? input.placement,
         existingSessionId: currentSession?.sessionId,
         existingSessionAudienceKey: currentSession?.buddyAudienceKey,

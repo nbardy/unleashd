@@ -7,7 +7,7 @@ import {
   chatConversationInboxAtom,
   conversationAtomFamily,
 } from '../../atoms/conversations';
-import { doneConversationsAtom, hasUnseenMessages, lastSeenMessageIndexAtom } from '../../atoms/ui';
+import { hasUnseenMessages, lastSeenMessageIndexAtom } from '../../atoms/ui';
 import { formatTimeAgo, getConversationLastActivity } from '../../utils/time';
 import { mobileConversationRouteState } from '../../utils/conversation-route-state';
 import {
@@ -37,8 +37,6 @@ const ConversationListItem = memo(function ConversationListItem({
 }) {
   const conv = useAtomValue(conversationAtomFamily(id));
   const lastSeenMessageIndex = useAtomValue(lastSeenMessageIndexAtom);
-  const doneConversations = useAtomValue(doneConversationsAtom);
-  const done = doneConversations.includes(id);
 
   if (!conv) return null;
 
@@ -63,7 +61,7 @@ const ConversationListItem = memo(function ConversationListItem({
           {folderName}
         </span>
         <span className="mobile-conversation-item__meta">
-          {done ? <MobileBadge>Done</MobileBadge> : null}
+          {conv.done ? <MobileBadge>Done</MobileBadge> : null}
           {unseen ? <MobileBadge tone="accent">New</MobileBadge> : null}
           <span className="mobile-conversation-item__time">{timeAgo}</span>
           {conv.isRunning ? (

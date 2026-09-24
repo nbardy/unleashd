@@ -188,11 +188,13 @@ buffers into the conversation snapshot.
 
 ## Persisted UI state
 
-[atoms/ui.ts](../client/src/atoms/ui.ts) separates local and shared preferences.
-Local fields persist via `atomWithStorage` under `unleashd-ui-local`; shared fields
-debounce-POST to `/api/ui-state`, gated until server hydration. Subscribe to
+[atoms/ui.ts](../client/src/atoms/ui.ts) holds device-local preferences and
+NEW-badge seen indexes in `localStorage`; none of it syncs. Subscribe to
 per-field atoms and mutate through exported actions, never the slice atoms.
-See [mobile view tree](mobile-view-tree.md) for the field partition and migration.
+Facts about a conversation belong on the conversation, not here: done/hidden is
+`conversation.done`, owned by the server record and changed with
+`set_conversation_done`. See [mobile view tree](mobile-view-tree.md) for the
+fields and why the synced blob was retired.
 
 ## Hook ordering and stable values
 

@@ -313,6 +313,13 @@ export class ConversationConfigService {
     await this.store.setCurrentSession(conversationId, binding);
   }
 
+  setDone(
+    conversationId: string,
+    done: boolean
+  ): Promise<PersistedConversationConfigRecord | undefined> {
+    return this.store.setDone(conversationId, done);
+  }
+
   getRecord(conversationId: string): Promise<PersistedConversationConfigRecord | undefined> {
     return this.store.getByConversationId(conversationId);
   }

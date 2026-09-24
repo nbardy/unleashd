@@ -10,7 +10,7 @@ import {
   allConversationsAtom,
   allPendingCreationsAtom,
 } from './conversations';
-import { doneConversationsAtom, promotedWorkersAtom } from './ui';
+import { promotedWorkersAtom } from './ui';
 
 /**
  * The slice of `BuddyOverview` the sidebar reads, declared as Picks over the
@@ -50,7 +50,6 @@ export const buddySidebarProjectsAtom = atom((get) => {
   const archived = get(archivedBuddyIdsAtom);
   const all = get(allConversationsAtom);
   const ids = new Set(all.map((c) => c.id));
-  const done = new Set(get(doneConversationsAtom));
   const projects = new Map<
     string,
     {
@@ -148,7 +147,7 @@ export const buddySidebarProjectsAtom = atom((get) => {
       activity > getConversationLastActivity(item.latestConversation).getTime()
     )
       item.latestConversation = conversation;
-    if (!done.has(conversation.sessionId ?? conversation.id)) item.conversations.push(conversation);
+    if (!conversation.done) item.conversations.push(conversation);
   }
   for (const pending of get(allPendingCreationsAtom)) {
     const context = pending.buddyContext;
