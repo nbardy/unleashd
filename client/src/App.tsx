@@ -2,7 +2,7 @@ import { Provider, useAtomValue } from 'jotai';
 import { type ComponentType, type ReactElement, useCallback, useEffect, useRef } from 'react';
 import { BrowserRouter, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { handleMessage, setSendFn, setWsStatus } from './atoms/actions';
-import { allConversationsAtom, conversationsAtom } from './atoms/conversations';
+import { conversationsAtom, hasConversationsAtom } from './atoms/conversations';
 import { startConversationPrefetch } from './atoms/prefetch';
 import { jotaiStore } from './atoms/store';
 import { savedActiveConversationIdAtom } from './atoms/ui';
@@ -81,7 +81,7 @@ function useWebSocketBridge() {
 function useRestoreOnLoad(device: DeviceKind) {
   const navigate = useNavigate();
   const location = useLocation();
-  const allConversations = useAtomValue(allConversationsAtom);
+  const hasConversations = useAtomValue(hasConversationsAtom);
   const savedActiveId = useAtomValue(savedActiveConversationIdAtom);
   const didRestore = useRef(false);
 
@@ -98,10 +98,10 @@ function useRestoreOnLoad(device: DeviceKind) {
 
   // Initial: "/" → /chat/:id once conversations have hydrated.
   useEffect(() => {
-    if (allConversations.length === 0) return;
+    if (!hasConversations) return;
     if (location.pathname !== '/') return;
     tryRestore();
-  }, [allConversations.length, location.pathname, tryRestore]);
+  }, [hasConversations, location.pathname, tryRestore]);
 
   // HMR/visibility: re-assert URL if a soft reload landed back on "/".
   // Focus is owned by useConversationDraft — no input handling here.

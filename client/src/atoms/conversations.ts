@@ -1,5 +1,4 @@
 import { getBuddyContext, getConversationKind, isBuddyKind } from '@unleashd/shared';
-import { archivedBuddyIdsAtom } from './buddy-visibility';
 import type {
   BuddyContext,
   ClientMessage,
@@ -10,10 +9,11 @@ import type {
 } from '@unleashd/shared';
 import { atom } from 'jotai';
 import { atomFamily } from 'jotai-family';
-import { groupChatMessages, type MessageGroup } from '../utils/chat-message-groups';
+import { type MessageGroup, groupChatMessages } from '../utils/chat-message-groups';
 import { normalizeFolderDirectory } from '../utils/directories';
 import { isWorktreeDirectory } from '../utils/swarmUtils';
-import { getConversationLastActivity } from '../utils/time';
+import { sortByActivityDesc } from '../utils/time';
+import { archivedBuddyIdsAtom } from './buddy-visibility';
 
 // =============================================================================
 // Primary State Atoms
@@ -182,17 +182,19 @@ export const queueAtomFamily = atomFamily((id: string) =>
 export const allConversationsAtom = atom((get) => {
   const map = get(conversationsAtom);
   const archived = get(archivedBuddyIdsAtom);
-  return Array.from(map.values())
-    .filter((conversation) => {
+  return sortByActivityDesc(
+    Array.from(map.values()).filter((conversation) => {
       const buddyId = getBuddyContext(conversation)?.buddyId;
       return !buddyId || !archived.has(buddyId);
     })
-    .sort((a, b) => {
-      const aTime = getConversationLastActivity(a).getTime();
-      const bTime = getConversationLastActivity(b).getTime();
-      return bTime - aTime;
-    });
+  );
 });
+
+// True once any conversation is visible. A boolean, so subscribers re-render once
+// on hydration rather than on every conversation event — App's restore-on-load
+// subscribed to allConversationsAtom just to read `.length`, which re-rendered
+// AppInner and the whole route tree per message/status/queue event.
+export const hasConversationsAtom = atom((get) => get(allConversationsAtom).length > 0);
 
 // Stable sorted ID list — only changes on add/delete/reorder.
 // Use with atomFamily for per-item subtree pruning (see CLAUDE.md).

@@ -3,7 +3,7 @@ import { getBuddyContext, isBuddyBuilderConversation, isBuddyConversation } from
 import { atom } from 'jotai';
 import type { Buddy, BuddyOverview, Workspace } from '../components/buddies/types';
 import { folderGroupKey } from '../utils/directories';
-import { getConversationLastActivity } from '../utils/time';
+import { conversationActivityMs, sortByActivityDesc } from '../utils/time';
 import { archivedBuddyIdsAtom } from './buddy-visibility';
 import {
   type PendingConversationCreation,
@@ -125,7 +125,7 @@ export const buddySidebarProjectsAtom = atom((get) => {
     const context = getBuddyContext(conversation)!;
     const item = entries.get(entryKey(context.buddyId, context.workspaceId));
     if (!item) continue;
-    const activity = getConversationLastActivity(conversation).getTime();
+    const activity = conversationActivityMs(conversation);
     touch(item, activity);
     // Background conversations have their own destination, including tasks
     // linked to a foreground parent. Count them before hiding nested chat rows.
@@ -142,10 +142,7 @@ export const buddySidebarProjectsAtom = atom((get) => {
       item.foregroundRunningCount += 1;
       projects.get(context.workspaceId)!.runningCount += 1;
     }
-    if (
-      !item.latestConversation ||
-      activity > getConversationLastActivity(item.latestConversation).getTime()
-    )
+    if (!item.latestConversation || activity > conversationActivityMs(item.latestConversation))
       item.latestConversation = conversation;
     if (!conversation.done) item.conversations.push(conversation);
   }
@@ -158,11 +155,7 @@ export const buddySidebarProjectsAtom = atom((get) => {
     touch(item, pending.createdAt.getTime());
   }
   for (const project of projects.values()) {
-    for (const item of project.items)
-      item.conversations.sort(
-        (a, b) =>
-          getConversationLastActivity(b).getTime() - getConversationLastActivity(a).getTime()
-      );
+    for (const item of project.items) item.conversations = sortByActivityDesc(item.conversations);
     project.items.sort(
       (a, b) =>
         (b.lastActiveAt?.getTime() ?? 0) - (a.lastActiveAt?.getTime() ?? 0) ||
@@ -246,7 +239,7 @@ export const buddySidebarGroupsAtom = atom((get) => {
     groups.push({
       kind: 'builder',
       key: '__builder__',
-      lastActiveMs: getConversationLastActivity(builders[0]).getTime(),
+      lastActiveMs: conversationActivityMs(builders[0]),
     });
   }
   return groups.sort((a, b) => b.lastActiveMs - a.lastActiveMs);

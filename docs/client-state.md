@@ -36,6 +36,21 @@ export const runningConversationIdsAtom = atom((get) =>
 );
 ```
 
+Collection atoms recompute on every message, status and queue event, over every
+conversation (1,100+ in real use), so their per-item work must be cheap:
+
+- Sort by recency with `sortByActivityDesc` / `conversationActivityMs` from
+  `utils/time.ts`, never `getConversationLastActivity` inside a comparator. That
+  parsed two dates per comparison (~22k per sort, measured 2026-09-25); the
+  helper computes one key per conversation snapshot and caches it in a WeakMap.
+- The kind accessors (`getConversationKind`, `isBuddyConversation`,
+  `getBuddyContext`) read `conversation.kind` directly; the wire schema already
+  validated it. Do not re-add a zod parse on that read path
+  (`client/test/buddy-builder-kind.test.ts` trips if you do).
+- A component that only needs "are there any conversations" subscribes to
+  `hasConversationsAtom`, not `allConversationsAtom` — the array is a new
+  reference on every event and re-renders the subscriber each time.
+
 ## Mutations and state ownership
 
 These are separate atoms, not fields of one combined state object:
