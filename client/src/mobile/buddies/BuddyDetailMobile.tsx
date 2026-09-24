@@ -160,6 +160,7 @@ export function BuddyDetailMobile() {
         <BuddyMessages
           key={employee.buddy.id}
           buddyId={employee.buddy.id}
+          workspaceId={workspace?.id}
           buddyNames={Object.fromEntries(
             [
               employee.buddy,
