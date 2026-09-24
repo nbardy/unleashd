@@ -225,6 +225,7 @@ async function recoverAll(input: {
     workingDirectory: string | null;
     provenance?: string;
     createdAt?: string;
+    creation?: { initialMessage?: string; initialMessageDispatchedAt?: string };
   }>;
   failFor: string;
 }): Promise<{
@@ -232,9 +233,14 @@ async function recoverAll(input: {
   threw: boolean;
   createdAt: Map<string, Date>;
   broadcastIds: string[];
+  dispatched: string[];
 }> {
   const created: ConversationOptions[] = [];
   const broadcastIds: string[] = [];
+  const dispatched: string[] = [];
+  const creations = new Map(
+    input.recoverable.map((entry) => [entry.conversationId, entry.creation])
+  );
   const registry = new Map<string, ConversationRuntime>();
 
   const dependencies = {
@@ -269,7 +275,10 @@ async function recoverAll(input: {
         }
         return {
           state: { config: {}, revision: 0, resolution: { status: 'resolved', value: {} } },
-          record: { conversationId: request.conversationId },
+          record: {
+            conversationId: request.conversationId,
+            creation: creations.get(request.conversationId),
+          },
           migrated: false,
           diagnostics: [],
         };
@@ -309,7 +318,9 @@ async function recoverAll(input: {
     },
     createId: () => 'unused-id',
     resolveBuddyConversation: async (context: BuddyContext) => ({ context, briefing: 'soul' }),
-    dispatchInitialMessage: async () => {},
+    dispatchInitialMessage: async (conversation: ConversationRuntime) => {
+      dispatched.push(conversation.id);
+    },
     persistCurrentSession: async () => {},
     broadcast: (data: ConversationBroadcast) => {
       if (data.type === 'conversations_updated') {
@@ -327,7 +338,13 @@ async function recoverAll(input: {
   }
   const createdAt = new Map<string, Date>();
   for (const [id, conversation] of registry) createdAt.set(id, conversation.createdAt);
-  return { recovered: created.map((options) => options.id), threw, createdAt, broadcastIds };
+  return {
+    recovered: created.map((options) => options.id),
+    threw,
+    createdAt,
+    broadcastIds,
+    dispatched,
+  };
 }
 
 /**
@@ -422,6 +439,31 @@ test('recovered conversations are broadcast to clients connected during startup'
 
   assert.deepEqual(result.broadcastIds.sort(), result.recovered.sort());
   assert.equal(result.broadcastIds.length, 2);
+});
+
+// Recovery skips the dispatch claim when nothing can be pending (2026-09-25).
+// The half that matters: a recovered conversation whose first message was
+// never sent must still be dispatched, or it waits forever on "Starting…".
+test('recovery dispatches only first messages that are still pending', async () => {
+  const result = await recoverAll({
+    recoverable: [
+      {
+        conversationId: 'aaaaaaaa-0000-4000-8000-000000000001',
+        workingDirectory: '/tmp/a',
+        creation: { initialMessage: 'hello' },
+      },
+      {
+        conversationId: 'bbbbbbbb-0000-4000-8000-000000000002',
+        workingDirectory: '/tmp/b',
+        creation: { initialMessage: 'hi', initialMessageDispatchedAt: '2026-09-01T00:00:00.000Z' },
+      },
+      { conversationId: 'cccccccc-0000-4000-8000-000000000003', workingDirectory: '/tmp/c' },
+    ],
+    failFor: 'none',
+  });
+
+  assert.deepEqual(result.dispatched, ['aaaaaaaa-0000-4000-8000-000000000001']);
+  assert.equal(result.recovered.length, 3);
 });
 
 /**

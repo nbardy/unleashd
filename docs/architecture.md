@@ -109,6 +109,12 @@ guarded by a test; every one of them regressed by growing with history size.
   the client's list; it never adds.
 - **Do not reintroduce per-file work on boot** that does not scale with the
   newest 500 sources (e.g. the removed chmod of every session-cache record).
+- **The session cache holds only live sources.** After a discovery that failed
+  for no provider, startup deletes records outside the discovered set (13,375 →
+  7,475 records). Never prune after a failed discovery: it would drop that
+  provider's whole cache.
+- **Recovery dispatches only pending first messages.** A record whose
+  `initialMessage` is absent or dispatched skips the claim (two record reads).
 
 ### 2.0) A config record is not a conversation
 

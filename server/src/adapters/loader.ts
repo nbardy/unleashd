@@ -62,8 +62,15 @@ const DEFAULT_MAX_IN_FLIGHT_PARSE_BYTES = 256 * 1024 * 1024;
  * correctness on dirty detection. If ordering precision ever matters, compute
  * composite only for the top-K after the fast sort.
  */
-async function discoverAll(adapters: DiskAdapter[]): Promise<DiscoveredFile[]> {
+/** Every source found, plus the providers whose discovery threw (their sources are unknown). */
+interface Discovery {
+  files: DiscoveredFile[];
+  failed: DiskAdapter['provider'][];
+}
+
+async function discoverAll(adapters: DiskAdapter[]): Promise<Discovery> {
   const files: DiscoveredFile[] = [];
+  const failed: DiskAdapter['provider'][] = [];
 
   await Promise.all(
     adapters.map(async (adapter) => {
@@ -74,6 +81,7 @@ async function discoverAll(adapters: DiskAdapter[]): Promise<DiscoveredFile[]> {
         console.warn(
           `[discover] ${adapter.provider}: discoverFiles() failed: ${err instanceof Error ? err.message : err}`
         );
+        failed.push(adapter.provider);
         return;
       }
 
@@ -107,7 +115,7 @@ async function discoverAll(adapters: DiskAdapter[]): Promise<DiscoveredFile[]> {
 
   // Sort by mtime descending — most recently modified sessions first.
   files.sort((a, b) => b.mtimeMs - a.mtimeMs);
-  return files;
+  return { files, failed };
 }
 
 function sessionFileIndexKey(provider: string, key: string): string {
@@ -391,7 +399,7 @@ export async function loadAllConversations(
   // Phase 1: Discover all files (sorted by mtime descending)
   const discoverStart = performance.now();
   console.log('Discovering persisted conversation files...');
-  const files = await discoverAll([...adapters]);
+  const { files, failed } = await discoverAll([...adapters]);
   const readSource = createBoundedSourceReader(maxInFlightParseBytes, cache);
   const readHistory = createHistoryReader(options, async () => files, readSource);
   const discoverTimeMs = performance.now() - discoverStart;
@@ -473,6 +481,23 @@ export async function loadAllConversations(
   }
   if (cache) {
     console.log(`[session-cache] ${cacheHits}/${parseTimeCount} startup sources reused`);
+    // Records for deleted sources were never removed: 13,361 records (787MB)
+    // for ~7,700 sources on 2026-09-25. Only a discovery that failed for no
+    // provider is the complete source set; pruning after a failed one would
+    // delete that provider's whole cache on one transient error.
+    if (failed.length === 0) {
+      // The cache only accelerates startup; a failed prune must not fail it.
+      await cache
+        .retainOnly(
+          files.map((file) => ({ provider: file.adapter.provider, filePath: file.filePath }))
+        )
+        .then((pruned) => {
+          if (pruned > 0) {
+            console.log(`[session-cache] Removed ${pruned} records for deleted sources`);
+          }
+        })
+        .catch((error: unknown) => console.warn('[session-cache] Prune failed:', error));
+    }
   }
 
   const totalTimeMs = discoverTimeMs + parseTimeMs;
@@ -516,7 +541,9 @@ export async function pollForChanges(
   // preventing the map from accumulating dead paths forever.
   const mtimes = new Map<string, number>();
   const adapters = options.adapters ?? diskAdapters;
-  const readHistory = createHistoryReader(options, () => discoverAll([...adapters]));
+  const readHistory = createHistoryReader(options, () =>
+    discoverAll([...adapters]).then((discovery) => discovery.files)
+  );
 
   for (const adapter of adapters) {
     let paths: string[];
