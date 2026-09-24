@@ -214,6 +214,13 @@ requirements to rebuild omitted machinery.
   Use `resolveEncodedProjectDirectory()`, which disambiguates against the
   filesystem and returns null rather than guessing. It only fires as a fallback:
   a modern Claude transcript carries an explicit `cwd`, which always wins.
+- A new field on a server→client schema needs `.default(...)` on the wire.
+  The client validates every WS message (`safeParseServerMessage`), Vite
+  serves new client code immediately, and the dev watcher defers backend
+  reloads until running turns finish, so a required field rejects every
+  `init` and update from the not-yet-reloaded backend and the list goes empty.
+  `Conversation.done` shipped required on 2026-09-24 and did exactly that
+  (fixed in e54fe26). The parsed type stays required, so servers still set it.
 - Sidebar rows are ONE line. `.done-btn` is an absolute overlay on the row's
   right edge, so anything else anchored right (`.thread-stop-btn`) sits under
   it and stops receiving clicks. Two-line rows hid this; single-line rows do
