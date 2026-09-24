@@ -181,7 +181,9 @@ the scheduler — and on create/delete of a Buddy-context conversation, which th
 client already knows about. `channel_changed {listId}` is the precise one:
 `invalidateChannelResources` refreshes only keys under
 `/api/buddies/lists/<listId>/` (posts, threads, who is replying) plus the
-channel list, whose rows count and sort by every post, so channel views poll
+channel list, whose rows count and sort by every post, and any mounted
+Task-filtered feed (`/api/buddies/posts?…`, cross-channel, so `listId` cannot
+select it), so channel views poll
 just as a 30 s backstop (`CHANNEL_BACKSTOP_MS`). An invalidation
 that lands while that key's load is in flight marks it to load once more when
 it settles, because the running request may have read the server before the

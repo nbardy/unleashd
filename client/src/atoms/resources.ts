@@ -88,8 +88,17 @@ const mounted = new Map<string, number>();
 
 function writeEntry(key: string, entry: ResourceEntry<unknown>): void {
   const cache = jotaiStore.get(resourceCacheAtom);
-  // An unchanged refresh (settledEntry kept the entry): no new Map, no subscriber work.
-  if (cache.get(key) === entry) return;
+  if (cache.get(key) === entry) {
+    // An unchanged refresh (settledEntry kept the entry): no new Map, no
+    // subscriber work — but it IS a use, so it still bumps recency. Returning
+    // before the bump (until 2026-09-25) left a key revalidated every visit at
+    // its first-load position, so eviction dropped the channel the user keeps
+    // returning to ahead of ones opened once. Reordering in place is invisible
+    // to readers (same Map, same entries); only `evictRetained` reads order.
+    cache.delete(key);
+    cache.set(key, entry);
+    return;
+  }
   const next = new Map(cache);
   // Delete-then-set moves the key to the Map's most-recent end, which is what
   // makes plain insertion order an LRU.
@@ -268,10 +277,21 @@ export const invalidateBuddyResources = (): void =>
  * refreshes too: its row counts every post, replies included, and sorts by the
  * newest. A Buddy's mention reply is announced only here, never by
  * `buddies_changed`, so without it the rail lagged by up to the 30 s backstop.
+ *
+ * The Task-filtered feed (`taskChannelFeedUrl`, `/api/buddies/posts?…`) is a
+ * cross-channel query keyed by workspace + Task, not by list, and the push
+ * carries only `listId`, so every mounted Task feed refreshes. Only mounted
+ * keys refetch — in practice the one feed on screen. Before 2026-09-25 a
+ * mention reply under a Task filter waited out the backstop too.
  */
 export const invalidateChannelResources = (listId: string): void => {
   const prefix = `/api/buddies/lists/${encodeURIComponent(listId)}/`;
-  invalidateResources((key) => key.startsWith(prefix) || key.startsWith('/api/buddies/lists?'));
+  invalidateResources(
+    (key) =>
+      key.startsWith(prefix) ||
+      key.startsWith('/api/buddies/lists?') ||
+      key.startsWith('/api/buddies/posts?')
+  );
 };
 
 /**

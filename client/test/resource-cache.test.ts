@@ -6,6 +6,7 @@ import {
   clearResourceCache,
   invalidateChannelResources,
   invalidateResources,
+  isResourceCached,
   loadResource,
   resourceAtomFamily,
   resourceCacheSize,
@@ -269,6 +270,9 @@ test('a channel change refreshes that channel and the channel list, not other ch
     '/api/buddies/lists/list_a/posts?limit=50',
     '/api/buddies/lists/list_a/responding',
     '/api/buddies/lists?workspaceId=w',
+    // The Task-filtered feed spans channels and is keyed by Task, not list;
+    // until 2026-09-25 it missed the push and a reply showed up to 30 s late.
+    '/api/buddies/posts?workspaceId=w&projectId=p&limit=50',
     '/api/buddies/lists/list_b/posts?limit=50',
   ];
   const releases = keys.map((key) => retainResourceKey(key));
@@ -284,7 +288,24 @@ test('a channel change refreshes that channel and the channel list, not other ch
   await new Promise((resolve) => setImmediate(resolve));
   assert.deepEqual(
     keys.map((key) => loads.get(key)),
-    [2, 2, 2, 1]
+    [2, 2, 2, 2, 1]
   );
   for (const release of releases) release();
+});
+
+// A key revalidated with unchanged data is still a use. writeEntry returned
+// before the LRU bump on an equal refresh, so the channel a user keeps
+// reopening kept its first-load position and was evicted ahead of keys
+// touched once since.
+test('an unchanged refresh still counts as recent use for eviction', async () => {
+  const favourite: Resource<string> = { key: '/api/favourite', load: async () => 'same' };
+  await loadResource(favourite);
+  for (let i = 0; i < 299; i += 1) {
+    await loadResource({ key: `/api/filler/${i}`, load: async () => i });
+  }
+  await loadResource(favourite); // equal answer: entry kept, recency bumped
+  await loadResource({ key: '/api/filler/overflow', load: async () => 'overflow' });
+
+  assert.ok(isResourceCached('/api/favourite'), 'the recently used key survives');
+  assert.ok(!isResourceCached('/api/filler/0'), 'the least recently used key goes');
 });
