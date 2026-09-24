@@ -6,7 +6,7 @@
  * Usage (dev server running, `pnpm dev`):
  *   pnpm screenshots                                   # every screen × every size
  *   pnpm screenshots --sizes phone,desktop
- *   pnpm screenshots --only thread,mention-menu
+ *   pnpm screenshots --only thread,mention-menu,mention-model
  *   pnpm screenshots --workspace project_… --open      # pin a workspace, open the sheet
  *   pnpm screenshots --url http://host:7489 --out /tmp/shots
  *
@@ -174,6 +174,36 @@ const OPEN_MENTION_MENU = `(() => {
   return document.querySelector('.channel-composer-picker') ? 'OK' : 'SKIP';
 })()`;
 
+// Pick the first Buddy from the @ menu with Enter (React handles the native
+// keydown), then click its chip on the bar to open the harness/model picker.
+// A chip that is disabled means the backend predates member execution.
+const OPEN_MENTION_MODEL = `(async () => {
+  const tick = () => new Promise((resolve) => setTimeout(resolve, 150));
+  const input = document.querySelector('.channel-composer textarea');
+  if (!input) return 'SKIP';
+  const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set;
+  input.focus();
+  setter.call(input, '@');
+  input.setSelectionRange(1, 1);
+  input.dispatchEvent(new Event('input', { bubbles: true }));
+  await tick();
+  const buddy = [...document.querySelectorAll('.channel-composer-picker button')].findIndex(
+    (button) => !button.querySelector('.channel-composer-picker-task')
+  );
+  if (buddy < 0) return 'SKIP';
+  for (let step = 0; step < buddy; step += 1) {
+    input.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
+    await tick();
+  }
+  input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
+  await tick();
+  const chip = document.querySelector('.channel-composer-mention');
+  if (!chip || chip.disabled) return 'SKIP';
+  chip.click();
+  await tick();
+  return document.querySelector('.channel-composer-model') ? 'OK' : 'SKIP';
+})()`;
+
 /**
  * Every screen, as data. `path` needs the ids it names; a screen whose ids
  * were not found is skipped with that reason. `trees` limits a screen to the
@@ -195,6 +225,12 @@ function buildScreens(found) {
       needs: channel,
       path: `${base}?${channel}`,
       prepare: OPEN_MENTION_MENU,
+    },
+    {
+      name: 'mention-model',
+      needs: channel,
+      path: `${base}?${channel}`,
+      prepare: OPEN_MENTION_MODEL,
     },
     {
       name: 'task-filter',

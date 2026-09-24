@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { ConversationConfigSchema } from './conversation-config.js';
 
 // Wire shape of a channel post (Buddies list schema v33). The client parses
 // every post fetch with these, so a server serving another shape fails loudly
@@ -39,6 +40,15 @@ export const BuddyMentionDispatchSchema = z.discriminatedUnion('status', [
   z.object({ buddyId: z.string(), status: z.literal('rejected'), reason: z.string() }),
 ]);
 
+// The owner's model choice for one mentioned Buddy, sent beside the post (not
+// in its body, so the channel reads the same either way). A mentioned Buddy
+// with no entry replies on whatever its thread already runs: its profile
+// default for a new thread.
+export const OwnerPostMentionConfigSchema = z.object({
+  buddyId: z.string().min(1),
+  config: ConversationConfigSchema,
+});
+
 export const BuddyOwnerPostResultSchema = z.object({
   post: BuddyMailingListPostSchema,
   mentions: z.array(BuddyMentionDispatchSchema),
@@ -48,4 +58,5 @@ export type BuddyListAuthor = z.infer<typeof BuddyListAuthorSchema>;
 export type BuddyMailingListPost = z.infer<typeof BuddyMailingListPostSchema>;
 export type BuddyChannelThread = z.infer<typeof BuddyChannelThreadSchema>;
 export type BuddyMentionDispatch = z.infer<typeof BuddyMentionDispatchSchema>;
+export type OwnerPostMentionConfig = z.infer<typeof OwnerPostMentionConfigSchema>;
 export type BuddyOwnerPostResult = z.infer<typeof BuddyOwnerPostResultSchema>;

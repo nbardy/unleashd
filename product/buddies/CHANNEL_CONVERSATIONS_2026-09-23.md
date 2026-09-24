@@ -66,6 +66,38 @@ silently. The fix is to launch each mention as a `buddy_runs` row; see the
 proposal in
 [the 2026-09-24 handoff](../../agent_notes/2026-09-24_dev-restart-simplification-and-cleanup.md#open-mention-replies-as-durable-buddy-runs).
 
+## Model choice per mention (2026-09-24)
+
+- **Composer:** every Buddy the text mentions gets a chip on the composer bar
+  (`@Name · model`). Clicking it opens the chat's `ConversationConfigPicker`
+  (harness, model, thinking level; harnesses without Buddy MCP are hidden).
+  Chips come from `mentionedBuddies()`, the same encoding as send, so deleting
+  `@Name` drops its chip and its choice.
+- **Wire:** the choice travels beside the post as
+  `mentionConfigs: [{buddyId, config}]` (`OwnerPostMentionConfigSchema`), not in
+  the body. The route 400s a choice for a Buddy the body does not mention, a
+  duplicate, or any choice on a Buddy-authored post — each would otherwise be
+  dropped without a trace.
+- **Server:** a new (thread, Buddy) conversation is created on the chosen
+  config; a continuing one gets a `replace` patch through `updateRuntimeConfig`
+  (`server/src/conversations/runtime-config.ts`) — the path the chat header's
+  `set_conversation_config` also uses — once it is idle. So a choice sticks for
+  later mentions in that thread, and a mention with no choice keeps what the
+  thread runs.
+- **Harness lock:** a started thread cannot change provider (its session cannot
+  move). That is a `reply_failed` post saying so, never a silent fallback to
+  the old harness.
+- **Defaults on the chip:** workspace activity members carry
+  `execution: {kind:'profile', config}` from `buddyExecutionPreferences()` (the
+  same mapping turn creation uses). The wire default is `{kind:'unreported'}`
+  for a backend that predates the field; its chip is disabled rather than
+  opening the picker at an invented config.
+- **@ menu fix:** after Enter picked a Buddy, the menu stayed open. React's
+  `onSelect` fired during that keydown with the pre-edit caret, and the
+  inserted `@Label ` is itself a valid query (queries hold spaces). The composer
+  now re-asserts the caret after the edit, and `completesPickedReference()`
+  closes a query that is a finished pick.
+
 ## Agent navigation tools (2026-09-24)
 
 Buddy MCP tools for finding their way around the channels, all workspace-scoped
@@ -134,8 +166,9 @@ most recently active workspace. Shared with desktop: `channel-data.ts`,
 
 ## Verifying UI changes
 
-`pnpm screenshots` shoots Home, channel, thread, the `@` menu and the Task
-filter at 375 / 768 / 1024 / 1440 into `output/screenshots/<timestamp>/`
+`pnpm screenshots` shoots Home, channel, thread, the `@` menu, the mention
+model picker (`mention-model`; skipped while the backend predates member
+`execution`) and the Task filter at 375 / 768 / 1024 / 1440 into `output/screenshots/<timestamp>/`
 (`index.html` contact sheet, `manifest.json`). 768 renders the MOBILE tree.
 Ids come from the API (richest channel across workspaces) unless `--workspace`
 pins one. Driver: `tools/lib/headless-chrome.mjs` (sends the auth token).
@@ -145,7 +178,7 @@ pins one. Driver: `tools/lib/headless-chrome.mjs` (sends the auth token).
 | Route | Purpose |
 |---|---|
 | `POST /api/buddies/lists` | `{workspaceId, author, key, name, purpose}` |
-| `POST /api/buddies/lists/:id/posts` | `{author, key, purpose, body, threadRootId?, projectId?}` → `{post, mentions}` |
+| `POST /api/buddies/lists/:id/posts` | `{author, key, purpose, body, threadRootId?, projectId?, mentionConfigs?}` → `{post, mentions}` |
 | `GET /api/buddies/lists/:id/threads/:postId` | `{root, replies}` |
 | `GET /api/buddies/lists/:id/responding` | in-flight mention replies |
 | `POST /api/buddies/lists/:id/media` | multipart `files` → absolute paths to insert |

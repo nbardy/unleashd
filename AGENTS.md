@@ -121,7 +121,7 @@ running (`pnpm dev`); both tools log in with the server's own token
 ```bash
 pnpm screenshots                              # Channels: every screen × every size
 pnpm screenshots --sizes phone,desktop        # phone | ipad-portrait | ipad-landscape | desktop
-pnpm screenshots --only thread,mention-menu   # home | channel | thread | mention-menu | task-filter
+pnpm screenshots --only thread,mention-menu   # home | channel | thread | mention-menu | mention-model | task-filter
 pnpm screenshots --workspace project_… --open # pin a workspace; open the sheet when done
 pnpm screenshot:mobile --out /tmp/shots       # the older phone-only gallery (chats, buddies, swarms…)
 ```

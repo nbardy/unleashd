@@ -1,4 +1,5 @@
 import fs from 'node:fs';
+import { type ConversationConfig, OwnerPostMentionConfigSchema } from '@unleashd/shared';
 import type { Express, Request, Response } from 'express';
 import multer from 'multer';
 import { z } from 'zod';
@@ -11,6 +12,7 @@ import {
   requireCanonicalPostMedia,
 } from './channel-media';
 import type { ChannelResponder } from './channel-responder';
+import { mentionedBuddyIds } from './channel-text';
 import type { BuddiesStorePort } from './contract';
 import { withPostProvenanceFields } from './operations';
 
@@ -41,8 +43,28 @@ const OwnerPostSchema = z
     evidence: z.array(z.string().trim().min(1).max(4000)).max(32).optional(),
     projectId: z.string().min(1).nullable().optional(),
     threadRootId: z.string().min(1).nullable().optional(),
+    mentionConfigs: z.array(OwnerPostMentionConfigSchema).max(32).default([]),
   })
   .strict();
+
+// κ for the owner's per-mention model choices: one entry per Buddy, and only
+// for a Buddy the body actually mentions. A choice for anyone else would be
+// dropped without a trace, so it is a 400 instead.
+function mentionConfigsByBuddy(
+  body: string,
+  entries: readonly { buddyId: string; config: ConversationConfig }[]
+): ReadonlyMap<string, ConversationConfig> {
+  const mentioned = new Set(mentionedBuddyIds(body));
+  const byBuddy = new Map<string, ConversationConfig>();
+  for (const entry of entries) {
+    if (!mentioned.has(entry.buddyId))
+      throw new Error(`mentionConfigs names ${entry.buddyId}, who is not mentioned in the post`);
+    if (byBuddy.has(entry.buddyId))
+      throw new Error(`mentionConfigs names ${entry.buddyId} more than once`);
+    byBuddy.set(entry.buddyId, entry.config);
+  }
+  return byBuddy;
+}
 
 // The Task index the channel needs for chips and the @ picker: identity,
 // live status, owner and todo progress. Not the full project record.
@@ -111,6 +133,9 @@ export function registerChannelRoutes(app: Express, dependencies: ChannelRouteDe
         return;
       }
       const input = OwnerPostSchema.parse(req.body);
+      if (input.author.kind === 'buddy' && input.mentionConfigs.length > 0)
+        throw new Error('mentionConfigs apply to owner posts only; Buddy mentions start no turn');
+      const mentionConfigs = mentionConfigsByBuddy(input.body, input.mentionConfigs);
       const { post } = buddies.createPost({
         list: list.id,
         author: input.author,
@@ -126,7 +151,9 @@ export function registerChannelRoutes(app: Express, dependencies: ChannelRouteDe
       });
       // Only the owner's own mentions start turns (channel-responder.ts).
       const mentions =
-        input.author.kind === 'owner' ? await responder.respondToOwnerPost(list, post) : [];
+        input.author.kind === 'owner'
+          ? await responder.respondToOwnerPost(list, post, mentionConfigs)
+          : [];
       res.status(201).json({ post: withPostProvenanceFields(post), mentions });
     })
   );

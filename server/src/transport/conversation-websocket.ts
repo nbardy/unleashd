@@ -31,6 +31,7 @@ import type {
   ConversationOptions,
   ConversationRuntime,
 } from '../conversations/runtime';
+import { updateRuntimeConfig } from '../conversations/runtime-config';
 import { summarizeConversation } from '../conversations/serialization';
 import {
   sendCommandAccepted,
@@ -321,10 +322,7 @@ export function registerConversationWebSocket(
               );
               break;
             }
-            const record = await dependencies.configService.setDone(
-              data.conversationId,
-              data.done
-            );
+            const record = await dependencies.configService.setDone(data.conversationId, data.done);
             if (!record) throw new Error(`Conversation ${data.conversationId} has no record`);
             conversation.done = record.done;
             dependencies.broadcast({
@@ -345,17 +343,9 @@ export function registerConversationWebSocket(
               });
               break;
             }
-            const result = await dependencies.configService.update(
-              {
-                config: conversation.config,
-                revision: conversation.configRevision,
-                resolution: conversation.configResolution,
-              },
-              {
-                isRunning: conversation.isRunning,
-                queueDepth: conversation.queue.length,
-                hasStartedSession: conversation.hasStartedSession(),
-              },
+            const result = await updateRuntimeConfig(
+              dependencies.configService,
+              conversation,
               data
             );
             if (!result.ok) {
@@ -367,7 +357,6 @@ export function registerConversationWebSocket(
               });
               break;
             }
-            conversation.applyConfigState(result.value.next);
             dependencies.broadcast({
               type: 'conversation_updated',
               commandId: data.commandId,

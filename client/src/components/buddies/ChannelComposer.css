@@ -172,3 +172,193 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* Mention chips: one per Buddy the text mentions. Clicking opens the harness /
+   model picker for that Buddy's reply. */
+.channel-composer-mentions {
+  display: flex;
+  flex: 1;
+  gap: 6px;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.channel-composer-mentions + .channel-composer-hint {
+  flex: none;
+}
+
+.channel-composer-mention {
+  display: inline-flex;
+  flex: 0 1 auto;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+  max-width: 360px;
+  height: 26px;
+  padding: 0 9px 0 4px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 13px;
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.channel-composer-mention:hover:not(:disabled),
+.channel-composer-mention[aria-expanded="true"] {
+  border-color: var(--border-emphasis);
+  color: var(--text-bright);
+}
+
+.channel-composer-mention[data-chosen] {
+  border-color: color-mix(in srgb, var(--theme-user) 60%, transparent);
+}
+
+.channel-composer-mention:disabled {
+  cursor: default;
+}
+
+.channel-composer-mention-sigil {
+  flex: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+}
+
+.channel-composer-mention-name {
+  min-width: 2em;
+  overflow: hidden;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* On a narrow bar the name gives way first: the model is the point. */
+.channel-composer-mention-model {
+  flex: none;
+  color: var(--text-muted);
+  white-space: nowrap;
+}
+
+.channel-composer-model-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 19;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: default;
+}
+
+.channel-composer-model {
+  position: absolute;
+  top: auto;
+  right: 0;
+  bottom: calc(100% + 6px);
+  left: 0;
+  width: auto;
+  margin: 0; /* <dialog open> is centered by the UA sheet */
+  color: inherit;
+  z-index: 20;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: min(60vh, 440px);
+  padding: 12px 14px;
+  overflow-y: auto;
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  background: var(--bg-panel);
+  box-shadow: 0 12px 32px rgb(0 0 0 / 28%);
+}
+
+.channel-composer-model-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.channel-composer-model-head strong {
+  color: var(--text-bright);
+}
+
+.channel-composer-model .new-conv-label {
+  margin: 6px 0 0;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.channel-composer-model .provider-selector,
+.channel-composer-model .model-selector {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+/* Compact pills. The chat picker's option classes carry flex-grow and sizing
+   from Sidebar.css (loaded on desktop only), so reset them here for both trees. */
+.channel-composer-model .ui-choice.ui-choice {
+  flex: none;
+  min-width: 0;
+  min-height: 28px;
+  padding: 3px 10px;
+  font-size: 12.5px;
+  white-space: nowrap;
+}
+
+.channel-composer-model input[type="radio"] {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+
+.channel-composer-model .custom-model-option {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.channel-composer-model-note {
+  margin: 4px 0 0;
+  color: var(--text-muted);
+  font-size: 11.5px;
+}
+
+.channel-composer-model-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.channel-composer-model-actions button {
+  padding: 4px 12px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.channel-composer-model-actions button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.channel-composer-model-actions .channel-composer-model-done {
+  border-color: transparent;
+  background: color-mix(in srgb, var(--theme-user) 70%, transparent);
+  color: var(--text-bright);
+  font-weight: 600;
+}

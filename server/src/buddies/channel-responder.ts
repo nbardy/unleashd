@@ -1,5 +1,11 @@
 import { createHash } from 'node:crypto';
-import type { BuddyContext } from '@unleashd/shared';
+import type {
+  BuddyContext,
+  ConfigError,
+  ConversationConfig,
+  ConversationConfigState,
+  Result,
+} from '@unleashd/shared';
 import type { ConversationRuntime } from '../conversations/runtime';
 import { canonicalizePostMedia, describeMediaProblems } from './channel-media';
 import { mentionedBuddyIds, readableChannelText, transcriptLine } from './channel-text';
@@ -18,12 +24,23 @@ import type { BuddiesStorePort, BuddyMailingList, BuddyMailingListPost } from '.
 // that Buddy (purpose "reply"), stamped with the conversation for provenance.
 // The model never has to remember to call `post` for its answer.
 //
+// The owner may pick the harness/model for a mentioned Buddy (the composer's
+// mention chip). The choice is applied to the (Buddy, thread) conversation
+// through the same config path as the chat header, so it sticks for later
+// mentions in that thread, and a thread that has started keeps its harness:
+// switching it is rejected and reported in the thread like any failed turn.
+//
 // Known gap: a turn in flight when the server restarts loses its reply post
 // (the transcript survives). The owner re-mentions to retry.
 
 export type MentionDispatch =
   | { buddyId: string; status: 'started'; conversationId: string }
   | { buddyId: string; status: 'rejected'; reason: string };
+
+// Which configuration a mention's turn runs on. `thread` keeps whatever the
+// (Buddy, thread) conversation already runs — the Buddy's profile default
+// when the thread is new; `chosen` is the owner's pick from the mention chip.
+export type MentionModel = { kind: 'thread' } | { kind: 'chosen'; config: ConversationConfig };
 
 export type ChannelResponse = {
   listId: string;
@@ -42,7 +59,13 @@ export interface ChannelResponderPorts {
     commandId: string;
     conversationId: string;
     deferInitialMessage: true;
+    config?: ConversationConfig;
   }): Promise<ConversationRuntime>;
+  /** Replace a live conversation's configuration (runtime-config.ts). */
+  setConversationConfig(
+    conversation: ConversationRuntime,
+    config: ConversationConfig
+  ): Promise<Result<ConversationConfigState, ConfigError>>;
   uploadsRoot(): string;
   logger?: Pick<Console, 'warn'>;
 }
@@ -172,6 +195,25 @@ function clipReply(text: string): string {
   return clipped + suffix;
 }
 
+// A new thread is created on the chosen config directly, so a Buddy whose
+// profile harness is unavailable can still answer on the one the owner picked.
+function creationConfig(model: MentionModel): { config?: ConversationConfig } {
+  switch (model.kind) {
+    case 'thread':
+      return {};
+    case 'chosen':
+      return { config: model.config };
+  }
+}
+
+function configRejection(error: ConfigError): string {
+  const hint =
+    error.code === 'provider_locked'
+      ? ' A thread keeps its harness once it has started; mention the Buddy in a new message to use another.'
+      : '';
+  return `this thread can’t use the chosen model: ${error.message}.${hint}`;
+}
+
 function isIdle(conversation: ConversationRuntime): boolean {
   return (
     !conversation.isRunning && !conversation.hasActiveProcess() && conversation.queue.length === 0
@@ -214,7 +256,12 @@ export function createChannelResponder(ports: ChannelResponderPorts) {
   const chains = new Map<string, Promise<void>>();
   const active = new Map<string, ChannelResponse>();
 
-  async function conversationFor(buddyId: string, workspaceId: string, conversationId: string) {
+  async function conversationFor(
+    buddyId: string,
+    workspaceId: string,
+    conversationId: string,
+    model: MentionModel
+  ) {
     const existing = ports.getConversation(conversationId);
     if (existing) return ports.ensureConversationReady(existing);
     return ports.createConversation({
@@ -222,7 +269,23 @@ export function createChannelResponder(ports: ChannelResponderPorts) {
       commandId: `channel-thread-${conversationId}`,
       conversationId,
       deferInitialMessage: true,
+      ...creationConfig(model),
     });
+  }
+
+  // Runs on an idle conversation (a provider change is refused mid-turn).
+  // Re-applying the config a new thread was just created with only advances
+  // its revision, which keeps one path for new and continuing threads.
+  async function selectModel(conversation: ConversationRuntime, model: MentionModel) {
+    switch (model.kind) {
+      case 'thread':
+        return;
+      case 'chosen': {
+        const result = await ports.setConversationConfig(conversation, model.config);
+        if (!result.ok) throw new Error(configRejection(result.error));
+        return;
+      }
+    }
   }
 
   async function postReply(input: {
@@ -274,6 +337,7 @@ export function createChannelResponder(ports: ChannelResponderPorts) {
     threadRootId: string;
     buddyId: string;
     conversationId: string;
+    model: MentionModel;
   }): Promise<void> {
     const store = await ports.getStore();
     const context =
@@ -286,9 +350,11 @@ export function createChannelResponder(ports: ChannelResponderPorts) {
       const conversation = await conversationFor(
         input.buddyId,
         input.list.workspaceId,
-        input.conversationId
+        input.conversationId,
+        input.model
       );
       await untilIdle(conversation);
+      await selectModel(conversation, input.model);
       outcome = { kind: 'answered', text: await runTurn(conversation, prompt, input.trigger.id) };
     } catch (error) {
       outcome = { kind: 'failed', reason: error instanceof Error ? error.message : String(error) };
@@ -300,10 +366,12 @@ export function createChannelResponder(ports: ChannelResponderPorts) {
     /**
      * Start one turn per valid @mention in an OWNER post. Returns as soon as
      * the turns are queued; replies land in the thread when they finish.
+     * `chosen` holds the owner's model pick per mentioned Buddy.
      */
     async respondToOwnerPost(
       list: BuddyMailingList,
-      post: BuddyMailingListPost
+      post: BuddyMailingListPost,
+      chosen: ReadonlyMap<string, ConversationConfig>
     ): Promise<MentionDispatch[]> {
       const store = await ports.getStore();
       const threadRootId = post.threadRootId ?? post.id;
@@ -317,6 +385,8 @@ export function createChannelResponder(ports: ChannelResponderPorts) {
         if (!inWorkspace)
           return { buddyId, status: 'rejected', reason: 'Buddy is outside this workspace' };
         const conversationId = channelConversationId(threadRootId, buddyId);
+        const config = chosen.get(buddyId);
+        const model: MentionModel = config ? { kind: 'chosen', config } : { kind: 'thread' };
         const previous = chains.get(conversationId) ?? Promise.resolve();
         const job = previous
           .then(async () => {
@@ -327,7 +397,7 @@ export function createChannelResponder(ports: ChannelResponderPorts) {
               conversationId,
               startedAt: new Date().toISOString(),
             });
-            await respond({ list, trigger: post, threadRootId, buddyId, conversationId });
+            await respond({ list, trigger: post, threadRootId, buddyId, conversationId, model });
           })
           .catch((error) => {
             logger.warn(`[channel-responder] ${conversationId} reply failed:`, error);

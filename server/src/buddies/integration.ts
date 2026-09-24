@@ -8,6 +8,7 @@ import {
   type Provider,
 } from '@unleashd/shared';
 import type { Response } from 'express';
+import { buddyExecutionPreferences } from '../conversations/config-mapping';
 import { BuddyClosureService, BuddyReviewSettlementSchema } from './closure';
 import type { BuddiesModule, BuddiesStorePort, BuddyMemory } from './contract';
 import { knowledgeStore } from './knowledge';
@@ -403,9 +404,7 @@ export function createBuddiesIntegration(dependencies: BuddiesIntegrationDepende
         .update(JSON.stringify([detail.buddy.name, detail.buddy.role, roleBrief, audience]))
         .digest('hex')}`,
       workingDirectory: detail.workspace.root_path,
-      provider: (detail.buddy.provider || 'codex') as Provider,
-      model: detail.buddy.model || undefined,
-      reasoningEffort: detail.buddy.reasoning_effort || undefined,
+      ...buddyExecutionPreferences(detail.buddy),
     };
   }
 

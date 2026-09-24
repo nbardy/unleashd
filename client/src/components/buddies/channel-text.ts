@@ -12,9 +12,12 @@
  * inserts `@Label` and records the reference; `encodeReferences` swaps the
  * labels for tokens on send.
  */
+import type { BuddyMemberExecution } from '@unleashd/shared';
 
+// A Buddy carries what its turn runs on by default, so the composer's mention
+// chip can show it and open the harness/model picker from it.
 export type ChannelReference =
-  | { kind: 'buddy'; id: string; label: string; detail: string }
+  | { kind: 'buddy'; id: string; label: string; detail: string; execution: BuddyMemberExecution }
   | { kind: 'task'; id: string; label: string; detail: string; status: string };
 
 // ── Fuzzy matching ─────────────────────────────────────────────────────────
@@ -98,6 +101,26 @@ export function activeReferenceQuery(
   return { start: at, query };
 }
 
+/**
+ * True when the @ query is a reference the owner already picked: picking
+ * inserts `@Label `, and because a query may contain spaces that text is
+ * itself a live query that still fuzzy-matches everything, so the menu stayed
+ * open after Enter and covered the mention chip's model picker (2026-09-24).
+ * A query that is still the start of some label ("Lead Des" toward "Lead
+ * Designer" after picking "Lead") keeps the menu open.
+ */
+export function completesPickedReference(
+  query: string,
+  picked: readonly ChannelReference[],
+  references: readonly ChannelReference[]
+): boolean {
+  const typed = query.toLowerCase();
+  return (
+    picked.some((reference) => query.startsWith(`${reference.label} `)) &&
+    !references.some((reference) => reference.label.toLowerCase().startsWith(typed))
+  );
+}
+
 export function insertReference(
   text: string,
   trigger: { start: number; query: string },
@@ -150,6 +173,33 @@ export function encodeReferences(text: string, references: readonly ChannelRefer
   return text.replace(pattern, (_whole, lead: string, label: string) => {
     const reference = byLabel.get(label);
     return reference ? `${lead}${referenceToken(reference)}` : _whole;
+  });
+}
+
+export type BuddyReference = Extract<ChannelReference, { kind: 'buddy' }>;
+
+const MENTION_TOKEN = /\]\(buddy:([A-Za-z0-9_-]+)\)/g;
+
+/**
+ * The picked Buddies whose mention survives in the text, in mention order:
+ * the composer's mention chips. Derived from the same encoding as send, so a
+ * chip exists exactly when the post will start that Buddy's turn — and a model
+ * choice is never sent for a Buddy the post no longer mentions (the server
+ * rejects that post).
+ */
+export function mentionedBuddies(
+  text: string,
+  picked: readonly ChannelReference[]
+): BuddyReference[] {
+  const byId = new Map(
+    picked
+      .filter((reference): reference is BuddyReference => reference.kind === 'buddy')
+      .map((reference) => [reference.id, reference])
+  );
+  const ids = new Set([...encodeReferences(text, picked).matchAll(MENTION_TOKEN)].map((m) => m[1]));
+  return [...ids].flatMap((id) => {
+    const reference = byId.get(id);
+    return reference ? [reference] : [];
   });
 }
 

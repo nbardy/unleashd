@@ -9,6 +9,7 @@
 import {
   BuddyChannelThreadSchema,
   type BuddyMailingListPost,
+  type BuddyMemberExecution,
   type BuddyWorkspaceActivity,
   BuddyWorkspaceActivitySchema,
 } from '@unleashd/shared';
@@ -54,7 +55,13 @@ export function respondingUrl(listId: string): string {
 
 // Every workspace member names posts (archived authors included); only active
 // ones appear in the rail and the @ menu.
-export type ChannelMember = { id: string; name: string; role: string; status: string };
+export type ChannelMember = {
+  id: string;
+  name: string;
+  role: string;
+  status: string;
+  execution: BuddyMemberExecution;
+};
 
 export type ChannelResponse = { threadRootId: string; buddyId: string; conversationId: string };
 
@@ -163,6 +170,7 @@ export function channelReferences(
           id: member.id,
           label: member.name,
           detail: member.role,
+          execution: member.execution,
         })
       ),
     ...tasks
@@ -203,6 +211,7 @@ export function useWorkspaceDirectory(workspaceId: string): WorkspaceDirectory {
       name: member.name,
       role: member.role,
       status: member.status,
+      execution: member.execution,
     }));
     return {
       workspaceName: activity.data?.workspace.name ?? 'Channels',

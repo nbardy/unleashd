@@ -6,6 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
 import { BuddiesStore } from '@nbardy/buddies';
+import type { ConversationConfig, ConversationConfigState } from '@unleashd/shared';
 import express from 'express';
 import { WAKE_MESSAGE, createBuddyDirect } from '../src/buddies/buddy-direct';
 import { createChannelResponder } from '../src/buddies/channel-responder';
@@ -14,20 +15,39 @@ import type { BuddiesStorePort, BuddyMailingListPost } from '../src/buddies/cont
 import { coordinationStore } from '../src/buddies/coordination-store';
 import { BuddyOperationsService } from '../src/buddies/operations';
 import { registerBuddyRoutes } from '../src/buddies/routes';
+import { configFromProviderPreferences } from '../src/conversations/config-mapping';
+import { ConversationConfigService } from '../src/conversations/config-service';
+import { ConversationConfigStore } from '../src/conversations/config-store';
 import type { ConversationRuntime } from '../src/conversations/runtime';
+import { updateRuntimeConfig } from '../src/conversations/runtime-config';
+import { resolveConfigAgainstProviderCatalog } from '../src/providers/catalog-service';
 
 // End-to-end channel conversation: owner posts through the real routes into a
 // real store, @mentions start a turn, and the Buddy's final answer lands in the
 // thread. The provider turn is the only stand-in (the model is the external
 // boundary); the fake runtime exposes exactly the surface the responder drives.
 
+// Configuration is real: the runtime holds the persisted config state and the
+// responder changes it through the same updateRuntimeConfig path as the chat.
 class FakeTurnRuntime extends EventEmitter {
   isRunning = false;
   queue: unknown[] = [];
   prompts: Array<{ content: string; ownerInput: unknown }> = [];
   enqueued: Array<{ content: string; ownerInput: unknown }> = [];
+  config!: ConversationConfig;
+  configRevision = 0;
+  configResolution!: ConversationConfigState['resolution'];
   constructor(readonly id: string) {
     super();
+  }
+  applyConfigState(state: ConversationConfigState) {
+    this.config = state.config;
+    this.configRevision = state.revision;
+    this.configResolution = state.resolution;
+  }
+  // A provider session exists once the first turn was sent.
+  hasStartedSession() {
+    return this.prompts.length > 0;
   }
   hasActiveProcess() {
     return false;
@@ -63,9 +83,21 @@ function harness() {
   const runtimes = new Map<string, FakeTurnRuntime>();
   const created: string[] = [];
   const deleted = new Set<string>();
-  const createRuntime = async (input: { conversationId: string }) => {
+  const configService = new ConversationConfigService({
+    store: new ConversationConfigStore({ appDataRoot: join(scratch, 'config') }),
+    resolver: { resolve: async (config) => resolveConfigAgainstProviderCatalog(config) },
+  });
+  // Mirrors createServerBuddyConversation: an explicit config wins, else the
+  // Buddy profile default (these test Buddies have none, so Codex).
+  const createRuntime = async (input: { conversationId: string; config?: ConversationConfig }) => {
     created.push(input.conversationId);
     const runtime = new FakeTurnRuntime(input.conversationId);
+    runtime.applyConfigState(
+      await configService.create({
+        conversationId: input.conversationId,
+        config: input.config ?? configFromProviderPreferences({ provider: 'codex' }),
+      })
+    );
     runtimes.set(input.conversationId, runtime);
     return runtime as unknown as ConversationRuntime;
   };
@@ -96,6 +128,13 @@ function harness() {
       getConversation: getRuntime,
       ensureConversationReady: async (conversation) => conversation,
       createConversation: createRuntime,
+      setConversationConfig: (conversation, config) =>
+        updateRuntimeConfig(configService, conversation, {
+          conversationId: conversation.id,
+          commandId: `test-${conversation.configRevision}`,
+          expectedRevision: conversation.configRevision,
+          patch: { kind: 'replace', config },
+        }),
       uploadsRoot: () => uploadsRoot,
       logger: { warn: () => undefined },
     }),
@@ -250,6 +289,124 @@ test('owner @mention runs one turn per thread and the answer lands in the thread
     });
     assert.equal(missing.status, 400);
     assert.match(missing.json.error, /missing/);
+  } finally {
+    server.close();
+    h.raw.close();
+    rmSync(h.scratch, { recursive: true, force: true });
+  }
+});
+
+// The model picked on a mention chip must reach the turn, stick for later
+// mentions in the thread, and never silently switch a started thread's
+// harness (the provider session cannot move) — that is a visible failure.
+test('a mention’s chosen model runs the turn, sticks for the thread, and a harness switch fails visibly', async () => {
+  const h = harness();
+  const server = h.app.listen(0, '127.0.0.1');
+  try {
+    await new Promise<void>((resolve) => server.once('listening', resolve));
+    const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+    const post = async (path: string, body: unknown) => {
+      const response = await fetch(`${base}${path}`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      return { status: response.status, json: (await response.json()) as any };
+    };
+    const list = (
+      await post('/api/buddies/lists', {
+        workspaceId: h.workspace.id,
+        author: { kind: 'owner' },
+        key: 'models',
+        name: 'models',
+        purpose: 'Model choice',
+      })
+    ).json.list;
+    const mention = `[@Lead](buddy:${h.lead.id})`;
+    const claude = (modelId: string): ConversationConfig => ({
+      provider: 'claude',
+      model: { mode: 'explicit', modelId },
+      reasoning: { mode: 'default' },
+    });
+    // Buddy-authored thread replies (the owner's follow-ups are replies too).
+    const replies = (root: string) =>
+      h.raw.listThread({ root }).replies.filter((reply) => reply.author.kind === 'buddy');
+
+    // First mention: the Buddy's profile is Codex; the owner picked Claude.
+    const asked = await post(`/api/buddies/lists/${list.id}/posts`, {
+      author: { kind: 'owner' },
+      key: 'ask',
+      purpose: 'message',
+      body: `${mention} review this`,
+      mentionConfigs: [{ buddyId: h.lead.id, config: claude('fable') }],
+    });
+    assert.equal(asked.status, 201, JSON.stringify(asked.json));
+    const root = asked.json.post.id;
+    const runtime = await until(
+      () => h.runtimes.get(asked.json.mentions[0].conversationId),
+      'runtime'
+    );
+    await until(() => runtime.prompts[0], 'first prompt');
+    assert.deepEqual(runtime.config, claude('fable'));
+    runtime.emit('buddy-turn-complete', 'Looks fine.');
+    await until(() => replies(root).length === 1, 'first reply');
+
+    // Same harness, another model: applied before the next turn.
+    await post(`/api/buddies/lists/${list.id}/posts`, {
+      author: { kind: 'owner' },
+      key: 'switch-model',
+      purpose: 'message',
+      body: `${mention} again, more carefully`,
+      threadRootId: root,
+      mentionConfigs: [{ buddyId: h.lead.id, config: claude('sonnet') }],
+    });
+    await until(() => runtime.prompts[1], 'second prompt');
+    assert.deepEqual(runtime.config, claude('sonnet'));
+    runtime.emit('buddy-turn-complete', 'Checked twice.');
+    await until(() => replies(root).length === 2, 'second reply');
+
+    // No choice: the thread keeps what it runs, not the profile's Codex.
+    await post(`/api/buddies/lists/${list.id}/posts`, {
+      author: { kind: 'owner' },
+      key: 'no-choice',
+      purpose: 'message',
+      body: `${mention} one more`,
+      threadRootId: root,
+    });
+    await until(() => runtime.prompts[2], 'third prompt');
+    assert.deepEqual(runtime.config, claude('sonnet'));
+    runtime.emit('buddy-turn-complete', 'Done.');
+    await until(() => replies(root).length === 3, 'third reply');
+
+    // Another harness on a started thread: no turn, a visible failure reply.
+    await post(`/api/buddies/lists/${list.id}/posts`, {
+      author: { kind: 'owner' },
+      key: 'switch-harness',
+      purpose: 'message',
+      body: `${mention} try it on codex`,
+      threadRootId: root,
+      mentionConfigs: [
+        { buddyId: h.lead.id, config: configFromProviderPreferences({ provider: 'codex' }) },
+      ],
+    });
+    const failed = await until(
+      () => replies(root).find((reply) => reply.purpose === 'reply_failed'),
+      'harness failure reply'
+    );
+    assert.match(failed.body, /keeps its harness/);
+    assert.equal(runtime.prompts.length, 3);
+    assert.deepEqual(runtime.config, claude('sonnet'));
+
+    // A choice for a Buddy the post does not mention would vanish: 400.
+    const stray = await post(`/api/buddies/lists/${list.id}/posts`, {
+      author: { kind: 'owner' },
+      key: 'stray',
+      purpose: 'message',
+      body: 'nobody mentioned',
+      mentionConfigs: [{ buddyId: h.lead.id, config: claude('fable') }],
+    });
+    assert.equal(stray.status, 400);
+    assert.match(stray.json.error, /not mentioned/);
   } finally {
     server.close();
     h.raw.close();

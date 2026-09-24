@@ -30,6 +30,10 @@ import {
 } from '@unleashd/shared';
 import type { Express, Request, Response } from 'express';
 import { z } from 'zod';
+import {
+  buddyExecutionPreferences,
+  configFromProviderPreferences,
+} from '../conversations/config-mapping';
 import { ListAuthorSchema } from './channel-routes';
 import type { BuddiesStorePort, BuddyAutomation, BuddyAutomationRun } from './contract';
 import { coordinationStore } from './coordination-store';
@@ -632,6 +636,10 @@ export function registerBuddyRoutes(app: Express, dependencies: BuddyRouteDepend
             name: buddy.name,
             role: buddy.role,
             status: buddy.status,
+            execution: {
+              kind: 'profile',
+              config: configFromProviderPreferences(buddyExecutionPreferences(buddy)),
+            },
             jobs: jobsByBuddy
               .get(buddy.id)!
               .sort((left, right) =>
