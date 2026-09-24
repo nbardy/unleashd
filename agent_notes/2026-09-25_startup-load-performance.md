@@ -67,3 +67,11 @@ merge fast path (exact, perf-only; comment at the site).
 - Stale processes seen: three `wave_sim-*` vinext/workerd dev servers from
   2026-09-23 (one workerd orphaned) and an orphaned agent-browser daemon; not
   killed (user's call).
+
+## History note
+
+c5e4f91 (a concurrent channels commit) reverted f530d3a's five server files,
+most likely by committing a stale copy of them. 16145ce ("docs: …") restored
+them because they were still staged; after it, those files equal f530d3a
+(`git diff f530d3a 16145ce -- <files>` is empty). If a bisect lands on
+c5e4f91, that is why the cache prune briefly vanished.
