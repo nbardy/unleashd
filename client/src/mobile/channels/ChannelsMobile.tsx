@@ -1,8 +1,9 @@
 import type { BuddyMailingListPost, BuddyOwnerPostResult } from '@unleashd/shared';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, Navigate, useLocation, useNavigate, useParams } from 'react-router-dom';
-import { type BuddyMailingListSummary, PostAuthor } from '../../components/buddies/BuddyMessages';
+import type { BuddyMailingListSummary } from '../../components/buddies/BuddyMessages';
 import { BuddySigil } from '../../components/buddies/BuddySigil';
+import { ChannelAuthor } from '../../components/buddies/ChannelAuthor';
 import { ChannelComposer } from '../../components/buddies/ChannelComposer';
 import { ChannelMarkdown, TypingDots } from '../../components/buddies/ChannelMarkdown';
 import { WakeIcon, WakeIndicator } from '../../components/buddies/WakeIndicator';
@@ -343,7 +344,7 @@ type RowPlace =
     }
   | { kind: 'thread' };
 
-type RowContext = { directory: WorkspaceDirectory; place: RowPlace };
+type RowContext = { workspaceId: string; directory: WorkspaceDirectory; place: RowPlace };
 
 function PostPurpose({ post }: { post: BuddyMailingListPost }) {
   const label = postPurposeLabel(post);
@@ -416,10 +417,11 @@ function Row({ row, context }: { row: ChannelRow; context: RowContext }) {
           />
           <div className="mobile-channel-post__content">
             <div className="mobile-channel-post__heading">
-              <PostAuthor
+              <ChannelAuthor
                 className="mobile-channel-post__author"
                 author={row.post.author}
                 buddyNames={context.directory.buddyNames}
+                workspaceId={context.workspaceId}
               />
               <time dateTime={row.post.createdAt}>{clockTime(row.post.createdAt)}</time>
               <PostPurpose post={row.post} />
@@ -486,6 +488,7 @@ function ChannelScreen({ listId, context }: { listId: string; context: ScreenCon
   const follow = useFollowBottom(rows.length, feed.data);
   useRefetchWhenRepliesLand(responding.count, feed.refetch);
   const rowContext: RowContext = {
+    workspaceId,
     directory,
     place: {
       kind: 'channel',
@@ -555,7 +558,7 @@ function ThreadScreen({
   const replyRows = useMemo(() => channelRows(thread.data?.replies ?? []), [thread.data]);
   const follow = useFollowBottom(replyRows.length + replying.length, thread.data);
   useRefetchWhenRepliesLand(responding.count, thread.refetch);
-  const rowContext: RowContext = { directory, place: { kind: 'thread' } };
+  const rowContext: RowContext = { workspaceId, directory, place: { kind: 'thread' } };
   const root = thread.data?.root;
   return (
     <div className="mobile-channel">

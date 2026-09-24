@@ -177,6 +177,10 @@ test('workspace slack page resolves the workspace name and member names', async 
   assert.match(html, /<h1>unleashd<\/h1>/);
   assert.match(html, /Older update from the first run./);
   assert.match(html, /channel-browser-author[^>]*>Lead</);
+  // Like Slack, a post author's name opens the DM, not the Buddy page
+  // (ChannelAuthor, not BuddyMessages' PostAuthor).
+  assert.match(html, /<button[^>]*class="channel-browser-author"[^>]*title="Message Lead"/);
+  assert.doesNotMatch(html, /<a[^>]*class="channel-browser-author"/);
 });
 
 test('channel browser shows an empty state without channels', async () => {

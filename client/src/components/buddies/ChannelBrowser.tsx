@@ -5,14 +5,10 @@ import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { buddySidebarChannelsAtom } from '../../atoms/buddy-sidebar';
 import { allConversationIdsAtom } from '../../atoms/conversations';
 import { usePolledFetch } from '../../hooks/usePolledFetch';
-import {
-  type BuddyMailingListSummary,
-  PostAuthor,
-  postsResource,
-  taskChannelFeedUrl,
-} from './BuddyMessages';
+import { type BuddyMailingListSummary, postsResource, taskChannelFeedUrl } from './BuddyMessages';
 import { BuddyRailRow } from './BuddyRailRow';
 import { BuddySigil } from './BuddySigil';
+import { ChannelAuthor } from './ChannelAuthor';
 import { ChannelComposer } from './ChannelComposer';
 import { ChannelMarkdown, TypingDots } from './ChannelMarkdown';
 import {
@@ -58,6 +54,7 @@ type RowPlace =
   | { kind: 'thread' };
 
 type RowContext = {
+  workspaceId: string;
   buddyNames: Readonly<Record<string, string>>;
   tasks: ReadonlyMap<string, ChannelTask>;
   channelNameById: ReadonlyMap<string, string>;
@@ -198,10 +195,11 @@ function LeadRow({ post, context }: { post: BuddyMailingListPost; context: RowCo
       />
       <div className="channel-browser-message-content">
         <div className="channel-browser-message-heading">
-          <PostAuthor
+          <ChannelAuthor
             className="channel-browser-author"
             author={post.author}
             buddyNames={context.buddyNames}
+            workspaceId={context.workspaceId}
           />
           <time dateTime={post.createdAt} title={new Date(post.createdAt).toLocaleString()}>
             {clockTime(post.createdAt)}
@@ -396,6 +394,7 @@ function ChannelPane({
 
   const follow = useFollowBottom(rows.length, shown.data);
   const base = {
+    workspaceId,
     buddyNames,
     tasks,
     channelNameById,
