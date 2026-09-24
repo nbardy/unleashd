@@ -2,19 +2,20 @@ import fs from 'node:fs';
 import path from 'node:path';
 import type { OompaCycle, OompaReviewLog, OompaStarted } from '@unleashd/shared';
 import type { Application, Request, Response } from 'express';
+import type { OompaContextCommand } from './commands';
 import { buildSwarmContext } from './context';
 
 export interface SwarmReadModelPorts {
   isUnderKnownProject(resolvedPath: string): boolean;
   resolveWorkingDirectory(input: string): string;
-  captureSwarmCommand(command: 'oompa status' | 'oompa info', cwd: string): string;
-  executeGit(args: string[], cwd: string, timeoutMs: number): string;
+  captureOompaCommand(command: OompaContextCommand, cwd: string): Promise<string>;
+  executeGit(args: string[], cwd: string, timeoutMs: number): Promise<string>;
   isProcessAlive(pid: number): boolean;
   now(): number;
 }
 
 export function registerSwarmReadModelRoutes(app: Application, ports: SwarmReadModelPorts): void {
-  app.get('/api/oompa-swarm-context', (request, response) => {
+  app.get('/api/oompa-swarm-context', async (request, response) => {
     const input = queryString(request.query.dir);
     if (!input?.trim()) {
       response.status(400).json({ error: 'Directory path required' });
@@ -26,7 +27,7 @@ export function registerSwarmReadModelRoutes(app: Application, ports: SwarmReadM
       return;
     }
     try {
-      if (!fs.statSync(projectRoot).isDirectory()) {
+      if (!(await fs.promises.stat(projectRoot)).isDirectory()) {
         response.status(400).json({ error: 'Path must be a directory' });
         return;
       }
@@ -34,21 +35,26 @@ export function registerSwarmReadModelRoutes(app: Application, ports: SwarmReadM
       response.status(404).json({ error: 'Directory does not exist' });
       return;
     }
-    response.json({
-      prefix: buildSwarmContext(projectRoot, {
-        captureCommand: ports.captureSwarmCommand,
-        now: () => new Date(ports.now()),
-      }),
-    });
+    try {
+      response.json({
+        prefix: await buildSwarmContext(projectRoot, {
+          captureCommand: ports.captureOompaCommand,
+          now: () => new Date(ports.now()),
+        }),
+      });
+    } catch (error) {
+      console.error('[swarm-read-model] Failed to build swarm context:', error);
+      response.status(500).json({ error: errorMessage(error) });
+    }
   });
 
-  app.get('/api/git-log', (request, response) => {
+  app.get('/api/git-log', async (request, response) => {
     const projectRoot = authorizeDirectory(request, response, ports);
     if (!projectRoot) return;
     try {
-      const raw = ports
-        .executeGit(['log', '-20', '--format=%H\t%s\t%aI\t%an'], projectRoot, 5_000)
-        .trim();
+      const raw = (
+        await ports.executeGit(['log', '-20', '--format=%H\t%s\t%aI\t%an'], projectRoot, 5_000)
+      ).trim();
       const entries = raw
         .split('\n')
         .filter(Boolean)
@@ -138,7 +144,7 @@ export function registerSwarmReadModelRoutes(app: Application, ports: SwarmReadM
       const args = ['log', '--merges', `--after=${sanitizeTimestamp(startedAt)}`];
       if (finishedAt) args.push(`--before=${sanitizeTimestamp(finishedAt)}`);
       args.push('--diff-filter=A', '--name-only', '--pretty=format:', '--', '*.json');
-      const raw = ports.executeGit(args, projectRoot, 10_000).trim();
+      const raw = (await ports.executeGit(args, projectRoot, 10_000)).trim();
       const files = raw.split('\n').filter((line) => line.trim().length > 0);
       response.json({ count: files.length, files });
     } catch (error) {
@@ -147,7 +153,7 @@ export function registerSwarmReadModelRoutes(app: Application, ports: SwarmReadM
     }
   });
 
-  app.get('/api/read-file', (request, response) => {
+  app.get('/api/read-file', async (request, response) => {
     const filePath = queryString(request.query.path);
     if (!filePath || !path.isAbsolute(filePath)) {
       response.status(400).json({ error: 'Absolute path required' });
@@ -159,11 +165,11 @@ export function registerSwarmReadModelRoutes(app: Application, ports: SwarmReadM
       return;
     }
     try {
-      if (!fs.statSync(resolved).isFile()) {
+      if (!(await fs.promises.stat(resolved)).isFile()) {
         response.status(400).json({ error: 'Path must be a file' });
         return;
       }
-      response.json({ content: fs.readFileSync(resolved, 'utf8') });
+      response.json({ content: await fs.promises.readFile(resolved, 'utf8') });
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
         response.status(404).json({ error: 'File not found' });

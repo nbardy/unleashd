@@ -1,4 +1,3 @@
-import { execFileSync, execSync } from 'node:child_process';
 import http from 'node:http';
 import path from 'node:path';
 import type { Provider as ProviderName } from '@unleashd/shared';
@@ -69,6 +68,7 @@ import { createPaletteService } from './palettes/palette-service';
 import { buildPalettePrompt } from './palettes/prompt';
 import { getProvider, providers } from './providers';
 import { resolveConfigAgainstProviderCatalog } from './providers/catalog-service';
+import { captureOompaCommand, executeGit } from './swarm/commands';
 import { registerSwarmReadModelRoutes } from './swarm/read-model-routes';
 import { registerSwarmRuntimeRoutes } from './swarm/routes';
 import { isProcessAlive, readLatestSwarmRuntime } from './swarm/runtime';
@@ -581,30 +581,9 @@ registerSwarmRuntimeRoutes(app, {
 registerSwarmReadModelRoutes(app, {
   isUnderKnownProject,
   resolveWorkingDirectory: resolveWorkingDirectoryInput,
-  captureSwarmCommand(command, workingDirectory) {
-    try {
-      return execSync(command, {
-        cwd: workingDirectory,
-        timeout: SWARM_CONTEXT_COMMAND_TIMEOUT_MS,
-        stdio: ['pipe', 'pipe', 'pipe'],
-        encoding: 'utf8',
-      }).trim();
-    } catch (error) {
-      if (error === null || typeof error !== 'object') return String(error);
-      const commandError = error as { stdout?: unknown; stderr?: unknown; message?: unknown };
-      return [commandError.stdout, commandError.stderr, commandError.message]
-        .filter((value): value is string => typeof value === 'string' && value.trim().length > 0)
-        .join('\n')
-        .trim();
-    }
-  },
-  executeGit: (args, workingDirectory, timeoutMs) =>
-    execFileSync('git', args, {
-      cwd: workingDirectory,
-      timeout: timeoutMs,
-      stdio: ['pipe', 'pipe', 'pipe'],
-      encoding: 'utf8',
-    }),
+  captureOompaCommand: (command, workingDirectory) =>
+    captureOompaCommand(command, workingDirectory, SWARM_CONTEXT_COMMAND_TIMEOUT_MS),
+  executeGit,
   isProcessAlive,
   now: Date.now,
 });

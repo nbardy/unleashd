@@ -87,6 +87,12 @@ most impactful first:
    - `/api/oompa-swarm-context` (server.ts:586) runs `oompa status/info` via
      `execSync`, 8s timeout ×2, blocking the whole backend. It is called before
      creating a swarm conversation.
+   - Fixed on `fix/async-swarm-commands-2026-09-25`: `server/src/swarm/commands.ts`
+     runs `oompa` and `git` through async `execFile` (no shell), the two oompa
+     commands run concurrently, and `/api/read-file` no longer reads synchronously.
+     `lifecycle/system-ports.ts` keeps `execSync`; it runs only at startup.
+     Still synchronous on a request path: `http/usage-routes.ts` scans every
+     Claude/Codex transcript with `readdirSync`/`readFileSync`.
 5. **Half-open sockets (refuted as a bug, but a gap).**
    - A frame sent on a dead socket is dropped. A half-open socket after sleep
      only recovers on the next reconnect, and there is no server ping/pong.

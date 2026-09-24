@@ -1,19 +1,26 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import type { OompaContextCommand } from './commands';
 
 const MAX_COMMAND_OUTPUT_CHARS = 8_000;
 const MAX_DOCUMENT_CHARS = 3_000;
 const MAX_DOCUMENT_FILES = 6;
 
 export interface SwarmContextDependencies {
-  captureCommand(command: 'oompa status' | 'oompa info', cwd: string): string;
+  captureCommand(command: OompaContextCommand, cwd: string): Promise<string>;
   now(): Date;
 }
 
-export function buildSwarmContext(
+export async function buildSwarmContext(
   projectRoot: string,
   dependencies: SwarmContextDependencies
-): string {
+): Promise<string> {
+  // Both commands are independent and each may take up to its timeout; run them
+  // together so the wait is the slower one, not the sum.
+  const [statusOutput, infoOutput] = await Promise.all([
+    dependencies.captureCommand('status', projectRoot),
+    dependencies.captureCommand('info', projectRoot),
+  ]);
   const availableConfigs = listAvailableConfigFiles(projectRoot);
   const primaryConfigPath = path.join(projectRoot, 'oompa.json');
   const documentation = findDocumentation(projectRoot).map((absolutePath) =>
@@ -36,14 +43,12 @@ export function buildSwarmContext(
     '',
     '## Command Output: oompa status',
     '```',
-    clip(dependencies.captureCommand('oompa status', projectRoot), MAX_COMMAND_OUTPUT_CHARS) ||
-      '(no output)',
+    clip(statusOutput, MAX_COMMAND_OUTPUT_CHARS) || '(no output)',
     '```',
     '',
     '## Command Output: oompa info',
     '```',
-    clip(dependencies.captureCommand('oompa info', projectRoot), MAX_COMMAND_OUTPUT_CHARS) ||
-      '(no output)',
+    clip(infoOutput, MAX_COMMAND_OUTPUT_CHARS) || '(no output)',
     '```',
     '',
     '## Docs To Follow For Good Oompa Agents',

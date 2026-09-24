@@ -5,6 +5,7 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import express from 'express';
+import { captureOompaCommand, executeGit } from '../src/swarm/commands';
 import {
   type SwarmReadModelPorts,
   registerSwarmReadModelRoutes,
@@ -71,11 +72,11 @@ test('read-model routes reject unknown projects before commands or file reads', 
   const ports: SwarmReadModelPorts = {
     isUnderKnownProject: () => false,
     resolveWorkingDirectory: (input) => path.resolve(input),
-    captureSwarmCommand: () => {
+    captureOompaCommand: async () => {
       commandCalls += 1;
       return 'should not execute';
     },
-    executeGit: () => {
+    executeGit: async () => {
       commandCalls += 1;
       return 'should not execute';
     },
@@ -110,8 +111,8 @@ test('swarm-new-files rejects run-directory traversal before invoking git', asyn
   registerSwarmReadModelRoutes(app, {
     isUnderKnownProject: (candidate) => candidate.startsWith(projectRoot),
     resolveWorkingDirectory: path.resolve,
-    captureSwarmCommand: () => '',
-    executeGit: () => {
+    captureOompaCommand: async () => '',
+    executeGit: async () => {
       gitCalls += 1;
       return '';
     },
@@ -128,6 +129,74 @@ test('swarm-new-files rejects run-directory traversal before invoking git', asyn
 
   assert.equal(response.status, 400);
   assert.equal(gitCalls, 0);
+});
+
+// Regression guard (2026-09-25): the swarm-context route ran `oompa status` and
+// `oompa info` through execSync, back to back, freezing the whole backend for up
+// to 16s. A real `oompa` executable that sleeps proves both that the event loop
+// keeps serving other requests meanwhile and that the two commands overlap.
+test('swarm context runs oompa without blocking the server and runs both commands at once', async (context) => {
+  const sandbox = await mkdtemp(path.join(os.tmpdir(), 'swarm-context-'));
+  context.after(() => rm(sandbox, { recursive: true, force: true }));
+  const binDirectory = path.join(sandbox, 'bin');
+  const projectRoot = path.join(sandbox, 'project');
+  await mkdir(binDirectory);
+  await mkdir(projectRoot);
+  const oompaSleepSeconds = 1;
+  await writeFile(
+    path.join(binDirectory, 'oompa'),
+    `#!/bin/sh\nsleep ${oompaSleepSeconds}\necho "fake oompa $1 output"\n`,
+    { mode: 0o755 }
+  );
+  const originalPath = process.env.PATH;
+  process.env.PATH = `${binDirectory}${path.delimiter}${originalPath}`;
+  context.after(() => {
+    process.env.PATH = originalPath;
+  });
+
+  const app = express();
+  app.get('/ping', (_request, response) => {
+    response.send('pong');
+  });
+  registerSwarmReadModelRoutes(app, {
+    isUnderKnownProject: (candidate) => candidate.startsWith(projectRoot),
+    resolveWorkingDirectory: path.resolve,
+    captureOompaCommand: (command, cwd) => captureOompaCommand(command, cwd, 5_000),
+    executeGit,
+    isProcessAlive: () => false,
+    now: Date.now,
+  });
+  const server = await listen(app);
+  context.after(() => close(server));
+  const address = server.address();
+  assert(address && typeof address === 'object');
+  const base = `http://127.0.0.1:${address.port}`;
+
+  const startedAt = Date.now();
+  const contextRequest = fetch(
+    `${base}/api/oompa-swarm-context?dir=${encodeURIComponent(projectRoot)}`
+  ).then(async (response) => ({
+    status: response.status,
+    body: (await response.json()) as { prefix: string },
+    elapsedMs: Date.now() - startedAt,
+  }));
+  await new Promise((resolve) => setTimeout(resolve, 200));
+  const ping = await fetch(`${base}/ping`);
+  const pingElapsedMs = Date.now() - startedAt;
+  const contextResult = await contextRequest;
+
+  assert.equal(await ping.text(), 'pong');
+  assert.equal(contextResult.status, 200);
+  assert.ok(
+    pingElapsedMs < oompaSleepSeconds * 1_000,
+    `ping sent at 200ms was answered at ${pingElapsedMs}ms: oompa blocked the event loop`
+  );
+  assert.ok(
+    contextResult.elapsedMs < oompaSleepSeconds * 2_000 - 50,
+    `context took ${contextResult.elapsedMs}ms; oompa status and info ran sequentially`
+  );
+  assert.match(contextResult.body.prefix, /fake oompa status output/);
+  assert.match(contextResult.body.prefix, /fake oompa info output/);
 });
 
 function listen(app: express.Application): Promise<Server> {
