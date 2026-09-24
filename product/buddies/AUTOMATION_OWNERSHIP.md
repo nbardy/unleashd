@@ -1,6 +1,6 @@
 # Automation execution ownership
 
-Current contract · updated 2026-09-10
+Current contract · updated 2026-09-24
 
 | Capability | Implementation |
 |---|---|
@@ -9,6 +9,22 @@ Current contract · updated 2026-09-10
 | Private scoped tool authority | `control-server.ts`, `mcp-config.ts`, package run transactions |
 | Credential-free run projection | Shared automation run schema, `public-automation-run.ts` |
 | Original decision and review evidence | [Accepted design](../../agent_notes/2026-08-24_automation-execution-ownership-design.md) |
+
+## Who may turn a schedule on
+
+A Buddy turns on schedules for **itself** without an owner grant, from any
+conversation including channel threads, and new self schedules start enabled
+(owner decision 2026-09-24, #bugfixes). Two bounds stand in for the grant:
+a self-enabled schedule fires at most once an hour, and a Buddy has at most 5
+enabled schedules. A schedule over either bound is saved as a disabled draft
+whose `enable` decision names the bound; the owner enables it from
+`/buddies/:buddyId/automations` or grants `schedule.manage`, which lifts both
+bounds. Scheduling **another** Buddy always needs `schedule.manage` to enable.
+Each run keeps its own runtime limit. `SELF_SCHEDULE_LIMITS` and
+`scheduleEnableDecision` in `server/src/buddies/operations.ts` are the rule;
+the cron gap bound is `minimumAutomationGapSeconds` in `scheduler.ts`.
+
+## Execution
 
 One durable occurrence has one executor. Its run row and private current claim
 token authorize work; a conversation is the transcript and does not extend that

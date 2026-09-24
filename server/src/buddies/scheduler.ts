@@ -210,6 +210,28 @@ export function nextAutomationRunAt(automation: BuddyAutomation, after: Date): s
   throw new Error('Cron has no occurrence within the supported 366-day horizon');
 }
 
+/**
+ * The shortest gap, in seconds, between two consecutive fires of a valid
+ * schedule. Every hour a cron fires runs all of its minutes, so the minute
+ * field alone bounds the gap: the closest pair of minutes, wrapping into the
+ * next hour. That is exact when consecutive hours fire and conservative when
+ * the hour field skips hours, never optimistic. Used by the self-schedule
+ * limit in operations.ts.
+ */
+export function minimumAutomationGapSeconds(
+  automation: Pick<BuddyAutomation, 'schedule_kind' | 'schedule_expression'>
+): number {
+  if (automation.schedule_kind === 'interval') return Number(automation.schedule_expression);
+  const minuteField = automation.schedule_expression.trim().split(/\s+/)[0];
+  const minutes = Array.from({ length: 60 }, (_unused, minute) => minute).filter((minute) =>
+    cronFieldMatches(minuteField, minute, 0, 59)
+  );
+  const gaps = minutes.map((minute, index) =>
+    index + 1 < minutes.length ? minutes[index + 1] - minute : 60 - minute + minutes[0]
+  );
+  return Math.min(...gaps) * 60;
+}
+
 export class BuddyScheduler {
   private readonly store: BuddiesStorePort;
   private readonly coordination?: BuddyRunExecutor;

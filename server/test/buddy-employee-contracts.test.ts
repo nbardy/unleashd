@@ -188,7 +188,7 @@ test('real MCP advertises all automation actions and validates their canonical c
       scheduleExpression: '3600',
       jobPayload: { prompt: 'Review current work' },
     });
-    assert.equal(created.enabled, false);
+    assert.equal(created.enabled, true);
     for (const args of [
       { action: 'enable', automationId: created.id },
       { action: 'disable', automationId: created.id, name: 'not valid for disable' },
@@ -198,12 +198,12 @@ test('real MCP advertises all automation actions and validates their canonical c
         (await f.client.callTool({ name: 'set_automation', arguments: args })).isError,
         true
       );
+    await f.call('set_automation', { action: 'disable', automationId: created.id });
     await f.call('set_automation', {
       action: 'update',
       automationId: created.id,
       name: 'Renamed daily',
     });
-    await f.call('set_automation', { action: 'disable', automationId: created.id });
     assert.equal(f.raw.listAutomations({ buddy: f.lead.id }).length, 1);
   } finally {
     await f.close();

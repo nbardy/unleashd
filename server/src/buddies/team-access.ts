@@ -380,6 +380,23 @@ export function getTeamCapabilities(
     'profile.read',
     'execution.manage',
   ]);
+  // A Buddy schedules ITSELF without a grant, bounded by SELF_SCHEDULE_LIMITS
+  // in operations.ts (owner decision 2026-09-24). The run policy still applies.
+  if (self && !capabilities['schedule.manage'].allowed) {
+    const selfSchedule = {
+      capability: 'schedule.self',
+      ...decision(
+        manages,
+        'A Buddy creates and turns on its own schedules without a grant: at most once an hour and 5 enabled. schedule.manage lifts both limits.'
+      ),
+    };
+    const policy = operations.set_automation.prerequisites?.find(
+      (entry) => entry.capability === 'run_policy'
+    );
+    operations.set_automation = policy
+      ? { ...policy, prerequisites: [selfSchedule, policy] }
+      : { ...selfSchedule, prerequisites: [selfSchedule] };
+  }
   operations['set_automation.enable'] = operations.set_automation;
   operations.retire_direct_report = isRestrictedBuddyContext(context)
     ? decision(false, 'Retirement is available only in a direct owner conversation.')
@@ -401,8 +418,8 @@ export function getTeamCapabilities(
       ? operations.set_automation
       : decision(
           manages &&
-            (!isRestrictedBuddyContext(context) || capabilities['schedule.manage'].allowed),
-          'Direct owner conversations can prepare disabled schedules; restricted runs require schedule.manage.'
+            (self || !isRestrictedBuddyContext(context) || capabilities['schedule.manage'].allowed),
+          'A Buddy prepares its own schedules anywhere; for another Buddy, restricted runs require schedule.manage.'
         );
   return {
     contractVersion: BUDDY_TEAM_CONTRACT_VERSION,

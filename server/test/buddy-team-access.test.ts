@@ -232,38 +232,57 @@ test('one lead MCP onboards four existing identities, imports one, assigns and v
       provider: 'codex',
       unleashdConversationId: 'owner-chief',
     });
+    // Owner decision 2026-09-24 (#bugfixes): a Buddy's OWN schedule needs no
+    // grant and starts enabled. Before this, every enable needed schedule.manage.
     const schedule = await call('set_automation', {
       action: 'create',
       key: 'check-in',
       name: 'Review results',
       scheduleKind: 'interval',
-      scheduleExpression: '300',
+      scheduleExpression: '3600',
       prompt: 'Inspect inbox and completed work; steer only when needed.',
     });
-    assert.equal(schedule.enabled, false);
+    assert.equal(schedule.enabled, true);
+    // Scheduling a direct report still needs the owner's schedule.manage grant.
+    const report = specialists[0].id;
+    const drafted = await call('set_automation', {
+      action: 'create',
+      key: 'report-check-in',
+      targetBuddyId: report,
+      name: 'Report check-in',
+      scheduleKind: 'interval',
+      scheduleExpression: '3600',
+      jobPayload: { prompt: 'Review current work' },
+    });
+    assert.equal(drafted.enabled, false);
     const enable = {
       action: 'enable',
-      automationId: schedule.id,
-      key: 'enable-check-in',
-      baseRevision: schedule.updated_at,
+      automationId: drafted.id,
+      key: 'enable-report-check-in',
+      baseRevision: drafted.updated_at,
     };
     assert.equal(
       (await client.callTool({ name: 'set_automation', arguments: enable })).isError,
       true
     );
-    grant(lead.id, 'schedule-access', ['schedule.manage']);
+    const setScheduleGrant = (key: string, granted: boolean) => {
+      const access = store.getBuddyAccess(lead.id, w.id, report)!;
+      store.setBuddyAccess({
+        granteeId: lead.id,
+        workspaceId: w.id,
+        targetBuddyId: report,
+        capabilities: granted
+          ? [...access.capabilities, 'schedule.manage']
+          : access.capabilities.filter((capability) => capability !== 'schedule.manage'),
+        baseRevision: access.revision,
+        key,
+        reason: 'Schedule grant fixture',
+      });
+    };
+    setScheduleGrant('schedule-access', true);
     assert.equal((await call('set_automation', enable)).enabled, true);
-    assert.equal((await call('set_automation', enable)).id, schedule.id);
-    const access = store.getBuddyAccess(lead.id, w.id, lead.id)!;
-    store.setBuddyAccess({
-      granteeId: lead.id,
-      workspaceId: w.id,
-      targetBuddyId: lead.id,
-      capabilities: [],
-      baseRevision: access.revision,
-      key: 'revoke-schedule',
-      reason: 'Revocation fixture',
-    });
+    assert.equal((await call('set_automation', enable)).id, drafted.id);
+    setScheduleGrant('revoke-schedule', false);
     assert.equal(
       (await client.callTool({ name: 'set_automation', arguments: enable })).isError,
       true

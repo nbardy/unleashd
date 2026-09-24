@@ -381,6 +381,70 @@ test('automation schedule validation leaves durable definitions unchanged on fai
   }
 });
 
+// Owner decision 2026-09-24 (#bugfixes): a Buddy turns on its OWN schedules
+// with no schedule.manage grant, including from channel-thread runs. The
+// frequency and count limits are what stop a Buddy, or channel text steering
+// one, from scheduling itself every minute now that no grant is required.
+test('a Buddy turns on its own schedules without a grant, within the self-schedule limits', () => {
+  const root = mkdtempSync(join(tmpdir(), 'buddy-self-schedule-'));
+  const store = new BuddiesStore(':memory:');
+  try {
+    const workspace = store.createWorkspace({ name: 'Workspace', rootPath: root });
+    const buddy = store.createBuddy({ project: workspace.id, name: 'Scheduler', role: 'Self' });
+    // A channel-thread run: restricted by its run policy.
+    const operations = new BuddyOperationsService(store as unknown as BuddiesStorePort, {
+      buddyId: buddy.id,
+      workspaceId: workspace.id,
+      allowedOperations: ['buddy.set_automation', 'buddy.get_capabilities'],
+    });
+    // get_capabilities misreporting this is how a Buddy told the owner "can't".
+    const reported = operations.execute('buddy.get_capabilities', {}).data as {
+      operations: Record<string, { allowed: boolean }>;
+    };
+    assert.equal(reported.operations['set_automation.enable'].allowed, true);
+    type Created = { id: string; enabled: boolean; updated_at: string; enable: { code: string } };
+    const create = (name: string, scheduleKind: 'cron' | 'interval', scheduleExpression: string) =>
+      operations.execute('buddy.set_automation', {
+        action: 'create',
+        name,
+        scheduleKind,
+        scheduleExpression,
+        jobPayload: { prompt: `Run ${name}.` },
+      }).data as Created;
+    const enable = (created: Created) =>
+      operations.execute('buddy.set_automation', {
+        action: 'enable',
+        automationId: created.id,
+        key: `enable-${created.id}`,
+        baseRevision: created.updated_at,
+      });
+
+    assert.equal(create('hourly interval', 'interval', '3600').enabled, true);
+    assert.equal(create('daily cron', 'cron', '0 9 * * *').enabled, true);
+    // Two minutes in one hour, and a minute field that wraps: 55 -> 10 is 15 minutes.
+    for (const [kind, expression] of [
+      ['interval', '3599'],
+      ['cron', '0,30 * * * *'],
+      ['cron', '10,55 * * * *'],
+    ] as const) {
+      const draft = create(`too frequent ${expression}`, kind, expression);
+      assert.deepEqual([draft.enabled, draft.enable.code], [false, 'self_schedule_too_frequent']);
+      assert.throws(() => enable(draft), /at most once an hour/);
+    }
+    for (const name of ['third', 'fourth', 'fifth'])
+      assert.equal(create(name, 'interval', '7200').enabled, true);
+    const sixth = create('sixth', 'interval', '7200');
+    assert.deepEqual([sixth.enabled, sixth.enable.code], [false, 'self_schedule_cap']);
+    assert.throws(() => enable(sixth), /at most 5/);
+    const [first] = store.listAutomations({ buddy: buddy.id }).filter((a) => a.enabled);
+    operations.execute('buddy.set_automation', { action: 'disable', automationId: first.id });
+    assert.equal((enable(sixth).data as { enabled: boolean }).enabled, true);
+  } finally {
+    store.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
 test('memory-v2 operations use typed inputs, trusted workspace scope, and CAS errors', () => {
   const calls: Array<{ operation: string; input: unknown }> = [];
   const store = {

@@ -112,7 +112,7 @@ const TOOL_DESCRIPTIONS: Record<(typeof TOOL_NAMES)[number], string> = {
   'buddy.get_automations':
     'List durable Buddy automations for this employee or one direct report in the conversation workspace.',
   'buddy.set_automation':
-    'Supply command:{action,...} with the exact fields for that action. Create or update a disabled durable Buddy automation for this employee or a direct report, or disable an existing automation. Enable requires an explicit owner schedule.manage grant, current baseRevision and stable key. Background execution settings and limits still apply.',
+    'Supply command:{action,...} with the exact fields for that action. Create, update, enable or disable a durable Buddy automation for this employee or a direct report. Your OWN schedules need no grant and start enabled when they fire at most once an hour and you have fewer than 5 enabled; otherwise create returns a disabled draft whose `enable` decision says why. Tell the owner what you scheduled and link ownerControlUrl, where they can disable it. Enabling another Buddy schedule requires an explicit owner schedule.manage grant. Enable needs the current baseRevision and a stable key. Update requires the automation to be disabled. Background execution settings and limits still apply.',
   'buddy.new_project':
     'Create a bounded project for self or a supervised ownerId. Use a stable key, concrete deliverables in definitionOfDone and optional parentProjectId. Assign by creating this project then sending its projectId; repeat both keys to resume safely. Recipient marks in_progress to accept and done with evidence to complete.',
   'buddy.update_project':

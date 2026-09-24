@@ -1,5 +1,5 @@
 import { MEMORY_NOTE_MAX_BYTES } from '@nbardy/buddies';
-import { ConversationConfigSchema } from '@unleashd/shared';
+import { type BuddyCapabilityDecision, ConversationConfigSchema } from '@unleashd/shared';
 import { GetBuddyInboxResourceSchema, GetBuddyWorkResourceSchema } from '@unleashd/shared';
 import { BuddyCheckpointInputSchema, BuddyTeamObservationInputSchema } from '@unleashd/shared';
 import { BuddyDocumentRefSchema } from '@unleashd/shared';
@@ -40,7 +40,7 @@ import {
 } from './knowledge';
 import { assertBuddyProviderSupportsMcp } from './provider-capability';
 import { publicAutomationRun } from './public-automation-run';
-import { nextAutomationRunAt } from './scheduler';
+import { minimumAutomationGapSeconds, nextAutomationRunAt } from './scheduler';
 import { readBuddySoul, updateBuddySoul } from './soul';
 import { validateProfileChange } from './team-access';
 import {
@@ -77,6 +77,14 @@ const AutomationPolicyInputSchema = z
     allowedOperations: z.array(z.string().min(1)).optional(),
   })
   .strict();
+
+// Owner decision 2026-09-24 (#bugfixes): a Buddy turns on schedules for
+// ITSELF without a schedule.manage grant, from any conversation including
+// channel threads. These bounds replace what the grant used to guard: without
+// them a Buddy, or channel text steering one, could schedule itself every
+// minute. Each run keeps its own 600s runtime limit. The owner grant lifts
+// both bounds; scheduling ANOTHER Buddy still requires it.
+export const SELF_SCHEDULE_LIMITS = { minGapSeconds: 3600, maxEnabled: 5 } as const;
 
 export const SetAutomationSchema = z.discriminatedUnion('action', [
   z
@@ -1342,15 +1350,21 @@ export class BuddyOperationsService {
       }
       case 'buddy.set_automation': {
         const parsed = BuddyOperationInputSchemas[name].parse(input);
-        if (parsed.action === 'enable' || isRestrictedBuddyContext(this.context)) {
-          const targetBuddyId =
-            parsed.action === 'create'
-              ? (parsed.targetBuddyId ?? this.context.buddyId)
-              : this.store.getAutomation(parsed.automationId)?.buddy_id;
-          if (!targetBuddyId) throw new Error('Automation not found');
+        const scheduleTargetId =
+          parsed.action === 'create'
+            ? (parsed.targetBuddyId ?? this.context.buddyId)
+            : this.store.getAutomation(parsed.automationId)?.buddy_id;
+        if (!scheduleTargetId) throw new Error('Automation not found');
+        // Self schedules are bounded by SELF_SCHEDULE_LIMITS instead of a
+        // grant (scheduleEnableDecision). Another Buddy's schedule needs the
+        // owner's grant to enable, and for every action in a restricted run.
+        if (
+          scheduleTargetId !== this.context.buddyId &&
+          (parsed.action === 'enable' || isRestrictedBuddyContext(this.context))
+        ) {
           teamStore(this.store).requireBuddyCapability({
             ...teamAuthority(this.context),
-            targetBuddyId,
+            targetBuddyId: scheduleTargetId,
             capability: 'schedule.manage',
           });
         }
@@ -1418,6 +1432,13 @@ export class BuddyOperationsService {
             } as BuddyAutomation,
             new Date()
           );
+          // New schedules start ON whenever the caller may enable them; a
+          // schedule it may not enable is saved as a disabled draft and the
+          // decision says why, so the Buddy can tell the owner.
+          const enable = this.scheduleEnableDecision(targetBuddyId, {
+            schedule_kind: parsed.scheduleKind,
+            schedule_expression: parsed.scheduleExpression,
+          });
           const automation = this.store.createAutomation({
             buddy: targetBuddyId,
             workspace: this.context.workspaceId,
@@ -1429,18 +1450,13 @@ export class BuddyOperationsService {
             jobKind: parsed.jobKind,
             jobPayload,
             policy: parsed.policy,
-            enabled: false,
+            enabled: enable.allowed,
             nextRunAt,
           });
           return this.result(
             name,
-            automation,
-            {
-              ...parsed,
-              targetBuddyId,
-              enabled: false,
-              note: 'Created disabled; owner review is required before enabling.',
-            },
+            { ...automation, enable, ownerControlUrl: this.automationsUrl(targetBuddyId) },
+            { ...parsed, targetBuddyId, enabled: enable.allowed, enableCode: enable.code },
             project?.buddy_id === this.context.buddyId ? project.id : undefined
           );
         }
@@ -1465,6 +1481,12 @@ export class BuddyOperationsService {
         )
           throw new Error(`Schedule revision conflict: current ${automation.updated_at}`);
         if (parsed.action === 'enable') {
+          const enable = this.scheduleEnableDecision(
+            automation.buddy_id,
+            automation,
+            automation.id
+          );
+          if (!enable.allowed) throw new Error(`${enable.reason} ${enable.remedy}`);
           const nextRunAt = nextAutomationRunAt(automation, new Date());
           return this.result(
             name,
@@ -2221,6 +2243,55 @@ export class BuddyOperationsService {
       );
     }
     return buddy;
+  }
+
+  /**
+   * May this caller turn `schedule` on for `targetBuddyId`? The owner's
+   * schedule.manage grant always may. Without it only a Buddy scheduling
+   * itself may, within SELF_SCHEDULE_LIMITS. `automationId` excludes the
+   * schedule being enabled from its own active count.
+   */
+  private scheduleEnableDecision(
+    targetBuddyId: string,
+    schedule: Pick<BuddyAutomation, 'schedule_kind' | 'schedule_expression'>,
+    automationId?: string
+  ): BuddyCapabilityDecision {
+    const grant = teamStore(this.store).buddyCapability({
+      ...teamAuthority(this.context),
+      targetBuddyId,
+      capability: 'schedule.manage',
+    });
+    if (grant.allowed || targetBuddyId !== this.context.buddyId) return grant;
+    const remedy = `Owner can enable it from ${this.automationsUrl(targetBuddyId)} or grant schedule.manage to lift the limits.`;
+    const gapSeconds = minimumAutomationGapSeconds(schedule);
+    if (gapSeconds < SELF_SCHEDULE_LIMITS.minGapSeconds)
+      return {
+        allowed: false,
+        code: 'self_schedule_too_frequent',
+        reason: `A schedule a Buddy turns on for itself may fire at most once an hour; this one can fire ${gapSeconds}s apart.`,
+        remedy,
+      };
+    const enabled = this.store
+      .listAutomations({ buddy: targetBuddyId })
+      .filter((automation) => automation.enabled && automation.id !== automationId).length;
+    if (enabled >= SELF_SCHEDULE_LIMITS.maxEnabled)
+      return {
+        allowed: false,
+        code: 'self_schedule_cap',
+        reason: `This Buddy already has ${enabled} enabled schedules; it may turn on at most ${SELF_SCHEDULE_LIMITS.maxEnabled} itself. Disable one first.`,
+        remedy,
+      };
+    return {
+      allowed: true,
+      code: 'self_schedule',
+      reason:
+        'A Buddy turns on its own schedules without a grant, within the self-schedule limits.',
+      remedy: null,
+    };
+  }
+
+  private automationsUrl(buddyId: string) {
+    return `/buddies/${encodeURIComponent(buddyId)}/automations`;
   }
 
   private requireManageableBuddy(targetBuddyId: string) {

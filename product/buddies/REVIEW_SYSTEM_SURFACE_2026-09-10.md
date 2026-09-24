@@ -137,7 +137,7 @@ get_automations({ targetBuddyId? })
 set_automation({ action: 'create', key?, targetBuddyId?, projectId?,
                  name, prompt?, conversationId?, scheduleKind: 'cron' | 'interval',
                  scheduleExpression, timezone?, policy?, ... })
-// Also update and disable variants. Creation is DISABLED, not scheduled execution.
+// Also update, enable and disable variants. Self schedules start enabled within limits.
 
 get_soul({})
 update_soul({ content, reasoning, baseVersion })
@@ -164,9 +164,12 @@ Important behavior:
 - Direct-report creation remains a convenience operation. Automated/delegated recipient
   conversations cannot hire, reparent staff or grant themselves more tools. Removing quotas
   did not remove these authority boundaries.
-- `set_automation` can draft or disable a schedule. The authenticated owner surface enables
-  it. A prompt without `conversationId` uses the current linked conversation. A background
-  message run's allowlist does not expose schedule creation.
+- `set_automation` creates, enables and disables schedules. A Buddy's OWN schedule needs no
+  grant and starts enabled when it fires at most hourly and the Buddy has fewer than 5
+  enabled; otherwise it is saved as a disabled draft (see Automation ownership). Another
+  Buddy's schedule needs `schedule.manage` to enable. A prompt without `conversationId` uses
+  the current linked conversation. A background message run's allowlist does not expose
+  schedule creation.
 - Structured executable approval currently covers exact `buddy.update_project` control
   arguments, revision and expiry. `purpose: 'approval'` alone never authorizes an external action.
 
