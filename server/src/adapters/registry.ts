@@ -13,8 +13,6 @@ import {
   OPENCODE_PART_DIR,
   extractCodexSessionIdFromFilename,
   extractMessagesFromCodexEntries,
-  extractMessagesFromEntries,
-  extractSubAgentsFromEntries,
   getCodexSessionDirectories,
   getCursorSessionFiles,
   getGeminiSessionFiles,
@@ -22,12 +20,11 @@ import {
   getOpenCodeSessionMetadataIndex,
   getOpenCodeSessionMtime,
   getProjectDirectories,
-  inferProviderFromModel,
   parseCodexJsonlFile,
   parseCursorTranscriptFile,
   parseGeminiSessionFile,
-  parseJsonlFile,
   parseOpenCodeSessionDirectory,
+  readClaudeTranscript,
   scanSessionDirectory,
 } from './jsonl';
 import { museAdapter } from './muse-adapter';
@@ -69,27 +66,10 @@ const claudeAdapter: DiskAdapter = {
   },
 
   async parseFile(filePath: string): Promise<ParsedSession | null> {
-    const session = await parseJsonlFile(filePath);
-    if (session.entries.length === 0) return null;
-
-    const messages = extractMessagesFromEntries(session.entries);
-    const provider = inferProviderFromModel(session.model);
-    const subAgents = extractSubAgentsFromEntries(session.entries, provider);
-
-    return {
-      sessionId: session.sessionId,
-      filePath: session.filePath,
-      workingDirectory: session.workingDirectory,
-      provider,
-      model: session.model,
-      createdAt: session.createdAt,
-      modifiedAt: session.modifiedAt,
-      messages,
-      subAgents,
-      parentSessionId: null,
-      title: session.title ?? null,
-    };
+    return (await readClaudeTranscript(filePath)).session;
   },
+  // Claude Code only appends newline-terminated records to a session file.
+  growth: { kind: 'appended', read: readClaudeTranscript },
 };
 
 // =============================================================================
@@ -101,6 +81,7 @@ const claudeAdapter: DiskAdapter = {
 
 const codexAdapter: DiskAdapter = {
   provider: 'codex',
+  growth: { kind: 'rewritten' },
   sessionFileKeys: (filePath) => {
     const sessionId = extractCodexSessionIdFromFilename(filePath);
     return sessionId ? [sessionId] : [];
@@ -158,6 +139,7 @@ const codexAdapter: DiskAdapter = {
 
 const opencodeAdapter: DiskAdapter & { _sessionIndex: Map<string, string> | null } = {
   provider: 'opencode',
+  growth: { kind: 'rewritten' },
   sessionFileKeys: (filePath) => [path.basename(filePath)],
   _sessionIndex: null,
 
@@ -200,6 +182,7 @@ const opencodeAdapter: DiskAdapter & { _sessionIndex: Map<string, string> | null
 
 const geminiAdapter: DiskAdapter = {
   provider: 'gemini',
+  growth: { kind: 'rewritten' },
   sessionFileKeys(filePath) {
     const stem = path.basename(filePath, '.json');
     // Gemini also uses session-{timestamp}-{first eight id characters}, so every
@@ -256,6 +239,7 @@ const geminiAdapter: DiskAdapter = {
 
 const cursorAdapter: DiskAdapter = {
   provider: 'cursor',
+  growth: { kind: 'rewritten' },
   sessionFileKeys: (filePath) => [path.basename(filePath, '.jsonl')],
 
   async discoverFiles(): Promise<string[]> {

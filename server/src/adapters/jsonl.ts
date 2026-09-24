@@ -31,6 +31,7 @@ import type {
 import {
   BuddyContextSchema,
   ConversationKindSchema,
+  ProviderSchema,
   formatBuddyBuilderToolResult,
   formatBuddyWorkerToolResult,
 } from '@unleashd/shared';
@@ -45,6 +46,8 @@ import {
   isJsonlUserEntry,
 } from '@unleashd/shared';
 import { getSubagentDescription, isSubagentSpawnTool } from '../subagent-tools';
+import type { AppendableRead, ParsedSession } from './disk-adapter';
+import { readJsonlLines } from './jsonl-lines';
 import { formatToolUse } from './tool-format';
 
 /** Canonicalize a directory path: resolve `.`/`..` and strip trailing slashes
@@ -275,99 +278,192 @@ function isDirectory(candidate: string): boolean {
 // =============================================================================
 
 /**
- * Parse a JSONL file into a JsonlSession object
- * Uses streaming to handle large files efficiently
+ * Session metadata a Claude transcript accumulates record by record. Every
+ * field is a fold (first cwd, first model, min/max timestamp, last title), so
+ * the same state serves a whole-file read and an append-only resume.
  */
-export async function parseJsonlFile(filePath: string): Promise<JsonlSession> {
-  const entries: JsonlEntry[] = [];
-  let workingDirectory = '';
-  let model = 'unknown';
-  let createdAt: Date | null = null;
-  let modifiedAt: Date | null = null;
+interface ClaudeTranscriptMetadata {
+  workingDirectory: string;
+  model: string;
+  createdAt: Date | null;
+  modifiedAt: Date | null;
+  aiTitle: string | null;
+  customTitle: string | null;
+}
 
-  const fileStream = fs.createReadStream(filePath, { encoding: 'utf-8' });
-  const rl = readline.createInterface({
-    input: fileStream,
-    crlfDelay: Number.POSITIVE_INFINITY,
-  });
+function emptyClaudeTranscriptMetadata(): ClaudeTranscriptMetadata {
+  return {
+    workingDirectory: '',
+    model: 'unknown',
+    createdAt: null,
+    modifiedAt: null,
+    aiTitle: null,
+    customTitle: null,
+  };
+}
 
-  let skippedLines = 0;
-  let aiTitle: string | null = null;
-  let customTitle: string | null = null;
-
-  for await (const line of rl) {
-    if (!line.trim()) continue;
-
-    try {
-      const entry = JSON.parse(line) as JsonlEntry;
-      entries.push(entry);
-      // Provider-generated conversation labels (Claude only). ai-title is
-      // auto-generated and re-emitted per turn; custom-title is user-set via
-      // /rename or --name and wins. Last observation of each kind wins.
-      if (entry.type === 'ai-title' || entry.type === 'custom-title') {
-        const raw = entry as unknown as Record<string, unknown>;
-        const value = entry.type === 'ai-title' ? raw.aiTitle : raw.customTitle;
-        if (typeof value === 'string' && value.trim()) {
-          if (entry.type === 'ai-title') aiTitle = value.trim();
-          else customTitle = value.trim();
-        }
-      }
-
-      // Extract metadata from entries
-      if (isJsonlUserEntry(entry) || isJsonlAssistantEntry(entry)) {
-        // Get working directory from first entry with cwd
-        if (!workingDirectory && 'cwd' in entry && entry.cwd) {
-          workingDirectory = entry.cwd;
-        }
-
-        // Get model from first assistant message
-        if (isJsonlAssistantEntry(entry) && (!model || model === 'unknown')) {
-          if (entry.message?.model) {
-            model = entry.message.model;
-          }
-        }
-
-        // Track timestamps (parseTimestamp guards against NaN / invalid dates)
-        if (entry.timestamp) {
-          const timestamp = parseTimestamp(entry.timestamp) ?? new Date();
-          if (!createdAt || timestamp < createdAt) {
-            createdAt = timestamp;
-          }
-          if (!modifiedAt || timestamp > modifiedAt) {
-            modifiedAt = timestamp;
-          }
-        }
-      }
-    } catch {
-      skippedLines++;
+function observeClaudeTranscriptMetadata(
+  metadata: ClaudeTranscriptMetadata,
+  entry: JsonlEntry
+): void {
+  // Provider-generated conversation labels (Claude only). ai-title is
+  // auto-generated and re-emitted per turn; custom-title is user-set via
+  // /rename or --name and wins. Last observation of each kind wins.
+  if (entry.type === 'ai-title' || entry.type === 'custom-title') {
+    const raw = entry as unknown as Record<string, unknown>;
+    const value = entry.type === 'ai-title' ? raw.aiTitle : raw.customTitle;
+    if (typeof value === 'string' && value.trim()) {
+      if (entry.type === 'ai-title') metadata.aiTitle = value.trim();
+      else metadata.customTitle = value.trim();
     }
   }
 
-  if (skippedLines > 0) {
-    console.warn(
-      `Skipped ${skippedLines} malformed line${skippedLines > 1 ? 's' : ''} in ${filePath}`
-    );
+  if (!isJsonlUserEntry(entry) && !isJsonlAssistantEntry(entry)) return;
+  // Get working directory from first entry with cwd
+  if (!metadata.workingDirectory && 'cwd' in entry && entry.cwd) {
+    metadata.workingDirectory = entry.cwd;
   }
+  // Get model from first assistant message
+  if (isJsonlAssistantEntry(entry) && (!metadata.model || metadata.model === 'unknown')) {
+    if (entry.message?.model) metadata.model = entry.message.model;
+  }
+  // Track timestamps (parseTimestamp guards against NaN / invalid dates)
+  if (entry.timestamp) {
+    const timestamp = parseTimestamp(entry.timestamp) ?? new Date();
+    if (!metadata.createdAt || timestamp < metadata.createdAt) metadata.createdAt = timestamp;
+    if (!metadata.modifiedAt || timestamp > metadata.modifiedAt) metadata.modifiedAt = timestamp;
+  }
+}
 
-  // Extract session ID from filename
-  const sessionId = path.basename(filePath, '.jsonl');
-
+function claudeTranscriptIdentity(
+  metadata: ClaudeTranscriptMetadata,
+  filePath: string
+): Pick<
+  JsonlSession,
+  'sessionId' | 'filePath' | 'workingDirectory' | 'model' | 'createdAt' | 'modifiedAt' | 'title'
+> {
   // Fallback for working directory: decode from parent directory name
+  let workingDirectory = metadata.workingDirectory;
   if (!workingDirectory) {
     const projectDirName = path.basename(path.dirname(filePath));
     workingDirectory =
       resolveEncodedProjectDirectory(projectDirName) ?? decodeProjectPath(projectDirName);
   }
-
   return {
-    sessionId,
+    sessionId: path.basename(filePath, '.jsonl'),
     filePath,
     workingDirectory: normalizeDirPath(workingDirectory),
-    model,
-    createdAt: createdAt ?? new Date(),
-    modifiedAt: modifiedAt ?? new Date(),
-    entries,
-    title: customTitle ?? aiTitle,
+    model: metadata.model,
+    createdAt: metadata.createdAt ?? new Date(),
+    modifiedAt: metadata.modifiedAt ?? new Date(),
+    title: metadata.customTitle ?? metadata.aiTitle,
+  };
+}
+
+function warnSkippedLines(filePath: string, skippedLines: number): void {
+  if (skippedLines === 0) return;
+  console.warn(
+    `Skipped ${skippedLines} malformed line${skippedLines > 1 ? 's' : ''} in ${filePath}`
+  );
+}
+
+/**
+ * Parse a JSONL file into a JsonlSession object (raw entries retained).
+ * Uses streaming to handle large files efficiently
+ */
+export async function parseJsonlFile(filePath: string): Promise<JsonlSession> {
+  const entries: JsonlEntry[] = [];
+  const metadata = emptyClaudeTranscriptMetadata();
+  let skippedLines = 0;
+  for await (const line of readJsonlLines(filePath, 0)) {
+    if (!line.text.trim()) continue;
+    try {
+      const entry = JSON.parse(line.text) as JsonlEntry;
+      entries.push(entry);
+      observeClaudeTranscriptMetadata(metadata, entry);
+    } catch {
+      skippedLines++;
+    }
+  }
+  warnSkippedLines(filePath, skippedLines);
+  return { ...claudeTranscriptIdentity(metadata, filePath), entries };
+}
+
+/**
+ * Everything a Claude session needs from its records, without the records.
+ *
+ * A 120MB transcript held 822 messages on 2026-09-25: nearly all of its bytes
+ * are tool results that no message keeps. Folding records into this state
+ * instead of retaining JsonlEntry[] is what makes an append-only resume cheap
+ * to hold between polls.
+ */
+interface ClaudeTranscriptFold {
+  metadata: ClaudeTranscriptMetadata;
+  entryCount: number;
+  /** Undeduplicated; see appendClaudeEntryMessages. */
+  messages: Message[];
+  toolUses: ClaudeToolUse[];
+}
+
+/** Read a whole Claude transcript, keeping a resume point for appended bytes. */
+export function readClaudeTranscript(filePath: string): Promise<AppendableRead> {
+  return foldClaudeTranscript(
+    filePath,
+    { metadata: emptyClaudeTranscriptMetadata(), entryCount: 0, messages: [], toolUses: [] },
+    0
+  );
+}
+
+async function foldClaudeTranscript(
+  filePath: string,
+  fold: ClaudeTranscriptFold,
+  start: number
+): Promise<AppendableRead> {
+  let offset = start;
+  let skippedLines = 0;
+  for await (const line of readJsonlLines(filePath, start)) {
+    if (!line.text.trim()) {
+      offset = line.end;
+      continue;
+    }
+    let entry: JsonlEntry;
+    try {
+      entry = JSON.parse(line.text) as JsonlEntry;
+    } catch {
+      // An unterminated fragment that does not parse is a record still being
+      // written: leave it for the next read rather than skipping it forever.
+      if (!line.terminated) break;
+      skippedLines++;
+      offset = line.end;
+      continue;
+    }
+    fold.entryCount++;
+    observeClaudeTranscriptMetadata(fold.metadata, entry);
+    appendClaudeEntryMessages(fold.messages, entry);
+    fold.toolUses.push(...claudeToolUses(entry));
+    offset = line.end;
+  }
+  warnSkippedLines(filePath, skippedLines);
+  return {
+    session: fold.entryCount === 0 ? null : finishClaudeTranscript(fold, filePath),
+    offset,
+    extend: () => foldClaudeTranscript(filePath, fold, offset),
+  };
+}
+
+function finishClaudeTranscript(fold: ClaudeTranscriptFold, filePath: string): ParsedSession {
+  const identity = claudeTranscriptIdentity(fold.metadata, filePath);
+  const provider = inferProviderFromModel(identity.model);
+  return {
+    ...identity,
+    provider,
+    title: identity.title ?? null,
+    // Consumers rewrite message content in place (stripMergePrefix and the
+    // Buddy/oompa prefix strippers), so the fold's own messages must never
+    // escape: a resumed read would otherwise re-strip already-stripped text.
+    messages: dedupeConsecutiveMessages(fold.messages).map((message) => ({ ...message })),
+    subAgents: subAgentsFromToolUses(fold.toolUses, provider),
+    parentSessionId: null,
   };
 }
 
@@ -985,52 +1081,55 @@ function extractAssistantContent(entry: JsonlAssistantEntry): string {
  */
 export function extractMessagesFromEntries(entries: JsonlEntry[]): Message[] {
   const messages: Message[] = [];
+  for (const entry of entries) appendClaudeEntryMessages(messages, entry);
+  return dedupeConsecutiveMessages(messages);
+}
 
-  for (const entry of entries) {
-    if (isJsonlUserEntry(entry)) {
-      // Claude persists MCP results as user-role transport blocks, not user prose.
-      if (Array.isArray(entry.message.content)) {
-        for (const block of entry.message.content) {
-          if (block.type !== 'tool_result' || !('content' in block) || block.is_error) continue;
-          const result =
-            formatBuddyWorkerToolResult(block.content) ??
-            formatBuddyBuilderToolResult(block.content);
-          if (result)
-            messages.push({
-              role: 'assistant',
-              content: result,
-              timestamp: parseTimestamp(entry.timestamp) ?? new Date(),
-            });
-        }
-      }
-      const content = extractUserContent(entry);
-      // Skip tool result messages that are just internal tool communication
-      if (content && !content.startsWith('[Tool result:')) {
-        messages.push({
-          role: 'user',
-          content,
-          timestamp: parseTimestamp(entry.timestamp) ?? new Date(),
-        });
-      }
-    } else if (isJsonlAssistantEntry(entry)) {
-      const content = extractAssistantContent(entry);
-      if (content) {
-        const completedAt = parseTimestamp(entry.timestamp) ?? new Date();
-        // Fallback to completedAt if no previous message exists
-        const startedAt =
-          messages.length > 0 ? messages[messages.length - 1].timestamp : completedAt;
-        messages.push({
-          role: 'assistant',
-          content,
-          timestamp: startedAt,
-          completedAt,
-          completionReason: 'success', // assume success for historical
-        });
+/**
+ * Append the messages one Claude entry contributes. `messages` is the
+ * undeduplicated list so far: an assistant's startedAt is the timestamp of
+ * the raw message before it, which a fold must see exactly as a full pass does.
+ */
+function appendClaudeEntryMessages(messages: Message[], entry: JsonlEntry): void {
+  if (isJsonlUserEntry(entry)) {
+    // Claude persists MCP results as user-role transport blocks, not user prose.
+    if (Array.isArray(entry.message.content)) {
+      for (const block of entry.message.content) {
+        if (block.type !== 'tool_result' || !('content' in block) || block.is_error) continue;
+        const result =
+          formatBuddyWorkerToolResult(block.content) ?? formatBuddyBuilderToolResult(block.content);
+        if (result)
+          messages.push({
+            role: 'assistant',
+            content: result,
+            timestamp: parseTimestamp(entry.timestamp) ?? new Date(),
+          });
       }
     }
+    const content = extractUserContent(entry);
+    // Skip tool result messages that are just internal tool communication
+    if (content && !content.startsWith('[Tool result:')) {
+      messages.push({
+        role: 'user',
+        content,
+        timestamp: parseTimestamp(entry.timestamp) ?? new Date(),
+      });
+    }
+  } else if (isJsonlAssistantEntry(entry)) {
+    const content = extractAssistantContent(entry);
+    if (content) {
+      const completedAt = parseTimestamp(entry.timestamp) ?? new Date();
+      // Fallback to completedAt if no previous message exists
+      const startedAt = messages.length > 0 ? messages[messages.length - 1].timestamp : completedAt;
+      messages.push({
+        role: 'assistant',
+        content,
+        timestamp: startedAt,
+        completedAt,
+        completionReason: 'success', // assume success for historical
+      });
+    }
   }
-
-  return dedupeConsecutiveMessages(messages);
 }
 
 function dedupeConsecutiveMessages(messages: Message[]): Message[] {
@@ -1244,51 +1343,80 @@ export function extractMessagesFromCodexEntries(entries: CodexSessionEntry[]): M
  * - Timestamps use the entry timestamp (approximation)
  */
 export function extractSubAgentsFromEntries(entries: JsonlEntry[], provider: Provider): SubAgent[] {
+  return subAgentsFromToolUses(entries.flatMap(claudeToolUses), provider);
+}
+
+/**
+ * The part of an assistant tool_use block that sub-agent reconstruction reads.
+ *
+ * Which tool names spawn a sub-agent depends on the provider, and a Claude
+ * transcript's provider is only known once its model is (inferProviderFromModel).
+ * Keeping the input of every name that spawns for SOME provider lets an
+ * append-only fold decide at the end, without retaining the inputs of
+ * ordinary tools (a Write input carries a whole file).
+ */
+type ClaudeToolUse =
+  | {
+      kind: 'spawn_candidate';
+      id: string;
+      name: string;
+      input: Record<string, unknown>;
+      timestamp: Date;
+    }
+  | { kind: 'tool'; name: string };
+
+function mayBeSubagentSpawnTool(name: string): boolean {
+  return ProviderSchema.options.some((provider) => isSubagentSpawnTool(provider, name));
+}
+
+function claudeToolUses(entry: JsonlEntry): ClaudeToolUse[] {
+  if (!isJsonlAssistantEntry(entry)) return [];
+  const timestamp = parseTimestamp(entry.timestamp) ?? new Date();
+  const uses: ClaudeToolUse[] = [];
+  for (const block of entry.message.content) {
+    if (!isJsonlToolUseBlock(block)) continue;
+    const toolBlock = block as JsonlToolUseBlock;
+    uses.push(
+      mayBeSubagentSpawnTool(toolBlock.name)
+        ? {
+            kind: 'spawn_candidate',
+            id: toolBlock.id,
+            name: toolBlock.name,
+            input: toolBlock.input as Record<string, unknown>,
+            timestamp,
+          }
+        : { kind: 'tool', name: toolBlock.name }
+    );
+  }
+  return uses;
+}
+
+function subAgentsFromToolUses(uses: readonly ClaudeToolUse[], provider: Provider): SubAgent[] {
   const subAgents: SubAgent[] = [];
   let currentSubAgent: SubAgent | null = null;
 
-  for (const entry of entries) {
-    // Only process assistant entries that contain tool uses
-    if (!isJsonlAssistantEntry(entry)) {
-      continue;
-    }
-
-    const content = entry.message.content;
-    const timestamp = parseTimestamp(entry.timestamp) ?? new Date();
-
-    // Scan all content blocks in this assistant message
-    for (const block of content) {
-      if (isJsonlToolUseBlock(block)) {
-        const toolBlock = block as JsonlToolUseBlock;
-
-        if (isSubagentSpawnTool(provider, toolBlock.name)) {
-          // Complete the previous sub-agent if one is active
-          if (currentSubAgent) {
-            currentSubAgent.status = 'completed';
-            currentSubAgent.completedAt = timestamp;
-            subAgents.push(currentSubAgent);
-          }
-
-          const input = toolBlock.input as Record<string, unknown>;
-          const description = getSubagentDescription(provider, toolBlock.name, input);
-
-          // Create new sub-agent
-          currentSubAgent = {
-            id: toolBlock.id,
-            description,
-            status: 'running',
-            toolUses: 0,
-            tokens: 0,
-            currentAction: undefined,
-            startedAt: timestamp,
-            completedAt: undefined,
-          };
-        } else if (currentSubAgent) {
-          // Regular tool use within an active sub-agent
-          currentSubAgent.toolUses += 1;
-          currentSubAgent.currentAction = toolBlock.name;
-        }
+  for (const use of uses) {
+    if (use.kind === 'spawn_candidate' && isSubagentSpawnTool(provider, use.name)) {
+      // Complete the previous sub-agent if one is active
+      if (currentSubAgent) {
+        currentSubAgent.status = 'completed';
+        currentSubAgent.completedAt = use.timestamp;
+        subAgents.push(currentSubAgent);
       }
+      currentSubAgent = {
+        id: use.id,
+        description: getSubagentDescription(provider, use.name, use.input),
+        status: 'running',
+        toolUses: 0,
+        tokens: 0,
+        currentAction: undefined,
+        startedAt: use.timestamp,
+        completedAt: undefined,
+      };
+    } else if (currentSubAgent) {
+      // Regular tool use within an active sub-agent
+      currentSubAgent.toolUses += 1;
+      currentSubAgent.currentAction = use.name;
     }
   }
 

@@ -34,6 +34,7 @@ test('startup limit hydrates only the requested files but baselines every discov
   let parseCalls = 0;
   const adapter: DiskAdapter = {
     provider: 'claude',
+    growth: { kind: 'rewritten' },
     sessionFileKeys: (filePath) => [path.basename(filePath, '.jsonl')],
     discoverFiles: async () => files,
     parseFile: async (filePath) => {
@@ -64,6 +65,7 @@ test('startup parser respects the aggregate in-flight source byte budget', async
   let maxActiveParsers = 0;
   const adapter: DiskAdapter = {
     provider: 'claude',
+    growth: { kind: 'rewritten' },
     sessionFileKeys: (filePath) => [path.basename(filePath, '.jsonl')],
     discoverFiles: async () => files,
     parseFile: async (filePath) => {
@@ -93,6 +95,7 @@ test('startup reuses normalized sessions while source identity is unchanged', as
   let parseCalls = 0;
   const adapter: DiskAdapter = {
     provider: 'claude',
+    growth: { kind: 'rewritten' },
     sessionFileKeys: (filePath) => [path.basename(filePath, '.jsonl')],
     discoverFiles: async () => [sourcePath],
     parseFile: async (filePath) => {
@@ -182,6 +185,7 @@ test('startup emits a small first batch before returning to the steady batch siz
   );
   const adapter: DiskAdapter = {
     provider: 'claude',
+    growth: { kind: 'rewritten' },
     sessionFileKeys: (filePath) => [path.basename(filePath, '.jsonl')],
     discoverFiles: async () => files,
     parseFile: async (filePath) => parsedSession(filePath),

@@ -233,6 +233,17 @@ Flow is:
 `server` state remains authoritative while the provider process is active.
 Poller/loader merges skip active in-memory IDs.
 
+The poller resumes an append-only transcript (Claude) from its last byte
+offset instead of re-parsing it (`server/src/adapters/transcript-tails.ts`,
+`DiskAdapter.growth`). Before this, a still-running 120MB external Claude
+session cost ~1.2s of main-thread parsing every 5s and queued every WS command
+behind it (2026-09-25). After it, the same poll takes ~15ms. A resume is taken
+only when the file provably only grew: same inode, no shrink, and unchanged
+bytes just before the offset. Any other case is a named full read. Codex,
+Cursor, Gemini, OpenCode and Muse stay `rewritten` (full parse). Codex could be
+next, but its turn lifecycle and final sort need the whole file first. Guard:
+`server/test/transcript-tail-poll.test.ts`.
+
 Buddy provider-session bindings also persist the host-resolved disclosure audience.
 On restart, the runtime compares that saved key with freshly resolved access before
 resuming. Matching access preserves native conversation context and still receives

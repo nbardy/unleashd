@@ -171,6 +171,7 @@ test('selected and related parses share the aggregate source byte budget', async
   let parses = 0;
   const adapter: DiskAdapter = {
     provider: 'claude',
+    growth: { kind: 'rewritten' },
     sessionFileKeys: (filePath) => [path.basename(filePath, '.jsonl')],
     discoverFiles: async () => sources,
     parseFile: async (filePath): Promise<ParsedSession> => {
@@ -230,6 +231,7 @@ test('bound-session lookup reads each discovered path once, not once per binding
   let keyReads = 0;
   const adapter: DiskAdapter = {
     provider: 'claude',
+    growth: { kind: 'rewritten' },
     sessionFileKeys: (filePath) => {
       keyReads += 1;
       return [path.basename(filePath, '.jsonl')];

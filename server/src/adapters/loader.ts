@@ -22,15 +22,18 @@ import type {
   DiskAdapter,
   LoadProgressCallback,
   LoadResult,
+  ParsedSession,
   PollResult,
   SessionHistoryOptions,
   SessionHistorySource,
+  SourceGrowth,
 } from './disk-adapter';
 import { sessionLookupKeys, sessionToConversation } from './disk-adapter';
 import { extractCodexSessionIdFromFilename, extractMuseSessionIdFromFilePath } from './jsonl';
 import { diskAdapters } from './registry';
 import { OPENCODE_PART_DIR, getOpenCodeSessionMtime } from './registry';
 import type { NormalizedSessionCache } from './session-cache';
+import type { TranscriptTails } from './transcript-tails';
 
 // =============================================================================
 // DiscoveredFile — adapter-tagged file entry from Phase 1
@@ -517,6 +520,55 @@ export async function loadAllConversations(
 // Individual stat calls are cheap (microseconds).
 // =============================================================================
 
+export type PollOptions = SessionHistoryOptions & {
+  cache?: NormalizedSessionCache;
+  adapters?: readonly DiskAdapter[];
+  /** Resume points that make re-reading a still-growing transcript cost only its new bytes. */
+  tails: TranscriptTails;
+};
+
+/** Re-read one changed source; δ over how its adapter's format grows. */
+async function readChangedSession(
+  file: DiscoveredFile,
+  options: PollOptions
+): Promise<ParsedSession | null> {
+  const growth = file.adapter.growth;
+  switch (growth.kind) {
+    case 'rewritten':
+      return (await readParsedSession(file, options.cache)).session;
+    case 'appended':
+      return readAppendedSession(file, growth, options);
+  }
+}
+
+async function readAppendedSession(
+  file: DiscoveredFile,
+  growth: Extract<SourceGrowth, { kind: 'appended' }>,
+  options: PollOptions
+): Promise<ParsedSession | null> {
+  const session = await options.tails.read(file.filePath, growth);
+  // Still written so the next startup reuses this parse. Not read first: the
+  // source just changed, so a record for its new mtime cannot exist yet.
+  await options.cache
+    ?.write(
+      {
+        provider: file.adapter.provider,
+        filePath: file.filePath,
+        mtimeMs: file.mtimeMs,
+        sizeBytes: file.sizeBytes,
+      },
+      session
+    )
+    .catch((error: unknown) => {
+      console.warn(
+        `[session-cache] Could not cache ${path.basename(file.filePath)}: ${
+          error instanceof Error ? error.message : error
+        }`
+      );
+    });
+  return session;
+}
+
 /**
  * Poll for changes to persisted session sources since the last check.
  *
@@ -529,10 +581,7 @@ export async function loadAllConversations(
 export async function pollForChanges(
   prevMtimes: Map<string, number>,
   activeIds: Set<string>,
-  options: SessionHistoryOptions & {
-    cache?: NormalizedSessionCache;
-    adapters?: readonly DiskAdapter[];
-  } = {}
+  options: PollOptions
 ): Promise<PollResult> {
   const updated = new Map<string, DiscoveredConversation>();
   const deferredDirtyPaths = new Set<string>();
@@ -635,15 +684,9 @@ export async function pollForChanges(
           }
         }
 
-        // Re-parse the changed session
-        const { session } = await readParsedSession(
-          {
-            filePath,
-            mtimeMs: currentMtime,
-            sizeBytes: currentSizeBytes,
-            adapter,
-          },
-          options.cache
+        const session = await readChangedSession(
+          { filePath, mtimeMs: currentMtime, sizeBytes: currentSizeBytes, adapter },
+          options
         );
         if (!session) continue;
         if (shouldIgnoreWorkingDirectory(session.workingDirectory)) continue;

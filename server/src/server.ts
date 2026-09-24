@@ -18,6 +18,7 @@ import { v4 as uuidv4 } from 'uuid';
 import { WebSocketServer } from 'ws';
 import { loadAllConversations, pollForChanges } from './adapters/loader';
 import { NormalizedSessionCache } from './adapters/session-cache';
+import { TranscriptTails } from './adapters/transcript-tails';
 import { appDataDirectory, uploadsDirectory } from './app-data';
 import { createConversationApplicationContext } from './application/context';
 import { registerAuthRoutes } from './auth/express';
@@ -147,6 +148,7 @@ const conversationConfigStore = new ConversationConfigStore({
 const normalizedSessionCache = new NormalizedSessionCache(
   path.join(APP_DATA_DIR, 'session-cache-v1')
 );
+const transcriptTails = new TranscriptTails();
 const conversationConfigService = new ConversationConfigService({
   store: conversationConfigStore,
   resolver: {
@@ -695,7 +697,11 @@ const sessionLoader = createSessionLoader({
   loadConversations: (options) =>
     loadAllConversations({ ...options, cache: normalizedSessionCache }),
   pollConversations: (mtimes, activeIds, options) =>
-    pollForChanges(mtimes, activeIds, { ...options, cache: normalizedSessionCache }),
+    pollForChanges(mtimes, activeIds, {
+      ...options,
+      cache: normalizedSessionCache,
+      tails: transcriptTails,
+    }),
   createConversation: (options) => new Conversation(options),
   createId: uuidv4,
   resolveBuddyConversation,

@@ -19,6 +19,7 @@ import {
  */
 export const museAdapter: DiskAdapter = {
   provider: 'muse',
+  growth: { kind: 'rewritten' },
   sessionFileKeys: (filePath) => {
     const sessionId = extractMuseSessionIdFromFilePath(filePath);
     return sessionId ? [sessionId] : [];

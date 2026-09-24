@@ -7,8 +7,13 @@ import type {
 } from '@unleashd/shared';
 import { conversationKindFromLegacy } from '@unleashd/shared';
 import { validate as isUuid } from 'uuid';
-import type { SessionHistorySource } from '../adapters/disk-adapter';
-import type { loadAllConversations, pollForChanges } from '../adapters/loader';
+import type {
+  PollResult,
+  SessionHistoryOptions,
+  SessionHistorySource,
+} from '../adapters/disk-adapter';
+import type { loadAllConversations } from '../adapters/loader';
+import { forEachWithConcurrency } from '../adapters/loader';
 import type {
   CompletionSuppression,
   ConversationRegistry,
@@ -29,7 +34,6 @@ import type {
 } from '../conversations/runtime';
 import { extractBuddyMemorySnapshot } from '../conversations/runtime';
 import { summarizeConversation } from '../conversations/serialization';
-import { forEachWithConcurrency } from '../adapters/loader';
 import { createFilePoller } from './file-poller';
 import { loadProgressively } from './progressive-loader';
 import { mergeSessionMessages } from './session-history';
@@ -56,7 +60,11 @@ export interface SessionLoaderDependencies {
   configStore: ConversationConfigStore;
   configService: ConversationConfigService;
   loadConversations: typeof loadAllConversations;
-  pollConversations: typeof pollForChanges;
+  pollConversations(
+    mtimes: Map<string, number>,
+    activeIds: Set<string>,
+    options: SessionHistoryOptions
+  ): Promise<PollResult>;
   createConversation(options: ConversationOptions): ConversationRuntime;
   createId(): string;
   resolveBuddyConversation(context: BuddyContext): Promise<{
@@ -708,8 +716,18 @@ export function createSessionLoader(dependencies: SessionLoaderDependencies): Se
             isStreaming: false,
           }),
         applyUpdate: applyPolledUpdate,
+        // Summaries, not full histories. A still-running external transcript
+        // changes every poll, and its full ConversationData (~400-500KB) was
+        // serialized and sent to every client every 5s (2026-09-25). A client
+        // with the history loaded refetches it over HTTP when the summary's
+        // messageCount moves (handleConversationsUpdated), so only a viewer
+        // pays for the full history.
         broadcastUpdates: (conversations) =>
-          dependencies.broadcast({ type: 'conversations_updated', conversations }),
+          dependencies.broadcast({
+            type: 'conversations_updated',
+            conversations: conversations.map(summarizeConversation),
+            summaries: true,
+          }),
         pruneTracking: pruneSessionTracking,
       }
     ).start();
