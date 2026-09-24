@@ -227,6 +227,19 @@ const scrollToText = (text) => `(() => {
   return 'OK';
 })()`;
 
+// Then focus that post's LAST live Task chip, which opens its hover card —
+// the last one sits lowest, where a card is most likely to be cut off.
+const hoverTaskIn = (text) => `(() => {
+  const body = [...document.querySelectorAll('.channel-markdown')].findLast((node) =>
+    node.textContent.includes(${JSON.stringify(text)})
+  );
+  const chip = [...(body?.querySelectorAll('a.channel-task-chip') ?? [])].at(-1);
+  if (!chip) return 'SKIP';
+  chip.scrollIntoView({ block: 'center' });
+  chip.focus();
+  return 'OK';
+})()`;
+
 /**
  * Every screen, as data. `path` needs the ids it names; a screen whose ids
  * were not found is skipped with that reason. `trees` limits a screen to the
@@ -260,6 +273,12 @@ function buildScreens(found, focus) {
       needs: channel && found.threadRootId && focus,
       path: `${base}?${channel}&thread=${encodeURIComponent(found.threadRootId)}`,
       prepare: focus && scrollToText(focus),
+    },
+    {
+      name: 'task-hover',
+      needs: channel && found.threadRootId && focus,
+      path: `${base}?${channel}&thread=${encodeURIComponent(found.threadRootId)}`,
+      prepare: focus && hoverTaskIn(focus),
     },
     {
       name: 'task-filter',

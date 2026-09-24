@@ -44,3 +44,44 @@ test('tool-call lines in a post collapse into the chat activity disclosure', () 
   assert.match(html, /Four channels are up/);
   assert.match(html, /<strong>created<\/strong>/);
 });
+
+// Owner report, #buddies-dev 2026-09-24: a Task ref inside a sentence was a
+// full-width wrapping pill that stranded ", marked ready." on its own line.
+// In a sentence it must stay one inline chip in the same paragraph; alone on
+// its line it becomes the card (title, status, owner, todo progress).
+test('a Task ref is an inline chip in a sentence and a card on its own line', () => {
+  const task = {
+    id: 'buddy_project_1',
+    title: 'Mention replies post the tool-call trace into the channel',
+    status: 'ready',
+    ownerBuddyId: 'lead',
+    ownerName: 'Buddies Development Lead',
+    todosDone: 1,
+    todosTotal: 5,
+    nextAction: null,
+    updatedAt: '2026-09-24T10:00:00.000Z',
+  };
+  const ref = `[${task.title}](task:${task.id})`;
+  const render = (body: string) =>
+    renderToStaticMarkup(
+      <MemoryRouter>
+        <ChannelMarkdown body={body} buddyNames={{}} tasks={new Map([[task.id, task]])} />
+      </MemoryRouter>
+    );
+
+  const inline = render(`I filed that as ${ref}, marked ready.`);
+  assert.match(
+    inline,
+    /^<div class="channel-markdown"><p>I filed that as <a[^>]*class="channel-task-chip"/
+  );
+  assert.match(inline, /<\/a>, marked ready\.<\/p>/);
+  assert.doesNotMatch(inline, /channel-task-block/);
+
+  for (const body of [ref, `- ${ref}\n- ${ref}`]) {
+    const block = render(body);
+    assert.doesNotMatch(block, /channel-task-chip/);
+    assert.match(block, /class="channel-task-block"/);
+    assert.match(block, /Ready<span class="channel-task-card-owner"> · Buddies Development Lead/);
+    assert.match(block, /width:20%.*1\/5 todos/);
+  }
+});

@@ -121,7 +121,7 @@ running (`pnpm dev`); both tools log in with the server's own token
 ```bash
 pnpm screenshots                              # Channels: every screen × every size
 pnpm screenshots --sizes phone,desktop        # phone | ipad-portrait | ipad-landscape | desktop
-pnpm screenshots --only thread,mention-menu   # home | channel | thread | mention-menu | mention-model | task-filter
+pnpm screenshots --only thread,mention-menu   # home | channel | thread | mention-menu | mention-model | task-filter | focus | task-hover (last two need --focus)
 pnpm screenshots --workspace project_… --open # pin a workspace; open the sheet when done
 pnpm screenshots --workspace project_… --channel list_… --thread post_… --focus 'text'
                                               # pin one thread; `focus` scrolls to the post containing text

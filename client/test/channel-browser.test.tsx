@@ -272,13 +272,13 @@ test('posts render markdown mentions, live Task chips, inline media and thread s
   assert.match(html, /class="channel-browser-author">You</);
   assert.match(html, /<a class="channel-mention" href="\/buddies\/lead"[^>]*>@Lead<\/a>/);
   assert.doesNotMatch(html, /buddy:lead/);
-  // Live chip: in-progress tone, links to the owner's work, hover card carries progress.
+  // Live chip: in-progress tone, links to the owner's work. Its hover card is
+  // portalled only while hovered or focused; card content is covered in
+  // channel-markdown.test.tsx.
   assert.match(
     html,
     /class="channel-task-chip" data-tone="active"[^>]*href="\/buddies\/lead\/work"/
   );
-  assert.match(html, /3\/5 todos/);
-  assert.match(html, /Wire the composer/);
   // Local media goes through the authenticated file route; .mp4 is a player.
   assert.match(
     html,

@@ -1,5 +1,6 @@
-import { type ReactNode, useMemo } from 'react';
-import Markdown, { type Components, defaultUrlTransform } from 'react-markdown';
+import { type ReactNode, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
+import Markdown, { type Components, type ExtraProps, defaultUrlTransform } from 'react-markdown';
 import { Link } from 'react-router-dom';
 import remarkGfm from 'remark-gfm';
 import { ChatActivity } from '../../ui/ChatActivity';
@@ -12,7 +13,9 @@ import './ChannelContent.css';
 // Channel post bodies: markdown (GFM, soft breaks, highlighted code; raw HTML
 // stays disabled) with three app-level extensions, all ordinary markdown:
 //   [@Name](buddy:<id>)  → mention pill linking to the Buddy
-//   [Title](task:<id>)   → live Task chip with a hover card
+//   [Title](task:<id>)   → live Task: a one-line chip with a hover card in
+//                          running text; a card of its own when the ref is
+//                          the whole paragraph or list item
 //   ![alt](/abs/path)    → inline image, or a video player for .mp4/.webm/.mov
 // A mention reply is the Buddy's final assistant message, and live providers
 // embed their tool calls in it as `🔧 name …` / `⚡ Bash …` lines. Those runs
@@ -42,6 +45,57 @@ function statusView(status: string): TaskStatusView {
   return TASK_STATUS[status] ?? { glyph: '•', label: status, tone: 'idle' };
 }
 
+const CARD_WIDTH = 280;
+const CARD_GAP = 6;
+const VIEWPORT_MARGIN = 8;
+
+// Title, status, owner, todo progress and next action: the one Task card
+// layout, shared by the hover card and the block card so they cannot drift.
+function TaskCardBody({ task }: { task: ChannelTask }) {
+  const status = statusView(task.status);
+  return (
+    <>
+      <span className="channel-task-card-title">{task.title}</span>
+      <span className="channel-task-card-status" data-tone={status.tone}>
+        {status.glyph} {status.label}
+        <span className="channel-task-card-owner"> · {task.ownerName}</span>
+      </span>
+      {task.todosTotal > 0 && (
+        <span className="channel-task-card-progress">
+          <span
+            className="channel-task-card-bar"
+            style={{ width: `${(task.todosDone / task.todosTotal) * 100}%` }}
+          />
+          <span className="channel-task-card-count">
+            {task.todosDone}/{task.todosTotal} todos
+          </span>
+        </span>
+      )}
+      {task.nextAction && <span className="channel-task-card-next">{task.nextAction}</span>}
+    </>
+  );
+}
+
+function taskHref(task: ChannelTask): string {
+  return `/buddies/${encodeURIComponent(task.ownerBuddyId)}/work`;
+}
+
+type CardPlacement = { left: number; top: number } | { left: number; bottom: number };
+
+// The hover card is portalled and fixed to the viewport, clamped to its
+// edges. It used to be absolute inside the post, so the thread pane's
+// overflow cut it off at the right edge (#buddies-dev, 2026-09-24).
+function placeCard(trigger: DOMRect): CardPlacement {
+  const width = Math.min(CARD_WIDTH, window.innerWidth - 2 * VIEWPORT_MARGIN);
+  const left = Math.max(
+    VIEWPORT_MARGIN,
+    Math.min(trigger.left, window.innerWidth - VIEWPORT_MARGIN - width)
+  );
+  return trigger.top > window.innerHeight - trigger.bottom
+    ? { left, bottom: window.innerHeight - trigger.top + CARD_GAP }
+    : { left, top: trigger.bottom + CARD_GAP };
+}
+
 function TaskChip({
   taskId,
   label,
@@ -51,50 +105,76 @@ function TaskChip({
   label: ReactNode;
   task: ChannelTask | undefined;
 }) {
+  const chipRef = useRef<HTMLAnchorElement>(null);
+  const [placement, setPlacement] = useState<CardPlacement | null>(null);
   if (!task) {
     return (
       <span className="channel-task-chip" data-tone="missing" title={`Task ${taskId}`}>
         <span className="channel-task-chip-glyph" aria-hidden="true">
           ?
         </span>
-        {label}
+        <span className="channel-task-chip-title">{label}</span>
       </span>
     );
   }
   const status = statusView(task.status);
+  const open = () => {
+    const chip = chipRef.current;
+    if (chip) setPlacement(placeCard(chip.getBoundingClientRect()));
+  };
+  const close = () => setPlacement(null);
   return (
-    <span className="channel-task-chip-anchor">
+    <>
       <Link
+        ref={chipRef}
         className="channel-task-chip"
         data-tone={status.tone}
-        to={`/buddies/${encodeURIComponent(task.ownerBuddyId)}/work`}
+        to={taskHref(task)}
         aria-label={`${task.title} — ${status.label}`}
+        onMouseEnter={open}
+        onMouseLeave={close}
+        onFocus={open}
+        onBlur={close}
       >
         <span className="channel-task-chip-glyph" aria-hidden="true">
           {status.glyph}
         </span>
-        {task.title}
+        <span className="channel-task-chip-title">{task.title}</span>
       </Link>
-      <span className="channel-task-card" role="tooltip">
-        <span className="channel-task-card-title">{task.title}</span>
-        <span className="channel-task-card-status" data-tone={status.tone}>
-          {status.glyph} {status.label}
-          <span className="channel-task-card-owner"> · {task.ownerName}</span>
-        </span>
-        {task.todosTotal > 0 && (
-          <span className="channel-task-card-progress">
-            <span
-              className="channel-task-card-bar"
-              style={{ width: `${(task.todosDone / task.todosTotal) * 100}%` }}
-            />
-            <span className="channel-task-card-count">
-              {task.todosDone}/{task.todosTotal} todos
-            </span>
-          </span>
+      {placement &&
+        createPortal(
+          <span className="channel-task-card" role="tooltip" style={placement}>
+            <TaskCardBody task={task} />
+          </span>,
+          document.body
         )}
-        {task.nextAction && <span className="channel-task-card-next">{task.nextAction}</span>}
-      </span>
-    </span>
+    </>
+  );
+}
+
+// A ref that stands alone — a paragraph or list item holding nothing else —
+// is a card; one inside a sentence stays a chip so it never splits the line.
+function standaloneTaskId(node: ExtraProps['node']): string | null {
+  const content = (node?.children ?? []).filter(
+    (child) => !(child.type === 'text' && child.value.trim() === '')
+  );
+  if (content.length !== 1) return null;
+  const [only] = content;
+  if (only.type !== 'element' || only.tagName !== 'a') return null;
+  const link = parseChannelLink(String(only.properties.href ?? ''));
+  return link.kind === 'task' ? link.id : null;
+}
+
+function TaskBlock({ taskId, task }: { taskId: string; task: ChannelTask | undefined }) {
+  if (!task) return <TaskChip taskId={taskId} label={`Task ${taskId}`} task={undefined} />;
+  return (
+    <Link
+      className="channel-task-block"
+      data-tone={statusView(task.status).tone}
+      to={taskHref(task)}
+    >
+      <TaskCardBody task={task} />
+    </Link>
   );
 }
 
@@ -103,6 +183,24 @@ function channelComponents(
   tasks: ReadonlyMap<string, ChannelTask>
 ): Components {
   return {
+    p: ({ node, children }) => {
+      const taskId = standaloneTaskId(node);
+      return taskId === null ? (
+        <p>{children}</p>
+      ) : (
+        <TaskBlock taskId={taskId} task={tasks.get(taskId)} />
+      );
+    },
+    li: ({ node, children, className }) => {
+      const taskId = standaloneTaskId(node);
+      return taskId === null ? (
+        <li className={className}>{children}</li>
+      ) : (
+        <li className="channel-task-block-item">
+          <TaskBlock taskId={taskId} task={tasks.get(taskId)} />
+        </li>
+      );
+    },
     a: ({ href, children }) => {
       const link = parseChannelLink(href ?? '');
       switch (link.kind) {

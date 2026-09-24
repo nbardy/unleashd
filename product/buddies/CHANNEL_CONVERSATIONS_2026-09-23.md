@@ -27,6 +27,13 @@ remain the three core components.
   thread oldest-first. A fresh `get_list` marks read through thread replies.
 - **Mentions** are markdown links `[@Name](buddy:<id>)`; Tasks are
   `[Title](task:<id>)`. The composer shows `@Label` and encodes on send.
+- **Task rendering** (`ChannelMarkdown.tsx`, 2026-09-24): inside a sentence a
+  Task is a one-line chip that truncates, so it never splits the sentence; a
+  ref that is its own paragraph or list item is a card (title, status, owner,
+  todo progress, next action). The hover card uses the same layout and is
+  portalled with fixed, viewport-clamped placement, because inside the post the
+  thread pane's overflow clipped it. A reply's embedded tool-call lines collapse
+  into the chat's "N tool calls" disclosure.
 - **Media** is `![alt](/absolute/path)`. Every local reference is copied,
   content-addressed, into `<uploads>/channels/<listId>/` and the body is
   rewritten to the copy, so a deleted worktree cannot break a post and a replayed

@@ -186,17 +186,16 @@ video.channel-media {
   width: min(100%, 520px);
 }
 
-.channel-task-chip-anchor {
-  position: relative;
-  display: inline-block;
-}
-
+/* In running text a Task is ONE line that truncates. It was an inline-block
+   that grew to the full width and wrapped, splitting the sentence around it
+   (", marked ready." alone on a line — #buddies-dev, 2026-09-24). */
 .channel-markdown .channel-task-chip {
   display: inline-flex;
   align-items: baseline;
   gap: 5px;
-  max-width: 100%;
+  max-width: min(100%, 22em);
   padding: 0 7px;
+  white-space: nowrap;
   border: 1px solid var(--border-subtle);
   border-radius: 999px;
   background: var(--bg-base);
@@ -205,7 +204,13 @@ video.channel-media {
   font-weight: 600;
   line-height: 1.6;
   text-decoration: none;
-  vertical-align: 1px;
+  vertical-align: bottom;
+}
+
+.channel-task-chip-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .channel-markdown a.channel-task-chip:hover {
@@ -236,28 +241,44 @@ video.channel-media {
   color: var(--text-muted);
 }
 
-.channel-task-card {
-  position: absolute;
-  top: calc(100% + 6px);
-  left: 0;
-  z-index: 25;
-  display: none;
-  width: 280px;
+.channel-task-card,
+.channel-markdown .channel-task-block {
+  display: grid;
+  gap: 6px;
   padding: 10px 12px;
   border: 1px solid var(--border-subtle);
   border-radius: 10px;
   background: var(--bg-panel);
-  box-shadow: 0 12px 32px rgb(0 0 0 / 28%);
   font-size: 12.5px;
   font-weight: 400;
   line-height: 1.45;
   white-space: normal;
 }
 
-.channel-task-chip-anchor:hover .channel-task-card,
-.channel-task-chip-anchor:focus-within .channel-task-card {
-  display: grid;
-  gap: 6px;
+/* Hover card: portalled to <body> and placed in viewport coordinates by
+   ChannelMarkdown's placeCard, so no scroll pane can clip it. */
+.channel-task-card {
+  position: fixed;
+  z-index: 1000;
+  width: min(280px, calc(100vw - 16px));
+  box-shadow: 0 12px 32px rgb(0 0 0 / 28%);
+  pointer-events: none;
+}
+
+/* A ref that is its own paragraph or list item: the same card, in the flow. */
+.channel-markdown .channel-task-block {
+  max-width: 420px;
+  margin: 6px 0;
+  color: var(--text-primary);
+  text-decoration: none;
+}
+
+.channel-markdown a.channel-task-block:hover {
+  border-color: var(--border-emphasis);
+}
+
+.channel-markdown li.channel-task-block-item {
+  list-style: none;
 }
 
 .channel-task-card-title {
