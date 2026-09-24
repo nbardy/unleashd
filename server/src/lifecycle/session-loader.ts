@@ -327,12 +327,33 @@ export function createSessionLoader(dependencies: SessionLoaderDependencies): Se
     // held the startup barrier for ~10s after the last transcript loaded
     // (2026-09-25).
     const records = await dependencies.configService.listRecoverable();
-    await forEachWithConcurrency(records, RECOVERY_CONCURRENCY, recoverRecord);
+    // Stream recovered conversations like transcript batches. They used to be
+    // registered silently, and `conversation_load_complete` only prunes, so a
+    // client connected during startup never showed these (mostly app-created)
+    // conversations until it reconnected.
+    const summaries: ConversationData[] = [];
+    const flush = () => {
+      if (summaries.length === 0) return;
+      dependencies.broadcast({
+        type: 'conversations_updated',
+        conversations: summaries.splice(0),
+        summaries: true,
+      });
+    };
+    await forEachWithConcurrency(records, RECOVERY_CONCURRENCY, async (record) => {
+      const recovered = await recoverRecord(record);
+      if (!recovered) return;
+      summaries.push(summarizeConversation(recovered.toJSON()));
+      if (summaries.length >= dependencies.options.startupBatchSize) flush();
+    });
+    flush();
   }
 
-  async function recoverRecord(record: PersistedConversationConfigRecord): Promise<void> {
+  async function recoverRecord(
+    record: PersistedConversationConfigRecord
+  ): Promise<ConversationRuntime | null> {
     if (dependencies.registry.has(record.conversationId) || !record.workingDirectory) {
-      return;
+      return null;
     }
     // An `external_discovered` record is a config sidecar for a transcript that
     // already exists on disk — it is not independent evidence that a conversation
@@ -346,7 +367,7 @@ export function createSessionLoader(dependencies: SessionLoaderDependencies): Se
     const availableSource = rememberBindings(record)
       .map((binding) => nativeSources.get(sourceKey(binding)))
       .find((source) => source !== undefined);
-    if (record.provenance === 'external_discovered' && !availableSource) return;
+    if (record.provenance === 'external_discovered' && !availableSource) return null;
     // Per-record isolation is required, not defensive: this loop runs inside the
     // startup barrier, so an unreadable or future-versioned record used to throw
     // all the way out to handleStartupFailure() and exit the process — one bad
@@ -434,12 +455,14 @@ export function createSessionLoader(dependencies: SessionLoaderDependencies): Se
       recovered.createdAt = new Date(record.createdAt);
       if (availableSource) restoreDisplayHistory(recovered, record, availableSource);
       // Awaited hydration must not replace a runtime created while startup was loading.
-      if (dependencies.registry.has(record.conversationId)) return;
+      if (dependencies.registry.has(record.conversationId)) return null;
       startupRuntimes.add(recovered);
       dependencies.registry.set(recovered);
       await dependencies.dispatchInitialMessage(recovered);
+      return recovered;
     } catch (error) {
       logger.error(`Failed to recover conversation ${record.conversationId}:`, error);
+      return null;
     }
   }
 

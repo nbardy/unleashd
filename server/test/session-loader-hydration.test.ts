@@ -227,8 +227,14 @@ async function recoverAll(input: {
     createdAt?: string;
   }>;
   failFor: string;
-}): Promise<{ recovered: string[]; threw: boolean; createdAt: Map<string, Date> }> {
+}): Promise<{
+  recovered: string[];
+  threw: boolean;
+  createdAt: Map<string, Date>;
+  broadcastIds: string[];
+}> {
   const created: ConversationOptions[] = [];
+  const broadcastIds: string[] = [];
   const registry = new Map<string, ConversationRuntime>();
 
   const dependencies = {
@@ -305,7 +311,11 @@ async function recoverAll(input: {
     resolveBuddyConversation: async (context: BuddyContext) => ({ context, briefing: 'soul' }),
     dispatchInitialMessage: async () => {},
     persistCurrentSession: async () => {},
-    broadcast: () => {},
+    broadcast: (data: ConversationBroadcast) => {
+      if (data.type === 'conversations_updated') {
+        broadcastIds.push(...data.conversations.map((conversation) => conversation.id));
+      }
+    },
     logger: { error: () => {}, log: () => {}, warn: () => {} },
   } as unknown as SessionLoaderDependencies;
 
@@ -317,7 +327,7 @@ async function recoverAll(input: {
   }
   const createdAt = new Map<string, Date>();
   for (const [id, conversation] of registry) createdAt.set(id, conversation.createdAt);
-  return { recovered: created.map((options) => options.id), threw, createdAt };
+  return { recovered: created.map((options) => options.id), threw, createdAt, broadcastIds };
 }
 
 /**
@@ -395,6 +405,23 @@ test('a recovered conversation keeps the durable record createdAt', async () => 
     result.createdAt.get('bbbbbbbb-0000-4000-8000-000000000002')?.toISOString(),
     '2026-03-04T05:06:07.000Z'
   );
+});
+
+// A client connected during startup learns of conversations only from
+// broadcasts; `conversation_load_complete` prunes but never adds. Recovered
+// conversations were registered without one, so an open app showed none of
+// them until it reconnected (2026-09-25).
+test('recovered conversations are broadcast to clients connected during startup', async () => {
+  const result = await recoverAll({
+    recoverable: [
+      { conversationId: 'aaaaaaaa-0000-4000-8000-000000000001', workingDirectory: '/tmp/a' },
+      { conversationId: 'bbbbbbbb-0000-4000-8000-000000000002', workingDirectory: '/tmp/b' },
+    ],
+    failFor: 'none',
+  });
+
+  assert.deepEqual(result.broadcastIds.sort(), result.recovered.sort());
+  assert.equal(result.broadcastIds.length, 2);
 });
 
 /**
