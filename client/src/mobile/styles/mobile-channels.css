@@ -339,6 +339,12 @@ a.mobile-channels-wake-done {
   font-size: 15px;
   font-weight: 700;
   text-decoration: none;
+  /* a DM button (ChannelAuthor): shed the global button chrome */
+  padding: 0;
+  border: 0;
+  background: none;
+  font-family: inherit;
+  cursor: pointer;
 }
 
 .mobile-channel-post__heading time {
