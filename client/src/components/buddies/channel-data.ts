@@ -127,6 +127,17 @@ export function joinNames(names: readonly string[]): string {
 // handoff, decision, reply_failed…) is a label worth showing.
 export const CONVERSATIONAL_PURPOSES: ReadonlySet<string> = new Set(['message', 'reply']);
 
+// A post's purpose as UI: the raw tag (styling hook, e.g. reply_failed) and the
+// label to show, which is null for plain conversation. Kept here so the mobile
+// tree never reads a raw `.purpose` (gate G2 guards Conversation.purpose there).
+export function postPurposeTag(post: BuddyMailingListPost): string {
+  return post.purpose;
+}
+
+export function postPurposeLabel(post: BuddyMailingListPost): string | null {
+  return CONVERSATIONAL_PURPOSES.has(post.purpose) ? null : post.purpose.replaceAll('_', ' ');
+}
+
 const TASK_STATUS_LABELS: Readonly<Record<string, string>> = {
   backlog: 'Backlog',
   ready: 'Ready',

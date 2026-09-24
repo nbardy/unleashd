@@ -2,16 +2,18 @@ import { useAtomValue } from 'jotai';
 import { NavLink, Outlet, matchPath, useLocation } from 'react-router-dom';
 import { conversationAtomFamily } from '../../atoms/conversations';
 import {
+  type MobilePrimarySection,
   mobilePrimarySectionForPath,
   resolveMobileConversationDestination,
-  type MobilePrimarySection,
 } from '../../utils/conversation-route-state';
+import { isImmersiveChannelRoute } from '../channels/channel-route';
 import { useKeyboardInset } from '../hooks/useKeyboardInset';
 import '../styles/mobile.css';
 import '../styles/mobile-ui.css';
 import '../styles/mobile-controls.css';
 import '../styles/mobile-buddy.css';
 import '../styles/mobile-swarm.css';
+import '../styles/mobile-channels.css';
 
 /**
  * ShellMobile — mobile chrome around <Outlet/>.
@@ -33,6 +35,7 @@ type TabDef = {
 // Search lives at /search (query param variant is handled inside SearchMobile).
 const TABS: readonly TabDef[] = [
   { section: 'chats', label: 'Chats', to: '/', end: true, icon: '◈', ariaLabel: 'Chats' },
+  { section: 'channels', label: 'Channels', to: '/channels', icon: '#', ariaLabel: 'Channels' },
   {
     section: 'swarms',
     label: 'Swarms',
@@ -62,7 +65,10 @@ export function ShellMobile() {
   // Without this distinction the pane grew to its own message-list height and
   // the composer ended up thousands of pixels below the tab bar. See the layout
   // contract in ConversationView.tsx.
-  const isPaneRoute = pathname.startsWith('/chat/');
+  // A channel or thread (not the channels Home) is Slack's conversation
+  // screen: a pane with its composer pinned and no tab bar underneath it.
+  const isImmersiveChannel = isImmersiveChannelRoute(pathname, location.search);
+  const isPaneRoute = pathname.startsWith('/chat/') || isImmersiveChannel;
   const activeSection = isPaneRoute
     ? resolveMobileConversationDestination(location.state, conversation).section
     : mobilePrimarySectionForPath(pathname);
@@ -80,7 +86,11 @@ export function ShellMobile() {
       </div>
       {/* Tab bar yields to the keyboard — competing for the same ~50px is what
           made the composer feel cramped and clipped on focus. */}
-      <nav className="mobile-tab-bar" aria-label="Primary" hidden={keyboardOpen}>
+      <nav
+        className="mobile-tab-bar"
+        aria-label="Primary"
+        hidden={keyboardOpen || isImmersiveChannel}
+      >
         {TABS.map((tab) => (
           <NavLink
             key={tab.to}

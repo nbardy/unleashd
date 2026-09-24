@@ -1,10 +1,18 @@
-import {
-  getBuddyContext,
-  isBuddyBuilderConversation,
-  type Conversation,
-} from '@unleashd/shared';
+import { type Conversation, getBuddyContext, isBuddyBuilderConversation } from '@unleashd/shared';
 
-export type MobilePrimarySection = 'chats' | 'swarms' | 'buddies' | 'search';
+export type MobilePrimarySection = 'chats' | 'channels' | 'swarms' | 'buddies' | 'search';
+
+const MOBILE_PRIMARY_SECTIONS: readonly MobilePrimarySection[] = [
+  'chats',
+  'channels',
+  'swarms',
+  'buddies',
+  'search',
+];
+
+// Channels live under /buddies/workspaces/:id/channels (one URL on both
+// devices); /channels is the tab's entry point that picks a workspace.
+const CHANNELS_PATH = /^\/buddies\/workspaces\/[^/]+\/channels\/?$/;
 
 export interface MobileConversationOrigin {
   section: MobilePrimarySection;
@@ -33,6 +41,7 @@ function isInternalPathname(pathname: string): boolean {
 }
 
 export function mobilePrimarySectionForPath(pathname: string): MobilePrimarySection {
+  if (pathname === '/channels' || CHANNELS_PATH.test(pathname)) return 'channels';
   if (pathname === '/buddies' || pathname.startsWith('/buddies/')) return 'buddies';
   if (pathname === '/workers' || pathname.startsWith('/workers/')) return 'swarms';
   if (pathname === '/search' || pathname.startsWith('/search/')) return 'search';
@@ -47,7 +56,7 @@ export function readMobileConversationOrigin(state: unknown): MobileConversation
     !isInternalPathname(origin.pathname) ||
     typeof origin.search !== 'string' ||
     typeof origin.hash !== 'string' ||
-    !['chats', 'swarms', 'buddies', 'search'].includes(String(origin.section))
+    !MOBILE_PRIMARY_SECTIONS.includes(origin.section as MobilePrimarySection)
   )
     return null;
   const section = origin.section as MobilePrimarySection;

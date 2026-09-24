@@ -1,0 +1,463 @@
+/* Mobile channels (mobile/channels/ChannelsMobile.tsx), Slack's phone layout.
+   Post content (markdown, chips, media, typing dots) and the composer's own
+   look come from components/buddies/ChannelContent.css + ChannelComposer.css;
+   this file owns only mobile layout and the Home rows. */
+
+/* ── Home: channel and Buddy rows ─────────────────────────────────────── */
+
+.mobile-channels-list {
+  display: grid;
+  gap: 2px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.mobile-channels-workspaces {
+  margin-bottom: 16px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.mobile-channels-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 48px;
+  padding: 6px 4px;
+  border: 0;
+  border-radius: var(--ui-radius);
+  background: transparent;
+  color: var(--text-primary);
+  font: inherit;
+  text-align: left;
+  text-decoration: none;
+}
+
+.mobile-channels-row:active {
+  background: color-mix(in srgb, var(--text-emphasis) 8%, transparent);
+}
+
+.mobile-channels-row[aria-current="page"] {
+  color: var(--text-bright);
+  font-weight: 600;
+}
+
+.mobile-channels-row--add {
+  color: var(--text-secondary);
+}
+
+.mobile-channels-row__hash,
+.mobile-channels-row__mark {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 28px;
+  height: 28px;
+  color: var(--text-muted);
+  font-size: 18px;
+}
+
+.mobile-channels-row__mark {
+  border-radius: var(--ui-radius);
+  background: color-mix(in srgb, var(--text-emphasis) 10%, transparent);
+  color: var(--text-emphasis);
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.mobile-channels-row__sigil {
+  display: block;
+  flex: none;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+}
+
+.mobile-channels-row__stack {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.mobile-channels-row__name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  font-size: 16px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mobile-channels-row__detail {
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 13px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mobile-channels-row__meta {
+  flex: none;
+  color: var(--text-muted);
+  font: 500 12px / 1 var(--font-mono);
+}
+
+.mobile-channels-buddy {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.mobile-channels-buddy > .mobile-channels-row {
+  flex: 1;
+  min-width: 0;
+}
+
+.mobile-channels-buddy[data-failed] .mobile-channels-row__detail {
+  color: var(--theme-warning);
+}
+
+/* Touch has no hover, so Wake is a visible 44px button on every Buddy row. */
+.mobile-channels-wake {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--ui-radius);
+  background: transparent;
+  color: var(--text-muted);
+}
+
+.mobile-channels-wake:active {
+  background: color-mix(in srgb, var(--text-emphasis) 10%, transparent);
+  color: var(--text-bright);
+}
+
+.mobile-channels-wake:disabled {
+  opacity: 0.5;
+}
+
+.mobile-channels-wake-status {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  color: var(--text-muted);
+}
+
+a.mobile-channels-wake-done {
+  min-width: 28px;
+  min-height: 44px;
+  justify-content: center;
+  color: var(--success-bright);
+  text-decoration: none;
+}
+
+.mobile-channels-new {
+  display: grid;
+  gap: 8px;
+  padding: 10px 4px;
+}
+
+.mobile-channels-new input {
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--ui-radius);
+  background: var(--bg-base);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 16px; /* 16px stops iOS zooming into the field */
+}
+
+.mobile-channels-new__problem {
+  margin: 0;
+  color: var(--theme-warning);
+  font-size: 13px;
+}
+
+.mobile-channels-new__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.mobile-channels-new__actions button {
+  min-height: 44px;
+  padding: 0 16px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--ui-radius);
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+}
+
+.mobile-channels-new__actions button[type="submit"] {
+  border-color: transparent;
+  background: var(--accent-primary);
+  color: var(--text-on-accent);
+}
+
+.mobile-channels-new__actions button:disabled {
+  opacity: 0.5;
+}
+
+/* ── Channel / thread screen: a pane, header + transcript + composer ──── */
+
+.mobile-channel {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.mobile-channel-header {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 4px;
+  min-height: 52px;
+  padding: env(safe-area-inset-top) 12px 0 4px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.mobile-channel-header__back {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  color: var(--text-secondary);
+  font-size: 28px;
+  line-height: 1;
+  text-decoration: none;
+}
+
+.mobile-channel-header__heading {
+  min-width: 0;
+}
+
+.mobile-channel-header__heading h1 {
+  margin: 0;
+  overflow: hidden;
+  color: var(--text-bright);
+  font-size: 17px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mobile-channel-header__heading p {
+  margin: 1px 0 0;
+  overflow: hidden;
+  color: var(--text-muted);
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mobile-channel__scroll {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 4px 0 12px;
+}
+
+.mobile-channel__error {
+  margin: 8px 14px;
+  color: var(--theme-warning);
+  font-size: 13px;
+}
+
+.mobile-channel__posts {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.mobile-channel-day {
+  display: flex;
+  justify-content: center;
+  margin: 14px 0 4px;
+}
+
+.mobile-channel-day span {
+  padding: 2px 10px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 999px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.mobile-channel-post {
+  padding: 3px 14px;
+}
+
+.mobile-channel-post--lead {
+  display: grid;
+  grid-template-columns: 36px minmax(0, 1fr);
+  column-gap: 10px;
+  margin-top: 8px;
+}
+
+/* Continuations line up with the lead's text column, as in Slack. */
+.mobile-channel-post--continuation {
+  padding-left: 60px;
+}
+
+.mobile-channel-post__avatar {
+  display: block;
+  width: 36px;
+  height: 36px;
+  margin-top: 2px;
+  border-radius: 8px;
+}
+
+.mobile-channel-post__content {
+  min-width: 0;
+}
+
+.mobile-channel-post__heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 8px;
+}
+
+.mobile-channel-post__author {
+  color: var(--text-bright);
+  font-size: 15px;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.mobile-channel-post__heading time {
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.mobile-channel-post__purpose {
+  padding: 1px 6px;
+  border-radius: var(--ui-radius);
+  background: color-mix(in srgb, var(--theme-ai) 14%, transparent);
+  color: var(--ai-bright);
+  font: 500 11px / 1.5 var(--font-mono);
+}
+
+.mobile-channel-post__purpose[data-purpose="reply_failed"] {
+  background: color-mix(in srgb, var(--theme-warning) 16%, transparent);
+  color: var(--theme-warning);
+}
+
+.mobile-channel-post[data-purpose="reply_failed"] .channel-markdown {
+  color: var(--text-muted);
+}
+
+.mobile-channel .channel-markdown {
+  font-size: 15px;
+}
+
+.mobile-channel .channel-media {
+  max-width: 100%;
+}
+
+.mobile-channel-post__footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px 12px;
+  margin-top: 2px;
+}
+
+/* 44px-tall tap areas that sit on one text line visually. */
+.mobile-channel-post__replies,
+.mobile-channel-post__reply {
+  display: inline-flex;
+  align-items: center;
+  min-height: 32px;
+  font-size: 13px;
+  text-decoration: none;
+}
+
+.mobile-channel-post__replies {
+  color: var(--theme-user);
+  font-weight: 600;
+}
+
+.mobile-channel-post__replies span {
+  color: var(--text-muted);
+  font-weight: 400;
+}
+
+.mobile-channel-post__reply {
+  color: var(--text-muted);
+}
+
+.mobile-channel-post__replying,
+.mobile-channel__replying {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-muted);
+  font-size: 13px;
+  font-style: italic;
+}
+
+.mobile-channel__replying {
+  margin: 8px 14px 0 60px;
+}
+
+.mobile-channel-divider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 8px 14px 0;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.mobile-channel-divider::after {
+  flex: 1;
+  height: 1px;
+  background: var(--border-subtle);
+  content: "";
+}
+
+/* The composer: pinned under the transcript; no tab bar below, so it owns
+   the home-indicator inset itself. */
+.mobile-channel .channel-composer {
+  flex: none;
+  margin: 6px 8px calc(8px + env(safe-area-inset-bottom));
+  border-radius: var(--ui-radius);
+}
+
+.mobile-channel .channel-composer textarea {
+  font-size: 16px; /* 16px stops iOS zooming into the field */
+}
+
+.mobile-channel .channel-composer-attach {
+  width: 36px;
+  height: 36px;
+}
+
+.mobile-channel .channel-composer-send {
+  min-height: 36px;
+  padding: 0 18px;
+  border-radius: var(--ui-radius);
+}
+
+.mobile-channel .channel-composer-picker {
+  max-height: 45dvh;
+  border-radius: var(--ui-radius);
+}
+
+.mobile-channel .channel-composer-picker button {
+  min-height: 44px;
+}

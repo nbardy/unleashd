@@ -134,6 +134,7 @@ import { BuddyWorkspaceActivity } from './components/buddies/BuddyWorkspaceActiv
 import { WorkspaceSlack } from './components/buddies/ChannelBrowser';
 import { BuddiesMobile } from './mobile/buddies/BuddiesMobile';
 import { BuddyDetailMobile } from './mobile/buddies/BuddyDetailMobile';
+import { ChannelsIndex, ChannelsMobile } from './mobile/channels/ChannelsMobile';
 import { ChatMobile } from './mobile/conversations/ChatMobile';
 import { ConversationListMobile } from './mobile/conversations/ConversationListMobile';
 import { SearchMobile } from './mobile/search/SearchMobile';
@@ -180,7 +181,25 @@ const ROUTES: RouteDef[] = [
     mobile: () => <ConversationListMobile />,
   },
   { path: '/search', desktop: () => <Gallery />, mobile: () => <SearchMobile /> },
+  // The Channels tab's entry: redirects to the first workspace's channels.
+  { path: '/channels', desktop: () => <ChannelsIndex />, mobile: () => <ChannelsIndex /> },
 ];
+
+// Channels mount differently per device, at the SAME URL so links travel.
+// Desktop: a full-screen surface OUTSIDE the shell — its channel rail replaces
+// the conversations sidebar (inside the shell it rendered as a second sidebar
+// nested beside the first; owner feedback 2026-09-23).
+// Mobile: inside the shell, Slack-style — Home keeps the tab bar, a channel or
+// thread is an immersive pane (ShellMobile hides the tab bar there).
+const CHANNELS_PATH = '/buddies/workspaces/:workspaceId/channels';
+const OUTSIDE_SHELL: Record<DeviceKind, ReactElement | null> = {
+  desktop: <Route path={CHANNELS_PATH} element={<WorkspaceSlack />} />,
+  mobile: null,
+};
+const INSIDE_SHELL: Record<DeviceKind, ReactElement | null> = {
+  desktop: null,
+  mobile: <Route path={CHANNELS_PATH} element={<ChannelsMobile />} />,
+};
 
 const SHELLS: Record<DeviceKind, ComponentType> = {
   desktop: ShellDesktop,
@@ -193,14 +212,12 @@ function AppRoutes({ device }: { device: DeviceKind }) {
   return (
     <Routes>
       <Route path="/robot" element={<RobotLoader />} />
-      {/* Channels is a full-screen surface OUTSIDE the shell: its channel rail
-          replaces the conversations sidebar. Inside the shell it rendered as a
-          second sidebar nested beside the first (owner feedback 2026-09-23). */}
-      <Route path="/buddies/workspaces/:workspaceId/channels" element={<WorkspaceSlack />} />
+      {OUTSIDE_SHELL[device]}
       <Route element={<Shell />}>
         {ROUTES.map((r) => (
           <Route key={r.path} path={r.path} element={pick(r)} />
         ))}
+        {INSIDE_SHELL[device]}
         <Route path="*" element={<Navigate to="/" replace />} />
       </Route>
     </Routes>
