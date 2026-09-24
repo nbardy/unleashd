@@ -229,15 +229,21 @@ export class ConversationConfigService {
       if (existing.status === 'deleted') {
         throw new ConversationTombstonedError(existing);
       }
+      // Each update returns the record it read or wrote, so the result needs no
+      // re-read. Startup hydrates ~1,100 records; the extra read per record was
+      // a measurable share of the startup barrier (2026-09-25).
+      let refreshed = existing;
       for (const binding of input.sessionBindings) {
-        await this.bindSession(existing.conversationId, binding);
+        refreshed =
+          (await this.store.addSessionBinding(existing.conversationId, binding)) ?? refreshed;
       }
       const inferredCurrentSession =
         existing.currentSession ?? existing.sessionBindings.at(-1) ?? input.currentSession;
       if (inferredCurrentSession && !existing.currentSession) {
-        await this.setCurrentSession(existing.conversationId, inferredCurrentSession);
+        refreshed =
+          (await this.store.setCurrentSession(existing.conversationId, inferredCurrentSession)) ??
+          refreshed;
       }
-      const refreshed = (await this.store.getByConversationId(existing.conversationId)) ?? existing;
       return {
         state: await this.stateFromRecord(refreshed),
         record: refreshed,

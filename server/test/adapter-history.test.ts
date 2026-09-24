@@ -171,6 +171,7 @@ test('selected and related parses share the aggregate source byte budget', async
   let parses = 0;
   const adapter: DiskAdapter = {
     provider: 'claude',
+    sessionFileKeys: (filePath) => [path.basename(filePath, '.jsonl')],
     discoverFiles: async () => sources,
     parseFile: async (filePath): Promise<ParsedSession> => {
       active += 1;

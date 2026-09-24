@@ -82,8 +82,20 @@ export interface DiskAdapter {
   provider: Provider;
   discoverFiles(): Promise<string[]>;
   parseFile(filePath: string): Promise<ParsedSession | null>;
-  /** Candidate lookup only; callers must verify the parsed provider and full native id. */
-  matchesSessionFile?(filePath: string, sessionId: string): boolean;
+  /**
+   * Native ids this file may hold, as found in its path. Candidate lookup only;
+   * callers must verify the parsed provider and full native id. Keys (rather than
+   * a `matches(file, id)` predicate) let a caller index every discovered file
+   * once: the predicate form scanned all ~7,700 sources per session binding and
+   * cost ~8s of every startup (2026-09-25).
+   */
+  sessionFileKeys(filePath: string): readonly string[];
+}
+
+/** Keys a native id is looked up under; see DiskAdapter.sessionFileKeys. */
+export function sessionLookupKeys(sessionId: string): readonly string[] {
+  // Gemini names files session-{timestamp}-{first eight id characters}.
+  return [sessionId, sessionId.slice(0, 8)];
 }
 
 // =============================================================================

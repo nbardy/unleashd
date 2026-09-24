@@ -3,6 +3,7 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import { codexTurnInterruptionNotices, extractCodexTurnLifecycle } from './codex-turn-lifecycle';
 import type { DiskAdapter, ParsedSession } from './disk-adapter';
+import { sessionLookupKeys } from './disk-adapter';
 import {
   CLAUDE_PROJECTS_DIR,
   CODEX_SESSIONS_DIR,
@@ -59,7 +60,7 @@ async function discoverGeminiSandboxDirs(): Promise<string[]> {
 
 const claudeAdapter: DiskAdapter = {
   provider: 'claude',
-  matchesSessionFile: (filePath, sessionId) => path.basename(filePath, '.jsonl') === sessionId,
+  sessionFileKeys: (filePath) => [path.basename(filePath, '.jsonl')],
 
   async discoverFiles(): Promise<string[]> {
     const projectDirs = await getProjectDirectories(CLAUDE_PROJECTS_DIR);
@@ -100,8 +101,10 @@ const claudeAdapter: DiskAdapter = {
 
 const codexAdapter: DiskAdapter = {
   provider: 'codex',
-  matchesSessionFile: (filePath, sessionId) =>
-    extractCodexSessionIdFromFilename(filePath) === sessionId,
+  sessionFileKeys: (filePath) => {
+    const sessionId = extractCodexSessionIdFromFilename(filePath);
+    return sessionId ? [sessionId] : [];
+  },
 
   async discoverFiles(): Promise<string[]> {
     const dayDirs = await getCodexSessionDirectories(CODEX_SESSIONS_DIR);
@@ -155,7 +158,7 @@ const codexAdapter: DiskAdapter = {
 
 const opencodeAdapter: DiskAdapter & { _sessionIndex: Map<string, string> | null } = {
   provider: 'opencode',
-  matchesSessionFile: (filePath, sessionId) => path.basename(filePath) === sessionId,
+  sessionFileKeys: (filePath) => [path.basename(filePath)],
   _sessionIndex: null,
 
   async discoverFiles(): Promise<string[]> {
@@ -197,15 +200,17 @@ const opencodeAdapter: DiskAdapter & { _sessionIndex: Map<string, string> | null
 
 const geminiAdapter: DiskAdapter = {
   provider: 'gemini',
-  matchesSessionFile(filePath, sessionId) {
+  sessionFileKeys(filePath) {
     const stem = path.basename(filePath, '.json');
-    // Gemini also uses session-{timestamp}-{first eight id characters}. A
-    // prefix collision only selects a candidate; its JSON sessionId still wins.
-    return (
-      stem === sessionId ||
-      stem.endsWith(`-${sessionId}`) ||
-      stem.endsWith(`-${sessionId.slice(0, 8)}`)
-    );
+    // Gemini also uses session-{timestamp}-{first eight id characters}, so every
+    // suffix after a '-' is a key (sessionLookupKeys also asks for the first
+    // eight). A prefix collision only selects a candidate; its JSON sessionId
+    // still wins.
+    const keys = [stem];
+    for (let index = stem.indexOf('-'); index !== -1; index = stem.indexOf('-', index + 1)) {
+      keys.push(stem.slice(index + 1));
+    }
+    return keys;
   },
 
   async discoverFiles(): Promise<string[]> {
@@ -251,7 +256,7 @@ const geminiAdapter: DiskAdapter = {
 
 const cursorAdapter: DiskAdapter = {
   provider: 'cursor',
-  matchesSessionFile: (filePath, sessionId) => path.basename(filePath, '.jsonl') === sessionId,
+  sessionFileKeys: (filePath) => [path.basename(filePath, '.jsonl')],
 
   async discoverFiles(): Promise<string[]> {
     return getCursorSessionFiles(CURSOR_PROJECTS_DIR);
@@ -319,8 +324,9 @@ export async function resolveSessionTranscript(
 ): Promise<string | null> {
   if (adapter.provider !== provider) return null;
   try {
+    const lookupKeys = sessionLookupKeys(sessionId);
     for (const file of await adapter.discoverFiles()) {
-      if (adapter.matchesSessionFile && !adapter.matchesSessionFile(file, sessionId)) continue;
+      if (!adapter.sessionFileKeys(file).some((key) => lookupKeys.includes(key))) continue;
       try {
         const parsed = await adapter.parseFile(file);
         if (parsed?.provider === provider && parsed.sessionId === sessionId) return parsed.filePath;

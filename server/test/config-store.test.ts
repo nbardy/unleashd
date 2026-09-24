@@ -163,11 +163,13 @@ test('session binding rotation removes the old index and lookup repairs a missin
 
 test('bulk session lookups scan once while imports, rotations, tombstones, and rekeys update the index', async () => {
   await withStore(async (store) => {
-    const list = store.list.bind(store);
+    // The bulk scope's one full scan (private; list() serves it inside a scope).
+    const scanner = store as unknown as { scanRecords: () => ReturnType<typeof store.list> };
+    const list = scanner.scanRecords.bind(store);
     let scans = 0;
-    store.list = async (options) => {
+    scanner.scanRecords = async () => {
       scans += 1;
-      return list(options);
+      return list();
     };
 
     await store.withSessionLookupIndex(async () => {
@@ -293,15 +295,24 @@ test('bulk lookup includes writes and purges committed while its initial record 
     const scanned = new Promise<void>((resolve) => {
       markScanned = resolve;
     });
-    const list = store.list.bind(store);
-    store.list = async (options) => {
-      const records = await list(options);
+    // The bulk scope's one full scan (private; list() serves it inside a scope).
+    const scanner = store as unknown as { scanRecords: () => ReturnType<typeof store.list> };
+    const list = scanner.scanRecords.bind(store);
+    scanner.scanRecords = async () => {
+      const records = await list();
       markScanned();
       await resumeScan;
       return records;
     };
 
+    let markWritten!: () => void;
+    const written = new Promise<void>((resolve) => {
+      markWritten = resolve;
+    });
+    // The scope does not wait for its scan; these lookups run after the writes
+    // below, and must see them although the scan captured the older records.
     const loading = store.withSessionLookupIndex(async () => {
+      await written;
       assert.equal(await store.findBySession('codex', 'removed-during-scan'), undefined);
       assert.equal(
         (await store.findBySession('codex', 'created-during-scan'))?.conversationId,
@@ -319,9 +330,41 @@ test('bulk lookup includes writes and purges committed while its initial record 
       });
       await rm(store.sessionDirectory, { recursive: true, force: true });
     } finally {
+      markWritten();
       releaseScan();
     }
     await loading;
+  });
+});
+
+test('list inside a bulk scope serves its one scan and never a record this store rewrote', async () => {
+  // Startup recovery lists every record inside the scope whose index scan
+  // already read them all (2026-09-25); reusing that scan must not hide writes
+  // made after it.
+  await withStore(async (store) => {
+    await store.create({ conversationId: CONVERSATION_ID, config: CONFIG, provenance: 'user' });
+    await store.create({ conversationId: 'purged', config: CONFIG, provenance: 'user' });
+    const scanner = store as unknown as { scanRecords: () => ReturnType<typeof store.list> };
+    const scan = scanner.scanRecords.bind(store);
+    let scans = 0;
+    scanner.scanRecords = async () => {
+      scans += 1;
+      return scan();
+    };
+    await store.withSessionLookupIndex(async () => {
+      assert.equal((await store.list()).length, 2);
+      await store.setDone(CONVERSATION_ID, true);
+      await store.purge('purged');
+      await store.create({
+        conversationId: OTHER_CONVERSATION_ID,
+        config: CONFIG,
+        provenance: 'user',
+      });
+      const listed = new Map((await store.list()).map((record) => [record.conversationId, record]));
+      assert.deepEqual([...listed.keys()].sort(), [CONVERSATION_ID, OTHER_CONVERSATION_ID]);
+      assert.equal(listed.get(CONVERSATION_ID)?.done, true);
+    });
+    assert.equal(scans, 1);
   });
 });
 
@@ -331,11 +374,13 @@ test('one failing bulk lookup does not release an overlapping import scope', asy
     const held = new Promise<void>((resolve) => {
       release = resolve;
     });
-    const list = store.list.bind(store);
+    // The bulk scope's one full scan (private; list() serves it inside a scope).
+    const scanner = store as unknown as { scanRecords: () => ReturnType<typeof store.list> };
+    const list = scanner.scanRecords.bind(store);
     let scans = 0;
-    store.list = async (options) => {
+    scanner.scanRecords = async () => {
       scans += 1;
-      return list(options);
+      return list();
     };
     const importing = store.withSessionLookupIndex(() => held);
     try {

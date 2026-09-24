@@ -19,8 +19,10 @@ import {
  */
 export const museAdapter: DiskAdapter = {
   provider: 'muse',
-  matchesSessionFile: (filePath, sessionId) =>
-    extractMuseSessionIdFromFilePath(filePath) === sessionId,
+  sessionFileKeys: (filePath) => {
+    const sessionId = extractMuseSessionIdFromFilePath(filePath);
+    return sessionId ? [sessionId] : [];
+  },
 
   async discoverFiles(): Promise<string[]> {
     return getMuseSessionFiles(MUSE_SESSIONS_DIR);

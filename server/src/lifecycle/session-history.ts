@@ -37,6 +37,11 @@ export function mergeSessionMessages(
   nativeSets: readonly (readonly Message[])[],
   runtimeFallback?: readonly Message[]
 ): Message[] {
+  // One transcript and no live rows is every startup hydration. Each row is
+  // then its own identity and the order below is the source order, so skip the
+  // per-row JSON keys: they stringified every tool input and cost ~6s of each
+  // startup (2026-09-25).
+  if (nativeSets.length === 1 && !runtimeFallback?.length) return [...nativeSets[0]];
   const sets = [...nativeSets];
   if (runtimeFallback?.length) {
     const liveTurns = userTurns(runtimeFallback);

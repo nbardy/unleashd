@@ -78,6 +78,10 @@ interface SessionLookupIndex {
   bySession: Map<string, Set<string>>;
   byConversation: Map<string, readonly string[]>;
   pending?: Map<string, readonly string[]>;
+  /** The scope's one full scan; `list()` serves it while the scope is open. */
+  records?: ReadonlyMap<string, PersistedConversationConfigRecord>;
+  /** Records this store wrote or removed since the scope began; re-read, never served stale. */
+  written: Set<string>;
 }
 
 export class ConfigRevisionConflictError extends Error {
@@ -158,13 +162,17 @@ export class ConversationConfigStore {
         bySession: new Map(),
         byConversation: new Map(),
         pending: new Map(),
+        written: new Set(),
       };
       this.sessionLookupIndex = index;
       index.ready = this.buildSessionLookupIndex(index);
+      // Observed only by a lookup miss (findBySession awaits it). Nothing else
+      // waits: awaiting the scan here held all of startup for a full read of
+      // every record (~7,800, 3-6s) before discovery began (2026-09-25).
+      index.ready.catch(() => {});
     }
     index.scopes += 1;
     try {
-      await index.ready;
       return await operation();
     } finally {
       index.scopes -= 1;
@@ -230,9 +238,49 @@ export class ConversationConfigStore {
     return found;
   }
 
+  /**
+   * Every supported record. Inside a bulk lookup scope this serves the scope's
+   * scan plus fresh reads of what this store wrote since: startup scanned all
+   * ~7,800 records twice (lookup index, then recovery), and each scan cost
+   * seconds of the startup barrier (2026-09-25).
+   */
   async list(
     options: ConversationConfigRecordListOptions = {}
   ): Promise<PersistedConversationConfigRecord[]> {
+    const index = this.sessionLookupIndex;
+    const records = index ? await this.scopeRecords(index) : await this.scanRecords();
+    return records.filter(
+      (record) => options.status === undefined || record.status === options.status
+    );
+  }
+
+  private async scopeRecords(
+    index: SessionLookupIndex
+  ): Promise<PersistedConversationConfigRecord[]> {
+    await index.ready;
+    const records = new Map(index.records);
+    const written = [...index.written];
+    const current = await Promise.all(written.map((id) => this.readSupportedRecord(id)));
+    written.forEach((conversationId, position) => {
+      const record = current[position];
+      if (record) records.set(conversationId, record);
+      else records.delete(conversationId);
+    });
+    return [...records.values()];
+  }
+
+  private async readSupportedRecord(
+    conversationId: string
+  ): Promise<PersistedConversationConfigRecord | undefined> {
+    try {
+      return await this.getByConversationId(conversationId);
+    } catch (error) {
+      if (error instanceof UnsupportedConfigRecordVersionError) return undefined;
+      throw error;
+    }
+  }
+
+  private async scanRecords(): Promise<PersistedConversationConfigRecord[]> {
     await mkdir(this.conversationDirectory, { recursive: true });
     const entries = await readdir(this.conversationDirectory, {
       withFileTypes: true,
@@ -251,9 +299,9 @@ export class ConversationConfigStore {
           }
         })
     );
-    return records
-      .filter((record): record is PersistedConversationConfigRecord => record !== undefined)
-      .filter((record) => options.status === undefined || record.status === options.status);
+    return records.filter(
+      (record): record is PersistedConversationConfigRecord => record !== undefined
+    );
   }
 
   listActive(): Promise<PersistedConversationConfigRecord[]> {
@@ -645,7 +693,8 @@ export class ConversationConfigStore {
   }
 
   private async buildSessionLookupIndex(index: SessionLookupIndex): Promise<void> {
-    const records = await this.list();
+    const records = await this.scanRecords();
+    index.records = new Map(records.map((record) => [record.conversationId, record]));
     for (const record of records) {
       this.updateSessionLookupIndex(
         index,
@@ -664,6 +713,7 @@ export class ConversationConfigStore {
   private trackSessionBindings(conversationId: string, bindings: readonly SessionBinding[]): void {
     const index = this.sessionLookupIndex;
     if (!index) return;
+    index.written.add(conversationId);
     const keys = bindings.map(bindingKey);
     if (index.pending) {
       index.pending.set(conversationId, keys);

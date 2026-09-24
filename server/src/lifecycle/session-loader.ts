@@ -29,9 +29,12 @@ import type {
 } from '../conversations/runtime';
 import { extractBuddyMemorySnapshot } from '../conversations/runtime';
 import { summarizeConversation } from '../conversations/serialization';
+import { forEachWithConcurrency } from '../adapters/loader';
 import { createFilePoller } from './file-poller';
 import { loadProgressively } from './progressive-loader';
 import { mergeSessionMessages } from './session-history';
+
+const RECOVERY_CONCURRENCY = 16;
 
 export interface SessionLoaderOptions {
   startupLimit: number;
@@ -319,117 +322,124 @@ export function createSessionLoader(dependencies: SessionLoaderDependencies): Se
   }
 
   async function recoverConversationsWithoutTranscripts(): Promise<void> {
-    for (const record of await dependencies.configService.listRecoverable()) {
-      if (dependencies.registry.has(record.conversationId) || !record.workingDirectory) {
-        continue;
-      }
-      // An `external_discovered` record is a config sidecar for a transcript that
-      // already exists on disk — it is not independent evidence that a conversation
-      // exists. Startup only hydrates the newest `startupLimit` (500) transcripts,
-      // so recovering these materialised one empty "New conversation" per
-      // un-hydrated session: 5,275 of 5,633 conversations on 2026-09-06, each
-      // stamped createdAt=now, which floated all of them to the top of the
-      // sidebar's recent-folder groups. Only app-created records (`user` /
-      // `legacy_inferred`) may become a conversation without a transcript —
-      // those are the ones that genuinely have nothing on disk yet.
-      const availableSource = rememberBindings(record)
-        .map((binding) => nativeSources.get(sourceKey(binding)))
-        .find((source) => source !== undefined);
-      if (record.provenance === 'external_discovered' && !availableSource) continue;
-      // Per-record isolation is required, not defensive: this loop runs inside the
-      // startup barrier, so an unreadable or future-versioned record used to throw
-      // all the way out to handleStartupFailure() and exit the process — one bad
-      // record bricked every conversation on disk (incident 2026-08-20).
-      try {
-        const hydrated = await dependencies.configService.hydrate({
-          conversationId: record.conversationId,
-          sessionBindings: [],
-          legacy: {
-            provider: record.config.provider,
-            reportedModel: record.lastResolvedConfig?.modelId,
-            source: 'external_session',
-          },
-        });
-        const currentSession =
-          hydrated.record.currentSession?.provider === hydrated.state.config.provider
-            ? hydrated.record.currentSession
-            : undefined;
-        // A conversation with a current provider session is a resumed
-        // application conversation, not a new memory-generation boundary. It
-        // has no transcript snapshot to recover here, so do not inject the
-        // latest Buddy briefing during recovery. Fresh records that have not
-        // started a provider session still need the latest generation for
-        // their pending initial message.
-        const recoveredBuddy =
-          record.creation?.buddyContext && !currentSession
-            ? await dependencies
-                .resolveBuddyConversation(record.creation.buddyContext)
-                .catch((error) => {
-                  logger.warn(
-                    `[buddies] Could not rebuild ${record.conversationId} briefing:`,
-                    error
-                  );
-                  return null;
-                })
-            : null;
-        const recovered = dependencies.createConversation({
-          id: record.conversationId,
-          workingDirectory: record.workingDirectory,
-          configState: hydrated.state,
-          done: hydrated.record.done,
-          existingSessionId: currentSession?.sessionId,
-          existingSessionAudienceKey: currentSession?.buddyAudienceKey,
-          existingProviderUsage: currentSession?.latestUsage ?? null,
-          swarmDebugPrefix: record.creation?.swarmDebugPrefix ?? null,
-          resumedFromConversationId: record.creation?.resumedFromConversationId ?? null,
-          kind: recoveredBuddy?.context
+    // Records are independent, so recover them concurrently. One at a time,
+    // ~800 records each paid several sequential record reads, and this phase
+    // held the startup barrier for ~10s after the last transcript loaded
+    // (2026-09-25).
+    const records = await dependencies.configService.listRecoverable();
+    await forEachWithConcurrency(records, RECOVERY_CONCURRENCY, recoverRecord);
+  }
+
+  async function recoverRecord(record: PersistedConversationConfigRecord): Promise<void> {
+    if (dependencies.registry.has(record.conversationId) || !record.workingDirectory) {
+      return;
+    }
+    // An `external_discovered` record is a config sidecar for a transcript that
+    // already exists on disk — it is not independent evidence that a conversation
+    // exists. Startup only hydrates the newest `startupLimit` (500) transcripts,
+    // so recovering these materialised one empty "New conversation" per
+    // un-hydrated session: 5,275 of 5,633 conversations on 2026-09-06, each
+    // stamped createdAt=now, which floated all of them to the top of the
+    // sidebar's recent-folder groups. Only app-created records (`user` /
+    // `legacy_inferred`) may become a conversation without a transcript —
+    // those are the ones that genuinely have nothing on disk yet.
+    const availableSource = rememberBindings(record)
+      .map((binding) => nativeSources.get(sourceKey(binding)))
+      .find((source) => source !== undefined);
+    if (record.provenance === 'external_discovered' && !availableSource) return;
+    // Per-record isolation is required, not defensive: this loop runs inside the
+    // startup barrier, so an unreadable or future-versioned record used to throw
+    // all the way out to handleStartupFailure() and exit the process — one bad
+    // record bricked every conversation on disk (incident 2026-08-20).
+    try {
+      const hydrated = await dependencies.configService.hydrate({
+        conversationId: record.conversationId,
+        sessionBindings: [],
+        legacy: {
+          provider: record.config.provider,
+          reportedModel: record.lastResolvedConfig?.modelId,
+          source: 'external_session',
+        },
+      });
+      const currentSession =
+        hydrated.record.currentSession?.provider === hydrated.state.config.provider
+          ? hydrated.record.currentSession
+          : undefined;
+      // A conversation with a current provider session is a resumed
+      // application conversation, not a new memory-generation boundary. It
+      // has no transcript snapshot to recover here, so do not inject the
+      // latest Buddy briefing during recovery. Fresh records that have not
+      // started a provider session still need the latest generation for
+      // their pending initial message.
+      const recoveredBuddy =
+        record.creation?.buddyContext && !currentSession
+          ? await dependencies
+              .resolveBuddyConversation(record.creation.buddyContext)
+              .catch((error) => {
+                logger.warn(
+                  `[buddies] Could not rebuild ${record.conversationId} briefing:`,
+                  error
+                );
+                return null;
+              })
+          : null;
+      const recovered = dependencies.createConversation({
+        id: record.conversationId,
+        workingDirectory: record.workingDirectory,
+        configState: hydrated.state,
+        done: hydrated.record.done,
+        existingSessionId: currentSession?.sessionId,
+        existingSessionAudienceKey: currentSession?.buddyAudienceKey,
+        existingProviderUsage: currentSession?.latestUsage ?? null,
+        swarmDebugPrefix: record.creation?.swarmDebugPrefix ?? null,
+        resumedFromConversationId: record.creation?.resumedFromConversationId ?? null,
+        kind: recoveredBuddy?.context
+          ? {
+              kind: 'buddy',
+              buddyId: recoveredBuddy.context.buddyId,
+              workspaceId: recoveredBuddy.context.workspaceId,
+              buddyProjectId: recoveredBuddy.context.buddyProjectId ?? null,
+              legacyWorkItemId: recoveredBuddy.context.legacyWorkItemId ?? null,
+              automationRunId: recoveredBuddy.context.automationRunId ?? null,
+              delegatedByBuddyId: recoveredBuddy.context.delegatedByBuddyId ?? null,
+              parentBuddyConversationId: recoveredBuddy.context.parentBuddyConversationId ?? null,
+              allowedBuddyOperations: recoveredBuddy.context.allowedBuddyOperations,
+            }
+          : record.creation?.buddyContext
             ? {
                 kind: 'buddy',
-                buddyId: recoveredBuddy.context.buddyId,
-                workspaceId: recoveredBuddy.context.workspaceId,
-                buddyProjectId: recoveredBuddy.context.buddyProjectId ?? null,
-                legacyWorkItemId: recoveredBuddy.context.legacyWorkItemId ?? null,
-                automationRunId: recoveredBuddy.context.automationRunId ?? null,
-                delegatedByBuddyId: recoveredBuddy.context.delegatedByBuddyId ?? null,
-                parentBuddyConversationId: recoveredBuddy.context.parentBuddyConversationId ?? null,
-                allowedBuddyOperations: recoveredBuddy.context.allowedBuddyOperations,
+                buddyId: record.creation.buddyContext.buddyId,
+                workspaceId: record.creation.buddyContext.workspaceId,
+                buddyProjectId: record.creation.buddyContext.buddyProjectId ?? null,
+                legacyWorkItemId: record.creation.buddyContext.legacyWorkItemId ?? null,
+                automationRunId: record.creation.buddyContext.automationRunId ?? null,
+                delegatedByBuddyId: record.creation.buddyContext.delegatedByBuddyId ?? null,
+                parentBuddyConversationId:
+                  record.creation.buddyContext.parentBuddyConversationId ?? null,
+                allowedBuddyOperations: record.creation.buddyContext.allowedBuddyOperations,
               }
-            : record.creation?.buddyContext
-              ? {
-                  kind: 'buddy',
-                  buddyId: record.creation.buddyContext.buddyId,
-                  workspaceId: record.creation.buddyContext.workspaceId,
-                  buddyProjectId: record.creation.buddyContext.buddyProjectId ?? null,
-                  legacyWorkItemId: record.creation.buddyContext.legacyWorkItemId ?? null,
-                  automationRunId: record.creation.buddyContext.automationRunId ?? null,
-                  delegatedByBuddyId: record.creation.buddyContext.delegatedByBuddyId ?? null,
-                  parentBuddyConversationId:
-                    record.creation.buddyContext.parentBuddyConversationId ?? null,
-                  allowedBuddyOperations: record.creation.buddyContext.allowedBuddyOperations,
-                }
-              : record.creation?.purpose === 'buddy_builder'
-                ? { kind: 'buddy_builder' }
-                : null,
-          buddyContext: recoveredBuddy?.context ?? record.creation?.buddyContext ?? null,
-          buddyBriefing: recoveredBuddy?.briefing ?? null,
-          buddyMemoryGeneration: normalizeMemoryGeneration(recoveredBuddy?.memoryGeneration),
-          purpose: record.creation?.purpose ?? 'general',
-          placement: record.creation?.placement,
-        });
-        // The record's createdAt is the conversation's real birth time. Leaving
-        // the runtime's `new Date()` default made every recovered conversation
-        // look like it was created at boot, sorting the oldest history to the
-        // top of the sidebar as "1m ago".
-        recovered.createdAt = new Date(record.createdAt);
-        if (availableSource) restoreDisplayHistory(recovered, record, availableSource);
-        // Awaited hydration must not replace a runtime created while startup was loading.
-        if (dependencies.registry.has(record.conversationId)) continue;
-        startupRuntimes.add(recovered);
-        dependencies.registry.set(recovered);
-        await dependencies.dispatchInitialMessage(recovered);
-      } catch (error) {
-        logger.error(`Failed to recover conversation ${record.conversationId}:`, error);
-      }
+            : record.creation?.purpose === 'buddy_builder'
+              ? { kind: 'buddy_builder' }
+              : null,
+        buddyContext: recoveredBuddy?.context ?? record.creation?.buddyContext ?? null,
+        buddyBriefing: recoveredBuddy?.briefing ?? null,
+        buddyMemoryGeneration: normalizeMemoryGeneration(recoveredBuddy?.memoryGeneration),
+        purpose: record.creation?.purpose ?? 'general',
+        placement: record.creation?.placement,
+      });
+      // The record's createdAt is the conversation's real birth time. Leaving
+      // the runtime's `new Date()` default made every recovered conversation
+      // look like it was created at boot, sorting the oldest history to the
+      // top of the sidebar as "1m ago".
+      recovered.createdAt = new Date(record.createdAt);
+      if (availableSource) restoreDisplayHistory(recovered, record, availableSource);
+      // Awaited hydration must not replace a runtime created while startup was loading.
+      if (dependencies.registry.has(record.conversationId)) return;
+      startupRuntimes.add(recovered);
+      dependencies.registry.set(recovered);
+      await dependencies.dispatchInitialMessage(recovered);
+    } catch (error) {
+      logger.error(`Failed to recover conversation ${record.conversationId}:`, error);
     }
   }
 

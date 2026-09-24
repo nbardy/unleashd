@@ -26,7 +26,7 @@ import type {
   SessionHistoryOptions,
   SessionHistorySource,
 } from './disk-adapter';
-import { sessionToConversation } from './disk-adapter';
+import { sessionLookupKeys, sessionToConversation } from './disk-adapter';
 import { extractCodexSessionIdFromFilename, extractMuseSessionIdFromFilePath } from './jsonl';
 import { diskAdapters } from './registry';
 import { OPENCODE_PART_DIR, getOpenCodeSessionMtime } from './registry';
@@ -110,12 +110,30 @@ async function discoverAll(adapters: DiskAdapter[]): Promise<DiscoveredFile[]> {
   return files;
 }
 
+function sessionFileIndexKey(provider: string, key: string): string {
+  return `${provider}\0${key}`;
+}
+
+/** One pass over discovery; each binding lookup is then a map hit. */
+function indexSessionFiles(files: readonly DiscoveredFile[]): Map<string, DiscoveredFile[]> {
+  const index = new Map<string, DiscoveredFile[]>();
+  for (const file of files) {
+    for (const key of file.adapter.sessionFileKeys(file.filePath)) {
+      const indexKey = sessionFileIndexKey(file.adapter.provider, key);
+      const entries = index.get(indexKey);
+      if (entries) entries.push(file);
+      else index.set(indexKey, [file]);
+    }
+  }
+  return index;
+}
+
 function createHistoryReader(
   options: SessionHistoryOptions & { cache?: NormalizedSessionCache },
   discover: () => Promise<DiscoveredFile[]>,
   readSource = (file: DiscoveredFile) => parseOneFile(file, options.cache)
 ): (source: DiscoveredConversation) => Promise<SessionHistorySource> {
-  let discovered: Promise<DiscoveredFile[]> | undefined;
+  let byKey: Promise<Map<string, DiscoveredFile[]>> | undefined;
   return async (source) => {
     const bindings = await options.resolveSessionBindings?.(source);
     const related = bindings?.filter(
@@ -124,16 +142,16 @@ function createHistoryReader(
     if (!related?.length) return source;
     // Startup's limit selects conversations. Older files bound to a selected
     // conversation still belong to its history, without importing unrelated rows.
-    discovered ??= discover();
-    const files = await discovered;
+    byKey ??= discover().then(indexSessionFiles);
+    const index = await byKey;
     const boundSessionSources: DiscoveredConversation[] = [];
     for (const binding of related) {
       // Native path layouts belong to adapters. Gemini uses shortened ids and
       // Muse uses a parent directory; hints never establish conversation identity.
-      const candidates = files.filter((file) =>
-        file.adapter.matchesSessionFile
-          ? file.adapter.matchesSessionFile(file.filePath, binding.sessionId)
-          : path.basename(file.filePath, path.extname(file.filePath)) === binding.sessionId
+      const candidates = new Set(
+        sessionLookupKeys(binding.sessionId).flatMap(
+          (key) => index.get(sessionFileIndexKey(binding.provider, key)) ?? []
+        )
       );
       for (const candidate of candidates) {
         const parsed = await readSource(candidate);
@@ -203,7 +221,7 @@ function createBoundedSourceReader(
  * Shared mutable state in `fn` (batchBuffer, counters) is safe because JS is
  * single-threaded: mutations between awaits run atomically.
  */
-async function forEachWithConcurrency<T>(
+export async function forEachWithConcurrency<T>(
   items: T[],
   concurrency: number,
   fn: (item: T) => Promise<void>
