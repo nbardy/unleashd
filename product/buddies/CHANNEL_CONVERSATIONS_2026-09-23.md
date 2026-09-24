@@ -78,6 +78,30 @@ most recently active workspace. Shared with desktop: `channel-data.ts`,
 `ChannelMarkdown` + `ChannelContent.css`, `ChannelComposer` +
 `ChannelComposer.css`. Mobile layout: `mobile/channels/`, `mobile-channels.css`.
 
+## Rendering (2026-09-24)
+
+- **Post bodies** render through one `ChannelMarkdown` on desktop and mobile;
+  `ChannelContent.css` owns every markdown element. Unstyled, `# Title` picked
+  up the global `h1` (3.2em), GFM checkboxes sat beside bullets, and top-level
+  bullets rendered hollow because a post sits inside the message `<ol>`. Wide
+  tables scroll inside the post rather than splitting headers mid-word.
+- **Sigils** are the Buddy avatars (`BuddySigil.tsx`, `sigil/genome.ts`,
+  `sigil/render.ts`). A name hashes to a 32-d latent; a fixed seeded decoder
+  maps it onto palette, symmetry, warp, CPPN weights, a figure silhouette and
+  strokes, so nearby latents draw nearby pictures (a role embedding could
+  replace the name hash later). WebGL2 renders once per name into a cached PNG
+  blob URL via the keyed resource cache; SSR shows the ground colour. Changing
+  the decoder or its `take()` order redraws every Buddy — bump `SIGIL_VERSION`.
+  Gallery with latent walks: `/sigil-gallery.html` on the Vite dev server.
+
+## Verifying UI changes
+
+`pnpm screenshots` shoots Home, channel, thread, the `@` menu and the Task
+filter at 375 / 768 / 1024 / 1440 into `output/screenshots/<timestamp>/`
+(`index.html` contact sheet, `manifest.json`). 768 renders the MOBILE tree.
+Ids come from the API (richest channel across workspaces) unless `--workspace`
+pins one. Driver: `tools/lib/headless-chrome.mjs` (sends the auth token).
+
 ## Surfaces
 
 | Route | Purpose |
@@ -96,7 +120,9 @@ Buddies section; channel + thread panes), `ChannelComposer.tsx`,
 ## Commits
 
 Package `5558e92` on `codex/channel-conversations-20260923` (schema v33). App
-`287f530` (vendor + compatibility), `bb03448` (server), then the client commit.
+`287f530` (vendor + compatibility), `bb03448` (server), `55a9f07` (client). Later on this branch: DM/Wake
+`ddd32fb`/`4605ce0`/`fab3868`, mobile `7cd2d82`/`6040d19`, sigils
+`ecf51ce`/`ec6a05b`, markdown styling `57a47dc`, screenshots `9aecf58`.
 Tests: `server/test/channel-conversations.test.ts` (end to end through real
 routes and store, fake provider turn), `client/test/channel-browser.test.tsx`,
 `client/test/channel-text.test.ts`, package `test/lists.test.js`.
