@@ -49,6 +49,27 @@ deltas; start warm.
    or a workspace doc) that warm starts include, so each conversation does not
    re-read the same files to orient.
 
+## First `pnpm token-audit` findings (2026-09-25, last 3 days, 617 sessions)
+
+Measurement fixes landed first: d49d2f5 (Codex cached input priced as cached)
+and dcb829d (Claude usage counted once per request, not per content-block
+line; the panel overcounted Claude ~2.4x).
+
+- Start cost (fresh input on the first request, median): channel 33k,
+  buddy 22k, other 20k. Only ~34% of first-request input is served from cache.
+  Warm-start forking (#4) and trimming always-loaded instructions (AGENTS.md
+  19k chars, ~/.claude/CLAUDE.md 11.5k) both attack this floor.
+- Idle-gap cache expiry (56.7M rewritten) outweighs warm busts (16.0M). Bursty
+  Slack-style use hits expiry often; check the cache TTL the harnesses use.
+- Unexplained warm bust: 774k of 787k context rewritten 134 s after the prior
+  request in `94d99e8d` (2026-09-23T18:28:07Z). Find the cause (model/config
+  switch? tool-surface change?) before assuming it is rare.
+- Codex swarm prompts re-send the same instruction lines (×47 in `01a07203`,
+  dynaworld) and polling returns identical large tool outputs (`01a0c7a3`,
+  `01a0c82d`).
+- Claude Code's own `<note>A task-notification fires…` line repeats ×34 in
+  long background-agent sessions (harness-side, not ours).
+
 ## Smaller items
 
 - `seenThrough` (channel-responder.ts) is in memory; after a restart each seat
