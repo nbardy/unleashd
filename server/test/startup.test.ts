@@ -11,6 +11,7 @@ test('startup exposes one authoritative hydration barrier before polling', async
       host: '127.0.0.1',
       development: true,
       developmentClientPort: 7489,
+      browser: 'none',
     },
     {
       server: {
@@ -58,6 +59,7 @@ test('startup does not release readiness or background work after hydration fail
         host: '127.0.0.1',
         development: true,
         developmentClientPort: 7489,
+      browser: 'none',
       },
       {
         server: {
@@ -108,6 +110,7 @@ test('reload during scheduler startup pauses the scheduler before aborting readi
       host: '127.0.0.1',
       development: true,
       developmentClientPort: 7489,
+      browser: 'none',
     },
     {
       server: {

@@ -171,11 +171,21 @@ function devAuthPlugin(policy: AuthPolicy) {
 
 const devAuthPolicy = resolveDevAuthPolicy();
 
+// Once per PROCESS, not per config load. A Vite restart (vite.config.ts or .env
+// edit, `r` in the terminal) re-imports this file as a fresh module and re-runs
+// configureServer on a new httpServer, so a module-level `let` resets and the
+// page reopened on every restart. globalThis outlives the re-import; a new
+// `pnpm dev` / `pnpm dev:replace` is a new process and opens once.
+const BROWSER_OPENED = Symbol.for('unleashd.dev.browserOpened');
+const processFlags = globalThis as { [BROWSER_OPENED]?: true };
+
 function openPreferredDevUrlPlugin() {
   return {
     name: 'open-preferred-dev-url',
     configureServer(server: ViteDevServer) {
       server.httpServer?.once('listening', () => {
+        if (processFlags[BROWSER_OPENED]) return;
+        processFlags[BROWSER_OPENED] = true;
         console.log(`[unleashd] Opening ${LOCAL_DEV_URL}`);
         openInBrowser(LOCAL_DEV_URL);
       });

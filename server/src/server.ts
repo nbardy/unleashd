@@ -708,6 +708,9 @@ void runServerStartup(
     host: LISTEN_HOST,
     development: process.env.NODE_ENV === 'development',
     developmentClientPort: DEV_CLIENT_PORT,
+    // A TTY means a person ran `pnpm start`; tests and agent-launched servers
+    // pipe stdout and must never open a browser window (see StartupOptions).
+    browser: process.stdout.isTTY ? 'open' : 'none',
   },
   {
     server,
