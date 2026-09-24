@@ -132,8 +132,7 @@ test('empty Buddy WebSocket creation resolves and registers without sending a pr
       completionSuppression: { clear: () => undefined },
       initialLoadComplete,
       isInitialLoadComplete: () => acceptsCommands,
-      beginCommand: (command: { type: string }) =>
-        command.type === 'create_conversation' || acceptsCommands ? () => undefined : null,
+      beginCommand: () => () => undefined,
       configService: {
         getRecord: async (id: string) => (conversations.has(id) ? { status: 'active' } : null),
         delete: async () => true,

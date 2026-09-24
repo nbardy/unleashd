@@ -57,7 +57,11 @@ export interface ConversationWebSocketDependencies {
   completionSuppression: CompletionSuppression;
   initialLoadComplete: Promise<void>;
   isInitialLoadComplete(): boolean;
-  beginCommand(command: ClientMessage): (() => void) | null;
+  /**
+   * Admit one command as active work the shutdown coordinator counts, also
+   * while `starting`; null once the backend is reloading or shutting down.
+   */
+  beginCommand(): (() => void) | null;
   configService: ConversationConfigService;
   getArchivedBuddyIds?(): Promise<string[]>;
   isBuddyArchived?(buddyId: string): Promise<boolean>;
@@ -105,22 +109,13 @@ export function registerConversationWebSocket(
         }
 
         const data = result.data;
-        // A new UUID and durable config record cannot collide with historical
-        // session hydration, so creation is safe as soon as durable services
-        // and the WebSocket are available. Commands against existing history
-        // still wait for that history to become authoritative.
-        if (data.type !== 'create_conversation') {
-          await dependencies.initialLoadComplete;
-          if (socket.readyState !== WebSocket.OPEN) return;
-        }
         if ('commandId' in data) {
           activeCommand = {
             commandId: data.commandId,
             ...('conversationId' in data ? { conversationId: data.conversationId } : {}),
           };
         }
-        releaseCommand = dependencies.beginCommand(data);
-        if (!releaseCommand) {
+        const rejectDraining = () => {
           const unavailable =
             'Backend reload is draining active turns; try again after reconnecting';
           if (activeCommand) {
@@ -131,7 +126,35 @@ export function registerConversationWebSocket(
           } else {
             sendProtocolError(socket, unavailable);
           }
+        };
+        // Take the command slot BEFORE awaiting the startup barrier: the slot
+        // is what the shutdown coordinator counts as active work. Until
+        // 2026-09-25 the barrier was awaited first, so a command parked on it
+        // was invisible. A dev reload requested while `starting` (handleReload
+        // accepts it) then exited the backend the moment markReady ran
+        // completeStartup, and the parked queue_message woke into `reloading`
+        // and was rejected with server_draining: a message typed during boot
+        // was lost to a file save. Holding the slot keeps the backend `idle`
+        // until this command finishes; the queued reload happens after it.
+        releaseCommand = dependencies.beginCommand();
+        if (!releaseCommand) {
+          rejectDraining();
           return;
+        }
+        // A new UUID and durable config record cannot collide with historical
+        // session hydration, so creation is safe as soon as durable services
+        // and the WebSocket are available. Commands against existing history
+        // still wait for that history to become authoritative.
+        if (data.type !== 'create_conversation') {
+          await dependencies.initialLoadComplete;
+          if (socket.readyState !== WebSocket.OPEN) return;
+          // The barrier means "startup is over", not "startup succeeded": a
+          // startup failure or SIGTERM during boot resolves it too. Only a
+          // backend that reached `idle` may run commands on existing history.
+          if (!dependencies.isInitialLoadComplete()) {
+            rejectDraining();
+            return;
+          }
         }
         const target =
           'conversationId' in data ? dependencies.registry.get(data.conversationId) : undefined;

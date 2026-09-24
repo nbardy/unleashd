@@ -73,6 +73,7 @@ import { registerSwarmReadModelRoutes } from './swarm/read-model-routes';
 import { registerSwarmRuntimeRoutes } from './swarm/routes';
 import { isProcessAlive, readLatestSwarmRuntime } from './swarm/runtime';
 import { registerConversationWebSocket } from './transport/conversation-websocket';
+import { WS_LIVENESS_INTERVAL_MS, superviseLiveness } from './transport/websocket';
 
 import { auditLocalAgents } from './audit.js';
 import { type StableConversationPorts, slotOf } from './buddies/buddy-conversation-slots';
@@ -136,6 +137,7 @@ server.on('upgrade', (request, socket, head) => {
     wss.emit('connection', client, request);
   });
 });
+wss.on('connection', (client) => superviseLiveness(client, WS_LIVENESS_INTERVAL_MS));
 const conversationConfigStore = new ConversationConfigStore({
   appDataRoot: APP_DATA_DIR,
   logger: {
@@ -203,8 +205,9 @@ const {
 // below. A reload IPC arriving mid-startup makes completeStartup() return false,
 // and before 2026-08-20 that path left this promise pending forever, so every
 // non-create WS command awaited it with no reply and no error, and the client's
-// load spinner never cleared. Waiters that resume into a non-idle state are
-// refused by beginMutation with a typed rejection, which the client can retry.
+// load spinner never cleared. Waiters hold a command slot while they wait (so a
+// reload queued during startup waits for them); one that resumes into a
+// non-idle state is refused with a typed rejection, which the client can retry.
 let resolveInitialLoad!: () => void;
 const initialLoadComplete = new Promise<void>((resolve) => {
   resolveInitialLoad = resolve;
@@ -375,13 +378,13 @@ registerConversationWebSocket(wss, {
   // for mutations on existing history. WS `init` streams immediately with
   // `loading:true` + summaries; Phase 2 batches arrive via
   // `conversations_updated` and `conversation_load_complete` flips `idle`.
-  // Only `create_conversation` is allowed during `starting` (5d79890) — it
-  // mints a fresh UUID/config record that cannot collide with disk hydration.
-  // All other commands await `initialLoadComplete` in the WS handler so they
-  // never race the authoritative restore.
+  // Every command is admitted (counted as active work) during `starting`.
+  // Only `create_conversation` RUNS during `starting` (5d79890) — it mints a
+  // fresh UUID/config record that cannot collide with disk hydration. All
+  // other commands hold their slot and await `initialLoadComplete` in the WS
+  // handler so they never race the authoritative restore.
   isInitialLoadComplete: () => shutdownController?.state === 'idle',
-  beginCommand: (command) =>
-    beginMutation({ allowDuringStartup: command.type === 'create_conversation' }),
+  beginCommand: () => beginMutation({ allowDuringStartup: true }),
   configService: conversationConfigService,
   isBuddyArchived: async (buddyId) =>
     (await getBuddiesStore()).getBuddy(buddyId)?.status === 'archived',
