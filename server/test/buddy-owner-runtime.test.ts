@@ -8,6 +8,7 @@ import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { BuddiesStore } from '@nbardy/buddies';
 import type { TeamSetupResult } from '@unleashd/shared';
 import { type BuddyContext, createDefaultConversationConfig } from '@unleashd/shared';
+import { chatRunAdmission } from '../src/buddies/chat-run-admission';
 import type { BuddiesStorePort } from '../src/buddies/contract';
 import {
   BuddyControlServer,
@@ -151,16 +152,10 @@ test('owner MCP configures unconfigured staff, releases original work, and compl
       briefing: `Current profile for ${context.buddyId}; turn ${visits.length}`,
       memoryGeneration: `revision:${visits.length}`,
     }),
-    beginBuddyChatRun: (context, conversationId, maxRuntimeMs) => {
-      const run = store.beginBuddyChatRun({
-        buddyId: context.buddyId,
-        workspaceId: context.workspaceId,
-        conversationId,
-        allowedOperations: MESSAGE_BUDDY_OPERATIONS,
-        maxRuntimeSeconds: maxRuntimeMs / 1000,
-      });
-      return { id: run.id, claim_token: run.claim_token!, deadline: run.deadline! };
-    },
+    ...chatRunAdmission(
+      () => store,
+      () => MESSAGE_BUDDY_OPERATIONS
+    ),
     finishBuddyChatRun: (id, token, status, detail) => {
       store.finishBuddyRun(id, { claimToken: token, status, outcome: detail });
     },

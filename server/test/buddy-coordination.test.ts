@@ -11,6 +11,7 @@ import {
   parseClientMessage,
   parseServerMessage,
 } from '@unleashd/shared';
+import { chatRunAdmission } from '../src/buddies/chat-run-admission';
 import type { BuddiesStorePort } from '../src/buddies/contract';
 import { coordinationStore } from '../src/buddies/coordination-store';
 import { createBuddiesIntegration } from '../src/buddies/integration';
@@ -27,6 +28,7 @@ import {
 } from '../src/conversations/runtime';
 import { summarizeConversation } from '../src/conversations/serialization';
 import { resolveConfigAgainstProviderCatalog } from '../src/providers/catalog-service';
+import { startChatRun } from './fixtures/chat-run';
 
 async function until(check: () => boolean, tick: () => void) {
   const deadline = Date.now() + 15000;
@@ -116,16 +118,10 @@ test('real creation boundary delivers two-worker aggregate and retries a failed 
       audienceKeys.set(key, current.audienceKey);
       return current;
     },
-    beginBuddyChatRun: (context, conversationId, maxRuntimeMs) => {
-      const run = store.beginBuddyChatRun({
-        buddyId: context.buddyId,
-        workspaceId: context.workspaceId,
-        conversationId,
-        allowedOperations: MESSAGE_BUDDY_OPERATIONS,
-        maxRuntimeSeconds: maxRuntimeMs / 1000,
-      });
-      return { id: run.id, claim_token: run.claim_token!, deadline: run.deadline! };
-    },
+    ...chatRunAdmission(
+      () => store,
+      () => MESSAGE_BUDDY_OPERATIONS
+    ),
     finishBuddyChatRun: (id, token, status, detail) => {
       store.finishBuddyRun(id, { claimToken: token, status, outcome: detail });
     },
@@ -541,7 +537,7 @@ test('private capability commits durable sends once and rejects payload conflict
   });
   const a = raw.createBuddy({ project: w.id, name: 'Chief', role: 'Coordinate' });
   const b = raw.createBuddy({ project: w.id, name: 'Lead', role: 'Deliver' });
-  const run = store.beginBuddyChatRun({
+  const run = startChatRun(store, {
     buddyId: a.id,
     workspaceId: w.id,
     conversationId: 'owner-thread',
@@ -622,7 +618,7 @@ test('packaged owner chats retain tool authority past ten minutes and honor thei
       rootPath: '/tmp/foreground-budget',
     });
     const buddy = raw.createBuddy({ project: workspace.id, name: 'Lead', role: 'Build' });
-    const run = store.beginBuddyChatRun({
+    const run = startChatRun(store, {
       buddyId: buddy.id,
       workspaceId: workspace.id,
       conversationId: 'foreground-budget',
@@ -646,7 +642,7 @@ test('packaged owner chats retain tool authority past ten minutes and honor thei
       /revoked/
     );
     store.finishBuddyRun(run.id, { claimToken: run.claim_token, status: 'cancelled' });
-    const configured = store.beginBuddyChatRun({
+    const configured = startChatRun(store, {
       buddyId: buddy.id,
       workspaceId: workspace.id,
       conversationId: 'foreground-budget',

@@ -88,14 +88,18 @@ async function runtimeFixture(
       briefing: 'Current bounded Buddy briefing',
       memoryGeneration: 'fixture',
     }),
-    beginBuddyChatRun: (context) => {
+    enqueueBuddyChatRun: (context) => {
       contexts.push(context);
-      return {
-        id: `foreground-${contexts.length}`,
+      return { id: `foreground-${contexts.length}` };
+    },
+    startBuddyChatRun: (id) => ({
+      kind: 'admitted',
+      run: {
+        id,
         claim_token: 'private-foreground-claim',
         deadline: new Date(Date.now() + 60_000).toISOString(),
-      };
-    },
+      },
+    }),
     finishBuddyChatRun: () => {},
     issueBuddyControlCapability: () => ({}),
     issueOwnerControlCapability: (input, id) =>

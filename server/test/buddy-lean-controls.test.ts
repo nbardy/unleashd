@@ -10,6 +10,7 @@ import type { BuddiesStorePort } from '../src/buddies/contract';
 import { createBuddiesIntegration } from '../src/buddies/integration';
 import { createBuddyMcpServer } from '../src/buddies/mcp-server';
 import { MESSAGE_BUDDY_OPERATIONS } from '../src/buddies/operations';
+import { startChatRun } from './fixtures/chat-run';
 
 async function fixture() {
   const root = mkdtempSync(join(tmpdir(), 'buddy-lean-controls-'));
@@ -52,7 +53,7 @@ test('native readiness checks the actual background return route and retains leg
   const f = await fixture();
   try {
     const policy = { allowed_operations: MESSAGE_BUDDY_OPERATIONS };
-    f.raw.beginBuddyChatRun({
+    startChatRun(f.raw, {
       buddyId: f.lead.id,
       workspaceId: f.workspace.id,
       conversationId: 'owner',
@@ -205,7 +206,7 @@ test('native portable soul edit reaches the next owner briefing without changing
 test('native run stop preserves siblings while root stop cancels the shared work chain', async () => {
   const f = await fixture();
   try {
-    const parent = f.raw.beginBuddyChatRun({
+    const parent = startChatRun(f.raw, {
       buddyId: f.lead.id,
       workspaceId: f.workspace.id,
       conversationId: 'owner',

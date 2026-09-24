@@ -5,6 +5,7 @@ import { join } from 'node:path';
 import test from 'node:test';
 import { BuddiesStore } from '@nbardy/buddies';
 import { type BuddyContext, createDefaultConversationConfig } from '@unleashd/shared';
+import { chatRunAdmission } from '../src/buddies/chat-run-admission';
 import type { BuddiesStorePort } from '../src/buddies/contract';
 import { coordinationStore } from '../src/buddies/coordination-store';
 import { createBuddyDispatchService } from '../src/buddies/dispatch-service';
@@ -17,6 +18,7 @@ import {
   createConversationRuntime,
 } from '../src/conversations/runtime';
 import { resolveConfigAgainstProviderCatalog } from '../src/providers/catalog-service';
+import { startChatRun } from './fixtures/chat-run';
 
 test('restart recovery releases a drained foreground claim and wakes its conversation queue', () => {
   const root = mkdtempSync(join(tmpdir(), 'buddy-foreground-restart-'));
@@ -29,7 +31,7 @@ test('restart recovery releases a drained foreground claim and wakes its convers
       rootPath: '/tmp/buddy-restart-recovery',
     });
     const buddy = raw.createBuddy({ project: workspace.id, name: 'Lead', role: 'Deliver' });
-    const stale = store.beginBuddyChatRun({
+    const stale = startChatRun(store, {
       buddyId: buddy.id,
       workspaceId: workspace.id,
       conversationId: 'owner-thread',
@@ -62,6 +64,72 @@ test('restart recovery releases a drained foreground claim and wakes its convers
     assert.equal(store.getBuddyRun(stale.id)?.status, 'failed');
     assert.equal(store.getBuddyRun(stale.id)?.error_code, 'interrupted');
     assert.equal(queueWakes, 1);
+  } finally {
+    raw.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});
+
+// Regression 2026-09-24: 8 past-deadline runs (one 6 days old) whose
+// conversations were never loaded by the live server stayed claimed forever,
+// filled the machine-wide background cap and held every Buddy's queued work.
+// Also: a chat turn left waiting by a previous process must not pin its
+// Buddy's FIFO line.
+test('executor recovers unloaded past-deadline runs and sweeps stale waiting chat turns', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'buddy-zombie-recovery-'));
+  const raw = new BuddiesStore(join(root, 'buddies.sqlite'));
+  const store = coordinationStore(raw as unknown as BuddiesStorePort);
+  try {
+    const workspace = raw.createWorkspace({ name: 'Zombies', rootPath: '/tmp/buddy-zombies' });
+    const buddy = raw.createBuddy({ project: workspace.id, name: 'Lead', role: 'Deliver' });
+    store.setCoordinationMembership(buddy.id, workspace.id, { background_enabled: true });
+    const claimed = (key: string, claimedAt: Date) => {
+      const run = store.enqueueBuddyRun({
+        inputKey: key,
+        inputKind: 'chat',
+        inputId: key,
+        buddyId: buddy.id,
+        workspaceId: workspace.id,
+        conversationId: `thread-${key}`,
+        readyAt: claimedAt.toISOString(),
+        policy: { allowed_operations: [] },
+      });
+      assert.ok(
+        store.claimBuddyRun(run.id, {
+          claimToken: key,
+          maxRuntimeSeconds: 600,
+          now: claimedAt.toISOString(),
+        })
+      );
+      return run.id;
+    };
+    const zombie = claimed('zombie', new Date(Date.now() - 6 * 24 * 3600_000));
+    const live = claimed('live', new Date());
+    const staleWait = store.enqueueBuddyChatRun({
+      buddyId: buddy.id,
+      workspaceId: workspace.id,
+      conversationId: 'owner-waiting',
+      allowedOperations: [],
+    });
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    const executor = new BuddyRunExecutor({
+      store,
+      getConversation: () => undefined,
+      createConversation: async () => {
+        throw new Error('must not create a conversation');
+      },
+    });
+
+    executor.poll();
+
+    assert.equal(store.getBuddyRun(zombie)?.error_code, 'interrupted');
+    assert.equal(
+      store.getBuddyRun(live)?.status,
+      'claimed',
+      'an unloaded run inside its deadline may still be alive'
+    );
+    assert.equal(store.getBuddyRun(staleWait.id)?.status, 'cancelled');
+    executor.stop();
   } finally {
     raw.close();
     rmSync(root, { recursive: true, force: true });
@@ -114,16 +182,10 @@ async function backgroundWorkReturns(
       briefing: `Current profile for ${context.buddyId}; turn ${visits.length}`,
       memoryGeneration: `revision:${visits.length}`,
     }),
-    beginBuddyChatRun: (context, conversationId, maxRuntimeMs) => {
-      const run = store.beginBuddyChatRun({
-        buddyId: context.buddyId,
-        workspaceId: context.workspaceId,
-        conversationId,
-        allowedOperations: MESSAGE_BUDDY_OPERATIONS,
-        maxRuntimeSeconds: maxRuntimeMs / 1000,
-      });
-      return { id: run.id, claim_token: run.claim_token!, deadline: run.deadline! };
-    },
+    ...chatRunAdmission(
+      () => store,
+      () => MESSAGE_BUDDY_OPERATIONS
+    ),
     finishBuddyChatRun: (id, token, status, detail) => {
       store.finishBuddyRun(id, { claimToken: token, status, outcome: detail });
     },
@@ -345,7 +407,7 @@ async function backgroundWorkReturns(
     assert.equal(store.listBuddyRuns({ limit: 100 }).length, 3);
     assert.ok(store.listBuddyRuns({ limit: 100 }).every((run) => run.status === 'complete'));
     if (sourcePlacement === 'default' && !routeReturns) {
-      const source = store.beginBuddyChatRun({
+      const source = startChatRun(store, {
         buddyId: buddy.id,
         workspaceId: w.id,
         conversationId: owner.id,

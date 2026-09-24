@@ -1,4 +1,3 @@
-import { createBuddiesIntegration } from '../src/buddies/integration';
 import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -7,10 +6,11 @@ import test from 'node:test';
 import { executeCommand } from '@nbardy/agent-cli';
 import { BuddiesStore } from '@nbardy/buddies';
 import {
+  BUDDY_RESOURCE_CONTRACT_VERSION,
   type BuddyContext,
   createDefaultConversationConfig,
-  BUDDY_RESOURCE_CONTRACT_VERSION,
 } from '@unleashd/shared';
+import { chatRunAdmission } from '../src/buddies/chat-run-admission';
 import type { BuddiesStorePort } from '../src/buddies/contract';
 import {
   BuddyControlServer,
@@ -19,17 +19,18 @@ import {
 } from '../src/buddies/control-server';
 import { coordinationStore } from '../src/buddies/coordination-store';
 import { createBuddyDispatchService } from '../src/buddies/dispatch-service';
+import { createBuddiesIntegration } from '../src/buddies/integration';
 import { BuddyOperationsService, MESSAGE_BUDDY_OPERATIONS } from '../src/buddies/operations';
 import { BuddyRunExecutor } from '../src/buddies/run-executor';
+import { createBuddyCreationService } from '../src/conversations/buddy-creation-service';
+import { ConversationConfigService } from '../src/conversations/config-service';
+import { ConversationConfigStore } from '../src/conversations/config-store';
 import {
   type ConversationRuntime,
   type ConversationRuntimeDependencies,
   createConversationRuntime,
 } from '../src/conversations/runtime';
 import { resolveConfigAgainstProviderCatalog } from '../src/providers/catalog-service';
-import { createBuddyCreationService } from '../src/conversations/buddy-creation-service';
-import { ConversationConfigService } from '../src/conversations/config-service';
-import { ConversationConfigStore } from '../src/conversations/config-store';
 
 test(
   'live provider configures isolated staff and delivers a bounded completion to the lead',
@@ -117,16 +118,10 @@ test(
       readLatestOompaRuntime: () => ({ available: false, run: null, reason: 'fixture' }),
       createSessionId: () => `session-${visits.length}`,
       readCurrentBuddyContext: integration.readCurrentConversation,
-      beginBuddyChatRun: (context, conversationId, maxRuntimeMs) => {
-        const run = store.beginBuddyChatRun({
-          buddyId: context.buddyId,
-          workspaceId: context.workspaceId,
-          conversationId,
-          allowedOperations: MESSAGE_BUDDY_OPERATIONS,
-          maxRuntimeSeconds: maxRuntimeMs / 1000,
-        });
-        return { id: run.id, claim_token: run.claim_token!, deadline: run.deadline! };
-      },
+      ...chatRunAdmission(
+        () => store,
+        () => MESSAGE_BUDDY_OPERATIONS
+      ),
       finishBuddyChatRun: (id, token, status, detail) => {
         store.finishBuddyRun(id, { claimToken: token, status, outcome: detail });
       },

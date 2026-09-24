@@ -8,6 +8,7 @@ import {
 } from '@unleashd/shared';
 import { resolveSessionTranscript } from './adapters/registry';
 import { resolveBuddyAssignmentConfig } from './buddies/assignment-config';
+import { chatRunAdmission } from './buddies/chat-run-admission';
 import { type CoordinationStore, coordinationStore } from './buddies/coordination-store';
 import { BuddyOperationInputSchemas } from './buddies/operations';
 import { BuddyRunExecutor } from './buddies/run-executor';
@@ -290,21 +291,13 @@ const memoryReviewer = new BuddyMemoryReviewer({
 const Conversation = createConversationRuntime({
   readCurrentBuddyContext,
   reviewCompletedBuddyTurn: (turn) => memoryReviewer.enqueue(turn),
-  beginBuddyChatRun: (context, conversationId, maxRuntimeMs) => {
-    if (!coordinationRuntimeStore) throw new Error('Buddy execution store is not ready');
-    const run = coordinationRuntimeStore.beginBuddyChatRun({
-      buddyId: context.buddyId,
-      workspaceId: context.workspaceId,
-      conversationId,
-      projectId: context.buddyProjectId,
-      allowedOperations: context.allowedBuddyOperations ?? Object.keys(BuddyOperationInputSchemas),
-      // Explicitly pass the foreground budget (runtime ms -> package seconds).
-      // Do not fall back to a package/background default: that reintroduced the
-      // 600s cutoff independently of the already-fixed bridge watchdog.
-      maxRuntimeSeconds: maxRuntimeMs / 1000,
-    });
-    return { id: run.id, claim_token: run.claim_token!, deadline: run.deadline! };
-  },
+  ...chatRunAdmission(
+    () => {
+      if (!coordinationRuntimeStore) throw new Error('Buddy execution store is not ready');
+      return coordinationRuntimeStore;
+    },
+    () => Object.keys(BuddyOperationInputSchemas)
+  ),
   finishBuddyChatRun: (id, token, status, detail) => {
     if (!coordinationRuntimeStore) throw new Error('Buddy execution store is not ready');
     const run = coordinationRuntimeStore.getBuddyRun(id);
