@@ -103,6 +103,10 @@ export function parseClaudeSession(
   let cacheWrite = 0;
   let model = 'unknown';
   const timestampedTokens: { ts: number; tokens: number }[] = [];
+  // Claude Code writes one line per content block and stamps the SAME request
+  // usage on each. Summing every line overcounted ~2.4x until 2026-09-25 (one
+  // session: 1,081 usage lines, 446 requests). Count each message id once.
+  const countedMessages = new Set<string>();
 
   const content = fs.readFileSync(filePath, 'utf-8');
   for (const line of content.split('\n')) {
@@ -110,6 +114,8 @@ export function parseClaudeSession(
     try {
       const entry = JSON.parse(line);
       if (entry.type === 'assistant' && entry.message?.usage) {
+        if (countedMessages.has(entry.message.id)) continue;
+        countedMessages.add(entry.message.id);
         const u = entry.message.usage;
         const inTok = u.input_tokens ?? 0;
         const outTok = u.output_tokens ?? 0;
