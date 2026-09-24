@@ -161,8 +161,12 @@ pnpm screenshot:mobile --out /tmp/shots       # the older phone-only gallery (ch
 
 - Token cost: `pnpm token-audit` ranks sessions by EXCESS (context re-sent,
   identical tool output returned twice, warm-cache rewrites), never by volume;
-  `--session <id>` drills in. Findings and next steps:
-  `agent_notes/review_token_usage/FOLLOWUPS.md`.
+  `--session <id>` drills in, `--tag buddy|channel|swarm|other` narrows.
+  Run it (a) after any change to what a turn sends — briefing, thread/channel
+  context, resume/fork, worker launch — comparing before/after, and (b) every
+  few days of real use. A top entry is a lead to investigate, not a verdict.
+  It found the briefing re-sent on every Buddy turn (5c081f5). Findings and
+  next steps: `agent_notes/review_token_usage/FOLLOWUPS.md`.
 - Inspect unresolved operational failures with `pnpm errors:list`; do not read or
   mutate the JSONL journal directly. Its configured location and capture policy
   are documented in `docs/error-journal.md`.
