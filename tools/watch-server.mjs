@@ -85,8 +85,12 @@ export function createBackendRunner({
 }) {
   const root = realpathSync(watchRoot);
   let state = { kind: 'down', timer: undefined };
-  // Loaded file → digest of the content the backend loaded.
+  // Loaded file → digest of the content the backend loaded. This is the running
+  // backend's baseline and is never overwritten by file events; only a new
+  // backend (spawnBackend) resets it.
   let loaded = new Map();
+  // Loaded files touched since the last settle; compared to `loaded` once quiet.
+  const touched = new Set();
   let backoffMs = initialBackoffMs;
   let settleTimer;
   let watcher;
@@ -106,15 +110,27 @@ export function createBackendRunner({
     }
   }
 
-  // A clean build (pnpm typecheck / build) rewrites shared/dist byte-for-byte;
-  // only a real content change may restart the backend. 'missing' is a file
-  // mid-rewrite: the write that completes it fires its own event.
+  // A clean build (pnpm typecheck / build) and every `tsc --watch` start rewrite
+  // shared/dist and the agent-cli-tool dist byte-for-byte; only a real content
+  // change may restart the backend. Files are compared once the writes settle,
+  // never per event: tsc truncates a file and then writes it, and digesting the
+  // empty intermediate read as a change. On 2026-09-25 that made the cli
+  // watcher's initial emit restart a backend mid-startup, so every `pnpm dev`
+  // parsed the conversation history twice (~135s each on a loaded machine).
   function onFileEvent(file) {
-    const current = digest(file);
-    if (current === 'missing' || current === loaded.get(file)) return;
-    loaded.set(file, current);
+    touched.add(file);
     clearTimeout(settleTimer);
-    settleTimer = setTimeout(() => void onSourceChanged(), settleMs);
+    settleTimer = setTimeout(onSettled, settleMs);
+  }
+
+  // 'missing' is a file mid-rewrite: the write that completes it fires its own event.
+  function onSettled() {
+    const changed = [...touched].filter((file) => {
+      const current = digest(file);
+      return current !== 'missing' && current !== loaded.get(file);
+    });
+    touched.clear();
+    if (changed.length > 0) void onSourceChanged();
   }
 
   function spawnBackend() {

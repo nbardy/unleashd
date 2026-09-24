@@ -288,6 +288,13 @@ running the code on disk.
 - **New code must build before the old backend is asked to drain.** One esbuild
   bundle of `src/server.ts` (~60ms) catches syntax errors and missing exports;
   on failure the current backend keeps serving.
+- **Only a real content change reloads, judged after the writes settle.** Every
+  `pnpm dev` start re-emits `shared/dist` and the agent-cli-tool `dist`
+  byte-for-byte, and `tsc` truncates each file before writing it. The runner
+  compares touched files against the digests the backend loaded once events go
+  quiet, never per event. Digesting per event read the empty intermediate as a
+  change and restarted a backend mid-startup, so the history loaded twice
+  (2026-09-25).
 - **Any exit it did not request is a restart**, with backoff doubling to 30s and
   resetting after 30s of healthy uptime. It never gives up: giving up is what let
   `concurrently --kill-others-on-fail` tear down the whole dev runtime after a

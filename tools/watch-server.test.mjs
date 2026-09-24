@@ -100,6 +100,22 @@ test('rewriting loaded files with identical content does not restart the backend
   assert.equal(boots().length, 1);
 });
 
+test('truncating then rewriting a loaded file with identical content does not restart', async (t) => {
+  // Regression, 2026-09-25: `tsc --watch` truncates each output before writing
+  // it. The runner digested the empty intermediate as a change, so the cli
+  // watcher's initial (byte-identical) emit restarted the backend mid-startup
+  // and every `pnpm dev` loaded the conversation history twice.
+  const { root, runner, boots } = fixture(t);
+  runner.start();
+  await firstBoot(boots);
+  const file = path.join(root, 'node_modules', 'pkg', 'index.js');
+  writeFileSync(file, '');
+  await new Promise((resolve) => setTimeout(resolve, 60));
+  writeFileSync(file, 'module.exports = { value: 1 };\n');
+  await new Promise((resolve) => setTimeout(resolve, 600));
+  assert.equal(boots().length, 1);
+});
+
 test('code that does not build keeps the current backend until it is fixed', async (t) => {
   const { root, runner, boots } = fixture(t);
   runner.start();
