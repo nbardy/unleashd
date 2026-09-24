@@ -474,7 +474,13 @@ export const ConversationSchema = z.object({
   isRunning: z.boolean(),
   // Owner marked this conversation done (hidden from working lists). Server-
   // owned: read from the durable record, changed only by set_conversation_done.
-  done: z.boolean(),
+  // The default exists only for version skew: the client validates every
+  // server message, and a backend from before 2026-09-24 (the dev watcher
+  // defers backend reloads until running turns finish, while Vite serves new
+  // client code at once) omits the field. Without the default every init and
+  // update was rejected and the list went empty until the backend reloaded.
+  // The parsed type stays `boolean`, so current servers must still set it.
+  done: z.boolean().default(false),
   // Server-authoritative: assistant is actively producing content.
   // true on first text_delta, false on message_complete or process close.
   // INVARIANT: !isRunning → !isStreaming (dead process can't stream).
