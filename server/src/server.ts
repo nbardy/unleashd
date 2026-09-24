@@ -267,13 +267,10 @@ const buddyDispatchService = createBuddyDispatchService({
     runtime.stop();
     updateBuddyConversationLink(runtime, 'cancelled');
   },
-  createId: uuidv4,
 });
 const buddyControlServer = new BuddyControlServer({
   getStore: getBuddiesStore,
   isConversationActive: (conversationId) => conversations.get(conversationId)?.isRunning === true,
-  dispatchDelegation: buddyDispatchService.delegation,
-  dispatchReview: buddyDispatchService.review,
   dispatchMessage: buddyDispatchService.send,
 });
 
@@ -474,11 +471,6 @@ registerBuddyRoutes(app, {
   getStore: getBuddiesStore,
   dispatchMessage: buddyDispatchService.send,
   getScheduler: () => buddyScheduler,
-  createConversation: (input) =>
-    buddyCreationService.createServerBuddyConversation({
-      ...input,
-      ownerInput: { origin: 'owner_input', inputId: input.commandId },
-    }),
   createBuilderConversation: ({ commandId, conversationId }) =>
     buddyCreationService.createBuddyBuilderConversation({
       commandId,

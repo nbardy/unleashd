@@ -27,7 +27,6 @@ test('native exact preview, descendant observation, historical checkpoint and br
     },
     dispatchInitialMessage: async () => {},
     abandonConversation: () => {},
-    createId: () => assert.fail(),
   });
   const server = createBuddyMcpServer(store, context, {
     dispatchMessage: (input) => dispatch.send(context, input),

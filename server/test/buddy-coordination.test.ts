@@ -556,14 +556,11 @@ test('private capability commits durable sends once and rejects payload conflict
     },
     dispatchInitialMessage: async () => {},
     abandonConversation: () => {},
-    createId: () => 'unused',
   });
   const control = new BuddyControlServer({
     getStore: async () => store,
     isConversationActive: () => true,
     dispatchMessage: dispatch.send,
-    dispatchDelegation: dispatch.delegation,
-    dispatchReview: dispatch.review,
   });
   await control.start();
   const env = control.issue(

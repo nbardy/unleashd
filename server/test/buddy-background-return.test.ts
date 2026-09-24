@@ -417,7 +417,6 @@ test('same-key send replay reuses persisted launch instead of capturing newer hi
       },
       dispatchInitialMessage: async () => {},
       abandonConversation: () => {},
-      createId: () => 'unused',
     });
     const input = {
       key: 'same-request',

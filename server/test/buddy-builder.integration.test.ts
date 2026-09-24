@@ -412,9 +412,6 @@ test('Builder MCP creates a team, retries each hire and recovers scoped results 
     registerBuddyRoutes(app, {
       getStore: async () => store as unknown as BuddiesStorePort,
       getScheduler: () => null,
-      createConversation: async () => {
-        throw new Error('not used');
-      },
       getBuilderResult: async (conversationId) =>
         new BuddyBuilderService(store as unknown as BuddyBuilderStore, conversationId).getResult(),
       getBuilderResults: async (conversationId) =>
@@ -483,9 +480,6 @@ test('owner PUT soul stages text and rejects oversize payloads', async () => {
     registerBuddyRoutes(app, {
       getStore: async () => store as unknown as BuddiesStorePort,
       getScheduler: () => null,
-      createConversation: async () => {
-        throw new Error('not used');
-      },
       sendError(response, error, status) {
         response
           .status(status)

@@ -27,11 +27,10 @@ test('Buddy control capabilities are scoped, rotate per turn, and bypass no publ
   const control = new BuddyControlServer({
     getStore: async () => store as unknown as BuddiesStorePort,
     isConversationActive: (conversationId) => active && conversationId === 'conversation-1',
-    dispatchDelegation: async (_context, input) => {
-      dispatched.push(input.purpose);
+    dispatchMessage: async (_context, input) => {
+      dispatched.push(input.body);
       return { ok: true };
     },
-    dispatchReview: async () => ({ ok: true }),
   });
   await control.start();
   try {
@@ -43,18 +42,18 @@ test('Buddy control capabilities are scoped, rotate per turn, and bypass no publ
       automationRunId: null,
       delegatedByBuddyId: null,
       parentBuddyConversationId: null,
-      allowedBuddyOperations: ['buddy.delegate'],
+      allowedBuddyOperations: ['buddy.send'],
     } as const;
     const first = control.issue(context, 'conversation-1');
     const second = control.issue(context, 'conversation-1');
     const post = (env: Readonly<Record<string, string>>) =>
-      fetch(`${env[BUDDY_CONTROL_URL_ENV]}/v1/delegations`, {
+      fetch(`${env[BUDDY_CONTROL_URL_ENV]}/v1/messages`, {
         method: 'POST',
         headers: {
           authorization: `Bearer ${env[BUDDY_CONTROL_TOKEN_ENV]}`,
           'content-type': 'application/json',
         },
-        body: JSON.stringify({ toBuddyId: report.id, purpose: 'Bounded work' }),
+        body: JSON.stringify({ to: report.id, purpose: 'delegation', body: 'Bounded work' }),
       });
 
     assert.equal((await post(first)).status, 401, 'issuing a new turn revokes the old token');
@@ -71,7 +70,7 @@ test('Buddy control capabilities are scoped, rotate per turn, and bypass no publ
     assert.equal((await post(terminal)).status, 401, 'terminal turns lose callback authority');
     assert.equal(
       (
-        await fetch(`${second[BUDDY_CONTROL_URL_ENV]}/v1/delegations`, {
+        await fetch(`${second[BUDDY_CONTROL_URL_ENV]}/v1/messages`, {
           method: 'POST',
           headers: { 'content-type': 'application/json' },
           body: '{}',

@@ -328,17 +328,6 @@ export class ConversationConfigService {
     return this.store.listActive();
   }
 
-  listTombstones(): Promise<PersistedConversationConfigRecord[]> {
-    return this.store.listDeleted();
-  }
-
-  markInitialMessageDispatched(
-    conversationId: string,
-    dispatchedAt?: Date
-  ): Promise<PersistedConversationConfigRecord | undefined> {
-    return this.store.markInitialMessageDispatched(conversationId, dispatchedAt);
-  }
-
   claimInitialMessageDispatch(
     conversationId: string,
     dispatchedAt?: Date

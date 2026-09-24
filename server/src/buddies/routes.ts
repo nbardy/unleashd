@@ -68,12 +68,6 @@ export interface BuddyRouteDependencies {
     cancel(runId: string): Promise<BuddyAutomationRun>;
     health(): { running: boolean; pollIntervalMs: number; activeRunIds: string[] };
   } | null;
-  createConversation(input: {
-    context: BuddyContext;
-    initialMessage: string;
-    commandId: string;
-    conversationId?: string;
-  }): Promise<BuddyConversationView>;
   dispatchMessage?(
     context: BuddyContext,
     input: PreparedBuddyMessage,

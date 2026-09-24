@@ -43,10 +43,7 @@ function fixture() {
   const control = new BuddyControlServer({
     getStore: async () => port,
     isConversationActive: () => false,
-    dispatchDelegation: async () => {
-      throw new Error('Forbidden');
-    },
-    dispatchReview: async () => {
+    dispatchMessage: async () => {
       throw new Error('Forbidden');
     },
   });

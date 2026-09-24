@@ -84,10 +84,7 @@ async function evaluateCase(
     control = new BuddyControlServer({
       getStore: async () => port,
       isConversationActive: () => false,
-      dispatchDelegation: async () => {
-        throw new Error('Evaluation cannot dispatch work');
-      },
-      dispatchReview: async () => {
+      dispatchMessage: async () => {
         throw new Error('Evaluation cannot dispatch work');
       },
     });

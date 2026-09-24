@@ -53,9 +53,6 @@ test('runtime diagnostics survive package mismatch; owner controls release the o
   registerBuddyRoutes(app, {
     getStore: async () => store,
     getScheduler: () => null,
-    createConversation: async () => {
-      throw new Error('Provider execution is driven explicitly by this fixture');
-    },
     sendError(response, error, status) {
       response.status(status).json({ error: String(error) });
     },

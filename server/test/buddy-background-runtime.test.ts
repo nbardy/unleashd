@@ -247,13 +247,17 @@ async function backgroundWorkReturns(
   });
   const dispatch = createBuddyDispatchService({
     getStore: async () => store,
-    getReturnConversationId: routeReturns ? () => returnThread : undefined,
     createConversation: async () => {
       throw new Error('durable producer must not start provider');
     },
     dispatchInitialMessage: async () => {},
     abandonConversation: () => {},
-    createId: () => 'unused',
+    prepareReturnConversation: routeReturns
+      ? async () => ({
+          returnConversationId: returnThread,
+          launch: { through_message_id: 'snapshot-sha256:fixture' },
+        })
+      : undefined,
   });
   try {
     const context = { buddyId: buddy.id, workspaceId: w.id, buddyProjectId: project.id };

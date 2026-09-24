@@ -54,7 +54,6 @@ test('a completed research handoff can start fresh recipient work and retains it
       },
       dispatchInitialMessage: async () => {},
       abandonConversation: () => {},
-      createId: () => 'unused',
     });
     const input = {
       key: 'handoff',
@@ -145,7 +144,6 @@ test('message enqueue checks current automation ownership after async conversati
     abandonConversation: () => {
       abandoned += 1;
     },
-    createId: () => 'unused',
   });
   const input = {
     to: recipient.id,
@@ -227,7 +225,6 @@ test('a send without an explicit config inherits the launching conversation, not
       },
       dispatchInitialMessage: async () => {},
       abandonConversation: () => {},
-      createId: () => 'unused',
     });
     const operations = new BuddyOperationsService(store, context, {});
     const send = (key: string, extra: Record<string, unknown>) =>

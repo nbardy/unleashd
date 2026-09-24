@@ -66,12 +66,6 @@ test(
       getStore: async () => store,
       isConversationActive: (id) => conversations.get(id)?.isRunning === true,
       dispatchMessage: (...args) => dispatch.send(...args),
-      dispatchDelegation: async () => {
-        throw new Error('unused');
-      },
-      dispatchReview: async () => {
-        throw new Error('unused');
-      },
     });
     await control.start();
     let current!: { context: BuddyContext; conversationId: string };
@@ -193,7 +187,6 @@ test(
         throw new Error('durable messages only');
       },
       abandonConversation: () => {},
-      createId: randomUUID,
     });
     const executor = new BuddyRunExecutor({
       store,

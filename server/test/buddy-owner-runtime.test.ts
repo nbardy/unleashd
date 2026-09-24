@@ -58,10 +58,7 @@ test('owner MCP configures unconfigured staff, releases original work, and compl
   const control = new BuddyControlServer({
     getStore: async () => store,
     isConversationActive: (id) => conversations.get(id)?.isRunning === true,
-    dispatchDelegation: async () => {
-      throw new Error('unused');
-    },
-    dispatchReview: async () => {
+    dispatchMessage: async () => {
       throw new Error('unused');
     },
   });
@@ -314,7 +311,11 @@ test('owner MCP configures unconfigured staff, releases original work, and compl
       };
     }) as NonNullable<ConversationRuntimeDependencies['executeTurn']>,
   });
-  const create = (id: string, context: BuddyContext, placement: 'default' | 'background' = 'default') => {
+  const create = (
+    id: string,
+    context: BuddyContext,
+    placement: 'default' | 'background' = 'default'
+  ) => {
     const c = new Conversation({
       id,
       workingDirectory: '/tmp',
@@ -335,7 +336,8 @@ test('owner MCP configures unconfigured staff, releases original work, and compl
   const executor = new BuddyRunExecutor({
     store,
     getConversation: (id) => conversations.get(id),
-    createConversation: async (input) => create(input.conversationId, input.context, input.placement ?? 'default'),
+    createConversation: async (input) =>
+      create(input.conversationId, input.context, input.placement ?? 'default'),
   });
   const dispatch = createBuddyDispatchService({
     getStore: async () => store,
@@ -344,7 +346,6 @@ test('owner MCP configures unconfigured staff, releases original work, and compl
     },
     dispatchInitialMessage: async () => {},
     abandonConversation: () => {},
-    createId: () => 'unused',
   });
   let originalMessageId = '';
   try {
@@ -395,18 +396,22 @@ test('owner MCP configures unconfigured staff, releases original work, and compl
     );
     for (let i = 0; i < 200; i++) {
       executor.poll();
-      if (workerTurns === 2 && executor.activeRunIds.length === 0 && store.listBuddyRuns({ limit: 100 }).some((run) => run.input_kind === 'message_reply' && run.status === 'complete')) break;
+      if (
+        workerTurns === 2 &&
+        executor.activeRunIds.length === 0 &&
+        store
+          .listBuddyRuns({ limit: 100 })
+          .some((run) => run.input_kind === 'message_reply' && run.status === 'complete')
+      )
+        break;
       await new Promise((resolve) => setTimeout(resolve, 5));
     }
     assert.equal(workerTurns, 2);
-    assert.deepEqual(origins, [
-      'owner_input',
-      'owner_input',
-      'buddy_message',
-      'buddy_message',
-    ]);
+    assert.deepEqual(origins, ['owner_input', 'owner_input', 'buddy_message', 'buddy_message']);
     assert.equal(returnTurns, 0, 'background results do not restart the owner conversation');
-    const returned = store.listBuddyRuns({ limit: 100 }).find((run) => run.input_kind === 'message_reply')!;
+    const returned = store
+      .listBuddyRuns({ limit: 100 })
+      .find((run) => run.input_kind === 'message_reply')!;
     assert.equal(returned.outcome, 'mailbox_only');
     assert.equal(returned.acknowledged_at, null);
     assert.equal(conversations.size, 2);
