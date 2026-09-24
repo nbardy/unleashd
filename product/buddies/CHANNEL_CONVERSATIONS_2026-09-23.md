@@ -55,9 +55,16 @@ remain the three core components.
    A failed turn posts `purpose: reply_failed` with the reason — never silent.
 5. `GET /api/buddies/lists/:id/responding` drives "X is replying…".
 
-**Known gap:** a reply in flight when the server restarts is lost (the
-transcript survives); re-mention to retry. Durable replies belong with the
-[restart-interruption work](../../docs/architecture.md), not here.
+**Known gap:** mention replies are launched by an in-memory chain in
+`channel-responder.ts`, not as durable Buddy runs. A hard restart (crash,
+Ctrl-C, `dev:replace`) loses a reply in flight; the transcript survives and the
+owner re-mentions to retry. A hot reload is safe for a turn already running
+(the drain waits for its process), but a mention still WAITING — a second
+mention to a busy thread, or the window between saving the post and starting
+the turn — is not counted as active work, so the drain can exit and drop it
+silently. The fix is to launch each mention as a `buddy_runs` row; see the
+proposal in
+[the 2026-09-24 handoff](../../agent_notes/2026-09-24_dev-restart-simplification-and-cleanup.md#open-mention-replies-as-durable-buddy-runs).
 
 ## Agent navigation tools (2026-09-24)
 
