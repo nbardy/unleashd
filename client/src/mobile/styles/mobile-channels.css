@@ -7,6 +7,9 @@
 
 .mobile-channels-list {
   display: grid;
+  /* minmax(0, …): a grid item's min-width is its content by default, so a
+     long nowrap role line widened the column and pushed Wake off-screen. */
+  grid-template-columns: minmax(0, 1fr);
   gap: 2px;
   margin: 0;
   padding: 0;

@@ -100,6 +100,19 @@ Scalar / full-replace sets stay plain `jotaiStore.set`. Current code already con
 
 ---
 
+### Channels: same URL, per-device mount
+
+`/buddies/workspaces/:id/channels?channel=&thread=` is one URL on both devices.
+Desktop mounts `WorkspaceSlack` OUTSIDE the shell (its rail replaces the
+sidebar); mobile mounts `ChannelsMobile` INSIDE `ShellMobile` (`App.tsx`:
+`OUTSIDE_SHELL` / `INSIDE_SHELL` keyed by `DeviceKind`). On mobile the query
+picks Home ⊕ Channel ⊕ Thread (`mobile/channels/channel-route.ts`); Channel and
+Thread are immersive panes, so ShellMobile hides the tab bar there and uses the
+pane layout. Shared, CSS-owning pieces come from `components/buddies/`
+(`ChannelMarkdown`, `ChannelComposer`, `channel-data.ts`); a channel post's
+purpose is read through `postPurposeLabel`/`postPurposeTag`, since gate G2 greps
+for raw `.purpose` in `mobile/`.
+
 ### One conversation pane, two entry points
 
 `mobile/conversations/ConversationView.tsx` is the only mobile conversation UI.

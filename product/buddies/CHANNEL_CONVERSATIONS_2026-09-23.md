@@ -54,6 +54,30 @@ remain the three core components.
 transcript survives); re-mention to retry. Durable replies belong with the
 [restart-interruption work](../../docs/architecture.md), not here.
 
+## DM and Wake (2026-09-24)
+
+- **DM** (`POST /api/buddies/:id/direct`) is ONE ongoing owner conversation per
+  (workspace, Buddy): a derived id, reused on every open so history persists;
+  if the owner deletes it, the next open advances to a fresh generation.
+- **Wake** (`POST /api/buddies/:id/wake`) queues a catch-up instruction INTO that
+  DM as owner input: read unread channels and active threads (`get_inbox`,
+  `get_list`), then per item reply in the thread, start background work, hand
+  off with `send`, or leave it, and end with a summary. No new run type — the
+  summary is in the DM. Server: `server/src/buddies/buddy-direct.ts`.
+- Both appear on Buddy rows in the desktop channels rail, the desktop main
+  sidebar (hover, after the running counts), and mobile Channels Home (tap row =
+  DM, visible Wake button). Shared client logic: `buddy-direct-actions.ts`.
+
+## Mobile (2026-09-24)
+
+Slack's phone pattern at the SAME URL as desktop, mounted inside the mobile
+shell (`App.tsx` picks the mount per `DeviceKind`): Home (channels + Buddies,
+tab bar visible) → Channel → Thread (immersive panes, tab bar hidden, composer
+pinned with `submit="button"` so Return is a newline). A Channels tab opens the
+most recently active workspace. Shared with desktop: `channel-data.ts`,
+`ChannelMarkdown` + `ChannelContent.css`, `ChannelComposer` +
+`ChannelComposer.css`. Mobile layout: `mobile/channels/`, `mobile-channels.css`.
+
 ## Surfaces
 
 | Route | Purpose |

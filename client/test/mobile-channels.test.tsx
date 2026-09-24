@@ -146,3 +146,36 @@ test('mobile channels Home lists channels and Buddies with a visible Wake', asyn
   assert.match(html, /mobile-channels-row__name">Lead</);
   assert.match(html, /aria-label="Wake Lead: catch up on the channels and act"/);
 });
+
+// Regression guard: the Channels tab once opened the alphabetically first
+// workspace (an empty one) instead of where the team was active.
+test('the Channels tab opens the most recently active workspace first', async () => {
+  const { overviewWorkspaces } = await import('../src/mobile/channels/ChannelsMobile');
+  const workspace = (id: string, name: string) => ({ id, name, root_path: `/tmp/${id}` });
+  const employee = (workspaces: ReturnType<typeof workspace>[]) =>
+    ({ workspaces }) as unknown as Parameters<typeof overviewWorkspaces>[0] extends infer O
+      ? O extends { employees: Array<infer E> }
+        ? E
+        : never
+      : never;
+  const ordered = overviewWorkspaces({
+    generatedAt: '2026-09-24T00:00:00.000Z',
+    employees: [employee([workspace('a', 'alpha-empty')]), employee([workspace('u', 'unleashd')])],
+    topLevel: [],
+    recentRuns: [
+      {
+        conversationId: 'c',
+        buddyId: 'b',
+        buddyName: 'B',
+        workspaceId: 'u',
+        workspaceName: 'unleashd',
+        status: 'complete',
+        lastActiveAt: '2026-09-24T01:00:00.000Z',
+      },
+    ],
+  });
+  assert.deepEqual(
+    ordered.map((entry) => entry.id),
+    ['u', 'a']
+  );
+});

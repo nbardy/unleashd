@@ -44,14 +44,29 @@ import { type MobileChannelScreen, channelsHref, mobileChannelScreen } from './c
 // a link opens the right place on either device. Desktop hover affordances
 // become visible taps here (docs/mobile-ui.md: hover needs a touch counterpart).
 
-type OverviewWorkspace = { id: string; name: string };
+type OverviewWorkspace = { id: string; name: string; lastActiveAt: string };
 
-function overviewWorkspaces(overview: BuddyOverview | null): OverviewWorkspace[] {
+// Most recently active workspace first (by its Buddies' latest runs), then by
+// name: the Channels tab opens where the team is working, not whichever
+// workspace sorts first alphabetically (that was often an empty one).
+export function overviewWorkspaces(overview: BuddyOverview | null): OverviewWorkspace[] {
+  const lastActive = new Map<string, string>();
+  for (const run of overview?.recentRuns ?? []) {
+    const seen = lastActive.get(run.workspaceId);
+    if (seen === undefined || run.lastActiveAt > seen)
+      lastActive.set(run.workspaceId, run.lastActiveAt);
+  }
   const byId = new Map<string, OverviewWorkspace>();
   for (const employee of overview?.employees ?? [])
     for (const workspace of employee.workspaces)
-      byId.set(workspace.id, { id: workspace.id, name: workspace.name });
-  return [...byId.values()].sort((a, b) => a.name.localeCompare(b.name));
+      byId.set(workspace.id, {
+        id: workspace.id,
+        name: workspace.name,
+        lastActiveAt: lastActive.get(workspace.id) ?? '',
+      });
+  return [...byId.values()].sort(
+    (a, b) => b.lastActiveAt.localeCompare(a.lastActiveAt) || a.name.localeCompare(b.name)
+  );
 }
 
 /** /channels — the tab's entry: open the first workspace's channels. */
