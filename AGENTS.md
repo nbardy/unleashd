@@ -114,6 +114,12 @@ requirements to rebuild omitted machinery.
 
 ## Misc
 
+- Screenshot review: `pnpm screenshots` shoots the Channels screens (home,
+  channel, thread, @ menu, Task filter) at phone / iPad portrait / iPad
+  landscape / desktop into `output/screenshots/<timestamp>/index.html`, a
+  contact sheet to review and rerun against. iPad portrait (768px) renders the
+  MOBILE tree — the switch is `max-width: 768px`. No puppeteer: both tools
+  drive Chrome over CDP via `tools/lib/headless-chrome.mjs`.
 - Inspect unresolved operational failures with `pnpm errors:list`; do not read or
   mutate the JSONL journal directly. Its configured location and capture policy
   are documented in `docs/error-journal.md`.

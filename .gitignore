@@ -32,6 +32,7 @@ Thumbs.db
 coverage/
 .playwright-cli/
 output/playwright/
+output/screenshots/
 
 # Temporary files
 *.tmp
