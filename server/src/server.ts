@@ -518,8 +518,13 @@ const buddyConversations: StableConversationPorts = {
   createConversation: (input) => buddyCreationService.createServerBuddyConversation(input),
 };
 
+// One channel's posts or responders changed: clients refresh only that
+// channel's views, which otherwise poll just as a backstop.
+const channelChanged = (listId: string) =>
+  applicationContext.broadcast({ type: 'channel_changed', listId });
 const channelResponder = createChannelResponder({
   getStore: getBuddiesStore,
+  respondingChanged: channelChanged,
   conversations: buddyConversations,
   uploadsRoot: () => UPLOADS_DIR,
   // Resolved by the same authority as conversations, so the gate runs exactly
@@ -533,6 +538,7 @@ const channelResponder = createChannelResponder({
   }),
 });
 onChannelPost((post) => {
+  channelChanged(post.listId);
   void channelResponder.considerThreadPost(post).catch((error) => {
     console.warn(`[channel-responder] follow-up gating failed for post ${post.id}:`, error);
   });

@@ -94,6 +94,8 @@ export interface ChannelResponderPorts {
   conversations: StableConversationPorts;
   uploadsRoot(): string;
   gate: ReplyGate;
+  /** Who is replying in this list changed; the client's indicator does not poll for it. */
+  respondingChanged(listId: string): void;
   logger?: Pick<Console, 'warn'>;
 }
 
@@ -552,8 +554,11 @@ export function createChannelResponder(ports: ChannelResponderPorts) {
       tail,
     };
     queues.set(key, entry);
+    ports.respondingChanged(entry.listId);
     void tail.finally(() => {
-      if (queues.get(key) === entry) queues.delete(key);
+      if (queues.get(key) !== entry) return;
+      queues.delete(key);
+      ports.respondingChanged(entry.listId);
     });
   }
 

@@ -8,7 +8,9 @@
  */
 import {
   BuddyChannelThreadSchema,
+  type BuddyListAuthor,
   type BuddyMailingListPost,
+  BuddyMailingListPostsSchema,
   type BuddyMemberExecution,
   type BuddyWorkspaceActivity,
   BuddyWorkspaceActivitySchema,
@@ -17,7 +19,6 @@ import { type UIEvent, useEffect, useMemo, useRef } from 'react';
 import { warmResources } from '../../atoms/prefetch';
 import { resource, usePolledFetch } from '../../hooks/usePolledFetch';
 import { newId } from '../../utils/ids';
-import { authorKey, postsResource } from './BuddyMessages';
 import { buddyApi } from './api';
 import { type ChannelReference, type ChannelTask, workspaceTasksUrl } from './channel-text';
 
@@ -34,6 +35,47 @@ export function workspaceActivityResource(workspaceId: string) {
     return BuddyWorkspaceActivitySchema.parse(await response.json());
   });
 }
+
+export interface BuddyMailingListSummary {
+  id: string;
+  workspaceId: string;
+  name: string;
+  purpose: string;
+  createdBy: BuddyListAuthor;
+  createdAt: string;
+  postCount: number;
+  latestPostAt: string | null;
+}
+
+// Every post read goes through here: the fetch boundary parses the v33 wire
+// shape once, so a stale or foreign server surfaces as the view's refresh
+// error instead of a crash (or a silent "Unknown") deep in rendering.
+export function postsResource(path: string) {
+  return resource(path, async (signal: AbortSignal) =>
+    BuddyMailingListPostsSchema.parse(await buddyApi(path, { signal }))
+  );
+}
+
+// A Task filter reads the workspace-wide feed so one Task's discussion is
+// visible across every channel, not just the selected one.
+export function taskChannelFeedUrl(workspaceId: string, projectId: string): string {
+  return `/api/buddies/posts?workspaceId=${encodeURIComponent(workspaceId)}&projectId=${encodeURIComponent(projectId)}&limit=50`;
+}
+
+export function authorKey(author: BuddyListAuthor): string {
+  switch (author.kind) {
+    case 'owner':
+      return 'owner';
+    case 'buddy':
+      return author.buddyId;
+  }
+}
+
+// Channels are pushed, not polled: the server's `channel_changed` (a post, or
+// who is replying) and `buddies_changed` (any other write) refresh exactly the
+// views they touch, and a reconnect or a tab returning to view refreshes
+// everything. This poll is only a backstop for a lost push.
+export const CHANNEL_BACKSTOP_MS = 30_000;
 
 export function listsUrl(workspaceId: string): string {
   return `/api/buddies/lists?workspaceId=${encodeURIComponent(workspaceId)}`;
@@ -256,16 +298,15 @@ export function useWorkspaceDirectory(workspaceId: string): WorkspaceDirectory {
   }, [activity.data, tasks]);
 }
 
-/** Buddies composing a mention reply, by thread root, plus a refetch. */
-export function useChannelResponding(listId: string) {
-  const responding = usePolledFetch<ChannelResponse[]>(respondingUrl(listId), 2500);
-  const byRoot = useMemo(() => {
+/** Buddies composing a reply, by thread root. */
+export function useChannelResponding(listId: string): ReadonlyMap<string, readonly string[]> {
+  const responding = usePolledFetch<ChannelResponse[]>(respondingUrl(listId), CHANNEL_BACKSTOP_MS);
+  return useMemo(() => {
     const map = new Map<string, string[]>();
     for (const row of responding.data ?? [])
       map.set(row.threadRootId, [...(map.get(row.threadRootId) ?? []), row.buddyId]);
     return map;
   }, [responding.data]);
-  return { byRoot, count: responding.data?.length ?? 0, refetch: responding.refetch };
 }
 
 // Pin to the newest message on open, and keep following new posts only while

@@ -116,8 +116,10 @@ seat config, server-posted answer), framed as "you chose to reply".
   usage limit, each owner reply's gate failed 4 s in, and the thread just
   stayed quiet. Claude, codex and muse only (the Buddy harnesses).
 - **"X is replying…"** starts the moment a gate says `<yes>` (the reply queue
-  entry is created synchronously on the verdict, before the seat opens) and the
-  client polls `/responding` every 2.5 s. A reply a Buddy posts from its own
+  entry is created synchronously on the verdict, before the seat opens). Every
+  add and remove of a queue entry is pushed as `channel_changed`, and the client
+  refetches `/responding` on it; its 30 s poll is only a backstop (until
+  2026-09-25 it polled every 2.5 s). A reply a Buddy posts from its own
   background run (a standup, a wake, a Task run reading the channel) never
   passes through the responder, so it shows no indicator.
   Live check 2026-09-24 on claude/haiku: ~6 s, `<yes>` for a UI question to the

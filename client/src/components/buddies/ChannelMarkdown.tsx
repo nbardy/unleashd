@@ -1,4 +1,4 @@
-import { type ReactNode, useMemo, useRef, useState } from 'react';
+import { type ReactNode, memo, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import Markdown, { type Components, type ExtraProps, defaultUrlTransform } from 'react-markdown';
 import { Link } from 'react-router-dom';
@@ -244,7 +244,11 @@ function channelComponents(
   };
 }
 
-export function ChannelMarkdown({
+// Memoized: react-markdown re-parses on every render, and a row re-renders
+// whenever who is replying changes. The cache keeps an unchanged post's body,
+// names and Tasks identical (atoms/resources.ts settledEntry), so only a post
+// that actually changed is parsed again.
+export const ChannelMarkdown = memo(function ChannelMarkdown({
   body,
   buddyNames,
   tasks,
@@ -288,7 +292,7 @@ export function ChannelMarkdown({
       )}
     </div>
   );
-}
+});
 
 // Text runs can carry the same provider markers /chat strips
 // (splitStructuredMessageContent): a mention reply is the Buddy's final

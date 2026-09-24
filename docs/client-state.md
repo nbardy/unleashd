@@ -129,6 +129,16 @@ The cache entry is a sum, not `{data, loading, error}`:
 copy: retaining the last-known value across a failed refresh is the cache's job,
 and the error is still reported rather than silently swallowed.
 
+A successful refresh is **structurally shared** with the value it replaces
+(`settledEntry` in resources.ts): an equal answer writes nothing, so no
+subscriber re-renders, and a changed answer keeps the identity of every part
+that did not change. Array elements pair by `id` when they have one, because a
+"latest 50" window shifts every index on each new post. Until 2026-09-25 every
+poll handed React a fresh tree, and an open channel re-rendered all 50 rows
+and re-parsed their markdown every few seconds with nothing new. Keep derived
+values keyed on `data` identity (`useMemo(..., [feed.data])`, `memo` on heavy
+leaves such as `ChannelMarkdown`) so the sharing reaches the DOM.
+
 Every Buddy read model is declared once in
 [hooks/useBuddyData.ts](../client/src/hooks/useBuddyData.ts) and consumed by
 both shells. `BuddiesDashboard` (desktop) and `BuddyDetailMobile` used to each
@@ -168,8 +178,14 @@ is the named predicate for Buddy data. It fires from the WS spine on
 (`server/src/buddies/change-feed.ts`), which announces every Buddy-store write
 whether it came from an owner route, an owner MCP tool, a Buddy's MCP tool or
 the scheduler — and on create/delete of a Buddy-context conversation, which the
-client already knows about. **Add new push refreshes here, not at call
-sites** — that is the whole reason the cache is keyed centrally.
+client already knows about. `channel_changed {listId}` is the precise one:
+`invalidateChannelResources` refreshes only keys under
+`/api/buddies/lists/<listId>/` (posts, threads, who is replying), so channel
+views poll just as a 30 s backstop (`CHANNEL_BACKSTOP_MS`). An invalidation
+that lands while that key's load is in flight marks it to load once more when
+it settles, because the running request may have read the server before the
+change. **Add new push refreshes here, not at call sites** — that is the whole
+reason the cache is keyed centrally.
 
 ## Assistant response model
 

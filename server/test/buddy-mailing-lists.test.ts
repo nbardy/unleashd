@@ -128,6 +128,7 @@ function routeTestApp(store: BuddiesStorePort) {
         throw new Error('not used');
       },
       uploadsRoot: () => tmpdir(),
+      respondingChanged: () => undefined,
     }),
     direct: createBuddyDirect({
       getStore: async () => store,

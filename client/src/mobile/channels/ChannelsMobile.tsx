@@ -1,7 +1,6 @@
 import type { BuddyMailingListPost, BuddyOwnerPostResult } from '@unleashd/shared';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Link, Navigate, useLocation, useNavigate, useParams } from 'react-router-dom';
-import type { BuddyMailingListSummary } from '../../components/buddies/BuddyMessages';
 import { BuddySigil } from '../../components/buddies/BuddySigil';
 import { ChannelAuthor } from '../../components/buddies/ChannelAuthor';
 import { ChannelComposer } from '../../components/buddies/ChannelComposer';
@@ -10,8 +9,9 @@ import { ChannelMarkdown, TypingDots } from '../../components/buddies/ChannelMar
 import { CopyLinkButton } from '../../components/buddies/CopyLinkButton';
 import { WakeIcon, WakeIndicator } from '../../components/buddies/WakeIndicator';
 import { useBuddyDirectActions } from '../../components/buddies/buddy-direct-actions';
-import { channelLinkPath } from '../../components/buddies/channel-link';
 import {
+  type BuddyMailingListSummary,
+  CHANNEL_BACKSTOP_MS,
   type ChannelMember,
   type ChannelRow,
   type WorkspaceDirectory,
@@ -31,6 +31,7 @@ import {
   useWarmChannelPosts,
   useWorkspaceDirectory,
 } from '../../components/buddies/channel-data';
+import { channelLinkPath } from '../../components/buddies/channel-link';
 import type { BuddyOverview } from '../../components/buddies/types';
 import { useBuddyOverview } from '../../hooks/useBuddyData';
 import { usePolledFetch } from '../../hooks/usePolledFetch';
@@ -95,7 +96,10 @@ export function ChannelsMobile() {
   const location = useLocation();
   const screen = mobileChannelScreen(location.search);
   const directory = useWorkspaceDirectory(workspaceId);
-  const lists = usePolledFetch<BuddyMailingListSummary[]>(listsUrl(workspaceId), 5000);
+  const lists = usePolledFetch<BuddyMailingListSummary[]>(
+    listsUrl(workspaceId),
+    CHANNEL_BACKSTOP_MS
+  );
   useWarmChannelPosts(lists.data);
   return renderScreen(screen, {
     workspaceId,
@@ -503,11 +507,10 @@ function ScreenHeader({
 function ChannelScreen({ listId, context }: { listId: string; context: ScreenContext }) {
   const { workspaceId, directory, lists } = context;
   const list = lists?.find((candidate) => candidate.id === listId) ?? null;
-  const feed = usePolledFetch(channelPostsResource(listId), 5000);
+  const feed = usePolledFetch(channelPostsResource(listId), CHANNEL_BACKSTOP_MS);
   const responding = useChannelResponding(listId);
   const rows = useMemo(() => channelRows(feed.data ?? []), [feed.data]);
   const follow = useFollowBottom(rows.length, feed.data, null);
-  useRefetchWhenRepliesLand(responding.count, feed.refetch);
   const rowContext: RowContext = {
     workspaceId,
     directory,
@@ -515,7 +518,7 @@ function ChannelScreen({ listId, context }: { listId: string; context: ScreenCon
       kind: 'channel',
       threadHref: (rootId) =>
         channelsHref(workspaceId, { kind: 'thread', listId, rootId, linkedPostId: null }),
-      responding: responding.byRoot,
+      responding,
     },
     linkedPostId: null,
   };
@@ -562,7 +565,6 @@ function ChannelScreen({ listId, context }: { listId: string; context: ScreenCon
         onPosted={(_result: BuddyOwnerPostResult) => {
           follow.pin();
           void feed.refetch();
-          void responding.refetch();
         }}
       />
     </div>
@@ -584,14 +586,13 @@ function ThreadScreen({
 }) {
   const { workspaceId, directory, lists } = context;
   const list = lists?.find((candidate) => candidate.id === listId) ?? null;
-  const thread = usePolledFetch(channelThreadResource(listId, rootId), 3000);
+  const thread = usePolledFetch(channelThreadResource(listId, rootId), CHANNEL_BACKSTOP_MS);
   const responding = useChannelResponding(listId);
-  const replying = (responding.byRoot.get(rootId) ?? []).map(
+  const replying = (responding.get(rootId) ?? []).map(
     (buddyId) => directory.buddyNames[buddyId] ?? buddyId
   );
   const replyRows = useMemo(() => channelRows(thread.data?.replies ?? []), [thread.data]);
   const follow = useFollowBottom(replyRows.length + replying.length, thread.data, linkedPostId);
-  useRefetchWhenRepliesLand(responding.count, thread.refetch);
   const rowContext: RowContext = {
     workspaceId,
     directory,
@@ -649,19 +650,8 @@ function ThreadScreen({
         onPosted={() => {
           follow.pin();
           void thread.refetch();
-          void responding.refetch();
         }}
       />
     </div>
   );
-}
-
-// A mention reply is already written when its responder entry disappears:
-// fetch it now rather than on the next poll.
-function useRefetchWhenRepliesLand(respondingCount: number, refetch: () => Promise<void>) {
-  const previous = useRef(respondingCount);
-  useEffect(() => {
-    if (respondingCount < previous.current) void refetch();
-    previous.current = respondingCount;
-  }, [respondingCount, refetch]);
 }

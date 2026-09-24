@@ -48,7 +48,7 @@ import {
   removePendingConversation,
   resendPendingCreation,
 } from './pending-creations';
-import { invalidateBuddyResources } from './resources';
+import { invalidateBuddyResources, invalidateChannelResources } from './resources';
 import {
   captureRestartRecoveryQueue,
   clearRestartRecovery,
@@ -732,6 +732,8 @@ export function handleMessage(data: ServerMessage): void {
       return hideArchivedBuddy(data.buddyId);
     case 'buddies_changed':
       return invalidateBuddyResources();
+    case 'channel_changed':
+      return invalidateChannelResources(data.listId);
     case 'init':
       return handleInit(data);
     case 'conversation_created':

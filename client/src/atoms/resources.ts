@@ -46,9 +46,9 @@ export interface Resource<T> {
 export type ResourceEntry<T> =
   | { kind: 'idle' }
   | { kind: 'loading' }
-  | { kind: 'ready'; value: T; fetchedAt: number }
+  | { kind: 'ready'; value: T }
   | { kind: 'failed'; error: Error }
-  | { kind: 'stale'; value: T; fetchedAt: number; error: Error };
+  | { kind: 'stale'; value: T; error: Error };
 
 /** Stable references — a fresh object here would re-render every subscriber. */
 export const IDLE_ENTRY: ResourceEntry<never> = Object.freeze({ kind: 'idle' });
@@ -73,13 +73,23 @@ export const resourceAtomFamily = atomFamily((key: string) =>
 
 /** Loaders by key, so invalidation can re-run a request it never saw created. */
 const loaders = new Map<string, Resource<unknown>>();
-/** One request per key; a second caller joins the first rather than racing it. */
-const inFlight = new Map<string, { promise: Promise<void>; controller: AbortController }>();
+/**
+ * One request per key; a second caller joins the first rather than racing it.
+ * `rerun`: invalidated after it started, so its answer may predate the change
+ * that was pushed. It loads once more when it settles; without that, a push
+ * landing mid-request was lost until the next poll.
+ */
+const inFlight = new Map<
+  string,
+  { promise: Promise<void>; controller: AbortController; rerun: boolean }
+>();
 /** Mounted-subscriber counts — eviction and push invalidation both consult this. */
 const mounted = new Map<string, number>();
 
 function writeEntry(key: string, entry: ResourceEntry<unknown>): void {
   const cache = jotaiStore.get(resourceCacheAtom);
+  // An unchanged refresh (settledEntry kept the entry): no new Map, no subscriber work.
+  if (cache.get(key) === entry) return;
   const next = new Map(cache);
   // Delete-then-set moves the key to the Map's most-recent end, which is what
   // makes plain insertion order an LRU.
@@ -111,9 +121,62 @@ function failureEntry(
   error: Error
 ): ResourceEntry<unknown> {
   if (previous?.kind === 'ready' || previous?.kind === 'stale') {
-    return { kind: 'stale', value: previous.value, fetchedAt: previous.fetchedAt, error };
+    return { kind: 'stale', value: previous.value, error };
   }
   return { kind: 'failed', error };
+}
+
+/**
+ * A successful load, structurally shared with what the entry held. Every poll
+ * and push used to hand React a fresh tree, so a channel re-rendered all 50
+ * rows — and re-parsed their markdown — on each tick even when nothing
+ * changed. Now an equal answer keeps the entry itself (no write at all), and
+ * a changed one keeps the identity of every part that did not change.
+ */
+function settledEntry(
+  previous: ResourceEntry<unknown> | undefined,
+  value: unknown
+): ResourceEntry<unknown> {
+  const held =
+    previous?.kind === 'ready' || previous?.kind === 'stale' ? previous.value : undefined;
+  const shared = share(held, value);
+  return previous?.kind === 'ready' && shared === previous.value
+    ? previous
+    : { kind: 'ready', value: shared };
+}
+
+/**
+ * The parts of `next` deep-equal to `previous` keep previous's identity.
+ * Array elements pair by `id` when they carry one — each new post slides the
+ * "latest 50" window and shifts every index — and by position otherwise.
+ */
+function share(previous: unknown, next: unknown): unknown {
+  if (Object.is(previous, next)) return previous;
+  if (Array.isArray(previous) && Array.isArray(next)) {
+    const held = new Map(previous.map((item, index) => [identity(item, index), item]));
+    const shared = next.map((item, index) => share(held.get(identity(item, index)), item));
+    const same =
+      shared.length === previous.length && shared.every((item, index) => item === previous[index]);
+    return same ? previous : shared;
+  }
+  if (isPlainObject(previous) && isPlainObject(next)) {
+    const keys = Object.keys(next);
+    const shared = Object.fromEntries(keys.map((key) => [key, share(previous[key], next[key])]));
+    const same =
+      keys.length === Object.keys(previous).length &&
+      keys.every((key) => key in previous && shared[key] === previous[key]);
+    return same ? previous : shared;
+  }
+  return next;
+}
+
+const identity = (item: unknown, index: number): unknown =>
+  isPlainObject(item) && typeof item.id === 'string' ? item.id : index;
+
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  if (value === null || typeof value !== 'object') return false;
+  const prototype = Object.getPrototypeOf(value);
+  return prototype === Object.prototype || prototype === null;
 }
 
 function normalizeError(cause: unknown): Error {
@@ -140,7 +203,10 @@ export function loadResource<T>(resource: Resource<T>): Promise<void> {
     .load(controller.signal)
     .then((value) => {
       if (controller.signal.aborted) return;
-      writeEntry(resource.key, { kind: 'ready', value, fetchedAt: Date.now() });
+      writeEntry(
+        resource.key,
+        settledEntry(jotaiStore.get(resourceCacheAtom).get(resource.key), value)
+      );
     })
     .catch((cause) => {
       const error = normalizeError(cause);
@@ -151,10 +217,13 @@ export function loadResource<T>(resource: Resource<T>): Promise<void> {
       );
     })
     .finally(() => {
-      if (inFlight.get(resource.key)?.promise === promise) inFlight.delete(resource.key);
+      const settled = inFlight.get(resource.key);
+      if (settled?.promise !== promise) return;
+      inFlight.delete(resource.key);
+      if (settled.rerun) void loadResource(resource);
     });
 
-  inFlight.set(resource.key, { promise, controller });
+  inFlight.set(resource.key, { promise, controller, rerun: false });
   return promise;
 }
 
@@ -173,7 +242,10 @@ export function loadResource<T>(resource: Resource<T>): Promise<void> {
 export function invalidateResources(matches: (key: string) => boolean): void {
   for (const key of mounted.keys()) {
     const resource = loaders.get(key);
-    if (resource && matches(key)) void loadResource(resource);
+    if (!resource || !matches(key)) continue;
+    const running = inFlight.get(key);
+    if (running) running.rerun = true;
+    else void loadResource(resource);
   }
 }
 
@@ -187,6 +259,17 @@ export function invalidateResources(matches: (key: string) => boolean): void {
  */
 export const invalidateBuddyResources = (): void =>
   invalidateResources((key) => key.startsWith('/api/buddies') || key.startsWith('buddy-'));
+
+/**
+ * One channel changed — a post, or who is replying (server `channel_changed`).
+ * Every per-channel key is a URL under `/api/buddies/lists/<listId>/` (built
+ * in components/buddies/channel-data.ts), so one prefix selects its posts,
+ * threads and responders and nothing else.
+ */
+export const invalidateChannelResources = (listId: string): void => {
+  const prefix = `/api/buddies/lists/${encodeURIComponent(listId)}/`;
+  invalidateResources((key) => key.startsWith(prefix));
+};
 
 /**
  * Drop cached data outright. For sign-out / hard reset only: unlike

@@ -173,3 +173,12 @@ payload on purpose: the client refreshes its mounted Buddy views from cache
 keys, and a payload would only tempt a second, per-event code path. Reads
 (`get_*`, `list_*`, `recall`) never announce; a Buddy polling its inbox must
 not make every open panel refetch.
+
+`channel_changed {listId}` is the exception. Two channel writes bypass all three
+doors: the responder posts a mention reply straight to the store, and who is
+replying lives only in the responder's in-memory queue. So `server.ts`
+broadcasts `channel_changed` from the channel post feed (`onChannelPost`, which
+every post door announces to) and from the responder's `respondingChanged` port
+(a queue entry added or removed). `listId` only picks which cache keys to
+refresh; there is still one refresh path. It is not debounced: the client's
+in-flight join already folds a burst.

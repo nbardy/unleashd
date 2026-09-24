@@ -102,6 +102,7 @@ async function harness() {
   const runtimes = new Map<string, FakeTurnRuntime>();
   const created: string[] = [];
   const deleted = new Set<string>();
+  const respondingChanges: string[] = [];
   const configService = new ConversationConfigService({
     store: new ConversationConfigStore({ appDataRoot: join(scratch, 'config') }),
     resolver: { resolve: async (config) => resolveConfigAgainstProviderCatalog(config) },
@@ -160,6 +161,7 @@ async function harness() {
       new Promise<GateVerdict>((answer) =>
         gates.push({ name: /^You are (\S+)/.exec(prompt)![1], config, prompt, answer })
       ),
+    respondingChanged: (listId) => respondingChanges.push(listId),
     logger: { warn: () => undefined },
   });
   const unsubscribe = onChannelPost((post) => void responder.considerThreadPost(post));
@@ -193,6 +195,7 @@ async function harness() {
     runtimes,
     created,
     deleted,
+    respondingChanges,
     gates,
     api,
     newList: (key: string) =>
@@ -747,19 +750,23 @@ test('an owner reply shows who is replying as soon as a gate says yes, and a fai
     assert.match(notice.body, /out_of_tokens/);
     assert.deepEqual(await responding(), []);
 
-    // From the <yes> until the reply posts, Lead is on the indicator.
+    // From the <yes> until the reply posts, Lead is on the indicator. Each
+    // change is announced: the client's indicator no longer polls for it.
+    const announced = h.respondingChanges.length;
     asked.get('Lead')!.answer({ kind: 'respond' });
     await settle();
     assert.deepEqual(
       (await responding()).map((entry) => entry.buddyId),
       [h.lead.id]
     );
+    assert.deepEqual(h.respondingChanges.slice(announced), [list.id], 'the start is announced');
     const turn = await h.nextTurn(h.seat(root.id, h.lead.id));
     assert.match(turn.prompt, /Why do we need Modal\?/);
     turn.complete('Local fits; Modal is only a speed hedge.');
     await until(() => h.replies(root.id).at(-1)!.purpose === 'reply', 'lead reply');
     await settle();
     assert.deepEqual(await responding(), []);
+    assert.deepEqual(h.respondingChanges.slice(announced), [list.id, list.id], 'so is the end');
   } finally {
     h.close();
   }

@@ -193,3 +193,68 @@ test('eviction never discards a key a mounted view is reading', async () => {
   assert.equal(pinned.kind === 'ready' && pinned.value, 'pinned');
   release();
 });
+
+// The render-cost fix. Before structural sharing every poll and push wrote a
+// fresh value, so each open channel re-rendered all 50 rows and re-parsed
+// their markdown every few seconds with nothing new. A change that writes
+// unconditionally again brings that back without failing anything else.
+test('a refresh that returns equal data leaves the entry itself untouched', async () => {
+  const resource: Resource<Array<{ id: string; body: string }>> = {
+    key: '/api/buddies/lists/l/posts',
+    load: async () => [{ id: 'p1', body: 'hello' }],
+  };
+  await loadResource(resource);
+  const before = read('/api/buddies/lists/l/posts');
+  await loadResource(resource);
+  assert.equal(read('/api/buddies/lists/l/posts'), before);
+});
+
+// Posts arrive as a sliding "latest N" window: a new post shifts every index.
+// Pairing elements by position would give every row a new object on every
+// new post; pairing by `id` re-renders only the new one.
+test('a new post keeps the identity of every unchanged post in the window', async () => {
+  let posts = [
+    { id: 'p3', body: 'three' },
+    { id: 'p2', body: 'two' },
+  ];
+  const resource: Resource<typeof posts> = {
+    key: '/api/buddies/lists/l/posts',
+    load: async () => structuredClone(posts),
+  };
+  await loadResource(resource);
+  const first = read<typeof posts>('/api/buddies/lists/l/posts');
+  posts = [{ id: 'p4', body: 'four' }, ...posts.slice(0, 1)];
+  await loadResource(resource);
+  const second = read<typeof posts>('/api/buddies/lists/l/posts');
+  assert.ok(first.kind === 'ready' && second.kind === 'ready');
+  assert.equal(second.value[1], first.value[0], 'p3 keeps its identity');
+  assert.deepEqual(second.value[0], { id: 'p4', body: 'four' });
+});
+
+// With polling reduced to a backstop, a push is the only prompt refresh. A
+// load already in flight may have read the server before the pushed change;
+// joining it would show the old answer until the next poll (30s).
+test('an invalidation while a load is in flight loads once more after it', async () => {
+  const gate = deferred<string>();
+  let server = 'before';
+  let calls = 0;
+  const resource: Resource<string> = {
+    key: '/api/buddies/lists/l/responding',
+    load: () => {
+      calls += 1;
+      return calls === 1 ? gate.promise : Promise.resolve(server);
+    },
+  };
+  const release = retainResourceKey(resource.key);
+  const first = loadResource(resource);
+  server = 'after';
+  invalidateResources(() => true);
+  assert.equal(calls, 1, 'joins the running load instead of racing it');
+  gate.resolve('before');
+  await first;
+  await new Promise((resolve) => setImmediate(resolve)); // the rerun settles
+  const entry = read<string>(resource.key);
+  assert.equal(entry.kind === 'ready' && entry.value, 'after');
+  assert.equal(calls, 2);
+  release();
+});

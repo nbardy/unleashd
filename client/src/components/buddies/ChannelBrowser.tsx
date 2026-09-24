@@ -5,7 +5,6 @@ import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { buddySidebarChannelsAtom } from '../../atoms/buddy-sidebar';
 import { allConversationIdsAtom } from '../../atoms/conversations';
 import { usePolledFetch } from '../../hooks/usePolledFetch';
-import { type BuddyMailingListSummary, postsResource, taskChannelFeedUrl } from './BuddyMessages';
 import { BuddyRailRow } from './BuddyRailRow';
 import { BuddySigil } from './BuddySigil';
 import { ChannelAuthor } from './ChannelAuthor';
@@ -14,6 +13,8 @@ import { ChannelLoader } from './ChannelLoader';
 import { ChannelMarkdown, TypingDots } from './ChannelMarkdown';
 import { CopyLinkButton } from './CopyLinkButton';
 import {
+  type BuddyMailingListSummary,
+  CHANNEL_BACKSTOP_MS,
   CONVERSATIONAL_PURPOSES,
   type ChannelMember,
   type ChannelRow,
@@ -26,7 +27,9 @@ import {
   feedPhase,
   joinNames,
   listsUrl,
+  postsResource,
   renderFeed,
+  taskChannelFeedUrl,
   useChannelResponding,
   useFollowBottom,
   useWarmChannelPosts,
@@ -315,20 +318,13 @@ function ThreadPane({
   replying: readonly string[];
   onClose(): void;
 }) {
-  const thread = usePolledFetch(channelThreadResource(list.id, rootId), 3000);
+  const thread = usePolledFetch(channelThreadResource(list.id, rootId), CHANNEL_BACKSTOP_MS);
   const replyRows = useMemo(() => channelRows(thread.data?.replies ?? []), [thread.data]);
   const follow = useFollowBottom(
     replyRows.length + replying.length,
     thread.data,
     context.linkedPostId
   );
-  // A reply that just finished is already written; fetch it now, not on the next poll.
-  const replyingCount = replying.length;
-  const previousReplying = useRef(replyingCount);
-  useEffect(() => {
-    if (replyingCount < previousReplying.current) void thread.refetch();
-    previousReplying.current = replyingCount;
-  }, [replyingCount, thread.refetch]);
   const root = thread.data?.root;
   return (
     <aside className="channel-thread" aria-label="Thread">
@@ -425,12 +421,12 @@ function ChannelPane({
   linkedPostId: string | null;
   onThread: (rootId: string | null) => void;
 }) {
-  const channelFeed = usePolledFetch(channelPostsResource(list.id), 5000);
+  const channelFeed = usePolledFetch(channelPostsResource(list.id), CHANNEL_BACKSTOP_MS);
   const taskFeed = usePolledFetch(
     taskFilter ? postsResource(taskChannelFeedUrl(workspaceId, taskFilter)) : null,
-    5000
+    CHANNEL_BACKSTOP_MS
   );
-  const responding = useChannelResponding(list.id);
+  const respondingByRoot = useChannelResponding(list.id);
   const shown = taskFilter ? taskFeed : channelFeed;
   const rows = useMemo(() => channelRows(shown.data ?? []), [shown.data]);
   // Task options come from the channel itself so the picker never offers a
@@ -445,15 +441,6 @@ function ChannelPane({
     ],
     [channelFeed.data]
   );
-  const respondingByRoot = responding.byRoot;
-  // When a reply finishes, its post already exists: refresh reply counts now.
-  const respondingCount = responding.count;
-  const previousResponding = useRef(respondingCount);
-  useEffect(() => {
-    if (respondingCount < previousResponding.current) void channelFeed.refetch();
-    previousResponding.current = respondingCount;
-  }, [respondingCount, channelFeed.refetch]);
-
   const follow = useFollowBottom(rows.length, shown.data, null);
   const base = {
     workspaceId,
@@ -545,7 +532,6 @@ function ChannelPane({
           onPosted={(result: BuddyOwnerPostResult) => {
             follow.pin();
             void channelFeed.refetch();
-            void responding.refetch();
             // Mentioning a Buddy opens the thread its reply will land in.
             if (result.mentions.some((mention) => mention.status === 'started'))
               onThread(result.post.id);
@@ -738,7 +724,10 @@ export function ChannelBrowser({
   tasks: readonly ChannelTask[];
   availableConversationIds: ReadonlySet<string>;
 }) {
-  const lists = usePolledFetch<BuddyMailingListSummary[]>(listsUrl(workspaceId), 5000);
+  const lists = usePolledFetch<BuddyMailingListSummary[]>(
+    listsUrl(workspaceId),
+    CHANNEL_BACKSTOP_MS
+  );
   const { data, error } = lists;
   useWarmChannelPosts(data);
   const [params, setParams] = useSearchParams();
