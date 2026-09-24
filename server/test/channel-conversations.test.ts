@@ -777,6 +777,48 @@ test('an owner reply shows who is replying as soon as a gate says yes, and a fai
   }
 });
 
+// 2026-09-25: the owner @mentioned a Buddy, then added a plain follow-up in the
+// thread while its reply was still running. The follow-up was dropped twice
+// over: the Buddy had not posted yet, so it was no participant, and a busy
+// Buddy was skipped rather than asked later. Its own reply never re-raises the
+// question (an author is not asked about its own post), so nobody answered.
+test('an owner follow-up sent while the Buddy is still replying is asked once the reply lands', async () => {
+  const h = await harness();
+  try {
+    const list = h.newList('inflight');
+    const { post: root } = await h.post(list.id, {
+      key: 'root',
+      body: `[@Lead](buddy:${h.lead.id}) fix the send delay`,
+    });
+    const seat = h.seat(root.id, h.lead.id);
+    const first = await h.nextTurn(seat);
+    await h.post(list.id, {
+      key: 'more',
+      body: 'Also the mention highlight.',
+      threadRootId: root.id,
+    });
+    await settle();
+    assert.equal(h.gates.length, 0, 'asked only after the running reply lands');
+
+    first.complete('Send is instant now.');
+    const asked = await h.gate(0);
+    assert.equal(asked.name, 'Lead');
+    assert.match(asked.prompt, /New message, from Owner:\nAlso the mention highlight\./);
+    asked.answer({ kind: 'respond' });
+    const second = await h.nextTurn(seat);
+    assert.match(
+      second.prompt,
+      /Reply to the latest message, from Owner:\nAlso the mention highlight\./
+    );
+    second.complete('Highlight fixed.');
+    await until(() => h.replies(root.id).at(-1)!.body === 'Highlight fixed.', 'second reply');
+    await settle();
+    assert.equal(h.gates.length, 1, 'the answered follow-up is not asked again');
+  } finally {
+    h.close();
+  }
+});
+
 // Follow-ups use the Buddy's seat, so the owner's pick on an earlier mention
 // carries over — gate question included (a gate on the profile harness would
 // fail whenever that harness is down) — while a Buddy never picked for stays

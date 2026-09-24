@@ -45,7 +45,9 @@ import type {
 //               spec's fan-out warning is about, so the chain is bounded: once
 //               the thread's last MAX_BUDDY_CHAIN posts are all Buddies',
 //               nobody is asked until the owner posts again. The bound is read
-//               from the thread itself, so it survives restarts.
+//               from the thread itself, so it survives restarts. A Buddy
+//               already gating or replying in the thread is asked once it
+//               finishes, about the newest post its turn did not see.
 //
 // SEATS. Every reply by a Buddy in a thread — mention or follow-up — goes to
 // its seat there: ONE resumed conversation per (thread, Buddy), so the Buddy
@@ -407,6 +409,15 @@ export function createChannelResponder(ports: ChannelResponderPorts) {
   const gating = new Set<string>();
   const pairKey = (threadRootId: string, buddyId: string) => `${threadRootId}:${buddyId}`;
   const busy = (key: string) => gating.has(key) || queues.has(key);
+  // Pair -> the newest thread post that arrived while the pair was busy; it is
+  // gated once the pair goes idle. Until 2026-09-25 such a post was skipped: an
+  // owner reply landing while the Buddy was mid-reply in that thread was never
+  // asked about, and the Buddy's own reply (its author is never asked) did not
+  // raise it again, so the owner's message went unanswered.
+  const deferred = new Map<string, FollowUp>();
+  // Pair -> when its latest reply turn read the thread. A deferred post created
+  // before then was already in that turn's context and needs no second look.
+  const contextReadAt = new Map<string, string>();
   // Seat conversation id -> the trigger post of its last answered turn. In
   // memory: after a restart a seat is unknown and gets the full thread once.
   const seenThrough = new Map<string, string>();
@@ -530,6 +541,7 @@ export function createChannelResponder(ports: ChannelResponderPorts) {
       );
       conversationId = conversation.id;
       await untilIdle(conversation);
+      contextReadAt.set(pairKey(input.threadRootId, input.buddyId), new Date().toISOString());
       const context = launchContext(store, input, conversation.id);
       const prompt = buildPrompt({ ...input, context, store });
       const text = await awaitTurn(
@@ -567,16 +579,47 @@ export function createChannelResponder(ports: ChannelResponderPorts) {
       if (queues.get(key) !== entry) return;
       queues.delete(key);
       ports.channelChanged(entry.listId);
+      settle(key);
     });
   }
 
-  async function followUp(input: {
+  type FollowUp = {
     list: BuddyMailingList;
     trigger: BuddyMailingListPost;
     root: BuddyMailingListPost;
     buddyId: string;
     others: string[];
-  }): Promise<void> {
+  };
+
+  // Ask the pair's gate now, or once its current gate or reply finishes.
+  function gate(input: FollowUp): void {
+    const key = pairKey(input.root.id, input.buddyId);
+    if (busy(key)) {
+      deferred.set(key, input);
+      return;
+    }
+    gating.add(key);
+    void followUp(input)
+      .catch((error) => {
+        logger.warn(`[channel-responder] follow-up for ${input.buddyId} failed:`, error);
+      })
+      .finally(() => {
+        gating.delete(key);
+        settle(key);
+      });
+  }
+
+  // The pair went idle: gate the post that arrived meanwhile, unless the
+  // Buddy's last reply turn read the thread after it was posted.
+  function settle(key: string): void {
+    const next = deferred.get(key);
+    if (next === undefined || busy(key)) return;
+    deferred.delete(key);
+    if (next.trigger.createdAt <= (contextReadAt.get(key) ?? '')) return;
+    gate(next);
+  }
+
+  async function followUp(input: FollowUp): Promise<void> {
     const store = await ports.getStore();
     const profile = (buddyId: string) => {
       const buddy = store.getBuddy(buddyId);
@@ -696,23 +739,24 @@ export function createChannelResponder(ports: ChannelResponderPorts) {
       if (thread[thread.length - 1].id !== post.id) return;
       if (trailingBuddyPosts(thread) >= MAX_BUDDY_CHAIN) return;
       const skipped = new Set([...buddyAuthorIds(post.author), ...dispatchedMentions(post)]);
-      const participants = [...new Set(thread.flatMap((entry) => buddyAuthorIds(entry.author)))];
+      // A Buddy whose first reply here is still running participates too: the
+      // owner's "one more thing" right after an @mention is meant for it.
+      const replying = [...queues.values()]
+        .filter((entry) => entry.threadRootId === root.id)
+        .map((entry) => entry.buddyId);
+      const participants = [
+        ...new Set([...thread.flatMap((entry) => buddyAuthorIds(entry.author)), ...replying]),
+      ];
       for (const buddyId of participants) {
-        const key = pairKey(root.id, buddyId);
-        if (skipped.has(buddyId) || busy(key)) continue;
+        if (skipped.has(buddyId)) continue;
         if (eligibility(store, buddyId, list.workspaceId).kind === 'rejected') continue;
-        gating.add(key);
-        void followUp({
+        gate({
           list,
           trigger: post,
           root,
           buddyId,
           others: participants.filter((other) => other !== buddyId),
-        })
-          .catch((error) => {
-            logger.warn(`[channel-responder] follow-up for ${buddyId} failed:`, error);
-          })
-          .finally(() => gating.delete(key));
+        });
       }
     },
 
