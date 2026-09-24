@@ -79,11 +79,17 @@ Adding a provider means adding:
 Startup imports use `ConversationConfigStore.withSessionLookupIndex` to scan
 saved configuration identities once. Without it, every unfamiliar native session
 can trigger two full record scans, even when its transcript hits the session cache.
-The temporary index maps session IDs to conversation IDs; every hit still reads
-the authoritative record, and store writes update the index during the import.
-The index is released on completion or failure. Normal lookup and index repair
-resume afterward; unindexed writes from another process are discovered then.
-This optimization preserves the existing hydration/readiness barrier.
+The first scope builds an in-memory index (session ID → conversation IDs) from
+that scan, and the index then lives for the process: every write through the
+store maintains it, so after startup a lookup miss is the answer and never
+rescans. Until 2026-09-25 it was dropped when the scope ended, and each miss the
+poller made for a new external session (up to 3 per session) read all ~7,800
+records (~3.2s). Every hit still reads the authoritative record. Another
+process's writes are found through the durable `by-session/` index it maintains,
+which lookup consults first; a record with no durable entry (older versions) is
+covered by the startup scan. The scope's cached record scan (served by `list()`)
+is released on completion or failure. This optimization preserves the existing
+hydration/readiness barrier.
 
 **Startup cost rules** (2026-09-25: the barrier took 67-102s on ~7,700 sources
 and ~7,800 records; these brought it to 14-20s on the same data). Each is

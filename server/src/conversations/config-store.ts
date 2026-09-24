@@ -72,14 +72,41 @@ export type ConfigRecordExpectation =
   | 'missing'
   | { configRevision: number; recordRevision: number };
 
-interface SessionLookupIndex {
-  scopes: number;
-  ready: Promise<void>;
+/** Session identities of every record: binding key -> conversation ids, and back. */
+interface SessionIdentityIndex {
   bySession: Map<string, Set<string>>;
   byConversation: Map<string, readonly string[]>;
-  pending?: Map<string, readonly string[]>;
-  /** The scope's one full scan; `list()` serves it while the scope is open. */
-  records?: ReadonlyMap<string, PersistedConversationConfigRecord>;
+}
+
+/**
+ * Whether a lookup miss can be trusted without reading every record.
+ *
+ * - `unindexed`: no full scan has run in this process; a miss scans all records.
+ * - `building`: the first bulk scope's scan is in flight. Writes land in
+ *   `pending` and replay over the scan, so the scan cannot undo them.
+ * - `indexed`: built from a full scan and maintained by every write through this
+ *   store for the rest of the process. A miss here is the answer.
+ *
+ * The index outlives the scope that built it. Until 2026-09-25 it was dropped
+ * when startup's scope ended, so every later miss read and parsed all ~7,800
+ * records (42MB, ~3.2s) — and the poller misses up to 3x per new external
+ * session. Records written by another process are still found: their writes
+ * maintain the durable by-session index, which findBySession consults first.
+ */
+type SessionIdentity =
+  | { kind: 'unindexed' }
+  | {
+      kind: 'building';
+      index: SessionIdentityIndex;
+      pending: Map<string, readonly string[]>;
+      ready: Promise<void>;
+    }
+  | { kind: 'indexed'; index: SessionIdentityIndex };
+
+/** A bulk scope's one full record scan, which `list()` serves while it is open. */
+interface RecordScope {
+  scopes: number;
+  records: Promise<ReadonlyMap<string, PersistedConversationConfigRecord>>;
   /** Records this store wrote or removed since the scope began; re-read, never served stale. */
   written: Set<string>;
 }
@@ -112,7 +139,9 @@ export class UnsupportedConfigRecordVersionError extends Error {
  * Durable authority for application-owned conversation configuration.
  *
  * Conversation records are authoritative. Session indexes are only accelerators:
- * lookup falls back to scanning records and repairs a missing or stale index.
+ * lookup repairs a missing or stale durable index. Before the first bulk scope
+ * has built the in-memory identity index, a miss scans every record; after it,
+ * the in-memory index answers (see SessionIdentity).
  */
 export class ConversationConfigStore {
   readonly rootDirectory: string;
@@ -124,7 +153,8 @@ export class ConversationConfigStore {
   private readonly logger?: ConfigStoreLogger;
   private readonly durableWrites: boolean;
   private readonly locks = new Map<string, Promise<void>>();
-  private sessionLookupIndex: SessionLookupIndex | undefined;
+  private sessionIdentity: SessionIdentity = { kind: 'unindexed' };
+  private recordScope: RecordScope | undefined;
 
   constructor(options: ConversationConfigStoreOptions) {
     if (!path.isAbsolute(options.appDataRoot)) {
@@ -147,37 +177,37 @@ export class ConversationConfigStore {
   }
 
   /**
-   * Amortize missing-session lookup during a bulk import. The index contains only
-   * identities; every hit still reads its authoritative record from disk. Writes
-   * through this store maintain it, including writes while the initial scan runs.
-   * Normal scan-and-repair behavior resumes when the last overlapping scope ends.
-   * Unindexed writes by another process are discovered after the scope ends.
+   * Amortize record reads during a bulk import. The scope scans every record
+   * once; `list()` serves that scan while any overlapping scope is open. The
+   * first scope in a process also builds the session identity index from the
+   * same scan, and that index then lives for the process (see SessionIdentity).
+   * Every lookup hit still reads its authoritative record from disk.
    */
   async withSessionLookupIndex<T>(operation: () => Promise<T>): Promise<T> {
-    let index = this.sessionLookupIndex;
-    if (!index) {
-      index = {
+    let scope = this.recordScope;
+    if (!scope) {
+      const scan = this.scanRecords();
+      scope = {
         scopes: 0,
-        ready: Promise.resolve(),
-        bySession: new Map(),
-        byConversation: new Map(),
-        pending: new Map(),
+        records: scan.then(
+          (records) => new Map(records.map((record) => [record.conversationId, record]))
+        ),
         written: new Set(),
       };
-      this.sessionLookupIndex = index;
-      index.ready = this.buildSessionLookupIndex(index);
-      // Observed only by a lookup miss (findBySession awaits it). Nothing else
-      // waits: awaiting the scan here held all of startup for a full read of
-      // every record (~7,800, 3-6s) before discovery began (2026-09-25).
-      index.ready.catch(() => {});
+      this.recordScope = scope;
+      if (this.sessionIdentity.kind === 'unindexed') this.buildSessionIdentity(scan);
+      // Observed only by list() and a lookup miss. Nothing else waits: awaiting
+      // the scan here held all of startup for a full read of every record
+      // (~7,800, 3-6s) before discovery began (2026-09-25).
+      scope.records.catch(() => {});
     }
-    index.scopes += 1;
+    scope.scopes += 1;
     try {
       return await operation();
     } finally {
-      index.scopes -= 1;
-      if (index.scopes === 0 && this.sessionLookupIndex === index) {
-        this.sessionLookupIndex = undefined;
+      scope.scopes -= 1;
+      if (scope.scopes === 0 && this.recordScope === scope) {
+        this.recordScope = undefined;
       }
     }
   }
@@ -201,31 +231,43 @@ export class ConversationConfigStore {
       }
     }
 
-    const index = this.sessionLookupIndex;
-    if (index) {
-      await index.ready;
-      const candidates = index.bySession.get(bindingKey({ provider, sessionId }));
-      for (const conversationId of candidates ?? []) {
-        let record: PersistedConversationConfigRecord | undefined;
-        try {
-          record = await this.getByConversationId(conversationId);
-        } catch (error) {
-          if (error instanceof UnsupportedConfigRecordVersionError) continue;
-          throw error;
-        }
-        if (
-          record &&
-          recordSessionBindings(record).some(
-            (binding) => binding.provider === provider && binding.sessionId === sessionId
-          )
-        ) {
-          await this.writeSessionIndex({ provider, sessionId }, record.conversationId);
-          return record;
-        }
-      }
-      return undefined;
+    const identity = this.sessionIdentity;
+    switch (identity.kind) {
+      case 'unindexed':
+        return this.findBySessionByScan(provider, sessionId);
+      case 'building':
+        await identity.ready;
+        return this.findBySessionInIndex(identity.index, provider, sessionId);
+      case 'indexed':
+        return this.findBySessionInIndex(identity.index, provider, sessionId);
     }
+  }
 
+  private async findBySessionInIndex(
+    index: SessionIdentityIndex,
+    provider: Provider,
+    sessionId: string
+  ): Promise<PersistedConversationConfigRecord | undefined> {
+    const candidates = index.bySession.get(bindingKey({ provider, sessionId }));
+    for (const conversationId of candidates ?? []) {
+      const record = await this.readSupportedRecord(conversationId);
+      if (
+        record &&
+        recordSessionBindings(record).some(
+          (binding) => binding.provider === provider && binding.sessionId === sessionId
+        )
+      ) {
+        await this.writeSessionIndex({ provider, sessionId }, record.conversationId);
+        return record;
+      }
+    }
+    return undefined;
+  }
+
+  private async findBySessionByScan(
+    provider: Provider,
+    sessionId: string
+  ): Promise<PersistedConversationConfigRecord | undefined> {
     const records = await this.list();
     const found = records.find((record) =>
       recordSessionBindings(record).some(
@@ -247,19 +289,16 @@ export class ConversationConfigStore {
   async list(
     options: ConversationConfigRecordListOptions = {}
   ): Promise<PersistedConversationConfigRecord[]> {
-    const index = this.sessionLookupIndex;
-    const records = index ? await this.scopeRecords(index) : await this.scanRecords();
+    const scope = this.recordScope;
+    const records = scope ? await this.scopeRecords(scope) : await this.scanRecords();
     return records.filter(
       (record) => options.status === undefined || record.status === options.status
     );
   }
 
-  private async scopeRecords(
-    index: SessionLookupIndex
-  ): Promise<PersistedConversationConfigRecord[]> {
-    await index.ready;
-    const records = new Map(index.records);
-    const written = [...index.written];
+  private async scopeRecords(scope: RecordScope): Promise<PersistedConversationConfigRecord[]> {
+    const records = new Map(await scope.records);
+    const written = [...scope.written];
     const current = await Promise.all(written.map((id) => this.readSupportedRecord(id)));
     written.forEach((conversationId, position) => {
       const record = current[position];
@@ -692,38 +731,52 @@ export class ConversationConfigStore {
     return count;
   }
 
-  private async buildSessionLookupIndex(index: SessionLookupIndex): Promise<void> {
-    const records = await this.scanRecords();
-    index.records = new Map(records.map((record) => [record.conversationId, record]));
-    for (const record of records) {
-      this.updateSessionLookupIndex(
-        index,
-        record.conversationId,
-        recordSessionBindings(record).map(bindingKey)
-      );
-    }
-    // A write may have committed after readdir/readRecord captured the scan.
-    // Replay its latest bindings so the scan cannot undo a creation or purge.
-    for (const [conversationId, keys] of index.pending ?? []) {
-      this.updateSessionLookupIndex(index, conversationId, keys);
-    }
-    index.pending = undefined;
+  private buildSessionIdentity(scan: Promise<PersistedConversationConfigRecord[]>): void {
+    const index: SessionIdentityIndex = { bySession: new Map(), byConversation: new Map() };
+    const pending = new Map<string, readonly string[]>();
+    const ready = scan.then((records) => {
+      for (const record of records) {
+        this.updateSessionLookupIndex(
+          index,
+          record.conversationId,
+          recordSessionBindings(record).map(bindingKey)
+        );
+      }
+      // A write may have committed after readdir/readRecord captured the scan.
+      // Replay its latest bindings so the scan cannot undo a creation or purge.
+      for (const [conversationId, keys] of pending) {
+        this.updateSessionLookupIndex(index, conversationId, keys);
+      }
+      this.sessionIdentity = { kind: 'indexed', index };
+    });
+    this.sessionIdentity = { kind: 'building', index, pending, ready };
+    // A failed scan never made the index trustworthy: lookups awaiting it see
+    // the error, and later ones scan again until another scope rebuilds it.
+    ready.catch(() => {
+      if (this.sessionIdentity.kind === 'building' && this.sessionIdentity.ready === ready) {
+        this.sessionIdentity = { kind: 'unindexed' };
+      }
+    });
   }
 
   private trackSessionBindings(conversationId: string, bindings: readonly SessionBinding[]): void {
-    const index = this.sessionLookupIndex;
-    if (!index) return;
-    index.written.add(conversationId);
+    this.recordScope?.written.add(conversationId);
+    const identity = this.sessionIdentity;
     const keys = bindings.map(bindingKey);
-    if (index.pending) {
-      index.pending.set(conversationId, keys);
-    } else {
-      this.updateSessionLookupIndex(index, conversationId, keys);
+    switch (identity.kind) {
+      case 'unindexed':
+        return;
+      case 'building':
+        identity.pending.set(conversationId, keys);
+        return;
+      case 'indexed':
+        this.updateSessionLookupIndex(identity.index, conversationId, keys);
+        return;
     }
   }
 
   private updateSessionLookupIndex(
-    index: SessionLookupIndex,
+    index: SessionIdentityIndex,
     conversationId: string,
     keys: readonly string[]
   ): void {

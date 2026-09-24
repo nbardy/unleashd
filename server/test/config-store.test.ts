@@ -210,7 +210,7 @@ test('bulk session lookups scan once while imports, rotations, tombstones, and r
     });
 
     assert.equal(await store.findBySession('codex', 'ordinary-miss'), undefined);
-    assert.equal(scans, 2, 'ordinary lookup resumes scanning after the import');
+    assert.equal(scans, 1, 'the index built by the import answers misses after it');
   });
 });
 
@@ -267,11 +267,14 @@ test('bulk lookup repairs stale indexes, reads current records, and releases its
       /import failed/
     );
 
+    // The failed scope released its record scan: list() reads the disk again.
+    assert.ok((await store.list()).some((record) => record.conversationId === 'external-record'));
+    // Another process's later write reaches this store through the durable
+    // by-session index it maintains, not through a scan.
     await otherStore.setCurrentSession('external-record', {
       provider: 'codex',
       sessionId: 'future-unindexed-session',
     });
-    await rm(store.sessionDirectory, { recursive: true, force: true });
     assert.equal(
       (await store.findBySession('codex', 'future-unindexed-session'))?.conversationId,
       'external-record'
@@ -420,7 +423,62 @@ test('one failing bulk lookup does not release an overlapping import scope', asy
       await importing;
     }
     assert.equal(await store.findBySession('codex', 'finished-importing'), undefined);
-    assert.equal(scans, 2);
+    assert.equal(scans, 1);
+  });
+});
+
+test('after the startup scope, a session lookup miss never scans every record', async () => {
+  // Regression, 2026-09-25: the startup index was dropped when its scope ended,
+  // so each later miss read and parsed all ~7,800 records (42MB, ~3.2s), up to
+  // 3x per new external session the poller found.
+  await withStore(async (store, root) => {
+    await store.create({
+      conversationId: CONVERSATION_ID,
+      currentSession: { provider: 'codex', sessionId: 'known-session' },
+      config: CONFIG,
+      provenance: 'user',
+    });
+    await store.create({
+      conversationId: OTHER_CONVERSATION_ID,
+      currentSession: { provider: 'claude', sessionId: 'unindexed-on-disk' },
+      config: CONFIG,
+      provenance: 'user',
+    });
+    // A record with no durable index entry, as an older version could leave:
+    // the startup scan must cover it, not a per-lookup scan.
+    await rm(path.join(store.sessionDirectory, 'claude'), { recursive: true, force: true });
+
+    const restarted = new ConversationConfigStore({ appDataRoot: root });
+    await restarted.withSessionLookupIndex(async () => {});
+    const scanner = restarted as unknown as { scanRecords: () => Promise<unknown> };
+    scanner.scanRecords = async () => {
+      throw new Error('findBySession scanned every record after startup');
+    };
+
+    assert.equal(await restarted.findBySession('codex', 'never-seen'), undefined);
+    assert.equal(
+      (await restarted.findBySession('codex', 'known-session'))?.conversationId,
+      CONVERSATION_ID
+    );
+    assert.equal(
+      (await restarted.findBySession('claude', 'unindexed-on-disk'))?.conversationId,
+      OTHER_CONVERSATION_ID
+    );
+
+    // Writes after startup keep the retained index current.
+    await restarted.create({
+      conversationId: 'created-after-startup',
+      currentSession: { provider: 'codex', sessionId: 'late-session' },
+      config: CONFIG,
+      provenance: 'user',
+    });
+    await restarted.purge(CONVERSATION_ID);
+    await rm(restarted.sessionDirectory, { recursive: true, force: true });
+    assert.equal(
+      (await restarted.findBySession('codex', 'late-session'))?.conversationId,
+      'created-after-startup'
+    );
+    assert.equal(await restarted.findBySession('codex', 'known-session'), undefined);
   });
 });
 
