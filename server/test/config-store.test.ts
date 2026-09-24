@@ -368,6 +368,29 @@ test('list inside a bulk scope serves its one scan and never a record this store
   });
 });
 
+test('a bulk scope runs without waiting for its record scan', async () => {
+  // Regression, 2026-09-25: startup awaited a full read of every record
+  // (~7,800, 3-6s) before discovery began. Only a lookup miss needs the scan.
+  await withStore(async (store) => {
+    const scanner = store as unknown as { scanRecords: () => ReturnType<typeof store.list> };
+    const scan = scanner.scanRecords.bind(store);
+    let release!: () => void;
+    const held = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    scanner.scanRecords = async () => {
+      await held;
+      return scan();
+    };
+    const ran = await Promise.race([
+      store.withSessionLookupIndex(async () => 'ran'),
+      new Promise((resolve) => setTimeout(() => resolve('blocked'), 500)),
+    ]);
+    release();
+    assert.equal(ran, 'ran');
+  });
+});
+
 test('one failing bulk lookup does not release an overlapping import scope', async () => {
   await withStore(async (store) => {
     let release!: () => void;

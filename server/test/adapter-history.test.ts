@@ -207,3 +207,54 @@ test('selected and related parses share the aggregate source byte budget', async
     assert.equal(source.boundSessionSources?.length, 1);
   }
 });
+
+test('bound-session lookup reads each discovered path once, not once per binding', async (t) => {
+  // Regression, 2026-09-25: each binding ran the adapter's filename matcher over
+  // every discovered source (O(bindings × sources)) — ~8s of every startup
+  // across 7,700 sources. Keys are now indexed once per discovery.
+  const root = await fs.mkdtemp(path.join(tmpdir(), 'unleashd-history-index-'));
+  t.after(() => fs.rm(root, { recursive: true, force: true }));
+  const ids = [
+    ...Array.from({ length: 10 }, (_, index) => `current-${index}`),
+    ...Array.from({ length: 10 }, (_, index) => `old-${index}`),
+    ...Array.from({ length: 40 }, (_, index) => `other-${index}`),
+  ];
+  const sources = await Promise.all(
+    ids.map(async (id, index) => {
+      const filePath = path.join(root, `${id}.jsonl`);
+      await fs.writeFile(filePath, '{}');
+      await fs.utimes(filePath, 1000 - index, 1000 - index);
+      return filePath;
+    })
+  );
+  let keyReads = 0;
+  const adapter: DiskAdapter = {
+    provider: 'claude',
+    sessionFileKeys: (filePath) => {
+      keyReads += 1;
+      return [path.basename(filePath, '.jsonl')];
+    },
+    discoverFiles: async () => sources,
+    parseFile: async (filePath): Promise<ParsedSession> => ({
+      sessionId: path.basename(filePath, '.jsonl'),
+      filePath,
+      workingDirectory: '/tmp/project',
+      provider: 'claude',
+      model: 'unknown',
+      createdAt: new Date(timestamp),
+      modifiedAt: new Date(timestamp),
+      messages: [{ role: 'user', content: filePath, timestamp: new Date(timestamp) }],
+    }),
+  };
+  const result = await loadAllConversations({
+    adapters: [adapter],
+    limit: 10,
+    resolveSessionBindings: async (source) => [
+      { provider: 'claude', sessionId: source.sessionId.replace('current', 'old') },
+    ],
+  });
+  for (const source of result.conversations.values() as Iterable<SessionHistorySource>) {
+    assert.equal(source.boundSessionSources?.length, 1);
+  }
+  assert.equal(keyReads, sources.length);
+});

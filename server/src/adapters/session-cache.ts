@@ -56,13 +56,10 @@ export class NormalizedSessionCache {
 
   async initialize(): Promise<void> {
     await fs.mkdir(this.directory, { recursive: true, mode: 0o700 });
+    // The directory mode guards the records. Every record has been written
+    // 0o600 since the cache existed (86dbd4e), so re-chmodding each one on
+    // boot — 13k chmods, ~1s — protected nothing (removed 2026-09-25).
     await fs.chmod(this.directory, 0o700);
-    const entries = await fs.readdir(this.directory, { withFileTypes: true });
-    await Promise.all(
-      entries
-        .filter((entry) => entry.isFile() && entry.name.endsWith('.json'))
-        .map((entry) => fs.chmod(path.join(this.directory, entry.name), 0o600))
-    );
   }
 
   async read(key: SessionCacheKey): Promise<SessionCacheLookup> {

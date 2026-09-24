@@ -367,7 +367,6 @@ export async function loadAllConversations(
   options: SessionHistoryOptions & {
     onProgress?: LoadProgressCallback;
     limit?: number;
-    offset?: number;
     concurrency?: number;
     batchSize?: number;
     initialBatchSize?: number;
@@ -379,7 +378,6 @@ export async function loadAllConversations(
   const {
     onProgress,
     limit,
-    offset = 0,
     concurrency = 10,
     batchSize = 50,
     initialBatchSize = Math.min(20, batchSize),
@@ -388,40 +386,20 @@ export async function loadAllConversations(
     cache,
   } = options;
 
-  const normalizedConcurrency =
-    Number.isFinite(concurrency) && concurrency > 0 ? Math.floor(concurrency) : 10;
-  const normalizedBatchSize =
-    Number.isFinite(batchSize) && batchSize > 0 ? Math.floor(batchSize) : 50;
-  const normalizedInitialBatchSize =
-    Number.isFinite(initialBatchSize) && initialBatchSize > 0
-      ? Math.min(normalizedBatchSize, Math.floor(initialBatchSize))
-      : Math.min(20, normalizedBatchSize);
-  const normalizedMaxInFlightParseBytes =
-    Number.isFinite(maxInFlightParseBytes) && maxInFlightParseBytes > 0
-      ? Math.floor(maxInFlightParseBytes)
-      : DEFAULT_MAX_IN_FLIGHT_PARSE_BYTES;
-  const normalizedOffset = Number.isFinite(offset) && offset > 0 ? Math.floor(offset) : 0;
-  const normalizedLimit =
-    typeof limit === 'number' && Number.isFinite(limit) && limit > 0
-      ? Math.floor(limit)
-      : undefined;
-
+  // Callers pass validated positive integers (server.ts readPositiveIntEnv);
+  // `limit` absent means every discovered source.
   // Phase 1: Discover all files (sorted by mtime descending)
   const discoverStart = performance.now();
   console.log('Discovering persisted conversation files...');
   const files = await discoverAll([...adapters]);
-  const readSource = createBoundedSourceReader(normalizedMaxInFlightParseBytes, cache);
+  const readSource = createBoundedSourceReader(maxInFlightParseBytes, cache);
   const readHistory = createHistoryReader(options, async () => files, readSource);
   const discoverTimeMs = performance.now() - discoverStart;
 
-  const startIndex = Math.min(normalizedOffset, files.length);
-  const endIndex = normalizedLimit
-    ? Math.min(startIndex + normalizedLimit, files.length)
-    : files.length;
-  const filesToParse = files.slice(startIndex, endIndex);
+  const filesToParse = files.slice(0, limit ?? files.length);
 
   console.log(
-    `Discovered ${files.length} persisted conversation sources in ${discoverTimeMs.toFixed(0)}ms (sorted by mtime), parsing ${filesToParse.length} with concurrency=${normalizedConcurrency}, in-flight source budget=${Math.ceil(normalizedMaxInFlightParseBytes / 1024 / 1024)}MB...`
+    `Discovered ${files.length} persisted conversation sources in ${discoverTimeMs.toFixed(0)}ms (sorted by mtime), parsing ${filesToParse.length} with concurrency=${concurrency}, in-flight source budget=${Math.ceil(maxInFlightParseBytes / 1024 / 1024)}MB...`
   );
 
   // Phase 2: Parse files in parallel with batched progress callbacks.
@@ -448,7 +426,7 @@ export async function loadAllConversations(
 
   const parseStart = performance.now();
 
-  await forEachWithConcurrency(filesToParse, normalizedConcurrency, async (file) => {
+  await forEachWithConcurrency(filesToParse, concurrency, async (file) => {
     // Release the source-byte budget before loading its siblings; retaining
     // that reservation while waiting on an older source can deadlock startup.
     const result = await readSource(file);
@@ -469,8 +447,7 @@ export async function loadAllConversations(
 
     filesProcessed++;
 
-    const nextBatchSize =
-      conversationCount <= batchBuffer.length ? normalizedInitialBatchSize : normalizedBatchSize;
+    const nextBatchSize = conversationCount <= batchBuffer.length ? initialBatchSize : batchSize;
     if (onProgress && batchBuffer.length >= nextBatchSize) {
       // Detach the full batch before awaiting the consumer. Other parser
       // workers may complete while hydration is in progress.

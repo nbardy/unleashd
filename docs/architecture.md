@@ -85,6 +85,25 @@ The index is released on completion or failure. Normal lookup and index repair
 resume afterward; unindexed writes from another process are discovered then.
 This optimization preserves the existing hydration/readiness barrier.
 
+**Startup cost rules** (2026-09-25: the barrier took 67-102s on ~7,700 sources
+and ~7,800 records; these brought it to 14-20s on the same data). Each is
+guarded by a test; every one of them regressed by growing with history size.
+
+- **One record scan per startup, and nothing waits for it.** The lookup scope's
+  scan runs alongside discovery; only a lookup miss awaits it. `list()` inside
+  the scope serves that scan plus fresh reads of records this store wrote since —
+  recovery used to rescan all records a second time.
+- **No per-binding scan of sources.** Adapters declare `sessionFileKeys(path)`;
+  the loader indexes discovery once. A `matches(file, id)` predicate made each
+  binding walk every source (O(bindings × sources), ~8s).
+- **No per-row work for a lone transcript.** `mergeSessionMessages` returns a
+  single source unchanged; the general merge stringifies every row.
+- **Recovered conversations stream.** They broadcast in batches like transcript
+  batches, and recovery runs 16-wide. `conversation_load_complete` only prunes
+  the client's list; it never adds.
+- **Do not reintroduce per-file work on boot** that does not scale with the
+  newest 500 sources (e.g. the removed chmod of every session-cache record).
+
 ### 2.0) A config record is not a conversation
 
 Startup hydrates only the newest `STARTUP_INITIAL_LOAD_LIMIT` (500) transcripts;
