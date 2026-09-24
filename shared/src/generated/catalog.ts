@@ -1,5 +1,5 @@
 // DO NOT EDIT - generated from catalog.jsonc
-// Source: vendor/agent-cli-tool/catalog.jsonc (revision 2026-09-24.grok-4-7)
+// Source: vendor/agent-cli-tool/catalog.jsonc (revision 2026-09-24.gpt-6-sol-luna)
 // Generator: shared/scripts/gen-catalog.ts
 // Run: pnpm --filter @unleashd/shared gen:catalog
 
@@ -67,6 +67,8 @@ export const CODEX_MODEL_REGISTRY = [
   { modelName: "gpt-5.4", displayName: "GPT-5.4", thinkingOptions: CODEX_UNIFIED_THINKING_OPTIONS, defaultThinkingOption: "xhigh", isDefault: false },
   { modelName: "gpt-5.4-mini", displayName: "GPT-5.4 Mini", thinkingOptions: CODEX_UNIFIED_THINKING_OPTIONS, defaultThinkingOption: "xhigh", isDefault: false },
   { modelName: "gpt-6-astra", displayName: "GPT-6 Astra", thinkingOptions: CODEX_UNIFIED_THINKING_OPTIONS, defaultThinkingOption: "xhigh", isDefault: false },
+  { modelName: "gpt-6-sol", displayName: "GPT-6 Sol", thinkingOptions: CODEX_UNIFIED_THINKING_OPTIONS, defaultThinkingOption: "xhigh", isDefault: false },
+  { modelName: "gpt-6-luna", displayName: "GPT-6 Luna", thinkingOptions: CODEX_UNIFIED_THINKING_OPTIONS, defaultThinkingOption: "xhigh", isDefault: false },
   { modelName: "gpt-5.3-codex-spark", displayName: "Codex Spark", thinkingOptions: CODEX_UNIFIED_THINKING_OPTIONS, defaultThinkingOption: "xhigh", isDefault: false },
 ] as const;
 

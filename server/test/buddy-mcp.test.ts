@@ -334,16 +334,15 @@ test('Buddy conversations allow required-MCP harnesses and fail closed for the r
   // Muse negotiates MCP through a merged settings file with explicit
   // required mode; the CLI aborts when a required server fails startup.
   assert.doesNotThrow(() => assertBuddyProviderSupportsMcp('muse'));
+  // Cursor loads Buddy MCP as a --plugin-dir plugin and agent-cli probes the
+  // server's startup, failing the turn when it does not come up (agent-cli bcc33cc).
+  assert.doesNotThrow(() => assertBuddyProviderSupportsMcp('cursor'));
   assert.throws(
     () => assertBuddyProviderSupportsMcp('opencode'),
     /cannot start Buddy conversations.*cannot guarantee required Buddy state tools/
   );
   assert.throws(
     () => assertBuddyProviderSupportsMcp('gemini'),
-    /cannot start Buddy conversations.*cannot guarantee required Buddy state tools/
-  );
-  assert.throws(
-    () => assertBuddyProviderSupportsMcp('cursor'),
     /cannot start Buddy conversations.*cannot guarantee required Buddy state tools/
   );
 });

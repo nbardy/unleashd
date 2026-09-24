@@ -33,6 +33,8 @@ test('CODEX_MODEL_REGISTRY includes the expected base entries with shared thinki
     'gpt-5.6-sol',
     'gpt-5.6-terra',
     'gpt-6-astra',
+    'gpt-6-luna',
+    'gpt-6-sol',
   ]);
   for (const entry of CODEX_MODEL_REGISTRY) {
     assert.deepEqual(entry.thinkingOptions, [
@@ -225,6 +227,8 @@ test('listModels returns exactly the configured base IDs', () => {
     'gpt-5.6-sol',
     'gpt-5.6-terra',
     'gpt-6-astra',
+    'gpt-6-luna',
+    'gpt-6-sol',
   ]);
 });
 

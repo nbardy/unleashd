@@ -411,7 +411,7 @@ test('review runner keeps process ownership until completion and event drain on 
   let finished = false;
   let reviewDirectory = '';
   const run = createMemoryReviewRunner(f.control, ((request) => {
-    assert.equal(request.model, 'gpt-5.6-luna');
+    assert.equal(request.model, MEMORY_REVIEW_MODELS[0].model);
     assert.equal(request.reasoningEffort, 'low');
     assert.equal(request.resumeSessionId, undefined);
     assert.equal(request.yolo, false);
@@ -616,13 +616,47 @@ test('memory review receives current scoped project revisions without work tools
   }
 });
 
+/** A turn whose provider reports exhausted credits, as agent-cli normalizes it. */
+function drained(sessionId: string) {
+  return {
+    events: (async function* () {
+      yield { type: 'out_of_tokens' as const, message: 'Out of tokens: usage limit' };
+    })(),
+    completed: Promise.resolve({ reason: 'out_of_tokens', exitCode: 1, signal: null, sessionId }),
+    stop: () => {},
+  };
+}
+
+/** A turn that emits `toolNames` as tool.use, then really reads memory through the capability. */
+function reviewing(request: Parameters<typeof executeCommand>[0], toolNames: string[]) {
+  const env = request.mcpServers!.unleashd_memory.env!;
+  return {
+    events: (async function* () {
+      for (const name of toolNames) yield { type: 'tool.use' as const, name, input: {} };
+      const response = await fetch(env[MEMORY_REVIEW_URL_ENV], {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${env[MEMORY_REVIEW_TOKEN_ENV]}`,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify({ operation: 'get_memory', input: { doc: 'working' } }),
+      });
+      assert.equal(response.status, 200);
+      yield { type: 'turn.complete' as const, reason: 'success' as const };
+    })(),
+    completed: Promise.resolve({ reason: 'success', exitCode: 0, signal: null, sessionId: 'ok' }),
+    stop: () => {},
+  };
+}
+
 // Regression guard for the 2026-09-16 silent memory outage: Codex Luna credits
 // ran out and 395 consecutive background reviews died with
 // `Memory reviewer exited: out_of_tokens (1)`, so Buddy memory stopped being
-// curated while every other surface looked healthy. Without this test a future
-// edit can quietly collapse the ladder back to one model, or re-break the muse
-// event guard, and nothing else in the suite would notice.
-test('credit exhaustion on Luna re-runs the review on Muse 1.3 and records the fallback', async () => {
+// curated while every other surface looked healthy. Codex ran dry again on
+// 2026-09-24 and the Cursor rung became the live reviewer. Without this test a
+// future edit can quietly collapse the ladder back to one model, or unlock
+// Cursor's shell/edit tools, and nothing else in the suite would notice.
+test('credit exhaustion on codex re-runs the review on Cursor and records the fallback', async () => {
   const f = fixture();
   await f.control.start();
   const requests: Array<Record<string, unknown>> = [];
@@ -630,50 +664,9 @@ test('credit exhaustion on Luna re-runs the review on Muse 1.3 and records the f
     f.control,
     ((request) => {
       requests.push(request as unknown as Record<string, unknown>);
-      if (request.harness === 'codex')
-        return {
-          events: (async function* () {
-            yield { type: 'out_of_tokens' as const, message: 'Out of tokens: credit balance' };
-          })(),
-          completed: Promise.resolve({
-            reason: 'out_of_tokens',
-            exitCode: 1,
-            signal: null,
-            sessionId: 'luna',
-          }),
-          stop: () => {},
-        };
-      const env = request.mcpServers!.unleashd_memory.env!;
-      return {
-        events: (async function* () {
-          // The three tool.use-shaped records muse actually emits per MCP call;
-          // only the last is an invocation (measured on Muse Code 1.3.0).
-          yield { type: 'tool.use' as const, name: 'model.meta.response', input: {} };
-          yield {
-            type: 'tool.use' as const,
-            name: 'tool:mcp__unleashd_memory__get_memory',
-            input: {},
-          };
-          yield { type: 'tool.use' as const, name: 'mcp__unleashd_memory__get_memory', input: {} };
-          const response = await fetch(env[MEMORY_REVIEW_URL_ENV], {
-            method: 'POST',
-            headers: {
-              authorization: `Bearer ${env[MEMORY_REVIEW_TOKEN_ENV]}`,
-              'content-type': 'application/json',
-            },
-            body: JSON.stringify({ operation: 'get_memory', input: { doc: 'working' } }),
-          });
-          assert.equal(response.status, 200);
-          yield { type: 'turn.complete' as const, reason: 'success' as const };
-        })(),
-        completed: Promise.resolve({
-          reason: 'success',
-          exitCode: 0,
-          signal: null,
-          sessionId: 'muse',
-        }),
-        stop: () => {},
-      };
+      if (request.harness === 'codex') return drained('luna');
+      // Cursor reads a tool's schema through getMcpTools before calling it.
+      return reviewing(request, ['getMcpTools', 'mcp__unleashd_memory__get_memory']);
     }) as typeof executeCommand,
     { warn: () => {} }
   );
@@ -684,25 +677,64 @@ test('credit exhaustion on Luna re-runs the review on Muse 1.3 and records the f
     reviewer.enqueue(f.source);
     const [receipt] = await settled(reviewer, f.buddy.id);
     assert.equal(receipt.status, 'complete', receipt.error);
-    assert.equal(receipt.model, 'muse-spark-1.3');
-    assert.equal(receipt.fallbackFrom, 'gpt-5.6-luna');
-    assert.equal(requests.length, 2);
-    assert.equal(requests[0].harness, 'codex');
-    assert.equal(requests[0].model, 'gpt-5.6-luna');
-    assert.equal(requests[1].harness, 'muse');
-    // The contributor build may train on what it reads, and a reviewer reads
-    // the whole transcript — the fallback must stay on the plain 1.3.
-    assert.equal(requests[1].model, 'muse-spark-1.3');
-    // Muse has no instructions-file flag, so the contract must ride in the
-    // prompt ahead of the evidence or the fallback reviews with no rules.
-    const musePrompt = requests[1].prompt as string;
-    assert.ok(musePrompt.startsWith(MEMORY_REVIEW_INSTRUCTIONS));
-    assert.ok(musePrompt.includes('EVIDENCE_JSON:\n'));
-    assert.ok(!(requests[1].extraArgs as string[]).includes('--yolo'));
+    assert.equal(receipt.model, MEMORY_REVIEW_MODELS[1].model);
+    assert.equal(receipt.fallbackFrom, MEMORY_REVIEW_MODELS[0].model);
+    assert.deepEqual(
+      requests.map((request) => request.harness),
+      ['codex', 'cursor']
+    );
+    // Cursor runs MCP calls only under --force, so --mode ask is the ONLY thing
+    // keeping shell and file edits away from a process reading a transcript.
+    assert.equal(requests[1].yolo, true);
+    const cursorArgs = requests[1].extraArgs as string[];
+    assert.equal(cursorArgs[cursorArgs.indexOf('--mode') + 1], 'ask');
+    // Cursor has no system-prompt flag: the contract must ride ahead of the evidence.
+    const cursorPrompt = requests[1].prompt as string;
+    assert.ok(cursorPrompt.startsWith(MEMORY_REVIEW_INSTRUCTIONS));
+    assert.ok(cursorPrompt.includes('EVIDENCE_JSON:\n'));
     // The ladder only means anything if each rung bills a different provider:
     // retrying an empty balance on the same account answers nothing.
     const harnesses = MEMORY_REVIEW_MODELS.map((choice) => choice.harness);
     assert.equal(new Set(harnesses).size, harnesses.length, harnesses.join(' -> '));
+  } finally {
+    reviewer.stop();
+    await f.close();
+  }
+});
+
+test('the last rung is reached when every earlier provider is out of credits', async () => {
+  const f = fixture();
+  await f.control.start();
+  const attempted: string[] = [];
+  const last = MEMORY_REVIEW_MODELS[MEMORY_REVIEW_MODELS.length - 1];
+  const run = createMemoryReviewRunner(
+    f.control,
+    ((request) => {
+      attempted.push(request.harness);
+      if (request.harness !== last.harness) return drained(request.harness);
+      // The three tool.use-shaped records muse emitted per MCP call; only the
+      // last is an invocation (measured on Muse Code 1.3.0). The guard must
+      // tolerate the other two or it kills the review mid-write.
+      return reviewing(request, [
+        'model.meta.response',
+        'tool:mcp__unleashd_memory__get_memory',
+        'mcp__unleashd_memory__get_memory',
+      ]);
+    }) as typeof executeCommand,
+    { warn: () => {} }
+  );
+  const reviewer = f.create(run);
+  try {
+    await reviewer.initialize();
+    reviewer.start();
+    reviewer.enqueue(f.source);
+    const [receipt] = await settled(reviewer, f.buddy.id);
+    assert.equal(receipt.status, 'complete', receipt.error);
+    assert.equal(receipt.model, last.model);
+    assert.deepEqual(
+      attempted,
+      MEMORY_REVIEW_MODELS.map((choice) => choice.harness)
+    );
   } finally {
     reviewer.stop();
     await f.close();
@@ -739,7 +771,7 @@ test('a non-credit reviewer failure stays on the primary model instead of spendi
     reviewer.enqueue(f.source);
     const [receipt] = await settled(reviewer, f.buddy.id);
     assert.equal(receipt.status, 'failed');
-    assert.equal(receipt.model, 'gpt-5.6-luna');
+    assert.equal(receipt.model, MEMORY_REVIEW_MODELS[0].model);
     assert.equal(receipt.fallbackFrom, undefined);
     assert.equal(invocations, 1);
   } finally {
@@ -748,35 +780,28 @@ test('a non-credit reviewer failure stays on the primary model instead of spendi
   }
 });
 
-// The last rung can only be exercised for real by draining the two above it,
-// which never happens on demand. This forces that state so rung 3 is known to
-// work BEFORE the day both providers are actually empty. Live-gated: it spends
-// Claude quota and needs the real binary.
+// A fallback rung can only be exercised for real by draining every rung above
+// it, which never happens on demand. This forces that state so a rung is known
+// to work BEFORE the day it is needed. Live-gated: it spends real quota.
+// UNLEASHD_LIVE_MEMORY_REVIEW_HARNESS picks the rung (default cursor, the live
+// reviewer while codex credits are exhausted, 2026-09-24).
 test(
-  'live fallback ladder reaches Claude when both providers report credit exhaustion',
+  'live fallback ladder reaches the chosen rung when every earlier provider is drained',
   {
     skip: process.env.UNLEASHD_LIVE_MEMORY_REVIEW_LADDER !== '1',
     timeout: 280_000,
   },
   async () => {
+    const target = process.env.UNLEASHD_LIVE_MEMORY_REVIEW_HARNESS ?? 'cursor';
+    const rung = MEMORY_REVIEW_MODELS.findIndex((choice) => choice.harness === target);
+    assert.ok(rung > 0, `${target} is not a fallback rung`);
     const f = fixture();
     await f.control.start();
     const attempted: string[] = [];
     const run = createMemoryReviewRunner(f.control, ((request) => {
       attempted.push(`${request.harness}:${request.model}`);
-      if (request.harness === 'claude') return executeCommandLive(request);
-      return {
-        events: (async function* () {
-          yield { type: 'out_of_tokens' as const, message: 'Out of tokens: credit balance' };
-        })(),
-        completed: Promise.resolve({
-          reason: 'out_of_tokens',
-          exitCode: 1,
-          signal: null,
-          sessionId: 'drained',
-        }),
-        stop: () => {},
-      };
+      if (request.harness === target) return executeCommandLive(request);
+      return drained('drained');
     }) as typeof executeCommand);
     const reviewer = f.create(run);
     f.source.messages = [
@@ -803,12 +828,14 @@ test(
         await new Promise((resolve) => setTimeout(resolve, 100));
       const receipt = reviewer.list(f.buddy.id)[0];
       assert.equal(receipt.status, 'complete', receipt.error);
-      assert.equal(receipt.model, 'sonnet');
-      assert.equal(receipt.fallbackFrom, 'muse-spark-1.3');
-      assert.deepEqual(attempted, ['codex:gpt-5.6-luna', 'muse:muse-spark-1.3', 'claude:sonnet']);
+      assert.equal(receipt.model, MEMORY_REVIEW_MODELS[rung].model);
+      assert.equal(receipt.fallbackFrom, MEMORY_REVIEW_MODELS[rung - 1].model);
+      assert.deepEqual(
+        attempted,
+        MEMORY_REVIEW_MODELS.slice(0, rung + 1).map((choice) => `${choice.harness}:${choice.model}`)
+      );
       assert.ok(receipt.writes.working + receipt.writes.longTerm > 0);
-      // The whole point of --system-prompt + --disallowedTools: the reviewer
-      // stays a reviewer under a quoted injection line.
+      // The reviewer stays a reviewer under a quoted injection line.
       assert.equal(f.store.readBuddySoul(f.buddy.id).body, 'Use measured evidence.');
       console.log(JSON.stringify({ model: receipt.model, writes: receipt.writes }));
     } finally {

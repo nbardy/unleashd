@@ -4,6 +4,7 @@ import path from 'node:path';
 import type { ExecuteCommandRequest, McpServerSpec } from '@nbardy/agent-cli';
 import { executeCommand } from '@nbardy/agent-cli';
 import type { BuddyControlServer } from './control-server';
+import { discardCursorTranscript } from './cursor-ephemeral';
 import { resolveBuddyMcpLaunch } from './mcp-config';
 import {
   MEMORY_REVIEW_INSTRUCTIONS,
@@ -43,6 +44,11 @@ interface ReviewLaunch {
 interface ReviewHarnessHandler {
   request(launch: ReviewLaunch): ExecuteCommandRequest;
   authorizes(toolName: string): boolean;
+  /**
+   * Present only where the CLI cannot be told not to persist the run (cursor):
+   * erase the transcript after exit so the review never surfaces as a chat.
+   */
+  discardSession?(sessionId: string): void;
 }
 
 const CODEX_DISABLED_FEATURES = [
@@ -216,8 +222,36 @@ const claudeHandler: ReviewHarnessHandler = {
   authorizes: (toolName) => isMemoryTool(toolName),
 };
 
+/**
+ * Cursor (grok-4.7-low rung). Print mode executes an MCP call only under
+ * `--force` — without it the call is auto-rejected ("User rejected MCP",
+ * measured 2026-09-24) — so `yolo` is on and `--mode ask` (read-only: no
+ * shell, no edits) is what keeps the reviewer a reviewer. The event guard
+ * below still kills the run on any non-memory tool. Like muse, Cursor has no
+ * system-prompt flag, so the contract rides ahead of the evidence.
+ *
+ * `getMcpTools` is Cursor's schema-discovery frame: the model calls it to read
+ * a tool's input schema before the real call. It reaches no server capability.
+ */
+const cursorHandler: ReviewHarnessHandler = {
+  request: ({ choice, evidence, directory, memoryServer }) => ({
+    harness: 'cursor',
+    mode: 'conversation',
+    model: choice.model,
+    cwd: directory,
+    prompt: `${MEMORY_REVIEW_INSTRUCTIONS}\n\n${evidence}`,
+    yolo: true,
+    detached: true,
+    mcpServers: { [MEMORY_MCP_SERVER]: memoryServer },
+    extraArgs: ['--mode', 'ask'],
+  }),
+  authorizes: (toolName) => toolName === 'getMcpTools' || isMemoryTool(toolName),
+  discardSession: (sessionId) => discardCursorTranscript(sessionId),
+};
+
 const REVIEW_HARNESSES: Record<MemoryReviewModelChoice['harness'], ReviewHarnessHandler> = {
   codex: codexHandler,
+  cursor: cursorHandler,
   muse: museHandler,
   claude: claudeHandler,
 };
@@ -326,6 +360,7 @@ async function runAttempt(
     })();
     // Retain process ownership until the CLI has exited AND its normalized events drain.
     const [completion, events] = await Promise.allSettled([turn.completed, consumed]);
+    if (completion.status === 'fulfilled') handler.discardSession?.(completion.value.sessionId);
     signal.throwIfAborted();
     if (events.status === 'rejected') throw events.reason;
     if (completion.status === 'rejected') throw completion.reason;

@@ -9,8 +9,12 @@ import { MEMORY_REVIEW_TOOLS, type MemoryReviewTool } from './memory-review-tool
 
 /** One reviewer launch identity. Recorded on the receipt, so a fallback is data, never a silent swap. */
 export interface MemoryReviewModelChoice {
-  readonly harness: 'codex' | 'muse' | 'claude';
+  readonly harness: 'codex' | 'cursor' | 'claude' | 'muse';
   readonly model: string;
+  /**
+   * Passed to harnesses with an effort flag. Cursor has none — effort is part
+   * of its model id — so a cursor rung records the effort its id encodes.
+   */
   readonly reasoningEffort: string;
 }
 
@@ -23,21 +27,41 @@ export interface MemoryReviewModelChoice {
  * curated while the product looked healthy.
  *
  * Every rung bills a DIFFERENT provider, which is the whole point: retrying the
- * same empty balance answers nothing. Order is deliberate:
- *   0. Luna — the reviewer the curation benchmark is calibrated on.
- *   1. Muse — separate Meta billing, so it competes with nothing else here.
- *   2. Claude — last on purpose. It shares the quota that foreground Buddy
- *      sessions run on, and starving live work to curate memory in the
- *      background is a worse trade than a late review.
- * Only harnesses with fail-closed required MCP can host a reviewer, which rules
- * out gemini and cursor (`mcpCapability: 'none'`) and opencode (`'inject'`).
+ * same empty balance answers nothing.
+ *
+ * History of the order:
+ *   2026-09-16 — codex gpt-5.6-luna → muse muse-spark-1.3 → claude sonnet.
+ *     Muse second (separate Meta billing), Claude last on purpose: it shares
+ *     the quota foreground Buddy sessions run on. Muse was the non-contributor
+ *     build because contributor variants may train on what they read, and a
+ *     reviewer reads the whole Buddy transcript.
+ *   2026-09-24 — owner decision, the ladder below:
+ *     0. codex gpt-6-luna — became available with codex-cli 0.156.1 that day
+ *        (before it, `-m gpt-6-luna` returned 400 "not supported when using
+ *        Codex with a ChatGPT account"). The curation benchmark was calibrated
+ *        on gpt-5.6-luna, not this model.
+ *     1. cursor grok-4.7-low — Cursor billing. Cursor has no effort flag; the
+ *        `-low` id IS the "low effort" choice, matching every other rung.
+ *        Cursor became a reviewer host once agent-cli earned it `required`
+ *        MCP (per-process plugin + runner startup probe, 2026-09-24).
+ *     2. claude sonnet — owner moved it ahead of muse, accepting that the
+ *        fallback now competes with foreground Buddy quota.
+ *     3. muse muse-spark-1.3-contributor — owner's explicit pick; this
+ *        REVERSES the non-contributor rule above, so a review reaching this
+ *        rung may hand the Buddy transcript to a training-eligible build.
+ *   The same day codex credits were exhausted until 2026-09-27 22:15, so rung 1
+ *   was the live reviewer. Codex reports that as "You've hit your usage
+ *   limit ..." which agent-cli classifies `out_of_tokens` (pinned by a fixture
+ *   of the verbatim text in vendor/agent-cli-tool/test/run.test.ts).
+ *
+ * Only harnesses with `required` MCP can host a reviewer: gemini is `'none'`
+ * and opencode `'inject'`.
  */
 export const MEMORY_REVIEW_MODELS: readonly MemoryReviewModelChoice[] = [
-  { harness: 'codex', model: 'gpt-5.6-luna', reasoningEffort: 'low' },
-  // Deliberately the non-contributor build: contributor variants may train on
-  // what they read, and a reviewer reads the whole Buddy transcript.
-  { harness: 'muse', model: 'muse-spark-1.3', reasoningEffort: 'low' },
+  { harness: 'codex', model: 'gpt-6-luna', reasoningEffort: 'low' },
+  { harness: 'cursor', model: 'grok-4.7-low', reasoningEffort: 'low' },
   { harness: 'claude', model: 'sonnet', reasoningEffort: 'low' },
+  { harness: 'muse', model: 'muse-spark-1.3-contributor', reasoningEffort: 'low' },
 ];
 
 export const MEMORY_REVIEW_MODEL = MEMORY_REVIEW_MODELS[0].model;

@@ -4,6 +4,7 @@ import path from 'node:path';
 import type { ExecuteCommandRequest } from '@nbardy/agent-cli';
 import { executeCommand } from '@nbardy/agent-cli';
 import type { ConversationConfig, ResolvedExecutionConfig } from '@unleashd/shared';
+import { discardCursorTranscript } from './cursor-ephemeral';
 
 // The thread follow-up gate: "should you respond, or leave it to another team
 // member?" asked of one Buddy about one new thread post. It is a bare CLI run
@@ -46,7 +47,7 @@ export function parseGateVerdict(output: string): GateVerdict {
 // admits only required-MCP harnesses). Each flag set drops tools, user and
 // project instructions, and session persistence — a persisted gate transcript
 // would be imported by the disk adapters and show up as a conversation.
-type GateHarness = 'claude' | 'codex' | 'muse';
+type GateHarness = 'claude' | 'codex' | 'muse' | 'cursor';
 
 function gateRequest(
   harness: GateHarness,
@@ -88,6 +89,33 @@ function gateRequest(
           '--disable-web-tools',
         ],
       };
+    // Cursor has no flag to drop tools or persistence. `--mode ask` makes it
+    // read-only and, without `--force`, nothing needing approval executes; any
+    // tool.use still ends the gate as unparseable. Its transcript is deleted
+    // after exit (discardGateSession), and effort lives in the model id.
+    case 'cursor':
+      return {
+        mode: 'conversation',
+        prompt,
+        cwd,
+        model: execution.modelId,
+        yolo: false,
+        detached: true,
+        harness,
+        extraArgs: ['--mode', 'ask'],
+      };
+  }
+}
+
+/** Only cursor persists a run it cannot be told to skip; see cursor-ephemeral.ts. */
+function discardGateSession(harness: GateHarness, sessionId: string): void {
+  switch (harness) {
+    case 'cursor':
+      return discardCursorTranscript(sessionId);
+    case 'claude':
+    case 'codex':
+    case 'muse':
+      return;
   }
 }
 
@@ -96,16 +124,17 @@ function gateHarness(provider: ResolvedExecutionConfig['provider']): GateHarness
     case 'claude':
     case 'codex':
     case 'muse':
+    case 'cursor':
       return provider;
     case 'opencode':
     case 'gemini':
-    case 'cursor':
       return null;
   }
 }
 
 async function runGate(
   execute: typeof executeCommand,
+  harness: GateHarness,
   request: ExecuteCommandRequest
 ): Promise<GateVerdict> {
   const turn = execute(request);
@@ -135,6 +164,7 @@ async function runGate(
       }
     })();
     const [completion, events] = await Promise.allSettled([turn.completed, consumed]);
+    if (completion.status === 'fulfilled') discardGateSession(harness, completion.value.sessionId);
     if (violation) return violation;
     if (events.status === 'rejected') throw events.reason;
     if (completion.status === 'rejected') throw completion.reason;
@@ -162,7 +192,7 @@ export function createCliReplyGate(ports: {
       return { kind: 'failed', reason: `no reply gate for provider ${execution.provider}` };
     const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'unleashd-reply-gate-'));
     try {
-      return await runGate(execute, gateRequest(harness, execution, prompt, directory));
+      return await runGate(execute, harness, gateRequest(harness, execution, prompt, directory));
     } finally {
       fs.rmSync(directory, { recursive: true, force: true });
     }
