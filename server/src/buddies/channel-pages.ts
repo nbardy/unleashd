@@ -21,26 +21,28 @@ export type PostPage = {
   newer: string | null;
 };
 
-type Pager = (
+type Slice = { posts: BuddyMailingListPost[]; more: boolean };
+
+// Each read over-fetches one row to learn whether another page exists.
+function olderThan(
   store: BuddiesStorePort,
   scope: PageScope,
+  anchor: string | null,
   limit: number
-) => {
-  olderThan(anchor: string | null): { posts: BuddyMailingListPost[]; more: boolean };
-  newerThan(anchor: string | null): { posts: BuddyMailingListPost[]; more: boolean };
-};
+): Slice {
+  const rows = store.pagePosts({ ...scope, direction: 'older', anchor, limit: limit + 1 });
+  return { posts: rows.slice(-limit), more: rows.length > limit };
+}
 
-// Over-fetch one row per direction to learn whether another page exists.
-const pager: Pager = (store, scope, limit) => ({
-  olderThan(anchor) {
-    const rows = store.pagePosts({ ...scope, direction: 'older', anchor, limit: limit + 1 });
-    return { posts: rows.slice(-limit), more: rows.length > limit };
-  },
-  newerThan(anchor) {
-    const rows = store.pagePosts({ ...scope, direction: 'newer', anchor, limit: limit + 1 });
-    return { posts: rows.slice(0, limit), more: rows.length > limit };
-  },
-});
+function newerThan(
+  store: BuddiesStorePort,
+  scope: PageScope,
+  anchor: string | null,
+  limit: number
+): Slice {
+  const rows = store.pagePosts({ ...scope, direction: 'newer', anchor, limit: limit + 1 });
+  return { posts: rows.slice(0, limit), more: rows.length > limit };
+}
 
 const first = (posts: BuddyMailingListPost[]) => posts[0]?.id ?? null;
 const last = (posts: BuddyMailingListPost[]) => posts[posts.length - 1]?.id ?? null;
@@ -51,20 +53,19 @@ export function readPage(
   request: PageRequest,
   limit: number
 ): PostPage {
-  const read = pager(store, scope, limit);
   switch (request.kind) {
     case 'latest': {
-      const page = read.olderThan(null);
+      const page = olderThan(store, scope, null, limit);
       return { posts: page.posts, older: page.more ? first(page.posts) : null, newer: null };
     }
     case 'earliest': {
-      const page = read.newerThan(null);
+      const page = newerThan(store, scope, null, limit);
       return { posts: page.posts, older: null, newer: page.more ? last(page.posts) : null };
     }
+    // Paging from an anchor, the anchor side always has more (the anchor
+    // itself), so that side's cursor is simply the page edge.
     case 'before': {
-      // Everything after this page is at least the anchor, so `newer` is
-      // always available: pass the page's last id to continue forward.
-      const page = read.olderThan(request.anchor);
+      const page = olderThan(store, scope, request.anchor, limit);
       return {
         posts: page.posts,
         older: page.more ? first(page.posts) : null,
@@ -72,7 +73,7 @@ export function readPage(
       };
     }
     case 'after': {
-      const page = read.newerThan(request.anchor);
+      const page = newerThan(store, scope, request.anchor, limit);
       return {
         posts: page.posts,
         older: first(page.posts),
@@ -81,8 +82,8 @@ export function readPage(
     }
     case 'around': {
       const half = Math.max(1, Math.floor(limit / 2));
-      const before = pager(store, scope, half).olderThan(request.anchor.id);
-      const after = pager(store, scope, half).newerThan(request.anchor.id);
+      const before = olderThan(store, scope, request.anchor.id, half);
+      const after = newerThan(store, scope, request.anchor.id, half);
       const posts = [...before.posts, request.anchor, ...after.posts];
       return {
         posts,

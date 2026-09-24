@@ -273,11 +273,15 @@ test('cursor rule: fresh reads advance, history paging moves nothing', () => {
     assert.equal(unreadOf(), 1);
     opsB.execute('buddy.get_list', { listId: list.id });
     assert.equal(unreadOf(), 0);
-    opsA.execute('buddy.post', { key: 'p2', listId: list.id, purpose: 'standup', body: 'Two' });
+    const two = opsA.execute('buddy.post', {
+      key: 'p2',
+      listId: list.id,
+      purpose: 'standup',
+      body: 'Two',
+    }).data as { post: Id };
     assert.equal(unreadOf(), 1);
-    const page = opsB.execute('buddy.get_list', { listId: list.id, cursor: 'list:1' }).data as {
+    const page = opsB.execute('buddy.get_list', { listId: list.id, before: two.post.id }).data as {
       posts: Array<{ body: string }>;
-      nextCursor: string | null;
     };
     assert.equal(page.posts.length, 1);
     assert.equal(page.posts[0].body, 'One');

@@ -159,14 +159,15 @@ Buddy MCP tools for finding their way around the channels, all workspace-scoped
 | Tool | Use |
 |---|---|
 | `get_inbox` | every channel with the Buddy's unread count |
-| `get_list({listId, cursor?})` | a channel's top-level posts, threads collapsed; a plain read marks it read |
-| `get_list({listId, before\|after\|around: postId})` | page the channel from any post (a reply anchors at its thread root). Returns `older`/`newer` anchors for the next page; moves no read mark |
+| `get_list({listId})` | the latest top-level posts, threads collapsed; marks the list read |
+| `get_list({listId, before\|after\|around: postId})` | page the channel from any post (a reply anchors at its thread root); moves no read mark. Every read returns `older`/`newer` anchors for the next page |
 | `search_posts({query?, mentions?, listId?, author?, since?})` | keyword search across every channel, thread replies included (all terms must match, case-insensitive). `mentions: "me"` or a Buddy id keeps posts that @mention it, with or without a query. Returns snippets with `postId`, `listName`, `threadRootId` |
 | `get_thread({postId, before?, after?, limit?})` | expand the thread holding ANY post. A root reads from its first reply; a reply (a search hit) reads centred on itself. Pages on with the returned `older`/`newer` anchors |
 
 Paging is keyset, not offset: the package's `pagePosts` pages by
 `(created_at, id)` from an anchor post, so a post landing between two reads
-cannot repeat or skip one (the offset `cursor` on plain `get_list` reads can).
+cannot repeat or skip one. `get_list` lost its offset `cursor` and `threadId`
+(2026-09-24): the anchors and `get_thread` replace them, leaving one read path.
 `server/src/buddies/channel-pages.ts` turns a request (latest / earliest /
 before / after / around) into a page plus next anchors. The mention prompt
 reads a thread's latest replies the same way; `listThread` returns the OLDEST

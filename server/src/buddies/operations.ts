@@ -25,7 +25,6 @@ import { authorLabel, searchSnippet } from './channel-text';
 import {
   type BuddiesStorePort,
   type BuddyAutomation,
-  type BuddyMailingList,
   type BuddyMailingListPost,
   BuddyMemoryOperationError,
 } from './contract';
@@ -325,12 +324,7 @@ export const BuddyOperationInputSchemas = {
   'buddy.get_list': z
     .object({
       listId: z.string().min(1),
-      threadId: z.string().min(1).optional(),
       limit: z.number().int().min(1).max(50).default(20),
-      cursor: z
-        .string()
-        .regex(/^list:[0-9]+$/)
-        .optional(),
       before: z.string().min(1).optional(),
       after: z.string().min(1).optional(),
       around: z.string().min(1).optional(),
@@ -338,10 +332,9 @@ export const BuddyOperationInputSchemas = {
     .strict()
     .refine(
       (input) =>
-        [input.threadId, input.cursor, input.before, input.after, input.around].filter(
-          (value) => value !== undefined
-        ).length <= 1,
-      { message: 'Pass at most one of threadId, cursor, before, after or around' }
+        [input.before, input.after, input.around].filter((anchor) => anchor !== undefined).length <=
+        1,
+      { message: 'Pass at most one of before, after or around' }
     ),
   'buddy.search_posts': z
     .object({
@@ -622,7 +615,16 @@ function withPostProvenance<T extends { post: BuddyMailingListPost }>(result: T)
   return { ...result, post: withPostProvenanceFields(result.post) };
 }
 
-type ListFeedRead = { kind: 'feed'; offset: number; marksRead: boolean };
+// A thread opens from its first reply for a root, centred on the post for a
+// reply (a search hit); before/after page on from there.
+function threadPageRequest(
+  parsed: z.infer<(typeof BuddyOperationInputSchemas)['buddy.get_thread']>,
+  post: BuddyMailingListPost
+): PageRequest {
+  if (parsed.before) return { kind: 'before', anchor: parsed.before };
+  if (parsed.after) return { kind: 'after', anchor: parsed.after };
+  return post.threadRootId ? { kind: 'around', anchor: post } : { kind: 'earliest' };
+}
 
 export class BuddyOperationsService {
   readonly context: BuddyOperationContext;
@@ -1773,28 +1775,25 @@ export class BuddyOperationsService {
           throw Object.assign(new Error('Mailing list is unavailable in this workspace'), {
             code: 'list_outside_workspace',
           });
-        const read = this.listReadOf(parsed, list.id);
-        switch (read.kind) {
-          case 'thread':
-            return this.result(name, this.readWholeThread(read.root, list.id), parsed);
-          case 'feed':
-            return this.result(name, this.readListFeed(list, read, parsed.limit), parsed);
-          case 'page': {
-            // Anchored pages are history navigation: no read mark moves.
-            // Posts stay newest-first like every other get_list page.
-            const page = readPage(this.store, { list: list.id }, read.request, parsed.limit);
-            return this.result(
-              name,
-              {
-                list,
-                posts: page.posts.map(withPostProvenanceFields).reverse(),
-                older: page.older,
-                newer: page.newer,
-              },
-              parsed
-            );
-          }
-        }
+        const request = this.listPageRequest(parsed, list.id);
+        const page = readPage(this.store, { list: list.id }, request, parsed.limit);
+        // Only the plain read (the latest page) marks the list read, up to the
+        // newest post anywhere in it: thread replies included, since the feed
+        // shows their roots' replyCount/latestReplyAt. Anchored pages are
+        // history navigation and move nothing.
+        const newest = request.kind === 'latest' && this.store.newestListPost({ list: list.id });
+        if (newest)
+          this.store.markListRead({ buddy: this.context.buddyId, list: list.id, post: newest.id });
+        return this.result(
+          name,
+          {
+            list,
+            posts: page.posts.map(withPostProvenanceFields).reverse(),
+            older: page.older,
+            newer: page.newer,
+          },
+          parsed
+        );
       }
       case 'buddy.search_posts': {
         const parsed = BuddyOperationInputSchemas[name].parse(input);
@@ -1837,18 +1836,10 @@ export class BuddyOperationsService {
       }
       case 'buddy.get_thread': {
         const parsed = BuddyOperationInputSchemas[name].parse(input);
-        // Any post id opens its thread: a root reads from the first reply, a
-        // reply (the usual search hit) reads the replies around itself.
-        // before/after page on from there. Never moves a read mark.
+        // Any post id opens its thread; never moves a read mark.
         const post = this.requireWorkspacePost(parsed.postId);
         const root = post.threadRootId ? this.requireWorkspacePost(post.threadRootId) : post;
-        const request: PageRequest = parsed.before
-          ? { kind: 'before', anchor: parsed.before }
-          : parsed.after
-            ? { kind: 'after', anchor: parsed.after }
-            : post.threadRootId
-              ? { kind: 'around', anchor: post }
-              : { kind: 'earliest' };
+        const request = threadPageRequest(parsed, post);
         const page = readPage(this.store, { thread: root.id }, request, parsed.limit);
         return this.result(
           name,
@@ -2348,60 +2339,19 @@ export class BuddyOperationsService {
     return post;
   }
 
-  // get_list reads one of three ways; the schema allows at most one selector.
-  private listReadOf(
+  // No anchor reads the latest page; a reply anchors at its thread root's
+  // position, since the channel lists only top-level posts.
+  private listPageRequest(
     parsed: z.infer<(typeof BuddyOperationInputSchemas)['buddy.get_list']>,
     listId: string
-  ): { kind: 'thread'; root: string } | ListFeedRead | { kind: 'page'; request: PageRequest } {
-    if (parsed.threadId) return { kind: 'thread', root: parsed.threadId };
-    if (parsed.before) return { kind: 'page', request: { kind: 'before', anchor: parsed.before } };
-    if (parsed.after) return { kind: 'page', request: { kind: 'after', anchor: parsed.after } };
-    if (parsed.around) {
-      // A reply sits in the channel at its thread root's position.
-      const post = this.requireWorkspacePost(parsed.around);
-      const anchor = post.threadRootId ? this.requireWorkspacePost(post.threadRootId) : post;
-      if (anchor.listId !== listId) throw new Error('Post is not in this list');
-      return { kind: 'page', request: { kind: 'around', anchor } };
-    }
-    const offset = parsed.cursor ? Number(parsed.cursor.slice('list:'.length)) : 0;
-    if (!Number.isSafeInteger(offset)) throw new Error('Invalid list cursor');
-    // Only a read from the top (no cursor at all) marks the list read.
-    return { kind: 'feed', offset, marksRead: parsed.cursor === undefined };
-  }
-
-  private readWholeThread(root: string, listId: string) {
-    const thread = this.store.listThread({ root });
-    if (thread.root.listId !== listId) throw new Error('Thread is not in this list');
-    return {
-      root: withPostProvenanceFields(thread.root),
-      replies: thread.replies.map(withPostProvenanceFields),
-    };
-  }
-
-  private readListFeed(list: BuddyMailingList, { offset, marksRead }: ListFeedRead, limit: number) {
-    const overfetch = limit < 50;
-    const rows = this.store.listPosts({
-      list: list.id,
-      limit: overfetch ? limit + 1 : limit,
-      offset,
-    });
-    const hasMore = overfetch ? rows.length > limit : rows.length === limit;
-    const posts = (overfetch && hasMore ? rows.slice(0, limit) : rows).map(
-      withPostProvenanceFields
-    );
-    // A read from the top marks the list read, up to the newest post
-    // anywhere in it (thread replies included: the feed shows their
-    // roots' replyCount/latestReplyAt). Paging into history moves nothing.
-    const newest = marksRead ? this.store.newestListPost({ list: list.id }) : null;
-    if (newest)
-      this.store.markListRead({ buddy: this.context.buddyId, list: list.id, post: newest.id });
-    return {
-      list,
-      posts,
-      nextCursor: hasMore ? `list:${offset + limit}` : null,
-      // Keyset anchor for get_list({before}): stable while new posts arrive.
-      older: hasMore ? (posts[posts.length - 1]?.id ?? null) : null,
-    };
+  ): PageRequest {
+    if (parsed.before) return { kind: 'before', anchor: parsed.before };
+    if (parsed.after) return { kind: 'after', anchor: parsed.after };
+    if (!parsed.around) return { kind: 'latest' };
+    const post = this.requireWorkspacePost(parsed.around);
+    const anchor = post.threadRootId ? this.requireWorkspacePost(post.threadRootId) : post;
+    if (anchor.listId !== listId) throw new Error('Post is not in this list');
+    return { kind: 'around', anchor };
   }
 
   private result(
