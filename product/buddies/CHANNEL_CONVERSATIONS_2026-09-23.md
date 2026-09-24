@@ -39,9 +39,15 @@ remain the three core components.
 1. Only OWNER posts dispatch. Buddy-authored mentions never wake anyone: Buddies
    coordinate with `send`/`update_project`, and post-driven wakeups would reopen
    the fan-out the mailing-list spec closed.
-2. One conversation per (thread, Buddy), id derived from both, so follow-up
-   mentions continue the same transcript. Input is `owner_input` origin: owner
-   thread knowledge scope, owner-control MCP, like a `talk()` chat.
+2. One NEW conversation per mention (the Slack model), id derived from the
+   (mention post, Buddy) pair. A follow-up mention inside a thread does not
+   resume the previous reply's conversation: the thread context in the prompt
+   (item 3) is the memory. Until 2026-09-24 one (thread, Buddy) conversation
+   was resumed per thread; in conv 0f1dfb23 it grew until the provider ended
+   the turn `out_of_tokens`, and a harness picked on a later mention was
+   refused because a started session cannot change provider. Resuming belongs
+   to the chat view. Input is `owner_input` origin: owner thread knowledge
+   scope, owner-control MCP, like a `talk()` chat.
 3. Context is deliberately short (2026-09-24): for a top-level mention, the 10
    latest channel posts with every thread COLLAPSED to `[thread: N replies,
    latest …]`; for a thread mention, the root plus its 10 latest replies and an
@@ -55,13 +61,12 @@ remain the three core components.
    A failed turn posts `purpose: reply_failed` with the reason — never silent.
 5. `GET /api/buddies/lists/:id/responding` drives "X is replying…".
 
-**Known gap:** mention replies are launched by an in-memory chain in
+**Known gap:** mention replies are launched as in-memory promises in
 `channel-responder.ts`, not as durable Buddy runs. A hard restart (crash,
 Ctrl-C, `dev:replace`) loses a reply in flight; the transcript survives and the
 owner re-mentions to retry. A hot reload is safe for a turn already running
-(the drain waits for its process), but a mention still WAITING — a second
-mention to a busy thread, or the window between saving the post and starting
-the turn — is not counted as active work, so the drain can exit and drop it
+(the drain waits for its process), but a mention still WAITING — the window
+between saving the post and starting the turn — is not counted as active work, so the drain can exit and drop it
 silently. The fix is to launch each mention as a `buddy_runs` row; see the
 proposal in
 [the 2026-09-24 handoff](../../agent_notes/2026-09-24_dev-restart-simplification-and-cleanup.md#open-mention-replies-as-durable-buddy-runs).
@@ -78,15 +83,10 @@ proposal in
   the body. The route 400s a choice for a Buddy the body does not mention, a
   duplicate, or any choice on a Buddy-authored post — each would otherwise be
   dropped without a trace.
-- **Server:** a new (thread, Buddy) conversation is created on the chosen
-  config; a continuing one gets a `replace` patch through `updateRuntimeConfig`
-  (`server/src/conversations/runtime-config.ts`) — the path the chat header's
-  `set_conversation_config` also uses — once it is idle. So a choice sticks for
-  later mentions in that thread, and a mention with no choice keeps what the
-  thread runs.
-- **Harness lock:** a started thread cannot change provider (its session cannot
-  move). That is a `reply_failed` post saying so, never a silent fallback to
-  the old harness.
+- **Server:** the mention's new conversation is created on the chosen config,
+  so the choice applies to that one reply. A mention with no choice runs on the
+  Buddy's profile default, in a thread too. Any harness works on any mention:
+  there is no started session to lock it.
 - **Defaults on the chip:** workspace activity members carry
   `execution: {kind:'profile', config}` from `buddyExecutionPreferences()` (the
   same mapping turn creation uses). The wire default is `{kind:'unreported'}`

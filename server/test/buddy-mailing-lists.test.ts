@@ -124,10 +124,6 @@ function routeTestApp(store: BuddiesStorePort) {
     },
     responder: createChannelResponder({
       getStore: async () => store,
-      getConversation: () => undefined,
-      ensureConversationReady: async () => {
-        throw new Error('not used');
-      },
       createConversation: async () => {
         throw new Error('not used');
       },

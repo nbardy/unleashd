@@ -19,7 +19,6 @@ import { configFromProviderPreferences } from '../src/conversations/config-mappi
 import { ConversationConfigService } from '../src/conversations/config-service';
 import { ConversationConfigStore } from '../src/conversations/config-store';
 import type { ConversationRuntime } from '../src/conversations/runtime';
-import { updateRuntimeConfig } from '../src/conversations/runtime-config';
 import { resolveConfigAgainstProviderCatalog } from '../src/providers/catalog-service';
 
 // End-to-end channel conversation: owner posts through the real routes into a
@@ -27,8 +26,8 @@ import { resolveConfigAgainstProviderCatalog } from '../src/providers/catalog-se
 // thread. The provider turn is the only stand-in (the model is the external
 // boundary); the fake runtime exposes exactly the surface the responder drives.
 
-// Configuration is real: the runtime holds the persisted config state and the
-// responder changes it through the same updateRuntimeConfig path as the chat.
+// Configuration is real: the runtime holds the config state persisted when the
+// conversation was created (the mention's pick, else the profile default).
 class FakeTurnRuntime extends EventEmitter {
   isRunning = false;
   queue: unknown[] = [];
@@ -125,16 +124,7 @@ function harness() {
     sendError,
     responder: createChannelResponder({
       getStore: async () => store,
-      getConversation: getRuntime,
-      ensureConversationReady: async (conversation) => conversation,
       createConversation: createRuntime,
-      setConversationConfig: (conversation, config) =>
-        updateRuntimeConfig(configService, conversation, {
-          conversationId: conversation.id,
-          commandId: `test-${conversation.configRevision}`,
-          expectedRevision: conversation.configRevision,
-          patch: { kind: 'replace', config },
-        }),
       uploadsRoot: () => uploadsRoot,
       logger: { warn: () => undefined },
     }),
@@ -160,7 +150,7 @@ function harness() {
   };
 }
 
-test('owner @mention runs one turn per thread and the answer lands in the thread with its media', async () => {
+test('owner @mention runs a turn and the answer lands in the thread with its media', async () => {
   const h = harness();
   const server = h.app.listen(0, '127.0.0.1');
   try {
@@ -250,8 +240,9 @@ test('owner @mention runs one turn per thread and the answer lands in the thread
       await new Promise((resolve) => setTimeout(resolve, 10));
     }
 
-    // A follow-up mention in the same thread continues the same transcript;
-    // a failed turn is reported in the thread, never swallowed.
+    // A follow-up mention in the same thread starts a NEW conversation seeded
+    // with the thread (the Buddy's earlier reply included); a failed turn is
+    // reported in the thread, never swallowed.
     const followUp = await call(`/api/buddies/lists/${list.id}/posts`, {
       author: { kind: 'owner' },
       key: 'follow-up',
@@ -259,16 +250,20 @@ test('owner @mention runs one turn per thread and the answer lands in the thread
       body: `[@Lead](buddy:${h.lead.id}) and the mobile view?`,
       threadRootId: root.id,
     });
-    assert.equal(followUp.json.mentions[0].conversationId, leadMention.conversationId);
-    const second = await until(() => runtime.prompts[1], 'second prompt');
+    const followUpId = followUp.json.mentions[0].conversationId;
+    assert.notEqual(followUpId, leadMention.conversationId);
+    const followUpRuntime = await until(() => h.runtimes.get(followUpId), 'follow-up runtime');
+    const second = await until(() => followUpRuntime.prompts[0], 'follow-up prompt');
     assert.match(second.content, /Close — fixed the spacing/);
-    runtime.emit('buddy-turn-failed', 'Buddy provider is unavailable: codex');
+    assert.equal(runtime.prompts.length, 1);
+    followUpRuntime.emit('buddy-turn-failed', 'Buddy provider is unavailable: codex');
     const failed = await until(() => {
       const read = h.raw.listThread({ root: root.id }).replies;
       return read.find((post) => post.purpose === 'reply_failed');
     }, 'failure reply');
     assert.match(failed.body, /provider is unavailable/);
-    assert.deepEqual(h.created, [leadMention.conversationId]);
+    assert.equal(failed.senderConversationId, followUpId);
+    assert.deepEqual(h.created, [leadMention.conversationId, followUpId]);
 
     // Buddy-authored mentions never start turns.
     const buddyMention = await call(`/api/buddies/lists/${list.id}/posts`, {
@@ -278,7 +273,7 @@ test('owner @mention runs one turn per thread and the answer lands in the thread
       body: `[@Lead](buddy:${h.lead.id}) note to self`,
     });
     assert.deepEqual(buddyMention.json.mentions, []);
-    assert.equal(runtime.prompts.length, 2);
+    assert.equal(h.created.length, 2);
 
     // A missing local file rejects an author-controlled post outright.
     const missing = await call(`/api/buddies/lists/${list.id}/posts`, {
@@ -296,10 +291,12 @@ test('owner @mention runs one turn per thread and the answer lands in the thread
   }
 });
 
-// The model picked on a mention chip must reach the turn, stick for later
-// mentions in the thread, and never silently switch a started thread's
-// harness (the provider session cannot move) — that is a visible failure.
-test('a mention’s chosen model runs the turn, sticks for the thread, and a harness switch fails visibly', async () => {
+// Regression, conv 0f1dfb23 (2026-09-24): mentions in one thread resumed one
+// (Buddy, thread) conversation, so a harness picked on a later mention was
+// refused ("Provider cannot change after the conversation has started") and
+// the resumed transcript grew until the turn ended `out_of_tokens`. Every
+// mention now gets its own conversation, created on its own pick.
+test('each mention in a thread gets its own conversation on its own harness', async () => {
   const h = harness();
   const server = h.app.listen(0, '127.0.0.1');
   try {
@@ -323,14 +320,20 @@ test('a mention’s chosen model runs the turn, sticks for the thread, and a har
       })
     ).json.list;
     const mention = `[@Lead](buddy:${h.lead.id})`;
-    const claude = (modelId: string): ConversationConfig => ({
+    const claude: ConversationConfig = {
       provider: 'claude',
-      model: { mode: 'explicit', modelId },
+      model: { mode: 'explicit', modelId: 'fable' },
       reasoning: { mode: 'default' },
-    });
-    // Buddy-authored thread replies (the owner's follow-ups are replies too).
+    };
+    const codex = configFromProviderPreferences({ provider: 'codex' });
     const replies = (root: string) =>
       h.raw.listThread({ root }).replies.filter((reply) => reply.author.kind === 'buddy');
+    const answer = async (conversationId: string, text: string) => {
+      const runtime = await until(() => h.runtimes.get(conversationId), 'runtime');
+      const prompt = await until(() => runtime.prompts[0], 'prompt');
+      runtime.emit('buddy-turn-complete', text);
+      return { runtime, prompt: prompt.content };
+    };
 
     // First mention: the Buddy's profile is Codex; the owner picked Claude.
     const asked = await post(`/api/buddies/lists/${list.id}/posts`, {
@@ -338,64 +341,38 @@ test('a mention’s chosen model runs the turn, sticks for the thread, and a har
       key: 'ask',
       purpose: 'message',
       body: `${mention} review this`,
-      mentionConfigs: [{ buddyId: h.lead.id, config: claude('fable') }],
+      mentionConfigs: [{ buddyId: h.lead.id, config: claude }],
     });
     assert.equal(asked.status, 201, JSON.stringify(asked.json));
     const root = asked.json.post.id;
-    const runtime = await until(
-      () => h.runtimes.get(asked.json.mentions[0].conversationId),
-      'runtime'
-    );
-    await until(() => runtime.prompts[0], 'first prompt');
-    assert.deepEqual(runtime.config, claude('fable'));
-    runtime.emit('buddy-turn-complete', 'Looks fine.');
+    const first = await answer(asked.json.mentions[0].conversationId, 'Looks fine on Claude.');
+    assert.deepEqual(first.runtime.config, claude);
     await until(() => replies(root).length === 1, 'first reply');
 
-    // Same harness, another model: applied before the next turn.
-    await post(`/api/buddies/lists/${list.id}/posts`, {
-      author: { kind: 'owner' },
-      key: 'switch-model',
-      purpose: 'message',
-      body: `${mention} again, more carefully`,
-      threadRootId: root,
-      mentionConfigs: [{ buddyId: h.lead.id, config: claude('sonnet') }],
-    });
-    await until(() => runtime.prompts[1], 'second prompt');
-    assert.deepEqual(runtime.config, claude('sonnet'));
-    runtime.emit('buddy-turn-complete', 'Checked twice.');
-    await until(() => replies(root).length === 2, 'second reply');
-
-    // No choice: the thread keeps what it runs, not the profile's Codex.
-    await post(`/api/buddies/lists/${list.id}/posts`, {
-      author: { kind: 'owner' },
-      key: 'no-choice',
-      purpose: 'message',
-      body: `${mention} one more`,
-      threadRootId: root,
-    });
-    await until(() => runtime.prompts[2], 'third prompt');
-    assert.deepEqual(runtime.config, claude('sonnet'));
-    runtime.emit('buddy-turn-complete', 'Done.');
-    await until(() => replies(root).length === 3, 'third reply');
-
-    // Another harness on a started thread: no turn, a visible failure reply.
-    await post(`/api/buddies/lists/${list.id}/posts`, {
+    // Second mention in the SAME thread on another harness: it succeeds on a
+    // new conversation that sees the first answer through the thread context.
+    const switched = await post(`/api/buddies/lists/${list.id}/posts`, {
       author: { kind: 'owner' },
       key: 'switch-harness',
       purpose: 'message',
       body: `${mention} try it on codex`,
       threadRootId: root,
-      mentionConfigs: [
-        { buddyId: h.lead.id, config: configFromProviderPreferences({ provider: 'codex' }) },
-      ],
+      mentionConfigs: [{ buddyId: h.lead.id, config: codex }],
     });
-    const failed = await until(
-      () => replies(root).find((reply) => reply.purpose === 'reply_failed'),
-      'harness failure reply'
+    const secondId = switched.json.mentions[0].conversationId;
+    assert.notEqual(secondId, asked.json.mentions[0].conversationId);
+    const second = await answer(secondId, 'Also fine on Codex.');
+    assert.deepEqual(second.runtime.config, codex);
+    assert.match(second.prompt, /Looks fine on Claude\./);
+    await until(() => replies(root).length === 2, 'second reply');
+    assert.deepEqual(
+      replies(root).map((reply) => [reply.purpose, reply.senderConversationId]),
+      [
+        ['reply', asked.json.mentions[0].conversationId],
+        ['reply', secondId],
+      ]
     );
-    assert.match(failed.body, /keeps its harness/);
-    assert.equal(runtime.prompts.length, 3);
-    assert.deepEqual(runtime.config, claude('sonnet'));
+    assert.equal(first.runtime.prompts.length, 1);
 
     // A choice for a Buddy the post does not mention would vanish: 400.
     const stray = await post(`/api/buddies/lists/${list.id}/posts`, {
@@ -403,7 +380,7 @@ test('a mention’s chosen model runs the turn, sticks for the thread, and a har
       key: 'stray',
       purpose: 'message',
       body: 'nobody mentioned',
-      mentionConfigs: [{ buddyId: h.lead.id, config: claude('fable') }],
+      mentionConfigs: [{ buddyId: h.lead.id, config: claude }],
     });
     assert.equal(stray.status, 400);
     assert.match(stray.json.error, /not mentioned/);

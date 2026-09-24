@@ -1,5 +1,4 @@
 import { execFileSync, execSync } from 'node:child_process';
-import { randomUUID } from 'node:crypto';
 import http from 'node:http';
 import path from 'node:path';
 import type { Provider as ProviderName } from '@unleashd/shared';
@@ -92,7 +91,6 @@ import { createMemoryReviewRunner } from './buddies/memory-review-runner';
 import { ownerWorkspaceIds } from './buddies/owner-team-configuration';
 import { registerBuddyRoutes } from './buddies/routes';
 import { BuddyScheduler, nextAutomationRunAt } from './buddies/scheduler';
-import { updateRuntimeConfig } from './conversations/runtime-config';
 
 let startupAuditResults: ReturnType<typeof auditLocalAgents> = [];
 
@@ -514,30 +512,10 @@ registerChannelRoutes(app, {
   sendError: sendBuddiesError,
   responder: createChannelResponder({
     getStore: getBuddiesStore,
-    getConversation: (id) => applicationContext.registry.get(id),
-    ensureConversationReady: buddyCreationService.ensureConversationReady,
-    // Owner-origin creation: the mention IS owner input, so the thread gets
-    // owner-thread knowledge scope and owner-control MCP, like a talk() chat.
+    // Owner-origin creation: the mention IS owner input, so the conversation
+    // gets owner-thread knowledge scope and owner-control MCP, like a talk()
+    // chat. Each mention creates its own, on the owner's pick when there is one.
     createConversation: (input) => buddyCreationService.createServerBuddyConversation(input),
-    // The owner's model pick on a mention: the chat header's config path, so
-    // open viewers see the change and a started thread keeps its harness.
-    setConversationConfig: async (conversation, config) => {
-      const commandId = `channel-model-${randomUUID()}`;
-      const result = await updateRuntimeConfig(conversationConfigService, conversation, {
-        conversationId: conversation.id,
-        commandId,
-        expectedRevision: conversation.configRevision,
-        patch: { kind: 'replace', config },
-      });
-      if (result.ok)
-        applicationContext.broadcast({
-          type: 'conversation_updated',
-          commandId,
-          reason: 'config',
-          conversation: conversation.toJSON(),
-        });
-      return result;
-    },
     uploadsRoot: () => UPLOADS_DIR,
   }),
   direct: createBuddyDirect({

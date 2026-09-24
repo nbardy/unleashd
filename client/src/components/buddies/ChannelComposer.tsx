@@ -38,7 +38,8 @@ const NO_CHOICES: ReadonlyMap<string, ConversationConfig> = new Map();
 //
 // Every Buddy the text mentions gets a chip on the bar; clicking it opens the
 // chat's harness/model picker for that Buddy's reply. The choice is sent
-// beside the post (mentionConfigs) and sticks for that Buddy in the thread.
+// beside the post (mentionConfigs) and applies to that one reply: every
+// mention starts a fresh conversation (channel-responder.ts).
 //
 // submit: 'enter' (desktop — Enter sends, Shift+Enter breaks a line) or
 // 'button' (touch — Return is a newline, as in Slack mobile; Send sends).
@@ -203,7 +204,6 @@ export function ChannelComposer({
           buddy={choosing}
           choice={mentionChoice(choosing, choices)}
           catalog={catalog}
-          inThread={threadRootId !== null}
           onChange={(config) => setChoices(new Map(choices).set(choosing.id, config))}
           onReset={() => {
             const next = new Map(choices);
@@ -315,7 +315,6 @@ export function ChannelComposer({
                 buddy={buddy}
                 choice={mentionChoice(buddy, choices)}
                 catalog={catalog}
-                inThread={threadRootId !== null}
                 open={buddy.id === choosingFor}
                 onOpen={() => setChoosingFor(buddy.id === choosingFor ? null : buddy.id)}
               />
@@ -347,12 +346,12 @@ export function ChannelComposer({
 }
 
 // What a mentioned Buddy's reply will run on, as the chip and picker see it.
-// `thread` is the Buddy's profile default — or, in a thread it already
-// answered, whatever that thread runs. `unreported` is a backend that predates
+// `profile` is the Buddy's profile default: every mention starts a fresh
+// conversation, so an unchosen reply runs on it even inside a thread. `unreported` is a backend that predates
 // execution on members; there is nothing honest to open the picker at.
 type MentionChoice =
   | { kind: 'chosen'; config: ConversationConfig }
-  | { kind: 'thread'; profile: ConversationConfig }
+  | { kind: 'profile'; profile: ConversationConfig }
   | { kind: 'unreported' };
 
 function mentionChoice(
@@ -363,7 +362,7 @@ function mentionChoice(
   if (chosen) return { kind: 'chosen', config: chosen };
   switch (buddy.execution.kind) {
     case 'profile':
-      return { kind: 'thread', profile: buddy.execution.config };
+      return { kind: 'profile', profile: buddy.execution.config };
     case 'unreported':
       return { kind: 'unreported' };
   }
@@ -379,18 +378,12 @@ function configLabel(config: ConversationConfig, catalog: ProviderCatalog | null
   return model?.displayName ?? modelId ?? `${config.provider} default`;
 }
 
-function choiceLabel(
-  choice: MentionChoice,
-  catalog: ProviderCatalog | null,
-  inThread: boolean
-): string {
+function choiceLabel(choice: MentionChoice, catalog: ProviderCatalog | null): string {
   switch (choice.kind) {
     case 'chosen':
       return configLabel(choice.config, catalog);
-    case 'thread':
-      // A new top-level post starts a fresh thread on the profile default; a
-      // reply continues whatever this thread already runs.
-      return inThread ? 'thread model' : configLabel(choice.profile, catalog);
+    case 'profile':
+      return configLabel(choice.profile, catalog);
     case 'unreported':
       return 'default';
   }
@@ -402,7 +395,7 @@ function pickerValue(choice: MentionChoice): ConversationConfig | null {
   switch (choice.kind) {
     case 'chosen':
       return choice.config;
-    case 'thread':
+    case 'profile':
       return choice.profile;
     case 'unreported':
       return null;
@@ -413,14 +406,12 @@ function MentionChip({
   buddy,
   choice,
   catalog,
-  inThread,
   open,
   onOpen,
 }: {
   buddy: BuddyReference;
   choice: MentionChoice;
   catalog: ProviderCatalog | null;
-  inThread: boolean;
   open: boolean;
   onOpen(): void;
 }) {
@@ -442,9 +433,7 @@ function MentionChip({
     >
       <BuddySigil className="channel-composer-mention-sigil" name={buddy.label} />
       <span className="channel-composer-mention-name">{buddy.label}</span>
-      <span className="channel-composer-mention-model">
-        {choiceLabel(choice, catalog, inThread)}
-      </span>
+      <span className="channel-composer-mention-model">{choiceLabel(choice, catalog)}</span>
     </button>
   );
 }
@@ -453,7 +442,6 @@ function MentionModelPopover({
   buddy,
   choice,
   catalog,
-  inThread,
   onChange,
   onReset,
   onClose,
@@ -461,7 +449,6 @@ function MentionModelPopover({
   buddy: BuddyReference;
   choice: MentionChoice;
   catalog: ProviderCatalog | null;
-  inThread: boolean;
   onChange(config: ConversationConfig): void;
   onReset(): void;
   onClose(): void;
@@ -507,9 +494,7 @@ function MentionModelPopover({
           <p className="channel-composer-model-note">Loading harness options…</p>
         )}
         <p className="channel-composer-model-note">
-          {inThread
-            ? `Sticks for ${buddy.label} in this thread. A thread keeps its harness once ${buddy.label} has replied.`
-            : `Sticks for ${buddy.label} in this message’s thread.`}
+          {`Applies to ${buddy.label}’s reply to this message. Each mention starts a fresh conversation from the thread.`}
         </p>
         <div className="channel-composer-model-actions">
           <button type="button" onClick={onReset} disabled={choice.kind !== 'chosen'}>
