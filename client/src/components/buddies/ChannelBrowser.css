@@ -547,8 +547,9 @@ a.channel-browser-instance:hover {
 
 /* ── Rail: section header with add, Buddies, new-channel form ──────── */
 
-/* A Buddy row: name link fills the row; DM / Wake appear on hover (and on
-   keyboard focus) over its right edge; wake progress sits just left of them. */
+/* A Buddy row: the name fills the row and opens the DM; Wake appears on
+   hover (and on keyboard focus) over its right edge; wake progress sits just
+   left of it. */
 .channel-browser-buddy {
   position: relative;
   display: flex;
