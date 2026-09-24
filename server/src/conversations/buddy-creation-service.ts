@@ -9,6 +9,7 @@ import { normalizeModelId } from '@unleashd/shared';
 import type { BuddyAutomation, BuddyAutomationRun } from '../buddies/contract';
 import type { ResolvedBuddyConversation } from '../buddies/integration';
 import type { BuddyAutomationConversation } from '../buddies/scheduler';
+import { awaitTurn } from './await-turn';
 import { configFromProviderPreferences } from './config-mapping';
 import type { ConversationConfigService } from './config-service';
 import { INITIAL_MESSAGE_DISPATCH_LEASE_MS } from './config-store';
@@ -290,25 +291,12 @@ export function createBuddyCreationService(ports: BuddyCreationServicePorts): Bu
 
     return {
       conversationId,
-      runTurn(prompt: string) {
-        return new Promise<string>((resolve, reject) => {
-          const cleanup = () => {
-            conversation.off('buddy-turn-complete', onComplete);
-            conversation.off('buddy-turn-failed', onFailure);
-          };
-          const onComplete = (output: string) => {
-            cleanup();
-            resolve(output);
-          };
-          const onFailure = (reason: string) => {
-            cleanup();
-            reject(new Error(reason || 'Buddy automation turn failed'));
-          };
-          conversation.once('buddy-turn-complete', onComplete);
-          conversation.once('buddy-turn-failed', onFailure);
-          conversation.sendAutomationMessage(prompt);
-        });
-      },
+      runTurn: (prompt: string) =>
+        awaitTurn(
+          conversation,
+          () => conversation.sendAutomationMessage(prompt),
+          'Buddy automation turn failed'
+        ),
       stop: () => conversation.stopAutomationTurn(),
       async stopAndDrain() {
         conversation.stopAutomationTurn();

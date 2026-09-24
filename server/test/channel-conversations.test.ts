@@ -41,7 +41,7 @@ class FakeTurnRuntime extends EventEmitter {
   isRunning = false;
   queue: unknown[] = [];
   prompts: Array<{ content: string; ownerInput: unknown }> = [];
-  answered?: number;
+  claimed = 0;
   enqueued: Array<{ content: string; ownerInput: unknown }> = [];
   config!: ConversationConfig;
   configRevision = 0;
@@ -80,11 +80,21 @@ async function until<T>(read: () => T | undefined | false, what: string): Promis
   }
 }
 
-function harness() {
+const settle = () => new Promise((resolve) => setTimeout(resolve, 100));
+
+const CLAUDE: ConversationConfig = {
+  provider: 'claude',
+  model: { mode: 'explicit', modelId: 'fable' },
+  reasoning: { mode: 'default' },
+};
+const CODEX = configFromProviderPreferences({ provider: 'codex' });
+
+async function harness() {
   const raw = new BuddiesStore(':memory:');
   const store = coordinationStore(raw as unknown as BuddiesStorePort);
   const workspace = raw.createWorkspace({ name: 'Team', rootPath: '/tmp/team' });
   const lead = raw.createBuddy({ project: workspace.id, name: 'Lead', role: 'Answer' });
+  const designer = raw.createBuddy({ project: workspace.id, name: 'Designer', role: 'UI' });
   const elsewhere = raw.createWorkspace({ name: 'Other', rootPath: '/tmp/other' });
   const outsider = raw.createBuddy({ project: elsewhere.id, name: 'Outsider', role: 'Other' });
   const scratch = mkdtempSync(join(tmpdir(), 'channel-conv-'));
@@ -104,13 +114,20 @@ function harness() {
     runtime.applyConfigState(
       await configService.create({
         conversationId: input.conversationId,
-        config: input.config ?? configFromProviderPreferences({ provider: 'codex' }),
+        config: input.config ?? CODEX,
       })
     );
     runtimes.set(input.conversationId, runtime);
     return runtime as unknown as ConversationRuntime;
   };
-  const getRuntime = (id: string) => runtimes.get(id) as unknown as ConversationRuntime | undefined;
+  // A deleted id is a tombstone, exactly as the config record reports it.
+  const conversations = {
+    slot: async (id: string) =>
+      deleted.has(id) ? ({ kind: 'deleted' } as const) : slotOf(await configService.getRecord(id)),
+    getConversation: (id: string) => runtimes.get(id) as unknown as ConversationRuntime | undefined,
+    ensureConversationReady: async (conversation: ConversationRuntime) => conversation,
+    createConversation: createRuntime,
+  };
   // Who is asked is read off the prompt ("You are <Name> (<role>)…").
   const gates: Array<{
     name: string;
@@ -118,14 +135,6 @@ function harness() {
     prompt: string;
     answer(verdict: GateVerdict): void;
   }> = [];
-  // A deleted id is a tombstone, exactly as the config record reports it.
-  const conversations = {
-    slot: async (id: string) =>
-      deleted.has(id) ? ({ kind: 'deleted' } as const) : slotOf(await configService.getRecord(id)),
-    getConversation: getRuntime,
-    ensureConversationReady: async (conversation: ConversationRuntime) => conversation,
-    createConversation: createRuntime,
-  };
   const app = express();
   app.use(express.json());
   const sendError = (response: express.Response, error: unknown, fallbackStatus: number) =>
@@ -161,10 +170,23 @@ function harness() {
     responder,
     direct: createBuddyDirect({ getStore: async () => store, conversations }),
   });
+  const server = app.listen(0, '127.0.0.1');
+  await new Promise<void>((resolve) => server.once('listening', resolve));
+  const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+
+  const api = async (path: string, body?: unknown) => {
+    const response = await fetch(`${base}${path}`, {
+      method: body === undefined ? 'GET' : 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+    return { status: response.status, json: (await response.json()) as any };
+  };
   return {
     raw,
     workspace,
     lead,
+    designer,
     outsider,
     scratch,
     uploadsRoot,
@@ -172,30 +194,56 @@ function harness() {
     created,
     deleted,
     gates,
-    app,
+    api,
+    newList: (key: string) =>
+      raw.createList({
+        workspace: workspace.id,
+        author: { kind: 'owner' },
+        key,
+        name: key,
+        purpose: key,
+      }).list,
+    /** A post through the owner route; owner-authored unless `author` says otherwise. */
+    async post(listId: string, body: Record<string, unknown>) {
+      const result = await api(`/api/buddies/lists/${listId}/posts`, {
+        author: { kind: 'owner' },
+        purpose: 'message',
+        ...body,
+      });
+      assert.equal(result.status, 201, JSON.stringify(result.json));
+      return result.json as { post: BuddyMailingListPost; mentions: unknown[] };
+    },
+    /** The Buddy's seat conversation id in a thread (generation 0 unless given). */
+    seat: (root: string, buddyId: string, generation = 0) =>
+      threadConversationId(root, buddyId, generation),
+    /** The next turn sent to a conversation, claimed so the next call waits for the one after. */
+    async nextTurn(conversationId: string) {
+      const runtime = await until(() => runtimes.get(conversationId), `runtime ${conversationId}`);
+      const index = runtime.claimed++;
+      const prompt = await until(() => runtime.prompts[index], `turn ${index}`);
+      return {
+        runtime,
+        prompt: prompt.content,
+        ownerInput: prompt.ownerInput,
+        complete: (text: string) => runtime.emit('buddy-turn-complete', text),
+        fail: (reason: string) => runtime.emit('buddy-turn-failed', reason),
+      };
+    },
+    gate: (index: number) => until(() => gates[index], `gate ${index}`),
+    replies: (root: string) => raw.listThread({ root }).replies,
     close() {
       unsubscribe();
+      server.close();
       raw.close();
+      rmSync(scratch, { recursive: true, force: true });
     },
   };
 }
 
 test('owner @mention runs a turn and the answer lands in the thread with its media', async () => {
-  const h = harness();
-  const server = h.app.listen(0, '127.0.0.1');
+  const h = await harness();
   try {
-    await new Promise<void>((resolve) => server.once('listening', resolve));
-    const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
-    const call = async (path: string, body?: unknown) => {
-      const response = await fetch(`${base}${path}`, {
-        method: body === undefined ? 'GET' : 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: body === undefined ? undefined : JSON.stringify(body),
-      });
-      return { status: response.status, json: (await response.json()) as any };
-    };
-
-    const { json: listResult } = await call('/api/buddies/lists', {
+    const { json: listResult } = await h.api('/api/buddies/lists', {
       workspaceId: h.workspace.id,
       author: { kind: 'owner' },
       key: 'general',
@@ -204,7 +252,7 @@ test('owner @mention runs a turn and the answer lands in the thread with its med
     });
     const list = listResult.list;
     assert.deepEqual(list.createdBy, { kind: 'owner' });
-    await call(`/api/buddies/lists/${list.id}/posts`, {
+    await h.post(list.id, {
       author: { kind: 'buddy', buddyId: h.lead.id },
       key: 'earlier',
       purpose: 'standup',
@@ -213,34 +261,27 @@ test('owner @mention runs a turn and the answer lands in the thread with its med
 
     const screenshot = join(h.scratch, 'before.png');
     writeFileSync(screenshot, 'png-bytes-before');
-    const posted = await call(`/api/buddies/lists/${list.id}/posts`, {
-      author: { kind: 'owner' },
+    const { post: root, mentions } = await h.post(list.id, {
       key: 'ask',
-      purpose: 'message',
       body: `[@Lead](buddy:${h.lead.id}) does this look right? ![before](${screenshot}) cc [@Outsider](buddy:${h.outsider.id})`,
     });
-    assert.equal(posted.status, 201, JSON.stringify(posted.json));
-    const root: BuddyMailingListPost = posted.json.post;
     // Local media is copied into the channel and the body points at the copy.
     assert.ok(!root.body.includes(screenshot));
     const copied = /!\[before\]\(([^)]+)\)/.exec(root.body)?.[1] ?? '';
     assert.ok(copied.startsWith(join(h.uploadsRoot, 'channels', list.id)), copied);
     assert.ok(existsSync(copied));
-    const [leadMention, outsiderMention] = posted.json.mentions;
-    assert.equal(leadMention.status, 'started');
-    assert.deepEqual(outsiderMention, {
-      buddyId: h.outsider.id,
-      status: 'rejected',
-      reason: 'Buddy is outside this workspace',
-    });
+    assert.deepEqual(mentions, [
+      { buddyId: h.lead.id, status: 'started' },
+      { buddyId: h.outsider.id, status: 'rejected', reason: 'Buddy is outside this workspace' },
+    ]);
 
-    const runtime = await until(() => h.runtimes.get(leadMention.conversationId), 'runtime');
-    const first = await until(() => runtime.prompts[0], 'first prompt');
+    const seat = h.seat(root.id, h.lead.id, 0);
+    const first = await h.nextTurn(seat);
     assert.deepEqual(first.ownerInput, { origin: 'owner_input', inputId: root.id });
     // Channel context and readable mentions reach the model.
-    assert.match(first.content, /Shipped the settings page yesterday/);
-    assert.match(first.content, /@Lead does this look right\?/);
-    const responding = await call(`/api/buddies/lists/${list.id}/responding`);
+    assert.match(first.prompt, /Shipped the settings page yesterday/);
+    assert.match(first.prompt, /@Lead does this look right\?/);
+    const responding = await h.api(`/api/buddies/lists/${list.id}/responding`);
     assert.deepEqual(
       responding.json.map((row: { buddyId: string; threadRootId: string }) => [
         row.buddyId,
@@ -251,59 +292,52 @@ test('owner @mention runs a turn and the answer lands in the thread with its med
 
     const after = join(h.scratch, 'after.png');
     writeFileSync(after, 'png-bytes-after');
-    runtime.emit('buddy-turn-complete', `Close — fixed the spacing. ![after](${after})`);
-    const replies = await until(() => {
-      const read = h.raw.listThread({ root: root.id }).replies;
+    first.complete(`Close — fixed the spacing. ![after](${after})`);
+    const [reply] = await until(() => {
+      const read = h.replies(root.id);
       return read.length === 1 ? read : undefined;
     }, 'reply post');
-    const [reply] = replies;
     assert.deepEqual(reply.author, { kind: 'buddy', buddyId: h.lead.id });
     assert.equal(reply.purpose, 'reply');
-    assert.equal(reply.senderConversationId, leadMention.conversationId);
+    assert.equal(reply.senderConversationId, seat);
     assert.ok(!reply.body.includes(after));
     assert.match(reply.body, new RegExp(`channels/${list.id}/[0-9a-f]+\\.png`));
     // The responder clears its entry once the reply is written.
-    for (let attempt = 0; ; attempt += 1) {
-      const rows = (await call(`/api/buddies/lists/${list.id}/responding`)).json;
-      if (rows.length === 0) break;
-      assert.ok(attempt < 100, 'responding entry never cleared');
-      await new Promise((resolve) => setTimeout(resolve, 10));
-    }
+    await until(
+      async () => (await h.api(`/api/buddies/lists/${list.id}/responding`)).json.length === 0,
+      'responding entry cleared'
+    );
 
     // A follow-up mention in the same thread RESUMES the Buddy's seat there
     // (its memory of the thread); a failed turn is reported in the thread,
     // never swallowed.
-    const followUp = await call(`/api/buddies/lists/${list.id}/posts`, {
-      author: { kind: 'owner' },
+    await h.post(list.id, {
       key: 'follow-up',
-      purpose: 'message',
       body: `[@Lead](buddy:${h.lead.id}) and the mobile view?`,
       threadRootId: root.id,
     });
-    assert.equal(followUp.json.mentions[0].conversationId, leadMention.conversationId);
-    const second = await until(() => runtime.prompts[1], 'follow-up prompt');
-    assert.match(second.content, /Close — fixed the spacing/);
-    runtime.emit('buddy-turn-failed', 'Buddy provider is unavailable: codex');
-    const failed = await until(() => {
-      const read = h.raw.listThread({ root: root.id }).replies;
-      return read.find((post) => post.purpose === 'reply_failed');
-    }, 'failure reply');
+    const second = await h.nextTurn(seat);
+    assert.match(second.prompt, /Close — fixed the spacing/);
+    second.fail('Buddy provider is unavailable: codex');
+    const failed = await until(
+      () => h.replies(root.id).find((post) => post.purpose === 'reply_failed'),
+      'failure reply'
+    );
     assert.match(failed.body, /provider is unavailable/);
-    assert.equal(failed.senderConversationId, leadMention.conversationId);
-    assert.deepEqual(h.created, [leadMention.conversationId]);
+    assert.equal(failed.senderConversationId, seat);
+    assert.deepEqual(h.created, [seat]);
 
     // Buddy-authored mentions never start turns.
-    const buddyMention = await call(`/api/buddies/lists/${list.id}/posts`, {
+    const buddyMention = await h.post(list.id, {
       author: { kind: 'buddy', buddyId: h.lead.id },
       key: 'buddy-mention',
-      purpose: 'message',
       body: `[@Lead](buddy:${h.lead.id}) note to self`,
     });
-    assert.deepEqual(buddyMention.json.mentions, []);
+    assert.deepEqual(buddyMention.mentions, []);
     assert.equal(h.created.length, 1);
 
     // A missing local file rejects an author-controlled post outright.
-    const missing = await call(`/api/buddies/lists/${list.id}/posts`, {
+    const missing = await h.api(`/api/buddies/lists/${list.id}/posts`, {
       author: { kind: 'owner' },
       key: 'missing-media',
       purpose: 'message',
@@ -312,9 +346,7 @@ test('owner @mention runs a turn and the answer lands in the thread with its med
     assert.equal(missing.status, 400);
     assert.match(missing.json.error, /missing/);
   } finally {
-    server.close();
     h.close();
-    rmSync(h.scratch, { recursive: true, force: true });
   }
 });
 
@@ -325,103 +357,67 @@ test('owner @mention runs a turn and the answer lands in the thread with its med
 // generation. (That conversation's `out_of_tokens` was Codex's usage limit,
 // not transcript growth — resuming itself was never the problem.)
 test('a picked harness sticks for the Buddy in the thread; a different pick opens a new seat', async () => {
-  const h = harness();
-  const server = h.app.listen(0, '127.0.0.1');
+  const h = await harness();
   try {
-    await new Promise<void>((resolve) => server.once('listening', resolve));
-    const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
-    const post = async (path: string, body: unknown) => {
-      const response = await fetch(`${base}${path}`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(body),
-      });
-      return { status: response.status, json: (await response.json()) as any };
-    };
-    const list = (
-      await post('/api/buddies/lists', {
-        workspaceId: h.workspace.id,
-        author: { kind: 'owner' },
-        key: 'models',
-        name: 'models',
-        purpose: 'Model choice',
-      })
-    ).json.list;
+    const list = h.newList('models');
     const mention = `[@Lead](buddy:${h.lead.id})`;
-    const claude: ConversationConfig = {
-      provider: 'claude',
-      model: { mode: 'explicit', modelId: 'fable' },
-      reasoning: { mode: 'default' },
-    };
-    const codex = configFromProviderPreferences({ provider: 'codex' });
-    const replies = (root: string) =>
-      h.raw.listThread({ root }).replies.filter((reply) => reply.author.kind === 'buddy');
-    // Answers the next turn sent to a conversation.
-    const answer = async (conversationId: string, text: string) => {
-      const runtime = await until(() => h.runtimes.get(conversationId), 'runtime');
-      const count = runtime.answered ?? 0;
-      const prompt = await until(() => runtime.prompts[count], 'prompt');
-      runtime.answered = count + 1;
-      runtime.emit('buddy-turn-complete', text);
-      return { runtime, prompt: prompt.content };
-    };
-    const ask = (key: string, body: string, extra: Record<string, unknown>) =>
-      post(`/api/buddies/lists/${list.id}/posts`, {
-        author: { kind: 'owner' },
-        key,
-        purpose: 'message',
-        body: `${mention} ${body}`,
-        ...extra,
-      });
+    const leadReplies = (root: string) =>
+      h.replies(root).filter((reply) => reply.author.kind === 'buddy');
 
     // First mention: the Buddy's profile is Codex; the owner picked Claude.
-    const asked = await ask('ask', 'review this', {
-      mentionConfigs: [{ buddyId: h.lead.id, config: claude }],
+    const { post: root } = await h.post(list.id, {
+      key: 'ask',
+      body: `${mention} review this`,
+      mentionConfigs: [{ buddyId: h.lead.id, config: CLAUDE }],
     });
-    assert.equal(asked.status, 201, JSON.stringify(asked.json));
-    const root = asked.json.post.id;
-    const seat = asked.json.mentions[0].conversationId;
-    assert.equal(seat, threadConversationId(root, h.lead.id, 0));
-    const first = await answer(seat, 'Looks fine on Claude.');
-    assert.deepEqual(first.runtime.config, claude);
-    await until(() => replies(root).length === 1, 'first reply');
+    const seat = h.seat(root.id, h.lead.id, 0);
+    const first = await h.nextTurn(seat);
+    assert.deepEqual(first.runtime.config, CLAUDE);
 
-    // An unpicked mention later in the thread resumes the Claude seat.
-    const again = await ask('again', 'and the edge cases?', { threadRootId: root });
-    assert.equal(again.json.mentions[0].conversationId, seat);
-    await answer(seat, 'Edge cases fine too.');
-    await until(() => replies(root).length === 2, 'second reply');
+    // An unpicked mention while that turn runs resumes the Claude seat, but
+    // waits: turn events carry no identity, so a second prompt sent now would
+    // take the first one's answer.
+    await h.post(list.id, { key: 'again', body: `${mention} edge cases?`, threadRootId: root.id });
+    await settle();
+    assert.equal(first.runtime.prompts.length, 1);
+    first.complete('Looks fine on Claude.');
+    (await h.nextTurn(seat)).complete('Edge cases fine too.');
+    await until(() => leadReplies(root.id).length === 2, 'second reply');
+    assert.deepEqual(
+      leadReplies(root.id).map((reply) => reply.body),
+      ['Looks fine on Claude.', 'Edge cases fine too.']
+    );
 
     // Picking another harness opens seat generation 1 on it, seeded with the
     // thread; later unpicked mentions keep that one.
-    const switched = await ask('switch-harness', 'try it on codex', {
-      threadRootId: root,
-      mentionConfigs: [{ buddyId: h.lead.id, config: codex }],
+    await h.post(list.id, {
+      key: 'switch-harness',
+      body: `${mention} try it on codex`,
+      threadRootId: root.id,
+      mentionConfigs: [{ buddyId: h.lead.id, config: CODEX }],
     });
-    const codexSeat = switched.json.mentions[0].conversationId;
-    assert.equal(codexSeat, threadConversationId(root, h.lead.id, 1));
-    const second = await answer(codexSeat, 'Also fine on Codex.');
-    assert.deepEqual(second.runtime.config, codex);
-    assert.match(second.prompt, /Looks fine on Claude\./);
-    await until(() => replies(root).length === 3, 'third reply');
-    const after = await ask('after', 'ship it?', { threadRootId: root });
-    assert.equal(after.json.mentions[0].conversationId, codexSeat);
+    const codexSeat = h.seat(root.id, h.lead.id, 1);
+    const onCodex = await h.nextTurn(codexSeat);
+    assert.deepEqual(onCodex.runtime.config, CODEX);
+    assert.match(onCodex.prompt, /Looks fine on Claude\./);
+    onCodex.complete('Also fine on Codex.');
+    await until(() => leadReplies(root.id).length === 3, 'third reply');
+    await h.post(list.id, { key: 'after', body: `${mention} ship it?`, threadRootId: root.id });
+    await h.nextTurn(codexSeat);
     assert.deepEqual(h.created, [seat, codexSeat]);
 
     // A choice for a Buddy the post does not mention would vanish: 400.
-    const stray = await post(`/api/buddies/lists/${list.id}/posts`, {
+    const stray = await h.api(`/api/buddies/lists/${list.id}/posts`, {
       author: { kind: 'owner' },
       key: 'stray',
       purpose: 'message',
       body: 'nobody mentioned',
-      mentionConfigs: [{ buddyId: h.lead.id, config: claude }],
+      mentionConfigs: [{ buddyId: h.lead.id, config: CLAUDE }],
     });
     assert.equal(stray.status, 400);
     assert.match(stray.json.error, /not mentioned/);
   } finally {
-    server.close();
     h.close();
-    rmSync(h.scratch, { recursive: true, force: true });
   }
 });
 
@@ -429,27 +425,16 @@ test('a picked harness sticks for the Buddy in the thread; a different pick open
 // history; wake queues the catch-up instruction there as owner input. Deleting
 // the DM must not strand the Buddy — the next open starts a fresh one.
 test('DM reopens one conversation, wake queues the catch-up there, and a deleted DM is replaced', async () => {
-  const h = harness();
-  const server = h.app.listen(0, '127.0.0.1');
+  const h = await harness();
   try {
-    await new Promise<void>((resolve) => server.once('listening', resolve));
-    const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
-    const post = async (path: string, body: unknown) => {
-      const response = await fetch(`${base}${path}`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify(body),
-      });
-      return { status: response.status, json: (await response.json()) as any };
-    };
     const workspace = { workspaceId: h.workspace.id };
-    const first = await post(`/api/buddies/${h.lead.id}/direct`, workspace);
-    const again = await post(`/api/buddies/${h.lead.id}/direct`, workspace);
+    const first = await h.api(`/api/buddies/${h.lead.id}/direct`, workspace);
+    const again = await h.api(`/api/buddies/${h.lead.id}/direct`, workspace);
     assert.equal(first.status, 200, JSON.stringify(first.json));
     assert.equal(again.json.conversationId, first.json.conversationId);
     assert.deepEqual(h.created, [first.json.conversationId]);
 
-    const woken = await post(`/api/buddies/${h.lead.id}/wake`, workspace);
+    const woken = await h.api(`/api/buddies/${h.lead.id}/wake`, workspace);
     assert.equal(woken.status, 202);
     assert.equal(woken.json.conversationId, first.json.conversationId);
     const [queued] = h.runtimes.get(first.json.conversationId)?.enqueued ?? [];
@@ -459,17 +444,15 @@ test('DM reopens one conversation, wake queues the catch-up there, and a deleted
     // The owner deletes the DM: its id is tombstoned, the next open is new.
     h.runtimes.delete(first.json.conversationId);
     h.deleted.add(first.json.conversationId);
-    const replacement = await post(`/api/buddies/${h.lead.id}/direct`, workspace);
+    const replacement = await h.api(`/api/buddies/${h.lead.id}/direct`, workspace);
     assert.notEqual(replacement.json.conversationId, first.json.conversationId);
     assert.equal(h.created.length, 2);
 
-    const outsider = await post(`/api/buddies/${h.outsider.id}/wake`, workspace);
+    const outsider = await h.api(`/api/buddies/${h.outsider.id}/wake`, workspace);
     assert.equal(outsider.status, 400);
     assert.match(outsider.json.error, /outside this workspace/);
   } finally {
-    server.close();
     h.close();
-    rmSync(h.scratch, { recursive: true, force: true });
   }
 });
 
@@ -484,26 +467,9 @@ function nextMillisecond() {
 // get_thread, so this test walks that path to a decision buried in a reply
 // that the prompt omitted — the case a longer prompt used to paper over.
 test('mention context is the latest 10 messages, threads collapsed; search and get_thread reach the rest', async () => {
-  const h = harness();
-  const server = h.app.listen(0, '127.0.0.1');
+  const h = await harness();
   try {
-    await new Promise<void>((resolve) => server.once('listening', resolve));
-    const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
-    const ownerPost = async (listId: string, body: Record<string, unknown>) => {
-      const response = await fetch(`${base}/api/buddies/lists/${listId}/posts`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ author: { kind: 'owner' }, purpose: 'message', ...body }),
-      });
-      return (await response.json()) as any;
-    };
-    const { list } = h.raw.createList({
-      workspace: h.workspace.id,
-      author: { kind: 'owner' },
-      key: 'general',
-      name: 'general',
-      purpose: 'Team chat',
-    });
+    const list = h.newList('general');
     const lead = { kind: 'buddy', buddyId: h.lead.id } as const;
     const updates: BuddyMailingListPost[] = [];
     for (let n = 1; n <= 12; n += 1) {
@@ -532,12 +498,9 @@ test('mention context is the latest 10 messages, threads collapsed; search and g
     }
 
     nextMillisecond();
-    const top = await ownerPost(list.id, {
-      key: 'ask',
-      body: `[@Lead](buddy:${h.lead.id}) status?`,
-    });
-    const topRuntime = await until(() => h.runtimes.get(top.mentions[0].conversationId), 'runtime');
-    const channelPrompt = (await until(() => topRuntime.prompts[0], 'channel prompt')).content;
+    const top = await h.post(list.id, { key: 'ask', body: `[@Lead](buddy:${h.lead.id}) status?` });
+    const onTop = await h.nextTurn(h.seat(top.post.id, h.lead.id));
+    const channelPrompt = onTop.prompt;
     assert.match(channelPrompt, /status update 12\b/);
     assert.match(channelPrompt, /status update 3\b/);
     assert.doesNotMatch(channelPrompt, /status update 2\b/);
@@ -546,29 +509,23 @@ test('mention context is the latest 10 messages, threads collapsed; search and g
       new RegExp(`\\(${busy.id}\\): status update 11 \\[thread: 12 replies`)
     );
     assert.doesNotMatch(channelPrompt, /side note/);
-    topRuntime.emit('buddy-turn-complete', 'All green.');
+    onTop.complete('All green.');
 
     nextMillisecond();
-    const inThread = await ownerPost(list.id, {
+    const inThread = await h.post(list.id, {
       key: 'thread-ask',
       body: `[@Lead](buddy:${h.lead.id}) when do we ship?`,
       threadRootId: busy.id,
     });
-    const threadRuntime = await until(
-      () => h.runtimes.get(inThread.mentions[0].conversationId),
-      'thread runtime'
-    );
-    const threadPrompt = (await until(() => threadRuntime.prompts[0], 'thread prompt')).content;
+    const onThread = await h.nextTurn(h.seat(busy.id, h.lead.id));
+    const threadPrompt = onThread.prompt;
     assert.match(threadPrompt, /status update 11/);
     assert.match(threadPrompt, /2 earlier replies omitted/);
     assert.match(threadPrompt, /side note 12/);
     assert.doesNotMatch(threadPrompt, /ship on Monday/);
-    threadRuntime.emit('buddy-turn-complete', 'Checking.');
+    onThread.complete('Checking.');
 
-    await until(
-      () => h.raw.listThread({ root: busy.id }).replies.find((post) => post.body === 'Checking.'),
-      'thread reply'
-    );
+    await until(() => h.replies(busy.id).find((post) => post.body === 'Checking.'), 'thread reply');
 
     // The Buddy's way back to the omitted decision.
     const operations = new BuddyOperationsService(h.raw as unknown as BuddiesStorePort, {
@@ -666,9 +623,7 @@ test('mention context is the latest 10 messages, threads collapsed; search and g
       /unavailable in this workspace/
     );
   } finally {
-    server.close();
     h.close();
-    rmSync(h.scratch, { recursive: true, force: true });
   }
 });
 
@@ -678,58 +633,39 @@ test('mention context is the latest 10 messages, threads collapsed; search and g
 // thread waits for the owner. Without that bound two agreeable Buddies would
 // answer each other forever.
 test('a thread post asks the other Buddies in it; <yes> replies, <no> stays quiet, Buddy chains stop at three', async () => {
-  const h = harness();
-  const designer = h.raw.createBuddy({ project: h.workspace.id, name: 'Designer', role: 'UI' });
-  const server = h.app.listen(0, '127.0.0.1');
+  const h = await harness();
   try {
-    await new Promise<void>((resolve) => server.once('listening', resolve));
-    const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
-    const { list } = h.raw.createList({
-      workspace: h.workspace.id,
-      author: { kind: 'owner' },
-      key: 'launch',
-      name: 'launch',
-      purpose: 'Launch',
-    });
-    const write = async (author: unknown, key: string, body: string, threadRootId?: string) => {
-      const response = await fetch(`${base}/api/buddies/lists/${list.id}/posts`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ author, key, purpose: 'message', body, threadRootId }),
-      });
-      assert.equal(response.status, 201);
-      return ((await response.json()) as any).post as BuddyMailingListPost;
-    };
-    const owner = { kind: 'owner' };
-    const gate = (index: number) => until(() => h.gates[index], `gate ${index}`);
-    const settle = () => new Promise((resolve) => setTimeout(resolve, 100));
+    const list = h.newList('launch');
+    const say = async (key: string, body: string, author?: string) =>
+      (
+        await h.post(list.id, {
+          key,
+          body,
+          ...(author ? { author: { kind: 'buddy', buddyId: author } } : {}),
+          ...(key === 'root' ? {} : { threadRootId: root.id }),
+        })
+      ).post;
     // Answers the next turn in the Buddy's seat for this thread.
-    const replyIn = async (root: BuddyMailingListPost, buddyId: string, text: string) => {
-      const runtime = await until(
-        () => h.runtimes.get(threadConversationId(root.id, buddyId, 0)),
-        `seat for ${buddyId}`
-      );
-      const count = runtime.answered ?? 0;
-      const prompt = await until(() => runtime.prompts[count], 'seat prompt');
-      runtime.answered = count + 1;
-      runtime.emit('buddy-turn-complete', text);
-      return prompt.content;
+    const replyIn = async (buddyId: string, text: string) => {
+      const turn = await h.nextTurn(h.seat(root.id, buddyId));
+      turn.complete(text);
+      return turn.prompt;
     };
-    const newestReply = (root: string) => h.raw.listThread({ root }).replies.at(-1)!;
+    const newestReply = () => h.replies(root.id).at(-1)!;
 
-    const root = await write(owner, 'root', 'Launch plan?');
+    const root = await say('root', 'Launch plan?');
     // Lead is the only Buddy in the thread and wrote the post: nobody to ask.
-    await write({ kind: 'buddy', buddyId: h.lead.id }, 'lead-1', 'I own the backend.', root.id);
+    await say('lead-1', 'I own the backend.', h.lead.id);
     await settle();
     assert.equal(h.gates.length, 0);
     // Designer's post asks Lead, who passes: no conversation, no reply.
-    await write({ kind: 'buddy', buddyId: designer.id }, 'designer-1', 'I own the UI.', root.id);
-    (await gate(0)).answer({ kind: 'pass' });
+    await say('designer-1', 'I own the UI.', h.designer.id);
+    (await h.gate(0)).answer({ kind: 'pass' });
     assert.equal(h.gates[0].name, 'Lead');
 
     // The owner's question asks both Buddies, with the thread as context.
-    const question = await write(owner, 'ask', 'Is the login page ready?', root.id);
-    await gate(2);
+    await say('ask', 'Is the login page ready?');
+    await h.gate(2);
     const asked = new Map(h.gates.slice(1).map((entry) => [entry.name, entry]));
     const toDesigner = asked.get('Designer')!;
     assert.match(toDesigner.prompt, /I own the backend\.[\s\S]*Is the login page ready\?/);
@@ -737,32 +673,31 @@ test('a thread post asks the other Buddies in it; <yes> replies, <no> stays quie
     assert.match(toDesigner.prompt, /exactly <yes> or <no>/);
     asked.get('Lead')!.answer({ kind: 'pass' });
     toDesigner.answer({ kind: 'respond' });
-    const followUpPrompt = await replyIn(root, designer.id, 'Login ships Friday.');
+    const followUpPrompt = await replyIn(h.designer.id, 'Login ships Friday.');
     assert.match(followUpPrompt, /you chose to reply/);
     assert.match(followUpPrompt, /from Owner:\nIs the login page ready\?/);
-    await until(() => newestReply(root.id).body === 'Login ships Friday.', 'designer reply');
+    await until(() => newestReply().body === 'Login ships Friday.', 'designer reply');
     // Lead passed: no seat was opened for it.
-    assert.equal(h.runtimes.has(threadConversationId(root.id, h.lead.id, 0)), false);
+    assert.equal(h.runtimes.has(h.seat(root.id, h.lead.id)), false);
 
     // Buddy chain: Designer's reply (1) asks Lead, Lead's reply (2) asks
     // Designer, Designer's reply (3) asks nobody.
-    (await gate(3)).answer({ kind: 'respond' });
+    (await h.gate(3)).answer({ kind: 'respond' });
     assert.equal(h.gates[3].name, 'Lead');
-    await replyIn(root, h.lead.id, 'Backend is ready too.');
-    await until(() => newestReply(root.id).body === 'Backend is ready too.', 'lead reply');
-    (await gate(4)).answer({ kind: 'respond' });
+    await replyIn(h.lead.id, 'Backend is ready too.');
+    await until(() => newestReply().body === 'Backend is ready too.', 'lead reply');
+    (await h.gate(4)).answer({ kind: 'respond' });
     assert.equal(h.gates[4].name, 'Designer');
     // Designer's second reply resumes its seat: the same conversation.
-    await replyIn(root, designer.id, 'Great, shipping.');
-    await until(() => newestReply(root.id).body === 'Great, shipping.', 'third buddy post');
+    await replyIn(h.designer.id, 'Great, shipping.');
+    await until(() => newestReply().body === 'Great, shipping.', 'third buddy post');
     await settle();
     assert.equal(h.gates.length, 5, 'three Buddy posts in a row: the thread waits for the owner');
 
     // The owner speaking again reopens the thread to both Buddies.
-    await write(owner, 'thanks', 'Thanks both, one more thing.', root.id);
-    await gate(6);
+    await say('thanks', 'Thanks both, one more thing.');
+    await h.gate(6);
   } finally {
-    server.close();
     h.close();
   }
 });
@@ -772,76 +707,42 @@ test('a thread post asks the other Buddies in it; <yes> replies, <no> stays quie
 // fail whenever that harness is down) — while a Buddy never picked for stays
 // on its profile.
 test('a follow-up keeps the harness the owner picked for that Buddy earlier in the thread', async () => {
-  const h = harness();
-  const designer = h.raw.createBuddy({ project: h.workspace.id, name: 'Designer', role: 'UI' });
-  const server = h.app.listen(0, '127.0.0.1');
+  const h = await harness();
   try {
-    await new Promise<void>((resolve) => server.once('listening', resolve));
-    const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
-    const { list } = h.raw.createList({
-      workspace: h.workspace.id,
-      author: { kind: 'owner' },
-      key: 'sticky',
-      name: 'sticky',
-      purpose: 'Sticky model',
-    });
-    const write = async (body: Record<string, unknown>) => {
-      const response = await fetch(`${base}/api/buddies/lists/${list.id}/posts`, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ author: { kind: 'owner' }, purpose: 'message', ...body }),
-      });
-      assert.equal(response.status, 201);
-      return (await response.json()) as any;
-    };
-    const claude: ConversationConfig = {
-      provider: 'claude',
-      model: { mode: 'explicit', modelId: 'fable' },
-      reasoning: { mode: 'default' },
-    };
-    const gate = (index: number) => until(() => h.gates[index], `gate ${index}`);
-
-    const root = (await write({ key: 'root', body: 'Plan?' })).post;
-    await write({
+    const list = h.newList('sticky');
+    const { post: root } = await h.post(list.id, { key: 'root', body: 'Plan?' });
+    await h.post(list.id, {
       key: 'lead-1',
       author: { kind: 'buddy', buddyId: h.lead.id },
       body: 'Backend is mine.',
       threadRootId: root.id,
     });
     // The owner mentions Designer on Claude; Lead (profile) is asked and passes.
-    const mentioned = await write({
+    await h.post(list.id, {
       key: 'mention',
-      body: `[@Designer](buddy:${designer.id}) mock up the login page`,
+      body: `[@Designer](buddy:${h.designer.id}) mock up the login page`,
       threadRootId: root.id,
-      mentionConfigs: [{ buddyId: designer.id, config: claude }],
+      mentionConfigs: [{ buddyId: h.designer.id, config: CLAUDE }],
     });
-    (await gate(0)).answer({ kind: 'pass' });
-    const mentionRuntime = await until(
-      () => h.runtimes.get(mentioned.mentions[0].conversationId),
-      'mention runtime'
-    );
-    await until(() => mentionRuntime.prompts[0], 'mention prompt');
-    mentionRuntime.emit('buddy-turn-complete', 'Mockup attached.');
-    (await gate(1)).answer({ kind: 'pass' });
+    (await h.gate(0)).answer({ kind: 'pass' });
+    const seat = h.seat(root.id, h.designer.id);
+    (await h.nextTurn(seat)).complete('Mockup attached.');
+    (await h.gate(1)).answer({ kind: 'pass' });
 
     // A plain owner reply: Designer is asked on Claude, Lead on its profile.
-    await write({ key: 'risks', body: 'Any risks?', threadRootId: root.id });
-    await gate(3);
+    await h.post(list.id, { key: 'risks', body: 'Any risks?', threadRootId: root.id });
+    await h.gate(3);
     const asked = new Map(h.gates.slice(2).map((entry) => [entry.name, entry]));
-    assert.deepEqual(asked.get('Designer')!.config, claude);
-    assert.deepEqual(
-      asked.get('Lead')!.config,
-      configFromProviderPreferences({ provider: 'codex' })
-    );
+    assert.deepEqual(asked.get('Designer')!.config, CLAUDE);
+    assert.deepEqual(asked.get('Lead')!.config, CODEX);
     asked.get('Lead')!.answer({ kind: 'pass' });
     asked.get('Designer')!.answer({ kind: 'respond' });
     // The reply resumes the Claude seat the mention opened.
-    const followUp = await until(() => mentionRuntime.prompts[1], 'follow-up prompt');
-    assert.match(followUp.content, /Any risks\?/);
-    assert.deepEqual(mentionRuntime.config, claude);
-    assert.equal(h.created.length, 1);
+    const followUp = await h.nextTurn(seat);
+    assert.match(followUp.prompt, /Any risks\?/);
+    assert.deepEqual(followUp.runtime.config, CLAUDE);
+    assert.deepEqual(h.created, [seat]);
   } finally {
-    server.close();
     h.close();
   }
 });

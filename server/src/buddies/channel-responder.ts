@@ -1,5 +1,6 @@
 import { isDeepStrictEqual } from 'node:util';
 import type { ConversationConfig } from '@unleashd/shared';
+import { awaitTurn } from '../conversations/await-turn';
 import {
   buddyExecutionPreferences,
   configFromProviderPreferences,
@@ -78,14 +79,13 @@ type ReplyCause = { kind: 'mention' } | { kind: 'follow_up' };
 export type SeatRequest = { kind: 'keep' } | { kind: 'chosen'; config: ConversationConfig };
 
 export type MentionDispatch =
-  | { buddyId: string; status: 'started'; conversationId: string }
+  | { buddyId: string; status: 'started' }
   | { buddyId: string; status: 'rejected'; reason: string };
 
 export type ChannelResponse = {
   listId: string;
   threadRootId: string;
   buddyId: string;
-  conversationId: string;
   startedAt: string;
 };
 
@@ -351,60 +351,16 @@ async function untilIdle(conversation: ConversationRuntime): Promise<void> {
   }
 }
 
-// The runtime's turn events carry no turn identity, so a turn is only started
-// on an idle seat, with its listeners attached right before it, and replies
-// into one seat are serialized by the responder: the next completion is ours.
-function runTurn(conversation: ConversationRuntime, prompt: string, inputId: string) {
-  return new Promise<string>((resolve, reject) => {
-    const cleanup = () => {
-      conversation.off('buddy-turn-complete', onComplete);
-      conversation.off('buddy-turn-failed', onFailure);
-    };
-    const onComplete = (output: string) => {
-      cleanup();
-      resolve(output);
-    };
-    const onFailure = (reason: string) => {
-      cleanup();
-      reject(new Error(reason || 'Buddy turn failed'));
-    };
-    conversation.once('buddy-turn-complete', onComplete);
-    conversation.once('buddy-turn-failed', onFailure);
-    conversation.sendMessage(prompt, { origin: 'owner_input', inputId });
-  });
-}
-
 export function createChannelResponder(ports: ChannelResponderPorts) {
   const logger = ports.logger ?? console;
-  const active = new Map<string, ChannelResponse>();
-  // Per-seat queues: seat choice (scan + create) per (thread, Buddy), turns
-  // per conversation. Both are promise tails, so work runs one at a time.
-  const choosing = new Map<string, Promise<unknown>>();
-  const turns = new Map<string, Promise<unknown>>();
-  // (thread, Buddy) pairs with a gate question out, so a burst of posts asks
-  // each Buddy once rather than stacking duplicate replies.
+  // One queue per (thread, Buddy): its replies run one at a time, in order,
+  // each opening the seat, waiting for it to idle, then taking the turn. An
+  // entry lives while replies are queued; it is what "X is replying…" reads.
+  const queues = new Map<string, ChannelResponse & { tail: Promise<void> }>();
+  // Pairs with a gate question out, so a burst of posts asks each Buddy once.
   const gating = new Set<string>();
   const pairKey = (threadRootId: string, buddyId: string) => `${threadRootId}:${buddyId}`;
-  const busy = (threadRootId: string, buddyId: string) =>
-    gating.has(pairKey(threadRootId, buddyId)) ||
-    [...active.values()].some(
-      (response) => response.threadRootId === threadRootId && response.buddyId === buddyId
-    );
-
-  function serialized<T>(
-    queue: Map<string, Promise<unknown>>,
-    key: string,
-    work: () => Promise<T>
-  ) {
-    const run = (queue.get(key) ?? Promise.resolve()).catch(() => undefined).then(work);
-    queue.set(key, run);
-    void run
-      .catch(() => undefined)
-      .finally(() => {
-        if (queue.get(key) === run) queue.delete(key);
-      });
-    return run;
-  }
+  const busy = (key: string) => gating.has(key) || queues.has(key);
 
   async function currentSeats(threadRootId: string, buddyId: string) {
     return scanGenerations(ports.conversations, (generation) =>
@@ -412,27 +368,24 @@ export function createChannelResponder(ports: ChannelResponderPorts) {
     );
   }
 
-  // Resolve and open the Buddy's seat. Serialized per (thread, Buddy) so two
-  // picks arriving together cannot both claim the same free generation.
-  function openSeat(
+  // Runs inside the pair's queue, so two picks can never claim one generation.
+  async function openSeat(
     list: BuddyMailingList,
     threadRootId: string,
     buddyId: string,
     request: SeatRequest
   ): Promise<ConversationRuntime> {
-    return serialized(choosing, pairKey(threadRootId, buddyId), async () => {
-      const store = await ports.getStore();
-      const seat = seatFor(
-        request,
-        await currentSeats(threadRootId, buddyId),
-        profileConfig(store, buddyId)
-      );
-      return openConversation(ports.conversations, {
-        context: { buddyId, workspaceId: list.workspaceId },
-        conversationId: seat.conversationId,
-        commandId: `channel-thread-${seat.conversationId}`,
-        config: seat.config,
-      });
+    const store = await ports.getStore();
+    const seat = seatFor(
+      request,
+      await currentSeats(threadRootId, buddyId),
+      profileConfig(store, buddyId)
+    );
+    return openConversation(ports.conversations, {
+      context: { buddyId, workspaceId: list.workspaceId },
+      conversationId: seat.conversationId,
+      commandId: `channel-thread-${seat.conversationId}`,
+      config: seat.config,
     });
   }
 
@@ -488,44 +441,66 @@ export function createChannelResponder(ports: ChannelResponderPorts) {
     }
   }
 
-  // Queue one reply turn on an open seat; the answer lands in the thread.
-  function reply(input: {
+  type Reply = {
     list: BuddyMailingList;
     cause: ReplyCause;
+    request: SeatRequest;
     trigger: BuddyMailingListPost;
     threadRootId: string;
     buddyId: string;
-    conversation: ConversationRuntime;
-  }): void {
-    const key = `${input.trigger.id}:${input.buddyId}`;
-    active.set(key, {
-      listId: input.list.id,
-      threadRootId: input.threadRootId,
-      buddyId: input.buddyId,
-      conversationId: input.conversation.id,
-      startedAt: new Date().toISOString(),
-    });
-    void serialized(turns, input.conversation.id, async () => {
-      const store = await ports.getStore();
+  };
+
+  // Every failure — seat, turn — becomes a visible reply_failed post.
+  async function runReply(input: Reply): Promise<void> {
+    const store = await ports.getStore();
+    let conversationId: string | null = null;
+    let outcome: { kind: 'answered'; text: string } | { kind: 'failed'; reason: string };
+    try {
+      const conversation = await openSeat(
+        input.list,
+        input.threadRootId,
+        input.buddyId,
+        input.request
+      );
+      conversationId = conversation.id;
+      await untilIdle(conversation);
       const context =
         input.trigger.threadRootId === null
           ? channelContext(store, input.list, input.trigger)
           : threadContext(store, input.threadRootId, input.trigger);
       const prompt = buildPrompt({ ...input, context, store });
-      let outcome: { kind: 'answered'; text: string } | { kind: 'failed'; reason: string };
-      try {
-        const conversation = await ports.conversations.ensureConversationReady(input.conversation);
-        await untilIdle(conversation);
-        outcome = { kind: 'answered', text: await runTurn(conversation, prompt, input.trigger.id) };
-      } catch (error) {
-        outcome = { kind: 'failed', reason: errorText(error) };
-      }
-      await postReply({ ...input, conversationId: input.conversation.id, outcome });
-    })
+      const text = await awaitTurn(
+        conversation,
+        () =>
+          conversation.sendMessage(prompt, { origin: 'owner_input', inputId: input.trigger.id }),
+        'Buddy turn failed'
+      );
+      outcome = { kind: 'answered', text };
+    } catch (error) {
+      outcome = { kind: 'failed', reason: error instanceof Error ? error.message : String(error) };
+    }
+    await postReply({ ...input, conversationId, outcome });
+  }
+
+  function reply(input: Reply): void {
+    const key = pairKey(input.threadRootId, input.buddyId);
+    const previous = queues.get(key);
+    const tail = (previous?.tail ?? Promise.resolve())
+      .then(() => runReply(input))
       .catch((error) => {
         logger.warn(`[channel-responder] reply to ${input.trigger.id} failed:`, error);
-      })
-      .finally(() => active.delete(key));
+      });
+    const entry = {
+      listId: input.list.id,
+      threadRootId: input.threadRootId,
+      buddyId: input.buddyId,
+      startedAt: previous?.startedAt ?? new Date().toISOString(),
+      tail,
+    };
+    queues.set(key, entry);
+    void tail.finally(() => {
+      if (queues.get(key) === entry) queues.delete(key);
+    });
   }
 
   async function followUp(input: {
@@ -556,10 +531,10 @@ export function createChannelResponder(ports: ChannelResponderPorts) {
         return reply({
           list: input.list,
           cause: { kind: 'follow_up' },
+          request: { kind: 'keep' },
           trigger: input.trigger,
           threadRootId: input.root.id,
           buddyId: input.buddyId,
-          conversation: await openSeat(input.list, input.root.id, input.buddyId, { kind: 'keep' }),
         });
       case 'pass':
         return;
@@ -580,10 +555,9 @@ export function createChannelResponder(ports: ChannelResponderPorts) {
 
   return {
     /**
-     * Queue one reply per valid @mention in an OWNER post, each in the
-     * Buddy's seat for this thread. Returns once the seats are open; replies
-     * land in the thread when their turns finish. `chosen` holds the owner's
-     * harness/model pick per mentioned Buddy.
+     * Queue one reply per valid @mention in an OWNER post, in the Buddy's seat
+     * for this thread; replies land there when their turns finish. `chosen`
+     * holds the owner's harness/model pick per mentioned Buddy.
      */
     async respondToOwnerPost(
       list: BuddyMailingList,
@@ -591,41 +565,21 @@ export function createChannelResponder(ports: ChannelResponderPorts) {
       chosen: ReadonlyMap<string, ConversationConfig>
     ): Promise<MentionDispatch[]> {
       const store = await ports.getStore();
-      const threadRootId = post.threadRootId ?? post.id;
-      return Promise.all(
-        mentionedBuddyIds(post.body).map(async (buddyId): Promise<MentionDispatch> => {
-          const admitted = eligibility(store, buddyId, list.workspaceId);
-          if (admitted.kind === 'rejected')
-            return { buddyId, status: 'rejected', reason: admitted.reason };
-          const config = chosen.get(buddyId);
-          const request: SeatRequest = config ? { kind: 'chosen', config } : { kind: 'keep' };
-          let conversation: ConversationRuntime;
-          try {
-            conversation = await openSeat(list, threadRootId, buddyId, request);
-          } catch (error) {
-            // Visible where the owner is looking, like any failed reply.
-            const reason = errorText(error);
-            await postReply({
-              list,
-              trigger: post,
-              threadRootId,
-              buddyId,
-              conversationId: null,
-              outcome: { kind: 'failed', reason },
-            });
-            return { buddyId, status: 'rejected', reason };
-          }
-          reply({
-            list,
-            cause: { kind: 'mention' },
-            trigger: post,
-            threadRootId,
-            buddyId,
-            conversation,
-          });
-          return { buddyId, status: 'started', conversationId: conversation.id };
-        })
-      );
+      return mentionedBuddyIds(post.body).map((buddyId): MentionDispatch => {
+        const admitted = eligibility(store, buddyId, list.workspaceId);
+        if (admitted.kind === 'rejected')
+          return { buddyId, status: 'rejected', reason: admitted.reason };
+        const config = chosen.get(buddyId);
+        reply({
+          list,
+          cause: { kind: 'mention' },
+          request: config ? { kind: 'chosen', config } : { kind: 'keep' },
+          trigger: post,
+          threadRootId: post.threadRootId ?? post.id,
+          buddyId,
+        });
+        return { buddyId, status: 'started' };
+      });
     },
 
     /**
@@ -648,9 +602,9 @@ export function createChannelResponder(ports: ChannelResponderPorts) {
       const skipped = new Set([...buddyAuthorIds(post.author), ...dispatchedMentions(post)]);
       const participants = [...new Set(thread.flatMap((entry) => buddyAuthorIds(entry.author)))];
       for (const buddyId of participants) {
-        if (skipped.has(buddyId) || busy(root.id, buddyId)) continue;
-        if (eligibility(store, buddyId, list.workspaceId).kind === 'rejected') continue;
         const key = pairKey(root.id, buddyId);
+        if (skipped.has(buddyId) || busy(key)) continue;
+        if (eligibility(store, buddyId, list.workspaceId).kind === 'rejected') continue;
         gating.add(key);
         void followUp({
           list,
@@ -668,13 +622,11 @@ export function createChannelResponder(ports: ChannelResponderPorts) {
 
     /** Buddies currently composing a reply in this list, for "X is replying…". */
     responding(listId: string): ChannelResponse[] {
-      return [...active.values()].filter((response) => response.listId === listId);
+      return [...queues.values()]
+        .filter((entry) => entry.listId === listId)
+        .map(({ tail: _tail, ...response }) => response);
     },
   };
-}
-
-function errorText(error: unknown): string {
-  return error instanceof Error ? error.message : String(error);
 }
 
 export type ChannelResponder = ReturnType<typeof createChannelResponder>;

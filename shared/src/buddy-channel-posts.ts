@@ -37,7 +37,9 @@ export const BuddyChannelThreadSchema = z.object({
 });
 
 export const BuddyMentionDispatchSchema = z.discriminatedUnion('status', [
-  z.object({ buddyId: z.string(), status: z.literal('started'), conversationId: z.string() }),
+  // No conversation id: the reply queues for the Buddy's thread seat, which
+  // is only chosen when the reply runs (channel-responder.ts).
+  z.object({ buddyId: z.string(), status: z.literal('started') }),
   z.object({ buddyId: z.string(), status: z.literal('rejected'), reason: z.string() }),
 ]);
 

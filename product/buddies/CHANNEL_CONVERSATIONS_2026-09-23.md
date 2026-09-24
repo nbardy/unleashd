@@ -54,9 +54,10 @@ remain the three core components.
    seat runs anything else, because a started session cannot change provider),
    and every later reply — un-picked mentions, follow-ups, their gate questions
    — keeps it. Never picked: the Buddy's profile default. A deleted seat
-   conversation is skipped like a deleted DM. Seat choice is serialized per
-   (thread, Buddy); turns are serialized per seat and start only when it is
-   idle (it is also an ordinary chat the owner can type in). The DM and seats
+   conversation is skipped like a deleted DM. A (thread, Buddy) pair has ONE
+   reply queue: each reply opens the seat, waits until it is idle (it is also
+   an ordinary chat the owner can type in), then takes its turn — turn events
+   carry no identity, so two prompts in flight would swap answers. The DM and seats
    share `buddy-conversation-slots.ts` (derived ids, generation scan from the
    config record: absent / deleted / live+config, reopen-or-create,
    membership). Input is `owner_input` origin: owner thread knowledge scope,

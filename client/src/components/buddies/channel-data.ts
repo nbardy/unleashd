@@ -63,7 +63,7 @@ export type ChannelMember = {
   execution: BuddyMemberExecution;
 };
 
-export type ChannelResponse = { threadRootId: string; buddyId: string; conversationId: string };
+export type ChannelResponse = { threadRootId: string; buddyId: string };
 
 // =============================================================================
 // Transcript rows: D = Day ⊕ Lead ⊕ Continuation.
