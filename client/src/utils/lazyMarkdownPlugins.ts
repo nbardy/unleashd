@@ -74,9 +74,10 @@ export function useLazyMarkdownPlugins(): PluggableList {
 
 /**
  * The frozen processor for `flavor` plus whatever rehype plugins have loaded.
- * Hand it to `renderMarkdown` (utils/markdown-pipeline) — never render chat
- * or channel text through react-markdown's `<Markdown>`, which rebuilds and
- * re-freezes the whole processor on every render.
+ * Hand it to `renderMarkdownCached` / `renderMarkdownLive`
+ * (utils/markdown-pipeline) — never render chat or channel text through
+ * react-markdown's `<Markdown>`, which rebuilds and re-freezes the whole
+ * processor on every render.
  */
 export function useMarkdownPipeline(flavor: MarkdownFlavor): MarkdownPipeline {
   return markdownPipeline(flavor, useLazyMarkdownPlugins());

@@ -229,16 +229,25 @@ unified processor on every render, re-running every plugin attacher; opening a
 1,099-message conversation on mobile blocked the main thread 1,321ms (4x CPU,
 2026-09-25), ~391ms of it `freeze()`. Declare a `defineMarkdownFlavor(...)` as a
 module constant, take the pipeline from `useMarkdownPipeline(flavor)` and call
-`renderMarkdown(pipeline, text, components)`. Finished hast trees sit in a
-bounded LRU keyed by pipeline and text, so remounted rows skip parse and
-highlighting. The pipeline turns raw HTML into text and applies the URL policy
+`renderMarkdownCached(pipeline, text, components)` for settled text. Finished
+hast trees sit in an LRU keyed by pipeline and text, bounded by entry count AND
+total source characters, so remounted rows skip parse and highlighting. The
+message a streaming turn is still growing MUST use `renderMarkdownLive` instead:
+each animation-frame flush is a new string, and caching those retained a tree
+per prefix (334MB heap for one 18KB reply, 2026-09-25) and evicted every settled
+tree. The response row that knows the turn is live picks the renderer for its
+last part. The pipeline turns raw HTML into text and applies the URL policy
 before a tree is cached. Cached trees are shared, so never mutate a `node`
-passed to a component override. `client/test/markdown-pipeline.test.tsx` keeps
-the output byte-identical to `<Markdown>`.
+passed to a component override — outside production builds they are
+deep-frozen, so a mutation throws. `client/test/markdown-pipeline.test.tsx`
+keeps the output byte-identical to `<Markdown>` and guards both cache bounds.
 
 Desktop virtualizes the message list. Mobile keeps a flat scroller for iOS
-momentum and mounts only the newest 30 groups. "Show earlier" adds 30 at a time
-and keeps the reader's distance from the bottom.
+momentum and mounts groups from a pinned first index: the newest 30 when the
+conversation opens, 30 more per "Show earlier" (keeping the reader's distance
+from the bottom). New groups append below without unmounting the top one — a
+count-from-the-end window did, which shifted content above the reader on Safari
+(no scroll anchoring).
 
 ## Persisted UI state
 

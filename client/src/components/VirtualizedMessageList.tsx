@@ -24,8 +24,10 @@ import { messageTranscriptContent } from '../utils/conversation-transcript';
 import { useMarkdownPipeline } from '../utils/lazyMarkdownPlugins';
 import {
   type MarkdownPipeline,
+  type MarkdownRenderer,
   defineMarkdownFlavor,
-  renderMarkdown,
+  renderMarkdownCached,
+  renderMarkdownLive,
 } from '../utils/markdown-pipeline';
 import { remarkBreaks } from '../utils/remark-breaks';
 import { splitStructuredMessageContent } from '../utils/structured-message-segments';
@@ -449,18 +451,20 @@ function MessageMarkdown({
   collapseTools,
   pipeline,
   components,
+  markdown,
 }: {
   content: string;
   collapseTools: boolean;
   pipeline: MarkdownPipeline;
   components: Components;
+  markdown: MarkdownRenderer;
 }) {
   const segments = useMemo(
     () => (collapseTools ? splitToolActivity(content) : []),
     [content, collapseTools]
   );
   if (!segments.some((segment) => segment.type === 'tool_calls')) {
-    return renderMarkdown(pipeline, content, components);
+    return markdown(pipeline, content, components);
   }
   return segments.map((segment, index) =>
     segment.type === 'tool_calls' ? (
@@ -468,10 +472,10 @@ function MessageMarkdown({
         key={index}
         label={`${segment.count} tool ${segment.count === 1 ? 'call' : 'calls'}`}
       >
-        {renderMarkdown(pipeline, segment.content, components)}
+        {markdown(pipeline, segment.content, components)}
       </ChatActivity>
     ) : (
-      <Fragment key={index}>{renderMarkdown(pipeline, segment.content, components)}</Fragment>
+      <Fragment key={index}>{markdown(pipeline, segment.content, components)}</Fragment>
     )
   );
 }
@@ -484,6 +488,8 @@ interface MessageContentProps {
   msg: Message;
   collapseTools?: boolean;
   workingDirectory: string;
+  /** `renderMarkdownLive` only for the message a streaming turn is growing. */
+  markdown: MarkdownRenderer;
 }
 
 const MemoizedMessageContent = memo(
@@ -491,6 +497,7 @@ const MemoizedMessageContent = memo(
     msg,
     collapseTools = true,
     workingDirectory,
+    markdown,
   }: MessageContentProps) {
     // katex + highlight.js arrive asynchronously; markdown renders immediately
     // with the remark plugins and re-renders once the chunk lands.
@@ -542,6 +549,7 @@ const MemoizedMessageContent = memo(
                   collapseTools={collapseToolActivity}
                   pipeline={pipeline}
                   components={mdComponents}
+                  markdown={markdown}
                 />
               );
             }
@@ -579,6 +587,7 @@ const MemoizedMessageContent = memo(
             collapseTools={collapseToolActivity}
             pipeline={pipeline}
             components={mdComponents}
+            markdown={markdown}
           />
         )}
         {msg.toolCall?.input !== undefined && (
@@ -596,7 +605,8 @@ const MemoizedMessageContent = memo(
       prev.msg.toolCall?.name === next.msg.toolCall?.name &&
       prev.msg.toolCall?.input === next.msg.toolCall?.input &&
       prev.collapseTools === next.collapseTools &&
-      prev.workingDirectory === next.workingDirectory
+      prev.workingDirectory === next.workingDirectory &&
+      prev.markdown === next.markdown
     );
   }
 );
@@ -621,7 +631,11 @@ function StandaloneMessage({
   return (
     <div className={`message ${msg.role}`} ref={forwardedRef}>
       {msg.role !== 'system' && <div className={`message-role ${msg.role}`}>{roleLabel}</div>}
-      <MemoizedMessageContent msg={msg} workingDirectory={workingDirectory} />
+      <MemoizedMessageContent
+        msg={msg}
+        workingDirectory={workingDirectory}
+        markdown={renderMarkdownCached}
+      />
       {messageTranscriptContent(msg).trim() && (
         <div className="message-actions">
           <CopyButton text={messageTranscriptContent(msg)} className="message-action-btn" />
@@ -926,8 +940,13 @@ function AssistantResponseBlock({
             <span className="typing-dot" aria-hidden="true" />
           </div>
         )}
-        {response.parts.map((part) =>
-          part.type === 'tool_calls' ? (
+        {response.parts.map((part, partIndex) => {
+          // Streaming text only ever grows the response's last part.
+          const markdown =
+            isLive === true && partIndex === response.parts.length - 1
+              ? renderMarkdownLive
+              : renderMarkdownCached;
+          return part.type === 'tool_calls' ? (
             <ChatActivity
               key={part.key}
               label={
@@ -943,6 +962,7 @@ function AssistantResponseBlock({
                   msg={msg}
                   collapseTools={false}
                   workingDirectory={workingDirectory}
+                  markdown={markdown}
                 />
               ))}
             </ChatActivity>
@@ -951,9 +971,10 @@ function AssistantResponseBlock({
               key={part.key}
               msg={part.message}
               workingDirectory={workingDirectory}
+              markdown={markdown}
             />
-          )
-        )}
+          );
+        })}
       </div>
       <div className="message-actions" ref={forwardedRef}>
         {response.copyText.trim() && (

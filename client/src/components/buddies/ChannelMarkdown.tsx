@@ -6,7 +6,7 @@ import remarkGfm from 'remark-gfm';
 import { ChatActivity } from '../../ui/ChatActivity';
 import { parseBuddyReviewResult } from '../../utils/buddy-review-message';
 import { useMarkdownPipeline } from '../../utils/lazyMarkdownPlugins';
-import { defineMarkdownFlavor, renderMarkdown } from '../../utils/markdown-pipeline';
+import { defineMarkdownFlavor, renderMarkdownCached } from '../../utils/markdown-pipeline';
 import { remarkBreaks } from '../../utils/remark-breaks';
 import {
   type StructuredMessageSegment,
@@ -264,7 +264,7 @@ export const ChannelMarkdown = memo(function ChannelMarkdown({
   const segments = useMemo(() => splitToolActivity(body), [body]);
   const pipeline = useMarkdownPipeline(CHANNEL_MARKDOWN);
   const markdown = (text: string, key?: number) => (
-    <Fragment key={key}>{renderMarkdown(pipeline, text, components)}</Fragment>
+    <Fragment key={key}>{renderMarkdownCached(pipeline, text, components)}</Fragment>
   );
   return (
     <div className="channel-markdown">

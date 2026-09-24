@@ -31,8 +31,8 @@ import { useCopyAction } from '../../hooks/useCopyAction';
 import { useProviderCatalog } from '../../hooks/useProviderCatalog';
 import { useSavedPrompts } from '../../hooks/useSavedPrompts';
 import { useTurnDiagnostics } from '../../hooks/useTurnDiagnostics';
-import { buildThreadTranscript } from '../../utils/conversation-transcript';
 import { mobileConversationRouteState } from '../../utils/conversation-route-state';
+import { buildThreadTranscript } from '../../utils/conversation-transcript';
 import { buildUnifiedSubAgents } from '../../utils/subAgents';
 import { parseStatsFromPrefix } from '../../utils/swarmConvoParsers';
 import {
@@ -74,6 +74,11 @@ import { MobileQueueStrip } from './MobileQueueStrip';
 
 /** Message groups mounted on open, and added per "Show earlier" tap. */
 const MOBILE_GROUP_PAGE = 30;
+
+/** First shown group index, pinned per conversation (see `groupWindow`). */
+type GroupWindow = { readonly conversationId: string; readonly firstShown: number };
+/** Matches no conversation, so the first render with history pins a window. */
+const UNPINNED_GROUP_WINDOW: GroupWindow = { conversationId: '', firstShown: 0 };
 
 function CopyThreadButton({ conversation }: { conversation: Conversation }) {
   const text = buildThreadTranscript(conversation);
@@ -523,16 +528,29 @@ export function ConversationView({
   const lastMessageRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  // Render window: only the newest `shown` groups mount. The list stays a flat
+  // Render window: groups from `firstShown` on mount. The list stays a flat
   // scroller (iOS momentum) instead of a virtualizer, but mounting all of it
   // was the cost — opening a 1,099-message conversation blocked the main
   // thread 1,321ms (4x CPU, 2026-09-25), nearly all markdown parse for turns
-  // nobody had scrolled to. The window belongs to one conversation: switching
-  // resets it without an effect because the stored id no longer matches.
-  const [groupWindow, setGroupWindow] = useState({ conversationId, shown: MOBILE_GROUP_PAGE });
-  const shownGroups =
-    groupWindow.conversationId === conversationId ? groupWindow.shown : MOBILE_GROUP_PAGE;
-  const firstShownGroup = Math.max(0, messageGroups.length - shownGroups);
+  // nobody had scrolled to.
+  //
+  // The window stores the INDEX of the first shown group, not a count from the
+  // end: with a count, every new group unmounted the oldest mounted one, so
+  // content above the reader shifted mid-read (Safari has no scroll anchoring).
+  // It is pinned the first render the history is present (React's
+  // adjust-state-during-render pattern — no effect, no flash of every group)
+  // and moved only by "Show earlier". Switching conversations re-pins because
+  // the stored id no longer matches.
+  const newestPageStart = Math.max(0, messageGroups.length - MOBILE_GROUP_PAGE);
+  const [groupWindow, setGroupWindow] = useState(UNPINNED_GROUP_WINDOW);
+  if (detailsLoaded && groupWindow.conversationId !== conversationId) {
+    setGroupWindow({ conversationId, firstShown: newestPageStart });
+  }
+  // min(): if the history shrinks below the pinned start, show the newest page.
+  const firstShownGroup =
+    groupWindow.conversationId === conversationId
+      ? Math.min(groupWindow.firstShown, newestPageStart)
+      : newestPageStart;
   // Distance from the bottom captured just before "load earlier" grows the
   // window; restored after layout so the reader's place does not jump.
   const bottomOffsetBeforeGrow = useRef<number | null>(null);
@@ -666,7 +684,10 @@ export function ConversationView({
   const showEarlierGroups = () => {
     const el = scrollRef.current;
     if (el) bottomOffsetBeforeGrow.current = el.scrollHeight - el.scrollTop;
-    setGroupWindow({ conversationId, shown: shownGroups + MOBILE_GROUP_PAGE });
+    setGroupWindow({
+      conversationId,
+      firstShown: Math.max(0, firstShownGroup - MOBILE_GROUP_PAGE),
+    });
   };
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: runs when the window grows
@@ -676,7 +697,7 @@ export function ConversationView({
     if (!el || offset === null) return;
     bottomOffsetBeforeGrow.current = null;
     el.scrollTop = el.scrollHeight - offset;
-  }, [shownGroups]);
+  }, [firstShownGroup]);
 
   // Turn diagnostics — same hook desktop Chat.tsx uses (hooks/useTurnDiagnostics)
   // + same derived view model (utils/turn-diagnostics). Reuses existing atoms
@@ -911,7 +932,7 @@ export function ConversationView({
       )}
 
       {/* Flat message list — not virtualized (iOS momentum-scroll, §10 Phase 1),
-          but windowed to the newest groups; see `groupWindow`. */}
+          but windowed from a pinned first group; see `groupWindow`. */}
       <div ref={scrollRef} className="mobile-chat__messages">
         {firstShownGroup > 0 && (
           <button type="button" className="mobile-chat__load-earlier" onClick={showEarlierGroups}>
