@@ -1,5 +1,10 @@
 import { createHash } from 'node:crypto';
+import { isDeepStrictEqual } from 'node:util';
 import type { BuddyContext, ConversationConfig } from '@unleashd/shared';
+import {
+  buddyExecutionPreferences,
+  configFromProviderPreferences,
+} from '../conversations/config-mapping';
 import type { ConversationRuntime } from '../conversations/runtime';
 import { canonicalizePostMedia, describeMediaProblems } from './channel-media';
 import { announceChannelPost } from './channel-post-feed';
@@ -33,6 +38,9 @@ import type {
 //               bounded: once the thread's last MAX_BUDDY_CHAIN posts are all
 //               Buddies', nobody is asked until the owner posts again. The
 //               bound is read from the thread itself, so it survives restarts.
+//               A follow-up (gate and reply) runs on the harness/model of the
+//               Buddy's latest reply in the thread when that was a custom pick,
+//               else on its profile (`threadModel`).
 //
 // One conversation per MENTION (the Slack model): every @mention, including a
 // follow-up inside a thread, starts a new conversation seeded from the thread
@@ -83,6 +91,8 @@ export interface ChannelResponderPorts {
   }): Promise<ConversationRuntime>;
   uploadsRoot(): string;
   gate: ReplyGate;
+  /** The config a conversation was created on; null when there is no record. */
+  getConversationConfig(conversationId: string): Promise<ConversationConfig | null>;
   logger?: Pick<Console, 'warn'>;
 }
 
@@ -306,6 +316,28 @@ function gatePrompt(input: {
   ].join('\n');
 }
 
+// The Buddy's latest post in the thread that ran in a conversation (reply
+// posts and `post` calls carry it; an owner-route Buddy post does not).
+function latestSpokenConversation(thread: BuddyMailingListPost[], buddyId: string): string | null {
+  for (let index = thread.length - 1; index >= 0; index--) {
+    const post = thread[index];
+    if (buddyAuthorIds(post.author)[0] === buddyId && post.senderConversationId)
+      return post.senderConversationId;
+  }
+  return null;
+}
+
+// A follow-up keeps the owner's custom pick for this Buddy in this thread: if
+// its latest reply here ran on a config that is not its profile default, that
+// was a mention-chip choice (or a follow-up that inherited one), so reuse it.
+// A reply that ran on the profile stays on the profile, so editing a Buddy's
+// profile still takes effect in its old threads. No custom flag is stored
+// anywhere; the persisted config of the reply's own conversation is the record.
+function modelFor(prior: ConversationConfig | null, profile: ConversationConfig): MentionModel {
+  if (prior === null || isDeepStrictEqual(prior, profile)) return { kind: 'profile' };
+  return { kind: 'chosen', config: prior };
+}
+
 type Eligibility = { kind: 'eligible' } | { kind: 'rejected'; reason: string };
 
 function eligibility(
@@ -486,10 +518,23 @@ export function createChannelResponder(ports: ChannelResponderPorts) {
       .finally(() => active.delete(input.conversationId));
   }
 
+  async function threadModel(
+    store: BuddiesStorePort,
+    thread: BuddyMailingListPost[],
+    buddyId: string
+  ): Promise<MentionModel> {
+    const spoken = latestSpokenConversation(thread, buddyId);
+    const prior = spoken === null ? null : await ports.getConversationConfig(spoken);
+    const buddy = store.getBuddy(buddyId);
+    if (!buddy) throw new Error(`Buddy ${buddyId} not found`);
+    return modelFor(prior, configFromProviderPreferences(buddyExecutionPreferences(buddy)));
+  }
+
   async function followUp(input: {
     list: BuddyMailingList;
     trigger: BuddyMailingListPost;
     root: BuddyMailingListPost;
+    thread: BuddyMailingListPost[];
     buddyId: string;
     others: string[];
   }): Promise<void> {
@@ -498,8 +543,10 @@ export function createChannelResponder(ports: ChannelResponderPorts) {
       const buddy = store.getBuddy(buddyId);
       return { name: buddy?.name ?? buddyId, role: buddy?.role ?? '' };
     };
+    const model = await threadModel(store, input.thread, input.buddyId);
     const verdict: GateVerdict = await ports.gate({
       buddyId: input.buddyId,
+      model,
       prompt: gatePrompt({
         list: input.list,
         buddy: profile(input.buddyId),
@@ -518,7 +565,7 @@ export function createChannelResponder(ports: ChannelResponderPorts) {
           threadRootId: input.root.id,
           buddyId: input.buddyId,
           conversationId: followUpConversationId(input.trigger.id, input.buddyId),
-          model: { kind: 'profile' },
+          model,
         });
       case 'pass':
         return;
@@ -598,6 +645,7 @@ export function createChannelResponder(ports: ChannelResponderPorts) {
           list,
           trigger: post,
           root,
+          thread,
           buddyId,
           others: participants.filter((other) => other !== buddyId),
         })

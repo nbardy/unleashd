@@ -103,8 +103,16 @@ model, server-posted answer, key `follow-up-reply:<post>:<buddy>`), framed as
   asked until the owner posts again. Read from the thread itself, so it holds
   across restarts. This is what keeps Buddy-to-Buddy follow-ups from being the
   unbounded fan-out the mailing-list spec warns about.
-- **Cost:** one gate run per other participant per thread post, on each
-  Buddy's profile model and effort (provider-bespoke effort values are not
+- **Model sticks to the thread's custom pick:** a follow-up (gate AND reply)
+  runs on the config of the Buddy's latest reply in that thread when that
+  config differs from its profile default — i.e. the owner picked a custom
+  harness/model on the mention chip, or an earlier follow-up inherited one.
+  Otherwise it runs on the profile, so a profile edit still reaches old
+  threads. Read from the persisted config record of the reply's own
+  conversation (`senderConversationId`); no "custom" flag is stored. The gate
+  follows too, so a Buddy moved off a down profile harness can still answer.
+- **Cost:** one gate run per other participant per thread post, on that
+  model and effort (provider-bespoke effort values are not
   translated down). Same restart gap as mention replies.
 
 Guard: the follow-up test in `server/test/channel-conversations.test.ts`.

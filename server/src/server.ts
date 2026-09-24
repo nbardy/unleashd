@@ -1,7 +1,7 @@
 import { execFileSync, execSync } from 'node:child_process';
 import http from 'node:http';
 import path from 'node:path';
-import type { Provider as ProviderName } from '@unleashd/shared';
+import type { ConversationConfig, Provider as ProviderName } from '@unleashd/shared';
 import {
   FORK_CAPABLE_PROVIDERS,
   buildMergeReviewPrompt,
@@ -84,7 +84,7 @@ import { BuddyBuilderService, type BuddyBuilderStore } from './buddies/builder';
 import { onBuddiesChanged, registerBuddyMutationFeed } from './buddies/change-feed';
 import { onChannelPost } from './buddies/channel-post-feed';
 import { createCliReplyGate } from './buddies/channel-reply-gate';
-import { createChannelResponder } from './buddies/channel-responder';
+import { type MentionModel, createChannelResponder } from './buddies/channel-responder';
 import { registerChannelRoutes } from './buddies/channel-routes';
 import { BuddyControlServer } from './buddies/control-server';
 import {
@@ -519,20 +519,32 @@ const channelResponder = createChannelResponder({
   // chat. Each mention creates its own, on the owner's pick when there is one.
   createConversation: (input) => buddyCreationService.createServerBuddyConversation(input),
   uploadsRoot: () => UPLOADS_DIR,
-  // The follow-up gate runs on the Buddy's own profile model, resolved by the
-  // same authority as its conversations.
+  // The follow-up gate runs on the model the reply would (profile, or the
+  // thread's custom pick), resolved by the same authority as conversations.
   gate: createCliReplyGate({
-    resolveExecution: async (buddyId) => {
-      const buddy = (await getBuddiesStore()).getBuddy(buddyId);
-      if (!buddy) throw new Error(`Buddy ${buddyId} not found`);
+    resolveExecution: async (buddyId, model) => {
       const resolution = await conversationConfigService.resolve(
-        configFromProviderPreferences(buddyExecutionPreferences(buddy))
+        await replyGateConfig(buddyId, model)
       );
       if (resolution.status !== 'resolved') throw new Error(resolution.error.message);
       return resolution.value;
     },
   }),
+  getConversationConfig: async (conversationId) =>
+    (await conversationConfigService.getRecord(conversationId))?.config ?? null,
 });
+
+async function replyGateConfig(buddyId: string, model: MentionModel): Promise<ConversationConfig> {
+  switch (model.kind) {
+    case 'profile': {
+      const buddy = (await getBuddiesStore()).getBuddy(buddyId);
+      if (!buddy) throw new Error(`Buddy ${buddyId} not found`);
+      return configFromProviderPreferences(buddyExecutionPreferences(buddy));
+    }
+    case 'chosen':
+      return model.config;
+  }
+}
 onChannelPost((post) => {
   void channelResponder.considerThreadPost(post).catch((error) => {
     console.warn(`[channel-responder] follow-up gating failed for post ${post.id}:`, error);

@@ -15,7 +15,11 @@ import {
   createCliReplyGate,
   parseGateVerdict,
 } from '../src/buddies/channel-reply-gate';
-import { createChannelResponder, followUpConversationId } from '../src/buddies/channel-responder';
+import {
+  type MentionModel,
+  createChannelResponder,
+  followUpConversationId,
+} from '../src/buddies/channel-responder';
 import { registerChannelRoutes } from '../src/buddies/channel-routes';
 import type { BuddiesStorePort, BuddyMailingListPost } from '../src/buddies/contract';
 import { coordinationStore } from '../src/buddies/coordination-store';
@@ -109,7 +113,12 @@ function harness() {
     return runtime as unknown as ConversationRuntime;
   };
   const getRuntime = (id: string) => runtimes.get(id) as unknown as ConversationRuntime | undefined;
-  const gates: Array<{ buddyId: string; prompt: string; answer(verdict: GateVerdict): void }> = [];
+  const gates: Array<{
+    buddyId: string;
+    model: MentionModel;
+    prompt: string;
+    answer(verdict: GateVerdict): void;
+  }> = [];
   const app = express();
   app.use(express.json());
   const sendError = (response: express.Response, error: unknown, fallbackStatus: number) =>
@@ -131,8 +140,9 @@ function harness() {
     getStore: async () => store,
     createConversation: createRuntime,
     uploadsRoot: () => uploadsRoot,
-    gate: ({ buddyId, prompt }) =>
-      new Promise<GateVerdict>((answer) => gates.push({ buddyId, prompt, answer })),
+    gate: ({ buddyId, model, prompt }) =>
+      new Promise<GateVerdict>((answer) => gates.push({ buddyId, model, prompt, answer })),
+    getConversationConfig: async (id) => (await configService.getRecord(id))?.config ?? null,
     logger: { warn: () => undefined },
   });
   const unsubscribe = onChannelPost((post) => void responder.considerThreadPost(post));
@@ -748,6 +758,83 @@ test('a thread post asks the other Buddies in it; <yes> replies, <no> stays quie
   }
 });
 
+// A custom harness/model the owner picked for a Buddy in a thread sticks for
+// that Buddy's follow-ups there (gate and reply alike), read back from the
+// persisted config of its latest reply's conversation. A Buddy that replied on
+// its profile stays on the profile.
+test('a follow-up runs on the harness and model the Buddy last replied with in the thread when it was a custom pick', async () => {
+  const h = harness();
+  const designer = h.raw.createBuddy({ project: h.workspace.id, name: 'Designer', role: 'UI' });
+  const server = h.app.listen(0, '127.0.0.1');
+  try {
+    await new Promise<void>((resolve) => server.once('listening', resolve));
+    const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+    const { list } = h.raw.createList({
+      workspace: h.workspace.id,
+      author: { kind: 'owner' },
+      key: 'sticky',
+      name: 'sticky',
+      purpose: 'Sticky model',
+    });
+    const write = async (body: Record<string, unknown>) => {
+      const response = await fetch(`${base}/api/buddies/lists/${list.id}/posts`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ author: { kind: 'owner' }, purpose: 'message', ...body }),
+      });
+      assert.equal(response.status, 201);
+      return (await response.json()) as any;
+    };
+    const claude: ConversationConfig = {
+      provider: 'claude',
+      model: { mode: 'explicit', modelId: 'fable' },
+      reasoning: { mode: 'default' },
+    };
+    const gate = (index: number) => until(() => h.gates[index], `gate ${index}`);
+
+    const root = (await write({ key: 'root', body: 'Plan?' })).post;
+    await write({
+      key: 'lead-1',
+      author: { kind: 'buddy', buddyId: h.lead.id },
+      body: 'Backend is mine.',
+      threadRootId: root.id,
+    });
+    // The owner mentions Designer on Claude; Lead (profile) is asked and passes.
+    const mentioned = await write({
+      key: 'mention',
+      body: `[@Designer](buddy:${designer.id}) mock up the login page`,
+      threadRootId: root.id,
+      mentionConfigs: [{ buddyId: designer.id, config: claude }],
+    });
+    (await gate(0)).answer({ kind: 'pass' });
+    const mentionRuntime = await until(
+      () => h.runtimes.get(mentioned.mentions[0].conversationId),
+      'mention runtime'
+    );
+    await until(() => mentionRuntime.prompts[0], 'mention prompt');
+    mentionRuntime.emit('buddy-turn-complete', 'Mockup attached.');
+    (await gate(1)).answer({ kind: 'pass' });
+
+    // A plain owner reply: Designer is asked on Claude, Lead on its profile.
+    const question = (await write({ key: 'risks', body: 'Any risks?', threadRootId: root.id }))
+      .post;
+    await gate(3);
+    const asked = new Map(h.gates.slice(2).map((entry) => [entry.buddyId, entry]));
+    assert.deepEqual(asked.get(designer.id)!.model, { kind: 'chosen', config: claude });
+    assert.deepEqual(asked.get(h.lead.id)!.model, { kind: 'profile' });
+    asked.get(h.lead.id)!.answer({ kind: 'pass' });
+    asked.get(designer.id)!.answer({ kind: 'respond' });
+    const followUp = await until(
+      () => h.runtimes.get(followUpConversationId(question.id, designer.id)),
+      'follow-up runtime'
+    );
+    assert.deepEqual(followUp.config, claude);
+  } finally {
+    server.close();
+    h.close();
+  }
+});
+
 // "Let it do a few tokens": the gate is a strict parse, and a model that keeps
 // talking past `<yes>`/`<no>` is stopped rather than billed to the end and then
 // read as a yes.
@@ -780,7 +867,7 @@ test('the reply gate accepts only a bare <yes>/<no> and stops a rambling run', a
       });
     })() as never,
   });
-  const verdict = await gate({ buddyId: 'b', prompt: 'p' });
+  const verdict = await gate({ buddyId: 'b', model: { kind: 'profile' }, prompt: 'p' });
   assert.equal(stopped, true);
   assert.equal(verdict.kind, 'unparseable');
 });

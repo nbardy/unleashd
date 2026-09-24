@@ -4,6 +4,7 @@ import path from 'node:path';
 import type { ExecuteCommandRequest } from '@nbardy/agent-cli';
 import { executeCommand } from '@nbardy/agent-cli';
 import type { ResolvedExecutionConfig } from '@unleashd/shared';
+import type { MentionModel } from './channel-responder';
 
 // The thread follow-up gate: "should you respond, or leave it to another team
 // member?" asked of one Buddy about one new thread post. It is a bare CLI run
@@ -18,7 +19,14 @@ export type GateVerdict =
   | { kind: 'unparseable'; output: string }
   | { kind: 'failed'; reason: string };
 
-export type ReplyGate = (input: { buddyId: string; prompt: string }) => Promise<GateVerdict>;
+// `model` is the one the Buddy would reply on (channel-responder.ts
+// `threadModel`), so a Buddy the owner moved onto another harness in this
+// thread is asked there too — not on a profile harness that may be down.
+export type ReplyGate = (input: {
+  buddyId: string;
+  model: MentionModel;
+  prompt: string;
+}) => Promise<GateVerdict>;
 
 // `<yes>` / `<no>` plus whitespace. Past this the answer is already invalid, so
 // the run is stopped rather than left to spend tokens.
@@ -145,12 +153,12 @@ async function runGate(
 }
 
 export function createCliReplyGate(ports: {
-  resolveExecution(buddyId: string): Promise<ResolvedExecutionConfig>;
+  resolveExecution(buddyId: string, model: MentionModel): Promise<ResolvedExecutionConfig>;
   execute?: typeof executeCommand;
 }): ReplyGate {
   const execute = ports.execute ?? executeCommand;
-  return async ({ buddyId, prompt }) => {
-    const execution = await ports.resolveExecution(buddyId);
+  return async ({ buddyId, model, prompt }) => {
+    const execution = await ports.resolveExecution(buddyId, model);
     const harness = gateHarness(execution.provider);
     if (!harness)
       return { kind: 'failed', reason: `no reply gate for provider ${execution.provider}` };
