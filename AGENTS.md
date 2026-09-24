@@ -159,6 +159,10 @@ pnpm screenshot:mobile --out /tmp/shots       # the older phone-only gallery (ch
 
 ## Misc
 
+- Token cost: `pnpm token-audit` ranks sessions by EXCESS (context re-sent,
+  identical tool output returned twice, warm-cache rewrites), never by volume;
+  `--session <id>` drills in. Findings and next steps:
+  `agent_notes/review_token_usage/FOLLOWUPS.md`.
 - Inspect unresolved operational failures with `pnpm errors:list`; do not read or
   mutate the JSONL journal directly. Its configured location and capture policy
   are documented in `docs/error-journal.md`.
