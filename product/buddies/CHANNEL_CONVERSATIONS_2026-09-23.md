@@ -36,9 +36,9 @@ remain the three core components.
 
 ## Mention replies (host policy, `server/src/buddies/channel-responder.ts`)
 
-1. Only OWNER posts dispatch. Buddy-authored mentions never wake anyone: Buddies
-   coordinate with `send`/`update_project`, and post-driven wakeups would reopen
-   the fan-out the mailing-list spec closed.
+1. Only OWNER mentions dispatch. Buddy-authored mentions never wake anyone:
+   Buddies coordinate with `send`/`update_project`. (Thread follow-ups, below,
+   are the one bounded way a Buddy's post leads to another Buddy's turn.)
 2. One NEW conversation per mention (the Slack model), id derived from the
    (mention post, Buddy) pair. A follow-up mention inside a thread does not
    resume the previous reply's conversation: the thread context in the prompt
@@ -70,6 +70,44 @@ between saving the post and starting the turn — is not counted as active work,
 silently. The fix is to launch each mention as a `buddy_runs` row; see the
 proposal in
 [the 2026-09-24 handoff](../../agent_notes/2026-09-24_dev-restart-simplification-and-cleanup.md#open-mention-replies-as-durable-buddy-runs).
+
+## Thread follow-ups (2026-09-24)
+
+A reply in a thread, from the owner or any Buddy, asks each OTHER Buddy who has
+posted in that thread one question: *"Given this thread context, should you
+respond, or leave it to another team member?"* Only a strict `<yes>` starts a
+reply; it then runs exactly like a mention reply (new conversation, profile
+model, server-posted answer, key `follow-up-reply:<post>:<buddy>`), framed as
+"you chose to reply".
+
+- **Doors:** every post is announced on `channel-post-feed.ts` — the owner
+  route, a Buddy's `post` tool (`operations.ts`) and the server-posted reply
+  (`reply_failed` notices are not announced). `server.ts` subscribes
+  `responder.considerThreadPost`.
+- **Gate** (`channel-reply-gate.ts`): a bare CLI run on the Buddy's own profile
+  model — no Buddy MCP, no tools, no session files (a persisted transcript
+  would be imported as a conversation), scratch cwd. Output past 32 characters,
+  or any tool call, stops the run as `unparseable`; `<yes> because…` is not a
+  yes. Unparseable and failed gates are `console.warn`ed (error journal), never
+  read as either answer. Claude, codex and muse only (the Buddy harnesses).
+  Live check 2026-09-24 on claude/haiku: ~6 s, `<yes>` for a UI question to the
+  UI Buddy, `<no>` for a database question.
+- **Who is asked:** Buddy authors of the root and all replies, minus the post's
+  author, minus Buddies an OWNER post just @mentioned (they answer anyway),
+  minus inactive/out-of-workspace Buddies, minus any Buddy with a gate or reply
+  already in flight in that thread.
+- **Only the newest post** in the thread is followed up, so a replayed post
+  (same idempotency key returns the same post) is a no-op and a burst of posts
+  is gated once against the latest.
+- **Chain bound:** once the thread's last 3 posts are all Buddies', nobody is
+  asked until the owner posts again. Read from the thread itself, so it holds
+  across restarts. This is what keeps Buddy-to-Buddy follow-ups from being the
+  unbounded fan-out the mailing-list spec warns about.
+- **Cost:** one gate run per other participant per thread post, on each
+  Buddy's profile model and effort (provider-bespoke effort values are not
+  translated down). Same restart gap as mention replies.
+
+Guard: the follow-up test in `server/test/channel-conversations.test.ts`.
 
 ## Model choice per mention (2026-09-24)
 

@@ -11,6 +11,7 @@ import {
   channelMediaDirectory,
   requireCanonicalPostMedia,
 } from './channel-media';
+import { announceChannelPost } from './channel-post-feed';
 import type { ChannelResponder } from './channel-responder';
 import { mentionedBuddyIds } from './channel-text';
 import type { BuddiesStorePort } from './contract';
@@ -149,6 +150,7 @@ export function registerChannelRoutes(app: Express, dependencies: ChannelRouteDe
         conversationId: null,
         runId: null,
       });
+      announceChannelPost(post);
       // Only the owner's own mentions start turns (channel-responder.ts).
       const mentions =
         input.author.kind === 'owner'

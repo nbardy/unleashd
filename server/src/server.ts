@@ -38,6 +38,10 @@ import {
   type BuddyCreationService,
   createBuddyCreationService,
 } from './conversations/buddy-creation-service';
+import {
+  buddyExecutionPreferences,
+  configFromProviderPreferences,
+} from './conversations/config-mapping';
 import { ConversationConfigService } from './conversations/config-service';
 import { ConversationConfigStore } from './conversations/config-store';
 import { retireLegacyUiState } from './conversations/legacy-ui-state';
@@ -78,6 +82,8 @@ import { auditLocalAgents } from './audit.js';
 import { createBuddyDirect } from './buddies/buddy-direct';
 import { BuddyBuilderService, type BuddyBuilderStore } from './buddies/builder';
 import { onBuddiesChanged, registerBuddyMutationFeed } from './buddies/change-feed';
+import { onChannelPost } from './buddies/channel-post-feed';
+import { createCliReplyGate } from './buddies/channel-reply-gate';
 import { createChannelResponder } from './buddies/channel-responder';
 import { registerChannelRoutes } from './buddies/channel-routes';
 import { BuddyControlServer } from './buddies/control-server';
@@ -506,18 +512,38 @@ registerBuddyRoutes(app, {
     (await conversationConfigService.getRecord(conversationId))?.status === 'deleted',
 });
 
+const channelResponder = createChannelResponder({
+  getStore: getBuddiesStore,
+  // Owner-origin creation: the mention IS owner input, so the conversation
+  // gets owner-thread knowledge scope and owner-control MCP, like a talk()
+  // chat. Each mention creates its own, on the owner's pick when there is one.
+  createConversation: (input) => buddyCreationService.createServerBuddyConversation(input),
+  uploadsRoot: () => UPLOADS_DIR,
+  // The follow-up gate runs on the Buddy's own profile model, resolved by the
+  // same authority as its conversations.
+  gate: createCliReplyGate({
+    resolveExecution: async (buddyId) => {
+      const buddy = (await getBuddiesStore()).getBuddy(buddyId);
+      if (!buddy) throw new Error(`Buddy ${buddyId} not found`);
+      const resolution = await conversationConfigService.resolve(
+        configFromProviderPreferences(buddyExecutionPreferences(buddy))
+      );
+      if (resolution.status !== 'resolved') throw new Error(resolution.error.message);
+      return resolution.value;
+    },
+  }),
+});
+onChannelPost((post) => {
+  void channelResponder.considerThreadPost(post).catch((error) => {
+    console.warn(`[channel-responder] follow-up gating failed for post ${post.id}:`, error);
+  });
+});
+
 registerChannelRoutes(app, {
   getStore: getBuddiesStore,
   uploadsRoot: UPLOADS_DIR,
   sendError: sendBuddiesError,
-  responder: createChannelResponder({
-    getStore: getBuddiesStore,
-    // Owner-origin creation: the mention IS owner input, so the conversation
-    // gets owner-thread knowledge scope and owner-control MCP, like a talk()
-    // chat. Each mention creates its own, on the owner's pick when there is one.
-    createConversation: (input) => buddyCreationService.createServerBuddyConversation(input),
-    uploadsRoot: () => UPLOADS_DIR,
-  }),
+  responder: channelResponder,
   direct: createBuddyDirect({
     getStore: getBuddiesStore,
     getConversation: (id) => applicationContext.registry.get(id),

@@ -20,6 +20,7 @@ import { uploadsDirectory } from '../app-data';
 import { isReadOnlyBuddyOperation, notifyBuddiesChanged } from './change-feed';
 import { requireCanonicalPostMedia } from './channel-media';
 import { type PageRequest, readPage } from './channel-pages';
+import { announceChannelPost } from './channel-post-feed';
 import { authorLabel, searchSnippet } from './channel-text';
 import {
   type BuddiesStorePort,
@@ -1742,31 +1743,28 @@ export class BuddyOperationsService {
           throw Object.assign(new Error('Mailing list is unavailable in this workspace'), {
             code: 'list_outside_workspace',
           });
-        return this.result(
-          name,
-          withPostProvenance(
-            this.store.createPost({
-              list: list.id,
-              author: { kind: 'buddy', buddyId: this.context.buddyId },
-              key: parsed.key,
-              purpose: parsed.purpose,
-              // Local ![](path) media is copied into the channel before the
-              // write; a bad reference rejects the post so the Buddy can fix it.
-              body: requireCanonicalPostMedia(parsed.body, {
-                uploadsRoot: uploadsDirectory(),
-                listId: list.id,
-              }),
-              evidence: parsed.evidence,
-              project: parsed.projectId ?? null,
-              threadRoot: parsed.threadId ?? null,
-              // Provenance is server-stamped from the operation context only;
-              // the input schema carries no caller-supplied ids to trust.
-              conversationId: this.context.conversationId ?? null,
-              runId: this.context.coordinationRunId ?? null,
-            })
-          ),
-          parsed
-        );
+        const created = this.store.createPost({
+          list: list.id,
+          author: { kind: 'buddy', buddyId: this.context.buddyId },
+          key: parsed.key,
+          purpose: parsed.purpose,
+          // Local ![](path) media is copied into the channel before the
+          // write; a bad reference rejects the post so the Buddy can fix it.
+          body: requireCanonicalPostMedia(parsed.body, {
+            uploadsRoot: uploadsDirectory(),
+            listId: list.id,
+          }),
+          evidence: parsed.evidence,
+          project: parsed.projectId ?? null,
+          threadRoot: parsed.threadId ?? null,
+          // Provenance is server-stamped from the operation context only;
+          // the input schema carries no caller-supplied ids to trust.
+          conversationId: this.context.conversationId ?? null,
+          runId: this.context.coordinationRunId ?? null,
+        });
+        // Thread follow-ups: other Buddies in the thread may be asked to reply.
+        announceChannelPost(created.post);
+        return this.result(name, withPostProvenance(created), parsed);
       }
       case 'buddy.get_list': {
         const parsed = BuddyOperationInputSchemas[name].parse(input);

@@ -9,7 +9,13 @@ import { BuddiesStore } from '@nbardy/buddies';
 import type { ConversationConfig, ConversationConfigState } from '@unleashd/shared';
 import express from 'express';
 import { WAKE_MESSAGE, createBuddyDirect } from '../src/buddies/buddy-direct';
-import { createChannelResponder } from '../src/buddies/channel-responder';
+import { onChannelPost } from '../src/buddies/channel-post-feed';
+import {
+  type GateVerdict,
+  createCliReplyGate,
+  parseGateVerdict,
+} from '../src/buddies/channel-reply-gate';
+import { createChannelResponder, followUpConversationId } from '../src/buddies/channel-responder';
 import { registerChannelRoutes } from '../src/buddies/channel-routes';
 import type { BuddiesStorePort, BuddyMailingListPost } from '../src/buddies/contract';
 import { coordinationStore } from '../src/buddies/coordination-store';
@@ -25,6 +31,8 @@ import { resolveConfigAgainstProviderCatalog } from '../src/providers/catalog-se
 // real store, @mentions start a turn, and the Buddy's final answer lands in the
 // thread. The provider turn is the only stand-in (the model is the external
 // boundary); the fake runtime exposes exactly the surface the responder drives.
+// The follow-up gate is the same boundary: each question is held open until
+// the test answers it.
 
 // Configuration is real: the runtime holds the config state persisted when the
 // conversation was created (the mention's pick, else the profile default).
@@ -101,6 +109,7 @@ function harness() {
     return runtime as unknown as ConversationRuntime;
   };
   const getRuntime = (id: string) => runtimes.get(id) as unknown as ConversationRuntime | undefined;
+  const gates: Array<{ buddyId: string; prompt: string; answer(verdict: GateVerdict): void }> = [];
   const app = express();
   app.use(express.json());
   const sendError = (response: express.Response, error: unknown, fallbackStatus: number) =>
@@ -118,16 +127,20 @@ function harness() {
     createId: () => 'test-id',
     isConversationDeleted: async () => false,
   });
+  const responder = createChannelResponder({
+    getStore: async () => store,
+    createConversation: createRuntime,
+    uploadsRoot: () => uploadsRoot,
+    gate: ({ buddyId, prompt }) =>
+      new Promise<GateVerdict>((answer) => gates.push({ buddyId, prompt, answer })),
+    logger: { warn: () => undefined },
+  });
+  const unsubscribe = onChannelPost((post) => void responder.considerThreadPost(post));
   registerChannelRoutes(app, {
     getStore: async () => store,
     uploadsRoot,
     sendError,
-    responder: createChannelResponder({
-      getStore: async () => store,
-      createConversation: createRuntime,
-      uploadsRoot: () => uploadsRoot,
-      logger: { warn: () => undefined },
-    }),
+    responder,
     direct: createBuddyDirect({
       getStore: async () => store,
       getConversation: getRuntime,
@@ -146,7 +159,12 @@ function harness() {
     runtimes,
     created,
     deleted,
+    gates,
     app,
+    close() {
+      unsubscribe();
+      raw.close();
+    },
   };
 }
 
@@ -286,7 +304,7 @@ test('owner @mention runs a turn and the answer lands in the thread with its med
     assert.match(missing.json.error, /missing/);
   } finally {
     server.close();
-    h.raw.close();
+    h.close();
     rmSync(h.scratch, { recursive: true, force: true });
   }
 });
@@ -386,7 +404,7 @@ test('each mention in a thread gets its own conversation on its own harness', as
     assert.match(stray.json.error, /not mentioned/);
   } finally {
     server.close();
-    h.raw.close();
+    h.close();
     rmSync(h.scratch, { recursive: true, force: true });
   }
 });
@@ -434,7 +452,7 @@ test('DM reopens one conversation, wake queues the catch-up there, and a deleted
     assert.match(outsider.json.error, /outside this workspace/);
   } finally {
     server.close();
-    h.raw.close();
+    h.close();
     rmSync(h.scratch, { recursive: true, force: true });
   }
 });
@@ -633,7 +651,136 @@ test('mention context is the latest 10 messages, threads collapsed; search and g
     );
   } finally {
     server.close();
-    h.raw.close();
+    h.close();
     rmSync(h.scratch, { recursive: true, force: true });
   }
+});
+
+// Thread follow-ups: every new thread post asks each OTHER Buddy who has posted
+// there "respond or leave it?". Only <yes> starts a reply; Buddy replies are
+// posts too, so they ask again — until three Buddy posts in a row, when the
+// thread waits for the owner. Without that bound two agreeable Buddies would
+// answer each other forever.
+test('a thread post asks the other Buddies in it; <yes> replies, <no> stays quiet, Buddy chains stop at three', async () => {
+  const h = harness();
+  const designer = h.raw.createBuddy({ project: h.workspace.id, name: 'Designer', role: 'UI' });
+  const server = h.app.listen(0, '127.0.0.1');
+  try {
+    await new Promise<void>((resolve) => server.once('listening', resolve));
+    const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+    const { list } = h.raw.createList({
+      workspace: h.workspace.id,
+      author: { kind: 'owner' },
+      key: 'launch',
+      name: 'launch',
+      purpose: 'Launch',
+    });
+    const write = async (author: unknown, key: string, body: string, threadRootId?: string) => {
+      const response = await fetch(`${base}/api/buddies/lists/${list.id}/posts`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ author, key, purpose: 'message', body, threadRootId }),
+      });
+      assert.equal(response.status, 201);
+      return ((await response.json()) as any).post as BuddyMailingListPost;
+    };
+    const owner = { kind: 'owner' };
+    const gate = (index: number) => until(() => h.gates[index], `gate ${index}`);
+    const settle = () => new Promise((resolve) => setTimeout(resolve, 100));
+    const replyTo = async (trigger: BuddyMailingListPost, buddyId: string, text: string) => {
+      const runtime = await until(
+        () => h.runtimes.get(followUpConversationId(trigger.id, buddyId)),
+        `follow-up runtime for ${buddyId}`
+      );
+      const prompt = await until(() => runtime.prompts[0], 'follow-up prompt');
+      runtime.emit('buddy-turn-complete', text);
+      return prompt.content;
+    };
+    const newestReply = (root: string) => h.raw.listThread({ root }).replies.at(-1)!;
+
+    const root = await write(owner, 'root', 'Launch plan?');
+    // Lead is the only Buddy in the thread and wrote the post: nobody to ask.
+    await write({ kind: 'buddy', buddyId: h.lead.id }, 'lead-1', 'I own the backend.', root.id);
+    await settle();
+    assert.equal(h.gates.length, 0);
+    // Designer's post asks Lead, who passes: no conversation, no reply.
+    await write({ kind: 'buddy', buddyId: designer.id }, 'designer-1', 'I own the UI.', root.id);
+    (await gate(0)).answer({ kind: 'pass' });
+    assert.equal(h.gates[0].buddyId, h.lead.id);
+
+    // The owner's question asks both Buddies, with the thread as context.
+    const question = await write(owner, 'ask', 'Is the login page ready?', root.id);
+    await gate(2);
+    const asked = new Map(h.gates.slice(1).map((entry) => [entry.buddyId, entry]));
+    const toDesigner = asked.get(designer.id)!;
+    assert.match(toDesigner.prompt, /I own the backend\.[\s\S]*Is the login page ready\?/);
+    assert.match(toDesigner.prompt, /should you respond, or leave it to another team member\?/);
+    assert.match(toDesigner.prompt, /exactly <yes> or <no>/);
+    asked.get(h.lead.id)!.answer({ kind: 'pass' });
+    toDesigner.answer({ kind: 'respond' });
+    const followUpPrompt = await replyTo(question, designer.id, 'Login ships Friday.');
+    assert.match(followUpPrompt, /you chose to reply/);
+    assert.match(followUpPrompt, /from Owner:\nIs the login page ready\?/);
+    await until(() => newestReply(root.id).body === 'Login ships Friday.', 'designer reply');
+    assert.equal(h.runtimes.has(followUpConversationId(question.id, h.lead.id)), false);
+
+    // Buddy chain: Designer's reply (1) asks Lead, Lead's reply (2) asks
+    // Designer, Designer's reply (3) asks nobody.
+    const chain1 = newestReply(root.id);
+    (await gate(3)).answer({ kind: 'respond' });
+    assert.equal(h.gates[3].buddyId, h.lead.id);
+    await replyTo(chain1, h.lead.id, 'Backend is ready too.');
+    await until(() => newestReply(root.id).body === 'Backend is ready too.', 'lead reply');
+    const chain2 = newestReply(root.id);
+    (await gate(4)).answer({ kind: 'respond' });
+    assert.equal(h.gates[4].buddyId, designer.id);
+    await replyTo(chain2, designer.id, 'Great, shipping.');
+    await until(() => newestReply(root.id).body === 'Great, shipping.', 'third buddy post');
+    await settle();
+    assert.equal(h.gates.length, 5, 'three Buddy posts in a row: the thread waits for the owner');
+
+    // The owner speaking again reopens the thread to both Buddies.
+    await write(owner, 'thanks', 'Thanks both, one more thing.', root.id);
+    await gate(6);
+  } finally {
+    server.close();
+    h.close();
+  }
+});
+
+// "Let it do a few tokens": the gate is a strict parse, and a model that keeps
+// talking past `<yes>`/`<no>` is stopped rather than billed to the end and then
+// read as a yes.
+test('the reply gate accepts only a bare <yes>/<no> and stops a rambling run', async () => {
+  assert.deepEqual(parseGateVerdict(' <yes>\n'), { kind: 'respond' });
+  assert.deepEqual(parseGateVerdict('<no>'), { kind: 'pass' });
+  assert.equal(parseGateVerdict('<yes> because I own it').kind, 'unparseable');
+
+  let stopped = false;
+  const gate = createCliReplyGate({
+    resolveExecution: async () => ({ provider: 'claude', modelId: 'sonnet' }),
+    execute: (() => {
+      let finish: (value: unknown) => void = () => undefined;
+      const completed = new Promise((resolve) => {
+        finish = resolve;
+      });
+      async function* events() {
+        for (const text of ['Let me think about ', 'whether this thread ', 'needs me. <yes>']) {
+          if (stopped) break;
+          yield { type: 'text.delta', text };
+        }
+        finish({ reason: stopped ? 'killed' : 'success', exitCode: 0 });
+      }
+      return () => ({
+        events: events(),
+        completed,
+        stop: () => {
+          stopped = true;
+        },
+      });
+    })() as never,
+  });
+  const verdict = await gate({ buddyId: 'b', prompt: 'p' });
+  assert.equal(stopped, true);
+  assert.equal(verdict.kind, 'unparseable');
 });
