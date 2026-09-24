@@ -102,7 +102,7 @@ async function harness() {
   const runtimes = new Map<string, FakeTurnRuntime>();
   const created: string[] = [];
   const deleted = new Set<string>();
-  const respondingChanges: string[] = [];
+  const channelChanges: string[] = [];
   const configService = new ConversationConfigService({
     store: new ConversationConfigStore({ appDataRoot: join(scratch, 'config') }),
     resolver: { resolve: async (config) => resolveConfigAgainstProviderCatalog(config) },
@@ -161,7 +161,7 @@ async function harness() {
       new Promise<GateVerdict>((answer) =>
         gates.push({ name: /^You are (\S+)/.exec(prompt)![1], config, prompt, answer })
       ),
-    respondingChanged: (listId) => respondingChanges.push(listId),
+    channelChanged: (listId) => channelChanges.push(listId),
     logger: { warn: () => undefined },
   });
   const unsubscribe = onChannelPost((post) => void responder.considerThreadPost(post));
@@ -195,7 +195,7 @@ async function harness() {
     runtimes,
     created,
     deleted,
-    respondingChanges,
+    channelChanges,
     gates,
     api,
     newList: (key: string) =>
@@ -741,6 +741,7 @@ test('an owner reply shows who is replying as soon as a gate says yes, and a fai
     });
     await h.gate(2);
     const asked = new Map(h.gates.slice(1).map((entry) => [entry.name, entry]));
+    const beforeNotice = h.channelChanges.length;
     asked.get('Designer')!.answer({ kind: 'failed', reason: 'gate run ended: out_of_tokens' });
     const notice = await until(
       () => h.replies(root.id).find((post) => post.purpose === 'reply_failed'),
@@ -749,24 +750,28 @@ test('an owner reply shows who is replying as soon as a gate says yes, and a fai
     assert.deepEqual(notice.author, { kind: 'buddy', buddyId: h.designer.id });
     assert.match(notice.body, /out_of_tokens/);
     assert.deepEqual(await responding(), []);
+    // The owner is waiting on this notice. A failed gate never queued a reply,
+    // so nothing else refreshes the channel: without this push it showed only
+    // on the 30 s backstop poll.
+    assert.deepEqual(h.channelChanges.slice(beforeNotice), [list.id], 'the notice is pushed');
 
     // From the <yes> until the reply posts, Lead is on the indicator. Each
     // change is announced: the client's indicator no longer polls for it.
-    const announced = h.respondingChanges.length;
+    const announced = h.channelChanges.length;
     asked.get('Lead')!.answer({ kind: 'respond' });
     await settle();
     assert.deepEqual(
       (await responding()).map((entry) => entry.buddyId),
       [h.lead.id]
     );
-    assert.deepEqual(h.respondingChanges.slice(announced), [list.id], 'the start is announced');
+    assert.deepEqual(h.channelChanges.slice(announced), [list.id], 'the start is announced');
     const turn = await h.nextTurn(h.seat(root.id, h.lead.id));
     assert.match(turn.prompt, /Why do we need Modal\?/);
     turn.complete('Local fits; Modal is only a speed hedge.');
     await until(() => h.replies(root.id).at(-1)!.purpose === 'reply', 'lead reply');
     await settle();
     assert.deepEqual(await responding(), []);
-    assert.deepEqual(h.respondingChanges.slice(announced), [list.id, list.id], 'so is the end');
+    assert.deepEqual(h.channelChanges.slice(announced), [list.id, list.id], 'so is the end');
   } finally {
     h.close();
   }

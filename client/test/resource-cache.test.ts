@@ -4,6 +4,7 @@ import {
   type Resource,
   type ResourceEntry,
   clearResourceCache,
+  invalidateChannelResources,
   invalidateResources,
   loadResource,
   resourceAtomFamily,
@@ -257,4 +258,33 @@ test('an invalidation while a load is in flight loads once more after it', async
   assert.equal(entry.kind === 'ready' && entry.value, 'after');
   assert.equal(calls, 2);
   release();
+});
+
+// A Buddy's mention reply reaches the client only as `channel_changed`. The
+// rail row counts that reply and sorts by it, so the channel list refreshes
+// with the channel; until 2026-09-25 it waited out the 30 s backstop poll.
+test('a channel change refreshes that channel and the channel list, not other channels', async () => {
+  const loads = new Map<string, number>();
+  const keys = [
+    '/api/buddies/lists/list_a/posts?limit=50',
+    '/api/buddies/lists/list_a/responding',
+    '/api/buddies/lists?workspaceId=w',
+    '/api/buddies/lists/list_b/posts?limit=50',
+  ];
+  const releases = keys.map((key) => retainResourceKey(key));
+  const counted = (key: string): Resource<string> => ({
+    key,
+    load: async () => {
+      loads.set(key, (loads.get(key) ?? 0) + 1);
+      return key;
+    },
+  });
+  await Promise.all(keys.map((key) => loadResource(counted(key))));
+  invalidateChannelResources('list_a');
+  await new Promise((resolve) => setImmediate(resolve));
+  assert.deepEqual(
+    keys.map((key) => loads.get(key)),
+    [2, 2, 2, 1]
+  );
+  for (const release of releases) release();
 });

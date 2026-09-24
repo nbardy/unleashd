@@ -94,8 +94,12 @@ export interface ChannelResponderPorts {
   conversations: StableConversationPorts;
   uploadsRoot(): string;
   gate: ReplyGate;
-  /** Who is replying in this list changed; the client's indicator does not poll for it. */
-  respondingChanged(listId: string): void;
+  /**
+   * This list changed in a way the channel post feed does not announce: who
+   * is replying, or a failure notice. The server pushes it to clients, whose
+   * channel views poll only as a 30 s backstop.
+   */
+  channelChanged(listId: string): void;
   logger?: Pick<Console, 'warn'>;
 }
 
@@ -488,13 +492,17 @@ export function createChannelResponder(ports: ChannelResponderPorts) {
         announceChannelPost(post);
         return;
       }
-      // A failure notice is not conversation: it asks nobody to follow up.
+      // A failure notice is not conversation: it asks nobody to follow up, so
+      // it is not announced as a post. It is still pushed: a failed gate has
+      // no queue entry whose removal would refresh the channel, and before
+      // 2026-09-25 its notice waited out the 30 s backstop poll.
       case 'failed':
         store.createPost({
           ...base,
           purpose: 'reply_failed',
           body: `Couldn’t reply: ${input.outcome.reason}`,
         });
+        ports.channelChanged(input.list.id);
         return;
     }
   }
@@ -554,11 +562,11 @@ export function createChannelResponder(ports: ChannelResponderPorts) {
       tail,
     };
     queues.set(key, entry);
-    ports.respondingChanged(entry.listId);
+    ports.channelChanged(entry.listId);
     void tail.finally(() => {
       if (queues.get(key) !== entry) return;
       queues.delete(key);
-      ports.respondingChanged(entry.listId);
+      ports.channelChanged(entry.listId);
     });
   }
 

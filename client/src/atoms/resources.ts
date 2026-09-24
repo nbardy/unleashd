@@ -264,11 +264,14 @@ export const invalidateBuddyResources = (): void =>
  * One channel changed — a post, or who is replying (server `channel_changed`).
  * Every per-channel key is a URL under `/api/buddies/lists/<listId>/` (built
  * in components/buddies/channel-data.ts), so one prefix selects its posts,
- * threads and responders and nothing else.
+ * threads and responders. The channel list (`listsUrl`, `/api/buddies/lists?…`)
+ * refreshes too: its row counts every post, replies included, and sorts by the
+ * newest. A Buddy's mention reply is announced only here, never by
+ * `buddies_changed`, so without it the rail lagged by up to the 30 s backstop.
  */
 export const invalidateChannelResources = (listId: string): void => {
   const prefix = `/api/buddies/lists/${encodeURIComponent(listId)}/`;
-  invalidateResources((key) => key.startsWith(prefix));
+  invalidateResources((key) => key.startsWith(prefix) || key.startsWith('/api/buddies/lists?'));
 };
 
 /**

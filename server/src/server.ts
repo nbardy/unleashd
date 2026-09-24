@@ -524,7 +524,7 @@ const channelChanged = (listId: string) =>
   applicationContext.broadcast({ type: 'channel_changed', listId });
 const channelResponder = createChannelResponder({
   getStore: getBuddiesStore,
-  respondingChanged: channelChanged,
+  channelChanged,
   conversations: buddyConversations,
   uploadsRoot: () => UPLOADS_DIR,
   // Resolved by the same authority as conversations, so the gate runs exactly
