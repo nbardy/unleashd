@@ -1,7 +1,7 @@
 import { execFileSync, execSync } from 'node:child_process';
 import http from 'node:http';
 import path from 'node:path';
-import type { ConversationConfig, Provider as ProviderName } from '@unleashd/shared';
+import type { Provider as ProviderName } from '@unleashd/shared';
 import {
   FORK_CAPABLE_PROVIDERS,
   buildMergeReviewPrompt,
@@ -38,10 +38,6 @@ import {
   type BuddyCreationService,
   createBuddyCreationService,
 } from './conversations/buddy-creation-service';
-import {
-  buddyExecutionPreferences,
-  configFromProviderPreferences,
-} from './conversations/config-mapping';
 import { ConversationConfigService } from './conversations/config-service';
 import { ConversationConfigStore } from './conversations/config-store';
 import { retireLegacyUiState } from './conversations/legacy-ui-state';
@@ -79,12 +75,13 @@ import { isProcessAlive, readLatestSwarmRuntime } from './swarm/runtime';
 import { registerConversationWebSocket } from './transport/conversation-websocket';
 
 import { auditLocalAgents } from './audit.js';
+import { type StableConversationPorts, slotOf } from './buddies/buddy-conversation-slots';
 import { createBuddyDirect } from './buddies/buddy-direct';
 import { BuddyBuilderService, type BuddyBuilderStore } from './buddies/builder';
 import { onBuddiesChanged, registerBuddyMutationFeed } from './buddies/change-feed';
 import { onChannelPost } from './buddies/channel-post-feed';
 import { createCliReplyGate } from './buddies/channel-reply-gate';
-import { type MentionModel, createChannelResponder } from './buddies/channel-responder';
+import { createChannelResponder } from './buddies/channel-responder';
 import { registerChannelRoutes } from './buddies/channel-routes';
 import { BuddyControlServer } from './buddies/control-server';
 import {
@@ -512,39 +509,29 @@ registerBuddyRoutes(app, {
     (await conversationConfigService.getRecord(conversationId))?.status === 'deleted',
 });
 
+// A Buddy's stable conversations (DM, thread seats): owner-origin creation, so
+// they get owner-thread knowledge scope and owner-control MCP, like talk().
+const buddyConversations: StableConversationPorts = {
+  slot: async (conversationId) => slotOf(await conversationConfigService.getRecord(conversationId)),
+  getConversation: (id) => applicationContext.registry.get(id),
+  ensureConversationReady: buddyCreationService.ensureConversationReady,
+  createConversation: (input) => buddyCreationService.createServerBuddyConversation(input),
+};
+
 const channelResponder = createChannelResponder({
   getStore: getBuddiesStore,
-  // Owner-origin creation: the mention IS owner input, so the conversation
-  // gets owner-thread knowledge scope and owner-control MCP, like a talk()
-  // chat. Each mention creates its own, on the owner's pick when there is one.
-  createConversation: (input) => buddyCreationService.createServerBuddyConversation(input),
+  conversations: buddyConversations,
   uploadsRoot: () => UPLOADS_DIR,
-  // The follow-up gate runs on the model the reply would (profile, or the
-  // thread's custom pick), resolved by the same authority as conversations.
+  // Resolved by the same authority as conversations, so the gate runs exactly
+  // the harness/model the Buddy's reply would.
   gate: createCliReplyGate({
-    resolveExecution: async (buddyId, model) => {
-      const resolution = await conversationConfigService.resolve(
-        await replyGateConfig(buddyId, model)
-      );
+    resolveExecution: async (config) => {
+      const resolution = await conversationConfigService.resolve(config);
       if (resolution.status !== 'resolved') throw new Error(resolution.error.message);
       return resolution.value;
     },
   }),
-  getConversationConfig: async (conversationId) =>
-    (await conversationConfigService.getRecord(conversationId))?.config ?? null,
 });
-
-async function replyGateConfig(buddyId: string, model: MentionModel): Promise<ConversationConfig> {
-  switch (model.kind) {
-    case 'profile': {
-      const buddy = (await getBuddiesStore()).getBuddy(buddyId);
-      if (!buddy) throw new Error(`Buddy ${buddyId} not found`);
-      return configFromProviderPreferences(buddyExecutionPreferences(buddy));
-    }
-    case 'chosen':
-      return model.config;
-  }
-}
 onChannelPost((post) => {
   void channelResponder.considerThreadPost(post).catch((error) => {
     console.warn(`[channel-responder] follow-up gating failed for post ${post.id}:`, error);
@@ -556,14 +543,7 @@ registerChannelRoutes(app, {
   uploadsRoot: UPLOADS_DIR,
   sendError: sendBuddiesError,
   responder: channelResponder,
-  direct: createBuddyDirect({
-    getStore: getBuddiesStore,
-    getConversation: (id) => applicationContext.registry.get(id),
-    ensureConversationReady: buddyCreationService.ensureConversationReady,
-    createConversation: (input) => buddyCreationService.createServerBuddyConversation(input),
-    isConversationDeleted: async (conversationId) =>
-      (await conversationConfigService.getRecord(conversationId))?.status === 'deleted',
-  }),
+  direct: createBuddyDirect({ getStore: getBuddiesStore, conversations: buddyConversations }),
 });
 
 registerSearchRoutes(

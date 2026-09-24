@@ -1,14 +1,21 @@
-import { createHash } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
-import type { BuddyContext, ConversationConfig } from '@unleashd/shared';
+import type { ConversationConfig } from '@unleashd/shared';
 import {
   buddyExecutionPreferences,
   configFromProviderPreferences,
 } from '../conversations/config-mapping';
 import type { ConversationRuntime } from '../conversations/runtime';
+import {
+  type LiveConversation,
+  type StableConversationPorts,
+  eligibility,
+  openConversation,
+  scanGenerations,
+  stableConversationId,
+} from './buddy-conversation-slots';
 import { canonicalizePostMedia, describeMediaProblems } from './channel-media';
 import { announceChannelPost } from './channel-post-feed';
-import type { GateVerdict, ReplyGate } from './channel-reply-gate';
+import type { ReplyGate } from './channel-reply-gate';
 import {
   authorLabel,
   mentionedBuddyIds,
@@ -33,30 +40,30 @@ import type {
 //               OTHER Buddy who has posted in that thread one short gate
 //               question: "should you respond, or leave it to another team
 //               member?" (channel-reply-gate.ts). Only a strict `<yes>` starts
-//               a reply turn. Buddy-to-Buddy follow-ups are what the
-//               mailing-list spec's fan-out warning is about, so the chain is
-//               bounded: once the thread's last MAX_BUDDY_CHAIN posts are all
-//               Buddies', nobody is asked until the owner posts again. The
-//               bound is read from the thread itself, so it survives restarts.
-//               A follow-up (gate and reply) runs on the harness/model of the
-//               Buddy's latest reply in the thread when that was a custom pick,
-//               else on its profile (`threadModel`).
+//               a reply. Buddy-to-Buddy follow-ups are what the mailing-list
+//               spec's fan-out warning is about, so the chain is bounded: once
+//               the thread's last MAX_BUDDY_CHAIN posts are all Buddies',
+//               nobody is asked until the owner posts again. The bound is read
+//               from the thread itself, so it survives restarts.
 //
-// One conversation per MENTION (the Slack model): every @mention, including a
-// follow-up inside a thread, starts a new conversation seeded from the thread
-// or channel context in its prompt. The thread is the memory, not a resumed
-// transcript. Until 2026-09-24 a (Buddy, thread) conversation was resumed for
-// every mention, which broke two ways in conv 0f1dfb23: the resumed transcript
-// grew until the provider ended the turn with `out_of_tokens`, and a harness
-// picked on a later mention was refused ("Provider cannot change after the
-// conversation has started"). Resuming belongs to the chat view, not channels.
+// SEATS. Every reply by a Buddy in a thread — mention or follow-up — goes to
+// its seat there: ONE resumed conversation per (thread, Buddy), so the Buddy
+// remembers the thread. The seat's persisted config is the owner's harness /
+// model pick: a mention-chip pick opens the seat on it (a new seat generation
+// when the current seat runs anything else — a started session cannot change
+// provider), and every later reply, gate question included, keeps it. With
+// no pick ever made the seat runs the Buddy's profile default.
+//
+// History: until 2026-09-24 (46b4c0c) this resumed seats, then briefly made a
+// fresh conversation per mention, blaming conv 0f1dfb23's `out_of_tokens` on
+// transcript growth. It was not: the error was Codex's account USAGE LIMIT
+// ("You've hit your usage limit … try again at Sep 27th"), which agent-cli
+// classifies as out_of_tokens (diagnostics.ts). Resuming is safe; the one real
+// constraint, provider lock, is what seat generations handle.
+//
 // The Buddy's final assistant text is posted into the thread by the SERVER as
 // that Buddy (purpose "reply"), stamped with the conversation for provenance.
 // The model never has to remember to call `post` for its answer.
-//
-// The owner may pick the harness/model for a mentioned Buddy (the composer's
-// mention chip). The new conversation is created on that pick, so it applies
-// to that one reply; an unpicked mention runs on the Buddy's profile default.
 //
 // Known gap: a turn in flight when the server restarts loses its reply post
 // (the transcript survives). The owner re-mentions to retry.
@@ -64,13 +71,15 @@ import type {
 // Why a Buddy is replying; it only changes how the launch prompt is framed.
 type ReplyCause = { kind: 'mention' } | { kind: 'follow_up' };
 
+// Which seat a reply goes to. `keep`: the Buddy's current seat in the thread,
+// opened on its profile when it has none. `chosen`: the owner's mention-chip
+// pick — the current seat if it already runs exactly that, else a new seat
+// generation on it.
+export type SeatRequest = { kind: 'keep' } | { kind: 'chosen'; config: ConversationConfig };
+
 export type MentionDispatch =
   | { buddyId: string; status: 'started'; conversationId: string }
   | { buddyId: string; status: 'rejected'; reason: string };
-
-// Which configuration a mention's conversation is created on: the Buddy's
-// profile default, or the owner's pick from the mention chip.
-export type MentionModel = { kind: 'profile' } | { kind: 'chosen'; config: ConversationConfig };
 
 export type ChannelResponse = {
   listId: string;
@@ -82,17 +91,9 @@ export type ChannelResponse = {
 
 export interface ChannelResponderPorts {
   getStore(): Promise<BuddiesStorePort>;
-  createConversation(input: {
-    context: BuddyContext;
-    commandId: string;
-    conversationId: string;
-    deferInitialMessage: true;
-    config?: ConversationConfig;
-  }): Promise<ConversationRuntime>;
+  conversations: StableConversationPorts;
   uploadsRoot(): string;
   gate: ReplyGate;
-  /** The config a conversation was created on; null when there is no record. */
-  getConversationConfig(conversationId: string): Promise<ConversationConfig | null>;
   logger?: Pick<Console, 'warn'>;
 }
 
@@ -107,22 +108,33 @@ const MAX_REPLY_BYTES = 32000;
 const MAX_BUDDY_CHAIN = 3;
 const THREAD_PAGE = 200;
 
-// UUID-shaped id derived from a seed, so a (purpose, Buddy, …) tuple always
-// names the same transcript across restarts without storing a mapping.
-export function stableConversationId(seed: string): string {
-  const hex = createHash('sha256').update(seed).digest('hex');
-  const variant = ((Number.parseInt(hex[16], 16) & 0x3) | 0x8).toString(16);
-  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-5${hex.slice(13, 16)}-${variant}${hex.slice(17, 20)}-${hex.slice(20, 32)}`;
+export function threadConversationId(
+  threadRootId: string,
+  buddyId: string,
+  generation: number
+): string {
+  return stableConversationId(`channel-thread:${threadRootId}:${buddyId}:${generation}`);
 }
 
-// One transcript per (mention post, Buddy). Stable so a replayed post names
-// the same conversation instead of starting another.
-export function mentionConversationId(triggerPostId: string, buddyId: string): string {
-  return stableConversationId(`channel-mention:${triggerPostId}:${buddyId}`);
+function profileConfig(store: BuddiesStorePort, buddyId: string): ConversationConfig {
+  const buddy = store.getBuddy(buddyId);
+  if (!buddy) throw new Error(`Buddy ${buddyId} not found`);
+  return configFromProviderPreferences(buddyExecutionPreferences(buddy));
 }
 
-export function followUpConversationId(triggerPostId: string, buddyId: string): string {
-  return stableConversationId(`channel-follow-up:${triggerPostId}:${buddyId}`);
+function seatFor(
+  request: SeatRequest,
+  seats: { current: LiveConversation | null; next: string },
+  profile: ConversationConfig
+): LiveConversation {
+  switch (request.kind) {
+    case 'keep':
+      return seats.current ?? { conversationId: seats.next, config: profile };
+    case 'chosen':
+      return seats.current && isDeepStrictEqual(seats.current.config, request.config)
+        ? seats.current
+        : { conversationId: seats.next, config: request.config };
+  }
 }
 
 // What the Buddy is shown before the owner's message. A channel view lists
@@ -316,54 +328,6 @@ function gatePrompt(input: {
   ].join('\n');
 }
 
-// The Buddy's latest post in the thread that ran in a conversation (reply
-// posts and `post` calls carry it; an owner-route Buddy post does not).
-function latestSpokenConversation(thread: BuddyMailingListPost[], buddyId: string): string | null {
-  for (let index = thread.length - 1; index >= 0; index--) {
-    const post = thread[index];
-    if (buddyAuthorIds(post.author)[0] === buddyId && post.senderConversationId)
-      return post.senderConversationId;
-  }
-  return null;
-}
-
-// A follow-up keeps the owner's custom pick for this Buddy in this thread: if
-// its latest reply here ran on a config that is not its profile default, that
-// was a mention-chip choice (or a follow-up that inherited one), so reuse it.
-// A reply that ran on the profile stays on the profile, so editing a Buddy's
-// profile still takes effect in its old threads. No custom flag is stored
-// anywhere; the persisted config of the reply's own conversation is the record.
-function modelFor(prior: ConversationConfig | null, profile: ConversationConfig): MentionModel {
-  if (prior === null || isDeepStrictEqual(prior, profile)) return { kind: 'profile' };
-  return { kind: 'chosen', config: prior };
-}
-
-type Eligibility = { kind: 'eligible' } | { kind: 'rejected'; reason: string };
-
-function eligibility(
-  store: BuddiesStorePort,
-  list: BuddyMailingList,
-  buddyId: string
-): Eligibility {
-  const buddy = store.getBuddy(buddyId);
-  if (!buddy || buddy.status !== 'active')
-    return { kind: 'rejected', reason: 'Buddy is not active' };
-  const inWorkspace = store
-    .listBuddyWorkspaces(buddyId)
-    .some((workspace) => (workspace as { id: string }).id === list.workspaceId);
-  if (!inWorkspace) return { kind: 'rejected', reason: 'Buddy is outside this workspace' };
-  return { kind: 'eligible' };
-}
-
-function replyKey(cause: ReplyCause, triggerId: string, buddyId: string): string {
-  switch (cause.kind) {
-    case 'mention':
-      return `mention-reply:${triggerId}:${buddyId}`;
-    case 'follow_up':
-      return `follow-up-reply:${triggerId}:${buddyId}`;
-  }
-}
-
 function clipReply(text: string): string {
   if (Buffer.byteLength(text, 'utf8') <= MAX_REPLY_BYTES) return text;
   const suffix = '\n\n… [reply truncated; the full answer is in the conversation]';
@@ -373,19 +337,23 @@ function clipReply(text: string): string {
   return clipped + suffix;
 }
 
-// The conversation is created on the chosen config directly, so a Buddy whose
-// profile harness is unavailable can still answer on the one the owner picked.
-function creationConfig(model: MentionModel): { config?: ConversationConfig } {
-  switch (model.kind) {
-    case 'profile':
-      return {};
-    case 'chosen':
-      return { config: model.config };
+function isIdle(conversation: ConversationRuntime): boolean {
+  return (
+    !conversation.isRunning && !conversation.hasActiveProcess() && conversation.queue.length === 0
+  );
+}
+
+// A seat is also an ordinary chat: the owner may be typing in it.
+async function untilIdle(conversation: ConversationRuntime): Promise<void> {
+  while (!isIdle(conversation)) {
+    await conversation.waitForTurnDrain();
+    await new Promise((resolve) => setTimeout(resolve, 250));
   }
 }
 
-// The runtime's turn events carry no turn identity; the conversation is new
-// and runs exactly this one turn, so the next completion is ours.
+// The runtime's turn events carry no turn identity, so a turn is only started
+// on an idle seat, with its listeners attached right before it, and replies
+// into one seat are serialized by the responder: the next completion is ours.
 function runTurn(conversation: ConversationRuntime, prompt: string, inputId: string) {
   return new Promise<string>((resolve, reject) => {
     const cleanup = () => {
@@ -409,30 +377,85 @@ function runTurn(conversation: ConversationRuntime, prompt: string, inputId: str
 export function createChannelResponder(ports: ChannelResponderPorts) {
   const logger = ports.logger ?? console;
   const active = new Map<string, ChannelResponse>();
-  // (thread, Buddy) pairs with a follow-up gate or reply in flight, so a burst
-  // of posts asks each Buddy once rather than stacking duplicate replies.
-  const following = new Set<string>();
-  const threadKey = (threadRootId: string, buddyId: string) => `${threadRootId}:${buddyId}`;
+  // Per-seat queues: seat choice (scan + create) per (thread, Buddy), turns
+  // per conversation. Both are promise tails, so work runs one at a time.
+  const choosing = new Map<string, Promise<unknown>>();
+  const turns = new Map<string, Promise<unknown>>();
+  // (thread, Buddy) pairs with a gate question out, so a burst of posts asks
+  // each Buddy once rather than stacking duplicate replies.
+  const gating = new Set<string>();
+  const pairKey = (threadRootId: string, buddyId: string) => `${threadRootId}:${buddyId}`;
   const busy = (threadRootId: string, buddyId: string) =>
-    following.has(threadKey(threadRootId, buddyId)) ||
+    gating.has(pairKey(threadRootId, buddyId)) ||
     [...active.values()].some(
       (response) => response.threadRootId === threadRootId && response.buddyId === buddyId
     );
 
+  function serialized<T>(
+    queue: Map<string, Promise<unknown>>,
+    key: string,
+    work: () => Promise<T>
+  ) {
+    const run = (queue.get(key) ?? Promise.resolve()).catch(() => undefined).then(work);
+    queue.set(key, run);
+    void run
+      .catch(() => undefined)
+      .finally(() => {
+        if (queue.get(key) === run) queue.delete(key);
+      });
+    return run;
+  }
+
+  async function currentSeats(threadRootId: string, buddyId: string) {
+    return scanGenerations(ports.conversations, (generation) =>
+      threadConversationId(threadRootId, buddyId, generation)
+    );
+  }
+
+  // Resolve and open the Buddy's seat. Serialized per (thread, Buddy) so two
+  // picks arriving together cannot both claim the same free generation.
+  function openSeat(
+    list: BuddyMailingList,
+    threadRootId: string,
+    buddyId: string,
+    request: SeatRequest
+  ): Promise<ConversationRuntime> {
+    return serialized(choosing, pairKey(threadRootId, buddyId), async () => {
+      const store = await ports.getStore();
+      const seat = seatFor(
+        request,
+        await currentSeats(threadRootId, buddyId),
+        profileConfig(store, buddyId)
+      );
+      return openConversation(ports.conversations, {
+        context: { buddyId, workspaceId: list.workspaceId },
+        conversationId: seat.conversationId,
+        commandId: `channel-thread-${seat.conversationId}`,
+        config: seat.config,
+      });
+    });
+  }
+
+  // The config the Buddy's next reply in this thread would run on.
+  async function seatConfig(threadRootId: string, buddyId: string): Promise<ConversationConfig> {
+    const store = await ports.getStore();
+    const seats = await currentSeats(threadRootId, buddyId);
+    return seatFor({ kind: 'keep' }, seats, profileConfig(store, buddyId)).config;
+  }
+
   async function postReply(input: {
     list: BuddyMailingList;
-    cause: ReplyCause;
     trigger: BuddyMailingListPost;
     threadRootId: string;
     buddyId: string;
-    conversationId: string;
+    conversationId: string | null;
     outcome: { kind: 'answered'; text: string } | { kind: 'failed'; reason: string };
   }): Promise<void> {
     const store = await ports.getStore();
     const base = {
       list: input.list.id,
       author: { kind: 'buddy', buddyId: input.buddyId } as const,
-      key: replyKey(input.cause, input.trigger.id, input.buddyId),
+      key: `thread-reply:${input.trigger.id}:${input.buddyId}`,
       evidence: [],
       threadRoot: input.threadRootId,
       conversationId: input.conversationId,
@@ -465,76 +488,50 @@ export function createChannelResponder(ports: ChannelResponderPorts) {
     }
   }
 
-  async function respond(input: {
+  // Queue one reply turn on an open seat; the answer lands in the thread.
+  function reply(input: {
     list: BuddyMailingList;
     cause: ReplyCause;
     trigger: BuddyMailingListPost;
     threadRootId: string;
     buddyId: string;
-    conversationId: string;
-    model: MentionModel;
-  }): Promise<void> {
-    const store = await ports.getStore();
-    const context =
-      input.trigger.threadRootId === null
-        ? channelContext(store, input.list, input.trigger)
-        : threadContext(store, input.threadRootId, input.trigger);
-    const prompt = buildPrompt({
-      list: input.list,
-      cause: input.cause,
-      trigger: input.trigger,
-      context,
-      store,
-    });
-    let outcome: { kind: 'answered'; text: string } | { kind: 'failed'; reason: string };
-    try {
-      const conversation = await ports.createConversation({
-        context: { buddyId: input.buddyId, workspaceId: input.list.workspaceId },
-        commandId: `channel-reply-${input.conversationId}`,
-        conversationId: input.conversationId,
-        deferInitialMessage: true,
-        ...creationConfig(input.model),
-      });
-      outcome = { kind: 'answered', text: await runTurn(conversation, prompt, input.trigger.id) };
-    } catch (error) {
-      outcome = { kind: 'failed', reason: error instanceof Error ? error.message : String(error) };
-    }
-    await postReply({ ...input, outcome });
-  }
-
-  // Registers the reply for "X is replying…" and runs it to its posted answer.
-  function launch(input: Parameters<typeof respond>[0]): Promise<void> {
-    active.set(input.conversationId, {
+    conversation: ConversationRuntime;
+  }): void {
+    const key = `${input.trigger.id}:${input.buddyId}`;
+    active.set(key, {
       listId: input.list.id,
       threadRootId: input.threadRootId,
       buddyId: input.buddyId,
-      conversationId: input.conversationId,
+      conversationId: input.conversation.id,
       startedAt: new Date().toISOString(),
     });
-    return respond(input)
+    void serialized(turns, input.conversation.id, async () => {
+      const store = await ports.getStore();
+      const context =
+        input.trigger.threadRootId === null
+          ? channelContext(store, input.list, input.trigger)
+          : threadContext(store, input.threadRootId, input.trigger);
+      const prompt = buildPrompt({ ...input, context, store });
+      let outcome: { kind: 'answered'; text: string } | { kind: 'failed'; reason: string };
+      try {
+        const conversation = await ports.conversations.ensureConversationReady(input.conversation);
+        await untilIdle(conversation);
+        outcome = { kind: 'answered', text: await runTurn(conversation, prompt, input.trigger.id) };
+      } catch (error) {
+        outcome = { kind: 'failed', reason: errorText(error) };
+      }
+      await postReply({ ...input, conversationId: input.conversation.id, outcome });
+    })
       .catch((error) => {
-        logger.warn(`[channel-responder] ${input.conversationId} reply failed:`, error);
+        logger.warn(`[channel-responder] reply to ${input.trigger.id} failed:`, error);
       })
-      .finally(() => active.delete(input.conversationId));
-  }
-
-  async function threadModel(
-    store: BuddiesStorePort,
-    thread: BuddyMailingListPost[],
-    buddyId: string
-  ): Promise<MentionModel> {
-    const spoken = latestSpokenConversation(thread, buddyId);
-    const prior = spoken === null ? null : await ports.getConversationConfig(spoken);
-    const buddy = store.getBuddy(buddyId);
-    if (!buddy) throw new Error(`Buddy ${buddyId} not found`);
-    return modelFor(prior, configFromProviderPreferences(buddyExecutionPreferences(buddy)));
+      .finally(() => active.delete(key));
   }
 
   async function followUp(input: {
     list: BuddyMailingList;
     trigger: BuddyMailingListPost;
     root: BuddyMailingListPost;
-    thread: BuddyMailingListPost[];
     buddyId: string;
     others: string[];
   }): Promise<void> {
@@ -543,10 +540,8 @@ export function createChannelResponder(ports: ChannelResponderPorts) {
       const buddy = store.getBuddy(buddyId);
       return { name: buddy?.name ?? buddyId, role: buddy?.role ?? '' };
     };
-    const model = await threadModel(store, input.thread, input.buddyId);
-    const verdict: GateVerdict = await ports.gate({
-      buddyId: input.buddyId,
-      model,
+    const verdict = await ports.gate({
+      config: await seatConfig(input.root.id, input.buddyId),
       prompt: gatePrompt({
         list: input.list,
         buddy: profile(input.buddyId),
@@ -558,14 +553,13 @@ export function createChannelResponder(ports: ChannelResponderPorts) {
     });
     switch (verdict.kind) {
       case 'respond':
-        return launch({
+        return reply({
           list: input.list,
           cause: { kind: 'follow_up' },
           trigger: input.trigger,
           threadRootId: input.root.id,
           buddyId: input.buddyId,
-          conversationId: followUpConversationId(input.trigger.id, input.buddyId),
-          model,
+          conversation: await openSeat(input.list, input.root.id, input.buddyId, { kind: 'keep' }),
         });
       case 'pass':
         return;
@@ -586,9 +580,10 @@ export function createChannelResponder(ports: ChannelResponderPorts) {
 
   return {
     /**
-     * Start one turn per valid @mention in an OWNER post. Returns as soon as
-     * the turns are queued; replies land in the thread when they finish.
-     * `chosen` holds the owner's model pick per mentioned Buddy.
+     * Queue one reply per valid @mention in an OWNER post, each in the
+     * Buddy's seat for this thread. Returns once the seats are open; replies
+     * land in the thread when their turns finish. `chosen` holds the owner's
+     * harness/model pick per mentioned Buddy.
      */
     async respondToOwnerPost(
       list: BuddyMailingList,
@@ -597,30 +592,46 @@ export function createChannelResponder(ports: ChannelResponderPorts) {
     ): Promise<MentionDispatch[]> {
       const store = await ports.getStore();
       const threadRootId = post.threadRootId ?? post.id;
-      return mentionedBuddyIds(post.body).map((buddyId): MentionDispatch => {
-        const admitted = eligibility(store, list, buddyId);
-        if (admitted.kind === 'rejected')
-          return { buddyId, status: 'rejected', reason: admitted.reason };
-        const conversationId = mentionConversationId(post.id, buddyId);
-        const config = chosen.get(buddyId);
-        const model: MentionModel = config ? { kind: 'chosen', config } : { kind: 'profile' };
-        void launch({
-          list,
-          cause: { kind: 'mention' },
-          trigger: post,
-          threadRootId,
-          buddyId,
-          conversationId,
-          model,
-        });
-        return { buddyId, status: 'started', conversationId };
-      });
+      return Promise.all(
+        mentionedBuddyIds(post.body).map(async (buddyId): Promise<MentionDispatch> => {
+          const admitted = eligibility(store, buddyId, list.workspaceId);
+          if (admitted.kind === 'rejected')
+            return { buddyId, status: 'rejected', reason: admitted.reason };
+          const config = chosen.get(buddyId);
+          const request: SeatRequest = config ? { kind: 'chosen', config } : { kind: 'keep' };
+          let conversation: ConversationRuntime;
+          try {
+            conversation = await openSeat(list, threadRootId, buddyId, request);
+          } catch (error) {
+            // Visible where the owner is looking, like any failed reply.
+            const reason = errorText(error);
+            await postReply({
+              list,
+              trigger: post,
+              threadRootId,
+              buddyId,
+              conversationId: null,
+              outcome: { kind: 'failed', reason },
+            });
+            return { buddyId, status: 'rejected', reason };
+          }
+          reply({
+            list,
+            cause: { kind: 'mention' },
+            trigger: post,
+            threadRootId,
+            buddyId,
+            conversation,
+          });
+          return { buddyId, status: 'started', conversationId: conversation.id };
+        })
+      );
     },
 
     /**
      * Ask every other Buddy who has posted in this post's thread whether to
      * follow up (see the header). Returns once the gates are started; a
-     * `<yes>` becomes a reply turn whose answer lands in the thread.
+     * `<yes>` becomes a reply in that Buddy's seat.
      */
     async considerThreadPost(post: BuddyMailingListPost): Promise<void> {
       if (post.threadRootId === null) return;
@@ -638,21 +649,20 @@ export function createChannelResponder(ports: ChannelResponderPorts) {
       const participants = [...new Set(thread.flatMap((entry) => buddyAuthorIds(entry.author)))];
       for (const buddyId of participants) {
         if (skipped.has(buddyId) || busy(root.id, buddyId)) continue;
-        if (eligibility(store, list, buddyId).kind === 'rejected') continue;
-        const key = threadKey(root.id, buddyId);
-        following.add(key);
+        if (eligibility(store, buddyId, list.workspaceId).kind === 'rejected') continue;
+        const key = pairKey(root.id, buddyId);
+        gating.add(key);
         void followUp({
           list,
           trigger: post,
           root,
-          thread,
           buddyId,
           others: participants.filter((other) => other !== buddyId),
         })
           .catch((error) => {
             logger.warn(`[channel-responder] follow-up for ${buddyId} failed:`, error);
           })
-          .finally(() => following.delete(key));
+          .finally(() => gating.delete(key));
       }
     },
 
@@ -661,6 +671,10 @@ export function createChannelResponder(ports: ChannelResponderPorts) {
       return [...active.values()].filter((response) => response.listId === listId);
     },
   };
+}
+
+function errorText(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
 }
 
 export type ChannelResponder = ReturnType<typeof createChannelResponder>;

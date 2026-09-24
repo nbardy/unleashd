@@ -3,12 +3,11 @@ import os from 'node:os';
 import path from 'node:path';
 import type { ExecuteCommandRequest } from '@nbardy/agent-cli';
 import { executeCommand } from '@nbardy/agent-cli';
-import type { ResolvedExecutionConfig } from '@unleashd/shared';
-import type { MentionModel } from './channel-responder';
+import type { ConversationConfig, ResolvedExecutionConfig } from '@unleashd/shared';
 
 // The thread follow-up gate: "should you respond, or leave it to another team
 // member?" asked of one Buddy about one new thread post. It is a bare CLI run
-// on the Buddy's own profile model — no Buddy MCP, no tools, no session files,
+// on the Buddy's seat model — no Buddy MCP, no tools, no session files,
 // a scratch cwd so no repository instructions load — and it may answer only
 // `<yes>` or `<no>`. Anything else is `unparseable`, never read as a guess:
 // a Buddy that rambles past GATE_MAX_CHARS is stopped and stays silent.
@@ -19,12 +18,11 @@ export type GateVerdict =
   | { kind: 'unparseable'; output: string }
   | { kind: 'failed'; reason: string };
 
-// `model` is the one the Buddy would reply on (channel-responder.ts
-// `threadModel`), so a Buddy the owner moved onto another harness in this
-// thread is asked there too — not on a profile harness that may be down.
+// `config` is the Buddy's seat config in the thread (channel-responder.ts), so
+// a Buddy the owner moved onto another harness is asked there too — not on a
+// profile harness that may be down.
 export type ReplyGate = (input: {
-  buddyId: string;
-  model: MentionModel;
+  config: ConversationConfig;
   prompt: string;
 }) => Promise<GateVerdict>;
 
@@ -153,12 +151,12 @@ async function runGate(
 }
 
 export function createCliReplyGate(ports: {
-  resolveExecution(buddyId: string, model: MentionModel): Promise<ResolvedExecutionConfig>;
+  resolveExecution(config: ConversationConfig): Promise<ResolvedExecutionConfig>;
   execute?: typeof executeCommand;
 }): ReplyGate {
   const execute = ports.execute ?? executeCommand;
-  return async ({ buddyId, model, prompt }) => {
-    const execution = await ports.resolveExecution(buddyId, model);
+  return async ({ config, prompt }) => {
+    const execution = await ports.resolveExecution(config);
     const harness = gateHarness(execution.provider);
     if (!harness)
       return { kind: 'failed', reason: `no reply gate for provider ${execution.provider}` };

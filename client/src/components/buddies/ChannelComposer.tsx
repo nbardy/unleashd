@@ -42,8 +42,8 @@ const NO_CHOICES: ReadonlyMap<string, ConversationConfig> = new Map();
 //
 // Every Buddy the text mentions gets a chip on the bar; clicking it opens the
 // chat's harness/model picker for that Buddy's reply. The choice is sent
-// beside the post (mentionConfigs) and applies to that one reply: every
-// mention starts a fresh conversation (channel-responder.ts).
+// beside the post (mentionConfigs) and becomes the Buddy's seat in the thread:
+// every later reply there keeps it (channel-responder.ts).
 //
 // Unsent text survives navigation and reload through the chat's own draft
 // hook (useConversationDraft), one draft per channel and per thread. The
@@ -371,9 +371,11 @@ export function ChannelComposer({
 }
 
 // What a mentioned Buddy's reply will run on, as the chip and picker see it.
-// `profile` is the Buddy's profile default: every mention starts a fresh
-// conversation, so an unchosen reply runs on it even inside a thread. `unreported` is a backend that predates
-// execution on members; there is nothing honest to open the picker at.
+// `profile` is the Buddy's profile default — exact for a new thread; in a
+// thread where the owner already picked for this Buddy, an unchosen reply
+// keeps that pick (its seat), which the chip does not know yet. `unreported`
+// is a backend that predates execution on members; there is nothing honest to
+// open the picker at.
 type MentionChoice =
   | { kind: 'chosen'; config: ConversationConfig }
   | { kind: 'profile'; profile: ConversationConfig }
@@ -519,7 +521,7 @@ function MentionModelPopover({
           <p className="channel-composer-model-note">Loading harness options…</p>
         )}
         <p className="channel-composer-model-note">
-          {`Applies to ${buddy.label}’s reply to this message. Each mention starts a fresh conversation from the thread.`}
+          {`Applies to ${buddy.label}’s replies in this thread from now on. Without a choice, ${buddy.label} keeps what it already uses here.`}
         </p>
         <div className="channel-composer-model-actions">
           <button type="button" onClick={onReset} disabled={choice.kind !== 'chosen'}>

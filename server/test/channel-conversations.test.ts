@@ -8,6 +8,7 @@ import test from 'node:test';
 import { BuddiesStore } from '@nbardy/buddies';
 import type { ConversationConfig, ConversationConfigState } from '@unleashd/shared';
 import express from 'express';
+import { slotOf } from '../src/buddies/buddy-conversation-slots';
 import { WAKE_MESSAGE, createBuddyDirect } from '../src/buddies/buddy-direct';
 import { onChannelPost } from '../src/buddies/channel-post-feed';
 import {
@@ -15,11 +16,7 @@ import {
   createCliReplyGate,
   parseGateVerdict,
 } from '../src/buddies/channel-reply-gate';
-import {
-  type MentionModel,
-  createChannelResponder,
-  followUpConversationId,
-} from '../src/buddies/channel-responder';
+import { createChannelResponder, threadConversationId } from '../src/buddies/channel-responder';
 import { registerChannelRoutes } from '../src/buddies/channel-routes';
 import type { BuddiesStorePort, BuddyMailingListPost } from '../src/buddies/contract';
 import { coordinationStore } from '../src/buddies/coordination-store';
@@ -44,6 +41,7 @@ class FakeTurnRuntime extends EventEmitter {
   isRunning = false;
   queue: unknown[] = [];
   prompts: Array<{ content: string; ownerInput: unknown }> = [];
+  answered?: number;
   enqueued: Array<{ content: string; ownerInput: unknown }> = [];
   config!: ConversationConfig;
   configRevision = 0;
@@ -113,12 +111,21 @@ function harness() {
     return runtime as unknown as ConversationRuntime;
   };
   const getRuntime = (id: string) => runtimes.get(id) as unknown as ConversationRuntime | undefined;
+  // Who is asked is read off the prompt ("You are <Name> (<role>)…").
   const gates: Array<{
-    buddyId: string;
-    model: MentionModel;
+    name: string;
+    config: ConversationConfig;
     prompt: string;
     answer(verdict: GateVerdict): void;
   }> = [];
+  // A deleted id is a tombstone, exactly as the config record reports it.
+  const conversations = {
+    slot: async (id: string) =>
+      deleted.has(id) ? ({ kind: 'deleted' } as const) : slotOf(await configService.getRecord(id)),
+    getConversation: getRuntime,
+    ensureConversationReady: async (conversation: ConversationRuntime) => conversation,
+    createConversation: createRuntime,
+  };
   const app = express();
   app.use(express.json());
   const sendError = (response: express.Response, error: unknown, fallbackStatus: number) =>
@@ -138,11 +145,12 @@ function harness() {
   });
   const responder = createChannelResponder({
     getStore: async () => store,
-    createConversation: createRuntime,
+    conversations,
     uploadsRoot: () => uploadsRoot,
-    gate: ({ buddyId, model, prompt }) =>
-      new Promise<GateVerdict>((answer) => gates.push({ buddyId, model, prompt, answer })),
-    getConversationConfig: async (id) => (await configService.getRecord(id))?.config ?? null,
+    gate: ({ config, prompt }) =>
+      new Promise<GateVerdict>((answer) =>
+        gates.push({ name: /^You are (\S+)/.exec(prompt)![1], config, prompt, answer })
+      ),
     logger: { warn: () => undefined },
   });
   const unsubscribe = onChannelPost((post) => void responder.considerThreadPost(post));
@@ -151,13 +159,7 @@ function harness() {
     uploadsRoot,
     sendError,
     responder,
-    direct: createBuddyDirect({
-      getStore: async () => store,
-      getConversation: getRuntime,
-      ensureConversationReady: async (conversation) => conversation,
-      createConversation: createRuntime,
-      isConversationDeleted: async (id) => deleted.has(id),
-    }),
+    direct: createBuddyDirect({ getStore: async () => store, conversations }),
   });
   return {
     raw,
@@ -268,9 +270,9 @@ test('owner @mention runs a turn and the answer lands in the thread with its med
       await new Promise((resolve) => setTimeout(resolve, 10));
     }
 
-    // A follow-up mention in the same thread starts a NEW conversation seeded
-    // with the thread (the Buddy's earlier reply included); a failed turn is
-    // reported in the thread, never swallowed.
+    // A follow-up mention in the same thread RESUMES the Buddy's seat there
+    // (its memory of the thread); a failed turn is reported in the thread,
+    // never swallowed.
     const followUp = await call(`/api/buddies/lists/${list.id}/posts`, {
       author: { kind: 'owner' },
       key: 'follow-up',
@@ -278,20 +280,17 @@ test('owner @mention runs a turn and the answer lands in the thread with its med
       body: `[@Lead](buddy:${h.lead.id}) and the mobile view?`,
       threadRootId: root.id,
     });
-    const followUpId = followUp.json.mentions[0].conversationId;
-    assert.notEqual(followUpId, leadMention.conversationId);
-    const followUpRuntime = await until(() => h.runtimes.get(followUpId), 'follow-up runtime');
-    const second = await until(() => followUpRuntime.prompts[0], 'follow-up prompt');
+    assert.equal(followUp.json.mentions[0].conversationId, leadMention.conversationId);
+    const second = await until(() => runtime.prompts[1], 'follow-up prompt');
     assert.match(second.content, /Close — fixed the spacing/);
-    assert.equal(runtime.prompts.length, 1);
-    followUpRuntime.emit('buddy-turn-failed', 'Buddy provider is unavailable: codex');
+    runtime.emit('buddy-turn-failed', 'Buddy provider is unavailable: codex');
     const failed = await until(() => {
       const read = h.raw.listThread({ root: root.id }).replies;
       return read.find((post) => post.purpose === 'reply_failed');
     }, 'failure reply');
     assert.match(failed.body, /provider is unavailable/);
-    assert.equal(failed.senderConversationId, followUpId);
-    assert.deepEqual(h.created, [leadMention.conversationId, followUpId]);
+    assert.equal(failed.senderConversationId, leadMention.conversationId);
+    assert.deepEqual(h.created, [leadMention.conversationId]);
 
     // Buddy-authored mentions never start turns.
     const buddyMention = await call(`/api/buddies/lists/${list.id}/posts`, {
@@ -301,7 +300,7 @@ test('owner @mention runs a turn and the answer lands in the thread with its med
       body: `[@Lead](buddy:${h.lead.id}) note to self`,
     });
     assert.deepEqual(buddyMention.json.mentions, []);
-    assert.equal(h.created.length, 2);
+    assert.equal(h.created.length, 1);
 
     // A missing local file rejects an author-controlled post outright.
     const missing = await call(`/api/buddies/lists/${list.id}/posts`, {
@@ -319,12 +318,13 @@ test('owner @mention runs a turn and the answer lands in the thread with its med
   }
 });
 
-// Regression, conv 0f1dfb23 (2026-09-24): mentions in one thread resumed one
-// (Buddy, thread) conversation, so a harness picked on a later mention was
-// refused ("Provider cannot change after the conversation has started") and
-// the resumed transcript grew until the turn ended `out_of_tokens`. Every
-// mention now gets its own conversation, created on its own pick.
-test('each mention in a thread gets its own conversation on its own harness', async () => {
+// The owner's harness pick is saved as the Buddy's seat in the thread and
+// every later reply there keeps it. Regression, conv 0f1dfb23 (2026-09-24): a
+// resumed seat refused a later pick of another harness ("Provider cannot change
+// after the conversation has started"), so a different pick opens a NEW seat
+// generation. (That conversation's `out_of_tokens` was Codex's usage limit,
+// not transcript growth — resuming itself was never the problem.)
+test('a picked harness sticks for the Buddy in the thread; a different pick opens a new seat', async () => {
   const h = harness();
   const server = h.app.listen(0, '127.0.0.1');
   try {
@@ -356,51 +356,57 @@ test('each mention in a thread gets its own conversation on its own harness', as
     const codex = configFromProviderPreferences({ provider: 'codex' });
     const replies = (root: string) =>
       h.raw.listThread({ root }).replies.filter((reply) => reply.author.kind === 'buddy');
+    // Answers the next turn sent to a conversation.
     const answer = async (conversationId: string, text: string) => {
       const runtime = await until(() => h.runtimes.get(conversationId), 'runtime');
-      const prompt = await until(() => runtime.prompts[0], 'prompt');
+      const count = runtime.answered ?? 0;
+      const prompt = await until(() => runtime.prompts[count], 'prompt');
+      runtime.answered = count + 1;
       runtime.emit('buddy-turn-complete', text);
       return { runtime, prompt: prompt.content };
     };
+    const ask = (key: string, body: string, extra: Record<string, unknown>) =>
+      post(`/api/buddies/lists/${list.id}/posts`, {
+        author: { kind: 'owner' },
+        key,
+        purpose: 'message',
+        body: `${mention} ${body}`,
+        ...extra,
+      });
 
     // First mention: the Buddy's profile is Codex; the owner picked Claude.
-    const asked = await post(`/api/buddies/lists/${list.id}/posts`, {
-      author: { kind: 'owner' },
-      key: 'ask',
-      purpose: 'message',
-      body: `${mention} review this`,
+    const asked = await ask('ask', 'review this', {
       mentionConfigs: [{ buddyId: h.lead.id, config: claude }],
     });
     assert.equal(asked.status, 201, JSON.stringify(asked.json));
     const root = asked.json.post.id;
-    const first = await answer(asked.json.mentions[0].conversationId, 'Looks fine on Claude.');
+    const seat = asked.json.mentions[0].conversationId;
+    assert.equal(seat, threadConversationId(root, h.lead.id, 0));
+    const first = await answer(seat, 'Looks fine on Claude.');
     assert.deepEqual(first.runtime.config, claude);
     await until(() => replies(root).length === 1, 'first reply');
 
-    // Second mention in the SAME thread on another harness: it succeeds on a
-    // new conversation that sees the first answer through the thread context.
-    const switched = await post(`/api/buddies/lists/${list.id}/posts`, {
-      author: { kind: 'owner' },
-      key: 'switch-harness',
-      purpose: 'message',
-      body: `${mention} try it on codex`,
+    // An unpicked mention later in the thread resumes the Claude seat.
+    const again = await ask('again', 'and the edge cases?', { threadRootId: root });
+    assert.equal(again.json.mentions[0].conversationId, seat);
+    await answer(seat, 'Edge cases fine too.');
+    await until(() => replies(root).length === 2, 'second reply');
+
+    // Picking another harness opens seat generation 1 on it, seeded with the
+    // thread; later unpicked mentions keep that one.
+    const switched = await ask('switch-harness', 'try it on codex', {
       threadRootId: root,
       mentionConfigs: [{ buddyId: h.lead.id, config: codex }],
     });
-    const secondId = switched.json.mentions[0].conversationId;
-    assert.notEqual(secondId, asked.json.mentions[0].conversationId);
-    const second = await answer(secondId, 'Also fine on Codex.');
+    const codexSeat = switched.json.mentions[0].conversationId;
+    assert.equal(codexSeat, threadConversationId(root, h.lead.id, 1));
+    const second = await answer(codexSeat, 'Also fine on Codex.');
     assert.deepEqual(second.runtime.config, codex);
     assert.match(second.prompt, /Looks fine on Claude\./);
-    await until(() => replies(root).length === 2, 'second reply');
-    assert.deepEqual(
-      replies(root).map((reply) => [reply.purpose, reply.senderConversationId]),
-      [
-        ['reply', asked.json.mentions[0].conversationId],
-        ['reply', secondId],
-      ]
-    );
-    assert.equal(first.runtime.prompts.length, 1);
+    await until(() => replies(root).length === 3, 'third reply');
+    const after = await ask('after', 'ship it?', { threadRootId: root });
+    assert.equal(after.json.mentions[0].conversationId, codexSeat);
+    assert.deepEqual(h.created, [seat, codexSeat]);
 
     // A choice for a Buddy the post does not mention would vanish: 400.
     const stray = await post(`/api/buddies/lists/${list.id}/posts`, {
@@ -697,12 +703,15 @@ test('a thread post asks the other Buddies in it; <yes> replies, <no> stays quie
     const owner = { kind: 'owner' };
     const gate = (index: number) => until(() => h.gates[index], `gate ${index}`);
     const settle = () => new Promise((resolve) => setTimeout(resolve, 100));
-    const replyTo = async (trigger: BuddyMailingListPost, buddyId: string, text: string) => {
+    // Answers the next turn in the Buddy's seat for this thread.
+    const replyIn = async (root: BuddyMailingListPost, buddyId: string, text: string) => {
       const runtime = await until(
-        () => h.runtimes.get(followUpConversationId(trigger.id, buddyId)),
-        `follow-up runtime for ${buddyId}`
+        () => h.runtimes.get(threadConversationId(root.id, buddyId, 0)),
+        `seat for ${buddyId}`
       );
-      const prompt = await until(() => runtime.prompts[0], 'follow-up prompt');
+      const count = runtime.answered ?? 0;
+      const prompt = await until(() => runtime.prompts[count], 'seat prompt');
+      runtime.answered = count + 1;
       runtime.emit('buddy-turn-complete', text);
       return prompt.content;
     };
@@ -716,35 +725,35 @@ test('a thread post asks the other Buddies in it; <yes> replies, <no> stays quie
     // Designer's post asks Lead, who passes: no conversation, no reply.
     await write({ kind: 'buddy', buddyId: designer.id }, 'designer-1', 'I own the UI.', root.id);
     (await gate(0)).answer({ kind: 'pass' });
-    assert.equal(h.gates[0].buddyId, h.lead.id);
+    assert.equal(h.gates[0].name, 'Lead');
 
     // The owner's question asks both Buddies, with the thread as context.
     const question = await write(owner, 'ask', 'Is the login page ready?', root.id);
     await gate(2);
-    const asked = new Map(h.gates.slice(1).map((entry) => [entry.buddyId, entry]));
-    const toDesigner = asked.get(designer.id)!;
+    const asked = new Map(h.gates.slice(1).map((entry) => [entry.name, entry]));
+    const toDesigner = asked.get('Designer')!;
     assert.match(toDesigner.prompt, /I own the backend\.[\s\S]*Is the login page ready\?/);
     assert.match(toDesigner.prompt, /should you respond, or leave it to another team member\?/);
     assert.match(toDesigner.prompt, /exactly <yes> or <no>/);
-    asked.get(h.lead.id)!.answer({ kind: 'pass' });
+    asked.get('Lead')!.answer({ kind: 'pass' });
     toDesigner.answer({ kind: 'respond' });
-    const followUpPrompt = await replyTo(question, designer.id, 'Login ships Friday.');
+    const followUpPrompt = await replyIn(root, designer.id, 'Login ships Friday.');
     assert.match(followUpPrompt, /you chose to reply/);
     assert.match(followUpPrompt, /from Owner:\nIs the login page ready\?/);
     await until(() => newestReply(root.id).body === 'Login ships Friday.', 'designer reply');
-    assert.equal(h.runtimes.has(followUpConversationId(question.id, h.lead.id)), false);
+    // Lead passed: no seat was opened for it.
+    assert.equal(h.runtimes.has(threadConversationId(root.id, h.lead.id, 0)), false);
 
     // Buddy chain: Designer's reply (1) asks Lead, Lead's reply (2) asks
     // Designer, Designer's reply (3) asks nobody.
-    const chain1 = newestReply(root.id);
     (await gate(3)).answer({ kind: 'respond' });
-    assert.equal(h.gates[3].buddyId, h.lead.id);
-    await replyTo(chain1, h.lead.id, 'Backend is ready too.');
+    assert.equal(h.gates[3].name, 'Lead');
+    await replyIn(root, h.lead.id, 'Backend is ready too.');
     await until(() => newestReply(root.id).body === 'Backend is ready too.', 'lead reply');
-    const chain2 = newestReply(root.id);
     (await gate(4)).answer({ kind: 'respond' });
-    assert.equal(h.gates[4].buddyId, designer.id);
-    await replyTo(chain2, designer.id, 'Great, shipping.');
+    assert.equal(h.gates[4].name, 'Designer');
+    // Designer's second reply resumes its seat: the same conversation.
+    await replyIn(root, designer.id, 'Great, shipping.');
     await until(() => newestReply(root.id).body === 'Great, shipping.', 'third buddy post');
     await settle();
     assert.equal(h.gates.length, 5, 'three Buddy posts in a row: the thread waits for the owner');
@@ -758,11 +767,11 @@ test('a thread post asks the other Buddies in it; <yes> replies, <no> stays quie
   }
 });
 
-// A custom harness/model the owner picked for a Buddy in a thread sticks for
-// that Buddy's follow-ups there (gate and reply alike), read back from the
-// persisted config of its latest reply's conversation. A Buddy that replied on
-// its profile stays on the profile.
-test('a follow-up runs on the harness and model the Buddy last replied with in the thread when it was a custom pick', async () => {
+// Follow-ups use the Buddy's seat, so the owner's pick on an earlier mention
+// carries over — gate question included (a gate on the profile harness would
+// fail whenever that harness is down) — while a Buddy never picked for stays
+// on its profile.
+test('a follow-up keeps the harness the owner picked for that Buddy earlier in the thread', async () => {
   const h = harness();
   const designer = h.raw.createBuddy({ project: h.workspace.id, name: 'Designer', role: 'UI' });
   const server = h.app.listen(0, '127.0.0.1');
@@ -816,19 +825,21 @@ test('a follow-up runs on the harness and model the Buddy last replied with in t
     (await gate(1)).answer({ kind: 'pass' });
 
     // A plain owner reply: Designer is asked on Claude, Lead on its profile.
-    const question = (await write({ key: 'risks', body: 'Any risks?', threadRootId: root.id }))
-      .post;
+    await write({ key: 'risks', body: 'Any risks?', threadRootId: root.id });
     await gate(3);
-    const asked = new Map(h.gates.slice(2).map((entry) => [entry.buddyId, entry]));
-    assert.deepEqual(asked.get(designer.id)!.model, { kind: 'chosen', config: claude });
-    assert.deepEqual(asked.get(h.lead.id)!.model, { kind: 'profile' });
-    asked.get(h.lead.id)!.answer({ kind: 'pass' });
-    asked.get(designer.id)!.answer({ kind: 'respond' });
-    const followUp = await until(
-      () => h.runtimes.get(followUpConversationId(question.id, designer.id)),
-      'follow-up runtime'
+    const asked = new Map(h.gates.slice(2).map((entry) => [entry.name, entry]));
+    assert.deepEqual(asked.get('Designer')!.config, claude);
+    assert.deepEqual(
+      asked.get('Lead')!.config,
+      configFromProviderPreferences({ provider: 'codex' })
     );
-    assert.deepEqual(followUp.config, claude);
+    asked.get('Lead')!.answer({ kind: 'pass' });
+    asked.get('Designer')!.answer({ kind: 'respond' });
+    // The reply resumes the Claude seat the mention opened.
+    const followUp = await until(() => mentionRuntime.prompts[1], 'follow-up prompt');
+    assert.match(followUp.content, /Any risks\?/);
+    assert.deepEqual(mentionRuntime.config, claude);
+    assert.equal(h.created.length, 1);
   } finally {
     server.close();
     h.close();
@@ -867,7 +878,10 @@ test('the reply gate accepts only a bare <yes>/<no> and stops a rambling run', a
       });
     })() as never,
   });
-  const verdict = await gate({ buddyId: 'b', model: { kind: 'profile' }, prompt: 'p' });
+  const verdict = await gate({
+    config: configFromProviderPreferences({ provider: 'claude' }),
+    prompt: 'p',
+  });
   assert.equal(stopped, true);
   assert.equal(verdict.kind, 'unparseable');
 });

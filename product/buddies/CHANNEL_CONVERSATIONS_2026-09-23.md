@@ -46,15 +46,29 @@ remain the three core components.
 1. Only OWNER mentions dispatch. Buddy-authored mentions never wake anyone:
    Buddies coordinate with `send`/`update_project`. (Thread follow-ups, below,
    are the one bounded way a Buddy's post leads to another Buddy's turn.)
-2. One NEW conversation per mention (the Slack model), id derived from the
-   (mention post, Buddy) pair. A follow-up mention inside a thread does not
-   resume the previous reply's conversation: the thread context in the prompt
-   (item 3) is the memory. Until 2026-09-24 one (thread, Buddy) conversation
-   was resumed per thread; in conv 0f1dfb23 it grew until the provider ended
-   the turn `out_of_tokens`, and a harness picked on a later mention was
-   refused because a started session cannot change provider. Resuming belongs
-   to the chat view. Input is `owner_input` origin: owner thread knowledge
-   scope, owner-control MCP, like a `talk()` chat.
+2. **Seats.** Every reply by a Buddy in a thread — mention or follow-up —
+   goes to its SEAT there: one resumed conversation per (thread, Buddy), id
+   `threadConversationId(root, buddy, generation)`, so the Buddy remembers the
+   thread. The seat's persisted conversation config IS the owner's harness
+   pick: a chip pick opens the seat on it (a new generation when the current
+   seat runs anything else, because a started session cannot change provider),
+   and every later reply — un-picked mentions, follow-ups, their gate questions
+   — keeps it. Never picked: the Buddy's profile default. A deleted seat
+   conversation is skipped like a deleted DM. Seat choice is serialized per
+   (thread, Buddy); turns are serialized per seat and start only when it is
+   idle (it is also an ordinary chat the owner can type in). The DM and seats
+   share `buddy-conversation-slots.ts` (derived ids, generation scan from the
+   config record: absent / deleted / live+config, reopen-or-create,
+   membership). Input is `owner_input` origin: owner thread knowledge scope,
+   owner-control MCP, like a `talk()` chat.
+
+   History: seats existed until 46b4c0c (2026-09-24), which switched to a new
+   conversation per mention, blaming conv 0f1dfb23's `out_of_tokens` on a
+   growing resumed transcript. It was Codex's account USAGE LIMIT ("You've hit
+   your usage limit … try again at Sep 27th", 4 s into the turn), which
+   agent-cli's `classifyError` maps to `out_of_tokens`. Read the error text
+   before blaming context size. The other failure there — a later pick of
+   another harness refused — is what seat generations fix.
 3. Context is deliberately short (2026-09-24): for a top-level mention, the 10
    latest channel posts with every thread COLLAPSED to `[thread: N replies,
    latest …]`; for a thread mention, the root plus its 10 latest replies and an
@@ -63,7 +77,7 @@ remain the three core components.
    below. Expanding side threads inline buried the recent flow; the Buddy pulls
    what it needs instead. Rendering: `server/src/buddies/channel-text.ts`.
 4. The final assistant text is posted by the server as that Buddy (`purpose:
-   reply`, conversation provenance, key `mention-reply:<post>:<buddy>`). Media
+   reply`, seat conversation provenance, key `thread-reply:<post>:<buddy>`). Media
    the Buddy referenced is copied; a bad reference is noted visibly in the reply.
    A failed turn posts `purpose: reply_failed` with the reason — never silent.
 5. `GET /api/buddies/lists/:id/responding` drives "X is replying…".
@@ -83,16 +97,15 @@ proposal in
 A reply in a thread, from the owner or any Buddy, asks each OTHER Buddy who has
 posted in that thread one question: *"Given this thread context, should you
 respond, or leave it to another team member?"* Only a strict `<yes>` starts a
-reply; it then runs exactly like a mention reply (new conversation, profile
-model, server-posted answer, key `follow-up-reply:<post>:<buddy>`), framed as
-"you chose to reply".
+reply; it then runs exactly like a mention reply (in the Buddy's seat, on its
+seat config, server-posted answer), framed as "you chose to reply".
 
 - **Doors:** every post is announced on `channel-post-feed.ts` — the owner
   route, a Buddy's `post` tool (`operations.ts`) and the server-posted reply
   (`reply_failed` notices are not announced). `server.ts` subscribes
   `responder.considerThreadPost`.
-- **Gate** (`channel-reply-gate.ts`): a bare CLI run on the Buddy's own profile
-  model — no Buddy MCP, no tools, no session files (a persisted transcript
+- **Gate** (`channel-reply-gate.ts`): a bare CLI run on the Buddy's seat
+  config (its profile when it has no seat) — no Buddy MCP, no tools, no session files (a persisted transcript
   would be imported as a conversation), scratch cwd. Output past 32 characters,
   or any tool call, stops the run as `unparseable`; `<yes> because…` is not a
   yes. Unparseable and failed gates are `console.warn`ed (error journal), never
@@ -110,14 +123,9 @@ model, server-posted answer, key `follow-up-reply:<post>:<buddy>`), framed as
   asked until the owner posts again. Read from the thread itself, so it holds
   across restarts. This is what keeps Buddy-to-Buddy follow-ups from being the
   unbounded fan-out the mailing-list spec warns about.
-- **Model sticks to the thread's custom pick:** a follow-up (gate AND reply)
-  runs on the config of the Buddy's latest reply in that thread when that
-  config differs from its profile default — i.e. the owner picked a custom
-  harness/model on the mention chip, or an earlier follow-up inherited one.
-  Otherwise it runs on the profile, so a profile edit still reaches old
-  threads. Read from the persisted config record of the reply's own
-  conversation (`senderConversationId`); no "custom" flag is stored. The gate
-  follows too, so a Buddy moved off a down profile harness can still answer.
+- **Model:** the gate runs on the seat config too, so a Buddy the owner moved
+  off a down profile harness (Codex hit its usage limit on 2026-09-24) can
+  still answer.
 - **Cost:** one gate run per other participant per thread post, on that
   model and effort (provider-bespoke effort values are not
   translated down). Same restart gap as mention replies.
@@ -136,10 +144,13 @@ Guard: the follow-up test in `server/test/channel-conversations.test.ts`.
   the body. The route 400s a choice for a Buddy the body does not mention, a
   duplicate, or any choice on a Buddy-authored post — each would otherwise be
   dropped without a trace.
-- **Server:** the mention's new conversation is created on the chosen config,
-  so the choice applies to that one reply. A mention with no choice runs on the
-  Buddy's profile default, in a thread too. Any harness works on any mention:
-  there is no started session to lock it.
+- **Server:** the choice becomes the Buddy's seat in the thread (see Mention
+  replies, item 2) and sticks for every later reply there. A mention with no
+  choice keeps the seat; in a new thread that is the profile default. Any
+  harness works on any mention: a different pick opens a new seat generation.
+- **Open gap:** the chip shows the PROFILE default for an un-picked mention,
+  which is wrong in a thread whose seat runs an earlier pick. Fix: return
+  each Buddy's seat config with the thread read and seed the chip from it.
 - **Defaults on the chip:** workspace activity members carry
   `execution: {kind:'profile', config}` from `buddyExecutionPreferences()` (the
   same mapping turn creation uses). The wire default is `{kind:'unreported'}`

@@ -1,0 +1,114 @@
+import { createHash } from 'node:crypto';
+import type {
+  BuddyContext,
+  ConversationConfig,
+  PersistedConversationConfigRecord,
+} from '@unleashd/shared';
+import type { ConversationRuntime } from '../conversations/runtime';
+import type { BuddiesStorePort } from './contract';
+
+// A Buddy's STABLE conversations — its DM (buddy-direct.ts) and its seat in
+// each channel thread (channel-responder.ts) — share one shape: an id derived
+// per generation, reopened while it lives. Nothing maps ids to conversations;
+// the conversation-config record of each derived id is the whole state:
+//
+//   absent  — never created: the first free generation.
+//   deleted — tombstoned by the owner; that id is unusable forever.
+//   live    — reopen it. Its persisted config is the harness/model it runs,
+//             which is how a thread seat remembers the owner's pick.
+//
+// A later generation exists only because an earlier one was deleted or (for a
+// seat) replaced by a different pick, so the newest created one is current.
+
+export type ConversationSlot =
+  | { kind: 'absent' }
+  | { kind: 'deleted' }
+  | { kind: 'live'; config: ConversationConfig };
+
+export function slotOf(record: PersistedConversationConfigRecord | undefined): ConversationSlot {
+  if (!record) return { kind: 'absent' };
+  if (record.status === 'deleted') return { kind: 'deleted' };
+  return { kind: 'live', config: record.config };
+}
+
+export interface StableConversationPorts {
+  slot(conversationId: string): Promise<ConversationSlot>;
+  getConversation(id: string): ConversationRuntime | undefined;
+  ensureConversationReady(conversation: ConversationRuntime): Promise<ConversationRuntime>;
+  createConversation(input: {
+    context: BuddyContext;
+    commandId: string;
+    conversationId: string;
+    deferInitialMessage: true;
+    /** Omitted: the Buddy's profile default, resolved by the creation service. */
+    config?: ConversationConfig;
+  }): Promise<ConversationRuntime>;
+}
+
+const MAX_GENERATIONS = 32;
+
+// UUID-shaped id derived from a seed, so a (purpose, Buddy, …) tuple always
+// names the same transcript across restarts without storing a mapping.
+export function stableConversationId(seed: string): string {
+  const hex = createHash('sha256').update(seed).digest('hex');
+  const variant = ((Number.parseInt(hex[16], 16) & 0x3) | 0x8).toString(16);
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-5${hex.slice(13, 16)}-${variant}${hex.slice(17, 20)}-${hex.slice(20, 32)}`;
+}
+
+export type LiveConversation = { conversationId: string; config: ConversationConfig };
+
+/** The current generation (null when none lives) and the first never used. */
+export async function scanGenerations(
+  ports: Pick<StableConversationPorts, 'slot'>,
+  idOf: (generation: number) => string
+): Promise<{ current: LiveConversation | null; next: string }> {
+  let current: LiveConversation | null = null;
+  for (let generation = 0; generation < MAX_GENERATIONS; generation += 1) {
+    const conversationId = idOf(generation);
+    const slot = await ports.slot(conversationId);
+    switch (slot.kind) {
+      case 'absent':
+        return { current, next: conversationId };
+      case 'deleted':
+        current = null;
+        break;
+      case 'live':
+        current = { conversationId, config: slot.config };
+        break;
+    }
+  }
+  throw new Error(`Every conversation generation here is used (${MAX_GENERATIONS})`);
+}
+
+/** Reopen the runtime if it is registered, else create (or replay) it. */
+export async function openConversation(
+  ports: StableConversationPorts,
+  input: {
+    context: BuddyContext;
+    conversationId: string;
+    commandId: string;
+    config?: ConversationConfig;
+  }
+): Promise<ConversationRuntime> {
+  const existing = ports.getConversation(input.conversationId);
+  if (existing) return ports.ensureConversationReady(existing);
+  return ports.createConversation({ ...input, deferInitialMessage: true });
+}
+
+export type Eligibility = { kind: 'eligible' } | { kind: 'rejected'; reason: string };
+
+/** Only an active Buddy that belongs to the workspace gets a conversation there. */
+export function eligibility(
+  store: BuddiesStorePort,
+  buddyId: string,
+  workspaceId: string
+): Eligibility {
+  const buddy = store.getBuddy(buddyId);
+  if (!buddy || buddy.status !== 'active')
+    return { kind: 'rejected', reason: 'Buddy is not active' };
+  const member = store
+    .listBuddyWorkspaces(buddyId)
+    .some((workspace) => (workspace as { id: string }).id === workspaceId);
+  if (!member) return { kind: 'rejected', reason: 'Buddy is outside this workspace' };
+  return { kind: 'eligible' };
+}

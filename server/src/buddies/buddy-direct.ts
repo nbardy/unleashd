@@ -1,15 +1,20 @@
 import { randomUUID } from 'node:crypto';
-import type { BuddyContext } from '@unleashd/shared';
 import type { ConversationRuntime } from '../conversations/runtime';
-import { stableConversationId } from './channel-responder';
+import {
+  type StableConversationPorts,
+  eligibility,
+  openConversation,
+  scanGenerations,
+  stableConversationId,
+} from './buddy-conversation-slots';
 import type { BuddiesStorePort } from './contract';
 
 // Direct messages and "wake up" for a Buddy, from the channels page.
 //
 // DM = ONE ongoing owner conversation per (workspace, Buddy), so opening it
 // again shows the history instead of a blank thread. Its id is derived, not
-// stored: generation 0 is the DM; if the owner deletes it (a tombstone makes
-// that id permanently unusable), the next open moves to generation 1, and so on.
+// stored (buddy-conversation-slots.ts): generation 0 is the DM; if the owner
+// deletes it, the next open moves to generation 1, and so on.
 //
 // Wake = owner input sent INTO the DM: "catch up on the channels, then act".
 // The Buddy reads its unread lists with its own tools and decides per item —
@@ -30,19 +35,9 @@ export const WAKE_MESSAGE = [
   '4. Finish with a short summary: what you read, what you replied to, and what work you started (with ids).',
 ].join('\n');
 
-const MAX_DM_GENERATIONS = 32;
-
 export interface BuddyDirectPorts {
   getStore(): Promise<BuddiesStorePort>;
-  getConversation(id: string): ConversationRuntime | undefined;
-  ensureConversationReady(conversation: ConversationRuntime): Promise<ConversationRuntime>;
-  createConversation(input: {
-    context: BuddyContext;
-    commandId: string;
-    conversationId: string;
-    deferInitialMessage: true;
-  }): Promise<ConversationRuntime>;
-  isConversationDeleted(conversationId: string): Promise<boolean>;
+  conversations: StableConversationPorts;
 }
 
 export function directConversationId(workspaceId: string, buddyId: string, generation: number) {
@@ -50,36 +45,23 @@ export function directConversationId(workspaceId: string, buddyId: string, gener
 }
 
 export function createBuddyDirect(ports: BuddyDirectPorts) {
-  async function requireActiveMember(buddyId: string, workspaceId: string): Promise<void> {
-    const store = await ports.getStore();
-    const buddy = store.getBuddy(buddyId);
-    if (!buddy || buddy.status !== 'active') throw new Error('Buddy is not active');
-    const member = store
-      .listBuddyWorkspaces(buddyId)
-      .some((workspace) => (workspace as { id: string }).id === workspaceId);
-    if (!member) throw new Error('Buddy is outside this workspace');
-  }
-
   async function directConversation(
     buddyId: string,
     workspaceId: string
   ): Promise<ConversationRuntime> {
-    await requireActiveMember(buddyId, workspaceId);
-    for (let generation = 0; generation < MAX_DM_GENERATIONS; generation += 1) {
-      const conversationId = directConversationId(workspaceId, buddyId, generation);
-      const existing = ports.getConversation(conversationId);
-      if (existing) return ports.ensureConversationReady(existing);
-      if (await ports.isConversationDeleted(conversationId)) continue;
-      return ports.createConversation({
-        context: { buddyId, workspaceId },
-        commandId: `buddy-dm-${conversationId}`,
-        conversationId,
-        deferInitialMessage: true,
-      });
-    }
-    throw new Error(
-      `Every direct conversation slot for this Buddy was deleted (${MAX_DM_GENERATIONS})`
+    const admitted = eligibility(await ports.getStore(), buddyId, workspaceId);
+    if (admitted.kind === 'rejected') throw new Error(admitted.reason);
+    const { current, next } = await scanGenerations(ports.conversations, (generation) =>
+      directConversationId(workspaceId, buddyId, generation)
     );
+    const conversationId = current?.conversationId ?? next;
+    return openConversation(ports.conversations, {
+      context: { buddyId, workspaceId },
+      conversationId,
+      commandId: `buddy-dm-${conversationId}`,
+      // A live DM replays on the config it runs; a new one takes the profile.
+      config: current?.config,
+    });
   }
 
   return {
