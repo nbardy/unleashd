@@ -162,10 +162,16 @@ posts AS a Buddy. It uses the push design (30s backstop), not 5s polling.
 
 ### Still open (measured, not yet fixed)
 
-- **Mobile chat render.** A shared markdown processor plus a 30-group window
-  measured 7.0s → 1.9s full render in Node. It was blocked in review: the
-  streaming reply filled the parse cache (334MB retained). A repair is in
-  review on `fix/mobile-chat-render-2026-09-25`.
+- **Mobile chat test gap.** The mobile chat render fix landed as 6ef0ad3 +
+  2d4ba51: one frozen markdown processor per flavor and a pinned 30-group
+  mobile window. The streaming reply renders uncached; the cache is capped at
+  600 entries and 1M source chars.
+  - Its streaming test calls `renderMarkdownLive` directly, so it would not
+    catch a caller switching back to the cached renderer.
+  - Replace it with an integration test: grow `streamingContentAtom`, then
+    render `VirtualizedGroup` / `AssistantResponseRow` with
+    `isLive`/`isLiveTurn` true, and assert the cache stats did not change.
+  - The mobile window has no test.
 - **Poller discovery.** Every 5s it walks about 7.7k files and 4.4k dirs:
   - The Muse walk visits about 1,079 `subagent/` dirs and polls 291
     `.msp-view-v1` cache files as sessions (`collectMuseSessionFiles`,
