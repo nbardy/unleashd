@@ -59,7 +59,7 @@ test('startup does not release readiness or background work after hydration fail
         host: '127.0.0.1',
         development: true,
         developmentClientPort: 7489,
-      browser: 'none',
+        browser: 'none',
       },
       {
         server: {
