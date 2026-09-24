@@ -31,7 +31,9 @@ interface UsageEntry {
 
 // Approximate pricing per 1M tokens (as of early 2026).
 // Claude: input $3, output $15, cache read $0.30, cache write $3.75
-// Codex: input $2.50, output $10
+// Codex: input $2.50, cached input $0.25, output $10. OpenAI bills cached input
+// at a tenth of the input rate; until 2026-09-25 every Codex token was priced
+// as uncached, overstating Codex spend several-fold (~97% of it is cached).
 function estimateCost(
   provider: ProviderName,
   input: number,
@@ -44,7 +46,7 @@ function estimateCost(
   }
   // Codex/OpenAI and OpenCode (provider-backed model pricing can vary by backend).
   // Gemini mirrors Codex-like pricing here until token billing data is emitted per-provider.
-  return (input * 2.5 + output * 10) / 1_000_000;
+  return (input * 2.5 + output * 10 + cacheRead * 0.25) / 1_000_000;
 }
 
 // Per-session cached usage data so we don't re-read unchanged files.
@@ -275,32 +277,40 @@ export interface SessionProviderUsage {
   cumulativeInputTokens: number;
 }
 
-function parseCodexTokenTotals(filePath: string): { input: number; output: number } | null {
-  try {
-    const content = fs.readFileSync(filePath, 'utf-8');
-    let input = 0;
-    let output = 0;
-    let found = false;
-    for (const line of content.split('\n')) {
-      if (!line.trim()) continue;
-      try {
-        const entry = JSON.parse(line);
-        if (
-          entry.type === 'event_msg' &&
-          entry.payload?.type === 'token_count' &&
-          entry.payload.info?.total_token_usage
-        ) {
-          const u = entry.payload.info.total_token_usage;
-          // token_count events carry latest totals — the last one wins.
-          input = u.input_tokens ?? 0;
-          output = u.output_tokens ?? 0;
-          found = true;
-        }
-      } catch {
-        /* skip malformed lines */
+// Codex `token_count` events carry the session's latest cumulative totals, so the
+// last one wins. `cached_input_tokens` is a SUBSET of `input_tokens`; split it out
+// so `input` means uncached input, as it does for Claude.
+type CodexTokenTotals = { input: number; cacheRead: number; output: number };
+
+function codexTokenTotals(content: string): CodexTokenTotals | null {
+  let totals: CodexTokenTotals | null = null;
+  for (const line of content.split('\n')) {
+    if (!line.trim()) continue;
+    try {
+      const entry = JSON.parse(line);
+      if (
+        entry.type === 'event_msg' &&
+        entry.payload?.type === 'token_count' &&
+        entry.payload.info?.total_token_usage
+      ) {
+        const u = entry.payload.info.total_token_usage;
+        const cacheRead = u.cached_input_tokens ?? 0;
+        totals = {
+          input: (u.input_tokens ?? 0) - cacheRead,
+          cacheRead,
+          output: u.output_tokens ?? 0,
+        };
       }
+    } catch {
+      /* skip malformed lines */
     }
-    return found ? { input, output } : null;
+  }
+  return totals;
+}
+
+function parseCodexTokenTotals(filePath: string): CodexTokenTotals | null {
+  try {
+    return codexTokenTotals(fs.readFileSync(filePath, 'utf-8'));
   } catch {
     return null;
   }
@@ -428,9 +438,9 @@ export function lookupProviderUsageForSession(sessionId: string): SessionProvide
         model: 'codex',
         inputTokens: totals.input,
         outputTokens: totals.output,
-        cacheReadTokens: 0,
+        cacheReadTokens: totals.cacheRead,
         cacheWriteTokens: 0,
-        cumulativeInputTokens: totals.input,
+        cumulativeInputTokens: totals.input + totals.cacheRead,
       };
     }
   }
@@ -570,38 +580,17 @@ export function registerUsageRoutes(app: Express, providerNames: readonly Provid
               if (dateMs < cutoffMs) continue;
 
               const sessionId = codexSessionIdFromFilename(file);
-              let inputTokens = 0;
-              let outputTokens = 0;
-
-              const content = fs.readFileSync(filePath, 'utf-8');
-              for (const line of content.split('\n')) {
-                if (!line.trim()) continue;
-                try {
-                  const entry = JSON.parse(line);
-                  if (
-                    entry.type === 'event_msg' &&
-                    entry.payload?.type === 'token_count' &&
-                    entry.payload.info?.total_token_usage
-                  ) {
-                    const u = entry.payload.info.total_token_usage;
-                    inputTokens = u.input_tokens ?? 0;
-                    outputTokens = u.output_tokens ?? 0;
-                  }
-                } catch {
-                  /* skip malformed lines */
-                }
-              }
-
-              if (inputTokens + outputTokens > 0) {
+              const totals = codexTokenTotals(fs.readFileSync(filePath, 'utf-8'));
+              if (totals && totals.input + totals.cacheRead + totals.output > 0) {
                 entries.push({
                   sessionId,
                   provider: 'codex',
                   model: 'codex',
-                  inputTokens,
-                  outputTokens,
-                  cacheReadTokens: 0,
+                  inputTokens: totals.input,
+                  outputTokens: totals.output,
+                  cacheReadTokens: totals.cacheRead,
                   cacheWriteTokens: 0,
-                  costUsd: estimateCost('codex', inputTokens, outputTokens, 0, 0),
+                  costUsd: estimateCost('codex', totals.input, totals.output, totals.cacheRead, 0),
                   date: dateStr,
                 });
               }
