@@ -159,7 +159,10 @@ export function ConversationConfigPicker({
           const selected =
             modelKey === key || (inlineDefaults && isDefault && modelKey === 'default');
           return (
-            <label key={model.id} className={`ui-choice model-option ${selected ? 'selected' : ''}`}>
+            <label
+              key={model.id}
+              className={`ui-choice model-option ${selected ? 'selected' : ''}`}
+            >
               <input
                 type="radio"
                 name={modelGroup}
@@ -223,7 +226,10 @@ export function ConversationConfigPicker({
                   reasoningKey === option.key ||
                   (inlineDefaults && isDefault && reasoningKey === 'default');
                 return (
-                  <label key={option.key} className={`ui-choice model-option ${selected ? 'selected' : ''}`}>
+                  <label
+                    key={option.key}
+                    className={`ui-choice model-option ${selected ? 'selected' : ''}`}
+                  >
                     <input
                       type="radio"
                       name={reasoningGroup}

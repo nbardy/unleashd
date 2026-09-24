@@ -58,11 +58,7 @@ function ConversationRow({
   return (
     <li>
       {available ? (
-        <Link
-          className="buddy-thread-list__row"
-          to={conversationPath(id)}
-          state={routeState}
-        >
+        <Link className="buddy-thread-list__row" to={conversationPath(id)} state={routeState}>
           {contents}
           <span className="buddy-thread-list__arrow" aria-hidden="true">
             ↗

@@ -58,6 +58,7 @@
       "public",
       "runs",
       "vendor",
+      "agent_notes",
       "shared/src/generated"
     ]
   }

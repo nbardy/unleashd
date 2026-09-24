@@ -628,15 +628,12 @@ export function Sidebar() {
                           +
                         </button>
                         <span className="folder-group-count">
-                          {builderConversations.filter((c) => !c.done)
-                            .length || ''}
+                          {builderConversations.filter((c) => !c.done).length || ''}
                         </span>
                       </div>
                       {!collapsedSet.has('__builder__') &&
                         (() => {
-                          const builderActive = builderConversations.filter(
-                            (c) => !c.done
-                          );
+                          const builderActive = builderConversations.filter((c) => !c.done);
                           if (builderActive.length === 0) return null;
                           const isBuilderExpanded = expandedDirectories.has('__builder__');
                           const visibleBuilder = isBuilderExpanded
@@ -868,9 +865,7 @@ export function Sidebar() {
                   const projectColor = getProjectColor(group.directory);
                   const runningCount = runningCountByFolder.get(group.directory) ?? 0;
                   // Filter done at render time — group position stays stable
-                  const activeConvs = group.conversations.filter(
-                    (c) => !c.done
-                  );
+                  const activeConvs = group.conversations.filter((c) => !c.done);
 
                   return (
                     <div key={group.directory} className="folder-group">

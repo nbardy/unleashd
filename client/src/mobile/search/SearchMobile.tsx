@@ -259,11 +259,7 @@ export function SearchMobile() {
           ) : (
             <div className="mobile-search__list">
               {groupedServerHits.slice(0, DEEP_RESULT_LIMIT).map((g) => (
-                <ServerGroupCard
-                  key={g.conversationId}
-                  group={g}
-                  routeState={routeState}
-                />
+                <ServerGroupCard key={g.conversationId} group={g} routeState={routeState} />
               ))}
             </div>
           )}

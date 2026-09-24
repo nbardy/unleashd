@@ -272,14 +272,23 @@ test(
       );
       for (let i = 0; i < 1200; i++) {
         executor.poll();
-        if (workerTurns > 0 && executor.activeRunIds.length === 0 && store.listBuddyRuns({ limit: 100 }).some((run) => run.input_kind === 'message_reply' && run.status === 'complete')) break;
+        if (
+          workerTurns > 0 &&
+          executor.activeRunIds.length === 0 &&
+          store
+            .listBuddyRuns({ limit: 100 })
+            .some((run) => run.input_kind === 'message_reply' && run.status === 'complete')
+        )
+          break;
         await new Promise((resolve) => setTimeout(resolve, 250));
       }
       assert.ok(workerTurns >= 1 && workerTurns <= 3);
       assert.deepEqual(origins.slice(0, 2), ['owner_input', 'owner_input']);
       assert.ok(origins.slice(2).every((origin) => origin === 'buddy_message'));
       assert.equal(returnTurns, 0, 'the owner reads worker results from the mailbox');
-      const delivery = store.listBuddyRuns({ limit: 100 }).find((run) => run.input_kind === 'message_reply')!;
+      const delivery = store
+        .listBuddyRuns({ limit: 100 })
+        .find((run) => run.input_kind === 'message_reply')!;
       assert.equal(delivery.outcome, 'mailbox_only');
       assert.equal(delivery.acknowledged_at, null);
       assert.equal(conversations.size, 2);

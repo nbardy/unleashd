@@ -1,8 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import {
-  type TurnAttemptSnapshotLike,
-  turnDiagnosticsPollDelay,
-} from '../utils/turn-diagnostics';
+import { type TurnAttemptSnapshotLike, turnDiagnosticsPollDelay } from '../utils/turn-diagnostics';
 
 interface DiagnosticsResponse {
   attempt: TurnAttemptSnapshotLike | null;

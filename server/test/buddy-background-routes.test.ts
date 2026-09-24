@@ -95,7 +95,11 @@ async function fixture() {
       };
     }) as NonNullable<ConversationRuntimeDependencies['executeTurn']>,
   });
-  const create = (id: string, context: BuddyContext, placement: 'default' | 'background' = 'default') => {
+  const create = (
+    id: string,
+    context: BuddyContext,
+    placement: 'default' | 'background' = 'default'
+  ) => {
     const conversation = new Conversation({
       id,
       workingDirectory: root,
@@ -117,7 +121,8 @@ async function fixture() {
   const executor = new BuddyRunExecutor({
     store,
     getConversation: (id) => conversations.get(id),
-    createConversation: async (input) => create(input.conversationId, input.context, input.placement ?? 'default'),
+    createConversation: async (input) =>
+      create(input.conversationId, input.context, input.placement ?? 'default'),
   });
   const dispatch = createBuddyDispatchService({
     getStore: async () => store,

@@ -16,10 +16,7 @@ export function buddyConversationListAtom(
     const availableIds = new Set(get(allConversationIdsAtom));
     const seen = new Set<string>();
     const rows = links.flatMap((link) => {
-      if (
-        link.kind === 'automation' ||
-        (!showReviewConversations && link.kind === 'review')
-      )
+      if (link.kind === 'automation' || (!showReviewConversations && link.kind === 'review'))
         return [];
       const id = link.conversation_id ?? link.unleashd_conversation_id;
       if (!id || seen.has(id)) return [];

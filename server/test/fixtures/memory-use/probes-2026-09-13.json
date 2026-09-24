@@ -108,9 +108,7 @@
           "criterion": "Distinguish the rejected assistant amber-triangle proposal from the owner choice."
         }
       ],
-      "forbidden": [
-        "Invent an owner preference for amber triangles."
-      ]
+      "forbidden": ["Invent an owner preference for amber triangles."]
     },
     {
       "id": "probe-6",
@@ -122,9 +120,7 @@
           "criterion": "Tie deployed artifact identity to a signed release manifest; a local build alone is insufficient."
         }
       ],
-      "forbidden": [
-        "Invent a new rollout status."
-      ],
+      "forbidden": ["Invent a new rollout status."],
       "storageChecks": [
         "No document or note write when evidence and useful memory are unchanged.",
         "Repeat the no-op review in a future harness to test drift; no such execution is claimed by this fixture."
