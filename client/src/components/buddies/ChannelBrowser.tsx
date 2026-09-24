@@ -10,6 +10,7 @@ import { BuddyRailRow } from './BuddyRailRow';
 import { BuddySigil } from './BuddySigil';
 import { ChannelAuthor } from './ChannelAuthor';
 import { ChannelComposer } from './ChannelComposer';
+import { ChannelLoader } from './ChannelLoader';
 import { ChannelMarkdown, TypingDots } from './ChannelMarkdown';
 import { CopyLinkButton } from './CopyLinkButton';
 import {
@@ -22,10 +23,13 @@ import {
   channelThreadResource,
   clockTime,
   createChannel,
+  feedPhase,
   joinNames,
   listsUrl,
+  renderFeed,
   useChannelResponding,
   useFollowBottom,
+  useWarmChannelPosts,
   useWorkspaceDirectory,
 } from './channel-data';
 import { channelLinkPath, postLink } from './channel-link';
@@ -354,6 +358,9 @@ function ThreadPane({
             Thread could not refresh: {thread.error.message}
           </p>
         )}
+        {feedPhase({ data: thread.data?.replies ?? null, error: thread.error }) === 'loading' && (
+          <ChannelLoader label="Loading thread…" />
+        )}
         {root && (
           <ol className="channel-browser-messages channel-thread-root">
             <LeadRow post={root} context={context} />
@@ -513,16 +520,21 @@ function ChannelPane({
               Posts could not refresh: {shown.error.message}
             </p>
           )}
-          {rows.length === 0 ? (
-            <div className="channel-browser-empty">
-              <strong>#{list.name}</strong>
-              <span>No posts yet. Say hello, or @mention a Buddy to ask it something.</span>
-            </div>
-          ) : (
-            <ol className="channel-browser-messages">
-              {rows.map((row) => renderRow(row, channelContext))}
-            </ol>
-          )}
+          {renderFeed(feedPhase(shown), {
+            loading: () => <ChannelLoader label={`Loading #${list.name}…`} />,
+            failed: () => null,
+            empty: () => (
+              <div className="channel-browser-empty">
+                <strong>#{list.name}</strong>
+                <span>No posts yet. Say hello, or @mention a Buddy to ask it something.</span>
+              </div>
+            ),
+            posts: () => (
+              <ol className="channel-browser-messages">
+                {rows.map((row) => renderRow(row, channelContext))}
+              </ol>
+            ),
+          })}
         </div>
         <ChannelComposer
           listId={list.id}
@@ -728,6 +740,7 @@ export function ChannelBrowser({
 }) {
   const lists = usePolledFetch<BuddyMailingListSummary[]>(listsUrl(workspaceId), 5000);
   const { data, error } = lists;
+  useWarmChannelPosts(data);
   const [params, setParams] = useSearchParams();
   const [creating, setCreating] = useState(false);
   const channelNameById = useMemo(

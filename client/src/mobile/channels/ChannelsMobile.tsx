@@ -5,6 +5,7 @@ import type { BuddyMailingListSummary } from '../../components/buddies/BuddyMess
 import { BuddySigil } from '../../components/buddies/BuddySigil';
 import { ChannelAuthor } from '../../components/buddies/ChannelAuthor';
 import { ChannelComposer } from '../../components/buddies/ChannelComposer';
+import { ChannelLoader } from '../../components/buddies/ChannelLoader';
 import { ChannelMarkdown, TypingDots } from '../../components/buddies/ChannelMarkdown';
 import { CopyLinkButton } from '../../components/buddies/CopyLinkButton';
 import { WakeIcon, WakeIndicator } from '../../components/buddies/WakeIndicator';
@@ -19,12 +20,15 @@ import {
   channelThreadResource,
   clockTime,
   createChannel,
+  feedPhase,
   joinNames,
   listsUrl,
   postPurposeLabel,
   postPurposeTag,
+  renderFeed,
   useChannelResponding,
   useFollowBottom,
+  useWarmChannelPosts,
   useWorkspaceDirectory,
 } from '../../components/buddies/channel-data';
 import type { BuddyOverview } from '../../components/buddies/types';
@@ -92,6 +96,7 @@ export function ChannelsMobile() {
   const screen = mobileChannelScreen(location.search);
   const directory = useWorkspaceDirectory(workspaceId);
   const lists = usePolledFetch<BuddyMailingListSummary[]>(listsUrl(workspaceId), 5000);
+  useWarmChannelPosts(lists.data);
   return renderScreen(screen, {
     workspaceId,
     directory,
@@ -533,15 +538,20 @@ function ChannelScreen({ listId, context }: { listId: string; context: ScreenCon
             Posts could not refresh: {feed.error.message}
           </p>
         )}
-        {rows.length === 0 && !feed.loading ? (
-          <MobileEmptyPanel>No posts yet. @mention a Buddy to ask it something.</MobileEmptyPanel>
-        ) : (
-          <ol className="mobile-channel__posts">
-            {rows.map((row) => (
-              <Row key={row.key} row={row} context={rowContext} />
-            ))}
-          </ol>
-        )}
+        {renderFeed(feedPhase(feed), {
+          loading: () => <ChannelLoader label={`Loading # ${name}…`} />,
+          failed: () => null,
+          empty: () => (
+            <MobileEmptyPanel>No posts yet. @mention a Buddy to ask it something.</MobileEmptyPanel>
+          ),
+          posts: () => (
+            <ol className="mobile-channel__posts">
+              {rows.map((row) => (
+                <Row key={row.key} row={row} context={rowContext} />
+              ))}
+            </ol>
+          ),
+        })}
       </div>
       <ChannelComposer
         listId={listId}
@@ -605,6 +615,9 @@ function ThreadScreen({
           <p className="mobile-channel__error" role="alert">
             Thread could not refresh: {thread.error.message}
           </p>
+        )}
+        {feedPhase({ data: thread.data?.replies ?? null, error: thread.error }) === 'loading' && (
+          <ChannelLoader label="Loading thread…" />
         )}
         {root && (
           <ol className="mobile-channel__posts">

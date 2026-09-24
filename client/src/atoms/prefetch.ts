@@ -4,6 +4,7 @@ import {
   conversationDetailsLoadedAtom,
   conversationLoadCompleteAtom,
 } from './conversations';
+import { type Resource, isResourceCached, loadResource } from './resources';
 import { jotaiStore } from './store';
 
 // =============================================================================
@@ -38,19 +39,14 @@ const scheduleIdle: IdleScheduler = (callback) => {
   else setTimeout(callback, 300);
 };
 
-async function drain(ids: string[]): Promise<void> {
-  const queue = ids.slice();
+/** Run warm jobs PREFETCH_CONCURRENCY at a time; a failed warm is a non-event. */
+async function drain(jobs: readonly (() => Promise<unknown>)[]): Promise<void> {
+  const queue = jobs.slice();
   const workers = Array.from({ length: Math.min(PREFETCH_CONCURRENCY, queue.length) }, async () => {
-    while (queue.length > 0) {
-      const id = queue.shift();
-      if (!id) return;
-      // loadConversationDetails already dedupes in flight and is epoch-guarded
-      // against reconnect, so a prefetch that collides with the user opening
-      // the same conversation joins that request rather than racing it.
-      await loadConversationDetails(id).catch(() => {
-        // A warm request that fails is a non-event: the lazy load on open
-        // reports the failure to the user, and this one has no UI to report to.
-      });
+    for (let job = queue.shift(); job; job = queue.shift()) {
+      // A warm request that fails has no UI to report to; the lazy load on
+      // open reports the failure to the user.
+      await job().catch(() => {});
     }
   });
   await Promise.all(workers);
@@ -67,7 +63,10 @@ export function prefetchRecentConversationDetails(): void {
       .get(chatConversationIdsAtom)
       .slice(0, PREFETCH_CONVERSATION_LIMIT)
       .filter((id) => !loaded.has(id));
-    if (cold.length > 0) void drain(cold);
+    // loadConversationDetails already dedupes in flight and is epoch-guarded
+    // against reconnect, so a prefetch that collides with the user opening
+    // the same conversation joins that request rather than racing it.
+    if (cold.length > 0) void drain(cold.map((id) => () => loadConversationDetails(id)));
   });
 }
 
@@ -86,5 +85,18 @@ export function startConversationPrefetch(): () => void {
     const became = complete && !wasComplete;
     wasComplete = complete;
     if (became) prefetchRecentConversationDetails();
+  });
+}
+
+/**
+ * Warm keyed resources the user is likely to open next — e.g. every channel
+ * in the rail — so the first visit renders from cache like a revisit does.
+ * Keys already cached are skipped (a mount revalidates them anyway), and
+ * loadResource joins any in-flight request for the same key.
+ */
+export function warmResources(resources: readonly Resource<unknown>[]): void {
+  scheduleIdle(() => {
+    const cold = resources.filter((resource) => !isResourceCached(resource.key));
+    if (cold.length > 0) void drain(cold.map((resource) => () => loadResource(resource)));
   });
 }

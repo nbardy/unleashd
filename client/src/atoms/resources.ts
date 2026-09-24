@@ -210,5 +210,9 @@ export function retainResourceKey(key: string): () => void {
   };
 }
 
+/** True once `key` holds an entry — prefetch skips it; a mount revalidates it. */
+export const isResourceCached = (key: string): boolean =>
+  jotaiStore.get(resourceCacheAtom).has(key);
+
 /** Test seam: inspect cache size without exporting the atom itself. */
 export const resourceCacheSize = (): number => jotaiStore.get(resourceCacheAtom).size;

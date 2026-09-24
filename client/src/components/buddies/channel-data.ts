@@ -14,6 +14,7 @@ import {
   BuddyWorkspaceActivitySchema,
 } from '@unleashd/shared';
 import { type UIEvent, useEffect, useMemo, useRef } from 'react';
+import { warmResources } from '../../atoms/prefetch';
 import { resource, usePolledFetch } from '../../hooks/usePolledFetch';
 import { newId } from '../../utils/ids';
 import { authorKey, postsResource } from './BuddyMessages';
@@ -40,6 +41,18 @@ export function listsUrl(workspaceId: string): string {
 
 export function channelPostsResource(listId: string) {
   return postsResource(`/api/buddies/lists/${encodeURIComponent(listId)}/posts?limit=50`);
+}
+
+/**
+ * Warm every channel's posts at idle once the rail knows them, so switching
+ * to a channel for the first time renders from cache like switching back does.
+ * Keyed on the id set, not the polled array, so a poll does not re-schedule.
+ */
+export function useWarmChannelPosts(lists: readonly { id: string }[] | null): void {
+  const ids = lists?.map((list) => list.id).join('\n') ?? '';
+  useEffect(() => {
+    if (ids) warmResources(ids.split('\n').map(channelPostsResource));
+  }, [ids]);
 }
 
 export function channelThreadResource(listId: string, rootId: string) {
@@ -118,6 +131,24 @@ export function channelRows(newestFirst: readonly BuddyMailingListPost[]): Chann
     previous = post;
   }
   return rows;
+}
+
+// What a feed pane shows: D = Loading ⊕ Failed ⊕ Empty ⊕ Posts.
+// `rows.length === 0` alone conflated "never loaded" with "loaded, no posts",
+// so every cold channel said "No posts yet" and then flashed its posts in.
+export type FeedPhase = 'loading' | 'failed' | 'empty' | 'posts';
+
+export function feedPhase(feed: {
+  data: readonly unknown[] | null;
+  error: Error | null;
+}): FeedPhase {
+  if (feed.data === null) return feed.error ? 'failed' : 'loading';
+  return feed.data.length === 0 ? 'empty' : 'posts';
+}
+
+/** Thin dispatcher: one handler per phase, exhaustive by the Record type. */
+export function renderFeed<R>(phase: FeedPhase, handlers: Record<FeedPhase, () => R>): R {
+  return handlers[phase]();
 }
 
 export function clockTime(iso: string): string {
