@@ -19,6 +19,7 @@ import { z } from 'zod';
 import { uploadsDirectory } from '../app-data';
 import { isReadOnlyBuddyOperation, notifyBuddiesChanged } from './change-feed';
 import { requireCanonicalPostMedia } from './channel-media';
+import { authorLabel, searchSnippet } from './channel-text';
 import {
   type BuddiesStorePort,
   type BuddyAutomation,
@@ -329,6 +330,25 @@ export const BuddyOperationInputSchemas = {
         .optional(),
     })
     .strict(),
+  'buddy.search_posts': z
+    .object({
+      query: z.string().trim().min(1).max(400),
+      listId: z.string().min(1).optional(),
+      author: z
+        .discriminatedUnion('kind', [
+          z.object({ kind: z.literal('owner') }).strict(),
+          z.object({ kind: z.literal('buddy'), buddyId: z.string().min(1) }).strict(),
+        ])
+        .optional(),
+      since: z.string().datetime().optional(),
+      limit: z.number().int().min(1).max(50).default(20),
+      cursor: z
+        .string()
+        .regex(/^search:[0-9]+$/)
+        .optional(),
+    })
+    .strict(),
+  'buddy.get_thread': z.object({ postId: z.string().min(1) }).strict(),
   'buddy.delegate': z.object({
     toBuddyId: z.string().min(1),
     purpose: z.string().min(1),
@@ -437,6 +457,8 @@ export const MESSAGE_BUDDY_OPERATIONS: BuddyOperationName[] = [
   'buddy.new_list',
   'buddy.post',
   'buddy.get_list',
+  'buddy.search_posts',
+  'buddy.get_thread',
 ];
 
 export type PreparedBuddyDelegation = {
@@ -1758,6 +1780,69 @@ export class BuddyOperationsService {
         return this.result(
           name,
           { list, posts, nextCursor: hasMore ? `list:${offset + parsed.limit}` : null },
+          parsed
+        );
+      }
+      case 'buddy.search_posts': {
+        const parsed = BuddyOperationInputSchemas[name].parse(input);
+        const offset = parsed.cursor ? Number(parsed.cursor.slice('search:'.length)) : 0;
+        if (!Number.isSafeInteger(offset)) throw new Error('Invalid search cursor');
+        const rows = this.store.searchPosts({
+          workspace: this.context.workspaceId,
+          query: parsed.query,
+          list: parsed.listId ?? null,
+          author: parsed.author ?? null,
+          since: parsed.since ?? null,
+          limit: Math.min(parsed.limit + 1, 50),
+          offset,
+        });
+        const hasMore = rows.length > parsed.limit;
+        const listNames = new Map(
+          this.store
+            .listLists({ workspace: this.context.workspaceId })
+            .map((list) => [list.id, list.name])
+        );
+        // Hits are snippets, not bodies: the reader expands one with get_thread.
+        const matches = rows.slice(0, parsed.limit).map((post) => ({
+          postId: post.id,
+          listId: post.listId,
+          listName: listNames.get(post.listId) ?? post.listId,
+          threadRootId: post.threadRootId,
+          author: post.author,
+          authorName: authorLabel(post.author, this.store),
+          purpose: post.purpose,
+          createdAt: post.createdAt,
+          replyCount: post.replyCount,
+          snippet: searchSnippet(post.body, parsed.query),
+        }));
+        return this.result(
+          name,
+          { matches, nextCursor: hasMore ? `search:${offset + parsed.limit}` : null },
+          parsed
+        );
+      }
+      case 'buddy.get_thread': {
+        const parsed = BuddyOperationInputSchemas[name].parse(input);
+        // Any post id opens its thread: a root reads itself, a reply (the usual
+        // search hit) reads its root's thread. Never moves a read mark.
+        const post = this.store.getPost(parsed.postId);
+        if (!post || post.workspaceId !== this.context.workspaceId)
+          throw Object.assign(new Error('Post is unavailable in this workspace'), {
+            code: 'post_outside_workspace',
+          });
+        const thread = this.store.listThread({ root: post.threadRootId ?? post.id });
+        const list = this.store.getList(post.listId);
+        return this.result(
+          name,
+          {
+            list,
+            focusPostId: post.id,
+            root: withPostProvenanceFields(thread.root),
+            replies: thread.replies.map(withPostProvenanceFields),
+            // listThread stops at its per-read cap; say so rather than let a
+            // long thread look complete.
+            truncated: thread.root.replyCount > thread.replies.length,
+          },
           parsed
         );
       }

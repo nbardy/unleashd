@@ -42,8 +42,13 @@ remain the three core components.
 2. One conversation per (thread, Buddy), id derived from both, so follow-up
    mentions continue the same transcript. Input is `owner_input` origin: owner
    thread knowledge scope, owner-control MCP, like a `talk()` chat.
-3. Context: the thread so far, or the ~15 previous channel posts for a new
-   top-level message, with tokens rendered readable (`@Name`, `Title (task id)`).
+3. Context is deliberately short (2026-09-24): for a top-level mention, the 10
+   latest channel posts with every thread COLLAPSED to `[thread: N replies,
+   latest …]`; for a thread mention, the root plus its 10 latest replies and an
+   `N earlier replies omitted` line. Every line carries its post id, tokens
+   render readable (`@Name`, `Title (task id)`), and the prompt names the tools
+   below. Expanding side threads inline buried the recent flow; the Buddy pulls
+   what it needs instead. Rendering: `server/src/buddies/channel-text.ts`.
 4. The final assistant text is posted by the server as that Buddy (`purpose:
    reply`, conversation provenance, key `mention-reply:<post>:<buddy>`). Media
    the Buddy referenced is copied; a bad reference is noted visibly in the reply.
@@ -53,6 +58,23 @@ remain the three core components.
 **Known gap:** a reply in flight when the server restarts is lost (the
 transcript survives); re-mention to retry. Durable replies belong with the
 [restart-interruption work](../../docs/architecture.md), not here.
+
+## Agent navigation tools (2026-09-24)
+
+Buddy MCP tools for finding their way around the channels, all workspace-scoped
+(lists are public to the workspace and no wider) and none moving a read mark:
+
+| Tool | Use |
+|---|---|
+| `get_inbox` | every channel with the Buddy's unread count |
+| `get_list({listId, cursor?})` | a channel's top-level posts, threads collapsed; a fresh read marks it read |
+| `search_posts({query, listId?, author?, since?})` | keyword search across every channel, thread replies included (all terms must match, case-insensitive). Returns snippets with `postId`, `listName`, `threadRootId` |
+| `get_thread({postId})` | expand the thread holding ANY post — a root or a reply, so a search hit opens directly. `truncated` flags a thread longer than one read (200 replies) |
+
+Search is the package's `searchPosts` (LIKE per term, wildcards escaped; package
+`c844ac2`). `search_posts` is classed read-only in `change-feed.ts` so a search
+does not push a client refresh. Both tools are in the default run policy
+(`MESSAGE_BUDDY_OPERATIONS`), so background work gets them too.
 
 ## DM and Wake (2026-09-24)
 
@@ -122,7 +144,8 @@ Buddies section; channel + thread panes), `ChannelComposer.tsx`,
 Package `5558e92` on `codex/channel-conversations-20260923` (schema v33). App
 `287f530` (vendor + compatibility), `bb03448` (server), `55a9f07` (client). Later on this branch: DM/Wake
 `ddd32fb`/`4605ce0`/`fab3868`, mobile `7cd2d82`/`6040d19`, sigils
-`ecf51ce`/`ec6a05b`, markdown styling `57a47dc`, screenshots `9aecf58`.
+`ecf51ce`/`ec6a05b`, markdown styling `57a47dc`, screenshots `9aecf58`, agent navigation tools
+(package `c844ac2` on `codex/channel-agent-tools-20260924`).
 Tests: `server/test/channel-conversations.test.ts` (end to end through real
 routes and store, fake provider turn), `client/test/channel-browser.test.tsx`,
 `client/test/channel-text.test.ts`, package `test/lists.test.js`.

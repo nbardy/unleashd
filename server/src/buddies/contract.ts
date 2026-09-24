@@ -531,6 +531,15 @@ export interface BuddiesStorePort {
     root: BuddyMailingListPost;
     replies: BuddyMailingListPost[];
   };
+  searchPosts(input: {
+    workspace: string;
+    query: string;
+    list?: string | null;
+    author?: BuddyListAuthor | null;
+    since?: string | null;
+    limit?: number;
+    offset?: number;
+  }): BuddyMailingListPost[];
   newestListPost(input: { list: string }): BuddyMailingListPost | null;
   listUnread(input: { buddy: string; workspace: string }): BuddyMailingListUnread[];
   markListRead(input: { buddy: string; list: string; post: string }): unknown;

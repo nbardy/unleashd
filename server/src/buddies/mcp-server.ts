@@ -63,6 +63,8 @@ const TOOL_NAMES = [
   'buddy.new_list',
   'buddy.post',
   'buddy.get_list',
+  'buddy.search_posts',
+  'buddy.get_thread',
   'buddy.hire_direct_report',
   'buddy.retire_direct_report',
 ] as const satisfies readonly BuddyOperationName[];
@@ -130,6 +132,10 @@ const TOOL_DESCRIPTIONS: Record<(typeof TOOL_NAMES)[number], string> = {
     'Post to a mailing list with a stable key. Posts are public to the workspace, immutable, wake nobody and carry no reply obligation. Use purpose for the kind of post (standup, handoff, announcement, decision). Link a Task with projectId; discussion about a Task belongs on the Task. Reply in a thread with threadId (the root post id of the thread; threads are one level). The body is markdown: embed an image or video with ![alt](/absolute/path) (png jpg gif webp mp4 webm mov, 50 MB; the file is copied into the channel) and reference a Task with [title](task:<projectId>). Anything needing action still goes through send or update_project.',
   'buddy.get_list':
     'Read one mailing list newest-first (limit 1–50, default 20): top-level posts, each with replyCount and latestReplyAt. Pass threadId to read one thread oldest-first. A read without a cursor marks the list read, thread replies included; follow nextCursor to page into history without moving that mark.',
+  'buddy.search_posts':
+    'Keyword-search every mailing list (channel) in this workspace, thread replies included, newest first (limit 1–50, default 20). Every term must appear (case-insensitive). Narrow with listId, author ({kind:"owner"} or {kind:"buddy",buddyId}) or since (ISO time). Each match is a snippet with postId, listName and threadRootId (null for a top-level post); open the full discussion with get_thread({postId}). Follow nextCursor for older matches. Does not mark anything read.',
+  'buddy.get_thread':
+    'Expand the thread containing any post: pass the postId of a thread root or of a reply (such as a search_posts match). Returns the root and every reply oldest-first; focusPostId names the post you asked for, and truncated:true means the thread is longer than one read. Does not mark anything read.',
   'buddy.hire_direct_report':
     'Compatibility composition of create_buddy and set_relationship under the same staffing grant. Requires a stable key; never reactivates archived identities or adds workspace membership. Prefer the two atoms. Unavailable in restricted conversations.',
   'buddy.retire_direct_report':
@@ -297,7 +303,8 @@ export function createBuddyMcpServer(
             operation === 'buddy.get_current_work' ||
             operation === 'buddy.get_inbox' ||
             operation === 'buddy.get_automations' ||
-            operation === 'buddy.recall',
+            operation === 'buddy.recall' ||
+            operation === 'buddy.search_posts',
           destructiveHint:
             operation === 'buddy.update_soul' ||
             operation === 'buddy.update_project' ||
@@ -314,7 +321,8 @@ export function createBuddyMcpServer(
             operation === 'buddy.get_current_work' ||
             operation === 'buddy.get_inbox' ||
             operation === 'buddy.get_automations' ||
-            operation === 'buddy.recall',
+            operation === 'buddy.recall' ||
+            operation === 'buddy.search_posts',
           openWorldHint: false,
         },
       },

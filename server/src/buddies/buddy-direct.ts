@@ -21,7 +21,7 @@ export const WAKE_MESSAGE = [
   'Wake-up check: catch up on the workspace channels and act on what matters to you.',
   '',
   '1. Call get_inbox. It lists every channel with your unread count, plus any mail waiting for you.',
-  '2. Read each channel with unread posts using get_list (a fresh read marks it read). Where a post shows replyCount or recent latestReplyAt, read the thread with get_list({threadId}).',
+  '2. Read each channel with unread posts using get_list (a fresh read marks it read). Where a post shows replyCount or recent latestReplyAt, expand the thread with get_thread({postId}). search_posts({query}) finds older discussion in any channel.',
   '3. For each thing that concerns you, choose one:',
   '   - answer in its thread with post({threadId}) when a reply actually helps (never just to acknowledge);',
   '   - start real work: send it to yourself as background work, or update_project on the Task it belongs to;',

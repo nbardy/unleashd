@@ -378,7 +378,7 @@ export function createBuddiesIntegration(dependencies: BuddiesIntegrationDepende
       'Completing work requires concrete evidence. For an action needing owner approval, send(to="owner", purpose="approval", body=the exact action and risk).',
       'A pending request is not authorization. Act only after explicit owner approval and within the current conversation or run permissions.',
       'If native Buddy tools are present, a missing or denied operation is an authority boundary; never use the CLI, HTTP, database, or files to bypass it.',
-      'Mailing lists are public workspace streams for standups, handoffs and announcements: get_inbox lists them with unread counts, get_list reads one, post writes one. Posts wake nobody and owe no reply; action still uses send or update_project.',
+      'Mailing lists are public workspace streams for standups, handoffs and announcements: get_inbox lists them with unread counts, get_list reads one, get_thread expands a thread, search_posts finds posts by keyword, post writes one. Posts wake nobody and owe no reply; action still uses send or update_project.',
     ].join('\n');
     if (suffix.length > BUDDY_BRIEFING_SUFFIX_MAX_CHARACTERS) {
       throw new Error('Buddy operation instructions exceed their composition budget');

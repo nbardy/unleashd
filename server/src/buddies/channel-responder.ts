@@ -2,12 +2,8 @@ import { createHash } from 'node:crypto';
 import type { BuddyContext } from '@unleashd/shared';
 import type { ConversationRuntime } from '../conversations/runtime';
 import { canonicalizePostMedia, describeMediaProblems } from './channel-media';
-import type {
-  BuddiesStorePort,
-  BuddyListAuthor,
-  BuddyMailingList,
-  BuddyMailingListPost,
-} from './contract';
+import { mentionedBuddyIds, readableChannelText, transcriptLine } from './channel-text';
+import type { BuddiesStorePort, BuddyMailingList, BuddyMailingListPost } from './contract';
 
 // @mentions in channels. A list post wakes nobody (package invariant), so a
 // Buddy only answers when the OWNER explicitly mentions it: this is host
@@ -24,22 +20,6 @@ import type {
 //
 // Known gap: a turn in flight when the server restarts loses its reply post
 // (the transcript survives). The owner re-mentions to retry.
-
-// Mentions are markdown links with a buddy: target, inserted by the composer
-// as `[@Name](buddy:<id>)`. Tasks use `[Title](task:<id>)`.
-const MENTION = /\[@([^\]]+)\]\(buddy:([A-Za-z0-9_-]+)\)/g;
-const TASK_REFERENCE = /\[([^\]]+)\]\(task:([A-Za-z0-9_-]+)\)/g;
-
-export function mentionedBuddyIds(body: string): string[] {
-  return [...new Set([...body.matchAll(MENTION)].map((match) => match[2]))];
-}
-
-// What a reader (human or model) sees for a token: `@Name`, `Title (task <id>)`.
-export function readableChannelText(body: string): string {
-  return body
-    .replace(MENTION, (_whole, name: string) => `@${name}`)
-    .replace(TASK_REFERENCE, (_whole, title: string, id: string) => `${title} (task ${id})`);
-}
 
 export type MentionDispatch =
   | { buddyId: string; status: 'started'; conversationId: string }
@@ -67,8 +47,10 @@ export interface ChannelResponderPorts {
   logger?: Pick<Console, 'warn'>;
 }
 
-const MAX_CONTEXT_POSTS = 40;
-const MAX_POST_CHARS = 4000;
+// The launch prompt carries only the recent conversation: the last N channel
+// posts with their threads collapsed, or the last N replies of the thread. The
+// Buddy pulls anything older with get_list / get_thread / search_posts.
+const CONTEXT_POSTS = 10;
 const MAX_REPLY_BYTES = 32000;
 
 // UUID-shaped id derived from a seed, so a (purpose, Buddy, …) tuple always
@@ -84,36 +66,87 @@ export function channelConversationId(threadRootId: string, buddyId: string): st
   return stableConversationId(`channel:${threadRootId}:${buddyId}`);
 }
 
-function authorLabel(author: BuddyListAuthor, store: BuddiesStorePort): string {
-  switch (author.kind) {
-    case 'owner':
-      return 'Owner';
-    case 'buddy':
-      return store.getBuddy(author.buddyId)?.name ?? author.buddyId;
-  }
+// What the Buddy is shown before the owner's message. A channel view lists
+// top-level posts only (threads collapsed to a reply count); a thread view is
+// its root plus the latest replies, noting how many earlier ones were skipped.
+type LaunchContext =
+  | { kind: 'channel'; posts: BuddyMailingListPost[] }
+  | {
+      kind: 'thread';
+      root: BuddyMailingListPost;
+      omittedReplies: number;
+      replies: BuddyMailingListPost[];
+    };
+
+function channelContext(
+  store: BuddiesStorePort,
+  list: BuddyMailingList,
+  trigger: BuddyMailingListPost
+): LaunchContext {
+  const posts = store
+    .listPosts({ list: list.id, limit: CONTEXT_POSTS + 1 })
+    .filter((post) => post.id !== trigger.id)
+    .slice(0, CONTEXT_POSTS)
+    .reverse();
+  return { kind: 'channel', posts };
 }
 
-function transcriptLine(post: BuddyMailingListPost, store: BuddiesStorePort): string {
-  const text = readableChannelText(post.body);
-  const clipped =
-    text.length > MAX_POST_CHARS ? `${text.slice(0, MAX_POST_CHARS)}… [truncated]` : text;
-  return `[${post.createdAt}] ${authorLabel(post.author, store)}: ${clipped}`;
+function threadContext(
+  store: BuddiesStorePort,
+  threadRootId: string,
+  trigger: BuddyMailingListPost
+): LaunchContext {
+  // listThread reads the OLDEST replies up to its 200 cap, so past 200 replies
+  // this "latest" window is really replies 191-200. Acceptable at channel
+  // scale; fix with a newest-first thread read in the package if it matters.
+  const thread = store.listThread({ root: threadRootId });
+  const earlier = thread.replies.filter((post) => post.id !== trigger.id);
+  const replies = earlier.slice(-CONTEXT_POSTS);
+  return {
+    kind: 'thread',
+    root: thread.root,
+    omittedReplies: earlier.length - replies.length,
+    replies,
+  };
+}
+
+function contextLines(
+  list: BuddyMailingList,
+  context: LaunchContext,
+  store: BuddiesStorePort
+): string[] {
+  switch (context.kind) {
+    case 'channel':
+      return [
+        `The owner mentioned you in a new message in #${list.name} (list ${list.id}). The ${context.posts.length} most recent channel messages, oldest first (threads collapsed to a reply count):`,
+        '',
+        ...context.posts.map((post) => transcriptLine(post, store)),
+      ];
+    case 'thread':
+      return [
+        `The owner mentioned you in a thread in #${list.name} (list ${list.id}). The thread root, then its most recent replies, oldest first:`,
+        '',
+        transcriptLine(context.root, store),
+        ...(context.omittedReplies > 0
+          ? [`… ${context.omittedReplies} earlier replies omitted (get_thread to read them) …`]
+          : []),
+        ...context.replies.map((post) => transcriptLine(post, store)),
+      ];
+  }
 }
 
 function buildPrompt(input: {
   list: BuddyMailingList;
   trigger: BuddyMailingListPost;
-  context: readonly BuddyMailingListPost[];
+  context: LaunchContext;
   store: BuddiesStorePort;
 }): string {
-  const where =
-    input.trigger.threadRootId === null
-      ? `a new message in #${input.list.name}. Recent channel messages, oldest first:`
-      : `a thread in #${input.list.name}. The thread so far, oldest first:`;
   return [
-    `The owner mentioned you in ${where}`,
+    ...contextLines(input.list, input.context, input.store),
     '',
-    ...input.context.map((post) => transcriptLine(post, input.store)),
+    'Each line shows its post id. Open any thread with get_thread({postId}), page older channel ' +
+      'history with get_list({listId, cursor}), and find earlier discussion in any channel with ' +
+      'search_posts({query}). Look things up only when the reply needs it.',
     '',
     'Reply to the owner’s latest message:',
     readableChannelText(input.trigger.body),
@@ -241,16 +274,8 @@ export function createChannelResponder(ports: ChannelResponderPorts) {
     const store = await ports.getStore();
     const context =
       input.trigger.threadRootId === null
-        ? store
-            .listPosts({ list: input.list.id, limit: Math.min(MAX_CONTEXT_POSTS, 16) })
-            .filter((post) => post.id !== input.trigger.id)
-            .reverse()
-        : (() => {
-            const thread = store.listThread({ root: input.threadRootId });
-            return [thread.root, ...thread.replies.slice(-MAX_CONTEXT_POSTS)].filter(
-              (post) => post.id !== input.trigger.id
-            );
-          })();
+        ? channelContext(store, input.list, input.trigger)
+        : threadContext(store, input.threadRootId, input.trigger);
     const prompt = buildPrompt({ list: input.list, trigger: input.trigger, context, store });
     let outcome: { kind: 'answered'; text: string } | { kind: 'failed'; reason: string };
     try {

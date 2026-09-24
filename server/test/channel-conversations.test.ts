@@ -12,6 +12,7 @@ import { createChannelResponder } from '../src/buddies/channel-responder';
 import { registerChannelRoutes } from '../src/buddies/channel-routes';
 import type { BuddiesStorePort, BuddyMailingListPost } from '../src/buddies/contract';
 import { coordinationStore } from '../src/buddies/coordination-store';
+import { BuddyOperationsService } from '../src/buddies/operations';
 import { registerBuddyRoutes } from '../src/buddies/routes';
 import type { ConversationRuntime } from '../src/conversations/runtime';
 
@@ -297,6 +298,147 @@ test('DM reopens one conversation, wake queues the catch-up there, and a deleted
     const outsider = await post(`/api/buddies/${h.outsider.id}/wake`, workspace);
     assert.equal(outsider.status, 400);
     assert.match(outsider.json.error, /outside this workspace/);
+  } finally {
+    server.close();
+    h.raw.close();
+    rmSync(h.scratch, { recursive: true, force: true });
+  }
+});
+
+// Posts in one millisecond order by random id; context tests need a real order.
+function nextMillisecond() {
+  const start = Date.now();
+  while (Date.now() === start) {}
+}
+
+// The launch prompt is deliberately SHORT: the 10 latest messages with side
+// threads collapsed. Anything older is reached through search_posts and
+// get_thread, so this test walks that path to a decision buried in a reply
+// that the prompt omitted — the case a longer prompt used to paper over.
+test('mention context is the latest 10 messages, threads collapsed; search and get_thread reach the rest', async () => {
+  const h = harness();
+  const server = h.app.listen(0, '127.0.0.1');
+  try {
+    await new Promise<void>((resolve) => server.once('listening', resolve));
+    const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+    const ownerPost = async (listId: string, body: Record<string, unknown>) => {
+      const response = await fetch(`${base}/api/buddies/lists/${listId}/posts`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ author: { kind: 'owner' }, purpose: 'message', ...body }),
+      });
+      return (await response.json()) as any;
+    };
+    const { list } = h.raw.createList({
+      workspace: h.workspace.id,
+      author: { kind: 'owner' },
+      key: 'general',
+      name: 'general',
+      purpose: 'Team chat',
+    });
+    const lead = { kind: 'buddy', buddyId: h.lead.id } as const;
+    const updates: BuddyMailingListPost[] = [];
+    for (let n = 1; n <= 12; n += 1) {
+      nextMillisecond();
+      updates.push(
+        h.raw.createPost({
+          list: list.id,
+          author: lead,
+          key: `update-${n}`,
+          purpose: 'standup',
+          body: `status update ${n}`,
+        }).post
+      );
+    }
+    const busy = updates[10];
+    for (let n = 1; n <= 12; n += 1) {
+      nextMillisecond();
+      h.raw.createPost({
+        list: list.id,
+        author: lead,
+        key: `reply-${n}`,
+        purpose: 'reply',
+        body: n === 2 ? 'Decision: ship on Monday after the review' : `side note ${n}`,
+        threadRoot: busy.id,
+      });
+    }
+
+    nextMillisecond();
+    const top = await ownerPost(list.id, {
+      key: 'ask',
+      body: `[@Lead](buddy:${h.lead.id}) status?`,
+    });
+    const topRuntime = await until(() => h.runtimes.get(top.mentions[0].conversationId), 'runtime');
+    const channelPrompt = (await until(() => topRuntime.prompts[0], 'channel prompt')).content;
+    assert.match(channelPrompt, /status update 12\b/);
+    assert.match(channelPrompt, /status update 3\b/);
+    assert.doesNotMatch(channelPrompt, /status update 2\b/);
+    assert.match(
+      channelPrompt,
+      new RegExp(`\\(${busy.id}\\): status update 11 \\[thread: 12 replies`)
+    );
+    assert.doesNotMatch(channelPrompt, /side note/);
+    topRuntime.emit('buddy-turn-complete', 'All green.');
+
+    nextMillisecond();
+    const inThread = await ownerPost(list.id, {
+      key: 'thread-ask',
+      body: `[@Lead](buddy:${h.lead.id}) when do we ship?`,
+      threadRootId: busy.id,
+    });
+    const threadRuntime = await until(
+      () => h.runtimes.get(inThread.mentions[0].conversationId),
+      'thread runtime'
+    );
+    const threadPrompt = (await until(() => threadRuntime.prompts[0], 'thread prompt')).content;
+    assert.match(threadPrompt, /status update 11/);
+    assert.match(threadPrompt, /2 earlier replies omitted/);
+    assert.match(threadPrompt, /side note 12/);
+    assert.doesNotMatch(threadPrompt, /ship on Monday/);
+    threadRuntime.emit('buddy-turn-complete', 'Checking.');
+
+    // The Buddy's way back to the omitted decision.
+    const operations = new BuddyOperationsService(h.raw as unknown as BuddiesStorePort, {
+      buddyId: h.lead.id,
+      workspaceId: h.workspace.id,
+    });
+    const found = operations.execute('buddy.search_posts', { query: 'MONDAY ship' }).data as any;
+    assert.equal(found.matches.length, 1);
+    const [hit] = found.matches;
+    assert.equal(hit.threadRootId, busy.id);
+    assert.equal(hit.listName, 'general');
+    const thread = operations.execute('buddy.get_thread', { postId: hit.postId }).data as any;
+    assert.equal(thread.root.id, busy.id);
+    assert.equal(thread.focusPostId, hit.postId);
+    assert.ok(
+      thread.replies.some((post: BuddyMailingListPost) => /ship on Monday/.test(post.body))
+    );
+    assert.equal(thread.truncated, false);
+
+    // Channels are public to the workspace and no wider.
+    const foreignList = h.raw.createList({
+      workspace: h.raw.createWorkspace({ name: 'Foreign', rootPath: '/tmp/foreign' }).id,
+      author: { kind: 'owner' },
+      key: 'foreign',
+      name: 'foreign',
+      purpose: 'Elsewhere',
+    }).list;
+    const foreign = h.raw.createPost({
+      list: foreignList.id,
+      author: { kind: 'owner' },
+      key: 'foreign-post',
+      purpose: 'message',
+      body: 'ship on Monday elsewhere',
+    }).post;
+    assert.equal(
+      (operations.execute('buddy.search_posts', { query: 'ship monday' }).data as any).matches
+        .length,
+      1
+    );
+    assert.throws(
+      () => operations.execute('buddy.get_thread', { postId: foreign.id }),
+      /unavailable in this workspace/
+    );
   } finally {
     server.close();
     h.raw.close();

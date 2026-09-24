@@ -38,7 +38,9 @@ export function onBuddiesChanged(listener: () => void): () => void {
  * union whose read members all carry a `get_` / `list_` prefix (plus `recall`).
  */
 export function isReadOnlyBuddyOperation(name: string): boolean {
-  return /^(buddy\.)?(get_|list_)/.test(name) || name === 'buddy.recall';
+  return (
+    /^(buddy\.)?(get_|list_)/.test(name) || name === 'buddy.recall' || name === 'buddy.search_posts'
+  );
 }
 
 /**
