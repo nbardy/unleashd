@@ -1,5 +1,6 @@
 import { type BuddyKnowledgeScope, BuddyKnowledgeScopeSchema } from '@unleashd/shared';
 import {
+  BuddyInactiveAccessSchema,
   BuddyProjectExecutionViewSchema,
   BuddyProjectRunInputSchema,
   BuddyTaskCommentInputSchema,
@@ -58,6 +59,9 @@ import { readBuddySoul, updateBuddySoul } from './soul';
 import { getTeamCapabilities, messageExecution, teamStore } from './team-access';
 import { observeBuddyTeam } from './team-observation';
 import { visibleBuddyPayload } from './visibility';
+
+/** Upper bound on one inactive-access read; the response counts what it left out. */
+const INACTIVE_ACCESS_LIMIT = 200;
 
 export interface BuddyConversationView {
   id: string;
@@ -316,6 +320,55 @@ export function registerBuddyRoutes(app: Express, dependencies: BuddyRouteDepend
     // identities remain hidden from every generic Buddy route and projection.
     { allowArchivedBuddy: true }
   );
+  // Owner-only, read-only inventory of saved grants the per-Buddy settings
+  // cannot reach: a grant whose grantee or target is archived or detached from
+  // this workspace. Each entry names the exact pair the access read above and
+  // the existing team-configuration preview/apply need to revoke it; this route
+  // never writes. Revoked grants keep their row with no capabilities, so they
+  // drop out here. Bounded: newest first, capped, the remainder counted.
+  route.get('/api/buddies/workspaces/:workspaceId/inactive-access', 400, async (req, res) => {
+    const store = teamStore(await getStore());
+    const { workspaceId } = req.params;
+    const buddies = store.listBuddies();
+    const parties = new Map(
+      buddies.map((buddy) => [
+        buddy.id,
+        {
+          id: buddy.id,
+          name: buddy.name,
+          standing:
+            buddy.status === 'archived'
+              ? 'archived'
+              : store.getCoordinationMembership(buddy.id, workspaceId)
+                ? 'member'
+                : 'detached',
+        } as const,
+      ])
+    );
+    const entries = buddies
+      .flatMap((grantee) => store.listBuddyAccess(grantee.id, workspaceId))
+      .filter((grant) => grant.capabilities.length > 0)
+      .map((grant) => ({
+        grant,
+        grantee: parties.get(grant.grantee_id),
+        target:
+          grant.target_id === workspaceId
+            ? { kind: 'workspace' as const }
+            : { kind: 'buddy' as const, ...parties.get(grant.target_id) },
+      }))
+      .filter(
+        (entry) =>
+          entry.grantee?.standing !== 'member' ||
+          (entry.target.kind === 'buddy' && entry.target.standing !== 'member')
+      )
+      .sort((a, b) => b.grant.updated_at.localeCompare(a.grant.updated_at));
+    res.json(
+      BuddyInactiveAccessSchema.parse({
+        entries: entries.slice(0, INACTIVE_ACCESS_LIMIT),
+        omitted: Math.max(0, entries.length - INACTIVE_ACCESS_LIMIT),
+      })
+    );
+  });
   route.get('/api/buddies/:buddyId/capabilities/:workspaceId', 400, async (req, res) => {
     const target =
       typeof req.query.targetBuddyId === 'string' ? req.query.targetBuddyId : undefined;

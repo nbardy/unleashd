@@ -104,3 +104,35 @@ export const BuddyMessageExecutionSchema = z.object({
   error: z.string().nullable(),
 });
 export type BuddyMessageExecution = z.infer<typeof BuddyMessageExecutionSchema>;
+/**
+ * Where a grant party stands in the workspace. `archived` wins over membership:
+ * archiving keeps the membership row. `detached` is a live identity whose
+ * membership was removed. Grants survive both, and neither party can be reached
+ * from per-Buddy settings (BuddyCoordination renders current memberships only),
+ * which is why the inactive-access inventory exists.
+ */
+export const BuddyAccessStandingSchema = z.enum(['member', 'archived', 'detached']);
+export type BuddyAccessStanding = z.infer<typeof BuddyAccessStandingSchema>;
+// Parties say `standing`, never `status`: the route guard's visibleBuddyPayload
+// drops any record carrying status 'archived', which is every row this read shows.
+export const BuddyAccessPartySchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  standing: BuddyAccessStandingSchema,
+});
+export type BuddyAccessParty = z.infer<typeof BuddyAccessPartySchema>;
+export const BuddyInactiveAccessSchema = z.object({
+  entries: z.array(
+    z.object({
+      grant: BuddyAccessGrantSchema,
+      grantee: BuddyAccessPartySchema,
+      // A staffing grant targets the workspace itself (target_id === workspace_id).
+      target: z.discriminatedUnion('kind', [
+        z.object({ kind: z.literal('workspace') }),
+        BuddyAccessPartySchema.extend({ kind: z.literal('buddy') }),
+      ]),
+    })
+  ),
+  omitted: z.number().int(),
+});
+export type BuddyInactiveAccess = z.infer<typeof BuddyInactiveAccessSchema>;
