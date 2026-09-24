@@ -1,13 +1,19 @@
-import type { BuddyListAuthor, BuddyMailingListPost, BuddyOwnerPostResult } from '@unleashd/shared';
+import {
+  type BuddyListAuthor,
+  type BuddyMailingListPost,
+  type BuddyOwnerPostResult,
+  getBuddyContext,
+} from '@unleashd/shared';
 import { useAtomValue } from 'jotai';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { buddySidebarChannelsAtom } from '../../atoms/buddy-sidebar';
-import { allConversationIdsAtom } from '../../atoms/conversations';
+import { allConversationIdsAtom, conversationAtomFamily } from '../../atoms/conversations';
 import { usePolledFetch } from '../../hooks/usePolledFetch';
+import { Chat } from '../Chat';
 import { BuddyRailRow } from './BuddyRailRow';
 import { BuddySigil } from './BuddySigil';
-import { ChannelAuthor } from './ChannelAuthor';
+import { ChannelAuthor, type OpenDm } from './ChannelAuthor';
 import { ChannelComposer } from './ChannelComposer';
 import { ChannelLoader } from './ChannelLoader';
 import { ChannelMarkdown, TypingDots } from './ChannelMarkdown';
@@ -72,6 +78,7 @@ type RowContext = {
   channelNameById: ReadonlyMap<string, string>;
   showChannel: boolean;
   availableConversationIds: ReadonlySet<string>;
+  openDm: OpenDm;
   place: RowPlace;
 };
 
@@ -244,6 +251,7 @@ function LeadRow({ post, context }: { post: BuddyMailingListPost; context: RowCo
             author={post.author}
             buddyNames={context.buddyNames}
             workspaceId={context.workspaceId}
+            openDm={context.openDm}
           />
           <time dateTime={post.createdAt} title={new Date(post.createdAt).toLocaleString()}>
             {clockTime(post.createdAt)}
@@ -409,6 +417,7 @@ function ChannelPane({
   threadId,
   linkedPostId,
   onThread,
+  openDm,
 }: {
   list: BuddyMailingListSummary;
   workspaceId: string;
@@ -422,6 +431,7 @@ function ChannelPane({
   threadId: string | null;
   linkedPostId: string | null;
   onThread: (rootId: string | null) => void;
+  openDm: OpenDm;
 }) {
   const channelFeed = usePolledFetch(channelPostsResource(list.id), CHANNEL_BACKSTOP_MS);
   const taskFeed = usePolledFetch(
@@ -453,6 +463,7 @@ function ChannelPane({
     showChannel: taskFilter !== null,
     availableConversationIds,
     linkedPostId,
+    openDm,
   };
   const channelContext: RowContext = {
     ...base,
@@ -555,6 +566,19 @@ function ChannelPane({
         />
       )}
     </div>
+  );
+}
+
+// A DM inside the channels view: the ordinary chat, beside the rail, the way
+// Slack opens a DM. Mounted only once the client holds the conversation — the
+// DM may be created by the click that opened it, and Chat bounces to '/' when
+// it cannot find its conversation (AGENTS.md: availability-check every
+// "open this conversation" affordance).
+function DmPane({ conversationId, available }: { conversationId: string; available: boolean }) {
+  return (
+    <section className="channel-browser-dm" aria-label="Direct message">
+      {available ? <Chat id={conversationId} /> : <ChannelLoader label="Opening DM…" />}
+    </section>
   );
 }
 
@@ -710,7 +734,7 @@ function NewChannelForm({
 
 // Full-screen Slack layout. Mounted OUTSIDE the app shell (see App.tsx): the
 // channel rail replaces the conversations sidebar instead of nesting beside
-// it. Selection lives in the URL (?channel=, ?task=, ?thread=, ?post=) so
+// it. Selection lives in the URL (?channel=, ?task=, ?thread=, ?post=, ?dm=) so
 // reload and Back keep the reader where they were, and any of it can be shared
 // as a permalink (channel-link.ts). Selecting anything drops `post`: the
 // highlight belongs to the link that was opened, not to later navigation.
@@ -756,6 +780,11 @@ export function ChannelBrowser({
       ...(next.task ? { task: next.task } : {}),
       ...(next.thread ? { thread: next.thread } : {}),
     });
+  // An open DM replaces the channel in the main pane; picking a channel closes it.
+  const dm = params.get('dm');
+  const openDm: OpenDm = (conversationId) => setParams({ dm: conversationId });
+  const dmConversation = useAtomValue(conversationAtomFamily(dm ?? ''));
+  const dmBuddyId = getBuddyContext(dmConversation)?.buddyId;
   return (
     <div className="channel-browser" aria-label="Channels">
       <nav className="channel-browser-rail">
@@ -798,7 +827,7 @@ export function ChannelBrowser({
                 <li key={list.id}>
                   <button
                     type="button"
-                    aria-current={selected?.id === list.id ? 'page' : undefined}
+                    aria-current={!dm && selected?.id === list.id ? 'page' : undefined}
                     onClick={() => select({ channel: list.id, task: null, thread: null })}
                     title={list.purpose}
                   >
@@ -817,7 +846,13 @@ export function ChannelBrowser({
               <h3 className="channel-browser-rail-section">Buddies</h3>
               <ul className="channel-browser-buddies">
                 {activeMembers.map((member) => (
-                  <BuddyRailRow key={member.id} member={member} workspaceId={workspaceId} />
+                  <BuddyRailRow
+                    key={member.id}
+                    member={member}
+                    workspaceId={workspaceId}
+                    openDm={openDm}
+                    current={member.id === dmBuddyId}
+                  />
                 ))}
               </ul>
             </>
@@ -825,7 +860,9 @@ export function ChannelBrowser({
         </div>
       </nav>
       <main className="channel-browser-main">
-        {selected ? (
+        {dm ? (
+          <DmPane conversationId={dm} available={availableConversationIds.has(dm)} />
+        ) : selected ? (
           <ChannelPane
             key={selected.id}
             list={selected}
@@ -844,6 +881,7 @@ export function ChannelBrowser({
             onThread={(thread) =>
               select({ channel: selected.id, task: params.get('task'), thread })
             }
+            openDm={openDm}
           />
         ) : (
           <div className="channel-browser-empty">

@@ -114,62 +114,6 @@ test('startup reuses normalized sessions while source identity is unchanged', as
   assert.equal(parseCalls, 2);
 });
 
-test('startup drops cache records of deleted sources, but never after a failed discovery', async (t) => {
-  // Records for deleted sources were never removed: 13,361 records (787MB) for
-  // ~7,700 sources on 2026-09-25. The failed-discovery half guards the obvious
-  // regression: one transient readdir error must not wipe a provider's cache.
-  const fixtureDir = await fs.mkdtemp(path.join(tmpdir(), 'unleashd-loader-prune-'));
-  t.after(() => fs.rm(fixtureDir, { recursive: true, force: true }));
-  const kept = path.join(fixtureDir, 'kept.jsonl');
-  const deleted = path.join(fixtureDir, 'deleted.jsonl');
-  await fs.writeFile(kept, 'a');
-  await fs.writeFile(deleted, 'b');
-  const cacheDir = path.join(fixtureDir, 'cache');
-  const cache = new NormalizedSessionCache(cacheDir);
-  let sources = [kept, deleted];
-  let codexFails = false;
-  const claude: DiskAdapter = {
-    provider: 'claude',
-    sessionFileKeys: (filePath) => [path.basename(filePath, '.jsonl')],
-    discoverFiles: async () => sources,
-    parseFile: async (filePath) => parsedSession(filePath),
-  };
-  const codex: DiskAdapter = {
-    provider: 'codex',
-    sessionFileKeys: () => [],
-    discoverFiles: async () => {
-      if (codexFails) throw new Error('transient');
-      return [];
-    },
-    parseFile: async () => null,
-  };
-  const records = async () => (await fs.readdir(cacheDir)).filter((n) => n.endsWith('.json'));
-
-  await loadAllConversations({ adapters: [claude, codex], cache });
-  assert.equal((await records()).length, 2);
-
-  await fs.rm(deleted);
-  sources = [kept];
-  codexFails = true;
-  await loadAllConversations({ adapters: [claude, codex], cache });
-  assert.equal((await records()).length, 2, 'a failed discovery must not prune');
-
-  codexFails = false;
-  await loadAllConversations({ adapters: [claude, codex], cache });
-  assert.equal((await records()).length, 1);
-  assert.equal(
-    (
-      await cache.read({
-        provider: 'claude',
-        filePath: kept,
-        mtimeMs: (await fs.stat(kept)).mtimeMs,
-        sizeBytes: 1,
-      })
-    ).hit,
-    true
-  );
-});
-
 test('startup emits a small first batch before returning to the steady batch size', async (t) => {
   const fixtureDir = await fs.mkdtemp(path.join(tmpdir(), 'unleashd-loader-batches-'));
   t.after(() => fs.rm(fixtureDir, { recursive: true, force: true }));

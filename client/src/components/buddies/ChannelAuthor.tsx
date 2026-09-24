@@ -3,6 +3,22 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { mobileConversationRouteState } from '../../utils/conversation-route-state';
 import { useBuddyDirectActions } from './buddy-direct-actions';
 
+/** Where a resolved DM opens. The caller's surface decides (see useChatPageDm). */
+export type OpenDm = (conversationId: string) => void;
+
+// Mobile: the DM is the full-screen chat page; Back returns to the channel it
+// was opened from. Desktop opens it inside the channels view instead
+// (ChannelBrowser's `?dm=`), so the rail stays put — owner feedback 2026-09-25:
+// a name click leaving Slack for the conversation list felt like a different app.
+export function useChatPageDm(): OpenDm {
+  const navigate = useNavigate();
+  const location = useLocation();
+  return (conversationId) =>
+    navigate(`/chat/${encodeURIComponent(conversationId)}`, {
+      state: mobileConversationRouteState(location),
+    });
+}
+
 // A post's author inside Channels, desktop and mobile. Like Slack, a Buddy's
 // name opens the DM with it (the one ongoing owner chat, history kept —
 // server/src/buddies/buddy-direct.ts), not its profile page. PostAuthor in
@@ -11,11 +27,13 @@ export function ChannelAuthor({
   author,
   buddyNames,
   workspaceId,
+  openDm,
   className,
 }: {
   author: BuddyListAuthor;
   buddyNames: Readonly<Record<string, string>>;
   workspaceId: string;
+  openDm: OpenDm;
   className: string;
 }) {
   switch (author.kind) {
@@ -27,6 +45,7 @@ export function ChannelAuthor({
           buddyId={author.buddyId}
           name={buddyNames[author.buddyId] ?? author.buddyId}
           workspaceId={workspaceId}
+          openDm={openDm}
           className={className}
         />
       );
@@ -37,15 +56,15 @@ function DmName({
   buddyId,
   name,
   workspaceId,
+  openDm,
   className,
 }: {
   buddyId: string;
   name: string;
   workspaceId: string;
+  openDm: OpenDm;
   className: string;
 }) {
-  const navigate = useNavigate();
-  const location = useLocation();
   const direct = useBuddyDirectActions(buddyId, workspaceId);
   const { action } = direct;
   return (
@@ -55,14 +74,7 @@ function DmName({
       data-failed={action.kind === 'failed' || undefined}
       title={action.kind === 'failed' ? action.message : `Message ${name}`}
       disabled={action.kind === 'pending'}
-      onClick={() =>
-        direct.openDm((conversationId) =>
-          // Mobile reads the origin so Back returns to this channel; desktop ignores it.
-          navigate(`/chat/${encodeURIComponent(conversationId)}`, {
-            state: mobileConversationRouteState(location),
-          })
-        )
-      }
+      onClick={() => direct.openDm(openDm)}
     >
       {name}
     </button>

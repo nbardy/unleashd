@@ -1,8 +1,8 @@
 import type { BuddyMailingListPost, BuddyOwnerPostResult } from '@unleashd/shared';
 import { useMemo, useState } from 'react';
-import { Link, Navigate, useLocation, useNavigate, useParams } from 'react-router-dom';
+import { Link, Navigate, useLocation, useParams } from 'react-router-dom';
 import { BuddySigil } from '../../components/buddies/BuddySigil';
-import { ChannelAuthor } from '../../components/buddies/ChannelAuthor';
+import { ChannelAuthor, useChatPageDm } from '../../components/buddies/ChannelAuthor';
 import { ChannelComposer } from '../../components/buddies/ChannelComposer';
 import { ChannelLoader } from '../../components/buddies/ChannelLoader';
 import { ChannelMarkdown, TypingDots } from '../../components/buddies/ChannelMarkdown';
@@ -36,7 +36,6 @@ import { channelLinkPath } from '../../components/buddies/channel-link';
 import type { BuddyOverview } from '../../components/buddies/types';
 import { useBuddyOverview } from '../../hooks/useBuddyData';
 import { usePolledFetch } from '../../hooks/usePolledFetch';
-import { mobileConversationRouteState } from '../../utils/conversation-route-state';
 import {
   MobileEmptyPanel,
   MobileHeaderAction,
@@ -236,23 +235,17 @@ function ChannelsHome({ context }: { context: ScreenContext }) {
 // Slack's DM row: tapping the Buddy opens the conversation (its one ongoing
 // DM, history kept). Wake is a visible button, since touch has no hover.
 function BuddyRow({ member, workspaceId }: { member: ChannelMember; workspaceId: string }) {
-  const navigate = useNavigate();
-  const location = useLocation();
+  // Back from the DM returns here, not to the Buddies tab.
+  const openDm = useChatPageDm();
   const direct = useBuddyDirectActions(member.id, workspaceId);
   const { action } = direct;
-  // Back from the DM returns here, not to the Buddies tab.
-  const origin = mobileConversationRouteState(location);
   return (
     <li className="mobile-channels-buddy" data-failed={action.kind === 'failed' || undefined}>
       <button
         type="button"
         className="mobile-channels-row"
         disabled={action.kind === 'pending'}
-        onClick={() =>
-          direct.openDm((conversationId) =>
-            navigate(`/chat/${encodeURIComponent(conversationId)}`, { state: origin })
-          )
-        }
+        onClick={() => direct.openDm(openDm)}
       >
         <BuddySigil className="mobile-channels-row__sigil" name={member.name} />
         <span className="mobile-channels-row__stack">
@@ -417,6 +410,7 @@ function authorName(post: BuddyMailingListPost, directory: WorkspaceDirectory): 
 }
 
 function Row({ row, context }: { row: ChannelRow; context: RowContext }) {
+  const openDm = useChatPageDm();
   switch (row.kind) {
     case 'day':
       return (
@@ -443,6 +437,7 @@ function Row({ row, context }: { row: ChannelRow; context: RowContext }) {
                 author={row.post.author}
                 buddyNames={context.directory.buddyNames}
                 workspaceId={context.workspaceId}
+                openDm={openDm}
               />
               <time dateTime={row.post.createdAt}>{clockTime(row.post.createdAt)}</time>
               <PostPurpose post={row.post} />

@@ -94,8 +94,15 @@ function useTimeAgo(date: Date | undefined): string | null {
   return formatTimeAgo(date);
 }
 
-export function Chat() {
-  const { id } = useParams<{ id: string }>();
+// The desktop /chat/:id page.
+export function ChatRoute() {
+  const { id = '' } = useParams<{ id: string }>();
+  return <Chat id={id} />;
+}
+
+// One conversation, by id: the /chat page and the DM pane inside the desktop
+// channels view (ChannelBrowser) both render it.
+export function Chat({ id }: { id: string }) {
   const navigate = useNavigate();
 
   // Per-ID atoms — only re-render when THIS conversation changes, not others

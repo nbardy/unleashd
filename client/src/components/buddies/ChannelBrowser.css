@@ -204,7 +204,8 @@
   color: var(--text-emphasis);
 }
 
-.channel-browser-channels button[aria-current="page"] {
+.channel-browser-channels button[aria-current="page"],
+.channel-browser-buddy-link[aria-current="page"] {
   background: color-mix(in srgb, var(--theme-user) 28%, transparent);
   color: var(--text-bright);
 }
@@ -255,6 +256,14 @@
 
 .channel-browser-main {
   display: flex;
+  min-width: 0;
+  min-height: 0;
+}
+
+/* A DM open inside the channels view: the ordinary chat view fills the pane. */
+.channel-browser-dm {
+  display: flex;
+  flex: 1;
   min-width: 0;
   min-height: 0;
 }

@@ -22,7 +22,12 @@ const { BuddyRailRow } = await import('../src/components/buddies/BuddyRailRow');
 test('desktop slack rail: buddy name is a DM button, never a buddy-page link', () => {
   const html = renderToStaticMarkup(
     <MemoryRouter>
-      <BuddyRailRow member={{ id: 'b1', name: 'Lead', role: 'Own the work' }} workspaceId="ws" />
+      <BuddyRailRow
+        member={{ id: 'b1', name: 'Lead', role: 'Own the work' }}
+        workspaceId="ws"
+        openDm={() => {}}
+        current={false}
+      />
     </MemoryRouter>
   );
   assert.ok(html.includes('aria-label="Message Lead"'), 'name must offer the DM action');

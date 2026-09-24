@@ -1,19 +1,24 @@
-import { useNavigate } from 'react-router-dom';
 import { BuddySigil } from './BuddySigil';
+import type { OpenDm } from './ChannelAuthor';
 import { WakeIcon, WakeIndicator } from './WakeIndicator';
 import { useBuddyDirectActions } from './buddy-direct-actions';
 
 // One Buddy in the desktop channels rail. Like Slack (and the mobile Buddies
 // home), the name opens the DM — the ongoing owner chat, history kept; on
 // hover, Wake asks the Buddy to catch up on the channels inside that DM.
+// The DM opens inside the channels view (`openDm`), and its row is marked
+// current while it is open, like a selected channel.
 export function BuddyRailRow({
   member,
   workspaceId,
+  openDm,
+  current,
 }: {
   member: { id: string; name: string; role: string };
   workspaceId: string;
+  openDm: OpenDm;
+  current: boolean;
 }) {
-  const navigate = useNavigate();
   const direct = useBuddyDirectActions(member.id, workspaceId);
   const { action } = direct;
   return (
@@ -23,10 +28,9 @@ export function BuddyRailRow({
         className="channel-browser-buddy-link"
         aria-label={`Message ${member.name}`}
         title={action.kind === 'failed' ? action.message : member.role}
+        aria-current={current ? 'page' : undefined}
         disabled={action.kind === 'pending'}
-        onClick={() =>
-          direct.openDm((conversationId) => navigate(`/chat/${encodeURIComponent(conversationId)}`))
-        }
+        onClick={() => direct.openDm(openDm)}
       >
         <BuddySigil className="channel-browser-buddy-sigil" name={member.name} />
         <span className="channel-browser-channel-name">{member.name}</span>

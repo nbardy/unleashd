@@ -458,13 +458,7 @@ export function createSessionLoader(dependencies: SessionLoaderDependencies): Se
       if (dependencies.registry.has(record.conversationId)) return null;
       startupRuntimes.add(recovered);
       dependencies.registry.set(recovered);
-      // Absent or already-dispatched never becomes pending again, so skip the
-      // claim (two record reads); ~765 recovered records paid it every
-      // startup (2026-09-25). A pending one still goes through the claim.
-      const creation = hydrated.record.creation;
-      if (creation?.initialMessage && !creation.initialMessageDispatchedAt) {
-        await dependencies.dispatchInitialMessage(recovered);
-      }
+      await dependencies.dispatchInitialMessage(recovered);
       return recovered;
     } catch (error) {
       logger.error(`Failed to recover conversation ${record.conversationId}:`, error);

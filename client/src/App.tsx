@@ -7,7 +7,7 @@ import { startConversationPrefetch } from './atoms/prefetch';
 import { jotaiStore } from './atoms/store';
 import { savedActiveConversationIdAtom } from './atoms/ui';
 import { BuddiesDashboard } from './components/BuddiesDashboard';
-import { Chat } from './components/Chat';
+import { ChatRoute } from './components/Chat';
 import { Gallery } from './components/Gallery';
 import { RobotLoader } from './components/RobotLoader';
 import { ShellDesktop } from './components/ShellDesktop';
@@ -148,7 +148,7 @@ const ROUTES: RouteDef[] = [
     desktop: () => <Gallery />,
     mobile: () => <ConversationListMobile scope="chats" />,
   },
-  { path: '/chat/:id', desktop: () => <Chat />, mobile: () => <ChatMobile /> },
+  { path: '/chat/:id', desktop: () => <ChatRoute />, mobile: () => <ChatMobile /> },
   { path: '/buddies', desktop: () => <BuddiesDashboard />, mobile: () => <BuddiesMobile /> },
   {
     path: '/buddies/workspaces/:workspaceId',
