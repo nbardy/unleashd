@@ -146,7 +146,19 @@ type ThreadContext = {
   omittedReplies: number;
   replies: BuddyMailingListPost[];
 };
-type LaunchContext = { kind: 'channel'; posts: BuddyMailingListPost[] } | ThreadContext;
+// A resumed seat already holds every post up to the trigger it last answered
+// (its earlier prompts) and its own replies (its answers), so it is shown only
+// what arrived since. Until 2026-09-25 every resumed reply re-sent the root and
+// the last 10 replies, duplicating them in the seat's transcript each turn.
+type ThreadDelta = {
+  kind: 'thread_delta';
+  omittedReplies: number;
+  replies: BuddyMailingListPost[];
+};
+type LaunchContext =
+  | { kind: 'channel'; posts: BuddyMailingListPost[] }
+  | ThreadContext
+  | ThreadDelta;
 
 function channelContext(
   store: BuddiesStorePort,
@@ -183,6 +195,25 @@ function threadContext(
   };
 }
 
+function threadDelta(
+  store: BuddiesStorePort,
+  threadRootId: string,
+  seenThrough: string,
+  seatConversationId: string,
+  trigger: BuddyMailingListPost
+): ThreadDelta {
+  const root = store.getPost(threadRootId);
+  if (!root) throw new Error('Thread root not found');
+  const thread = wholeThread(store, root);
+  // An anchor that is gone (deleted post) finds -1, so the whole thread counts
+  // as unseen: more context, never less.
+  const unseen = thread
+    .slice(thread.findIndex((post) => post.id === seenThrough) + 1)
+    .filter((post) => post.id !== trigger.id && post.senderConversationId !== seatConversationId);
+  const replies = unseen.slice(-CONTEXT_POSTS);
+  return { kind: 'thread_delta', omittedReplies: unseen.length - replies.length, replies };
+}
+
 function causeHeadline(cause: ReplyCause, where: string): string {
   switch (cause.kind) {
     case 'mention':
@@ -210,6 +241,15 @@ function contextLines(
         `${causeHeadline(cause, 'a thread')} in #${list.name} (list ${list.id}). The thread root, then its most recent replies, oldest first:`,
         '',
         ...threadTranscript(context, store),
+      ];
+    case 'thread_delta':
+      return [
+        `${causeHeadline(cause, 'a thread')} in #${list.name} (list ${list.id}). You have seen this thread through your last turn. Replies since then, oldest first (${context.replies.length}):`,
+        '',
+        ...(context.omittedReplies > 0
+          ? [`… ${context.omittedReplies} earlier new replies omitted (get_thread to read them) …`]
+          : []),
+        ...context.replies.map((post) => transcriptLine(post, store)),
       ];
   }
 }
@@ -361,6 +401,22 @@ export function createChannelResponder(ports: ChannelResponderPorts) {
   const gating = new Set<string>();
   const pairKey = (threadRootId: string, buddyId: string) => `${threadRootId}:${buddyId}`;
   const busy = (key: string) => gating.has(key) || queues.has(key);
+  // Seat conversation id -> the trigger post of its last answered turn. In
+  // memory: after a restart a seat is unknown and gets the full thread once.
+  const seenThrough = new Map<string, string>();
+
+  function launchContext(
+    store: BuddiesStorePort,
+    input: Reply,
+    seatConversationId: string
+  ): LaunchContext {
+    if (input.trigger.threadRootId === null)
+      return channelContext(store, input.list, input.trigger);
+    const seen = seenThrough.get(seatConversationId);
+    return seen === undefined
+      ? threadContext(store, input.threadRootId, input.trigger)
+      : threadDelta(store, input.threadRootId, seen, seatConversationId, input.trigger);
+  }
 
   async function currentSeats(threadRootId: string, buddyId: string) {
     return scanGenerations(ports.conversations, (generation) =>
@@ -464,10 +520,7 @@ export function createChannelResponder(ports: ChannelResponderPorts) {
       );
       conversationId = conversation.id;
       await untilIdle(conversation);
-      const context =
-        input.trigger.threadRootId === null
-          ? channelContext(store, input.list, input.trigger)
-          : threadContext(store, input.threadRootId, input.trigger);
+      const context = launchContext(store, input, conversation.id);
       const prompt = buildPrompt({ ...input, context, store });
       const text = await awaitTurn(
         conversation,
@@ -475,6 +528,7 @@ export function createChannelResponder(ports: ChannelResponderPorts) {
           conversation.sendMessage(prompt, { origin: 'owner_input', inputId: input.trigger.id }),
         'Buddy turn failed'
       );
+      seenThrough.set(conversation.id, input.trigger.id);
       outcome = { kind: 'answered', text };
     } catch (error) {
       outcome = { kind: 'failed', reason: error instanceof Error ? error.message : String(error) };

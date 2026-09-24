@@ -317,7 +317,12 @@ test('owner @mention runs a turn and the answer lands in the thread with its med
       threadRootId: root.id,
     });
     const second = await h.nextTurn(seat);
-    assert.match(second.prompt, /Close — fixed the spacing/);
+    // The resumed seat already holds the root (its first prompt) and its own
+    // reply (its answer): it is sent only what is new. Re-sending them each
+    // turn duplicated the thread in the transcript until 2026-09-25.
+    assert.match(second.prompt, /and the mobile view\?/);
+    assert.doesNotMatch(second.prompt, /Shipped the settings page yesterday/);
+    assert.doesNotMatch(second.prompt, /Close — fixed the spacing/);
     second.fail('Buddy provider is unavailable: codex');
     const failed = await until(
       () => h.replies(root.id).find((post) => post.purpose === 'reply_failed'),
