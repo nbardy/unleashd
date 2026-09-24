@@ -5,6 +5,7 @@ import { Link, useParams } from 'react-router-dom';
 import { allConversationIdsAtom, conversationAtomFamily } from '../../atoms/conversations';
 import { usePolledFetch } from '../../hooks/usePolledFetch';
 import { formatTimeAgo } from '../../utils/time';
+import { BuddyInactiveAccess } from './BuddyInactiveAccess';
 import './BuddyWorkspaceActivity.css';
 import { workspaceActivityResource } from './channel-data';
 
@@ -156,6 +157,7 @@ export function BuddyWorkspaceActivity() {
           ))}
         </section>
       )}
+      {workspaceId && <BuddyInactiveAccess workspaceId={workspaceId} />}
     </main>
   );
 }

@@ -25,6 +25,13 @@ revocation; removal of the old raw PUT mutation; desktop/mobile shared integrati
   these grants, but the UI does not expose them. The implemented former-**target**
   revocation path is covered by the passing HTTP test. Review recommendation: cover
   former leads in a separately scoped owner grant-discovery improvement.
+  **Resolved 2026-09-24:** the workspace page (`/buddies/workspaces/:id`, both shells)
+  lists "Access held outside the team" from the read-only
+  `GET /api/buddies/workspaces/:workspaceId/inactive-access` (grants whose grantee or
+  target is archived or detached). Each row opens the ordinary `BuddyTeamSettings` for
+  that pair, so revocation is the unchanged preview/apply. Parties carry `standing`, not
+  `status`, because the route guard's `visibleBuddyPayload` drops any record with
+  `status: 'archived'`. Guard: `server/test/buddy-inactive-access.test.ts`.
 - Browser evidence uses `BuddyTeamSetup` with deterministic HTTP fixtures. The fetching
   wrapper's visibility/reconnect/refetch interaction was not exercised in a fresh
   browser run during this review. A newer grant revision remounts permission controls

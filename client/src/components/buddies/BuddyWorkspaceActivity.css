@@ -259,3 +259,57 @@ a.buddy-workspace-job:hover {
 .buddy-workspace-channels-open:hover {
   color: var(--ai-bright);
 }
+
+.buddy-inactive-access {
+  margin-top: 28px;
+  padding-top: 18px;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.buddy-inactive-access h2 {
+  margin: 0 0 6px;
+  color: var(--text-emphasis);
+  font-size: 16px;
+}
+
+.buddy-inactive-access > p {
+  margin: 0 0 12px;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.buddy-inactive-access__list {
+  display: grid;
+  gap: 8px;
+  margin: 0 0 12px;
+  padding: 0;
+  list-style: none;
+}
+
+.buddy-inactive-access__list li {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--ui-radius);
+}
+
+.buddy-inactive-access__pair {
+  flex: 1 1 240px;
+  min-width: 0;
+}
+
+.buddy-inactive-access__capabilities {
+  flex: 1 1 200px;
+  color: var(--text-muted);
+  font: 500 11px / 1.4 var(--font-mono);
+  overflow-wrap: anywhere;
+}
+
+.buddy-inactive-access__panel {
+  padding: 12px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--ui-radius);
+}
