@@ -89,6 +89,26 @@ export class NormalizedSessionCache {
     await fs.rename(temporaryPath, recordPath);
   }
 
+  /**
+   * Delete every record whose source is not in `sources`; returns how many.
+   * Callers pass a COMPLETE source set (see loadAllConversations).
+   */
+  async retainOnly(
+    sources: Iterable<Pick<SessionCacheKey, 'provider' | 'filePath'>>
+  ): Promise<number> {
+    const keep = new Set(Array.from(sources, (source) => path.basename(this.recordPath(source))));
+    let names: string[];
+    try {
+      names = await fs.readdir(this.directory);
+    } catch (error) {
+      if (isMissingFile(error)) return 0;
+      throw error;
+    }
+    const stale = names.filter((name) => name.endsWith('.json') && !keep.has(name));
+    await Promise.all(stale.map((name) => fs.rm(path.join(this.directory, name), { force: true })));
+    return stale.length;
+  }
+
   private recordPath(key: Pick<SessionCacheKey, 'provider' | 'filePath'>): string {
     const digest = createHash('sha256')
       .update(key.provider)
