@@ -99,8 +99,25 @@ function rejectPendingMessageCommands(error: Error): void {
 
 function markConversationDetailsLoaded(ids: Iterable<string>): void {
   const next = new Set(jotaiStore.get(conversationDetailsLoadedAtom));
-  for (const id of ids) next.add(id);
+  for (const id of ids) {
+    next.add(id);
+    staleDetailIds.delete(id);
+  }
   jotaiStore.set(conversationDetailsLoadedAtom, next);
+}
+
+// Loaded histories that a summary says have moved on since they were fetched.
+// They stay loaded (on screen, no "Loading…" flash) and refetch in place the
+// next time they become active. Marking them unloaded instead made every
+// reopened external chat show the loading screen (review of c21b131).
+const staleDetailIds = new Set<string>();
+
+function refreshIfStale(id: string): void {
+  if (!staleDetailIds.has(id)) return;
+  staleDetailIds.delete(id);
+  void loadConversationDetails(id).catch((error) => {
+    console.warn(`[WS] Could not refresh history for ${id}:`, error);
+  });
 }
 
 /**
@@ -218,6 +235,7 @@ export function setSendFn(fn: (msg: ClientMessage) => void): void {
 
 export function setActiveConversationId(id: string | null): void {
   jotaiStore.set(activeConversationIdAtom, id);
+  if (id !== null) refreshIfStale(id);
 }
 
 /**
@@ -648,21 +666,13 @@ function handleConversationsUpdated(
 }
 
 function refreshStaleDetails(ids: readonly string[]): void {
-  if (ids.length === 0) return;
   const active = jotaiStore.get(activeConversationIdAtom);
-  const unloaded = new Set(jotaiStore.get(conversationDetailsLoadedAtom));
   for (const id of ids) {
-    if (id === active) {
-      // A failed refresh leaves the previous history on screen; the next
-      // summary with a moved count retries.
-      void loadConversationDetails(id).catch((error) => {
-        console.warn(`[WS] Could not refresh history for ${id}:`, error);
-      });
-    } else {
-      unloaded.delete(id);
-    }
+    staleDetailIds.add(id);
+    // A failed refresh leaves the previous history on screen; the next
+    // summary with a moved count retries.
+    if (id === active) refreshIfStale(id);
   }
-  jotaiStore.set(conversationDetailsLoadedAtom, unloaded);
 }
 
 function handleConversationLoadComplete(

@@ -35,7 +35,7 @@ function conversation(id: string, messages: Message[], messageCount: number): Co
   } as unknown as Conversation;
 }
 
-test('a summary with a moved message count refreshes the open chat and unloads the rest', () => {
+test('a summary with a moved message count refreshes the open chat now and the rest when opened', () => {
   const fetched: string[] = [];
   const realFetch = globalThis.fetch;
   globalThis.fetch = ((url: string) => {
@@ -66,7 +66,9 @@ test('a summary with a moved message count refreshes the open chat and unloads t
     assert.deepEqual(fetched, [`/api/conversations/${openId}`]);
     const details = jotaiStore.get(conversationDetailsLoadedAtom);
     assert.equal(details.has(openId), true, 'the open chat keeps rendering while it refreshes');
-    assert.equal(details.has(closedId), false, 'a closed chat refetches when next opened');
+    // Regression (review of c21b131): unloading it made every reopened
+    // external chat flash "Loading conversation history…".
+    assert.equal(details.has(closedId), true, 'a closed chat keeps its history on screen');
     assert.deepEqual(
       jotaiStore
         .get(conversationsAtom)
@@ -75,6 +77,10 @@ test('a summary with a moved message count refreshes the open chat and unloads t
       ['one', 'two'],
       'the preview row never replaces loaded history'
     );
+    setActiveConversationId(closedId);
+    assert.deepEqual(fetched, [`/api/conversations/${openId}`, `/api/conversations/${closedId}`]);
+    setActiveConversationId(openId);
+    assert.equal(fetched.length, 2, 'a refreshed chat is not refetched on every activation');
   } finally {
     globalThis.fetch = realFetch;
     setActiveConversationId(null);
