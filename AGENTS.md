@@ -112,14 +112,51 @@ requirements to rebuild omitted machinery.
 | Memory reviewer benchmark: rerun, grade, extend, historical evidence (read before changing reviewer prompts/tools) | [Memory curation benchmark](server/test/fixtures/memory-curation/README.md) |
 | New provider integration protocol | `docs/agent_client_spec.md` |
 
+## Screenshot review (UI changes)
+
+Prove a visible change with pictures, not source reading. Dev server must be
+running (`pnpm dev`); both tools log in with the server's own token
+(`UNLEASHD_AUTH_TOKEN` → `UNLEASHD_AUTH_TOKEN_FILE` → `~/.agent-viewer/auth-token`).
+
+```bash
+pnpm screenshots                              # Channels: every screen × every size
+pnpm screenshots --sizes phone,desktop        # phone | ipad-portrait | ipad-landscape | desktop
+pnpm screenshots --only thread,mention-menu   # home | channel | thread | mention-menu | task-filter
+pnpm screenshots --workspace project_… --open # pin a workspace; open the sheet when done
+pnpm screenshot:mobile --out /tmp/shots       # the older phone-only gallery (chats, buddies, swarms…)
+```
+
+- Each run writes `output/screenshots/<timestamp>/` (gitignored):
+  `<screen>@<size>.png`, `manifest.json` (shots + skips with reasons) and
+  `index.html` — a contact sheet, a row per screen and a column per size.
+  Runs are never overwritten, so the loop is: run → review the sheet → fix →
+  rerun → compare the two folders. Look at the PNGs before calling a UI
+  change done.
+- Screens use REAL data found through the API: by default the richest channel
+  across every Buddy workspace (has a replied thread, then Task-linked posts,
+  then most posts). It is deliberately not the workspace `/channels` opens —
+  that is the most recently active one, often threadless, and the first run
+  came back half empty. A screen whose data is absent is skipped and recorded,
+  never faked.
+- iPad portrait (768px) renders the MOBILE tree; the switch is
+  `matchMedia('(max-width: 768px)')`. `task-filter` has no mobile UI, so it is
+  skipped there by design.
+- Add a screen by appending to `buildScreens()` in `tools/screenshots.mjs`:
+  `path`, optional `needs` (ids it requires → skip reason when absent),
+  `trees` (`['desktop']` / `['mobile']`) and `prepare` (page JS run before the
+  shot; return `'SKIP'` when its precondition is missing). Set React-controlled
+  inputs through the native value setter + an `input` event, as
+  `OPEN_MENTION_MENU` does, or React never sees the value.
+- No puppeteer/playwright: both tools drive Chrome over CDP through
+  `tools/lib/headless-chrome.mjs` (zero dependencies). Always `await
+  session.close()` in a `finally`; it waits for Chrome to exit before deleting
+  the profile, because deleting early threw ENOTEMPTY and that error replaced
+  the real failure.
+- `pnpm screenshot:mobile` writes to the COMMITTED `docs/screenshots/mobile/`
+  by default — pass `--out` for throwaway runs so the gallery does not churn.
+
 ## Misc
 
-- Screenshot review: `pnpm screenshots` shoots the Channels screens (home,
-  channel, thread, @ menu, Task filter) at phone / iPad portrait / iPad
-  landscape / desktop into `output/screenshots/<timestamp>/index.html`, a
-  contact sheet to review and rerun against. iPad portrait (768px) renders the
-  MOBILE tree — the switch is `max-width: 768px`. No puppeteer: both tools
-  drive Chrome over CDP via `tools/lib/headless-chrome.mjs`.
 - Inspect unresolved operational failures with `pnpm errors:list`; do not read or
   mutate the JSONL journal directly. Its configured location and capture policy
   are documented in `docs/error-journal.md`.
