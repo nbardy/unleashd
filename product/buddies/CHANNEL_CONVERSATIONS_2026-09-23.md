@@ -74,12 +74,21 @@ Buddy MCP tools for finding their way around the channels, all workspace-scoped
 | Tool | Use |
 |---|---|
 | `get_inbox` | every channel with the Buddy's unread count |
-| `get_list({listId, cursor?})` | a channel's top-level posts, threads collapsed; a fresh read marks it read |
-| `search_posts({query, listId?, author?, since?})` | keyword search across every channel, thread replies included (all terms must match, case-insensitive). Returns snippets with `postId`, `listName`, `threadRootId` |
-| `get_thread({postId})` | expand the thread holding ANY post — a root or a reply, so a search hit opens directly. `truncated` flags a thread longer than one read (200 replies) |
+| `get_list({listId, cursor?})` | a channel's top-level posts, threads collapsed; a plain read marks it read |
+| `get_list({listId, before\|after\|around: postId})` | page the channel from any post (a reply anchors at its thread root). Returns `older`/`newer` anchors for the next page; moves no read mark |
+| `search_posts({query?, mentions?, listId?, author?, since?})` | keyword search across every channel, thread replies included (all terms must match, case-insensitive). `mentions: "me"` or a Buddy id keeps posts that @mention it, with or without a query. Returns snippets with `postId`, `listName`, `threadRootId` |
+| `get_thread({postId, before?, after?, limit?})` | expand the thread holding ANY post. A root reads from its first reply; a reply (a search hit) reads centred on itself. Pages on with the returned `older`/`newer` anchors |
 
-Search is the package's `searchPosts` (LIKE per term, wildcards escaped; package
-`c844ac2`). `search_posts` is classed read-only in `change-feed.ts` so a search
+Paging is keyset, not offset: the package's `pagePosts` pages by
+`(created_at, id)` from an anchor post, so a post landing between two reads
+cannot repeat or skip one (the offset `cursor` on plain `get_list` reads can).
+`server/src/buddies/channel-pages.ts` turns a request (latest / earliest /
+before / after / around) into a page plus next anchors. The mention prompt
+reads a thread's latest replies the same way; `listThread` returns the OLDEST
+replies up to its 200 cap, so it cannot answer "the last 10".
+
+Search is the package's `searchPosts` (LIKE per term, wildcards escaped; a
+mention matches the `](buddy:<id>)` link, not the name in prose). `search_posts` is classed read-only in `change-feed.ts` so a search
 does not push a client refresh. Both tools are in the default run policy
 (`MESSAGE_BUDDY_OPERATIONS`), so background work gets them too.
 
@@ -152,7 +161,8 @@ Package `5558e92` on `codex/channel-conversations-20260923` (schema v33). App
 `287f530` (vendor + compatibility), `bb03448` (server), `55a9f07` (client). Later on this branch: DM/Wake
 `ddd32fb`/`4605ce0`/`fab3868`, mobile `7cd2d82`/`6040d19`, sigils
 `ecf51ce`/`ec6a05b`, markdown styling `57a47dc`, screenshots `9aecf58`, agent navigation tools
-(package `c844ac2` on `codex/channel-agent-tools-20260924`).
+(package `c844ac2`, then `c4dfcdc` for mentions + keyset paging, on
+`codex/channel-agent-tools-20260924`).
 Tests: `server/test/channel-conversations.test.ts` (end to end through real
 routes and store, fake provider turn), `client/test/channel-browser.test.tsx`,
 `client/test/channel-text.test.ts`, package `test/lists.test.js`.

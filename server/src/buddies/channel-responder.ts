@@ -96,16 +96,19 @@ function threadContext(
   threadRootId: string,
   trigger: BuddyMailingListPost
 ): LaunchContext {
-  // listThread reads the OLDEST replies up to its 200 cap, so past 200 replies
-  // this "latest" window is really replies 191-200. Acceptable at channel
-  // scale; fix with a newest-first thread read in the package if it matters.
-  const thread = store.listThread({ root: threadRootId });
-  const earlier = thread.replies.filter((post) => post.id !== trigger.id);
-  const replies = earlier.slice(-CONTEXT_POSTS);
+  // Read the thread's tail by keyset, not listThread: listThread returns the
+  // OLDEST replies up to its cap, so on a long thread its "last 10" were not
+  // the latest. The trigger is itself the newest reply, hence one extra.
+  const root = store.getPost(threadRootId);
+  if (!root) throw new Error('Thread root not found');
+  const replies = store
+    .pagePosts({ thread: threadRootId, direction: 'older', limit: CONTEXT_POSTS + 1 })
+    .filter((post) => post.id !== trigger.id)
+    .slice(-CONTEXT_POSTS);
   return {
     kind: 'thread',
-    root: thread.root,
-    omittedReplies: earlier.length - replies.length,
+    root,
+    omittedReplies: Math.max(0, root.replyCount - 1 - replies.length),
     replies,
   };
 }
@@ -144,9 +147,10 @@ function buildPrompt(input: {
   return [
     ...contextLines(input.list, input.context, input.store),
     '',
-    'Each line shows its post id. Open any thread with get_thread({postId}), page older channel ' +
-      'history with get_list({listId, cursor}), and find earlier discussion in any channel with ' +
-      'search_posts({query}). Look things up only when the reply needs it.',
+    'Each line shows its post id. Open any thread with get_thread({postId}); page the channel ' +
+      'from any post with get_list({listId, before|after|around: postId}); find earlier ' +
+      'discussion in any channel with search_posts({query}) or search_posts({mentions:"me"}). ' +
+      'Look things up only when the reply needs it.',
     '',
     'Reply to the owner’s latest message:',
     readableChannelText(input.trigger.body),

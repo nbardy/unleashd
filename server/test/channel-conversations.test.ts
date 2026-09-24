@@ -397,6 +397,11 @@ test('mention context is the latest 10 messages, threads collapsed; search and g
     assert.doesNotMatch(threadPrompt, /ship on Monday/);
     threadRuntime.emit('buddy-turn-complete', 'Checking.');
 
+    await until(
+      () => h.raw.listThread({ root: busy.id }).replies.find((post) => post.body === 'Checking.'),
+      'thread reply'
+    );
+
     // The Buddy's way back to the omitted decision.
     const operations = new BuddyOperationsService(h.raw as unknown as BuddiesStorePort, {
       buddyId: h.lead.id,
@@ -413,7 +418,60 @@ test('mention context is the latest 10 messages, threads collapsed; search and g
     assert.ok(
       thread.replies.some((post: BuddyMailingListPost) => /ship on Monday/.test(post.body))
     );
-    assert.equal(thread.truncated, false);
+    const bodies = (posts: BuddyMailingListPost[]) => posts.map((post) => post.body);
+
+    // A reply opens centred on itself and pages forward to the end.
+    const centred = operations.execute('buddy.get_thread', { postId: hit.postId, limit: 4 })
+      .data as any;
+    assert.deepEqual(bodies(centred.replies), [
+      'side note 1',
+      'Decision: ship on Monday after the review',
+      'side note 3',
+      'side note 4',
+    ]);
+    assert.equal(centred.older, null);
+    const rest = operations.execute('buddy.get_thread', {
+      postId: hit.postId,
+      after: centred.newer,
+      limit: 20,
+    }).data as any;
+    assert.equal(rest.replies.length, 10);
+    assert.equal(rest.replies.at(-1).body, 'Checking.');
+    assert.equal(rest.newer, null);
+
+    // The same hit placed in its channel: a reply sits at its root, and the
+    // older anchor keeps paging back.
+    const around = operations.execute('buddy.get_list', {
+      listId: list.id,
+      around: hit.postId,
+      limit: 4,
+    }).data as any;
+    assert.deepEqual(bodies(around.posts), [
+      `[@Lead](buddy:${h.lead.id}) status?`,
+      'status update 12',
+      'status update 11',
+      'status update 10',
+      'status update 9',
+    ]);
+    assert.equal(around.newer, null);
+    const older = operations.execute('buddy.get_list', {
+      listId: list.id,
+      before: around.older,
+      limit: 3,
+    }).data as any;
+    assert.deepEqual(bodies(older.posts), [
+      'status update 8',
+      'status update 7',
+      'status update 6',
+    ]);
+
+    // "Where was I mentioned?" needs no keyword.
+    const mentioned = operations.execute('buddy.search_posts', { mentions: 'me' }).data as any;
+    assert.deepEqual(
+      mentioned.matches.map((match: { postId: string }) => match.postId),
+      [inThread.post.id, top.post.id]
+    );
+    assert.throws(() => operations.execute('buddy.search_posts', {}), /query, mentions/);
 
     // Channels are public to the workspace and no wider.
     const foreignList = h.raw.createList({

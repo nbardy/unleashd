@@ -533,12 +533,20 @@ export interface BuddiesStorePort {
   };
   searchPosts(input: {
     workspace: string;
-    query: string;
+    query?: string;
+    mentions?: string | null;
     list?: string | null;
     author?: BuddyListAuthor | null;
     since?: string | null;
     limit?: number;
     offset?: number;
+  }): BuddyMailingListPost[];
+  pagePosts(input: {
+    list?: string;
+    thread?: string;
+    direction: 'older' | 'newer';
+    anchor?: string | null;
+    limit?: number;
   }): BuddyMailingListPost[];
   newestListPost(input: { list: string }): BuddyMailingListPost | null;
   listUnread(input: { buddy: string; workspace: string }): BuddyMailingListUnread[];
