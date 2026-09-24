@@ -14,6 +14,7 @@ import { normalizeFolderDirectory } from '../utils/directories';
 import { isWorktreeDirectory } from '../utils/swarmUtils';
 import { sortByActivityDesc } from '../utils/time';
 import { archivedBuddyIdsAtom } from './buddy-visibility';
+import { savedActiveConversationIdAtom } from './ui';
 
 // =============================================================================
 // Primary State Atoms
@@ -190,11 +191,17 @@ export const allConversationsAtom = atom((get) => {
   );
 });
 
-// True once any conversation is visible. A boolean, so subscribers re-render once
-// on hydration rather than on every conversation event — App's restore-on-load
-// subscribed to allConversationsAtom just to read `.length`, which re-rendered
-// AppInner and the whole route tree per message/status/queue event.
-export const hasConversationsAtom = atom((get) => get(allConversationsAtom).length > 0);
+// True once the conversation restore-on-load wants to reopen has hydrated. A
+// boolean, so App re-renders once rather than on every conversation event (it
+// used to subscribe to allConversationsAtom just to read `.length`, which
+// re-rendered AppInner and the whole route tree per message/status event).
+// It must track the SAVED id, not "any conversation": startup hydrates in
+// batches, and a "has any" flag flips on the first batch and never again, so a
+// saved chat arriving in a later batch was never restored (review of 984d00f).
+export const savedActiveConversationPresentAtom = atom((get) => {
+  const savedId = get(savedActiveConversationIdAtom);
+  return savedId !== null && get(conversationsAtom).has(savedId);
+});
 
 // Stable sorted ID list — only changes on add/delete/reorder.
 // Use with atomFamily for per-item subtree pruning (see CLAUDE.md).
