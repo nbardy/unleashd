@@ -12,13 +12,16 @@
  * inserts `@Label` and records the reference; `encodeReferences` swaps the
  * labels for tokens on send.
  */
-import type { BuddyMemberExecution } from '@unleashd/shared';
+import {
+  type ChannelComposerDraft,
+  ChannelComposerDraftSchema,
+  type ChannelReference,
+} from '@unleashd/shared';
 
 // A Buddy carries what its turn runs on by default, so the composer's mention
-// chip can show it and open the harness/model picker from it.
-export type ChannelReference =
-  | { kind: 'buddy'; id: string; label: string; detail: string; execution: BuddyMemberExecution }
-  | { kind: 'task'; id: string; label: string; detail: string; status: string };
+// chip can show it and open the harness/model picker from it. The type is the
+// shared schema's, because composer drafts persist picks (see Drafts below).
+export type { ChannelReference };
 
 // ── Fuzzy matching ─────────────────────────────────────────────────────────
 
@@ -201,6 +204,38 @@ export function mentionedBuddies(
     const reference = byId.get(id);
     return reference ? [reference] : [];
   });
+}
+
+// ── Drafts ─────────────────────────────────────────────────────────────────
+
+/**
+ * The composer's draft id for `useConversationDraft` (the chat's draft hook,
+ * stored at `draft:<id>`): one per channel and one per thread.
+ */
+export function channelDraftId(listId: string, threadRootId: string | null): string {
+  return threadRootId === null ? `channel:${listId}` : `channel:${listId}:thread:${threadRootId}`;
+}
+
+export const EMPTY_CHANNEL_DRAFT: ChannelComposerDraft = { text: '', picked: [] };
+
+/** Empty text stores '' so the draft hook deletes the key instead of keeping `{}`. */
+export function encodeChannelDraft(draft: ChannelComposerDraft): string {
+  return draft.text === '' ? '' : JSON.stringify(draft);
+}
+
+/**
+ * A stored draft back into composer state. Local storage is outside the type
+ * system: a blob that is not a draft (hand-edited, or an older shape) is
+ * discarded whole, the same policy as atoms/ui.ts validatedStorage.
+ */
+export function decodeChannelDraft(stored: string): ChannelComposerDraft {
+  if (stored === '') return EMPTY_CHANNEL_DRAFT;
+  try {
+    const parsed = ChannelComposerDraftSchema.safeParse(JSON.parse(stored));
+    return parsed.success ? parsed.data : EMPTY_CHANNEL_DRAFT;
+  } catch {
+    return EMPTY_CHANNEL_DRAFT;
+  }
 }
 
 // ── Media ──────────────────────────────────────────────────────────────────

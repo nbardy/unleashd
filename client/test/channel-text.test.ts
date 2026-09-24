@@ -4,6 +4,8 @@ import {
   type ChannelReference,
   activeReferenceQuery,
   completesPickedReference,
+  decodeChannelDraft,
+  encodeChannelDraft,
   encodeReferences,
   insertReference,
   mentionedBuddies,
@@ -117,4 +119,20 @@ test('a picked reference closes the @ query it completed', () => {
   assert.equal(completesPickedReference('Lead Designer can you', [leadDesigner], all), true);
   // Still typing toward a longer name keeps the menu open.
   assert.equal(completesPickedReference('Lead Des', [lead], all), false);
+});
+
+// A draft must bring its picks back with the text (2026-09-24 draft fix):
+// saving the text alone would restore `@Lead` as plain words, and the post
+// would then mention nobody and start no reply.
+test('a restored draft still encodes its mentions', () => {
+  const text = 'hey @Lead can you check this';
+  const restored = decodeChannelDraft(encodeChannelDraft({ text, picked: [lead] }));
+  assert.equal(
+    encodeReferences(restored.text, restored.picked),
+    'hey [@Lead](buddy:b1) can you check this'
+  );
+  // Clearing the text deletes the key rather than storing an empty object,
+  // and a blob that is not a draft is discarded whole.
+  assert.equal(encodeChannelDraft({ text: '', picked: [lead] }), '');
+  assert.deepEqual(decodeChannelDraft('{"text":7}'), { text: '', picked: [] });
 });

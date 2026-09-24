@@ -6,6 +6,7 @@ import {
   type ProviderCatalog,
 } from '@unleashd/shared';
 import { useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { useConversationDraft } from '../../hooks/useConversationDraft';
 import { useProviderCatalog } from '../../hooks/useProviderCatalog';
 import { newId } from '../../utils/ids';
 import { ConversationConfigPicker } from '../ConversationConfigPicker';
@@ -15,7 +16,10 @@ import {
   type BuddyReference,
   type ChannelReference,
   activeReferenceQuery,
+  channelDraftId,
   completesPickedReference,
+  decodeChannelDraft,
+  encodeChannelDraft,
   encodeReferences,
   insertReference,
   mediaMarkdown,
@@ -40,6 +44,10 @@ const NO_CHOICES: ReadonlyMap<string, ConversationConfig> = new Map();
 // chat's harness/model picker for that Buddy's reply. The choice is sent
 // beside the post (mentionConfigs) and applies to that one reply: every
 // mention starts a fresh conversation (channel-responder.ts).
+//
+// Unsent text survives navigation and reload through the chat's own draft
+// hook (useConversationDraft), one draft per channel and per thread. The
+// picks are saved with the text, so a restored `@Lead` still mentions Lead.
 //
 // submit: 'enter' (desktop — Enter sends, Shift+Enter breaks a line) or
 // 'button' (touch — Return is a newline, as in Slack mobile; Send sends).
@@ -74,6 +82,19 @@ export function ChannelComposer({
   const { catalog } = useProviderCatalog();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const draft = useConversationDraft({
+    conversationId: channelDraftId(listId, threadRootId),
+    textareaRef,
+    controlled: true,
+    autoFocus: false,
+    maxHeight: MAX_TEXTAREA_HEIGHT,
+    onDraftLoaded: (stored) => {
+      const restored = decodeChannelDraft(stored);
+      setText(restored.text);
+      setPicked(restored.picked);
+      setCaret(restored.text.length);
+    },
+  });
 
   const trigger = activeReferenceQuery(text, caret);
   const open =
@@ -100,8 +121,9 @@ export function ChannelComposer({
     node.style.height = `${Math.min(node.scrollHeight, MAX_TEXTAREA_HEIGHT)}px`;
   }, [text]);
 
-  const edit = (next: string, nextCaret: number) => {
+  const edit = (next: string, nextCaret: number, nextPicked: ChannelReference[] = picked) => {
     setText(next);
+    draft.setDraft(encodeChannelDraft({ text: next, picked: nextPicked }));
     setCaret(nextCaret);
     setHighlight(0);
     // React's onSelect fires during the same keydown (Enter in the @ menu)
@@ -119,8 +141,9 @@ export function ChannelComposer({
   const pick = (reference: ChannelReference) => {
     if (!trigger) return;
     const result = insertReference(text, trigger, reference);
-    setPicked((current) => [...current, reference]);
-    edit(result.text, result.caret);
+    const nextPicked = [...picked, reference];
+    setPicked(nextPicked);
+    edit(result.text, result.caret, nextPicked);
     textareaRef.current?.focus();
   };
 
@@ -171,6 +194,7 @@ export function ChannelComposer({
     })
       .then((response) => {
         const result = BuddyOwnerPostResultSchema.parse(response);
+        draft.clear();
         setText('');
         setCaret(0);
         setPicked([]);
@@ -245,6 +269,7 @@ export function ChannelComposer({
         aria-label={placeholder}
         onChange={(event) => {
           setText(event.target.value);
+          draft.setDraft(encodeChannelDraft({ text: event.target.value, picked }));
           setCaret(event.target.selectionStart);
           setHighlight(0);
           setDismissedAt(null);
