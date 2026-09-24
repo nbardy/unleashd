@@ -707,6 +707,64 @@ test('a thread post asks the other Buddies in it; <yes> replies, <no> stays quie
   }
 });
 
+// 2026-09-24: an owner reply in a Buddy's thread got no answer and no sign of
+// one — the gate failed on Codex's usage limit and only the journal knew. A
+// failed gate on an owner post is now a visible notice; a <yes> shows
+// "replying" at once, before the seat opens or the turn starts.
+test('an owner reply shows who is replying as soon as a gate says yes, and a failed gate says so', async () => {
+  const h = await harness();
+  try {
+    const list = h.newList('compute');
+    const { post: root } = await h.post(list.id, {
+      key: 'root',
+      author: { kind: 'buddy', buddyId: h.lead.id },
+      purpose: 'decision',
+      body: 'W1 compute ask.',
+    });
+    await h.post(list.id, {
+      key: 'designer-1',
+      author: { kind: 'buddy', buddyId: h.designer.id },
+      body: 'UI is ready for it.',
+      threadRootId: root.id,
+    });
+    (await h.gate(0)).answer({ kind: 'pass' });
+    const responding = async () =>
+      (await h.api(`/api/buddies/lists/${list.id}/responding`)).json as Array<{ buddyId: string }>;
+
+    await h.post(list.id, {
+      key: 'why',
+      body: 'Why do we need Modal?',
+      threadRootId: root.id,
+    });
+    await h.gate(2);
+    const asked = new Map(h.gates.slice(1).map((entry) => [entry.name, entry]));
+    asked.get('Designer')!.answer({ kind: 'failed', reason: 'gate run ended: out_of_tokens' });
+    const notice = await until(
+      () => h.replies(root.id).find((post) => post.purpose === 'reply_failed'),
+      'gate failure notice'
+    );
+    assert.deepEqual(notice.author, { kind: 'buddy', buddyId: h.designer.id });
+    assert.match(notice.body, /out_of_tokens/);
+    assert.deepEqual(await responding(), []);
+
+    // From the <yes> until the reply posts, Lead is on the indicator.
+    asked.get('Lead')!.answer({ kind: 'respond' });
+    await settle();
+    assert.deepEqual(
+      (await responding()).map((entry) => entry.buddyId),
+      [h.lead.id]
+    );
+    const turn = await h.nextTurn(h.seat(root.id, h.lead.id));
+    assert.match(turn.prompt, /Why do we need Modal\?/);
+    turn.complete('Local fits; Modal is only a speed hedge.');
+    await until(() => h.replies(root.id).at(-1)!.purpose === 'reply', 'lead reply');
+    await settle();
+    assert.deepEqual(await responding(), []);
+  } finally {
+    h.close();
+  }
+});
+
 // Follow-ups use the Buddy's seat, so the owner's pick on an earlier mention
 // carries over — gate question included (a gate on the profile harness would
 // fail whenever that harness is down) — while a Buddy never picked for stays

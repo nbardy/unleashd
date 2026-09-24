@@ -110,7 +110,16 @@ seat config, server-posted answer), framed as "you chose to reply".
   would be imported as a conversation), scratch cwd. Output past 32 characters,
   or any tool call, stops the run as `unparseable`; `<yes> because…` is not a
   yes. Unparseable and failed gates are `console.warn`ed (error journal), never
-  read as either answer. Claude, codex and muse only (the Buddy harnesses).
+  read as either answer. A gate that FAILED on an owner post also posts a
+  visible `reply_failed` notice ("Couldn't reply: could not decide whether to
+  reply (…)"): on 2026-09-24 every Buddy in a workspace ran on Codex at its
+  usage limit, each owner reply's gate failed 4 s in, and the thread just
+  stayed quiet. Claude, codex and muse only (the Buddy harnesses).
+- **"X is replying…"** starts the moment a gate says `<yes>` (the reply queue
+  entry is created synchronously on the verdict, before the seat opens) and the
+  client polls `/responding` every 2.5 s. A reply a Buddy posts from its own
+  background run (a standup, a wake, a Task run reading the channel) never
+  passes through the responder, so it shows no indicator.
   Live check 2026-09-24 on claude/haiku: ~6 s, `<yes>` for a UI question to the
   UI Buddy, `<no>` for a database question.
 - **Who is asked:** Buddy authors of the root and all replies, minus the post's

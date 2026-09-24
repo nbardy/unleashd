@@ -603,6 +603,35 @@ export function createChannelResponder(ports: ChannelResponderPorts) {
         logger.warn(
           `[channel-responder] reply gate failed for ${input.buddyId} on post ${input.trigger.id}: ${verdict.reason}`
         );
+        return gateFailedNotice(input, verdict.reason);
+    }
+  }
+
+  // The owner is waiting on an answer, so a gate that could not run is shown
+  // in the thread. 2026-09-24: every Buddy in a workspace ran on Codex at its
+  // usage limit; each owner reply failed its gate 4 s in and the thread just
+  // stayed quiet — the journal was the only trace. A Buddy's post has no one
+  // waiting on it, so there the journal line is enough.
+  async function gateFailedNotice(
+    input: {
+      list: BuddyMailingList;
+      trigger: BuddyMailingListPost;
+      root: BuddyMailingListPost;
+      buddyId: string;
+    },
+    reason: string
+  ): Promise<void> {
+    switch (input.trigger.author.kind) {
+      case 'owner':
+        return postReply({
+          list: input.list,
+          trigger: input.trigger,
+          threadRootId: input.root.id,
+          buddyId: input.buddyId,
+          conversationId: null,
+          outcome: { kind: 'failed', reason: `could not decide whether to reply (${reason})` },
+        });
+      case 'buddy':
         return;
     }
   }
