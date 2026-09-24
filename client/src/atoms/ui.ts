@@ -19,7 +19,7 @@ import { jotaiStore } from './store';
 // partitioning prevents last-writer-wins cross-device churn.
 //
 // NEW badge: lastSeenMessageIndex tracks the last viewed message index per
-// conversation; see docs/new_badge_feature.md.
+// conversation.
 //
 // Subscribe via the per-field derived atoms below (jotai skips notification
 // when the derived value is Object.is-equal, so per-field granularity is

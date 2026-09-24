@@ -11,6 +11,7 @@ read the guide for the area you are changing.
 | Style or extract mobile components | [Mobile UI](mobile-ui.md) |
 | Change conversation settings | [Pass-through pattern](pass-through-pattern.md) |
 | Change WebSocket behavior | [WS contract notes](ws-contract-surprises.md) and [shared schemas](../shared/src/index.ts) |
+| Change how sub-agents are shown | [Sub-agent UI contract](subagent_ui_contract.md) |
 | Change authentication or network access | [Auth](auth.md) |
 | Add a provider | [Provider integration protocol](agent_client_spec.md) |
 | Update the provider submodule | [Submodule workflow](git-submodule-dance.md) |
@@ -24,16 +25,7 @@ persistence loads through the [adapter registry](../server/src/adapters/registry
 
 ## Historical context
 
-Dated plans, reviews, incidents, and [agent notes](../agent_notes/) preserve
-rationale and evidence. Some older documents describe superseded implementations:
-
-- [Persistence design](persistence_design.md)
-- [Unread badge design](new_badge_feature.md)
-- [Settings store migration](settings_store_migration.md)
-- [Color design](COLOR_DESIGN.md), [redesign notes](color_palette_redesign.md), and
-  [original palette](color_palette.md)
-- [Refactor plans](refactor-plans/) and [reviews](reviews/)
-
-Use the current guides and owning code to check those details before applying
-them. Update the relevant guide when behavior changes; keep this file as an
-index rather than duplicating implementation instructions.
+Dated incident reports and [agent notes](../agent_notes/) preserve rationale
+and evidence; superseded designs live only in git history. Update the relevant
+guide when behavior changes; keep this file as an index rather than
+duplicating implementation instructions.
