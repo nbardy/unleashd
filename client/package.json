@@ -11,7 +11,9 @@
   "dependencies": {
     "@tanstack/react-virtual": "^3.13.18",
     "@unleashd/shared": "workspace:*",
+    "hast-util-to-jsx-runtime": "^2.3.6",
     "highlight.js": "^11.11.1",
+    "html-url-attributes": "^3.0.1",
     "immer": "^11.1.4",
     "jotai": "^2.18.0",
     "jotai-family": "^1.0.1",
@@ -26,9 +28,12 @@
     "rehype-katex": "^7.0.1",
     "remark-gfm": "^4.0.1",
     "remark-math": "^6.0.0",
+    "remark-parse": "^11.0.0",
+    "remark-rehype": "^11.1.2",
     "zustand": "^5.0.10"
   },
   "devDependencies": {
+    "@types/hast": "^3.0.4",
     "@types/mdast": "^4.0.4",
     "@types/node": "^24.10.1",
     "@types/react": "^19.2.5",

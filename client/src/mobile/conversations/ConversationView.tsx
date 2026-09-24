@@ -5,6 +5,7 @@ import {
   type MouseEventHandler,
   type ReactNode,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -70,6 +71,9 @@ import { MobileQueueStrip } from './MobileQueueStrip';
  * route changes) looked fine. Mirror Chat.tsx: only claim "not found" once the
  * conversation list has finished loading AND there is no pending creation.
  */
+
+/** Message groups mounted on open, and added per "Show earlier" tap. */
+const MOBILE_GROUP_PAGE = 30;
 
 function CopyThreadButton({ conversation }: { conversation: Conversation }) {
   const text = buildThreadTranscript(conversation);
@@ -519,6 +523,20 @@ export function ConversationView({
   const lastMessageRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
+  // Render window: only the newest `shown` groups mount. The list stays a flat
+  // scroller (iOS momentum) instead of a virtualizer, but mounting all of it
+  // was the cost — opening a 1,099-message conversation blocked the main
+  // thread 1,321ms (4x CPU, 2026-09-25), nearly all markdown parse for turns
+  // nobody had scrolled to. The window belongs to one conversation: switching
+  // resets it without an effect because the stored id no longer matches.
+  const [groupWindow, setGroupWindow] = useState({ conversationId, shown: MOBILE_GROUP_PAGE });
+  const shownGroups =
+    groupWindow.conversationId === conversationId ? groupWindow.shown : MOBILE_GROUP_PAGE;
+  const firstShownGroup = Math.max(0, messageGroups.length - shownGroups);
+  // Distance from the bottom captured just before "load earlier" grows the
+  // window; restored after layout so the reader's place does not jump.
+  const bottomOffsetBeforeGrow = useRef<number | null>(null);
+
   // Prompt palette — shared hook (logic) + mobile sheet (UI). Mirrors Chat.tsx.
   // Owned here so the palette is available at the conversation-pane level:
   // ChatMobile is a thin wrapper and buddy inline threads embed ConversationView
@@ -644,6 +662,21 @@ export function ConversationView({
     const el = scrollRef.current;
     if (el) el.scrollTop = el.scrollHeight;
   }, [conversationId]);
+
+  const showEarlierGroups = () => {
+    const el = scrollRef.current;
+    if (el) bottomOffsetBeforeGrow.current = el.scrollHeight - el.scrollTop;
+    setGroupWindow({ conversationId, shown: shownGroups + MOBILE_GROUP_PAGE });
+  };
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: runs when the window grows
+  useLayoutEffect(() => {
+    const el = scrollRef.current;
+    const offset = bottomOffsetBeforeGrow.current;
+    if (!el || offset === null) return;
+    bottomOffsetBeforeGrow.current = null;
+    el.scrollTop = el.scrollHeight - offset;
+  }, [shownGroups]);
 
   // Turn diagnostics — same hook desktop Chat.tsx uses (hooks/useTurnDiagnostics)
   // + same derived view model (utils/turn-diagnostics). Reuses existing atoms
@@ -877,8 +910,14 @@ export function ConversationView({
         </div>
       )}
 
-      {/* Flat message list — not virtualized, iOS momentum-scroll (§10 Phase 1) */}
+      {/* Flat message list — not virtualized (iOS momentum-scroll, §10 Phase 1),
+          but windowed to the newest groups; see `groupWindow`. */}
       <div ref={scrollRef} className="mobile-chat__messages">
+        {firstShownGroup > 0 && (
+          <button type="button" className="mobile-chat__load-earlier" onClick={showEarlierGroups}>
+            Show {Math.min(firstShownGroup, MOBILE_GROUP_PAGE)} earlier ({firstShownGroup} hidden)
+          </button>
+        )}
         {messageGroups.length === 0 ? (
           <div className="mobile-chat__empty">
             {isBuddyBuilderConversation(conversation)
@@ -886,8 +925,9 @@ export function ConversationView({
               : 'No messages yet. Send a message to start.'}
           </div>
         ) : (
-          messageGroups.map((group, index) =>
-            group.type === 'assistant' ? (
+          messageGroups.slice(firstShownGroup).map((group, windowIndex) => {
+            const index = firstShownGroup + windowIndex;
+            return group.type === 'assistant' ? (
               <AssistantResponseRow
                 key={group.firstMessageIndex}
                 response={group}
@@ -902,8 +942,8 @@ export function ConversationView({
                 isLast={index === messageGroups.length - 1}
                 lastMessageRef={lastMessageRef}
               />
-            )
-          )
+            );
+          })
         )}
         {turnActive && !streamingText && !turnDiagnostics && !liveBubbleHostsWorking && (
           <div className="mobile-chat__thinking">Thinking…</div>

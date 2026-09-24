@@ -60,9 +60,15 @@ importers:
       '@unleashd/shared':
         specifier: workspace:*
         version: link:../shared
+      hast-util-to-jsx-runtime:
+        specifier: ^2.3.6
+        version: 2.3.6
       highlight.js:
         specifier: ^11.11.1
         version: 11.11.1
+      html-url-attributes:
+        specifier: ^3.0.1
+        version: 3.0.1
       immer:
         specifier: ^11.1.4
         version: 11.1.4
@@ -105,10 +111,19 @@ importers:
       remark-math:
         specifier: ^6.0.0
         version: 6.0.0
+      remark-parse:
+        specifier: ^11.0.0
+        version: 11.0.0
+      remark-rehype:
+        specifier: ^11.1.2
+        version: 11.1.2
       zustand:
         specifier: ^5.0.10
         version: 5.0.10(@types/react@19.2.10)(immer@11.1.4)(react@19.2.4)
     devDependencies:
+      '@types/hast':
+        specifier: ^3.0.4
+        version: 3.0.4
       '@types/mdast':
         specifier: ^4.0.4
         version: 4.0.4

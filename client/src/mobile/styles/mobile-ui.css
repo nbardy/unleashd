@@ -565,6 +565,17 @@
   overscroll-behavior-y: contain;
 }
 
+.mobile-chat__load-earlier {
+  align-self: center;
+  min-height: 36px;
+  padding: 6px 14px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
 .mobile-chat__empty,
 .mobile-chat__notice,
 .mobile-chat__loading {

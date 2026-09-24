@@ -220,6 +220,26 @@ embedded tool lines and hydrated separate tool records normalize to the same
 part types. The projection never rewrites persisted records or commits stream
 buffers into the conversation snapshot.
 
+## Rendering markdown and long threads
+
+Chat (desktop and mobile) and channel text render through
+[utils/markdown-pipeline.ts](../client/src/utils/markdown-pipeline.ts), never
+react-markdown's `<Markdown>` component. `<Markdown>` builds and freezes a new
+unified processor on every render, re-running every plugin attacher; opening a
+1,099-message conversation on mobile blocked the main thread 1,321ms (4x CPU,
+2026-09-25), ~391ms of it `freeze()`. Declare a `defineMarkdownFlavor(...)` as a
+module constant, take the pipeline from `useMarkdownPipeline(flavor)` and call
+`renderMarkdown(pipeline, text, components)`. Finished hast trees sit in a
+bounded LRU keyed by pipeline and text, so remounted rows skip parse and
+highlighting. The pipeline turns raw HTML into text and applies the URL policy
+before a tree is cached. Cached trees are shared, so never mutate a `node`
+passed to a component override. `client/test/markdown-pipeline.test.tsx` keeps
+the output byte-identical to `<Markdown>`.
+
+Desktop virtualizes the message list. Mobile keeps a flat scroller for iOS
+momentum and mounts only the newest 30 groups. "Show earlier" adds 30 at a time
+and keeps the reader's distance from the bottom.
+
 ## Persisted UI state
 
 [atoms/ui.ts](../client/src/atoms/ui.ts) holds device-local preferences and

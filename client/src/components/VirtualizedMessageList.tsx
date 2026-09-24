@@ -2,6 +2,7 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 import type { Message } from '@unleashd/shared';
 import type { ComponentPropsWithoutRef, ReactNode } from 'react';
 import {
+  Fragment,
   isValidElement,
   memo,
   useCallback,
@@ -10,7 +11,6 @@ import {
   useMemo,
   useRef,
 } from 'react';
-import Markdown from 'react-markdown';
 import type { Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
@@ -21,7 +21,12 @@ import { ChatActivity } from '../ui/ChatActivity';
 import { parseBuddyReviewRequest, parseBuddyReviewResult } from '../utils/buddy-review-message';
 import type { AssistantResponse, MessageGroup } from '../utils/chat-message-groups';
 import { messageTranscriptContent } from '../utils/conversation-transcript';
-import { useLazyMarkdownPlugins } from '../utils/lazyMarkdownPlugins';
+import { useMarkdownPipeline } from '../utils/lazyMarkdownPlugins';
+import {
+  type MarkdownPipeline,
+  defineMarkdownFlavor,
+  renderMarkdown,
+} from '../utils/markdown-pipeline';
 import { remarkBreaks } from '../utils/remark-breaks';
 import { splitStructuredMessageContent } from '../utils/structured-message-segments';
 import { splitToolActivity } from '../utils/tool-activity-segments';
@@ -437,20 +442,25 @@ function makeMarkdownComponents(workingDirectory: string): Components {
   };
 }
 
+const CHAT_MARKDOWN = defineMarkdownFlavor([remarkGfm, remarkMath, remarkBreaks]);
+
 function MessageMarkdown({
   content,
   collapseTools,
-  ...props
-}: Omit<ComponentPropsWithoutRef<typeof Markdown>, 'children'> & {
+  pipeline,
+  components,
+}: {
   content: string;
   collapseTools: boolean;
+  pipeline: MarkdownPipeline;
+  components: Components;
 }) {
   const segments = useMemo(
     () => (collapseTools ? splitToolActivity(content) : []),
     [content, collapseTools]
   );
   if (!segments.some((segment) => segment.type === 'tool_calls')) {
-    return <Markdown {...props}>{content}</Markdown>;
+    return renderMarkdown(pipeline, content, components);
   }
   return segments.map((segment, index) =>
     segment.type === 'tool_calls' ? (
@@ -458,12 +468,10 @@ function MessageMarkdown({
         key={index}
         label={`${segment.count} tool ${segment.count === 1 ? 'call' : 'calls'}`}
       >
-        <Markdown {...props}>{segment.content}</Markdown>
+        {renderMarkdown(pipeline, segment.content, components)}
       </ChatActivity>
     ) : (
-      <Markdown key={index} {...props}>
-        {segment.content}
-      </Markdown>
+      <Fragment key={index}>{renderMarkdown(pipeline, segment.content, components)}</Fragment>
     )
   );
 }
@@ -486,7 +494,7 @@ const MemoizedMessageContent = memo(
   }: MessageContentProps) {
     // katex + highlight.js arrive asynchronously; markdown renders immediately
     // with the remark plugins and re-renders once the chunk lands.
-    const rehypePlugins = useLazyMarkdownPlugins();
+    const pipeline = useMarkdownPipeline(CHAT_MARKDOWN);
 
     const displayContent = useMemo(
       () => normalizeLatexDelimiters(msg.content || '...'),
@@ -532,8 +540,7 @@ const MemoizedMessageContent = memo(
                   key={i}
                   content={trimmed}
                   collapseTools={collapseToolActivity}
-                  remarkPlugins={[remarkGfm, remarkMath, remarkBreaks]}
-                  rehypePlugins={rehypePlugins}
+                  pipeline={pipeline}
                   components={mdComponents}
                 />
               );
@@ -570,8 +577,7 @@ const MemoizedMessageContent = memo(
           <MessageMarkdown
             content={displayContent}
             collapseTools={collapseToolActivity}
-            remarkPlugins={[remarkGfm, remarkMath, remarkBreaks]}
-            rehypePlugins={rehypePlugins}
+            pipeline={pipeline}
             components={mdComponents}
           />
         )}

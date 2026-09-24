@@ -1,19 +1,18 @@
 import { BuddyWorkerThreadBadge } from '../../components/buddies/BuddyWorkerThreadBadge';
 import type { BuddyWorkerThread } from '@unleashd/shared';
 import type { Message } from '@unleashd/shared';
-import { memo, useState } from 'react';
+import { Fragment, memo, useState } from 'react';
 import type { AssistantResponse } from '../../utils/chat-message-groups';
-import Markdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
-import type { PluggableList } from 'unified';
 import { InlineBuddyBuilderResult } from '../../components/buddies/BuddyBuilderResultCard';
 import { InlineBuddyTeamConfiguration } from '../../components/buddies/BuddyTeamConfiguration';
 import { COPY_LABEL, useCopyAction } from '../../hooks/useCopyAction';
 import { parseBuddyReviewRequest, parseBuddyReviewResult } from '../../utils/buddy-review-message';
 import { messageTranscriptContent } from '../../utils/conversation-transcript';
 import { execInputPreview } from '../../utils/tool-call-preview';
-import { useLazyMarkdownPlugins } from '../../utils/lazyMarkdownPlugins';
+import { useMarkdownPipeline } from '../../utils/lazyMarkdownPlugins';
+import { defineMarkdownFlavor, renderMarkdown } from '../../utils/markdown-pipeline';
 import { splitStructuredMessageContent } from '../../utils/structured-message-segments';
 
 function BuddyReviewRequestCard({ content }: { content: string }) {
@@ -99,13 +98,8 @@ function MessageCopyButton({ content }: { content: string }) {
   );
 }
 
-function MarkdownBlock({ content, plugins }: { content: string; plugins: PluggableList }) {
-  return (
-    <Markdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={plugins}>
-      {content}
-    </Markdown>
-  );
-}
+// No remark-breaks here: `.mobile-markdown` is `white-space: pre-wrap`.
+const MOBILE_MARKDOWN = defineMarkdownFlavor([remarkGfm, remarkMath]);
 
 export const MessageRow = memo(function MessageRow({
   message,
@@ -185,7 +179,7 @@ export const MessageRow = memo(function MessageRow({
 
 const MessageRowContent = memo(function MessageRowContent({ message }: { message: Message }) {
   // Shared lazy loader (utils/lazyMarkdownPlugins) — one loading path with desktop.
-  const plugins = useLazyMarkdownPlugins();
+  const pipeline = useMarkdownPipeline(MOBILE_MARKDOWN);
   const isUser = message.role === 'user';
   const segments = splitStructuredMessageContent(message.content);
   const execPreview = execInputPreview(message.toolCall);
@@ -217,7 +211,7 @@ const MessageRowContent = memo(function MessageRowContent({ message }: { message
               // Skip duplicate rendering when the whole message was a review request
               if (reviewRequest && seg.content === message.content) return null;
               if (!seg.content.trim()) return null;
-              return <MarkdownBlock key={idx} content={seg.content} plugins={plugins} />;
+              return <Fragment key={idx}>{renderMarkdown(pipeline, seg.content)}</Fragment>;
             }
             if (seg.type === 'buddy_review_result') {
               return <BuddyReviewResultCard key={idx} json={seg.json} />;
