@@ -64,11 +64,25 @@ export const WS_LIVENESS_INTERVAL_MS = 20_000;
  */
 export function superviseLiveness(ws: WebSocket, intervalMs: number): void {
   let answeredSinceLastPing = true;
+  let lastTickAt = Date.now();
+  let lastBufferedAmount = 0;
   ws.on('pong', () => {
     answeredSinceLastPing = true;
   });
   const timer = setInterval(() => {
-    if (!answeredSinceLastPing) {
+    const now = Date.now();
+    // Two ways a LIVE peer misses a pong, both confirmed by review of 4d2b990:
+    // - our own event loop stalled (seconds, see the 2026-09-25 audit): the
+    //   overdue tick runs before the poll phase reads a pong that already
+    //   arrived, so a late tick is our fault, not the peer's;
+    // - a slow link still downloading the 2.4MB `init`: our ping sits behind
+    //   it in the send buffer. A shrinking buffer means bytes are flowing.
+    // A half-open socket shows neither: ticks on time, buffer flat or growing.
+    const tickWasLate = now - lastTickAt > intervalMs * 1.5;
+    const sendBufferDraining = ws.bufferedAmount > 0 && ws.bufferedAmount < lastBufferedAmount;
+    lastTickAt = now;
+    lastBufferedAmount = ws.bufferedAmount;
+    if (!answeredSinceLastPing && !tickWasLate && !sendBufferDraining) {
       ws.terminate();
       return;
     }
