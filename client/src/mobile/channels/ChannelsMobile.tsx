@@ -29,6 +29,7 @@ import {
   useChannelResponding,
   useFollowBottom,
   useWarmChannelPosts,
+  useWithOutbox,
   useWorkspaceDirectory,
 } from '../../components/buddies/channel-data';
 import { channelLinkPath } from '../../components/buddies/channel-link';
@@ -509,7 +510,8 @@ function ChannelScreen({ listId, context }: { listId: string; context: ScreenCon
   const list = lists?.find((candidate) => candidate.id === listId) ?? null;
   const feed = usePolledFetch(channelPostsResource(listId), CHANNEL_BACKSTOP_MS);
   const responding = useChannelResponding(listId);
-  const rows = useMemo(() => channelRows(feed.data ?? []), [feed.data]);
+  const posts = useWithOutbox(workspaceId, listId, null, feed.data);
+  const rows = useMemo(() => channelRows(posts ?? []), [posts]);
   const follow = useFollowBottom(rows.length, feed.data, null);
   const rowContext: RowContext = {
     workspaceId,
@@ -591,7 +593,8 @@ function ThreadScreen({
   const replying = (responding.get(rootId) ?? []).map(
     (buddyId) => directory.buddyNames[buddyId] ?? buddyId
   );
-  const replyRows = useMemo(() => channelRows(thread.data?.replies ?? []), [thread.data]);
+  const replies = useWithOutbox(workspaceId, listId, rootId, thread.data?.replies ?? null);
+  const replyRows = useMemo(() => channelRows(replies ?? []), [replies]);
   const follow = useFollowBottom(replyRows.length + replying.length, thread.data, linkedPostId);
   const rowContext: RowContext = {
     workspaceId,

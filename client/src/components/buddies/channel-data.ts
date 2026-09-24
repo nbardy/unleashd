@@ -15,7 +15,9 @@ import {
   type BuddyWorkspaceActivity,
   BuddyWorkspaceActivitySchema,
 } from '@unleashd/shared';
+import { useAtomValue } from 'jotai';
 import { type UIEvent, useEffect, useMemo, useRef } from 'react';
+import { type OutboxEntry, channelOutboxAtom, outboxDrop } from '../../atoms/channel-outbox';
 import { warmResources } from '../../atoms/prefetch';
 import { resource, usePolledFetch } from '../../hooks/usePolledFetch';
 import { newId } from '../../utils/ids';
@@ -141,6 +143,67 @@ function sameInstance(a: BuddyMailingListPost, b: BuddyMailingListPost): boolean
   return (
     authorKey(a.author) === authorKey(b.author) && a.senderConversationId === b.senderConversationId
   );
+}
+
+/**
+ * `posts` (one channel's roots, or one thread's replies) plus the owner's
+ * posts the server has not returned yet (atoms/channel-outbox.ts), so Send
+ * shows the message at once. Entries a refetch now includes leave the outbox.
+ * `null` stays `null`: nothing loaded yet is not the same as no posts.
+ */
+export function useWithOutbox(
+  workspaceId: string,
+  listId: string,
+  threadRootId: string | null,
+  posts: readonly BuddyMailingListPost[] | null
+): readonly BuddyMailingListPost[] | null {
+  const outbox = useAtomValue(channelOutboxAtom);
+  const served = useMemo(() => new Set(posts?.map((post) => post.id)), [posts]);
+  const pending = useMemo(
+    () =>
+      outbox.flatMap((entry): BuddyMailingListPost[] => {
+        const post = outboxPost(workspaceId, entry);
+        return post.listId === listId && post.threadRootId === threadRootId && !served.has(post.id)
+          ? [post]
+          : [];
+      }),
+    [outbox, workspaceId, listId, threadRootId, served]
+  );
+  const confirmed = useMemo(
+    () =>
+      outbox.flatMap((entry) =>
+        entry.kind === 'sent' && served.has(entry.post.id) ? [entry.key] : []
+      ),
+    [outbox, served]
+  );
+  useEffect(() => {
+    if (confirmed.length > 0) outboxDrop(new Set(confirmed));
+  }, [confirmed]);
+  return useMemo(() => (posts === null ? null : [...pending, ...posts]), [pending, posts]);
+}
+
+function outboxPost(workspaceId: string, entry: OutboxEntry): BuddyMailingListPost {
+  switch (entry.kind) {
+    case 'sent':
+      return entry.post;
+    case 'sending':
+      return {
+        id: `outbox:${entry.key}`,
+        listId: entry.listId,
+        workspaceId,
+        author: { kind: 'owner' },
+        threadRootId: entry.threadRootId,
+        replyCount: 0,
+        latestReplyAt: null,
+        purpose: 'message',
+        body: entry.body,
+        evidence: [],
+        projectId: null,
+        createdAt: entry.createdAt,
+        senderConversationId: null,
+        senderRunId: null,
+      };
+  }
 }
 
 // Posts arrive newest-first; a Slack transcript reads oldest-first with the

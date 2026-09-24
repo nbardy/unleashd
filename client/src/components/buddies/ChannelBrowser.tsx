@@ -33,6 +33,7 @@ import {
   useChannelResponding,
   useFollowBottom,
   useWarmChannelPosts,
+  useWithOutbox,
   useWorkspaceDirectory,
 } from './channel-data';
 import { channelLinkPath, postLink } from './channel-link';
@@ -319,7 +320,8 @@ function ThreadPane({
   onClose(): void;
 }) {
   const thread = usePolledFetch(channelThreadResource(list.id, rootId), CHANNEL_BACKSTOP_MS);
-  const replyRows = useMemo(() => channelRows(thread.data?.replies ?? []), [thread.data]);
+  const replies = useWithOutbox(list.workspaceId, list.id, rootId, thread.data?.replies ?? null);
+  const replyRows = useMemo(() => channelRows(replies ?? []), [replies]);
   const follow = useFollowBottom(
     replyRows.length + replying.length,
     thread.data,
@@ -427,7 +429,8 @@ function ChannelPane({
     CHANNEL_BACKSTOP_MS
   );
   const respondingByRoot = useChannelResponding(list.id);
-  const shown = taskFilter ? taskFeed : channelFeed;
+  const channelPosts = useWithOutbox(workspaceId, list.id, null, channelFeed.data);
+  const shown = taskFilter ? taskFeed : { ...channelFeed, data: channelPosts };
   const rows = useMemo(() => channelRows(shown.data ?? []), [shown.data]);
   // Task options come from the channel itself so the picker never offers a
   // Task with nothing to read here.

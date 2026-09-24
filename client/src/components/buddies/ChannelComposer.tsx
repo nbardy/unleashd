@@ -6,6 +6,7 @@ import {
   type ProviderCatalog,
 } from '@unleashd/shared';
 import { useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { outboxDrop, outboxSending, outboxSent } from '../../atoms/channel-outbox';
 import { useConversationDraft } from '../../hooks/useConversationDraft';
 import { useProviderCatalog } from '../../hooks/useProviderCatalog';
 import { newId } from '../../utils/ids';
@@ -74,7 +75,6 @@ export function ChannelComposer({
   const [highlight, setHighlight] = useState(0);
   const [dismissedAt, setDismissedAt] = useState<number | null>(null);
   const [uploading, setUploading] = useState(0);
-  const [sending, setSending] = useState(false);
   const [problem, setProblem] = useState<string | null>(null);
   const [dragging, setDragging] = useState(false);
   const [choices, setChoices] = useState(NO_CHOICES);
@@ -82,6 +82,9 @@ export function ChannelComposer({
   const { catalog } = useProviderCatalog();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  // The POST settles after later renders; its failure path reads the text now.
+  const textRef = useRef(text);
+  textRef.current = text;
   const draft = useConversationDraft({
     conversationId: channelDraftId(listId, threadRootId),
     textareaRef,
@@ -171,21 +174,40 @@ export function ChannelComposer({
       .finally(() => setUploading((count) => count - 1));
   };
 
+  // Optimistic: the post lands in the channel outbox and the composer clears
+  // the moment Send is pressed; waiting for the POST made Send feel broken
+  // whenever the server was busy. A failed POST takes the post back out and
+  // returns the text, unless the owner has already started a new message.
   const send = () => {
     const body = encodeReferences(text, picked).trim();
-    if (!body || sending || uploading > 0) return;
+    if (!body || uploading > 0) return;
     const mentionConfigs = mentions.flatMap((buddy): OwnerPostMentionConfig[] => {
       const config = choices.get(buddy.id);
       return config ? [{ buddyId: buddy.id, config }] : [];
     });
-    setSending(true);
+    const unsent = { text, picked, choices };
+    const key = newId();
+    outboxSending({
+      kind: 'sending',
+      key,
+      listId,
+      threadRootId,
+      body,
+      createdAt: new Date().toISOString(),
+    });
+    draft.clear();
+    setText('');
+    setCaret(0);
+    setPicked([]);
+    setChoices(NO_CHOICES);
+    setChoosingFor(null);
     setProblem(null);
     void buddyApi(`/api/buddies/lists/${encodeURIComponent(listId)}/posts`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
         author: { kind: 'owner' },
-        key: newId(),
+        key,
         purpose: 'message',
         body,
         threadRootId,
@@ -194,16 +216,19 @@ export function ChannelComposer({
     })
       .then((response) => {
         const result = BuddyOwnerPostResultSchema.parse(response);
-        draft.clear();
-        setText('');
-        setCaret(0);
-        setPicked([]);
-        setChoices(NO_CHOICES);
-        setChoosingFor(null);
+        outboxSent(key, result.post);
         onPosted(result);
       })
-      .catch((cause: unknown) => setProblem(cause instanceof Error ? cause.message : String(cause)))
-      .finally(() => setSending(false));
+      .catch((cause: unknown) => {
+        outboxDrop(new Set([key]));
+        setProblem(cause instanceof Error ? cause.message : String(cause));
+        if (textRef.current.trim().length > 0) return;
+        setText(unsent.text);
+        setCaret(unsent.text.length);
+        setPicked(unsent.picked);
+        setChoices(unsent.choices);
+        draft.setDraft(encodeChannelDraft({ text: unsent.text, picked: unsent.picked }));
+      });
   };
 
   return (
@@ -361,9 +386,9 @@ export function ChannelComposer({
           type="button"
           className="channel-composer-send"
           onClick={send}
-          disabled={sending || uploading > 0 || text.trim().length === 0}
+          disabled={uploading > 0 || text.trim().length === 0}
         >
-          {sending ? 'Sending…' : 'Send'}
+          Send
         </button>
       </div>
     </div>
