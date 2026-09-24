@@ -9,6 +9,8 @@
  *   pnpm screenshots --only thread,mention-menu,mention-model
  *   pnpm screenshots --workspace project_… --open      # pin a workspace, open the sheet
  *   pnpm screenshots --url http://host:7489 --out /tmp/shots
+ *   pnpm screenshots --workspace project_… --channel list_… --thread post_… \
+ *     --focus 'Two stale Tasks'   # pin one thread; `focus` scrolls to that text
  *
  * Each run writes output/screenshots/<timestamp>/ (gitignored):
  *   <screen>@<size>.png   one per screen and size
@@ -56,6 +58,9 @@ function parseArgs(argv) {
     sizes: Object.keys(SIZES),
     only: null,
     workspace: null,
+    channel: null,
+    thread: null,
+    focus: null,
     open: false,
   };
   for (let i = 0; i < argv.length; i += 1) {
@@ -65,9 +70,15 @@ function parseArgs(argv) {
     else if (flag === '--sizes') args.sizes = argv[++i].split(',').map((s) => s.trim());
     else if (flag === '--only') args.only = new Set(argv[++i].split(',').map((s) => s.trim()));
     else if (flag === '--workspace') args.workspace = argv[++i];
+    else if (flag === '--channel') args.channel = argv[++i];
+    else if (flag === '--thread') args.thread = argv[++i];
+    else if (flag === '--focus') args.focus = argv[++i];
     else if (flag === '--open') args.open = true;
     else throw new Error(`Unknown flag ${flag}`);
   }
+  if ((args.channel || args.thread) && !args.workspace)
+    throw new Error('--channel/--thread need --workspace (the ids belong to one workspace)');
+  if (args.thread && !args.channel) throw new Error('--thread needs its --channel');
   const unknown = args.sizes.filter((name) => !SIZES[name]);
   if (unknown.length) {
     throw new Error(`Unknown size ${unknown.join(', ')}; known: ${Object.keys(SIZES).join(', ')}`);
@@ -204,12 +215,24 @@ const OPEN_MENTION_MODEL = `(async () => {
   return document.querySelector('.channel-composer-model') ? 'OK' : 'SKIP';
 })()`;
 
+// Scroll the LAST post body containing `text` to the top of its pane, so a
+// long reply deep in a thread can be shot at a named spot. Last, because the
+// desktop thread pane follows the channel pane in document order.
+const scrollToText = (text) => `(() => {
+  const body = [...document.querySelectorAll('.channel-markdown')].findLast((node) =>
+    node.textContent.includes(${JSON.stringify(text)})
+  );
+  if (!body) return 'SKIP';
+  body.scrollIntoView({ block: 'start' });
+  return 'OK';
+})()`;
+
 /**
  * Every screen, as data. `path` needs the ids it names; a screen whose ids
  * were not found is skipped with that reason. `trees` limits a screen to the
  * device trees that render it (the Task filter has no mobile UI).
  */
-function buildScreens(found) {
+function buildScreens(found, focus) {
   const base = `/buddies/workspaces/${encodeURIComponent(found.workspaceId)}/channels`;
   const channel = found.channelId && `channel=${encodeURIComponent(found.channelId)}`;
   return [
@@ -231,6 +254,12 @@ function buildScreens(found) {
       needs: channel,
       path: `${base}?${channel}`,
       prepare: OPEN_MENTION_MODEL,
+    },
+    {
+      name: 'focus',
+      needs: channel && found.threadRootId && focus,
+      path: `${base}?${channel}&thread=${encodeURIComponent(found.threadRootId)}`,
+      prepare: focus && scrollToText(focus),
     },
     {
       name: 'task-filter',
@@ -316,8 +345,13 @@ async function main() {
   let screens;
   try {
     found = await discover(api, args.workspace);
+    // A pinned channel/thread replaces the richest one discovery picked.
+    if (args.channel) found = { ...found, channelId: args.channel, channelName: args.channel };
+    if (args.thread) found = { ...found, threadRootId: args.thread };
     process.stdout.write(`workspace ${found.workspaceName} · #${found.channelName}\n`);
-    screens = buildScreens(found).filter((screen) => !args.only || args.only.has(screen.name));
+    screens = buildScreens(found, args.focus).filter(
+      (screen) => !args.only || args.only.has(screen.name)
+    );
 
     for (const sizeName of args.sizes) {
       const size = SIZES[sizeName];

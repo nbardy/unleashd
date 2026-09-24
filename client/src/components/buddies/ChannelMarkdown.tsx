@@ -2,8 +2,10 @@ import { type ReactNode, useMemo } from 'react';
 import Markdown, { type Components, defaultUrlTransform } from 'react-markdown';
 import { Link } from 'react-router-dom';
 import remarkGfm from 'remark-gfm';
+import { ChatActivity } from '../../ui/ChatActivity';
 import { useLazyMarkdownPlugins } from '../../utils/lazyMarkdownPlugins';
 import { remarkBreaks } from '../../utils/remark-breaks';
+import { splitToolActivity } from '../../utils/tool-activity-segments';
 import { type ChannelTask, isVideoSource, mediaUrl, parseChannelLink } from './channel-text';
 import './ChannelContent.css';
 
@@ -12,6 +14,11 @@ import './ChannelContent.css';
 //   [@Name](buddy:<id>)  → mention pill linking to the Buddy
 //   [Title](task:<id>)   → live Task chip with a hover card
 //   ![alt](/abs/path)    → inline image, or a video player for .mp4/.webm/.mov
+// A mention reply is the Buddy's final assistant message, and live providers
+// embed their tool calls in it as `🔧 name …` / `⚡ Bash …` lines. Those runs
+// collapse into the chat's own "N tool calls" disclosure (splitToolActivity +
+// ChatActivity, the /chat path), never paint as raw lines: on 2026-09-24 a
+// reply opened with 20 of them.
 
 // react-markdown strips unknown URL schemes; buddy: and task: are ours.
 function channelUrlTransform(url: string): string {
@@ -140,17 +147,33 @@ export function ChannelMarkdown({
   tasks: ReadonlyMap<string, ChannelTask>;
 }) {
   const components = useMemo(() => channelComponents(buddyNames, tasks), [buddyNames, tasks]);
+  const segments = useMemo(() => splitToolActivity(body), [body]);
   const rehypePlugins = useLazyMarkdownPlugins();
+  const markdown = (text: string, key?: number) => (
+    <Markdown
+      key={key}
+      remarkPlugins={[remarkGfm, remarkBreaks]}
+      rehypePlugins={rehypePlugins}
+      urlTransform={channelUrlTransform}
+      components={components}
+    >
+      {text}
+    </Markdown>
+  );
   return (
     <div className="channel-markdown">
-      <Markdown
-        remarkPlugins={[remarkGfm, remarkBreaks]}
-        rehypePlugins={rehypePlugins}
-        urlTransform={channelUrlTransform}
-        components={components}
-      >
-        {body}
-      </Markdown>
+      {segments.map((segment, index) =>
+        segment.type === 'tool_calls' ? (
+          <ChatActivity
+            key={index}
+            label={`${segment.count} tool ${segment.count === 1 ? 'call' : 'calls'}`}
+          >
+            {markdown(segment.content)}
+          </ChatActivity>
+        ) : (
+          markdown(segment.content, index)
+        )
+      )}
     </div>
   );
 }

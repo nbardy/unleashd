@@ -123,6 +123,8 @@ pnpm screenshots                              # Channels: every screen × every 
 pnpm screenshots --sizes phone,desktop        # phone | ipad-portrait | ipad-landscape | desktop
 pnpm screenshots --only thread,mention-menu   # home | channel | thread | mention-menu | mention-model | task-filter
 pnpm screenshots --workspace project_… --open # pin a workspace; open the sheet when done
+pnpm screenshots --workspace project_… --channel list_… --thread post_… --focus 'text'
+                                              # pin one thread; `focus` scrolls to the post containing text
 pnpm screenshot:mobile --out /tmp/shots       # the older phone-only gallery (chats, buddies, swarms…)
 ```
 

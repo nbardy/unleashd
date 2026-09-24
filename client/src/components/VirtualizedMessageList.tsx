@@ -1,5 +1,4 @@
 import { useVirtualizer } from '@tanstack/react-virtual';
-import type { BuddyWorkerThread } from '@unleashd/shared';
 import type { Message } from '@unleashd/shared';
 import type { ComponentPropsWithoutRef, ReactNode } from 'react';
 import {
@@ -10,7 +9,6 @@ import {
   useLayoutEffect,
   useMemo,
   useRef,
-  useState,
 } from 'react';
 import Markdown from 'react-markdown';
 import type { Components } from 'react-markdown';
@@ -19,6 +17,7 @@ import remarkMath from 'remark-math';
 import type { BuddyContext } from '../atoms/pending-creations';
 import type { CopyState } from '../hooks/useCopyAction';
 import { COPY_LABEL, useCopyAction } from '../hooks/useCopyAction';
+import { ChatActivity } from '../ui/ChatActivity';
 import { parseBuddyReviewRequest, parseBuddyReviewResult } from '../utils/buddy-review-message';
 import type { AssistantResponse, MessageGroup } from '../utils/chat-message-groups';
 import { messageTranscriptContent } from '../utils/conversation-transcript';
@@ -27,7 +26,6 @@ import { remarkBreaks } from '../utils/remark-breaks';
 import { splitStructuredMessageContent } from '../utils/structured-message-segments';
 import { splitToolActivity } from '../utils/tool-activity-segments';
 import { execInputPreview } from '../utils/tool-call-preview';
-import { BuddyWorkerThreadBadge } from './buddies/BuddyWorkerThreadBadge';
 export type { MessageGroup } from '../utils/chat-message-groups';
 import { AskUserQuestionWidget, parseAskUserQuestion } from './AskUserQuestion';
 import { BuddyConvoHeader } from './BuddyConvoHeader';
@@ -437,32 +435,6 @@ function makeMarkdownComponents(workingDirectory: string): Components {
       }
     },
   };
-}
-
-/** One disclosure for live tool runs and saved activity groups. */
-function ChatActivity({
-  label,
-  children,
-  workerThreads,
-}: { label: string; children: ReactNode; workerThreads?: BuddyWorkerThread[] }) {
-  const [expanded, setExpanded] = useState(false);
-  return (
-    <div className="chat-activity">
-      <button
-        type="button"
-        className="chat-activity-toggle"
-        aria-expanded={expanded}
-        onClick={() => setExpanded((value) => !value)}
-      >
-        <span aria-hidden="true">{expanded ? '▾' : '▸'}</span>
-        {label}
-      </button>
-      {workerThreads?.map((thread) => (
-        <BuddyWorkerThreadBadge key={thread.conversationId} thread={thread} />
-      ))}
-      {expanded && <div className="chat-activity-history">{children}</div>}
-    </div>
-  );
 }
 
 function MessageMarkdown({

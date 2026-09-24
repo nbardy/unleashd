@@ -460,36 +460,6 @@
   font-size: 13px;
 }
 
-.chat-activity-toggle {
-  display: inline-flex;
-  vertical-align: middle;
-  align-items: center;
-  gap: 6px;
-  min-height: 24px;
-  padding: 0;
-  margin: 0;
-  border: 0;
-  background: transparent;
-  color: var(--text-emphasis);
-  font: inherit;
-  font-size: 12px;
-  line-height: 20px;
-  cursor: pointer;
-  text-align: left;
-}
-
-.chat-activity-toggle:hover {
-  color: var(--text-bright);
-}
-
-.chat-activity-history {
-  margin: 4px 0;
-}
-
-.chat-activity-history > .message-content + .message-content {
-  margin-top: 8px;
-}
-
 @media (max-width: 700px) {
   .messages-container {
     padding: 20px 18px;
