@@ -253,6 +253,57 @@ test('retained Buddy display history stays out of fresh provider context across 
   assert.equal(conversation.createdAt, originalDate);
 });
 
+test('resumed Buddy turns re-brief only when the memory generation changes', async () => {
+  // Regression: from 5c0cec4 (2026-09-20) every Buddy turn re-sent the full
+  // ~20k-char briefing, so a provider transcript carried one copy per turn
+  // (44 in one session) and every later step re-read all of them.
+  type Request = Parameters<NonNullable<ConversationRuntimeDependencies['executeTurn']>>[0];
+  const requests: Request[] = [];
+  let current = { briefing: 'BRIEFING_GEN_1', memoryGeneration: '1', audienceKey: 'owner' };
+  const fixture = runtimeFixture({
+    readCurrentBuddyContext: () => current,
+    executeTurn: ((request) => {
+      requests.push(request);
+      const sessionId = request.resumeSessionId ?? 'native-session';
+      return {
+        child: { exitCode: 0 },
+        events: (async function* () {
+          yield { type: 'session.started' as const, sessionId };
+          yield { type: 'turn.started' as const };
+          yield { type: 'turn.complete' as const, reason: 'success' as const };
+        })(),
+        completed: Promise.resolve({ exitCode: 0, signal: null, sessionId, reason: 'success' }),
+        stop: () => undefined,
+      };
+    }) as NonNullable<ConversationRuntimeDependencies['executeTurn']>,
+  });
+  const conversation = new fixture.Conversation({
+    id: 'steady-buddy',
+    workingDirectory: '/tmp',
+    configState: fixture.configState,
+    buddyContext: { buddyId: 'buddy', workspaceId: 'workspace' },
+  });
+  const turn = async (content: string) => {
+    conversation.sendMessage(content, { origin: 'owner_input', inputId: content });
+    await eventually(() => assert.equal(conversation.hasActiveProcess(), false));
+  };
+
+  await turn('one');
+  await turn('two');
+  current = { ...current, briefing: 'BRIEFING_GEN_2', memoryGeneration: '2' };
+  await turn('three');
+  await turn('four');
+
+  assert.deepEqual(
+    requests.map((request) => request.prompt.match(/BRIEFING_GEN_\d/)?.[0] ?? 'none'),
+    ['BRIEFING_GEN_1', 'none', 'BRIEFING_GEN_2', 'none']
+  );
+  assert.deepEqual(
+    requests.map((request) => request.resumeSessionId),
+    [undefined, 'native-session', 'native-session', 'native-session']
+  );
+});
+
 test('provider completion waits for the normalized event stream and session persistence', async () => {
   const persistence = deferred<void>();
   const completion = deferred<{

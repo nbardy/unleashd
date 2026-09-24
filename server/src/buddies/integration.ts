@@ -16,12 +16,6 @@ import { knowledgeStore } from './knowledge';
 const BUDDIES_PACKAGE_NAME: string = '@nbardy/buddies';
 const BUDDY_BRIEFING_MAX_CHARACTERS = 40_000;
 const BUDDY_BRIEFING_PREFIX_MAX_CHARACTERS = 1_600;
-// The suffix is static text plus a JSON audience carrying a real conversation
-// UUID. It sat at 2,609 chars against a 2,600 budget on 2026-09-21 after the
-// mailing-lists line landed, so every owner-thread Buddy turn threw at compose
-// time while tests with short placeholder ids stayed green. Measure with a real
-// UUID before adding a line; guard: buddies-integration.test.ts.
-const BUDDY_BRIEFING_SUFFIX_MAX_CHARACTERS = 3_000;
 const BUDDY_SOUL_MAX_CHARACTERS = 10_000;
 const BUDDY_RELATIONSHIPS_MAX_CHARACTERS = 4_000;
 const BUDDY_SKILLS_MAX_CHARACTERS = 8_000;
@@ -381,9 +375,10 @@ export function createBuddiesIntegration(dependencies: BuddiesIntegrationDepende
       'If native Buddy tools are present, a missing or denied operation is an authority boundary; never use the CLI, HTTP, database, or files to bypass it.',
       'Mailing lists are public workspace streams for standups, handoffs and announcements: get_inbox lists them with unread counts, get_list reads one, get_thread expands a thread, search_posts finds posts by keyword, post writes one. Posts wake nobody and owe no reply; action still uses send or update_project.',
     ].join('\n');
-    if (suffix.length > BUDDY_BRIEFING_SUFFIX_MAX_CHARACTERS) {
-      throw new Error('Buddy operation instructions exceed their composition budget');
-    }
+    // The suffix is developer-authored prose plus server-issued ids, so its size
+    // budget is a TEST invariant (buddies-integration.test.ts), not a runtime
+    // throw. As a runtime throw it failed every owner-thread Buddy message on
+    // 2026-09-21 when one feature line pushed it 9 chars over.
     const briefing = [
       boundedText(prefix, BUDDY_BRIEFING_PREFIX_MAX_CHARACTERS),
       middle,
@@ -401,7 +396,20 @@ export function createBuddiesIntegration(dependencies: BuddiesIntegrationDepende
       memoryGeneration: `memory-generation:${memory.generation}:working:${memory.workingRevision}:long-term:${memory.longTermRevision}:identity:${createHash(
         'sha256'
       )
-        .update(JSON.stringify([detail.buddy.name, detail.buddy.role, roleBrief, audience]))
+        .update(
+          JSON.stringify([
+            detail.buddy.name,
+            detail.buddy.role,
+            roleBrief,
+            audience,
+            // Steady-state turns re-brief only when this generation changes
+            // (runtime.ts refreshBuddyContext), so anything the Buddy must see
+            // promptly belongs in it. Owned work and recent activity are
+            // deliberately excluded: they change every turn and have live tools.
+            detail.relationships,
+            skillBriefings,
+          ])
+        )
         .digest('hex')}`,
       workingDirectory: detail.workspace.root_path,
       ...buddyExecutionPreferences(detail.buddy),

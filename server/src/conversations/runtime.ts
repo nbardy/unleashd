@@ -1185,6 +1185,8 @@ export function createConversationRuntime(
         );
       } catch (error) {
         dependencies.revokeBuddyControlCapability?.(this.id);
+        // The briefing in this prompt never reached the provider transcript.
+        this._briefedMemoryGeneration = null;
         this._finishTurnAttempt('failed', 'spawn_failed');
         if (isBuddyChatCapacityUnavailable(error)) {
           // Owner turns do not share background capacity. If this still fires,
@@ -2224,6 +2226,10 @@ export function createConversationRuntime(
     }
 
     private _providerAudienceKey: string | null = null;
+    // Memory generation the current provider session was last briefed with;
+    // null means "unknown" (new, reset, restored, or failed spawn) and forces
+    // one re-brief. Same lifetime as _providerAudienceKey.
+    private _briefedMemoryGeneration: string | null = null;
     private contextForInput(input: TurnInput): BuddyContext | null {
       if (this._coordinationExecution) {
         const context = this._coordinationExecution.context;
@@ -2270,7 +2276,6 @@ export function createConversationRuntime(
       }
 
       const turnBuddyContext = this.contextForInput(input);
-      const refreshBuddyContext = !!turnBuddyContext && !!dependencies.readCurrentBuddyContext;
       if (turnBuddyContext && dependencies.readCurrentBuddyContext) {
         const current = dependencies.readCurrentBuddyContext(turnBuddyContext);
         if (current.audienceKey && current.audienceKey !== this._providerAudienceKey) {
@@ -2286,6 +2291,16 @@ export function createConversationRuntime(
         }
         this._memorySnapshot = createMemorySnapshot(current.briefing, current.memoryGeneration);
       }
+      // Re-brief only when this provider session has not yet seen the current
+      // memory generation. From 5c0cec4 (2026-09-20) until 2026-09-24 this was
+      // true on EVERY Buddy turn, so each turn appended another full ~20k-char
+      // briefing to the provider transcript and every later step re-read all
+      // accumulated copies: one basketball-model session carried 44 copies
+      // (~835k chars) and re-priced them across 1,081 requests.
+      const refreshBuddyContext =
+        !!turnBuddyContext &&
+        !!dependencies.readCurrentBuddyContext &&
+        this.memoryGeneration !== this._briefedMemoryGeneration;
 
       // --- Chat Fork vs merge session-fork (easy to confuse) ---
       //
@@ -2375,6 +2390,10 @@ export function createConversationRuntime(
       // pasted-context prefixes — the CLI already has the source transcript.
       // Soft Chat Forks (no forkSourceSessionId) keep buildFirstTurnCliContent.
       if (forkSourceSessionId && !refreshBuddyContext) cliContent = content;
+      // Every path above leaves the provider session holding this generation:
+      // injected now, injected on an earlier turn, or inherited by a native fork
+      // (which requires matching generations).
+      if (turnBuddyContext) this._briefedMemoryGeneration = this.memoryGeneration;
 
       // Merge feature: on the very first user send of a merge parent thread,
       // inject a prefix containing the contents of each child's review doc.
@@ -2685,6 +2704,7 @@ export function createConversationRuntime(
       const oldSessionId = this.sessionId;
       this.sessionId = createSessionId();
       this._providerAudienceKey = null;
+      this._briefedMemoryGeneration = null;
       // A reset starts an empty provider context. Carrying the old session's
       // token count forward would show a full meter on a fresh thread.
       this.providerUsage = null;

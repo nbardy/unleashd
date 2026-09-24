@@ -315,8 +315,11 @@ test('direct, queued and interrupting owner inputs keep clean prompts and distin
       'Apply the corrected setup.',
     ];
     for (const [index, request] of f.requests.entries()) {
-      assert.doesNotMatch(String(request.prompt), /HOST OWNER CONTROLS/);
-      assert.ok(String(request.prompt).endsWith(`\n\n${authoredInputs[index]}`));
+      const prompt = String(request.prompt);
+      assert.doesNotMatch(prompt, /HOST OWNER CONTROLS/);
+      assert.ok(prompt.endsWith(authoredInputs[index]));
+      // Resumed turns with an unchanged memory generation are not re-briefed.
+      assert.equal(prompt.includes('Current bounded Buddy briefing'), index === 0);
       assert.ok(request.mcpServers?.unleashd_buddy);
     }
     assert.deepEqual(
