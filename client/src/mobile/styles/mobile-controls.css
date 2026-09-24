@@ -94,14 +94,6 @@
   line-height: 1.45;
 }
 
-.mobile-body {
-  margin: 0;
-  color: var(--text-primary);
-  font-size: 14px;
-  line-height: 1.55;
-  overflow-wrap: anywhere;
-}
-
 .mobile-badge {
   display: inline-flex;
   align-items: center;
@@ -168,8 +160,7 @@
 
 .mobile-field input,
 .mobile-field textarea,
-.mobile-field select,
-.mobile-inline-form input {
+.mobile-field select {
   width: 100%;
   min-width: 0;
   padding: 10px 12px;
@@ -185,23 +176,9 @@
 
 .mobile-field input:focus-visible,
 .mobile-field textarea:focus-visible,
-.mobile-field select:focus-visible,
-.mobile-inline-form input:focus-visible {
+.mobile-field select:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 1px;
-}
-
-.mobile-inline-form {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 8px;
-  align-items: center;
-  margin-top: 8px;
-}
-
-.mobile-inline-form input {
-  flex: 1;
-  min-width: 160px;
 }
 
 .mobile-error {

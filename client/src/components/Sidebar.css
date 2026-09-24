@@ -334,36 +334,6 @@
 }
 
 /* View mode toggle: grouped vs list */
-.view-mode-toggle {
-  display: flex;
-  gap: 2px;
-  background: transparent;
-  border-radius: var(--ui-radius);
-  padding: 2px;
-}
-
-.view-mode-btn {
-  padding: 4px 6px;
-  background: transparent;
-  color: var(--text-muted);
-  border: none;
-  border-radius: var(--ui-radius);
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: all 0.15s;
-}
-
-.view-mode-btn:hover {
-  color: var(--text-primary);
-  background: var(--border-subtle);
-}
-
-.view-mode-btn.active {
-  background: var(--sidebar-selection);
-  color: var(--sidebar-selection-text);
-}
 
 .status-dot {
   width: 8px;
@@ -668,9 +638,6 @@
 }
 
 /* Count pushed to far right so it aligns vertically with parent Buddies count */
-.folder-group-count--right {
-  margin-left: auto;
-}
 
 .folder-group-header--buddy {
   --sidebar-row-hover: color-mix(in srgb, var(--text-emphasis) 5%, transparent);
@@ -826,10 +793,6 @@ a.sidebar-buddy-wake-done {
   .folder-group-header.folder-group-header--buddy.active {
     animation: none;
   }
-}
-
-.folder-group-header--buddy .folder-group-count--right {
-  margin-left: auto;
 }
 
 /* Conversation items under a buddy — about 1/2 the padding/margin per thread */

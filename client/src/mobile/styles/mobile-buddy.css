@@ -204,7 +204,6 @@
 
 .mobile-buddy-work-list,
 .mobile-buddy-convo-list,
-.mobile-journal-list,
 .mobile-automation-list {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
@@ -217,7 +216,6 @@
 
 .mobile-buddy-work-card,
 .mobile-buddy-convo-card,
-.mobile-journal-card,
 .mobile-automation-card {
   display: flex;
   flex-direction: column;
@@ -230,8 +228,6 @@
   background: var(--bg-raised-1);
 }
 
-.mobile-buddy-work-card__header,
-.mobile-buddy-convo-card__header,
 .mobile-automation-card__header {
   display: flex;
   flex-wrap: wrap;
@@ -458,11 +454,6 @@
 .mobile-memory-v2__notes h3,
 .mobile-memory-v2__form h3 {
   margin-bottom: 2px;
-}
-
-.mobile-buddy-convo-card__header {
-  justify-content: space-between;
-  margin-bottom: 6px;
 }
 
 .mobile-buddy-detail__description {

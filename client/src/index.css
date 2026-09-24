@@ -260,8 +260,7 @@ a:hover {
 code,
 pre,
 kbd,
-samp,
-.filepath-pill {
+samp {
   font-family: var(--font-mono);
 }
 

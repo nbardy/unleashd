@@ -194,13 +194,6 @@
   text-align: center;
 }
 
-.mobile-ui-note {
-  color: var(--text-muted);
-  font-size: 12px;
-  line-height: 1.45;
-  text-align: center;
-}
-
 @media (prefers-reduced-motion: reduce) {
   .mobile-ui-card--button {
     transition: none;
@@ -522,10 +515,6 @@
 .mobile-chat__status {
   color: var(--text-muted);
   font-size: 11px;
-}
-
-.mobile-chat__status--running {
-  color: var(--theme-success);
 }
 
 .mobile-chat__actions {
@@ -874,68 +863,6 @@
   background: var(--bg-raised-1);
 }
 
-.mobile-pending-files {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  margin-bottom: 6px;
-}
-
-.mobile-pending-file {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  max-width: 100%;
-  padding: 4px 6px;
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--ui-radius);
-  background: var(--bg-raised-2);
-  font-size: 12px;
-  color: var(--text-secondary);
-}
-
-.mobile-pending-file__thumb {
-  width: 28px;
-  height: 28px;
-  object-fit: cover;
-  border-radius: var(--ui-radius);
-  flex: none;
-}
-
-.mobile-pending-file__icon {
-  font-size: 16px;
-  line-height: 1;
-  flex: none;
-}
-
-.mobile-pending-file__name {
-  max-width: 110px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.mobile-pending-file__remove {
-  flex: none;
-  width: 18px;
-  height: 18px;
-  display: inline-grid;
-  place-items: center;
-  border: none;
-  border-radius: var(--ui-radius);
-  background: color-mix(in srgb, var(--theme-danger) 18%, transparent);
-  color: var(--theme-danger);
-  font-size: 12px;
-  font-weight: 700;
-  line-height: 1;
-  cursor: pointer;
-}
-
-.mobile-pending-file__remove:active {
-  background: var(--theme-danger);
-  color: #fff;
-}
-
 /* ---- Slim conversation header ---- */
 .mobile-chat__heading {
   flex: 1;
@@ -1139,10 +1066,6 @@
   .mobile-turn-status--active .mobile-turn-status__indicator {
     animation: none;
   }
-}
-
-.mobile-chat__turn-status-row {
-  padding-top: 4px;
 }
 
 .mobile-chat__typing,

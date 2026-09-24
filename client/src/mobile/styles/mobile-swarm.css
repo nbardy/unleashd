@@ -376,10 +376,6 @@
   background: var(--text-muted);
 }
 
-.mobile-worker-row__dot--running {
-  background: var(--theme-success);
-}
-
 .mobile-worker-row__role,
 .mobile-worker-row__state {
   color: var(--text-muted);

@@ -162,10 +162,5 @@
 }
 
 /* Swarm count badges */
-.swarm-worker-badges {
-  display: flex;
-  gap: 6px;
-  flex-wrap: wrap;
-}
 
 /* Reuse state-badge from Gallery.css */

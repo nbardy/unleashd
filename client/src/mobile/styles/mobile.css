@@ -131,15 +131,6 @@
 }
 
 /* ---- Header (optional top bar inside mobile shell) ---- */
-.mobile-header {
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  height: var(--mobile-header-height);
-  padding: 0 16px;
-  border-bottom: 1px solid var(--border-subtle);
-  background: var(--bg-raised-1);
-}
 
 /* ---- Tab items (NavLink) ---- */
 .mobile-tab {
@@ -195,12 +186,6 @@
   letter-spacing: -0.02em;
   color: var(--text-primary);
   line-height: 1.1;
-}
-
-.mobile-hub__subtitle {
-  margin-top: 6px;
-  font-size: 13px;
-  color: var(--text-muted);
 }
 
 /* ---- EmptyState ---- */
@@ -446,24 +431,6 @@
   white-space: nowrap;
 }
 
-.mobile-buddy-card__presence {
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-  text-transform: capitalize;
-}
-
-.mobile-buddy-card__presence--active {
-  color: var(--theme-success);
-}
-.mobile-buddy-card__presence--idle {
-  color: var(--text-muted);
-}
-.mobile-buddy-card__presence--offline {
-  color: var(--text-muted);
-  opacity: 0.7;
-}
-
 /* ---- SwarmsMobile directory ---- */
 .mobile-swarm-card {
   display: flex;
@@ -578,42 +545,8 @@
 
 /* ---- BuddyDetailMobile ---- */
 
-.mobile-buddy-detail__tabs {
-  display: flex;
-  gap: 18px;
-  padding: 0;
-  scrollbar-width: none;
-  overflow-x: auto;
-  -webkit-overflow-scrolling: touch;
-  border-bottom: 1px solid var(--border-subtle);
-  background: var(--bg-page);
-  position: sticky;
-  top: 0;
-  z-index: 2;
-}
-
 /* Anchors, not buttons — each tab is a URL, so Back returns to the previous
    tab instead of leaving the buddy. */
-.mobile-buddy-detail__tab {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 44px;
-  flex-shrink: 0;
-  padding: 10px 0;
-  border-bottom: 2px solid transparent;
-  background: transparent;
-  color: var(--text-muted);
-  font-size: 13px;
-  font-weight: 600;
-  white-space: nowrap;
-  text-decoration: none;
-}
-
-.mobile-buddy-detail__tab--active {
-  border-bottom-color: var(--accent);
-  color: var(--text-primary);
-}
 
 .mobile-buddy-section__heading {
   font-size: 13px;

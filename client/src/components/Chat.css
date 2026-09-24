@@ -142,8 +142,7 @@
   background: color-mix(in srgb, var(--warning) 22%, transparent);
 }
 
-.provider-picker-trigger:disabled,
-.model-picker-trigger:disabled {
+.provider-picker-trigger:disabled {
   cursor: wait;
   opacity: 0.65;
 }
@@ -217,107 +216,10 @@
 }
 
 /* Model picker — inline dropdown in chat header */
-.model-picker {
-  position: relative;
-  display: inline-flex;
-}
-
-.model-picker-trigger {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 2px 8px;
-  border-radius: var(--ui-radius);
-  font-size: 10px;
-  font-weight: 600;
-  background: color-mix(in srgb, var(--warning) 20%, transparent);
-  color: var(--warning);
-  border: 1px solid transparent;
-  cursor: pointer;
-  transition: border-color 0.15s, background 0.15s;
-  font-family: inherit;
-}
-
-.model-picker-trigger:hover {
-  border-color: color-mix(in srgb, var(--warning) 40%, transparent);
-  background: color-mix(in srgb, var(--warning) 30%, transparent);
-}
-
-.reasoning-picker-trigger {
-  background: color-mix(in srgb, var(--accent-primary) 16%, transparent);
-  color: var(--accent-primary);
-}
-
-.reasoning-picker-trigger:hover {
-  border-color: color-mix(in srgb, var(--accent-primary) 40%, transparent);
-  background: color-mix(in srgb, var(--accent-primary) 24%, transparent);
-}
 
 .model-picker-caret {
   font-size: 9px;
   opacity: 0.7;
-}
-
-.model-picker-menu {
-  position: absolute;
-  top: calc(100% + 6px);
-  left: 0;
-  min-width: 180px;
-  background: var(--bg-panel);
-  border: 1px solid var(--border-default);
-  border-radius: var(--ui-radius);
-  padding: 4px;
-  z-index: 1000;
-  box-shadow: 0 8px 24px color-mix(in srgb, var(--bg-darkest) 40%, transparent);
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-}
-
-.model-picker-option {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 6px 10px;
-  border: none;
-  border-radius: var(--ui-radius);
-  background: transparent;
-  color: var(--text-primary);
-  font-size: 12px;
-  font-family: inherit;
-  cursor: pointer;
-  transition: background 0.1s;
-  text-align: left;
-  white-space: nowrap;
-}
-
-.model-picker-option:hover {
-  background: color-mix(in srgb, var(--warning) 15%, transparent);
-}
-
-.model-picker-option.selected {
-  background: color-mix(in srgb, var(--warning) 20%, transparent);
-  color: var(--warning);
-  font-weight: 600;
-}
-
-.model-default-tag {
-  font-size: 9px;
-  padding: 1px 5px;
-  border-radius: var(--ui-radius);
-  background: color-mix(in srgb, var(--text-muted) 20%, transparent);
-  color: var(--text-muted);
-  font-weight: 400;
-}
-
-.reasoning-picker-menu .model-picker-option:hover {
-  background: color-mix(in srgb, var(--accent-primary) 15%, transparent);
-}
-
-.reasoning-picker-menu .model-picker-option.selected {
-  background: color-mix(in srgb, var(--accent-primary) 20%, transparent);
-  color: var(--accent-primary);
 }
 
 .config-save-state {

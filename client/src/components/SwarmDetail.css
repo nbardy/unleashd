@@ -44,12 +44,6 @@
   gap: 2px;
 }
 
-.swarm-detail-header .swarm-detail-path {
-  font-size: 11px;
-  color: var(--text-muted);
-  font-family: var(--font-mono);
-}
-
 .swarm-detail-header-stats {
   margin-left: auto;
   display: flex;
