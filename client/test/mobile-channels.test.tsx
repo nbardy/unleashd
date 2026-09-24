@@ -15,7 +15,10 @@ register(
   import.meta.url
 );
 const { ChannelsMobile } = await import('../src/mobile/channels/ChannelsMobile');
-const { isImmersiveChannelRoute } = await import('../src/mobile/channels/channel-route');
+const { isImmersiveChannelRoute, mobileChannelScreen } = await import(
+  '../src/mobile/channels/channel-route'
+);
+const { channelLinkPath, postLink } = await import('../src/components/buddies/channel-link');
 const { mobilePrimarySectionForPath, resolveMobileConversationDestination } = await import(
   '../src/utils/conversation-route-state'
 );
@@ -25,6 +28,47 @@ const { loadResource } = await import('../src/atoms/resources');
 
 const WS = 'ws-phone';
 const CHANNELS = `/buddies/workspaces/${WS}/channels`;
+
+// Permalinks are built by desktop (channel-link.ts) but parsed by a separate
+// mobile router (channel-route.ts). A link pasted into a bug report from the
+// desktop must open the same thread, and the same reply, on a phone.
+test('a desktop message permalink opens its thread and reply on mobile', () => {
+  const post = {
+    id: 'post_reply',
+    listId: 'list_a',
+    workspaceId: WS,
+    author: { kind: 'buddy' as const, buddyId: 'b1' },
+    threadRootId: 'post_root',
+    replyCount: 0,
+    latestReplyAt: null,
+    purpose: 'reply',
+    body: 'A confusing answer.',
+    evidence: [],
+    projectId: null,
+    createdAt: '2026-09-24T00:00:00.000Z',
+    senderConversationId: null,
+    senderRunId: null,
+  };
+  const reply = new URL(channelLinkPath(WS, postLink(post)), 'http://host');
+  assert.equal(reply.pathname, CHANNELS);
+  assert.deepEqual(mobileChannelScreen(reply.search), {
+    kind: 'thread',
+    listId: 'list_a',
+    rootId: 'post_root',
+    linkedPostId: 'post_reply',
+  });
+  // A top-level message links to its own thread, which loads it by id however old it is.
+  const root = new URL(
+    channelLinkPath(WS, postLink({ ...post, id: 'post_root', threadRootId: null })),
+    'http://host'
+  );
+  assert.deepEqual(mobileChannelScreen(root.search), {
+    kind: 'thread',
+    listId: 'list_a',
+    rootId: 'post_root',
+    linkedPostId: null,
+  });
+});
 
 // The channel URL is shared with desktop, so the section and the immersive
 // flag are derived from it. Misreading it as the Buddies section would light

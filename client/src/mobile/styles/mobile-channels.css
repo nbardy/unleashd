@@ -470,3 +470,28 @@ a.mobile-channels-wake-done {
 .mobile-channel .channel-composer-picker button {
   min-height: 44px;
 }
+
+.mobile-channel-header__link {
+  display: grid;
+  flex: none;
+  margin-left: auto;
+  place-items: center;
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border: 0;
+  border-radius: 8px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 15px;
+}
+
+.mobile-channel-header__link[data-copy-state="copied"] {
+  color: var(--theme-success);
+}
+
+/* The reply a permalink opened (`?post=`), highlighted as Slack does. */
+.mobile-channel-post[data-linked="true"] {
+  background: color-mix(in srgb, var(--theme-warning) 12%, transparent);
+  box-shadow: inset 3px 0 0 var(--theme-warning);
+}

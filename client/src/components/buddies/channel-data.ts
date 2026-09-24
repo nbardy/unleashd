@@ -240,14 +240,34 @@ export function useChannelResponding(listId: string) {
 // Pin to the newest message on open, and keep following new posts only while
 // the reader is already at the bottom — never yank someone reading history
 // back down on a poll.
-export function useFollowBottom(rowCount: number, version: unknown) {
+//
+// `linkedPostId` is the post a permalink named (channel-link.ts `post=`):
+// once its row renders, scroll it into view instead — once, so a poll never
+// drags the reader back to it — and stop following the bottom.
+export function useFollowBottom(rowCount: number, version: unknown, linkedPostId: string | null) {
   const scrollRef = useRef<HTMLDivElement>(null);
   const followRef = useRef(true);
+  const revealedRef = useRef<string | null>(null);
   // biome-ignore lint/correctness/useExhaustiveDependencies: version is the re-pin trigger
   useEffect(() => {
     const node = scrollRef.current;
-    if (node && followRef.current && rowCount > 0) node.scrollTop = node.scrollHeight;
-  }, [rowCount, version]);
+    if (!node || rowCount === 0) return;
+    const linked =
+      linkedPostId !== null && revealedRef.current !== linkedPostId
+        ? node.querySelector<HTMLElement>(`[data-post-id="${CSS.escape(linkedPostId)}"]`)
+        : null;
+    if (linked) {
+      revealedRef.current = linkedPostId;
+      followRef.current = false;
+      // Scroll only this pane; scrollIntoView would also scroll its ancestors.
+      node.scrollTop +=
+        linked.getBoundingClientRect().top -
+        node.getBoundingClientRect().top -
+        node.clientHeight / 4;
+      return;
+    }
+    if (followRef.current) node.scrollTop = node.scrollHeight;
+  }, [rowCount, version, linkedPostId]);
   const onScroll = (event: UIEvent<HTMLDivElement>) => {
     const node = event.currentTarget;
     followRef.current = node.scrollHeight - node.scrollTop - node.clientHeight < 48;

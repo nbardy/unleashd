@@ -11,6 +11,7 @@ import { BuddySigil } from './BuddySigil';
 import { ChannelAuthor } from './ChannelAuthor';
 import { ChannelComposer } from './ChannelComposer';
 import { ChannelMarkdown, TypingDots } from './ChannelMarkdown';
+import { CopyLinkButton } from './CopyLinkButton';
 import {
   CONVERSATIONAL_PURPOSES,
   type ChannelMember,
@@ -27,6 +28,7 @@ import {
   useFollowBottom,
   useWorkspaceDirectory,
 } from './channel-data';
+import { channelLinkPath, postLink } from './channel-link';
 import { type ChannelReference, type ChannelTask, plainChannelText } from './channel-text';
 import './ChannelBrowser.css';
 
@@ -55,6 +57,8 @@ type RowPlace =
 
 type RowContext = {
   workspaceId: string;
+  // The post a permalink named (`?post=`); its row is highlighted.
+  linkedPostId: string | null;
   buddyNames: Readonly<Record<string, string>>;
   tasks: ReadonlyMap<string, ChannelTask>;
   channelNameById: ReadonlyMap<string, string>;
@@ -159,6 +163,20 @@ function ThreadSummary({ post, context }: { post: BuddyMailingListPost; context:
   }
 }
 
+function ReplyIcon() {
+  return (
+    <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
+      <path
+        d="M2.5 4.5a2 2 0 0 1 2-2h7a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2H7l-3 2.5v-2.5h0a2 2 0 0 1-1.5-2z"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
 function ReplyAction({ post, context }: { post: BuddyMailingListPost; context: RowContext }) {
   switch (context.place.kind) {
     case 'thread':
@@ -168,15 +186,31 @@ function ReplyAction({ post, context }: { post: BuddyMailingListPost; context: R
       return (
         <button
           type="button"
-          className="channel-browser-reply-action"
+          className="channel-browser-message-action"
           onClick={() => place.openThread(post.threadRootId ?? post.id)}
           title="Reply in thread"
+          aria-label="Reply in thread"
         >
-          Reply
+          <ReplyIcon />
         </button>
       );
     }
   }
+}
+
+// Slack's hover toolbar: a small floating group pinned to the message's
+// top-right corner, straddling its top edge so it never covers the text.
+function MessageActions({ post, context }: { post: BuddyMailingListPost; context: RowContext }) {
+  return (
+    <div className="channel-browser-message-actions" role="toolbar" aria-label="Message actions">
+      <ReplyAction post={post} context={context} />
+      <CopyLinkButton
+        className="channel-browser-message-action"
+        path={channelLinkPath(context.workspaceId, postLink(post))}
+        label="Copy link to message"
+      />
+    </div>
+  );
 }
 
 function PostBody({ post, context }: { post: BuddyMailingListPost; context: RowContext }) {
@@ -188,6 +222,8 @@ function LeadRow({ post, context }: { post: BuddyMailingListPost; context: RowCo
     <li
       className="channel-browser-message channel-browser-message--lead"
       data-purpose={post.purpose}
+      data-post-id={post.id}
+      data-linked={post.id === context.linkedPostId ? 'true' : undefined}
     >
       <BuddySigil
         className="channel-browser-avatar"
@@ -209,7 +245,7 @@ function LeadRow({ post, context }: { post: BuddyMailingListPost; context: RowCo
         <PostBody post={post} context={context} />
         <ThreadSummary post={post} context={context} />
       </div>
-      <ReplyAction post={post} context={context} />
+      <MessageActions post={post} context={context} />
     </li>
   );
 }
@@ -219,6 +255,8 @@ function ContinuationRow({ post, context }: { post: BuddyMailingListPost; contex
     <li
       className="channel-browser-message channel-browser-message--continuation"
       data-purpose={post.purpose}
+      data-post-id={post.id}
+      data-linked={post.id === context.linkedPostId ? 'true' : undefined}
     >
       <time
         className="channel-browser-gutter-time"
@@ -234,7 +272,7 @@ function ContinuationRow({ post, context }: { post: BuddyMailingListPost; contex
         <PostBody post={post} context={context} />
         <ThreadSummary post={post} context={context} />
       </div>
-      <ReplyAction post={post} context={context} />
+      <MessageActions post={post} context={context} />
     </li>
   );
 }
@@ -275,7 +313,11 @@ function ThreadPane({
 }) {
   const thread = usePolledFetch(channelThreadResource(list.id, rootId), 3000);
   const replyRows = useMemo(() => channelRows(thread.data?.replies ?? []), [thread.data]);
-  const follow = useFollowBottom(replyRows.length + replying.length, thread.data);
+  const follow = useFollowBottom(
+    replyRows.length + replying.length,
+    thread.data,
+    context.linkedPostId
+  );
   // A reply that just finished is already written; fetch it now, not on the next poll.
   const replyingCount = replying.length;
   const previousReplying = useRef(replyingCount);
@@ -291,9 +333,20 @@ function ThreadPane({
           <h2>Thread</h2>
           <p>#{list.name}</p>
         </div>
-        <button type="button" onClick={onClose} aria-label="Close thread" title="Close thread">
-          ✕
-        </button>
+        <div className="channel-thread-header-actions">
+          <CopyLinkButton
+            className="channel-browser-header-action"
+            path={channelLinkPath(context.workspaceId, {
+              kind: 'thread',
+              listId: list.id,
+              rootId,
+            })}
+            label="Copy link to thread"
+          />
+          <button type="button" onClick={onClose} aria-label="Close thread" title="Close thread">
+            ✕
+          </button>
+        </div>
       </header>
       <div className="channel-browser-scroll" ref={follow.scrollRef} onScroll={follow.onScroll}>
         {thread.error && (
@@ -349,6 +402,7 @@ function ChannelPane({
   taskFilter,
   onTaskFilter,
   threadId,
+  linkedPostId,
   onThread,
 }: {
   list: BuddyMailingListSummary;
@@ -361,6 +415,7 @@ function ChannelPane({
   taskFilter: string | null;
   onTaskFilter: (projectId: string | null) => void;
   threadId: string | null;
+  linkedPostId: string | null;
   onThread: (rootId: string | null) => void;
 }) {
   const channelFeed = usePolledFetch(channelPostsResource(list.id), 5000);
@@ -392,7 +447,7 @@ function ChannelPane({
     previousResponding.current = respondingCount;
   }, [respondingCount, channelFeed.refetch]);
 
-  const follow = useFollowBottom(rows.length, shown.data);
+  const follow = useFollowBottom(rows.length, shown.data, null);
   const base = {
     workspaceId,
     buddyNames,
@@ -400,6 +455,7 @@ function ChannelPane({
     channelNameById,
     showChannel: taskFilter !== null,
     availableConversationIds,
+    linkedPostId,
   };
   const channelContext: RowContext = {
     ...base,
@@ -417,6 +473,11 @@ function ChannelPane({
             </h2>
             <p title={list.purpose}>{list.purpose}</p>
           </div>
+          <CopyLinkButton
+            className="channel-browser-header-action"
+            path={channelLinkPath(workspaceId, { kind: 'channel', listId: list.id })}
+            label="Copy link to channel"
+          />
           {taskIds.length > 0 && (
             <label className="channel-browser-task-filter">
               <span>Task</span>
@@ -648,8 +709,10 @@ function NewChannelForm({
 
 // Full-screen Slack layout. Mounted OUTSIDE the app shell (see App.tsx): the
 // channel rail replaces the conversations sidebar instead of nesting beside
-// it. Selection lives in the URL (?channel=, ?task=, ?thread=) so reload and
-// Back keep the reader where they were.
+// it. Selection lives in the URL (?channel=, ?task=, ?thread=, ?post=) so
+// reload and Back keep the reader where they were, and any of it can be shared
+// as a permalink (channel-link.ts). Selecting anything drops `post`: the
+// highlight belongs to the link that was opened, not to later navigation.
 export function ChannelBrowser({
   workspaceId,
   workspaceName,
@@ -772,6 +835,7 @@ export function ChannelBrowser({
               select({ channel: selected.id, task, thread: params.get('thread') })
             }
             threadId={params.get('thread')}
+            linkedPostId={params.get('post')}
             onThread={(thread) =>
               select({ channel: selected.id, task: params.get('task'), thread })
             }

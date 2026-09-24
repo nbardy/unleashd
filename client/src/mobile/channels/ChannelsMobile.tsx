@@ -6,8 +6,10 @@ import { BuddySigil } from '../../components/buddies/BuddySigil';
 import { ChannelAuthor } from '../../components/buddies/ChannelAuthor';
 import { ChannelComposer } from '../../components/buddies/ChannelComposer';
 import { ChannelMarkdown, TypingDots } from '../../components/buddies/ChannelMarkdown';
+import { CopyLinkButton } from '../../components/buddies/CopyLinkButton';
 import { WakeIcon, WakeIndicator } from '../../components/buddies/WakeIndicator';
 import { useBuddyDirectActions } from '../../components/buddies/buddy-direct-actions';
+import { channelLinkPath } from '../../components/buddies/channel-link';
 import {
   type ChannelMember,
   type ChannelRow,
@@ -117,6 +119,7 @@ function renderScreen(screen: MobileChannelScreen, context: ScreenContext) {
           key={screen.rootId}
           listId={screen.listId}
           rootId={screen.rootId}
+          linkedPostId={screen.linkedPostId}
           context={context}
         />
       );
@@ -344,7 +347,13 @@ type RowPlace =
     }
   | { kind: 'thread' };
 
-type RowContext = { workspaceId: string; directory: WorkspaceDirectory; place: RowPlace };
+type RowContext = {
+  workspaceId: string;
+  directory: WorkspaceDirectory;
+  place: RowPlace;
+  // The reply a permalink named (`?post=`); its row is highlighted.
+  linkedPostId: string | null;
+};
 
 function PostPurpose({ post }: { post: BuddyMailingListPost }) {
   const label = postPurposeLabel(post);
@@ -410,6 +419,8 @@ function Row({ row, context }: { row: ChannelRow; context: RowContext }) {
         <li
           className="mobile-channel-post mobile-channel-post--lead"
           data-purpose={postPurposeTag(row.post)}
+          data-post-id={row.post.id}
+          data-linked={row.post.id === context.linkedPostId ? 'true' : undefined}
         >
           <BuddySigil
             className="mobile-channel-post__avatar"
@@ -440,6 +451,8 @@ function Row({ row, context }: { row: ChannelRow; context: RowContext }) {
         <li
           className="mobile-channel-post mobile-channel-post--continuation"
           data-purpose={postPurposeTag(row.post)}
+          data-post-id={row.post.id}
+          data-linked={row.post.id === context.linkedPostId ? 'true' : undefined}
         >
           <div className="mobile-channel-post__content">
             <PostPurpose post={row.post} />
@@ -459,10 +472,12 @@ function ScreenHeader({
   backTo,
   title,
   subtitle,
+  link,
 }: {
   backTo: string;
   title: string;
   subtitle: string;
+  link: { path: string; label: string };
 }) {
   return (
     <header className="mobile-channel-header">
@@ -473,6 +488,7 @@ function ScreenHeader({
         <h1>{title}</h1>
         <p>{subtitle}</p>
       </div>
+      <CopyLinkButton className="mobile-channel-header__link" path={link.path} label={link.label} />
     </header>
   );
 }
@@ -485,16 +501,18 @@ function ChannelScreen({ listId, context }: { listId: string; context: ScreenCon
   const feed = usePolledFetch(channelPostsResource(listId), 5000);
   const responding = useChannelResponding(listId);
   const rows = useMemo(() => channelRows(feed.data ?? []), [feed.data]);
-  const follow = useFollowBottom(rows.length, feed.data);
+  const follow = useFollowBottom(rows.length, feed.data, null);
   useRefetchWhenRepliesLand(responding.count, feed.refetch);
   const rowContext: RowContext = {
     workspaceId,
     directory,
     place: {
       kind: 'channel',
-      threadHref: (rootId) => channelsHref(workspaceId, { kind: 'thread', listId, rootId }),
+      threadHref: (rootId) =>
+        channelsHref(workspaceId, { kind: 'thread', listId, rootId, linkedPostId: null }),
       responding: responding.byRoot,
     },
+    linkedPostId: null,
   };
   // The mailing list's own description — unrelated to the conversation field gate G2 guards.
   const { name, purpose: description } = list ?? { name: 'channel', purpose: '' };
@@ -504,6 +522,10 @@ function ChannelScreen({ listId, context }: { listId: string; context: ScreenCon
         backTo={channelsHref(workspaceId, { kind: 'home' })}
         title={`# ${name}`}
         subtitle={description}
+        link={{
+          path: channelLinkPath(workspaceId, { kind: 'channel', listId }),
+          label: 'Copy link to channel',
+        }}
       />
       <div className="mobile-channel__scroll" ref={follow.scrollRef} onScroll={follow.onScroll}>
         {feed.error && (
@@ -542,10 +564,12 @@ function ChannelScreen({ listId, context }: { listId: string; context: ScreenCon
 function ThreadScreen({
   listId,
   rootId,
+  linkedPostId,
   context,
 }: {
   listId: string;
   rootId: string;
+  linkedPostId: string | null;
   context: ScreenContext;
 }) {
   const { workspaceId, directory, lists } = context;
@@ -556,9 +580,14 @@ function ThreadScreen({
     (buddyId) => directory.buddyNames[buddyId] ?? buddyId
   );
   const replyRows = useMemo(() => channelRows(thread.data?.replies ?? []), [thread.data]);
-  const follow = useFollowBottom(replyRows.length + replying.length, thread.data);
+  const follow = useFollowBottom(replyRows.length + replying.length, thread.data, linkedPostId);
   useRefetchWhenRepliesLand(responding.count, thread.refetch);
-  const rowContext: RowContext = { workspaceId, directory, place: { kind: 'thread' } };
+  const rowContext: RowContext = {
+    workspaceId,
+    directory,
+    place: { kind: 'thread' },
+    linkedPostId,
+  };
   const root = thread.data?.root;
   return (
     <div className="mobile-channel">
@@ -566,6 +595,10 @@ function ThreadScreen({
         backTo={channelsHref(workspaceId, { kind: 'channel', listId })}
         title="Thread"
         subtitle={`# ${list?.name ?? 'channel'}`}
+        link={{
+          path: channelLinkPath(workspaceId, { kind: 'thread', listId, rootId }),
+          label: 'Copy link to thread',
+        }}
       />
       <div className="mobile-channel__scroll" ref={follow.scrollRef} onScroll={follow.onScroll}>
         {thread.error && (

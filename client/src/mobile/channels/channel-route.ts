@@ -1,14 +1,15 @@
 /**
  * Which mobile channels screen a URL names. The URL is the one desktop uses —
- * /buddies/workspaces/:id/channels?channel=&thread= — so links work on both
- * devices; mobile renders it as Slack does on a phone: one screen at a time.
+ * /buddies/workspaces/:id/channels?channel=&thread=&post= — so links work on
+ * both devices; mobile renders it as Slack does on a phone: one screen at a
+ * time. `post` is the reply a permalink names (components/buddies/channel-link.ts).
  *
  *   D = Home (channel list + Buddies) ⊕ Channel ⊕ Thread
  */
 export type MobileChannelScreen =
   | { kind: 'home' }
   | { kind: 'channel'; listId: string }
-  | { kind: 'thread'; listId: string; rootId: string };
+  | { kind: 'thread'; listId: string; rootId: string; linkedPostId: string | null };
 
 const CHANNELS_PATH = /^\/buddies\/workspaces\/[^/]+\/channels\/?$/;
 
@@ -16,7 +17,7 @@ export function mobileChannelScreen(search: string): MobileChannelScreen {
   const params = new URLSearchParams(search);
   const listId = params.get('channel');
   const rootId = params.get('thread');
-  if (listId && rootId) return { kind: 'thread', listId, rootId };
+  if (listId && rootId) return { kind: 'thread', listId, rootId, linkedPostId: params.get('post') };
   if (listId) return { kind: 'channel', listId };
   return { kind: 'home' };
 }
@@ -37,7 +38,11 @@ export function channelsHref(workspaceId: string, screen: MobileChannelScreen): 
       return base;
     case 'channel':
       return `${base}?channel=${encodeURIComponent(screen.listId)}`;
-    case 'thread':
-      return `${base}?channel=${encodeURIComponent(screen.listId)}&thread=${encodeURIComponent(screen.rootId)}`;
+    case 'thread': {
+      const thread = `${base}?channel=${encodeURIComponent(screen.listId)}&thread=${encodeURIComponent(screen.rootId)}`;
+      return screen.linkedPostId === null
+        ? thread
+        : `${thread}&post=${encodeURIComponent(screen.linkedPostId)}`;
+    }
   }
 }
