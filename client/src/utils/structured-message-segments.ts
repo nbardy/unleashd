@@ -5,10 +5,19 @@ import { BUDDY_REVIEW_RESULT_RE } from './buddy-review-message';
  * only; callers receive typed segments and never need to understand delimiters.
  * New provider-native events should normalize to the same segment union.
  */
-export const ASK_USER_QUESTION_RE = /<!--ask_user_question:(.*?)-->/s;
+export const ASK_USER_QUESTION_RE = /<!--\s*ask_user_question\s*:(.*?)\s*-->/s;
 
 export const OOMPA_RUN_TOOL_FRAGMENT_RE =
   /⚡\s+(?:bash|shell|run_shell_command)\s+(?:(?:oompa\s+(?:run|swarm)\s+::|(?:env\s+(?:-\w+\s+\S+\s+)*)?oompa\s+(?:run|swarm)\s)[^\n]*|(?:env\s+(?:-\w+\s+\S+\s+)*)?oompa\s+\S+\.json[^\n]*)/i;
+
+// Capturing copy: channel rendering keeps the fragment's source text so an
+// oompa run line reads exactly as before, while chat keeps its widget.
+const OOMPA_RUN_CAPTURE_RE = new RegExp(`(${OOMPA_RUN_TOOL_FRAGMENT_RE.source})`, 'i');
+
+// Provider markers are transport compatibility only; the model, history
+// rewraps, and Markdown soft breaks can all leave whitespace inside the
+// `<!-- … -->` delimiters, so every marker pattern tolerates it. Writers keep
+// emitting the canonical compact form.
 
 export type StructuredMessageSegment =
   | { type: 'text'; content: string }
@@ -17,7 +26,7 @@ export type StructuredMessageSegment =
   | { type: 'buddy_builder_result'; json: string }
   | { type: 'buddy_team_configuration'; json: string }
   | { type: 'buddy_worker_thread'; json: string }
-  | { type: 'oompa_run' };
+  | { type: 'oompa_run'; content: string };
 
 interface SegmentMatch {
   type: Exclude<StructuredMessageSegment['type'], 'text'>;
@@ -50,20 +59,25 @@ function collectMatches(
 
 export function splitStructuredMessageContent(content: string): StructuredMessageSegment[] {
   const matches = [
-    ...collectMatches(content, 'buddy_worker_thread', /<!--buddy_worker_thread:(.*?)-->/s, 1),
+    ...collectMatches(
+      content,
+      'buddy_worker_thread',
+      /<!--\s*buddy_worker_thread\s*:(.*?)\s*-->/s,
+      1
+    ),
     ...collectMatches(content, 'ask_user_question', ASK_USER_QUESTION_RE, 1),
     ...collectMatches(content, 'buddy_review_result', BUDDY_REVIEW_RESULT_RE, 1),
     ...collectMatches(
       content,
       'buddy_builder_result',
-      /(?:^[ \t]*🔧[ \t]+mcp_tool[ \t]*\r?\n\s*)?<!--buddy_builder_result:(.*?)-->/ms,
+      /(?:^[ \t]*🔧[ \t]+mcp_tool[ \t]*\r?\n\s*)?<!--\s*buddy_builder_result\s*:(.*?)\s*-->/ms,
       1
     ),
-    ...collectMatches(content, 'oompa_run', OOMPA_RUN_TOOL_FRAGMENT_RE),
+    ...collectMatches(content, 'oompa_run', OOMPA_RUN_CAPTURE_RE, 1),
     ...collectMatches(
       content,
       'buddy_team_configuration',
-      /(?:^[ \t]*🔧[ \t]+mcp_tool[ \t]*\r?\n\s*)?<!--buddy_team_configuration:(.*?)-->/ms,
+      /(?:^[ \t]*🔧[ \t]+mcp_tool[ \t]*\r?\n\s*)?<!--\s*buddy_team_configuration\s*:(.*?)\s*-->/ms,
       1
     ),
   ].sort((a, b) => a.index - b.index);
@@ -84,8 +98,12 @@ export function splitStructuredMessageContent(content: string): StructuredMessag
       match.type === 'buddy_worker_thread'
     ) {
       segments.push({ type: match.type, json: match.payload ?? '' });
+    } else if (match.type === 'oompa_run') {
+      segments.push({ type: match.type, content: match.payload ?? '' });
     } else {
-      segments.push({ type: match.type });
+      // Unreachable: every segment type is handled above. Fail closed so a
+      // future variant errors loudly instead of rejoining text or vanishing.
+      throw new Error(`unhandled structured segment ${(match as SegmentMatch).type}`);
     }
     lastIndex = match.index + match.length;
   }

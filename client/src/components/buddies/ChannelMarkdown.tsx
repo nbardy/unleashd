@@ -4,9 +4,18 @@ import Markdown, { type Components, type ExtraProps, defaultUrlTransform } from 
 import { Link } from 'react-router-dom';
 import remarkGfm from 'remark-gfm';
 import { ChatActivity } from '../../ui/ChatActivity';
+import { parseBuddyReviewResult } from '../../utils/buddy-review-message';
 import { useLazyMarkdownPlugins } from '../../utils/lazyMarkdownPlugins';
 import { remarkBreaks } from '../../utils/remark-breaks';
+import {
+  type StructuredMessageSegment,
+  splitStructuredMessageContent,
+} from '../../utils/structured-message-segments';
 import { splitToolActivity } from '../../utils/tool-activity-segments';
+import { AskUserQuestionWidget, parseAskUserQuestion } from '../AskUserQuestion';
+import { BuddyReviewResultCard } from '../BuddyReviewMessage';
+import { InlineBuddyBuilderResult } from './BuddyBuilderResultCard';
+import { InlineBuddyTeamConfiguration } from './BuddyTeamConfiguration';
 import { type ChannelTask, isVideoSource, mediaUrl, parseChannelLink } from './channel-text';
 import './ChannelContent.css';
 
@@ -269,11 +278,70 @@ export function ChannelMarkdown({
             {markdown(segment.content)}
           </ChatActivity>
         ) : (
-          markdown(segment.content, index)
+          <ChannelTextBody
+            key={index}
+            content={segment.content}
+            markdown={markdown}
+            startIndex={index * 1000}
+          />
         )
       )}
     </div>
   );
+}
+
+// Text runs can carry the same provider markers /chat strips
+// (splitStructuredMessageContent): a mention reply is the Buddy's final
+// assistant message, including the server-injected tool-result markers. Raw
+// HTML stays disabled, so an unstripped marker paints as literal text — on
+// 2026-09-24 a team-configuration blob leaked into #general this way. Each
+// marker renders the same widget /chat uses; oompa run lines keep their
+// long-standing plain-text rendering.
+function ChannelTextBody({
+  content,
+  markdown,
+  startIndex,
+}: {
+  content: string;
+  markdown: (text: string, key?: number) => ReactNode;
+  startIndex: number;
+}) {
+  const parts = useMemo(() => splitStructuredMessageContent(content), [content]);
+  return (
+    <>{parts.map((part, offset) => channelStructuredPart(part, markdown, startIndex + offset))}</>
+  );
+}
+
+function channelStructuredPart(
+  part: StructuredMessageSegment,
+  markdown: (text: string, key?: number) => ReactNode,
+  key: number
+): ReactNode {
+  if (part.type === 'text' || part.type === 'oompa_run') {
+    if (!part.content.trim()) return null;
+    return markdown(part.content, key);
+  }
+  if (part.type === 'buddy_worker_thread') return null;
+  if (part.type === 'buddy_team_configuration') {
+    return <InlineBuddyTeamConfiguration key={key} payload={part.json} />;
+  }
+  if (part.type === 'buddy_builder_result') {
+    return <InlineBuddyBuilderResult key={key} payload={part.json} />;
+  }
+  if (part.type === 'buddy_review_result') {
+    const result = parseBuddyReviewResult(part.json);
+    return result ? (
+      <BuddyReviewResultCard key={key} result={result} />
+    ) : (
+      <code key={key}>Buddy review result (parse error)</code>
+    );
+  }
+  try {
+    const data = parseAskUserQuestion(part.json);
+    return <AskUserQuestionWidget key={key} data={data} />;
+  } catch {
+    return <code key={key}>AskUserQuestion (parse error)</code>;
+  }
 }
 
 /** Three pulsing dots: "is replying" / "is checking". Respects reduced motion. */
