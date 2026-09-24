@@ -1,5 +1,5 @@
 // DO NOT EDIT - generated from catalog.jsonc
-// Source: vendor/agent-cli-tool/catalog.jsonc (revision 2026-09-23.opus-5-5-default)
+// Source: vendor/agent-cli-tool/catalog.jsonc (revision 2026-09-24.grok-4-7)
 // Generator: shared/scripts/gen-catalog.ts
 // Run: pnpm --filter @unleashd/shared gen:catalog
 
@@ -12,6 +12,26 @@ export const CURSOR_MODEL_REGISTRY = [
     "id": "composer-2.5",
     "displayName": "Composer 2.5",
     "isDefault": true
+  },
+  {
+    "id": "grok-4.7-xhigh",
+    "displayName": "Grok 4.7 Extra High",
+    "isDefault": false
+  },
+  {
+    "id": "grok-4.7-high",
+    "displayName": "Grok 4.7 High",
+    "isDefault": false
+  },
+  {
+    "id": "grok-4.7-medium",
+    "displayName": "Grok 4.7 Medium",
+    "isDefault": false
+  },
+  {
+    "id": "grok-4.7-low",
+    "displayName": "Grok 4.7 Low",
+    "isDefault": false
   },
   {
     "id": "cursor-grok-4.5-high",
@@ -29,7 +49,7 @@ export const CURSOR_MODEL_REGISTRY = [
     "isDefault": false
   }
 ] as const;
-export const CURSOR_MODEL_IDS = ["composer-2.5","cursor-grok-4.5-high","cursor-grok-4.5-medium","cursor-grok-4.5-low"] as const;
+export const CURSOR_MODEL_IDS = ["composer-2.5","grok-4.7-xhigh","grok-4.7-high","grok-4.7-medium","grok-4.7-low","cursor-grok-4.5-high","cursor-grok-4.5-medium","cursor-grok-4.5-low"] as const;
 
 export const CLAUDE_EFFORT_LEVELS = ["low","medium","high","xhigh","max"] as const;
 export const CODEX_EFFORT_LEVELS = ["minimal","low","medium","high","xhigh","max","ultra"] as const;

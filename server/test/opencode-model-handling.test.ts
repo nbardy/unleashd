@@ -85,6 +85,7 @@ test('server provider/model compatibility validation works per provider', () => 
   assert.equal(isModelIdValidForProvider('cursor', 'opus'), false);
   assert.equal(normalizeModelId('cursor', 'composer-2'), 'composer-2.5');
   assert.equal(normalizeModelId('cursor', 'grok-4.5'), 'cursor-grok-4.5-high');
+  assert.equal(normalizeModelId('cursor', 'grok-4.7'), 'grok-4.7-high');
 });
 
 test('disk hydration rejects a globally valid model from the wrong provider', () => {

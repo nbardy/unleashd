@@ -146,6 +146,7 @@ export const CURSOR_MODEL_ALIASES: Readonly<Record<string, CursorModel>> = {
   'composer-2-fast': 'composer-2.5',
   'composer-2.5-fast': 'composer-2.5',
   'grok-4.5': 'cursor-grok-4.5-high',
+  'grok-4.7': 'grok-4.7-high',
 };
 
 type CodexModelRegistryItem = (typeof CODEX_MODEL_REGISTRY)[number];
