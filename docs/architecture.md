@@ -295,6 +295,15 @@ forever with no reply. Recovery of durable records is per-record fault-isolated
 for the same reason — it runs inside the barrier, so an unreadable record used to
 reach `handleStartupFailure()` and exit the process.
 
+**One dev process** (`tools/dev-supervisor.mjs` + `tools/dev-runtime.mjs`):
+`pnpm dev` hosts the three TypeScript watch compilers (shared ESM, shared CJS,
+agent-cli-tool), Vite and the backend runner in the supervisor process through
+their JS APIs; only the backend server is a child. The backend and Vite start
+after every compiler's first pass, so no compiler output lands on a backend
+mid-boot and there is no separate pre-build. It replaced concurrently plus a
+`pnpm --filter` wrapper per tool (18 processes → ~5, 2026-09-25); memory is
+about the same, the saving is processes and a deterministic start order.
+
 **Watcher contract** (`tools/watch-server.mjs`): keep exactly one backend
 running the code on disk.
 

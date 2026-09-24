@@ -1,6 +1,10 @@
 #!/usr/bin/env node
 // Runs one named task: dev | dev-server | dev-client | build | typecheck.
 //
+// Dev tasks host their long-lived tools in THIS process (tools/dev-runtime.mjs):
+// compilers, Vite and the backend runner; only the backend server itself is a
+// child. `pnpm dev` went from 18 processes to ~7 (2026-09-25).
+//
 // Dev tasks claim one dev runtime per data directory (a lock file holding the
 // owner's PID) and refuse dev ports held by anything else. `--replace` stops the
 // recorded owner first. Build and typecheck take no lock: when they clean-rebuild
@@ -9,11 +13,11 @@
 // retries (tools/watch-server.mjs).
 import { spawn, spawnSync } from 'node:child_process';
 import { mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { createRequire } from 'node:module';
 import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
+import { startBackend, startCompiler, startVite } from './dev-runtime.mjs';
 import { LOCAL_DOMAIN_ENV, detectLocalDomain } from './local-domain.mjs';
 
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -41,68 +45,56 @@ function pnpm(...args) {
     : { command: 'pnpm', args };
 }
 
-export function taskSteps(task, localDomain) {
-  const domainEnv = { [LOCAL_DOMAIN_ENV]: localDomain ? '1' : '0' };
+// A task = one-shot `steps` (spawned in order, each must exit 0), then the
+// long-lived `services` this process hosts itself (tools/dev-runtime.mjs).
+export function taskPlan(task) {
   const buildShared = pnpm('--filter', '@unleashd/shared', 'build');
   const buildCli = pnpm('--dir', 'vendor/agent-cli-tool', 'build');
-  const vite = { ...pnpm('--filter', '@unleashd/client', 'exec', 'vite'), env: domainEnv };
-  const backend = {
-    command: process.execPath,
-    args: [path.join(repositoryRoot, 'tools', 'watch-server.mjs')],
-    env: { NODE_ENV: 'development', ...domainEnv },
-  };
   switch (task) {
     case 'build':
-      return [
-        buildShared,
-        buildCli,
-        pnpm('--filter', '@unleashd/server', 'build'),
-        pnpm('--filter', '@unleashd/client', 'build'),
-      ];
+      return {
+        steps: [
+          buildShared,
+          buildCli,
+          pnpm('--filter', '@unleashd/server', 'build'),
+          pnpm('--filter', '@unleashd/client', 'build'),
+        ],
+        services: [],
+      };
     case 'typecheck':
-      return [
-        buildShared,
-        pnpm('--filter', '@unleashd/server', 'typecheck'),
-        pnpm('--filter', '@unleashd/client', 'exec', 'tsc', '-b'),
-        pnpm('--dir', 'vendor/agent-cli-tool', 'typecheck'),
-      ];
+      return {
+        steps: [
+          buildShared,
+          pnpm('--filter', '@unleashd/server', 'typecheck'),
+          pnpm('--filter', '@unleashd/client', 'exec', 'tsc', '-b'),
+          pnpm('--dir', 'vendor/agent-cli-tool', 'typecheck'),
+        ],
+        services: [],
+      };
     case 'dev-server':
-      return [buildShared, buildCli, backend];
+      return { steps: [buildShared, buildCli], services: ['backend'] };
     case 'dev-client':
-      return [buildShared, vite];
+      return { steps: [buildShared], services: ['vite'] };
+    // No build steps: the compilers' first pass is the build, and nothing else
+    // starts until it has finished.
     case 'dev':
-      return [
-        buildShared,
-        buildCli,
-        {
-          command: process.execPath,
-          args: [
-            path.join(
-              path.dirname(createRequire(import.meta.url).resolve('concurrently/package.json')),
-              'dist',
-              'bin',
-              'concurrently.js'
-            ),
-            '--kill-others-on-fail',
-            '-n',
-            'shared-esm,shared-cjs,cli,server,client',
-            '-c',
-            'yellow,yellow,magenta,blue,green',
-            'pnpm --filter @unleashd/shared watch:esm',
-            'pnpm --filter @unleashd/shared watch:cjs',
-            'pnpm --dir vendor/agent-cli-tool watch',
-            'node tools/watch-server.mjs',
-            'pnpm --filter @unleashd/client exec vite',
-          ],
-          env: { NODE_ENV: 'development', ...domainEnv },
-        },
-      ];
+      return { steps: [], services: ['compilers', 'backend', 'vite'] };
     default:
       throw new Error(
         `Unknown task "${task}"; expected dev, dev-server, dev-client, build or typecheck`
       );
   }
 }
+
+// The compilers `pnpm dev` runs: the same configs as the packages' watch scripts.
+const COMPILERS = [
+  { name: 'shared-esm', configPath: path.join(repositoryRoot, 'shared', 'tsconfig.json') },
+  { name: 'shared-cjs', configPath: path.join(repositoryRoot, 'shared', 'tsconfig.cjs.json') },
+  {
+    name: 'cli',
+    configPath: path.join(repositoryRoot, 'vendor', 'agent-cli-tool', 'tsconfig.build.json'),
+  },
+];
 
 // --- the dev runtime lock -----------------------------------------------------
 
@@ -242,13 +234,8 @@ async function runSteps(steps, onChild) {
   try {
     for (const step of steps) {
       if (received) return 130;
-      // concurrently forces colour for its children; an inherited NO_COLOR makes
-      // every Node child warn about the conflict before any useful output.
-      // (spawn drops undefined env entries.)
-      const env = { ...process.env, ...step.env, NO_COLOR: undefined };
       child = spawn(step.command, step.args, {
         cwd: repositoryRoot,
-        env,
         stdio: 'inherit',
         detached: true,
       });
@@ -269,13 +256,69 @@ async function runSteps(steps, onChild) {
   }
 }
 
+const log = (line) => process.stdout.write(`${line}\n`);
+
+/**
+ * Host `services` until a signal. Compilers finish their first pass before the
+ * backend or Vite starts. Returns the exit code.
+ */
+async function runServices(services) {
+  const running = { compilers: [], backend: null, vite: null };
+  let stopping = null;
+  const stop = (name) => {
+    if (stopping) {
+      running.backend?.stop('SIGKILL');
+      return;
+    }
+    stopping = name;
+    for (const compiler of running.compilers) compiler.close();
+    void running.vite?.close();
+    if (running.backend) running.backend.stop(name);
+    else process.exit(130);
+  };
+  const signals = ['SIGINT', 'SIGTERM', 'SIGHUP'];
+  for (const name of signals) process.on(name, stop);
+  try {
+    if (services.includes('compilers')) {
+      // The build scripts write these CommonJS markers after tsc; watch mode never does.
+      await import(
+        pathToFileURL(path.join(repositoryRoot, 'shared/scripts/write-cjs-package.mjs')).href
+      );
+      await import(
+        pathToFileURL(
+          path.join(repositoryRoot, 'vendor/agent-cli-tool/scripts/write-dist-package.mjs')
+        ).href
+      );
+      running.compilers = COMPILERS.map((compiler) => startCompiler({ ...compiler, log }));
+      await Promise.all(running.compilers.map((compiler) => compiler.ready));
+    }
+    if (stopping) return 130;
+    if (services.includes('backend')) {
+      running.backend = startBackend({ repositoryRoot, env: { NODE_ENV: 'development' }, log });
+    }
+    if (services.includes('vite')) {
+      running.vite = await startVite({ clientRoot: path.join(repositoryRoot, 'client') });
+    }
+    if (running.backend) await running.backend.stopped;
+    else await new Promise(() => {});
+    return 130;
+  } finally {
+    for (const name of signals) process.off(name, stop);
+  }
+}
+
 export async function runTask({ task, replace }) {
-  const steps = taskSteps(task, task in DEV_PORTS && detectLocalDomain({ task }));
-  if (!(task in DEV_PORTS)) return runSteps(steps, () => {});
+  const plan = taskPlan(task);
+  if (!(task in DEV_PORTS)) return runSteps(plan.steps, () => {});
+  // Vite's config and the backend read this at load; both now run in or under
+  // this process, so it is set here rather than per spawned tool.
+  process.env[LOCAL_DOMAIN_ENV] = detectLocalDomain({ task }) ? '1' : '0';
   const runtime = await claimDevRuntime({ replace });
   try {
     await assertPortsFree(DEV_PORTS[task]);
-    return await runSteps(steps, runtime.recordChild);
+    const code = await runSteps(plan.steps, runtime.recordChild);
+    if (code !== 0) return code;
+    return await runServices(plan.services);
   } finally {
     runtime.release();
   }
@@ -288,4 +331,6 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
     console.error(`[dev-supervisor] ${error.message}`);
     process.exitCode = 1;
   }
+  // Hosted services (Vite's watchers, compiler timers) may still hold handles.
+  process.exit();
 }

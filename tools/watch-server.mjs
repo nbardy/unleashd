@@ -78,6 +78,9 @@ export function createBackendRunner({
   env = {},
   watchRoot,
   check,
+  // (chunk) => void. Given, the backend's stdout and stderr are piped through
+  // it (the one-process dev runtime prefixes them); absent, they are inherited.
+  output,
   settleMs = SETTLE_MS,
   initialBackoffMs = INITIAL_BACKOFF_MS,
   log = (line) => console.log(`[server-watch] ${line}`),
@@ -138,8 +141,12 @@ export function createBackendRunner({
     const child = spawn(command, args, {
       cwd,
       env: { ...process.env, ...env, WATCH_REPORT_DEPENDENCIES: '1' },
-      stdio: ['inherit', 'inherit', 'inherit', 'ipc'],
+      stdio: output ? ['inherit', 'pipe', 'pipe', 'ipc'] : ['inherit', 'inherit', 'inherit', 'ipc'],
     });
+    if (output) {
+      child.stdout.setEncoding('utf8').on('data', output);
+      child.stderr.setEncoding('utf8').on('data', output);
+    }
     const startedAt = Date.now();
     child.on('message', recordLoaded);
     child.once('exit', (code, signal) => onExit(code, signal, Date.now() - startedAt));
