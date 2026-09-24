@@ -5,6 +5,7 @@ import remarkGfm from 'remark-gfm';
 import { useLazyMarkdownPlugins } from '../../utils/lazyMarkdownPlugins';
 import { remarkBreaks } from '../../utils/remark-breaks';
 import { type ChannelTask, isVideoSource, mediaUrl, parseChannelLink } from './channel-text';
+import { taskStatusView } from './ui-contract';
 import './ChannelContent.css';
 
 // Channel post bodies: markdown (GFM, soft breaks, highlighted code; raw HTML
@@ -16,23 +17,6 @@ import './ChannelContent.css';
 // react-markdown strips unknown URL schemes; buddy: and task: are ours.
 function channelUrlTransform(url: string): string {
   return /^(buddy|task):/.test(url) ? url : defaultUrlTransform(url);
-}
-
-type TaskStatusView = { glyph: string; label: string; tone: string };
-
-const TASK_STATUS: Readonly<Record<string, TaskStatusView>> = {
-  backlog: { glyph: '○', label: 'Backlog', tone: 'idle' },
-  ready: { glyph: '○', label: 'Ready', tone: 'idle' },
-  in_progress: { glyph: '◐', label: 'In progress', tone: 'active' },
-  review: { glyph: '◑', label: 'In review', tone: 'active' },
-  blocked: { glyph: '■', label: 'Blocked', tone: 'blocked' },
-  done: { glyph: '✓', label: 'Done', tone: 'done' },
-  cancelled: { glyph: '✕', label: 'Cancelled', tone: 'idle' },
-};
-
-// Status is an open string from the store; an unlisted one shows verbatim.
-function statusView(status: string): TaskStatusView {
-  return TASK_STATUS[status] ?? { glyph: '•', label: status, tone: 'idle' };
 }
 
 function TaskChip({
@@ -54,7 +38,7 @@ function TaskChip({
       </span>
     );
   }
-  const status = statusView(task.status);
+  const status = taskStatusView(task.status);
   return (
     <span className="channel-task-chip-anchor">
       <Link

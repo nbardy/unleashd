@@ -1,21 +1,13 @@
 import { useAtomValue } from 'jotai';
 import { type ReactNode, useMemo, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { initials } from '../../components/buddies/ui-contract';
 import { useBuddyOverview } from '../../hooks/useBuddyData';
 import { mobileConversationRouteState } from '../../utils/conversation-route-state';
 import { type BuddyDirectorySort, mobileBuddyDirectoryAtom } from '../atoms/buddies';
 import { createBuddyViaBuilder } from '../atoms/create';
 import { EmptyState } from '../components/EmptyState';
 import { MobileHeaderAction, MobilePage } from '../components/MobileUI';
-
-function initials(name: string): string {
-  return name
-    .split(/\s+/)
-    .map((part) => part[0])
-    .join('')
-    .slice(0, 2)
-    .toUpperCase();
-}
 
 export function BuddiesMobile() {
   const navigate = useNavigate();

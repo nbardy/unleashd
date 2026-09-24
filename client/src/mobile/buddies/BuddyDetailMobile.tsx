@@ -11,13 +11,14 @@ import { useCallback, useMemo, useState } from 'react';
 import { Link, Navigate, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { BuddyBackgroundTasks } from '../../components/buddies/BuddyBackgroundTasks';
 import '../../components/buddies/BuddyBackgroundTasks.css';
-import { allConversationIdsAtom } from '../../atoms/conversations';
+import { availableConversationIdSetAtom } from '../../atoms/conversations';
 import { BuddyCoordination } from '../../components/buddies/BuddyCoordination';
 import { BuddyMemoryWorkspace } from '../../components/buddies/BuddyMemoryWorkspace';
 import { BuddyMessages } from '../../components/buddies/BuddyMessages';
 import { buddyApi } from '../../components/buddies/api';
 import { buddyTabPath, parseEmployeeTab } from '../../components/buddies/buddy-tabs';
 import type { EmployeeTab } from '../../components/buddies/types';
+import { initials } from '../../components/buddies/ui-contract';
 import { useBuddyPage } from '../../hooks/useBuddyData';
 import { mobileConversationRouteState } from '../../utils/conversation-route-state';
 import { EmptyState } from '../components/EmptyState';
@@ -44,22 +45,12 @@ import { WorkTab } from './BuddyDetailWorkTab';
  *   buddy profile. Strings travel verbatim to the upstream CLI.
  */
 
-function initials(name: string): string {
-  return name
-    .split(/\s+/)
-    .map((part) => part[0])
-    .join('')
-    .slice(0, 2)
-    .toUpperCase();
-}
-
 export function BuddyDetailMobile() {
   const { buddyId, tab: tabSegment } = useParams<{ buddyId: string; tab: string }>();
   const navigate = useNavigate();
   const location = useLocation();
   const chatRouteState = useMemo(() => mobileConversationRouteState(location), [location]);
-  const conversationIds = useAtomValue(allConversationIdsAtom);
-  const availableIds = useMemo(() => new Set(conversationIds), [conversationIds]);
+  const availableIds = useAtomValue(availableConversationIdSetAtom);
 
   // The tab is the URL, not state (see components/buddies/buddy-tabs.ts).
   // `routedTab === null` means the URL is not canonical yet — redirect below.

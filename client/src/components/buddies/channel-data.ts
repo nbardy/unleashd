@@ -19,6 +19,7 @@ import { resource, usePolledFetch } from '../../hooks/usePolledFetch';
 import { newId } from '../../utils/ids';
 import { buddyApi } from './api';
 import { type ChannelReference, type ChannelTask, workspaceTasksUrl } from './channel-text';
+import { taskStatusView } from './ui-contract';
 
 export interface BuddyMailingListSummary {
   id: string;
@@ -185,16 +186,6 @@ export function postPurposeLabel(post: BuddyMailingListPost): string | null {
   return CONVERSATIONAL_PURPOSES.has(post.purpose) ? null : post.purpose.replaceAll('_', ' ');
 }
 
-const TASK_STATUS_LABELS: Readonly<Record<string, string>> = {
-  backlog: 'Backlog',
-  ready: 'Ready',
-  in_progress: 'In progress',
-  review: 'In review',
-  blocked: 'Blocked',
-  done: 'Done',
-  cancelled: 'Cancelled',
-};
-
 // The universal @ menu: active Buddies and every non-cancelled Task; the fuzzy
 // ranker orders them together by match quality.
 function channelReferences(
@@ -220,7 +211,7 @@ function channelReferences(
           id: task.id,
           label: task.title,
           status: task.status,
-          detail: `${TASK_STATUS_LABELS[task.status] ?? task.status} · ${task.ownerName}`,
+          detail: `${taskStatusView(task.status).label} · ${task.ownerName}`,
         })
       ),
   ];

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { asArray, buddyApi } from '../../components/buddies/api';
+import { linkConversationId } from '../../components/buddies/buddies-shaping';
 import { conversationPath } from '../../components/buddies/buddy-tabs';
 import type {
   AutomationRun,
@@ -63,7 +64,7 @@ function MobileAutomationCard({
   automation: BuddyAutomation;
   busy: string | null;
   runAction: AutomationAction;
-  availableIds: Set<string>;
+  availableIds: ReadonlySet<string>;
 }) {
   const [runs, setRuns] = useState<AutomationRun[]>([]);
   const [showRuns, setShowRuns] = useState(false);
@@ -232,7 +233,7 @@ export function AutomationsTab({
   setBusy: (value: string | null) => void;
   error: string | null;
   /** Conversation ids the client actually holds — a run outlives its thread. */
-  availableIds: Set<string>;
+  availableIds: ReadonlySet<string>;
   onRefresh: () => void;
 }) {
   const [actionError, setActionError] = useState<string | null>(null);
@@ -301,8 +302,7 @@ export function AutomationsTab({
           <h3 className="mobile-buddy-section__heading">Automation conversations</h3>
           <div className="mobile-buddy-convo-list">
             {automationConversations.map((conversation) => {
-              const conversationId =
-                conversation.conversation_id ?? conversation.unleashd_conversation_id;
+              const conversationId = linkConversationId(conversation);
               if (!conversationId) return null;
               return (
                 <article key={conversationId} className="mobile-buddy-convo-card">

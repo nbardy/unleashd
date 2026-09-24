@@ -2,7 +2,7 @@ import type { Conversation } from '@unleashd/shared';
 import { useAtomValue } from 'jotai';
 import { useId } from 'react';
 import { Link } from 'react-router-dom';
-import { allConversationIdsAtom } from '../atoms/conversations';
+import { availableConversationIdSetAtom } from '../atoms/conversations';
 import './ResumeThreadWidget.css';
 
 /**
@@ -23,8 +23,7 @@ export function ResumeThreadWidget({
   sourceConversation,
 }: ResumeThreadWidgetProps) {
   const tooltipId = useId();
-  const conversationIds = useAtomValue(allConversationIdsAtom);
-  const sourceAvailable = conversationIds.includes(sourceConversationId);
+  const sourceAvailable = useAtomValue(availableConversationIdSetAtom).has(sourceConversationId);
   const displayId = sourceConversationId.substring(0, 8);
   const folder = sourceConversation?.workingDirectory?.replace(/^\/Users\/[^/]+/, '~');
   const icon = (

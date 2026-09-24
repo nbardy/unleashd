@@ -2,22 +2,14 @@ import type { BuddyWorkspaceActiveJob } from '@unleashd/shared';
 import { useAtomValue } from 'jotai';
 import { useMemo } from 'react';
 import { Link, useParams } from 'react-router-dom';
-import { allConversationIdsAtom, conversationAtomFamily } from '../../atoms/conversations';
+import { availableConversationIdSetAtom, conversationAtomFamily } from '../../atoms/conversations';
 import { usePolledFetch } from '../../hooks/usePolledFetch';
 import { formatTimeAgo } from '../../utils/time';
 import './BuddyWorkspaceActivity.css';
 import { workspaceActivityResource } from './channel-data';
+import { initials } from './ui-contract';
 
 const NO_CONVERSATION_ID = '__workspace_job_without_conversation__';
-
-function initials(name: string): string {
-  return name
-    .split(/\s+/)
-    .map((part) => part[0])
-    .join('')
-    .slice(0, 2)
-    .toUpperCase();
-}
 
 function compactPath(path: string | null): string {
   return path?.replace(/^\/Users\/[^/]+/, '~') ?? 'No folder path';
@@ -72,8 +64,7 @@ function JobRow({
 
 export function BuddyWorkspaceActivity() {
   const { workspaceId } = useParams();
-  const conversationIds = useAtomValue(allConversationIdsAtom);
-  const availableConversationIds = useMemo(() => new Set(conversationIds), [conversationIds]);
+  const availableConversationIds = useAtomValue(availableConversationIdSetAtom);
   const loadActivity = useMemo(
     () => (workspaceId ? workspaceActivityResource(workspaceId) : null),
     [workspaceId]

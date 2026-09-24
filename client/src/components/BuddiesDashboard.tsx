@@ -12,7 +12,7 @@ import './buddies/BuddySoulConflict.css';
 import { useAtomValue } from 'jotai';
 import { useCallback, useMemo, useState } from 'react';
 import { Link, Navigate, useNavigate, useParams } from 'react-router-dom';
-import { allConversationIdsAtom } from '../atoms/conversations';
+import { availableConversationIdSetAtom } from '../atoms/conversations';
 import { useBuddyOverview, useBuddyPage } from '../hooks/useBuddyData';
 import { BuddyAutomationsTab } from './buddies/BuddyAutomationsTab';
 import { BuddyBackgroundTasks } from './buddies/BuddyBackgroundTasks';
@@ -27,27 +27,10 @@ import { BuddyProjectExecution } from './buddies/BuddyProjectExecution';
 import './buddies/BuddyProjectExecution.css';
 import { buddyTabPath, parseEmployeeTab } from './buddies/buddy-tabs';
 import { createBuddyViaBuilder } from './buddies/create-buddy-builder';
-import type { BuddyProject, EmployeeTab, WorkStatus } from './buddies/types';
-import { buddyProjectTodoProgress } from './buddies/ui-contract';
+import { projectConversation } from './buddies/buddies-shaping';
+import type { BuddyProject, EmployeeTab } from './buddies/types';
+import { TASK_STATUS, buddyProjectTodoProgress, initials } from './buddies/ui-contract';
 import './BuddiesDashboard.css';
-
-const STATUS_LABELS: Record<WorkStatus, string> = {
-  backlog: 'Backlog',
-  ready: 'Ready',
-  in_progress: 'In progress',
-  blocked: 'Blocked',
-  review: 'Review',
-  done: 'Done',
-  cancelled: 'Cancelled',
-};
-function initials(name: string): string {
-  return name
-    .split(/\s+/)
-    .map((part) => part[0])
-    .join('')
-    .slice(0, 2)
-    .toUpperCase();
-}
 
 function compactPath(path: string | null): string {
   if (!path) return 'No source linked';
@@ -57,8 +40,7 @@ function compactPath(path: string | null): string {
 export function BuddiesDashboard() {
   const navigate = useNavigate();
   const { buddyId, tab: tabSegment } = useParams();
-  const conversationIds = useAtomValue(allConversationIdsAtom);
-  const availableConversationIds = useMemo(() => new Set(conversationIds), [conversationIds]);
+  const availableConversationIds = useAtomValue(availableConversationIdSetAtom);
   // The tab is the URL, not state. `routedTab === null` means the URL is not
   // canonical yet (`/buddies/:id`, or a junk segment); we render the default
   // tab's redirect below rather than showing one tab under another tab's URL.
@@ -165,19 +147,14 @@ export function BuddiesDashboard() {
 
   const renderWorkProject = (project: BuddyProject) => {
     const todoProgress = buddyProjectTodoProgress(project);
-    const existingConversation = employee.conversations.some((conversation) => {
-      const conversationId = conversation.conversation_id ?? conversation.unleashd_conversation_id;
-      return (
-        conversation.buddy_project_id === project.id &&
-        Boolean(conversationId && availableConversationIds.has(conversationId))
-      );
-    });
+    const existingConversation =
+      projectConversation(employee.conversations, project.id, availableConversationIds) !== null;
     return (
       <details className="buddy-work-disclosure" key={project.id}>
         <summary>
           <strong>{project.title}</strong>
           <span>
-            {STATUS_LABELS[project.status]} · {todoProgress.done}/{todoProgress.total} todos
+            {TASK_STATUS[project.status].label} · {todoProgress.done}/{todoProgress.total} todos
           </span>
         </summary>
         <div className={`buddy-work-card status-${project.status}`}>
@@ -447,7 +424,7 @@ export function BuddiesDashboard() {
                   <div key={item.id}>
                     <strong>{item.title}</strong>
                     <span>
-                      {STATUS_LABELS[item.status]} · {item.next_action ?? 'No next action'}
+                      {TASK_STATUS[item.status].label} · {item.next_action ?? 'No next action'}
                     </span>
                   </div>
                 ))}
