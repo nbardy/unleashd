@@ -3,9 +3,12 @@
 Start with the [benchmark runbook](../../../../server/test/fixtures/memory-curation/README.md)
 for current commands and extension guidance, and the
 [dated report](../../../memory-curation-evaluation-2026-09-13.md) for the decision.
-This directory preserves the original synthetic evidence outside ignored scratch.
-It contains 100 scored invocations and two pilot invocations; no private production
-memory or conversation was copied into the fixtures.
+The grades, prompts and hashes here are committed. The raw runs (100 scored
+invocations and two pilot invocations, under `results/`, `final-results/`,
+`verified-results/`, `release-results/` and `pilot/`) and the `sources/`
+snapshots are git-ignored and exist only on the machine that produced them, or
+in git history before 2026-09-24. `sha256.json` still lists them. No private
+production memory or conversation was copied into the fixtures.
 
 ## Which candidate is which?
 

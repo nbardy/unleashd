@@ -13,7 +13,7 @@ grading. Project agents discover it through the root `AGENTS.md` and
 | [Current reviewer](../../../src/buddies/memory-review.ts) | Candidate instructions and runtime configuration |
 | [Current tools](../../../src/buddies/memory-review-tools.ts) | Shared tool contract for both variants |
 | [September 13 report](../../../../docs/memory-curation-evaluation-2026-09-13.md) | Method, selection rationale, results and known misses |
-| [Historical evidence](../../../../docs/benchmarks/memory-curation/2026-09-13/README.md) | Prompts, grades, 102 raw runs, source snapshots and hashes |
+| [Historical evidence](../../../../docs/benchmarks/memory-curation/2026-09-13/README.md) | Prompts, grades and hashes; raw runs and source snapshots are local-only |
 | [Thread preservation](../../../../docs/benchmarks/memory-curation/2026-09-13-closeout/README.md) | Lessons, private-corpus boundaries and six prepared fresh-session fixtures |
 
 The September 13 selected prompt scored **19/20** manually graded case runs
@@ -112,8 +112,10 @@ documents against every rubric item; a model's report is not a grade.
 
 Results are saved before post-run assertions. A setup or pre-drain failure may
 occur before any JSON is saved, so retain stdout/stderr and identify uninvoked
-cases. Preserve reviewed synthetic results in a dated repository directory with
-hashes before relying on them for a handoff; temporary output is not durable.
+cases. Temporary output is not durable: before relying on reviewed results for
+a handoff, copy them into a subdirectory of a dated `docs/benchmarks/` directory.
+Those subdirectories are git-ignored; commit only the dated directory's README,
+prompts, grades and `sha256.json`.
 
 ## Grading and comparison
 

@@ -53,3 +53,8 @@ output
 # Each profiles/<buddyId>/memory/*.md carries a generated `updated:` timestamp
 # and is rewritten on every turn, so committing it churns the tree constantly.
 profiles/
+
+# Raw benchmark runs stay local. A dated benchmark directory commits only its
+# top-level README, prompts, grades and sha256.json; each subdirectory is a
+# folder of raw run JSON or source snapshots (~20k lines for one date).
+docs/benchmarks/*/*/*/
