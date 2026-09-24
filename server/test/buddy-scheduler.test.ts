@@ -126,6 +126,7 @@ test('Buddy context is typed conversation metadata independent of swarm state', 
     id: '00000000-0000-4000-8000-000000000001',
     messages: [],
     isRunning: false,
+    done: false,
     createdAt: new Date(),
     workingDirectory: '/tmp',
     config: {

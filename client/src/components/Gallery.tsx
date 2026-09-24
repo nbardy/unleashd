@@ -2,9 +2,9 @@ import type { Conversation, Message } from '@unleashd/shared';
 import { useAtomValue } from 'jotai';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { allConversationsAtom } from '../atoms/conversations';
+import { setConversationDone } from '../atoms/actions';
+import { allConversationsAtom, wsStatusAtom } from '../atoms/conversations';
 import {
-  doneConversationsAtom,
   galleryCollapsedProjectsAtom,
   galleryExpandedProjectsAtom,
   promoteWorker,
@@ -17,7 +17,6 @@ import {
   showWorkerConversationsAtom,
   toggleGalleryCollapsed,
   toggleGalleryExpanded,
-  unmarkDone,
 } from '../atoms/ui';
 import { useFolderFilter } from '../hooks/useFolderFilter';
 import { useUrlFolderSelection } from '../hooks/useUrlFolderSelection';
@@ -77,7 +76,7 @@ export function Gallery({ filter }: GalleryProps = {}) {
   const galleryCollapsedProjects = useAtomValue(galleryCollapsedProjectsAtom);
   const showTempSessions = useAtomValue(showTempSessionsAtom);
   const showDoneConversations = useAtomValue(showDoneConversationsAtom);
-  const doneConversations = useAtomValue(doneConversationsAtom);
+  const connected = useAtomValue(wsStatusAtom) === 'connected';
   const promotedWorkers = useAtomValue(promotedWorkersAtom);
   const showWorkerConversations = useAtomValue(showWorkerConversationsAtom);
   const [showDoneBySection, setShowDoneBySection] = useState<Record<string, boolean>>({});
@@ -91,7 +90,6 @@ export function Gallery({ filter }: GalleryProps = {}) {
     () => new Set(galleryCollapsedProjects),
     [galleryCollapsedProjects]
   );
-  const doneSet = useMemo(() => new Set(doneConversations), [doneConversations]);
   const promotedSet = useMemo(() => new Set(promotedWorkers), [promotedWorkers]);
 
   // Filter to top-level conversations and sort by createdAt (newest first).
@@ -180,7 +178,7 @@ export function Gallery({ filter }: GalleryProps = {}) {
     // Group by working directory, separating done → worker → temp → real
     for (const conv of filtered) {
       const dir = conv.workingDirectory;
-      if (doneSet.has(conv.sessionId ?? conv.id)) {
+      if (conv.done) {
         if (!doneGroupsMap.has(dir)) doneGroupsMap.set(dir, []);
         doneGroupsMap.get(dir)!.push(conv);
         if (conv.isWorker && !promotedSet.has(conv.id)) {
@@ -251,7 +249,7 @@ export function Gallery({ filter }: GalleryProps = {}) {
       doneTempGroups: doneTempGroupsMap,
       doneWorkerGroups: doneWorkerGroupsMap,
     };
-  }, [filtered, doneSet, promotedSet]);
+  }, [filtered, promotedSet]);
 
   const isDoneView = filter === 'done';
   const isWorkersView = filter === 'workers';
@@ -289,8 +287,7 @@ export function Gallery({ filter }: GalleryProps = {}) {
 
   const renderConversationCard = useCallback(
     (conv: Conversation, showWorkerBadge = false) => {
-      const conversationKey = conv.sessionId ?? conv.id;
-      const isDoneConversation = doneSet.has(conversationKey);
+      const isDoneConversation = conv.done;
       const state = conv.isRunning ? 'running' : 'idle';
       const accentColor = getProjectColor(conv.workingDirectory);
       const cardClassName = [
@@ -330,12 +327,14 @@ export function Gallery({ filter }: GalleryProps = {}) {
                 <button
                   type="button"
                   className="undo-done-btn"
+                  disabled={!connected}
+                  title={connected ? undefined : 'Reconnecting to the server'}
                   onClick={(e) => {
                     // Restore opens the thread as well as un-marking it. Un-marking
                     // alone makes the card vanish from the Done view with no visible
                     // destination, which reads as "Restore did nothing".
                     e.stopPropagation();
-                    unmarkDone(conversationKey);
+                    setConversationDone(conv.id, false);
                     navigate(`/chat/${conv.id}`);
                   }}
                 >
@@ -375,7 +374,7 @@ export function Gallery({ filter }: GalleryProps = {}) {
         </div>
       );
     },
-    [doneSet, isDoneView, isWorkersView, navigate]
+    [connected, isDoneView, isWorkersView, navigate]
   );
 
   const renderProjectSection = useCallback(

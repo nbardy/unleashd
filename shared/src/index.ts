@@ -472,6 +472,9 @@ export const ConversationSchema = z.object({
   // the last preview message while preserving the authoritative total.
   messageCount: z.number().int().nonnegative().optional(),
   isRunning: z.boolean(),
+  // Owner marked this conversation done (hidden from working lists). Server-
+  // owned: read from the durable record, changed only by set_conversation_done.
+  done: z.boolean(),
   // Server-authoritative: assistant is actively producing content.
   // true on first text_delta, false on message_complete or process close.
   // INVARIANT: !isRunning → !isStreaming (dead process can't stream).
@@ -581,7 +584,7 @@ export const ConversationSchema = z.object({
 export type Conversation = z.infer<typeof ConversationSchema>;
 export type DiscoveredConversation = Omit<
   Conversation,
-  'id' | 'sessionId' | 'config' | 'configRevision' | 'configResolution'
+  'id' | 'sessionId' | 'config' | 'configRevision' | 'configResolution' | 'done'
 > & {
   /** Opaque provider-owned identity. Never use as the application conversation ID. */
   sessionId: string;
@@ -785,6 +788,14 @@ export const StopConversationMessageSchema = z.object({
 
 export type StopConversationMessage = z.infer<typeof StopConversationMessageSchema>;
 
+export const SetConversationDoneMessageSchema = z.object({
+  type: z.literal('set_conversation_done'),
+  conversationId: ConversationIdSchema,
+  done: z.boolean(),
+});
+
+export type SetConversationDoneMessage = z.infer<typeof SetConversationDoneMessageSchema>;
+
 export const DeleteConversationMessageSchema = z.object({
   type: z.literal('delete_conversation'),
   conversationId: ConversationIdSchema,
@@ -843,6 +854,7 @@ export const ClientMessageSchema = z.discriminatedUnion('type', [
   SendMessageMessageSchema,
   StopConversationMessageSchema,
   DeleteConversationMessageSchema,
+  SetConversationDoneMessageSchema,
   QueueMessageSchema,
   InterruptAndSendMessageSchema,
   CancelQueuedMessageSchema,
@@ -853,24 +865,28 @@ export const ClientMessageSchema = z.discriminatedUnion('type', [
 export type ClientMessage = z.infer<typeof ClientMessageSchema>;
 
 // =============================================================================
-// UI State (server-synced preferences)
+// Device UI preferences (browser localStorage; never synced)
 // =============================================================================
 
-export const UIStateSchema = z.object({
-  activeConversationId: z.string().nullable().default(null),
-  lastWorkingDirectory: z.string().nullable().default(null),
-  galleryExpandedProjects: z.array(z.string()).default([]),
-  galleryCollapsedProjects: z.array(z.string()).default([]),
-  showTempSessions: z.boolean().default(false),
-  showDoneConversations: z.boolean().default(false),
-  doneConversations: z.array(z.string()).default([]),
-  promotedWorkers: z.array(z.string()).default([]),
-  showWorkerConversations: z.boolean().default(false),
-  lastSeenMessageIndex: z.record(z.string(), z.number()).default({}),
-  sidebarViewMode: z.enum(['grouped', 'list']).default('list'),
+// Per-device view state. Conversation facts (done) live on the conversation
+// record instead: the retired server-synced UI blob keyed them by an unstable
+// id and lost writes on refresh and reconnect.
+export const DeviceUiPrefsSchema = z.object({
+  activeConversationId: z.string().nullable(),
+  galleryExpandedProjects: z.array(z.string()),
+  galleryCollapsedProjects: z.array(z.string()),
+  showTempSessions: z.boolean(),
+  showDoneConversations: z.boolean(),
+  showWorkerConversations: z.boolean(),
+  sidebarViewMode: z.enum(['grouped', 'list']),
+  lastWorkingDirectory: z.string().nullable(),
+  promotedWorkers: z.array(z.string()),
 });
 
-export type UIState = z.infer<typeof UIStateSchema>;
+export type DeviceUiPrefs = z.infer<typeof DeviceUiPrefsSchema>;
+
+/** Last viewed message index per conversation id, for the NEW badge. */
+export const SeenMessageIndexSchema = z.record(z.string(), z.number());
 
 // =============================================================================
 // Server → Client Messages
@@ -900,8 +916,6 @@ export const InitMessageSchema = z.object({
   summaries: z.boolean().optional(),
   /** True if server is still loading conversations from disk. Client should wait for conversations_updated. */
   loading: z.boolean().optional(),
-  /** UI preferences synced from server (~/.agent-viewer/ui-state.json) */
-  uiState: UIStateSchema.optional(),
   protocol: ProtocolInfoSchema,
 });
 
@@ -920,7 +934,7 @@ export type ConversationCreatedMessage = z.infer<typeof ConversationCreatedMessa
 export const ConversationUpdatedEventSchema = z.object({
   type: z.literal('conversation_updated'),
   commandId: z.string().min(1).optional(),
-  reason: z.enum(['config', 'catalog', 'status', 'queue', 'messages', 'external_refresh']),
+  reason: z.enum(['config', 'catalog', 'status', 'queue', 'messages', 'external_refresh', 'done']),
   conversation: ConversationSchema,
 });
 export type ConversationUpdatedEvent = z.infer<typeof ConversationUpdatedEventSchema>;

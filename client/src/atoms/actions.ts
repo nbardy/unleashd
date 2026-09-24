@@ -59,7 +59,6 @@ import {
   DRAFT_KEY_PREFIX,
   PENDING_FILES_KEY_PREFIX,
   getSavedActiveConversationId,
-  hydrateUiFromServer,
   markConversationsSeenBulk,
   markMessagesSeen,
   removeSeenIndex,
@@ -247,6 +246,15 @@ export async function createMergeConversations(args: {
   return res.json();
 }
 
+/**
+ * Hide or unhide a conversation. Not optimistic: the server writes the record
+ * and broadcasts conversation_updated, which is what moves the row. Callers
+ * disable the control while disconnected — send() drops messages then.
+ */
+export function setConversationDone(conversationId: string, done: boolean): void {
+  send({ type: 'set_conversation_done', conversationId, done });
+}
+
 export function stopConversation(conversationId: string): void {
   const conv = jotaiStore.get(conversationsAtom).get(conversationId);
   if (!conv) return;
@@ -372,11 +380,6 @@ function handleInit(data: Extract<ServerMessage, { type: 'init' }>): void {
   // snapshots, so an acknowledgement lost with the old socket must not
   // leave the UI in a permanent "Saving…" state.
   jotaiStore.set(pendingConfigCommandsAtom, new Map());
-
-  // Apply server UI state preferences
-  if (data.uiState) {
-    hydrateUiFromServer(data.uiState);
-  }
 
   // Drop stale streaming state from before this reconnect
   chunkBuffer.clear();

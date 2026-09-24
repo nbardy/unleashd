@@ -123,11 +123,6 @@ for (const mode of ['delete-during-link', 'remove-after-readiness', 'normal'] as
         initialLoadComplete: Promise.resolve(),
         isInitialLoadComplete: () => true,
         beginCommand: () => () => {},
-        getUIState: () => ({
-          activeConversationId: null,
-          lastWorkingDirectory: null,
-          galleryExpandedProjects: [],
-        }),
         getDefaultWorkingDirectory: () => root,
         resolveWorkingDirectory: (path) => path,
         resolveBuddyConversation: integration.resolveConversation,

@@ -331,6 +331,7 @@ export class ConversationConfigStore {
         conversationId: input.conversationId,
         sessionBindings: [...(input.sessionBindings ?? [])],
         status: 'active',
+        done: false,
         ...(input.currentSession ? { currentSession: input.currentSession } : {}),
         ...(input.workingDirectory ? { workingDirectory: input.workingDirectory } : {}),
         ...(input.creation ? { creation: input.creation } : {}),
@@ -430,6 +431,16 @@ export class ConversationConfigStore {
         },
       };
     });
+  }
+
+  /** Undefined when no record exists for this id. */
+  setDone(
+    conversationId: string,
+    done: boolean
+  ): Promise<PersistedConversationConfigRecord | undefined> {
+    return this.updateRecord(conversationId, (record) =>
+      record.done === done ? record : { ...record, done, updatedAt: this.now().toISOString() }
+    );
   }
 
   async setCurrentSession(

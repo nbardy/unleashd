@@ -1,51 +1,34 @@
-import { type UIState, UIStateSchema } from '@unleashd/shared';
+import { type DeviceUiPrefs, DeviceUiPrefsSchema, SeenMessageIndexSchema } from '@unleashd/shared';
 import { atom } from 'jotai';
 import { atomWithStorage } from 'jotai/utils';
 import type { SyncStorage } from 'jotai/vanilla/utils/atomWithStorage';
 import { jotaiStore } from './store';
 
 // =============================================================================
-// UI state — jotai fold of the former zustand uiStore (PLANNING_MOBILE.md §4).
+// Device UI state — browser localStorage only, never synced to the server.
 //
-// Partition (unchanged semantics; partitionUiState was the migration map):
-//   shared (4) — cross-device, debounced POST /api/ui-state:
-//     doneConversations, promotedWorkers, lastSeenMessageIndex, lastWorkingDirectory
-//   local (7) — per-device, atomWithStorage under 'unleashd-ui-local'
-//     (same key + blob shape as the zustand version — existing data loads as-is):
-//     activeConversationId, galleryExpandedProjects, galleryCollapsedProjects,
-//     showTempSessions, showDoneConversations, showWorkerConversations, sidebarViewMode
+//   prefs ('unleashd-ui-local') — view state: active conversation, gallery
+//     expansion, list toggles, view mode, last directory, promoted workers.
+//   seen ('unleashd-seen-message-index') — NEW badge: last viewed message
+//     index per conversation. Its own key because
+//     it changes on every viewed message; the prefs blob should not be
+//     rewritten at that rate.
 //
-// Rationale: two concurrent clients (phone + desktop) race on local fields;
-// partitioning prevents last-writer-wins cross-device churn.
-//
-// NEW badge: lastSeenMessageIndex tracks the last viewed message index per
-// conversation.
+// Done (hidden) is NOT here: it is a fact about the conversation, stored on
+// the server's conversation record and read as `conversation.done`. It used to
+// live in a server-synced blob keyed by `sessionId ?? id`; the server rotates
+// sessionId, and the blob's debounced snapshot POST lost writes on refresh
+// and reconnect — hidden conversations kept reappearing (2026-09-23).
 //
 // Subscribe via the per-field derived atoms below (jotai skips notification
-// when the derived value is Object.is-equal, so per-field granularity is
-// preserved). Mutate ONLY via the exported action functions — jotaiStore.set
-// lives inside atoms/ (gate G1).
+// when the derived value is Object.is-equal). Mutate ONLY via the exported
+// action functions — jotaiStore.set lives inside atoms/ (gate G1).
 // =============================================================================
 
 export const LOCAL_STORAGE_KEY = 'unleashd-ui-local';
+const SEEN_STORAGE_KEY = 'unleashd-seen-message-index';
 
-export type SharedSlice = Pick<
-  UIState,
-  'doneConversations' | 'promotedWorkers' | 'lastSeenMessageIndex' | 'lastWorkingDirectory'
->;
-
-export type LocalSlice = Pick<
-  UIState,
-  | 'activeConversationId'
-  | 'galleryExpandedProjects'
-  | 'galleryCollapsedProjects'
-  | 'showTempSessions'
-  | 'showDoneConversations'
-  | 'showWorkerConversations'
-  | 'sidebarViewMode'
->;
-
-const LOCAL_DEFAULTS: LocalSlice = {
+const PREFS_DEFAULTS: DeviceUiPrefs = {
   activeConversationId: null,
   galleryExpandedProjects: [],
   galleryCollapsedProjects: [],
@@ -53,13 +36,8 @@ const LOCAL_DEFAULTS: LocalSlice = {
   showDoneConversations: false,
   showWorkerConversations: false,
   sidebarViewMode: 'grouped',
-};
-
-const SHARED_DEFAULTS: SharedSlice = {
-  doneConversations: [],
-  promotedWorkers: [],
-  lastSeenMessageIndex: {},
   lastWorkingDirectory: null,
+  promotedWorkers: [],
 };
 
 // ---------------------------------------------------------------------------
@@ -79,71 +57,65 @@ export const PENDING_CONVERSATIONS_KEY = 'pendingConversations';
 export const PENDING_FILES_KEY_PREFIX = 'pendingFiles:';
 
 // ---------------------------------------------------------------------------
-// Local slice — atomWithStorage with Zod-validated reads.
-// Invalid blob → discard whole blob, fall back to defaults (no half-merge).
+// Validated storage. An invalid blob is discarded whole and defaults are used
+// (no half-merge).
 // ---------------------------------------------------------------------------
 
-function pickLocal(data: Partial<UIState>): Partial<LocalSlice> {
-  const local: Partial<LocalSlice> = {};
-  if ('activeConversationId' in data)
-    local.activeConversationId = data.activeConversationId ?? null;
-  if (data.galleryExpandedProjects !== undefined)
-    local.galleryExpandedProjects = data.galleryExpandedProjects;
-  if (data.galleryCollapsedProjects !== undefined)
-    local.galleryCollapsedProjects = data.galleryCollapsedProjects;
-  if (data.showTempSessions !== undefined) local.showTempSessions = data.showTempSessions;
-  if (data.showDoneConversations !== undefined)
-    local.showDoneConversations = data.showDoneConversations;
-  if (data.showWorkerConversations !== undefined)
-    local.showWorkerConversations = data.showWorkerConversations;
-  if (data.sidebarViewMode !== undefined) local.sidebarViewMode = data.sidebarViewMode;
-  return local;
-}
-
-const validatedLocalStorage: SyncStorage<LocalSlice> = {
-  getItem: (key, initialValue) => {
-    try {
-      if (typeof localStorage === 'undefined') return initialValue;
-      const raw = localStorage.getItem(key);
-      if (!raw) return initialValue;
-      const result = UIStateSchema.partial().safeParse(JSON.parse(raw));
-      if (!result.success) {
-        localStorage.removeItem(key);
+function validatedStorage<T>(parse: (raw: unknown, initialValue: T) => T | null): SyncStorage<T> {
+  return {
+    getItem: (key, initialValue) => {
+      try {
+        if (typeof localStorage === 'undefined') return initialValue;
+        const raw = localStorage.getItem(key);
+        if (!raw) return initialValue;
+        const parsed = parse(JSON.parse(raw), initialValue);
+        if (parsed === null) {
+          localStorage.removeItem(key);
+          return initialValue;
+        }
+        return parsed;
+      } catch {
         return initialValue;
       }
-      return { ...initialValue, ...pickLocal(result.data) };
-    } catch {
-      return initialValue;
-    }
-  },
-  setItem: (key, value) => {
-    try {
-      if (typeof localStorage !== 'undefined') localStorage.setItem(key, JSON.stringify(value));
-    } catch {
-      // quota / private-mode failure — in-memory state still updates
-    }
-  },
-  removeItem: (key) => {
-    try {
-      if (typeof localStorage !== 'undefined') localStorage.removeItem(key);
-    } catch {
-      // ignore
-    }
-  },
-};
+    },
+    setItem: (key, value) => {
+      try {
+        if (typeof localStorage !== 'undefined') localStorage.setItem(key, JSON.stringify(value));
+      } catch {
+        // quota / private-mode failure — in-memory state still updates
+      }
+    },
+    removeItem: (key) => {
+      try {
+        if (typeof localStorage !== 'undefined') localStorage.removeItem(key);
+      } catch {
+        // ignore
+      }
+    },
+  };
+}
+
+// Partial parse over defaults so a blob written before a field existed still
+// loads; zod strips keys that are no longer prefs.
+const prefsStorage = validatedStorage<DeviceUiPrefs>((raw, initialValue) => {
+  const result = DeviceUiPrefsSchema.partial().safeParse(raw);
+  return result.success ? { ...initialValue, ...result.data } : null;
+});
+
+const seenStorage = validatedStorage<Record<string, number>>((raw) => {
+  const result = SeenMessageIndexSchema.safeParse(raw);
+  return result.success ? result.data : null;
+});
 
 // getOnInit — read synchronously at first get so App.tsx restore-on-load sees
 // the persisted activeConversationId on its initial render.
-const uiLocalAtom = atomWithStorage<LocalSlice>(
-  LOCAL_STORAGE_KEY,
-  LOCAL_DEFAULTS,
-  validatedLocalStorage,
-  {
-    getOnInit: true,
-  }
-);
+const prefsAtom = atomWithStorage<DeviceUiPrefs>(LOCAL_STORAGE_KEY, PREFS_DEFAULTS, prefsStorage, {
+  getOnInit: true,
+});
 
-const uiSharedAtom = atom<SharedSlice>(SHARED_DEFAULTS);
+const seenAtom = atomWithStorage<Record<string, number>>(SEEN_STORAGE_KEY, {}, seenStorage, {
+  getOnInit: true,
+});
 
 // ---------------------------------------------------------------------------
 // Per-field read atoms — subscribe to these, never the slice atoms.
@@ -152,200 +124,31 @@ const uiSharedAtom = atom<SharedSlice>(SHARED_DEFAULTS);
 /** Persisted last-active conversation (device-local). Distinct from the
  *  ephemeral routing atom `activeConversationIdAtom` in conversations.ts —
  *  the "dual-active-id" design (this one survives reload). */
-export const savedActiveConversationIdAtom = atom((get) => get(uiLocalAtom).activeConversationId);
-export const galleryExpandedProjectsAtom = atom((get) => get(uiLocalAtom).galleryExpandedProjects);
-export const galleryCollapsedProjectsAtom = atom(
-  (get) => get(uiLocalAtom).galleryCollapsedProjects
-);
-export const showTempSessionsAtom = atom((get) => get(uiLocalAtom).showTempSessions);
-export const showDoneConversationsAtom = atom((get) => get(uiLocalAtom).showDoneConversations);
-export const showWorkerConversationsAtom = atom((get) => get(uiLocalAtom).showWorkerConversations);
-export const sidebarViewModeAtom = atom((get) => get(uiLocalAtom).sidebarViewMode);
-
-export const doneConversationsAtom = atom((get) => get(uiSharedAtom).doneConversations);
-export const promotedWorkersAtom = atom((get) => get(uiSharedAtom).promotedWorkers);
-export const lastSeenMessageIndexAtom = atom((get) => get(uiSharedAtom).lastSeenMessageIndex);
-export const lastWorkingDirectoryAtom = atom((get) => get(uiSharedAtom).lastWorkingDirectory);
-
-// ---------------------------------------------------------------------------
-// Shared-slice server sync — debounced POST, gated until hydration.
-//
-// Guard: don't sync default (empty) state before hydration. Without this,
-// Chat's mount-time mutations fire before the WS init delivers authoritative
-// server state and overwrite persisted doneConversations/lastSeenMessageIndex
-// with empty defaults.
-// ---------------------------------------------------------------------------
-
-let syncTimer: ReturnType<typeof setTimeout> | null = null;
-let hydrated = false;
-
-/**
- * Last server-acknowledged snapshot. POSTs carry only the keys whose
- * references differ from this snapshot — the server merges partials
- * (`{...uiState, ...partial}`), so omitting a key preserves it, including
- * keys written concurrently by another tab. This also keeps the unload
- * flush small: `keepalive` caps the body at 64KB and the full slice is
- * hundreds of KB on large workspaces (1.2k dones + 11k seen entries measured
- * 2026-09-23), so a full-slice flush is rejected and the write dies with the
- * page. A failed POST leaves lastSynced behind, so the next scheduled sync —
- * including the post-reconnect sync-back in hydrateUiFromServer — retries
- * exactly the unacknowledged keys.
- */
-let lastSynced: SharedSlice | null = null;
-
-/** Keys changed since the last acknowledgement, by reference. Null when clean. */
-function sharedDelta(current: SharedSlice): Partial<SharedSlice> | null {
-  if (!lastSynced) return { ...current };
-  const delta: Partial<SharedSlice> = {};
-  // setShared preserves the references of untouched keys, so a changed
-  // reference means a local mutation the server has not acknowledged —
-  // except across hydrateUiFromServer, which rebuilds arrays and therefore
-  // resends them once. Converges either way: the server merges.
-  if (current.doneConversations !== lastSynced.doneConversations) {
-    delta.doneConversations = current.doneConversations;
-  }
-  if (current.promotedWorkers !== lastSynced.promotedWorkers) {
-    delta.promotedWorkers = current.promotedWorkers;
-  }
-  if (current.lastSeenMessageIndex !== lastSynced.lastSeenMessageIndex) {
-    delta.lastSeenMessageIndex = current.lastSeenMessageIndex;
-  }
-  if (current.lastWorkingDirectory !== lastSynced.lastWorkingDirectory) {
-    delta.lastWorkingDirectory = current.lastWorkingDirectory;
-  }
-  return Object.keys(delta).length > 0 ? delta : null;
-}
-
-function postSharedState(keepalive: boolean): void {
-  if (!hydrated) return;
-  const current = jotaiStore.get(uiSharedAtom);
-  const delta = sharedDelta(current);
-  if (!delta) return;
-  // Snapshot what was sent, not what is current at response time: a mutation
-  // that lands mid-flight differs from this snapshot by reference, so it is
-  // still resent by the next sync instead of being marked acknowledged.
-  const sent = current;
-  fetch('/api/ui-state', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(delta),
-    keepalive,
-  })
-    .then((res) => {
-      if (!res.ok) {
-        console.warn(`[UI State] Sync failed: ${res.status} ${res.statusText}`);
-        return;
-      }
-      lastSynced = sent;
-    })
-    .catch((err) => console.warn('[UI State] Sync error:', err));
-}
-
-function scheduleSharedSync(): void {
-  if (syncTimer) clearTimeout(syncTimer);
-  syncTimer = setTimeout(() => {
-    syncTimer = null;
-    if (!hydrated) return;
-    postSharedState(false);
-  }, 500);
-}
-
-/**
- * Sync unacknowledged shared writes now, bypassing the debounce. No-op when
- * clean, so backgrounding a tab does not spam the server.
- *
- * Why: marking a conversation done and then closing the tab inside the 500ms
- * window lost the write — the timer died with the document. The draft hook
- * (useConversationDraft.ts) flushes on the same three events for the same
- * reason; beforeunload is the one that reliably fires on a hard refresh.
- * `keepalive` lets the request outlive the page. It caps the body at 64KB,
- * so this flushes the delta (small), never the full slice.
- */
-export function flushSharedSync(): void {
-  if (syncTimer) {
-    clearTimeout(syncTimer);
-    syncTimer = null;
-  }
-  if (!hydrated) return;
-  postSharedState(true);
-}
-
-// Module-scoped rather than a hook: the atoms are mutated from actions outside
-// React, so the flush must not depend on any component being mounted. Guarded
-// because this module is also loaded by react-dom/server tests with no window.
-if (typeof window !== 'undefined') {
-  window.addEventListener('pagehide', flushSharedSync);
-  window.addEventListener('beforeunload', flushSharedSync);
-  document.addEventListener('visibilitychange', () => {
-    if (document.visibilityState === 'hidden') flushSharedSync();
-  });
-}
-
-function setLocal(patch: Partial<LocalSlice>): void {
-  jotaiStore.set(uiLocalAtom, { ...jotaiStore.get(uiLocalAtom), ...patch });
-}
-
-function setShared(recipe: (s: SharedSlice) => Partial<SharedSlice>): void {
-  const current = jotaiStore.get(uiSharedAtom);
-  jotaiStore.set(uiSharedAtom, { ...current, ...recipe(current) });
-  scheduleSharedSync();
-}
-
-/**
- * Apply server state. Merges ONLY the shared slice — local fields are
- * device-owned and never overwritten by another client's values. Called on
- * every WS init, including reconnects after a server restart.
- *
- * The merge (not overwrite) is load-bearing: `init` can arrive while the
- * client's own debounced POST is still pending, or after a restart whose
- * debounced disk write never landed — in both cases the snapshot is older
- * than this tab's in-memory state. Overwriting dropped those unflushed
- * client writes, un-hiding conversations the user just marked done, and the
- * sync-back below then cemented the loss server-side. Union the
- * accumulative lists, take the max seen index per conversation, and keep the
- * client's working directory unless it has none. Add-wins errs toward
- * hidden on genuine conflicts; the opposite bias is the reported bug.
- * Syncs back afterward so the merged state repairs a stale server copy.
- */
-export function hydrateUiFromServer(serverState: UIState): void {
-  const current = jotaiStore.get(uiSharedAtom);
-  const seen: Record<string, number> = { ...serverState.lastSeenMessageIndex };
-  for (const [id, index] of Object.entries(current.lastSeenMessageIndex)) {
-    seen[id] = Math.max(seen[id] ?? Number.NEGATIVE_INFINITY, index);
-  }
-  jotaiStore.set(uiSharedAtom, {
-    doneConversations: unionOrdered(serverState.doneConversations, current.doneConversations),
-    promotedWorkers: unionOrdered(serverState.promotedWorkers, current.promotedWorkers),
-    lastSeenMessageIndex: seen,
-    lastWorkingDirectory: current.lastWorkingDirectory ?? serverState.lastWorkingDirectory,
-  });
-  hydrated = true;
-  scheduleSharedSync();
-}
-
-/** Order-preserving union: server order first, client-only entries appended. */
-function unionOrdered(server: string[], client: string[]): string[] {
-  const known = new Set(server);
-  const merged = [...server];
-  for (const id of client) {
-    if (!known.has(id)) {
-      known.add(id);
-      merged.push(id);
-    }
-  }
-  return merged;
-}
+export const savedActiveConversationIdAtom = atom((get) => get(prefsAtom).activeConversationId);
+export const galleryExpandedProjectsAtom = atom((get) => get(prefsAtom).galleryExpandedProjects);
+export const galleryCollapsedProjectsAtom = atom((get) => get(prefsAtom).galleryCollapsedProjects);
+export const showTempSessionsAtom = atom((get) => get(prefsAtom).showTempSessions);
+export const showDoneConversationsAtom = atom((get) => get(prefsAtom).showDoneConversations);
+export const showWorkerConversationsAtom = atom((get) => get(prefsAtom).showWorkerConversations);
+export const sidebarViewModeAtom = atom((get) => get(prefsAtom).sidebarViewMode);
+export const promotedWorkersAtom = atom((get) => get(prefsAtom).promotedWorkers);
+export const lastWorkingDirectoryAtom = atom((get) => get(prefsAtom).lastWorkingDirectory);
+export const lastSeenMessageIndexAtom = atom((get) => get(seenAtom));
 
 // ---------------------------------------------------------------------------
 // Actions — the only mutation surface.
 // ---------------------------------------------------------------------------
 
+function setPrefs(patch: Partial<DeviceUiPrefs>): void {
+  jotaiStore.set(prefsAtom, { ...jotaiStore.get(prefsAtom), ...patch });
+}
+
 export function setSavedActiveConversationId(id: string | null): void {
-  setLocal({ activeConversationId: id });
+  setPrefs({ activeConversationId: id });
 }
 
 export function setLastWorkingDirectory(dir: string): void {
-  setShared(() => ({ lastWorkingDirectory: dir }));
+  setPrefs({ lastWorkingDirectory: dir });
 }
 
 function toggleInList(list: string[], value: string): string[] {
@@ -353,76 +156,65 @@ function toggleInList(list: string[], value: string): string[] {
 }
 
 export function toggleGalleryExpanded(dir: string): void {
-  setLocal({
-    galleryExpandedProjects: toggleInList(jotaiStore.get(uiLocalAtom).galleryExpandedProjects, dir),
+  setPrefs({
+    galleryExpandedProjects: toggleInList(jotaiStore.get(prefsAtom).galleryExpandedProjects, dir),
   });
 }
 
 export function toggleGalleryCollapsed(dir: string): void {
-  setLocal({
-    galleryCollapsedProjects: toggleInList(
-      jotaiStore.get(uiLocalAtom).galleryCollapsedProjects,
-      dir
-    ),
+  setPrefs({
+    galleryCollapsedProjects: toggleInList(jotaiStore.get(prefsAtom).galleryCollapsedProjects, dir),
   });
 }
 
 export function setShowTempSessions(show: boolean): void {
-  setLocal({ showTempSessions: show });
+  setPrefs({ showTempSessions: show });
 }
 
 export function setShowDoneConversations(show: boolean): void {
-  setLocal({ showDoneConversations: show });
+  setPrefs({ showDoneConversations: show });
 }
 
 export function setShowWorkerConversations(show: boolean): void {
-  setLocal({ showWorkerConversations: show });
+  setPrefs({ showWorkerConversations: show });
 }
 
 export function setSidebarViewMode(mode: 'grouped' | 'list'): void {
-  setLocal({ sidebarViewMode: mode });
-}
-
-export function markDone(conversationId: string): void {
-  setShared((s) =>
-    s.doneConversations.includes(conversationId)
-      ? {}
-      : { doneConversations: [...s.doneConversations, conversationId] }
-  );
-}
-
-export function unmarkDone(conversationId: string): void {
-  setShared((s) => ({
-    doneConversations: s.doneConversations.filter((id) => id !== conversationId),
-  }));
+  setPrefs({ sidebarViewMode: mode });
 }
 
 export function promoteWorker(conversationId: string): void {
-  setShared((s) =>
-    s.promotedWorkers.includes(conversationId)
-      ? {}
-      : { promotedWorkers: [...s.promotedWorkers, conversationId] }
-  );
+  const promoted = jotaiStore.get(prefsAtom).promotedWorkers;
+  if (!promoted.includes(conversationId)) {
+    setPrefs({ promotedWorkers: [...promoted, conversationId] });
+  }
+}
+
+/** Merge seen indexes; skips the localStorage write when nothing changes, which
+ *  is the common case for the bulk path below (it runs on every poll). */
+function setSeen(updates: Record<string, number>): void {
+  const current = jotaiStore.get(seenAtom);
+  const changed = Object.entries(updates).filter(([id, index]) => current[id] !== index);
+  if (changed.length === 0) return;
+  jotaiStore.set(seenAtom, { ...current, ...Object.fromEntries(changed) });
 }
 
 export function markMessagesSeen(conversationId: string, messageIndex: number): void {
-  setShared((s) => ({
-    lastSeenMessageIndex: { ...s.lastSeenMessageIndex, [conversationId]: messageIndex },
-  }));
+  setSeen({ [conversationId]: messageIndex });
 }
 
 /** Bulk-seen after external JSONL edits — conservative: better to miss a badge
  *  than show a wrong one. */
 export function markConversationsSeenBulk(updates: Record<string, number>): void {
-  setShared((s) => ({ lastSeenMessageIndex: { ...s.lastSeenMessageIndex, ...updates } }));
+  setSeen(updates);
 }
 
 /** Drop the seen-index entry for a deleted conversation. */
 export function removeSeenIndex(conversationId: string): void {
-  setShared((s) => {
-    const { [conversationId]: _removed, ...rest } = s.lastSeenMessageIndex;
-    return { lastSeenMessageIndex: rest };
-  });
+  const current = jotaiStore.get(seenAtom);
+  if (!(conversationId in current)) return;
+  const { [conversationId]: _removed, ...rest } = current;
+  jotaiStore.set(seenAtom, rest);
 }
 
 // ---------------------------------------------------------------------------
@@ -442,5 +234,5 @@ export function hasUnseenMessages(
 
 /** Non-React read of the persisted active id (actions.ts, WS handlers). */
 export function getSavedActiveConversationId(): string | null {
-  return jotaiStore.get(uiLocalAtom).activeConversationId;
+  return jotaiStore.get(prefsAtom).activeConversationId;
 }

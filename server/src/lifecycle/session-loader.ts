@@ -285,6 +285,7 @@ export function createSessionLoader(dependencies: SessionLoaderDependencies): Se
       id: hydratedConfig.record.conversationId,
       workingDirectory: hydratedConfig.record.workingDirectory ?? source.workingDirectory,
       configState: hydratedConfig.state,
+      done: hydratedConfig.record.done,
       existingSessionId: resumableSession?.sessionId,
       existingSessionAudienceKey: resumableSession?.buddyAudienceKey,
       // Provider-counted context size measured before the restart. Restoring it
@@ -375,6 +376,7 @@ export function createSessionLoader(dependencies: SessionLoaderDependencies): Se
           id: record.conversationId,
           workingDirectory: record.workingDirectory,
           configState: hydrated.state,
+          done: hydrated.record.done,
           existingSessionId: currentSession?.sessionId,
           existingSessionAudienceKey: currentSession?.buddyAudienceKey,
           existingProviderUsage: currentSession?.latestUsage ?? null,

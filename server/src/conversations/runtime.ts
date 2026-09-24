@@ -488,6 +488,9 @@ export interface ConversationOptions {
   id: string;
   workingDirectory?: string | null;
   configState: ConversationConfigState;
+  /** From the durable record. Required so a load path cannot forget it and
+   *  resurrect a hidden conversation; new conversations pass false. */
+  done: boolean;
   existingSessionId?: string;
   /** Host-owned metadata from the matching durable provider-session binding. */
   existingSessionAudienceKey?: string;
@@ -525,6 +528,7 @@ export interface ConversationRuntime extends EventEmitter, ConversationRuntimeVi
   workingDirectory: string;
   configRevision: number;
   configResolution: ConfigResolution;
+  done: boolean;
   isWorker: boolean;
   swarmId: string | null;
   workerId: string | null;
@@ -684,6 +688,9 @@ export function createConversationRuntime(
     config: ConversationConfig;
     configRevision: number;
     configResolution: ConfigResolution;
+    // Mirror of record.done. Written only by the set_conversation_done
+    // handler, after the record write succeeds.
+    done: boolean;
     // Oompa worker detection — true if first user message started with "[oompa]".
     // Set during JSONL loading, preserved across restarts.
     isWorker: boolean;
@@ -851,6 +858,7 @@ export function createConversationRuntime(
       this.config = configState.config;
       this.configRevision = configState.revision;
       this.configResolution = configState.resolution;
+      this.done = opts.done;
       // Canonical kind — derive from legacy when absent (migration on load).
       this.kind =
         kind ??
@@ -3247,6 +3255,7 @@ export function createConversationRuntime(
         messages: this.messages,
         messageCount: this.messages.length,
         isRunning: this.isRunning,
+        done: this.done,
         isStreaming: this.isStreaming,
         confirmed: true,
         createdAt: this.createdAt,

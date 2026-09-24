@@ -23,7 +23,7 @@ vendor/agent-cli-tool/             → GIT SUBMODULE: canonical request → argv
 client/src/atoms/*                 → jotai atoms, derived views, WS actions
 client/src/components/{Sidebar,Chat,ConversationConfigPicker}.tsx → main desktop UI
 client/src/mobile/*                → mobile view tree (second shell, same core)
-client/src/atoms/ui.ts             → persisted UI prefs (local+shared partition)
+client/src/atoms/ui.ts             → device-local UI prefs + NEW-badge seen indexes
 ```
 
 ## Hard rules (violations = rejected PR)

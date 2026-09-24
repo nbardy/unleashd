@@ -5,7 +5,6 @@ import type {
   ConversationKind,
   ModelId,
   Provider,
-  UIState,
 } from '@unleashd/shared';
 import {
   PROTOCOL_INFO,
@@ -59,7 +58,6 @@ export interface ConversationWebSocketDependencies {
   isInitialLoadComplete(): boolean;
   beginCommand(command: ClientMessage): (() => void) | null;
   configService: ConversationConfigService;
-  getUIState(): UIState;
   getArchivedBuddyIds?(): Promise<string[]>;
   isBuddyArchived?(buddyId: string): Promise<boolean>;
   getDefaultWorkingDirectory(): string;
@@ -314,6 +312,29 @@ export function registerConversationWebSocket(
             break;
           }
 
+          case 'set_conversation_done': {
+            const conversation = dependencies.registry.get(data.conversationId);
+            if (!conversation) {
+              sendProtocolError(
+                socket,
+                `Conversation ${data.conversationId} is not open on this server`
+              );
+              break;
+            }
+            const record = await dependencies.configService.setDone(
+              data.conversationId,
+              data.done
+            );
+            if (!record) throw new Error(`Conversation ${data.conversationId} has no record`);
+            conversation.done = record.done;
+            dependencies.broadcast({
+              type: 'conversation_updated',
+              reason: 'done',
+              conversation: conversation.toJSON(),
+            });
+            break;
+          }
+
           case 'set_conversation_config': {
             const conversation = dependencies.registry.get(data.conversationId);
             if (!conversation) {
@@ -441,7 +462,6 @@ async function sendInitialState(
       return summarizeConversation(value);
     }),
     defaultCwd: dependencies.getDefaultWorkingDirectory(),
-    uiState: dependencies.getUIState(),
     protocol: PROTOCOL_INFO,
   });
 }
