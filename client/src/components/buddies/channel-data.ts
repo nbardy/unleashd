@@ -8,37 +8,84 @@
  */
 import {
   BuddyChannelThreadSchema,
+  type BuddyListAuthor,
   type BuddyMailingListPost,
+  BuddyMailingListPostsSchema,
   type BuddyWorkspaceActivity,
   BuddyWorkspaceActivitySchema,
 } from '@unleashd/shared';
 import { type UIEvent, useEffect, useMemo, useRef } from 'react';
 import { resource, usePolledFetch } from '../../hooks/usePolledFetch';
 import { newId } from '../../utils/ids';
-import { authorKey, postsResource } from './BuddyMessages';
 import { buddyApi } from './api';
 import { type ChannelReference, type ChannelTask, workspaceTasksUrl } from './channel-text';
 
-export function workspaceActivityResource(workspaceId: string) {
-  const path = `/api/buddies/workspaces/${encodeURIComponent(workspaceId)}/activity`;
-  return resource(path, async (signal: AbortSignal) => {
-    const response = await fetch(path, { signal });
-    if (!response.ok) {
-      const payload = (await response.json().catch(() => ({}))) as { error?: string };
-      throw new Error(
-        payload.error ?? `Unable to load workspace activity (HTTP ${response.status})`
-      );
-    }
-    return BuddyWorkspaceActivitySchema.parse(await response.json());
-  });
+export interface BuddyMailingListSummary {
+  id: string;
+  workspaceId: string;
+  name: string;
+  purpose: string;
+  createdBy: BuddyListAuthor;
+  createdAt: string;
+  postCount: number;
+  latestPostAt: string | null;
 }
 
-export function listsUrl(workspaceId: string): string {
+export function workspaceActivityResource(workspaceId: string) {
+  const path = `/api/buddies/workspaces/${encodeURIComponent(workspaceId)}/activity`;
+  return resource(path, async (signal: AbortSignal) =>
+    BuddyWorkspaceActivitySchema.parse(await buddyApi(path, { signal }))
+  );
+}
+
+function listsUrl(workspaceId: string): string {
   return `/api/buddies/lists?workspaceId=${encodeURIComponent(workspaceId)}`;
+}
+
+/** A workspace's channels, polled and cached (one key for every surface). */
+export function useChannelLists(workspaceId: string) {
+  return usePolledFetch<BuddyMailingListSummary[]>(listsUrl(workspaceId), 5000);
+}
+
+// Every post read goes through here: the fetch boundary parses the v33 wire
+// shape once, so a stale or foreign server surfaces as the view's refresh
+// error instead of a crash (or a silent "Unknown") deep in rendering.
+export function postsResource(path: string) {
+  return resource(path, async (signal: AbortSignal) =>
+    BuddyMailingListPostsSchema.parse(await buddyApi(path, { signal }))
+  );
 }
 
 export function channelPostsResource(listId: string) {
   return postsResource(`/api/buddies/lists/${encodeURIComponent(listId)}/posts?limit=50`);
+}
+
+// A Task filter reads the workspace-wide feed so one Task's discussion is
+// visible across every channel, not just the selected one.
+export function taskChannelFeedUrl(workspaceId: string, projectId: string): string {
+  return `/api/buddies/posts?workspaceId=${encodeURIComponent(workspaceId)}&projectId=${encodeURIComponent(projectId)}&limit=50`;
+}
+
+export function authorKey(author: BuddyListAuthor): string {
+  switch (author.kind) {
+    case 'owner':
+      return 'owner';
+    case 'buddy':
+      return author.buddyId;
+  }
+}
+
+/** The name a post's author shows as: the owner is "You", a Buddy its name. */
+export function authorName(
+  author: BuddyListAuthor,
+  buddyNames: Readonly<Record<string, string>>
+): string {
+  switch (author.kind) {
+    case 'owner':
+      return 'You';
+    case 'buddy':
+      return buddyNames[author.buddyId] ?? author.buddyId;
+  }
 }
 
 export function channelThreadResource(listId: string, rootId: string) {
@@ -48,7 +95,7 @@ export function channelThreadResource(listId: string, rootId: string) {
   );
 }
 
-export function respondingUrl(listId: string): string {
+function respondingUrl(listId: string): string {
   return `/api/buddies/lists/${encodeURIComponent(listId)}/responding`;
 }
 
@@ -56,7 +103,7 @@ export function respondingUrl(listId: string): string {
 // ones appear in the rail and the @ menu.
 export type ChannelMember = { id: string; name: string; role: string; status: string };
 
-export type ChannelResponse = { threadRootId: string; buddyId: string; conversationId: string };
+type ChannelResponse = { threadRootId: string; buddyId: string; conversationId: string };
 
 // =============================================================================
 // Transcript rows: D = Day ⊕ Lead ⊕ Continuation.
@@ -150,7 +197,7 @@ const TASK_STATUS_LABELS: Readonly<Record<string, string>> = {
 
 // The universal @ menu: active Buddies and every non-cancelled Task; the fuzzy
 // ranker orders them together by match quality.
-export function channelReferences(
+function channelReferences(
   members: readonly ChannelMember[],
   tasks: readonly ChannelTask[]
 ): ChannelReference[] {
@@ -191,29 +238,43 @@ export type WorkspaceDirectory = {
 
 const NO_TASKS: readonly ChannelTask[] = [];
 
+/** Every lookup the channel views derive from a workspace's members and Tasks. */
+export function workspaceDirectory(
+  workspaceName: string,
+  members: readonly ChannelMember[],
+  tasks: readonly ChannelTask[]
+): WorkspaceDirectory {
+  return {
+    workspaceName,
+    members,
+    activeMembers: members.filter((member) => member.status === 'active'),
+    tasks,
+    buddyNames: Object.fromEntries(members.map((member) => [member.id, member.name])),
+    taskById: new Map(tasks.map((task) => [task.id, task])),
+    references: channelReferences(members, tasks),
+  };
+}
+
 /** Members, Tasks and the @ index for one workspace, polled and cached. */
 export function useWorkspaceDirectory(workspaceId: string): WorkspaceDirectory {
   const loadActivity = useMemo(() => workspaceActivityResource(workspaceId), [workspaceId]);
   const activity = usePolledFetch<BuddyWorkspaceActivity>(loadActivity, 10_000);
   const tasksFeed = usePolledFetch<ChannelTask[]>(workspaceTasksUrl(workspaceId), 15_000);
   const tasks = tasksFeed.data ?? NO_TASKS;
-  return useMemo(() => {
-    const members = (activity.data?.members ?? []).map((member) => ({
-      id: member.id,
-      name: member.name,
-      role: member.role,
-      status: member.status,
-    }));
-    return {
-      workspaceName: activity.data?.workspace.name ?? 'Channels',
-      members,
-      activeMembers: members.filter((member) => member.status === 'active'),
-      tasks,
-      buddyNames: Object.fromEntries(members.map((member) => [member.id, member.name])),
-      taskById: new Map(tasks.map((task) => [task.id, task])),
-      references: channelReferences(members, tasks),
-    };
-  }, [activity.data, tasks]);
+  return useMemo(
+    () =>
+      workspaceDirectory(
+        activity.data?.workspace.name ?? 'Channels',
+        (activity.data?.members ?? []).map((member) => ({
+          id: member.id,
+          name: member.name,
+          role: member.role,
+          status: member.status,
+        })),
+        tasks
+      ),
+    [activity.data, tasks]
+  );
 }
 
 /** Buddies composing a mention reply, by thread root, plus a refetch. */
@@ -261,4 +322,14 @@ export async function createChannel(
     body: JSON.stringify({ workspaceId, author: { kind: 'owner' }, key: newId(), name, purpose }),
   });
   return result.list.id;
+}
+
+// A mention reply is already written when its responder entry disappears:
+// fetch it now rather than on the next poll.
+export function useRefetchWhenRepliesLand(respondingCount: number, refetch: () => Promise<void>) {
+  const previous = useRef(respondingCount);
+  useEffect(() => {
+    if (respondingCount < previous.current) void refetch();
+    previous.current = respondingCount;
+  }, [respondingCount, refetch]);
 }

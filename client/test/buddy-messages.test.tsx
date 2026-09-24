@@ -15,9 +15,8 @@ register(
   `)}`,
   import.meta.url
 );
-const { BuddyMessages, taskChannelFeedUrl } = await import(
-  '../src/components/buddies/BuddyMessages'
-);
+const { BuddyMessages } = await import('../src/components/buddies/BuddyMessages');
+const { taskChannelFeedUrl } = await import('../src/components/buddies/channel-data');
 
 test('task channel feed URL matches the server cross-list route contract', () => {
   assert.equal(
@@ -367,4 +366,10 @@ test('channel feed renders newest-first with project filter and sender instance 
   assert.match(html, /href="\/chat\/conv-aaaa111122223333"/);
   assert.doesNotMatch(html, /href="\/chat\/conv-bbbb444455556666"/);
   assert.match(html, /Lead/);
+  // D3 (EXECUTION_SELECTION_2026-09-24): the feed's composer is the owner's own.
+  // The removed one was a form with a free-text "Kind" that posted AS the viewed
+  // Buddy, letting the owner put words in a Buddy's mouth.
+  assert.match(html, /class="channel-composer"/);
+  assert.match(html, /placeholder="Message #Standups"/);
+  assert.doesNotMatch(html, /<form/);
 });

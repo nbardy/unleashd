@@ -1,27 +1,30 @@
 import type { BuddyMailingListPost, BuddyOwnerPostResult } from '@unleashd/shared';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { Link, Navigate, useLocation, useNavigate, useParams } from 'react-router-dom';
-import { type BuddyMailingListSummary, PostAuthor } from '../../components/buddies/BuddyMessages';
+import { PostAuthor } from '../../components/buddies/BuddyMessages';
 import { BuddySigil } from '../../components/buddies/BuddySigil';
 import { ChannelComposer } from '../../components/buddies/ChannelComposer';
 import { ChannelMarkdown, TypingDots } from '../../components/buddies/ChannelMarkdown';
 import { WakeIcon, WakeIndicator } from '../../components/buddies/WakeIndicator';
 import { useBuddyDirectActions } from '../../components/buddies/buddy-direct-actions';
 import {
+  type BuddyMailingListSummary,
   type ChannelMember,
   type ChannelRow,
   type WorkspaceDirectory,
+  authorName,
   channelPostsResource,
   channelRows,
   channelThreadResource,
   clockTime,
   createChannel,
   joinNames,
-  listsUrl,
   postPurposeLabel,
   postPurposeTag,
+  useChannelLists,
   useChannelResponding,
   useFollowBottom,
+  useRefetchWhenRepliesLand,
   useWorkspaceDirectory,
 } from '../../components/buddies/channel-data';
 import type { BuddyOverview } from '../../components/buddies/types';
@@ -88,7 +91,7 @@ export function ChannelsMobile() {
   const location = useLocation();
   const screen = mobileChannelScreen(location.search);
   const directory = useWorkspaceDirectory(workspaceId);
-  const lists = usePolledFetch<BuddyMailingListSummary[]>(listsUrl(workspaceId), 5000);
+  const lists = useChannelLists(workspaceId);
   return renderScreen(screen, {
     workspaceId,
     directory,
@@ -387,15 +390,6 @@ function PostFooter({ post, context }: { post: BuddyMailingListPost; context: Ro
   }
 }
 
-function authorName(post: BuddyMailingListPost, directory: WorkspaceDirectory): string {
-  switch (post.author.kind) {
-    case 'owner':
-      return 'You';
-    case 'buddy':
-      return directory.buddyNames[post.author.buddyId] ?? post.author.buddyId;
-  }
-}
-
 function Row({ row, context }: { row: ChannelRow; context: RowContext }) {
   switch (row.kind) {
     case 'day':
@@ -412,7 +406,7 @@ function Row({ row, context }: { row: ChannelRow; context: RowContext }) {
         >
           <BuddySigil
             className="mobile-channel-post__avatar"
-            name={authorName(row.post, context.directory)}
+            name={authorName(row.post.author, context.directory.buddyNames)}
           />
           <div className="mobile-channel-post__content">
             <div className="mobile-channel-post__heading">
@@ -605,14 +599,4 @@ function ThreadScreen({
       />
     </div>
   );
-}
-
-// A mention reply is already written when its responder entry disappears:
-// fetch it now rather than on the next poll.
-function useRefetchWhenRepliesLand(respondingCount: number, refetch: () => Promise<void>) {
-  const previous = useRef(respondingCount);
-  useEffect(() => {
-    if (respondingCount < previous.current) void refetch();
-    previous.current = respondingCount;
-  }, [respondingCount, refetch]);
 }

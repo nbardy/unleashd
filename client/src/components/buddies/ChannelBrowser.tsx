@@ -1,35 +1,36 @@
-import type { BuddyListAuthor, BuddyMailingListPost, BuddyOwnerPostResult } from '@unleashd/shared';
+import type { BuddyMailingListPost, BuddyOwnerPostResult } from '@unleashd/shared';
 import { useAtomValue } from 'jotai';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { buddySidebarChannelsAtom } from '../../atoms/buddy-sidebar';
 import { allConversationIdsAtom } from '../../atoms/conversations';
 import { usePolledFetch } from '../../hooks/usePolledFetch';
-import {
-  type BuddyMailingListSummary,
-  PostAuthor,
-  postsResource,
-  taskChannelFeedUrl,
-} from './BuddyMessages';
+import { PostAuthor } from './BuddyMessages';
 import { BuddyRailRow } from './BuddyRailRow';
 import { BuddySigil } from './BuddySigil';
 import { ChannelComposer } from './ChannelComposer';
 import { ChannelMarkdown, TypingDots } from './ChannelMarkdown';
 import {
-  CONVERSATIONAL_PURPOSES,
+  type BuddyMailingListSummary,
   type ChannelMember,
   type ChannelRow,
+  authorName,
   channelPostsResource,
-  channelReferences,
   channelRows,
   channelThreadResource,
   clockTime,
   createChannel,
   joinNames,
-  listsUrl,
+  postPurposeLabel,
+  postPurposeTag,
+  postsResource,
+  taskChannelFeedUrl,
+  useChannelLists,
   useChannelResponding,
   useFollowBottom,
+  useRefetchWhenRepliesLand,
   useWorkspaceDirectory,
+  workspaceDirectory,
 } from './channel-data';
 import { type ChannelReference, type ChannelTask, plainChannelText } from './channel-text';
 import './ChannelBrowser.css';
@@ -92,14 +93,19 @@ function InstanceTag({
   );
 }
 
+function PostPurpose({ post }: { post: BuddyMailingListPost }) {
+  const label = postPurposeLabel(post);
+  return label === null ? null : (
+    <span className="channel-browser-purpose" data-purpose={postPurposeTag(post)}>
+      {label}
+    </span>
+  );
+}
+
 function PostMeta({ post, context }: { post: BuddyMailingListPost; context: RowContext }) {
   return (
     <>
-      {!CONVERSATIONAL_PURPOSES.has(post.purpose) && (
-        <span className="channel-browser-purpose" data-purpose={post.purpose}>
-          {post.purpose.replaceAll('_', ' ')}
-        </span>
-      )}
+      <PostPurpose post={post} />
       {context.showChannel && (
         <span className="channel-browser-channel-tag">
           #{context.channelNameById.get(post.listId) ?? post.listId}
@@ -113,15 +119,6 @@ function PostMeta({ post, context }: { post: BuddyMailingListPost; context: RowC
       )}
     </>
   );
-}
-
-function authorName(author: BuddyListAuthor, buddyNames: Readonly<Record<string, string>>) {
-  switch (author.kind) {
-    case 'owner':
-      return 'You';
-    case 'buddy':
-      return buddyNames[author.buddyId] ?? author.buddyId;
-  }
 }
 
 function Replying({ names }: { names: readonly string[] }) {
@@ -278,13 +275,7 @@ function ThreadPane({
   const thread = usePolledFetch(channelThreadResource(list.id, rootId), 3000);
   const replyRows = useMemo(() => channelRows(thread.data?.replies ?? []), [thread.data]);
   const follow = useFollowBottom(replyRows.length + replying.length, thread.data);
-  // A reply that just finished is already written; fetch it now, not on the next poll.
-  const replyingCount = replying.length;
-  const previousReplying = useRef(replyingCount);
-  useEffect(() => {
-    if (replyingCount < previousReplying.current) void thread.refetch();
-    previousReplying.current = replyingCount;
-  }, [replyingCount, thread.refetch]);
+  useRefetchWhenRepliesLand(replying.length, thread.refetch);
   const root = thread.data?.root;
   return (
     <aside className="channel-thread" aria-label="Thread">
@@ -386,13 +377,7 @@ function ChannelPane({
     [channelFeed.data]
   );
   const respondingByRoot = responding.byRoot;
-  // When a reply finishes, its post already exists: refresh reply counts now.
-  const respondingCount = responding.count;
-  const previousResponding = useRef(respondingCount);
-  useEffect(() => {
-    if (respondingCount < previousResponding.current) void channelFeed.refetch();
-    previousResponding.current = respondingCount;
-  }, [respondingCount, channelFeed.refetch]);
+  useRefetchWhenRepliesLand(responding.count, channelFeed.refetch);
 
   const follow = useFollowBottom(rows.length, shown.data);
   const base = {
@@ -664,7 +649,7 @@ export function ChannelBrowser({
   tasks: readonly ChannelTask[];
   availableConversationIds: ReadonlySet<string>;
 }) {
-  const lists = usePolledFetch<BuddyMailingListSummary[]>(listsUrl(workspaceId), 5000);
+  const lists = useChannelLists(workspaceId);
   const { data, error } = lists;
   const [params, setParams] = useSearchParams();
   const [creating, setCreating] = useState(false);
@@ -672,16 +657,10 @@ export function ChannelBrowser({
     () => new Map((data ?? []).map((list) => [list.id, list.name])),
     [data]
   );
-  const buddyNames = useMemo(
-    () => Object.fromEntries(members.map((member) => [member.id, member.name])),
-    [members]
+  const { buddyNames, activeMembers, taskById, references } = useMemo(
+    () => workspaceDirectory(workspaceName, members, tasks),
+    [workspaceName, members, tasks]
   );
-  const activeMembers = useMemo(
-    () => members.filter((member) => member.status === 'active'),
-    [members]
-  );
-  const taskById = useMemo(() => new Map(tasks.map((task) => [task.id, task])), [tasks]);
-  const references = useMemo(() => channelReferences(members, tasks), [members, tasks]);
   const selected = data?.find((list) => list.id === params.get('channel')) ?? data?.[0] ?? null;
   const select = (next: { channel: string; task: string | null; thread: string | null }) =>
     setParams({
