@@ -15,7 +15,7 @@ atoms/*, hooks/*, utils/*, shared/*, components/buddies/{api,types,ui-contract,b
 Never import another `components/*.tsx` or its CSS. Swarm parsers were moved to `utils/swarmConvoParsers.ts` / `utils/swarmAnalyticsParsers.ts` precisely so mobile can reuse logic without pulling desktop view trees. `components/buddies/*` is the one allowed exception — its `buddies-shaping.ts` is pure shaping (no JSX/CSS side-effects) co-located with `api.ts`/`types.ts`/`ui-contract.ts`.
 
 Grep gates (run `pnpm check:client-invariants` / `bash tools/check-client-invariants.sh`):
-- **G1** — `jotaiStore.set` only inside `client/src/atoms/` (`mutate()` wraps it there). Components call actions.
+- **G1** — `jotaiStore.set` only inside `client/src/atoms/`. Components call actions.
 - **G2** — no raw `.buddyContext` / `.purpose` reads in `client/src/mobile/` — use `getConversationKind` / `matchConversationKind` / `buddyContextFromKind` (`shared/src/conversation-kind.ts`).
 - **G3** — no `components/` imports in `mobile/` except `components/buddies/` (see above).
 
@@ -38,8 +38,8 @@ export function useDeviceKind(): DeviceKind { /* sticky per page load */ }
 export type MobileSearchState = { kind: 'idle' } | { kind: 'searching'; query: string };
 export const mobileSearchStateAtom = atom<MobileSearchState>({ kind: 'idle' });
 export const mobileSearchResultsAtom = atom((get) => get(mobileSearchStateAtom).kind === 'idle'
-  ? get(allConversationIdsAtom)
-  : filter(allConversationIdsAtom, query) /* via utils/fuzzyMatch; rows subscribe per id */);
+  ? get(listField('order'))
+  : filter(get(listField('order')), query) /* via utils/fuzzyMatch over rowFamily(id) */);
 ```
 
 `T2`: `MobileSearchState` sum type, never `atom<string>('')` sentinel. `mobile/atoms/search.ts → atoms/conversations.ts` is allowed; core never imports mobile.
@@ -88,13 +88,10 @@ routing `activeConversationIdAtom` in `conversations.ts` (dual-active-id).
 
 ### Mutation rule
 
-Partial updates of collection atoms go through `mutate()` (`atoms/mutate.ts` / `atoms/actions.ts`):
-
-```ts
-const mutate = <T>(a, recipe) => jotaiStore.set(a, produce(jotaiStore.get(a), recipe));
-```
-
-Scalar / full-replace sets stay plain `jotaiStore.set`. Current code already conforms: ~20 produce sites use `mutate()`, rest are scalars/snapshot replacements. Keeps every atom one uniform kind (no `jotai-immer` dep).
+Writes live in `client/src/atoms/` only. Keyed stores (rows, transcripts,
+streams) are written through their `patch` atom for the ids an event names;
+everything else is a plain `jotaiStore.set` of a new value. `mutate()` and
+immer were removed in T19. See [client state](client-state.md).
 
 ### Single-bridge + single-handler rules
 

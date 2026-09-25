@@ -52,18 +52,18 @@ client keeps its rows, shows "backend reloading" and reconnects. A v2 client fac
 
 ## Pending commands are separate from server rows
 
-`conversationsAtom` contains server rows. New creations live in `pendingCreationsAtom`, and config
-writes live in `pendingConfigCommandsAtom`; neither is a partial row. Config actions send the patch
+`rowsAtom` contains server rows. New creations and config writes are commands in `commandsAtom`
+(`atoms/commands.ts`); neither is a partial row. Config actions send the patch
 and record pending state without overwriting the authoritative config optimistically; the `config`
 patch carrying the command's id settles it.
 
-[pending-creations.ts](../client/src/atoms/pending-creations.ts) persists creation intent (store v3;
-older stores are dropped, not migrated). Preserve the original command and conversation IDs on
+Pending creations are in memory only since T19 (O5); a create lost to a full page reload keeps its
+first message in `draft:<id>`. Preserve the original command and conversation IDs on
 reconnect so retries stay idempotent. A matching `ack created` removes its pending record; a
 rejection retains the error. Only retryable admission failures are automatically cleared for a new
 connection.
 
-On `hello`, the client reconciles persisted creations with server IDs and clears pending config
+On `hello`, the client reconciles pending creations with server IDs and clears pending config
 commands from the previous socket epoch. A lost acknowledgement must not leave the UI saving forever.
 
 ## Rows are not transcripts

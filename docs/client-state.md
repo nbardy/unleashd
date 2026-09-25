@@ -1,68 +1,82 @@
 # Client state patterns
 
-The state atoms and derived conversation views live in
-[atoms/conversations.ts](../client/src/atoms/conversations.ts). Components call
-exported actions; all `jotaiStore.set` calls stay inside `client/src/atoms/`.
+The state core is [atoms/conversations.ts](../client/src/atoms/conversations.ts)
+(atoms), [atoms/actions.ts](../client/src/atoms/actions.ts) (the WS spine and
+reads) and [atoms/commands.ts](../client/src/atoms/commands.ts) (client-owned
+commands). Components call exported actions; all `jotaiStore.set` calls stay
+inside `client/src/atoms/`. Design: `06-target-client.md` §1 (T19).
+
+## The atoms
+
+Base:
+
+| Atom | Holds |
+|---|---|
+| `connectionAtom` | `{ socket: connecting \| open{send} \| closed, server: unknown \| skew{version} \| v3{defaultCwd, loadComplete} }`. A send while not open is a typed outcome (`sendNow` → `'closed'`), never a silent drop. |
+| `rowsAtom` / `rowFamily(id)` | List rows (protocol v3), one atom per id (`keyedAtoms`). `null` = the client does not hold it. Archived Buddies' rows are dropped at ingestion, so no reader filters them. |
+| `transcriptFamily(id)` | `absent \| loading \| loaded{epoch, messages, detail} \| failed{error}`. Read with `messagesOf` / `detailOf` / `queueOf` / `subAgentsOf` (stable empty fallbacks). |
+| `streamFamily(id)` | Live text of one streaming reply. |
+| `commandsAtom` | In-flight `create` / `set_config` / `send` commands, keyed by commandId. In memory only; a hello resends creates with their original ids. |
+| `prefsAtom`, `seenAtom` (`atoms/ui.ts`) | Device-local prefs (read `useAtomValue(prefsAtom).field`) and last-seen message index per conversation. |
+| resource cache (`atoms/resources.ts`), outbox (`channel-outbox.ts`) | Unchanged. |
+
+Derived:
+
+| Atom | Gives |
+|---|---|
+| `listIndexAtom` + `listField(key)` | ONE pass over the newest-first list: `order`, `idSet`, `recentDirs`, `latestCwd`, `inbox`, `gallery`, `childrenOf`, `folders`, `runningByFolder`, `buddyEntries`, `builders`, `buddyThreads`, `workspaceActivity`, `workersByProject`. Each field keeps its identity while its content is unchanged; subscribe to the field, not the index. |
+| `groupsFamily(id)` | Chat response blocks including live text (tail regroup). |
+| `commandFor(id)` | `{ create, config }` in flight for one conversation. |
+| `unreadFamily(id)` | The NEW badge (`row.messageCount` past `seen[id]`). |
+| `childRowsFamily(id)` | Child-session rows for the sub-agent panel. |
+| `buddySidebarAtom` (`buddy-sidebar.ts`) | Buddy projects, groups, count and channel rows (roster ⨝ `buddyEntries`). |
+| `swarmWorkersByProjectAtom` (`swarm/swarm-workers.ts`) | Worker rows per project root, over `workersByProject`. Swarm code only. |
 
 ## Subscriptions
 
 | UI needs | Subscribe to |
 |---|---|
-| One server conversation | `conversationAtomFamily(id)` |
-| A sorted or filtered collection | A derived view over `conversationListAtom` in `atoms/` (ids or list entries) |
-| Conversation IDs | `allConversationIdsAtom` or a derived ID list such as `chatConversationIdsAtom` |
-| Chat response blocks, including live text | `chatMessageGroupsAtomFamily(id)` |
-| Live text for one conversation | `streamingAtomFamily(id)` |
-| Pending creation or config command | `pendingCreationAtomFamily(id)` or `pendingConfigCommandAtomFamily(id)` |
-| Whether full history is hydrated | `conversationDetailsLoadedAtomFamily(id)` |
-| Persisted UI preference | A per-field atom from `atoms/ui.ts` |
+| One conversation's row | `rowFamily(id)` |
+| A sorted or filtered collection | A field of the list index: `listField('inbox')`, `listField('folders')`, … |
+| "Can I link to this conversation?" | `listField('idSet')` (AGENTS.md Link rule) |
+| Chat blocks / live text | `groupsFamily(id)` / `streamFamily(id)` |
+| Bodies, detail, queue | `transcriptFamily(id)` through `useConversationBodies(id)`, which also loads it |
+| Pending creation or config command | `commandFor(id)` |
+| Connected? load complete? default cwd? | `connectionAtom` (`loadCompleteOf`, `defaultCwdOf`) |
+| The active conversation | The route (`/chat/:id`); `prefs.activeConversationId` is only for reopening on load |
+| Persisted UI preference | `useAtomValue(prefsAtom).field` |
 | Any read-only server view (Buddy panels, swarm runs, catalog, git log) | `usePolledFetch` over the keyed cache in `atoms/resources.ts` |
 | Buddy directory / detail / automations | `useBuddyOverview`, `useBuddyDetailData`, `useBuddyAutomations` in `hooks/useBuddyData.ts` — both shells |
 | A Buddy page's derived model + `talk` / open-project actions | `useBuddyPage` in `hooks/useBuddyData.ts` — the shells only render |
 
-Never call `useAtomValue(conversationsAtom)` in a component. For lists, subscribe
-the parent to the appropriate derived ID view and have each row subscribe to its
-own conversation (`conversationAtomFamily(id)`), wrapped in `React.memo` with
-stable callbacks, so an event re-renders only the row it is about. Sidebar
-(`SidebarConversationRow`) and Gallery (`GalleryCard`) are the models.
+Never call `useAtomValue(rowsAtom)` in a component. For lists, subscribe the
+parent to a list field of ids and have each row subscribe to its own
+`rowFamily(id)`, wrapped in `React.memo` with stable callbacks, so an event
+re-renders only the row it is about. Sidebar (`SidebarConversationRow`) and
+Gallery (`GalleryCard`) are the models. A component that needs only "are
+there any conversations?" reads `listField('idSet').size` — never `order`,
+which moves on every re-sort (the isolation test caught Chat doing that).
 
-### An event costs what it changed (2026-09-25)
+### An event costs what it changed (2026-09-25, T05 → T19)
 
 There are ~1,200 conversations in real use, and every event (status, queue,
 message, each 5 s poller batch) used to run ~10 full-list passes and re-render
-the open Chat for whichever conversation it was about. The store is now built so
-work follows the ids an event touched:
+the open Chat for whichever conversation it was about. Work now follows the ids
+an event touched:
 
-- **Per-id records.** `conversationsAtom` is a `keyedAtoms` store
+- **Per-id records.** `rowsAtom` is a `keyedAtoms` store
   (`atoms/structural.ts`): one primitive atom per conversation, and a write sets
-  only the ids it touched. Per-id atoms (`conversationAtomFamily`,
-  `chatMessageGroupsAtomFamily`, `childConversationsAtomFamily`, `queueAtomFamily`)
-  read their own record, never the map. Streaming text is keyed the same way.
+  only the ids it touched. Transcripts and streams are keyed the same way.
 - **One list index.** `atoms/conversation-index.ts` keeps a
   `ConversationListEntry` per conversation (only the fields views filter, group
   and sort on) and one newest-first list. A write rebuilds entries for the
-  touched ids only, keeps an entry that did not change, and moves a changed one
-  by binary search. So queue, sub-agent and streaming events never touch the
-  list, and no collection view recomputes.
-- **Stable views.** Every collection view reads `conversationListAtom` and is a
-  `stableAtom(read, equals)`: when it recomputes to an equal value it hands back
-  the previous reference, so its subscribers do not re-render. Sidebar grouping
-  (`sidebarFolderViewAtom`), the gallery list, the Buddy sidebar and the running
-  counts all work like this; they used to be `useMemo` chains in the components.
-
-Add a view like this:
-
-```ts
-// client/src/atoms/conversations.ts
-export const runningConversationIdsAtom = stableAtom(
-  (get) => get(conversationListAtom).filter((entry) => entry.isRunning).map((entry) => entry.id),
-  sameItems
-);
-```
+  touched ids only and moves a changed one by binary search. `buildListIndex`
+  then derives every collection view in one pass, and `reuseUnchangedFields`
+  hands back the previous reference for each field whose content is equal.
+  Queue, sub-agent and streaming events never touch the list.
 
 If a view needs a field the entry lacks, add it to `ConversationListEntry`
-(`buildEntry` and `sameEntry`). Never read `conversationsAtom` from a derived atom
-that is mounted all the time. Mobile search reads it only while a query is typed.
+(`buildEntry` and `sameEntry`), then add the view as a `ListIndex` field.
 Per-directory facts (`folderGroupKey`, worktree and temp checks) come from
 `directoryFacts(dir)`, which runs each regex once per distinct directory.
 
@@ -71,65 +85,50 @@ for B, records every atom Chat reads, then drives events for A through
 `handleMessage`. It fails if any of those values changes (which would re-render
 Chat), if an atom labelled for B recomputes, or if a queue, sub-agent or stream
 event recomputes a collection view. Label new per-id atoms `name:<id>` so the
-test covers them.
-`client/bench/conversation-event.bench.ts` times one event at 1,200
-conversations (numbers in the T05 report).
+test covers them. `client/bench/conversation-event.bench.ts` times one event at
+1,200 conversations (numbers in the T05 and T19 reports).
 
 Other rules for per-item work:
 
-- The kind accessors (`getConversationKind`, `isBuddyConversation`,
-  `getBuddyContext`) read `conversation.kind` directly; the wire schema already
-  validated it. Do not re-add a zod parse on that read path
-  (`client/test/buddy-builder-kind.test.ts` trips if you do).
-- A component that only needs "are there any conversations" subscribes to
-  `hasConversationsAtom`, a boolean.
+- The kind accessors read `row.kind` directly; the wire schema already
+  validated it. Do not re-add a zod parse on that read path.
 - A component that needs a conversation only inside an event handler (the
   gallery's message search, the sidebar's "seed from latest thread") calls
   `readConversation(id)` from actions at that moment instead of subscribing.
 
 ## Mutations and state ownership
 
-These are separate atoms, not fields of one combined state object:
+Row writes go through `putRows` / `removeConversations` in actions.ts, which
+patch `rowStore` for the named ids only. Never replace the whole map from an
+event. Transcripts go through `putTranscript`; streams through the chunk
+buffer. Add a separate atom for new high-frequency state and document its
+clearing or commit boundary; do not put it into the row.
 
-- `conversationsAtom`: server snapshots, keyed per conversation (read as a
-  `ReadonlyMap`; writing a whole map replaces everything and diffs by identity).
-- `streamingContentAtom`: transient live text, keyed per conversation.
-- `pendingCreationsAtom`: client-owned creation commands, separate from conversations.
-- `pendingConfigCommandsAtom`: pending revision-checked config writes and errors.
-- `restartRecoveryAtomFamily`: per-conversation local mirror of the accepted
-  in-flight message and server queue, retained only for optional restart replay.
+Commands (`commands.ts`) are client-owned and never fabricate a row: a pending
+create lives in `commandsAtom` until its `ack` carries the rows. A hello
+rejects in-flight sends (the composer keeps its text), drops config commands
+(revision-checked; their result is in the detail) and resends creates the
+server does not hold with their original ids; a create rejected with
+`server_draining` / `server_starting` becomes `sent` again, any other
+rejection stays failed (`client/test/pending-creations.test.ts`).
 
-Conversation writes go through `putConversations`, `removeConversations` and
-`updateConversation(id, recipe)` in actions.ts: an immer recipe over one
-conversation, written through `conversationPatchAtom` for that id only. Never
-`mutate()` the whole conversations map. That copied the map and invalidated
-every reader on each event. For other collections, use
-[mutate](../client/src/atoms/mutate.ts) for partial updates inside atom modules;
-scalar or complete replacements can use `jotaiStore.set` there.
-Add a separate atom for new high-frequency state and document its clearing or
-commit boundary. Do not put it into each authoritative conversation entry.
-
-Restart recovery is deliberately client-owned. Non-empty `queue_updated`
-snapshots are mirrored under `restartRecovery:{conversationId}` in localStorage;
-an empty queue does not erase them because that is also what a replacement
-server reports after losing its runtime queue. A successful `message_complete`,
-an observed non-restart terminal attempt, explicit dismissal, or conversation
-deletion clears the mirror. The UI only offers replay when diagnostics prove a
-newer attempt ended with `server_restart`, then resubmits the former current
-message before its queued successors through acknowledged queue commands.
+Restart recovery is deliberately client-owned. Non-empty queue patches are
+mirrored under `restartRecovery:{conversationId}` in localStorage; an empty
+queue does not erase them because that is also what a replacement server
+reports after losing its runtime queue. A successful `message_complete`,
+explicit dismissal, or conversation deletion clears the mirror.
 
 [actions.ts](../client/src/atoms/actions.ts) owns the single WebSocket message
-spine. Creation and config actions live in
-[pending-creations.ts](../client/src/atoms/pending-creations.ts) and
-[config-actions.ts](../client/src/atoms/config-actions.ts). Pending commands do
-not fabricate `Conversation` stubs or overwrite authoritative config optimistically.
-See [WS contract notes](ws-contract-surprises.md) for replay and reconciliation.
+spine. See [WS contract notes](ws-contract-surprises.md) for replay and
+reconciliation.
 
 ## Streaming and hydration boundaries
 
-`chunk` events accumulate in a buffer outside React state. The animation-frame
-flush writes only `streamingContentAtom`; the chat renders that alongside the
-conversation snapshot. Never append individual chunks to `conversation.messages`.
+`chunk` frames skip the full ServerMessage Zod parse: `parseServerFrame`
+(`hooks/useWebSocket.ts`) checks the type tag and two string fields, and every
+other frame still gets the whole schema (`stream-frame-validation.test.ts`).
+Chunks accumulate in a buffer outside React state; the animation-frame flush
+writes only `streamFamily(id)`. Never append chunks to the transcript.
 
 A frame rebuilds only the last message group (`withStreamingTail` in
 `utils/chat-message-groups.ts`); every earlier group is the settled object, so
@@ -137,25 +136,25 @@ A frame rebuilds only the last message group (`withStreamingTail` in
 recompute only when the records array changes, and an appended record
 regroups from the last group (`regroupChatMessages`). Until 2026-09-25 each
 frame regrouped the whole transcript and replaced all ~300 groups of a
-600-record chat (0.53 ms of grouping per frame, then a re-render of every
-visible group). Only the last group gets `isLiveTurn`, so a turn starting or
-ending does not re-render the list. `client/test/chat-message-groups.test.tsx`
-checks group identity across frames and compares the incremental regroup with
-a full pass for every prefix of random transcripts.
+600-record chat. `client/test/chat-message-groups.test.tsx` checks group
+identity across frames and compares the incremental regroup with a full pass
+for every prefix of random transcripts.
 
-`message_complete` flushes buffered chunks synchronously. When `status` says
-streaming ended, its handler flushes pending chunks and clears transient text.
-Committed message content comes from authoritative `conversations_updated`
-snapshots, not by copying the transient buffer into the conversation on status.
+`message_complete` flushes buffered chunks synchronously and folds the
+streamed text into the last assistant record, as the server did; a `run`
+patch that leaves `streaming` clears the stream atom.
 
-Summary snapshots contain previews rather than complete transcripts. Detail
-loading uses `loadConversationDetails` and tracks hydrated IDs in
-`conversationDetailsLoadedAtom`. Preserve loaded messages when a summary batch
-arrives; the existing detail-loader guards stale requests and reconnect epochs.
+Bodies load on open. `useConversationBodies(id)` is the only caller:
+`bodiesStep` says `load` for an absent transcript and `refresh` for a loaded
+one whose length differs from the row's `messageCount` (an external CLI wrote
+to it, or a `message` event was missed). `refreshTranscript` pages in only the
+last held message and after, keeping the history on screen; a moved epoch
+reloads it. The WS spine never fetches bodies, so a count moving on a chat
+nobody shows costs nothing (`summary-history-refresh.test.ts`).
 
 ## Server resources: one keyed local store
 
-Conversations arrive over the WebSocket and live in `conversationsAtom`. Every
+Conversations arrive over the WebSocket and live in `rowsAtom`. Every
 OTHER read-only server view — Buddy panels, swarm runs, git log, usage — goes
 through the keyed cache in
 [atoms/resources.ts](../client/src/atoms/resources.ts), read via
@@ -300,7 +299,7 @@ reason the cache is keyed centrally.
 ## Assistant response model
 
 `Message` records are provider transcript fragments. The derived
-`chatMessageGroupsAtomFamily` projects consecutive assistant records into one
+`groupsFamily` projects consecutive assistant records into one
 `AssistantResponse`: ordered content/tool parts, original records, and full
 `copyText`. The response is one virtual item, one message container, one heading,
 and one Copy action. User or system records end it; completion metadata and
@@ -359,8 +358,9 @@ fields and why the synced blob was retired.
   list's times went stale.
 - Display paths: `shortenHomePath()` from `utils/directories.ts`, never an
   inline `/^\/Users\/[^/]+/` regex. It is for display only.
-- Swarm workers: `swarmWorkersByProjectAtom` / `swarmWorkersForProjectAtomFamily`
-  (grouped by project root, promoted workers excluded). Do not regroup
+- Swarm workers: `swarmWorkersByProjectAtom` in `swarm/swarm-workers.ts`
+  (`.get(root) ?? NO_WORKERS` for one project; grouped by project root,
+  promoted workers excluded). Do not regroup
   `isWorker` conversations in a component.
 
 ## Hook ordering and stable values

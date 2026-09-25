@@ -13,7 +13,7 @@ echo "==> Gate G1: jotaiStore.set outside client/src/atoms/ — components call 
 # mutate.ts wraps jotaiStore.set inside atoms/ — allowed; everything outside must be zero.
 if grep -R --include="*.ts" --include="*.tsx" -n "jotaiStore\.set" client/src 2>/dev/null | grep -v "client/src/atoms/" | grep -v "node_modules" ; then
   echo "G1 FAIL: jotaiStore.set found outside client/src/atoms/. Components must call actions, never write atoms directly."
-  echo "  Fix: move the write into an action in client/src/atoms/actions.ts or use mutate() helper."
+  echo "  Fix: move the write into an action in client/src/atoms/actions.ts (or another module in client/src/atoms/)."
   FAIL=1
 else
   echo "G1 PASS"

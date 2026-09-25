@@ -37,11 +37,12 @@ client/src/atoms/ui.ts             → device-local UI prefs + NEW-badge seen in
 
 ## Hard rules (violations = rejected PR)
 
-- Never `useAtomValue(conversationsAtom)` in components — use
-  `conversationAtomFamily` (the row) / derived atoms. Bodies live in
-  `transcriptAtomFamily` and details in `conversationDetailAtomFamily`, loaded
-  on open (`useConversationBodies`). Streaming text goes to
-  `streamingContent`/streaming atoms, never the transcript mid-stream.
+- Never `useAtomValue(rowsAtom)` in components — use `rowFamily(id)` (the row)
+  and `listField(...)` (one field of the one-pass `listIndexAtom`). Bodies and
+  detail live in `transcriptFamily(id)`, loaded on open (`useConversationBodies`).
+  Streaming text goes to `streamFamily(id)`, never the transcript mid-stream.
+  Socket/server state is `connectionAtom`; in-flight commands `commandsAtom`
+  (`commandFor(id)`). The route owns the active conversation id.
 - All hooks before any early `return`. New list views go in derived atoms, not
   component `useMemo`. Stable fallbacks are module constants.
 - Read-only server data goes through `usePolledFetch(source, intervalMs)`,
@@ -58,8 +59,8 @@ client/src/atoms/ui.ts             → device-local UI prefs + NEW-badge seen in
   UsagePanel). Keying supersedes the old abort-on-change guard: a late response
   lands on its own key, which whoever switched away is no longer reading, so
   never re-add a `data.id === currentId` check at a call site.
-- `jotaiStore.set` only inside `client/src/atoms/` (via `mutate()` for partial
-  updates). Mobile never imports `components/*` except `components/buddies/`.
+- `jotaiStore.set` only inside `client/src/atoms/`. Mobile never imports
+  `components/*` except `components/buddies/`.
   Gates: `bash tools/check-client-invariants.sh`.
 - One WS bridge (`App.tsx`), one `handleMessage` spine — never a second.
 - Auth gate stays FIRST in the Express chain and the WS stays `noServer` +
@@ -227,8 +228,8 @@ magenta). Run 1 and 3 back-to-back: live data drifts (sidebar badges,
   Tab strips are `<Link>`s so Back returns to the previous tab instead of
   leaving the buddy, and a tab survives reload.
 - Any "open this conversation" affordance must be a `<Link to={/chat/:id}>`
-  AND availability-checked against `availableConversationIdSetAtom` (the one
-  Set derived from `allConversationIdsAtom`; never a per-component
+  AND availability-checked against `listField('idSet')` (the one
+  Set in the list index; never a per-component
   `new Set(ids)` memo). Deleting a
   conversation only terminalises its buddy link row, and an automation run
   keeps its `conversation_id` forever — navigating to a thread the client no
