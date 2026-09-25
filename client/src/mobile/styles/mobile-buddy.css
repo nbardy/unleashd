@@ -44,7 +44,7 @@
 .mobile-buddy-detail__name {
   margin: 0;
   color: var(--text-bright);
-  font-size: 26px;
+  font-size: var(--fs-8);
   font-weight: 600;
   line-height: 1.15;
   letter-spacing: -0.02em;
@@ -118,14 +118,14 @@
 .mobile-buddy-detail :where(h2) {
   margin: 0;
   color: var(--text-bright);
-  font-size: 20px;
+  font-size: var(--fs-7);
   font-weight: 600;
   letter-spacing: -0.02em;
 }
 .mobile-buddy-detail :where(h3) {
   margin: 16px 0 0;
   color: var(--text-emphasis);
-  font-size: 15px;
+  font-size: var(--fs-5);
   font-weight: 600;
 }
 .mobile-buddy-detail :where(p) {

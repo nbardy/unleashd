@@ -1,6 +1,6 @@
 .buddy-soul-conflict {
   display: grid;
-  gap: 14px;
+  gap: var(--sp-6);
   min-width: 0;
 }
 

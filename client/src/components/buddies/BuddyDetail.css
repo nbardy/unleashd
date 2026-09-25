@@ -67,7 +67,7 @@
   display: flex;
   flex-direction: column;
   gap: var(--sp-3);
-  padding: var(--sp-7) 28px var(--sp-7) 0;
+  padding: var(--sp-7) var(--sp-9) var(--sp-7) 0;
   text-decoration: none;
   min-width: 0;
 }
@@ -100,7 +100,7 @@
 .buddy-thread-list__running::before {
   content: "●";
   margin-right: 5px;
-  font-size: 8px;
+  font-size: var(--fs-1);
 }
 .buddy-thread-list__arrow {
   position: absolute;
@@ -138,7 +138,7 @@
   flex-direction: column;
   gap: var(--sp-3);
   position: relative;
-  padding: 18px 28px 18px 0;
+  padding: var(--sp-7) var(--sp-9) var(--sp-7) 0;
   min-height: 44px;
   cursor: pointer;
   list-style: none;
@@ -251,7 +251,7 @@
 .buddy-run-list button {
   justify-self: start;
   min-height: 40px;
-  padding: var(--sp-4) 14px;
+  padding: var(--sp-4) var(--sp-6);
   border: 1px solid var(--border-default);
   border-radius: var(--ui-radius);
   background: var(--bg-raised-1);
@@ -297,7 +297,7 @@
 }
 .buddy-post-list__evidence {
   margin: 6px 0 0;
-  padding-left: 18px;
+  padding-left: var(--sp-7);
   color: var(--text-secondary);
   font-size: var(--fs-3);
   overflow-wrap: anywhere;
@@ -349,7 +349,7 @@
 }
 .buddy-doc__heading h3 {
   margin: 0;
-  font-size: 15px;
+  font-size: var(--fs-5);
 }
 .buddy-doc__heading small {
   color: var(--text-secondary);

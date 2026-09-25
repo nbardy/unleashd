@@ -156,21 +156,12 @@ const SRC = 'client/src';
 const TOKENS = 'ui/tokens.css';
 const BREAKPOINTS = new Set(['768px', '340px']);
 const KNOWN_LITERAL = {
-  // Buddy UI, owned by T11/T22 when T21a ran (2026-09-25). Only goes down.
-  'components/BuddiesDashboard.css': 51,
-  'components/BuddyConvoHeader.css': 13,
-  'components/buddies/BuddyBackgroundTasks.css': 11,
-  'components/buddies/BuddyBuilderResultCard.css': 14,
-  'components/buddies/BuddyDetail.css': 61,
-  'components/buddies/BuddySettings.css': 5,
-  'components/buddies/BuddySoulConflict.css': 6,
-  'components/buddies/BuddyWorkerThreadBadge.css': 3,
-  'components/buddies/BuddyWorkspaceActivity.css': 29,
+  // Channel UI, owned by T11/T22 when T21a ran (2026-09-25). Only goes down.
+  // The Buddy files reached 0 in S6 (2026-09-26) and left the list.
   'components/buddies/ChannelBrowser.css': 107,
   'components/buddies/ChannelComposer.css': 43,
   'components/buddies/ChannelContent.css': 23,
   'components/buddies/ChannelLoader.css': 11,
-  'mobile/styles/mobile-buddy.css': 22,
   'mobile/styles/mobile-channels.css': 49,
 };
 const walk = (d) => fs.readdirSync(d, { withFileTypes: true }).flatMap((e) => {

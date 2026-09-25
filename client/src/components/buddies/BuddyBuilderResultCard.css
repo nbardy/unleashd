@@ -22,7 +22,7 @@
 
 .buddy-created-card__badge {
   flex-shrink: 0;
-  padding: 1px 5px;
+  padding: var(--sp-1) var(--sp-2);
   border-radius: var(--ui-radius);
   background: var(--ai-glow);
   color: var(--ai-bright);
@@ -79,7 +79,7 @@
   border: 0;
   background: transparent;
   color: var(--text-muted);
-  font-size: 20px;
+  font-size: var(--fs-7);
   cursor: pointer;
 }
 
@@ -97,7 +97,7 @@
 }
 
 .buddy-created-card__details ul {
-  padding-left: 18px;
+  padding-left: var(--sp-7);
 }
 
 .buddy-created-card__config {
