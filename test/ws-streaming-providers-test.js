@@ -76,7 +76,9 @@ function runNextTest() {
         console.log(`[WS] Conversation created: ${conversationId}`);
         ws.send(
           JSON.stringify({
-            type: 'send_message',
+            type: 'queue_message',
+            // send_message was deleted (T14b); queue_message is the one send path and needs a commandId.
+            commandId: crypto.randomUUID(),
             conversationId,
             content: 'Count from 1 to 3.',
           })

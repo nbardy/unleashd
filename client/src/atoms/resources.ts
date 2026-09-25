@@ -287,7 +287,7 @@ export const invalidateBuddyResources = (): void =>
 
 /**
  * One channel changed — a post, a read mark, or who is replying (server
- * `channel_changed`; its `listId` is the id of a channel of ANY kind: public,
+ * `channel_changed`; its `channelId` is the id of a channel of ANY kind: public,
  * direct or task). Every per-channel key is a URL under
  * `/api/buddies/channels/<id>` (built in components/buddies/channel-data.ts),
  * so one prefix selects its posts and responders.
