@@ -172,7 +172,7 @@ fn import_then_verify_then_catch_tampering() {
     conn.execute("UPDATE post SET body = 'please build!' WHERE id = 'm1'", []).unwrap();
     conn.execute("UPDATE post SET body = 'built!' WHERE id = 'reply_m1'", []).unwrap();
     conn.execute("UPDATE post SET root_id = NULL WHERE id = 'm3'", []).unwrap();
-    conn.execute("UPDATE doc_revision SET content = 'use postgres' WHERE doc_id = 'k2'", []).unwrap();
+    conn.execute("UPDATE doc_revision SET content = 'repo lies' WHERE doc_id = 'k3'", []).unwrap();
     // An ordered id that is not a UUIDv7 (it would sort after every real post).
     conn.execute("UPDATE post SET ord = 'x' || ord WHERE id = 'm1'", []).unwrap();
     conn.execute("DELETE FROM post_read WHERE reader = 'b1' AND json_extract(legacy, '$.source') = 'import:direct-read'", []).unwrap();
@@ -194,4 +194,38 @@ fn import_then_verify_then_catch_tampering() {
 
 fn json_row(path: &std::path::Path, sql: &str) -> i64 {
     Connection::open(path).unwrap().query_row(sql, [], |r| r.get(0)).unwrap()
+}
+
+/// Notes leave the store as agent_notes Markdown, never as docs: a Buddy keeps notes as files
+/// (2026-09-26). If the importer copied them again, `doc` would carry kind 'note', which the
+/// lean schema's CHECK rejects and the verifier's class counts would no longer balance.
+#[test]
+fn notes_leave_as_agent_notes_files() {
+    let dir = tempfile::tempdir().unwrap();
+    let old = fixture(dir.path());
+    Connection::open(&old)
+        .unwrap()
+        .execute_batch(
+            r#"INSERT INTO buddy_knowledge VALUES ('k4','b2','p1','owner_thread','conv-9','note','2026-07-06T09:00:00.000Z:x',1,
+                 '{"topic":"Queue choice","body":"Chose sqlite over redis: one file, no daemon.","evidence":["agent_notes/queue.md"]}',
+                 '2026-07-06T09:00:00.000Z');"#,
+        )
+        .unwrap();
+    let new = dir.path().join("new.sqlite");
+    let report = import(&old, &new, &dir.path().join("owner-channel-reads.json"), ImportOptions::default()).unwrap();
+    let notes_in_store: i64 =
+        Connection::open(&new).unwrap().query_row("SELECT count(*) FROM doc WHERE kind = 'note'", [], |r| r.get(0)).unwrap();
+    assert_eq!(notes_in_store, 0);
+    assert!(verify(&old, &new, &report.soul_files, &report.owner_reads, &report.direct_reads).unwrap().ok);
+
+    let files = unleashd_buddies_import::notes::plan(&old).unwrap();
+    assert_eq!(files.len(), 1, "both of Worker's notes are from one day");
+    assert_eq!(files[0].path, dir.path().join("agent_notes/buddy-notes/worker/2026-07-06.md"));
+    assert_eq!(files[0].notes, 2);
+    let text = &files[0].text;
+    assert!(text.contains("use sqlite"), "a plain owner note is kept as typed");
+    assert!(text.contains("09:00Z — Queue choice") && text.contains("Chose sqlite over redis"));
+    assert!(text.contains("agent_notes/queue.md"), "evidence pointers survive");
+    unleashd_buddies_import::notes::write(&files).unwrap();
+    assert!(unleashd_buddies_import::notes::write(&files).is_err(), "a rerun never overwrites a note file");
 }

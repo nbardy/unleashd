@@ -2,6 +2,10 @@
 //!
 //!   buddies-import import --from <v33.sqlite> --to <new.sqlite> --report <import.json> [--owner-reads <json>] [--keep-direct-unread]
 //!   buddies-import verify --from <v33.sqlite> --to <new.sqlite> --import-report <import.json> --out <verify.json>
+//!   buddies-import export-notes --from <v33.sqlite> [--write]
+//!
+//! `export-notes` prints where each note file would go; `--write` writes them into each
+//! workspace's agent_notes/buddy-notes/ (refusing if any already exists). Notes are not imported.
 //!
 //! Both read the v33 file read-only. `import` refuses an existing target. `verify` exits 1 on any
 //! mismatch. Neither writes a soul file. `--owner-reads` defaults to the server's
@@ -11,6 +15,7 @@
 use std::path::PathBuf;
 use std::process::ExitCode;
 use unleashd_buddies_import::import::{DirectReads, ImportOptions, ImportReport, OwnerReads, SoulFile, import};
+use unleashd_buddies_import::notes;
 use unleashd_buddies_import::verify::verify;
 
 fn arg(args: &[String], name: &str) -> Result<PathBuf, String> {
@@ -30,9 +35,21 @@ fn write_json(path: &PathBuf, value: &impl serde::Serialize) -> Result<(), Strin
 }
 
 fn run(args: &[String]) -> Result<bool, String> {
-    let (from, to) = (arg(args, "--from")?, arg(args, "--to")?);
+    let from = arg(args, "--from")?;
     match args.first().map(String::as_str) {
+        Some("export-notes") => {
+            let files = notes::plan(&from).map_err(|e| format!("[{}] {e}", e.code()))?;
+            for file in &files {
+                println!("{:>4} notes  {}", file.notes, file.path.display());
+            }
+            if args.iter().any(|a| a == "--write") {
+                notes::write(&files).map_err(|e| format!("[{}] {e}", e.code()))?;
+                println!("wrote {} files", files.len());
+            }
+            Ok(true)
+        }
         Some("import") => {
+            let to = arg(args, "--to")?;
             let owner_reads = arg(args, "--owner-reads").unwrap_or_else(|_| default_owner_reads());
             // Imported DMs are marked read by default; --keep-direct-unread leaves them all unread.
             let options = ImportOptions { mark_direct_read: !args.iter().any(|a| a == "--keep-direct-unread") };
@@ -44,6 +61,7 @@ fn run(args: &[String]) -> Result<bool, String> {
             Ok(true)
         }
         Some("verify") => {
+            let to = arg(args, "--to")?;
             let baseline_path = arg(args, "--import-report")?;
             let text = std::fs::read_to_string(&baseline_path).map_err(|e| format!("{}: {e}", baseline_path.display()))?;
             let value: serde_json::Value = serde_json::from_str(&text).map_err(|e| e.to_string())?;
@@ -68,7 +86,7 @@ fn run(args: &[String]) -> Result<bool, String> {
             println!("{:<42} {:?}  unchanged {}  {}", "soul_files", report.soul.split, report.soul.files_unchanged, ok(report.soul.ok));
             Ok(report.ok)
         }
-        _ => Err("usage: buddies-import import|verify --from <v33> --to <new> ...".into()),
+        _ => Err("usage: buddies-import import|verify|export-notes --from <v33> ...".into()),
     }
 }
 

@@ -2,4 +2,5 @@
 //! addon so editing it never rebuilds `@unleashd/buddies-core` (S12). Delete after the live swap.
 
 pub mod import;
+pub mod notes;
 pub mod verify;

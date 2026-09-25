@@ -30,7 +30,7 @@ macro_rules! str_enum {
 str_enum!(BuddyStatus { Active = "active", Archived = "archived" });
 str_enum!(TaskStatus { Open = "open", InProgress = "in_progress", Blocked = "blocked", Review = "review", Done = "done", Cancelled = "cancelled" });
 str_enum!(RunStatus { Queued = "queued", Running = "running", CancelRequested = "cancel_requested", Complete = "complete", Failed = "failed", Cancelled = "cancelled" });
-str_enum!(DocKind { Soul = "soul", Working = "working", LongTerm = "long_term", Note = "note", Shared = "shared" });
+str_enum!(DocKind { Soul = "soul", Working = "working", LongTerm = "long_term", Shared = "shared" });
 str_enum!(PostKind { Inform = "inform", Request = "request" });
 str_enum!(Op { ReadDoc = "read_doc", WriteDoc = "write_doc", Post = "post", ReadChannel = "read_channel", SearchPosts = "search_posts", CreateChannel = "create_channel", WriteTask = "write_task", EnqueueRun = "enqueue_run", CancelRun = "cancel_run", WriteSchedule = "write_schedule", Admin = "admin" });
 

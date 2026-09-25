@@ -43,7 +43,7 @@ export interface BuddyRouteDeps {
 
 const key = z.string().trim().min(1).max(200);
 const evidence = z.array(z.string().min(1).max(4000)).max(32).default([]);
-const docKind = z.enum(['soul', 'working', 'long_term', 'note', 'shared']);
+const docKind = z.enum(['soul', 'working', 'long_term', 'shared']);
 const manager = (id: string | null) =>
   id === null ? ({ kind: 'nobody' } as const) : ({ kind: 'buddy', id } as const);
 

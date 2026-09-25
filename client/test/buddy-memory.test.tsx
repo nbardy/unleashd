@@ -63,14 +63,13 @@ test('revision history lists newest first with its reason and author', () => {
   assert.match(html, /buddy:ada/);
 });
 
-test('the Memory tab lists notes and shared docs with their scope, and offers a new doc', () => {
+test('the Memory tab lists shared docs with their scope, and offers a new doc', () => {
   const card = renderToStaticMarkup(
     <DocCard buddyId="ada" doc={doc({ scope: { kind: 'workspace', workspaceId: 'ws-1' } })} />
   );
   assert.match(card, /release-checklist/);
   assert.match(card, /Workspace · Revision 3/);
   const tab = renderToStaticMarkup(<BuddyMemory buddyId="ada" workspaceId="ws-1" />);
-  assert.match(tab, /Notes/);
   assert.match(tab, /Shared docs/);
   assert.match(tab, /aria-label="New doc"/);
 });

@@ -248,7 +248,7 @@ function BuddyDocEditor({
   );
 }
 
-/** Notes (named, private) or shared docs (named, any scope): each opens into its editor. */
+/** Shared docs (named, any scope): each opens into its editor. */
 function DocList({ buddyId, kind, label }: { buddyId: string; kind: DocKind; label: string }) {
   const docs = usePolledFetch<Doc[]>(`${docUrl(buddyId, kind)}?all=1`, 0);
   return (
@@ -287,22 +287,21 @@ export function DocCard({ buddyId, doc }: { buddyId: string; doc: Doc }) {
           kind={doc.kind}
           address={addressOf(doc)}
           label={doc.name}
-          hint={`${SCOPE_LABEL[doc.scope.kind]} ${doc.kind === 'note' ? 'note' : 'doc'}.`}
+          hint={`${SCOPE_LABEL[doc.scope.kind]} doc.`}
         />
       )}
     </details>
   );
 }
 
-/** A first write: a private note, or a shared doc for this Buddy or its whole workspace. */
+/** A first write: a shared doc for this Buddy or its whole workspace. */
 function NewDocForm({ buddyId, workspaceId }: { buddyId: string; workspaceId: string }) {
-  const [kind, setKind] = useState<'note' | 'shared'>('note');
   const [shareWith, setShareWith] = useState<'buddy' | 'workspace'>('buddy');
   const [name, setName] = useState('');
   const [content, setContent] = useState('');
   const action = useBuddyAction(async () => {});
   const scope: DocAddress =
-    kind === 'shared' && shareWith === 'workspace'
+    shareWith === 'workspace'
       ? { scope: 'workspace', scopeId: workspaceId, name: name.trim() }
       : { scope: 'buddy', name: name.trim() };
   return (
@@ -313,7 +312,7 @@ function NewDocForm({ buddyId, workspaceId }: { buddyId: string; workspaceId: st
         event.preventDefault();
         void action
           .run('create', () =>
-            buddyWrite(docUrl(buddyId, kind), 'PUT', {
+            buddyWrite(docUrl(buddyId, 'shared'), 'PUT', {
               ...scope,
               content,
               baseRevision: 0,
@@ -328,24 +327,15 @@ function NewDocForm({ buddyId, workspaceId }: { buddyId: string; workspaceId: st
       }}
     >
       <label>
-        Kind
-        <select value={kind} onChange={(event) => setKind(event.target.value as typeof kind)}>
-          <option value="note">Note</option>
-          <option value="shared">Shared doc</option>
+        Shared with
+        <select
+          value={shareWith}
+          onChange={(event) => setShareWith(event.target.value as typeof shareWith)}
+        >
+          <option value="buddy">This Buddy</option>
+          <option value="workspace">The workspace</option>
         </select>
       </label>
-      {kind === 'shared' && (
-        <label>
-          Shared with
-          <select
-            value={shareWith}
-            onChange={(event) => setShareWith(event.target.value as typeof shareWith)}
-          >
-            <option value="buddy">This Buddy</option>
-            <option value="workspace">The workspace</option>
-          </select>
-        </label>
-      )}
       <label>
         Name
         <input value={name} onChange={(event) => setName(event.target.value)} />
@@ -366,8 +356,8 @@ function NewDocForm({ buddyId, workspaceId }: { buddyId: string; workspaceId: st
 }
 
 /**
- * The Buddy's portable docs (soul, working and long-term memory), then its notes and shared
- * docs. Every doc keeps its revision history.
+ * The Buddy's portable docs (soul, working and long-term memory), then its shared docs. Every
+ * doc keeps its revision history. Detailed notes are agent_notes/*.md files in the workspace.
  */
 export function BuddyMemory({ buddyId, workspaceId }: { buddyId: string; workspaceId: string }) {
   return (
@@ -396,7 +386,6 @@ export function BuddyMemory({ buddyId, workspaceId }: { buddyId: string; workspa
         label="Long-term memory"
         hint="What the Buddy keeps across work."
       />
-      <DocList key={`${buddyId}:note`} buddyId={buddyId} kind="note" label="Notes" />
       <DocList key={`${buddyId}:shared`} buddyId={buddyId} kind="shared" label="Shared docs" />
       <NewDocForm key={buddyId} buddyId={buddyId} workspaceId={workspaceId} />
     </section>

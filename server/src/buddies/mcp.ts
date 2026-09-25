@@ -64,15 +64,14 @@ function toChannelRef(author: Actor, ref: z.infer<typeof channelRef>): ChannelRe
   return { kind: 'direct', members: [author, ...ref.direct.map(actorOf)] };
 }
 
-const docKind = z.enum(['soul', 'working', 'long_term', 'note', 'shared']);
-const memoryKind = z.enum(['working', 'long_term', 'note']);
+const docKind = z.enum(['soul', 'working', 'long_term', 'shared']);
+const memoryKind = z.enum(['working', 'long_term']);
 const docScopeInput = z
   .enum(['turn', 'buddy'])
   .default('turn')
   .describe("'turn': this conversation's audience (default); 'buddy': the portable doc");
 
 type DocInput = { buddyId?: string; kind: DocRef['kind']; scope: 'turn' | 'buddy'; name?: string };
-type DocReadInput = DocInput & { query?: string };
 type DocWriteInput = DocInput & {
   content: string;
   baseRevision: number;
@@ -97,7 +96,6 @@ const docReadSchema = (kinds: Kinds) =>
     kind: kinds,
     scope: docScopeInput,
     name: z.string().optional(),
-    query: z.string().max(500).optional().describe('Notes only: one literal substring to find'),
   });
 const docWriteSchema = (kinds: Kinds) =>
   z.object({
@@ -117,24 +115,15 @@ const docWriteSchema = (kinds: Kinds) =>
     key,
   });
 
-async function readDocs(deps: ToolDeps, grant: BuddyGrant, input: DocReadInput) {
-  const ref = docRef(grant, input);
-  if (input.kind !== 'note') return deps.core.readDoc(grant.principal, ref);
-  const needle = input.query?.toLowerCase() ?? '';
-  const notes = await deps.core.listDocs(grant.principal, ref.buddyId, 'note');
-  return notes
-    .filter((note) => JSON.stringify(note.scope) === JSON.stringify(ref.scope))
-    .filter((note) => note.content.toLowerCase().includes(needle))
-    .slice(0, 8);
+function readDocs(deps: ToolDeps, grant: BuddyGrant, input: DocInput) {
+  return deps.core.readDoc(grant.principal, docRef(grant, input));
 }
 
 async function writeDoc(deps: ToolDeps, grant: BuddyGrant, input: DocWriteInput) {
-  // A note is append-only: each write is a new note doc, named by time (as imported notes are).
-  const name = input.kind === 'note' ? `${new Date().toISOString()}:${input.key}` : input.name;
   return deps.core.writeDoc(grant.principal, {
-    doc: docRef(grant, { ...input, name }),
+    doc: docRef(grant, input),
     content: input.content,
-    baseRevision: input.kind === 'note' ? 0 : input.baseRevision,
+    baseRevision: input.baseRevision,
     reason: input.reason,
     key: input.key,
   });
@@ -363,14 +352,14 @@ const BUDDY_TOOLS = {
   }),
   doc_read: buddyTool({
     description:
-      'Read a doc: soul, working or long-term memory, shared docs, or notes (with `query`, a literal substring; at most 8). Returns its revision for doc_write.',
+      'Read a doc: soul, working or long-term memory, or shared docs. Returns its revision for doc_write. Detailed notes are agent_notes/*.md files in the workspace: read and search them with your own file tools.',
     writes: false,
     schema: docReadSchema(docKind),
     handler: readDocs,
   }),
   doc_write: buddyTool({
     description:
-      'Replace a doc with complete content (compare-and-swap on baseRevision; every revision is kept) or append a note. Tasks own current work: never copy task status into memory.',
+      'Replace a doc with complete content (compare-and-swap on baseRevision; every revision is kept). Tasks own current work: never copy task status into memory.',
     writes: true,
     schema: docWriteSchema(docKind),
     handler: writeDoc,
@@ -579,9 +568,9 @@ const BUILDER_TOOLS = {
 const REVIEWER_TOOLS = {
   doc_read: {
     ...BUDDY_TOOLS.doc_read,
-    schema: docReadSchema(z.enum(['soul', 'working', 'long_term', 'note'])),
+    schema: docReadSchema(z.enum(['soul', 'working', 'long_term'])),
   },
-  // The reviewer curates memory and notes; its schema has no soul or shared docs.
+  // The reviewer curates working and long-term memory; it writes no soul or shared docs.
   doc_write: { ...BUDDY_TOOLS.doc_write, schema: docWriteSchema(memoryKind) },
 };
 

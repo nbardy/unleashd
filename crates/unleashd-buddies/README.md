@@ -147,6 +147,10 @@ Buddy call fails with the import command, and ordinary chats keep working.
 2. **Import** the copy into the new file (the importer refuses an existing target):
    `buddies-import import --from /path/backup-v33.sqlite --to ~/.buddies/buddies-v3.sqlite --report ~/.buddies/buddies-v3.import.json`
    (`--owner-reads` defaults to `$UNLEASHD_DATA_DIR/owner-channel-reads.json`).
+   Then carry the notes across: they are not imported (notes are agent_notes files, not docs).
+   `buddies-import export-notes --from /path/backup-v33.sqlite` prints the plan (154 files for
+   1,082 notes on the 2026-09-26 copy); add `--write` to write
+   `<workspace>/agent_notes/buddy-notes/<buddy>/<date>.md`. It refuses if any file exists.
 3. **Verify** (exit 1 on any mismatch; do not switch unless `"ok": true`):
    `buddies-import verify --from /path/backup-v33.sqlite --to ~/.buddies/buddies-v3.sqlite --import-report ~/.buddies/buddies-v3.import.json --out ~/.buddies/buddies-v3.verify.json`
 4. **Switch**: build the addon (`pnpm --dir crates/unleashd-buddies build`) and deploy the server

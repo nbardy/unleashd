@@ -1,4 +1,5 @@
-//! Docs: soul, working and long-term memory, notes and scoped knowledge in one revisioned store.
+//! Docs: soul, working and long-term memory and shared docs in one revisioned store. Notes are
+//! not docs: they are agent_notes/*.md files in the workspace.
 //! Writes are compare-and-swap on the revision the writer read; every revision is kept with its
 //! sha256. Soul files on disk are never written here.
 

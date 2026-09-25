@@ -193,7 +193,7 @@ export interface Doc {
   updatedAt: string
 }
 
-export type DocKind = 'soul' | 'working' | 'long_term' | 'note' | 'shared'
+export type DocKind = 'soul' | 'working' | 'long_term' | 'shared'
 
 export interface DocRef {
   buddyId: string
