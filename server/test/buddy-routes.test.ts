@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { mkdtempSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -614,5 +614,81 @@ test('memory-v2 HTTP routes use the Buddy operation authority boundary', async (
     await new Promise<void>((resolve, reject) =>
       server.close((error) => (error ? reject(error) : resolve()))
     );
+  }
+});
+
+test('workspace home lists every workspace and reuses a folder', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'workspace-home-'));
+  const other = mkdtempSync(join(tmpdir(), 'workspace-home-other-'));
+  const file = join(root, 'not-a-dir');
+  writeFileSync(file, 'nope');
+  const store = new BuddiesStore(':memory:');
+  const app = express();
+  app.use(express.json());
+  registerBuddyRoutes(app, {
+    getStore: async () => store as unknown as BuddiesStorePort,
+    getScheduler: () => null,
+    sendError(response, error, fallbackStatus) {
+      response
+        .status(fallbackStatus)
+        .json({ error: error instanceof Error ? error.message : String(error) });
+    },
+    getNextAutomationRunAt: () => '2026-07-29T00:00:00.000Z',
+    createId: () => 'test-id',
+    isConversationDeleted: async () => false,
+  });
+  const server = app.listen(0, '127.0.0.1');
+  try {
+    await new Promise<void>((resolve, reject) => {
+      server.once('listening', resolve);
+      server.once('error', reject);
+    });
+    const { port } = server.address() as AddressInfo;
+    const base = `http://127.0.0.1:${port}/api/buddies/workspaces`;
+    const created = await fetch(base, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ rootPath: root, name: 'Home' }),
+    });
+    assert.equal(created.status, 201);
+    const first = (await created.json()) as {
+      workspace: { id: string; name: string; root_path: string };
+    };
+    assert.equal(first.workspace.name, 'Home');
+    assert.equal(first.workspace.root_path, realpathSync(root));
+
+    const again = await fetch(base, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ rootPath: root }),
+    });
+    assert.equal(again.status, 200);
+    const second = (await again.json()) as { workspace: { id: string } };
+    assert.equal(second.workspace.id, first.workspace.id);
+
+    const named = await fetch(base, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ rootPath: other }),
+    });
+    assert.equal(named.status, 201);
+
+    const listed = await fetch(base);
+    assert.equal(listed.status, 200);
+    const body = (await listed.json()) as { workspaces: Array<{ id: string }> };
+    assert.equal(body.workspaces.length, 2);
+
+    const rejected = await fetch(base, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ rootPath: file }),
+    });
+    assert.equal(rejected.status, 400);
+  } finally {
+    await new Promise<void>((resolve, reject) =>
+      server.close((error) => (error ? reject(error) : resolve()))
+    );
+    rmSync(root, { recursive: true, force: true });
+    rmSync(other, { recursive: true, force: true });
   }
 });

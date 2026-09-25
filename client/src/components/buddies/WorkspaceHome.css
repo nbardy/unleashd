@@ -1,0 +1,415 @@
+/* Workspace home (`/`). Desktop renders it outside the shell, full height. */
+
+.workspace-home {
+  --workspace-home-width: 880px;
+  flex: 1;
+  min-height: 0;
+  height: 100%;
+  overflow-y: auto;
+  background: var(--bg-base);
+  color: var(--text-primary);
+}
+
+/* ── Page bar ─────────────────────────────────────────────────────────── */
+
+.workspace-home-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  max-width: var(--workspace-home-width);
+  margin: 0 auto;
+  padding: 18px 32px 0;
+}
+
+.workspace-home-brand {
+  color: var(--text-muted);
+  font: 600 12px / 1 var(--font-mono);
+  letter-spacing: 0.04em;
+}
+
+.workspace-home-nav-links {
+  display: flex;
+  gap: 20px;
+}
+
+.workspace-home-nav-links a {
+  color: var(--text-muted);
+  font-size: 13px;
+  text-decoration: none;
+}
+
+.workspace-home-nav-links a:hover {
+  color: var(--text-emphasis);
+}
+
+.workspace-home-body {
+  max-width: var(--workspace-home-width);
+  margin: 0 auto;
+  padding: 40px 32px 64px;
+}
+
+/* ── Header ───────────────────────────────────────────────────────────── */
+
+.workspace-home-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 28px;
+}
+
+.workspace-home-header h1 {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  color: var(--text-emphasis);
+  font-size: 24px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.workspace-home-count {
+  color: var(--text-muted);
+  font: 500 13px / 1 var(--font-mono);
+}
+
+.workspace-home-section {
+  margin: 0 0 10px;
+  color: var(--text-muted);
+  font: 600 11px / 1.6 var(--font-mono);
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+section + section .workspace-home-section {
+  margin-top: 36px;
+}
+
+/* ── Buttons and fields ───────────────────────────────────────────────── */
+
+.workspace-home-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 34px;
+  padding: 0 14px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.workspace-home-button:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--text-emphasis) 24%, transparent);
+  color: var(--text-emphasis);
+}
+
+.workspace-home-button--primary {
+  border-color: transparent;
+  background: var(--accent-primary);
+  color: var(--bg-base);
+  font-weight: 600;
+}
+
+.workspace-home-button--primary:hover:not(:disabled) {
+  border-color: transparent;
+  background: var(--accent-primary-hover);
+  color: var(--bg-base);
+}
+
+.workspace-home-button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.workspace-home-create {
+  display: grid;
+  gap: 16px;
+  margin-bottom: 32px;
+  padding: 20px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  background: var(--bg-content);
+}
+
+.workspace-home-field {
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr);
+  align-items: start;
+  gap: 12px;
+}
+
+/* Top-aligned with the control's first line, so it stays put when the finder opens. */
+.workspace-home-label {
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 36px;
+}
+
+.workspace-home-input,
+.workspace-home-directory input {
+  width: 100%;
+  min-height: 36px;
+  padding: 0 12px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 6px;
+  background: var(--bg-base);
+  color: var(--text-emphasis);
+  font: inherit;
+  font-size: 13px;
+}
+
+.workspace-home-input:focus,
+.workspace-home-directory input:focus {
+  outline: none;
+  border-color: var(--accent-primary);
+}
+
+.workspace-home-folder {
+  justify-self: start;
+  max-width: 100%;
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.workspace-home-folder span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.workspace-home-directory {
+  width: 100%;
+}
+
+.workspace-home-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.workspace-home-error {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  color: var(--danger);
+  font-size: 13px;
+}
+
+.workspace-home-status {
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+/* ── Shared pieces ────────────────────────────────────────────────────── */
+
+/* Workspace icons are rounded squares; Buddy faces are circles. */
+.workspace-home-icon {
+  flex: none;
+  display: block;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+}
+
+.workspace-home-icon--large {
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+}
+
+.workspace-home-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-emphasis);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.workspace-home-path {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--text-muted);
+  font: 12px / 1.4 var(--font-mono);
+}
+
+.workspace-home-activity {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--text-muted);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.workspace-home-faces {
+  display: inline-flex;
+}
+
+.workspace-home-face {
+  display: block;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  box-shadow: 0 0 0 2px var(--bg-base);
+}
+
+.workspace-home-face + .workspace-home-face {
+  margin-left: -6px;
+}
+
+.workspace-home-badge,
+.workspace-home-badge-slot {
+  flex: none;
+  min-width: 20px;
+}
+
+.workspace-home-badge {
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 10px;
+  background: var(--danger);
+  color: #fff;
+  font: 700 11px / 20px var(--font-mono);
+  text-align: center;
+}
+
+.workspace-home-dot {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  margin: 0 6px;
+  border-radius: 50%;
+  background: var(--accent-primary);
+}
+
+/* ── Recent tiles ─────────────────────────────────────────────────────── */
+
+.workspace-home-tiles {
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+  gap: 12px;
+}
+
+.workspace-home-tile {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  height: 100%;
+  padding: 16px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  background: var(--bg-content);
+  color: inherit;
+  text-decoration: none;
+  transition: border-color 120ms ease, background-color 120ms ease;
+}
+
+.workspace-home-tile:hover {
+  border-color: color-mix(in srgb, var(--text-emphasis) 22%, transparent);
+  background: color-mix(in srgb, var(--text-emphasis) 3%, var(--bg-content));
+}
+
+.workspace-home-tile-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.workspace-home-tile .workspace-home-activity {
+  margin-top: 12px;
+}
+
+.workspace-home-tile .workspace-home-face {
+  box-shadow: 0 0 0 2px var(--bg-content);
+}
+
+/* ── Other workspaces ─────────────────────────────────────────────────── */
+
+.workspace-home-list {
+  list-style: none;
+  border-top: 1px solid var(--border-subtle);
+}
+
+.workspace-home-list li {
+  border-bottom: 1px solid var(--border-subtle);
+}
+
+.workspace-home-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-height: 56px;
+  padding: 10px 8px;
+  color: inherit;
+  text-decoration: none;
+}
+
+.workspace-home-row:hover {
+  background: color-mix(in srgb, var(--text-emphasis) 4%, transparent);
+}
+
+.workspace-home-row-copy {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+/* Outside the desktop shell nothing above gives it a height. */
+@media (min-width: 769px) {
+  .workspace-home {
+    height: 100vh;
+    height: 100dvh;
+  }
+}
+
+/* ── Phone (the mobile tree switches at the same width) ───────────────── */
+
+@media (max-width: 768px) {
+  .workspace-home-nav {
+    display: none;
+  }
+
+  .workspace-home-body {
+    padding: 24px 16px 32px;
+  }
+
+  .workspace-home-header {
+    margin-bottom: 20px;
+  }
+
+  .workspace-home-button {
+    min-height: 40px;
+  }
+
+  .workspace-home-tiles {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+
+  .workspace-home-tile {
+    padding: 14px;
+  }
+
+  .workspace-home-field {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 6px;
+  }
+
+  .workspace-home-label {
+    line-height: 1.4;
+  }
+
+  .workspace-home-row .workspace-home-activity time {
+    display: none;
+  }
+}

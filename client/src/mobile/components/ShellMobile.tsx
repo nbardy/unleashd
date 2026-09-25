@@ -31,10 +31,10 @@ type TabDef = {
   ariaLabel: string;
 };
 
-// Tabs map to the RouteTable leaves (§3). Chats is the non-worker inbox at "/".
-// Search lives at /search (query param variant is handled inside SearchMobile).
+// Tabs map to the RouteTable leaves (§3). Home is the workspace directory at "/".
+// The conversation list remains at /chats. Search lives at /search.
 const TABS: readonly TabDef[] = [
-  { section: 'chats', label: 'Chats', to: '/', end: true, icon: '◈', ariaLabel: 'Chats' },
+  { section: 'chats', label: 'Home', to: '/', end: true, icon: '◈', ariaLabel: 'Home' },
   { section: 'channels', label: 'Channels', to: '/channels', icon: '#', ariaLabel: 'Channels' },
   {
     section: 'swarms',

@@ -845,8 +845,8 @@ export function ChannelBrowser({
     <div className="channel-browser" aria-label="Channels">
       <nav className="channel-browser-rail">
         <header className="channel-browser-rail-header">
-          <Link className="channel-browser-exit" to="/" title="Back to conversations">
-            ← Conversations
+          <Link className="channel-browser-exit" to="/" title="Back to workspaces">
+            ← Workspaces
           </Link>
           <WorkspaceSwitcher workspaceId={workspaceId} workspaceName={workspaceName} />
         </header>

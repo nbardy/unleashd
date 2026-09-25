@@ -57,6 +57,7 @@ import {
 import { assertBuddyProviderSupportsMcp } from './provider-capability';
 import { publicAutomationRun } from './public-automation-run';
 import { readBuddySoul, updateBuddySoul } from './soul';
+import { type WorkspaceWriter, ensureWorkspace, listWorkspaceHome } from './workspace-home';
 import { getTeamCapabilities, messageExecution, teamStore } from './team-access';
 import { observeBuddyTeam } from './team-observation';
 import { visibleBuddyPayload } from './visibility';
@@ -613,6 +614,26 @@ export function registerBuddyRoutes(app: Express, dependencies: BuddyRouteDepend
         recentSince: typeof req.query.recentSince === 'string' ? req.query.recentSince : undefined,
       })
     );
+  });
+
+  route.get('/api/buddies/workspaces', 400, async (_req, res) => {
+    res.json({ workspaces: listWorkspaceHome(await getStore()) });
+  });
+
+  route.post('/api/buddies/workspaces', 400, async (req, res) => {
+    const input = z
+      .object({
+        rootPath: z.string().trim().min(1),
+        name: z.string().trim().min(1).max(120).optional(),
+      })
+      .strict()
+      .parse(req.body);
+    const store = await getStore();
+    if (typeof (store as { createWorkspace?: unknown }).createWorkspace !== 'function') {
+      throw new Error('Store does not support creating workspaces');
+    }
+    const result = ensureWorkspace(store as unknown as WorkspaceWriter, input);
+    res.status(result.created ? 201 : 200).json({ workspace: result.workspace });
   });
 
   route.get('/api/buddies/workspaces/:workspaceId/activity', 400, async (req, res) => {
