@@ -1,6 +1,8 @@
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
-import { CURSOR_PROJECTS_DIR } from '../adapters/jsonl';
+
+const CURSOR_PROJECTS_DIR = path.join(os.homedir(), '.cursor', 'projects');
 
 /**
  * Cursor's print mode has no counterpart to claude `--no-session-persistence`

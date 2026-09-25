@@ -55,9 +55,7 @@ export {
 //
 // Claude: aliases passed to `claude --model <alias>`
 // Codex: base model IDs only. Reasoning effort is a SEPARATE field on the
-//   Conversation (Conversation.reasoningEffort), mirroring Claude. Composite IDs
-//   (e.g. "gpt-5.4-high") are a legacy on-disk format that survives only in
-//   fromCodexModelId, for disk-adapter.
+//   Conversation (Conversation.reasoningEffort), mirroring Claude.
 // OpenCode: path-style identifiers passed to `opencode run -m <id>`
 //   e.g. "opencode/big-pickle" or "opencode/gpt-5-nano"
 // We require at least one "/" segment to avoid collisions with Claude/Codex IDs.
@@ -139,38 +137,8 @@ export const CURSOR_MODEL_ALIASES: Readonly<Record<string, CursorModel>> = {
 type CodexModelRegistryItem = (typeof CODEX_MODEL_REGISTRY)[number];
 
 // Codex model IDs are base IDs only. Reasoning effort lives on
-// Conversation.reasoningEffort (same shape as Claude). Composite IDs like
-// "gpt-5.4-high" are a legacy on-disk format decoded by fromCodexModelId.
+// Conversation.reasoningEffort (same shape as Claude).
 export type CodexModel = CodexModelRegistryItem['modelName'];
-
-/**
- * MIGRATION HELPER: decomposes a (possibly legacy) composite Codex model id
- * (`gpt-5.4-high`) into its base model + optional effort suffix. Its one caller
- * is server/src/adapters/disk-adapter.ts (legacy `session.model` strings);
- * delete this with it.
- *
- * Matching strategy: try the longest known base-model prefix first, then check
- * for a known effort suffix. This disambiguates base names that themselves
- * contain hyphens (e.g. `gpt-5.3-codex-spark` vs. `gpt-5.3-codex-spark-high`).
- *
- * Unknown composites pass through as `{ baseModel: modelId, effort: null }`
- * (NO silent defaulting of the effort — unknown means unknown).
- */
-export function fromCodexModelId(modelId: string): {
-  baseModel: string;
-  effort: string | null;
-} {
-  const bases = CODEX_MODEL_REGISTRY.map((entry) => entry.modelName as string).sort(
-    (a, b) => b.length - a.length
-  );
-  for (const baseModel of bases) {
-    if (modelId === baseModel) return { baseModel, effort: null };
-    if (!modelId.startsWith(`${baseModel}-`)) continue;
-    const effort = modelId.slice(baseModel.length + 1);
-    if ((CODEX_EFFORT_LEVELS as readonly string[]).includes(effort)) return { baseModel, effort };
-  }
-  return { baseModel: modelId, effort: null };
-}
 
 export const CODEX_BASE_MODEL_INFOS = CODEX_MODEL_REGISTRY.map((entry) => ({
   id: entry.modelName,
@@ -749,47 +717,6 @@ export function classifyServerFrame(raw: unknown): ServerFrame {
     : { t: 'invalid', issues: parsed.error.issues.map((issue) => issue.message).join('; ') };
 }
 
-// =============================================================================
-// JSONL Adapter Types (for persistence layer)
-// =============================================================================
-
-export {
-  // Content block types
-  JsonlTextBlockSchema,
-  JsonlThinkingBlockSchema,
-  JsonlToolUseBlockSchema,
-  JsonlToolResultBlockSchema,
-  JsonlContentBlockSchema,
-  type JsonlTextBlock,
-  type JsonlThinkingBlock,
-  type JsonlToolUseBlock,
-  type JsonlToolResultBlock,
-  type JsonlContentBlock,
-  // Entry types
-  JsonlUserEntrySchema,
-  JsonlAssistantEntrySchema,
-  JsonlProgressEntrySchema,
-  JsonlSystemEntrySchema,
-  JsonlFileHistorySnapshotEntrySchema,
-  JsonlQueueOperationEntrySchema,
-  JsonlEntrySchema,
-  type JsonlUserEntry,
-  type JsonlAssistantEntry,
-  type JsonlProgressEntry,
-  type JsonlSystemEntry,
-  type JsonlFileHistorySnapshotEntry,
-  type JsonlQueueOperationEntry,
-  type JsonlEntry,
-  type JsonlSession,
-  // Type guards
-  isJsonlUserEntry,
-  isJsonlAssistantEntry,
-  isJsonlTextBlock,
-  isJsonlThinkingBlock,
-  isJsonlToolUseBlock,
-  isJsonlToolResultBlock,
-} from './adapters/jsonl.types.js';
-
 // Oompa raw JSON file types (auto-generated from oompa_loompas schemas)
 export type {
   OompaCycle,
@@ -797,36 +724,6 @@ export type {
   OompaStarted,
   OompaStopped,
 } from './generated/oompa-types.js';
-
-// Codex Native Session Types (for reading ~/.codex/sessions/)
-export {
-  // Schemas
-  CodexSessionMetaSchema,
-  CodexResponseMessageSchema,
-  CodexFunctionCallSchema,
-  CodexFunctionCallOutputSchema,
-  CodexUserMessageEventSchema,
-  CodexAgentMessageEventSchema,
-  CodexTurnContextSchema,
-  CodexSessionEntrySchema,
-  // Types
-  type CodexSessionMeta,
-  type CodexResponseMessage,
-  type CodexFunctionCall,
-  type CodexFunctionCallOutput,
-  type CodexUserMessageEvent,
-  type CodexAgentMessageEvent,
-  type CodexTurnContext,
-  type CodexSessionEntry,
-  type CodexParsedSession,
-  // Type guards
-  isCodexSessionMeta,
-  isCodexResponseMessage,
-  isCodexFunctionCall,
-  isCodexFunctionCallOutput,
-  isCodexUserMessageEvent,
-  isCodexAgentMessageEvent,
-} from './adapters/codex-session.types.js';
 
 export * from './buddy-workspace-activity.js';
 export * from './buddy-channel-posts.js';

@@ -62,8 +62,13 @@ conversation applies the effects.
 **Pattern:** one append/write path for a concept, with read models derived from it.
 **Here:** crate `posts.rs`, where every DM, channel post, reply and task comment is a `post` in a channel; `records/store.rs` `put`, the one write of a conversation record and its session index. Ingest crate
 `store.rs` `Writer::apply`: transcripts are parsed once, and the usage/cost numbers (`usage_turn`) and the context
-meter (`session.context`) are read models of that one ingest, replacing two more transcript parsers
-(`usage-routes.ts`, `session-context.ts`).
+meter (`session.context`) are read models of that one ingest. The server reads them through
+`server/src/ingest/instance.ts` (`/api/usage` in `usage-routes.ts`, the meter in `session-context.ts`);
+their own transcript parsers (1,209 lines) were deleted in T13b.
+The conversation list and every message history are read models of the same store:
+`server/src/ingest/conversation-list.ts` joins records with `listSessions` rows and serves pages from
+`Ingest.messages` merged with the runtime's live-turn overlay; `onChange` becomes field patches (T13b S1/S2).
+The TS transcript parsers, session cache and 5 s poller (`server/src/adapters/*`, ~5,000 lines) were deleted.
 
 ## idempotency-keys
 **Smell:** ad-hoc dedupe, retry flags, "did we already do this?" queries.

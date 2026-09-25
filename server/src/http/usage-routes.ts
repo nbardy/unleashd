@@ -1,74 +1,28 @@
-import fs from 'node:fs';
-import os from 'node:os';
-import path from 'node:path';
+import type { UsageGroup, UsageQuery } from '@unleashd/ingest';
 import type { Provider as ProviderName } from '@unleashd/shared';
-import type { Express, Request, Response } from 'express';
-import { readJsonlLines } from '../adapters/jsonl-lines';
-import { USAGE_CACHE_TTL_MS } from '../constants/timeouts';
+import type { Express } from 'express';
+import { z } from 'zod';
+import type { IngestAccessor, IngestReads } from '../ingest/instance';
 
 // =============================================================================
-// GET /api/usage — Aggregate token usage from Claude + Codex + OpenCode sessions.
+// GET /api/usage?days=N — token usage and estimated cost of the last N days (default 30).
 //
-// Reads persisted files on disk, sums token counts, and computes approximate cost.
-// Every read is async and transcripts are STREAMED (readJsonlLines, 1 MiB
-// chunks). Until 2026-09-25 this readFileSync'd whole transcripts on the event
-// loop, up to 3.1 GB Claude + 6.8 GB codex per uncached request, so one
-// UsagePanel open stalled every other request for seconds. Each parser skips a
-// line that cannot contain its key before JSON.parse; that only drops lines the
-// same test would have rejected after parsing.
-// Claude: ~/.claude/projects/**/*.jsonl → assistant entries with message.usage
-// Codex:  ~/.codex/sessions/**/*.jsonl  → event_msg with payload.type=token_count
-// OpenCode: ~/.local/share/opencode/storage/message/{session-id}/*.json
+// Pattern: one-write-path (docs/patterns.md#one-write-path)
+// The numbers are a read model of the ingest store (`Ingest.usage`, crates/unleashd-ingest):
+// transcripts are parsed once, by the crate, into per-request `usage_turn` rows. Until
+// 2026-09-26 this route re-parsed every transcript itself: 16.5 s for days=30 on the dev
+// machine (T13a measured 38.4 s), against ~10 ms of indexed range queries now.
+// Guard: server/test/usage-context-async-parity.test.ts (real crate over a fixture HOME).
 //
-// Query params:
-//   ?days=N  — only include sessions from the last N days (default: 30)
+// Windows count REQUESTS by their own transcript time. The old parsers credited a whole Claude
+// session to its file mtime and a whole Codex session to its start day, so a month-old session
+// touched yesterday counted in full ($10,234 vs $8,570 for days=30 on 2026-09-25, T13a).
+// Days are UTC, the crate's `day` key.
 // =============================================================================
 
-interface UsageEntry {
-  sessionId: string;
-  provider: ProviderName;
-  model: string;
-  inputTokens: number;
-  outputTokens: number;
-  cacheReadTokens: number;
-  cacheWriteTokens: number;
-  costUsd: number;
-  date: string; // YYYY-MM-DD
-}
+const HOUR_MS = 60 * 60 * 1000;
+const DAY_MS = 24 * HOUR_MS;
 
-// Approximate pricing per 1M tokens (as of early 2026).
-// Claude: input $3, output $15, cache read $0.30, cache write $3.75
-// Codex: input $2.50, cached input $0.25, output $10. OpenAI bills cached input
-// at a tenth of the input rate; until 2026-09-25 every Codex token was priced
-// as uncached, overstating Codex spend several-fold (~97% of it is cached).
-function estimateCost(
-  provider: ProviderName,
-  input: number,
-  output: number,
-  cacheRead: number,
-  cacheWrite: number
-): number {
-  if (provider === 'claude') {
-    return (input * 3 + output * 15 + cacheRead * 0.3 + cacheWrite * 3.75) / 1_000_000;
-  }
-  // Codex/OpenAI and OpenCode (provider-backed model pricing can vary by backend).
-  // Gemini mirrors Codex-like pricing here until token billing data is emitted per-provider.
-  return (input * 2.5 + output * 10 + cacheRead * 0.25) / 1_000_000;
-}
-
-// Per-session cached usage data so we don't re-read unchanged files.
-// Maps filePath → { mtimeMs, data }. Survives across requests.
-const usageFileCache = new Map<
-  string,
-  { mtimeMs: number; data: UsageEntry & { timestampedTokens: { ts: number; tokens: number }[] } }
->();
-const openCodeUsageCache = new Map<
-  string,
-  { mtimeMs: number; data: UsageEntry & { lastTimestampMs: number } }
->();
-
-// Full response cache — avoids re-aggregating when nothing changed.
-// Key is `days` param. Invalidated after USAGE_CACHE_TTL_MS.
 interface RateLimit {
   label: string;
   usedPercent: number;
@@ -76,273 +30,140 @@ interface RateLimit {
   resetsAt: number | null;
   tokenCount?: number;
 }
-interface UsageResponse {
+
+interface SessionUsage {
+  sessionId: string;
+  provider: ProviderName;
+  /** The model the transcript names; null when it names none. */
+  model: string | null;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+  costUsd: number;
+  /** UTC day of the session's latest request in the window. */
+  date: string;
+}
+
+interface DailyUsage {
+  date: string;
+  inputTokens: number;
+  outputTokens: number;
+  costUsd: number;
+  sessions: number;
+}
+
+export interface UsageResponse {
   totalCostUsd: number;
   totalInputTokens: number;
   totalOutputTokens: number;
   totalSessions: number;
   days: number;
-  daily: {
-    date: string;
-    inputTokens: number;
-    outputTokens: number;
-    costUsd: number;
-    sessions: number;
-  }[];
-  topSessions: UsageEntry[];
+  daily: DailyUsage[];
+  topSessions: SessionUsage[];
   rateLimits: Record<ProviderName, RateLimit[]>;
 }
-const usageResponseCache = new Map<number, { time: number; data: UsageResponse }>();
-// Parse a single Claude JSONL file. Returns cached result if mtime unchanged.
-// Exported for the per-conversation context-breakdown meter (same parser,
-// scoped to one session id instead of aggregated across all sessions).
-export async function parseClaudeSession(
-  filePath: string,
-  stat: fs.Stats
-): Promise<UsageEntry & { timestampedTokens: { ts: number; tokens: number }[] }> {
-  const cached = usageFileCache.get(filePath);
-  if (cached && cached.mtimeMs === stat.mtimeMs) return cached.data;
 
-  const sessionId = path.basename(filePath, '.jsonl');
-  let inputTokens = 0;
-  let outputTokens = 0;
-  let cacheRead = 0;
-  let cacheWrite = 0;
-  let model = 'unknown';
-  const timestampedTokens: { ts: number; tokens: number }[] = [];
-  // Claude Code writes one line per content block and stamps the SAME request
-  // usage on each. Summing every line overcounted ~2.4x until 2026-09-25 (one
-  // session: 1,081 usage lines, 446 requests). Count each message id once.
-  const countedMessages = new Set<string>();
-
-  for await (const { text: line } of readJsonlLines(filePath, 0)) {
-    if (!line.includes('"usage"')) continue;
-    try {
-      const entry = JSON.parse(line);
-      if (entry.type === 'assistant' && entry.message?.usage) {
-        if (countedMessages.has(entry.message.id)) continue;
-        countedMessages.add(entry.message.id);
-        const u = entry.message.usage;
-        const inTok = u.input_tokens ?? 0;
-        const outTok = u.output_tokens ?? 0;
-        inputTokens += inTok;
-        outputTokens += outTok;
-        cacheRead += u.cache_read_input_tokens ?? 0;
-        cacheWrite += u.cache_creation_input_tokens ?? 0;
-        if (entry.message.model && model === 'unknown') {
-          model = entry.message.model;
-        }
-        if (entry.timestamp) {
-          timestampedTokens.push({
-            ts: new Date(entry.timestamp).getTime(),
-            tokens: inTok + outTok,
-          });
-        }
-      }
-    } catch {
-      /* skip malformed lines */
-    }
-  }
-
-  const date = stat.mtime.toISOString().slice(0, 10);
-  const data: UsageEntry & { timestampedTokens: { ts: number; tokens: number }[] } = {
-    sessionId,
-    provider: 'claude',
-    model,
-    inputTokens,
-    outputTokens,
-    cacheReadTokens: cacheRead,
-    cacheWriteTokens: cacheWrite,
-    costUsd: estimateCost('claude', inputTokens, outputTokens, cacheRead, cacheWrite),
-    date,
-    timestampedTokens,
-  };
-  usageFileCache.set(filePath, { mtimeMs: stat.mtimeMs, data });
-  return data;
+// Approximate list prices per 1M tokens (early 2026). OpenAI bills cached input at a tenth of the
+// input rate; `input` is already the UNCACHED part for every provider (the crate splits Codex's
+// cached subset out). Gemini/Cursor/Muse record no usage; they carry the OpenAI-like row.
+interface Rates {
+  input: number;
+  output: number;
+  cacheRead: number;
+  cacheWrite: number;
 }
+const OPENAI_LIKE: Rates = { input: 2.5, output: 10, cacheRead: 0.25, cacheWrite: 0 };
+const RATES: Record<ProviderName, Rates> = {
+  claude: { input: 3, output: 15, cacheRead: 0.3, cacheWrite: 3.75 },
+  codex: OPENAI_LIKE,
+  opencode: OPENAI_LIKE,
+  gemini: OPENAI_LIKE,
+  cursor: OPENAI_LIKE,
+  muse: OPENAI_LIKE,
+};
 
-export async function parseOpenCodeSessionUsage(
-  sessionDirPath: string
-): Promise<(UsageEntry & { lastTimestampMs: number }) | null> {
-  const messageFiles = (await fs.promises.readdir(sessionDirPath)).filter((f) =>
-    f.endsWith('.json')
+/** A provider-recorded cost (OpenCode) wins over the estimate; `reportedCostUsd` is 0 when none. */
+function costUsd(provider: ProviderName, g: UsageGroup): number {
+  if (g.reportedCostUsd > 0) return g.reportedCostUsd;
+  const r = RATES[provider];
+  return (
+    (g.input * r.input +
+      g.output * r.output +
+      g.cacheRead * r.cacheRead +
+      g.cacheWrite * r.cacheWrite) /
+    1_000_000
   );
-  if (messageFiles.length === 0) {
-    return null;
-  }
-
-  let maxMtimeMs = 0;
-  for (const file of messageFiles) {
-    try {
-      const stat = await fs.promises.stat(path.join(sessionDirPath, file));
-      if (stat.mtimeMs > maxMtimeMs) {
-        maxMtimeMs = stat.mtimeMs;
-      }
-    } catch {
-      // File may disappear between readdir and stat/read.
-    }
-  }
-
-  const cached = openCodeUsageCache.get(sessionDirPath);
-  if (cached && cached.mtimeMs === maxMtimeMs) {
-    return cached.data;
-  }
-
-  const sessionId = path.basename(sessionDirPath);
-  let model = 'unknown';
-  let inputTokens = 0;
-  let outputTokens = 0;
-  let cacheReadTokens = 0;
-  let cacheWriteTokens = 0;
-  let costUsd = 0;
-  let lastTimestampMs = 0;
-  let hasUsage = false;
-
-  for (const file of messageFiles) {
-    const filePath = path.join(sessionDirPath, file);
-    try {
-      const parsed = JSON.parse(await fs.promises.readFile(filePath, 'utf-8'));
-      if (parsed?.role !== 'assistant') {
-        continue;
-      }
-
-      const inTok = typeof parsed?.tokens?.input === 'number' ? parsed.tokens.input : 0;
-      const outTok = typeof parsed?.tokens?.output === 'number' ? parsed.tokens.output : 0;
-      const cacheRead =
-        typeof parsed?.tokens?.cache?.read === 'number' ? parsed.tokens.cache.read : 0;
-      const cacheWrite =
-        typeof parsed?.tokens?.cache?.write === 'number' ? parsed.tokens.cache.write : 0;
-      const messageCost = typeof parsed?.cost === 'number' ? parsed.cost : 0;
-
-      inputTokens += inTok;
-      outputTokens += outTok;
-      cacheReadTokens += cacheRead;
-      cacheWriteTokens += cacheWrite;
-      costUsd += messageCost;
-
-      if (inTok + outTok + cacheRead + cacheWrite > 0 || messageCost > 0) {
-        hasUsage = true;
-      }
-
-      const providerID = typeof parsed?.providerID === 'string' ? parsed.providerID : null;
-      const modelID = typeof parsed?.modelID === 'string' ? parsed.modelID : null;
-      if (model === 'unknown') {
-        if (providerID && modelID) model = `${providerID}/${modelID}`;
-        else if (modelID) model = modelID;
-        else if (providerID) model = providerID;
-      }
-
-      const completedTs = typeof parsed?.time?.completed === 'number' ? parsed.time.completed : 0;
-      const createdTs = typeof parsed?.time?.created === 'number' ? parsed.time.created : 0;
-      const ts = Math.max(completedTs, createdTs);
-      if (ts > lastTimestampMs) {
-        lastTimestampMs = ts;
-      }
-    } catch {
-      // Skip malformed/unreadable message file.
-    }
-  }
-
-  if (!hasUsage) {
-    return null;
-  }
-
-  if (costUsd === 0) {
-    costUsd = estimateCost(
-      'opencode',
-      inputTokens,
-      outputTokens,
-      cacheReadTokens,
-      cacheWriteTokens
-    );
-  }
-
-  const fallbackTs = maxMtimeMs > 0 ? maxMtimeMs : Date.now();
-  const date = new Date(lastTimestampMs > 0 ? lastTimestampMs : fallbackTs)
-    .toISOString()
-    .slice(0, 10);
-
-  const data: UsageEntry & { lastTimestampMs: number } = {
-    sessionId,
-    provider: 'opencode',
-    model,
-    inputTokens,
-    outputTokens,
-    cacheReadTokens,
-    cacheWriteTokens,
-    costUsd,
-    date,
-    lastTimestampMs: lastTimestampMs > 0 ? lastTimestampMs : fallbackTs,
-  };
-
-  openCodeUsageCache.set(sessionDirPath, { mtimeMs: maxMtimeMs, data });
-  return data;
 }
 
-export interface SessionProviderUsage {
-  sessionId: string;
-  provider: ProviderName;
-  model: string;
-  inputTokens: number;
-  outputTokens: number;
-  cacheReadTokens: number;
-  cacheWriteTokens: number;
-  /** Provider-priced cumulative input (re-read across turns, not one turn's stack). */
-  cumulativeInputTokens: number;
+const utcDay = (ms: number) => new Date(ms).toISOString().slice(0, 10);
+
+async function sessionsIn(ingest: IngestReads, query: Omit<UsageQuery, 'groupBy'>) {
+  const report = await ingest.usage({ ...query, groupBy: 'session' });
+  const sessions: SessionUsage[] = report.groups.flatMap((g) =>
+    g.key.t === 'session'
+      ? [
+          {
+            sessionId: g.key.sessionId,
+            provider: g.key.provider,
+            model: g.key.model ?? null,
+            inputTokens: g.input,
+            outputTokens: g.output,
+            cacheReadTokens: g.cacheRead,
+            cacheWriteTokens: g.cacheWrite,
+            costUsd: costUsd(g.key.provider, g),
+            date: utcDay(g.lastAt),
+          },
+        ]
+      : []
+  );
+  return { sessions, codexRateLimits: report.codexRateLimits };
 }
 
-// Codex `token_count` events carry the session's latest cumulative totals, so the
-// last one wins. `cached_input_tokens` is a SUBSET of `input_tokens`; split it out
-// so `input` means uncached input, as it does for Claude.
-type CodexTokenTotals = { input: number; cacheRead: number; output: number };
-
-async function codexTokenTotals(filePath: string): Promise<CodexTokenTotals | null> {
-  let totals: CodexTokenTotals | null = null;
-  for await (const { text: line } of readJsonlLines(filePath, 0)) {
-    if (!line.includes('token_count')) continue;
-    try {
-      const entry = JSON.parse(line);
-      if (
-        entry.type === 'event_msg' &&
-        entry.payload?.type === 'token_count' &&
-        entry.payload.info?.total_token_usage
-      ) {
-        const u = entry.payload.info.total_token_usage;
-        const cacheRead = u.cached_input_tokens ?? 0;
-        totals = {
-          input: (u.input_tokens ?? 0) - cacheRead,
-          cacheRead,
-          output: u.output_tokens ?? 0,
-        };
-      }
-    } catch {
-      /* skip malformed lines */
-    }
+/** Claude publishes no limits; the panel shows the tokens (input + output) of the window. */
+async function claudeTokensSince(ingest: IngestReads, since: number): Promise<number> {
+  const report = await ingest.usage({ since, groupBy: 'model' });
+  let tokens = 0;
+  for (const g of report.groups) {
+    if (g.key.t === 'model' && g.key.provider === 'claude') tokens += g.input + g.output;
   }
-  return totals;
+  return tokens;
 }
 
-export async function parseCodexTokenTotals(filePath: string): Promise<CodexTokenTotals | null> {
-  try {
-    return await codexTokenTotals(filePath);
-  } catch {
-    return null;
-  }
-}
+const CodexWindowSchema = z.object({
+  used_percent: z.number(),
+  window_minutes: z.number(),
+  resets_at: z.number().nullish(),
+});
+const CodexRateLimitsSchema = z.object({
+  primary: CodexWindowSchema.nullish(),
+  secondary: CodexWindowSchema.nullish(),
+});
 
 /**
- * Recover a codex session id from its rollout filename.
- *
- * Codex writes `rollout-<timestamp>-<sessionId>.jsonl`, and has used two
- * timestamp shapes (`...T11-22-44-` and an older `...T11-14-43-024Z-`).
- * Stripping only the extension left the whole `rollout-<timestamp>-` prefix
- * glued to the id, so UsagePanel's `sessionId.slice(0, 8)` rendered the
- * literal string "rollout-" for EVERY codex row instead of its id. Anchoring
- * on the trailing UUID resolves both shapes; a bare `<sessionId>.jsonl` (the
- * form `findCodexSessionFile` also accepts) passes through unchanged.
+ * The crate keeps Codex's latest `rate_limits` payload verbatim. A shape Codex changed is logged
+ * and shown as no limits, rather than failing the whole usage panel.
  */
-const CODEX_ROLLOUT_NAME =
-  /^rollout-.+-([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$/;
+function codexLimits(raw: string | undefined): RateLimit[] {
+  if (raw === undefined) return [];
+  const parsed = CodexRateLimitsSchema.safeParse(JSON.parse(raw));
+  if (!parsed.success) {
+    console.warn('[usage] unrecognized Codex rate_limits payload:', parsed.error.message);
+    return [];
+  }
+  // Codex sends whichever windows the plan has: the weekly window can arrive as
+  // `primary` with `secondary` absent, so the slot name says nothing about the
+  // duration — label every window that exists from its minutes.
+  const { primary, secondary } = parsed.data;
+  return [primary, secondary]
+    .filter((w): w is z.infer<typeof CodexWindowSchema> => w != null)
+    .map((w) => ({
+      label: `${rateWindowLabel(w.window_minutes)} limit`,
+      usedPercent: w.used_percent,
+      windowMinutes: w.window_minutes,
+      resetsAt: w.resets_at ?? null,
+    }));
+}
 
 /** A rate-limit window's duration as a short label: 300 → "5h", 10080 → "7d", 90 → "90m". */
 export function rateWindowLabel(minutes: number): string {
@@ -351,441 +172,134 @@ export function rateWindowLabel(minutes: number): string {
   return `${minutes}m`;
 }
 
-export function codexSessionIdFromFilename(fileName: string): string {
-  const base = fileName.replace(/\.jsonl$/, '');
-  const rollout = base.match(CODEX_ROLLOUT_NAME);
-  return rollout ? rollout[1] : base;
-}
+export async function usageResponse(
+  ingest: IngestReads,
+  providerNames: readonly ProviderName[],
+  days: number,
+  now: number
+): Promise<UsageResponse> {
+  const since = now - days * DAY_MS;
+  const window = await sessionsIn(ingest, { since });
 
-/**
- * Locate a codex rollout by session id. Exported so the context reader
- * (conversations/session-context.ts) asks the same question one way: that file
- * carries BOTH the cumulative totals this module bills from and the
- * per-request `last_token_usage` the context meter needs.
- */
-export async function findCodexSessionFile(sessionId: string): Promise<string | null> {
-  const codexDir = path.join(os.homedir(), '.codex', 'sessions');
-  try {
-    for (const year of await fs.promises.readdir(codexDir, { withFileTypes: true })) {
-      if (!year.isDirectory()) continue;
-      const yearPath = path.join(codexDir, year.name);
-      for (const month of await fs.promises.readdir(yearPath, { withFileTypes: true })) {
-        if (!month.isDirectory()) continue;
-        const monthPath = path.join(yearPath, month.name);
-        for (const day of await fs.promises.readdir(monthPath, { withFileTypes: true })) {
-          if (!day.isDirectory()) continue;
-          const dayPath = path.join(monthPath, day.name);
-          // Codex names rollouts `rollout-<timestamp>-<sessionId>.jsonl`, NOT
-          // `<sessionId>.jsonl`. Probing the bare name matched zero files on a
-          // real ~/.codex/sessions tree, so this lookup silently never
-          // resolved and every codex thread fell back to estimates.
-          try {
-            for (const file of await fs.promises.readdir(dayPath)) {
-              if (!file.endsWith('.jsonl')) continue;
-              if (file === `${sessionId}.jsonl` || file.endsWith(`-${sessionId}.jsonl`)) {
-                return path.join(dayPath, file);
-              }
-            }
-          } catch {
-            /* day dir may vanish between readdir and read */
-          }
-        }
-      }
-    }
-  } catch {
-    /* ~/.codex/sessions may not exist */
-  }
-  return null;
-}
-
-/**
- * Locate a claude transcript by session id. The basename IS the session id, but
- * the project directory is a lossy encoding of the cwd, so the only reliable
- * lookup is a scan across project dirs. Exported for the same reason as
- * findCodexSessionFile.
- */
-export async function findClaudeSessionFile(
-  sessionId: string
-): Promise<{ path: string; stat: fs.Stats } | null> {
-  const claudeDir = path.join(os.homedir(), '.claude', 'projects');
-  try {
-    for (const project of await fs.promises.readdir(claudeDir, { withFileTypes: true })) {
-      if (!project.isDirectory()) continue;
-      const candidate = path.join(claudeDir, project.name, `${sessionId}.jsonl`);
-      try {
-        const stat = await fs.promises.stat(candidate);
-        if (stat.isFile()) return { path: candidate, stat };
-      } catch {
-        /* not in this project dir */
-      }
-    }
-  } catch {
-    /* ~/.claude/projects may not exist */
-  }
-  return null;
-}
-
-/**
- * Provider usage for one CLI session id, reusing the aggregate usage parsers
- * (Claude assistant usage, Codex latest token_count totals, OpenCode assistant
- * tokens). Returns null when no provider file matches — the meter then shows
- * only our estimated stack. Never throws; never recomputes pricing.
- */
-export async function lookupProviderUsageForSession(
-  sessionId: string
-): Promise<SessionProviderUsage | null> {
-  if (!sessionId) return null;
-
-  // Claude: file basename is the session id.
-  const claudeFile = await findClaudeSessionFile(sessionId);
-  if (claudeFile) {
-    const data = await parseClaudeSession(claudeFile.path, claudeFile.stat);
-    return {
-      sessionId,
-      provider: 'claude',
-      model: data.model,
-      inputTokens: data.inputTokens,
-      outputTokens: data.outputTokens,
-      cacheReadTokens: data.cacheReadTokens,
-      cacheWriteTokens: data.cacheWriteTokens,
-      cumulativeInputTokens: data.inputTokens + data.cacheReadTokens + data.cacheWriteTokens,
-    };
-  }
-
-  // Codex: latest token_count totals are already cumulative for the session.
-  const codexFile = await findCodexSessionFile(sessionId);
-  if (codexFile) {
-    const totals = await parseCodexTokenTotals(codexFile);
-    if (totals) {
-      return {
-        sessionId,
-        provider: 'codex',
-        model: 'codex',
-        inputTokens: totals.input,
-        outputTokens: totals.output,
-        cacheReadTokens: totals.cacheRead,
-        cacheWriteTokens: 0,
-        cumulativeInputTokens: totals.input + totals.cacheRead,
-      };
-    }
-  }
-
-  // OpenCode: session dir holds per-message assistant token usage.
-  try {
-    const sessionDir = path.join(
-      os.homedir(),
-      '.local',
-      'share',
-      'opencode',
-      'storage',
-      'message',
-      sessionId
-    );
-    const usage = await parseOpenCodeSessionUsage(sessionDir);
-    if (usage) {
-      return {
-        sessionId,
-        provider: 'opencode',
-        model: usage.model,
-        inputTokens: usage.inputTokens,
-        outputTokens: usage.outputTokens,
-        cacheReadTokens: usage.cacheReadTokens,
-        cacheWriteTokens: usage.cacheWriteTokens,
-        cumulativeInputTokens: usage.inputTokens + usage.cacheReadTokens + usage.cacheWriteTokens,
-      };
-    }
-  } catch {
-    /* opencode storage may not exist */
-  }
-
-  return null;
-}
-
-export function registerUsageRoutes(app: Express, providerNames: readonly ProviderName[]): void {
-  app.get('/api/usage', async (_req: Request, res: Response) => {
-    const days = Math.min(Math.max(Number.parseInt(String(_req.query.days)) || 30, 1), 365);
-
-    // Check response cache
-    const cached = usageResponseCache.get(days);
-    if (cached && Date.now() - cached.time < USAGE_CACHE_TTL_MS) {
-      res.json(cached.data);
-      return;
-    }
-
-    // Response cache expired (or missing) — clear per-file caches so entries for
-    // deleted files don't accumulate unboundedly across requests.
-    usageFileCache.clear();
-    openCodeUsageCache.clear();
-
-    const cutoff = new Date();
-    cutoff.setDate(cutoff.getDate() - days);
-    const cutoffMs = cutoff.getTime();
-    const now = Date.now();
-    const fiveHoursAgo = now - 5 * 60 * 60 * 1000;
-    const sevenDaysAgo = now - 7 * 24 * 60 * 60 * 1000;
-
-    const entries: UsageEntry[] = [];
-    let claude5hTokens = 0;
-    let claudeWeeklyTokens = 0;
-
-    // --- Claude sessions (single pass: usage entries + rate limit token counts) ---
-    const claudeDir = path.join(os.homedir(), '.claude', 'projects');
-    try {
-      const projectDirs = (await fs.promises.readdir(claudeDir, { withFileTypes: true }))
-        .filter((d) => d.isDirectory())
-        .map((d) => path.join(claudeDir, d.name));
-
-      for (const projDir of projectDirs) {
-        const jsonlFiles = (await fs.promises.readdir(projDir)).filter((f) => f.endsWith('.jsonl'));
-        for (const file of jsonlFiles) {
-          const filePath = path.join(projDir, file);
-          const stat = await fs.promises.stat(filePath);
-          // Skip files older than both the query window AND the 7-day rate-limit window
-          if (stat.mtimeMs < cutoffMs && stat.mtimeMs < sevenDaysAgo) continue;
-
-          const data = await parseClaudeSession(filePath, stat);
-
-          // Usage entry (for the requested days window)
-          if (stat.mtimeMs >= cutoffMs && data.inputTokens + data.outputTokens > 0) {
-            entries.push(data);
-          }
-
-          // Rate limit token counts (5h + 7d windows)
-          for (const { ts, tokens } of data.timestampedTokens) {
-            if (ts >= sevenDaysAgo) claudeWeeklyTokens += tokens;
-            if (ts >= fiveHoursAgo) claude5hTokens += tokens;
-          }
-        }
-      }
-    } catch {
-      /* ~/.claude/projects may not exist */
-    }
-
-    // --- Codex sessions (single pass: usage entries + rate limits from most recent) ---
-    const codexDir = path.join(os.homedir(), '.codex', 'sessions');
-    const rateLimits = {} as Record<ProviderName, RateLimit[]>;
-    for (const provider of providerNames) {
-      rateLimits[provider] = [];
-    }
-    let newestCodexFile = '';
-    let newestCodexMtime = 0;
-
-    try {
-      const years = (await fs.promises.readdir(codexDir, { withFileTypes: true })).filter((d) =>
-        d.isDirectory()
-      );
-      for (const year of years) {
-        const months = (
-          await fs.promises.readdir(path.join(codexDir, year.name), { withFileTypes: true })
-        ).filter((d) => d.isDirectory());
-        for (const month of months) {
-          const dayDirs = (
-            await fs.promises.readdir(path.join(codexDir, year.name, month.name), {
-              withFileTypes: true,
-            })
-          ).filter((d) => d.isDirectory());
-          for (const day of dayDirs) {
-            const dateStr = `${year.name}-${month.name}-${day.name}`;
-            const dateMs = new Date(dateStr).getTime();
-            // Skip entire day dirs that are too old for BOTH usage and rate limits
-            if (dateMs < cutoffMs && dateMs < sevenDaysAgo) continue;
-
-            const dayPath = path.join(codexDir, year.name, month.name, day.name);
-            const files = (await fs.promises.readdir(dayPath)).filter((f) => f.endsWith('.jsonl'));
-            for (const file of files) {
-              const filePath = path.join(dayPath, file);
-              const stat = await fs.promises.stat(filePath);
-
-              // Track most recent for rate limits
-              if (stat.mtimeMs > newestCodexMtime) {
-                newestCodexMtime = stat.mtimeMs;
-                newestCodexFile = filePath;
-              }
-
-              // Only parse for usage if within the query window
-              if (dateMs < cutoffMs) continue;
-
-              const sessionId = codexSessionIdFromFilename(file);
-              const totals = await codexTokenTotals(filePath);
-              if (totals && totals.input + totals.cacheRead + totals.output > 0) {
-                entries.push({
-                  sessionId,
-                  provider: 'codex',
-                  model: 'codex',
-                  inputTokens: totals.input,
-                  outputTokens: totals.output,
-                  cacheReadTokens: totals.cacheRead,
-                  cacheWriteTokens: 0,
-                  costUsd: estimateCost('codex', totals.input, totals.output, totals.cacheRead, 0),
-                  date: dateStr,
-                });
-              }
-            }
-          }
-        }
-      }
-    } catch {
-      /* ~/.codex/sessions may not exist */
-    }
-
-    // --- OpenCode sessions (single pass: assistant message token usage from local storage) ---
-    const openCodeMessageDir = path.join(
-      os.homedir(),
-      '.local',
-      'share',
-      'opencode',
-      'storage',
-      'message'
-    );
-    try {
-      const openCodeSessionDirs = (
-        await fs.promises.readdir(openCodeMessageDir, { withFileTypes: true })
-      )
-        .filter((d) => d.isDirectory())
-        .map((d) => path.join(openCodeMessageDir, d.name));
-
-      for (const sessionDirPath of openCodeSessionDirs) {
-        const usage = await parseOpenCodeSessionUsage(sessionDirPath);
-        if (!usage) {
-          continue;
-        }
-
-        if (usage.lastTimestampMs < cutoffMs) {
-          continue;
-        }
-
-        entries.push({
-          sessionId: usage.sessionId,
-          provider: usage.provider,
-          model: usage.model,
-          inputTokens: usage.inputTokens,
-          outputTokens: usage.outputTokens,
-          cacheReadTokens: usage.cacheReadTokens,
-          cacheWriteTokens: usage.cacheWriteTokens,
-          costUsd: usage.costUsd,
-          date: usage.date,
+  // One range query per UTC day that has usage (the `day` grouping names them).
+  const dayReport = await ingest.usage({ since, groupBy: 'day' });
+  const daily = await Promise.all(
+    dayReport.groups
+      .flatMap((g) => (g.key.t === 'day' ? [g.key.day] : []))
+      .map(async (date) => {
+        const start = Date.parse(`${date}T00:00:00Z`);
+        const { sessions } = await sessionsIn(ingest, {
+          since: Math.max(start, since),
+          until: start + DAY_MS,
         });
-      }
-    } catch {
-      /* ~/.local/share/opencode/storage/message may not exist */
-    }
+        return {
+          date,
+          inputTokens: sessions.reduce((n, s) => n + s.inputTokens, 0),
+          outputTokens: sessions.reduce((n, s) => n + s.outputTokens, 0),
+          costUsd: sessions.reduce((n, s) => n + s.costUsd, 0),
+          sessions: sessions.length,
+        };
+      })
+  );
+  daily.sort((a, b) => b.date.localeCompare(a.date));
 
-    // Extract rate limits from the most recent Codex session file
-    if (newestCodexFile) {
-      try {
-        // The LAST rate_limits event wins. Keeping the latest match while
-        // streaming forward gives the same answer as the old backwards scan
-        // over the whole file held in memory.
-        // biome-ignore lint/suspicious/noExplicitAny: raw provider JSON, read as the old code did
-        let r: any = null;
-        for await (const { text: line } of readJsonlLines(newestCodexFile, 0)) {
-          if (!line.includes('rate_limits')) continue;
-          try {
-            const entry = JSON.parse(line);
-            if (entry.type === 'event_msg' && entry.payload?.rate_limits) {
-              r = entry.payload.rate_limits;
-            }
-          } catch {
-            /* skip */
-          }
-        }
-        // Codex sends whichever windows the plan has: the weekly window can
-        // arrive as `primary` with `secondary` absent, so the slot name says
-        // nothing about the duration — label every window from its minutes.
-        for (const w of [r?.primary, r?.secondary]) {
-          if (!w) continue;
-          rateLimits.codex.push({
-            label: `${rateWindowLabel(w.window_minutes)} limit`,
-            usedPercent: w.used_percent,
-            windowMinutes: w.window_minutes,
-            resetsAt: w.resets_at ?? null,
-          });
-        }
-      } catch {
-        /* file may have been deleted */
-      }
-    }
+  // Top 20 by cost, plus each provider's top session so every provider tab has a row.
+  const byCost = [...window.sessions].sort((a, b) => b.costUsd - a.costUsd);
+  const topSessions = byCost.slice(0, 20);
+  for (const provider of providerNames) {
+    const top = byCost.find((s) => s.provider === provider);
+    if (top && !topSessions.includes(top)) topSessions.push(top);
+  }
+  topSessions.sort((a, b) => b.costUsd - a.costUsd);
 
-    // Claude rate limits from timestamped tokens (already computed in single pass above)
-    if (claude5hTokens > 0 || claudeWeeklyTokens > 0) {
-      rateLimits.claude.push({
+  const rateLimits = Object.fromEntries(providerNames.map((p) => [p, [] as RateLimit[]])) as Record<
+    ProviderName,
+    RateLimit[]
+  >;
+  rateLimits.codex = codexLimits(window.codexRateLimits);
+  const [claude5h, claudeWeek] = await Promise.all([
+    claudeTokensSince(ingest, now - 5 * HOUR_MS),
+    claudeTokensSince(ingest, now - 7 * DAY_MS),
+  ]);
+  if (claude5h + claudeWeek > 0) {
+    rateLimits.claude = [
+      {
         label: '5h window',
         usedPercent: 0,
         windowMinutes: 300,
         resetsAt: null,
-        tokenCount: claude5hTokens,
-      });
-      rateLimits.claude.push({
+        tokenCount: claude5h,
+      },
+      {
         label: 'Weekly',
         usedPercent: 0,
         windowMinutes: 10080,
         resetsAt: null,
-        tokenCount: claudeWeeklyTokens,
-      });
+        tokenCount: claudeWeek,
+      },
+    ];
+  }
+
+  return {
+    totalCostUsd: window.sessions.reduce((n, s) => n + s.costUsd, 0),
+    totalInputTokens: window.sessions.reduce((n, s) => n + s.inputTokens, 0),
+    totalOutputTokens: window.sessions.reduce((n, s) => n + s.outputTokens, 0),
+    totalSessions: window.sessions.length,
+    days,
+    daily,
+    topSessions,
+    rateLimits,
+  };
+}
+
+/** Cumulative provider usage of one CLI session, for the context-breakdown meter. */
+export interface SessionProviderUsage {
+  sessionId: string;
+  provider: ProviderName;
+  model: string | null;
+  inputTokens: number;
+  outputTokens: number;
+  cacheReadTokens: number;
+  cacheWriteTokens: number;
+  /** Provider-priced cumulative input (re-read across turns, not one turn's stack). */
+  cumulativeInputTokens: number;
+}
+
+/** null: the store has no transcript of that id, or the harness records no usage. */
+export async function lookupProviderUsageForSession(
+  ingest: IngestReads,
+  sessionId: string
+): Promise<SessionProviderUsage | null> {
+  const row = await ingest.session(sessionId);
+  if (!row?.usage) return null;
+  const u = row.usage;
+  return {
+    sessionId,
+    provider: row.provider,
+    model: row.observedModel ?? null,
+    inputTokens: u.input,
+    outputTokens: u.output,
+    cacheReadTokens: u.cacheRead,
+    cacheWriteTokens: u.cacheWrite,
+    cumulativeInputTokens: u.input + u.cacheRead + u.cacheWrite,
+  };
+}
+
+export function registerUsageRoutes(
+  app: Express,
+  providerNames: readonly ProviderName[],
+  ingest: IngestAccessor
+): void {
+  app.get('/api/usage', async (request, response) => {
+    const days = Math.min(Math.max(Number.parseInt(String(request.query.days)) || 30, 1), 365);
+    const slot = ingest();
+    switch (slot.t) {
+      case 'starting':
+        response.status(503).json({ error: 'The transcript store is still starting' });
+        return;
+      case 'ready':
+        response.json(await usageResponse(slot.ingest, providerNames, days, Date.now()));
+        return;
     }
-
-    // Aggregate by day
-    const byDay = new Map<
-      string,
-      { inputTokens: number; outputTokens: number; costUsd: number; sessions: number }
-    >();
-    let totalCost = 0;
-    let totalInput = 0;
-    let totalOutput = 0;
-
-    for (const e of entries) {
-      totalCost += e.costUsd;
-      totalInput += e.inputTokens;
-      totalOutput += e.outputTokens;
-
-      const existing = byDay.get(e.date);
-      if (existing) {
-        existing.inputTokens += e.inputTokens;
-        existing.outputTokens += e.outputTokens;
-        existing.costUsd += e.costUsd;
-        existing.sessions += 1;
-      } else {
-        byDay.set(e.date, {
-          inputTokens: e.inputTokens,
-          outputTokens: e.outputTokens,
-          costUsd: e.costUsd,
-          sessions: 1,
-        });
-      }
-    }
-
-    const daily = Array.from(byDay.entries())
-      .sort((a, b) => b[0].localeCompare(a[0]))
-      .map(([date, data]) => ({ date, ...data }));
-
-    const sortedEntries = [...entries].sort((a, b) => b.costUsd - a.costUsd);
-    const topSessions = sortedEntries.slice(0, 20);
-
-    // Keep provider tabs useful even when one provider's sessions are lower-cost.
-    const orderedProviders = providerNames;
-    for (const provider of orderedProviders) {
-      if (topSessions.some((entry) => entry.provider === provider)) {
-        continue;
-      }
-      const providerTopSession = sortedEntries.find((entry) => entry.provider === provider);
-      if (providerTopSession) {
-        topSessions.push(providerTopSession);
-      }
-    }
-    topSessions.sort((a, b) => b.costUsd - a.costUsd);
-
-    const response: UsageResponse = {
-      totalCostUsd: totalCost,
-      totalInputTokens: totalInput,
-      totalOutputTokens: totalOutput,
-      totalSessions: entries.length,
-      days,
-      daily,
-      topSessions,
-      rateLimits,
-    };
-
-    usageResponseCache.set(days, { time: Date.now(), data: response });
-    res.json(response);
   });
 }

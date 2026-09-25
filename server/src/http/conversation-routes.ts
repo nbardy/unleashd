@@ -7,7 +7,7 @@ import type {
   Provider,
   ProviderTurnUsage,
 } from '@unleashd/shared';
-import type { Express } from 'express';
+import type { Express, Request, RequestHandler, Response } from 'express';
 import { BUDDY_BUILDER_BRIEFING } from '../buddies/builder';
 import { toolManifest } from '../buddies/mcp';
 import { type ContextWindow, resolveContextWindow } from '../conversations/context-window';
@@ -17,6 +17,7 @@ import {
   type MessageSource,
 } from '../conversations/messages';
 import { type SessionContextReading, lookupSessionContext } from '../conversations/session-context';
+import type { IngestAccessor, IngestSlot } from '../ingest/instance';
 import { type SessionProviderUsage, lookupProviderUsageForSession } from './usage-routes';
 
 /** What the context meter reads about a conversation. */
@@ -25,7 +26,6 @@ export interface ContextSubject {
   readonly sessionId: string;
   readonly provider: Provider;
   readonly kind: ConversationKind;
-  readonly messages: readonly Message[];
   /** Provider-reported model of the latest turn. */
   readonly observedModel: string | null;
   readonly providerUsage: ProviderTurnUsage | null;
@@ -134,8 +134,28 @@ export interface ContextBreakdownDeps {
   getBranch?: (
     conversationId: string
   ) => Promise<ConversationBranch | null | undefined> | ConversationBranch | null | undefined;
-  lookupUsage?: (sessionId: string) => Promise<SessionProviderUsage | null>;
-  lookupContext?: (sessionId: string) => Promise<SessionContextReading | null>;
+  /** The ingest store's session usage and latest context (server/src/ingest/instance.ts). */
+  ingest: IngestAccessor;
+}
+
+interface ProviderReadings {
+  usage: SessionProviderUsage | null;
+  context: SessionContextReading | null;
+}
+
+/** While the store is starting the meter shows its estimates only, as for an unknown session. */
+async function providerReadings(slot: IngestSlot, sessionId: string): Promise<ProviderReadings> {
+  switch (slot.t) {
+    case 'starting':
+      return { usage: null, context: null };
+    case 'ready': {
+      const [usage, context] = await Promise.all([
+        lookupProviderUsageForSession(slot.ingest, sessionId),
+        lookupSessionContext(slot.ingest, sessionId),
+      ]);
+      return { usage, context };
+    }
+  }
 }
 
 /**
@@ -188,13 +208,14 @@ function mcpSpecJson(conversation: ContextSubject): string {
 
 export function buildContextBreakdown(
   conversation: ContextSubject,
+  history: readonly Message[],
   snapshotBriefing: string | null,
   branch: ConversationBranch | null | undefined,
   usage: SessionProviderUsage | null,
   contextWindow: ContextWindow,
   sessionContext: SessionContextReading | null = null
 ): ContextBreakdownResponse {
-  const historyChars = conversation.messages.reduce(
+  const historyChars = history.reduce(
     (sum, message) => sum + (typeof message.content === 'string' ? message.content.length : 0),
     0
   );
@@ -390,95 +411,107 @@ export function buildContextBreakdown(
   };
 }
 
+/** Express 4 does not catch a rejected async handler: route the error to the error handler. */
+function handled(handler: (request: Request, response: Response) => Promise<void>): RequestHandler {
+  return (request, response, next) => {
+    handler(request, response).catch(next);
+  };
+}
+
 export function registerConversationRoutes(
   app: Express,
-  getConversation: (id: string) => RoutedConversation | undefined,
+  /** The conversation's runtime, built from its record on first use; undefined = none. */
+  getConversation: (id: string) => Promise<RoutedConversation | undefined>,
   messages: MessageSource,
-  deps: ContextBreakdownDeps = {}
+  deps: ContextBreakdownDeps
 ): void {
-  app.get('/api/conversations/:conversationId/context-breakdown', async (request, response) => {
-    const conversation = getConversation(request.params.conversationId);
-    if (!conversation) {
-      response.status(404).json({ error: 'Conversation not found' });
-      return;
-    }
-    const data = conversation;
-    let branch: ConversationBranch | null | undefined;
-    try {
-      branch = (await deps.getBranch?.(data.id)) ?? null;
-    } catch {
-      branch = null;
-    }
-    let usage: SessionProviderUsage | null = null;
-    try {
-      usage = data.sessionId
-        ? await (deps.lookupUsage ?? lookupProviderUsageForSession)(data.sessionId)
-        : null;
-    } catch {
-      usage = null;
-    }
-    const snapshot = (() => {
-      try {
-        return conversation.getMemorySnapshot?.()?.briefing ?? null;
-      } catch {
-        return null;
+  app.get(
+    '/api/conversations/:conversationId/context-breakdown',
+    handled(async (request, response) => {
+      const conversation = await getConversation(request.params.conversationId);
+      if (!conversation) {
+        response.status(404).json({ error: 'Conversation not found' });
+        return;
       }
-    })();
-    // The harness's own session log: the latest request's context, plus the
-    // window and compaction markers it recorded. Retroactive, so a thread that
-    // has not taken a turn since the live event shipped still reads correctly.
-    let sessionContext: SessionContextReading | null = null;
-    try {
-      sessionContext = data.sessionId
-        ? await (deps.lookupContext ?? lookupSessionContext)(data.sessionId)
-        : null;
-    } catch {
-      sessionContext = null;
-    }
-    const resolved =
-      data.configResolution.status === 'resolved'
-        ? data.configResolution.value
-        : data.configResolution.lastResolved;
-    const contextWindow = resolveContextWindow({
-      modelId: resolved?.modelId ?? null,
-      reportedModelName: data.observedModel,
-      // codex reports its window on the same record as its usage, so the file
-      // supplies the denominator too when the live event has not run.
-      reportedWindow: data.providerUsage?.contextWindow ?? sessionContext?.contextWindow ?? null,
-    });
-    response.json(
-      buildContextBreakdown(data, snapshot, branch, usage, contextWindow, sessionContext)
-    );
-  });
+      const data = conversation;
+      let branch: ConversationBranch | null | undefined;
+      try {
+        branch = (await deps.getBranch?.(data.id)) ?? null;
+      } catch {
+        branch = null;
+      }
+      // The harness's own session log (via the ingest store): cumulative usage, plus the latest
+      // request's context, window and compaction markers. Retroactive, so a thread that has not
+      // taken a turn since the live event shipped still reads correctly.
+      let readings: ProviderReadings = { usage: null, context: null };
+      try {
+        readings = data.sessionId
+          ? await providerReadings(deps.ingest(), data.sessionId)
+          : readings;
+      } catch (error) {
+        console.warn('[context-breakdown] ingest read failed:', error);
+      }
+      const { usage, context: sessionContext } = readings;
+      const snapshot = (() => {
+        try {
+          return conversation.getMemorySnapshot?.()?.briefing ?? null;
+        } catch {
+          return null;
+        }
+      })();
+      const resolved =
+        data.configResolution.status === 'resolved'
+          ? data.configResolution.value
+          : data.configResolution.lastResolved;
+      const contextWindow = resolveContextWindow({
+        modelId: resolved?.modelId ?? null,
+        reportedModelName: data.observedModel,
+        // codex reports its window on the same record as its usage, so the file
+        // supplies the denominator too when the live event has not run.
+        reportedWindow: data.providerUsage?.contextWindow ?? sessionContext?.contextWindow ?? null,
+      });
+      const history =
+        (await messages(data.id, { afterSeq: -1, limit: Number.MAX_SAFE_INTEGER }))?.messages ?? [];
+      response.json(
+        buildContextBreakdown(data, history, snapshot, branch, usage, contextWindow, sessionContext)
+      );
+    })
+  );
 
   // Detail: config, queue, sub-agents, latest turn. No message bodies.
-  app.get('/api/conversations/:conversationId', (request, response) => {
-    const conversation = getConversation(request.params.conversationId);
-    if (!conversation) {
-      response.status(404).json({ error: 'Conversation not found' });
-      return;
-    }
-    response.json(conversation.toDetail());
-  });
+  app.get(
+    '/api/conversations/:conversationId',
+    handled(async (request, response) => {
+      const conversation = await getConversation(request.params.conversationId);
+      if (!conversation) {
+        response.status(404).json({ error: 'Conversation not found' });
+        return;
+      }
+      response.json(conversation.toDetail());
+    })
+  );
 
   // Bodies, paged: messages with seq > afterSeq, at most `limit` of them.
-  app.get('/api/conversations/:conversationId/messages', (request, response) => {
-    const afterSeq = integerParam(request.query.afterSeq, -1);
-    const limit = integerParam(request.query.limit, MESSAGE_PAGE_DEFAULT_LIMIT);
-    if (afterSeq === null || afterSeq < -1 || limit === null || limit < 1) {
-      response.status(400).json({ error: 'afterSeq must be an integer >= -1, limit >= 1' });
-      return;
-    }
-    const page = messages(request.params.conversationId, {
-      afterSeq,
-      limit: Math.min(limit, MESSAGE_PAGE_MAX_LIMIT),
-    });
-    if (!page) {
-      response.status(404).json({ error: 'Conversation not found' });
-      return;
-    }
-    response.json(page);
-  });
+  app.get(
+    '/api/conversations/:conversationId/messages',
+    handled(async (request, response) => {
+      const afterSeq = integerParam(request.query.afterSeq, -1);
+      const limit = integerParam(request.query.limit, MESSAGE_PAGE_DEFAULT_LIMIT);
+      if (afterSeq === null || afterSeq < -1 || limit === null || limit < 1) {
+        response.status(400).json({ error: 'afterSeq must be an integer >= -1, limit >= 1' });
+        return;
+      }
+      const page = await messages(request.params.conversationId, {
+        afterSeq,
+        limit: Math.min(limit, MESSAGE_PAGE_MAX_LIMIT),
+      });
+      if (!page) {
+        response.status(404).json({ error: 'Conversation not found' });
+        return;
+      }
+      response.json(page);
+    })
+  );
 }
 
 /** An absent param takes the default; anything but an integer is null (a 400). */

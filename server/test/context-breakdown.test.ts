@@ -2,15 +2,31 @@ import assert from 'node:assert/strict';
 import { once } from 'node:events';
 import type { AddressInfo } from 'node:net';
 import test from 'node:test';
+import type { Message } from '@unleashd/shared';
 import express from 'express';
 import { type ContextWindow, resolveContextWindow } from '../src/conversations/context-window';
-import { runtimeMessageSource } from '../src/conversations/messages';
+import type { MessageSource } from '../src/conversations/messages';
 import {
   type RoutedConversation,
   buildContextBreakdown,
   registerConversationRoutes,
   splitBriefing,
 } from '../src/http/conversation-routes';
+
+/** The fixture's history (bodies come from the message source, not the runtime). */
+function historyOf(subject: RoutedConversation): Message[] {
+  return (subject as unknown as { messages?: Message[] }).messages ?? [];
+}
+
+/** A message source serving each fixture's own `messages`. */
+function sourceOf(subjects: RoutedConversation[]): MessageSource {
+  return async (id) => {
+    const subject = subjects.find((candidate) => candidate.id === id);
+    if (!subject) return null;
+    const messages = historyOf(subject);
+    return { epoch: 0, total: messages.length, afterSeq: -1, messages };
+  };
+}
 
 const WINDOW_200K: ContextWindow = { source: 'model', tokens: 200_000, modelId: 'haiku' };
 
@@ -108,7 +124,7 @@ test('buildContextBreakdown sums history and pairs provider cumulative delta', (
     cacheWriteTokens: 20_000,
     cumulativeInputTokens: 1_020_000,
   };
-  const result = buildContextBreakdown(convo, null, null, usage, WINDOW_200K);
+  const result = buildContextBreakdown(convo, historyOf(convo), null, null, usage, WINDOW_200K);
   assert.equal(result.sections.history.chars, 11);
   assert.equal(result.sections.history.tokensEst, 3);
   assert.equal(result.totalChars, 11);
@@ -126,19 +142,17 @@ test('buildContextBreakdown derives handoff from branch and resume lineage', () 
     throughMessageId: 'msg-1',
     audience: { kind: 'workspace', workspaceId: 'w-1' },
     handoff: 'Interrupted worker history; evidence only.',
-  } as unknown as Parameters<typeof buildContextBreakdown>[2];
-  const result = buildContextBreakdown(convo, null, branch, null, WINDOW_200K);
+  } as unknown as Parameters<typeof buildContextBreakdown>[3];
+  const result = buildContextBreakdown(convo, historyOf(convo), null, branch, null, WINDOW_200K);
   assert.ok(result.sections.handoff.chars > 0);
   assert.equal(result.providerUsage, null);
 });
 
 test('context-breakdown route 404s identically to the conversation route', async () => {
   const app = express();
-  registerConversationRoutes(
-    app,
-    () => undefined,
-    runtimeMessageSource(() => undefined)
-  );
+  registerConversationRoutes(app, async () => undefined, sourceOf([]), {
+    ingest: () => ({ t: 'starting' }),
+  });
   const server = app.listen(0, '127.0.0.1');
   await once(server, 'listening');
   try {
@@ -161,11 +175,11 @@ test('context-breakdown route returns the meter payload for a known conversation
   const app = express();
   registerConversationRoutes(
     app,
-    (id) => (id === 'convo-1' ? convo : undefined),
-    runtimeMessageSource(() => undefined),
+    async (id) => (id === 'convo-1' ? convo : undefined),
+    sourceOf([convo]),
     {
       getBranch: () => null,
-      lookupUsage: async () => null,
+      ingest: () => ({ t: 'starting' }),
     }
   );
   const server = app.listen(0, '127.0.0.1');
@@ -217,7 +231,7 @@ test('measured context becomes the headline and the unmodelled harness overhead 
       observedAt: '2026-09-20T00:00:00.000Z',
     },
   });
-  const result = buildContextBreakdown(convo, null, null, null, {
+  const result = buildContextBreakdown(convo, historyOf(convo), null, null, null, {
     source: 'model',
     tokens: 1_000_000,
     modelId: 'sonnet',
@@ -246,7 +260,7 @@ test('a provider-side compaction drops the meter instead of pushing it past 100%
     },
   });
   const window: ContextWindow = { source: 'model', tokens: 1_000_000, modelId: 'sonnet' };
-  const result = buildContextBreakdown(convo, null, null, null, window);
+  const result = buildContextBreakdown(convo, historyOf(convo), null, null, null, window);
 
   assert.equal(result.totalTokensEst, 966_000, 'our history estimate still holds everything');
   assert.equal(result.totalTokens, 52_704, 'the headline follows the provider, not our store');
@@ -280,11 +294,19 @@ function bigConversation() {
 }
 
 test('session-file context is used when the live usage event has not run', () => {
-  const result = buildContextBreakdown(bigConversation(), null, null, null, WINDOW_200K, {
-    contextTokens: 52_704,
-    contextWindow: null,
-    compaction: null,
-  });
+  const result = buildContextBreakdown(
+    bigConversation(),
+    historyOf(bigConversation()),
+    null,
+    null,
+    null,
+    WINDOW_200K,
+    {
+      contextTokens: 52_704,
+      contextWindow: null,
+      compaction: null,
+    }
+  );
   // Without the file path this thread would show the chars/4 estimate and stay
   // wrong until it happened to take another turn.
   assert.equal(result.readingSource, 'measured');
@@ -296,7 +318,7 @@ test('the live usage event outranks the session file when both are present', () 
     messages: [{ role: 'user', content: 'x'.repeat(40_000) }],
     providerUsage: { contextTokens: 99_000 },
   });
-  const result = buildContextBreakdown(convo, null, null, null, WINDOW_200K, {
+  const result = buildContextBreakdown(convo, historyOf(convo), null, null, null, WINDOW_200K, {
     contextTokens: 52_704,
     contextWindow: null,
     compaction: null,
@@ -323,7 +345,7 @@ test('a live reading past a known window is an aggregate, not a context size', (
     },
   });
   const window: ContextWindow = { source: 'provider', tokens: 258_400 };
-  const result = buildContextBreakdown(convo, null, null, null, window, {
+  const result = buildContextBreakdown(convo, historyOf(convo), null, null, null, window, {
     contextTokens: 244_247,
     contextWindow: 258_400,
     compaction: null,
@@ -338,7 +360,7 @@ test('an over-budget live reading against an operator budget still shows', () =>
     providerUsage: { contextTokens: 150_000 },
   });
   const window: ContextWindow = { source: 'operator', tokens: 100_000 };
-  const result = buildContextBreakdown(convo, null, null, null, window, null);
+  const result = buildContextBreakdown(convo, historyOf(convo), null, null, null, window, null);
   // Exceeding a configured budget is the signal, not an error: the meter must
   // read over 100%, not fall back to the estimate.
   assert.equal(result.totalTokens, 150_000);
@@ -350,7 +372,7 @@ test('the unknown-model floor never discards a live reading', () => {
     providerUsage: { contextTokens: 500_000 },
   });
   const window: ContextWindow = { source: 'unknown', tokens: 200_000, modelId: null };
-  const result = buildContextBreakdown(convo, null, null, null, window, null);
+  const result = buildContextBreakdown(convo, historyOf(convo), null, null, null, window, null);
   // The 200k floor is a display guess for an unrecognised model, not physics:
   // a real 1M-window model at 500k must show, not fall back to chars/4.
   assert.equal(result.totalTokens, 500_000);
@@ -359,11 +381,19 @@ test('the unknown-model floor never discards a live reading', () => {
 test('a harness compaction marker is reported even when the ratio would not fire', () => {
   // measured sits just UNDER the estimate -- nowhere near the 0.9 ratio -- so
   // inference alone would miss a compaction the harness explicitly recorded.
-  const result = buildContextBreakdown(bigConversation(), null, null, null, WINDOW_200K, {
-    contextTokens: 9_900,
-    contextWindow: null,
-    compaction: { count: 3, preTokens: 968_884, postTokens: 10_737, trigger: 'auto' },
-  });
+  const result = buildContextBreakdown(
+    bigConversation(),
+    historyOf(bigConversation()),
+    null,
+    null,
+    null,
+    WINDOW_200K,
+    {
+      contextTokens: 9_900,
+      contextWindow: null,
+      compaction: { count: 3, preTokens: 968_884, postTokens: 10_737, trigger: 'auto' },
+    }
+  );
   assert.equal(result.compaction?.detected, true);
   assert.equal(result.compaction?.source, 'marker');
   assert.equal(result.compaction?.count, 3);
@@ -372,11 +402,19 @@ test('a harness compaction marker is reported even when the ratio would not fire
 });
 
 test('without a marker the ratio heuristic still fires, and says so', () => {
-  const result = buildContextBreakdown(bigConversation(), null, null, null, WINDOW_200K, {
-    contextTokens: 1_000,
-    contextWindow: null,
-    compaction: null,
-  });
+  const result = buildContextBreakdown(
+    bigConversation(),
+    historyOf(bigConversation()),
+    null,
+    null,
+    null,
+    WINDOW_200K,
+    {
+      contextTokens: 1_000,
+      contextWindow: null,
+      compaction: null,
+    }
+  );
   assert.equal(result.compaction?.detected, true);
   assert.equal(result.compaction?.source, 'inferred');
   // An inferred detection cannot report counts it never observed.
@@ -385,11 +423,19 @@ test('without a marker the ratio heuristic still fires, and says so', () => {
 });
 
 test('sections never sum above the measured context', () => {
-  const result = buildContextBreakdown(bigConversation(), null, null, null, WINDOW_200K, {
-    contextTokens: 2_000,
-    contextWindow: null,
-    compaction: { count: 1, preTokens: null, postTokens: null, trigger: null },
-  });
+  const result = buildContextBreakdown(
+    bigConversation(),
+    historyOf(bigConversation()),
+    null,
+    null,
+    null,
+    WINDOW_200K,
+    {
+      contextTokens: 2_000,
+      contextWindow: null,
+      compaction: { count: 1, preTokens: null, postTokens: null, trigger: null },
+    }
+  );
   const summed =
     result.sections.history.tokensScaled +
     result.sections.briefing.tokensScaled +

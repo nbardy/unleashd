@@ -12,7 +12,6 @@ import type {
   ConversationKind,
   ConversationRow,
   Message,
-  MessagePage,
   OompaRuntimeSnapshot,
   Provider as ProviderName,
   ProviderTurnUsage,
@@ -133,7 +132,53 @@ export interface ConversationRuntimeDependencies extends BuddyTurnPolicyDependen
   /** Test seam for the real provider boundary; production uses agent-cli directly. */
   executeTurn?: typeof executeCommand;
   turnAttempts?: RuntimeTurnAttemptObserver;
+  /** The ingest list (production); absent = a host with no transcripts (the overlay is all). */
+  history?: RuntimeHistory;
 }
+
+/** What the history owns in a runtime's row: label, times and the served history's length. */
+export interface HistoryRowFields {
+  label: string;
+  createdAt: number;
+  activityAt: number;
+  messageCount: number;
+}
+
+/** A runtime as the history reads it. */
+export interface HistorySubject {
+  readonly id: string;
+  readonly title?: string;
+  readonly messages: readonly Message[];
+  readonly createdAt: Date;
+  hasActiveProcess(): boolean;
+}
+
+/**
+ * The history port (server/src/ingest/conversation-list.ts): rows take their durable fields
+ * from it, so a runtime's row and a listed row follow one rule; `idle` applies transcript
+ * changes that were held back while a turn ran.
+ */
+export interface RuntimeHistory {
+  fields(conversation: HistorySubject): HistoryRowFields;
+  idle(conversationId: string): void;
+}
+
+/** A conversation with no transcript yet (app-created, first turn not flushed): its overlay. */
+export function overlayHistoryFields(conversation: HistorySubject): HistoryRowFields {
+  const createdAt = conversation.createdAt.getTime();
+  const last = conversation.messages.at(-1);
+  return {
+    label: conversationLabel(conversation.title, conversation.messages),
+    createdAt,
+    activityAt: last ? new Date(last.timestamp).getTime() : createdAt,
+    messageCount: conversation.messages.length,
+  };
+}
+
+const OVERLAY_ONLY_HISTORY: RuntimeHistory = {
+  fields: overlayHistoryFields,
+  idle: () => undefined,
+};
 
 const LOG_CONTENT_PREVIEW_CHARS = 140;
 
@@ -170,9 +215,11 @@ export interface ConversationOptions {
 }
 
 export interface ConversationRuntime extends EventEmitter, ConversationRuntimeView {
+  /**
+   * The live-turn overlay: messages this server appended this run. Disk history is never loaded
+   * here; the ingest list merges it with this overlay (server/src/ingest/conversation-list.ts).
+   */
   messages: Message[];
-  /** Bumped whenever `messages` is replaced rather than appended (MessagePage.epoch). */
-  readonly messagesEpoch: number;
   process: ChildProcess | null;
   isStreaming: boolean;
   createdAt: Date;
@@ -223,7 +270,6 @@ export interface ConversationRuntime extends EventEmitter, ConversationRuntimeVi
   getMemorySnapshot(): MemorySnapshot | null;
   toRow(): ConversationRow;
   toDetail(): ConversationDetail;
-  messagePage(afterSeq: number, limit: number): MessagePage;
   /** Append one message: broadcast it and the row's new activity. */
   appendMessage(message: Message): void;
   /** Send one field patch for this conversation. */
@@ -257,6 +303,7 @@ export function createConversationRuntime(
     getConversation,
     createSessionId,
   } = dependencies;
+  const history = dependencies.history ?? OVERLAY_ONLY_HISTORY;
   const runnerPorts = {
     broadcast,
     registerSessionAlias,
@@ -278,24 +325,20 @@ export function createConversationRuntime(
   return class Conversation extends EventEmitter {
     id: string; // UI conversation ID (persists across resets)
     sessionId: string; // Provider CLI session ID (can be reset for fresh context)
-    // Replacing the array with anything but an extension of it (history
-    // restore, native merge) bumps the epoch, so a client that paged the old
-    // history refetches from the start instead of appending to a stale prefix.
-    private _messages: Message[] = [];
-    private _messagesEpoch = 0;
-    get messages(): Message[] {
-      return this._messages;
-    }
-    set messages(value: Message[]) {
-      if (!extendsHistory(this._messages, value)) this._messagesEpoch += 1;
-      this._messages = value;
-    }
-    get messagesEpoch(): number {
-      return this._messagesEpoch;
-    }
+    messages: Message[] = [];
     // The last run state sent, so a status change publishes one `run` patch.
     private _publishedRun: RunState = 'idle';
-    process: ChildProcess | null;
+    private _process: ChildProcess | null = null;
+    get process(): ChildProcess | null {
+      return this._process;
+    }
+    // The provider process exiting is the idle boundary: transcript changes that arrived while
+    // the turn ran are merged now, replacing the overlay's rows with the provider's own.
+    set process(value: ChildProcess | null) {
+      const ended = this._process !== null && value === null;
+      this._process = value;
+      if (ended) history.idle(this.id);
+    }
     isRunning: boolean;
     // Server-authoritative: assistant is actively producing content.
     // INVARIANT: !isRunning → !isStreaming (enforced by the runner's completion paths).
@@ -1010,7 +1053,7 @@ export function createConversationRuntime(
 
     /** Provider title, else the first user line with hidden envelopes stripped. */
     label(): string {
-      return conversationLabel(this.title, this._messages);
+      return history.fields(this).label;
     }
 
     // Pattern: patches-not-snapshots (docs/patterns.md#patches-not-snapshots)
@@ -1022,10 +1065,7 @@ export function createConversationRuntime(
         resumedFrom: this.resumedFromConversationId,
         provider: this.provider,
         cwd: this.workingDirectory,
-        label: this.label(),
-        createdAt: this.createdAt.getTime(),
-        activityAt: this.activityAt(),
-        messageCount: this._messages.length,
+        ...history.fields(this),
         run: this.runState(),
         done: this.done,
       };
@@ -1043,22 +1083,8 @@ export function createConversationRuntime(
       };
     }
 
-    messagePage(afterSeq: number, limit: number): MessagePage {
-      return {
-        epoch: this._messagesEpoch,
-        total: this._messages.length,
-        afterSeq,
-        messages: this._messages.slice(afterSeq + 1, afterSeq + 1 + limit),
-      };
-    }
-
-    private activityAt(): number {
-      const last = this._messages.at(-1);
-      return (last ? new Date(last.timestamp) : this.createdAt).getTime();
-    }
-
     appendMessage(message: Message): void {
-      this._messages.push(message);
+      this.messages.push(message);
       broadcast({
         type: 'message',
         conversationId: this.id,
@@ -1069,11 +1095,8 @@ export function createConversationRuntime(
     }
 
     publishActivity(): void {
-      this.publish({
-        t: 'activity',
-        activityAt: this.activityAt(),
-        messageCount: this._messages.length,
-      });
+      const { activityAt, messageCount } = history.fields(this);
+      this.publish({ t: 'activity', activityAt, messageCount });
     }
 
     /** Turn end: the new history length and the provider's observations. */
@@ -1095,41 +1118,24 @@ export function createConversationRuntime(
   };
 }
 
-/**
- * `next` keeps every message of `previous` except possibly the last (a
- * streamed reply that grew), so a client may keep its prefix and refetch the
- * tail. The last message is exempt because clients always re-read it.
- */
-function extendsHistory(previous: readonly Message[], next: readonly Message[]): boolean {
-  if (next.length < previous.length) return false;
-  for (let index = 0; index < previous.length - 1; index += 1) {
-    const a = previous[index];
-    const b = next[index];
-    if (a !== b && (a.role !== b.role || a.content !== b.content)) return false;
-  }
-  return true;
-}
-
-const LABEL_MAX_CHARS = 80;
+// The crate's rule (markers.rs `label`): 60 UTF-16 units, whitespace folded onto one line.
+const LABEL_MAX_UNITS = 60;
 const HIDDEN_ENVELOPE_RE = /<!--[\s\S]*?-->/g;
 const OOMPA_TAG_RE = /^\[oompa[^\]]*\]\s*/i;
 
 /**
- * The list label, derived once on the server so rows never ship message
- * bodies: provider title, else the first non-empty line of the first user
- * message (hidden `<!-- ... -->` envelopes and the oompa tag removed).
+ * The label of a conversation whose transcript the ingest store has not read yet: provider
+ * title, else the first user message with hidden `<!-- ... -->` envelopes and the oompa tag
+ * removed, folded onto one line. It is the crate's rule for a listed row, so the label does not
+ * change when the transcript lands (T13b S2; until then the runtime kept line 1 at 80 chars and
+ * the list folded every line at 60, so multi-line prompts showed two labels).
  */
 export function conversationLabel(title: string | undefined, messages: readonly Message[]): string {
   if (title?.trim()) return title.trim();
   const source = messages.find((message) => message.role === 'user') ?? messages[0];
   if (!source) return 'New conversation';
-  const firstLine =
-    source.content
-      .replace(HIDDEN_ENVELOPE_RE, '')
-      .split('\n')
-      .map((line) => line.trim())
-      .find((line) => line.length > 0) ?? '';
-  const cleaned = firstLine.replace(OOMPA_TAG_RE, '').trim() || firstLine;
-  if (!cleaned) return 'New conversation';
-  return cleaned.length > LABEL_MAX_CHARS ? `${cleaned.slice(0, LABEL_MAX_CHARS - 1)}…` : cleaned;
+  const visible = source.content.replace(HIDDEN_ENVELOPE_RE, '').trim().replace(OOMPA_TAG_RE, '');
+  const line = visible.split(/\s+/).filter(Boolean).join(' ');
+  if (!line) return 'New conversation';
+  return line.length > LABEL_MAX_UNITS ? `${line.slice(0, LABEL_MAX_UNITS - 1)}…` : line;
 }

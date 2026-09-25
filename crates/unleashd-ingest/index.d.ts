@@ -48,6 +48,12 @@ export declare class Ingest {
    * transcript of that id records one. Replaces session-context.ts.
    */
   latestContext(sessionId: string): Promise<ContextReading | null>
+  /**
+   * Deep search: the newest listed messages (at most `limit`) whose text contains `query`, ASCII
+   * case-insensitively. It scans the message table (~0.5-1 s on 290k messages), so it runs on
+   * a connection of its own and never holds the reader that serves message pages.
+   */
+  search(query: string, limit: number): Promise<Array<SearchHit>>
   /** Stop watching and release `onChange` (so Node can exit). Idempotent. */
   stop(): Promise<void>
 }
@@ -75,7 +81,7 @@ export type BuddyVisibility = 'foreground' | 'background'
 
 /** What `onChange` receives. */
 export type ChangeEvent =
-  | { t: 'changes'; rev: number; sessionIds: Array<string>; removed: Array<string> }
+  | { t: 'changes'; rev: number; sessionIds: Array<string>; rewritten: Array<string>; removed: Array<string> }
   | { t: 'failed'; message: string }
 
 /** A compaction the harness recorded with its own marker record (never inferred from numbers). */
@@ -326,6 +332,12 @@ export interface ScanReport {
   /** Roots that do not exist; they are not watched (restart once the provider creates them). */
   missingRoots: Array<string>
   rev: number
+}
+
+/** One deep-search match. */
+export interface SearchHit {
+  sessionId: string
+  message: Message
 }
 
 export interface SessionBinding {

@@ -27,7 +27,6 @@ export interface StartupPorts {
   markReady(): boolean;
   abortStartup(): void;
   loadConversations(): Promise<void>;
-  startPolling(): void;
 }
 
 export async function runServerStartup(
@@ -57,9 +56,8 @@ export async function runServerStartup(
     exec(`${command} ${startUrl}`);
   });
 
-  // Barrier is intentional (59da781): authoritative init + single mtime
-  // baseline. WS `init` streams summaries with loading:true; Phase 1 was
-  // 38s before batches (composite opencode) — now single-stat in loader.ts.
+  // Barrier is intentional (59da781): commands on existing history wait for the
+  // list and the app conversations' runtimes (hello streams rows with loading:true).
   console.log('Loading conversations before accepting WebSocket commands...');
   await ports.loadConversations();
   if (!ports.isStartupActive()) {
@@ -71,7 +69,6 @@ export async function runServerStartup(
     ports.pauseOptionalScheduler();
     return;
   }
+  // No poller: transcript changes arrive from the ingest store's watcher (T13b S2).
   console.log('Initial load complete; WebSocket handlers unblocked');
-  ports.startPolling();
-  console.log('File polling started (5s interval)');
 }

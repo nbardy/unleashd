@@ -40,6 +40,7 @@ fn scan_append_delete_and_warm_restart() {
     let report = engine.changed([a.clone()].into(), &mut |c| commits.push(c.clone()));
     assert_eq!((report.resumed, report.messages_written), (1, 1));
     assert_eq!(commits.last().unwrap().session_ids, ["a"]);
+    assert!(commits.last().unwrap().rewritten.is_empty(), "an append is not a rewrite");
     let (rev2, changed, _) = reader.list_sessions(rev).unwrap();
     assert_eq!(changed.iter().map(|r| (r.session_id.as_str(), r.message_count)).collect::<Vec<_>>(), [("a", 3)]);
     let tail = reader.messages("a", 1, 10).unwrap();
@@ -116,4 +117,39 @@ fn every_store_read_uses_an_index() {
             assert!(!full_scan, "full table scan in {query}: {line}");
         }
     }
+}
+
+/// The server caches message pages by seq and refetches only the tail on an append; it must learn
+/// when a session's history was replaced instead (T13b: without `rewritten` a truncated or
+/// rewritten transcript kept its stale prefix in every open client).
+#[test]
+fn a_rewritten_source_is_reported_as_rewritten() {
+    let dir = tempfile::tempdir().unwrap();
+    let a = dir.path().join("claude/-w/a.jsonl");
+    write(&a, &format!("{}{}", user("a1"), user("a2")));
+    let db = dir.path().join("ingest.sqlite");
+    let mut commits: Vec<Committed> = Vec::new();
+    let mut engine = Engine::open(roots(dir.path()), &db).unwrap();
+    engine.scan(&mut |c| commits.push(c.clone()));
+    write(&a, &user("b1"));
+    engine.changed([a.clone()].into(), &mut |c| commits.push(c.clone()));
+    let last = commits.last().unwrap();
+    assert_eq!((last.session_ids.as_slice(), last.rewritten.as_slice()), (&["a".to_string()][..], &["a".to_string()][..]));
+}
+
+/// Deep search replaced a scan of every loaded transcript held in server memory (T13b). `%` and `_`
+/// in the query are literal: unescaped, "100%" matched every message containing "100".
+#[test]
+fn search_finds_listed_messages_newest_first_with_literal_wildcards() {
+    let dir = tempfile::tempdir().unwrap();
+    let a = dir.path().join("claude/-w/a.jsonl");
+    write(&a, &format!("{}{}{}", user("Deploy at 100% load"), user("deploy at 1000 load"), user("unrelated")));
+    let db = dir.path().join("ingest.sqlite");
+    Engine::open(roots(dir.path()), &db).unwrap().scan(&mut |_| {});
+    let reader = Reader::open(&db).unwrap();
+    let hits = reader.search("DEPLOY", 10).unwrap();
+    assert_eq!(hits.len(), 2);
+    assert!(hits.iter().all(|h| h.session_id == "a"));
+    let literal = reader.search("100%", 10).unwrap();
+    assert_eq!(literal.iter().map(|h| h.message.content.as_str()).collect::<Vec<_>>(), ["Deploy at 100% load"]);
 }

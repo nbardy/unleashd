@@ -12,7 +12,6 @@ import {
   decodeRows,
 } from '@unleashd/shared';
 import express from 'express';
-import { runtimeMessageSource } from '../src/conversations/messages';
 import { type ConversationRuntime, createConversationRuntime } from '../src/conversations/runtime';
 import { registerConversationRoutes } from '../src/http/conversation-routes';
 import { resolveConfigAgainstProviderCatalog } from '../src/providers/catalog-service';
@@ -81,6 +80,9 @@ function socketHarness(conversations: ConversationRuntime[]) {
   registerConversationWebSocket(
     sockets as never,
     {
+      listedRows: () => [],
+      materialize: async () => undefined,
+      forgetListed: () => undefined,
       registry: {
         get: (id: string) => byId.get(id),
         values: () => byId.values(),
@@ -155,13 +157,23 @@ test('a done toggle on a large conversation sends one small patch, never the con
   assert.ok(frame.length < 200, `done patch is ${frame.length} bytes`);
 });
 
-test('message bodies page by seq, and a replaced history changes the epoch', async () => {
+// The epoch (a replaced history refetches) is the ingest list's: ingest-history.test.ts.
+test('message bodies page by seq', async () => {
   const conversation = heavyConversation(1);
   const app = express();
   registerConversationRoutes(
     app,
-    (id) => (id === conversation.id ? conversation : undefined),
-    runtimeMessageSource((id) => (id === conversation.id ? conversation : undefined))
+    async (id) => (id === conversation.id ? conversation : undefined),
+    async (id, { afterSeq, limit }) =>
+      id === conversation.id
+        ? {
+            epoch: 0,
+            total: conversation.messages.length,
+            afterSeq,
+            messages: conversation.messages.slice(afterSeq + 1, afterSeq + 1 + limit),
+          }
+        : null,
+    { ingest: () => ({ t: 'starting' }) }
   );
   const server = app.listen(0, '127.0.0.1');
   await once(server, 'listening');
@@ -176,13 +188,6 @@ test('message bodies page by seq, and a replaced history changes the epoch', asy
     assert.equal(first.messages.length, 150);
     const rest = MessagePageSchema.parse((await read('afterSeq=149&limit=150')).body);
     assert.equal(rest.messages.length, 50);
-    assert.equal(rest.epoch, first.epoch, 'appends keep the epoch');
-
-    // Appending keeps the prefix: same epoch. Replacing it does not.
-    conversation.messages = [...conversation.messages, conversation.messages[0]];
-    assert.equal(MessagePageSchema.parse((await read('afterSeq=199')).body).epoch, first.epoch);
-    conversation.messages = conversation.messages.slice(5);
-    assert.notEqual(MessagePageSchema.parse((await read('afterSeq=-1')).body).epoch, first.epoch);
 
     assert.equal((await read('afterSeq=nope')).status, 400);
   } finally {

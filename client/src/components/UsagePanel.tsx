@@ -154,7 +154,12 @@ export function UsagePanel({ onClose }: Props) {
     // cache with data for the wrong window. A stale response is dropped entirely.
     let cancelled = false;
     fetch(`/api/usage?days=${days}`)
-      .then((r) => r.json())
+      // A 503 (transcript store still starting) carries `{error}`, not UsageData; rendering it
+      // would throw on `data.daily`. Treat it like a network failure.
+      .then((r) => {
+        if (!r.ok) throw new Error(`usage ${r.status}`);
+        return r.json();
+      })
       .then((d: UsageData) => {
         if (cancelled) return;
         clientCache = { days, data: d, time: Date.now() };

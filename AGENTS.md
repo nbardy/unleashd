@@ -17,7 +17,7 @@ server/src/conversations/config-{service,records}.ts → durable configuration a
                                      (records: Rust ConversationRecords store, own SQLite file)
 server/src/transport/conversation-websocket.ts → WS command routing
 server/src/observability/error-journal.ts → durable grouped server/client failures
-server/src/adapters/*              → registry/disk-adapter/loader: session persistence
+server/src/ingest/*                → transcripts + list from the Rust ingest addon; runtimes
 server/src/auth/*                  → shared-secret gate (policy/gate/express)
 server/src/providers/*             → provider registry + catalog service (models from the generated catalog)
 server/src/buddies/*               → Buddy server over the crate: grants, mcp (one HTTP
@@ -225,7 +225,7 @@ magenta). Run 1 and 3 back-to-back: live data drifts (sidebar badges,
   mutate the JSONL journal directly. Its configured location and capture policy
   are documented in `docs/error-journal.md`.
 - Adding a provider: harness (submodule) + catalog.jsonc entry (`pnpm check:catalog`) +
-  `ProviderSchema` in shared + disk adapter if persisted.
+  `ProviderSchema` in shared + a parser in `crates/unleashd-ingest` if persisted.
 - Buddy sections are ROUTES, not tab state: `/buddies/:buddyId/:tab` with
   `/buddies/:buddyId` redirecting onto the default tab. Tab segments and labels
   live in `client/src/components/buddies/buddy-tabs.ts` (pure, mobile-safe).
