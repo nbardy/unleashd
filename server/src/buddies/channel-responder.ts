@@ -5,7 +5,11 @@ import {
   buddyExecutionPreferences,
   configFromProviderPreferences,
 } from '../conversations/config-mapping';
-import type { ConversationRuntime, SessionRelativePrompt } from '../conversations/runtime';
+import type {
+  ConversationRuntime,
+  SeatTurnInput,
+  SessionRelativePrompt,
+} from '../conversations/runtime';
 import {
   type LiveConversation,
   type StableConversationPorts,
@@ -301,6 +305,23 @@ function buildPrompt(input: {
       '[title](task:<projectId>). Do not also call post for this reply. If the request needs ' +
       'real work, do it or hand it off with send/update_project, then say what you did.',
   ].join('\n');
+}
+
+// Owner authority for a seat turn follows the author of its trigger post, read
+// back from the store by id — never from the prompt, which quotes Buddy text.
+// B1 (2026-09-25): every seat turn was sent as 'owner_input', so a follow-up
+// gated on ANOTHER BUDDY's post ran with owner controls and the unleashd_owner
+// MCP (configure_team, owner document writes). A Buddy-authored trigger is a
+// 'buddy_post' turn: same seat audience and Buddy tools, no owner authority.
+function seatTurnInput(store: BuddiesStorePort, triggerId: string): SeatTurnInput {
+  const trigger = store.getPost(triggerId);
+  if (!trigger) throw new Error(`Trigger post ${triggerId} is gone`);
+  switch (trigger.author.kind) {
+    case 'owner':
+      return { origin: 'owner_input', inputId: trigger.id };
+    case 'buddy':
+      return { origin: 'buddy_post', inputId: trigger.id };
+  }
 }
 
 function buddyAuthorIds(author: BuddyListAuthor): string[] {
@@ -603,14 +624,12 @@ export function createChannelResponder(ports: ChannelResponderPorts) {
       await untilIdle(conversation);
       contextReadAt.set(pairKey(input.threadRootId, input.buddyId), new Date().toISOString());
       const prompt = seatPrompt(store, input, conversation.id);
+      const turnInput = seatTurnInput(store, input.trigger.id);
       let untrack: () => void = () => undefined;
       const text = await awaitTurn(
         conversation,
         () => {
-          conversation.sendSessionRelativeMessage(prompt, {
-            origin: 'owner_input',
-            inputId: input.trigger.id,
-          });
+          conversation.sendSessionRelativeMessage(prompt, turnInput);
           untrack = trackRunSlot(
             pairKey(input.threadRootId, input.buddyId),
             input.list.id,

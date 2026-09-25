@@ -240,10 +240,20 @@ export interface ConversationRuntimeView {
   toJSON(): ConversationData;
 }
 
+// Who a turn's input came from. Only 'owner_input' carries owner authority
+// (owner controls + the unleashd_owner MCP, see spawnForMessage).
+// 'buddy_post': a channel-thread seat answering a post ANOTHER BUDDY wrote. It
+// keeps the seat's conversation audience (so the seat's provider session
+// continues) but never owner authority: until 2026-09-25 (B1) the responder
+// sent these as 'owner_input', so Buddy-authored thread text drove turns that
+// held configure_team and owner document writes.
 type TurnInput = Readonly<{
-  origin: 'owner_input' | 'buddy_message' | 'schedule' | 'unknown';
+  origin: 'owner_input' | 'buddy_post' | 'buddy_message' | 'schedule' | 'unknown';
   inputId: string;
 }>;
+
+/** A channel seat turn, attributed by the author of its stored trigger post. */
+export type SeatTurnInput = Readonly<{ origin: 'owner_input' | 'buddy_post'; inputId: string }>;
 
 /**
  * The disclosure audience a Buddy turn runs under. `key` is persisted with the
@@ -579,11 +589,8 @@ export interface ConversationRuntime extends EventEmitter, ConversationRuntimeVi
     content: string,
     ownerInput?: Readonly<{ origin: 'owner_input'; inputId: string }>
   ): void;
-  /** Owner input whose wording depends on whether the provider session resumes. */
-  sendSessionRelativeMessage(
-    prompt: SessionRelativePrompt,
-    ownerInput: Readonly<{ origin: 'owner_input'; inputId: string }>
-  ): void;
+  /** Seat input whose wording depends on whether the provider session resumes. */
+  sendSessionRelativeMessage(prompt: SessionRelativePrompt, input: SeatTurnInput): void;
   sendAutomationMessage(content: string): void;
   runCoordinationMessage(
     content: string,
@@ -844,10 +851,7 @@ export function createConversationRuntime(
     private _activeAttemptId: string | null = null;
     private _nextAttempt: { attemptId: string; queueMessageId?: string } | null = null;
     private _queuedAttemptIds = new Map<string, string>();
-    private _queuedOwnerInputs = new Map<
-      string,
-      Readonly<{ origin: 'owner_input'; inputId: string }>
-    >();
+    private _queuedInputs = new Map<string, TurnInput>();
     // Each queued item's wordings, so a Buddy turn that waits for a run slot is
     // still worded at admission by the session it reaches. The wire item shows
     // `fresh`; a missing entry therefore errs toward more context, never less.
@@ -1009,7 +1013,7 @@ export function createConversationRuntime(
     }
 
     private _cancelQueuedAttempt(queueMessageId: string): void {
-      this._queuedOwnerInputs.delete(queueMessageId);
+      this._queuedInputs.delete(queueMessageId);
       this._queuedPrompts.delete(queueMessageId);
       const attemptId = this._queuedAttemptIds.get(queueMessageId);
       if (!attemptId) return;
@@ -1137,6 +1141,8 @@ export function createConversationRuntime(
           this.once('buddy-turn-complete', complete);
           this.on('buddy-turn-failed', failed);
         }
+        // Owner authority comes from input provenance alone: a 'buddy_post'
+        // seat turn (another Buddy's channel post) never reaches here as owner.
         const hasOwnerControls =
           turnInput.origin === 'owner_input' &&
           !!dependencies.issueOwnerControlCapability &&
@@ -2211,15 +2217,12 @@ export function createConversationRuntime(
     // follow a wait for a run slot, and where a changed Buddy audience rotates
     // the provider session. Asking first and sending one prompt after leaves a
     // window for that decision to flip, so the caller hands over both wordings.
-    sendSessionRelativeMessage(
-      prompt: SessionRelativePrompt,
-      ownerInput: Readonly<{ origin: 'owner_input'; inputId: string }>
-    ): void {
+    sendSessionRelativeMessage(prompt: SessionRelativePrompt, input: SeatTurnInput): void {
       if (this.buddyContext?.automationRunId) {
         this.refuseAutomationTranscript();
         return;
       }
-      this.sendMessageInternal(prompt, ownerInput);
+      this.sendMessageInternal(prompt, input);
     }
 
     /**
@@ -2275,33 +2278,55 @@ export function createConversationRuntime(
     private contextForInput(input: TurnInput): BuddyContext | null {
       if (this._coordinationExecution) {
         const context = this._coordinationExecution.context;
-        return {
-          ...context,
-          knowledgeScope:
-            input.origin === 'owner_input'
-              ? { kind: 'owner_thread', conversationId: this.id }
-              : (context.knowledgeScope ??
+        switch (input.origin) {
+          case 'owner_input':
+          case 'buddy_post':
+            return {
+              ...context,
+              knowledgeScope: { kind: 'owner_thread', conversationId: this.id },
+            };
+          case 'buddy_message':
+          case 'schedule':
+          case 'unknown':
+            return {
+              ...context,
+              knowledgeScope:
+                context.knowledgeScope ??
                 (context.buddyProjectId
                   ? { kind: 'project', projectId: context.buddyProjectId }
-                  : { kind: 'workspace', workspaceId: context.workspaceId })),
-        };
+                  : { kind: 'workspace', workspaceId: context.workspaceId }),
+            };
+        }
       }
       if (!this.buddyContext) return null;
-      if (input.origin !== 'owner_input')
-        return {
-          ...this.buddyContext,
-          knowledgeScope: this.buddyContext.buddyProjectId
-            ? { kind: 'project', projectId: this.buddyContext.buddyProjectId }
-            : { kind: 'workspace', workspaceId: this.buddyContext.workspaceId },
-        };
-      // A new owner input gets a new foreground claim. Never rewrite a worker claim.
-      return {
-        ...this.buddyContext,
-        knowledgeScope: { kind: 'owner_thread', conversationId: this.id },
-        delegatedByBuddyId: null,
-        allowedBuddyOperations: undefined,
-        coordinationRunId: undefined,
-      };
+      switch (input.origin) {
+        // A new owner input gets a new foreground claim. Never rewrite a worker claim.
+        case 'owner_input':
+          return {
+            ...this.buddyContext,
+            knowledgeScope: { kind: 'owner_thread', conversationId: this.id },
+            delegatedByBuddyId: null,
+            allowedBuddyOperations: undefined,
+            coordinationRunId: undefined,
+          };
+        // Same audience as the seat's owner turns, so its provider session
+        // continues (a different scope fails the audience fence and resets it),
+        // but no new claim: only the owner may lift the context's restrictions.
+        case 'buddy_post':
+          return {
+            ...this.buddyContext,
+            knowledgeScope: { kind: 'owner_thread', conversationId: this.id },
+          };
+        case 'buddy_message':
+        case 'schedule':
+        case 'unknown':
+          return {
+            ...this.buddyContext,
+            knowledgeScope: this.buddyContext.buddyProjectId
+              ? { kind: 'project', projectId: this.buddyContext.buddyProjectId }
+              : { kind: 'workspace', workspaceId: this.buddyContext.workspaceId },
+          };
+      }
     }
 
     // A provider session resumes only while the current audience CONTAINS the
@@ -2358,12 +2383,10 @@ export function createConversationRuntime(
       // Buddy chat turns are admitted through the queue, so a turn waiting for
       // a run slot is visible as pending and later sends line up behind it.
       if (!this._sendingFromQueue) {
-        this.enqueuePrompt(
-          prompt,
-          input.origin === 'owner_input'
-            ? { origin: 'owner_input', inputId: input.inputId }
-            : undefined
-        );
+        // The queue keeps the input's provenance whatever its origin: a
+        // 'buddy_post' seat turn dropped here would come back 'unknown' and
+        // run under the workspace audience, resetting the seat's session.
+        this.enqueuePrompt(prompt, input);
         return;
       }
       const owned = this.admitForegroundChatRun(input);
@@ -3182,10 +3205,7 @@ export function createConversationRuntime(
      * Admit a message: register its turn attempt and build the queue record.
      * Placement (append vs prepend) is the caller's decision.
      */
-    private createQueuedMessage(
-      prompt: SessionRelativePrompt,
-      ownerInput?: Readonly<{ origin: 'owner_input'; inputId: string }>
-    ): QueuedMessage {
+    private createQueuedMessage(prompt: SessionRelativePrompt, input?: TurnInput): QueuedMessage {
       const msg: QueuedMessage = {
         id: crypto.randomUUID(),
         content: prompt.fresh,
@@ -3194,7 +3214,7 @@ export function createConversationRuntime(
       };
       const attemptId = crypto.randomUUID();
       this._queuedPrompts.set(msg.id, prompt);
-      if (ownerInput) this._queuedOwnerInputs.set(msg.id, Object.freeze({ ...ownerInput }));
+      if (input) this._queuedInputs.set(msg.id, Object.freeze({ ...input }));
       this._queuedAttemptIds.set(msg.id, attemptId);
       turnAttempts.queued({
         attemptId,
@@ -3233,16 +3253,13 @@ export function createConversationRuntime(
       this.enqueuePrompt(sameEitherWay(content), ownerInput);
     }
 
-    private enqueuePrompt(
-      prompt: SessionRelativePrompt,
-      ownerInput?: Readonly<{ origin: 'owner_input'; inputId: string }>
-    ): void {
+    private enqueuePrompt(prompt: SessionRelativePrompt, input?: TurnInput): void {
       if (this.buddyContext?.automationRunId) {
         this.refuseAutomationTranscript();
         return;
       }
       const queueDepthBefore = this.queue.length;
-      const msg = this.createQueuedMessage(prompt, ownerInput);
+      const msg = this.createQueuedMessage(prompt, input);
       this.queue.push(msg);
       console.log(
         `[${this.id}] Queued message id=${msg.id.substring(0, 8)}, queueDepth=${queueDepthBefore}->${this.queue.length}, contentLen=${msg.content.length}, preview="${formatLogPreview(msg.content)}"`
@@ -3368,14 +3385,14 @@ export function createConversationRuntime(
       );
       this.broadcastQueue();
       try {
-        const ownerInput = this._queuedOwnerInputs.get(next.id);
+        const queuedInput = this._queuedInputs.get(next.id);
         this._sendingFromQueue = true;
         try {
           // Automation transcripts never reach here (cleared above), so this is
           // sendMessage without its refusal, carrying the item's own wording.
           this.sendMessageInternal(
             this._queuedPrompts.get(next.id) ?? sameEitherWay(next.content),
-            ownerInput
+            queuedInput
           );
         } finally {
           this._sendingFromQueue = false;
@@ -3383,7 +3400,7 @@ export function createConversationRuntime(
         // Keep trusted input provenance while preflight leaves this item pending.
         // It is consumed only after provider admission, never serialized for restore.
         if (this.process || this.isRunning) {
-          this._queuedOwnerInputs.delete(next.id);
+          this._queuedInputs.delete(next.id);
           this._queuedPrompts.delete(next.id);
         }
       } catch (error) {

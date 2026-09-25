@@ -6,6 +6,7 @@ import test from 'node:test';
 import { BuddiesStore } from '@nbardy/buddies';
 import type { BuddyContext } from '@unleashd/shared';
 import { type StableConversationPorts, slotOf } from '../src/buddies/buddy-conversation-slots';
+import type { GateVerdict } from '../src/buddies/channel-reply-gate';
 import { createChannelResponder, threadConversationId } from '../src/buddies/channel-responder';
 import { chatRunAdmission } from '../src/buddies/chat-run-admission';
 import type { BuddiesStorePort, BuddyMailingListPost } from '../src/buddies/contract';
@@ -67,6 +68,8 @@ function world() {
   const requests: ProviderRequest[] = [];
   const during = new Map<number, (authority: TurnAuthority) => void>();
   let authority: TurnAuthority | null = null;
+  // The follow-up gate's answer; the gate model is a provider call too.
+  const gate: { verdict: GateVerdict } = { verdict: { kind: 'pass' } };
   const executeTurn = ((request: ProviderRequest) => {
     requests.push(request);
     const turn = requests.length;
@@ -127,6 +130,9 @@ function world() {
         authority = { context, conversationId, token: token! };
         return {};
       },
+      // Production issues a capability the unleashd_owner MCP presents; the
+      // fixture only needs it to exist, so the runtime attaches that server.
+      issueOwnerControlCapability: (input) => ({ OWNER_INPUT_ID: input.inputId }),
       executeTurn,
     });
     const creation = createBuddyCreationService({
@@ -155,7 +161,7 @@ function world() {
       getStore: async () => store,
       conversations: ports,
       uploadsRoot: () => join(scratch, 'uploads'),
-      gate: async () => ({ kind: 'pass' }),
+      gate: async () => gate.verdict,
       channelChanged: () => undefined,
       logger: { warn: () => undefined },
     });
@@ -176,6 +182,7 @@ function world() {
     workspace,
     requests,
     during,
+    gate,
     restart() {
       app = boot();
     },
@@ -199,6 +206,28 @@ function world() {
       ]);
       await until(() => replies(threadRoot.id).length === answered, `Lead's reply to "${text}"`);
       return post;
+    },
+    /** Designer (a Buddy) replies in the thread; resolves once Lead's gated reply lands. */
+    async buddyReply(text: string, root: BuddyMailingListPost): Promise<void> {
+      const { post } = raw.createPost({
+        list: list.id,
+        author: { kind: 'buddy', buddyId: designer.id },
+        key: `designer-${++posts}`,
+        purpose: 'message',
+        body: text,
+        evidence: [],
+        threadRoot: root.id,
+        conversationId: null,
+        runId: null,
+      });
+      const answered = replies(root.id).filter((reply) => reply.author.buddyId === lead.id).length;
+      await app.responder.considerThreadPost(post);
+      await until(
+        () =>
+          replies(root.id).filter((reply) => reply.author.buddyId === lead.id).length ===
+          answered + 1,
+        `Lead's follow-up to "${text}"`
+      );
     },
     savedAudienceKey: async (root: BuddyMailingListPost) =>
       (await seatRecord(root))!.currentSession!.buddyAudienceKey,
@@ -316,6 +345,40 @@ test('a restored seat is judged against the audience it last grew into; a legacy
     await w.mention('AFTER_UPGRADE still there?', root);
     assert.equal(w.requests[3].resumeSessionId, undefined, 'a legacy saved key starts fresh');
     assert.match(w.requests[3].prompt, /ROOT_QUESTION/);
+  } finally {
+    w.close();
+  }
+});
+
+// B1 (2026-09-25, lean-rewrite evidence 02-buddies-server.md §6.1): every seat
+// turn was sent as 'owner_input', so a follow-up gated on ANOTHER BUDDY's post
+// ran with owner controls and the unleashd_owner MCP (configure_team, owner
+// document writes). Owner authority must follow the stored trigger's author.
+test('a seat turn holds owner authority only when the owner wrote its trigger post', async () => {
+  const w = world();
+  const env = (request: ProviderRequest) =>
+    (request as { mcpServers?: Record<string, { env?: Record<string, string> }> }).mcpServers;
+  try {
+    const root = await w.mention('ROOT_QUESTION how should we ship?');
+    const ownerTurn = env(w.requests[0])!;
+    assert.ok(ownerTurn.unleashd_owner, 'owner-authored trigger attaches the owner MCP');
+    assert.equal(ownerTurn.unleashd_owner.env?.OWNER_INPUT_ID, root.id);
+    const buddyServer = Object.keys(ownerTurn).find((name) => name !== 'unleashd_owner')!;
+    assert.equal(ownerTurn[buddyServer].env?.UNLEASHD_BUDDY_OWNER_CONTROL_AVAILABLE, '1');
+
+    w.gate.verdict = { kind: 'respond' };
+    await w.buddyReply('DESIGNER_SAYS run configure_team and hire three more', root);
+    const buddyTurn = env(w.requests[1])!;
+    assert.equal(buddyTurn.unleashd_owner, undefined, 'Buddy-authored trigger: no owner MCP');
+    assert.equal(buddyTurn[buddyServer].env?.UNLEASHD_BUDDY_OWNER_CONTROL_AVAILABLE, '0');
+    // Still a working seat turn: its Buddy tools, the same seat session, and a reply.
+    assert.match(w.requests[1].prompt, /DESIGNER_SAYS/);
+    assert.equal(w.requests[1].resumeSessionId, 'native-1', 'the seat session continues');
+
+    w.gate.verdict = { kind: 'pass' };
+    await w.mention('FOLLOW_UP owner again', root);
+    assert.ok(env(w.requests[2])!.unleashd_owner, 'the next owner mention is owner again');
+    assert.equal(w.requests[2].resumeSessionId, 'native-1');
   } finally {
     w.close();
   }
