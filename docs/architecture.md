@@ -89,29 +89,25 @@ Adding a provider means adding:
 - a server provider,
 - a disk adapter (if persisted artifacts are needed).
 
-Startup imports use `ConversationConfigStore.withSessionLookupIndex` to scan
-saved configuration identities once. Without it, every unfamiliar native session
-can trigger two full record scans, even when its transcript hits the session cache.
-The first scope builds an in-memory index (session ID → conversation IDs) from
-that scan, and the index then lives for the process: every write through the
-store maintains it, so after startup a lookup miss is the answer and never
-rescans. Until 2026-09-25 it was dropped when the scope ended, and each miss the
-poller made for a new external session (up to 3 per session) read all ~7,800
-records (~3.2s). Every hit still reads the authoritative record. Another
-process's writes are found through the durable `by-session/` index it maintains,
-which lookup consults first; a record with no durable entry (older versions) is
-covered by the startup scan. The scope's cached record scan (served by `list()`)
-is released on completion or failure. This optimization preserves the existing
-hydration/readiness barrier.
+Conversation records live in the Rust `ConversationRecords` store
+(`crates/unleashd-ingest/src/records`), reached through
+`ConversationRecordStore` in `server/src/conversations/config-records.ts`. The
+store owns validation, the session index (session ID → conversation, written
+in the record's own transaction) and compare-and-set revisions (`BEGIN
+IMMEDIATE`, exact across processes), so a session lookup is one indexed query
+and never a record scan. Until T23b (2026-09-26) records were `config-store.ts`:
+one JSON file per conversation plus one per session, all read at startup —
+18,850 reads of 8,019 records in the first 7s (T14b). Only the addon may open
+the records file in this process: node:sqlite is a second SQLite library, and
+two in one process broke POSIX locking (SIGBUS in the T12 parity run).
 
 **Startup cost rules** (2026-09-25: the barrier took 67-102s on ~7,700 sources
 and ~7,800 records; these brought it to 14-20s on the same data). Each is
 guarded by a test; every one of them regressed by growing with history size.
 
-- **One record scan per startup, and nothing waits for it.** The lookup scope's
-  scan runs alongside discovery; only a lookup miss awaits it. `list()` inside
-  the scope serves that scan plus fresh reads of records this store wrote since —
-  recovery used to rescan all records a second time.
+- **No record scans.** Lookups and startup listing are indexed queries on the
+  records store (`listSummaries`, 8,164 rows in ~100ms warm); the JSON-file
+  store's per-startup scan and its lookup scope are gone.
 - **No per-binding scan of sources.** Adapters declare `sessionFileKeys(path)`;
   the loader indexes discovery once. A `matches(file, id)` predicate made each
   binding walk every source (O(bindings × sources), ~8s).
@@ -135,7 +131,7 @@ Startup hydrates only the newest `STARTUP_INITIAL_LOAD_LIMIT` (500) transcripts;
 the mtime baseline still records every source, so `limit` is a real hydration
 cap and the omitted history does not look "new" to the first poll.
 
-The config store writes one durable record per session it has ever seen,
+The records store holds one durable record per session it has ever seen,
 tagged `provenance: 'external_discovered'`. That record is a **sidecar for a
 transcript on disk, not evidence that a conversation exists.** Only records the
 app itself created (`user` / `legacy_inferred`) may be materialised without a
@@ -221,24 +217,17 @@ buddy MCP scoping while their link row stayed live. The visible symptom was
 
 Regression guard: `server/test/session-loader-hydration.test.ts`.
 
-Related: link rows are never deleted — deletion only flips status to `cancelled`
-(`transport/conversation-websocket.ts`), which is also what a stopped or killed turn writes
-(`runtime.ts`). **Never filter the Buddies page on link status** — it would hide
-live conversations. `GET /api/buddies/:buddyId` instead asks the config store
-for a tombstone (`isConversationDeleted`), the only unambiguous "this is gone"
-signal. Links carrying only a `provider_session_id` are kept: there is no
-conversation record to tombstone them against.
-
 ## 3) Conversation lifecycle and state authority
 
 The `Conversation` class is created by `createConversationRuntime` in
 `server/src/conversations/runtime.ts`: record + `TurnQueue` (`turns/queue.ts`) +
 `TurnRunner` (`turns/runner.ts`) + a `TurnPolicy` chosen once by kind
 (`turns/policy.ts`, `buddies/turn-policy.ts`). Timeouts are `turns/watchdog.ts`,
-swarm observation `swarm/observer.ts`. `server/src/server.ts` composes its
+swarm observation `swarm/observer.ts` (outside code imports swarm only through
+`swarm/index.ts`). `server/src/server.ts` composes its
 dependencies and registers `server/src/transport/conversation-websocket.ts`.
 Durable config and revision checks belong to `conversations/config-service.ts`
-and `conversations/config-store.ts`.
+over the Rust records store (`conversations/config-records.ts`).
 
 Flow is:
 1. Client sends creation intent with stable command and conversation IDs.
@@ -358,6 +347,11 @@ running the code on disk.
   throttled cargo build. Only addon crates (a napi `package.json`) rebuild; the
   import CLI crates never do. The rewritten addon then reloads the backend like
   any loaded file; a failed build keeps the current addon (T14b, 2026-09-26).
+  The two addons are `unleashd-buddies` (the Buddies core: `server/src/buddies/*`
+  runs on it, no JS Buddies package) and `unleashd-ingest` (conversation records
+  and transcript ingest). `pnpm addons` brings both up to date outside the
+  watcher; `pnpm run bootstrap` (install + submodule + shared + addons) sets up
+  a fresh worktree.
 - **New code must build before the old backend is asked to drain.** One esbuild
   bundle of `src/server.ts` (~60ms) catches syntax errors and missing exports;
   on failure the current backend keeps serving.
