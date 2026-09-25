@@ -1,156 +1,84 @@
-import { type BuddyTaskComment, BuddyTaskCommentsPageSchema } from '@unleashd/shared';
-import { useMemo, useRef, useState } from 'react';
-import { resource, usePolledFetch } from '../../hooks/usePolledFetch';
-import { newId } from '../../utils/ids';
-import { buddyApi } from './api';
+import { useState } from 'react';
+import { buddyWrite } from './api';
+import type { Actor, Post } from './types';
+import { ActionError, useBuddyAction } from './useBuddyAction';
 
-export function BuddyTaskComments({ projectId }: { projectId: string }) {
-  return <BuddyTaskCommentsScope key={projectId} projectId={projectId} />;
-}
-
-function BuddyTaskCommentsScope({ projectId }: { projectId: string }) {
-  const path = `/api/buddies/projects/${encodeURIComponent(projectId)}/comments`;
-  const [cursor, setCursor] = useState<string | null>(null);
-  const [body, setBody] = useState('');
-  const [evidence, setEvidence] = useState('');
-  const [saving, setSaving] = useState(false);
-  const [failure, setFailure] = useState<string | null>(null);
-  const [notice, setNotice] = useState<string | null>(null);
-  const command = useRef<{ payload: string; key: string } | null>(null);
-  const submitting = useRef(false);
-  // The cursor is part of the cache key, so a page can only ever be read back
-  // under the cursor that requested it. The old un-keyed hook needed a
-  // `data.cursor === cursor` guard here to drop the previous page's response.
-  const source = useMemo(
-    () =>
-      resource(`${path}?cursor=${cursor ?? ''}`, async (signal: AbortSignal) =>
-        BuddyTaskCommentsPageSchema.parse(
-          await buddyApi(
-            `${path}?limit=20${cursor ? `&cursor=${encodeURIComponent(cursor)}` : ''}`,
-            { signal }
-          )
-        )
-      ),
-    [path, cursor]
-  );
-  const comments = usePolledFetch(source, 5000);
-  const { data: page, refetch } = comments;
-  const loading = comments.kind === 'loading';
-
-  async function append() {
-    if (submitting.current || !body.trim()) return;
-    submitting.current = true;
-    setSaving(true);
-    setFailure(null);
-    setNotice(null);
-    const input = {
-      body: body.trim(),
-      evidence: evidence
-        .split('\n')
-        .map((line) => line.trim())
-        .filter(Boolean),
-    };
-    const payload = JSON.stringify(input);
-    if (command.current?.payload !== payload) command.current = { payload, key: newId() };
-    try {
-      await buddyApi(path, {
-        method: 'POST',
-        headers: { 'content-type': 'application/json' },
-        body: JSON.stringify({ ...input, key: command.current.key }),
-      });
-      command.current = null;
-      setBody('');
-      setEvidence('');
-      setNotice('Comment added.');
-      setCursor(null);
-      refetch();
-    } catch (cause) {
-      setFailure(cause instanceof Error ? cause.message : String(cause));
-    } finally {
-      submitting.current = false;
-      setSaving(false);
-    }
+/** A post's author as a name: the owner is "You", a Buddy its roster name (or its id). */
+export function actorName(actor: Actor, names: Readonly<Record<string, string>>): string {
+  switch (actor.kind) {
+    case 'owner':
+      return 'You';
+    case 'buddy':
+      return names[actor.id] ?? actor.id;
   }
-
-  return (
-    <section className="buddy-task-comments" aria-label="Task comments">
-      <h3>Task comments</h3>
-      {(comments.kind === 'failed' || comments.kind === 'stale') && (
-        <p role="alert">
-          {comments.error.message}{' '}
-          <button type="button" onClick={refetch}>
-            Retry loading comments
-          </button>
-        </p>
-      )}
-      {!page && loading && <p>Loading comments…</p>}
-      {page && <BuddyTaskCommentList comments={page.items} />}
-      <nav aria-label="Comment pages">
-        {cursor && (
-          <button type="button" onClick={() => setCursor(null)}>
-            Latest comments
-          </button>
-        )}
-        {page?.nextCursor && (
-          <button type="button" disabled={loading} onClick={() => setCursor(page.nextCursor)}>
-            Older comments
-          </button>
-        )}
-      </nav>
-      <form
-        onSubmit={(event) => {
-          event.preventDefault();
-          void append();
-        }}
-      >
-        <fieldset disabled={saving}>
-          <label>
-            Comment
-            <textarea
-              required
-              maxLength={32000}
-              value={body}
-              onChange={(event) => setBody(event.target.value)}
-            />
-          </label>
-          <label>
-            Evidence or file references (one per line)
-            <textarea value={evidence} onChange={(event) => setEvidence(event.target.value)} />
-          </label>
-          <button type="submit" disabled={!body.trim()}>
-            {saving ? 'Adding comment…' : 'Add comment'}
-          </button>
-        </fieldset>
-      </form>
-      {failure && <p role="alert">{failure}</p>}
-      {notice && <output>{notice}</output>}
-    </section>
-  );
 }
 
-export function BuddyTaskCommentList({ comments }: { comments: readonly BuddyTaskComment[] }) {
-  return comments.length ? (
-    <ol className="buddy-task-comments-list">
+/** Task comments are the task channel's posts, newest first. */
+export function BuddyTaskCommentList({
+  comments,
+  names,
+}: {
+  comments: readonly Post[];
+  names: Readonly<Record<string, string>>;
+}) {
+  if (comments.length === 0) return <p className="buddy-panel__empty">No comments yet.</p>;
+  return (
+    <ol className="buddy-post-list">
       {comments.map((comment) => (
         <li key={comment.id}>
-          <p>
-            <strong>{comment.author}</strong> ·{' '}
-            <time dateTime={comment.created_at}>
-              {new Date(comment.created_at).toLocaleString()}
-            </time>
-          </p>
-          <p className="buddy-task-comments-body">{comment.body}</p>
+          <div className="buddy-post-list__meta">
+            <strong>{actorName(comment.author, names)}</strong>
+            <time dateTime={comment.createdAt}>{new Date(comment.createdAt).toLocaleString()}</time>
+          </div>
+          <p className="buddy-post-list__body">{comment.body}</p>
           {comment.evidence.length > 0 && (
-            <ul aria-label="Comment evidence">
-              {comment.evidence.map((ref, index) => (
-                <li key={`${index}:${ref}`}>{ref}</li>
+            <ul className="buddy-post-list__evidence">
+              {comment.evidence.map((item) => (
+                <li key={item}>{item}</li>
               ))}
             </ul>
           )}
         </li>
       ))}
     </ol>
-  ) : (
-    <p>No comments yet.</p>
+  );
+}
+
+/** Append a comment: a post in the task's channel. */
+export function BuddyTaskCommentForm({
+  channelId,
+  refresh,
+}: {
+  channelId: string;
+  refresh: () => Promise<void>;
+}) {
+  const [body, setBody] = useState('');
+  const action = useBuddyAction(refresh);
+  return (
+    <form
+      className="buddy-panel__form"
+      onSubmit={(event) => {
+        event.preventDefault();
+        void action
+          .run('comment', () =>
+            buddyWrite(`/api/buddies/channels/${encodeURIComponent(channelId)}/posts`, 'POST', {
+              body,
+            })
+          )
+          .then((ok) => ok && setBody(''));
+      }}
+    >
+      <textarea
+        aria-label="Comment"
+        placeholder="Add a comment for this task"
+        rows={3}
+        value={body}
+        onChange={(event) => setBody(event.target.value)}
+      />
+      <button type="submit" disabled={action.busy || !body.trim()}>
+        Add comment
+      </button>
+      <ActionError state={action.state} />
+    </form>
   );
 }

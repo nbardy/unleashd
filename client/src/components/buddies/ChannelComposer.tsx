@@ -1,10 +1,4 @@
-import {
-  type BuddyOwnerPostResult,
-  BuddyOwnerPostResultSchema,
-  type ConversationConfig,
-  type OwnerPostMentionConfig,
-  type ProviderCatalog,
-} from '@unleashd/shared';
+import type { ConversationConfig, OwnerPostMentionConfig, ProviderCatalog } from '@unleashd/shared';
 import { type ReactNode, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { outboxDrop, outboxSending, outboxSent } from '../../atoms/channel-outbox';
 import { useConversationDraft } from '../../hooks/useConversationDraft';
@@ -12,7 +6,7 @@ import { useProviderCatalog } from '../../hooks/useProviderCatalog';
 import { newId } from '../../utils/ids';
 import { ConversationConfigPicker } from '../ConversationConfigPicker';
 import { BuddySigil } from './BuddySigil';
-import { buddyApi } from './api';
+import { buddyApi, buddyWrite, errorText } from './api';
 import {
   type BuddyReference,
   type ChannelReference,
@@ -28,6 +22,7 @@ import {
   mentionedBuddies,
   rankReferences,
 } from './channel-text';
+import type { PostResult } from './types';
 import './ChannelComposer.css';
 
 type UploadedFile = { originalName: string; absolutePath: string };
@@ -56,19 +51,20 @@ const NO_CHOICES: ReadonlyMap<string, ConversationConfig> = new Map();
 export type ComposerSubmit = 'enter' | 'button';
 
 export function ChannelComposer({
-  listId,
+  channelId,
   placeholder,
-  threadRootId,
+  rootId,
   references,
   submit,
   onPosted,
 }: {
-  listId: string;
+  channelId: string;
   placeholder: string;
-  threadRootId: string | null;
+  /** The thread this composer replies in; null posts at the top level. */
+  rootId: string | null;
   references: readonly ChannelReference[];
   submit: ComposerSubmit;
-  onPosted(result: BuddyOwnerPostResult): void;
+  onPosted(result: PostResult): void;
 }) {
   const [text, setText] = useState('');
   const [caret, setCaret] = useState(0);
@@ -88,7 +84,7 @@ export function ChannelComposer({
   const textRef = useRef(text);
   textRef.current = text;
   const draft = useConversationDraft({
-    conversationId: channelDraftId(listId, threadRootId),
+    conversationId: channelDraftId(channelId, rootId),
     textareaRef,
     controlled: true,
     autoFocus: false,
@@ -171,11 +167,11 @@ export function ChannelComposer({
     const form = new FormData();
     for (const file of files) form.append('files', file);
     void buddyApi<{ files: UploadedFile[] }>(
-      `/api/buddies/lists/${encodeURIComponent(listId)}/media`,
+      `/api/buddies/channels/${encodeURIComponent(channelId)}/media`,
       { method: 'POST', body: form }
     )
       .then((result) => insertAtCaret(result.files.map(mediaMarkdown).join('\n')))
-      .catch((cause: unknown) => setProblem(cause instanceof Error ? cause.message : String(cause)))
+      .catch((cause: unknown) => setProblem(errorText(cause)))
       .finally(() => setUploading((count) => count - 1));
   };
 
@@ -195,8 +191,8 @@ export function ChannelComposer({
     outboxSending({
       kind: 'sending',
       key,
-      listId,
-      threadRootId,
+      channelId,
+      rootId,
       body,
       createdAt: new Date().toISOString(),
     });
@@ -207,26 +203,18 @@ export function ChannelComposer({
     setChoices(NO_CHOICES);
     setChoosingFor(null);
     setProblem(null);
-    void buddyApi(`/api/buddies/lists/${encodeURIComponent(listId)}/posts`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({
-        author: { kind: 'owner' },
-        key,
-        purpose: 'message',
-        body,
-        threadRootId,
-        mentionConfigs,
-      }),
-    })
-      .then((response) => {
-        const result = BuddyOwnerPostResultSchema.parse(response);
+    void buddyWrite<PostResult>(
+      `/api/buddies/channels/${encodeURIComponent(channelId)}/posts`,
+      'POST',
+      { key, body, mentionConfigs, ...(rootId === null ? {} : { replyToId: rootId }) }
+    )
+      .then((result) => {
         outboxSent(key, result.post);
         onPosted(result);
       })
       .catch((cause: unknown) => {
         outboxDrop(new Set([key]));
-        setProblem(cause instanceof Error ? cause.message : String(cause));
+        setProblem(errorText(cause));
         if (textRef.current.trim().length > 0) return;
         setText(unsent.text);
         setCaret(unsent.text.length);
@@ -439,8 +427,9 @@ function ComposerHighlight({
 // `profile` is the Buddy's profile default — exact for a new thread; in a
 // thread where the owner already picked for this Buddy, an unchosen reply
 // keeps that pick (its seat), which the chip does not know yet. `unreported`
-// is a backend that predates execution on members; there is nothing honest to
-// open the picker at.
+// is a profile whose harness this client's schema does not know
+// (channel-data.ts profileExecution); there is nothing honest to open the
+// picker at.
 type MentionChoice =
   | { kind: 'chosen'; config: ConversationConfig }
   | { kind: 'profile'; profile: ConversationConfig }
@@ -517,7 +506,7 @@ function MentionChip({
       disabled={choice.kind === 'unreported'}
       title={
         choice.kind === 'unreported'
-          ? 'Model choice needs a server restart'
+          ? 'This Buddy runs on a harness the picker does not know'
           : `Choose the harness and model for ${buddy.label}’s reply`
       }
       onMouseDown={(event) => event.preventDefault()}

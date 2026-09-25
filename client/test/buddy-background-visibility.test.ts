@@ -12,12 +12,14 @@ import {
 
 test('background placement hides rows but preserves direct transcript access and visible owner chats', () => {
   const store = createStore();
-  store.set(buddySidebarOverviewAtom, {
-    employees: [
-      { buddy: { id: 'lead', name: 'Lead' }, workspaces: [{ id: 'work', name: 'Work' }] },
-    ],
-    recentRuns: [],
-  });
+  store.set(buddySidebarOverviewAtom, [
+    {
+      id: 'work',
+      name: 'Work',
+      rootPath: '/project',
+      buddies: [{ id: 'lead', name: 'Lead', status: 'active' }],
+    },
+  ]);
   const make = (id: string, placement: 'default' | 'background') =>
     ({
       id,

@@ -136,6 +136,9 @@ importers:
       '@types/react-dom':
         specifier: ^19.2.3
         version: 19.2.3(@types/react@19.2.10)
+      '@unleashd/buddies-core':
+        specifier: workspace:*
+        version: link:../crates/unleashd-buddies
       '@vitejs/plugin-react':
         specifier: ^5.1.1
         version: 5.1.2(vite@7.3.1(@types/node@24.10.9)(tsx@4.21.0))

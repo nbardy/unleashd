@@ -286,32 +286,35 @@ export const invalidateBuddyResources = (): void =>
   invalidateResources((key) => key.startsWith('/api/buddies') || key.startsWith('buddy-'));
 
 /**
- * One channel changed — a post, or who is replying (server `channel_changed`).
- * Every per-channel key is a URL under `/api/buddies/lists/<listId>/` (built
- * in components/buddies/channel-data.ts), so one prefix selects its posts,
- * threads and responders. The channel list (`listsUrl`, `/api/buddies/lists?…`)
- * refreshes too: its row counts every post, replies included, and sorts by the
- * newest. A Buddy's mention reply is announced only here, never by
- * `buddies_changed`, so without it the rail lagged by up to the 30 s backstop.
+ * One channel changed — a post, a read mark, or who is replying (server
+ * `channel_changed`; its `listId` is the id of a channel of ANY kind: public,
+ * direct or task). Every per-channel key is a URL under
+ * `/api/buddies/channels/<id>` (built in components/buddies/channel-data.ts),
+ * so one prefix selects its posts and responders.
  *
- * The Task-filtered feed (`taskPostFeed`, `/api/buddies/posts?…`) is a
- * cross-channel query keyed by workspace + Task, not by list, and the push
- * carries only `listId`, so every mounted Task feed refreshes. Only mounted
- * keys refetch — in practice the one feed on screen. Before 2026-09-25 a
- * mention reply under a Task filter waited out the backstop too.
- *
- * The owner's unread state (`OWNER_UNREAD_PATH`) spans every channel, so any
- * channel's push refreshes it; the server also pushes `channel_changed` when
- * the owner marks a channel read, which is what clears it on other devices.
+ * The push names only the channel, so keys that are not addressed by it
+ * refresh whenever they are mounted — in practice the one of each on screen:
+ *   - threads (`/api/buddies/posts/<rootId>/thread`), keyed by their root;
+ *   - the owner's inboxes (`/api/buddies/workspaces/<ws>/inbox`, and the
+ *     all-workspace fan-out `buddy-owner-inboxes:<ids>` the title, sidebar and
+ *     mobile tab read): unread counts, requests and DMs span every channel,
+ *     and the server pushes `channel_changed` when the owner marks one read,
+ *     which is what clears it on other devices;
+ *   - task details (`/api/buddies/tasks/<id>`), whose comments are the task
+ *     channel's posts.
+ * A Buddy's mention reply is announced only here, never by `buddies_changed`,
+ * so without these the rail lagged by up to the 30 s backstop.
  */
-export const invalidateChannelResources = (listId: string): void => {
-  const prefix = `/api/buddies/lists/${encodeURIComponent(listId)}/`;
+export const invalidateChannelResources = (channelId: string): void => {
+  const channel = `/api/buddies/channels/${encodeURIComponent(channelId)}`;
   invalidateResources(
     (key) =>
-      key.startsWith(prefix) ||
-      key.startsWith('/api/buddies/lists?') ||
-      key.startsWith('/api/buddies/posts?') ||
-      key === '/api/buddies/channels/unread'
+      key === channel ||
+      key.startsWith(`${channel}/`) ||
+      /^\/api\/buddies\/posts\/[^/]+\/thread/.test(key) ||
+      /^\/api\/buddies\/workspaces\/[^/]+\/inbox$/.test(key) ||
+      key.startsWith('buddy-owner-inboxes:') ||
+      /^\/api\/buddies\/tasks\/[^/?]+$/.test(key)
   );
 };
 

@@ -38,6 +38,7 @@
     "@types/node": "^24.10.1",
     "@types/react": "^19.2.5",
     "@types/react-dom": "^19.2.3",
+    "@unleashd/buddies-core": "workspace:*",
     "@vitejs/plugin-react": "^5.1.1",
     "typescript": "~5.9.3",
     "unified": "^11.0.5",

@@ -1,39 +1,39 @@
-import type { BuddyMailingListPost } from '@unleashd/shared';
+import type { Post } from './types';
 
 /**
  * Shareable links into a workspace's channels, for pasting into a bug report
  * when a thread is confusing or a Buddy reply is wrong. They use the URL both
  * device trees already route on — /buddies/workspaces/:id/channels
  * ?channel=&thread=&post= (mobile parses it in mobile/channels/channel-route.ts)
- * — so one link opens the same place on desktop and phone.
+ * — so one link opens the same place on desktop and phone. `channel` is a
+ * channel id of any kind (public or direct).
  *
  *   D = Channel ⊕ Thread ⊕ Reply
  *
- * A top-level message IS its thread's root, so its link is the thread link.
- * That is deliberate: the thread pane fetches the root by id, so the link
- * works however old the post is, without paging the channel pane back to it
- * (it loads older posts only as the reader scrolls up). A reply opens its
- * thread and scrolls to itself (`post=`).
+ * A top-level message IS its thread's root, so its link is the thread link:
+ * the thread pane fetches the root by id, so the link works however old the
+ * post is. A reply opens its thread and is highlighted when it is on the
+ * thread's loaded pages (`post=`).
  */
 export type ChannelLink =
-  | { kind: 'channel'; listId: string }
-  | { kind: 'thread'; listId: string; rootId: string }
-  | { kind: 'reply'; listId: string; rootId: string; postId: string };
+  | { kind: 'channel'; channelId: string }
+  | { kind: 'thread'; channelId: string; rootId: string }
+  | { kind: 'reply'; channelId: string; rootId: string; postId: string };
 
-export function postLink(post: BuddyMailingListPost): ChannelLink {
-  return post.threadRootId === null
-    ? { kind: 'thread', listId: post.listId, rootId: post.id }
-    : { kind: 'reply', listId: post.listId, rootId: post.threadRootId, postId: post.id };
+export function postLink(post: Post): ChannelLink {
+  return post.rootId === undefined
+    ? { kind: 'thread', channelId: post.channelId, rootId: post.id }
+    : { kind: 'reply', channelId: post.channelId, rootId: post.rootId, postId: post.id };
 }
 
 function linkParams(link: ChannelLink): Record<string, string> {
   switch (link.kind) {
     case 'channel':
-      return { channel: link.listId };
+      return { channel: link.channelId };
     case 'thread':
-      return { channel: link.listId, thread: link.rootId };
+      return { channel: link.channelId, thread: link.rootId };
     case 'reply':
-      return { channel: link.listId, thread: link.rootId, post: link.postId };
+      return { channel: link.channelId, thread: link.rootId, post: link.postId };
   }
 }
 

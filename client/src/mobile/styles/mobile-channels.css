@@ -401,51 +401,12 @@ a.mobile-channels-wake-done {
 }
 
 /* 44px-tall tap areas that sit on one text line visually. */
-.mobile-channel-post__replies,
 .mobile-channel-post__reply {
   display: inline-flex;
   align-items: center;
   min-height: 32px;
   font-size: 13px;
   text-decoration: none;
-}
-
-.mobile-channel-post__replies {
-  color: var(--theme-user);
-  font-weight: 600;
-}
-
-.mobile-channel-post__replies[data-unread] {
-  font-weight: 800;
-}
-
-.mobile-channel-post__unread-dot {
-  width: 7px;
-  height: 7px;
-  margin-right: 6px;
-  border-radius: 50%;
-  background: var(--danger);
-}
-
-.mobile-channel-new-messages {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: 10px 14px 2px;
-  color: var(--danger);
-  font-size: 12px;
-  font-weight: 700;
-}
-
-.mobile-channel-new-messages::before {
-  content: "";
-  flex: 1;
-  border-top: 1px solid var(--danger);
-}
-
-.mobile-channel-post__replies span {
-  color: var(--text-muted);
-  font-weight: 400;
 }
 
 .mobile-channel-post__reply {

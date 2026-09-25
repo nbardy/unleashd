@@ -46,7 +46,7 @@ import { SearchPalette } from './SearchPalette';
 import { DmIcon, WakeIcon, WakeIndicator } from './buddies/WakeIndicator';
 import { useBuddyDirectActions } from './buddies/buddy-direct-actions';
 import { buddyTabPath } from './buddies/buddy-tabs';
-import { ownerUnreadTotal, useOwnerUnread } from './buddies/channel-data';
+import { ownerUnreadTotal, useOwnerInboxes } from './buddies/channel-data';
 import { createBuddyViaBuilder } from './buddies/create-buddy-builder';
 import { getConversationTitle } from './conversation-title';
 import './Sidebar.css';
@@ -147,7 +147,7 @@ export function Sidebar() {
   const buddySidebarGroups = useAtomValue(buddySidebarGroupsAtom);
   const buddyCount = useAtomValue(buddySidebarCountAtom);
   const channelsWorkspaces = useAtomValue(buddySidebarChannelsAtom);
-  const ownerUnread = useOwnerUnread().data;
+  const ownerUnread = useOwnerInboxes().data;
   const runningCountByFolder = useAtomValue(sidebarRunningCountByFolderAtom);
   const [expandedBuddies, setExpandedBuddies] = useState<Set<string>>(() => new Set());
   const [expandedDirectories, setExpandedDirectories] = useState<Set<string>>(() => new Set());
@@ -183,17 +183,13 @@ export function Sidebar() {
     (item: BuddySidebarItemData) => {
       // Reuse existing new-conversation flow but seed buddyContext so the
       // new thread is owned by that buddy — mirrors BuddiesDashboard talk().
-      const workspaceId = item.workspaceId;
       const latestConversation = item.latestConversation
         ? readConversation(item.latestConversation.id)
         : null;
       const workingDirectory =
         latestConversation?.workingDirectory ??
         item.pendingCreation?.workingDirectory ??
-        item.workingDirectory ??
-        lastWorkingDirectory ??
-        defaultCwd ??
-        '/';
+        item.workingDirectory;
       // Seed the harness from this buddy's latest thread so a provider/model
       // picked there sticks for the next thread. Falls back to the global
       // new-conversation draft only when the buddy has no prior thread.
@@ -204,13 +200,15 @@ export function Sidebar() {
       const id = createConversation({
         workingDirectory,
         config: seedConfig,
-        buddyContext: workspaceId
-          ? { buddyId: item.buddyId, workspaceId, buddyProjectId: null }
-          : { buddyId: item.buddyId, workspaceId: '', buddyProjectId: null },
+        buddyContext: {
+          buddyId: item.buddyId,
+          workspaceId: item.workspaceId,
+          buddyProjectId: null,
+        },
       });
       navigate(`/chat/${id}`);
     },
-    [configDraft, defaultCwd, lastWorkingDirectory, navigate]
+    [configDraft, navigate]
   );
 
   // Shift+Space global shortcut to open "New Conversation" dialog.
@@ -754,12 +752,12 @@ export function Sidebar() {
                       >
                         <span className="folder-group-name"># {project.name}</span>
                       </Link>
-                      {unread.repliesToYou > 0 && (
+                      {unread.requests > 0 && (
                         <span
                           className="sidebar-channels-badge"
-                          aria-label={`${unread.repliesToYou} new replies to you`}
+                          aria-label={`${unread.requests} requests waiting on you`}
                         >
-                          {unread.repliesToYou}
+                          {unread.requests}
                         </span>
                       )}
                     </div>
@@ -937,7 +935,7 @@ export function Sidebar() {
 // catch up on the workspace channels inside that chat (buddy-direct-actions.ts).
 function SidebarBuddyActions({ item }: { item: BuddySidebarItemData }) {
   const navigate = useNavigate();
-  const direct = useBuddyDirectActions(item.buddyId, item.workspaceId);
+  const direct = useBuddyDirectActions(item.buddyId);
   const { action } = direct;
   return (
     <>
@@ -987,12 +985,7 @@ function SidebarBuddyActions({ item }: { item: BuddySidebarItemData }) {
 }
 
 function BuddyRunningStatus({ item }: { item: BuddySidebarItemData }) {
-  // No `?workspace=` when the row has none: BuddyBackgroundTasks reads an
-  // empty value as "All workspaces", and a literal `?workspace=` used to
-  // filter the tab down to zero rows.
-  const backgroundPath = item.workspaceId
-    ? `${buddyTabPath(item.buddyId, 'background')}?workspace=${encodeURIComponent(item.workspaceId)}`
-    : buddyTabPath(item.buddyId, 'background');
+  const backgroundPath = buddyTabPath(item.buddyId, 'background');
   return (
     <span className="sidebar-buddy-running">
       <Link

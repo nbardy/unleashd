@@ -3,6 +3,9 @@ import { register } from 'node:module';
 import test from 'node:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import type { Channel, Post } from '../src/components/buddies/types';
+import { buddyFixture, rosterFixture } from './fixtures/buddy-roster';
+import { inboxFixture, postFixture, publicChannel } from './fixtures/channel-posts';
 register(
   `data:text/javascript,${encodeURIComponent(`
     export async function load(url, context, nextLoad) {
@@ -13,121 +16,68 @@ register(
   import.meta.url
 );
 const { ChannelBrowser, WorkspaceSlack } = await import('../src/components/buddies/ChannelBrowser');
-const { channelRows } = await import('../src/components/buddies/channel-data');
+const { channelRows, workspaceDirectory } = await import('../src/components/buddies/channel-data');
 const { Provider } = await import('jotai');
 const { jotaiStore } = await import('../src/atoms/store');
 const { loadResource } = await import('../src/atoms/resources');
 
-const UNREPORTED = { kind: 'unreported' } as const;
+const lead = buddyFixture({ id: 'lead', name: 'Lead', role: 'Own the work' });
+const dev = buddyFixture({ id: 'dev', name: 'Dev', role: 'Build the work' });
 
-async function seed() {
-  await loadResource({
-    key: '/api/buddies/lists?workspaceId=ws-slack',
-    load: async () => [
-      {
-        id: 'list_a',
-        workspaceId: 'ws-slack',
-        name: 'Standups',
-        purpose: 'Daily notes',
-        createdBy: { kind: 'buddy', buddyId: 'lead' },
-        createdAt: '2026-09-21T00:00:00.000Z',
-        postCount: 2,
-        latestPostAt: '2026-09-21T03:00:00.000Z',
-      },
-    ],
-  });
-  await loadResource({
-    key: '/api/buddies/lists/list_a/posts?limit=50',
-    load: async () => [
-      {
-        id: 'post_old',
-        listId: 'list_a',
-        workspaceId: 'ws-slack',
-        author: { kind: 'buddy', buddyId: 'lead' },
-        threadRootId: null,
-        replyCount: 0,
-        latestReplyAt: null,
-        purpose: 'standup',
-        body: 'Older update from the first run.',
-        evidence: [],
-        projectId: 'task-alpha',
-        createdAt: '2026-09-21T01:00:00.000Z',
-        senderConversationId: 'conv-aaaa111122223333',
-        senderRunId: 'run-aaa',
-      },
-      {
-        id: 'post_new',
-        listId: 'list_a',
-        workspaceId: 'ws-slack',
-        author: { kind: 'buddy', buddyId: 'dev' },
-        threadRootId: null,
-        replyCount: 0,
-        latestReplyAt: null,
-        purpose: 'handoff',
-        body: 'Newer handoff without a live thread.',
-        evidence: [],
-        projectId: null,
-        createdAt: '2026-09-21T03:00:00.000Z',
-        senderConversationId: null,
-        senderRunId: null,
-      },
-    ],
-  });
-  await loadResource({
-    key: '/api/buddies/workspaces/ws-slack/activity',
-    load: async () => ({
-      generatedAt: '2026-09-22T00:00:00.000Z',
-      workspace: { id: 'ws-slack', name: 'unleashd', rootPath: '~/git/unleashd' },
-      members: [
-        {
-          id: 'lead',
-          name: 'Lead',
-          role: 'Own the work',
-          status: 'active',
-          jobs: [],
-        },
-        {
-          id: 'dev',
-          name: 'Dev',
-          role: 'Build the work',
-          status: 'active',
-          jobs: [],
-        },
-      ],
-    }),
-  });
-}
-
-test('channel browser renders a Slack transcript, oldest first, with instance tags', async () => {
-  await seed();
-  const html = renderToStaticMarkup(
-    <MemoryRouter>
+function render(workspaceId: string, directory: ReturnType<typeof workspaceDirectory>, url = '/') {
+  return renderToStaticMarkup(
+    <MemoryRouter initialEntries={[url]}>
       <Provider store={jotaiStore}>
         <ChannelBrowser
-          workspaceId="ws-slack"
-          workspaceName="unleashd"
-          members={[
-            {
-              id: 'lead',
-              name: 'Lead',
-              role: 'Own the work',
-              status: 'active',
-              execution: UNREPORTED,
-            },
-            {
-              id: 'dev',
-              name: 'Dev',
-              role: 'Build the work',
-              status: 'active',
-              execution: UNREPORTED,
-            },
-          ]}
-          tasks={[]}
+          workspaceId={workspaceId}
+          directory={directory}
           availableConversationIds={new Set(['conv-aaaa111122223333'])}
         />
       </Provider>
     </MemoryRouter>
   );
+}
+
+async function seedSlack() {
+  await loadResource({
+    key: '/api/buddies/workspaces/ws-slack/inbox',
+    load: async () =>
+      inboxFixture([{ channel: publicChannel('ch_a', 'Standups', 'ws-slack'), unread: 0 }]),
+  });
+  await loadResource({
+    key: '/api/buddies/channels/ch_a/posts?limit=50',
+    load: async () => ({
+      posts: [
+        postFixture({
+          id: 'post_new',
+          author: { kind: 'buddy', id: 'dev' },
+          purpose: 'handoff',
+          body: 'Newer handoff without a live thread.',
+          createdAt: '2026-09-21T03:00:00.000Z',
+        }),
+        postFixture({
+          id: 'post_old',
+          author: { kind: 'buddy', id: 'lead' },
+          purpose: 'standup',
+          body: 'Older update from the first run.',
+          conversationId: 'conv-aaaa111122223333',
+          createdAt: '2026-09-21T01:00:00.000Z',
+        }),
+      ],
+    }),
+  });
+}
+
+const slackDirectory = () =>
+  workspaceDirectory(
+    [rosterFixture([lead, dev], { id: 'ws-slack', name: 'unleashd' })],
+    'ws-slack',
+    []
+  );
+
+test('channel browser renders a Slack transcript, oldest first, with instance tags', async () => {
+  await seedSlack();
+  const html = render('ws-slack', slackDirectory());
   assert.match(html, /<h1>unleashd<\/h1>/);
   assert.match(html, /channel-browser-channel-name">Standups</);
   const newerAt = html.indexOf('Newer handoff without a live thread.');
@@ -137,31 +87,20 @@ test('channel browser renders a Slack transcript, oldest first, with instance ta
   // A held thread is a link; a post without provenance carries no instance tag.
   assert.match(html, /href="\/chat\/conv-aaaa111122223333"[^>]*>conv conv-aaa</);
   assert.equal(html.match(/channel-browser-instance/g)?.length, 1);
-  assert.match(html, /<option value="task-alpha"/);
-  assert.doesNotMatch(html, /buddy-messages-list-composer/);
 });
 
 // Regression guard for the instance-uuid feature: two conversations running
 // as the SAME Buddy must never collapse into one sender group, or the reader
 // loses which instance said what.
 test('concurrent conversations of one Buddy start separate message groups', () => {
-  const post = (id: string, conversation: string, minute: number) => ({
-    id,
-    listId: 'list_a',
-    workspaceId: 'ws',
-    author: { kind: 'buddy' as const, buddyId: 'lead' },
-    threadRootId: null,
-    replyCount: 0,
-    latestReplyAt: null,
-    purpose: 'standup',
-    body: id,
-    evidence: [],
-    projectId: null,
-    createdAt: new Date(Date.UTC(2026, 8, 21, 12, minute)).toISOString(),
-    senderConversationId: conversation,
-    senderRunId: null,
-  });
-  const kinds = (posts: ReturnType<typeof post>[]) =>
+  const post = (id: string, conversation: string, minute: number): Post =>
+    postFixture({
+      id,
+      author: { kind: 'buddy', id: 'lead' },
+      conversationId: conversation,
+      createdAt: new Date(Date.UTC(2026, 8, 21, 12, minute)).toISOString(),
+    });
+  const kinds = (posts: Post[]) =>
     channelRows(posts)
       .filter((row) => row.kind !== 'day')
       .map((row) => row.kind);
@@ -175,8 +114,13 @@ test('concurrent conversations of one Buddy start separate message groups', () =
   ]);
 });
 
-test('workspace slack page resolves the workspace name and member names', async () => {
-  await seed();
+test('workspace slack page resolves the workspace name and member names from the overview', async () => {
+  await seedSlack();
+  await loadResource({
+    key: '/api/buddies/overview',
+    load: async () => [rosterFixture([lead, dev], { id: 'ws-slack', name: 'unleashd' })],
+  });
+  await loadResource({ key: '/api/buddies/tasks?workspaceId=ws-slack', load: async () => [] });
   const html = renderToStaticMarkup(
     <MemoryRouter initialEntries={['/buddies/workspaces/ws-slack/channels']}>
       <Provider store={jotaiStore}>
@@ -189,120 +133,92 @@ test('workspace slack page resolves the workspace name and member names', async 
   assert.match(html, /<h1>unleashd<\/h1>/);
   assert.match(html, /Older update from the first run./);
   assert.match(html, /channel-browser-author[^>]*>Lead</);
-  // Like Slack, a post author's name opens the DM, not the Buddy page
-  // (ChannelAuthor, not BuddyMessages' PostAuthor).
+  // Like Slack, a post author's name opens the DM, not the Buddy page.
   assert.match(html, /<button[^>]*class="channel-browser-author"[^>]*title="Message Lead"/);
   assert.doesNotMatch(html, /<a[^>]*class="channel-browser-author"/);
 });
 
 test('channel browser shows an empty state without channels', async () => {
   await loadResource({
-    key: '/api/buddies/lists?workspaceId=ws-bare',
-    load: async () => [],
+    key: '/api/buddies/workspaces/ws-bare/inbox',
+    load: async () => inboxFixture([]),
   });
-  const html = renderToStaticMarkup(
-    <MemoryRouter>
-      <Provider store={jotaiStore}>
-        <ChannelBrowser
-          workspaceId="ws-bare"
-          workspaceName="bare"
-          members={[]}
-          tasks={[]}
-          availableConversationIds={new Set()}
-        />
-      </Provider>
-    </MemoryRouter>
-  );
+  const html = render('ws-bare', workspaceDirectory([], 'ws-bare', []));
   assert.match(html, /No channels yet/);
 });
 
 // The body is markdown with app links: an owner mention, a live Task chip and
 // inline media must each render as their own element — a regression to plain
 // text would show raw `[@Lead](buddy:lead)` tokens and absolute file paths.
-test('posts render markdown mentions, live Task chips, inline media and thread summaries', async () => {
+// The inbox's direct channels are DMs, named by their Buddy members (never
+// "You"), with the count of requests waiting on the owner.
+test('posts render markdown mentions, Task chips and media; DMs list by member with requests', async () => {
+  const dm: Channel = {
+    id: 'ch_dm',
+    workspaceId: 'ws-rich',
+    kind: { type: 'direct', members: [{ kind: 'owner' }, { kind: 'buddy', id: 'lead' }] },
+    createdBy: { kind: 'owner' },
+    createdAt: '2026-09-23T00:00:00.000Z',
+  };
   await loadResource({
-    key: '/api/buddies/lists?workspaceId=ws-rich',
-    load: async () => [
-      {
-        id: 'list_rich',
-        workspaceId: 'ws-rich',
-        name: 'general',
-        purpose: 'Team chat',
-        createdBy: { kind: 'owner' },
-        createdAt: '2026-09-23T00:00:00.000Z',
-        postCount: 1,
-        latestPostAt: '2026-09-23T01:00:00.000Z',
-      },
-    ],
+    key: '/api/buddies/workspaces/ws-rich/inbox',
+    load: async () =>
+      inboxFixture(
+        [
+          { channel: publicChannel('ch_rich', 'general', 'ws-rich'), unread: 1 },
+          { channel: dm, unread: 1 },
+        ],
+        [
+          postFixture({
+            id: 'ask',
+            channelId: 'ch_dm',
+            author: { kind: 'buddy', id: 'lead' },
+            request: { state: 'awaiting' },
+          }),
+        ]
+      ),
   });
   await loadResource({
-    key: '/api/buddies/lists/list_rich/posts?limit=50',
-    load: async () => [
+    key: '/api/buddies/channels/ch_rich/posts?limit=50',
+    load: async () => ({
+      posts: [
+        postFixture({
+          id: 'post_ask',
+          channelId: 'ch_rich',
+          body: '[@Lead](buddy:lead) is [Ship channels](task:task-ship) done?\n\n![login](/Users/me/.agent-viewer/uploads/channels/ch_rich/abc.png)\n![demo](/Users/me/.agent-viewer/uploads/channels/ch_rich/def.mp4)',
+          createdAt: '2026-09-23T01:00:00.000Z',
+        }),
+      ],
+    }),
+  });
+  await loadResource({ key: '/api/buddies/channels/ch_rich/responding', load: async () => [] });
+  const gone = buddyFixture({ id: 'gone', name: 'Gone', status: 'archived' });
+  const directory = workspaceDirectory(
+    [rosterFixture([lead, gone], { id: 'ws-rich', name: 'rich' })],
+    'ws-rich',
+    [
       {
-        id: 'post_ask',
-        listId: 'list_rich',
+        id: 'task-ship',
         workspaceId: 'ws-rich',
-        author: { kind: 'owner' },
-        threadRootId: null,
-        replyCount: 2,
-        latestReplyAt: '2026-09-23T01:05:00.000Z',
-        purpose: 'message',
-        body: '[@Lead](buddy:lead) is [Ship channels](task:task-ship) done?\n\n![login](/Users/me/.agent-viewer/uploads/channels/list_rich/abc.png)\n![demo](/Users/me/.agent-viewer/uploads/channels/list_rich/def.mp4)',
+        ownerId: 'lead',
+        title: 'Ship channels',
+        doneCriteria: 'Shipped',
+        status: 'in_progress',
+        paused: false,
+        epoch: 1,
         evidence: [],
-        projectId: null,
-        createdAt: '2026-09-23T01:00:00.000Z',
-        senderConversationId: null,
-        senderRunId: null,
+        position: 0,
+        revision: 1,
+        createdAt: '2026-09-23T00:00:00.000Z',
+        updatedAt: '2026-09-23T00:30:00.000Z',
       },
-    ],
-  });
-  await loadResource({ key: '/api/buddies/lists/list_rich/responding', load: async () => [] });
-  const html = renderToStaticMarkup(
-    <MemoryRouter>
-      <Provider store={jotaiStore}>
-        <ChannelBrowser
-          workspaceId="ws-rich"
-          workspaceName="rich"
-          members={[
-            {
-              id: 'lead',
-              name: 'Lead',
-              role: 'Own the work',
-              status: 'active',
-              execution: UNREPORTED,
-            },
-            {
-              id: 'gone',
-              name: 'Gone',
-              role: 'Retired',
-              status: 'archived',
-              execution: UNREPORTED,
-            },
-          ]}
-          tasks={[
-            {
-              id: 'task-ship',
-              title: 'Ship channels',
-              status: 'in_progress',
-              ownerBuddyId: 'lead',
-              ownerName: 'Lead',
-              todosDone: 3,
-              todosTotal: 5,
-              nextAction: 'Wire the composer',
-              updatedAt: '2026-09-23T00:30:00.000Z',
-            },
-          ]}
-          availableConversationIds={new Set()}
-        />
-      </Provider>
-    </MemoryRouter>
+    ]
   );
+  const html = render('ws-rich', directory);
   assert.match(html, /class="channel-browser-author">You</);
   assert.match(html, /<a class="channel-mention" href="\/buddies\/lead"[^>]*>@Lead<\/a>/);
   assert.doesNotMatch(html, /buddy:lead/);
-  // Live chip: in-progress tone, links to the owner's work. Its hover card is
-  // portalled only while hovered or focused; card content is covered in
-  // channel-markdown.test.tsx.
+  // Live chip: in-progress tone, links to the owner's work.
   assert.match(
     html,
     /class="channel-task-chip" data-tone="active"[^>]*href="\/buddies\/lead\/work"/
@@ -313,89 +229,54 @@ test('posts render markdown mentions, live Task chips, inline media and thread s
     /<img class="channel-media" src="\/api\/files\?path=%2FUsers%2Fme%2F[^"]*abc\.png"/
   );
   assert.match(html, /<video class="channel-media" src="\/api\/files\?path=[^"]*def\.mp4"/);
-  assert.match(html, /<strong>2 replies<\/strong>/);
   // The composer posts to this channel; archived Buddies stay out of the rail.
   assert.match(html, /placeholder="Message #general"/);
   assert.match(html, /channel-browser-buddies/);
   assert.doesNotMatch(html, />Gone</);
+  // The DM row: named by its Buddy, badged with the request awaiting the owner.
+  const dms = html.slice(html.indexOf('Direct messages'));
+  assert.match(dms, /channel-browser-channel-name">Lead</);
+  assert.match(dms, /aria-label="1 requests waiting on you"/);
+  assert.match(html, /data-unread="new"/);
 });
 
-// Until 2026-09-25 the thread pane read a thread's first 200 replies and the
-// Task filter one page, and neither could page back. Both now read through
-// the channel's keyset feed: each opens on its newest page with the flame
-// above it while older posts may remain, and a thread keeps its root on top.
-test('the thread pane and the Task filter open on their newest page and page back like the channel', async () => {
-  const post = (id: string, minute: number, overrides: Record<string, unknown> = {}) => ({
-    id,
-    listId: 'list_long',
-    workspaceId: 'ws-long',
-    author: { kind: 'buddy', buddyId: 'lead' },
-    threadRootId: null,
-    replyCount: 0,
-    latestReplyAt: null,
-    purpose: 'message',
-    body: `Body of ${id}.`,
-    evidence: [],
-    projectId: null,
-    createdAt: new Date(Date.UTC(2026, 8, 24, 9, minute)).toISOString(),
-    senderConversationId: null,
-    senderRunId: null,
-    ...overrides,
-  });
-  // A full page, newest-first: more may sit before it.
-  const fullPage = (prefix: string, overrides: Record<string, unknown>) =>
-    Array.from({ length: 50 }, (_, index) =>
+// A channel and a thread each open on their newest page, with the flame above
+// it while the page says older posts remain (`next`), and a thread keeps its
+// root on top.
+test('the channel and thread panes open on their newest page and page back', async () => {
+  const post = (id: string, minute: number, overrides: Partial<Post> = {}) =>
+    postFixture({
+      id,
+      channelId: 'ch_long',
+      author: { kind: 'buddy', id: 'lead' },
+      createdAt: new Date(Date.UTC(2026, 8, 24, 9, minute)).toISOString(),
+      ...overrides,
+    });
+  // A full page, newest-first, with a cursor: more sits before it.
+  const fullPage = (prefix: string, overrides: Partial<Post>) => ({
+    posts: Array.from({ length: 50 }, (_, index) =>
       post(`${prefix}-${49 - index}`, 200 - index, overrides)
-    );
-  const root = post('root', 1, { replyCount: 260, latestReplyAt: '2026-09-24T12:20:00.000Z' });
-  await loadResource({
-    key: '/api/buddies/lists?workspaceId=ws-long',
-    load: async () => [
-      {
-        id: 'list_long',
-        workspaceId: 'ws-long',
-        name: 'general',
-        purpose: 'Team chat',
-        createdBy: { kind: 'owner' },
-        createdAt: '2026-09-24T00:00:00.000Z',
-        postCount: 400,
-        latestPostAt: '2026-09-24T12:20:00.000Z',
-      },
-    ],
+    ),
+    next: { createdAt: '2026-09-24T09:10:00.000Z', id: `${prefix}-0` },
   });
   await loadResource({
-    key: '/api/buddies/lists/list_long/posts?limit=50',
-    load: async () => [post('tasked', 2, { projectId: 'task-long' }), root],
+    key: '/api/buddies/workspaces/ws-long/inbox',
+    load: async () =>
+      inboxFixture([{ channel: publicChannel('ch_long', 'general', 'ws-long'), unread: 0 }]),
   });
   await loadResource({
-    key: '/api/buddies/posts?workspaceId=ws-long&projectId=task-long&limit=50',
-    load: async () => fullPage('task', { projectId: 'task-long' }),
+    key: '/api/buddies/channels/ch_long/posts?limit=50',
+    load: async () => fullPage('top', {}),
   });
   await loadResource({
-    key: '/api/buddies/lists/list_long/threads/root?limit=50',
-    load: async () => ({ root, replies: fullPage('reply', { threadRootId: 'root' }) }),
+    key: '/api/buddies/posts/root/thread?limit=50',
+    load: async () => ({ root: post('root', 1), ...fullPage('reply', { rootId: 'root' }) }),
   });
-  await loadResource({ key: '/api/buddies/lists/list_long/responding', load: async () => [] });
-  const html = renderToStaticMarkup(
-    <MemoryRouter initialEntries={['/?channel=list_long&task=task-long&thread=root']}>
-      <Provider store={jotaiStore}>
-        <ChannelBrowser
-          workspaceId="ws-long"
-          workspaceName="long"
-          members={[
-            {
-              id: 'lead',
-              name: 'Lead',
-              role: 'Own the work',
-              status: 'active',
-              execution: UNREPORTED,
-            },
-          ]}
-          tasks={[]}
-          availableConversationIds={new Set()}
-        />
-      </Provider>
-    </MemoryRouter>
+  await loadResource({ key: '/api/buddies/channels/ch_long/responding', load: async () => [] });
+  const html = render(
+    'ws-long',
+    workspaceDirectory([rosterFixture([lead], { id: 'ws-long' })], 'ws-long', []),
+    '/?channel=ch_long&thread=root'
   );
   const [channelPane, threadPane = ''] = html.split('aria-label="Thread"');
   const inOrder = (pane: string, needles: string[]) => {
@@ -412,8 +293,6 @@ test('the thread pane and the Task filter open on their newest page and page bac
     );
   };
   const flame = 'class="channel-history"';
-  // The Task filter pages its cross-channel feed.
-  inOrder(channelPane, [flame, 'Body of task-0.', 'Body of task-49.']);
-  // The thread opens on its newest replies, the root above the older ones' flame.
+  inOrder(channelPane, [flame, 'Body of top-0.', 'Body of top-49.']);
   inOrder(threadPane, ['Body of root.', flame, 'Body of reply-0.', 'Body of reply-49.']);
 });

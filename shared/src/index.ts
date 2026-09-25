@@ -38,8 +38,6 @@ export * from './conversation-config.js';
 export * from './conversation-kind.js';
 export * from './buddy.js';
 export * from './buddy-access.js';
-export * from './buddy-work.js';
-export * from './buddy-resources.js';
 export * from './provider-catalog.js';
 export * from './legacy/codex-composite-model.js';
 export { stripJsonc } from './utils/jsonc.js';
@@ -1195,37 +1193,8 @@ export {
   isCodexAgentMessageEvent,
 } from './adapters/codex-session.types.js';
 
-export { BuddyMessageSchema, BuddyMessageReplySchema, type BuddyMessage } from './buddy-message';
-export {
-  BUDDY_SOUL_MAX_CHARACTERS,
-  BuddySoulSchema,
-  BuddySoulUpdateSchema,
-  BuddySoulConflictDetailsSchema,
-  BuddySoulConflictSchema,
-  type BuddySoul,
-  type BuddySoulUpdate,
-} from './buddy-soul.js';
-
-export {
-  BuddyEmploymentSchema,
-  BuddyTeamMemberSchema,
-  BuddyTeamStateSchema,
-  type BuddyEmployment,
-  type BuddyTeamState,
-} from './buddy-team.js';
-
-export * from './buddy-coordination.js';
 export * from './buddy-workspace-activity.js';
 export * from './buddy-channel-posts.js';
 export * from './buddy-team-configuration.js';
 
 export * from './buddy-team-configuration-result.js';
-
-export {
-  TeamConfigurationProposalSchema,
-  formatTeamConfigurationProposal,
-  parseTeamConfigurationProposal,
-  type TeamConfigurationProposal,
-} from './buddy-message.js';
-
-export * from './buddy-observation.js';

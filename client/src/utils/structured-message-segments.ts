@@ -1,5 +1,3 @@
-import { BUDDY_REVIEW_RESULT_RE } from './buddy-review-message';
-
 /**
  * Legacy provider-output adapters. These markers are transport compatibility
  * only; callers receive typed segments and never need to understand delimiters.
@@ -19,12 +17,17 @@ const OOMPA_RUN_CAPTURE_RE = new RegExp(`(${OOMPA_RUN_TOOL_FRAGMENT_RE.source})`
 // `<!-- … -->` delimiters, so every marker pattern tolerates it. Writers keep
 // emitting the canonical compact form.
 
+// Markers of retired Buddy features (review results and team configuration,
+// removed with the v2 Buddy server, T11). Old transcripts and channel posts
+// still carry them; they render as nothing rather than as a raw blob.
+const RETIRED_MARKER_RE =
+  /(?:^[ \t]*🔧[ \t]+mcp_tool[ \t]*\r?\n\s*)?<!--\s*buddy_team_configuration\s*:.*?\s*-->|<!-- unleashd:buddy-review-result -->\r?\n[\s\S]*?\r?\n<!-- \/unleashd:buddy-review-result -->/m;
+
 export type StructuredMessageSegment =
   | { type: 'text'; content: string }
   | { type: 'ask_user_question'; json: string }
-  | { type: 'buddy_review_result'; json: string }
   | { type: 'buddy_builder_result'; json: string }
-  | { type: 'buddy_team_configuration'; json: string }
+  | { type: 'retired_marker' }
   | { type: 'buddy_worker_thread'; json: string }
   | { type: 'oompa_run'; content: string };
 
@@ -66,7 +69,6 @@ export function splitStructuredMessageContent(content: string): StructuredMessag
       1
     ),
     ...collectMatches(content, 'ask_user_question', ASK_USER_QUESTION_RE, 1),
-    ...collectMatches(content, 'buddy_review_result', BUDDY_REVIEW_RESULT_RE, 1),
     ...collectMatches(
       content,
       'buddy_builder_result',
@@ -74,12 +76,7 @@ export function splitStructuredMessageContent(content: string): StructuredMessag
       1
     ),
     ...collectMatches(content, 'oompa_run', OOMPA_RUN_CAPTURE_RE, 1),
-    ...collectMatches(
-      content,
-      'buddy_team_configuration',
-      /(?:^[ \t]*🔧[ \t]+mcp_tool[ \t]*\r?\n\s*)?<!--\s*buddy_team_configuration\s*:(.*?)\s*-->/ms,
-      1
-    ),
+    ...collectMatches(content, 'retired_marker', RETIRED_MARKER_RE),
   ].sort((a, b) => a.index - b.index);
 
   const segments: StructuredMessageSegment[] = [];
@@ -91,13 +88,10 @@ export function splitStructuredMessageContent(content: string): StructuredMessag
     }
     if (match.type === 'ask_user_question') {
       segments.push({ type: match.type, json: match.payload ?? '' });
-    } else if (
-      match.type === 'buddy_review_result' ||
-      match.type === 'buddy_builder_result' ||
-      match.type === 'buddy_team_configuration' ||
-      match.type === 'buddy_worker_thread'
-    ) {
+    } else if (match.type === 'buddy_builder_result' || match.type === 'buddy_worker_thread') {
       segments.push({ type: match.type, json: match.payload ?? '' });
+    } else if (match.type === 'retired_marker') {
+      segments.push({ type: match.type });
     } else if (match.type === 'oompa_run') {
       segments.push({ type: match.type, content: match.payload ?? '' });
     } else {
