@@ -11,6 +11,10 @@
 //! T23b should give them their own file — ingest's rows are a rebuildable cache, these are not,
 //! and "delete the cache to rebuild it" must never be able to delete conversation records.
 
+// Outcome enums carry a whole record in one variant and nothing in the others. Boxing would
+// change nothing napi generates and save ~400 bytes on a value that lives for one call.
+#![allow(clippy::large_enum_variant)]
+
 pub mod import;
 #[cfg(feature = "node")]
 pub mod node;

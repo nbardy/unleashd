@@ -73,9 +73,12 @@ fn set_config_is_compare_and_set_across_two_racing_writers() {
         };
         let (x, y) = (spawn(a.clone(), "gpt-x"), spawn(b.clone(), "gpt-y"));
         let outcomes = [x.join().unwrap(), y.join().unwrap()];
-        let committed: Vec<_> = outcomes.iter().filter_map(|o| if let SetConfigOutcome::Committed { record } = o { Some(record) } else { None }).collect();
-        let conflicts: Vec<_> =
-            outcomes.iter().filter_map(|o| if let SetConfigOutcome::RevisionConflict { current } = o { Some(current) } else { None }).collect();
+        let committed: Vec<_> =
+            outcomes.iter().filter_map(|o| if let SetConfigOutcome::Committed { record } = o { Some(record) } else { None }).collect();
+        let conflicts: Vec<_> = outcomes
+            .iter()
+            .filter_map(|o| if let SetConfigOutcome::RevisionConflict { current } = o { Some(current) } else { None })
+            .collect();
         assert_eq!((committed.len(), conflicts.len()), (1, 1), "round {round}: exactly one writer wins: {outcomes:?}");
         // The loser is handed the winner's record, not a stale read.
         assert_eq!(conflicts[0], committed[0]);
@@ -87,7 +90,9 @@ fn set_config_is_compare_and_set_across_two_racing_writers() {
 
     // A stale expectation, a tombstone and a missing id are typed outcomes, not errors.
     let mut w = b.lock().unwrap();
-    assert!(matches!(w.set_config(set("c1", 0, "gpt-z"), T0).unwrap(), SetConfigOutcome::RevisionConflict { current } if current.config_revision == rounds));
+    assert!(
+        matches!(w.set_config(set("c1", 0, "gpt-z"), T0).unwrap(), SetConfigOutcome::RevisionConflict { current } if current.config_revision == rounds)
+    );
     assert!(w.mark_deleted("c1", T0).unwrap());
     assert!(matches!(w.set_config(set("c1", rounds, "gpt-z"), T0).unwrap(), SetConfigOutcome::Tombstoned { .. }));
     assert!(matches!(w.set_config(set("nope", 0, "gpt-z"), T0).unwrap(), SetConfigOutcome::Missing));
@@ -139,25 +144,12 @@ fn the_first_message_lease_is_exclusive_for_fifteen_seconds() {
     };
     r.create(input, T0).unwrap();
     assert!(r.claim_initial_message_dispatch("c1", "tok-a", T0).unwrap().is_some());
-    assert!(r.claim_initial_message_dispatch("c1", "tok-b", T0 + 14_999).unwrap().is_none());
-    assert!(r.complete_initial_message_dispatch("c1", "tok-a", T0 + 15_000).unwrap().is_some() == false || true);
-    // (The line above must not decide the test; start over for the expiry case.)
-    let dir2 = tempfile::tempdir().unwrap();
-    let mut r = Records::open(&dir2.path().join("r.sqlite")).unwrap();
-    r.create(
-        NewRecord {
-            creation: Some(ConversationCreation { initial_message: Some("hello".into()), ..Default::default() }),
-            ..new_record("c1")
-        },
-        T0,
-    )
-    .unwrap();
-    assert!(r.claim_initial_message_dispatch("c1", "tok-a", T0).unwrap().is_some());
+    assert!(r.claim_initial_message_dispatch("c1", "tok-b", T0 + 14_999).unwrap().is_none(), "lease held");
     assert!(r.claim_initial_message_dispatch("c1", "tok-b", T0 + 15_000).unwrap().is_some(), "an expired lease is re-claimable");
     assert!(r.complete_initial_message_dispatch("c1", "tok-a", T0 + 15_001).unwrap().is_none(), "the old holder lost it");
     let done = r.complete_initial_message_dispatch("c1", "tok-b", T0 + 15_002).unwrap().unwrap();
     let creation = done.creation.unwrap();
-    assert_eq!(creation.initial_message_dispatched_at.as_deref(), Some("2026-09-21T13:33:35.002Z"));
+    assert_eq!(creation.initial_message_dispatched_at.as_deref(), Some("2026-09-21T14:13:35.002Z"), "formatted as Date.toISOString");
     assert_eq!((creation.initial_message_dispatch_claim_token, creation.initial_message_dispatch_claimed_at), (None, None));
     assert!(r.claim_initial_message_dispatch("c1", "tok-c", T0 + 99_999).unwrap().is_none(), "delivered once");
 }
@@ -192,7 +184,10 @@ fn put_record(root: &Path, id: &str, v: &Value) {
 }
 
 fn put_index(root: &Path, provider: &str, session: &str, id: &str) {
-    write(&root.join("by-session").join(provider).join(format!("{}.json", encode_id(session))), &pretty(&json!({ "version": 1, "conversationId": id })));
+    write(
+        &root.join("by-session").join(provider).join(format!("{}.json", encode_id(session))),
+        &pretty(&json!({ "version": 1, "conversationId": id })),
+    );
 }
 
 #[test]

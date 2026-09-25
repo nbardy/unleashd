@@ -205,10 +205,6 @@ export interface NewRecord {
 
 export type Placement = 'default' | 'background'
 
-/**
- * r" Who established the record's config: the owner, a legacy migration, or a sidecar created
- * r" for a transcript found on disk.
- */
 export type Provenance = 'user' | 'legacy_inferred' | 'external_discovered'
 
 export type Provider = 'claude' | 'codex' | 'cursor' | 'gemini' | 'opencode' | 'muse'
@@ -231,7 +227,6 @@ export type ReasoningSelection =
   | { mode: 'disabled' }
   | { mode: 'explicit'; effort: string }
 
-/** r" `status`: a deleted record is a tombstone, kept so its transcripts stay recognisable. */
 export type RecordStatus = 'active' | 'deleted'
 
 /**
