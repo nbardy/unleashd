@@ -67,12 +67,6 @@ export function matchConversationKind<T>(
 export function isBuddyKind(kind: ConversationKind): kind is BuddyKind {
   return kind.kind === 'buddy';
 }
-export function isGeneralKind(kind: ConversationKind): kind is GeneralKind {
-  return kind.kind === 'general';
-}
-export function isBuddyBuilderKind(kind: ConversationKind): kind is BuddyBuilderKind {
-  return kind.kind === 'buddy_builder';
-}
 
 // ── canonical constructors (κ at the ingestion boundary) ─────────────────────
 /**
@@ -241,30 +235,4 @@ export function getBuddyContext(
   );
   if (isBuddyKind(kind)) return buddyContextFromKind(kind);
   return value.buddyContext ?? null;
-}
-
-export function getBuddyId(
-  value:
-    | {
-        kind?: ConversationKind | null;
-        buddyContext?: BuddyContext | null;
-      }
-    | null
-    | undefined
-): string | null {
-  if (!value) return null;
-  const kind = getConversationKind(
-    value as { kind?: ConversationKind | null; buddyContext?: BuddyContext | null }
-  );
-  return isBuddyKind(kind) ? kind.buddyId : null;
-}
-
-export function getWorkspaceId(value: {
-  kind?: ConversationKind | null;
-  buddyContext?: BuddyContext | null;
-}): string | null {
-  const kind = getConversationKind(
-    value as { kind?: ConversationKind | null; buddyContext?: BuddyContext | null }
-  );
-  return isBuddyKind(kind) ? kind.workspaceId : null;
 }

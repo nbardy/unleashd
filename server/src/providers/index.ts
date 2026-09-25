@@ -5,13 +5,12 @@
  * `@nbardy/agent-cli` (`executeCommand`).
  */
 
-import type { ModelInfo, Provider as ProviderName } from '@unleashd/shared';
-import claudeProvider from './claude';
-import codexProvider from './codex';
-import cursorProvider from './cursor';
-import geminiProvider from './gemini';
-import museProvider from './muse';
-import opencodeProvider from './opencode';
+import {
+  type ModelInfo,
+  type Provider as ProviderName,
+  ProviderSchema,
+  catalogEntryForProvider,
+} from '@unleashd/shared';
 
 /**
  * Minimal provider contract used by the server runtime.
@@ -22,18 +21,25 @@ export interface Provider {
   listModels(): ModelInfo[];
 }
 
-const providers: Record<ProviderName, Provider> = {
-  claude: claudeProvider,
-  codex: codexProvider,
-  opencode: opencodeProvider,
-  gemini: geminiProvider,
-  cursor: cursorProvider,
-  muse: museProvider,
-};
+// Pattern: one-type-source (docs/patterns.md#one-type-source)
+// Models come only from the generated catalog (shared/src/generated/catalog.ts, built from
+// vendor/agent-cli-tool/catalog.jsonc). This replaced six per-provider files, each with a
+// FALLBACK_*_MODELS copy that drifted from the catalog, and a runtime catalog.jsonc search
+// over seven candidate paths (one an absolute home path). A provider missing from the
+// generated catalog throws here, at startup.
+function providerFromCatalog(name: ProviderName): Provider {
+  const models: ModelInfo[] = catalogEntryForProvider(name).models.map(
+    ({ id, displayName, isDefault }) => ({ id, displayName, isDefault })
+  );
+  return { name, listModels: () => models };
+}
+
+const providers = Object.fromEntries(
+  ProviderSchema.options.map((name) => [name, providerFromCatalog(name)])
+) as Record<ProviderName, Provider>;
 
 /**
  * Get a provider by name
- * @param name - Provider name ('claude', 'codex', 'opencode', 'gemini', or 'cursor')
  * @throws Error if provider not found
  */
 export function getProvider(name: ProviderName): Provider {

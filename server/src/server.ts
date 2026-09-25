@@ -1,4 +1,5 @@
 import http from 'node:http';
+import os from 'node:os';
 import path from 'node:path';
 import type { Provider as ProviderName } from '@unleashd/shared';
 
@@ -71,6 +72,14 @@ import { isProcessAlive, readLatestSwarmRuntime } from './swarm/runtime';
 import { registerConversationWebSocket } from './transport/conversation-websocket';
 import { WS_LIVENESS_INTERVAL_MS, superviseLiveness } from './transport/websocket';
 
+import {
+  CLAUDE_PROJECTS_DIR,
+  CODEX_SESSIONS_DIR,
+  CURSOR_PROJECTS_DIR,
+  GEMINI_SESSIONS_DIR,
+  MUSE_SESSIONS_DIR,
+  OPENCODE_MESSAGE_DIR,
+} from './adapters/jsonl';
 import { auditLocalAgents } from './audit.js';
 import { createBriefings } from './buddies/briefing';
 import { type StableConversationPorts, slotOf } from './buddies/buddy-conversation-slots';
@@ -90,6 +99,7 @@ import { createMemoryReviewer } from './buddies/memory-review';
 import { createBuddyPolicyPort } from './buddies/policy-port';
 import { registerBuddyRoutes } from './buddies/routes';
 import { type RunnerHost, createRunner } from './buddies/runner';
+import { UPLOADS_RETENTION_MS, startUploadsGc } from './uploads/gc';
 
 let startupAuditResults: ReturnType<typeof auditLocalAgents> = [];
 
@@ -670,6 +680,28 @@ void runServerStartup(
       // Before any conversation loads: runtimes copy record.done at construction.
       await retireLegacyUiState({ dataDirectory: APP_DATA_DIR, store: conversationConfigStore });
       await paletteService.initialize();
+      // Uploads retention: a worker-thread pass now and daily. Every place a message or post can
+      // name an upload is a reference root; see uploads/gc.ts for the deletion rule.
+      startUploadsGc(async () => ({
+        uploadsDir: UPLOADS_DIR,
+        referenceRoots: [
+          CLAUDE_PROJECTS_DIR,
+          CODEX_SESSIONS_DIR,
+          path.join(os.homedir(), '.codex', 'archived_sessions'),
+          path.dirname(OPENCODE_MESSAGE_DIR),
+          GEMINI_SESSIONS_DIR,
+          path.join(os.homedir(), '.gemini-sandbox'),
+          MUSE_SESSIONS_DIR,
+          CURSOR_PROJECTS_DIR,
+          APP_DATA_DIR,
+          path.dirname(buddiesDatabasePath()),
+        ],
+        protectedNames: [
+          ...(await conversationConfigStore.list()).map((record) => record.conversationId),
+          ...conversations.keys(),
+        ],
+        maxAgeMs: UPLOADS_RETENTION_MS,
+      }));
     },
     startOptionalScheduler: async () => {
       try {

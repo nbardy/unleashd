@@ -21,10 +21,6 @@ export interface MobileConversationOrigin {
   hash: string;
 }
 
-export interface MobileConversationRouteState {
-  mobileConversationOrigin: MobileConversationOrigin;
-}
-
 type RouteLocation = {
   pathname: string;
   search?: string;

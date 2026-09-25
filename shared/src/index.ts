@@ -91,7 +91,12 @@ import {
   MUSE_EFFORT_LEVELS as GEN_MUSE_EFFORT_LEVELS,
   MUSE_MODEL_IDS as GEN_MUSE_MODEL_IDS,
   NO_CODEX_THINKING as GEN_NO_CODEX_THINKING,
+  PROVIDER_MODEL_CATALOG,
 } from './generated/catalog.js';
+import type { CatalogProviderEntry } from './generated/catalog.js';
+
+export { PROVIDER_MODEL_CATALOG } from './generated/catalog.js';
+export type { CatalogModel, CatalogProviderEntry } from './generated/catalog.js';
 
 // Re-export generated arrays so consumers can import from shared entry point
 export const CLAUDE_EFFORT_LEVELS = GEN_CLAUDE_EFFORT_LEVELS;
@@ -103,9 +108,6 @@ export const CODEX_UNIFIED_THINKING_OPTIONS = GEN_CODEX_UNIFIED_THINKING_OPTIONS
 export const CURSOR_MODEL_REGISTRY = GEN_CURSOR_MODEL_REGISTRY;
 export const CODEX_MODEL_REGISTRY = GEN_CODEX_MODEL_REGISTRY;
 
-export type ClaudeEffortLevel = (typeof CLAUDE_EFFORT_LEVELS)[number];
-export type CodexEffortLevel = (typeof CODEX_EFFORT_LEVELS)[number];
-export type MuseEffortLevel = (typeof MUSE_EFFORT_LEVELS)[number];
 export type CodexThinkingOption = (typeof CODEX_THINKING_OPTIONS)[number];
 export type CodexThinkingMode = typeof NO_CODEX_THINKING | CodexThinkingOption;
 
@@ -123,10 +125,8 @@ export type CodexModelRegistryEntry = {
 const _codexRegistryCheck: ReadonlyArray<CodexModelRegistryEntry> = CODEX_MODEL_REGISTRY;
 
 export const ClaudeModelSchema = z.enum(GEN_CLAUDE_MODEL_IDS as unknown as [string, ...string[]]);
-export type ClaudeModel = z.infer<typeof ClaudeModelSchema>;
 
 export const GeminiModelSchema = z.enum(GEN_GEMINI_MODEL_IDS as unknown as [string, ...string[]]);
-export type GeminiModel = z.infer<typeof GeminiModelSchema>;
 
 export type CursorModel = (typeof CURSOR_MODEL_REGISTRY)[number]['id'];
 export const CURSOR_MODEL_IDS = CURSOR_MODEL_REGISTRY.map((entry) => entry.id);
@@ -135,7 +135,6 @@ export const CursorModelSchema = z.enum(
 );
 
 export const MuseModelSchema = z.enum(GEN_MUSE_MODEL_IDS as unknown as [string, ...string[]]);
-export type MuseModel = z.infer<typeof MuseModelSchema>;
 
 /** Retired / shorthand ids → canonical Cursor `--model` value. */
 export const CURSOR_MODEL_ALIASES: Readonly<Record<string, CursorModel>> = {
@@ -153,16 +152,6 @@ type CodexModelRegistryItem = (typeof CODEX_MODEL_REGISTRY)[number];
 // Conversation.reasoningEffort (same shape as Claude). Composite IDs like
 // "gpt-5.4-high" are a legacy wire format handled by toCodexModelId/fromCodexModelId.
 export type CodexModel = CodexModelRegistryItem['modelName'];
-
-export const CODEX_THINKING_DISPLAY_NAMES: Record<CodexThinkingOption, string> = {
-  minimal: 'Minimal Effort',
-  low: 'Low Effort',
-  medium: 'Medium Effort',
-  high: 'High Effort',
-  xhigh: 'Extra High Effort',
-  max: 'Max Effort',
-  ultra: 'Ultra Effort',
-};
 
 /**
  * MIGRATION HELPER for legacy composite Codex model IDs.
@@ -237,23 +226,35 @@ export const CodexModelSchema = z.custom<CodexModel>(
 );
 
 /**
- * Canonical server-side default for provider reasoning flags.
- * Codex defaults are model-specific; an absent/unknown model uses the registry default.
- * `none` is represented as undefined throughout Conversation state.
+ * The catalog entry for a provider. Every Provider has one: a missing entry is a
+ * stale generated catalog, and this throws at startup instead of guessing.
+ */
+export function catalogEntryForProvider(provider: Provider): CatalogProviderEntry {
+  const entry = PROVIDER_MODEL_CATALOG.find((candidate) => candidate.id === provider);
+  if (!entry) {
+    throw new Error(
+      `Provider '${provider}' is missing from the generated model catalog; run pnpm --filter @unleashd/shared gen:catalog`
+    );
+  }
+  return entry;
+}
+
+/**
+ * Canonical server-side default for provider reasoning flags: the model's
+ * `reasoning.defaultEffort` in the catalog. An absent/unknown model uses the
+ * provider's default model. Providers without reasoning return undefined.
+ * Pattern: one-type-source (docs/patterns.md#one-type-source) — this replaced a
+ * hard-coded 'high' for claude/muse that the catalog already declared.
  */
 export function defaultReasoningEffortForProvider(
   provider: Provider,
   model?: string
 ): string | undefined {
-  if (provider === 'claude' || provider === 'muse') return 'high';
-  if (provider !== 'codex') return undefined;
-
-  const entry: CodexModelRegistryEntry =
-    CODEX_MODEL_REGISTRY.find((candidate) => candidate.modelName === model) ??
-    CODEX_MODEL_REGISTRY.find((candidate) => candidate.isDefault) ??
-    CODEX_MODEL_REGISTRY[0];
-  const defaultOption = entry.defaultThinkingOption ?? NO_CODEX_THINKING;
-  return defaultOption === NO_CODEX_THINKING ? undefined : defaultOption;
+  const entry = catalogEntryForProvider(provider);
+  const chosen =
+    entry.models.find((candidate) => candidate.id === model) ??
+    entry.models.find((candidate) => candidate.id === entry.defaultModelId);
+  return chosen?.reasoning?.defaultEffort;
 }
 
 export type OpenCodeModel = `${string}/${string}`;
@@ -450,18 +451,6 @@ export function isEffortValidForProvider(
   if (effort == null) return true;
   return effortLevelsForProvider(provider).includes(effort);
 }
-
-// Display labels for the union of every level any provider accepts. Keyed by
-// plain string since the wire shape is string, not a typed enum.
-export const EFFORT_DISPLAY_NAMES: Record<string, string> = {
-  minimal: 'Minimal',
-  low: 'Low',
-  medium: 'Medium',
-  high: 'High',
-  xhigh: 'xHigh',
-  max: 'Max',
-  ultra: 'Ultra',
-};
 
 export const ConversationSchema = z.object({
   id: ConversationIdSchema,

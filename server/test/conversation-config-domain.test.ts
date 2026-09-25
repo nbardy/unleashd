@@ -3,8 +3,8 @@ import test from 'node:test';
 import {
   type ConversationConfig,
   ProviderCatalogSchema,
+  applyConversationConfigPatch,
   resolveConversationConfig,
-  transitionConversationConfig,
 } from '../../shared/src/index';
 
 const catalog = ProviderCatalogSchema.parse({
@@ -175,13 +175,16 @@ test('unavailable explicit selections are retained and return structured errors'
 });
 
 test('invalid explicit reasoning for a new model rejects the whole transition', () => {
+  // The production path: config-service applies the patch, then resolves the candidate.
   const current = config({ reasoning: { mode: 'explicit', effort: 'ultra' } });
-  const result = transitionConversationConfig(
-    current,
-    { kind: 'set_model', model: { mode: 'explicit', modelId: 'gpt-5.6-terra' } },
-    catalog
-  );
-  assert.equal(result.ok, false);
-  if (!result.ok) assert.equal(result.error.code, 'reasoning_unavailable');
+  const candidate = applyConversationConfigPatch(current, {
+    kind: 'set_model',
+    model: { mode: 'explicit', modelId: 'gpt-5.6-terra' },
+  });
+  const resolution = resolveConversationConfig(candidate, catalog);
+  assert.equal(resolution.status, 'unavailable');
+  if (resolution.status === 'unavailable') {
+    assert.equal(resolution.error.code, 'reasoning_unavailable');
+  }
   assert.deepEqual(current.model, { mode: 'default' });
 });
