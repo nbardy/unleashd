@@ -194,6 +194,6 @@ responder's `channelChanged` port (a queue entry added or removed, or a failure
 notice written — a notice is not announced as a post, because announcing asks
 the thread's other Buddies to follow up). `listId` only picks which cache keys
 to refresh, and the client refreshes the channel list with them because its rows
-count every post, plus any mounted Task-filtered feed (`/api/buddies/posts?…`),
+count every post, plus any mounted Task-filtered feed (`/api/buddies/tasks/<id>/posts`),
 which spans channels; there is still one refresh path. It is not debounced: the
 client's in-flight join already folds a burst.

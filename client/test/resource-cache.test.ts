@@ -250,8 +250,9 @@ test('an invalidation while a load is in flight loads once more after it', async
 // A Buddy's mention reply reaches the client only as `channel_changed`, whose
 // id may be any channel kind. The channel's own keys refresh, and so do the
 // keys the push cannot address by channel: the open thread, the owner's
-// inboxes (rail unread counts, requests, the tab title) and task details
-// (their comments are the task channel). Until 2026-09-25 the rail waited out
+// inboxes (rail unread counts, requests, the tab title), task details
+// (their comments are the task channel) and the Task filter's cross-channel
+// feed (T22). Until 2026-09-25 the rail waited out
 // the 30 s backstop poll for a reply.
 test('a channel change refreshes that channel, threads and inboxes, not other channels', async () => {
   const loads = new Map<string, number>();
@@ -262,6 +263,7 @@ test('a channel change refreshes that channel, threads and inboxes, not other ch
     '/api/buddies/workspaces/w/inbox',
     'buddy-owner-inboxes:w,v',
     '/api/buddies/tasks/t1',
+    '/api/buddies/tasks/t1/posts?limit=50',
     '/api/buddies/channels/ch_b/posts?limit=50',
     '/api/buddies/channels/ch_ab/posts?limit=50',
   ];
@@ -278,7 +280,7 @@ test('a channel change refreshes that channel, threads and inboxes, not other ch
   await new Promise((resolve) => setImmediate(resolve));
   assert.deepEqual(
     keys.map((key) => loads.get(key)),
-    [2, 2, 2, 2, 2, 2, 1, 1]
+    [2, 2, 2, 2, 2, 2, 2, 1, 1]
   );
   for (const release of releases) release();
 });

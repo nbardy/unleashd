@@ -302,6 +302,8 @@ export const invalidateBuddyResources = (): void =>
  *     which is what clears it on other devices;
  *   - task details (`/api/buddies/tasks/<id>`), whose comments are the task
  *     channel's posts.
+ *   - the Task filter's feed (`/api/buddies/tasks/<id>/posts`), which spans
+ *     channels; without it a filtered view waited out the backstop (T22).
  * A Buddy's mention reply is announced only here, never by `buddies_changed`,
  * so without these the rail lagged by up to the 30 s backstop.
  */
@@ -314,7 +316,7 @@ export const invalidateChannelResources = (channelId: string): void => {
       /^\/api\/buddies\/posts\/[^/]+\/thread/.test(key) ||
       /^\/api\/buddies\/workspaces\/[^/]+\/inbox$/.test(key) ||
       key.startsWith('buddy-owner-inboxes:') ||
-      /^\/api\/buddies\/tasks\/[^/?]+$/.test(key)
+      /^\/api\/buddies\/tasks\/[^/?]+(\/posts\?.*)?$/.test(key)
   );
 };
 
