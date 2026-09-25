@@ -974,6 +974,7 @@ name = "unleashd-ingest"
 version = "0.1.0"
 dependencies = [
  "base64",
+ "chrono",
  "memchr",
  "napi",
  "napi-build",
@@ -984,6 +985,7 @@ dependencies = [
  "rusqlite",
  "serde",
  "serde_json",
+ "sha2",
  "tempfile",
  "thiserror",
  "tokio",

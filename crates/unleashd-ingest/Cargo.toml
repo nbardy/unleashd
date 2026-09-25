@@ -7,10 +7,18 @@ publish = false
 [lib]
 crate-type = ["cdylib", "rlib"]
 
+[[bin]]
+name = "records-tool"
+path = "src/bin/records-tool.rs"
+# Build with --no-default-features --features cli: the binary must not link the napi layer.
+required-features = ["cli"]
+
 [features]
 default = ["node"]
 # The napi bindings. Off for `cargo test` of the pure core, which must link without Node.
 node = ["dep:napi", "dep:napi-derive", "dep:tokio"]
+# The records-tool binary (import / verify / bench). Build with --no-default-features --features cli.
+cli = []
 
 [dependencies]
 rusqlite = { version = "0.32", features = ["bundled"] }
@@ -24,6 +32,8 @@ regex = "1"
 base64 = "0.22"
 rayon = "1"
 thiserror = "2"
+sha2 = "0.10"
+chrono = { version = "0.4", default-features = false, features = ["std"] }
 napi = { version = "3", default-features = false, features = ["napi8", "tokio_rt"], optional = true }
 napi-derive = { version = "3", optional = true }
 tokio = { version = "1", features = ["rt"], optional = true }

@@ -12,6 +12,7 @@ pub mod node;
 pub mod parsers;
 pub mod paths;
 pub mod read;
+pub mod records;
 pub mod store;
 pub mod subagents;
 pub mod text;
