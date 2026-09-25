@@ -34,6 +34,19 @@ that way — the boundary state used to be `{ failed: boolean }`, which discarde
 indistinguishable from every other crash without leaving the broken app. Guarded by
 `client/test/client-error-fallback.test.tsx`.
 
+## Event-loop stalls
+
+Any pause of the server's event loop of 100 ms or more is journaled as a `warn` with component
+`event-loop` (`server/src/observability/event-loop-stall.ts`). Detection is
+`perf_hooks.monitorEventLoopDelay` at 10 ms resolution, read by a 100 ms check. The message gives
+the stall duration and the last noted activity: `GET /api/...` for HTTP requests, `ws <type>` for
+WebSocket commands, and `timer buddy-scheduler` / `timer session-poll` for the known timers. The
+activity is also stored as `context.route`. Treat the label as the prime suspect, not proof: a stall
+in a later async continuation is attributed to whatever was noted last. A new hot timer or request
+path should call `noteActivity(label)` at its top. The call is two variable writes. Each label
+writes at most one occurrence a minute, and the next occurrence summarizes the repeats. Measured
+cost: about 21 ns per `noteActivity` and 0.23% of one core while idle.
+
 Volatile UUIDs, numeric values and stack locations are normalized into a stable fingerprint. Repeats
 increment one group's count. Acknowledgement hides the group from the default unresolved view; a
 later occurrence automatically reopens it.

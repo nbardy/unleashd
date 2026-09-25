@@ -66,6 +66,8 @@ import {
   TurnAttemptJournal,
   createJournalTurnAttemptObserver,
   installConsoleErrorCapture,
+  noteActivity,
+  startEventLoopStallMonitor,
 } from './observability';
 import { createPaletteService } from './palettes/palette-service';
 import { buildPalettePrompt } from './palettes/prompt';
@@ -432,6 +434,13 @@ registerAuthRoutes(app, AUTH_POLICY);
 // added it must call `res.flush()` after each write or compression buffers it.
 app.use(compression({ threshold: 1024 }));
 
+// Event-loop stall attribution (observability/event-loop-stall.ts): a label and
+// a timestamp per request, nothing else.
+app.use((request, _response, next) => {
+  noteActivity(`${request.method} ${request.path}`);
+  next();
+});
+
 // JSON body parser for API routes.
 // Default limit is 100kb which is far too small — queue-message, merge, and
 // other endpoints routinely carry pasted content, inline images, or full
@@ -708,12 +717,14 @@ const sessionLoader = createSessionLoader({
   configService: conversationConfigService,
   loadConversations: (options) =>
     loadAllConversations({ ...options, cache: normalizedSessionCache }),
-  pollConversations: (mtimes, activeIds, options) =>
-    pollForChanges(mtimes, activeIds, {
+  pollConversations: (mtimes, activeIds, options) => {
+    noteActivity('timer session-poll');
+    return pollForChanges(mtimes, activeIds, {
       ...options,
       cache: normalizedSessionCache,
       tails: transcriptTails,
-    }),
+    });
+  },
   createConversation: (options) => new Conversation(options),
   createId: uuidv4,
   resolveBuddyConversation,
@@ -738,6 +749,7 @@ void runServerStartup(
     initialize: async () => {
       await errorJournal.initialize();
       installConsoleErrorCapture(errorJournal);
+      startEventLoopStallMonitor(errorJournal);
       await buddyControlServer.start();
       startupAuditResults = auditLocalAgents();
       await normalizedSessionCache.initialize();
