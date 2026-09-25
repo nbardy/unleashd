@@ -40,7 +40,8 @@ export const TURN_IDLE_TIMEOUT_MS = TURN_PROVIDER_IDLE_TIMEOUT_MS;
 // Foreground Buddy claims must receive this same budget, including env overrides.
 // A separate claim default of 600s killed active chats despite healthy heartbeats
 // on 2026-09-10. Raising idle limits cannot fix an earlier absolute deadline.
-// See docs/incident-2026-09-10-buddy-chat-timeout.md and buddy-coordination.test.ts.
+// See docs/incident-2026-09-10-buddy-chat-timeout.md. Guards: conversation-runtime.test.ts and
+// buddies-v2.test.ts (a chat run is leased for exactly TURN_MAX_RUNTIME_MS).
 export const TURN_MAX_RUNTIME_MS = readPositiveIntEnv('CWV_TURN_MAX_RUNTIME_MS', 24 * 60 * 60_000);
 export const TURN_TIMEOUT_KILL_GRACE_MS = readPositiveIntEnv(
   'CWV_TURN_TIMEOUT_KILL_GRACE_MS',

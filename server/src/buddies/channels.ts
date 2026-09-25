@@ -70,7 +70,7 @@ const buddyAuthor = (post: Post): string[] =>
 // Owner authority for a seat turn follows the author of its trigger post, read back from the
 // store by id — never from the prompt, which quotes Buddy text. B1 (2026-09-25): every seat turn
 // was sent as 'owner_input', so a follow-up gated on ANOTHER BUDDY's post held owner authority.
-// Guard: channel-seat-continuity.test.ts and buddies-v2.test.ts "B1".
+// Guard: buddies-v2.test.ts "B1: a seat turn holds owner authority only when …".
 export function seatTurnInput(trigger: Post): SeatTurnInput {
   switch (trigger.author.kind) {
     case 'owner':

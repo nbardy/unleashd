@@ -362,7 +362,15 @@ export function createRunner(options: {
         conversationId,
       });
       chats.set(turnId, { state: 'queued', context, conversationId, run });
-      run.then(wake, (error) => chats.set(turnId, { state: 'failed', error: String(error) }));
+      run.then(wake, (error) => {
+        // Loud (the error journal captures console.error), never thrown into the runtime's
+        // admission tick: an exception there is uncaught and would take the server down.
+        console.error(
+          `[buddies-runner] chat turn for ${context.buddyId} could not be queued:`,
+          error
+        );
+        chats.set(turnId, { state: 'failed', error: String(error) });
+      });
     },
 
     chatAdmission(turnId: string): ChatAdmission {
@@ -371,9 +379,9 @@ export function createRunner(options: {
       switch (ticket.state) {
         case 'queued':
           return { kind: 'waiting', reason: 'waiting for a run slot' };
+        // The turn stays pending in its conversation, showing why; the owner can stop it.
         case 'failed':
-          chats.delete(turnId);
-          throw new Error(`Buddy chat turn could not be queued: ${ticket.error}`);
+          return { kind: 'waiting', reason: `could not be queued: ${ticket.error}` };
         case 'admitted':
           chats.delete(turnId);
           return {
