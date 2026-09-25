@@ -1,4 +1,5 @@
-// Buddy sigil renderer: genome → 144px PNG blob URL.
+// Buddy sigil renderer: genome → 144px PNG blob. Runs in sigil.worker.ts, never on
+// the main thread (OffscreenCanvas only; see the worker for why).
 //
 // Two layers, one field:
 //   1. A WebGL2 fragment shader evaluates a scalar field t(p) ∈ [0, 1] — a
@@ -235,9 +236,7 @@ function compile(gl: WebGL2RenderingContext, type: number, source: string): WebG
 }
 
 function createGpu(): Gpu {
-  const canvas = document.createElement('canvas');
-  canvas.width = GL_SIZE;
-  canvas.height = GL_SIZE;
+  const canvas = new OffscreenCanvas(GL_SIZE, GL_SIZE);
   const gl = canvas.getContext('webgl2', { preserveDrawingBuffer: true, antialias: false });
   if (!gl) throw new Error('Sigil: WebGL2 is unavailable');
 
@@ -357,7 +356,7 @@ function streamFor(seed: number): () => number {
   };
 }
 
-function drawStrokes(ctx: CanvasRenderingContext2D, g: SigilGenome, field: FieldSample): void {
+function drawStrokes(ctx: OffscreenCanvasRenderingContext2D, g: SigilGenome, field: FieldSample): void {
   const s = g.strokes;
   const next = streamFor(s.seed);
   const scale = GL_SIZE / SIGIL_SIZE;
@@ -415,14 +414,8 @@ function drawStrokes(ctx: CanvasRenderingContext2D, g: SigilGenome, field: Field
   }
 }
 
-function canvasBlob(canvas: HTMLCanvasElement): Promise<Blob> {
-  return new Promise((resolve, reject) =>
-    canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error('Sigil: toBlob failed'))))
-  );
-}
-
-/** Render a genome to a PNG object URL. Browser-only (WebGL2 + canvas). */
-export async function renderSigil(genome: SigilGenome): Promise<string> {
+/** Render a genome to a PNG. Worker or window (WebGL2 + OffscreenCanvas). */
+export function renderSigil(genome: SigilGenome): Promise<Blob> {
   const device = gpu();
   const { gl } = device;
   const background = oklchToRgb(
@@ -455,13 +448,11 @@ export async function renderSigil(genome: SigilGenome): Promise<string> {
   gl.uniform1i(uniform(device, 'u_mode'), 1);
   gl.drawArrays(gl.TRIANGLES, 0, 3);
 
-  const canvas = document.createElement('canvas');
-  canvas.width = SIGIL_SIZE;
-  canvas.height = SIGIL_SIZE;
+  const canvas = new OffscreenCanvas(SIGIL_SIZE, SIGIL_SIZE);
   const ctx = canvas.getContext('2d');
   if (!ctx) throw new Error('Sigil: 2D canvas is unavailable');
   ctx.imageSmoothingQuality = 'high';
-  ctx.drawImage(gl.canvas as HTMLCanvasElement, 0, 0, SIGIL_SIZE, SIGIL_SIZE);
+  ctx.drawImage(gl.canvas, 0, 0, SIGIL_SIZE, SIGIL_SIZE);
   drawStrokes(ctx, genome, field);
-  return URL.createObjectURL(await canvasBlob(canvas));
+  return canvas.convertToBlob({ type: 'image/png' });
 }
