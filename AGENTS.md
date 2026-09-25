@@ -285,8 +285,9 @@ magenta). Run 1 and 3 back-to-back: live data drifts (sidebar badges,
   ceiling). Package tests are safe: they set `BUDDIES_HOME` themselves.
 - The server's Buddies are the crate (`@unleashd/buddies-core`) over the NEW-schema
   DB: `UNLEASHD_BUDDIES_DB`, default `~/.buddies/buddies-v3.sqlite`. It is never the
-  v33 `~/.buddies/buddies.sqlite`; a missing file fails every Buddy call with the
-  import command (`server/src/buddies/core.ts`), never an empty DB. `pnpm addons`
+  v33 `~/.buddies/buddies.sqlite`; a missing file while the v33 one exists fails every
+  Buddy call with the import command, never an empty DB over it (`buddiesLocation` in
+  `server/src/buddies/core.ts`). A first-time install (neither file) gets an empty DB. `pnpm addons`
   (also run by `pnpm run bootstrap`, `pnpm dev`, `pnpm build`, `test:server`) makes both
   addons match their sources from the shared build cache, running cargo only on
   a miss; `pnpm --dir crates/<c> run build` forces a build. Restart the backend
