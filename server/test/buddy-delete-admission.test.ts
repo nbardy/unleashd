@@ -66,7 +66,7 @@ for (const mode of ['delete-during-link', 'remove-after-readiness', 'normal'] as
         updateBuddyStatus: integration.updateStatus,
         settleBuddyDelegation: integration.settleDelegation,
         getConversation: app.registry.get,
-        readLatestOompaRuntime: () => ({ available: false, run: null, reason: 'fixture' }),
+        readLatestOompaRuntime: async () => ({ available: false, run: null, reason: 'fixture' }),
         createSessionId: () => 'fixture-session',
         executeTurn: (() => {
           providerTurns++;

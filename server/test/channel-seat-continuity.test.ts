@@ -111,7 +111,7 @@ function world() {
       updateBuddyStatus: () => undefined,
       settleBuddyDelegation: () => undefined,
       getConversation: (id) => conversations.get(id),
-      readLatestOompaRuntime: () => ({ available: false, run: null, reason: 'fixture' }),
+      readLatestOompaRuntime: async () => ({ available: false, run: null, reason: 'fixture' }),
       createSessionId: () => `provisional-${requests.length}`,
       readCurrentBuddyContext: integration.readCurrentConversation,
       ...chatRunAdmission(

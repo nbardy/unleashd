@@ -1,6 +1,6 @@
 import type { BuddyContext } from '@unleashd/shared';
-import type { BuddyChatAdmission } from '../conversations/runtime';
 import type { CoordinationStore } from './coordination-store';
+import type { BuddyChatAdmission } from './turn-policy';
 
 // Runtime ports for foreground Buddy chat/channel turns. A turn joins its
 // Buddy's FIFO run line (per-Buddy limit, default 5; owner decision 2026-09-25),

@@ -16,7 +16,7 @@ import {
   resolveBuddyMcpLaunch,
 } from '../src/buddies/mcp-config';
 import { createLegacyBuddyMcpServer as createBuddyMcpServer } from '../src/buddies/mcp-server';
-import { assertBuddyProviderSupportsMcp } from '../src/conversations/runtime';
+import { assertBuddyProviderSupportsMcp } from '../src/buddies/provider-capability';
 
 test('Buddy MCP exposes scoped native tools and enforces completion evidence', async () => {
   const root = mkdtempSync(join(tmpdir(), 'buddy-mcp-'));

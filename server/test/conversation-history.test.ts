@@ -144,7 +144,11 @@ async function fixture(
       updateBuddyStatus: () => {},
       settleBuddyDelegation: () => {},
       getConversation: app.registry.get,
-      readLatestOompaRuntime: () => ({ available: false, run: null, reason: 'isolated fixture' }),
+      readLatestOompaRuntime: async () => ({
+        available: false,
+        run: null,
+        reason: 'isolated fixture',
+      }),
       createSessionId: () => CURRENT_SESSION,
       readCurrentBuddyContext: () => ({
         briefing: 'Current permitted briefing',
