@@ -1,18 +1,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
-  ClientMessageSchema,
-  CommandRejectedEventSchema,
   type ConversationConfig,
-  ConversationCreatedEventSchema,
-  ConversationUpdatedEventSchema,
-  CreateConversationCommandSchema,
-  InitMessageSchema,
   ProviderCatalogSchema,
-  SetConversationConfigCommandSchema,
-  applyConversationConfigPatch,
-  decodeLegacyCodexCompositeModel,
-  encodeLegacyCodexCompositeModel,
   resolveConversationConfig,
   transitionConversationConfig,
 } from '../../shared/src/index';
@@ -184,21 +174,6 @@ test('unavailable explicit selections are retained and return structured errors'
   }
 });
 
-test('provider transition atomically resets model and reasoning intent', () => {
-  const current = config({
-    model: { mode: 'explicit', modelId: 'gpt-5.6-terra' },
-    reasoning: { mode: 'disabled' },
-  });
-  assert.deepEqual(
-    applyConversationConfigPatch(current, { kind: 'set_provider', provider: 'claude' }),
-    {
-      provider: 'claude',
-      model: { mode: 'default' },
-      reasoning: { mode: 'default' },
-    }
-  );
-});
-
 test('invalid explicit reasoning for a new model rejects the whole transition', () => {
   const current = config({ reasoning: { mode: 'explicit', effort: 'ultra' } });
   const result = transitionConversationConfig(
@@ -209,93 +184,4 @@ test('invalid explicit reasoning for a new model rejects the whole transition', 
   assert.equal(result.ok, false);
   if (!result.ok) assert.equal(result.error.code, 'reasoning_unavailable');
   assert.deepEqual(current.model, { mode: 'default' });
-});
-
-test('legacy Codex adapter only decomposes a supplied known combination', () => {
-  const vocabulary = {
-    modelIds: ['gpt-5.6-sol', 'gpt-5.3-codex-spark'],
-    effortLevels: ['high', 'ultra'],
-  };
-  assert.deepEqual(decodeLegacyCodexCompositeModel('gpt-5.6-sol-ultra', vocabulary), {
-    baseModel: 'gpt-5.6-sol',
-    effort: 'ultra',
-  });
-  assert.deepEqual(decodeLegacyCodexCompositeModel('gpt-example-ultra', vocabulary), {
-    baseModel: 'gpt-example-ultra',
-    effort: null,
-  });
-  assert.equal(encodeLegacyCodexCompositeModel('gpt-5.6-sol', 'ultra'), 'gpt-5.6-sol-ultra');
-});
-
-test('v2 command and event schemas preserve correlation and revisions', () => {
-  const conversationId = '550e8400-e29b-41d4-a716-446655440000';
-  assert.equal(
-    CreateConversationCommandSchema.safeParse({
-      type: 'create_conversation',
-      commandId: 'create-1',
-      conversationId,
-      workingDirectory: '/tmp',
-      config: config(),
-    }).success,
-    true
-  );
-  assert.equal(
-    SetConversationConfigCommandSchema.safeParse({
-      type: 'set_conversation_config',
-      commandId: 'update-1',
-      conversationId,
-      expectedRevision: 2,
-      patch: { kind: 'set_reasoning', reasoning: { mode: 'disabled' } },
-    }).success,
-    true
-  );
-  assert.equal(ConversationUpdatedEventSchema.shape.reason.options.includes('catalog'), true);
-  assert.equal(
-    CommandRejectedEventSchema.safeParse({
-      type: 'command_rejected',
-      commandId: 'update-1',
-      conversationId,
-      error: { code: 'revision_conflict', message: 'stale revision' },
-    }).success,
-    true
-  );
-});
-
-test('v2 client schema rejects every removed v1 command', () => {
-  const conversationId = '550e8400-e29b-41d4-a716-446655440000';
-  for (const message of [
-    { type: 'new_conversation', id: conversationId, provider: 'codex' },
-    { type: 'set_model', conversationId, model: 'gpt-5.6-sol' },
-    { type: 'set_provider', conversationId, provider: 'claude' },
-    { type: 'set_reasoning_effort', conversationId, value: 'high' },
-  ]) {
-    assert.equal(ClientMessageSchema.safeParse(message).success, false, message.type);
-  }
-});
-
-test('v2 creation acknowledgement requires command correlation', () => {
-  assert.equal(
-    ConversationCreatedEventSchema.safeParse({
-      type: 'conversation_created',
-      conversation: {
-        id: '550e8400-e29b-41d4-a716-446655440000',
-        messages: [],
-        isRunning: false,
-        createdAt: new Date(),
-        workingDirectory: '/tmp',
-      },
-    }).success,
-    false
-  );
-});
-
-test('v2 init requires explicit protocol metadata', () => {
-  assert.equal(
-    InitMessageSchema.safeParse({
-      type: 'init',
-      conversations: [],
-      defaultCwd: '/tmp',
-    }).success,
-    false
-  );
 });

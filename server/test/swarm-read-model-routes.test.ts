@@ -42,8 +42,18 @@ test('summary synthesis derives worker outcomes from cycles and reviews', async 
     {
       'swarm-id': 'swarm-1',
       'started-at': '2026-01-01T00:00:00.000Z',
+      'config-file': '/tmp/oompa.json',
       pid: 123,
-      workers: [{ id: 'worker-1', harness: 'codex', model: 'gpt-5.6-sol', iterations: 2 }],
+      workers: [
+        {
+          id: 'worker-1',
+          harness: 'codex',
+          model: 'gpt-5.6-sol',
+          iterations: 2,
+          'can-plan': false,
+          prompts: [],
+        },
+      ],
     },
     { isProcessAlive: () => true, now: () => Date.parse('2026-01-01T00:03:00.000Z') }
   );
