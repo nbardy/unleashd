@@ -130,6 +130,18 @@ delete the old path entirely.
 `server/src/conversations/record-migration.ts` (config records v1 → v2 with one stored `kind`; since T23b a CLI
 step of the records import, run on the copy; delete with `unleashd-records-tool` after the live swap).
 
+## build-cache
+**Smell:** every worktree cold-builds the Rust addons (~30 s each, three cores) though it never touched Rust, and an
+edit to a one-time tool rebuilds the shipped addon it happens to live in.
+**Pattern:** key each build output by a content hash of exactly its inputs, keep the outputs in one cache shared by
+every checkout, and publish into the cache by an atomic rename under a per-key lock. A hit copies files and never
+starts the compiler. Code that is not shipped lives in its own build unit, so editing it changes no shipped key.
+**Here:** `tools/ensure-addons.mjs` (key: the crate's `src/**`, `build.rs`, `Cargo.toml`, `package.json`, its
+reachable `Cargo.lock` entries, `rustc -vV`; cache `$UNLEASHD_ADDON_CACHE`); called by `pnpm setup`, the dev /
+build tasks, `test:server` and the dev watcher on a saved `.rs`. The import CLIs are `crates/unleashd-buddies-import`
+and `crates/unleashd-records-tool`. Guards: `tools/ensure-addons.test.mjs` (a TS or tool-crate edit keeps the key;
+a hit never spawns), `tools/watch-server.test.mjs` (a tool-crate save builds nothing). S12, 2026-09-26.
+
 ## tokens-and-shells
 **Smell:** per-screen CSS values (45 font sizes, 172 paddings) and a copy of every screen per device.
 **Pattern:** design tokens, then a few primitives, then views, then two thin device shells over the same views.

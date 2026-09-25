@@ -23,7 +23,9 @@ server/src/buddies/*               → Buddy server over the crate: grants, mcp 
                                      endpoint, 12 tools), runner, channels, routes,
                                      briefing, memory-review, policy-port (T08 seam)
 crates/unleashd-buddies/           → Buddies core (Rust, napi-rs addon): schema,
-                                     authorize, posts/docs/tasks/runs, v33 importer
+                                     authorize, posts/docs/tasks/runs
+crates/unleashd-{buddies-import,records-tool}/ → one-time import CLIs (own crates:
+                                     editing them never rebuilds an addon)
 vendor/agent-cli-tool/             → GIT SUBMODULE: canonical request → argv →
                                      process → unified event stream. Thin wrapper;
                                      harness differences live at its edges only.
@@ -281,9 +283,16 @@ magenta). Run 1 and 3 back-to-back: live data drifts (sidebar badges,
 - The server's Buddies are the crate (`@unleashd/buddies-core`) over the NEW-schema
   DB: `UNLEASHD_BUDDIES_DB`, default `~/.buddies/buddies-v3.sqlite`. It is never the
   v33 `~/.buddies/buddies.sqlite`; a missing file fails every Buddy call with the
-  import command (`server/src/buddies/core.ts`), never an empty DB. Build the addon
-  once (`pnpm --dir crates/unleashd-buddies build`, needs cargo) and after any Rust
-  change, then restart the backend. Deploy sequence: crate README "Deploy".
+  import command (`server/src/buddies/core.ts`), never an empty DB. `pnpm addons`
+  (also run by `pnpm setup`, `pnpm dev`, `pnpm build`, `test:server`) makes both
+  addons match their sources from the shared build cache, running cargo only on
+  a miss; `pnpm --dir crates/<c> run build` forces a build. Restart the backend
+  after a Rust change. Deploy sequence: crate README "Deploy".
+- Build cache: a lane that changes no Rust never runs rustc. The key is the
+  crate's own inputs only (docs/patterns.md#build-cache), so the one-time import
+  CLIs live in their own crates (`unleashd-buddies-import`, `unleashd-records-tool`);
+  build them with `cargo build --release -p <crate>` and never move tool code
+  back into an addon crate.
 - The Buddy MCP endpoint (`server/src/buddies/mcp.ts`) listens on its OWN loopback
   port. Never mount it on the gated Express app: a turn's bearer is not the owner
   secret, and the owner secret must never reach a turn. Each turn's grant is

@@ -17,7 +17,8 @@ import { existsSync, mkdirSync, rmSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
-import { createBackendRunner, esbuildCheck, pnpmCrateBuild } from './watch-server.mjs';
+import { ensureAddonBuild } from './ensure-addons.mjs';
+import { createBackendRunner, esbuildCheck } from './watch-server.mjs';
 
 /** Prefix every line of a chunk, for tools that print through one stdout. */
 export function linePrefixer(prefix, write) {
@@ -99,7 +100,7 @@ export function startBackend({ repositoryRoot, env, log }) {
     env,
     watchRoot: repositoryRoot,
     check: esbuildCheck('src/server.ts', serverRoot),
-    buildCrate: pnpmCrateBuild(repositoryRoot),
+    buildCrate: ensureAddonBuild(repositoryRoot, (line) => log(`[server-watch] ${line}`)),
     output: linePrefixer('[server]', (line) => process.stdout.write(line)),
     log: (line) => log(`[server-watch] ${line}`),
     logError: (line) => log(`[server-watch] ${line}`),
