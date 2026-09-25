@@ -5,7 +5,8 @@
   "scripts": {
     "studio": "remotion studio src/index.ts",
     "render:design-iteration": "remotion render src/index.ts DesignIteration out/design-iteration.mp4",
-    "still:design-iteration": "remotion still src/index.ts DesignIteration out/design-iteration.png"
+    "still:design-iteration": "remotion still src/index.ts DesignIteration out/design-iteration.png",
+    "render:overload": "remotion render src/index.ts Overload out/overload.mp4"
   },
   "dependencies": {
     "@remotion/cli": "4.0.529",

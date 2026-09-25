@@ -1,13 +1,24 @@
 import { Composition } from 'remotion';
-import { DURATION, DesignIteration, FPS, HEIGHT, WIDTH } from './DesignIteration';
+import * as DesignIteration from './DesignIteration';
+import * as Overload from './Overload';
 
 export const Root: React.FC = () => (
-  <Composition
-    id="DesignIteration"
-    component={DesignIteration}
-    durationInFrames={DURATION}
-    fps={FPS}
-    width={WIDTH}
-    height={HEIGHT}
-  />
+  <>
+    <Composition
+      id="Overload"
+      component={Overload.Overload}
+      durationInFrames={Overload.DURATION}
+      fps={Overload.FPS}
+      width={Overload.WIDTH}
+      height={Overload.HEIGHT}
+    />
+    <Composition
+      id="DesignIteration"
+      component={DesignIteration.DesignIteration}
+      durationInFrames={DesignIteration.DURATION}
+      fps={DesignIteration.FPS}
+      width={DesignIteration.WIDTH}
+      height={DesignIteration.HEIGHT}
+    />
+  </>
 );
