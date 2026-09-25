@@ -159,8 +159,9 @@ test('mobile channel screen: back to Home, thread link, touch composer', async (
   assert.doesNotMatch(html, /new line/);
 });
 
-// A reply permalink opens its thread; the linked reply is highlighted, the
-// root sits on top and older replies wait behind the flame.
+// A reply permalink opens its thread FROM the reply (`&from=`, T22): the
+// linked reply is on the first page however old it is, highlighted, the root
+// sits on top and older replies wait behind the flame.
 test('a reply permalink opens its thread with the reply highlighted and the root on top', async () => {
   await seed();
   const reply = (number: number) =>
@@ -173,7 +174,7 @@ test('a reply permalink opens its thread with the reply highlighted and the root
       createdAt: new Date(Date.UTC(2026, 8, 24, 2, number - 100)).toISOString(),
     });
   await loadResource({
-    key: '/api/buddies/posts/post_ask/thread?limit=50',
+    key: '/api/buddies/posts/post_ask/thread?limit=50&from=reply-120',
     load: async () => ({
       root: postFixture({ id: 'post_ask', body: '[@Lead](buddy:lead) ship it?' }),
       posts: [125, 124, 123, 122, 121, 120].map(reply),

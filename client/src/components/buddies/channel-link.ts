@@ -12,8 +12,9 @@ import type { Post } from './types';
  *
  * A top-level message IS its thread's root, so its link is the thread link:
  * the thread pane fetches the root by id, so the link works however old the
- * post is. A reply opens its thread and is highlighted when it is on the
- * thread's loaded pages (`post=`).
+ * post is. A reply (`post=`) opens its thread on a page that starts FROM the
+ * reply (`?from=`), so it is on screen and highlighted however old it is; the
+ * T11 migration opened the newest page only and missed older replies (T22).
  */
 export type ChannelLink =
   | { kind: 'channel'; channelId: string }

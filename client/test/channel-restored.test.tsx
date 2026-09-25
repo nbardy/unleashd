@@ -128,3 +128,25 @@ test('the New messages line and bold threads follow the read cursor', async () =
   assert.doesNotMatch(rowOf(html, 'mark'), /data-unread/);
   assert.doesNotMatch(rowOf(html, 'mine'), /data-unread/);
 });
+
+// Feature 3: a reply permalink asks the thread page FROM the reply, so a reply
+// older than the newest page still renders, highlighted, under its root.
+test('a reply permalink opens the desktop thread on the linked reply', async () => {
+  const root = post('root', 1);
+  await loadResource({
+    key: '/api/buddies/posts/root/thread?limit=50&from=old-reply',
+    load: async () => ({
+      root,
+      posts: [post('newer', 9, { rootId: 'root' }), post('old-reply', 2, { rootId: 'root' })],
+    }),
+  });
+  const html = await renderChannel({
+    ws: 'ws-link',
+    entry: { unread: 0 },
+    posts: [root],
+    url: '/?channel=ch_ws-link&thread=root&post=old-reply',
+  });
+  const thread = html.slice(html.indexOf('aria-label="Thread"'));
+  assert.match(thread, /data-post-id="old-reply" data-linked="true"/);
+  assert.ok(thread.indexOf('Body of root.') < thread.indexOf('Body of old-reply.'));
+});
