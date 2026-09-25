@@ -17,7 +17,7 @@ server/src/transport/conversation-websocket.ts → WS command routing
 server/src/observability/error-journal.ts → durable grouped server/client failures
 server/src/adapters/*              → registry/disk-adapter/loader: session persistence
 server/src/auth/*                  → shared-secret gate (policy/gate/express)
-server/src/providers/*             → thin Provider impls per CLI
+server/src/providers/*             → provider registry + catalog service (models from the generated catalog)
 vendor/agent-cli-tool/             → GIT SUBMODULE: canonical request → argv →
                                      process → unified event stream. Thin wrapper;
                                      harness differences live at its edges only.
@@ -209,8 +209,8 @@ magenta). Run 1 and 3 back-to-back: live data drifts (sidebar badges,
 - Inspect unresolved operational failures with `pnpm errors:list`; do not read or
   mutate the JSONL journal directly. Its configured location and capture policy
   are documented in `docs/error-journal.md`.
-- Adding a provider: harness (submodule) + `server/src/providers/{name}.ts` +
-  `ProviderSchema` in shared + registry entry + disk adapter if persisted.
+- Adding a provider: harness (submodule) + catalog.jsonc entry (`pnpm check:catalog`) +
+  `ProviderSchema` in shared + disk adapter if persisted.
 - Buddy sections are ROUTES, not tab state: `/buddies/:buddyId/:tab` with
   `/buddies/:buddyId` redirecting onto the default tab. Tab segments and labels
   live in `client/src/components/buddies/buddy-tabs.ts` (pure, mobile-safe).

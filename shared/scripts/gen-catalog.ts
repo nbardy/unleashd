@@ -132,6 +132,51 @@ async function main() {
   lines.push('] as const;');
   lines.push('');
 
+  // The whole catalog as data: every provider, every model, per-model reasoning.
+  // Pattern: one-type-source (docs/patterns.md#one-type-source) — the server's
+  // model lists and reasoning levels read this, never catalog.jsonc at runtime.
+  lines.push('export type CatalogModel = {');
+  lines.push('  readonly id: string;');
+  lines.push('  readonly displayName: string;');
+  lines.push('  readonly isDefault: boolean;');
+  lines.push(
+    '  readonly reasoning?: { readonly levels: readonly string[]; readonly defaultEffort?: string };'
+  );
+  lines.push('};');
+  lines.push('export type CatalogProviderEntry = {');
+  lines.push('  readonly id: string;');
+  lines.push('  readonly defaultModelId: string;');
+  lines.push('  readonly supportsDynamicModels: boolean;');
+  lines.push('  readonly models: readonly CatalogModel[];');
+  lines.push('};');
+  lines.push('export const PROVIDER_MODEL_CATALOG: readonly CatalogProviderEntry[] = [');
+  for (const p of catalog.providers) {
+    if (!p.models.some((m) => m.id === p.defaultModelId)) {
+      throw new Error(`Provider ${p.id}: defaultModelId ${p.defaultModelId} is not in its models`);
+    }
+    lines.push('  {');
+    lines.push(`    id: ${JSON.stringify(p.id)},`);
+    lines.push(`    defaultModelId: ${JSON.stringify(p.defaultModelId)},`);
+    lines.push(`    supportsDynamicModels: ${Boolean(p.supportsDynamicModels)},`);
+    lines.push('    models: [');
+    for (const m of p.models) {
+      const reasoning = m.reasoning
+        ? `, reasoning: { levels: ${JSON.stringify(m.reasoning.levels)}${
+            m.reasoning.defaultEffort
+              ? `, defaultEffort: ${JSON.stringify(m.reasoning.defaultEffort)}`
+              : ''
+          } }`
+        : '';
+      lines.push(
+        `      { id: ${JSON.stringify(m.id)}, displayName: ${JSON.stringify(m.displayName)}, isDefault: ${Boolean(m.isDefault)}${reasoning} },`
+      );
+    }
+    lines.push('    ],');
+    lines.push('  },');
+  }
+  lines.push('];');
+  lines.push('');
+
   const out = `${lines.join('\n')}\n`;
   await mkdir(dirname(OUT_FILE), { recursive: true });
   await writeFile(OUT_FILE, out, 'utf-8');

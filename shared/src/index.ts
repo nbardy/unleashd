@@ -93,7 +93,12 @@ import {
   MUSE_EFFORT_LEVELS as GEN_MUSE_EFFORT_LEVELS,
   MUSE_MODEL_IDS as GEN_MUSE_MODEL_IDS,
   NO_CODEX_THINKING as GEN_NO_CODEX_THINKING,
+  PROVIDER_MODEL_CATALOG,
 } from './generated/catalog.js';
+import type { CatalogProviderEntry } from './generated/catalog.js';
+
+export { PROVIDER_MODEL_CATALOG } from './generated/catalog.js';
+export type { CatalogModel, CatalogProviderEntry } from './generated/catalog.js';
 
 // Re-export generated arrays so consumers can import from shared entry point
 export const CLAUDE_EFFORT_LEVELS = GEN_CLAUDE_EFFORT_LEVELS;
@@ -223,23 +228,35 @@ export const CodexModelSchema = z.custom<CodexModel>(
 );
 
 /**
- * Canonical server-side default for provider reasoning flags.
- * Codex defaults are model-specific; an absent/unknown model uses the registry default.
- * `none` is represented as undefined throughout Conversation state.
+ * The catalog entry for a provider. Every Provider has one: a missing entry is a
+ * stale generated catalog, and this throws at startup instead of guessing.
+ */
+export function catalogEntryForProvider(provider: Provider): CatalogProviderEntry {
+  const entry = PROVIDER_MODEL_CATALOG.find((candidate) => candidate.id === provider);
+  if (!entry) {
+    throw new Error(
+      `Provider '${provider}' is missing from the generated model catalog; run pnpm --filter @unleashd/shared gen:catalog`
+    );
+  }
+  return entry;
+}
+
+/**
+ * Canonical server-side default for provider reasoning flags: the model's
+ * `reasoning.defaultEffort` in the catalog. An absent/unknown model uses the
+ * provider's default model. Providers without reasoning return undefined.
+ * Pattern: one-type-source (docs/patterns.md#one-type-source) — this replaced a
+ * hard-coded 'high' for claude/muse that the catalog already declared.
  */
 export function defaultReasoningEffortForProvider(
   provider: Provider,
   model?: string
 ): string | undefined {
-  if (provider === 'claude' || provider === 'muse') return 'high';
-  if (provider !== 'codex') return undefined;
-
-  const entry: CodexModelRegistryEntry =
-    CODEX_MODEL_REGISTRY.find((candidate) => candidate.modelName === model) ??
-    CODEX_MODEL_REGISTRY.find((candidate) => candidate.isDefault) ??
-    CODEX_MODEL_REGISTRY[0];
-  const defaultOption = entry.defaultThinkingOption ?? NO_CODEX_THINKING;
-  return defaultOption === NO_CODEX_THINKING ? undefined : defaultOption;
+  const entry = catalogEntryForProvider(provider);
+  const chosen =
+    entry.models.find((candidate) => candidate.id === model) ??
+    entry.models.find((candidate) => candidate.id === entry.defaultModelId);
+  return chosen?.reasoning?.defaultEffort;
 }
 
 export type OpenCodeModel = `${string}/${string}`;
