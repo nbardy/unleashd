@@ -13,7 +13,8 @@ shared/src/provider-catalog.ts      → provider identities + catalog schemas
 server/src/server.ts               → application composition and startup
 server/src/conversations/runtime.ts → Conversation: record + queue + runner + kind policy
 server/src/turns/*                 → TurnQueue, TurnRunner (event fold), TurnWatchdog, TurnPolicy
-server/src/conversations/config-{service,store}.ts → durable configuration and revisions
+server/src/conversations/config-{service,records}.ts → durable configuration and revisions
+                                     (records: Rust ConversationRecords store, own SQLite file)
 server/src/transport/conversation-websocket.ts → WS command routing
 server/src/observability/error-journal.ts → durable grouped server/client failures
 server/src/adapters/*              → registry/disk-adapter/loader: session persistence
@@ -24,6 +25,7 @@ server/src/buddies/*               → Buddy server over the crate: grants, mcp 
                                      briefing, memory-review, policy-port (T08 seam)
 crates/unleashd-buddies/           → Buddies core (Rust, napi-rs addon): schema,
                                      authorize, posts/docs/tasks/runs
+crates/unleashd-ingest/            → transcript ingest + conversation records (Rust addon)
 crates/unleashd-{buddies-import,records-tool}/ → one-time import CLIs (own crates:
                                      editing them never rebuilds an addon)
 vendor/agent-cli-tool/             → GIT SUBMODULE: canonical request → argv →
