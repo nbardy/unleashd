@@ -2,11 +2,14 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
   type BuddyContext,
-  type Conversation as ConversationData,
   type ConversationKind,
-  type DiscoveredConversation,
-  buddyKindFromContext,
+  EncodedRowsSchema,
+  type RowKind,
+  buddyKind,
+  decodeRows,
+  rowKind,
 } from '@unleashd/shared';
+import type { DiscoveredSession } from '../src/adapters/disk-adapter';
 import { buildFirstTurnCliContent } from '../src/buddies/turn-policy';
 import type { ConversationConfigService } from '../src/conversations/config-service';
 import type { ConversationConfigStore } from '../src/conversations/config-store';
@@ -19,6 +22,7 @@ import {
   type SessionLoaderDependencies,
   createSessionLoader,
 } from '../src/lifecycle/session-loader';
+import { discoveredSession } from './fixtures/discovered-session';
 
 const BUDDY: BuddyContext = {
   buddyId: 'buddy_d3f11f11',
@@ -26,27 +30,16 @@ const BUDDY: BuddyContext = {
 };
 
 /**
- * A conversation as the disk adapter reports it when the transcript carries no
- * buddy marker: `kind` is present but `general`. This is the shape every Chat
- * "Fork" of a Buddy thread has, because a fork's first message is the pasted
- * fork draft — the `<!-- unleashd:buddy-context-v2 -->` marker is never written.
+ * A transcript as discovery reports it with no marker of its owner: the shape
+ * every Chat "Fork" of a Buddy thread has (its first message is the pasted
+ * fork draft).
  */
-function discoveredWithoutMarker(sessionId: string): DiscoveredConversation {
-  return {
+function discoveredWithoutMarker(sessionId: string): DiscoveredSession {
+  return discoveredSession({
     sessionId,
-    messages: [],
-    isRunning: false,
-    isStreaming: false,
-    confirmed: true,
-    createdAt: new Date().toISOString(),
     workingDirectory: '/tmp/unleashd-test',
     provider: 'claude',
-    subAgents: [],
-    queue: [],
-    isWorker: false,
-    kind: { kind: 'general' },
-    buddyContext: null,
-  } as unknown as DiscoveredConversation;
+  });
 }
 
 /**
@@ -56,8 +49,9 @@ function discoveredWithoutMarker(sessionId: string): DiscoveredConversation {
  * it asserts the loader's actual output contract — the resolved canonical kind.
  */
 async function hydrateOne(input: {
-  source: DiscoveredConversation;
-  creation: Record<string, unknown> | undefined;
+  source: DiscoveredSession;
+  kind: ConversationKind;
+  creation?: Record<string, unknown>;
 }): Promise<ConversationOptions> {
   const conversationId = 'bb79c16e-4579-4523-9720-d90f9d72076b';
   const record = {
@@ -66,6 +60,7 @@ async function hydrateOne(input: {
     currentSession: { provider: input.source.provider, sessionId: input.source.sessionId },
     sessionBindings: [],
     status: 'active',
+    kind: input.kind,
     creation: input.creation,
     config: {},
   };
@@ -115,7 +110,7 @@ async function hydrateOne(input: {
     } as unknown as ConversationConfigService,
     loadConversations: async (options: {
       onProgress(
-        batch: DiscoveredConversation[],
+        batch: DiscoveredSession[],
         progress: { loaded: number; total: number }
       ): Promise<void>;
     }) => {
@@ -131,7 +126,7 @@ async function hydrateOne(input: {
         messages: [],
         createdAt: new Date(),
         subAgents: [],
-        toJSON: () => ({ id: conversationOptions.id, messages: [] }),
+        toRow: () => ({ id: conversationOptions.id, run: 'idle' }),
       } as unknown as ConversationRuntime;
     },
     createId: () => 'unused-id',
@@ -147,28 +142,28 @@ async function hydrateOne(input: {
   return created[0];
 }
 
-// Regression: forks of Buddy threads silently de-buddied on every server restart.
-// The disk adapter never returns a nullish kind — it defaults to `{kind:'general'}`
-// when the transcript has no buddy marker — so the old `source.kind ?? record…`
-// chain short-circuited and the durable `creation.buddyContext` was never read.
-// Symptom: the Buddies page (durable link rows) showed N conversations while the
-// sidebar's Buddies group (live runtime kind) showed N-1, and the fork lost its
-// buddy MCP scoping. Deleting this test lets that silently return.
-test('durable creation.buddyContext wins over a transcript-derived general kind', async () => {
+// Regression: forks of Buddy threads silently de-buddied on every server restart
+// (the transcript's "general" beat the record's creation.buddyContext), and
+// polling once demoted a Buddy thread whose provider stored metadata before the
+// marker (incident 2026-08-22). Since T09 the record's `kind` is the only
+// identity; these guard that the transcript can no longer move it.
+test('hydration takes identity from the record, never from the transcript', async () => {
+  const kind = buddyKind(BUDDY);
   const options = await hydrateOne({
     source: discoveredWithoutMarker('d682b842-fcba-48fe-9634-c7b9d4f7a52c'),
-    creation: {
-      resumedFromConversationId: '2429d826-0cd4-4f1f-ae4f-cc968edb5f5f',
-      buddyContext: BUDDY,
-    },
+    kind,
+    creation: { resumedFromConversationId: '2429d826-0cd4-4f1f-ae4f-cc968edb5f5f' },
   });
+  assert.deepEqual(options.kind, kind);
 
-  // Assert the restored identity, not the full canonical projection — the
-  // null-filled optional fields belong to `buddyContextFromKind`, not to this.
-  assert.equal(options.kind?.kind, 'buddy');
-  const restored = options.kind as { buddyId: string; workspaceId: string };
-  assert.equal(restored.buddyId, BUDDY.buddyId);
-  assert.equal(restored.workspaceId, BUDDY.workspaceId);
+  const chat = await hydrateOne({
+    source: {
+      ...discoveredWithoutMarker('11111111-2222-3333-4444-555555555555'),
+      discoveredKind: { t: 'worker', swarmId: 'swarm', workerId: 'w0', role: 'work' },
+    },
+    kind: { t: 'chat' },
+  });
+  assert.deepEqual(chat.kind, { t: 'chat' });
 });
 
 test('hydration retains the memory snapshot embedded at application-conversation creation', async () => {
@@ -176,7 +171,7 @@ test('hydration retains the memory snapshot embedded at application-conversation
     content: 'Original user message',
     messageCount: 0,
     hasStartedSession: false,
-    kind: buddyKindFromContext(BUDDY),
+    kind: buddyKind(BUDDY),
     buddyBriefing: 'Memory from generation seven',
     buddyMemoryGeneration: 'generation-7',
     swarmDebugPrefix: null,
@@ -184,8 +179,6 @@ test('hydration retains the memory snapshot embedded at application-conversation
   const options = await hydrateOne({
     source: {
       ...discoveredWithoutMarker('d682b842-fcba-48fe-9634-c7b9d4f7a52b'),
-      kind: buddyKindFromContext(BUDDY),
-      buddyContext: BUDDY,
       messages: [
         {
           role: 'user',
@@ -194,24 +187,11 @@ test('hydration retains the memory snapshot embedded at application-conversation
         },
       ],
     },
-    creation: { buddyContext: BUDDY },
+    kind: buddyKind(BUDDY),
   });
 
   assert.equal(options.buddyMemoryGeneration, 'generation-7');
   assert.equal(options.buddyBriefing, 'Memory from generation seven');
-});
-
-// Guards the other direction: preferring a specific kind must not invent buddy
-// identity for ordinary conversations. A record with no creation buddy context
-// stays general, so `kind` is left null for the runtime's legacy derivation.
-test('a conversation with no durable buddy context stays general', async () => {
-  const options = await hydrateOne({
-    source: discoveredWithoutMarker('11111111-2222-3333-4444-555555555555'),
-    creation: { resumedFromConversationId: '2429d826-0cd4-4f1f-ae4f-cc968edb5f5f' },
-  });
-
-  assert.equal(options.kind, null);
-  assert.equal(options.buddyContext ?? null, null);
 });
 
 /**
@@ -291,13 +271,14 @@ async function recoverAll(input: {
           config: { provider: 'claude' },
           sessionBindings: [],
           currentSession: null,
+          kind: { t: 'chat' },
           creation: undefined,
           lastResolvedConfig: undefined,
         })),
     } as unknown as ConversationConfigService,
     loadConversations: async (options: {
       onProgress(
-        batch: DiscoveredConversation[],
+        batch: DiscoveredSession[],
         progress: { loaded: number; total: number }
       ): Promise<void>;
     }) => {
@@ -313,7 +294,7 @@ async function recoverAll(input: {
         messages: [],
         createdAt: new Date(),
         subAgents: [],
-        toJSON: () => ({ id: conversationOptions.id, messages: [] }),
+        toRow: () => ({ id: conversationOptions.id, run: 'idle' }),
       } as unknown as ConversationRuntime;
     },
     createId: () => 'unused-id',
@@ -323,9 +304,7 @@ async function recoverAll(input: {
     },
     persistCurrentSession: async () => {},
     broadcast: (data: ConversationBroadcast) => {
-      if (data.type === 'conversations_updated') {
-        broadcastIds.push(...data.conversations.map((conversation) => conversation.id));
-      }
+      if (data.type === 'rows') broadcastIds.push(...data.rows.map((row) => row.id));
     },
     logger: { error: () => {}, log: () => {}, warn: () => {} },
   } as unknown as SessionLoaderDependencies;
@@ -473,8 +452,8 @@ test('recovery dispatches only first messages that are still pending', async () 
  */
 async function pollExistingKind(input: {
   existingKind: ConversationKind;
-  source: DiscoveredConversation;
-}): Promise<{ runtimeKind: ConversationKind; broadcastKind: ConversationKind }> {
+  source: DiscoveredSession;
+}): Promise<{ runtimeKind: ConversationKind; broadcastKind: RowKind }> {
   const conversationId = 'dddddddd-0000-4000-8000-000000000004';
   const sessionId = input.source.sessionId;
   const runtimeState = {
@@ -485,23 +464,26 @@ async function pollExistingKind(input: {
     messages: [],
     subAgents: [],
     createdAt: new Date(),
-    isWorker: false,
-    swarmId: null,
-    workerId: null,
-    workerRole: null,
     parentConversationId: null,
     resumedFromConversationId: null,
-    modelName: null,
+    observedModel: null,
     kind: input.existingKind,
     hasActiveProcess: () => false,
     refreshConfigResolution: () => {},
-    toJSON: () =>
-      ({
-        id: conversationId,
-        sessionId: runtimeState.sessionId,
-        messages: runtimeState.messages,
-        kind: runtimeState.kind,
-      }) as unknown as ConversationData,
+    toRow: () => ({
+      id: conversationId,
+      kind: rowKind(runtimeState.kind),
+      parent: null,
+      resumedFrom: null,
+      provider: runtimeState.provider,
+      cwd: runtimeState.workingDirectory,
+      label: 'fixture',
+      createdAt: 0,
+      activityAt: 0,
+      messageCount: 0,
+      run: 'idle' as const,
+      done: false,
+    }),
   };
   const runtime = runtimeState as unknown as ConversationRuntime;
   const registry = new Map<string, ConversationRuntime>([[conversationId, runtime]]);
@@ -512,7 +494,7 @@ async function pollExistingKind(input: {
   const updated = new Promise<void>((resolve) => {
     resolveUpdated = resolve;
   });
-  let broadcastKind: ConversationKind | undefined;
+  let broadcastKind: RowKind | undefined;
 
   const dependencies = {
     options: {
@@ -577,8 +559,8 @@ async function pollExistingKind(input: {
     dispatchInitialMessage: async () => {},
     persistCurrentSession: async () => {},
     broadcast: (data: ConversationBroadcast) => {
-      if (data.type !== 'conversations_updated') return;
-      broadcastKind = data.conversations[0]?.kind;
+      if (data.type !== 'rows') return;
+      broadcastKind = decodeRows(EncodedRowsSchema.parse(data))[0]?.kind;
       resolveUpdated();
     },
     logger: { error: () => {}, log: () => {}, warn: () => {} },
@@ -602,38 +584,18 @@ async function pollExistingKind(input: {
   return { runtimeKind: runtimeState.kind, broadcastKind };
 }
 
-// Regression, incident 2026-08-22. Codex can store host-injected user-role
-// metadata before the real Buddy prompt. The adapter then reports general
-// because the first user item has no Buddy marker. Polling used to overwrite the
-// durable runtime kind, moving the thread out of the Buddy sidebar and removing
-// Buddy MCP tools on the next turn.
-test('polling cannot demote a durable Buddy kind when the provider reports general', async () => {
-  const buddyKind = buddyKindFromContext(BUDDY);
+// Regression, incident 2026-08-22: polling overwrote a durable Buddy kind with the
+// provider's "general", moving the thread out of the Buddy sidebar and removing
+// its Buddy MCP tools. Polling never touches kind now; this keeps it that way.
+test('polling never changes a durable kind', async () => {
+  const kind = buddyKind(BUDDY);
   const source = {
     ...discoveredWithoutMarker('eeeeeeee-0000-4000-8000-000000000005'),
     provider: 'codex',
-  } as DiscoveredConversation;
+  } as DiscoveredSession;
 
-  const result = await pollExistingKind({ existingKind: buddyKind, source });
+  const result = await pollExistingKind({ existingKind: kind, source });
 
-  assert.deepEqual(result.runtimeKind, buddyKind);
-  assert.deepEqual(result.broadcastKind, buddyKind);
-});
-
-test('polling can still promote a general runtime when the provider reports a Buddy kind', async () => {
-  const buddyKind = buddyKindFromContext(BUDDY);
-  const source = {
-    ...discoveredWithoutMarker('ffffffff-0000-4000-8000-000000000006'),
-    provider: 'codex',
-    kind: buddyKind,
-    buddyContext: BUDDY,
-  } as DiscoveredConversation;
-
-  const result = await pollExistingKind({
-    existingKind: { kind: 'general' },
-    source,
-  });
-
-  assert.deepEqual(result.runtimeKind, buddyKind);
-  assert.deepEqual(result.broadcastKind, buddyKind);
+  assert.deepEqual(result.runtimeKind, kind);
+  assert.deepEqual(result.broadcastKind, rowKind(kind));
 });

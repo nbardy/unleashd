@@ -49,7 +49,7 @@ export interface BuddyDispatchServiceDependencies {
 
 export interface BuddyDispatchConversation {
   id: string;
-  toJSON(): unknown;
+  toRow(): unknown;
 }
 
 async function beforeMessageDeadline<T>(
@@ -395,7 +395,7 @@ export function createBuddyDispatchService(dependencies: BuddyDispatchServiceDep
         operation: 'buddy.send',
         data: {
           message: buddies.getMessage(message.id),
-          conversation: conversation?.toJSON() ?? null,
+          conversation: conversation?.toRow() ?? null,
         },
         audit: { recordedAtomicallyByStore: true },
       };
@@ -414,7 +414,7 @@ export function createReturnConversationPreparer(ports: {
     const source = ports.getConversation(sourceId);
     if (
       !source ||
-      source.placement === 'background' ||
+      (source.kind.t === 'buddy' && source.kind.visibility === 'background') ||
       source.buddyContext?.buddyId !== context.buddyId ||
       source.buddyContext.workspaceId !== context.workspaceId
     )
@@ -459,14 +459,15 @@ export function createReturnConversationPreparer(ports: {
         },
         conversationId: returnConversationId,
         commandId: `coordination-return-${returnConversationId}`,
-        placement: 'background',
+        visibility: 'background',
         deferInitialMessage: true,
         branch: { sourceConversationId: sourceId, throughMessageId, audience, handoff },
       });
     } else if (
-      record.creation?.buddyContext?.buddyId !== context.buddyId ||
-      record.creation.buddyContext.workspaceId !== context.workspaceId ||
-      record.creation.branch?.sourceConversationId !== sourceId ||
+      record.kind.t !== 'buddy' ||
+      record.kind.context.buddyId !== context.buddyId ||
+      record.kind.context.workspaceId !== context.workspaceId ||
+      record.creation?.branch?.sourceConversationId !== sourceId ||
       record.creation.branch.audience.kind !== 'owner_thread' ||
       record.creation.branch.audience.conversationId !== sourceId
     ) {

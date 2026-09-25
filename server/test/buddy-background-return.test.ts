@@ -1,3 +1,4 @@
+import { buddyKind } from '@unleashd/shared';
 import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -106,12 +107,12 @@ test('failure returns survive restart, wake once in background, and respect inco
       createConversation: async (input) => {
         creations++;
         await new Promise((resolve) => setTimeout(resolve, 5));
-        assert.equal(input.placement, 'background');
+        assert.equal(input.visibility, 'background');
         assert.equal(input.context.buddyId, lead.id);
         assert.equal(input.context.parentBuddyConversationId, 'human');
         const conversation = {
           id: input.conversationId,
-          placement: input.placement,
+          kind: buddyKind(input.context, input.visibility),
           buddyContext: input.context,
           isRunning: false,
           hasActiveProcess: () => false,
@@ -203,7 +204,8 @@ test('launch snapshots persist privately per request and reject another Buddy so
         provenance: 'user',
         // Mirrors createServerBuddyConversation: explicit config wins over the profile default.
         config: input.config ?? createDefaultConversationConfig('codex'),
-        creation: { buddyContext: input.context, branch: input.branch },
+        kind: buddyKind(input.context, input.visibility),
+        creation: { branch: input.branch },
       });
       return { id: input.conversationId } as ConversationRuntime;
     },

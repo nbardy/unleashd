@@ -66,7 +66,7 @@ const INACTIVE_ACCESS_LIMIT = 200;
 
 export interface BuddyConversationView {
   id: string;
-  toJSON(): unknown;
+  toRow(): unknown;
 }
 
 export interface BuddyRouteDependencies {
@@ -748,7 +748,7 @@ export function registerBuddyRoutes(app: Express, dependencies: BuddyRouteDepend
     });
     res.status(201).json({
       conversationId: conversation.id,
-      conversation: conversation.toJSON(),
+      conversation: conversation.toRow(),
     });
   });
 

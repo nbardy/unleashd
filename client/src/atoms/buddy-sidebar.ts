@@ -170,7 +170,7 @@ export const buddySidebarProjectsAtom = stableAtom((get): BuddySidebarProject[] 
     touch(item, conversation.activityMs);
     // Background conversations have their own destination, including tasks
     // linked to a foreground parent. Count them before hiding nested chat rows.
-    if (conversation.placement === 'background') {
+    if (conversation.background) {
       item.backgroundConversationCount += 1;
       if (conversation.isRunning) {
         item.backgroundRunningCount += 1;
@@ -187,8 +187,8 @@ export const buddySidebarProjectsAtom = stableAtom((get): BuddySidebarProject[] 
     if (!conversation.done) item.conversations.push(conversation);
   }
   for (const pending of get(allPendingCreationsAtom)) {
-    const context = pending.buddyContext;
-    if (!context) continue;
+    if (pending.createKind.t !== 'buddy') continue;
+    const context = pending.createKind.context;
     const item = entries.get(entryKey(context.buddyId, context.workspaceId));
     if (!item) continue;
     item.pendingCreation ??= pending;
@@ -234,7 +234,7 @@ function isFolderRow(
   return (
     !(entry.isWorker && !promoted.has(entry.id)) &&
     entry.kind !== 'buddy' &&
-    entry.kind !== 'buddy_builder' &&
+    entry.kind !== 'builder' &&
     !(entry.parentConversationId && listed.has(entry.parentConversationId))
   );
 }
@@ -329,7 +329,7 @@ export const buddyBuilderConversationsAtom = stableAtom((get) => {
   const promoted = get(promotedSetAtom);
   return get(conversationListAtom).filter(
     (entry) =>
-      entry.kind === 'buddy_builder' &&
+      entry.kind === 'builder' &&
       !(entry.isWorker && !promoted.has(entry.id)) &&
       !(entry.parentConversationId && listed.has(entry.parentConversationId))
   );

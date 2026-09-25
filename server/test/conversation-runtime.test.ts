@@ -1,3 +1,4 @@
+import { buddyKind } from '@unleashd/shared';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import test from 'node:test';
@@ -81,7 +82,7 @@ function runtimeFixture(
     id: 'conversation-id',
     workingDirectory: '/tmp',
     configState,
-    buddyContext: options.buddyContext,
+    kind: options.buddyContext ? buddyKind(options.buddyContext) : { t: 'chat' },
   });
   return { aliases, broadcasts, configState, Conversation, conversation };
 }
@@ -160,7 +161,7 @@ test('retained Buddy display history stays out of fresh provider context across 
     id: 'restored-buddy',
     workingDirectory: '/tmp',
     configState: fixture.configState,
-    buddyContext: { buddyId: 'buddy', workspaceId: 'workspace' },
+    kind: buddyKind({ buddyId: 'buddy', workspaceId: 'workspace' }),
     existingSessionId: 'unverified-restored-session',
   });
   const originalDate = new Date('2026-09-09T04:45:02.313Z');
@@ -236,7 +237,7 @@ test('resumed Buddy turns re-brief only when the memory generation changes', asy
     id: 'steady-buddy',
     workingDirectory: '/tmp',
     configState: fixture.configState,
-    buddyContext: { buddyId: 'buddy', workspaceId: 'workspace' },
+    kind: buddyKind({ buddyId: 'buddy', workspaceId: 'workspace' }),
   });
   const turn = async (content: string) => {
     conversation.sendMessage(content, { origin: 'owner_input', inputId: content });
@@ -452,7 +453,7 @@ test('unsupported Buddy provider leaves a queued message retryable', () => {
     id: 'gemini-buddy',
     workingDirectory: '/tmp',
     configState: fixture.configState,
-    buddyContext: {
+    kind: buddyKind({
       buddyId: 'buddy-1',
       workspaceId: 'workspace-1',
       buddyProjectId: null,
@@ -461,10 +462,10 @@ test('unsupported Buddy provider leaves a queued message retryable', () => {
       delegatedByBuddyId: null,
       parentBuddyConversationId: null,
       allowedBuddyOperations: ['read'],
-    },
+    }),
   });
 
-  assert.equal(conversation.kind.kind, 'buddy');
+  assert.equal(conversation.kind.t, 'buddy');
   conversation.enqueueMessage('Hello Buddy');
 
   assert.equal(conversation.isRunning, false);
@@ -601,11 +602,11 @@ test('historical automation transcripts refuse every user turn-admission path', 
     id: 'automation-history',
     workingDirectory: '/tmp',
     configState: fixture.configState,
-    buddyContext: {
+    kind: buddyKind({
       buddyId: 'buddy-1',
       workspaceId: 'workspace-1',
       automationRunId: 'terminal-run',
-    },
+    }),
   });
 
   conversation.sendMessage('Continue this completed automation');
@@ -631,11 +632,11 @@ test('public stop delegates automation cancellation without killing provider aut
     workingDirectory: '/tmp',
     configState: fixture.configState,
     automationClaimToken: 'private-claim-token',
-    buddyContext: {
+    kind: buddyKind({
       buddyId: 'buddy-1',
       workspaceId: 'workspace-1',
       automationRunId: 'active-run',
-    },
+    }),
   });
 
   conversation.stop();
@@ -657,6 +658,7 @@ test('first message in a user fork inherits the native source session without co
     getConversation: (id) => conversations.get(id),
   });
   const source = new fixture.Conversation({
+    kind: { t: 'chat' },
     done: false,
     id: 'source-conversation',
     workingDirectory: '/tmp',
@@ -666,6 +668,7 @@ test('first message in a user fork inherits the native source session without co
   conversations.set(source.id, source);
 
   const child = new fixture.Conversation({
+    kind: { t: 'chat' },
     done: false,
     id: 'child-conversation',
     workingDirectory: '/tmp',
@@ -692,8 +695,7 @@ test('first Buddy prompt carries a recoverable immutable memory snapshot', () =>
     content: 'Start the task',
     messageCount: 0,
     hasStartedSession: false,
-    kind: {
-      kind: 'buddy',
+    kind: buddyKind({
       buddyId: 'buddy-1',
       workspaceId: 'workspace-1',
       buddyProjectId: null,
@@ -701,7 +703,7 @@ test('first Buddy prompt carries a recoverable immutable memory snapshot', () =>
       automationRunId: null,
       delegatedByBuddyId: null,
       parentBuddyConversationId: null,
-    },
+    }),
     buddyBriefing: 'Memory generation seven',
     buddyMemoryGeneration: 7,
     swarmDebugPrefix: null,
@@ -740,7 +742,7 @@ test('native session fork falls back to a fresh handoff when memory generation c
     workingDirectory: '/tmp',
     configState: fixture.configState,
     existingSessionId: 'source-native-session',
-    buddyContext,
+    kind: buddyKind(buddyContext),
     buddyBriefing: 'Old memory',
     buddyMemoryGeneration: 'generation-6',
   });
@@ -752,7 +754,7 @@ test('native session fork falls back to a fresh handoff when memory generation c
     workingDirectory: '/tmp',
     configState: fixture.configState,
     resumedFromConversationId: source.id,
-    buddyContext,
+    kind: buddyKind(buddyContext),
     buddyBriefing: 'New memory',
     buddyMemoryGeneration: 'generation-7',
   });
@@ -838,6 +840,7 @@ test('same-provider fork on a fork-incapable harness falls back to string handof
     getConversation: (id) => conversations.get(id),
   });
   const source = new fixture.Conversation({
+    kind: { t: 'chat' },
     done: false,
     id: 'muse-source',
     workingDirectory: '/tmp',
@@ -847,6 +850,7 @@ test('same-provider fork on a fork-incapable harness falls back to string handof
   conversations.set(source.id, source);
 
   const child = new fixture.Conversation({
+    kind: { t: 'chat' },
     done: false,
     id: 'muse-child',
     workingDirectory: '/tmp',
@@ -980,14 +984,13 @@ test('first-turn markers are kind-exclusive: builder, buddy, general', () => {
     buddyBriefing: null,
   } as const;
 
-  const builder = buildFirstTurnCliContent({ ...base, kind: { kind: 'buddy_builder' } });
+  const builder = buildFirstTurnCliContent({ ...base, kind: { t: 'builder' } });
   assert.match(builder, /unleashd:buddy-builder-v1/);
   assert.doesNotMatch(builder, /unleashd:buddy-context-v2/);
 
   const buddy = buildFirstTurnCliContent({
     ...base,
-    kind: {
-      kind: 'buddy',
+    kind: buddyKind({
       buddyId: 'buddy-1',
       workspaceId: 'workspace-1',
       buddyProjectId: null,
@@ -995,14 +998,14 @@ test('first-turn markers are kind-exclusive: builder, buddy, general', () => {
       automationRunId: null,
       delegatedByBuddyId: null,
       parentBuddyConversationId: null,
-    },
+    }),
     buddyBriefing: 'Memory generation seven',
     buddyMemoryGeneration: 7,
   });
   assert.match(buddy, /unleashd:buddy-context-v2/);
   assert.doesNotMatch(buddy, /unleashd:buddy-builder-v1/);
 
-  const general = buildFirstTurnCliContent({ ...base, kind: { kind: 'general' } });
+  const general = buildFirstTurnCliContent({ ...base, kind: { t: 'chat' } });
   assert.doesNotMatch(general, /unleashd:buddy-builder-v1/);
   assert.doesNotMatch(general, /unleashd:buddy-context-v2/);
   assert.equal(general, 'Lets make some updates');
@@ -1069,7 +1072,7 @@ test('foreground Buddy deadline uses the conversation budget and reports timeout
     id: 'foreground-timeout',
     workingDirectory: '/tmp',
     configState: fixture.configState,
-    buddyContext: { buddyId: 'buddy-fixture', workspaceId: 'workspace-fixture' },
+    kind: buddyKind({ buddyId: 'buddy-fixture', workspaceId: 'workspace-fixture' }),
   });
   conversation.sendMessage('Keep working');
   await new Promise<void>((resolve) => setImmediate(resolve));
@@ -1143,9 +1146,8 @@ test('background deadline uses timeout classification and waits for provider dra
     id: 'foreground-timeout',
     workingDirectory: '/tmp',
     configState: fixture.configState,
-    buddyContext: { buddyId: 'buddy-fixture', workspaceId: 'workspace-fixture' },
+    kind: buddyKind({ buddyId: 'buddy-fixture', workspaceId: 'workspace-fixture' }, 'background'),
   });
-  conversation.placement = 'background';
   const execution = conversation.runCoordinationMessage(
     'Keep working',
     { buddyId: 'buddy-fixture', workspaceId: 'workspace-fixture', coordinationRunId: 'worker-run' },

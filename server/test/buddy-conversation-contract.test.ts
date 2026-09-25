@@ -1,3 +1,4 @@
+import { buddyKind } from '@unleashd/shared';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import test from 'node:test';
@@ -63,20 +64,15 @@ function runtimeFixture() {
   };
 }
 
-test('empty Buddy conversation construction is inert and suppresses incompatible Swarm state', () => {
+test('empty Buddy conversation construction is inert and drops a swarm debug prefix', () => {
   const fixture = runtimeFixture();
   const conversation = new fixture.Conversation({
     done: false,
     id: 'buddy-conversation',
     workingDirectory: '/tmp',
     configState: fixture.configState,
-    buddyContext,
+    kind: buddyKind(buddyContext),
     buddyBriefing: 'Private Buddy briefing',
-    // Malformed legacy input must not make a Buddy an Oompa worker.
-    isWorker: true,
-    swarmId: 'swarm-1',
-    workerId: 'worker-1',
-    workerRole: 'work',
     swarmDebugPrefix: 'SWARM DEBUG',
   });
 
@@ -85,10 +81,6 @@ test('empty Buddy conversation construction is inert and suppresses incompatible
   assert.deepEqual(conversation.messages, []);
   assert.deepEqual(fixture.broadcasts, []);
   assert.deepEqual(conversation.buddyContext, canonicalBuddyContext);
-  assert.equal(conversation.isWorker, false);
-  assert.equal(conversation.swarmId, null);
-  assert.equal(conversation.workerId, null);
-  assert.equal(conversation.workerRole, null);
   assert.equal(conversation.swarmDebugPrefix, null);
 });
 
@@ -360,7 +352,7 @@ test('replaying create_conversation reports the real failure, not a config misma
     id: conversationId,
     workingDirectory: '/tmp',
     configState: fixture.configState,
-    buddyContext,
+    kind: buddyKind(buddyContext),
   });
   const conversations = new Map([[conversationId, existing]]);
   const rejectionText = 'Buddy authority rejected the initial message: buddy is inactive';
@@ -453,7 +445,7 @@ test('hidden Buddy briefing is injected exactly once and never on resumed turns'
     content: 'Start the campaign.',
     messageCount: 0,
     hasStartedSession: false,
-    buddyContext,
+    kind: buddyKind(buddyContext),
     buddyBriefing: 'PRIVATE BRIEFING',
     swarmDebugPrefix: 'SWARM DEBUG',
   });
@@ -466,7 +458,7 @@ test('hidden Buddy briefing is injected exactly once and never on resumed turns'
     content: 'Continue.',
     messageCount: 2,
     hasStartedSession: true,
-    buddyContext,
+    kind: buddyKind(buddyContext),
     buddyBriefing: 'PRIVATE BRIEFING',
     swarmDebugPrefix: null,
   });
@@ -476,14 +468,14 @@ test('hidden Buddy briefing is injected exactly once and never on resumed turns'
     content: 'Resume.',
     messageCount: 0,
     hasStartedSession: true,
-    buddyContext,
+    kind: buddyKind(buddyContext),
     buddyBriefing: 'PRIVATE BRIEFING',
     swarmDebugPrefix: null,
   });
   assert.equal(resumedWithoutLoadedMessages, 'Resume.');
 });
 
-test('disk hydration restores Buddy ownership, removes hidden briefing, and remains non-Swarm', () => {
+test('disk hydration removes the hidden Buddy briefing and never classifies the turn as Swarm', () => {
   // Even a legacy-looking worker tag in the user's actual prompt cannot turn
   // typed Buddy ownership into an Oompa conversation.
   const visiblePrompt = '[oompa:legacy-swarm:worker-1] What should we ship next?';
@@ -505,12 +497,9 @@ test('disk hydration restores Buddy ownership, removes hidden briefing, and rema
   });
 
   assert.ok(hydrated);
-  assert.deepEqual(hydrated.buddyContext, buddyContext);
+  // Identity is the record's (T09); the transcript only proposes chat here.
+  assert.deepEqual(hydrated.discoveredKind, { t: 'chat' });
   assert.equal(hydrated.messages[0].content, visiblePrompt);
   assert.equal(hydrated.messages[0].content.includes('PRIVATE BRIEFING'), false);
-  assert.equal(hydrated.isWorker, false);
-  assert.equal(hydrated.swarmId, null);
-  assert.equal(hydrated.workerId, null);
-  assert.equal(hydrated.workerRole, null);
   assert.equal(hydrated.swarmDebugPrefix, null);
 });

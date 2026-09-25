@@ -1,5 +1,5 @@
 import type { UnifiedAgentEvent } from '@nbardy/agent-cli';
-import type { Provider, ServerMessage, SubAgent } from '@unleashd/shared';
+import type { Provider, SubAgent } from '@unleashd/shared';
 import {
   extractCodexCollabToolInput,
   getCodexSubagentCurrentAction,
@@ -24,7 +24,8 @@ export interface SubAgentHost {
   readonly conversationId: string;
   /** The conversation's live list; folds mutate it in place. */
   readonly agents: SubAgent[];
-  broadcast(message: ServerMessage): void;
+  /** One agent changed: its whole record goes out as a `subagent` patch. */
+  changed(agent: SubAgent): void;
   newId(): string;
 }
 
@@ -69,7 +70,7 @@ function spawnGenericAgent(host: SubAgentHost, provider: Provider, event: ToolUs
   console.log(
     `[${host.conversationId}] Sub-agent started: ${blockId.substring(0, 8)} - "${description.substring(0, 50)}"`
   );
-  host.broadcast({ type: 'subagent_start', conversationId: host.conversationId, subAgent });
+  host.changed(subAgent);
 }
 
 /** A non-spawn tool is attributed to the running sub-agent as its current action. */
@@ -82,13 +83,7 @@ function noteActiveAgentTool(host: SubAgentHost, event: ToolUseEvent): void {
   activeAgent.currentAction = filePath
     ? `${event.name}: ${filePath.split('/').pop() || filePath}`
     : event.name;
-  host.broadcast({
-    type: 'subagent_update',
-    conversationId: host.conversationId,
-    subAgentId: activeAgent.id,
-    toolUses: activeAgent.toolUses,
-    currentAction: activeAgent.currentAction,
-  });
+  host.changed(activeAgent);
 }
 
 function completeRunning(
@@ -103,13 +98,7 @@ function completeRunning(
     if (!agent.statusSource) agent.statusSource = 'inferred_parent_completion';
     agent.currentAction = 'Done';
     console.log(`[${host.conversationId}] Sub-agent completed: ${agent.id.substring(0, 8)}`);
-    host.broadcast({
-      type: 'subagent_complete',
-      conversationId: host.conversationId,
-      subAgentId: agent.id,
-      status: 'completed',
-      completedAt,
-    });
+    host.changed(agent);
   }
 }
 
@@ -177,11 +166,7 @@ function applyCodexChildState(
     console.log(
       `[${host.conversationId}] Codex sub-agent started: ${agent.id.substring(0, 8)} - "${agent.description.substring(0, 50)}"`
     );
-    host.broadcast({
-      type: 'subagent_start',
-      conversationId: host.conversationId,
-      subAgent: agent,
-    });
+    host.changed(agent);
   } else {
     broadcastAgentUpdate(host, agent);
   }
@@ -194,13 +179,7 @@ function applyCodexChildState(
   broadcastAgentUpdate(host, agent);
   if (!wasTerminal) {
     agent.currentAction = status === 'error' ? 'Error' : 'Done';
-    host.broadcast({
-      type: 'subagent_complete',
-      conversationId: host.conversationId,
-      subAgentId: agent.id,
-      status,
-      completedAt: agent.completedAt,
-    });
+    host.changed(agent);
   }
 }
 
@@ -252,17 +231,7 @@ function upsertCodexAgent(
 }
 
 function broadcastAgentUpdate(host: SubAgentHost, agent: SubAgent): void {
-  host.broadcast({
-    type: 'subagent_update',
-    conversationId: host.conversationId,
-    subAgentId: agent.id,
-    toolUses: agent.toolUses,
-    tokens: agent.tokens,
-    currentAction: agent.currentAction,
-    status: agent.status,
-    rawStatus: agent.rawStatus,
-    statusSource: agent.statusSource,
-  });
+  host.changed(agent);
 }
 
 // Pattern: table-driven (docs/patterns.md#table-driven)

@@ -14,7 +14,7 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { setTimeout as delay } from 'node:timers/promises';
-import type { OompaRuntimeSnapshot, ServerMessage, SubAgent } from '@unleashd/shared';
+import type { OompaRuntimeSnapshot, SubAgent } from '@unleashd/shared';
 import { SwarmObservers, watchSwarmRuns } from '../src/swarm/observer';
 import { readLatestSwarmRuntime } from '../src/swarm/runtime';
 
@@ -80,7 +80,7 @@ test('a swarm launched during a turn becomes a sub-agent row that completes when
   context.after(() => rm(projectRoot, { recursive: true, force: true }));
   await writeRun(projectRoot, 'run-before', 'stopped');
   const agents: SubAgent[] = [];
-  const broadcasts: ServerMessage[] = [];
+  const changes: Array<{ id: string; status: string }> = [];
   const observers = new SwarmObservers((folder) => readLatestSwarmRuntime(folder), {
     intervalMs: 30,
     throttleMs: 20,
@@ -88,7 +88,7 @@ test('a swarm launched during a turn becomes a sub-agent row that completes when
   const stop = watchSwarmRuns(observers, projectRoot, {
     conversationId: 'conversation',
     agents,
-    broadcast: (message) => broadcasts.push(message),
+    changed: (agent) => changes.push({ id: agent.id, status: agent.status }),
     newId: () => 'unused',
   });
   context.after(stop);
@@ -108,10 +108,11 @@ test('a swarm launched during a turn becomes a sub-agent row that completes when
     JSON.stringify({ reason: 'done' })
   );
   await until(() => agents[0].status === 'completed', 'swarm row completion');
-  assert.deepEqual(
-    broadcasts.map((message) => message.type),
-    ['subagent_start', 'subagent_complete']
-  );
+  // One `subagent` patch per change: the row appears running, then completes.
+  assert.deepEqual(changes, [
+    { id: 'swarm-run-launched', status: 'running' },
+    { id: 'swarm-run-launched', status: 'completed' },
+  ]);
 });
 
 test('a swarm runtime read never touches synchronous fs', async (context) => {

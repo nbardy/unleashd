@@ -1,13 +1,13 @@
 import type {
   BuddyContext,
-  Conversation as ConversationData,
-  DiscoveredConversation,
+  ConversationRow,
   Message,
   PersistedConversationConfigRecord,
 } from '@unleashd/shared';
-import { conversationKindFromLegacy } from '@unleashd/shared';
+import { encodeRows } from '@unleashd/shared';
 import { validate as isUuid } from 'uuid';
 import type {
+  DiscoveredSession,
   PollResult,
   SessionHistoryOptions,
   SessionHistorySource,
@@ -32,7 +32,6 @@ import type {
   ConversationOptions,
   ConversationRuntime,
 } from '../conversations/runtime';
-import { summarizeConversation } from '../conversations/serialization';
 import { createFilePoller } from './file-poller';
 import { loadProgressively } from './progressive-loader';
 import { mergeSessionMessages } from './session-history';
@@ -91,9 +90,23 @@ function normalizeMemoryGeneration(value: MemoryGenerationInput | null | undefin
 export function createSessionLoader(dependencies: SessionLoaderDependencies): SessionLoader {
   const logger = dependencies.logger ?? console;
   let fileMtimes = new Map<string, number>();
-  const nativeSources = new Map<string, DiscoveredConversation>();
+  const nativeSources = new Map<string, DiscoveredSession>();
   const boundSessionIds = new Map<string, Set<string>>();
   const startupRuntimes = new WeakSet<ConversationRuntime>();
+
+  /** The list row, with a transcript another process is writing shown as running. */
+  function rowFor(conversation: ConversationRuntime): ConversationRow {
+    const row = conversation.toRow();
+    return row.run === 'idle' &&
+      (dependencies.externalActivity.has(conversation.sessionId) ||
+        dependencies.externalActivity.has(conversation.id))
+      ? { ...row, run: 'running' }
+      : row;
+  }
+
+  function broadcastRows(rows: ConversationRow[]): void {
+    if (rows.length > 0) dependencies.broadcast({ type: 'rows', ...encodeRows(rows) });
+  }
 
   function sourceKey(source: { provider: string; sessionId: string }): string {
     return `${source.provider}:${source.sessionId}`;
@@ -106,7 +119,7 @@ export function createSessionLoader(dependencies: SessionLoaderDependencies): Se
     nativeSources.set(sourceKey(source), current);
   }
 
-  async function resolveSessionBindings(source: DiscoveredConversation) {
+  async function resolveSessionBindings(source: DiscoveredSession) {
     const record = await dependencies.configStore.findBySession(source.provider, source.sessionId);
     if (!record || record.status !== 'active') return [];
     return rememberBindings(record);
@@ -125,12 +138,12 @@ export function createSessionLoader(dependencies: SessionLoaderDependencies): Se
   function restoreDisplayHistory(
     conversation: ConversationRuntime,
     record: PersistedConversationConfigRecord,
-    source: DiscoveredConversation
+    source: DiscoveredSession
   ): void {
     const bindings = rememberBindings(record);
     const sources = bindings
       .map((binding) => nativeSources.get(sourceKey(binding)))
-      .filter((entry): entry is DiscoveredConversation => entry !== undefined);
+      .filter((entry): entry is DiscoveredSession => entry !== undefined);
     if (sources.length === 0) sources.push(source);
     // Native rows replace matching live turns. Unmatched turns survive when
     // a bound transcript is missing or its latest provider flush is partial.
@@ -213,9 +226,10 @@ export function createSessionLoader(dependencies: SessionLoaderDependencies): Se
         sessionBindings: [{ provider: source.provider, sessionId }],
         currentSession: { provider: source.provider, sessionId },
         workingDirectory: source.workingDirectory,
+        discoveredKind: source.discoveredKind,
         legacy: {
           provider: source.provider,
-          reportedModel: source.modelName ?? source.model,
+          reportedModel: source.observedModel ?? source.model,
           reasoningEffort: source.reasoningEffort,
           source: 'external_session',
         },
@@ -251,37 +265,6 @@ export function createSessionLoader(dependencies: SessionLoaderDependencies): Se
       );
     }
 
-    // Kind is canonical; durable record creation may still carry legacy buddyContext/purpose for old sessions.
-    // Prefer source.kind (from disk-adapter, already migrated), else derive from creation legacy.
-    //
-    // SUBTLE — first *specific* candidate wins, not first non-null. `sessionToConversation`
-    // never returns a nullish kind: it falls back to `{kind:'general'}` when the transcript
-    // carries no buddy marker (disk-adapter.ts:193). A `source.kind ?? …` chain therefore
-    // short-circuits on that default and makes both durable fallbacks below dead code for
-    // every transcript-backed conversation. That silently de-buddied Chat "Fork" threads:
-    // a fork inherits its buddy identity from `resumedFromConversationId` at creation
-    // (conversation-websocket.ts:159) and stores it in `creation.buddyContext`, but its
-    // transcript has no marker (its first message is the pasted fork draft), so on the next
-    // restart it rehydrated as `general` — dropping out of the sidebar's Buddies group and
-    // losing buddy MCP scoping while its buddy_conversations link row stayed live. That is
-    // the "N conversations on the Buddies page, N-1 in the sidebar" split.
-    //
-    // Nothing ever demotes buddy → general (no detach flow exists), so preferring any
-    // specific kind over `general` cannot resurrect a deliberate downgrade.
-    const kindForHydrate =
-      [
-        source.kind,
-        conversationKindFromLegacy({
-          buddyContext: hydratedConfig.record.creation?.buddyContext ?? null,
-          purpose: hydratedConfig.record.creation?.purpose ?? null,
-          kind: null,
-        }),
-        conversationKindFromLegacy({
-          buddyContext: source.buddyContext ?? null,
-          purpose: source.purpose ?? null,
-          kind: null,
-        }),
-      ].find((candidate) => candidate != null && candidate.kind !== 'general') ?? null;
     const memorySnapshot =
       source.messages
         .filter((message) => message.role === 'user')
@@ -302,21 +285,16 @@ export function createSessionLoader(dependencies: SessionLoaderDependencies): Se
       // is what keeps the meter honest across a reload instead of falling back
       // to the chars/4 estimate until the next turn reports usage.
       existingProviderUsage: resumableSession?.latestUsage ?? null,
-      isWorker: source.isWorker,
-      swarmId: source.swarmId ?? null,
-      workerId: source.workerId ?? null,
-      workerRole: source.workerRole ?? null,
+      // The record's kind is the identity; the transcript only proposed one
+      // when this hydration created the record (discoveredKind above).
+      kind: hydratedConfig.record.kind,
       parentConversationId: resolveParentConversationId(source.parentConversationId),
       resumedFromConversationId:
         source.resumedFromConversationId ??
         hydratedConfig.record.creation?.resumedFromConversationId ??
         null,
-      modelName: source.modelName ?? null,
+      observedModel: source.observedModel,
       title: source.title ?? null,
-      kind: kindForHydrate,
-      placement: hydratedConfig.record.creation?.placement ?? source.placement,
-      buddyContext: source.buddyContext ?? hydratedConfig.record.creation?.buddyContext ?? null,
-      purpose: source.purpose ?? hydratedConfig.record.creation?.purpose ?? 'general',
       buddyBriefing: memorySnapshot?.briefing ?? null,
       buddyMemoryGeneration: memorySnapshot?.generation ?? null,
     });
@@ -336,20 +314,13 @@ export function createSessionLoader(dependencies: SessionLoaderDependencies): Se
     // registered silently, and `conversation_load_complete` only prunes, so a
     // client connected during startup never showed these (mostly app-created)
     // conversations until it reconnected.
-    const summaries: ConversationData[] = [];
-    const flush = () => {
-      if (summaries.length === 0) return;
-      dependencies.broadcast({
-        type: 'conversations_updated',
-        conversations: summaries.splice(0),
-        summaries: true,
-      });
-    };
+    const rows: ConversationRow[] = [];
+    const flush = () => broadcastRows(rows.splice(0));
     await forEachWithConcurrency(records, RECOVERY_CONCURRENCY, async (record) => {
       const recovered = await recoverRecord(record);
       if (!recovered) return;
-      summaries.push(summarizeConversation(recovered.toJSON()));
-      if (summaries.length >= dependencies.options.startupBatchSize) flush();
+      rows.push(recovered.toRow());
+      if (rows.length >= dependencies.options.startupBatchSize) flush();
     });
     flush();
   }
@@ -381,6 +352,7 @@ export function createSessionLoader(dependencies: SessionLoaderDependencies): Se
       const hydrated = await dependencies.configService.hydrate({
         conversationId: record.conversationId,
         sessionBindings: [],
+        discoveredKind: record.kind,
         legacy: {
           provider: record.config.provider,
           reportedModel: record.lastResolvedConfig?.modelId,
@@ -398,9 +370,9 @@ export function createSessionLoader(dependencies: SessionLoaderDependencies): Se
       // started a provider session still need the latest generation for
       // their pending initial message.
       const recoveredBuddy =
-        record.creation?.buddyContext && !currentSession
+        record.kind.t === 'buddy' && !currentSession
           ? await dependencies
-              .resolveBuddyConversation(record.creation.buddyContext)
+              .resolveBuddyConversation(record.kind.context)
               .catch((error) => {
                 logger.warn(
                   `[buddies] Could not rebuild ${record.conversationId} briefing:`,
@@ -419,39 +391,14 @@ export function createSessionLoader(dependencies: SessionLoaderDependencies): Se
         existingProviderUsage: currentSession?.latestUsage ?? null,
         swarmDebugPrefix: record.creation?.swarmDebugPrefix ?? null,
         resumedFromConversationId: record.creation?.resumedFromConversationId ?? null,
-        kind: recoveredBuddy?.context
-          ? {
-              kind: 'buddy',
-              buddyId: recoveredBuddy.context.buddyId,
-              workspaceId: recoveredBuddy.context.workspaceId,
-              buddyProjectId: recoveredBuddy.context.buddyProjectId ?? null,
-              legacyWorkItemId: recoveredBuddy.context.legacyWorkItemId ?? null,
-              automationRunId: recoveredBuddy.context.automationRunId ?? null,
-              delegatedByBuddyId: recoveredBuddy.context.delegatedByBuddyId ?? null,
-              parentBuddyConversationId: recoveredBuddy.context.parentBuddyConversationId ?? null,
-              allowedBuddyOperations: recoveredBuddy.context.allowedBuddyOperations,
-            }
-          : record.creation?.buddyContext
-            ? {
-                kind: 'buddy',
-                buddyId: record.creation.buddyContext.buddyId,
-                workspaceId: record.creation.buddyContext.workspaceId,
-                buddyProjectId: record.creation.buddyContext.buddyProjectId ?? null,
-                legacyWorkItemId: record.creation.buddyContext.legacyWorkItemId ?? null,
-                automationRunId: record.creation.buddyContext.automationRunId ?? null,
-                delegatedByBuddyId: record.creation.buddyContext.delegatedByBuddyId ?? null,
-                parentBuddyConversationId:
-                  record.creation.buddyContext.parentBuddyConversationId ?? null,
-                allowedBuddyOperations: record.creation.buddyContext.allowedBuddyOperations,
-              }
-            : record.creation?.purpose === 'buddy_builder'
-              ? { kind: 'buddy_builder' }
-              : null,
-        buddyContext: recoveredBuddy?.context ?? record.creation?.buddyContext ?? null,
+        // A fresh Buddy record takes the Buddy's current context (the resolver
+        // may have refreshed it); identity and visibility stay the record's.
+        kind:
+          record.kind.t === 'buddy' && recoveredBuddy
+            ? { ...record.kind, context: recoveredBuddy.context }
+            : record.kind,
         buddyBriefing: recoveredBuddy?.briefing ?? null,
         buddyMemoryGeneration: normalizeMemoryGeneration(recoveredBuddy?.memoryGeneration),
-        purpose: record.creation?.purpose ?? 'general',
-        placement: record.creation?.placement,
       });
       // The record's createdAt is the conversation's real birth time. Leaving
       // the runtime's `new Date()` default made every recovered conversation
@@ -478,31 +425,21 @@ export function createSessionLoader(dependencies: SessionLoaderDependencies): Se
   }
 
   function reresolveParentIds(): void {
-    const changed: ConversationData[] = [];
+    const changed: ConversationRow[] = [];
     for (const conversation of dependencies.registry.values()) {
       if (!conversation.parentConversationId) continue;
       const resolved = resolveParentConversationId(conversation.parentConversationId);
       if (resolved === conversation.parentConversationId) continue;
       conversation.parentConversationId = resolved;
-      changed.push(summarizeConversation(conversation.toJSON()));
+      changed.push(rowFor(conversation));
     }
-    if (changed.length > 0) {
-      dependencies.broadcast({
-        type: 'conversations_updated',
-        conversations: changed,
-        summaries: true,
-      });
-    }
+    broadcastRows(changed);
   }
 
   async function loadExistingConversations(): Promise<void> {
     logger.log('Loading conversations from persisted session files...');
     try {
-      fileMtimes = await loadProgressively<
-        DiscoveredConversation,
-        ConversationRuntime,
-        ConversationData
-      >(
+      fileMtimes = await loadProgressively<DiscoveredSession, ConversationRuntime, ConversationRow>(
         {
           limit: dependencies.options.startupLimit,
           concurrency: dependencies.options.startupConcurrency,
@@ -522,13 +459,8 @@ export function createSessionLoader(dependencies: SessionLoaderDependencies): Se
             dependencies.registry.set(conversation);
             return true;
           },
-          serialize: (conversation) => summarizeConversation(conversation.toJSON()),
-          broadcast: (conversations) =>
-            dependencies.broadcast({
-              type: 'conversations_updated',
-              conversations,
-              summaries: true,
-            }),
+          serialize: rowFor,
+          broadcast: broadcastRows,
           count: () => dependencies.registry.size,
         }
       );
@@ -554,7 +486,7 @@ export function createSessionLoader(dependencies: SessionLoaderDependencies): Se
 
   function findBootstrapMatch(
     sessionId: string,
-    source: DiscoveredConversation
+    source: DiscoveredSession
   ): ConversationRuntime | undefined {
     const importedLastUser = getLastUserMessageContent(source.messages);
     if (!importedLastUser) return undefined;
@@ -588,7 +520,7 @@ export function createSessionLoader(dependencies: SessionLoaderDependencies): Se
   async function applyPolledUpdate(
     sessionId: string,
     source: SessionHistorySource
-  ): Promise<ConversationData | null> {
+  ): Promise<ConversationRow | null> {
     rememberSources(source);
     const record = await dependencies.configStore.findBySession(source.provider, sessionId);
     if (record?.status === 'deleted') return null;
@@ -599,7 +531,7 @@ export function createSessionLoader(dependencies: SessionLoaderDependencies): Se
       restoreDisplayHistory(boundExisting, record, source);
       // Older native sessions can gain history, but cannot change current
       // runtime metadata, model selection, session identity or running status.
-      return boundExisting.toJSON();
+      return boundExisting.toRow();
     }
     if (!existing) {
       const reconciled = findBootstrapMatch(sessionId, source);
@@ -623,40 +555,19 @@ export function createSessionLoader(dependencies: SessionLoaderDependencies): Se
       if (record) restoreDisplayHistory(existing, record, source);
       else existing.messages = mergeSessionMessages([source.messages], existing.messages);
       existing.subAgents = source.subAgents;
-      existing.isWorker = source.isWorker;
-      existing.swarmId = source.swarmId ?? null;
-      existing.workerId = source.workerId ?? null;
-      existing.workerRole = source.workerRole ?? null;
       existing.parentConversationId = resolveParentConversationId(source.parentConversationId);
       // Native provider artifacts do not carry Unleashd's UI lineage. A poll
       // must never erase the durable parent recorded at child creation.
       existing.resumedFromConversationId =
         source.resumedFromConversationId ?? existing.resumedFromConversationId;
-      // Provider artifacts are discovery evidence, not authority to detach a
-      // conversation from an application-owned kind. Their general fallback only
-      // means that no marker was observed. Since no Buddy/Builder detach flow
-      // exists, polling may promote general to a specific kind but never demote or
-      // reassign a specific durable runtime kind.
-      const specificPolledKind =
-        [
-          source.kind,
-          conversationKindFromLegacy({
-            buddyContext: source.buddyContext ?? null,
-            purpose: source.purpose ?? null,
-            kind: null,
-          }),
-        ].find((candidate) => candidate != null && candidate.kind !== 'general') ?? null;
-      if (existing.kind.kind === 'general' && specificPolledKind) {
-        existing.kind = specificPolledKind;
-      }
-      existing.modelName = source.modelName ?? source.model ?? null;
+      // Kind is not touched: the record owns identity (T09). Until then a poll
+      // could "promote" a general conversation from transcript markers.
+      existing.observedModel = source.observedModel ?? source.model ?? null;
       // Idle-only path (active processes return earlier): the file backfill
       // already resolved custom-over-ai precedence, so last file wins here.
       if (source.title !== undefined) existing.title = source.title;
       existing.refreshConfigResolution();
-      const serialized = existing.toJSON();
-      if (dependencies.externalActivity.has(sessionId)) serialized.isRunning = true;
-      return serialized;
+      return rowFor(existing);
     }
 
     if (
@@ -671,9 +582,7 @@ export function createSessionLoader(dependencies: SessionLoaderDependencies): Se
     const liveWinner = dependencies.registry.get(conversation.id);
     if (liveWinner && liveWinner !== conversation) return null;
     dependencies.registry.set(conversation);
-    const serialized = conversation.toJSON();
-    if (dependencies.externalActivity.has(sessionId)) serialized.isRunning = true;
-    return serialized;
+    return rowFor(conversation);
   }
 
   function pruneSessionTracking(): void {
@@ -681,7 +590,7 @@ export function createSessionLoader(dependencies: SessionLoaderDependencies): Se
   }
 
   function startFilePolling(): NodeJS.Timeout {
-    return createFilePoller<DiscoveredConversation, ConversationData>(
+    return createFilePoller<DiscoveredSession, ConversationRow>(
       {
         intervalMs: dependencies.options.pollIntervalMs,
         externalGraceMs: dependencies.options.externalGraceMs,
@@ -707,24 +616,21 @@ export function createSessionLoader(dependencies: SessionLoaderDependencies): Se
         findConversationId: (sessionId) => findByCurrentSessionId(sessionId)?.id,
         broadcastStatus: (conversationId, isRunning) =>
           dependencies.broadcast({
-            type: 'status',
-            conversationId,
-            isRunning,
-            isStreaming: false,
+            type: 'patch',
+            id: conversationId,
+            patch: {
+              t: 'run',
+              run: isRunning
+                ? 'running'
+                : (dependencies.registry.get(conversationId)?.runState() ?? 'idle'),
+            },
           }),
         applyUpdate: applyPolledUpdate,
-        // Summaries, not full histories. A still-running external transcript
-        // changes every poll, and its full ConversationData (~400-500KB) was
-        // serialized and sent to every client every 5s (2026-09-25). A client
-        // with the history loaded refetches it over HTTP when the summary's
-        // messageCount moves (handleConversationsUpdated), so only a viewer
-        // pays for the full history.
-        broadcastUpdates: (conversations) =>
-          dependencies.broadcast({
-            type: 'conversations_updated',
-            conversations: conversations.map(summarizeConversation),
-            summaries: true,
-          }),
+        // Rows, not histories. A still-running external transcript changes
+        // every poll; its full history (~400-500KB) was sent to every client
+        // every 5s until 2026-09-25. A client with the transcript loaded pages
+        // in the tail when the row's messageCount moves.
+        broadcastUpdates: broadcastRows,
         pruneTracking: pruneSessionTracking,
       }
     ).start();

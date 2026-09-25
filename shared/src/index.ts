@@ -8,18 +8,13 @@
 
 import { z } from 'zod';
 import {
-  BuddyContextSchema,
   ConfigErrorSchema,
-  ConfigResolutionSchema,
   ConversationConfigPatchSchema,
   ConversationConfigSchema,
   ConversationIdSchema,
-  ConversationPlacementSchema,
-  ConversationPurposeSchema,
   ModelIdSchema,
-  ProviderTurnUsageSchema,
 } from './conversation-config.js';
-import { ConversationKindSchema } from './conversation-kind.js';
+import { CreateKindSchema, EncodedRowsSchema, RowPatchSchema } from './conversation.js';
 import {
   decodeLegacyCodexCompositeModel,
   encodeLegacyCodexCompositeModel,
@@ -35,7 +30,7 @@ import {
 } from './provider-catalog.js';
 
 export * from './conversation-config.js';
-export * from './conversation-kind.js';
+export * from './conversation.js';
 export * from './buddy.js';
 export * from './buddy-access.js';
 export * from './buddy-work.js';
@@ -327,96 +322,6 @@ export const ModelInfoSchema = z.object({
 });
 export type ModelInfo = z.infer<typeof ModelInfoSchema>;
 
-export const MessageSchema = z.object({
-  role: z.enum(['user', 'assistant', 'system']),
-  content: z.string(),
-  timestamp: z.coerce.date(),
-  // Imported tool details stay separate from the compact, groupable summary.
-  toolCall: z.object({ name: z.string(), input: z.string().optional() }).optional(),
-  completedAt: z.coerce.date().optional(),
-  completionReason: z.enum(['success', 'error', 'out_of_tokens', 'killed']).optional(),
-});
-
-export type Message = z.infer<typeof MessageSchema>;
-
-// =============================================================================
-// Sub-Agent Types (for Task tool detection)
-// =============================================================================
-
-export const SubAgentStatusSchema = z.enum(['pending', 'running', 'completed', 'error']);
-export type SubAgentStatus = z.infer<typeof SubAgentStatusSchema>;
-
-export const SubAgentStatusSourceSchema = z.enum([
-  'native',
-  'inferred_parent_completion',
-  'recovered_from_disk',
-]);
-export type SubAgentStatusSource = z.infer<typeof SubAgentStatusSourceSchema>;
-
-export const SubAgentSchema = z.object({
-  id: z.string(),
-  description: z.string(),
-  status: SubAgentStatusSchema,
-  toolUses: z.number().int().nonnegative(),
-  tokens: z.number().int().nonnegative(),
-  currentAction: z.string().optional(), // e.g., "Write: client/src/App.css"
-  startedAt: z.coerce.date(),
-  completedAt: z.coerce.date().optional(),
-  providerThreadId: z.string().optional(),
-  rawStatus: z.string().optional(),
-  statusSource: SubAgentStatusSourceSchema.optional(),
-});
-
-export type SubAgent = z.infer<typeof SubAgentSchema>;
-
-// Queue types (shared between server state and client display).
-export const QueuedMessageSchema = z.object({
-  id: z.string(),
-  content: z.string(),
-  queuedAt: z.coerce.date(),
-  status: z.enum(['pending', 'sending']),
-});
-
-export type QueuedMessage = z.infer<typeof QueuedMessageSchema>;
-
-// CONVERSATION STATE MODEL
-// ========================
-// Two server-authoritative flags + one client-only flag:
-//
-//   isRunning   (server-authoritative via 'status' broadcasts)
-//     Process is alive. true on spawn, false on close.
-//     Drives: spawn guard, queue processing, sidebar/gallery indicators.
-//
-//   isStreaming  (server-authoritative via 'status' broadcasts)
-//     Assistant is actively producing content. true on first text_delta,
-//     false on message_complete or process close (whichever comes first).
-//     Drives: typing dots, pulse animation, scroll behavior.
-//     INVARIANT: !isRunning → !isStreaming (enforced in close handler).
-//     A dead process cannot produce content.
-//
-//   confirmed   (client-only, from 'conversation_created')
-//     Server has acknowledged this conversation. false only in the
-//     optimistic stub between createConversation() and server confirmation.
-//     Drives: input gating ("Waiting for claude...").
-//
-// Broadcast sequence on normal completion:
-//   1. message_complete  → server sets isStreaming=false, broadcasts status
-//   2. process close     → server sets isRunning=false, broadcasts status
-//   3. queue_updated     → client mirrors updated queue
-//   4. processQueue()    → server spawns next message if queued
-//
-// MESSAGE AUTHORITY MODEL
-// =======================
-// Claude conversations: JSONL is authoritative (Claude CLI writes its own file).
-//   The server relays streaming content but the poller's JSONL-parsed messages
-//   are the canonical version. conversations_updated correctly replaces client state.
-//
-// Codex conversations: Server memory is authoritative while a turn is active.
-//   The server builds messages from streaming stdout, while Codex CLI also
-//   self-persists native session files under ~/.codex/sessions.
-//   The poller skips active session IDs and rehydrates idle/reloaded sessions
-//   from persisted files.
-
 // Reasoning-effort values are passed through verbatim — we never translate or
 // map them. Whatever the CLI accepts is what flows through the wire.
 //
@@ -463,117 +368,6 @@ export const EFFORT_DISPLAY_NAMES: Record<string, string> = {
   xhigh: 'xHigh',
   max: 'Max',
   ultra: 'Ultra',
-};
-
-export const ConversationSchema = z.object({
-  id: ConversationIdSchema,
-  sessionId: z.string().optional(),
-  messages: z.array(MessageSchema),
-  // Full snapshots set this to messages.length. Summary snapshots keep only
-  // the last preview message while preserving the authoritative total.
-  messageCount: z.number().int().nonnegative().optional(),
-  isRunning: z.boolean(),
-  // Owner marked this conversation done (hidden from working lists). Server-
-  // owned: read from the durable record, changed only by set_conversation_done.
-  // The default exists only for version skew: the client validates every
-  // server message, and a backend from before 2026-09-24 (the dev watcher
-  // defers backend reloads until running turns finish, while Vite serves new
-  // client code at once) omits the field. Without the default every init and
-  // update was rejected and the list went empty until the backend reloaded.
-  // The parsed type stays `boolean`, so current servers must still set it.
-  done: z.boolean().default(false),
-  // Server-authoritative: assistant is actively producing content.
-  // true on first text_delta, false on message_complete or process close.
-  // INVARIANT: !isRunning → !isStreaming (dead process can't stream).
-  isStreaming: z.boolean().default(false),
-  // Server has confirmed this conversation exists. Only false in the client's
-  // optimistic stub (between createConversation and conversation_created).
-  // Server always sends true — it only serializes conversations it owns.
-  confirmed: z.boolean().default(true),
-  createdAt: z.coerce.date(),
-  workingDirectory: z.string(),
-  provider: ProviderSchema.default('claude'),
-  model: ModelIdSchema.optional(), // Provider-specific model identifier (undefined = provider default)
-  // Standalone reasoning level for providers that expose it (claude + codex).
-  // Pass-through string: value is whatever the target CLI accepts (see
-  // CLAUDE_EFFORT_LEVELS / CODEX_EFFORT_LEVELS). Other providers leave it undefined.
-  reasoningEffort: z.string().optional(),
-  // Canonical configuration authority for every server-owned conversation.
-  // Disk discoveries use DiscoveredConversation until server hydration resolves
-  // provider defaults and produces this complete snapshot.
-  config: ConversationConfigSchema,
-  configRevision: z.number().int().nonnegative(),
-  configResolution: ConfigResolutionSchema,
-  // Provider-reported observation; never configuration authority.
-  reportedModel: z.string().nullish(),
-  subAgents: z.array(SubAgentSchema).default([]), // Active/recent sub-agents
-  queue: z.array(QueuedMessageSchema).default([]), // Server-owned message queue
-  // Oompa worker detection: true if first user message started with "[oompa]".
-  // Workers are hidden from main Gallery/Sidebar and shown in a dedicated Workers section.
-  // Tag format: [oompa], [oompa:<swarmId>], or [oompa:<swarmId>:<workerId>]
-  isWorker: z.boolean().default(false),
-  // Swarm grouping: all workers from the same oompa swarm run share a swarmId.
-  // Parsed from [oompa:<swarmId>:...] tag on first user message.
-  swarmId: z.string().nullish(),
-  // Worker identity within a swarm (e.g., "w0", "claude-0").
-  // Parsed from [oompa:...:<workerId>] tag on first user message.
-  workerId: z.string().nullish(),
-  // Worker role within the swarm — inferred from first user message content.
-  // "work" = normal task execution, "review" = code review (contains diff + VERDICT),
-  // "fix" = fixing reviewer feedback (starts with "The reviewer found issues").
-  // Null for non-workers or when role can't be determined.
-  workerRole: z.enum(['work', 'review', 'fix']).nullish(),
-  // Optional parent conversation id for provider-native spawned sub-agent threads
-  // (e.g., Codex thread_spawn parent_thread_id).
-  // When present, UI can render this conversation nested under its parent.
-  parentConversationId: ConversationIdSchema.nullish(),
-  // Optional UI lineage for Chat "Fork" (soft handoff). Points at the source
-  // conversation the user forked from. This is NOT provider-session inheritance
-  // and does NOT imply FORK_CAPABLE_PROVIDERS. Context handoff is the draft /
-  // first-message content (historically a pasted transcript); the Resume
-  // badge is UI chrome for that lineage. When source and target share a
-  // fork-capable provider, the first send upgrades to CLI --fork / emulateFork.
-  resumedFromConversationId: ConversationIdSchema.nullish(),
-  // The actual model name from the CLI (e.g., "claude-sonnet-4-5-20250929").
-  // More specific than `provider` which is just "claude", "codex", or "opencode".
-  modelName: z.string().nullish(),
-  // Provider-generated conversation label (Claude ai-title/custom-title from
-  // the session JSONL; Codex threads.name is sqlite-only and not yet read).
-  // Absent means no provider title was observed — UI falls back to the
-  // first-user-message derivation. Never an estimate; only verbatim provider text.
-  title: z.string().optional(),
-  // Debug prefix for swarm conversations — prepended to first CLI message.
-  // UI sees clean user content; CLI process gets the prefix + content.
-  // Stays on the object so toJSON() includes it for client rendering.
-  swarmDebugPrefix: z.string().nullish(),
-  // Canonical kind — holistic sum type. Single source of truth.
-  // `buddyContext`/`purpose` are legacy compat only: new writes set kind
-  // and mirror to legacy fields for old clients/parsers; reads derive kind
-  // from legacy via `getConversationKind()` when kind is absent.
-  kind: ConversationKindSchema,
-  // Persistent employee ownership (deprecated in favor of kind.buddy). The
-  // server no longer sends it (it duplicated `kind` on every Buddy thread); it
-  // stays nullish so servers that still send it parse. Always read via
-  // `getBuddyContext()` / `isBuddyConversation()`, which derive from `kind`.
-  buddyContext: BuddyContextSchema.nullish(),
-  // Application-owned purpose (deprecated in favor of kind). `general` is implicit.
-  placement: ConversationPlacementSchema.optional(),
-  purpose: ConversationPurposeSchema.optional(),
-
-  // Provider-counted tokens for the latest request on the current session.
-  // Null before the first turn reports usage, and on harnesses that report
-  // none (muse emits no token fields on stdout). Never an estimate — the
-  // chars/4 estimate lives in the context-breakdown route and is labelled so.
-  providerUsage: ProviderTurnUsageSchema.nullish(),
-});
-
-export type Conversation = z.infer<typeof ConversationSchema>;
-export type DiscoveredConversation = Omit<
-  Conversation,
-  'id' | 'sessionId' | 'config' | 'configRevision' | 'configResolution' | 'done'
-> & {
-  /** Opaque provider-owned identity. Never use as the application conversation ID. */
-  sessionId: string;
 };
 
 // =============================================================================
@@ -718,10 +512,7 @@ export const CreateConversationCommandSchema = z.object({
   config: ConversationConfigSchema,
   initialMessage: z.string().min(1).optional(),
   swarmDebugPrefix: z.string().optional(),
-  // Chat "Fork" soft-handoff lineage.
-  resumedFromConversationId: ConversationIdSchema.optional(),
-  buddyContext: BuddyContextSchema.optional(),
-  kind: ConversationKindSchema.optional(),
+  kind: CreateKindSchema,
 });
 export type CreateConversationCommand = z.infer<typeof CreateConversationCommandSchema>;
 
@@ -733,14 +524,6 @@ export const SetConversationConfigCommandSchema = z.object({
   patch: ConversationConfigPatchSchema,
 });
 export type SetConversationConfigCommand = z.infer<typeof SetConversationConfigCommandSchema>;
-
-export const SendMessageMessageSchema = z.object({
-  type: z.literal('send_message'),
-  conversationId: ConversationIdSchema,
-  content: z.string().min(1),
-});
-
-export type SendMessageMessage = z.infer<typeof SendMessageMessageSchema>;
 
 export const StopConversationMessageSchema = z.object({
   type: z.literal('stop_conversation'),
@@ -812,7 +595,6 @@ export type PromoteQueuedMessage = z.infer<typeof PromoteQueuedMessageSchema>;
 export const ClientMessageSchema = z.discriminatedUnion('type', [
   CreateConversationCommandSchema,
   SetConversationConfigCommandSchema,
-  SendMessageMessageSchema,
   StopConversationMessageSchema,
   DeleteConversationMessageSchema,
   SetConversationDoneMessageSchema,
@@ -850,65 +632,50 @@ export type DeviceUiPrefs = z.infer<typeof DeviceUiPrefsSchema>;
 export const SeenMessageIndexSchema = z.record(z.string(), z.number());
 
 // =============================================================================
-// Server → Client Messages
+// Server → Client Messages (protocol v3, T09 2026-09-25)
+//
+// Skew rule: the client reads `hello.protocol.version` before anything else. A
+// v2 backend (still running while Vite already serves this client) sends
+// `init`, which this client recognises by type and answers with a typed
+// "backend reloading" state + reconnect — it never replaces the list with an
+// empty one. A v2 client talking to a v3 backend rejects `hello` as an
+// unknown type and keeps the list it had. Fields ADDED within v3 still need
+// `.default(...)` (CLAUDE.md). Guard: client/test/protocol-skew.test.ts.
 // =============================================================================
 
-export const ProtocolInfoSchema = z.object({
-  version: z.literal(2),
-  capabilities: z.tuple([
-    z.literal('conversation_config'),
-    z.literal('conversation_updated'),
-    z.literal('structured_command_errors'),
-  ]),
-});
-export type ProtocolInfo = z.infer<typeof ProtocolInfoSchema>;
+export const PROTOCOL_VERSION = 3;
 
-export const PROTOCOL_INFO: ProtocolInfo = {
-  version: 2,
-  capabilities: ['conversation_config', 'conversation_updated', 'structured_command_errors'],
-};
-
-export const InitMessageSchema = z.object({
-  type: z.literal('init'),
-  archivedBuddyIds: z.array(z.string()).optional(),
-  conversations: z.array(ConversationSchema),
+export const HelloMessageSchema = EncodedRowsSchema.extend({
+  type: z.literal('hello'),
+  protocol: z.object({ version: z.literal(PROTOCOL_VERSION) }),
   defaultCwd: z.string(),
-  /** Conversations contain metadata + last-message previews, not full transcripts. */
-  summaries: z.boolean().optional(),
-  /** True if server is still loading conversations from disk. Client should wait for conversations_updated. */
-  loading: z.boolean().optional(),
-  protocol: ProtocolInfoSchema,
+  /** True while the server still hydrates history; `ready` ends it. */
+  loading: z.boolean(),
+  archivedBuddyIds: z.array(z.string()),
+});
+export type HelloMessage = z.infer<typeof HelloMessageSchema>;
+
+/** Upsert rows (discovery batches, external refresh, a creation seen by other sockets). */
+export const RowsMessageSchema = EncodedRowsSchema.extend({ type: z.literal('rows') });
+export type RowsMessage = z.infer<typeof RowsMessageSchema>;
+
+export const RemovedMessageSchema = z.object({
+  type: z.literal('removed'),
+  ids: z.array(ConversationIdSchema),
 });
 
-export type InitMessage = z.infer<typeof InitMessageSchema>;
-
-export const ConversationCreatedEventSchema = z.object({
-  type: z.literal('conversation_created'),
-  commandId: z.string().min(1),
-  conversation: ConversationSchema,
+/** Startup hydration finished; `conversationIds` is the authoritative membership. */
+export const ReadyMessageSchema = z.object({
+  type: z.literal('ready'),
+  conversationIds: z.array(ConversationIdSchema),
 });
-export type ConversationCreatedEvent = z.infer<typeof ConversationCreatedEventSchema>;
 
-export const ConversationCreatedMessageSchema = ConversationCreatedEventSchema;
-export type ConversationCreatedMessage = z.infer<typeof ConversationCreatedMessageSchema>;
-
-export const ConversationUpdatedEventSchema = z.object({
-  type: z.literal('conversation_updated'),
-  commandId: z.string().min(1).optional(),
-  reason: z.enum(['config', 'catalog', 'status', 'queue', 'messages', 'external_refresh', 'done']),
-  conversation: ConversationSchema,
+export const PatchMessageSchema = z.object({
+  type: z.literal('patch'),
+  id: ConversationIdSchema,
+  patch: RowPatchSchema,
 });
-export type ConversationUpdatedEvent = z.infer<typeof ConversationUpdatedEventSchema>;
-
-export const ConversationDeletedEventSchema = z.object({
-  type: z.literal('conversation_deleted'),
-  commandId: z.string().min(1).optional(),
-  conversationId: ConversationIdSchema,
-});
-export type ConversationDeletedEvent = z.infer<typeof ConversationDeletedEventSchema>;
-
-export const ConversationDeletedMessageSchema = ConversationDeletedEventSchema;
-export type ConversationDeletedMessage = z.infer<typeof ConversationDeletedMessageSchema>;
+export type PatchMessage = z.infer<typeof PatchMessageSchema>;
 
 export const GeneralCommandErrorSchema = z.object({
   code: z.string().min(1),
@@ -917,21 +684,30 @@ export const GeneralCommandErrorSchema = z.object({
 });
 export type GeneralCommandError = z.infer<typeof GeneralCommandErrorSchema>;
 
-export const CommandRejectedEventSchema = z.object({
-  type: z.literal('command_rejected'),
-  commandId: z.string().min(1),
-  conversationId: ConversationIdSchema.optional(),
-  error: z.union([ConfigErrorSchema, GeneralCommandErrorSchema]),
-  authoritativeConversation: ConversationSchema.optional(),
-});
-export type CommandRejectedEvent = z.infer<typeof CommandRejectedEventSchema>;
+export const CommandErrorSchema = z.union([ConfigErrorSchema, GeneralCommandErrorSchema]);
+export type CommandError = z.infer<typeof CommandErrorSchema>;
 
-export const CommandAcceptedEventSchema = z.object({
-  type: z.literal('command_accepted'),
+/**
+ * The one acknowledgement for a correlated command. `created` answers the
+ * creating socket (other sockets get `rows`); `rejected` may follow `created`
+ * for the same commandId on a create replay (docs/ws-contract-surprises.md).
+ * A rejection never carries a snapshot: the authoritative state already went
+ * out as a patch.
+ */
+export const AckMessageSchema = z.object({
+  type: z.literal('ack'),
   commandId: z.string().min(1),
-  conversationId: ConversationIdSchema,
+  result: z.discriminatedUnion('t', [
+    z.object({ t: z.literal('created'), rows: EncodedRowsSchema }),
+    z.object({ t: z.literal('accepted') }),
+    z.object({
+      t: z.literal('rejected'),
+      conversationId: ConversationIdSchema.nullable(),
+      error: CommandErrorSchema,
+    }),
+  ]),
 });
-export type CommandAcceptedEvent = z.infer<typeof CommandAcceptedEventSchema>;
+export type AckMessage = z.infer<typeof AckMessageSchema>;
 
 export const MessageMessageSchema = z.object({
   type: z.literal('message'),
@@ -939,7 +715,6 @@ export const MessageMessageSchema = z.object({
   role: z.enum(['user', 'assistant', 'system']),
   content: z.string(),
 });
-
 export type MessageMessage = z.infer<typeof MessageMessageSchema>;
 
 export const ChunkMessageSchema = z.object({
@@ -947,7 +722,6 @@ export const ChunkMessageSchema = z.object({
   conversationId: ConversationIdSchema,
   text: z.string(),
 });
-
 export type ChunkMessage = z.infer<typeof ChunkMessageSchema>;
 
 export const MessageCompleteMessageSchema = z.object({
@@ -955,95 +729,25 @@ export const MessageCompleteMessageSchema = z.object({
   conversationId: ConversationIdSchema,
   reason: z.enum(['success', 'error', 'out_of_tokens', 'killed']).optional(),
 });
-
 export type MessageCompleteMessage = z.infer<typeof MessageCompleteMessageSchema>;
-
-export const SessionBoundMessageSchema = z.object({
-  type: z.literal('session_bound'),
-  conversationId: ConversationIdSchema,
-  sessionId: z.string(),
-});
-
-export type SessionBoundMessage = z.infer<typeof SessionBoundMessageSchema>;
-
-export const StatusMessageSchema = z.object({
-  type: z.literal('status'),
-  conversationId: ConversationIdSchema,
-  isRunning: z.boolean(),
-  isStreaming: z.boolean(),
-});
-
-export type StatusMessage = z.infer<typeof StatusMessageSchema>;
 
 export const ErrorMessageSchema = z.object({
   type: z.literal('error'),
   message: z.string(),
 });
-
 export type ErrorMessage = z.infer<typeof ErrorMessageSchema>;
 
-// Sub-Agent Messages (Server -> Client)
-export const SubAgentStartMessageSchema = z.object({
-  type: z.literal('subagent_start'),
-  conversationId: ConversationIdSchema,
-  subAgent: SubAgentSchema,
-});
-
-export type SubAgentStartMessage = z.infer<typeof SubAgentStartMessageSchema>;
-
-export const SubAgentUpdateMessageSchema = z.object({
-  type: z.literal('subagent_update'),
-  conversationId: ConversationIdSchema,
-  subAgentId: z.string(),
-  toolUses: z.number().int().nonnegative().optional(),
-  tokens: z.number().int().nonnegative().optional(),
-  currentAction: z.string().optional(),
-  status: SubAgentStatusSchema.optional(),
-  rawStatus: z.string().optional(),
-  statusSource: SubAgentStatusSourceSchema.optional(),
-});
-
-export type SubAgentUpdateMessage = z.infer<typeof SubAgentUpdateMessageSchema>;
-
-export const SubAgentCompleteMessageSchema = z.object({
-  type: z.literal('subagent_complete'),
-  conversationId: ConversationIdSchema,
-  subAgentId: z.string(),
-  status: z.enum(['completed', 'error']),
-  completedAt: z.coerce.date(),
-});
-
-export type SubAgentCompleteMessage = z.infer<typeof SubAgentCompleteMessageSchema>;
-
-// Queue update broadcast (Server → Client)
-export const QueueUpdatedMessageSchema = z.object({
-  type: z.literal('queue_updated'),
-  conversationId: ConversationIdSchema,
-  queue: z.array(QueuedMessageSchema),
-});
-
-export type QueueUpdatedMessage = z.infer<typeof QueueUpdatedMessageSchema>;
-
-// File polling: server detected external changes to JSONL files
-export const ConversationsUpdatedMessageSchema = z.object({
-  type: z.literal('conversations_updated'),
-  conversations: z.array(ConversationSchema),
-  /** Conversations contain metadata + last-message previews, not full transcripts. */
-  summaries: z.boolean().optional(),
-});
-
-export type ConversationsUpdatedMessage = z.infer<typeof ConversationsUpdatedMessageSchema>;
-
-export const ConversationLoadCompleteMessageSchema = z.object({
-  type: z.literal('conversation_load_complete'),
-  /** Final authoritative membership after progressive startup hydration. */
-  conversationIds: z.array(ConversationIdSchema).optional(),
-});
-
-export type ConversationLoadCompleteMessage = z.infer<typeof ConversationLoadCompleteMessageSchema>;
-
 export const ServerMessageSchema = z.discriminatedUnion('type', [
-  InitMessageSchema,
+  HelloMessageSchema,
+  RowsMessageSchema,
+  RemovedMessageSchema,
+  ReadyMessageSchema,
+  PatchMessageSchema,
+  AckMessageSchema,
+  MessageMessageSchema,
+  ChunkMessageSchema,
+  MessageCompleteMessageSchema,
+  ErrorMessageSchema,
   z.object({ type: z.literal('buddy_archived'), buddyId: z.string() }),
   // Debounced server change feed: some Buddy state was written; clients
   // refresh their cached Buddy views (see server/src/buddies/change-feed.ts).
@@ -1051,26 +755,11 @@ export const ServerMessageSchema = z.discriminatedUnion('type', [
   // One channel's posts or responders changed; clients refresh only that
   // channel's views (client atoms/resources.ts invalidateChannelResources).
   z.object({ type: z.literal('channel_changed'), listId: z.string() }),
-  ConversationCreatedMessageSchema,
-  ConversationUpdatedEventSchema,
-  ConversationDeletedMessageSchema,
-  CommandAcceptedEventSchema,
-  CommandRejectedEventSchema,
-  MessageMessageSchema,
-  ChunkMessageSchema,
-  MessageCompleteMessageSchema,
-  SessionBoundMessageSchema,
-  StatusMessageSchema,
-  ErrorMessageSchema,
-  SubAgentStartMessageSchema,
-  SubAgentUpdateMessageSchema,
-  SubAgentCompleteMessageSchema,
-  ConversationsUpdatedMessageSchema,
-  ConversationLoadCompleteMessageSchema,
-  QueueUpdatedMessageSchema,
 ]);
 
 export type ServerMessage = z.infer<typeof ServerMessageSchema>;
+/** What a server builds: rows are encoded (`encodeRows`) before they go out. */
+export type ServerMessageInput = z.input<typeof ServerMessageSchema>;
 
 // =============================================================================
 // Validation Helpers

@@ -8,27 +8,27 @@ import type {
   ConfigResolution,
   ConversationConfig,
   ConversationConfigState,
-  Conversation as ConversationData,
+  ConversationDetail,
   ConversationKind,
-  ConversationPlacement,
-  ConversationPurpose,
+  ConversationRow,
   Message,
-  ModelId,
+  MessagePage,
   OompaRuntimeSnapshot,
   Provider as ProviderName,
   ProviderTurnUsage,
   QueuedMessage,
   ResolvedExecutionConfig,
-  ServerMessage,
+  RowPatch,
+  RunState,
+  ServerMessageInput,
   SubAgent,
 } from '@unleashd/shared';
 import {
-  buddyContextFromKind,
-  buddyKindFromContext,
-  conversationKindFromLegacy,
-  isBuddyKind,
+  encodeRows,
+  kindBuddyContext,
   matchConversationKind,
   providerSupportsFork,
+  rowKind,
 } from '@unleashd/shared';
 import {
   BuddyBuilderTurnPolicy,
@@ -68,19 +68,20 @@ import { type TurnBroadcast, TurnRunner } from '../turns/runner';
 
 export type { SeatTurnInput, SessionRelativePrompt } from '../turns/input';
 
-export type ConversationBroadcast = ServerMessage | TurnBroadcast;
+export type ConversationBroadcast = ServerMessageInput | TurnBroadcast;
 
 export interface ConversationRuntimeView {
   id: string;
   sessionId: string;
   config: ConversationConfig;
   readonly provider: ProviderName;
-  buddyContext: BuddyContext | null;
+  /** Derived from `kind` (never a second identity): the Buddy run data or null. */
+  readonly buddyContext: BuddyContext | null;
   readonly memoryGeneration: string | null;
   kind: ConversationKind;
   getMemorySnapshot(): MemorySnapshot | null;
   isRunning: boolean;
-  toJSON(): ConversationData;
+  toRow(): ConversationRow;
 }
 
 /** Input with no recorded producer: no owner authority, workspace audience. */
@@ -149,32 +150,28 @@ export interface ConversationOptions {
   existingSessionId?: string;
   /** Host-owned metadata from the matching durable provider-session binding. */
   existingSessionAudienceKey?: string;
-  isWorker?: boolean;
-  swarmId?: string | null;
-  workerId?: string | null;
-  workerRole?: 'work' | 'review' | 'fix' | null;
+  /** The one identity; chosen at creation or read from the record. */
+  kind: ConversationKind;
   parentConversationId?: string | null;
   resumedFromConversationId?: string | null;
-  modelName?: string | null;
+  /** Provider-reported model from the latest turn / transcript. */
+  observedModel?: string | null;
   /** Provider-generated label (Claude ai-title/custom-title) restored on hydration. */
   title?: string | null;
   swarmDebugPrefix?: string | null;
-  buddyContext?: BuddyContext | null;
   buddyBriefing?: string | null;
   /** Native generation when the Buddy resolver provides one; otherwise derived from the briefing. */
   buddyMemoryGeneration?: MemoryGenerationInput | null;
   /** Server-private automation ownership. Never serialized or placed in BuddyContext. */
   automationClaimToken?: string | null;
-  placement?: ConversationPlacement;
-  purpose?: ConversationPurpose;
-  kind?: ConversationKind | null;
   /** Usage restored from the persisted session binding on reload. */
   existingProviderUsage?: ProviderTurnUsage | null;
 }
 
 export interface ConversationRuntime extends EventEmitter, ConversationRuntimeView {
-  placement: ConversationPlacement;
   messages: Message[];
+  /** Bumped whenever `messages` is replaced rather than appended (MessagePage.epoch). */
+  readonly messagesEpoch: number;
   process: ChildProcess | null;
   isStreaming: boolean;
   createdAt: Date;
@@ -182,24 +179,17 @@ export interface ConversationRuntime extends EventEmitter, ConversationRuntimeVi
   configRevision: number;
   configResolution: ConfigResolution;
   done: boolean;
-  isWorker: boolean;
-  swarmId: string | null;
-  workerId: string | null;
-  workerRole: 'work' | 'review' | 'fix' | null;
   parentConversationId: string | null;
   resumedFromConversationId: string | null;
-  modelName: string | null;
+  observedModel: string | null;
   /** Provider-generated conversation label. Undefined until observed. */
   title: string | undefined;
   swarmDebugPrefix: string | null;
   providerUsage: ProviderTurnUsage | null;
-  purpose: ConversationPurpose;
   subAgents: SubAgent[];
   readonly queue: QueuedMessage[];
   readonly provider: ProviderName;
   readonly memoryGeneration: string | null;
-  readonly model: ModelId | undefined;
-  readonly reasoningEffort: string | undefined;
   sendMessage(content: string, ownerInput?: OwnerInput): void;
   /** Seat input whose wording depends on whether the provider session resumes. */
   sendSessionRelativeMessage(prompt: SessionRelativePrompt, input: SeatTurnInput): void;
@@ -230,7 +220,17 @@ export interface ConversationRuntime extends EventEmitter, ConversationRuntimeVi
   refreshConfigResolution(): ConfigResolution;
   canChangeProvider(): boolean;
   getMemorySnapshot(): MemorySnapshot | null;
-  toJSON(): ConversationData;
+  toRow(): ConversationRow;
+  toDetail(): ConversationDetail;
+  messagePage(afterSeq: number, limit: number): MessagePage;
+  /** Append one message: broadcast it and the row's new activity. */
+  appendMessage(message: Message): void;
+  /** Send one field patch for this conversation. */
+  publish(patch: RowPatch): void;
+  /** Send the whole row (kind, lineage or history replaced). */
+  publishRow(): void;
+  runState(): RunState;
+  configState(): ConversationConfigState;
 }
 
 export type ConversationConstructor = new (options: ConversationOptions) => ConversationRuntime;
@@ -277,7 +277,23 @@ export function createConversationRuntime(
   return class Conversation extends EventEmitter {
     id: string; // UI conversation ID (persists across resets)
     sessionId: string; // Provider CLI session ID (can be reset for fresh context)
-    messages: Message[];
+    // Replacing the array with anything but an extension of it (history
+    // restore, native merge) bumps the epoch, so a client that paged the old
+    // history refetches from the start instead of appending to a stale prefix.
+    private _messages: Message[] = [];
+    private _messagesEpoch = 0;
+    get messages(): Message[] {
+      return this._messages;
+    }
+    set messages(value: Message[]) {
+      if (!extendsHistory(this._messages, value)) this._messagesEpoch += 1;
+      this._messages = value;
+    }
+    get messagesEpoch(): number {
+      return this._messagesEpoch;
+    }
+    // The last run state sent, so a status change publishes one `run` patch.
+    private _publishedRun: RunState = 'idle';
     process: ChildProcess | null;
     isRunning: boolean;
     // Server-authoritative: assistant is actively producing content.
@@ -291,31 +307,22 @@ export function createConversationRuntime(
     // Mirror of record.done. Written only by the set_conversation_done
     // handler, after the record write succeeds.
     done: boolean;
-    // Oompa worker detection — true if first user message started with "[oompa]".
-    // Set during JSONL loading, preserved across restarts.
-    isWorker: boolean;
-    // Swarm grouping: shared across all workers in the same oompa run.
-    swarmId: string | null;
-    // Worker identity within a swarm (e.g., "w0", "claude-0").
-    workerId: string | null;
-    // Worker role within the swarm: "work" (task execution), "review" (code review), "fix" (fixing review feedback).
-    workerRole: 'work' | 'review' | 'fix' | null;
     // Parent conversation id for provider-native spawned sub-agent threads.
     // For Codex this is resolved from thread_spawn.parent_thread_id.
     parentConversationId: string | null;
     // Chat "Fork" soft-handoff lineage (UI). Not a provider-session fork.
     // See the shared FORK_CAPABLE_PROVIDERS comment for when it upgrades to a session fork.
     resumedFromConversationId: string | null;
-    // Full model name from CLI (e.g., "claude-sonnet-4-5-20250929") — more specific than provider.
-    modelName: string | null;
+    // Provider-reported model (e.g. "claude-sonnet-4-5-20250929"). An observation
+    // of the latest turn, never configuration authority (that is `config`).
+    observedModel: string | null;
     // Provider-generated conversation label (Claude ai-title/custom-title).
-    // Undefined until observed; the sidebar falls back to first-message text.
+    // Undefined until observed; the row label falls back to first-message text.
     title: string | undefined;
     private _titleSource: 'ai' | 'custom' | null = null;
     // Debug prefix for swarm conversations — prepended to first CLI message.
-    // Stays on the object (never cleared) so toJSON() includes it for client rendering.
+    // Stays on the object (never cleared) so the detail carries it for rendering.
     swarmDebugPrefix: string | null;
-    placement: ConversationPlacement;
     // Provider-counted usage for the latest request on the CURRENT session.
     // Written from `usage` events during the turn and flushed to the session
     // binding when the turn ends, so a reload does not have to re-parse the
@@ -335,10 +342,10 @@ export function createConversationRuntime(
     private _sendingFromQueue = false;
     private readonly runner: TurnRunner;
 
-    // Canonical kind. Setting it re-selects the turn policy: the ONE place a
-    // conversation's kind decides turn behavior (`policyFor`). Polling may
-    // promote a general conversation to a specific kind (session-loader).
-    private _kind: ConversationKind = { kind: 'general' };
+    // The one identity (shared ConversationKindSchema). Setting it re-selects
+    // the turn policy: the ONE place a conversation's kind decides turn
+    // behavior (`policyFor`).
+    private _kind: ConversationKind;
     private _policy: TurnPolicy;
     get kind(): ConversationKind {
       return this._kind;
@@ -351,27 +358,8 @@ export function createConversationRuntime(
         automationClaimToken: this._automationClaimToken,
       });
     }
-    // Legacy compat: buddyContext/purpose are derived from kind. New code must use `kind` + `matchConversationKind`.
-    // Kept as getters so old readers (buddies integration, client) keep working.
     get buddyContext(): BuddyContext | null {
-      return isBuddyKind(this.kind) ? buddyContextFromKind(this.kind) : null;
-    }
-    set buddyContext(value: BuddyContext | null) {
-      if (value) {
-        this.kind = buddyKindFromContext(value, this._policy.memorySnapshot()?.briefing);
-      } else if (isBuddyKind(this.kind)) {
-        this.kind = { kind: 'general' };
-      }
-    }
-    get purpose(): ConversationPurpose {
-      return this.kind.kind === 'buddy_builder' ? 'buddy_builder' : 'general';
-    }
-    set purpose(value: ConversationPurpose) {
-      if (value === 'buddy_builder' && this.kind.kind !== 'buddy_builder') {
-        this.kind = { kind: 'buddy_builder' };
-      } else if (value !== 'buddy_builder' && this.kind.kind === 'buddy_builder') {
-        this.kind = { kind: 'general' };
-      }
+      return kindBuddyContext(this._kind);
     }
 
     constructor(opts: ConversationOptions) {
@@ -381,28 +369,21 @@ export function createConversationRuntime(
         workingDirectory = null,
         configState,
         existingSessionId,
-        isWorker = false,
-        swarmId = null,
-        workerId = null,
-        workerRole = null,
+        kind,
         parentConversationId = null,
         resumedFromConversationId = null,
-        modelName = null,
+        observedModel = null,
         title = null,
         swarmDebugPrefix = null,
-        buddyContext = null,
         buddyBriefing = null,
         buddyMemoryGeneration = null,
         automationClaimToken = null,
-        purpose = 'general',
-        kind = null,
       } = opts;
       this.id = id;
       // sessionId defaults to id so JSONL filename matches Map key (no poller mismatch).
       // Only differs from id after resetProcess() rotates it for fresh CLI context.
       this.sessionId = existingSessionId ?? id;
       registerSessionAlias(this.sessionId, this.id);
-      this.messages = [];
       this.process = null;
       this.isRunning = false;
       this.isStreaming = false;
@@ -414,34 +395,15 @@ export function createConversationRuntime(
       this.configResolution = configState.resolution;
       this.done = opts.done;
       this._automationClaimToken = automationClaimToken;
-      // Canonical kind — derive from legacy when absent (migration on load).
-      this._kind =
-        kind ??
-        conversationKindFromLegacy({
-          buddyContext: buddyContext ?? null,
-          purpose: purpose ?? null,
-          kind: null,
-        });
-      this.placement =
-        opts.placement ??
-        (this.buddyContext?.automationRunId ||
-        buddyContext?.coordinationRunId ||
-        this.buddyContext?.delegatedByBuddyId
-          ? 'background'
-          : 'default');
-      const isBuddyConversation = isBuddyKind(this.kind);
-      this.isWorker = isBuddyConversation ? false : isWorker;
-      this.swarmId = isBuddyConversation ? null : swarmId;
-      this.workerId = isBuddyConversation ? null : workerId;
-      this.workerRole = isBuddyConversation ? null : workerRole;
+      this._kind = kind;
       this.parentConversationId = parentConversationId;
       this.resumedFromConversationId = resumedFromConversationId;
-      this.modelName = modelName;
+      this.observedModel = observedModel;
       this.title = title ?? undefined;
       // A hydrated title already resolved custom-over-ai precedence in the
       // file backfill, so it is sticky: live ai noise must not overwrite it.
       this._titleSource = this.title !== undefined ? 'custom' : null;
-      this.swarmDebugPrefix = isBuddyConversation ? null : swarmDebugPrefix;
+      this.swarmDebugPrefix = kind.t === 'chat' ? swarmDebugPrefix : null;
       this._policy = this.policyFor(this._kind, {
         memorySnapshot: createMemorySnapshot(buddyBriefing, buddyMemoryGeneration),
         audienceKey: existingSessionId ? (opts.existingSessionAudienceKey ?? null) : null,
@@ -477,9 +439,11 @@ export function createConversationRuntime(
       }
     ): TurnPolicy {
       return matchConversationKind<TurnPolicy>(kind, {
-        general: () => new ChatTurnPolicy(() => this.swarmDebugPrefix),
+        chat: () => new ChatTurnPolicy(() => this.swarmDebugPrefix),
         buddy: (buddyKind) => new BuddyTurnPolicy(buddyKind, this.policyHost(), dependencies, seed),
-        buddy_builder: () => new BuddyBuilderTurnPolicy(this.policyHost(), dependencies),
+        builder: () => new BuddyBuilderTurnPolicy(this.policyHost(), dependencies),
+        // A swarm worker is an external oompa transcript; typing into it is a plain chat turn.
+        worker: () => new ChatTurnPolicy(() => null),
       });
     }
 
@@ -487,7 +451,7 @@ export function createConversationRuntime(
       return {
         id: this.id,
         view: this,
-        placement: () => this.placement,
+        visibility: () => (this._kind.t === 'buddy' ? this._kind.visibility : 'foreground'),
         provider: () => this.provider,
         hasProcess: () => this.process !== null,
         hasStartedSession: () => this._hasStartedSession,
@@ -537,7 +501,7 @@ export function createConversationRuntime(
       if (this.title === next) return;
       this.title = next;
       this._titleSource = source;
-      broadcast({ type: 'conversations_updated', conversations: [this.toJSON()] });
+      this.publish({ t: 'label', label: this.label() });
     }
 
     runCoordinationMessage(
@@ -547,7 +511,7 @@ export function createConversationRuntime(
       onDrained?: CoordinationDrained,
       onAdmitted?: (config: ResolvedExecutionConfig) => void
     ): Promise<string> {
-      if (this.placement !== 'background') {
+      if (this._kind.t !== 'buddy' || this._kind.visibility !== 'background') {
         return Promise.reject(
           new Error('Automated Buddy inputs require a background conversation')
         );
@@ -589,12 +553,10 @@ export function createConversationRuntime(
         message ??
           'This automation transcript is read-only. Start an ordinary Buddy conversation to continue working.'
       );
-      broadcast({ type: 'conversations_updated', conversations: [this.toJSON()] });
     }
 
     private addSystemMessage(content: string): void {
-      this.messages.push({ role: 'system', content, timestamp: new Date() });
-      broadcast({ type: 'message', role: 'system', content, conversationId: this.id });
+      this.appendMessage({ role: 'system', content, timestamp: new Date() });
     }
 
     // The one resume/fresh decision: the runner passes --resume on it and
@@ -663,8 +625,7 @@ export function createConversationRuntime(
               refreshBriefing,
             });
 
-      this.messages.push({ role: 'user', content, timestamp: new Date() });
-      broadcast({ type: 'message', role: 'user', content, conversationId: this.id });
+      this.appendMessage({ role: 'user', content, timestamp: new Date() });
       this._policy.admitted(input, content);
       // Owner workflow guidance lives in the native MCP tool descriptions.
       // Spawn with input provenance supplied by the host producer, never transcript text.
@@ -737,7 +698,6 @@ export function createConversationRuntime(
     private rejectFork(message: string): void {
       console.error(`[${this.id}] ${message}`);
       this.addSystemMessage(message);
-      broadcast({ type: 'conversations_updated', conversations: [this.toJSON()] });
     }
 
     private preflightExecution(): ResolvedExecutionConfig | undefined {
@@ -766,14 +726,14 @@ export function createConversationRuntime(
     // agent_notes/2026-08-24_automation-execution-ownership-design.md.
     private refusePreflight(errorMessage: string): void {
       console.error(`[${this.id}] ${errorMessage}`);
-      this.messages.push({
+      this.appendMessage({
         role: 'system',
         content: errorMessage,
         timestamp: new Date(),
         completionReason: 'error',
       });
       if (this.turnQueue.releaseHead()) this.broadcastQueue();
-      broadcast({ type: 'conversation_updated', reason: 'config', conversation: this.toJSON() });
+      this.publish({ t: 'config', state: this.configState(), commandId: null });
       this.runner.finishAttempt('failed', 'spawn_failed');
       this.emit('buddy-turn-failed', errorMessage);
     }
@@ -821,7 +781,23 @@ export function createConversationRuntime(
     }
 
     broadcastQueue(): void {
-      broadcast({ type: 'queue_updated', conversationId: this.id, queue: this.queue });
+      this.publish({ t: 'queue', queue: this.queue });
+      this.publishRun();
+    }
+
+    /** The one run-state field: streaming implies running; `queued` = work waiting, no process. */
+    runState(): RunState {
+      if (this.isStreaming) return 'streaming';
+      if (this.isRunning) return 'running';
+      return this.turnQueue.length > 0 ? 'queued' : 'idle';
+    }
+
+    /** Send a `run` patch when the run state changed since the last one sent. */
+    publishRun(): void {
+      const run = this.runState();
+      if (run === this._publishedRun) return;
+      this._publishedRun = run;
+      this.publish({ t: 'run', run });
     }
 
     /**
@@ -1008,14 +984,6 @@ export function createConversationRuntime(
         : this.configResolution.lastResolved;
     }
 
-    get model(): ModelId | undefined {
-      return this.effectiveConfig?.modelId;
-    }
-
-    get reasoningEffort(): string | undefined {
-      return this.effectiveConfig?.reasoningEffort;
-    }
-
     applyConfigState(state: ConversationConfigState): void {
       this.config = state.config;
       this.configRevision = state.revision;
@@ -1043,44 +1011,136 @@ export function createConversationRuntime(
       );
     }
 
-    toJSON(): ConversationData {
+    configState(): ConversationConfigState {
+      return {
+        config: this.config,
+        revision: this.configRevision,
+        resolution: this.configResolution,
+      };
+    }
+
+    /** Provider title, else the first user line with hidden envelopes stripped. */
+    label(): string {
+      return conversationLabel(this.title, this._messages);
+    }
+
+    // Pattern: patches-not-snapshots (docs/patterns.md#patches-not-snapshots)
+    toRow(): ConversationRow {
+      return {
+        id: this.id,
+        kind: rowKind(this._kind),
+        parent: this.parentConversationId,
+        resumedFrom: this.resumedFromConversationId,
+        provider: this.provider,
+        cwd: this.workingDirectory,
+        label: this.label(),
+        createdAt: this.createdAt.getTime(),
+        activityAt: this.activityAt(),
+        messageCount: this._messages.length,
+        run: this.runState(),
+        done: this.done,
+      };
+    }
+
+    toDetail(): ConversationDetail {
       return {
         id: this.id,
         sessionId: this.sessionId,
-        messages: this.messages,
-        messageCount: this.messages.length,
-        isRunning: this.isRunning,
-        done: this.done,
-        isStreaming: this.isStreaming,
-        confirmed: true,
-        createdAt: this.createdAt,
-        workingDirectory: this.workingDirectory,
-        provider: this.provider,
-        model: this.model,
-        reasoningEffort: this.reasoningEffort,
-        config: this.config,
-        configRevision: this.configRevision,
-        configResolution: this.configResolution,
-        reportedModel: this.modelName,
-        subAgents: this.subAgents,
+        config: this.configState(),
         queue: this.queue,
-        isWorker: this.isWorker,
-        swarmId: this.swarmId,
-        workerId: this.workerId,
-        workerRole: this.workerRole,
-        parentConversationId: this.parentConversationId,
-        resumedFromConversationId: this.resumedFromConversationId,
-        modelName: this.modelName,
-        title: this.title,
+        subAgents: this.subAgents,
+        latestTurn: { observedModel: this.observedModel, usage: this.providerUsage },
         swarmDebugPrefix: this.swarmDebugPrefix,
-        // `buddyContext` is deliberately NOT serialized: it is a getter over
-        // `kind`, and repeating it cost 550 KB of a 2.4 MB `init` (2026-09-25).
-        // Readers use shared `getBuddyContext()`, which derives from `kind`.
-        kind: this.kind,
-        purpose: this.purpose,
-        placement: this.placement,
-        providerUsage: this.providerUsage,
       };
     }
+
+    messagePage(afterSeq: number, limit: number): MessagePage {
+      return {
+        epoch: this._messagesEpoch,
+        total: this._messages.length,
+        afterSeq,
+        messages: this._messages.slice(afterSeq + 1, afterSeq + 1 + limit),
+      };
+    }
+
+    private activityAt(): number {
+      const last = this._messages.at(-1);
+      return (last ? new Date(last.timestamp) : this.createdAt).getTime();
+    }
+
+    appendMessage(message: Message): void {
+      this._messages.push(message);
+      broadcast({
+        type: 'message',
+        conversationId: this.id,
+        role: message.role,
+        content: message.content,
+      });
+      this.publishActivity();
+    }
+
+    publishActivity(): void {
+      this.publish({
+        t: 'activity',
+        activityAt: this.activityAt(),
+        messageCount: this._messages.length,
+      });
+    }
+
+    /** Turn end: the new history length and the provider's observations. */
+    publishTurnEnd(): void {
+      this.publishActivity();
+      this.publish({
+        t: 'turn',
+        latestTurn: { observedModel: this.observedModel, usage: this.providerUsage },
+      });
+    }
+
+    publish(patch: RowPatch): void {
+      broadcast({ type: 'patch', id: this.id, patch });
+    }
+
+    publishRow(): void {
+      broadcast({ type: 'rows', ...encodeRows([this.toRow()]) });
+    }
   };
+}
+
+/**
+ * `next` keeps every message of `previous` except possibly the last (a
+ * streamed reply that grew), so a client may keep its prefix and refetch the
+ * tail. The last message is exempt because clients always re-read it.
+ */
+function extendsHistory(previous: readonly Message[], next: readonly Message[]): boolean {
+  if (next.length < previous.length) return false;
+  for (let index = 0; index < previous.length - 1; index += 1) {
+    const a = previous[index];
+    const b = next[index];
+    if (a !== b && (a.role !== b.role || a.content !== b.content)) return false;
+  }
+  return true;
+}
+
+const LABEL_MAX_CHARS = 80;
+const HIDDEN_ENVELOPE_RE = /<!--[\s\S]*?-->/g;
+const OOMPA_TAG_RE = /^\[oompa[^\]]*\]\s*/i;
+
+/**
+ * The list label, derived once on the server so rows never ship message
+ * bodies: provider title, else the first non-empty line of the first user
+ * message (hidden `<!-- ... -->` envelopes and the oompa tag removed).
+ */
+export function conversationLabel(title: string | undefined, messages: readonly Message[]): string {
+  if (title?.trim()) return title.trim();
+  const source = messages.find((message) => message.role === 'user') ?? messages[0];
+  if (!source) return 'New conversation';
+  const firstLine =
+    source.content
+      .replace(HIDDEN_ENVELOPE_RE, '')
+      .split('\n')
+      .map((line) => line.trim())
+      .find((line) => line.length > 0) ?? '';
+  const cleaned = firstLine.replace(OOMPA_TAG_RE, '').trim() || firstLine;
+  if (!cleaned) return 'New conversation';
+  return cleaned.length > LABEL_MAX_CHARS ? `${cleaned.slice(0, LABEL_MAX_CHARS - 1)}…` : cleaned;
 }

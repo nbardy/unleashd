@@ -16,7 +16,6 @@ import * as os from 'node:os';
 import * as path from 'node:path';
 import * as readline from 'node:readline';
 import type {
-  BuddyContext,
   CodexSessionEntry,
   JsonlAssistantEntry,
   JsonlEntry,
@@ -29,8 +28,6 @@ import type {
   SubAgent,
 } from '@unleashd/shared';
 import {
-  BuddyContextSchema,
-  ConversationKindSchema,
   ProviderSchema,
   formatBuddyBuilderToolResult,
   formatBuddyWorkerToolResult,
@@ -1571,21 +1568,21 @@ const BUDDY_BUILDER_V1_HEADER_RE = /^<!-- unleashd:buddy-builder-v1 ([0-9]+) -->
 const BUDDY_BUILDER_V1_SUFFIX = '\n<!-- /unleashd:buddy-builder-v1 -->\n\n';
 
 /**
- * Recover typed Buddy ownership while removing the hidden first-turn briefing
- * from the user-visible transcript. The marker stores metadata only; identity,
- * memory, and work state are deliberately rebuilt for new conversations.
+ * Remove the hidden first-turn Buddy briefing from the user-visible transcript.
+ * Display cleanup only: since T09 (2026-09-25) the marker is never read as
+ * identity; the conversation record's `kind` is (record-migration.ts read the
+ * markers once).
  */
-export function extractBuddyContext(messages: Message[]): BuddyContext | null {
-  let context: BuddyContext | null = null;
+export function stripBuddyContextEnvelopes(messages: Message[]): boolean {
+  let stripped = false;
   for (const message of messages) {
-    if (message.role !== 'user') continue;
-    const recovered = extractBuddyContextFromMessage(message);
-    context ??= recovered;
+    if (message.role === 'user' && stripBuddyContextEnvelope(message)) stripped = true;
   }
-  return context;
+  return stripped;
 }
 
-function extractBuddyContextFromMessage(firstUserMsg: Message): BuddyContext | null {
+/** True when the message carried a Buddy envelope (now removed). */
+function stripBuddyContextEnvelope(firstUserMsg: Message): boolean {
   const v2Header = firstUserMsg.content.match(BUDDY_CONTEXT_V2_HEADER_RE);
   if (v2Header) {
     const briefingLength = Number.parseInt(v2Header[2], 10);
@@ -1597,35 +1594,19 @@ function extractBuddyContextFromMessage(firstUserMsg: Message): BuddyContext | n
       !firstUserMsg.content.startsWith(BUDDY_CONTEXT_V2_SUFFIX, suffixStart)
     ) {
       firstUserMsg.content = '[Buddy context recovery failed; hidden briefing removed]';
-      return null;
+      return true;
     }
-    const visibleStart = suffixStart + BUDDY_CONTEXT_V2_SUFFIX.length;
-    firstUserMsg.content = firstUserMsg.content.slice(visibleStart);
-    let payload: unknown;
-    try {
-      payload = JSON.parse(Buffer.from(v2Header[1], 'base64url').toString('utf8'));
-    } catch {
-      return null;
-    }
-    const parsed = BuddyContextSchema.safeParse(payload);
-    return parsed.success ? parsed.data : null;
+    firstUserMsg.content = firstUserMsg.content.slice(suffixStart + BUDDY_CONTEXT_V2_SUFFIX.length);
+    return true;
   }
   const match = firstUserMsg.content.match(BUDDY_CONTEXT_RE);
-  if (!match) return null;
-  let payload: unknown;
-  try {
-    payload = JSON.parse(match[1]);
-  } catch {
-    return null;
-  }
-  const parsed = BuddyContextSchema.safeParse(payload);
-  if (!parsed.success) return null;
+  if (!match) return false;
   firstUserMsg.content = firstUserMsg.content.slice(match[0].length);
-  return parsed.data;
+  return true;
 }
 
-/** Remove the hidden Buddy Builder briefing and recover its persisted purpose. */
-export function extractBuddyBuilderPurpose(messages: Message[]): boolean {
+/** Remove the hidden Buddy Builder briefing (display cleanup only, like the Buddy envelope). */
+export function stripBuddyBuilderEnvelope(messages: Message[]): boolean {
   const firstUserMsg = messages.find((message) => message.role === 'user');
   if (!firstUserMsg) return false;
   const header = firstUserMsg.content.match(BUDDY_BUILDER_V1_HEADER_RE);
@@ -1638,7 +1619,7 @@ export function extractBuddyBuilderPurpose(messages: Message[]): boolean {
     !firstUserMsg.content.startsWith(BUDDY_BUILDER_V1_SUFFIX, suffixStart)
   ) {
     firstUserMsg.content = '[Buddy Builder context recovery failed; hidden briefing removed]';
-    return false;
+    return true;
   }
   firstUserMsg.content = firstUserMsg.content.slice(suffixStart + BUDDY_BUILDER_V1_SUFFIX.length);
   return true;
@@ -2043,8 +2024,7 @@ export async function parseCursorTranscriptFile(filePath: string): Promise<Curso
 // Working directory from runtime.session.route_facts.cwd, model from run.model.configured.
 // Messages from runtime.session events: "started".prompt (user) and
 // "assistant_message_committed".text (assistant). Tool calls are rendered via
-// formatToolUse. Buddy context may be embedded as hidden prefix in first prompt
-// (legacy) or as durable record.creation.buddyContext (new).
+// formatToolUse. Identity is never read from the session: the record's kind owns it.
 // =============================================================================
 
 export interface MuseSession {
@@ -2055,11 +2035,8 @@ export interface MuseSession {
   createdAt: Date;
   modifiedAt: Date;
   messages: Message[];
-  kind?: import('@unleashd/shared').ConversationKind | null;
-  buddyContext: BuddyContext | null;
   swarmDebugPrefix: string | null;
   resumedFromConversationId: string | null;
-  purpose: string | null;
 }
 
 function parseMuseTimestamp(recordedAt: unknown): Date | null {
@@ -2112,11 +2089,8 @@ export async function parseMuseSessionFile(filePath: string): Promise<MuseSessio
   let sessionIdFromStream: string | null = null;
   let createdAt: Date | null = null;
   let modifiedAt: Date | null = null;
-  let kind: import('@unleashd/shared').ConversationKind | null = null;
-  let buddyContext: BuddyContext | null = null;
   let swarmDebugPrefix: string | null = null;
   let resumedFromConversationId: string | null = null;
-  let purpose: string | null = null;
 
   const rawMessages: Array<{ role: 'user' | 'assistant'; content: string; timestamp: Date }> = [];
 
@@ -2164,29 +2138,10 @@ export async function parseMuseSessionFile(filePath: string): Promise<MuseSessio
 
       if (payloadType === 'record.creation' || payloadType === 'record.creation.observed') {
         const record = asObject(payload?.record) ?? payload;
-        const rawKind = (record as Record<string, unknown>)?.kind;
-        if (rawKind) {
-          const parsedKind = ConversationKindSchema.safeParse(rawKind);
-          if (parsedKind.success) kind = parsedKind.data;
-        }
-        const bc = asObject((record as Record<string, unknown>)?.buddyContext);
-        if (bc) {
-          const parsed = BuddyContextSchema.safeParse(bc);
-          if (parsed.success) buddyContext = parsed.data;
-        }
         const sdp = asString((record as Record<string, unknown>)?.swarmDebugPrefix);
         if (sdp) swarmDebugPrefix = sdp;
         const rfc = asString((record as Record<string, unknown>)?.resumedFromConversationId);
         if (rfc) resumedFromConversationId = rfc;
-        const purp = asString((record as Record<string, unknown>)?.purpose);
-        if (purp) purpose = purp;
-      }
-      if (!buddyContext && payload) {
-        const maybeBc = asObject((payload as Record<string, unknown>).buddyContext);
-        if (maybeBc) {
-          const parsed = BuddyContextSchema.safeParse(maybeBc);
-          if (parsed.success) buddyContext = parsed.data;
-        }
       }
 
       if (payloadType !== 'runtime.session') continue;
@@ -2289,11 +2244,8 @@ export async function parseMuseSessionFile(filePath: string): Promise<MuseSessio
     createdAt: createdAt ?? new Date(),
     modifiedAt: modifiedAt ?? new Date(),
     messages: dedupeConsecutiveMessages(messages),
-    kind,
-    buddyContext,
     swarmDebugPrefix,
     resumedFromConversationId,
-    purpose,
   };
 }
 

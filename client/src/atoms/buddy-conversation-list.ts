@@ -24,9 +24,9 @@ export function buddyConversationListAtom(
       seen.add(id);
       const conversation = get(conversationAtomFamily(id));
       if (
-        conversation?.placement === 'background' ||
-        conversation?.isWorker ||
-        conversation?.parentConversationId
+        (conversation?.kind.t === 'buddy' && conversation.kind.visibility === 'background') ||
+        conversation?.kind.t === 'worker' ||
+        conversation?.parent
       )
         return [];
       const available = availableIds.has(id);
@@ -35,7 +35,14 @@ export function buddyConversationListAtom(
         conversation ? getConversationLastActivity(conversation).getTime() : 0
       );
       return [
-        { id, link, available, running: available && Boolean(conversation?.isRunning), timestamp },
+        {
+          id,
+          link,
+          available,
+          running:
+            available && (conversation?.run === 'running' || conversation?.run === 'streaming'),
+          timestamp,
+        },
       ];
     });
     rows.sort(

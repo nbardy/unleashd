@@ -1,4 +1,4 @@
-import type { Conversation } from '@unleashd/shared';
+import type { ConversationRow } from '@unleashd/shared';
 import { atom } from 'jotai';
 import { atomFamily } from 'jotai-family';
 import { conversationAtomFamily, conversationListAtom } from './conversations';
@@ -15,7 +15,7 @@ const backgroundIdsAtomFamily = atomFamily(
         get(conversationListAtom)
           .filter(
             (entry) =>
-              entry.placement === 'background' &&
+              entry.background &&
               entry.buddyId === buddyId &&
               (workspaceId === null || entry.buddyWorkspaceId === workspaceId)
           )
@@ -29,13 +29,15 @@ const backgroundIdsAtomFamily = atomFamily(
 export const buddyBackgroundConversationsAtomFamily = atomFamily(
   (scope: BuddyScope) =>
     atom((get) => {
-      const conversations = get(backgroundIdsAtomFamily(scope)).flatMap((id): Conversation[] => {
+      const conversations = get(backgroundIdsAtomFamily(scope)).flatMap((id): ConversationRow[] => {
         const conversation = get(conversationAtomFamily(id));
         return conversation ? [conversation] : [];
       });
       return {
         conversations,
-        runningCount: conversations.filter((conversation) => conversation.isRunning).length,
+        runningCount: conversations.filter(
+          (conversation) => conversation.run === 'running' || conversation.run === 'streaming'
+        ).length,
       };
     }),
   (a, b) => a.buddyId === b.buddyId && a.workspaceId === b.workspaceId

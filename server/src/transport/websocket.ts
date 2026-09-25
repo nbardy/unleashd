@@ -1,13 +1,8 @@
 import fs from 'node:fs';
-import type {
-  ConfigError,
-  Conversation,
-  GeneralCommandError,
-  ServerMessage,
-} from '@unleashd/shared';
+import type { CommandError, GeneralCommandError, ServerMessageInput } from '@unleashd/shared';
 import { WebSocket } from 'ws';
 
-export function sendToClient(ws: WebSocket, data: ServerMessage): void {
+export function sendToClient(ws: WebSocket, data: ServerMessageInput): void {
   if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify(data));
 }
 
@@ -30,23 +25,26 @@ export function validateWorkingDirectory(
   }
 }
 
+export function sendAck(
+  ws: WebSocket,
+  commandId: string,
+  result: Extract<ServerMessageInput, { type: 'ack' }>['result']
+): void {
+  sendToClient(ws, { type: 'ack', commandId, result });
+}
+
+/**
+ * A rejection never carries a snapshot (v2 embedded the whole conversation,
+ * messages included). Callers send the authoritative field as a patch first.
+ */
 export function sendCommandRejected(
   ws: WebSocket,
-  input: {
-    commandId: string;
-    conversationId?: string;
-    error: ConfigError | GeneralCommandError;
-    authoritativeConversation?: Conversation;
-  }
+  input: { commandId: string; conversationId?: string; error: CommandError }
 ): void {
-  sendToClient(ws, {
-    type: 'command_rejected',
-    commandId: input.commandId,
-    ...(input.conversationId ? { conversationId: input.conversationId } : {}),
+  sendAck(ws, input.commandId, {
+    t: 'rejected',
+    conversationId: input.conversationId ?? null,
     error: input.error,
-    ...(input.authoritativeConversation
-      ? { authoritativeConversation: input.authoritativeConversation }
-      : {}),
   });
 }
 
@@ -94,9 +92,6 @@ export function superviseLiveness(ws: WebSocket, intervalMs: number): void {
   ws.on('close', () => clearInterval(timer));
 }
 
-export function sendCommandAccepted(
-  ws: WebSocket,
-  input: { commandId: string; conversationId: string }
-): void {
-  sendToClient(ws, { type: 'command_accepted', ...input });
+export function sendCommandAccepted(ws: WebSocket, input: { commandId: string }): void {
+  sendAck(ws, input.commandId, { t: 'accepted' });
 }

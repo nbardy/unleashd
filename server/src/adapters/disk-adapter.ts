@@ -8,33 +8,29 @@
  * Flow:
  *   DiskAdapter.discoverFiles() → string[]    (paths to scan)
  *   DiskAdapter.parseFile(path) → ParsedSession | null  (null = skip)
- *   sessionToConversation(ParsedSession) → Conversation | null  (null = hidden)
+ *   sessionToConversation(ParsedSession) → DiscoveredSession | null  (null = hidden)
  */
 
 import type {
-  BuddyContext,
-  Conversation,
   ConversationKind,
   ConversationSessionBinding,
-  DiscoveredConversation,
   Message,
+  ModelId,
   Provider,
   SubAgent,
 } from '@unleashd/shared';
 import {
   ModelIdSchema,
-  buddyContextFromKind,
-  conversationKindFromLegacy,
   fromCodexModelId,
   isModelIdValidForProvider,
-  matchConversationKind,
   normalizeModelId,
 } from '@unleashd/shared';
 import {
-  extractBuddyBuilderPurpose,
-  extractBuddyContext,
+  type WorkerMetadata,
   extractSwarmDebugPrefix,
   extractWorkerMetadata,
+  stripBuddyBuilderEnvelope,
+  stripBuddyContextEnvelopes,
 } from './jsonl';
 
 // =============================================================================
@@ -59,13 +55,37 @@ export interface ParsedSession {
   parentSessionId?: string | null; // Codex only — for nested thread display
   /** Provider-generated label (Claude ai-title/custom-title). Null when unobserved. */
   title?: string | null;
-  // Canonical kind — new sessions set this directly. Legacy sessions may only have
-  // buddyContext/purpose + hidden HTML prefix; we migrate via conversationKindFromLegacy.
-  kind?: ConversationKind | null;
-  buddyContext?: BuddyContext | null;
   swarmDebugPrefix?: string | null;
   resumedFromConversationId?: string | null;
-  purpose?: string | null;
+}
+
+/**
+ * A provider transcript found on disk, before it is bound to a conversation
+ * record. Server-internal: nothing here goes on the wire (the row does).
+ */
+export interface DiscoveredSession {
+  /** Opaque provider-owned identity. Never use as the application conversation ID. */
+  sessionId: string;
+  messages: Message[];
+  createdAt: Date;
+  workingDirectory: string;
+  provider: Provider;
+  /** Canonical model id recovered from the transcript: config evidence for a new record. */
+  model: ModelId | undefined;
+  reasoningEffort: string | undefined;
+  /** The provider-reported model string, verbatim (null when the file names none). */
+  observedModel: string | null;
+  subAgents: SubAgent[];
+  parentConversationId: string | null;
+  resumedFromConversationId: string | null;
+  title: string | undefined;
+  swarmDebugPrefix: string | null;
+  /**
+   * Kind for a record this transcript CREATES (chat, or a tagged swarm worker).
+   * An existing record's kind always wins; nothing re-derives identity from
+   * transcript text after that.
+   */
+  discoveredKind: ConversationKind;
 }
 
 // =============================================================================
@@ -128,23 +148,21 @@ export function sessionLookupKeys(sessionId: string): readonly string[] {
 // =============================================================================
 
 export interface LoadResult {
-  conversations: Map<string, DiscoveredConversation>;
+  conversations: Map<string, DiscoveredSession>;
   mtimes: Map<string, number>; // filepath → mtime ms
 }
 
 /** Related native sessions are display history only, never provider resume input. */
-export type SessionHistorySource = DiscoveredConversation & {
-  boundSessionSources?: DiscoveredConversation[];
+export type SessionHistorySource = DiscoveredSession & {
+  boundSessionSources?: DiscoveredSession[];
 };
 
 export interface SessionHistoryOptions {
-  resolveSessionBindings?(
-    source: DiscoveredConversation
-  ): Promise<readonly ConversationSessionBinding[]>;
+  resolveSessionBindings?(source: DiscoveredSession): Promise<readonly ConversationSessionBinding[]>;
 }
 
 export interface PollResult {
-  updated: Map<string, DiscoveredConversation>; // changed or new conversations
+  updated: Map<string, DiscoveredSession>; // changed or new conversations
   mtimes: Map<string, number>; // full updated mtime index
   // Changed sources skipped because their session is active. Callers must keep
   // the previous baseline for these paths so the final persisted state is
@@ -161,72 +179,31 @@ export type LoadProgressCallback = (
 // Shared session → Conversation conversion
 // =============================================================================
 
+const NOT_A_WORKER: WorkerMetadata = {
+  isHidden: false,
+  isWorker: false,
+  swarmId: null,
+  workerId: null,
+  workerRole: null,
+};
+
 /**
- * Convert a ParsedSession to a Conversation.
+ * Convert a ParsedSession to a DiscoveredSession.
  * Returns null for [_HIDE_TEST_] conversations (dropped at ingestion).
- * Detects oompa workers by checking for "[oompa...]" tag in the first user message.
- *
- * This is the single canonical conversion function replacing the four near-identical
- * jsonlSessionToConversation / codexSessionToConversation / openCodeSessionToConversation /
- * geminiSessionToConversation functions that previously existed in jsonl.ts.
+ * Hidden first-turn envelopes (Buddy, Builder, swarm prefix) are stripped for
+ * display; they are never read as identity. The one classification made here
+ * is the oompa tag, and only for a record this transcript creates.
  */
-export function sessionToConversation(session: ParsedSession): DiscoveredConversation | null {
-  // Durable kind owns identity. Briefing removal is separate: even sessions
-  // with durable identity can contain the first-turn CLI envelope on disk.
-  const durableKind = session.kind ?? null;
-  const durableBuddy = session.buddyContext ?? null;
-  const durableSwarmPrefix = session.swarmDebugPrefix ?? null;
-  const durableResumed = session.resumedFromConversationId ?? null;
-  const durablePurpose = session.purpose ?? null;
-
-  const extractedBuddy = extractBuddyContext(session.messages);
-  // Display cleanup must run even when durable metadata already owns identity.
-  // Skipping extraction in that case restores hidden instructions as user text.
-  const extractedBuilder = extractBuddyBuilderPurpose(session.messages);
-  const extractedSwarmPrefix = extractSwarmDebugPrefix(session.messages);
-  let buddyContext: BuddyContext | null = durableBuddy;
-  let isBuddyBuilder = false;
-  let swarmDebugPrefix: string | null = durableSwarmPrefix;
-
-  if (durableKind) {
-    // Kind already present — derive legacy fields without trusting marker identity.
-    swarmDebugPrefix = durableSwarmPrefix ?? extractedSwarmPrefix;
-    // Thin dispatcher δ over the canonical kind — one clean handler per variant (D1/D2).
-    // Handlers must not re-derive the buddy context field-by-field: `buddyContextFromKind`
-    // is the single canonical projection and owns the null/omit absence invariant.
-    const derived = matchConversationKind<{
-      buddyContext: BuddyContext | null;
-      isBuddyBuilder: boolean;
-    }>(durableKind, {
-      buddy: (k) => ({ buddyContext: buddyContextFromKind(k), isBuddyBuilder: false }),
-      buddy_builder: () => ({ buddyContext: null, isBuddyBuilder: true }),
-      general: () => ({ buddyContext: null, isBuddyBuilder: false }),
-    });
-    buddyContext = derived.buddyContext;
-    isBuddyBuilder = derived.isBuddyBuilder;
-  } else {
-    buddyContext = durableBuddy ?? extractedBuddy;
-    isBuddyBuilder = buddyContext
-      ? false
-      : durablePurpose === 'buddy_builder'
-        ? true
-        : extractedBuilder;
-    swarmDebugPrefix =
-      buddyContext || isBuddyBuilder ? null : (durableSwarmPrefix ?? extractedSwarmPrefix);
-  }
-  // Resumed lineage durable wins; otherwise keep any prefix-extracted lineage
-  // (none currently from extractors, but preserve future extraction).
-  const resumedFromConversationId = durableResumed ?? null;
-  const worker =
-    buddyContext || isBuddyBuilder
-      ? {
-          isWorker: false,
-          isHidden: false,
-          swarmId: null,
-          workerId: null,
-          workerRole: null,
-        }
-      : extractWorkerMetadata(session.messages);
+export function sessionToConversation(session: ParsedSession): DiscoveredSession | null {
+  // Display cleanup runs for every transcript: skipping it restores hidden
+  // instructions as user text.
+  const buddyEnvelope = stripBuddyContextEnvelopes(session.messages);
+  const builderEnvelope = stripBuddyBuilderEnvelope(session.messages);
+  // A Buddy or Builder turn is never a swarm worker, whatever its prompt
+  // starts with, and its prefix is not a swarm debug prefix.
+  const appTurn = buddyEnvelope || builderEnvelope;
+  const extractedSwarmPrefix = appTurn ? null : extractSwarmDebugPrefix(session.messages);
+  const worker = appTurn ? NOT_A_WORKER : extractWorkerMetadata(session.messages);
   if (worker.isHidden) return null;
 
   // Recover the canonical ModelId when session.model parses against the schema.
@@ -234,43 +211,23 @@ export function sessionToConversation(session: ParsedSession): DiscoveredConvers
   // base + reasoningEffort so they live as separate fields (matches claude shape).
   const { model: recoveredModel, reasoningEffort } = recoverModelAndEffort(session);
 
-  // Holistic kind — canonical when session.kind present, else migration from legacy.
-  const durableKindPurpose = durablePurpose as 'buddy_builder' | null;
-  const kind =
-    durableKind ??
-    conversationKindFromLegacy({
-      buddyContext,
-      purpose: isBuddyBuilder ? 'buddy_builder' : durableKindPurpose,
-      kind: null,
-    });
-
   return {
     sessionId: session.sessionId,
     messages: session.messages,
-    isRunning: false,
-    isStreaming: false, // Loaded from disk — process is dead
-    confirmed: true,
     createdAt: session.createdAt,
     workingDirectory: session.workingDirectory,
     provider: session.provider,
     model: recoveredModel,
     reasoningEffort,
+    observedModel: session.model !== 'unknown' ? session.model : null,
     subAgents: session.subAgents ?? [],
-    queue: [],
-    isWorker: worker.isWorker,
-    swarmId: worker.swarmId ?? null,
-    workerId: worker.workerId ?? null,
-    workerRole: worker.workerRole ?? null,
     parentConversationId: session.parentSessionId ?? null,
+    resumedFromConversationId: session.resumedFromConversationId ?? null,
     title: session.title ?? undefined,
-    modelName: session.model !== 'unknown' ? session.model : null,
-    swarmDebugPrefix: swarmDebugPrefix ?? null,
-    resumedFromConversationId,
-    kind,
-    buddyContext,
-    purpose: isBuddyBuilder
-      ? 'buddy_builder'
-      : ((durablePurpose as 'buddy_builder' | 'general' | undefined) ?? undefined),
+    swarmDebugPrefix: appTurn ? null : (session.swarmDebugPrefix ?? extractedSwarmPrefix),
+    discoveredKind: worker.isWorker
+      ? { t: 'worker', swarmId: worker.swarmId, workerId: worker.workerId, role: worker.workerRole }
+      : { t: 'chat' },
   };
 }
 
@@ -286,7 +243,7 @@ export function sessionToConversation(session: ParsedSession): DiscoveredConvers
  * it must not invent a new flag for an existing provider session.
  */
 function recoverModelAndEffort(session: ParsedSession): {
-  model: Conversation['model'];
+  model: ModelId | undefined;
   reasoningEffort: string | undefined;
 } {
   if (session.model === 'unknown') {

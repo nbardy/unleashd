@@ -6,7 +6,13 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { type UnifiedAgentEvent, buildCommand } from '@nbardy/agent-cli';
-import type { ConversationConfig, Message } from '@unleashd/shared';
+import {
+  type ConversationConfig,
+  EncodedRowsSchema,
+  type Message,
+  buddyKind,
+  decodeRows,
+} from '@unleashd/shared';
 import { WebSocketServer } from 'ws';
 import { loadAllConversations, pollForChanges } from '../src/adapters/loader';
 import { getDiskAdapter } from '../src/adapters/registry';
@@ -96,6 +102,7 @@ test('bound native sessions retain display history across capped startup, pollin
     now: () => new Date(originalDate),
   });
   await store.create({
+    kind: { t: 'chat' },
     conversationId,
     workingDirectory: root,
     config,
@@ -222,7 +229,7 @@ test('bound native sessions retain display history across capped startup, pollin
       broadcast: (message) => {
         broadcasts.push(message);
         // onPoll is armed only after startup, so any update here is the poller's.
-        if (message.type === 'conversations_updated') onPoll?.();
+        if (message.type === 'rows') onPoll?.();
       },
       logger: {
         log: () => {},
@@ -239,6 +246,7 @@ test('bound native sessions retain display history across capped startup, pollin
       requests,
       seed: (history: Message[]) => {
         const live = new Conversation({
+          kind: { t: 'chat' },
           id: conversationId,
           workingDirectory: root,
           existingSessionId: sessionIds[3],
@@ -307,10 +315,9 @@ test('bound native sessions retain display history across capped startup, pollin
     'persisted live rows replace, rather than duplicate, streamed rows'
   );
   assert.equal(runtime.createdAt.toISOString(), originalDate);
-  const update = first.broadcasts.filter((entry) => entry.type === 'conversations_updated').at(-1);
-  assert.ok(update && update.type === 'conversations_updated');
-  assert.equal(update.summaries, true);
-  assert.equal(update.conversations[0].messageCount, expected.length);
+  const update = first.broadcasts.filter((entry) => entry.type === 'rows').at(-1);
+  assert.ok(update && update.type === 'rows');
+  assert.equal(decodeRows(EncodedRowsSchema.parse(update))[0].messageCount, expected.length);
 
   // A late write to a historical session refreshes its history, not current metadata.
   const late: Message = {
@@ -328,7 +335,7 @@ test('bound native sessions retain display history across capped startup, pollin
   );
   assert.equal(runtime.sessionId, sessionIds[3]);
   assert.equal(
-    first.broadcasts.some((entry) => entry.type === 'status'),
+    first.broadcasts.some((entry) => entry.type === 'patch' && entry.patch.t === 'run'),
     false
   );
   assert.deepEqual((await store.getByConversationId(conversationId))?.currentSession, {
@@ -355,7 +362,7 @@ test('bound native sessions retain display history across capped startup, pollin
   assert.equal(restored.createdAt.toISOString(), originalDate);
   assert.equal(restored.sessionId, sessionIds[3]);
   assert.deepEqual(
-    restored.toJSON().messages.map((message) => message.content),
+    restored.messages.map((message) => message.content),
     expected
   );
 
@@ -378,7 +385,7 @@ test('bound native sessions retain display history across capped startup, pollin
   const verified = { ...saved.currentSession!, buddyAudienceKey: 'verified-owner' };
   await store.save({
     ...saved,
-    creation: { buddyContext: { buddyId: 'buddy', workspaceId: 'workspace' } },
+    kind: buddyKind({ buddyId: 'buddy', workspaceId: 'workspace' }),
     currentSession: verified,
   });
   for (const mode of ['transcript', 'no-transcript', 'inferred-session'] as const) {

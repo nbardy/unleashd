@@ -31,7 +31,7 @@ export interface BuddyRunExecutorPorts {
     context: BuddyContext;
     branch?: ConversationBranch;
     initialMessage?: string;
-    placement?: 'default' | 'background';
+    visibility?: 'foreground' | 'background';
     commandId: string;
     conversationId: string;
     deferInitialMessage: boolean;
@@ -485,7 +485,7 @@ Inspect the actual returned files/transcript, then record your decision and cont
           : null;
         const audience =
           sourceRecord?.creation?.branch?.audience ??
-          sourceRecord?.creation?.buddyContext?.knowledgeScope ??
+          (sourceRecord?.kind.t === 'buddy' ? sourceRecord.kind.context.knowledgeScope : null) ??
           (source.project_id
             ? { kind: 'project' as const, projectId: source.project_id }
             : { kind: 'workspace' as const, workspaceId: source.workspace_id });
@@ -558,7 +558,7 @@ Inspect your saved work and return what was accomplished, what remains, and conc
                 : `coordination-${origin?.id ?? run.id}`,
               conversationId: run.conversation_id!,
               deferInitialMessage: true,
-              placement: 'background',
+              visibility: 'background',
               branch,
             })
           : (this.ports.ensureConversationReady?.(existing) ?? Promise.resolve(existing));
@@ -685,7 +685,8 @@ Inspect your saved work and return what was accomplished, what remains, and conc
     run: PrivateBuddyRun,
     conversation: ConversationRuntime
   ): boolean {
-    if (conversation.placement === 'background') return false;
+    if (conversation.kind.t === 'buddy' && conversation.kind.visibility === 'background')
+      return false;
     if (
       conversation.buddyContext?.buddyId !== run.buddy_id ||
       conversation.buddyContext?.workspaceId !== run.workspace_id

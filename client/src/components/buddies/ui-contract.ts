@@ -1,5 +1,3 @@
-import type { BuddyContext, ConversationKind } from '@unleashd/shared';
-import { isBuddyKind } from '@unleashd/shared';
 import type { BuddyOverview, BuddyOverviewEmployee, BuddyProject, WorkStatus } from './types';
 
 /** Up to two initials for an avatar: "Pixel Bot", "pixel_bot" and "pixel-bot" all give "PB". */
@@ -117,16 +115,6 @@ export function buddyCardMetrics(employee: BuddyOverviewEmployee) {
     active: employee.currentWork.active,
     blocked: employee.currentWork.blocked,
   };
-}
-
-export function effectiveSwarmDebugPrefix(
-  buddyContext: BuddyContext | null | undefined,
-  swarmDebugPrefix: string | null | undefined,
-  kind?: ConversationKind | null
-): string | null {
-  // Kind is canonical when present; legacy buddyContext fallback keeps old payloads working.
-  if (kind && isBuddyKind(kind)) return null;
-  return buddyContext ? null : (swarmDebugPrefix ?? null);
 }
 
 export function buddyProjectTodoProgress(project: Pick<BuddyProject, 'todos'>) {

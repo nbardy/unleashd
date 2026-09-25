@@ -1,5 +1,4 @@
-import { type Conversation, type Message, getBuddyContext } from '@unleashd/shared';
-import { effectiveSwarmDebugPrefix } from '../components/buddies/ui-contract';
+import type { ConversationDetail, ConversationRow, Message } from '@unleashd/shared';
 import { shortenHomePath } from './directories';
 
 /**
@@ -7,32 +6,20 @@ import { shortenHomePath } from './directories';
  *
  * Extracted from Chat.tsx so the mobile conversation view forks with identical
  * semantics. Chat "Fork" is a SOFT HANDOFF — a new conversation carrying the
- * prior transcript as its draft plus `resumedFromConversationId` for lineage.
- * The server upgrades the first send to a provider-session fork (CLI `--fork`
- * / emulateFork) only for same-provider FORK_CAPABLE_PROVIDERS pairs; see
- * shared/src/index.ts around the FORK_CAPABLE_PROVIDERS block.
+ * prior transcript as its draft, created with `kind: {t:'fork', from}` for
+ * lineage. The server upgrades the first send to a provider-session fork (CLI
+ * `--fork` / emulateFork) only for same-provider FORK_CAPABLE_PROVIDERS pairs;
+ * see shared/src/index.ts around the FORK_CAPABLE_PROVIDERS block.
  *
  * Because it is text-only, fork works across providers — the draft is all the
  * next CLI receives, so it must stand alone.
  */
 
-// The swarm debug preamble is a machine prefix on the first user message. It is
-// stripped from the display in Chat.tsx (messageGroups) and must be stripped
-// here too, or every fork re-injects the preamble as if the user typed it.
-function visiblePrefix(conversation: Conversation): string | null {
-  const buddyContext =
-    (getBuddyContext(
-      conversation as { kind?: unknown; buddyContext?: unknown } as Parameters<
-        typeof getBuddyContext
-      >[0]
-    ) ??
-      undefined) ||
-    null;
-  return effectiveSwarmDebugPrefix(
-    buddyContext,
-    conversation.swarmDebugPrefix,
-    conversation.kind ?? null
-  );
+/** An open conversation: its row, its loaded detail and its loaded bodies. */
+export interface OpenConversation {
+  row: ConversationRow;
+  detail: ConversationDetail;
+  messages: readonly Message[];
 }
 
 export function messageTranscriptContent(message: Message): string {
@@ -41,23 +28,26 @@ export function messageTranscriptContent(message: Message): string {
     : message.content;
 }
 
-export function buildThreadTranscript(conversation: Conversation): string {
+export function buildThreadTranscript({ row, detail, messages }: OpenConversation): string {
+  // The server's resolution is the model; the client never re-derives it (T09).
+  const resolution = detail.config.resolution;
   const modelDisplay =
-    conversation.configResolution?.status === 'resolved'
-      ? conversation.configResolution.value.modelId
-      : (conversation.reportedModel ?? conversation.modelName ?? conversation.model ?? 'default');
-  const folderDisplay = shortenHomePath(conversation.workingDirectory);
+    resolution.status === 'resolved'
+      ? resolution.value.modelId
+      : (resolution.lastResolved?.modelId ?? detail.latestTurn.observedModel ?? 'default');
   const header = [
-    `Conversation: ${conversation.id}`,
-    // Fallback matches shared DEFAULT_PROVIDER ('claude').
-    `Provider:     ${conversation.provider ?? 'claude'}`,
+    `Conversation: ${row.id}`,
+    `Provider:     ${row.provider}`,
     `Model:        ${modelDisplay}`,
-    `Folder:       ${folderDisplay}`,
+    `Folder:       ${shortenHomePath(row.cwd)}`,
     '---',
   ].join('\n');
 
-  const prefix = visiblePrefix(conversation);
-  const body = conversation.messages
+  // The swarm debug preamble is a machine prefix on the first user message
+  // (the server sets it only on chats). Strip it here too, or every fork
+  // re-injects the preamble as if the user typed it.
+  const prefix = detail.swarmDebugPrefix;
+  const body = messages
     .map((msg, index) => {
       const content =
         index === 0 && msg.role === 'user' && prefix && msg.content.startsWith(prefix)
@@ -70,7 +60,7 @@ export function buildThreadTranscript(conversation: Conversation): string {
   return body ? `${header}\n\n${body}` : header;
 }
 
-export function buildForkDraft(conversation: Conversation): string {
+export function buildForkDraft(conversation: OpenConversation): string {
   return [
     buildThreadTranscript(conversation),
     '',

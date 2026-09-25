@@ -3,17 +3,14 @@ import type { McpServerSpec } from '@nbardy/agent-cli';
 import type {
   BuddyContext,
   BuddyKind,
+  BuddyVisibility,
   ConversationKind,
-  ConversationPlacement,
-  ConversationPurpose,
   Message,
   Provider as ProviderName,
   ResolvedExecutionConfig,
 } from '@unleashd/shared';
 import {
   BUDDY_TEAM_CONTRACT_VERSION,
-  buddyContextFromKind,
-  conversationKindFromLegacy,
   formatBuddyBuilderToolResult,
   matchConversationKind,
 } from '@unleashd/shared';
@@ -130,7 +127,7 @@ export interface BuddyTurnPolicyDependencies {
 export interface BuddyPolicyHost {
   readonly id: string;
   readonly view: ConversationRuntimeView;
-  placement(): ConversationPlacement;
+  visibility(): BuddyVisibility;
   provider(): ProviderName;
   hasProcess(): boolean;
   hasStartedSession(): boolean;
@@ -261,7 +258,7 @@ function buddyFirstTurnPrompt(input: {
 }): string {
   if ((!input.firstUnstartedTurn && !input.refreshBriefing) || input.briefing === null)
     return input.content;
-  const ctx: BuddyContext = buddyContextFromKind(input.kind);
+  const ctx: BuddyContext = input.kind.context;
   const encodedContext = Buffer.from(JSON.stringify(ctx), 'utf8').toString('base64url');
   const snapshot = createMemorySnapshot(input.briefing, input.memoryGeneration) as MemorySnapshot;
   const encodedGeneration = Buffer.from(snapshot.generation, 'utf8').toString('base64url');
@@ -283,23 +280,20 @@ export function buildFirstTurnCliContent(input: {
   content: string;
   messageCount: number;
   hasStartedSession: boolean;
-  kind?: ConversationKind | null;
-  buddyContext?: BuddyContext | null;
+  kind: ConversationKind;
   buddyBriefing: string | null;
   buddyMemoryGeneration?: MemoryGenerationInput | null;
   refreshBuddyContext?: boolean;
   swarmDebugPrefix: string | null;
-  purpose?: ConversationPurpose;
 }): string {
   const firstUnstartedTurn = input.messageCount === 0 && !input.hasStartedSession;
-  const effectiveKind: ConversationKind =
-    input.kind ??
-    conversationKindFromLegacy({
-      buddyContext: input.buddyContext ?? null,
-      purpose: input.purpose ?? null,
-      kind: null,
+  const chatPrompt = () =>
+    chatFirstTurnPrompt({
+      content: input.content,
+      firstUnstartedTurn,
+      swarmDebugPrefix: input.swarmDebugPrefix,
     });
-  return matchConversationKind(effectiveKind, {
+  return matchConversationKind(input.kind, {
     buddy: (kind) =>
       buddyFirstTurnPrompt({
         kind,
@@ -309,13 +303,9 @@ export function buildFirstTurnCliContent(input: {
         briefing: input.buddyBriefing,
         memoryGeneration: input.buddyMemoryGeneration ?? null,
       }),
-    buddy_builder: () => builderFirstTurnPrompt(input.content, firstUnstartedTurn),
-    general: () =>
-      chatFirstTurnPrompt({
-        content: input.content,
-        firstUnstartedTurn,
-        swarmDebugPrefix: input.swarmDebugPrefix,
-      }),
+    builder: () => builderFirstTurnPrompt(input.content, firstUnstartedTurn),
+    chat: chatPrompt,
+    worker: chatPrompt,
   });
 }
 
@@ -502,18 +492,18 @@ export class BuddyTurnPolicy implements TurnPolicy {
   }
 
   private get context(): BuddyContext {
-    return buddyContextFromKind(this.kind);
+    return this.kind.context;
   }
 
   get acceptsUserInput(): boolean {
-    return !this.kind.automationRunId;
+    return !this.context.automationRunId;
   }
 
   // --- admission -------------------------------------------------------------
 
   gate(input: TurnInput, fromQueue: boolean): TurnGate {
     // Automation and coordination runs already own a run; only chat turns queue for one.
-    if (this.kind.automationRunId || this.coordination || !this.dependencies.enqueueBuddyChatRun)
+    if (this.context.automationRunId || this.coordination || !this.dependencies.enqueueBuddyChatRun)
       return 'send';
     // Buddy chat turns are admitted through the queue, so a turn waiting for a
     // run slot is visible as pending and later sends line up behind it. The
@@ -897,7 +887,7 @@ export class BuddyTurnPolicy implements TurnPolicy {
 
   stop(reason: 'user_stop' | 'server_restart'): boolean {
     this.revoke();
-    const automationRunId = this.kind.automationRunId;
+    const automationRunId = this.context.automationRunId;
     if (reason !== 'user_stop' || !automationRunId) return true;
     const requestCancellation = this.dependencies.requestAutomationCancellation;
     if (!requestCancellation) {
@@ -927,8 +917,8 @@ export class BuddyTurnPolicy implements TurnPolicy {
     if (
       !context.coordinationRunId ||
       !claimToken ||
-      context.buddyId !== this.kind.buddyId ||
-      context.workspaceId !== this.kind.workspaceId
+      context.buddyId !== this.context.buddyId ||
+      context.workspaceId !== this.context.workspaceId
     ) {
       return Promise.reject(new Error('Coordination identity or claim is missing'));
     }
@@ -991,7 +981,7 @@ export class BuddyTurnPolicy implements TurnPolicy {
    * agent_notes/2026-08-24_automation-execution-ownership-design.md.
    */
   sendAutomation(content: string): void {
-    const automationRunId = this.kind.automationRunId;
+    const automationRunId = this.context.automationRunId;
     if (!automationRunId || !this.automationClaimToken) rejectAutomation();
     const memoryPolicy = resolveAutomationMemoryWritePolicy({
       isAutomation: true,
@@ -1015,7 +1005,7 @@ export class BuddyTurnPolicy implements TurnPolicy {
    */
   stopAutomation(): void {
     this.revoke();
-    if (!this.kind.automationRunId || !this.automationClaimToken) {
+    if (!this.context.automationRunId || !this.automationClaimToken) {
       throw new Error('Automation stop requires current server-private execution authority');
     }
   }

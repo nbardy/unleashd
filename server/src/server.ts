@@ -38,6 +38,8 @@ import {
 import { ConversationConfigService } from './conversations/config-service';
 import { ConversationConfigStore } from './conversations/config-store';
 import { retireLegacyUiState } from './conversations/legacy-ui-state';
+import { runtimeMessageSource } from './conversations/messages';
+import { migrateConversationRecords } from './conversations/record-migration';
 import { type ConversationRuntime, createConversationRuntime } from './conversations/runtime';
 import { registerConversationRoutes } from './http/conversation-routes';
 import { registerCoreRoutes } from './http/core-routes';
@@ -351,7 +353,7 @@ const Conversation = createConversationRuntime({
       conversationId,
       ownerWorkspaceIds(coordinationRuntimeStore),
       () => ownerWorkspaceIds(coordinationRuntimeStore!),
-      conversations.get(conversationId)?.kind.kind === 'buddy_builder'
+      conversations.get(conversationId)?.kind.t === 'builder'
     );
   },
   recordBuddyTurnOrigin: (conversationId, input, context, contentHash) => {
@@ -466,7 +468,7 @@ app.use((request, response, next) => {
 const UPLOADS_DIR = uploadsDirectory();
 registerUploadRoutes(app, UPLOADS_DIR);
 registerCoreRoutes(app, () => startupAuditResults);
-registerConversationRoutes(app, (id) => conversations.get(id), {
+registerConversationRoutes(app, (id) => conversations.get(id), runtimeMessageSource((id) => conversations.get(id)), {
   getBranch: async (id) => (await conversationConfigService.getRecord(id))?.creation?.branch,
 });
 registerTurnDiagnosticsRoutes(app, turnAttemptJournal);
@@ -492,7 +494,7 @@ registerBuddyRoutes(app, {
   onBuddyArchived: async (buddyId) => {
     applicationContext.broadcast({ type: 'buddy_archived', buddyId });
     for (const conversation of conversations.values()) {
-      if (conversation.kind.kind === 'buddy' && conversation.kind.buddyId === buddyId) {
+      if (conversation.buddyContext?.buddyId === buddyId) {
         conversation.clearQueue();
         conversation.stop();
       }
@@ -579,8 +581,8 @@ registerSearchRoutes(
   async () => {
     const store = await getBuddiesStore();
     return (conversationId) => {
-      const kind = conversations.get(conversationId)?.kind;
-      return kind?.kind !== 'buddy' || store.getBuddy(kind.buddyId)?.status !== 'archived';
+      const buddy = conversations.get(conversationId)?.buddyContext;
+      return !buddy || store.getBuddy(buddy.buddyId)?.status !== 'archived';
     };
   }
 );
@@ -741,6 +743,9 @@ void runServerStartup(
       await normalizedSessionCache.initialize();
       await turnAttemptJournal.initialize();
       await persistedServerState.initialize();
+      // Before the config store reads a record: v1 records carry no kind.
+      // One-time; the module goes once the live data dir is migrated (T09).
+      await migrateConversationRecords({ appDataRoot: APP_DATA_DIR });
       // Before any conversation loads: runtimes copy record.done at construction.
       await retireLegacyUiState({ dataDirectory: APP_DATA_DIR, store: conversationConfigStore });
       await paletteService.initialize();
@@ -789,7 +794,7 @@ void runServerStartup(
       if (!shutdownController?.completeStartup()) return false;
       resolveInitialLoad();
       applicationContext.broadcast({
-        type: 'conversation_load_complete',
+        type: 'ready',
         conversationIds: Array.from(conversations.keys()),
       });
       return true;

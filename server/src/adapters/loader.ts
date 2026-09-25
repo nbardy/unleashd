@@ -16,9 +16,9 @@
 
 import * as fs from 'node:fs';
 import * as path from 'node:path';
-import type { DiscoveredConversation } from '@unleashd/shared';
 import { shouldIgnoreWorkingDirectory } from '../config';
 import type {
+  DiscoveredSession,
   DiskAdapter,
   LoadProgressCallback,
   LoadResult,
@@ -150,7 +150,7 @@ function createHistoryReader(
   options: SessionHistoryOptions & { cache?: NormalizedSessionCache },
   discover: () => Promise<DiscoveredFile[]>,
   readSource = (file: DiscoveredFile) => parseOneFile(file, options.cache)
-): (source: DiscoveredConversation) => Promise<SessionHistorySource> {
+): (source: DiscoveredSession) => Promise<SessionHistorySource> {
   let byKey: Promise<Map<string, DiscoveredFile[]>> | undefined;
   return async (source) => {
     const bindings = await options.resolveSessionBindings?.(source);
@@ -162,7 +162,7 @@ function createHistoryReader(
     // conversation still belong to its history, without importing unrelated rows.
     byKey ??= discover().then(indexSessionFiles);
     const index = await byKey;
-    const boundSessionSources: DiscoveredConversation[] = [];
+    const boundSessionSources: DiscoveredSession[] = [];
     for (const binding of related) {
       // Native path layouts belong to adapters. Gemini uses shortened ids and
       // Muse uses a parent directory; hints never establish conversation identity.
@@ -264,7 +264,7 @@ export async function forEachWithConcurrency<T>(
 interface ParsedResult {
   filePath: string;
   mtimeMs: number;
-  conversation: DiscoveredConversation | null;
+  conversation: DiscoveredSession | null;
   parseTimeMs: number;
   cacheHit: boolean;
 }
@@ -424,7 +424,7 @@ export async function loadAllConversations(
   // When onProgress is provided, the caller handles placement (e.g. into the server's
   // conversations Map), so we skip building a redundant conversations Map here —
   // avoids doubling peak memory by holding two copies of every parsed conversation.
-  const conversations = onProgress ? null : new Map<string, DiscoveredConversation>();
+  const conversations = onProgress ? null : new Map<string, DiscoveredSession>();
   // The mtime index is a discovery baseline, not a list of hydrated files.
   // Recording every source is what makes `limit` a real hydration cap: omitted
   // history must not look "new" to the first poll and trigger an accidental
@@ -438,7 +438,7 @@ export async function loadAllConversations(
   let parseTimeSum = 0;
   let parseTimeCount = 0;
   let cacheHits = 0;
-  let batchBuffer: DiscoveredConversation[] = [];
+  let batchBuffer: DiscoveredSession[] = [];
   let filesProcessed = 0;
   let conversationCount = 0;
 
@@ -590,7 +590,7 @@ export async function pollForChanges(
   activeIds: Set<string>,
   options: PollOptions
 ): Promise<PollResult> {
-  const updated = new Map<string, DiscoveredConversation>();
+  const updated = new Map<string, DiscoveredSession>();
   const deferredDirtyPaths = new Set<string>();
   // Start fresh — only populate with currently-discovered files.
   // Any path absent from this poll's discovery is deleted on disk and falls out naturally,

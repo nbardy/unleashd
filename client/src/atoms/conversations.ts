@@ -1,12 +1,13 @@
-import { getBuddyContext, getConversationKind, isBuddyKind } from '@unleashd/shared';
 import type {
-  BuddyContext,
   ClientMessage,
-  Conversation,
   ConversationConfig,
   ConversationConfigPatch,
+  ConversationDetail,
+  ConversationRow,
+  CreateKind,
   Message,
   QueuedMessage,
+  SubAgent,
 } from '@unleashd/shared';
 import { atom } from 'jotai';
 import { atomFamily } from 'jotai-family';
@@ -45,17 +46,17 @@ export type { ConversationListEntry } from './conversation-index';
 // they never mutate these maps directly.
 // =============================================================================
 
-// The authoritative conversations. Components never subscribe to the whole
-// map (AGENTS.md); actions read it imperatively and write it through
-// `conversationsAtom` (replace everything: init, reconnect, tests) or
-// `conversationPatchAtom` (named ids). Each write sets only the per-id record
-// atoms it touched and moves the list index in the same step, so an event
-// about conversation A does no work for conversation B. Reading the map from
-// every per-id atom made all of them recompute on every event (03-app-core
+// Pattern: one-store-one-index (docs/patterns.md#one-store-one-index)
+// The authoritative list ROWS (protocol v3: list fields only, no bodies).
+// Components never subscribe to the whole map (AGENTS.md); actions read it
+// imperatively and write it through `conversationsAtom` (replace everything:
+// hello, tests) or `conversationPatchAtom` (named ids). Each write sets only
+// the per-id atoms it touched and moves the list index in the same step, so an
+// event about conversation A does no work for conversation B (03-app-core
 // §6.2 #7).
 const conversationIndexAtom = atom<ConversationIndex>(EMPTY_CONVERSATION_INDEX);
 
-const conversationRecords = keyedAtoms<Conversation, null>({
+const conversationRecords = keyedAtoms<ConversationRow, null>({
   label: 'conversation',
   absent: null,
   onCommit: (get, set, next, changed) =>
@@ -66,8 +67,39 @@ export const conversationsAtom = conversationRecords.all;
 export const conversationPatchAtom = conversationRecords.patch;
 const conversationRecordAtomFamily = conversationRecords.byKey;
 
-export const conversationDetailsLoadedAtom = atom<ReadonlySet<string>>(new Set<string>());
+// Per open conversation, loaded on demand (GET /api/conversations/:id) and
+// kept current by detail-level patches. Null = not loaded (absence is the meaning).
+const conversationDetails = keyedAtoms<ConversationDetail, null>({
+  label: 'detail',
+  absent: null,
+});
+export const detailsAtom = conversationDetails.all;
+export const detailPatchAtom = conversationDetails.patch;
+export const conversationDetailAtomFamily = conversationDetails.byKey;
+
+/**
+ * A loaded transcript: every message body the server held at `epoch`, paged
+ * in from /messages, plus live `message` events appended since. Null = not
+ * loaded. A row whose messageCount differs from `messages.length` makes the
+ * open conversation page in its tail.
+ */
+export interface Transcript {
+  epoch: number;
+  messages: readonly Message[];
+}
+const transcripts = keyedAtoms<Transcript, null>({ label: 'transcript', absent: null });
+export const transcriptsAtom = transcripts.all;
+export const transcriptPatchAtom = transcripts.patch;
+export const transcriptAtomFamily = transcripts.byKey;
+
 export const conversationLoadCompleteAtom = atom(false);
+
+/**
+ * The backend speaks another protocol version (a dev reload in progress: Vite
+ * serves this client before the backend restarts). The list keeps what it had
+ * and the socket reconnects until a v3 `hello` arrives.
+ */
+export const protocolMismatchAtom = atom<{ serverVersion: number } | null>(null);
 
 export interface PendingConversationCreation {
   kind: 'create_conversation';
@@ -75,7 +107,7 @@ export interface PendingConversationCreation {
   conversationId: string;
   workingDirectory: string;
   config: ConversationConfig;
-  buddyContext?: BuddyContext;
+  createKind: CreateKind;
   createdAt: Date;
   error?: string;
   errorCode?: string;
@@ -136,21 +168,23 @@ function labelled<T extends { debugLabel?: string }>(value: T, label: string): T
   return value;
 }
 
-// Single conversation by ID — use instead of s.conversations.get(id)
+// Single conversation row by ID — use instead of s.conversations.get(id)
 export const conversationAtomFamily = atomFamily((id: string) =>
   labelled(
     atom((get) => {
-      const conversation = get(conversationRecordAtomFamily(id));
-      const buddyId = conversation && getBuddyContext(conversation)?.buddyId;
-      return buddyId && get(archivedBuddyIdsAtom).has(buddyId) ? null : conversation;
+      const row = get(conversationRecordAtomFamily(id));
+      return row?.kind.t === 'buddy' && get(archivedBuddyIdsAtom).has(row.kind.buddyId)
+        ? null
+        : row;
     }),
     `conversationView:${id}`
   )
 );
 
+/** True once the transcript bodies are loaded (the Chat view's load boundary). */
 export const conversationDetailsLoadedAtomFamily = atomFamily((id: string) =>
   labelled(
-    atom((get) => get(conversationDetailsLoadedAtom).has(id)),
+    atom((get) => get(transcriptAtomFamily(id)) !== null),
     `detailsLoaded:${id}`
   )
 );
@@ -175,19 +209,14 @@ const EMPTY_MESSAGES: readonly Message[] = [];
 
 // The transcript records alone: the same array while only status, queue or
 // other fields change, so grouping does not rerun for those.
-const conversationMessagesAtomFamily = atomFamily((id: string) =>
-  atom((get) => get(conversationAtomFamily(id))?.messages ?? EMPTY_MESSAGES)
+export const conversationMessagesAtomFamily = atomFamily((id: string) =>
+  atom((get) => get(transcriptAtomFamily(id))?.messages ?? EMPTY_MESSAGES)
 );
 
-// Swarm debug prefix stripped from the first user record (never for Buddies).
+// Swarm debug prefix stripped from the first user record. The server sets it
+// only on chat kinds, so no kind check is needed here.
 const groupPrefixAtomFamily = atomFamily((id: string) =>
-  atom((get) => {
-    const conversation = get(conversationAtomFamily(id));
-    if (!conversation) return null;
-    return isBuddyKind(getConversationKind(conversation)) || getBuddyContext(conversation)
-      ? null
-      : (conversation.swarmDebugPrefix ?? null);
-  })
+  atom((get) => get(conversationDetailAtomFamily(id))?.swarmDebugPrefix ?? null)
 );
 
 interface SettledGroups {
@@ -232,14 +261,21 @@ export const chatMessageGroupsAtomFamily = atomFamily((id: string) =>
 // Stable empty queue — shared reference avoids new [] on every read
 const EMPTY_QUEUE: QueuedMessage[] = [];
 
-// Queue for one conversation — a pure view over Conversation.queue, so mobile
-// and desktop share the authoritative server queue. Per-item cancel goes
+// Queue for one conversation — a pure view over the loaded detail's queue, so
+// mobile and desktop share the authoritative server queue. Per-item cancel goes
 // through cancelQueuedMessage/clearQueue (atoms/actions).
 export const queueAtomFamily = atomFamily((id: string) =>
   labelled(
-    atom((get) => get(conversationRecordAtomFamily(id))?.queue ?? EMPTY_QUEUE),
+    atom((get) => get(conversationDetailAtomFamily(id))?.queue ?? EMPTY_QUEUE),
     `queue:${id}`
   )
+);
+
+const EMPTY_SUB_AGENTS: readonly SubAgent[] = [];
+
+/** Sub-agents of one open conversation (detail-level; patched live). */
+export const subAgentsAtomFamily = atomFamily((id: string) =>
+  atom((get) => get(conversationDetailAtomFamily(id))?.subAgents ?? EMPTY_SUB_AGENTS)
 );
 
 // =============================================================================
@@ -315,7 +351,7 @@ const CHAT_INBOX_LIMIT = 50;
 // directories are operational noise rather than chats.
 function isUserChat(entry: ConversationListEntry): boolean {
   return (
-    entry.placement !== 'background' &&
+    !entry.background &&
     !entry.isWorker &&
     !entry.parentConversationId &&
     !directoryFacts(entry.workingDirectory).isScratch
@@ -396,11 +432,11 @@ const childIdsAtomFamily = atomFamily((parentId: string) =>
   stableAtom((get) => get(childIdsByParentAtom).get(parentId) ?? EMPTY_IDS, sameItems)
 );
 
-const EMPTY_CONVERSATIONS: readonly Conversation[] = [];
+const EMPTY_CONVERSATIONS: readonly ConversationRow[] = [];
 
 export const childConversationsAtomFamily = atomFamily((parentId: string) =>
   labelled(
-    atom((get): readonly Conversation[] => {
+    atom((get): readonly ConversationRow[] => {
       const ids = get(childIdsAtomFamily(parentId));
       if (ids.length === 0) return EMPTY_CONVERSATIONS;
       return ids.flatMap((id) => get(conversationRecordAtomFamily(id)) ?? []);
@@ -424,7 +460,7 @@ const workerIdsAtom = stableAtom(
   sameItems
 );
 
-const EMPTY_WORKERS: readonly Conversation[] = [];
+const EMPTY_WORKERS: readonly ConversationRow[] = [];
 
 // Swarm workers grouped by PROJECT root (oompa's worktree suffix stripped),
 // promoted workers excluded (they live in the main views). Every swarm view,
@@ -432,17 +468,17 @@ const EMPTY_WORKERS: readonly Conversation[] = [];
 // it in a component memo from a map keyed by raw working directory.
 export const swarmWorkersByProjectAtom = atom((get) => {
   const promoted = new Set(get(promotedWorkersAtom));
-  const groups = new Map<string, Conversation[]>();
+  const groups = new Map<string, ConversationRow[]>();
   for (const id of get(workerIdsAtom)) {
     if (promoted.has(id)) continue;
     const conv = get(conversationRecordAtomFamily(id));
     if (!conv) continue;
-    const root = getProjectRoot(conv.workingDirectory);
+    const root = getProjectRoot(conv.cwd);
     const group = groups.get(root);
     if (group) group.push(conv);
     else groups.set(root, [conv]);
   }
-  return groups as ReadonlyMap<string, readonly Conversation[]>;
+  return groups as ReadonlyMap<string, readonly ConversationRow[]>;
 });
 
 /** One project's swarm workers (see `swarmWorkersByProjectAtom`). */
@@ -453,6 +489,9 @@ export const swarmWorkersForProjectAtomFamily = atomFamily((projectRoot: string)
 /** Free every per-id atom memoized for a deleted conversation. */
 export function forgetConversationAtoms(id: string): void {
   conversationRecords.forget(id);
+  conversationDetails.forget(id);
+  transcripts.forget(id);
+  subAgentsAtomFamily.remove(id);
   streamingText.forget(id);
   conversationAtomFamily.remove(id);
   conversationMessagesAtomFamily.remove(id);

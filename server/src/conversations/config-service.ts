@@ -5,6 +5,7 @@ import {
   type ConversationConfigPatch,
   type ConversationConfigState,
   type ConversationCreationMetadata,
+  type ConversationKind,
   type ResolvedExecutionConfig,
   type Result,
   applyConversationConfigPatch as applyConversationConfigSelectionPatch,
@@ -49,6 +50,7 @@ export interface ConfigUpdateSuccess {
 
 export interface NewConversationConfigInput {
   conversationId: string;
+  kind: ConversationKind;
   config: ConversationConfig;
   sessionBindings?: readonly SessionBinding[];
   currentSession?: SessionBinding;
@@ -65,6 +67,8 @@ export interface CreateConversationConfigResult {
 
 export interface HydrateConversationConfigInput {
   conversationId: string;
+  /** Kind of a discovered transcript, stored only when this creates its record. */
+  discoveredKind: ConversationKind;
   sessionBindings: readonly SessionBinding[];
   currentSession?: SessionBinding;
   workingDirectory?: string;
@@ -80,6 +84,7 @@ export interface HydratedConversationConfig {
 
 export interface ForkConversationConfigInput {
   conversationId: string;
+  kind: ConversationKind;
   source: ConversationConfigState;
   sessionBindings?: readonly SessionBinding[];
   currentSession?: SessionBinding;
@@ -197,6 +202,7 @@ export class ConversationConfigService {
         currentSession: input.currentSession,
         workingDirectory: input.workingDirectory,
         creation: input.creation,
+        kind: input.kind,
         config: input.config,
         lastResolvedConfig: resolution.value,
         provenance: input.provenance ?? 'user',
@@ -261,6 +267,7 @@ export class ConversationConfigService {
         sessionBindings: input.sessionBindings,
         currentSession: input.currentSession,
         workingDirectory: input.workingDirectory,
+        kind: input.discoveredKind,
         config: migration.config,
         lastResolvedConfig: resolution.status === 'resolved' ? resolution.value : undefined,
         provenance: migration.provenance,
@@ -300,6 +307,7 @@ export class ConversationConfigService {
       currentSession: input.currentSession,
       workingDirectory: input.workingDirectory,
       creation: input.creation,
+      kind: input.kind,
       config: input.source.config,
       lastResolvedConfig: resolution.value,
       provenance: 'user',

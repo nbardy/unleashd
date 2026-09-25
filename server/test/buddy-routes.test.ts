@@ -457,7 +457,7 @@ test('manager review request dispatches one least-privilege reviewer conversatio
     getStore: async () => store as unknown as BuddiesStorePort,
     createConversation: async (input) => {
       created.push(input as unknown as Record<string, unknown>);
-      return { id: conversationId, toJSON: () => ({ id: conversationId }) };
+      return { id: conversationId, toRow: () => ({ id: conversationId }) };
     },
     dispatchInitialMessage: async (_conversation, options) => options.enqueueAuthorized(() => {}),
     abandonConversation: () => {},

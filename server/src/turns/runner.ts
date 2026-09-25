@@ -2,11 +2,11 @@ import type { ChildProcess } from 'node:child_process';
 import crypto from 'node:crypto';
 import type { ExecuteCommandRequest, UnifiedAgentEvent, executeCommand } from '@nbardy/agent-cli';
 import type {
-  Conversation as ConversationData,
+  RowPatch,
   Message,
   ProviderTurnUsage,
   ResolvedExecutionConfig,
-  ServerMessage,
+  ServerMessageInput,
   SubAgent,
 } from '@unleashd/shared';
 import { formatToolUse, isCompletionOnlyToolUse } from '../adapters/tool-format';
@@ -79,12 +79,18 @@ export interface TurnRunnerHost {
   broadcastQueue(): void;
   processQueue(): void;
   emit(event: string, ...args: string[]): void;
-  toJSON(): ConversationData;
+  /** Push one message: the `message` event plus the row's activity patch. */
+  appendMessage(message: Message): void;
+  publish(patch: RowPatch): void;
+  /** One `run` patch when isRunning/isStreaming/queue moved the run state. */
+  publishRun(): void;
+  /** Turn end: activity + the latest turn's observations (usage, model). */
+  publishTurnEnd(): void;
 }
 
 /** The host server's ports a turn uses. */
 export interface TurnRunnerPorts {
-  broadcast(data: ServerMessage | TurnBroadcast): void;
+  broadcast(data: ServerMessageInput | TurnBroadcast): void;
   registerSessionAlias(sessionId: string | null | undefined, conversationId: string): void;
   unregisterSessionAlias(
     sessionId: string | null | undefined,
@@ -164,7 +170,7 @@ export class TurnRunner {
       get agents() {
         return host.subAgents;
       },
-      broadcast: (message) => ports.broadcast(message),
+      changed: (agent) => host.publish({ t: 'subagent', subAgent: { ...agent } }),
       newId: () => ports.createSessionId(),
     };
   }
@@ -400,7 +406,7 @@ export class TurnRunner {
     if (this.activeAttemptId) {
       this.ports.turnAttempts.bindProviderSession(this.activeAttemptId, sessionId);
     }
-    this.ports.broadcast({ type: 'session_bound', conversationId: host.id, sessionId });
+    host.publish({ t: 'session', sessionId });
   }
 
   noteActivity(event: UnifiedAgentEvent): void {
@@ -469,13 +475,7 @@ export class TurnRunner {
     const lastMsg = host.messages[host.messages.length - 1];
     if (lastMsg && lastMsg.role === 'assistant') return;
     console.log(`[${host.id}] Creating NEW assistant message (msg #${host.messages.length + 1})`);
-    host.messages.push({ role: 'assistant', content: '', timestamp: new Date() });
-    this.ports.broadcast({
-      type: 'message',
-      role: 'assistant',
-      content: '',
-      conversationId: host.id,
-    });
+    host.appendMessage({ role: 'assistant', content: '', timestamp: new Date() });
     if (!host.isStreaming) {
       host.isStreaming = true;
       this.broadcastStatus();
@@ -549,7 +549,7 @@ export class TurnRunner {
     this.ports.clearExternalRunningStatus(host.id, host.sessionId);
     this.ports.markLocalCompletionSuppression(host.id, host.sessionId);
     this.broadcastStatus();
-    this.ports.broadcast({ type: 'conversations_updated', conversations: [host.toJSON()] });
+    host.publishTurnEnd();
     this.completedCleanly = true;
     host.policy.streamCompleted();
   }
@@ -557,13 +557,7 @@ export class TurnRunner {
   /** Surface provider errors (usage limits, auth failures, turn errors) as a system message. */
   surfaceError(message: string): void {
     console.error(`[${this.host.id}] Provider error: ${message}`);
-    this.host.messages.push({ role: 'system', content: message, timestamp: new Date() });
-    this.ports.broadcast({
-      type: 'message',
-      conversationId: this.host.id,
-      role: 'system',
-      content: message,
-    });
+    this.host.appendMessage({ role: 'system', content: message, timestamp: new Date() });
   }
 
   // --- drain -------------------------------------------------------------------------
@@ -696,13 +690,7 @@ export class TurnRunner {
     });
     if (systemMessage) {
       if (systemMessage.level === 'error') console.error(`[${host.id}] ${systemMessage.text}`);
-      host.messages.push({ role: 'system', content: systemMessage.text, timestamp: new Date() });
-      this.ports.broadcast({
-        type: 'message',
-        conversationId: host.id,
-        role: 'system',
-        content: systemMessage.text,
-      });
+      host.appendMessage({ role: 'system', content: systemMessage.text, timestamp: new Date() });
     }
 
     // INVARIANT: a dead process cannot stream. This is the safety net for
@@ -842,7 +830,7 @@ export class TurnRunner {
     this.ports.clearExternalRunningStatus(host.id, host.sessionId);
     this.ports.markLocalCompletionSuppression(host.id, host.sessionId);
     this.broadcastStatus();
-    this.ports.broadcast({ type: 'conversations_updated', conversations: [host.toJSON()] });
+    host.publishTurnEnd();
     // The close handler (after SIGTERM below) takes the fast path and does not
     // add a duplicate system message.
     this.completedCleanly = true;
@@ -873,12 +861,7 @@ export class TurnRunner {
   }
 
   broadcastStatus(): void {
-    this.ports.broadcast({
-      type: 'status',
-      conversationId: this.host.id,
-      isRunning: this.host.isRunning,
-      isStreaming: this.host.isStreaming,
-    });
+    this.host.publishRun();
   }
 }
 

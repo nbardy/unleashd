@@ -3,14 +3,17 @@ import type {
   BuddyContext,
   ClientMessage,
   ConversationKind,
+  ConversationRow,
+  CreateKind,
   ModelId,
   Provider,
 } from '@unleashd/shared';
 import {
-  PROTOCOL_INFO,
-  buddyContextFromKind,
-  buddyKindFromContext,
-  conversationKindFromLegacy,
+  CHAT_KIND,
+  PROTOCOL_VERSION,
+  buddyKind,
+  encodeRows,
+  kindBuddyContext,
   safeParseClientMessage,
 } from '@unleashd/shared';
 import { WebSocket, type WebSocketServer } from 'ws';
@@ -32,9 +35,9 @@ import type {
   ConversationRuntime,
 } from '../conversations/runtime';
 import { updateRuntimeConfig } from '../conversations/runtime-config';
-import { summarizeConversation } from '../conversations/serialization';
 import { noteActivity } from '../observability/event-loop-stall';
 import {
+  sendAck,
   sendCommandAccepted,
   sendCommandRejected,
   sendProtocolError,
@@ -160,10 +163,8 @@ export function registerConversationWebSocket(
         }
         const target =
           'conversationId' in data ? dependencies.registry.get(data.conversationId) : undefined;
-        if (
-          target?.kind.kind === 'buddy' &&
-          (await dependencies.isBuddyArchived?.(target.kind.buddyId))
-        ) {
+        const targetBuddy = target ? kindBuddyContext(target.kind) : null;
+        if (targetBuddy && (await dependencies.isBuddyArchived?.(targetBuddy.buddyId))) {
           throw new Error('Buddy is archived');
         }
         logCommand(data, logger);
@@ -172,16 +173,16 @@ export function registerConversationWebSocket(
           case 'create_conversation': {
             let buddyResolution: ResolvedBuddyConversation | null = null;
             try {
-              buddyResolution = data.buddyContext
-                ? await dependencies.resolveBuddyConversation(data.buddyContext)
-                : null;
+              buddyResolution =
+                data.kind.t === 'buddy'
+                  ? await dependencies.resolveBuddyConversation(data.kind.context)
+                  : null;
             } catch (error) {
               logger.error('Conversation creation failed', error);
               sendCommandRejected(socket, {
                 commandId: data.commandId,
                 conversationId: data.conversationId,
                 error: { code: 'create_failed', message: replayFailureMessage(error) },
-                authoritativeConversation: dependencies.registry.get(data.conversationId)?.toJSON(),
               });
               break;
             }
@@ -189,48 +190,11 @@ export function registerConversationWebSocket(
             const workingDirectory = dependencies.resolveWorkingDirectory(
               buddyResolution?.workingDirectory ?? data.workingDirectory
             );
-            // Fork retention: if forking a conversation but client didn't send top-level kind/buddyContext,
-            // retain the source's kind (canonical). buddyContext is derived from kind for compat.
-            let effectiveKind: ConversationKind | undefined = data.kind;
-            if (!effectiveKind && data.buddyContext) {
-              effectiveKind = buddyKindFromContext(data.buddyContext);
-            }
-            let effectiveBuddyContext: BuddyContext | undefined = buddyResolution?.context;
-            if (!effectiveBuddyContext && effectiveKind && effectiveKind.kind === 'buddy') {
-              effectiveBuddyContext = buddyContextFromKind(
-                effectiveKind as Extract<ConversationKind, { kind: 'buddy' }>
-              );
-            }
-            if ((!effectiveBuddyContext || !effectiveKind) && data.resumedFromConversationId) {
-              const sourceForBuddy = dependencies.registry.get(data.resumedFromConversationId);
-              if (sourceForBuddy?.kind) {
-                const srcKind = conversationKindFromLegacy({
-                  kind: sourceForBuddy.kind,
-                  buddyContext:
-                    (sourceForBuddy as { buddyContext?: BuddyContext | null }).buddyContext ?? null,
-                  purpose: (sourceForBuddy as { purpose?: string }).purpose ?? null,
-                });
-                if (!effectiveKind && srcKind.kind !== 'general') effectiveKind = srcKind;
-                if (!effectiveBuddyContext && srcKind.kind === 'buddy') {
-                  effectiveBuddyContext = buddyContextFromKind(srcKind);
-                }
-              }
-              // Legacy fallback: direct buddyContext on source without kind
-              if (
-                !effectiveBuddyContext &&
-                (sourceForBuddy as { buddyContext?: BuddyContext | null })?.buddyContext
-              ) {
-                effectiveBuddyContext =
-                  (sourceForBuddy as { buddyContext?: BuddyContext | null }).buddyContext ??
-                  undefined;
-                if (!effectiveKind && effectiveBuddyContext)
-                  effectiveKind = buddyKindFromContext(effectiveBuddyContext);
-              }
-            }
-            if (
-              effectiveBuddyContext &&
-              (await dependencies.isBuddyArchived?.(effectiveBuddyContext.buddyId))
-            ) {
+            const kind = createdKind(data.kind, buddyResolution, (id) =>
+              dependencies.registry.get(id)
+            );
+            const buddy = kindBuddyContext(kind);
+            if (buddy && (await dependencies.isBuddyArchived?.(buddy.buddyId))) {
               throw new Error('Buddy is archived');
             }
             try {
@@ -254,21 +218,13 @@ export function registerConversationWebSocket(
                 config: data.config,
                 initialMessage: data.initialMessage,
                 swarmDebugPrefix: data.swarmDebugPrefix,
-                resumedFromConversationId: data.resumedFromConversationId,
-                kind: effectiveKind,
-                buddyContext: effectiveBuddyContext,
+                resumedFromConversationId: data.kind.t === 'fork' ? data.kind.from : undefined,
+                kind,
                 buddyBriefing: buddyResolution?.briefing,
               });
-              sendToClient(socket, {
-                type: 'conversation_created',
-                commandId: data.commandId,
-                conversation: conversation.toJSON(),
-              });
-              dependencies.broadcastExcept(socket, {
-                type: 'conversation_updated',
-                reason: 'status',
-                conversation: conversation.toJSON(),
-              });
+              const rows = encodeRows([conversation.toRow()]);
+              sendAck(socket, data.commandId, { t: 'created', rows });
+              dependencies.broadcastExcept(socket, { type: 'rows', ...rows });
               await dependencies.dispatchInitialMessage(conversation, {
                 ownerInput: { origin: 'owner_input', inputId: data.commandId },
               });
@@ -279,28 +235,6 @@ export function registerConversationWebSocket(
                 conversationId: data.conversationId,
                 error: { code: 'create_failed', message: errorMessage(error) },
               });
-            }
-            break;
-          }
-
-          case 'send_message': {
-            logger.log(
-              `[WS] send_message for ${data.conversationId}: "${data.content.substring(0, 50)}"`
-            );
-            const conversation = dependencies.registry.get(data.conversationId);
-            if (conversation) {
-              await createOrReuse.ensureReady(conversation);
-              logger.log('[WS] Found conversation, calling sendMessage');
-              conversation.sendMessage(data.content, {
-                origin: 'owner_input',
-                inputId: crypto.randomUUID(),
-              });
-            } else {
-              logger.error(`[WS] Conversation not found: ${data.conversationId}`);
-              logger.error(
-                '[WS] Available conversations:',
-                Array.from(dependencies.registry.keys())
-              );
             }
             break;
           }
@@ -330,10 +264,7 @@ export function registerConversationWebSocket(
               dependencies.completionSuppression.clear(conversation.sessionId, conversation.id);
             }
             if (conversation || deletedDurably) {
-              dependencies.broadcast({
-                type: 'conversation_deleted',
-                conversationId: data.conversationId,
-              });
+              dependencies.broadcast({ type: 'removed', ids: [data.conversationId] });
             }
             break;
           }
@@ -350,10 +281,14 @@ export function registerConversationWebSocket(
             const record = await dependencies.configService.setDone(data.conversationId, data.done);
             if (!record) throw new Error(`Conversation ${data.conversationId} has no record`);
             conversation.done = record.done;
+            // Pattern: patches-not-snapshots (docs/patterns.md#patches-not-snapshots)
+            // One field. v2 re-sent the whole conversation with every message:
+            // 1.36 MB per socket for a 1,099-message chat (2026-09-25).
+            // Guard: wire-v3.test.ts "a done toggle sends one small patch".
             dependencies.broadcast({
-              type: 'conversation_updated',
-              reason: 'done',
-              conversation: conversation.toJSON(),
+              type: 'patch',
+              id: conversation.id,
+              patch: { t: 'done', done: record.done },
             });
             break;
           }
@@ -374,19 +309,25 @@ export function registerConversationWebSocket(
               data
             );
             if (!result.ok) {
+              // The authoritative state goes first, to the requester only, so
+              // its picker shows what the server holds before the error.
+              sendToClient(socket, {
+                type: 'patch',
+                id: conversation.id,
+                patch: { t: 'config', state: conversation.configState(), commandId: null },
+              });
               sendCommandRejected(socket, {
                 commandId: data.commandId,
                 conversationId: data.conversationId,
                 error: result.error,
-                authoritativeConversation: conversation.toJSON(),
               });
               break;
             }
+            // The patch carrying this commandId is the requester's acknowledgement.
             dependencies.broadcast({
-              type: 'conversation_updated',
-              commandId: data.commandId,
-              reason: 'config',
-              conversation: conversation.toJSON(),
+              type: 'patch',
+              id: conversation.id,
+              patch: { t: 'config', state: conversation.configState(), commandId: data.commandId },
             });
             break;
           }
@@ -419,10 +360,7 @@ export function registerConversationWebSocket(
             if (data.type === 'queue_message')
               conversation.enqueueMessage(data.content, ownerInput);
             else conversation.interruptAndSend(data.content, ownerInput);
-            sendCommandAccepted(socket, {
-              commandId: data.commandId,
-              conversationId: data.conversationId,
-            });
+            sendCommandAccepted(socket, { commandId: data.commandId });
             break;
           }
           case 'cancel_queued_message':
@@ -460,24 +398,54 @@ async function sendInitialState(
     ? await dependencies.getArchivedBuddyIds()
     : [];
   if (socket.readyState !== WebSocket.OPEN) return;
+  // Rows only: no message bodies, config, queue or Buddy run data. v2's `init`
+  // carried all of it (1.87 MB for 1,161 conversations on 2026-09-25).
+  // Guard: wire-v3.test.ts "hello stays inside its per-row budget".
   sendToClient(socket, {
-    type: 'init',
-    archivedBuddyIds,
-    summaries: true,
-    loading: !dependencies.isInitialLoadComplete(),
-    conversations: Array.from(dependencies.registry.values(), (conversation) => {
-      const value = conversation.toJSON();
-      if (
-        dependencies.externalActivity.has(conversation.sessionId) ||
-        dependencies.externalActivity.has(conversation.id)
-      ) {
-        value.isRunning = true;
-      }
-      return summarizeConversation(value);
-    }),
+    type: 'hello',
+    protocol: { version: PROTOCOL_VERSION },
     defaultCwd: dependencies.getDefaultWorkingDirectory(),
-    protocol: PROTOCOL_INFO,
+    loading: !dependencies.isInitialLoadComplete(),
+    archivedBuddyIds,
+    ...encodeRows(
+      Array.from(dependencies.registry.values(), (conversation) =>
+        externallyRunning(conversation.toRow(), conversation, dependencies.externalActivity)
+      )
+    ),
   });
+}
+
+/** A transcript another process is writing shows as running. */
+function externallyRunning(
+  row: ConversationRow,
+  conversation: { id: string; sessionId: string },
+  externalActivity: ExternalActivity
+): ConversationRow {
+  return row.run === 'idle' &&
+    (externalActivity.has(conversation.sessionId) || externalActivity.has(conversation.id))
+    ? { ...row, run: 'running' }
+    : row;
+}
+
+/**
+ * The kind a create command gets: a thin dispatcher over what it asked for.
+ * A fork inherits its source's kind (the client holds only the source's row);
+ * a fork of a conversation this server no longer holds is a plain chat.
+ */
+function createdKind(
+  requested: CreateKind,
+  buddy: ResolvedBuddyConversation | null,
+  getConversation: (id: string) => { kind: ConversationKind } | undefined
+): ConversationKind {
+  switch (requested.t) {
+    case 'chat':
+      return CHAT_KIND;
+    case 'buddy':
+      if (!buddy) throw new Error('Buddy conversation was not resolved');
+      return buddyKind(buddy.context);
+    case 'fork':
+      return getConversation(requested.from)?.kind ?? CHAT_KIND;
+  }
 }
 
 function rejectInvalidMessage(
