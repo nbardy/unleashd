@@ -190,16 +190,20 @@ pnpm screenshot:mobile --out /tmp/shots       # the older phone-only gallery (ch
   review, find-or-create on a project) — there is no id to put in an href yet.
 - Client component tests are `.tsx` under `client/test/` and render through
   `react-dom/server` + `MemoryRouter` (no jsdom). They need
-  `--tsconfig client/tsconfig.app.json` or JSX compiles with the classic
-  runtime and every component throws `ReferenceError: React is not defined`.
-  `pnpm test:client` passes it. See `docs/test-strategy.md`.
-  `client/test/` is NOT covered by `tsc -b` (the app project compiles `src`
-  only), so a test that passes props a component no longer accepts typechecks
-  clean and fails at runtime with something unrelated-looking — a renamed
-  `ConversationsTab` prop surfaced as `Cannot read properties of undefined
-  (reading 'flatMap')` inside a jotai atom on 2026-09-16. Run `pnpm test:client`
-  after renaming any prop a test constructs; a green typecheck proves nothing
-  about the tests.
+  `--tsconfig client/tsconfig.test.json` (it includes `src` AND `test`; tsx
+  applies a tsconfig only to files it includes, so the app config left test
+  files on the classic runtime) or JSX compiles classic and every component
+  throws `ReferenceError: React is not defined`. `pnpm test:client` passes it.
+  See `docs/test-strategy.md`.
+  Tests are typechecked by `pnpm typecheck`: `client/tsconfig.test.json` and
+  `server/tsconfig.test.json` (src + test, no emit). They sit outside
+  `tsc -b` so a test-only type error fails typecheck, never `vite build`.
+  Until 2026-09-25 no test was typechecked: a renamed `ConversationsTab` prop
+  surfaced as `Cannot read properties of undefined (reading 'flatMap')` inside
+  a jotai atom (2026-09-16), and fixtures drifted from real types (missing
+  `done`, stale provider handles). `server/tsconfig.test.json` still has a
+  TEMPORARY exclude list of runtime/Buddy tests owned by the lean-rewrite
+  tasks T08/T11 — shrink it, never grow it.
 
 - Typecheck the client with `tsc -b`, never `tsc --noEmit`. `client/tsconfig.json`
   is a solution file (`"files": []` + project references), so plain
