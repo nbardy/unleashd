@@ -5,13 +5,12 @@ import {
   DEFAULT_CODEX_MODEL_ID,
   defaultReasoningEffortForProvider,
   fromCodexModelId,
-  toCodexModelId,
 } from '../../shared/src/index';
 import { inferProviderFromModel } from '../src/adapters/jsonl';
 
 // Canonical Codex ids are base models; effort is a separate reasoning field.
-// Legacy composites (`gpt-5.4-high`) still exist on disk and in old config, and
-// disk-adapter / legacy-config-migration decode them with fromCodexModelId.
+// Legacy composites (`gpt-5.4-high`) still exist in old session files, and
+// disk-adapter decodes them with fromCodexModelId.
 
 const BASE_MODELS = CODEX_MODEL_REGISTRY.map((entry) => entry.modelName);
 
@@ -30,10 +29,10 @@ test('fromCodexModelId decomposes legacy composites and leaves hyphenated bases 
   assert.deepEqual(fromCodexModelId('gpt-5.4-mini'), { baseModel: 'gpt-5.4-mini', effort: null });
 });
 
-test('to/fromCodexModelId round-trips every registered base through composite strings', () => {
+test('fromCodexModelId decomposes every registered base through composite strings', () => {
   for (const base of BASE_MODELS) {
     for (const effort of ['medium', 'high', 'xhigh', 'ultra'] as const) {
-      const decomposed = fromCodexModelId(toCodexModelId(base, effort));
+      const decomposed = fromCodexModelId(`${base}-${effort}`);
       assert.equal(decomposed.baseModel, base);
       assert.equal(decomposed.effort, effort);
     }

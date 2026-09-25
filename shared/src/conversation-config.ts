@@ -136,7 +136,7 @@ export const ConversationLifecycleStatusSchema = z.enum(['active', 'deleted']);
 
 // Conversation IDs are opaque: Buddy runs use deterministic prefixed IDs and
 // older provider imports can be non-UUIDs. Use the same contract on disk and
-// across the wire; config-store encodes IDs before using them as file names.
+// across the wire.
 export const ConversationIdSchema = z.string().min(1);
 
 export const BuddyContextSchema = z.object({

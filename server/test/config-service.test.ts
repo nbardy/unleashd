@@ -17,7 +17,6 @@ import {
   ConversationTombstonedError,
   applyConversationConfigPatch,
 } from '../src/conversations/config-service';
-import { migrateLegacyConversationConfig } from '../src/conversations/legacy-config-migration';
 import { recordStore } from './fixtures/records';
 
 const CONVERSATION_ID = '550e8400-e29b-41d4-a716-446655440000';
@@ -438,37 +437,27 @@ test('create and fork require a currently resolved configuration', async () => {
   });
 });
 
-test('legacy migration is deterministic and confines composite decoding to known models', () => {
-  const composite = migrateLegacyConversationConfig({
-    provider: 'codex',
-    reportedModel: 'gpt-5.4-high',
-    source: 'external_session',
-  });
-  assert.deepEqual(composite.config, {
-    provider: 'codex',
-    model: { mode: 'explicit', modelId: 'gpt-5.4' },
-    reasoning: { mode: 'explicit', effort: 'high' },
-  });
-  assert.equal(composite.provenance, 'external_discovered');
+test('session hydration never guesses an unknown reported model', async () => {
+  await withService(async (service) => {
+    // A future Codex id ending in an effort-like suffix is unknown, not decomposed.
+    const futureSuffix = await service.hydrate({
+      conversationId: CONVERSATION_ID,
+      discoveredKind: { t: 'chat' },
+      sessionBindings: [{ provider: 'codex', sessionId: 'future-codex' }],
+      legacy: { provider: 'codex', reportedModel: 'gpt-example-ultra', source: 'external_session' },
+    });
+    assert.deepEqual(futureSuffix.state.config.model, { mode: 'default' });
+    assert.deepEqual(futureSuffix.state.config.reasoning, { mode: 'disabled' });
+    assert.equal(futureSuffix.record.provenance, 'external_discovered');
+    assert.equal(futureSuffix.diagnostics[0]?.code, 'unknown_reported_model');
 
-  const baseOnly = migrateLegacyConversationConfig({
-    provider: 'codex',
-    reportedModel: 'gpt-5.4',
+    const futureFable = await service.hydrate({
+      conversationId: FORK_ID,
+      discoveredKind: { t: 'chat' },
+      sessionBindings: [{ provider: 'claude', sessionId: 'future-fable' }],
+      legacy: { provider: 'claude', reportedModel: 'claude-fable-future' },
+    });
+    assert.deepEqual(futureFable.state.config.model, { mode: 'default' });
+    assert.equal(futureFable.diagnostics[0]?.code, 'unknown_reported_model');
   });
-  assert.deepEqual(baseOnly.config.reasoning, { mode: 'disabled' });
-
-  const futureSuffix = migrateLegacyConversationConfig({
-    provider: 'codex',
-    reportedModel: 'gpt-example-ultra',
-  });
-  assert.deepEqual(futureSuffix.config.model, { mode: 'default' });
-  assert.deepEqual(futureSuffix.config.reasoning, { mode: 'disabled' });
-  assert.equal(futureSuffix.diagnostics[0]?.code, 'unknown_reported_model');
-
-  const futureFable = migrateLegacyConversationConfig({
-    provider: 'claude',
-    reportedModel: 'claude-fable-future',
-  });
-  assert.deepEqual(futureFable.config.model, { mode: 'default' });
-  assert.equal(futureFable.diagnostics[0]?.code, 'unknown_reported_model');
 });

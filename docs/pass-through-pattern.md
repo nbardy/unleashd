@@ -46,9 +46,9 @@ or queued and after a provider session has started.
    `set_conversation_config` through the config service. Extend runtime execution
    mapping in [runner.ts](../server/src/turns/runner.ts) (one request shape), rather than
    adding an independent setter or assigning a provider default in the UI.
-4. **Persistence and hydration** — extend the durable config record and review
-   [config-store](../server/src/conversations/config-store.ts) and
-   [legacy-config-migration](../server/src/conversations/legacy-config-migration.ts).
+4. **Persistence and hydration** — extend the durable config record: the Rust
+   `ConversationRecords` store (`crates/unleashd-ingest/src/records`) validates
+   it, and [config-records](../server/src/conversations/config-records.ts) maps it.
    Provider transcripts may lack the setting: retain durable intent on reload.
    Retired explicit selections remain `unavailable` with diagnostics rather than
    silently becoming defaults; `lastResolved` is historical resolution context.

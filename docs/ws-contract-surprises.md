@@ -117,7 +117,7 @@ omit them. The owner Settings DELETE disables schedules and cancels active runs.
 `queue_message` and `interrupt_and_send` carry a `commandId` and the server
 answers with `ack accepted` / `ack rejected` (see `pendingMessageCommands`
 in [actions.ts](../client/src/atoms/actions.ts)). But the ack is written only
-after `ensureReady` (config-store read plus the Buddy link write) AND the full
+after `ensureReady` (records-store read) AND the full
 turn-spawn setup in `Conversation.sendMessageInternal` (Buddy store reads,
 coordination claim, MCP matching, audit, child-process spawn) — see the
 `queue_message` / `interrupt_and_send` cases in
@@ -174,12 +174,10 @@ Queue commands (`queue_message`, `interrupt_and_send`, `cancel_queued_message`,
 
 ## `buddies_changed` is a debounced "something changed", not a diff
 
-The Buddy store lives in the vendored `@nbardy/buddies` package, so there is no
-in-repo write chokepoint. `server/src/buddies/change-feed.ts` hooks the three
-doors writes come through — `BuddyOperationsService.execute` (Buddy MCP tools,
-scheduler, delegations), `executeOwnerResource` (owner MCP tools) and one
-Express middleware on non-GET `/api/buddies` (owner UI) — and `server.ts`
-folds a burst into one `buddies_changed` event per 250ms. The event carries no
+Every Buddy write runs in this process through the Rust core
+(`crates/unleashd-buddies`, wrapped by `server/src/buddies/core.ts`) and
+announces a `changed` event on the Buddy event bus (`buddies/events.ts`);
+`server.ts` folds a burst into one `buddies_changed` event per 250ms. The event carries no
 payload on purpose: the client refreshes its mounted Buddy views from cache
 keys, and a payload would only tempt a second, per-event code path. Reads
 (`get_*`, `list_*`, `recall`) never announce; a Buddy polling its inbox must
