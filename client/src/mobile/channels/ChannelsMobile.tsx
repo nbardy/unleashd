@@ -1,4 +1,4 @@
-import type { BuddyMailingListPost, BuddyOwnerPostResult, OwnerListUnread } from '@unleashd/shared';
+import { useAtomValue } from 'jotai';
 import { useMemo, useState } from 'react';
 import { Link, useLocation, useParams } from 'react-router-dom';
 import { BuddySigil } from '../../components/buddies/BuddySigil';
@@ -8,86 +8,82 @@ import { ChannelHistory, ChannelLoader } from '../../components/buddies/ChannelL
 import { ChannelMarkdown, TypingDots } from '../../components/buddies/ChannelMarkdown';
 import { CopyLinkButton } from '../../components/buddies/CopyLinkButton';
 import { WakeIcon, WakeIndicator } from '../../components/buddies/WakeIndicator';
+import { errorText } from '../../components/buddies/api';
 import { useBuddyDirectActions } from '../../components/buddies/buddy-direct-actions';
 import {
-  type BuddyMailingListSummary,
-  CHANNEL_BACKSTOP_MS,
-  type ChannelMember,
+  type ChannelHeading,
   type ChannelRow,
   type WorkspaceDirectory,
-  arrivalMarks,
   authorName,
-  channelPostFeed,
+  channelFeed,
+  channelHeading,
+  channelRequestCount,
   channelRows,
   channelUnreadAttr,
   clockTime,
   createChannel,
   feedPhase,
-  listsUrl,
-  ownerUnreadByList,
+  newestServedId,
   postPurposeLabel,
   postPurposeTag,
+  railChannels,
   renderFeed,
-  threadPostFeed,
+  threadFeed,
   useChannelFeed,
   useChannelResponding,
   useFollowBottom,
-  useOwnerChannelVisit,
-  useOwnerUnread,
+  useMarkChannelRead,
   useWarmChannelPosts,
   useWithOutbox,
   useWorkspaceDirectory,
+  useWorkspaceInbox,
 } from '../../components/buddies/channel-data';
 import { channelLinkPath } from '../../components/buddies/channel-link';
+import type { Buddy, ChannelUnread, Inbox, Post } from '../../components/buddies/types';
 import { useBuddyOverview } from '../../hooks/useBuddyData';
-import { usePolledFetch } from '../../hooks/usePolledFetch';
+import { mobileConversationRouteState } from '../../utils/conversation-route-state';
 import {
   MobileEmptyPanel,
   MobileHeaderAction,
   MobilePage,
   MobileSection,
 } from '../components/MobileUI';
-import { overviewWorkspaces } from './ChannelsIndex';
+import { buddyWorkspaceActivityAtom, overviewWorkspaces } from './ChannelsIndex';
 import { type MobileChannelScreen, channelsHref, mobileChannelScreen } from './channel-route';
 
 // Channels on a phone, following Slack's mobile app: one screen at a time.
-//   Home    — channel list + Buddies (Slack's DMs), tab bar visible
+//   Home    — channels, DMs and Buddies, tab bar visible
 //   Channel — full-height transcript, composer pinned, no tab bar
 //   Thread  — the root, its replies, a reply composer
 // Same URL as desktop (/buddies/workspaces/:id/channels?channel=&thread=), so
-// a link opens the right place on either device. Desktop hover affordances
-// become visible taps here (docs/mobile-ui.md: hover needs a touch counterpart).
+// a link opens the right place on either device. `channel` names a public
+// channel or a DM channel. Desktop hover affordances become visible taps here
+// (docs/mobile-ui.md: hover needs a touch counterpart).
 
 export function ChannelsMobile() {
   const { workspaceId = '' } = useParams();
   const location = useLocation();
   const screen = mobileChannelScreen(location.search);
   const directory = useWorkspaceDirectory(workspaceId);
-  const lists = usePolledFetch<BuddyMailingListSummary[]>(
-    listsUrl(workspaceId),
-    CHANNEL_BACKSTOP_MS
-  );
-  useWarmChannelPosts(lists.data);
-  const ownerUnread = useOwnerUnread();
-  const unreadByList = useMemo(
-    () => ownerUnreadByList(ownerUnread.data, workspaceId),
-    [ownerUnread.data, workspaceId]
-  );
+  const inbox = useWorkspaceInbox(workspaceId);
+  const rail = useMemo(() => railChannels(inbox.data), [inbox.data]);
+  useWarmChannelPosts(rail.channels);
   return renderScreen(screen, {
     workspaceId,
     directory,
-    lists: lists.data ?? null,
-    refetchLists: lists.refetch,
-    unreadByList,
+    inbox: inbox.data,
+    listed: [...rail.channels, ...rail.direct],
+    refetchInbox: inbox.refetch,
   });
 }
 
 type ScreenContext = {
   workspaceId: string;
   directory: WorkspaceDirectory;
-  lists: readonly BuddyMailingListSummary[] | null;
-  refetchLists(): Promise<void>;
-  unreadByList: ReadonlyMap<string, OwnerListUnread>;
+  inbox: Inbox | null;
+  /** Public channels, then DMs: what Home lists and a channel screen can open. */
+  listed: readonly ChannelUnread[];
+  refetchInbox(): Promise<void>;
 };
 
 function renderScreen(screen: MobileChannelScreen, context: ScreenContext) {
@@ -95,12 +91,14 @@ function renderScreen(screen: MobileChannelScreen, context: ScreenContext) {
     case 'home':
       return <ChannelsHome context={context} />;
     case 'channel':
-      return <ChannelScreen key={screen.listId} listId={screen.listId} context={context} />;
+      return (
+        <ChannelScreen key={screen.channelId} channelId={screen.channelId} context={context} />
+      );
     case 'thread':
       return (
         <ThreadScreen
           key={screen.rootId}
-          listId={screen.listId}
+          channelId={screen.channelId}
           rootId={screen.rootId}
           linkedPostId={screen.linkedPostId}
           context={context}
@@ -109,14 +107,48 @@ function renderScreen(screen: MobileChannelScreen, context: ScreenContext) {
   }
 }
 
+/** The screen's channel as the inbox lists it; a channel the inbox has not listed yet reads as unknown. */
+function listedEntry(context: ScreenContext, channelId: string): ChannelUnread | null {
+  return context.listed.find((entry) => entry.channel.id === channelId) ?? null;
+}
+
+const LOADING_HEADING: ChannelHeading = { mark: '#', name: 'channel', about: '' };
+
 // ── Home ────────────────────────────────────────────────────────────────────
 
 function ChannelsHome({ context }: { context: ScreenContext }) {
   const overview = useBuddyOverview();
-  const workspaces = overviewWorkspaces(overview.data);
+  const workspaces = overviewWorkspaces(overview.data, useAtomValue(buddyWorkspaceActivityAtom));
   const [switching, setSwitching] = useState(false);
   const [creating, setCreating] = useState(false);
-  const { workspaceId, directory, lists } = context;
+  const { workspaceId, directory, inbox } = context;
+  const rail = railChannels(inbox);
+  const row = (entry: ChannelUnread) => {
+    const heading = channelHeading(entry.channel.kind, directory.buddyNames);
+    const requests = channelRequestCount(inbox, entry.channel.id);
+    return (
+      <li key={entry.channel.id}>
+        <Link
+          className="mobile-channels-row"
+          data-unread={channelUnreadAttr(entry.unread)}
+          to={channelsHref(workspaceId, { kind: 'channel', channelId: entry.channel.id })}
+        >
+          <span className="mobile-channels-row__hash" aria-hidden="true">
+            {heading.mark}
+          </span>
+          <span className="mobile-channels-row__name">{heading.name}</span>
+          {requests > 0 && (
+            <span
+              className="mobile-channels-row__badge"
+              aria-label={`${requests} requests waiting on you`}
+            >
+              {requests}
+            </span>
+          )}
+        </Link>
+      </li>
+    );
+  };
   return (
     <MobilePage
       title={directory.workspaceName}
@@ -155,21 +187,7 @@ function ChannelsHome({ context }: { context: ScreenContext }) {
       )}
       <MobileSection title="Channels">
         <ul className="mobile-channels-list">
-          {(lists ?? []).map((list) => (
-            <li key={list.id}>
-              <Link
-                className="mobile-channels-row"
-                data-unread={channelUnreadAttr(context.unreadByList.get(list.id))}
-                to={channelsHref(workspaceId, { kind: 'channel', listId: list.id })}
-              >
-                <span className="mobile-channels-row__hash" aria-hidden="true">
-                  #
-                </span>
-                <span className="mobile-channels-row__name">{list.name}</span>
-                <RepliesBadge unread={context.unreadByList.get(list.id)} />
-              </Link>
-            </li>
-          ))}
+          {rail.channels.map(row)}
           <li>
             {creating ? (
               <NewChannelForm
@@ -177,7 +195,7 @@ function ChannelsHome({ context }: { context: ScreenContext }) {
                 onCancel={() => setCreating(false)}
                 onCreated={() => {
                   setCreating(false);
-                  void context.refetchLists();
+                  void context.refetchInbox();
                 }}
               />
             ) : (
@@ -194,12 +212,17 @@ function ChannelsHome({ context }: { context: ScreenContext }) {
             )}
           </li>
         </ul>
-        {lists === null && <MobileEmptyPanel>Loading channels…</MobileEmptyPanel>}
+        {inbox === null && <MobileEmptyPanel>Loading channels…</MobileEmptyPanel>}
       </MobileSection>
+      {rail.direct.length > 0 && (
+        <MobileSection title="Direct messages">
+          <ul className="mobile-channels-list">{rail.direct.map(row)}</ul>
+        </MobileSection>
+      )}
       <MobileSection title="Buddies" meta="Tap to message · ☀ to wake">
         <ul className="mobile-channels-list">
           {directory.activeMembers.map((member) => (
-            <BuddyRow key={member.id} member={member} workspaceId={workspaceId} />
+            <BuddyRow key={member.id} member={member} />
           ))}
         </ul>
       </MobileSection>
@@ -207,22 +230,13 @@ function ChannelsHome({ context }: { context: ScreenContext }) {
   );
 }
 
-// The red count is only what waits on the owner: replies in their threads.
-function RepliesBadge({ unread }: { unread: OwnerListUnread | undefined }) {
-  const count = unread?.repliesToYou ?? 0;
-  return count === 0 ? null : (
-    <span className="mobile-channels-row__badge" aria-label={`${count} new replies to you`}>
-      {count}
-    </span>
-  );
-}
-
 // Slack's DM row: tapping the Buddy opens the conversation (its one ongoing
 // DM, history kept). Wake is a visible button, since touch has no hover.
-function BuddyRow({ member, workspaceId }: { member: ChannelMember; workspaceId: string }) {
+function BuddyRow({ member }: { member: Buddy }) {
   // Back from the DM returns here, not to the Buddies tab.
   const openDm = useChatPageDm();
-  const direct = useBuddyDirectActions(member.id, workspaceId);
+  const location = useLocation();
+  const direct = useBuddyDirectActions(member.id);
   const { action } = direct;
   return (
     <li className="mobile-channels-buddy" data-failed={action.kind === 'failed' || undefined}>
@@ -247,7 +261,7 @@ function BuddyRow({ member, workspaceId }: { member: ChannelMember; workspaceId:
           name={member.name}
           className="mobile-channels-wake-status"
           doneClassName="mobile-channels-wake-done"
-          linkState={origin}
+          linkState={mobileConversationRouteState(location)}
         />
       )}
       <button
@@ -286,9 +300,7 @@ function NewChannelForm({
         setProblem(null);
         void createChannel(workspaceId, cleanName, purpose.trim())
           .then(onCreated)
-          .catch((cause: unknown) =>
-            setProblem(cause instanceof Error ? cause.message : String(cause))
-          )
+          .catch((cause: unknown) => setProblem(errorText(cause)))
           .finally(() => setBusy(false));
       }}
     >
@@ -325,27 +337,24 @@ function NewChannelForm({
 
 // ── Transcript rows ─────────────────────────────────────────────────────────
 
-// Where a row sits: in the channel (tap "N replies"/Reply to open its thread,
-// see who is replying) or inside the thread already. D = Channel ⊕ Thread.
+// Where a row sits: in the channel (tap Thread to open its thread, see who is
+// replying) or inside the thread already. D = Channel ⊕ Thread.
 type RowPlace =
   | {
       kind: 'channel';
       threadHref(rootId: string): string;
       responding: ReadonlyMap<string, string>;
-      // Roots with replies the owner had not seen when they arrived.
-      unreadThreads: ReadonlySet<string>;
     }
   | { kind: 'thread' };
 
 type RowContext = {
-  workspaceId: string;
   directory: WorkspaceDirectory;
   place: RowPlace;
   // The reply a permalink named (`?post=`); its row is highlighted.
   linkedPostId: string | null;
 };
 
-function PostPurpose({ post }: { post: BuddyMailingListPost }) {
+function PostPurpose({ post }: { post: Post }) {
   const label = postPurposeLabel(post);
   return label === null ? null : (
     <span className="mobile-channel-post__purpose" data-purpose={postPurposeTag(post)}>
@@ -354,33 +363,22 @@ function PostPurpose({ post }: { post: BuddyMailingListPost }) {
   );
 }
 
-function PostFooter({ post, context }: { post: BuddyMailingListPost; context: RowContext }) {
+// Posts carry no reply count (the API has none): every root offers its thread.
+function PostFooter({ post, context }: { post: Post; context: RowContext }) {
   switch (context.place.kind) {
     case 'thread':
       return null;
     case 'channel': {
       const place = context.place;
       const replying = place.responding.get(post.id);
-      const rootId = post.threadRootId ?? post.id;
       return (
         <div className="mobile-channel-post__footer">
-          {post.replyCount > 0 ? (
-            <Link
-              className="mobile-channel-post__replies"
-              data-unread={place.unreadThreads.has(rootId) || undefined}
-              to={place.threadHref(rootId)}
-            >
-              {place.unreadThreads.has(rootId) && (
-                <span className="mobile-channel-post__unread-dot" aria-label="New replies" />
-              )}
-              {post.replyCount} {post.replyCount === 1 ? 'reply' : 'replies'}
-              {post.latestReplyAt && <span> · {clockTime(post.latestReplyAt)}</span>}
-            </Link>
-          ) : (
-            <Link className="mobile-channel-post__reply" to={place.threadHref(rootId)}>
-              Reply
-            </Link>
-          )}
+          <Link
+            className="mobile-channel-post__reply"
+            to={place.threadHref(post.rootId ?? post.id)}
+          >
+            Thread
+          </Link>
           {replying !== undefined && (
             <span className="mobile-channel-post__replying">
               <TypingDots /> {replying}
@@ -419,7 +417,6 @@ function Row({ row, context }: { row: ChannelRow; context: RowContext }) {
                 className="mobile-channel-post__author"
                 author={row.post.author}
                 buddyNames={context.directory.buddyNames}
-                workspaceId={context.workspaceId}
                 openDm={openDm}
               />
               <time dateTime={row.post.createdAt}>{clockTime(row.post.createdAt)}</time>
@@ -483,50 +480,48 @@ function ScreenHeader({
 
 // ── Channel ─────────────────────────────────────────────────────────────────
 
-function ChannelScreen({ listId, context }: { listId: string; context: ScreenContext }) {
-  const { workspaceId, directory, lists } = context;
-  const list = lists?.find((candidate) => candidate.id === listId) ?? null;
-  const channel = useChannelFeed(channelPostFeed(listId));
-  const feed = channel.feed;
-  const responding = useChannelResponding(listId, directory.buddyNames);
-  const posts = useWithOutbox(workspaceId, listId, null, feed.data);
+function ChannelScreen({ channelId, context }: { channelId: string; context: ScreenContext }) {
+  const { workspaceId, directory } = context;
+  const entry = listedEntry(context, channelId);
+  const heading = entry
+    ? channelHeading(entry.channel.kind, directory.buddyNames)
+    : LOADING_HEADING;
+  const feed = useChannelFeed(channelFeed(channelId));
+  const responding = useChannelResponding(channelId, directory.buddyNames);
+  const posts = useWithOutbox(channelId, null, feed.posts);
   const rows = useMemo(() => channelRows(posts ?? []), [posts]);
-  const follow = useFollowBottom(rows.length, feed.data, null);
-  const visit = useOwnerChannelVisit(listId, context.unreadByList.get(listId));
-  const arrival = arrivalMarks(visit, feed.data ?? []);
+  const follow = useFollowBottom(rows.length, posts, null);
+  useMarkChannelRead(channelId, entry?.unread, newestServedId(feed.posts));
   const rowContext: RowContext = {
-    workspaceId,
     directory,
     place: {
       kind: 'channel',
       threadHref: (rootId) =>
-        channelsHref(workspaceId, { kind: 'thread', listId, rootId, linkedPostId: null }),
+        channelsHref(workspaceId, { kind: 'thread', channelId, rootId, linkedPostId: null }),
       responding,
-      unreadThreads: new Set(arrival.unreadThreads),
     },
     linkedPostId: null,
   };
-  // The mailing list's own description — unrelated to the conversation field gate G2 guards.
-  const { name, purpose: description } = list ?? { name: 'channel', purpose: '' };
+  const title = `${heading.mark} ${heading.name}`;
   return (
     <div className="mobile-channel">
       <ScreenHeader
         backTo={channelsHref(workspaceId, { kind: 'home' })}
-        title={`# ${name}`}
-        subtitle={description}
+        title={title}
+        subtitle={heading.about}
         link={{
-          path: channelLinkPath(workspaceId, { kind: 'channel', listId }),
+          path: channelLinkPath(workspaceId, { kind: 'channel', channelId }),
           label: 'Copy link to channel',
         }}
       />
       <div className="mobile-channel__scroll" ref={follow.scrollRef} onScroll={follow.onScroll}>
-        {(feed.kind === 'failed' || feed.kind === 'stale') && (
+        {(feed.latest.kind === 'failed' || feed.latest.kind === 'stale') && (
           <p className="mobile-channel__error" role="alert">
-            Posts could not refresh: {feed.error.message}
+            Posts could not refresh: {feed.latest.error.message}
           </p>
         )}
-        {renderFeed(feedPhase(feed), {
-          loading: () => <ChannelLoader label={`Loading # ${name}…`} />,
+        {renderFeed(feedPhase(feed.latest.kind, posts), {
+          loading: () => <ChannelLoader label={`Loading ${title}…`} />,
           failed: () => null,
           empty: () => (
             <MobileEmptyPanel>No posts yet. @mention a Buddy to ask it something.</MobileEmptyPanel>
@@ -534,33 +529,28 @@ function ChannelScreen({ listId, context }: { listId: string; context: ScreenCon
           posts: () => (
             <>
               <ChannelHistory
-                edge={channel.edge}
+                edge={feed.edge}
                 scrollRef={follow.scrollRef}
-                onReach={() => void channel.loadOlder(follow.hold)}
+                onReach={() => void feed.loadOlder(follow.hold)}
               />
               <ol className="mobile-channel__posts">
-                {rows.map((row) => [
-                  row.kind !== 'day' && row.post.id === arrival.firstUnread && (
-                    <li key="new-messages" className="mobile-channel-new-messages">
-                      <span>New messages</span>
-                    </li>
-                  ),
-                  <Row key={row.key} row={row} context={rowContext} />,
-                ])}
+                {rows.map((row) => (
+                  <Row key={row.key} row={row} context={rowContext} />
+                ))}
               </ol>
             </>
           ),
         })}
       </div>
       <ChannelComposer
-        listId={listId}
-        threadRootId={null}
-        placeholder={`Message #${name}`}
+        channelId={channelId}
+        rootId={null}
+        placeholder={`Message ${heading.mark}${heading.name}`}
         references={directory.references}
         submit="button"
-        onPosted={(_result: BuddyOwnerPostResult) => {
+        onPosted={() => {
           follow.pin();
-          void feed.refetch();
+          void feed.latest.refetch();
         }}
       />
     </div>
@@ -570,68 +560,62 @@ function ChannelScreen({ listId, context }: { listId: string; context: ScreenCon
 // ── Thread ──────────────────────────────────────────────────────────────────
 
 function ThreadScreen({
-  listId,
+  channelId,
   rootId,
   linkedPostId,
   context,
 }: {
-  listId: string;
+  channelId: string;
   rootId: string;
   linkedPostId: string | null;
   context: ScreenContext;
 }) {
-  const { workspaceId, directory, lists } = context;
-  const list = lists?.find((candidate) => candidate.id === listId) ?? null;
-  const paged = useChannelFeed(threadPostFeed(listId, rootId, linkedPostId));
-  const thread = paged.feed;
-  const replying = useChannelResponding(listId, directory.buddyNames).get(rootId);
-  const replies = useWithOutbox(workspaceId, listId, rootId, thread.data?.replies ?? null);
+  const { workspaceId, directory } = context;
+  const entry = listedEntry(context, channelId);
+  const heading = entry
+    ? channelHeading(entry.channel.kind, directory.buddyNames)
+    : LOADING_HEADING;
+  const thread = useChannelFeed(threadFeed(rootId));
+  const root = thread.latest.data?.root;
+  const replying = useChannelResponding(channelId, directory.buddyNames).get(rootId);
+  const replies = useWithOutbox(channelId, rootId, thread.posts);
   const replyRows = useMemo(() => channelRows(replies ?? []), [replies]);
   const follow = useFollowBottom(
     replyRows.length + (replying === undefined ? 0 : 1),
-    thread.data,
+    thread.posts,
     linkedPostId
   );
-  const rowContext: RowContext = {
-    workspaceId,
-    directory,
-    place: { kind: 'thread' },
-    linkedPostId,
-  };
-  const root = thread.data?.root;
+  useMarkChannelRead(channelId, entry?.unread, newestServedId(thread.posts) ?? root?.id ?? null);
+  const rowContext: RowContext = { directory, place: { kind: 'thread' }, linkedPostId };
   return (
     <div className="mobile-channel">
       <ScreenHeader
-        backTo={channelsHref(workspaceId, { kind: 'channel', listId })}
+        backTo={channelsHref(workspaceId, { kind: 'channel', channelId })}
         title="Thread"
-        subtitle={`# ${list?.name ?? 'channel'}`}
+        subtitle={`${heading.mark} ${heading.name}`}
         link={{
-          path: channelLinkPath(workspaceId, { kind: 'thread', listId, rootId }),
+          path: channelLinkPath(workspaceId, { kind: 'thread', channelId, rootId }),
           label: 'Copy link to thread',
         }}
       />
       <div className="mobile-channel__scroll" ref={follow.scrollRef} onScroll={follow.onScroll}>
-        {(thread.kind === 'failed' || thread.kind === 'stale') && (
+        {(thread.latest.kind === 'failed' || thread.latest.kind === 'stale') && (
           <p className="mobile-channel__error" role="alert">
-            Thread could not refresh: {thread.error.message}
+            Thread could not refresh: {thread.latest.error.message}
           </p>
         )}
-        {thread.kind === 'loading' && <ChannelLoader label="Loading thread…" />}
+        {thread.latest.kind === 'loading' && <ChannelLoader label="Loading thread…" />}
         {root && (
           <ol className="mobile-channel__posts">
             <Row row={{ kind: 'lead', key: root.id, post: root }} context={rowContext} />
           </ol>
         )}
-        {root && (
-          <div className="mobile-channel-divider">
-            {root.replyCount} {root.replyCount === 1 ? 'reply' : 'replies'}
-          </div>
-        )}
+        {root && <div className="mobile-channel-divider">Replies</div>}
         {root && (
           <ChannelHistory
-            edge={paged.edge}
+            edge={thread.edge}
             scrollRef={follow.scrollRef}
-            onReach={() => void paged.loadOlder(follow.hold)}
+            onReach={() => void thread.loadOlder(follow.hold)}
           />
         )}
         <ol className="mobile-channel__posts">
@@ -646,14 +630,14 @@ function ThreadScreen({
         )}
       </div>
       <ChannelComposer
-        listId={listId}
-        threadRootId={rootId}
+        channelId={channelId}
+        rootId={rootId}
         placeholder="Reply…"
         references={directory.references}
         submit="button"
         onPosted={() => {
           follow.pin();
-          void thread.refetch();
+          void thread.latest.refetch();
         }}
       />
     </div>

@@ -41,7 +41,7 @@ remain the three core components.
   the client serves them through `/api/files`. png jpg gif webp mp4 webm mov,
   50 MB. SVG is excluded (same-origin script risk).
 
-## Mention replies (host policy, `server/src/buddies/channel-responder.ts`)
+## Mention replies (host policy, `server/src/buddies/channels.ts` since T11)
 
 1. Only OWNER mentions dispatch. Buddy-authored mentions never wake anyone:
    Buddies coordinate with `send`/`update_project`. (Thread follow-ups, below,
@@ -67,7 +67,7 @@ remain the three core components.
    Buddy tools, but no owner controls and no `unleashd_owner` MCP). Until
    2026-09-25 (B1) every seat turn was `owner_input`, so a follow-up gated on a
    Buddy's post held `configure_team` and owner document writes. Guard:
-   `server/test/channel-seat-continuity.test.ts`.
+   `server/test/buddies-v2.test.ts` ("B1"; it replaced `channel-seat-continuity.test.ts` in T11).
 
    History: seats existed until 46b4c0c (2026-09-24), which switched to a new
    conversation per mention, blaming conv 0f1dfb23's `out_of_tokens` on a
@@ -157,7 +157,8 @@ seat config, server-posted answer), framed as "you chose to reply".
   model and effort (provider-bespoke effort values are not
   translated down). Same restart gap as mention replies.
 
-Guard: the follow-up test in `server/test/channel-conversations.test.ts`.
+Guard: `server/test/buddies-v2.test.ts` (follow-ups stop after three Buddy posts; a failed gate on
+an owner post is shown), ported from `channel-conversations.test.ts` in T11.
 
 ## Model choice per mention (2026-09-24)
 

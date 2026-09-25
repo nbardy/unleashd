@@ -1,21 +1,43 @@
-import type { BuddyWorkspaceActiveJob } from '@unleashd/shared';
 import { useAtomValue } from 'jotai';
-import { useMemo } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { availableConversationIdSetAtom, conversationAtomFamily } from '../../atoms/conversations';
+import { useBuddyOverview } from '../../hooks/useBuddyData';
 import { usePolledFetch } from '../../hooks/usePolledFetch';
-import { formatTimeAgo } from '../../utils/time';
-import { BuddyInactiveAccess } from './BuddyInactiveAccess';
-import './BuddyWorkspaceActivity.css';
 import { shortenHomePath } from '../../utils/directories';
-import { workspaceActivityResource } from './channel-data';
+import { formatTimeAgo } from '../../utils/time';
+import { activeBuddies, findWorkspace } from './roster';
+import type { Run, RunInput, RunStatus } from './types';
 import { initials } from './ui-contract';
+import './BuddyWorkspaceActivity.css';
 
-const NO_CONVERSATION_ID = '__workspace_job_without_conversation__';
+// What a workspace's Buddies are running now: the roster from the overview,
+// each Buddy's live runs from GET /api/buddies/runs?liveInWorkspace=.
 
-function compactPath(path: string | null): string {
-  return path === null ? 'No folder path' : shortenHomePath(path);
+const NO_CONVERSATION_ID = '__workspace_run_without_conversation__';
+const NO_RUNS: readonly Run[] = [];
+
+export function liveRunsUrl(workspaceId: string): string {
+  return `/api/buddies/runs?liveInWorkspace=${encodeURIComponent(workspaceId)}`;
 }
+
+/** Why a run exists, as a label: one entry per RunInput variant. */
+const RUN_KIND: Record<RunInput['kind'], string> = {
+  chat: 'chat',
+  post: 'post',
+  reply: 'reply',
+  schedule: 'schedule',
+  failure_notice: 'notice',
+};
+
+/** A live run's state; finished runs never appear in a live listing. */
+const RUN_STATUS: Record<RunStatus, string> = {
+  queued: 'Queued',
+  running: 'Running',
+  cancel_requested: 'Stopping',
+  complete: 'Complete',
+  failed: 'Failed',
+  cancelled: 'Cancelled',
+};
 
 function conversationTitle(messages: Array<{ role?: string; content?: string }>): string | null {
   const source = messages.find((message) => message.role === 'user') ?? messages[0];
@@ -24,39 +46,24 @@ function conversationTitle(messages: Array<{ role?: string; content?: string }>)
   return firstLine.length > 90 ? `${firstLine.slice(0, 87)}…` : firstLine;
 }
 
-function JobRow({
-  job,
-  available,
-}: {
-  job: BuddyWorkspaceActiveJob;
-  available: boolean;
-}) {
+function RunRow({ run, available }: { run: Run; available: boolean }) {
   const conversation = useAtomValue(
-    conversationAtomFamily(job.conversationId ?? NO_CONVERSATION_ID)
+    conversationAtomFamily(run.conversationId ?? NO_CONVERSATION_ID)
   );
-  const title = conversationTitle(conversation?.messages ?? []) ?? job.label;
-  const status =
-    job.status === 'claimed'
-      ? 'Starting'
-      : job.status === 'cancel_requested'
-        ? 'Stopping'
-        : 'Running';
+  const title = conversationTitle(conversation?.messages ?? []) ?? `Run ${run.id.slice(0, 8)}`;
   const body = (
     <>
       <span className="buddy-workspace-job-dot" aria-hidden="true" />
-      <span className={`buddy-workspace-job-kind buddy-workspace-job-kind--${job.kind}`}>
-        {job.kind}
-      </span>
+      <span className="buddy-workspace-job-kind">{RUN_KIND[run.input.kind]}</span>
       <span className="buddy-workspace-job-title">{title}</span>
       <span className="buddy-workspace-job-meta">
-        {status}
-        {job.startedAt ? ` · ${formatTimeAgo(new Date(job.startedAt))}` : ''}
+        {RUN_STATUS[run.status]}
+        {run.startedAt ? ` · ${formatTimeAgo(new Date(run.startedAt))}` : ''}
       </span>
     </>
   );
-
-  return job.conversationId && available ? (
-    <Link className="buddy-workspace-job" to={`/chat/${job.conversationId}`}>
+  return run.conversationId && available ? (
+    <Link className="buddy-workspace-job" to={`/chat/${encodeURIComponent(run.conversationId)}`}>
       {body}
     </Link>
   ) : (
@@ -65,15 +72,13 @@ function JobRow({
 }
 
 export function BuddyWorkspaceActivity() {
-  const { workspaceId } = useParams();
+  const { workspaceId = '' } = useParams();
   const availableConversationIds = useAtomValue(availableConversationIdSetAtom);
-  const loadActivity = useMemo(
-    () => (workspaceId ? workspaceActivityResource(workspaceId) : null),
-    [workspaceId]
-  );
-  const activity = usePolledFetch(loadActivity, 2_000);
-  const { data, refetch } = activity;
-  const activeCount = data?.members.reduce((sum, member) => sum + member.jobs.length, 0) ?? 0;
+  const overview = useBuddyOverview();
+  const live = usePolledFetch<Run[]>(liveRunsUrl(workspaceId), 5_000);
+  const workspace = overview.data ? findWorkspace(overview.data, workspaceId) : undefined;
+  const runs = live.data ?? NO_RUNS;
+  const failed = overview.kind === 'failed' ? overview : live.kind === 'failed' ? live : null;
 
   return (
     <main className="buddy-workspace-page">
@@ -84,75 +89,77 @@ export function BuddyWorkspaceActivity() {
         <div className="buddy-workspace-heading-row">
           <div>
             <p className="buddy-workspace-eyebrow">Workspace</p>
-            <h1>{data?.workspace.name ?? 'Workspace activity'}</h1>
-            {data && <p className="buddy-workspace-path">{compactPath(data.workspace.rootPath)}</p>}
+            <h1>{workspace?.name ?? 'Workspace activity'}</h1>
+            {workspace && (
+              <p className="buddy-workspace-path">{shortenHomePath(workspace.rootPath)}</p>
+            )}
           </div>
-          {data && (
+          {live.data && (
             <div className="buddy-workspace-active-summary" aria-live="polite">
-              <span className={activeCount ? 'is-running' : ''} aria-hidden="true" />
-              {activeCount ? `${activeCount} running` : 'No active jobs'}
+              <span className={runs.length ? 'is-running' : ''} aria-hidden="true" />
+              {runs.length ? `${runs.length} running` : 'No active runs'}
             </div>
           )}
         </div>
-        {workspaceId && (
-          <p>
-            <Link
-              className="buddy-workspace-channels-open"
-              to={`/buddies/workspaces/${encodeURIComponent(workspaceId)}/channels`}
-            >
-              Open channels
-            </Link>
-          </p>
-        )}
+        <p>
+          <Link
+            className="buddy-workspace-channels-open"
+            to={`/buddies/workspaces/${encodeURIComponent(workspaceId)}/channels`}
+          >
+            Open channels
+          </Link>
+        </p>
       </header>
 
-      {activity.kind === 'loading' && (
+      {(overview.kind === 'loading' || live.kind === 'loading') && (
         <p className="buddy-workspace-state">Loading workspace activity…</p>
       )}
-      {activity.kind === 'failed' && (
+      {failed && (
         <div className="buddy-workspace-state buddy-workspace-state--error" role="alert">
-          <p>{activity.error.message}</p>
-          <button type="button" onClick={refetch}>
+          <p>{failed.error.message}</p>
+          <button type="button" onClick={failed.refetch}>
             Retry
           </button>
         </div>
       )}
-      {data && (
-        <section className="buddy-workspace-members" aria-label="Buddies and active jobs">
-          {data.members.map((member) => (
-            <article className="buddy-workspace-member" key={member.id}>
-              <div className="buddy-workspace-member-header">
-                <span className="buddy-workspace-avatar" aria-hidden="true">
-                  {initials(member.name)}
-                </span>
-                <div className="buddy-workspace-identity">
-                  <Link to={`/buddies/${member.id}`}>{member.name}</Link>
-                  <span>{member.role}</span>
+      {workspace && (
+        <section className="buddy-workspace-members" aria-label="Buddies and live runs">
+          {activeBuddies(workspace).map((member) => {
+            const own = runs.filter((run) => run.buddyId === member.id);
+            return (
+              <article className="buddy-workspace-member" key={member.id}>
+                <div className="buddy-workspace-member-header">
+                  <span className="buddy-workspace-avatar" aria-hidden="true">
+                    {initials(member.name)}
+                  </span>
+                  <div className="buddy-workspace-identity">
+                    <Link to={`/buddies/${encodeURIComponent(member.id)}`}>{member.name}</Link>
+                    <span>{member.role}</span>
+                  </div>
+                  <span className="buddy-workspace-member-count">
+                    {own.length ? `${own.length} active` : 'Idle'}
+                  </span>
                 </div>
-                <span className="buddy-workspace-member-count">
-                  {member.jobs.length ? `${member.jobs.length} active` : 'Idle'}
-                </span>
-              </div>
-              <div className="buddy-workspace-jobs">
-                {member.jobs.length ? (
-                  member.jobs.map((job) => (
-                    <JobRow
-                      key={job.id}
-                      job={job}
-                      available={
-                        !!job.conversationId && availableConversationIds.has(job.conversationId)
-                      }
-                    />
-                  ))
-                ) : (
-                  <p className="buddy-workspace-idle">No foreground or background jobs running.</p>
-                )}
-              </div>
-            </article>
-          ))}
+                <div className="buddy-workspace-jobs">
+                  {own.length ? (
+                    own.map((run) => (
+                      <RunRow
+                        key={run.id}
+                        run={run}
+                        available={
+                          !!run.conversationId && availableConversationIds.has(run.conversationId)
+                        }
+                      />
+                    ))
+                  ) : (
+                    <p className="buddy-workspace-idle">Nothing running.</p>
+                  )}
+                </div>
+              </article>
+            );
+          })}
         </section>
       )}
-      {workspaceId && <BuddyInactiveAccess workspaceId={workspaceId} />}
     </main>
   );
 }

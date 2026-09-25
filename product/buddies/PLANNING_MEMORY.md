@@ -155,7 +155,7 @@ because another provider cannot fix those and would just multiply the spend.
 | 2 | claude | `sonnet` | Last on purpose — it shares the quota foreground Buddy sessions run on. |
 
 Every rung bills a **different provider**; that is the invariant that makes the
-ladder mean anything, and `buddy-memory-review.test.ts` asserts the harnesses are
+ladder mean anything, and `buddies-v2.test.ts` ("the reviewer climbs the ladder…", since T11) asserts the harnesses are
 distinct. Claude is deliberately last: starving live Buddy work to curate memory
 in the background is a worse trade than a late review.
 

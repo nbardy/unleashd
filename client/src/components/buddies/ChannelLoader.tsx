@@ -89,32 +89,6 @@ export function ChannelHistory({
   }
 }
 
-/**
- * The same edge at the foot of a newest-first list with a composer below it
- * (the Mailbox reader). There More is a button: loading on reach would fetch
- * another page each time the reader scrolled down to the composer.
- */
-export function OlderPostsButton({ edge, onLoad }: { edge: OlderEdge; onLoad(): void }) {
-  switch (edge.kind) {
-    case 'more':
-      return (
-        <button type="button" className="channel-history-more" onClick={onLoad}>
-          Show older posts
-        </button>
-      );
-    case 'loading':
-      return (
-        <div className="channel-history">
-          <ChannelLoader label="Loading older posts…" />
-        </div>
-      );
-    case 'failed':
-      return <HistoryFailed error={edge.error} onRetry={onLoad} />;
-    case 'complete':
-      return null;
-  }
-}
-
 function HistoryFailed({ error, onRetry }: { error: Error; onRetry(): void }) {
   return (
     <div className="channel-history channel-history-failed" role="alert">

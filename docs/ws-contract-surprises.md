@@ -15,7 +15,8 @@ keep the same destination. The config store encodes IDs for filesystem safety.
 A UUID-only wire field rejects these valid saved threads. Because the client
 validates the whole `init`, one such thread discards every conversation on
 reconnect; later stream events and owner controls fail the same validation.
-The real team-chain regression in `server/test/buddy-coordination.test.ts` now
+The real team-chain regression in `server/test/buddy-coordination.test.ts` (deleted in T11 with the
+delegation chain it tested) now
 round-trips its snapshots, runtime broadcasts and owner commands through the
 shared wire decoders. Review-document UUIDs retain their UUID contract.
 

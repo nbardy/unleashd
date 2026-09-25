@@ -4,7 +4,6 @@ import { type Components, type ExtraProps, defaultUrlTransform } from 'react-mar
 import { Link } from 'react-router-dom';
 import remarkGfm from 'remark-gfm';
 import { ChatActivity } from '../../ui/ChatActivity';
-import { parseBuddyReviewResult } from '../../utils/buddy-review-message';
 import { useMarkdownPipeline } from '../../utils/lazyMarkdownPlugins';
 import { defineMarkdownFlavor, renderMarkdownCached } from '../../utils/markdown-pipeline';
 import { remarkBreaks } from '../../utils/remark-breaks';
@@ -14,9 +13,7 @@ import {
 } from '../../utils/structured-message-segments';
 import { splitToolActivity } from '../../utils/tool-activity-segments';
 import { AskUserQuestionWidget, parseAskUserQuestion } from '../AskUserQuestion';
-import { BuddyReviewResultCard } from '../BuddyReviewMessage';
 import { InlineBuddyBuilderResult } from './BuddyBuilderResultCard';
-import { InlineBuddyTeamConfiguration } from './BuddyTeamConfiguration';
 import { type ChannelTask, isVideoSource, mediaUrl, parseChannelLink } from './channel-text';
 import { taskStatusView } from './ui-contract';
 import './ChannelContent.css';
@@ -73,7 +70,7 @@ function TaskCardBody({ task }: { task: ChannelTask }) {
 }
 
 function taskHref(task: ChannelTask): string {
-  return `/buddies/${encodeURIComponent(task.ownerBuddyId)}/work`;
+  return `/buddies/${encodeURIComponent(task.ownerId)}/work`;
 }
 
 type CardPlacement = { left: number; top: number } | { left: number; bottom: number };
@@ -304,20 +301,9 @@ function channelStructuredPart(
     if (!part.content.trim()) return null;
     return markdown(part.content, key);
   }
-  if (part.type === 'buddy_worker_thread') return null;
-  if (part.type === 'buddy_team_configuration') {
-    return <InlineBuddyTeamConfiguration key={key} payload={part.json} />;
-  }
+  if (part.type === 'buddy_worker_thread' || part.type === 'retired_marker') return null;
   if (part.type === 'buddy_builder_result') {
     return <InlineBuddyBuilderResult key={key} payload={part.json} />;
-  }
-  if (part.type === 'buddy_review_result') {
-    const result = parseBuddyReviewResult(part.json);
-    return result ? (
-      <BuddyReviewResultCard key={key} result={result} />
-    ) : (
-      <code key={key}>Buddy review result (parse error)</code>
-    );
   }
   try {
     const data = parseAskUserQuestion(part.json);

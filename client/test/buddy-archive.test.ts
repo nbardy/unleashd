@@ -19,10 +19,14 @@ test('archived Buddy threads stay hidden despite stale overview and later conver
     messages: [] as Conversation['messages'],
   } as Conversation;
   store.set(conversationsAtom, new Map([[thread.id, thread]]));
-  store.set(buddySidebarOverviewAtom, {
-    employees: [{ buddy: { id: 'retired', name: 'Retired' }, workspaces: [] }],
-    recentRuns: [],
-  });
+  store.set(buddySidebarOverviewAtom, [
+    {
+      id: 'work',
+      name: 'Work',
+      rootPath: '/work',
+      buddies: [{ id: 'retired', name: 'Retired', status: 'active' }],
+    },
+  ]);
   store.set(archivedBuddyIdsAtom, new Set(['retired']));
   store.set(conversationsAtom, new Map([[thread.id, { ...thread, title: 'Late update' }]]));
   assert.deepEqual(store.get(allConversationIdsAtom), []);

@@ -1,7 +1,7 @@
 import type { Conversation, ConversationBranch } from '@unleashd/shared';
 import type { Express } from 'express';
 import { BUDDY_BUILDER_BRIEFING } from '../buddies/builder';
-import { buddyBuilderMcpServers, buddyMcpServers } from '../buddies/mcp-config';
+import { toolManifest } from '../buddies/mcp';
 import { type ContextWindow, resolveContextWindow } from '../conversations/context-window';
 import { type SessionContextReading, lookupSessionContext } from '../conversations/session-context';
 import { type SessionProviderUsage, lookupProviderUsageForSession } from './usage-routes';
@@ -144,18 +144,16 @@ export function splitBriefing(briefing: string): { briefing: string; memory: str
   return { briefing: briefing.slice(0, index), memory: briefing.slice(index) };
 }
 
+// The tool definitions a turn's provider loads from the one Buddy endpoint (mcp.ts).
 function mcpSpecJson(conversation: Conversation): string {
-  try {
-    if (conversation.kind.kind === 'buddy_builder') {
-      return JSON.stringify(buddyBuilderMcpServers(conversation.id));
-    }
-    if (conversation.kind.kind === 'buddy' && conversation.buddyContext) {
-      return JSON.stringify(buddyMcpServers(conversation.buddyContext, conversation.id));
-    }
-  } catch {
-    /* meter must never break the conversation read */
+  switch (conversation.kind.kind) {
+    case 'buddy_builder':
+      return toolManifest('builder');
+    case 'buddy':
+      return toolManifest('worker');
+    case 'general':
+      return '';
   }
-  return '';
 }
 
 export function buildContextBreakdown(

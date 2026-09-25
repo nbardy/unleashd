@@ -33,8 +33,8 @@ pub fn fixture() -> Fixture {
         ("gone", Some("lead"), "archived"),
     ] {
         conn.execute(
-            "INSERT INTO buddy (id, workspace_id, slug, name, role, status, manager_id, max_active_runs, created_at)
-             VALUES (?1, ?2, ?1, ?1, 'role', ?3, ?4, 2, '2026-01-01T00:00:00.000Z')",
+            "INSERT INTO buddy (id, workspace_id, slug, name, role, status, manager_id, max_active_runs, background_enabled, created_at)
+             VALUES (?1, ?2, ?1, ?1, 'role', ?3, ?4, 2, 1, '2026-01-01T00:00:00.000Z')",
             params![id, WS, status, manager],
         )
         .unwrap();

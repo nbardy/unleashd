@@ -4,7 +4,7 @@
 use rusqlite::Connection;
 use rusqlite::functions::FunctionFlags;
 use std::path::Path;
-use unleashd_buddies::import::{OwnerReads, SoulFileState, import};
+use unleashd_buddies::import::{DirectReads, ImportOptions, OwnerReads, SoulFileState, import};
 use unleashd_buddies::store::sha256_hex;
 use unleashd_buddies::verify::verify;
 
@@ -97,19 +97,21 @@ fn import_then_verify_then_catch_tampering() {
     let old = fixture(dir.path());
     let new = dir.path().join("new.sqlite");
     let owner_reads = dir.path().join("owner-channel-reads.json");
-    let report = import(&old, &new, &owner_reads).unwrap();
+    let report = import(&old, &new, &owner_reads, ImportOptions::default()).unwrap();
 
     assert_eq!(report.dropped_read_events, 1, "buddy.get_inbox is a read");
     assert_eq!(report.non_home_memberships.len(), 1);
     assert_eq!(report.divergent_thread_souls[0]["doc_id"], "k1");
     assert_eq!(report.converted_schedules[0]["cron"], "*/30 * * * *");
     assert!(matches!(report.soul_files.iter().find(|s| s.slug == "lead").unwrap().state, SoulFileState::Present { .. }));
-    assert!(import(&old, &new, &owner_reads).is_err(), "an existing target is never overwritten");
+    assert!(import(&old, &new, &owner_reads, ImportOptions::default()).is_err(), "an existing target is never overwritten");
     assert_eq!(report.cross_channel_roots, 1, "m5's delegation root is in another channel");
-    let without = import(&old, &dir.path().join("no-reads.sqlite"), &dir.path().join("absent.json")).unwrap();
+    let without =
+        import(&old, &dir.path().join("no-reads.sqlite"), &dir.path().join("absent.json"), ImportOptions { mark_direct_read: false })
+            .unwrap();
     assert!(matches!(without.owner_reads, OwnerReads::Absent { .. }), "no owner file: skipped and recorded, not an error");
 
-    let ok = verify(&old, &new, &report.soul_files, &report.owner_reads).unwrap();
+    let ok = verify(&old, &new, &report.soul_files, &report.owner_reads, &report.direct_reads).unwrap();
     assert!(ok.ok, "{}", serde_json::to_string_pretty(&ok).unwrap());
     assert_eq!(ok.soul.split.get("match"), Some(&1));
     assert_eq!(ok.soul.split.get("no_path_empty"), Some(&2));
@@ -137,9 +139,28 @@ fn import_then_verify_then_catch_tampering() {
         "top/m1"
     );
     assert_eq!(
-        row("SELECT group_concat(channel_id || '=' || last_post_id || '@' || last_post_at, ' ') FROM post_read WHERE reader = 'owner'"),
+        row("SELECT group_concat(channel_id || '=' || last_post_id || '@' || last_post_at, ' ') FROM post_read
+             WHERE reader = 'owner' AND json_extract(legacy, '$.source') IS NOT 'import:direct-read'"),
         "l1=lp1@2026-07-05T01:00:00.000Z l2=@2026-07-05T00:30:00.000Z",
         "a mark, and the baseline for a list the owner never opened"
+    );
+    // Imported DMs are read through their newest post, for the owner and every member (owner
+    // decision, T11): v33 had no DM read state, so without this every DM post is unread.
+    assert!(matches!(report.direct_reads, DirectReads::Marked { cursors: 7 }), "{:?}", report.direct_reads);
+    assert_eq!(
+        row("SELECT group_concat(reader || '@' || c.member_key, ' ') FROM (SELECT r.reader, c.member_key FROM post_read r
+             JOIN channel c ON c.id = r.channel_id WHERE c.kind = 'direct' ORDER BY 1, 2) r JOIN channel c ON c.member_key = r.member_key"),
+        "b1@b1,b2 b2@b1,b2 b2@b2 b2@b2,owner owner@b1,b2 owner@b2 owner@b2,owner"
+    );
+    assert_eq!(row("SELECT CAST(count(*) AS TEXT) FROM post_read r JOIN channel c ON c.id = r.channel_id WHERE c.kind = 'direct'
+                     AND r.last_post_id != (SELECT p.id FROM post p WHERE p.channel_id = c.id ORDER BY p.created_at DESC, p.id DESC LIMIT 1)"), "0");
+    assert!(matches!(without.direct_reads, DirectReads::NotMarked));
+    assert_eq!(
+        json_row(
+            &dir.path().join("no-reads.sqlite"),
+            "SELECT count(*) FROM post_read r JOIN channel c ON c.id = r.channel_id WHERE c.kind = 'direct'"
+        ),
+        0
     );
     assert_eq!(row("SELECT json_extract(legacy, '$.priority') || '/' || status || '/' || paused FROM task WHERE id = 't1'"), "7/open/1");
     assert_eq!(row("SELECT input_kind || '/' || task_epoch FROM run WHERE id = 'run2'"), "post/3");
@@ -151,16 +172,22 @@ fn import_then_verify_then_catch_tampering() {
     conn.execute("UPDATE post SET body = 'built!' WHERE id = 'reply_m1'", []).unwrap();
     conn.execute("UPDATE post SET root_id = NULL WHERE id = 'm3'", []).unwrap();
     conn.execute("UPDATE doc_revision SET content = 'use postgres' WHERE doc_id = 'k2'", []).unwrap();
+    conn.execute("DELETE FROM post_read WHERE reader = 'b1' AND json_extract(legacy, '$.source') = 'import:direct-read'", []).unwrap();
     drop(conn);
     std::fs::write(dir.path().join("lead/SOUL.md"), "rewritten").unwrap();
     std::fs::write(&owner_reads, OWNER_READS.replace("lp1", "lp2")).unwrap();
-    let bad = verify(&old, &new, &report.soul_files, &report.owner_reads).unwrap();
+    let bad = verify(&old, &new, &report.soul_files, &report.owner_reads, &report.direct_reads).unwrap();
     assert!(!bad.ok);
     let failed: Vec<&str> = bad.classes.iter().filter(|c| !c.ok).map(|c| c.class.as_str()).collect();
     assert!(failed.contains(&"messages_by_sender") && failed.contains(&"knowledge_revisions_by_buddy_scope_kind"), "{failed:?}");
     assert_eq!(bad.answers.mismatches, ["m1"], "the answer text must be byte-identical to the v33 reply");
     assert_eq!(bad.links.mismatches, ["m3: same-channel v33 root lost"]);
     assert!(!bad.read_cursors.ok, "owner-channel-reads.json changed since the import");
+    assert!(bad.read_cursors.mismatches.iter().any(|m| m.contains("b1/")), "a lost direct cursor: {:?}", bad.read_cursors.mismatches);
     assert!(!bad.revision_chains.ok && !bad.soul.ok);
     assert_eq!(bad.soul.files_changed, ["lead"]);
+}
+
+fn json_row(path: &std::path::Path, sql: &str) -> i64 {
+    Connection::open(path).unwrap().query_row(sql, [], |r| r.get(0)).unwrap()
 }

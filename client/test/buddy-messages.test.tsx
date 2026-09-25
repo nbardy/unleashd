@@ -1,425 +1,126 @@
 import assert from 'node:assert/strict';
-import { register } from 'node:module';
 import test from 'node:test';
-import type { BuddyMessage } from '@unleashd/shared';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { MemoryRouter } from 'react-router-dom';
-register(
-  `data:text/javascript,${encodeURIComponent(`
-    export async function load(url, context, nextLoad) {
-      if (url.endsWith('.css')) return { format: 'module', source: '', shortCircuit: true };
-      return nextLoad(url, context);
-    }
-  `)}`,
-  import.meta.url
-);
-const { BuddyMessages } = await import('../src/components/buddies/BuddyMessages');
+import {
+  BuddyDirectPosts,
+  PostAsBuddyForm,
+  ownerDirectChannel,
+} from '../src/components/buddies/BuddyMessages';
+import type { Channel, Inbox, Post } from '../src/components/buddies/types';
 
-const message: BuddyMessage = {
-  id: 'message-owner',
-  from_buddy_id: 'lead',
-  to_buddy_id: null,
-  workspace_id: 'workspace',
-  buddy_project_id: null,
-  purpose: 'deployment approval',
-  body: 'The change is ready for your review.',
-  evidence: ['https://example.test/pr/1'],
-  parent_conversation_id: 'live-chat',
-  child_conversation_id: null,
-  status: 'pending',
-  outcome: null,
-  reply_body: null,
-  reply_evidence: [],
-  replied_by: null,
-  wait_until: null,
-  wait_status: 'none',
-  created_at: '2026-09-08T00:00:00Z',
-  updated_at: '2026-09-08T00:00:00Z',
-  replied_at: null,
-};
-
-test('message inbox offers owner replies, preserves evidence, and links only available conversations', () => {
-  const html = renderToStaticMarkup(
-    <MemoryRouter>
-      <BuddyMessages
-        buddyId="lead"
-        messages={[
-          message,
-          {
-            ...message,
-            id: 'message-buddy',
-            to_buddy_id: 'reviewer',
-            parent_conversation_id: 'deleted-chat',
-          },
-          {
-            ...message,
-            id: 'message-done',
-            parent_conversation_id: null,
-            status: 'replied',
-            outcome: 'approved',
-            reply_body: 'Ship the reviewed change.',
-            reply_evidence: ['Reviewed PR 1'],
-          },
-        ]}
-        availableConversationIds={new Set(['live-chat'])}
-        onReply={async () => {}}
-      />
-    </MemoryRouter>
-  );
-  assert.equal(
-    (html.match(/<form/g) ?? []).length,
-    1,
-    'only a pending owner message accepts an owner reply'
-  );
-  assert.match(html, /href="\/chat\/live-chat"/);
-  assert.doesNotMatch(html, /\/chat\/deleted-chat/);
-  assert.match(html, /https:\/\/example.test\/pr\/1/);
-  assert.match(html, /Ship the reviewed change/);
-  assert.match(html, /Evidence or decision basis/);
-  assert.match(html, /aria-label="Mailbox"/);
-  assert.match(html, /Messages, replies, and requests for your approval/);
-  assert.doesNotMatch(html, /Background coordination/);
+const direct = (id: string, members: Channel['kind']): Channel => ({
+  id,
+  workspaceId: 'ws-1',
+  kind: members,
+  createdBy: { kind: 'owner' },
+  createdAt: '2026-09-20T00:00:00Z',
 });
 
-test('mailbox-only returns are visible without claiming a model read the reply', () => {
-  const render = (mailboxOnly?: boolean) =>
-    renderToStaticMarkup(
-      <MemoryRouter>
-        <BuddyMessages
-          messages={[
-            {
-              ...message,
-              status: 'replied',
-              reply_body: 'Export verified.',
-              reply_evidence: ['fixture: export passed'],
-              execution: {
-                messageId: message.id,
-                runId: 'worker-run',
-                projectId: null,
-                state: 'complete',
-                code: null,
-                reason: null,
-                remedy: null,
-                acknowledgedAt: message.created_at,
-                acceptedBy: 'reviewer',
-                acceptedAt: message.updated_at,
-                completionEvidence: ['fixture: export passed'],
-                error: null,
-                delivery: [
-                  {
-                    runId: 'return-run',
-                    mailboxOnly,
-                    kind: 'message_reply',
-                    attempt: 1,
-                    state: 'complete',
-                    acknowledgedAt: null,
-                    createdAt: message.created_at,
-                    endedAt: message.updated_at,
-                    errorCode: null,
-                    error: null,
-                    retryOfRunId: null,
-                  },
-                ],
-              },
-            },
-          ]}
-          availableConversationIds={new Set()}
-          onReply={async () => {}}
-        />
-      </MemoryRouter>
-    );
-  const html = render(true);
-  assert.doesNotMatch(
-    render(),
-    /Saved in mailbox/,
-    'historical missing admission timestamps are not mailbox-only evidence'
-  );
-  assert.match(html, /Export verified/);
-  assert.match(html, /fixture: export passed/);
-  assert.match(html, /Saved in mailbox. No automated turn was started in your chat./);
+const post = (id: string, overrides: Partial<Post>): Post => ({
+  id,
+  channelId: 'dm-ada',
+  author: { kind: 'buddy', id: 'ada' },
+  body: id,
+  evidence: [],
+  request: { state: 'none' },
+  createdAt: '2026-09-20T00:00:00Z',
+  ...overrides,
 });
 
-test('held incoming work offers an owner action without resending the request', () => {
-  const render = (code: string) =>
-    renderToStaticMarkup(
-      <MemoryRouter>
-        <BuddyMessages
-          messages={[
-            {
-              ...message,
-              to_buddy_id: 'pixel',
-              execution: {
-                messageId: message.id,
-                runId: 'existing-run',
-                projectId: null,
-                state: 'held',
-                code,
-                reason: 'Recipient background execution is disabled.',
-                remedy: 'Owner can enable incoming work.',
-                conversationId: null,
-                acknowledgedAt: null,
-                acceptedBy: null,
-                acceptedAt: null,
-                completionEvidence: [],
-                outcome: null,
-                error: null,
-              },
-            },
-          ]}
-          availableConversationIds={new Set()}
-          onReply={async () => {}}
-        />
-      </MemoryRouter>
-    );
-  assert.match(render('background_disabled'), />Enable incoming work<\/button>/);
-  assert.doesNotMatch(render('TEAM_CONTRACT_UNAVAILABLE'), />Enable incoming work<\/button>/);
-});
-
-test('a pending structured setup proposal offers its concrete owner workflow instead of a textual approval', () => {
-  const html = renderToStaticMarkup(
-    <MemoryRouter>
-      <BuddyMessages
-        messages={[
-          {
-            ...message,
-            purpose: 'team_configuration',
-            team_configuration: {
-              key: 'existing-pixel-path-setup',
-              configuration: {
-                workspaceId: 'font-maker',
-                reason: 'Attach Pixel and Path and enable their existing audits. No training.',
-                memberships: [{ buddy: { id: 'pixel' }, present: true, incoming: true }],
-              },
-            },
-          },
-        ]}
-        availableConversationIds={new Set()}
-        onReply={async () => {}}
-      />
-    </MemoryRouter>
-  );
-  assert.match(html, /Attach Pixel and Path and enable their existing audits/);
-  assert.match(html, /Requested setup/);
-  assert.match(html, /Checking team setup/);
-  assert.match(html, /Reason for declining/);
-  assert.match(html, />Decline setup<\/button>/);
-  assert.doesNotMatch(
-    html,
-    />Send reply<|>Apply this team setup<|placeholder="For example: approved/
-  );
-});
-
-// Owner report 2026-09-24: channels said "No posts" and then flashed the posts
-// in, because "not loaded yet" and "loaded, empty" rendered the same. This
-// reader was restored with that same conflation; unloaded must show the loader.
-test('mailbox lists section tells cached, empty and not-yet-loaded channels apart', async () => {
-  const { Provider } = await import('jotai');
-  const { jotaiStore } = await import('../src/atoms/store');
-  const { loadResource } = await import('../src/atoms/resources');
-  await loadResource({ key: '/api/buddies/lists?workspaceId=ws-empty', load: async () => [] });
-  await loadResource({
-    key: '/api/buddies/lists?workspaceId=ws-cached',
-    load: async () => [
+test("the Messages tab reads the owner's one-to-one DM, never a group DM the Buddy is in", () => {
+  const inbox: Inbox = {
+    requests: [],
+    waitingOn: [],
+    channels: [
       {
-        id: 'list_1',
-        workspaceId: 'ws-cached',
-        name: 'Standups',
-        purpose: 'Daily notes',
-        createdBy: { kind: 'buddy', buddyId: 'lead' },
-        createdAt: '2026-09-21T00:00:00.000Z',
-        postCount: 2,
-        latestPostAt: '2026-09-21T01:00:00.000Z',
+        channel: direct('group', {
+          type: 'direct',
+          members: [{ kind: 'owner' }, { kind: 'buddy', id: 'ada' }, { kind: 'buddy', id: 'bo' }],
+        }),
+        unread: 0,
+      },
+      {
+        channel: direct('buddies-only', {
+          type: 'direct',
+          members: [
+            { kind: 'buddy', id: 'ada' },
+            { kind: 'buddy', id: 'bo' },
+          ],
+        }),
+        unread: 0,
+      },
+      {
+        channel: direct('dm-ada', {
+          type: 'direct',
+          members: [{ kind: 'owner' }, { kind: 'buddy', id: 'ada' }],
+        }),
+        unread: 1,
       },
     ],
-  });
-  const render = (workspaceId: string) =>
-    renderToStaticMarkup(
-      <MemoryRouter>
-        <Provider store={jotaiStore}>
-          <BuddyMessages
-            messages={[]}
-            availableConversationIds={new Set()}
-            onReply={async () => {}}
-            workspaceId={workspaceId}
-          />
-        </Provider>
-      </MemoryRouter>
-    );
-  const cached = render('ws-cached');
-  assert.match(cached, /aria-label="Channels"/);
-  assert.match(cached, /Standups · 2/);
-  const empty = render('ws-empty');
-  assert.match(empty, /aria-label="Channels"/);
-  assert.match(empty, /class="empty-state">No channels yet/);
-  const unloaded = render('ws-never-fetched');
-  assert.match(unloaded, /class="channel-loader"/);
-  assert.doesNotMatch(unloaded, /No channels yet/);
+  };
+  assert.equal(ownerDirectChannel(inbox, 'ada')?.channel.id, 'dm-ada');
+  assert.equal(ownerDirectChannel(inbox, 'bo'), undefined);
 });
 
-test('channel feed renders newest-first with project filter and sender instance labels', async () => {
-  const { Provider } = await import('jotai');
-  const { jotaiStore } = await import('../src/atoms/store');
-  const { loadResource } = await import('../src/atoms/resources');
-  await loadResource({
-    key: '/api/buddies/lists?workspaceId=ws-channels',
-    load: async () => [
-      {
-        id: 'list_a',
-        workspaceId: 'ws-channels',
-        name: 'Standups',
-        purpose: 'Daily notes',
-        createdBy: { kind: 'buddy', buddyId: 'lead' },
-        createdAt: '2026-09-21T00:00:00.000Z',
-        postCount: 3,
-        latestPostAt: '2026-09-21T03:00:00.000Z',
-      },
-    ],
-  });
-  await loadResource({
-    key: '/api/buddies/lists/list_a/posts?limit=50',
-    load: async () => [
-      {
-        id: 'post_old',
-        listId: 'list_a',
-        workspaceId: 'ws-channels',
-        author: { kind: 'buddy', buddyId: 'lead' },
-        threadRootId: null,
-        replyCount: 0,
-        latestReplyAt: null,
-        purpose: 'standup',
-        body: 'Older update from the first run.',
-        evidence: [],
-        projectId: 'task-alpha',
-        createdAt: '2026-09-21T01:00:00.000Z',
-        senderConversationId: 'conv-aaaa111122223333',
-        senderRunId: 'run-aaa',
-      },
-      {
-        id: 'post_new',
-        listId: 'list_a',
-        workspaceId: 'ws-channels',
-        author: { kind: 'buddy', buddyId: 'lead' },
-        threadRootId: null,
-        replyCount: 0,
-        latestReplyAt: null,
-        purpose: 'standup',
-        body: 'Newer update from the second run.',
-        evidence: [],
-        projectId: 'task-beta',
-        createdAt: '2026-09-21T03:00:00.000Z',
-        senderConversationId: 'conv-bbbb444455556666',
-        senderRunId: 'run-bbb',
-      },
-      {
-        id: 'post_legacy',
-        listId: 'list_a',
-        workspaceId: 'ws-channels',
-        author: { kind: 'buddy', buddyId: 'lead' },
-        threadRootId: null,
-        replyCount: 0,
-        latestReplyAt: null,
-        purpose: 'announcement',
-        body: 'Pre-migration post without stamped ids.',
-        evidence: [],
-        projectId: null,
-        createdAt: '2026-09-21T02:00:00.000Z',
-        senderConversationId: null,
-        senderRunId: null,
-      },
-    ],
-  });
+test('DM posts read oldest first and only requests awaiting the owner offer an answer', () => {
   const html = renderToStaticMarkup(
-    <MemoryRouter>
-      <Provider store={jotaiStore}>
-        <BuddyMessages
-          buddyId="lead"
-          messages={[]}
-          availableConversationIds={new Set(['conv-aaaa111122223333'])}
-          onReply={async () => {}}
-          workspaceId="ws-channels"
-          buddyNames={{ lead: 'Lead' }}
-        />
-      </Provider>
-    </MemoryRouter>
+    <BuddyDirectPosts
+      // Newest first, as the server pages them.
+      posts={[
+        post('Can you approve the deploy?', {
+          createdAt: '2026-09-20T03:00:00Z',
+          request: { state: 'awaiting' },
+        }),
+        post('Which branch?', {
+          createdAt: '2026-09-20T02:00:00Z',
+          request: { state: 'awaiting' },
+        }),
+        post('Please check the release', {
+          author: { kind: 'owner' },
+          createdAt: '2026-09-20T01:00:00Z',
+          request: { state: 'answered', answerId: 'a1' },
+        }),
+      ]}
+      awaitingOwner={new Set(['Can you approve the deploy?'])}
+      names={{ ada: 'Ada' }}
+      refresh={async () => {}}
+    />
   );
-  assert.match(html, /aria-label="Channels"/);
-  assert.match(html, /<h3>Channels<\/h3>/);
-  assert.match(html, /Standups · 3/);
-  assert.match(html, /buddy-messages-list-panes/);
-  const newerAt = html.indexOf('Newer update from the second run.');
-  const legacyAt = html.indexOf('Pre-migration post without stamped ids.');
-  const olderAt = html.indexOf('Older update from the first run.');
-  assert.ok(newerAt !== -1 && legacyAt !== -1 && olderAt !== -1, 'all posts render');
-  assert.ok(newerAt < legacyAt && legacyAt < olderAt, 'posts render newest-first');
-  assert.match(html, />All<\/button>/);
-  assert.match(html, /task-alpha/);
-  assert.match(html, /task-beta/);
-  assert.match(html, /conv conv-aaa/);
-  assert.match(html, /conv conv-bbb/);
-  assert.match(html, /href="\/chat\/conv-aaaa111122223333"/);
-  assert.doesNotMatch(html, /href="\/chat\/conv-bbbb444455556666"/);
-  assert.match(html, /Lead/);
+  const order = ['Please check the release', 'Which branch?', 'Can you approve the deploy?'].map(
+    (text) => html.indexOf(text)
+  );
+  assert.deepEqual(
+    [...order].sort((a, b) => a - b),
+    order
+  );
+  assert.match(html, /Answered/);
+  // "Which branch?" awaits someone else (not in the owner's inbox): no answer form for it.
+  assert.equal(html.match(/Send answer/g)?.length, 1);
+  assert.match(html, /You/);
+  assert.match(html, /Ada/);
 });
 
-// The reader read one page of 20 and nothing older. It now reads the Channels
-// feed: a full page means there may be more, asked for by button because the
-// composer sits below the list.
-test('the Mailbox channel reader pages the Channels feed: a full page offers older posts', async () => {
-  const { Provider } = await import('jotai');
-  const { jotaiStore } = await import('../src/atoms/store');
-  const { loadResource } = await import('../src/atoms/resources');
-  await loadResource({
-    key: '/api/buddies/lists?workspaceId=ws-long',
-    load: async () => [
+// T11 removed "post to a channel as this Buddy" from the Messages tab and the owner asked for it
+// back (no visible feature goes without approval). It offers the workspace's public channels only.
+test('the Messages tab can post to a public channel as the Buddy', () => {
+  const inbox: Inbox = {
+    requests: [],
+    waitingOn: [],
+    channels: [
+      { channel: direct('general', { type: 'public', name: 'general', purpose: 'p' }), unread: 0 },
       {
-        id: 'list_long',
-        workspaceId: 'ws-long',
-        name: 'Standups',
-        purpose: 'Daily notes',
-        createdBy: { kind: 'buddy', buddyId: 'lead' },
-        createdAt: '2026-09-21T00:00:00.000Z',
-        postCount: 80,
-        latestPostAt: '2026-09-21T02:00:00.000Z',
+        channel: direct('dm-ada', {
+          type: 'direct',
+          members: [{ kind: 'owner' }, { kind: 'buddy', id: 'ada' }],
+        }),
+        unread: 0,
       },
     ],
-  });
-  await loadResource({
-    key: '/api/buddies/lists/list_long/posts?limit=50',
-    load: async () =>
-      Array.from({ length: 50 }, (_, index) => ({
-        id: `post_${index}`,
-        listId: 'list_long',
-        workspaceId: 'ws-long',
-        author: { kind: 'buddy', buddyId: 'lead' },
-        threadRootId: null,
-        replyCount: 0,
-        latestReplyAt: null,
-        purpose: 'standup',
-        body: `Standup number ${index}.`,
-        evidence: [],
-        projectId: null,
-        createdAt: new Date(Date.UTC(2026, 8, 21, 2, -index)).toISOString(),
-        senderConversationId: null,
-        senderRunId: null,
-      })),
-  });
+  };
   const html = renderToStaticMarkup(
-    <MemoryRouter>
-      <Provider store={jotaiStore}>
-        <BuddyMessages
-          buddyId="lead"
-          messages={[]}
-          availableConversationIds={new Set()}
-          onReply={async () => {}}
-          workspaceId="ws-long"
-        />
-      </Provider>
-    </MemoryRouter>
+    <PostAsBuddyForm buddyId="ada" inbox={inbox} refresh={async () => undefined} />
   );
-  const newestAt = html.indexOf('Standup number 0.');
-  const oldestShownAt = html.indexOf('Standup number 49.');
-  const olderAt = html.indexOf('Show older posts');
-  assert.ok(newestAt !== -1 && newestAt < oldestShownAt, 'newest-first');
-  assert.ok(oldestShownAt < olderAt, 'older posts are asked for below the oldest shown');
-  assert.match(html, /<button type="button" class="channel-history-more">Show older posts/);
+  assert.match(html, /Post as Buddy/);
+  assert.match(html, /#general/);
+  assert.doesNotMatch(html, /dm-ada/);
 });

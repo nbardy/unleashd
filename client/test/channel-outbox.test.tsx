@@ -1,11 +1,12 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import type { BuddyMailingListPost } from '@unleashd/shared';
 import { Provider } from 'jotai';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { outboxDrop, outboxSending, outboxSent } from '../src/atoms/channel-outbox';
 import { jotaiStore } from '../src/atoms/store';
 import { useWithOutbox } from '../src/components/buddies/channel-data';
+import type { Post } from '../src/components/buddies/types';
+import { postFixture } from './fixtures/channel-posts';
 
 // Send is optimistic (2026-09-25, owner: "a slow delay, it should be
 // instant"): the owner's post renders from the outbox before the server
@@ -13,23 +14,14 @@ import { useWithOutbox } from '../src/components/buddies/channel-data';
 // merge would introduce silently: the message blinking out between the POST
 // response and the refetch, or rendering twice once the refetch includes it.
 
-function served(id: string, threadRootId: string | null): BuddyMailingListPost {
-  return {
+function served(id: string, rootId: string | null): Post {
+  return postFixture({
     id,
-    listId: 'list',
-    workspaceId: 'ws',
-    author: { kind: 'owner' },
-    threadRootId,
-    replyCount: 0,
-    latestReplyAt: null,
-    purpose: 'message',
+    channelId: 'channel',
     body: 'hello',
-    evidence: [],
-    projectId: null,
     createdAt: '2026-09-25T00:00:00.000Z',
-    senderConversationId: null,
-    senderRunId: null,
-  };
+    ...(rootId === null ? {} : { rootId }),
+  });
 }
 
 function Feed({
@@ -37,13 +29,13 @@ function Feed({
   posts,
 }: {
   rootId: string | null;
-  posts: readonly BuddyMailingListPost[] | null;
+  posts: readonly Post[] | null;
 }) {
-  const shown = useWithOutbox('ws', 'list', rootId, posts);
+  const shown = useWithOutbox('channel', rootId, posts);
   return <>{shown === null ? 'loading' : shown.map((post) => post.id).join(',')}</>;
 }
 
-const render = (rootId: string | null, posts: readonly BuddyMailingListPost[] | null) =>
+const render = (rootId: string | null, posts: readonly Post[] | null) =>
   renderToStaticMarkup(
     <Provider store={jotaiStore}>
       <Feed rootId={rootId} posts={posts} />
@@ -54,8 +46,8 @@ test('an owner post shows from Send until the server feed carries it, exactly on
   outboxSending({
     kind: 'sending',
     key: 'k1',
-    listId: 'list',
-    threadRootId: null,
+    channelId: 'channel',
+    rootId: null,
     body: 'hello',
     createdAt: '2026-09-25T00:00:00.000Z',
   });

@@ -95,35 +95,20 @@ function buildScreens(ids) {
           })()`,
         }
       : null,
-    ids.buddyId
-      ? { name: '10-buddy-detail-work', path: `/buddies/${ids.buddyId}`, settleMs: 2000 }
-      : null,
-    ids.buddyId
-      ? {
-          name: '11-buddy-detail-chats',
-          path: `/buddies/${ids.buddyId}`,
+    // Buddy sections are routes (/buddies/:id/:tab), so each shot names its tab.
+    ...(ids.buddyId
+      ? [
+          ['10-buddy-detail-work', 'work'],
+          ['11-buddy-detail-chats', 'conversations'],
+          ['12-buddy-detail-memory', 'memory'],
+          ['12b-buddy-detail-messages', 'mailbox'],
+          ['12c-buddy-detail-schedules', 'schedules'],
+        ].map(([name, tab]) => ({
+          name,
+          path: `/buddies/${ids.buddyId}/${tab}`,
           settleMs: 2000,
-          prepare: `(() => {
-            const tab = [...document.querySelectorAll('.mobile-buddy-detail__tab')]
-              .find((b) => b.textContent.trim() === 'Chats');
-            if (!tab) return 'SKIP';
-            tab.click();
-          })()`,
-        }
-      : null,
-    ids.buddyId
-      ? {
-          name: '12-buddy-detail-memory',
-          path: `/buddies/${ids.buddyId}`,
-          settleMs: 2000,
-          prepare: `(() => {
-            const tab = [...document.querySelectorAll('.mobile-buddy-detail__tab')]
-              .find((b) => b.textContent.trim() === 'Memory');
-            if (!tab) return 'SKIP';
-            tab.click();
-          })()`,
-        }
-      : null,
+        }))
+      : []),
     ids.swarmProject
       ? {
           name: '13-swarm-detail',

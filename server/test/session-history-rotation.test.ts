@@ -23,7 +23,7 @@ import {
 } from '../src/conversations/runtime';
 import { createSessionLoader } from '../src/lifecycle/session-loader';
 import { resolveConfigAgainstProviderCatalog } from '../src/providers/catalog-service';
-import { sameKeyAudience } from './fixtures/buddy-audience';
+import { fakeBuddyPort } from './fixtures/buddy-port';
 
 const conversationId = 'dddddddd-0000-4000-8000-000000000004';
 const sessionIds = [
@@ -151,15 +151,11 @@ test('bound native sessions retain display history across capped startup, pollin
       clearLocalCompletionSuppression: () => {},
       markLocalCompletionSuppression: () => {},
       persistCurrentSession,
-      updateBuddyStatus: () => {},
-      settleBuddyDelegation: () => {},
       getConversation: context.registry.get,
       readLatestOompaRuntime: async () => ({ available: false, run: null, reason: 'fixture' }),
       createSessionId: () => 'fresh-session',
-      readCurrentBuddyContext: () => ({
-        briefing: 'CURRENT_BRIEFING',
-        memoryGeneration: 'updated-memory',
-        audience: sameKeyAudience('verified-owner'),
+      buddies: fakeBuddyPort({
+        briefing: () => ({ briefing: 'CURRENT_BRIEFING', memoryGeneration: 'updated-memory' }),
       }),
       executeTurn: (request) => {
         requests.push(request);
@@ -375,7 +371,11 @@ test('bound native sessions retain display history across capped startup, pollin
   // A verified Buddy binding must survive both transcript loading and recovery
   // without files, including a current session inferred during hydration.
   const saved = (await store.getByConversationId(conversationId))!;
-  const verified = { ...saved.currentSession!, buddyAudienceKey: 'verified-owner' };
+  // Saved under this owner thread's doc audience (turn-policy.ts admitAudience), so it resumes.
+  const verified = {
+    ...saved.currentSession!,
+    buddyAudienceKey: JSON.stringify({ kind: 'thread', threadId: conversationId }),
+  };
   await store.save({
     ...saved,
     creation: { buddyContext: { buddyId: 'buddy', workspaceId: 'workspace' } },

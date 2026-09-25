@@ -72,6 +72,11 @@ impl BuddiesCore {
     }
 
     #[napi]
+    pub async fn search_posts(&self, actor: Actor, workspace_id: String, query: String, limit: i64) -> napi::Result<Vec<Post>> {
+        call(&self.store, move |s| s.search_posts(&actor, &workspace_id, &query, limit)).await
+    }
+
+    #[napi]
     pub async fn inbox(&self, actor: Actor, workspace_id: String) -> napi::Result<Inbox> {
         call(&self.store, move |s| s.inbox(&actor, &workspace_id)).await
     }
@@ -149,6 +154,26 @@ impl BuddiesCore {
     #[napi]
     pub async fn cancel_run(&self, actor: Actor, run_id: String) -> napi::Result<Run> {
         call(&self.store, move |s| s.cancel_run(&actor, &run_id)).await
+    }
+
+    #[napi]
+    pub async fn recover_runs(&self) -> napi::Result<Recovery> {
+        call(&self.store, move |s| s.recover_runs()).await
+    }
+
+    #[napi]
+    pub async fn create_workspace(&self, actor: Actor, input: WorkspaceInput) -> napi::Result<Workspace> {
+        call(&self.store, move |s| s.create_workspace(&actor, input)).await
+    }
+
+    #[napi]
+    pub async fn create_buddy(&self, actor: Actor, input: BuddyCreate) -> napi::Result<Buddy> {
+        call(&self.store, move |s| s.create_buddy(&actor, input)).await
+    }
+
+    #[napi]
+    pub async fn update_buddy(&self, actor: Actor, input: BuddyUpdate) -> napi::Result<Buddy> {
+        call(&self.store, move |s| s.update_buddy(&actor, input)).await
     }
 
     #[napi]

@@ -5,10 +5,9 @@ import type {
   PersistedConversationConfigRecord,
 } from '@unleashd/shared';
 import type { ConversationRuntime } from '../conversations/runtime';
-import type { BuddiesStorePort } from './contract';
 
-// A Buddy's STABLE conversations — its DM (buddy-direct.ts) and its seat in
-// each channel thread (channel-responder.ts) — share one shape: an id derived
+// A Buddy's STABLE conversations — its DM and its seat in each channel thread
+// (channels.ts) — share one shape: an id derived
 // per generation, reopened while it lives. Nothing maps ids to conversations;
 // the conversation-config record of each derived id is the whole state:
 //
@@ -93,22 +92,4 @@ export async function openConversation(
   const existing = ports.getConversation(input.conversationId);
   if (existing) return ports.ensureConversationReady(existing);
   return ports.createConversation({ ...input, deferInitialMessage: true });
-}
-
-export type Eligibility = { kind: 'eligible' } | { kind: 'rejected'; reason: string };
-
-/** Only an active Buddy that belongs to the workspace gets a conversation there. */
-export function eligibility(
-  store: BuddiesStorePort,
-  buddyId: string,
-  workspaceId: string
-): Eligibility {
-  const buddy = store.getBuddy(buddyId);
-  if (!buddy || buddy.status !== 'active')
-    return { kind: 'rejected', reason: 'Buddy is not active' };
-  const member = store
-    .listBuddyWorkspaces(buddyId)
-    .some((workspace) => (workspace as { id: string }).id === workspaceId);
-  if (!member) return { kind: 'rejected', reason: 'Buddy is outside this workspace' };
-  return { kind: 'eligible' };
 }

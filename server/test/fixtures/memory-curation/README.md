@@ -8,10 +8,9 @@ grading. Project agents discover it through the root `AGENTS.md` and
 | Resource | Purpose |
 |---|---|
 | [Cases and rubrics](cases.ts) | Synthetic inputs, expected behavior and assertion flags |
-| [Live harness](../../buddy-memory-curation.test.ts) | Production reviewer against a disposable store |
+| Live harness | **Removed in T11 (2026-09-25)** with the stdio reviewer it drove; the reviewer now uses `doc_read`/`doc_write` on the one HTTP endpoint. Port it onto `createMemoryReviewer` before the next rerun (listed for T14) |
 | [Frozen original control](baseline-2026-09-13.txt) | Pre-curation instruction text; retain unchanged |
-| [Current reviewer](../../../src/buddies/memory-review.ts) | Candidate instructions and runtime configuration |
-| [Current tools](../../../src/buddies/memory-review-tools.ts) | Shared tool contract for both variants |
+| [Current reviewer](../../../src/buddies/memory-review.ts) | Candidate instructions, runtime configuration and the reviewer's tool schema (`doc_read`/`doc_write`, `server/src/buddies/mcp.ts`) |
 | [September 13 report](../../../../docs/memory-curation-evaluation-2026-09-13.md) | Method, selection rationale, results and known misses |
 | [Historical evidence](../../../../docs/benchmarks/memory-curation/2026-09-13/README.md) | Prompts, grades and hashes; raw runs and source snapshots are local-only |
 | [Thread preservation](../../../../docs/benchmarks/memory-curation/2026-09-13-closeout/README.md) | Lessons, private-corpus boundaries and six prepared fresh-session fixtures |

@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useBuddyOverview } from '../hooks/useBuddyData';
 import { formatTimeAgo } from '../utils/time';
-import type { BuddyOverviewEmployee } from './buddies/types';
+import type { BuddyOverview } from './buddies/types';
+import { directoryEntries, filterDirectoryEntries } from './buddies/ui-contract';
 import './SearchPalette.css';
 
 interface SearchResult {
@@ -113,7 +114,7 @@ function highlightMatch(snippet: string, query: string): React.ReactNode[] {
   return parts;
 }
 
-const NO_BUDDIES: BuddyOverviewEmployee[] = [];
+const NO_BUDDIES: BuddyOverview = [];
 
 export function SearchPalette({
   isOpen,
@@ -154,7 +155,7 @@ export function SearchPalette({
   // alongside deep chat search. Same cache key the Sidebar polls, so opening
   // the palette reads what is already in memory.
   const overview = useBuddyOverview(0, isOpen && !filterDirectory);
-  const buddyDirectory = overview.data?.employees ?? NO_BUDDIES;
+  const buddyDirectory = overview.data ?? NO_BUDDIES;
 
   useEffect(() => {
     const trimmed = debouncedQuery.trim();
@@ -215,22 +216,10 @@ export function SearchPalette({
     };
   }, [debouncedQuery, filterDirectory]);
 
-  const buddyResults = filterDirectory
-    ? []
-    : buddyDirectory.filter((employee) => {
-        const trimmed = debouncedQuery.trim().toLowerCase();
-        if (trimmed.length < MIN_SEARCH_QUERY_LENGTH) return false;
-        const haystack = [
-          employee.buddy.name,
-          employee.buddy.role,
-          employee.buddy.status,
-          ...employee.workspaces.map((workspace) => workspace.name),
-          ...employee.team.map((member) => `${member.name} ${member.role}`),
-        ]
-          .join(' ')
-          .toLowerCase();
-        return haystack.includes(trimmed);
-      });
+  const buddyResults =
+    filterDirectory || debouncedQuery.trim().length < MIN_SEARCH_QUERY_LENGTH
+      ? []
+      : filterDirectoryEntries(directoryEntries(buddyDirectory), debouncedQuery);
 
   // Reset selection when results change
   // biome-ignore lint/correctness/useExhaustiveDependencies: reset on result count change

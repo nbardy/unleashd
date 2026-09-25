@@ -7,7 +7,7 @@ import {
 } from './buddy-tabs';
 import type { EmployeeTab } from './types';
 
-const PRIMARY: EmployeeTab[] = ['conversations', 'work', 'team'];
+const PRIMARY: EmployeeTab[] = ['conversations', 'work', 'mailbox'];
 const SECONDARY = EMPLOYEE_TABS.filter((tab) => !PRIMARY.includes(tab));
 export function BuddySectionNav({
   buddyId,

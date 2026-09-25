@@ -17,6 +17,7 @@ import {
   ChannelComposerDraftSchema,
   type ChannelReference,
 } from '@unleashd/shared';
+import type { Task, TaskStatus } from './types';
 
 // A Buddy carries what its turn runs on by default, so the composer's mention
 // chip can show it and open the harness/model picker from it. The type is the
@@ -254,8 +255,8 @@ export function mentionedBuddies(
  * The composer's draft id for `useConversationDraft` (the chat's draft hook,
  * stored at `draft:<id>`): one per channel and one per thread.
  */
-export function channelDraftId(listId: string, threadRootId: string | null): string {
-  return threadRootId === null ? `channel:${listId}` : `channel:${listId}:thread:${threadRootId}`;
+export function channelDraftId(channelId: string, rootId: string | null): string {
+  return rootId === null ? `channel:${channelId}` : `channel:${channelId}:thread:${rootId}`;
 }
 
 export const EMPTY_CHANNEL_DRAFT: ChannelComposerDraft = { text: '', picked: [] };
@@ -314,21 +315,47 @@ export function plainChannelText(body: string): string {
 
 // ── Tasks ──────────────────────────────────────────────────────────────────
 
-/** GET /api/buddies/workspaces/:id/tasks — the chip and @-picker index. */
+/**
+ * A Task as a chip and the @ menu show it: from GET /api/buddies/tasks?workspaceId=
+ * (every task of the workspace; todos are its child tasks), with the owner's
+ * name and todo progress resolved.
+ */
 export type ChannelTask = {
   id: string;
   title: string;
-  status: string;
-  ownerBuddyId: string;
+  status: TaskStatus;
+  ownerId: string;
   ownerName: string;
+  /** A todo (child task) is false: it never appears in the @ menu. */
+  topLevel: boolean;
+  nextAction: string | undefined;
   todosDone: number;
   todosTotal: number;
-  nextAction: string | null;
-  updatedAt: string;
 };
 
-export function workspaceTasksUrl(workspaceId: string): string {
-  return `/api/buddies/workspaces/${encodeURIComponent(workspaceId)}/tasks`;
+export function channelTasks(
+  tasks: readonly Task[],
+  buddyNames: Readonly<Record<string, string>>
+): ChannelTask[] {
+  const children = new Map<string, Task[]>();
+  for (const task of tasks) {
+    if (task.parentId === undefined) continue;
+    children.set(task.parentId, [...(children.get(task.parentId) ?? []), task]);
+  }
+  return tasks.map((task) => {
+    const todos = (children.get(task.id) ?? []).filter((todo) => todo.status !== 'cancelled');
+    return {
+      id: task.id,
+      title: task.title,
+      status: task.status,
+      ownerId: task.ownerId,
+      ownerName: buddyNames[task.ownerId] ?? task.ownerId,
+      topLevel: task.parentId === undefined,
+      nextAction: task.nextAction,
+      todosDone: todos.filter((todo) => todo.status === 'done').length,
+      todosTotal: todos.length,
+    };
+  });
 }
 
 /** App links inside a post body: D = Buddy ⊕ Task ⊕ Web. */

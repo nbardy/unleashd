@@ -15,19 +15,23 @@ test('a request, its run and its answer cross the napi boundary', async () => {
   const path = join(dir, 'core.sqlite');
   const core = await BuddiesCore.open(path);
 
-  // Identity rows have no core writer yet (team admin lands with the server rewrite), so seed them.
-  const db = new DatabaseSync(path);
-  db.exec(`INSERT INTO workspace VALUES ('ws', 'ws', '${dir}', '2026-01-01T00:00:00.000Z', NULL);
-    INSERT INTO buddy (id, workspace_id, slug, name, role, status, created_at)
-    VALUES ('a', 'ws', 'a', 'A', 'r', 'active', '2026-01-01T00:00:00.000Z'),
-           ('b', 'ws', 'b', 'B', 'r', 'active', '2026-01-01T00:00:00.000Z');`);
-  db.close();
-
-  const a = { kind: 'buddy', id: 'a' };
-  const b = { kind: 'buddy', id: 'b' };
-  assert.deepEqual(await core.authorize(a, 'write_doc', { kind: 'buddy', id: 'b' }), {
+  const owner = { kind: 'owner' };
+  const ws = await core.createWorkspace(owner, { name: 'ws', rootPath: dir });
+  const hire = (slug) =>
+    core.createBuddy(owner, {
+      workspaceId: ws.id,
+      slug,
+      name: slug.toUpperCase(),
+      role: 'r',
+      manager: { kind: 'nobody' },
+      backgroundEnabled: true,
+      key: slug,
+    });
+  const a = { kind: 'buddy', id: (await hire('a')).id };
+  const b = { kind: 'buddy', id: (await hire('b')).id };
+  assert.deepEqual(await core.authorize(a, 'write_doc', b), {
     kind: 'denied',
-    reason: 'a is neither b nor one of its managers',
+    reason: `${a.id} is neither ${b.id} nor one of its managers`,
   });
 
   const post = await core.post(
@@ -38,7 +42,9 @@ test('a request, its run and its answer cross the napi boundary', async () => {
   assert.deepEqual(post.request, { state: 'awaiting' });
   const channel = await core.openChannel(b, { kind: 'direct', members: [b, a] });
   assert.equal(channel.id, post.channelId);
-  assert.deepEqual(channel.kind, { type: 'direct', members: [a, b] });
+  // Members come back in canonical (byte-sorted key) order, whatever order they were named in.
+  const sorted = [a, b].sort((x, y) => (x.id < y.id ? -1 : 1));
+  assert.deepEqual(channel.kind, { type: 'direct', members: sorted });
 
   const claim = await core.claimRun(60_000);
   assert.deepEqual(claim.run.input, { kind: 'post', postId: post.id });
@@ -63,7 +69,7 @@ test('a request, its run and its answer cross the napi boundary', async () => {
   await assert.rejects(core.getBuddy('nobody'), /^Error: \[not_found\]/);
   await assert.rejects(
     core.writeDoc(a, {
-      doc: { buddyId: 'b', scope: { kind: 'buddy' }, kind: 'working', name: '' },
+      doc: { buddyId: b.id, scope: { kind: 'buddy' }, kind: 'working', name: '' },
       content: 'x',
       baseRevision: 0,
       reason: 'r',

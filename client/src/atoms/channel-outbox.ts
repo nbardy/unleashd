@@ -1,4 +1,4 @@
-import type { BuddyMailingListPost } from '@unleashd/shared';
+import type { Post } from '@unleashd/buddies-core';
 import { atom } from 'jotai';
 import { jotaiStore } from './store';
 
@@ -22,12 +22,12 @@ export type OutboxEntry =
   | {
       kind: 'sending';
       key: string;
-      listId: string;
-      threadRootId: string | null;
+      channelId: string;
+      rootId: string | null;
       body: string;
       createdAt: string;
     }
-  | { kind: 'sent'; key: string; post: BuddyMailingListPost };
+  | { kind: 'sent'; key: string; post: Post };
 
 export const channelOutboxAtom = atom<readonly OutboxEntry[]>([]);
 
@@ -35,7 +35,7 @@ export function outboxSending(entry: Extract<OutboxEntry, { kind: 'sending' }>):
   jotaiStore.set(channelOutboxAtom, [...jotaiStore.get(channelOutboxAtom), entry]);
 }
 
-export function outboxSent(key: string, post: BuddyMailingListPost): void {
+export function outboxSent(key: string, post: Post): void {
   jotaiStore.set(
     channelOutboxAtom,
     jotaiStore

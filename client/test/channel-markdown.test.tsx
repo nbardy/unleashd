@@ -1,7 +1,6 @@
 import assert from 'node:assert/strict';
 import { register } from 'node:module';
 import test from 'node:test';
-import { type TeamSetupResult, formatBuddyTeamConfigurationToolResult } from '@unleashd/shared';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { MemoryRouter } from 'react-router-dom';
 register(
@@ -14,6 +13,7 @@ register(
   import.meta.url
 );
 const { ChannelMarkdown } = await import('../src/components/buddies/ChannelMarkdown');
+type ChannelTask = import('../src/components/buddies/channel-text').ChannelTask;
 
 // Regression, #buddies-dev 2026-09-24: a mention reply is the Buddy's final
 // assistant message with the provider's tool summaries embedded, and the
@@ -49,16 +49,16 @@ test('tool-call lines in a post collapse into the chat activity disclosure', () 
 // In a sentence it must stay one inline chip in the same paragraph; alone on
 // its line it becomes the card (title, status, owner, todo progress).
 test('a Task ref is an inline chip in a sentence and a card on its own line', () => {
-  const task = {
-    id: 'buddy_project_1',
+  const task: ChannelTask = {
+    id: 'task_1',
     title: 'Mention replies post the tool-call trace into the channel',
-    status: 'ready',
-    ownerBuddyId: 'lead',
+    status: 'open',
+    ownerId: 'lead',
     ownerName: 'Buddies Development Lead',
+    topLevel: true,
+    nextAction: undefined,
     todosDone: 1,
     todosTotal: 5,
-    nextAction: null,
-    updatedAt: '2026-09-24T10:00:00.000Z',
   };
   const ref = `[${task.title}](task:${task.id})`;
   const render = (body: string) =>
@@ -80,34 +80,10 @@ test('a Task ref is an inline chip in a sentence and a card on its own line', ()
     const block = render(body);
     assert.doesNotMatch(block, /channel-task-chip/);
     assert.match(block, /class="channel-task-block"/);
-    assert.match(block, /Ready<span class="channel-task-card-owner"> · Buddies Development Lead/);
+    assert.match(block, /Open<span class="channel-task-card-owner"> · Buddies Development Lead/);
     assert.match(block, /width:20%.*1\/5 todos/);
   }
 });
-
-const teamResult: TeamSetupResult = {
-  workspaceId: 'project_956e40d6',
-  contractVersion: '2026-09-12.2',
-  key: 'hire-basketball-project-manager-2026-09-24',
-  planHash: '0'.repeat(64),
-  canApply: true,
-  blockers: [],
-  effects: [],
-  resolvedBuddies: [],
-  affectedWork: [],
-  receipt: { auditId: 'audit-1', appliedAt: '2026-09-24T15:24:00Z', replayed: false },
-  queuedRuns: [],
-  readiness: { ready: true, blockers: [], participants: [], messages: [] },
-  drift: false,
-};
-
-function teamMarker(): string {
-  const marker = formatBuddyTeamConfigurationToolResult({
-    structuredContent: { teamSetup: teamResult },
-  });
-  assert.ok(marker, 'canonical team setup formats to a marker');
-  return marker;
-}
 
 const renderChannel = (body: string) =>
   renderToStaticMarkup(
@@ -117,28 +93,19 @@ const renderChannel = (body: string) =>
   );
 
 // Owner report 2026-09-24 (#general thread): a mention reply showed the raw
-// `<!--buddy_team_configuration:%7B%22…-->` blob under "6 tool calls". The
-// /chat path strips structured markers via splitStructuredMessageContent, but
-// the channel path only split tool-activity lines, so the marker fell through
-// into Markdown and painted raw. Channels must render the same card as chat.
-test('a team configuration marker renders the chat card, not the raw blob', () => {
-  const html = renderChannel(`Hired the coordinator.\n${teamMarker()}\nWelcome aboard.`);
-  assert.match(html, /Team configuration saved/);
-  assert.match(html, /Hired the coordinator/);
-  assert.match(html, /Welcome aboard/);
-  assert.doesNotMatch(html, /buddy_team_configuration/);
-  assert.doesNotMatch(html, /%22workspaceId%22/);
-});
-
-// Same incident: the painted blob wrapped as `<!--` + newline +
-// `buddy_team_configuration:…`, so parsing must tolerate whitespace inside the
-// comment delimiters, not just the canonical compact form the server writes.
-test('a whitespace-wrapped team configuration marker still renders the card', () => {
-  const wrapped = teamMarker().replace('<!--', '<!--\n').replace('-->', '\n-->');
-  const html = renderChannel(`Hired the coordinator.\n${wrapped}\nWelcome aboard.`);
-  assert.match(html, /Team configuration saved/);
-  assert.doesNotMatch(html, /buddy_team_configuration/);
-  assert.doesNotMatch(html, /%22workspaceId%22/);
+// `<!--buddy_team_configuration:%7B%22…-->` blob under "6 tool calls". Team
+// configuration was retired with the v2 Buddy server (T11), but old posts
+// still carry the marker, compact or whitespace-wrapped: it must vanish, never
+// paint raw.
+test('a retired team configuration marker renders nothing, not the raw blob', () => {
+  const marker = '<!--buddy_team_configuration:%7B%22workspaceId%22%3A%22p1%22%7D-->';
+  for (const wrapped of [marker, marker.replace('<!--', '<!--\n').replace('-->', '\n-->')]) {
+    const html = renderChannel(`Hired the coordinator.\n${wrapped}\nWelcome aboard.`);
+    assert.match(html, /Hired the coordinator/);
+    assert.match(html, /Welcome aboard/);
+    assert.doesNotMatch(html, /buddy_team_configuration/);
+    assert.doesNotMatch(html, /%22workspaceId%22/);
+  }
 });
 
 // Sibling markers ride the same server injection path (runtime tool.result),
@@ -155,7 +122,7 @@ test('sibling structured markers never paint raw in channels', () => {
   ].join('\n');
   const html = renderChannel(`${question}\n${worker}\n${review}\nTip-off at nine.`);
   assert.match(html, /Which opening\?/);
-  assert.match(html, /Review result/);
+  assert.doesNotMatch(html, /Looks good/);
   assert.match(html, /Tip-off at nine/);
   assert.doesNotMatch(html, /ask_user_question/);
   assert.doesNotMatch(html, /buddy_worker_thread/);
