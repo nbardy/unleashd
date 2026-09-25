@@ -129,7 +129,11 @@ seat config, server-posted answer), framed as "you chose to reply".
   visible `reply_failed` notice ("Couldn't reply: could not decide whether to
   reply (…)"): on 2026-09-24 every Buddy in a workspace ran on Codex at its
   usage limit, each owner reply's gate failed 4 s in, and the thread just
-  stayed quiet. Claude, codex and muse only (the Buddy harnesses).
+  stayed quiet. An empty answer is a failure too, not an unparseable pass.
+  Claude 2.1.282 reports a session-limit 429 as `result` subtype `success`
+  with `is_error: true` and no text deltas; until that was parsed as a
+  failure, the gate logged `""` and the thread stayed quiet (2026-09-25,
+  post_fc9feb23). Claude, codex and muse only (the Buddy harnesses).
 - **"X is replying…"** starts the moment a gate says `<yes>` (the reply queue
   entry is created synchronously on the verdict, before the seat opens). Every
   add and remove of a queue entry is pushed as `channel_changed`, and the client

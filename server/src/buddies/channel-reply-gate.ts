@@ -38,6 +38,10 @@ export function parseGateVerdict(output: string): GateVerdict {
       return { kind: 'respond' };
     case '<no>':
       return { kind: 'pass' };
+    case '':
+      // A finished run with no text is a harness failure, not a `<no>`. An
+      // owner post then gets the same visible notice as any other failed gate.
+      return { kind: 'failed', reason: 'no answer' };
     default:
       return { kind: 'unparseable', output };
   }
@@ -156,7 +160,7 @@ async function runGate(
         if (event.type === 'text.delta') {
           output += event.text;
           if (output.length > GATE_MAX_CHARS) stop({ kind: 'unparseable', output });
-        } else if (event.type === 'error') {
+        } else if (event.type === 'error' || event.type === 'out_of_tokens') {
           providerError = event.message;
         } else if (event.type === 'tool.use') {
           stop({ kind: 'unparseable', output: `(called tool ${event.name})` });

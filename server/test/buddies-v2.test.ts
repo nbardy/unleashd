@@ -8,16 +8,21 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import type { McpServerSpec } from '@nbardy/agent-cli';
 import {
-  type Buddy,
   BuddiesCore,
+  type Buddy,
   type Inbox,
   type Post,
   type ThreadStat,
 } from '@unleashd/buddies-core';
+import { createDefaultConversationConfig } from '@unleashd/shared';
 import express from 'express';
 import { BUDDY_TOOL_GUIDE, createBriefings } from '../src/buddies/briefing';
 import { type StableConversationPorts, slotOf } from '../src/buddies/buddy-conversation-slots';
-import type { GateVerdict } from '../src/buddies/channel-reply-gate';
+import {
+  type GateVerdict,
+  createCliReplyGate,
+  parseGateVerdict,
+} from '../src/buddies/channel-reply-gate';
 import { createChannels } from '../src/buddies/channels';
 import { OWNER, buddyActor, openBuddiesCore } from '../src/buddies/core';
 import { type BuddyEvent, createBuddyEvents } from '../src/buddies/events';
@@ -662,6 +667,35 @@ test('the server never runs on a missing Buddies database: it names the import c
 test('the briefing tool guide stays inside its budget', () => {
   // A runtime throw on this budget failed every owner-thread turn on 2026-09-21; it is a test now.
   assert.ok(BUDDY_TOOL_GUIDE.length <= 3_000, `${BUDDY_TOOL_GUIDE.length} chars`);
+});
+
+// 2026-09-25 (92e8692): Claude reports a session-limit 429 as a successful
+// result with no text. The gate read the empty answer as `unparseable` and an
+// untagged owner follow-up stayed quiet instead of showing "Couldn't reply".
+// Only the CLI process is stubbed.
+test('a reply gate with no answer, or out of tokens, fails with the provider message', async () => {
+  assert.deepEqual(parseGateVerdict('  \n'), { kind: 'failed', reason: 'no answer' });
+  assert.equal(parseGateVerdict('<yes> because I own it').kind, 'unparseable');
+  const gate = createCliReplyGate({
+    resolveExecution: async () => ({ provider: 'claude', modelId: 'claude-opus-5-5' }),
+    execute: (() => {
+      async function* events() {
+        yield {
+          type: 'out_of_tokens',
+          message: "Out of tokens: You've hit your session limit · resets 2am (Asia/Makassar)",
+        };
+        yield { type: 'turn.complete', reason: 'out_of_tokens' };
+      }
+      return {
+        events: events(),
+        completed: Promise.resolve({ reason: 'out_of_tokens', sessionId: 'gate-session' }),
+        stop: () => undefined,
+      };
+    }) as never,
+  });
+  const verdict = await gate({ config: createDefaultConversationConfig('claude'), prompt: 'p' });
+  assert.equal(verdict.kind, 'failed');
+  assert.match(verdict.kind === 'failed' ? verdict.reason : '', /out_of_tokens.*session limit/);
 });
 
 test('follow-ups stop after three Buddy posts in a row, and a failed gate on an owner post is shown', async () => {
