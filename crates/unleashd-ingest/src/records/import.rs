@@ -13,7 +13,12 @@
 //!
 //! The verifier re-reads the directory and checks, per record, the sha256 of the source file's
 //! canonical JSON (keys sorted, compact) against the same hash of the record rebuilt from its row
-//! (`version: 1` put back, schema-defaulted keys the file lacked removed again).
+//! (`version: 2` put back, schema-defaulted keys the file lacked removed again).
+//!
+//! Source format: record v2 (T09: a stored `kind`). A v1 file has no kind, and deriving one needs
+//! the transcript markers only record-migration.ts reads, so the import refuses to start while
+//! any v1 file remains (an error, not a reject row: a v1 reject would pass verify and drop the
+//! record). Run record-migration.ts on the same copy first.
 
 use super::store::{Records, RecordsError, Result, put};
 use super::types::*;
@@ -35,7 +40,7 @@ use std::time::Instant;
 pub enum RejectReason {
     /// Not JSON. config-store.ts would move it to quarantine/ on first read.
     CorruptJson,
-    /// `version` above 1: config-store.ts leaves it untouched and skips it; so does this.
+    /// `version` above 2: config-store.ts leaves it untouched and skips it; so does this.
     FutureVersion,
     /// JSON the Zod schema refuses (shape or refinement). config-store.ts would quarantine it.
     InvalidRecord,
@@ -132,9 +137,17 @@ pub struct ImportReport {
 
 /// A file read from the source directory, classified.
 enum Parsed {
-    Record { record: Box<ConversationRecord>, defaults: Vec<Defaulted> },
+    Record {
+        record: Box<ConversationRecord>,
+        defaults: Vec<Defaulted>,
+    },
     Reject(RejectReason, String),
+    /// A pre-T09 record: the whole import stops (see the module comment).
+    Unmigrated,
 }
+
+/// The one record version this importer reads (`CONVERSATION_RECORD_VERSION`).
+pub const SOURCE_VERSION: i64 = 2;
 
 pub fn encode_id(id: &str) -> String {
     URL_SAFE_NO_PAD.encode(id.as_bytes())
@@ -155,8 +168,9 @@ fn parse_record(bytes: &[u8]) -> Parsed {
         return Parsed::Reject(RejectReason::InvalidRecord, "not a JSON object".into());
     };
     match object.remove("version").as_ref().and_then(Value::as_i64) {
-        Some(1) => {}
-        Some(v) if v > 1 => return Parsed::Reject(RejectReason::FutureVersion, format!("version {v}")),
+        Some(SOURCE_VERSION) => {}
+        Some(1) => return Parsed::Unmigrated,
+        Some(v) if v > SOURCE_VERSION => return Parsed::Reject(RejectReason::FutureVersion, format!("version {v}")),
         other => return Parsed::Reject(RejectReason::InvalidRecord, format!("version {other:?}")),
     }
     let defaults: Vec<Defaulted> = Defaulted::ALL
@@ -257,6 +271,13 @@ pub fn import(root: &Path, db: &Path) -> Result<ImportReport> {
             Ok((path, bytes, parsed))
         })
         .collect::<Result<_>>()?;
+    let unmigrated = parsed.iter().filter(|(_, _, p)| matches!(p, Parsed::Unmigrated)).count();
+    if unmigrated > 0 {
+        return Err(RecordsError::Corrupt(
+            root.display().to_string(),
+            format!("{unmigrated} record(s) are still version 1; run record-migration.ts on this copy first, then import into a new file"),
+        ));
+    }
     let quarantined: Vec<(PathBuf, Vec<u8>)> = files_in(&root.join("quarantine"))
         .into_iter()
         .map(|p| read(&p).map(|b| (p.clone(), b)).map_err(|e| io_err(&p, e)))
@@ -277,6 +298,7 @@ pub fn import(root: &Path, db: &Path) -> Result<ImportReport> {
         report.record_files += 1;
         match parsed {
             Parsed::Reject(reason, detail) => reject(&tx, &mut report, &path, reason, detail, &bytes)?,
+            Parsed::Unmigrated => unreachable!("refused before the transaction"),
             Parsed::Record { record, .. } if imported.contains_key(&record.conversation_id) => {
                 let detail = format!("conversation {} already imported from another file", record.conversation_id);
                 reject(&tx, &mut report, &path, RejectReason::DuplicateId, detail, &bytes)?
@@ -292,7 +314,7 @@ pub fn import(root: &Path, db: &Path) -> Result<ImportReport> {
                 }
                 *report.by_status.entry(record.status.as_str().to_string()).or_default() += 1;
                 *report.by_provenance.entry(record.provenance.as_str().to_string()).or_default() += 1;
-                *report.by_kind.entry(record.kind().column().0.to_string()).or_default() += 1;
+                *report.by_kind.entry(record.kind.tag().to_string()).or_default() += 1;
                 report.imported += 1;
                 imported.insert(record.conversation_id.clone(), *record);
             }
@@ -374,7 +396,7 @@ pub fn sha256_hex(s: &[u8]) -> String {
 pub fn as_source_json(record: &ConversationRecord, defaults: &[Defaulted]) -> Value {
     let mut v = serde_json::to_value(record).expect("record serializes");
     let object = v.as_object_mut().expect("record is an object");
-    object.insert("version".into(), Value::from(1));
+    object.insert("version".into(), Value::from(SOURCE_VERSION));
     for d in defaults {
         object.remove(d.key_and_default().0);
     }

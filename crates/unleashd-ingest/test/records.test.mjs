@@ -20,18 +20,21 @@ const config = (modelId) => ({
 test('records round-trip through the addon and set_config is compare-and-set', async () => {
   const db = join(mkdtempSync(join(tmpdir(), 'unleashd-records-')), 'records.sqlite');
   const records = await ConversationRecords.open(db);
-  const creation = {
-    commandId: 'cmd-1',
-    buddyContext: {
+  const creation = { commandId: 'cmd-1' };
+  const kind = {
+    t: 'buddy',
+    context: {
       buddyId: 'b1',
       workspaceId: 'w1',
       buddyProjectId: null,
       allowedBuddyOperations: ['buddy.post'],
     },
+    visibility: 'foreground',
   };
   const created = await records.create(
     {
       conversationId: 'c1',
+      kind,
       sessionBindings: [],
       currentSession: { provider: 'codex', sessionId: 's1' },
       workingDirectory: '/work',
@@ -45,6 +48,7 @@ test('records round-trip through the addon and set_config is compare-and-set', a
   assert.equal(created.t, 'created');
   assert.deepEqual(created.record, {
     conversationId: 'c1',
+    kind,
     sessionBindings: [],
     currentSession: { provider: 'codex', sessionId: 's1' },
     status: 'active',
@@ -94,7 +98,7 @@ test('records round-trip through the addon and set_config is compare-and-set', a
   assert.equal((await records.setDone('c1', true, T0 + 2)).done, true);
   assert.equal(await records.markDeleted('c1', T0 + 3), true);
   const [summary] = await records.listSummaries();
-  assert.deepEqual(summary.kind, { t: 'buddy', buddyId: 'b1' });
+  assert.deepEqual(summary.kind, kind);
   assert.equal(summary.status, 'deleted');
   assert.deepEqual(summary.sessions, [{ provider: 'codex', sessionId: 's1' }]);
 
@@ -103,6 +107,7 @@ test('records round-trip through the addon and set_config is compare-and-set', a
     records.create(
       {
         conversationId: 'c2',
+        kind: { t: 'chat' },
         sessionBindings: [{ provider: 'codex', sessionId: '' }],
         config: config('m'),
         provenance: 'user',
@@ -112,4 +117,18 @@ test('records round-trip through the addon and set_config is compare-and-set', a
     /^Error: \[invalid\]/
   );
   assert.equal(await records.get('c2'), null);
+
+  // Worker ids are `.nullable()` in the Zod schema: null must cross as null, never as absent.
+  const worker = { t: 'worker', swarmId: 'sw', workerId: null, role: null };
+  const w = await records.create(
+    {
+      conversationId: 'w1',
+      kind: worker,
+      sessionBindings: [],
+      config: config('m'),
+      provenance: 'external_discovered',
+    },
+    T0
+  );
+  assert.deepEqual((await records.get(w.record.conversationId)).kind, worker);
 });

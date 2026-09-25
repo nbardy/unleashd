@@ -25,7 +25,9 @@ use rusqlite::{Connection, OptionalExtension, Transaction, TransactionBehavior, 
 use std::collections::HashMap;
 use std::path::Path;
 
-pub const RECORDS_SCHEMA_VERSION: i64 = 1;
+// 2 (T23b): `kind` is the stored `ConversationKind` JSON (T09's record v2), replacing the
+// derived general/buddy/buddy_builder tag and its `buddy_id` column.
+pub const RECORDS_SCHEMA_VERSION: i64 = 2;
 
 /// A launch history this long means something is looping; refuse rather than drop context.
 pub const MAX_BRANCH_LAUNCHES: usize = 128;
@@ -39,8 +41,7 @@ CREATE TABLE IF NOT EXISTS conversation_record (
   status TEXT NOT NULL CHECK (status IN ('active', 'deleted')),
   deleted_at TEXT,
   done INTEGER NOT NULL CHECK (done IN (0, 1)),
-  kind TEXT NOT NULL CHECK (kind IN ('general', 'buddy', 'buddy_builder')),
-  buddy_id TEXT CHECK ((kind = 'buddy') = (buddy_id IS NOT NULL)),
+  kind TEXT NOT NULL CHECK (json_extract(kind, '$.t') IN ('chat', 'buddy', 'builder', 'worker')),
   provenance TEXT NOT NULL CHECK (provenance IN ('user', 'legacy_inferred', 'external_discovered')),
   working_directory TEXT,
   config TEXT NOT NULL,
@@ -108,7 +109,7 @@ pub enum Found<T> {
 }
 
 const COLUMNS: &str = "conversation_id, status, deleted_at, done, provenance, working_directory, config, config_revision,
-  record_revision, last_resolved, current_session, session_bindings, creation, created_at, updated_at";
+  record_revision, last_resolved, current_session, session_bindings, creation, created_at, updated_at, kind";
 
 pub struct Records {
     conn: Connection,
@@ -131,6 +132,7 @@ fn decode(r: &rusqlite::Row<'_>) -> rusqlite::Result<Result<ConversationRecord>>
     let current: Option<String> = r.get(10)?;
     let bindings: String = r.get(11)?;
     let creation: Option<String> = r.get(12)?;
+    let kind: String = r.get(15)?;
     let (deleted_at, done, working_directory, config_revision, record_revision, created_at, updated_at) =
         (r.get(2)?, r.get(3)?, r.get(5)?, r.get(7)?, r.get(8)?, r.get(13)?, r.get(14)?);
     Ok((|| {
@@ -143,6 +145,7 @@ fn decode(r: &rusqlite::Row<'_>) -> rusqlite::Result<Result<ConversationRecord>>
             current_session: current.map(|s| decode_json(&id, "current_session", &s)).transpose()?,
             session_bindings: decode_json(&id, "session_bindings", &bindings)?,
             creation: creation.map(|s| decode_json(&id, "creation", &s)).transpose()?,
+            kind: decode_json(&id, "kind", &kind)?,
             deleted_at,
             done,
             working_directory,
@@ -167,19 +170,14 @@ pub(crate) fn put(tx: &Transaction<'_>, record: &ConversationRecord, defaults: &
     if !issues.is_empty() {
         return Err(RecordsError::Invalid(record.conversation_id.clone(), issues));
     }
-    let (kind, buddy_id) = {
-        let kind = record.kind();
-        let (k, b) = kind.column();
-        (k, b.map(str::to_string))
-    };
     let import_defaults = (!defaults.is_empty()).then(|| defaults.iter().map(|d| d.key_and_default().0).collect::<Vec<_>>().join(","));
     tx.prepare_cached(
-        "INSERT INTO conversation_record (conversation_id, status, deleted_at, done, kind, buddy_id, provenance, working_directory,
+        "INSERT INTO conversation_record (conversation_id, status, deleted_at, done, kind, provenance, working_directory,
            config, config_revision, record_revision, last_resolved, current_session, session_bindings, creation, created_at,
            updated_at, import_defaults)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)
          ON CONFLICT(conversation_id) DO UPDATE SET status = excluded.status, deleted_at = excluded.deleted_at,
-           done = excluded.done, kind = excluded.kind, buddy_id = excluded.buddy_id, provenance = excluded.provenance,
+           done = excluded.done, kind = excluded.kind, provenance = excluded.provenance,
            working_directory = excluded.working_directory, config = excluded.config,
            config_revision = excluded.config_revision, record_revision = excluded.record_revision,
            last_resolved = excluded.last_resolved, current_session = excluded.current_session,
@@ -191,8 +189,7 @@ pub(crate) fn put(tx: &Transaction<'_>, record: &ConversationRecord, defaults: &
         record.status.as_str(),
         record.deleted_at,
         record.done,
-        kind,
-        buddy_id,
+        json(&record.kind),
         record.provenance.as_str(),
         record.working_directory,
         json(&record.config),
@@ -279,15 +276,14 @@ impl Records {
                 r.get::<_, String>(1)?,
                 r.get::<_, bool>(2)?,
                 r.get::<_, String>(3)?,
-                r.get::<_, Option<String>>(4)?,
-                r.get::<_, String>(5)?,
-                r.get::<_, Option<String>>(6)?,
-                r.get::<_, String>(7)?,
+                r.get::<_, String>(4)?,
+                r.get::<_, Option<String>>(5)?,
+                r.get::<_, String>(6)?,
+                r.get::<_, Option<String>>(7)?,
                 r.get::<_, Option<String>>(8)?,
-                r.get::<_, Option<String>>(9)?,
-                r.get::<_, i64>(10)?,
+                r.get::<_, i64>(9)?,
+                r.get::<_, String>(10)?,
                 r.get::<_, String>(11)?,
-                r.get::<_, String>(12)?,
             ))
         })?;
         let mut out = Vec::new();
@@ -297,7 +293,6 @@ impl Records {
                 status,
                 done,
                 kind,
-                buddy_id,
                 provenance,
                 working_directory,
                 provider,
@@ -307,12 +302,7 @@ impl Records {
                 created_at,
                 updated_at,
             ) = row?;
-            let kind = match (kind.as_str(), buddy_id) {
-                ("general", None) => KindTag::General,
-                ("buddy", Some(buddy_id)) => KindTag::Buddy { buddy_id },
-                ("buddy_builder", None) => KindTag::BuddyBuilder,
-                (other, _) => return Err(RecordsError::Corrupt(id, format!("kind {other}"))),
-            };
+            let kind = decode_json(&id, "kind", &kind)?;
             let current_session = match (cur_provider, cur_session) {
                 (Some(p), Some(session_id)) => Some(SessionKey { provider: parse_provider(&id, &p)?, session_id }),
                 (None, None) => None,
@@ -346,6 +336,7 @@ impl Records {
         let now = validate::iso(at);
         let record = ConversationRecord {
             conversation_id: input.conversation_id,
+            kind: input.kind,
             session_bindings: input.session_bindings,
             current_session: input.current_session,
             status: RecordStatus::Active,
@@ -620,7 +611,7 @@ impl Records {
 }
 
 const SUMMARY_SESSIONS: &str = "SELECT conversation_id, provider, session_id FROM conversation_session";
-const SUMMARY_ROWS: &str = "SELECT conversation_id, status, done, kind, buddy_id, provenance, working_directory,
+const SUMMARY_ROWS: &str = "SELECT conversation_id, status, done, kind, provenance, working_directory,
   json_extract(config, '$.provider'), json_extract(current_session, '$.provider'), json_extract(current_session, '$.sessionId'),
   config_revision, created_at, updated_at FROM conversation_record";
 
