@@ -56,6 +56,11 @@ export interface ResolvedBuddyConversation {
 
 export interface ConversationWebSocketDependencies {
   registry: ConversationRegistry<ConversationRuntime>;
+  /**
+   * List rows of conversations the registry does not hold (the ingest list,
+   * server/src/ingest/conversation-list.ts). `hello` sends registry rows plus these.
+   */
+  listedRows(): ConversationRow[];
   sessions: SessionTracking;
   externalActivity: ExternalActivity;
   completionSuppression: CompletionSuppression;
@@ -407,11 +412,12 @@ async function sendInitialState(
     defaultCwd: dependencies.getDefaultWorkingDirectory(),
     loading: !dependencies.isInitialLoadComplete(),
     archivedBuddyIds,
-    ...encodeRows(
-      Array.from(dependencies.registry.values(), (conversation) =>
+    ...encodeRows([
+      ...Array.from(dependencies.registry.values(), (conversation) =>
         externallyRunning(conversation.toRow(), conversation, dependencies.externalActivity)
-      )
-    ),
+      ),
+      ...dependencies.listedRows(),
+    ]),
   });
 }
 

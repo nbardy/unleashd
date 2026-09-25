@@ -81,6 +81,7 @@ function socketHarness(conversations: ConversationRuntime[]) {
   registerConversationWebSocket(
     sockets as never,
     {
+      listedRows: () => [],
       registry: {
         get: (id: string) => byId.get(id),
         values: () => byId.values(),

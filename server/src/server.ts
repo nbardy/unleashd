@@ -1,7 +1,7 @@
 import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
-import type { Provider as ProviderName } from '@unleashd/shared';
+import { type Provider as ProviderName, encodeRows } from '@unleashd/shared';
 
 import { executeCommand } from '@nbardy/agent-cli';
 import compression from 'compression';
@@ -52,6 +52,8 @@ import { registerSearchRoutes } from './http/search-routes';
 import { registerTurnDiagnosticsRoutes } from './http/turn-diagnostics-routes';
 import { registerUploadRoutes } from './http/upload-routes';
 import { registerUsageRoutes } from './http/usage-routes';
+import { type BootedIngest, bootIngest } from './ingest/boot';
+import type { ConversationList } from './ingest/conversation-list';
 import { currentIngest } from './ingest/instance';
 import { createSessionLoader } from './lifecycle/session-loader';
 import { type ShutdownController, registerShutdownHandlers } from './lifecycle/shutdown';
@@ -206,6 +208,27 @@ const applicationContext = createConversationApplicationContext<ConversationRunt
   completionSuppressionMs: LOCAL_COMPLETION_SUPPRESS_MS,
 });
 const conversations = applicationContext.registry;
+
+// The conversation list read from the ingest store (T13b S1). Until the store's initial scan
+// commits, nothing is listed from it: the loader's runtimes are the whole list, as before.
+const STARTING_LIST: Pick<ConversationList, 'rows' | 'ids'> = { rows: () => [], ids: () => [] };
+let conversationList: Pick<ConversationList, 'rows' | 'ids'> = STARTING_LIST;
+let bootedIngest: Promise<BootedIngest> | null = null;
+
+async function startIngestList(): Promise<void> {
+  bootedIngest = bootIngest(
+    { home: os.homedir(), appDataDir: APP_DATA_DIR },
+    {
+      records: conversationConfigStore,
+      isLive: (id) => conversations.has(id),
+      broadcast: applicationContext.broadcast,
+    }
+  );
+  const { list } = await bootedIngest;
+  conversationList = list;
+  const rows = list.rows();
+  if (rows.length > 0) applicationContext.broadcast({ type: 'rows', ...encodeRows(rows) });
+}
 
 // ---- Buddies: the crate (the new-schema DB) and the modules over it -------------------------
 // The DB is never the v33 ~/.buddies/buddies.sqlite; a missing file fails every Buddy call with
@@ -367,6 +390,7 @@ const Conversation = createConversationRuntime({
 
 registerConversationWebSocket(wss, {
   registry: applicationContext.registry,
+  listedRows: () => conversationList.rows(),
   sessions: applicationContext.sessions,
   externalActivity: applicationContext.externalActivity,
   completionSuppression: applicationContext.completionSuppression,
@@ -606,6 +630,7 @@ shutdownController = registerShutdownHandlers(
     flushState: async () => {
       await Promise.all([turnAttemptJournal.flush(), errorJournal.flush()]);
       await buddyMcp?.close();
+      if (bootedIngest) await (await bootedIngest).ingest.stop();
     },
     broadcastMessage: (conversationId, content) => {
       applicationContext.broadcast({ type: 'message', conversationId, role: 'system', content });
@@ -719,12 +744,16 @@ void runServerStartup(
       resolveInitialLoad();
       applicationContext.broadcast({
         type: 'ready',
-        conversationIds: Array.from(conversations.keys()),
+        conversationIds: [...new Set([...conversations.keys(), ...conversationList.ids()])],
       });
       return true;
     },
     abortStartup: () => shutdownController?.abortStartup(),
-    loadConversations: sessionLoader.loadExistingConversations,
+    // The loader still hydrates runtimes (message bodies, until T13b S2); the list comes
+    // from the ingest store in parallel. `ready` names both.
+    loadConversations: async () => {
+      await Promise.all([sessionLoader.loadExistingConversations(), startIngestList()]);
+    },
     startPolling: sessionLoader.startFilePolling,
   }
 )

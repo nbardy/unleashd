@@ -93,6 +93,7 @@ test('empty Buddy WebSocket creation resolves and registers without sending a pr
   registerConversationWebSocket(
     webSocketServer as never,
     {
+      listedRows: () => [],
       registry: {
         get: (id: string) => conversations.get(id),
         set: (conversation: InstanceType<typeof fixture.Conversation>) => {
@@ -250,6 +251,7 @@ test('existing hydrated Buddy messages repair the durable link before admission'
   registerConversationWebSocket(
     webSocketServer as never,
     {
+      listedRows: () => [],
       registry: {
         get: (id: string) => registry.get(id),
         set: (value: typeof conversation) => registry.set(value.id, value),
@@ -344,6 +346,7 @@ test('replaying create_conversation reports the real failure, not a config misma
   registerConversationWebSocket(
     webSocketServer as never,
     {
+      listedRows: () => [],
       registry: {
         get: (id: string) => conversations.get(id),
         set: () => undefined,

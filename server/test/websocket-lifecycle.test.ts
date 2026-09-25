@@ -76,6 +76,7 @@ test(
     });
     wss.on('connection', (socket) => socket.on('message', () => commandReceived()));
     registerConversationWebSocket(wss, {
+      listedRows: () => [],
       registry: {
         get: (id: string) => (id === CONVERSATION_ID ? conversation : undefined),
         set: () => undefined,
