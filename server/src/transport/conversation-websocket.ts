@@ -23,11 +23,11 @@ import type {
   ExternalActivity,
   SessionTracking,
 } from '../application/context';
+import { ConfigRevisionConflictError } from '../conversations/config-records';
 import {
   type ConversationConfigService,
   ConversationTombstonedError,
 } from '../conversations/config-service';
-import { ConfigRevisionConflictError } from '../conversations/config-records';
 import { createConversationService } from '../conversations/creation-service';
 import type {
   ConversationBroadcast,
@@ -56,6 +56,18 @@ export interface ResolvedBuddyConversation {
 
 export interface ConversationWebSocketDependencies {
   registry: ConversationRegistry<ConversationRuntime>;
+  /**
+   * List rows of conversations the registry does not hold (the ingest list,
+   * server/src/ingest/conversation-list.ts). `hello` sends registry rows plus these.
+   */
+  listedRows(): ConversationRow[];
+  /**
+   * The runtime of a listed conversation, built from its record on first use (T13b S2: most
+   * listed conversations have none until opened or sent a command).
+   */
+  materialize(conversationId: string): Promise<unknown>;
+  /** A deleted conversation leaves the ingest list too (its record is tombstoned). */
+  forgetListed(conversationId: string): void;
   sessions: SessionTracking;
   externalActivity: ExternalActivity;
   completionSuppression: CompletionSuppression;
@@ -161,6 +173,9 @@ export function registerConversationWebSocket(
             return;
           }
         }
+        if ('conversationId' in data && data.type !== 'create_conversation') {
+          await dependencies.materialize(data.conversationId);
+        }
         const target =
           'conversationId' in data ? dependencies.registry.get(data.conversationId) : undefined;
         const targetBuddy = target ? kindBuddyContext(target.kind) : null;
@@ -263,6 +278,7 @@ export function registerConversationWebSocket(
               dependencies.externalActivity.clear(conversation.sessionId, conversation.id);
               dependencies.completionSuppression.clear(conversation.sessionId, conversation.id);
             }
+            dependencies.forgetListed(data.conversationId);
             if (conversation || deletedDurably) {
               dependencies.broadcast({ type: 'removed', ids: [data.conversationId] });
             }
@@ -407,11 +423,12 @@ async function sendInitialState(
     defaultCwd: dependencies.getDefaultWorkingDirectory(),
     loading: !dependencies.isInitialLoadComplete(),
     archivedBuddyIds,
-    ...encodeRows(
-      Array.from(dependencies.registry.values(), (conversation) =>
+    ...encodeRows([
+      ...Array.from(dependencies.registry.values(), (conversation) =>
         externallyRunning(conversation.toRow(), conversation, dependencies.externalActivity)
-      )
-    ),
+      ),
+      ...dependencies.listedRows(),
+    ]),
   });
 }
 

@@ -69,6 +69,9 @@ test('a hide set over the WebSocket survives session rotation and a restart', as
     registerConversationWebSocket(
       webSocketServer as never,
       {
+        listedRows: () => [],
+        materialize: async () => undefined,
+        forgetListed: () => undefined,
         registry: {
           get: (id: string) => (id === CONVERSATION_ID ? conversation : undefined),
           values: () => [conversation][Symbol.iterator](),

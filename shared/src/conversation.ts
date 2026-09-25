@@ -203,6 +203,10 @@ export const RowPatchSchema = z.discriminatedUnion('t', [
   z.object({ t: z.literal('session'), sessionId: z.string() }),
   z.object({ t: z.literal('subagent'), subAgent: SubAgentSchema }),
   z.object({ t: z.literal('turn'), latestTurn: TurnObservationSchema }),
+  // History was REPLACED, not appended (a transcript rewritten on disk, or the live overlay
+  // absorbed into the provider's own rows): a loaded transcript refetches even when its length
+  // did not change. Guard: server/test/ingest-history.test.ts.
+  z.object({ t: z.literal('rewritten') }),
 ]);
 export type RowPatch = z.infer<typeof RowPatchSchema>;
 
@@ -341,6 +345,7 @@ export function applyRowPatch(row: ConversationRow, patch: RowPatch): Conversati
     case 'session':
     case 'subagent':
     case 'turn':
+    case 'rewritten':
       return row;
   }
 }
@@ -368,6 +373,7 @@ export function applyDetailPatch(detail: ConversationDetail, patch: RowPatch): C
     case 'done':
     case 'label':
     case 'activity':
+    case 'rewritten':
       return detail;
   }
 }

@@ -18,7 +18,9 @@ use std::sync::{Arc, Mutex};
 pub enum ChangeEvent {
     /// A committed batch: sessions whose rows changed (call `listSessions({ since })`) and
     /// sessions that left the list.
-    Changes { rev: i64, session_ids: Vec<String>, removed: Vec<String> },
+    /// `rewritten` is the subset of `session_ids` whose history was replaced or renumbered rather
+    /// than appended; refetch those from seq 0.
+    Changes { rev: i64, session_ids: Vec<String>, rewritten: Vec<String>, removed: Vec<String> },
     /// A batch failed as a whole. Stored rows are unchanged; the next change retries.
     Failed { message: String },
 }
@@ -64,6 +66,13 @@ pub struct SessionPage {
     pub removed: Vec<RemovedSession>,
 }
 
+/// One deep-search match.
+#[napi(object)]
+pub struct SearchHit {
+    pub session_id: String,
+    pub message: Message,
+}
+
 #[napi(object)]
 pub struct MessagesOptions {
     /// Return messages with `seq` greater than this; -1 starts at the first message.
@@ -81,6 +90,7 @@ async fn blocking<T: Send + 'static>(f: impl FnOnce() -> Result<T> + Send + 'sta
 
 #[napi]
 pub struct Ingest {
+    db: PathBuf,
     reader: Arc<Mutex<Reader>>,
     handle: Arc<Mutex<Option<watch::Handle>>>,
     report: Arc<ScanReportData>,
@@ -107,7 +117,9 @@ impl Ingest {
             let on_change = Arc::new(on_change);
             watch::start(roots, path, move |event| {
                 let js = match event {
-                    IngestEvent::Changes(c) => ChangeEvent::Changes { rev: c.rev, session_ids: c.session_ids, removed: c.removed },
+                    IngestEvent::Changes(c) => {
+                        ChangeEvent::Changes { rev: c.rev, session_ids: c.session_ids, rewritten: c.rewritten, removed: c.removed }
+                    }
                     IngestEvent::Failed(message) => ChangeEvent::Failed { message },
                 };
                 on_change.call(js, ThreadsafeFunctionCallMode::NonBlocking);
@@ -116,8 +128,10 @@ impl Ingest {
         })
         .await?;
         let db = PathBuf::from(db_path);
-        let reader = blocking(move || Reader::open(&db).map_err(to_js)).await?;
+        let reader_db = db.clone();
+        let reader = blocking(move || Reader::open(&reader_db).map_err(to_js)).await?;
         Ok(Ingest {
+            db,
             reader: Arc::new(Mutex::new(reader)),
             handle: Arc::new(Mutex::new(Some(handle))),
             report: Arc::new(ScanReportData { report: started.report, missing_roots: started.missing_roots, rev: started.rev }),
@@ -184,6 +198,19 @@ impl Ingest {
     pub async fn latest_context(&self, session_id: String) -> Result<Option<ContextReading>> {
         let reader = self.reader.clone();
         blocking(move || reader.lock().map_err(to_js)?.latest_context(&session_id).map_err(to_js)).await
+    }
+
+    /// Deep search: the newest listed messages (at most `limit`) whose text contains `query`, ASCII
+    /// case-insensitively. It scans the message table (~0.5-1 s on 290k messages), so it runs on
+    /// a connection of its own and never holds the reader that serves message pages.
+    #[napi]
+    pub async fn search(&self, query: String, limit: u32) -> Result<Vec<SearchHit>> {
+        let db = self.db.clone();
+        blocking(move || {
+            let hits = Reader::open(&db).map_err(to_js)?.search(&query, limit).map_err(to_js)?;
+            Ok(hits.into_iter().map(|h| SearchHit { session_id: h.session_id, message: h.message }).collect())
+        })
+        .await
     }
 
     /// Stop watching and release `onChange` (so Node can exit). Idempotent.

@@ -435,6 +435,9 @@ function patchEffects(id: string, patch: RowPatch): void {
     case 'queue':
       captureRestartRecoveryQueue(id, patch.queue);
       return;
+    case 'rewritten':
+      historyReplaced(id);
+      return;
     case 'activity':
     case 'done':
     case 'label':
@@ -452,6 +455,16 @@ function runChanged(id: string, run: ConversationRow['run']): void {
   // Streaming stopped: the transcript already holds the committed text
   // (chunks and `message_complete` mirror the server's fold).
   jotaiStore.set(streamStore.patch, { set: [], remove: [id] });
+}
+
+/**
+ * The server replaced this history (same count possible, so bodiesStep would
+ * not notice): drop a loaded copy to `absent` and the view that shows it
+ * reloads it (useConversationBodies). The WS spine itself never fetches bodies.
+ */
+function historyReplaced(id: string): void {
+  if (!readLoaded(id)) return;
+  putTranscript(id, { tag: 'absent' });
 }
 
 function handleAck(data: Extract<ServerMessage, { type: 'ack' }>): void {

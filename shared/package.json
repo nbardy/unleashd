@@ -11,12 +11,6 @@
       "require": "./dist/cjs/index.js",
       "default": "./dist/index.js"
     },
-    "./adapters/jsonl.types": {
-      "types": "./dist/adapters/jsonl.types.d.ts",
-      "import": "./dist/adapters/jsonl.types.js",
-      "require": "./dist/cjs/adapters/jsonl.types.js",
-      "default": "./dist/adapters/jsonl.types.js"
-    },
     "./utils/jsonc": {
       "types": "./dist/utils/jsonc.d.ts",
       "import": "./dist/utils/jsonc.js",

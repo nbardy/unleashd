@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { formatToolUse, isCompletionOnlyToolUse } from '../src/adapters/tool-format';
+import { formatToolUse, isCompletionOnlyToolUse } from '../src/turns/tool-format';
 
 // The `oompa <sub> ::` marker is what client/src/utils/structured-message-segments.ts
 // matches to render a swarm launch; the raw command alone is truncated and wrapped
