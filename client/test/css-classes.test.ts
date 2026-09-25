@@ -13,9 +13,11 @@ import { fileURLToPath } from 'node:url';
  *
  * Neither TypeScript nor Biome nor the browser complains about either one.
  *
- * UNSTYLED_BASELINE is a RATCHET, not an allowlist. It began as a real bug list
- * of 86 classes — the whole mobile buddy-detail and swarm-detail trees had been
- * written against stylesheets nobody authored — and is now empty.
+ * It began with a baseline of 86 unstyled classes — the whole mobile
+ * buddy-detail and swarm-detail trees had been written against stylesheets
+ * nobody authored. All were styled 2026-08-18 (mobile-controls.css,
+ * mobile-buddy.css, mobile-swarm.css) and the empty baseline was removed, so
+ * any unstyled class now fails outright.
  *
  * Scans every string literal in the file that contains a `mobile-` token, not
  * just static `className="..."` attributes. The narrower version missed six
@@ -25,11 +27,6 @@ import { fileURLToPath } from 'node:url';
  */
 
 const clientSrc = path.resolve(fileURLToPath(import.meta.url), '../../src');
-
-// Emptied 2026-08-18: all 86 entries were styled in the same pass that found
-// them (mobile-controls.css, mobile-buddy.css, mobile-swarm.css). Kept as a
-// ratchet so a future unstyled class fails loudly instead of shipping.
-const UNSTYLED_BASELINE: ReadonlySet<string> = new Set([]);
 
 function walk(dir: string, found: string[] = []): string[] {
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
@@ -75,7 +72,7 @@ test('no new unstyled className in the mobile tree', () => {
   const defined = definedClasses(files);
 
   const missing = mobileClassNames(files)
-    .filter((use) => !defined.has(use.name) && !UNSTYLED_BASELINE.has(use.name))
+    .filter((use) => !defined.has(use.name))
     .map((use) => `${use.file}: .${use.name}`);
 
   assert.deepEqual(
@@ -83,10 +80,4 @@ test('no new unstyled className in the mobile tree', () => {
     [],
     'className with no matching CSS rule — it renders as unstyled default HTML, silently'
   );
-});
-
-test('UNSTYLED_BASELINE has no stale entries', () => {
-  const defined = definedClasses(walk(clientSrc));
-  const stale = [...UNSTYLED_BASELINE].filter((name) => defined.has(name));
-  assert.deepEqual(stale, [], 'these classes now have CSS — remove them from UNSTYLED_BASELINE');
 });

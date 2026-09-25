@@ -51,9 +51,12 @@ router — no mocks, and no assertions on TSX source text.
 
 Two gotchas, both already handled by `pnpm test:client`:
 
-- The test file must be `.tsx`, and `tsx` needs `--tsconfig client/tsconfig.app.json`
-  or it transpiles JSX with the classic runtime and every component under test
-  throws `ReferenceError: React is not defined`.
+- The test file must be `.tsx`, and `tsx` needs `--tsconfig client/tsconfig.test.json`
+  (includes `src` and `test`) or it transpiles JSX with the classic runtime and
+  every component under test throws `ReferenceError: React is not defined`.
+  `client/tsconfig.app.json` is not enough: it includes only `src`, and tsx
+  applies a tsconfig only to the files it includes. The same config is what
+  `pnpm typecheck` uses to typecheck the tests, so no `import React` is needed.
 - Only markup that renders on first paint is visible. Anything behind local
   state (desktop `AutomationCard`'s run history sits behind a `showRuns`
   toggle) will not appear — assert against a section that renders immediately.

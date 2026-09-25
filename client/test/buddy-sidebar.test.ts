@@ -22,9 +22,9 @@ test('only roster memberships create workspace rows; orphan history remains acce
   const make = (id: string, buddyId: string, workspaceId: string) =>
     ({
       id,
-      kind: { kind: 'buddy', buddyId, workspaceId },
+      kind: { kind: 'buddy' as const, buddyId, workspaceId },
       createdAt: new Date('2026-09-13'),
-      messages: [],
+      messages: [] as Conversation['messages'],
       isRunning: true,
     }) as Conversation;
   const live = make('owner-thread', 'lead', 'work');
@@ -144,9 +144,9 @@ test('sidebar groups memberships and scopes recency and threads to each project'
   const conversation = (id: string, workspaceId: string, date: string) =>
     ({
       id,
-      buddyContext: { buddyId: 'lead', workspaceId, buddyProjectId: null },
+      kind: { kind: 'buddy' as const, buddyId: 'lead', workspaceId },
       createdAt: new Date(date),
-      messages: [],
+      messages: [] as Conversation['messages'],
       workingDirectory: `/${workspaceId}`,
     }) as Conversation;
   const a = conversation('thread-a', 'a', '2026-09-01');
@@ -201,10 +201,10 @@ test('Builder joins project recency ordering and moves when an older thread rece
     ({
       id,
       ...(builder
-        ? { kind: { kind: 'buddy_builder' } }
-        : { buddyContext: { buddyId: 'lead', workspaceId: 'project', buddyProjectId: null } }),
+        ? { kind: { kind: 'buddy_builder' as const } }
+        : { kind: { kind: 'buddy' as const, buddyId: 'lead', workspaceId: 'project' } }),
       createdAt: new Date(date),
-      messages: [],
+      messages: [] as Conversation['messages'],
     }) as Conversation;
   const project = conversation('project-thread', '2026-09-08');
   const older = conversation('older-builder', '2026-09-01', true);
@@ -259,7 +259,7 @@ test('sidebar exposes active process counts at project-folder scope', () => {
   const conversation = (input: Partial<Conversation> & Pick<Conversation, 'id'>) =>
     ({
       createdAt: new Date('2026-09-12T00:00:00.000Z'),
-      messages: [],
+      messages: [] as Conversation['messages'],
       workingDirectory: '/repo/wave_sim',
       ...input,
     }) as Conversation;

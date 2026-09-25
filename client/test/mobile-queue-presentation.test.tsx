@@ -1,7 +1,5 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-// biome-ignore lint/correctness/noUnusedImports: test transform uses classic JSX.
-import React from 'react';
 import type { QueuedMessage } from '@unleashd/shared';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { MobileQueueStrip } from '../src/mobile/conversations/MobileQueueStrip';

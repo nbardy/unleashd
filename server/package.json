@@ -6,7 +6,7 @@
     "start": "node dist/server.js",
     "dev": "node ../tools/dev-supervisor.mjs --task dev-server",
     "build": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\" && tsc",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc -p tsconfig.test.json"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",

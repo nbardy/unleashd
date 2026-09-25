@@ -3,8 +3,6 @@ import { register } from 'node:module';
 import test from 'node:test';
 import type { ServerMessage } from '@unleashd/shared';
 import { type Atom, Provider } from 'jotai';
-// biome-ignore lint/correctness/noUnusedImports: tsx's test transform uses the classic JSX runtime.
-import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { MemoryRouter } from 'react-router-dom';
 import { handleMessage } from '../src/atoms/actions';
