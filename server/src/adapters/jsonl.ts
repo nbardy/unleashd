@@ -455,8 +455,8 @@ function finishClaudeTranscript(fold: ClaudeTranscriptFold, filePath: string): P
     ...identity,
     provider,
     title: identity.title ?? null,
-    // Consumers rewrite message content in place (stripMergePrefix and the
-    // Buddy/oompa prefix strippers), so the fold's own messages must never
+    // Consumers rewrite message content in place (the Buddy/oompa prefix
+    // strippers), so the fold's own messages must never
     // escape: a resumed read would otherwise re-strip already-stripped text.
     messages: dedupeConsecutiveMessages(fold.messages).map((message) => ({ ...message })),
     subAgents: subAgentsFromToolUses(fold.toolUses, provider),
@@ -1561,11 +1561,6 @@ export function extractWorkerMetadata(messages: Message[]): WorkerMetadata {
  */
 const SWARM_DEBUG_PREFIX_RE =
   /^<!-- unleashd:swarm-prefix -->\n([\s\S]*?)\n<!-- \/unleashd:swarm-prefix -->\n\n/;
-const MERGE_PREFIX_RE =
-  /^<!-- unleashd:merge-prefix -->\n[\s\S]*?\n<!-- \/unleashd:merge-prefix -->\n\n/;
-const MERGE_PREFIX_SUFFIX = '\n<!-- /unleashd:merge-prefix -->\n\n';
-const MERGE_PREFIX_V1_HEADER_RE = /^<!-- unleashd:merge-prefix-v1 ([0-9]+) -->\n/;
-const MERGE_PREFIX_V1_SUFFIX = '\n<!-- /unleashd:merge-prefix-v1 -->\n\n';
 
 const BUDDY_CONTEXT_RE =
   /^<!-- unleashd:buddy-context (.+) -->\n[\s\S]*?\n<!-- \/unleashd:buddy-context -->\n\n/;
@@ -1657,36 +1652,6 @@ export function extractSwarmDebugPrefix(messages: Message[]): string | null {
   // Strip the sentinel block; leave only the user's actual message content.
   firstUserMsg.content = firstUserMsg.content.slice(match[0].length);
   return match[1];
-}
-
-/** Merge reviews are provider context, not the parent's authored first message. */
-export function stripMergePrefix(messages: Message[]): void {
-  const firstUserMsg = messages.find((message) => message.role === 'user');
-  if (!firstUserMsg) return;
-  const header = firstUserMsg.content.match(MERGE_PREFIX_V1_HEADER_RE);
-  if (header) {
-    const length = Number.parseInt(header[1], 10);
-    const suffixStart = header[0].length + length;
-    if (
-      Number.isSafeInteger(length) &&
-      firstUserMsg.content.startsWith(MERGE_PREFIX_V1_SUFFIX, suffixStart)
-    ) {
-      firstUserMsg.content = firstUserMsg.content.slice(
-        suffixStart + MERGE_PREFIX_V1_SUFFIX.length
-      );
-    }
-    return;
-  }
-  const match = firstUserMsg.content.match(MERGE_PREFIX_RE);
-  // Old envelopes have no length. Preserve ambiguous copies rather than guess
-  // which delimiter belongs to a review and which belongs to authored text.
-  if (
-    match &&
-    firstUserMsg.content.lastIndexOf(MERGE_PREFIX_SUFFIX) ===
-      match[0].length - MERGE_PREFIX_SUFFIX.length
-  ) {
-    firstUserMsg.content = firstUserMsg.content.slice(match[0].length);
-  }
 }
 
 // jsonlSessionToConversation, codexSessionToConversation, openCodeSessionToConversation,

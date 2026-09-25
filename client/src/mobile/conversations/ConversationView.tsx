@@ -24,7 +24,6 @@ import {
   streamingAtomFamily,
 } from '../../atoms/conversations';
 import { forkConversation } from '../../atoms/fork-actions';
-import { mergeChildErrorAtomFamily, mergeChildStatusAtomFamily } from '../../atoms/mergeAtoms';
 import { markMessagesSeen, setSavedActiveConversationId } from '../../atoms/ui';
 import { effectiveSwarmDebugPrefix } from '../../components/buddies/ui-contract';
 import { useCopyAction } from '../../hooks/useCopyAction';
@@ -139,53 +138,10 @@ function ForkButton({ conversation }: { conversation: Conversation }) {
 // ---------------------------------------------------------------------------
 // Mobile thread-context panels — reuse Chat.tsx data derivation, render with
 // MobileSection/MobileSurface primitives (not desktop VirtualizedMessageList /
-// SubAgentPanel / SwarmConvoPrefix / ResumeThreadWidget / MergeProgressStrip).
+// SubAgentPanel / SwarmConvoPrefix / ResumeThreadWidget).
 // G3: mobile never imports components/* except buddies/, so we import the
 // shared utils directly and render mobile-appropriate UI here.
 // ---------------------------------------------------------------------------
-
-function MobileMergeProgressStrip({ parent }: { parent: Conversation }) {
-  const meta = parent.mergeParentMeta;
-  if (!meta) return null;
-  return (
-    <MobileSection
-      title="Reviews"
-      meta={`${meta.children.length} ${meta.children.length === 1 ? 'review' : 'reviews'}`}
-    >
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
-        {meta.children.map((child) => (
-          <MergeChip
-            key={child.childConversationId}
-            childId={child.childConversationId}
-            reviewUuid={child.reviewUuid}
-          />
-        ))}
-      </div>
-    </MobileSection>
-  );
-}
-
-function MergeChip({ childId, reviewUuid }: { childId: string; reviewUuid: string }) {
-  const status = useAtomValue(mergeChildStatusAtomFamily(childId));
-  const errorMessage = useAtomValue(mergeChildErrorAtomFamily(childId));
-  const tone: 'active' | 'accent' | 'neutral' =
-    status === 'complete' ? 'accent' : status === 'error' ? 'neutral' : 'active';
-  const label = status === 'complete' ? '✓' : status === 'error' ? '!' : '…';
-  const title =
-    status === 'complete'
-      ? `REVIEW_DOC_${reviewUuid}.txt`
-      : status === 'error'
-        ? (errorMessage ?? `Review did not produce ${reviewUuid}`)
-        : 'Reviewing…';
-  return (
-    <MobileBadge tone={tone} title={title} style={{ fontSize: 11, gap: 4 }}>
-      <span aria-hidden="true">{label}</span> {reviewUuid.slice(0, 8)}
-      {status === 'error' && errorMessage ? (
-        <span style={{ opacity: 0.7, marginLeft: 4 }}>{errorMessage.slice(0, 40)}</span>
-      ) : null}
-    </MobileBadge>
-  );
-}
 
 function MobileSubAgentPanel({ subAgents }: { subAgents: SubAgent[] }) {
   const active = subAgents.filter((a) => a.status === 'running' || a.status === 'pending');
@@ -905,14 +861,13 @@ export function ConversationView({
         ) : null}
       </div>
 
-      {/* Thread-context strip — mirrors Chat.tsx: MergeProgressStrip + SubAgentPanel + ResumeThreadWidget + SwarmConvoPrefix,
+      {/* Thread-context strip — mirrors Chat.tsx: SubAgentPanel + ResumeThreadWidget + SwarmConvoPrefix,
           rendered with MobileSection/MobileSurface primitives and shared data derivation. */}
-      {(conversation.mergeParentMeta || hasThreadContext || showSwarmPrefix) && (
+      {(hasThreadContext || showSwarmPrefix) && (
         <div
           className="mobile-chat__thread-context"
           style={{ padding: '10px 12px 0', display: 'grid', gap: 10 }}
         >
-          {conversation.mergeParentMeta ? <MobileMergeProgressStrip parent={conversation} /> : null}
           {unifiedSubAgents.length > 0 ? (
             <MobileSubAgentPanel subAgents={unifiedSubAgents} />
           ) : null}

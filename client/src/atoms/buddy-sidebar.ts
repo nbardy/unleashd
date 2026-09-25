@@ -194,7 +194,6 @@ export const sidebarRunningCountByFolderAtom = atom((get) => {
       isBuddyConversation(conversation) ||
       isBuddyBuilderConversation(conversation) ||
       (conversation.isWorker && !promoted.has(conversation.id)) ||
-      conversation.mergeChildMeta ||
       (conversation.parentConversationId && ids.has(conversation.parentConversationId))
     )
       continue;
@@ -218,7 +217,6 @@ export const buddyBuilderConversationsAtom = atom((get) => {
     (conversation) =>
       isBuddyBuilderConversation(conversation) &&
       !(conversation.isWorker && !promoted.has(conversation.id)) &&
-      !conversation.mergeChildMeta &&
       !(conversation.parentConversationId && ids.has(conversation.parentConversationId))
   );
 });

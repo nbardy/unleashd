@@ -38,7 +38,7 @@ The submodule implementation lives in `src/build.ts`, `src/process-runner.ts`,
    Do not spread provider conditionals through the generic executor.
 
 3. **The submodule is not an app runtime.**
-   No conversation model, no merge/swarm orchestration, no sidebar/UI state, no
+   No conversation model, no swarm orchestration, no sidebar/UI state, no
    product-specific subagent data model. The submodule only reports normalized
    runtime facts.
 
@@ -148,10 +148,10 @@ Regression guard: `server/test/session-loader-hydration.test.ts`.
 Stable tool instructions belong in native tool descriptions or the dedicated
 model instruction channel. Keep authored text intact; scope generated workflow
 context to the selected operation. Display cleanup runs independently of durable
-identity: Builder, Buddy, swarm and merge envelopes must not become user messages
-after reload. Merge envelopes written from September 12 use a length field so
-review documents can quote closing markers; ambiguous legacy copies are preserved.
-Complete reserved envelopes pasted at the start of user text remain ambiguous.
+identity: Builder, Buddy and swarm envelopes must not become user messages
+after reload. (The merge feature and its `unleashd:merge-prefix` envelope were
+deleted on 2026-09-25; old merge transcripts now display the injected reviews as
+ordinary first-message text.) Complete reserved envelopes pasted at the start of user text remain ambiguous.
 Tests cover live provider input, imported/cached display and literal user quotes;
 see `product/buddies/AUDIT_PROMPT_PLACEMENT_2026-09-12.md` for rationale and limits.
 
@@ -252,18 +252,17 @@ no saved audience start a fresh session while retaining display history. Memory
 revision changes alone do not reset a session. Audience metadata is written when
 the provider confirms its session ID, never inferred from transcript text.
 
-### Two things are called "fork"
+### Chat "Fork" and provider-session inheritance
 
-| | Chat "Fork" (soft handoff) | Merge session-fork |
-|---|---|---|
-| Trigger | Fork button (`atoms/fork-actions.ts`) | `POST /api/conversations/merge` |
-| Carries | transcript as draft text | the native CLI session |
-| Provider gate | none — any provider, any pair | `FORK_CAPABLE_PROVIDERS` |
+Chat "Fork" (`atoms/fork-actions.ts`) is a soft handoff: a new conversation with
+`resumedFromConversationId` lineage and the transcript as draft text. Any
+provider pair works.
 
-Chat Fork **opportunistically upgrades** to session inheritance on its first
-send when the source is the same provider *and* that provider is fork-capable
-(`runtime.ts` `sendMessage`). Everything else stays string handoff. That upgrade
-must never reject the send.
+It **opportunistically upgrades** to native session inheritance (CLI `--fork` /
+`emulateFork`) on its first send when the source is the same provider *and*
+that provider is in `FORK_CAPABLE_PROVIDERS` (`runtime.ts` `sendMessage`).
+Everything else stays string handoff. That upgrade must never reject the send.
+(Merge, the only other session-fork user, was deleted on 2026-09-25.)
 
 It did once: the branch checked only `source.provider === this.provider`, so a
 muse -> muse fork handed a session id to a harness with neither

@@ -39,7 +39,6 @@ test('summarizeConversation keeps metadata, message count, and a bounded last-me
     swarmDebugPrefix: null,
     buddyContext: null,
     purpose: 'general',
-    mergeParentMeta: null,
   };
 
   const summary = summarizeConversation(conversation);

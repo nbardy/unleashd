@@ -1,7 +1,6 @@
 import type { ChildProcess } from 'node:child_process';
 import crypto from 'node:crypto';
 import { EventEmitter } from 'node:events';
-import fs from 'node:fs';
 import path from 'node:path';
 import {
   type ExecuteCommandRequest,
@@ -37,7 +36,6 @@ import {
   formatBuddyWorkerToolResult,
   isBuddyKind,
   matchConversationKind,
-  mergeReviewDocPath,
   providerSupportsFork,
 } from '@unleashd/shared';
 import { formatToolUse, isCompletionOnlyToolUse } from '../adapters/tool-format';
@@ -75,21 +73,6 @@ import {
   isTerminalSubagentStatus,
   normalizeCodexSubagentStatus,
 } from '../subagent-tools';
-
-export type MergeParentMeta = {
-  children: Array<{
-    sourceConversationId: string;
-    childConversationId: string;
-    reviewUuid: string;
-    childWorkingDirectory: string;
-  }>;
-  prefixInjected: boolean;
-};
-
-export type MergeChildMeta = {
-  parentConversationId: string;
-  reviewUuid: string;
-};
 
 export type OwnedBuddyChatRun = { id: string; claim_token: string; deadline: string };
 export type BuddyChatAdmission =
@@ -539,8 +522,6 @@ export interface ConversationOptions {
   placement?: ConversationPlacement;
   purpose?: ConversationPurpose;
   kind?: ConversationKind | null;
-  mergeParentMeta?: MergeParentMeta | null;
-  mergeChildMeta?: MergeChildMeta | null;
   /** Usage restored from the persisted session binding on reload. */
   existingProviderUsage?: ProviderTurnUsage | null;
 }
@@ -565,8 +546,6 @@ export interface ConversationRuntime extends EventEmitter, ConversationRuntimeVi
   /** Provider-generated conversation label. Undefined until observed. */
   title: string | undefined;
   swarmDebugPrefix: string | null;
-  mergeParentMeta: MergeParentMeta | null;
-  mergeChildMeta: MergeChildMeta | null;
   providerUsage: ProviderTurnUsage | null;
   purpose: ConversationPurpose;
   subAgents: SubAgent[];
@@ -596,7 +575,6 @@ export interface ConversationRuntime extends EventEmitter, ConversationRuntimeVi
     ) => void,
     onAdmitted?: (config: ResolvedExecutionConfig) => void
   ): Promise<string>;
-  spawnMergeReviewFork(content: string, forkSourceSessionId: string): void;
   stop(reason?: 'user_stop' | 'server_restart'): void;
   expireCoordinationRun(): void;
   stopAutomationTurn(): void;
@@ -737,7 +715,7 @@ export function createConversationRuntime(
     // For Codex this is resolved from thread_spawn.parent_thread_id.
     parentConversationId: string | null;
     // Chat "Fork" soft-handoff lineage (UI). Not a provider-session fork.
-    // See shared FORK_CAPABLE_PROVIDERS comment for the two "fork" concepts.
+    // See the shared FORK_CAPABLE_PROVIDERS comment for when it upgrades to a session fork.
     resumedFromConversationId: string | null;
     // Full model name from CLI (e.g., "claude-sonnet-4-5-20250929") — more specific than provider.
     modelName: string | null;
@@ -791,10 +769,6 @@ export function createConversationRuntime(
       claimToken: string;
       terminalCause?: TurnTerminalCause;
     } | null = null;
-    // Merge feature: set on a "parent" thread that aggregates review docs from
-    // N forked children. Children have mergeChildMeta instead.
-    mergeParentMeta: MergeParentMeta | null;
-    mergeChildMeta: MergeChildMeta | null;
     // Provider-counted usage for the latest request on the CURRENT session.
     // Written from `usage` events during the turn and flushed to the session
     // binding when the turn ends, so a reload does not have to re-parse the
@@ -883,8 +857,6 @@ export function createConversationRuntime(
         automationClaimToken = null,
         purpose = 'general',
         kind = null,
-        mergeParentMeta = null,
-        mergeChildMeta = null,
       } = opts;
       this.id = id;
       // sessionId defaults to id so JSONL filename matches Map key (no poller mismatch).
@@ -936,8 +908,6 @@ export function createConversationRuntime(
       this._providerAudienceKey =
         isBuddyConversation && existingSessionId ? (opts.existingSessionAudienceKey ?? null) : null;
       this._automationClaimToken = automationClaimToken;
-      this.mergeParentMeta = mergeParentMeta;
-      this.mergeChildMeta = mergeChildMeta;
       this.providerUsage = opts.existingProviderUsage ?? null;
       this.subAgents = [];
       this.queue = [];
@@ -2064,29 +2034,6 @@ export function createConversationRuntime(
           // Close handler will skip redundant state changes and broadcasts.
           this._turnCompletedCleanly = true;
           updateBuddyConversationLink(this, 'active');
-          // Merge feature: if this is a review child, scan the final assistant
-          // message for the sentinel `merge_review_docs/REVIEW_DOC_<uuid>.txt`.
-          // Presence → complete; absence → error. Either way, broadcast once so
-          // the parent's progress strip updates.
-          if (this.mergeChildMeta) {
-            const expectedPath = mergeReviewDocPath(this.mergeChildMeta.reviewUuid);
-            // Reverse scan instead of `[...messages].reverse().find(...)`, which
-            // copied the whole transcript to find one message from the end.
-            let lastAssistant: Message | undefined;
-            for (let i = this.messages.length - 1; i >= 0 && !lastAssistant; i--) {
-              if (this.messages[i].role === 'assistant') lastAssistant = this.messages[i];
-            }
-            const found = !!lastAssistant && lastAssistant.content.includes(expectedPath);
-            broadcast({
-              type: 'merge_child_status',
-              parentConversationId: this.mergeChildMeta.parentConversationId,
-              childConversationId: this.id,
-              reviewUuid: this.mergeChildMeta.reviewUuid,
-              status: found ? 'complete' : 'error',
-              reviewDocPath: found ? expectedPath : null,
-            });
-          }
-
           break;
         }
 
@@ -2372,8 +2319,8 @@ export function createConversationRuntime(
       try {
         this.sendAdmittedMessage(prompt, input);
       } finally {
-        // sendAdmittedMessage can return before spawning (merge send blocked,
-        // preflight refusal). An unconsumed admitted run must be settled here,
+        // sendAdmittedMessage can return before spawning (preflight
+        // refusal, rejected fork). An unconsumed admitted run must be settled here,
         // or it stays 'running' and holds one of its Buddy's slots forever.
         if (this._admittedChatRun) {
           this._admittedChatRun = null;
@@ -2458,17 +2405,13 @@ export function createConversationRuntime(
         !!dependencies.readCurrentBuddyContext &&
         this.memoryGeneration !== this._briefedMemoryGeneration;
 
-      // --- Chat Fork vs merge session-fork (easy to confuse) ---
+      // --- Chat Fork ---
       //
       // Chat "Fork" (soft handoff): resumedFromConversationId is UI lineage.
       // Context is supposed to live in the draft / first user message
       // (originally a pasted transcript). Changing provider before send is
       // intentional and must still work — do not require same-provider CLI
       // session inheritance for that path.
-      //
-      // Merge review children: spawnMergeReviewFork() below, which ALWAYS
-      // passes forkSourceSessionId into the harness (--fork / emulateFork).
-      // That path is gated by FORK_CAPABLE_PROVIDERS.
       //
       // The block below opportunistically upgrades a Chat Fork to session
       // inheritance when the source is the same provider AND that provider is
@@ -2558,68 +2501,6 @@ export function createConversationRuntime(
       // (which requires matching generations).
       if (turnBuddyContext) this._briefedMemoryGeneration = this.memoryGeneration;
 
-      // Merge feature: on the very first user send of a merge parent thread,
-      // inject a prefix containing the contents of each child's review doc.
-      // Loaded synchronously from each child's working directory. Missing files
-      // become inline placeholders so the injection always succeeds even if a
-      // child errored. Sentinel markers let a future restart path recover the
-      // injected context the same way swarmDebugPrefix does.
-      if (
-        this.mergeParentMeta !== null &&
-        !this.mergeParentMeta.prefixInjected &&
-        this.messages.length === 0
-      ) {
-        // Race guard: even though the client disables Send until all children
-        // settle via allMergeChildrenSettledAtomFamily, a server restart or a
-        // WS reconnect could briefly put the client's view ahead of reality.
-        // If any child is still running we reject with a clear system message
-        // so the user retries rather than getting placeholder-injected reviews.
-        const stillRunning: string[] = [];
-        for (const child of this.mergeParentMeta.children) {
-          const childConv = getConversation(child.childConversationId);
-          if (childConv?.isRunning) stillRunning.push(child.childConversationId.substring(0, 8));
-        }
-        if (stillRunning.length > 0) {
-          const msg = `Merge send blocked — ${stillRunning.length} review fork(s) still running: ${stillRunning.join(', ')}. Wait for the progress strip to settle.`;
-          console.warn(`[${this.id}] ${msg}`);
-          const systemMessage: Message = {
-            role: 'system',
-            content: msg,
-            timestamp: new Date(),
-          };
-          broadcast({
-            type: 'message',
-            conversationId: this.id,
-            role: 'system',
-            content: msg,
-          });
-          // Do NOT push into this.messages — leaving messages empty preserves
-          // prefixInjected=false so a retry re-enters this branch cleanly.
-          void systemMessage;
-          return;
-        }
-        const parts: string[] = [
-          'This is a merge thread that should take all the "reviews" below from other agent conversations as context',
-        ];
-        for (const child of this.mergeParentMeta.children) {
-          const docRel = mergeReviewDocPath(child.reviewUuid);
-          const docAbs = path.join(child.childWorkingDirectory, docRel);
-          let body: string;
-          try {
-            body = fs.readFileSync(docAbs, 'utf-8');
-          } catch {
-            body = `[review doc not found: ${docRel} — child ${child.childConversationId.substring(0, 8)} may have errored]`;
-          }
-          parts.push(
-            `--- review ${child.reviewUuid} (source conversation ${child.sourceConversationId.substring(0, 8)}) ---\n${body}`
-          );
-        }
-        const mergePrefix = parts.join('\n\n');
-        // Review documents may quote our delimiters; length keeps display recovery exact.
-        cliContent = `<!-- unleashd:merge-prefix-v1 ${mergePrefix.length} -->\n${mergePrefix}\n<!-- /unleashd:merge-prefix-v1 -->\n\n${content}`;
-        this.mergeParentMeta.prefixInjected = true;
-      }
-
       // Add user message to history (clean content for UI)
       const userMessage: Message = {
         role: 'user',
@@ -2666,48 +2547,8 @@ export function createConversationRuntime(
       });
     }
 
-    /**
-     * Merge feature ONLY: spawn a turn by inheriting another conversation's
-     * provider session (CLI --fork / emulateFork). `forkSourceSessionId` is the
-     * provider session id, NOT the Unleashd conversation UUID.
-     *
-     * This is NOT the Chat "Fork" button. Chat Fork is a soft handoff via
-     * resumedFromConversationId + draft/first-message text (often a pasted
-     * transcript) and must not be routed through here.
-     *
-     * Requires FORK_CAPABLE_PROVIDERS / harness sessionForkFlags or emulateFork.
-     * Only safe on a fresh Conversation (no prior messages).
-     */
-    spawnMergeReviewFork(content: string, forkSourceSessionId: string): void {
-      if (this.process || this.isRunning) {
-        console.warn(`[${this.id}] spawnMergeReviewFork: already running, ignoring`);
-        return;
-      }
-      this._prepareTurnAttempt();
-      const executionConfig = this.preflightExecution();
-      if (!executionConfig) return;
-      const userMessage: Message = {
-        role: 'user',
-        content,
-        timestamp: new Date(),
-      };
-      this.messages.push(userMessage);
-      this.broadcastMessage({
-        type: 'message',
-        role: 'user',
-        content,
-        conversationId: this.id,
-      });
-      // Native vs cp+resume emulation is decided inside agent-cli-tool based
-      // on the harness config. From here it's opaque: pass the source session
-      // id through, let the library handle the rest. Mark _hasStartedSession
-      // false so spawnForMessage treats this as a first-turn fork.
-      this._hasStartedSession = false;
-      this.spawnForMessage(content, executionConfig, forkSourceSessionId);
-    }
-
     private preflightExecution(): ResolvedExecutionConfig | undefined {
-      // Resolve immediately before any message, merge-prefix, or queue mutation.
+      // Resolve immediately before any message or queue mutation.
       // Catalog changes may affect defaults without changing durable intent.
       const resolution = this.refreshConfigResolution();
       if (resolution.status === 'resolved') {
@@ -3501,8 +3342,6 @@ export function createConversationRuntime(
         kind: this.kind,
         purpose: this.purpose,
         placement: this.placement,
-        mergeParentMeta: this.mergeParentMeta,
-        mergeChildMeta: this.mergeChildMeta,
         providerUsage: this.providerUsage,
       };
     }

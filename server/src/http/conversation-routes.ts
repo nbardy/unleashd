@@ -192,8 +192,6 @@ export function buildContextBreakdown(
       `Soft handoff: resumed from /chat/${conversation.resumedFromConversationId} (fork lineage; original kept).`
     );
   }
-  if (conversation.mergeParentMeta) handoffParts.push(JSON.stringify(conversation.mergeParentMeta));
-  if (conversation.mergeChildMeta) handoffParts.push(JSON.stringify(conversation.mergeChildMeta));
   const handoffText = handoffParts.join('\n');
 
   const sections = {

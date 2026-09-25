@@ -1,18 +1,8 @@
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
-import { promises as fs } from 'node:fs';
-import { tmpdir } from 'node:os';
-import path from 'node:path';
 import test from 'node:test';
 import type { Provider } from '@unleashd/shared';
-import {
-  type ConversationConfig,
-  createDefaultConversationConfig,
-  mergeReviewDocPath,
-} from '@unleashd/shared';
-import { loadAllConversations } from '../src/adapters/loader';
-import { getDiskAdapter } from '../src/adapters/registry';
-import { NormalizedSessionCache } from '../src/adapters/session-cache';
+import { type ConversationConfig, createDefaultConversationConfig } from '@unleashd/shared';
 import type { CompletedBuddyTurn } from '../src/buddies/memory-review';
 import { TURN_MAX_RUNTIME_MS } from '../src/constants/timeouts';
 import {
@@ -113,81 +103,6 @@ async function eventually(assertion: () => void): Promise<void> {
   }
   assertion();
 }
-
-test('merge context reaches the provider but stays out of live and cached imported user messages', async (t) => {
-  const directory = await fs.mkdtemp(path.join(tmpdir(), 'merge-prompt-transcript-'));
-  t.after(() => fs.rm(directory, { recursive: true, force: true }));
-  const reviewUuid = '7620bfae-9c98-47b2-a592-2b3d5b35d89a';
-  const reviewPath = path.join(directory, mergeReviewDocPath(reviewUuid));
-  await fs.mkdir(path.dirname(reviewPath), { recursive: true });
-  const review =
-    'Review quotes delimiters:\n<!-- /unleashd:merge-prefix -->\n\n<!-- /unleashd:merge-prefix-v1 -->\n\nRemaining review 🐱';
-  await fs.writeFile(reviewPath, review);
-  let providerPrompt = '';
-  const fixture = runtimeFixture({
-    executeTurn: ((request) => {
-      providerPrompt = request.prompt;
-      return {
-        child: { exitCode: 0 },
-        events: (async function* () {
-          yield { type: 'turn.complete' as const, reason: 'success' as const };
-        })(),
-        completed: Promise.resolve({ exitCode: 0, signal: null, reason: 'success' }),
-        stop: () => undefined,
-      };
-    }) as NonNullable<ConversationRuntimeDependencies['executeTurn']>,
-  });
-  const conversation = new fixture.Conversation({
-    id: 'merge-parent',
-    workingDirectory: directory,
-    configState: fixture.configState,
-    mergeParentMeta: {
-      children: [
-        {
-          sourceConversationId: 'source',
-          childConversationId: 'child',
-          reviewUuid,
-          childWorkingDirectory: directory,
-        },
-      ],
-      prefixInjected: false,
-    },
-  });
-  const authored =
-    'Combine the reviews. Preserve this literal:\n<!-- /unleashd:merge-prefix-v1 -->\n\nAfter it.';
-  conversation.sendMessage(authored);
-  await eventually(() => assert.equal(conversation.hasActiveProcess(), false));
-  assert.match(providerPrompt, /This is a merge thread/);
-  assert.ok(providerPrompt.includes(review));
-  assert.equal(conversation.messages[0].content, authored);
-
-  const quoted = `Explain this recorded wrapper:\n${providerPrompt}`;
-  const incomplete = '<!-- unleashd:merge-prefix -->\nAn incomplete literal example.';
-  const timestamp = new Date().toISOString();
-  const source = path.join(directory, 'session.jsonl');
-  await fs.writeFile(
-    source,
-    [
-      { timestamp, type: 'session_meta', payload: { id: 'merge-session', cwd: directory } },
-      ...[providerPrompt, quoted, incomplete].map((message) => ({
-        timestamp,
-        type: 'event_msg',
-        payload: { type: 'user_message', message },
-      })),
-    ]
-      .map((entry) => JSON.stringify(entry))
-      .join('\n')
-  );
-  const adapter = { ...getDiskAdapter('codex'), discoverFiles: async () => [source] };
-  const cache = new NormalizedSessionCache(path.join(directory, 'cache'));
-  for (let pass = 0; pass < 2; pass++) {
-    const loaded = await loadAllConversations({ adapters: [adapter], cache });
-    assert.deepEqual(
-      loaded.conversations.get('merge-session')?.messages.map((m) => m.content),
-      [authored, quoted, incomplete]
-    );
-  }
-});
 
 test('retained Buddy display history stays out of fresh provider context across audience resets', async () => {
   type Request = Parameters<NonNullable<ConversationRuntimeDependencies['executeTurn']>>[0];

@@ -7,8 +7,8 @@ import { effectiveSwarmDebugPrefix } from '../components/buddies/ui-contract';
  * Extracted from Chat.tsx so the mobile conversation view forks with identical
  * semantics. Chat "Fork" is a SOFT HANDOFF — a new conversation carrying the
  * prior transcript as its draft plus `resumedFromConversationId` for lineage.
- * It is NOT the provider-session fork used by merge (CLI `--fork` /
- * emulateFork, gated on FORK_CAPABLE_PROVIDERS). Do not conflate them; see
+ * The server upgrades the first send to a provider-session fork (CLI `--fork`
+ * / emulateFork) only for same-provider FORK_CAPABLE_PROVIDERS pairs; see
  * shared/src/index.ts around the FORK_CAPABLE_PROVIDERS block.
  *
  * Because it is text-only, fork works across providers — the draft is all the

@@ -1045,62 +1045,6 @@ a.sidebar-buddy-wake-done {
   line-height: 1.35;
 }
 
-/* ============================================================================
-   Merge feature — sidebar glow, merge button, row checkmark overlay
-   ============================================================================ */
-
-.sidebar--merge-mode {
-  box-shadow: inset 0 0 0 2px var(--theme-violet), 0 0 32px
-    color-mix(in oklab, var(--theme-violet) 45%, transparent);
-  transition: box-shadow 200ms ease;
-}
-
-.conversation-item--merge-mode {
-  cursor: pointer;
-  padding-left: 26px;
-  position: relative;
-}
-
-.conversation-item--merge-selected {
-  background: color-mix(in oklab, var(--theme-violet) 18%, transparent);
-  outline: 1px solid var(--theme-violet);
-}
-
-.conversation-item--merge-disabled {
-  opacity: 0.45;
-  cursor: not-allowed;
-}
-
-.merge-checkmark {
-  position: absolute;
-  left: 6px;
-  top: 50%;
-  transform: translateY(-50%);
-  width: 14px;
-  height: 14px;
-  border-radius: var(--ui-radius);
-  border: 1px solid var(--theme-base01);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 10px;
-  line-height: 1;
-  color: var(--theme-base03);
-  background: var(--theme-base03);
-}
-
-.merge-checkmark--on {
-  background: var(--theme-violet);
-  border-color: var(--theme-violet);
-  color: var(--theme-base03);
-  font-weight: 700;
-}
-
-.merge-checkmark--disabled {
-  background: transparent;
-  border-color: color-mix(in oklab, var(--theme-base01) 60%, transparent);
-}
-
 .sidebar .folder-group-header:focus-visible,
 .sidebar .conversation-item:focus-visible {
   outline: 2px solid var(--accent-primary);

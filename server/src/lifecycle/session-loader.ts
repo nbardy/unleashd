@@ -314,8 +314,6 @@ export function createSessionLoader(dependencies: SessionLoaderDependencies): Se
         null,
       modelName: source.modelName ?? null,
       title: source.title ?? null,
-      mergeParentMeta: source.mergeParentMeta ?? null,
-      mergeChildMeta: source.mergeChildMeta ?? null,
       kind: kindForHydrate,
       placement: hydratedConfig.record.creation?.placement ?? source.placement,
       buddyContext: source.buddyContext ?? hydratedConfig.record.creation?.buddyContext ?? null,

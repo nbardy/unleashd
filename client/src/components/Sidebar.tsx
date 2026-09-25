@@ -3,7 +3,6 @@ import {
   createDefaultConversationConfig,
   isBuddyBuilderConversation,
   isBuddyConversation,
-  providerSupportsFork,
 } from '@unleashd/shared';
 import { useAtom, useAtomValue } from 'jotai';
 import { useCallback, useEffect, useMemo, useState } from 'react';
@@ -26,7 +25,6 @@ import {
   recentDirectoriesAtom,
   wsStatusAtom,
 } from '../atoms/conversations';
-import { mergeModeAtom, mergeSelectionAtom } from '../atoms/mergeAtoms';
 import {
   galleryCollapsedProjectsAtom,
   hasUnseenMessages,
@@ -117,8 +115,6 @@ export function Sidebar() {
   const activeConversationId = useAtomValue(activeConversationIdAtom);
   const defaultCwd = useAtomValue(defaultCwdAtom);
   const wsStatus = useAtomValue(wsStatusAtom);
-  const mergeMode = useAtomValue(mergeModeAtom);
-  const [, setMergeSelection] = useAtom(mergeSelectionAtom);
 
   const lastWorkingDirectory = useAtomValue(lastWorkingDirectoryAtom);
   const lastSeenMessageIndex = useAtomValue(lastSeenMessageIndexAtom);
@@ -142,9 +138,6 @@ export function Sidebar() {
         (conv) =>
           // Hide workers unless promoted to main view — they belong in the Swarm UI.
           !(conv.isWorker && !promotedSet.has(conv.id)) &&
-          // Hide merge review children — they're internal forks shown only in the
-          // parent's MergeProgressStrip, not as standalone sidebar entries.
-          !conv.mergeChildMeta &&
           // Buddy conversations live in the virtual Buddies recent-project group.
           !isBuddyConversation(conv) &&
           // Builder threads live in their own Buddy Builder folder below.
@@ -369,20 +362,6 @@ export function Sidebar() {
   };
 
   const handleSelectConversation = (id: string) => {
-    if (mergeMode) {
-      // Merge selection only — requires provider-SESSION fork capability.
-      // Unrelated to the Chat "Fork" soft-handoff button.
-      const conv = allConversations.find((c) => c.id === id);
-      if (conv && !providerSupportsFork(conv.provider)) return;
-      if (conv?.isRunning) return;
-      setMergeSelection((prev) => {
-        const next = new Set(prev);
-        if (next.has(id)) next.delete(id);
-        else next.add(id);
-        return next;
-      });
-      return;
-    }
     navigate(`/chat/${id}`);
   };
 
@@ -396,7 +375,7 @@ export function Sidebar() {
   const onDone = wsStatus === 'connected' ? handleDone : null;
 
   return (
-    <div className={`sidebar ${mergeMode ? 'sidebar--merge-mode' : ''}`}>
+    <div className="sidebar">
       <div className="sidebar-header">
         <div className="sidebar-actions" aria-label="Quick actions">
           <button
@@ -1182,9 +1161,6 @@ function ConversationItem({
   showFolderBadge,
   onSelect,
   onDone,
-  mergeMode = false,
-  mergeSelected = false,
-  mergeDisabled = false,
 }: {
   conv: Conversation;
   isActive: boolean;
@@ -1193,9 +1169,6 @@ function ConversationItem({
   onSelect: (id: string) => void;
   /** Null while disconnected: the command would be dropped, so the button is disabled. */
   onDone: ((conv: Conversation, e: React.MouseEvent) => void) | null;
-  mergeMode?: boolean;
-  mergeSelected?: boolean;
-  mergeDisabled?: boolean;
 }) {
   const workingDirectory = normalizeFolderDirectory(conv.workingDirectory);
   const projectColor = getProjectColor(workingDirectory);
@@ -1207,18 +1180,10 @@ function ConversationItem({
   const timeAgo = lastTime ? formatTimeAgo(lastTime) : null;
   const timeColor = lastTime ? timeAgoColor(getMinutesElapsed(lastTime)) : undefined;
 
-  const itemClasses = [
-    'conversation-item',
-    isActive ? 'active' : '',
-    mergeMode ? 'conversation-item--merge-mode' : '',
-    mergeSelected ? 'conversation-item--merge-selected' : '',
-    mergeMode && mergeDisabled ? 'conversation-item--merge-disabled' : '',
-  ]
-    .filter(Boolean)
-    .join(' ');
+  const itemClasses = isActive ? 'conversation-item active' : 'conversation-item';
 
   // ONE row shape for every conversation, buddy or not:
-  //   [merge ✓] [folder badge] title — time [status]  (+ Done on hover)
+  //   [folder badge] title — time [status]  (+ Done on hover)
   // There used to be a second two-line branch here, kept only for non-buddy rows.
   // showFolderBadge is a display slot, not a second layout: grouped views hide the
   // badge because the group header already names the folder.
@@ -1226,16 +1191,8 @@ function ConversationItem({
     <div
       className={itemClasses}
       onClick={() => onSelect(conv.id)}
-      title={`${title}${timeAgo ? ` — ${timeAgo}` : ''}${mergeDisabled ? ` (Fork not supported for ${conv.provider})` : ''}`}
+      title={`${title}${timeAgo ? ` — ${timeAgo}` : ''}`}
     >
-      {mergeMode && (
-        <div
-          className={`merge-checkmark ${mergeSelected ? 'merge-checkmark--on' : ''} ${mergeDisabled ? 'merge-checkmark--disabled' : ''}`}
-          aria-hidden="true"
-        >
-          {mergeSelected ? '✓' : ''}
-        </div>
-      )}
       <div className="conversation-row">
         {showFolderBadge && (
           <span className="folder-badge" style={{ color: projectColor }} title={dirDisplay}>
@@ -1274,17 +1231,15 @@ function ConversationItem({
           />
         )}
       </div>
-      {!mergeMode && (
-        <button
-          type="button"
-          className="done-btn"
-          disabled={onDone === null}
-          title={onDone === null ? 'Reconnecting to the server' : undefined}
-          onClick={(e) => onDone?.(conv, e)}
-        >
-          Done
-        </button>
-      )}
+      <button
+        type="button"
+        className="done-btn"
+        disabled={onDone === null}
+        title={onDone === null ? 'Reconnecting to the server' : undefined}
+        onClick={(e) => onDone?.(conv, e)}
+      >
+        Done
+      </button>
     </div>
   );
 }

@@ -29,7 +29,6 @@ import {
   streamingAtomFamily,
 } from '../atoms/conversations';
 import { forkConversation } from '../atoms/fork-actions';
-import { allMergeChildrenSettledAtomFamily } from '../atoms/mergeAtoms';
 import type { BuddyContext } from '../atoms/pending-creations';
 import { markMessagesSeen, setSavedActiveConversationId } from '../atoms/ui';
 import { useComposerSubmission } from '../hooks/useComposerSubmission';
@@ -47,7 +46,6 @@ import { formatTimeAgo } from '../utils/time';
 import { BuddyConvoHeader } from './BuddyConvoHeader';
 import { ContextBreakdownMeter } from './ContextBreakdownMeter';
 import { ConversationConfigPicker } from './ConversationConfigPicker';
-import { MergeProgressStrip } from './MergeProgressStrip';
 import { PromptPalette } from './PromptPalette';
 import { ResumeThreadWidget } from './ResumeThreadWidget';
 import { SubAgentPanel } from './SubAgentPanel';
@@ -116,14 +114,6 @@ export function Chat({ id }: { id: string }) {
   const childSessionConversations = useAtomValue(childConversationsAtomFamily(id ?? ''));
   const conversationCount = useAtomValue(conversationCountAtom);
   const queue = conversation?.queue?.length ? conversation.queue : EMPTY_QUEUE;
-  const allMergeChildrenSettled = useAtomValue(allMergeChildrenSettledAtomFamily(id ?? ''));
-  // Merge parent threads must wait for all forked review children to settle
-  // (complete or error) before the user can send their first message — the
-  // server needs the review docs on disk to build the prefix.
-  const mergeGateBlocking =
-    !!conversation?.mergeParentMeta &&
-    conversation.messages.length === 0 &&
-    !allMergeChildrenSettled;
   const resumedFromConversationId = conversation?.resumedFromConversationId ?? '';
   const resumedFromConversation = useAtomValue(conversationAtomFamily(resumedFromConversationId));
 
@@ -368,8 +358,8 @@ export function Chat({ id }: { id: string }) {
   }, [threadCopyText, setSubmissionError]);
 
   // Chat "Fork": new conversation + resumedFromConversationId + draft context.
-  // Does not call CLI --fork / emulateFork. That is merge-only
-  // (FORK_CAPABLE_PROVIDERS + spawnMergeReviewFork).
+  // The server upgrades the first send to a native CLI session fork only when
+  // source and target share a FORK_CAPABLE_PROVIDERS provider.
   // Shared with the mobile conversation header via atoms/fork-actions.ts —
   // one fork implementation, so the two trees cannot drift on draft contents
   // or lineage.
@@ -471,7 +461,7 @@ export function Chat({ id }: { id: string }) {
   // turn-spawn setup, which can take seconds on a loaded box. Gating the
   // textbox and Send button on that round trip froze the composer with no
   // feedback, so the composer empties on submit and the queue strip carries
-  // the in-flight state. Admission (`confirmed`, mergeGateBlocking) is enforced
+  // the in-flight state. Admission (`confirmed`) is enforced
   // at the two entry points below — the Send button and handleKeyDown.
   const handleQueue = () => submit(queueMessage);
   const handleInterrupt = () => submit(interruptAndSend);
@@ -736,8 +726,6 @@ export function Chat({ id }: { id: string }) {
         </div>
       </div>
 
-      {conversation.mergeParentMeta && <MergeProgressStrip parentId={conversation.id} />}
-
       {unifiedSubAgents.length > 0 && (
         <div className="thread-context">
           <SubAgentPanel
@@ -982,13 +970,11 @@ export function Chat({ id }: { id: string }) {
                 type="button"
                 className={`send-btn ${hasActiveTurn ? 'interrupt-mode' : ''}`}
                 onClick={hasActiveTurn ? handleInterrupt : handleSend}
-                disabled={!confirmed || !hasContent || mergeGateBlocking}
+                disabled={!confirmed || !hasContent}
                 title={
-                  mergeGateBlocking
-                    ? 'Waiting for review forks to finish'
-                    : hasActiveTurn
-                      ? 'Enter: Interrupt & send | Tab: Queue'
-                      : 'Enter: Send | Tab: Queue'
+                  hasActiveTurn
+                    ? 'Enter: Interrupt & send | Tab: Queue'
+                    : 'Enter: Send | Tab: Queue'
                 }
               >
                 {hasActiveTurn ? 'Interrupt' : 'Send'}

@@ -176,31 +176,3 @@ test('durable Builder and swarm identity does not bypass hidden setup cleanup', 
     }
   }
 });
-
-test('legacy merge cleanup preserves ambiguous or incomplete reserved wrappers', () => {
-  const suffix = '\n<!-- /unleashd:merge-prefix -->\n\n';
-  const legacy = `<!-- unleashd:merge-prefix -->\nReview context${suffix}${prompt}`;
-  const adjacent = `<!-- unleashd:merge-prefix -->\nReview context${suffix}${suffix.slice(1)}${prompt}`;
-  for (const [content, expected] of [
-    [legacy, prompt],
-    [adjacent, adjacent],
-    [`${legacy}${suffix}Literal second delimiter`, `${legacy}${suffix}Literal second delimiter`],
-    ['<!-- unleashd:merge-prefix -->\nIncomplete', '<!-- unleashd:merge-prefix -->\nIncomplete'],
-    [
-      '<!-- unleashd:merge-prefix-v1 999 -->\nIncomplete',
-      '<!-- unleashd:merge-prefix-v1 999 -->\nIncomplete',
-    ],
-  ]) {
-    const conversation = sessionToConversation({
-      sessionId: 'session',
-      filePath: '/tmp/session.jsonl',
-      workingDirectory: '/tmp/project',
-      provider: 'codex',
-      model: 'unknown',
-      createdAt: new Date(timestamp),
-      modifiedAt: new Date(timestamp),
-      messages: [{ role: 'user', content, timestamp: new Date(timestamp) }],
-    });
-    assert.equal(conversation?.messages[0].content, expected);
-  }
-});

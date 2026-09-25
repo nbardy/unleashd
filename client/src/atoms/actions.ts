@@ -1,9 +1,4 @@
-import type {
-  ClientMessage,
-  Conversation,
-  ConversationConfig,
-  ServerMessage,
-} from '@unleashd/shared';
+import type { ClientMessage, Conversation, ServerMessage } from '@unleashd/shared';
 import { ConversationSchema, getBuddyContext } from '@unleashd/shared';
 import { enableMapSet, produce } from 'immer';
 import { newId } from '../utils/ids';
@@ -29,15 +24,6 @@ import {
   wsStatusAtom,
 } from './conversations';
 import { applyStableSnapshot } from './detail-loader';
-import {
-  allMergeChildrenSettledAtomFamily,
-  mergeChildErrorAtomFamily,
-  mergeChildErrorMapAtom,
-  mergeChildReviewDocPathAtomFamily,
-  mergeChildReviewDocPathMapAtom,
-  mergeChildStatusAtomFamily,
-  mergeChildStatusMapAtom,
-} from './mergeAtoms';
 import { mutate } from './mutate';
 import {
   loadPendingConversations,
@@ -236,32 +222,6 @@ export function setSendFn(fn: (msg: ClientMessage) => void): void {
 export function setActiveConversationId(id: string | null): void {
   jotaiStore.set(activeConversationIdAtom, id);
   if (id !== null) refreshIfStale(id);
-}
-
-/**
- * Merge feature: POST /api/conversations/merge. Server mints the parent id
- * and per-child ids/review UUIDs, creates everything, spawns forks, then
- * broadcasts conversations_updated + merge_child_status events. Returns the
- * parent id so the caller can navigate to the new thread.
- */
-export async function createMergeConversations(args: {
-  parentConfig: ConversationConfig;
-  workingDirectory: string;
-  sourceIds: string[];
-}): Promise<{
-  parentId: string;
-  children: Array<{ sourceId: string; childId: string; reviewUuid: string }>;
-}> {
-  const res = await fetch('/api/conversations/merge', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(args),
-  });
-  if (!res.ok) {
-    const err = await res.json().catch(() => ({ error: 'merge failed' }));
-    throw new Error(err.error ?? `HTTP ${res.status}`);
-  }
-  return res.json();
 }
 
 /**
@@ -524,10 +484,6 @@ function handleConversationDeleted(
   pendingConfigCommandAtomFamily.remove(data.conversationId);
   childConversationsAtomFamily.remove(data.conversationId);
   queueAtomFamily.remove(data.conversationId);
-  mergeChildStatusAtomFamily.remove(data.conversationId);
-  mergeChildReviewDocPathAtomFamily.remove(data.conversationId);
-  mergeChildErrorAtomFamily.remove(data.conversationId);
-  allMergeChildrenSettledAtomFamily.remove(data.conversationId);
 }
 
 function handleMessageEvent(data: Extract<ServerMessage, { type: 'message' }>): void {
@@ -689,27 +645,6 @@ function handleConversationLoadComplete(
   jotaiStore.set(conversationLoadCompleteAtom, true);
 }
 
-function handleMergeChildStatus(
-  data: Extract<ServerMessage, { type: 'merge_child_status' }>
-): void {
-  // Review child has settled. Write status (complete | error) + optional
-  // doc path so the progress strip chip in the parent's Chat updates and
-  // the tooltip can fetch the doc.
-  mutate(mergeChildStatusMapAtom, (draft) => {
-    draft.set(data.childConversationId, data.status);
-  });
-  if (data.reviewDocPath) {
-    mutate(mergeChildReviewDocPathMapAtom, (draft) => {
-      draft.set(data.childConversationId, data.reviewDocPath as string);
-    });
-  }
-  if (data.errorMessage) {
-    mutate(mergeChildErrorMapAtom, (draft) => {
-      draft.set(data.childConversationId, data.errorMessage as string);
-    });
-  }
-}
-
 function handleQueueUpdated(data: Extract<ServerMessage, { type: 'queue_updated' }>): void {
   captureRestartRecoveryQueue(data.conversationId, data.queue);
   mutate(conversationsAtom, (draft) => {
@@ -807,8 +742,6 @@ export function handleMessage(data: ServerMessage): void {
       return handleConversationsUpdated(data);
     case 'conversation_load_complete':
       return handleConversationLoadComplete(data);
-    case 'merge_child_status':
-      return handleMergeChildStatus(data);
     case 'queue_updated':
       return handleQueueUpdated(data);
     case 'subagent_start':

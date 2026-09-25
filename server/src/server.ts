@@ -1,11 +1,6 @@
 import http from 'node:http';
 import path from 'node:path';
 import type { Provider as ProviderName } from '@unleashd/shared';
-import {
-  FORK_CAPABLE_PROVIDERS,
-  buildMergeReviewPrompt,
-  providerSupportsFork,
-} from '@unleashd/shared';
 import { resolveSessionTranscript } from './adapters/registry';
 import { resolveBuddyAssignmentConfig } from './buddies/assignment-config';
 import { chatRunAdmission } from './buddies/chat-run-admission';
@@ -59,7 +54,6 @@ import { createSessionLoader } from './lifecycle/session-loader';
 import { type ShutdownController, registerShutdownHandlers } from './lifecycle/shutdown';
 import { runServerStartup } from './lifecycle/startup';
 import { registerStaticClient } from './lifecycle/static-client';
-import { registerMergeRoutes } from './merge/routes';
 import { resolveListenHost } from './network';
 import {
   ErrorJournal,
@@ -433,8 +427,8 @@ registerAuthRoutes(app, AUTH_POLICY);
 app.use(compression({ threshold: 1024 }));
 
 // JSON body parser for API routes.
-// Default limit is 100kb which is far too small — queue-message, merge, and
-// other endpoints routinely carry pasted content, inline images, or full
+// Default limit is 100kb which is far too small — queue-message and other
+// endpoints routinely carry pasted content, inline images, or full
 // conversation histories. Matches client uploads already sized in MB.
 app.use(express.json({ limit: '50mb' }));
 app.use((request, response, next) => {
@@ -603,22 +597,6 @@ registerSwarmReadModelRoutes(app, {
   executeGit,
   isProcessAlive,
   now: Date.now,
-});
-
-registerMergeRoutes(app, {
-  getConversation: (id) => conversations.get(id),
-  createAndAddConversation(options) {
-    // Merge parents and review children are brand-new records.
-    const conversation = new Conversation({ ...options, done: false });
-    conversations.set(conversation);
-    return conversation;
-  },
-  configService: conversationConfigService,
-  providerSupportsFork,
-  forkCapableProviders: FORK_CAPABLE_PROVIDERS,
-  buildReviewPrompt: buildMergeReviewPrompt,
-  createId: uuidv4,
-  broadcast: applicationContext.broadcast,
 });
 
 const paletteService = createPaletteService({

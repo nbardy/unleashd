@@ -531,8 +531,8 @@ export const ConversationSchema = z.object({
   // conversation the user forked from. This is NOT provider-session inheritance
   // and does NOT imply FORK_CAPABLE_PROVIDERS. Context handoff is the draft /
   // first-message content (historically a pasted transcript); the Resume
-  // badge is UI chrome for that lineage. Contrast with merge review children,
-  // which use spawnMergeReviewFork + CLI --fork / emulateFork.
+  // badge is UI chrome for that lineage. When source and target share a
+  // fork-capable provider, the first send upgrades to CLI --fork / emulateFork.
   resumedFromConversationId: ConversationIdSchema.nullish(),
   // The actual model name from the CLI (e.g., "claude-sonnet-4-5-20250929").
   // More specific than `provider` which is just "claude", "codex", or "opencode".
@@ -560,29 +560,6 @@ export const ConversationSchema = z.object({
   placement: ConversationPlacementSchema.optional(),
   purpose: ConversationPurposeSchema.optional(),
 
-  // Merge feature metadata. Parent threads that aggregate review docs from
-  // forked children set mergeParentMeta; forked children set mergeChildMeta.
-  // Exactly one is set; both null for ordinary conversations.
-  mergeParentMeta: z
-    .object({
-      children: z.array(
-        z.object({
-          sourceConversationId: ConversationIdSchema,
-          childConversationId: ConversationIdSchema,
-          reviewUuid: z.string().uuid(),
-          childWorkingDirectory: z.string(),
-        })
-      ),
-      prefixInjected: z.boolean().default(false),
-    })
-    .nullish(),
-  mergeChildMeta: z
-    .object({
-      parentConversationId: ConversationIdSchema,
-      reviewUuid: z.string().uuid(),
-    })
-    .nullish(),
-
   // Provider-counted tokens for the latest request on the current session.
   // Null before the first turn reports usage, and on harnesses that report
   // none (muse emits no token fields on stdout). Never an estimate — the
@@ -600,24 +577,17 @@ export type DiscoveredConversation = Omit<
 };
 
 // =============================================================================
-// Merge feature — provider-SESSION fork capability (NOT Chat "Fork")
+// Provider-SESSION fork capability
 // =============================================================================
 //
-// Two different "fork" concepts in this codebase — do not conflate them:
-//
-// 1) Chat "Fork" button (soft handoff)
-//    New conversation + resumedFromConversationId + draft/first-message
-//    context (originally a pasted transcript). Cross-provider is fine because
-//    nothing inherits a CLI session. Gated by nothing here. See Chat.tsx
-//    handleForkThread + ResumeThreadWidget.
-//
-// 2) Merge review / provider-session fork (this set)
-//    Child turn inherits the parent's native CLI transcript under a NEW
-//    provider session id (parent untouched). Needs harness sessionForkFlags
-//    (claude/opencode) or emulateFork (codex/gemini). Cursor is omitted: no
-//    `--fork`, and chats are opaque sqlite / cloud-backed under
-//    ~/.cursor/chats/. Used only by /api/conversations/merge +
-//    spawnMergeReviewFork.
+// Chat "Fork" creates a new conversation with resumedFromConversationId and
+// draft/first-message context (a soft handoff; cross-provider is fine). On the
+// first send, when source and target share a provider in this set, the turn
+// upgrades to native session inheritance: the child inherits the source's CLI
+// transcript under a NEW provider session id (source untouched). Needs harness
+// sessionForkFlags (claude/opencode) or emulateFork (codex/gemini). Cursor is
+// omitted: no `--fork`, and chats are opaque sqlite / cloud-backed under
+// ~/.cursor/chats/. See Conversation.sendMessage in server runtime.ts.
 //
 export const FORK_CAPABLE_PROVIDERS: ReadonlySet<Provider> = new Set<Provider>([
   'claude',
@@ -626,27 +596,9 @@ export const FORK_CAPABLE_PROVIDERS: ReadonlySet<Provider> = new Set<Provider>([
   'gemini',
 ]);
 
-/** True if this provider can do merge-style provider-session forks. Not Chat Fork. */
+/** True if this provider's harness can fork a provider session natively. */
 export function providerSupportsFork(p: Provider): boolean {
   return FORK_CAPABLE_PROVIDERS.has(p);
-}
-
-export const MergeChildStatusSchema = z.enum(['spinning', 'complete', 'error']);
-export type MergeChildStatus = z.infer<typeof MergeChildStatusSchema>;
-
-// Review prompt sent verbatim to each forked child. {UUID} is replaced by a
-// per-child reviewUuid before the fork spawns.
-export const MERGE_REVIEW_PROMPT = `stop, review the entire thread, report everything you've done, commit completed, work, not incomplete work, reflect on any potential bugs you've raised, any you've fixed what your key goals started as, how they evolved, which sub goals arose, which goals and sub goals are completed, and what is still pending, also report all mistakes you made, key learnings, any struggles or confusion you had, and any broader issues with the tooling or the code base.
-
-Write ALL the above in a long over descriptive doc, then report back with
-"merge_review_docs/REVIEW_DOC_{UUID}.txt"`;
-
-export function buildMergeReviewPrompt(reviewUuid: string): string {
-  return MERGE_REVIEW_PROMPT.replace('{UUID}', reviewUuid);
-}
-
-export function mergeReviewDocPath(reviewUuid: string): string {
-  return `merge_review_docs/REVIEW_DOC_${reviewUuid}.txt`;
 }
 
 // =============================================================================
@@ -766,7 +718,7 @@ export const CreateConversationCommandSchema = z.object({
   config: ConversationConfigSchema,
   initialMessage: z.string().min(1).optional(),
   swarmDebugPrefix: z.string().optional(),
-  // Chat "Fork" soft-handoff lineage only — not merge provider-session fork.
+  // Chat "Fork" soft-handoff lineage.
   resumedFromConversationId: ConversationIdSchema.optional(),
   buddyContext: BuddyContextSchema.optional(),
   kind: ConversationKindSchema.optional(),
@@ -1090,18 +1042,6 @@ export const ConversationLoadCompleteMessageSchema = z.object({
 
 export type ConversationLoadCompleteMessage = z.infer<typeof ConversationLoadCompleteMessageSchema>;
 
-export const MergeChildStatusMessageSchema = z.object({
-  type: z.literal('merge_child_status'),
-  parentConversationId: ConversationIdSchema,
-  childConversationId: ConversationIdSchema,
-  reviewUuid: z.string().uuid(),
-  status: MergeChildStatusSchema,
-  reviewDocPath: z.string().nullish(),
-  errorMessage: z.string().nullish(),
-});
-
-export type MergeChildStatusMessage = z.infer<typeof MergeChildStatusMessageSchema>;
-
 export const ServerMessageSchema = z.discriminatedUnion('type', [
   InitMessageSchema,
   z.object({ type: z.literal('buddy_archived'), buddyId: z.string() }),
@@ -1128,7 +1068,6 @@ export const ServerMessageSchema = z.discriminatedUnion('type', [
   ConversationsUpdatedMessageSchema,
   ConversationLoadCompleteMessageSchema,
   QueueUpdatedMessageSchema,
-  MergeChildStatusMessageSchema,
 ]);
 
 export type ServerMessage = z.infer<typeof ServerMessageSchema>;

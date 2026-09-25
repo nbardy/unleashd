@@ -19,7 +19,6 @@ import '../styles/mobile-channels.css';
 /**
  * ShellMobile — mobile chrome around <Outlet/>.
  * Bottom tab bar = persistent chrome (like ShellDesktop's Sidebar+top-bar).
- * Never renders mergeMode (Not in v1 — merge stays desktop-only, see PLANNING §1).
  * Safe-area bottom inset expands tap target into home-indicator area (§7 #9).
  */
 

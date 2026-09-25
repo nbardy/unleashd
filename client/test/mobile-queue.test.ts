@@ -49,8 +49,6 @@ function makeConversation(queue: QueuedMessage[]) {
     kind: { kind: 'chat' as const },
     buddyContext: null,
     purpose: undefined,
-    mergeParentMeta: null,
-    mergeChildMeta: null,
   } as unknown as import('@unleashd/shared').Conversation;
 }
 

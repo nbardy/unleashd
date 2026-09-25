@@ -1133,7 +1133,7 @@
 }
 
 .mobile-chat__thread-context {
-  /* Container for merge strip + sub-agent + resume + swarm prefix below header.
+  /* Container for sub-agent + resume + swarm prefix below header.
      Layout via inline grid/gap in JSX; this class exists so css-classes test
      sees a rule (no extra styling needed beyond the inline grid). */
 }

@@ -35,7 +35,6 @@ import {
   extractBuddyContext,
   extractSwarmDebugPrefix,
   extractWorkerMetadata,
-  stripMergePrefix,
 } from './jsonl';
 
 // =============================================================================
@@ -185,7 +184,6 @@ export function sessionToConversation(session: ParsedSession): DiscoveredConvers
   // Skipping extraction in that case restores hidden instructions as user text.
   const extractedBuilder = extractBuddyBuilderPurpose(session.messages);
   const extractedSwarmPrefix = extractSwarmDebugPrefix(session.messages);
-  stripMergePrefix(session.messages);
   let buddyContext: BuddyContext | null = durableBuddy;
   let isBuddyBuilder = false;
   let swarmDebugPrefix: string | null = durableSwarmPrefix;

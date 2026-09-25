@@ -46,8 +46,6 @@ function conversation(overrides: Record<string, unknown> = {}): Conversation {
     buddyContext: null,
     purpose: 'general',
     placement: 'default',
-    mergeParentMeta: null,
-    mergeChildMeta: null,
     ...overrides,
   } as unknown as Conversation;
 }
@@ -145,11 +143,8 @@ test('buildContextBreakdown sums history and pairs provider cumulative delta', (
   assert.ok(typeof result.observedAt === 'string');
 });
 
-test('buildContextBreakdown derives handoff from branch, resume lineage, and merge meta', () => {
-  const convo = conversation({
-    resumedFromConversationId: 'parent-9',
-    mergeChildMeta: { parentConversationId: 'parent-9', reviewUuid: 'r-1' },
-  });
+test('buildContextBreakdown derives handoff from branch and resume lineage', () => {
+  const convo = conversation({ resumedFromConversationId: 'parent-9' });
   const branch = {
     sourceConversationId: 'src-1',
     throughMessageId: 'msg-1',
