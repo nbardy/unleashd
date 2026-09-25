@@ -131,6 +131,10 @@ pub struct Known {
 pub struct Committed {
     pub rev: i64,
     pub session_ids: Vec<String>,
+    /// The subset of `session_ids` whose stored history was replaced or renumbered (`Apply::Replace`
+    /// or `Withdraw`), not only appended: a reader holding earlier seqs of these must refetch from
+    /// the start. Without it, the server could not tell an append from a Codex event-mode flip.
+    pub rewritten: Vec<String>,
     pub removed: Vec<String>,
     pub messages_written: u64,
     /// Source path → row id, for every source this batch wrote.
@@ -251,6 +255,9 @@ impl Writer {
                         if listed {
                             untombstone.execute([&path])?;
                             committed.session_ids.push(row.facts.session_id.clone());
+                            if !matches!(outcome.apply, Apply::Append) {
+                                committed.rewritten.push(row.facts.session_id.clone());
+                            }
                         } else if let Some((old_id, true)) = previous {
                             tombstone.execute(params![path, old_id, rev])?;
                             committed.removed.push(old_id);
@@ -488,6 +495,26 @@ impl Reader {
         .collect()
     }
 
+    /// Deep search (`/api/search`): the newest listed messages whose text contains `needle`, ASCII
+    /// case-insensitively (SQLite `LIKE`). This is the one read that scans the message table, so
+    /// it is not in `plans()`; `Ingest.search` opens a connection of its own for it,
+    /// so a ~1 s scan never holds the reader that serves message pages.
+    pub fn search(&self, needle: &str, limit: u32) -> Result<Vec<SearchHit>> {
+        let escaped = needle.replace('\\', "\\\\").replace('%', "\\%").replace('_', "\\_");
+        let mut stmt = self.conn.prepare(SEARCH)?;
+        let rows = stmt.query_map(params![format!("%{escaped}%"), limit], |r| {
+            let role: String = r.get(2)?;
+            let tool_name: Option<String> = r.get(6)?;
+            Ok((r.get::<_, String>(0)?, r.get::<_, u32>(1)?, role, r.get(3)?, r.get(4)?, r.get::<_, String>(5)?, tool_name, r.get::<_, Option<String>>(7)?))
+        })?;
+        rows.map(|row| {
+            let (session_id, seq, role, at, completed_at, content, tool_name, tool_input) = row?;
+            let role = Role::parse(&role).ok_or_else(|| StoreError::Corrupt(format!("role {role}")))?;
+            Ok(SearchHit { session_id, message: Message { seq, role, at, completed_at, content, tool_call: tool_name.map(|name| ToolCall { name, input: tool_input }) } })
+        })
+        .collect()
+    }
+
     /// The latest request's context for a native session id: the most recently active source of
     /// that id that recorded one (listed or not: a context belongs to whatever file holds it).
     pub fn latest_context(&self, session_id: &str) -> Result<Option<ContextReading>> {
@@ -589,6 +616,17 @@ impl Writer {
         ];
         explain(&self.conn, queries.into_iter())
     }
+}
+
+const SEARCH: &str = "SELECT s.session_id, m.seq, m.role, m.at, m.completed_at, m.content, m.tool_name, m.tool_input
+  FROM message m JOIN session s ON s.source_id = m.source_id AND s.listed = 1
+  WHERE m.content LIKE ?1 ESCAPE '\\' ORDER BY m.at DESC LIMIT ?2";
+
+/// One deep-search match: the session it belongs to and the message.
+#[derive(Debug, Clone, PartialEq)]
+pub struct SearchHit {
+    pub session_id: String,
+    pub message: Message,
 }
 
 const LATEST_CONTEXT: &str = "SELECT context FROM session WHERE session_id = ?1 AND context IS NOT NULL ORDER BY activity_at DESC LIMIT 1";
