@@ -6,9 +6,13 @@ import {
   type ConversationConfigState,
   type ConversationCreationMetadata,
   type ConversationKind,
+  type Provider,
   type ResolvedExecutionConfig,
   type Result,
   applyConversationConfigPatch as applyConversationConfigSelectionPatch,
+  isEffortValidForProvider,
+  isModelIdValidForProvider,
+  normalizeModelId,
 } from '@unleashd/shared';
 import {
   type ConfigProvenance,
@@ -17,11 +21,6 @@ import {
   type ConversationRecordStore,
   type SessionBinding,
 } from './config-records';
-import {
-  type LegacyConfigDiagnostic,
-  type LegacyConfigEvidence,
-  migrateLegacyConversationConfig,
-} from './legacy-config-migration';
 
 export interface ConversationConfigResolver {
   resolve(config: ConversationConfig): Promise<ConfigResolution>;
@@ -72,14 +71,15 @@ export interface HydrateConversationConfigInput {
   sessionBindings: readonly SessionBinding[];
   currentSession?: SessionBinding;
   workingDirectory?: string;
-  legacy: LegacyConfigEvidence;
+  /** Named `legacy` for its caller in lifecycle/session-loader.ts (lane S2's); it is session evidence. */
+  legacy: SessionConfigEvidence;
 }
 
 export interface HydratedConversationConfig {
   state: ConversationConfigState;
   record: ConversationRecord;
   migrated: boolean;
-  diagnostics: LegacyConfigDiagnostic[];
+  diagnostics: SessionConfigDiagnostic[];
 }
 
 export interface ForkConversationConfigInput {
@@ -255,7 +255,7 @@ export class ConversationConfigService {
       };
     }
 
-    const migration = migrateLegacyConversationConfig(input.legacy);
+    const migration = configFromSessionEvidence(input.legacy);
     const resolution = await this.resolver.resolve(migration.config);
     let record: ConversationRecord;
     try {
@@ -506,4 +506,83 @@ function failure(
       ...(provider ? { provider } : {}),
     },
   };
+}
+
+export interface SessionConfigEvidence {
+  provider: Provider;
+  /** Provider-reported model, or `unknown` when the native session has none. */
+  reportedModel?: string | null;
+  /** Effort recorded by the native session. */
+  reasoningEffort?: string | null;
+  /** Native sessions discovered without an application record use external provenance. */
+  source?: 'legacy_application' | 'external_session';
+}
+
+export interface SessionConfigDiagnostic {
+  code: 'unknown_reported_model' | 'invalid_legacy_effort';
+  message: string;
+  reportedModel?: string;
+  reasoningEffort?: string;
+}
+
+/**
+ * κ for a discovered native session with no record: session evidence → config.
+ * Until S11 (2026-09-26) this was legacy-config-migration.ts, which also decoded
+ * retired Codex `<model>-<effort>` composites; T14a found no live data needing it.
+ */
+function configFromSessionEvidence(evidence: SessionConfigEvidence): {
+  config: ConversationConfig;
+  provenance: ConfigProvenance;
+  diagnostics: SessionConfigDiagnostic[];
+} {
+  const diagnostics: SessionConfigDiagnostic[] = [];
+  const reportedModel = trimmed(evidence.reportedModel);
+  // Claude reports this versioned name for the catalog's Fable alias.
+  // Recover it only from session evidence; explicit stored selections stay unchanged.
+  const reported =
+    evidence.provider === 'claude' && reportedModel === 'claude-fable-5-1'
+      ? 'fable'
+      : reportedModel;
+  // Collapse provider aliases (e.g. composer-2 → composer-2.5) before validation
+  // so historical session labels land on the current catalog id.
+  const modelId = reported && (normalizeModelId(evidence.provider, reported) ?? reported);
+  const modelValid = modelId !== undefined && isModelIdValidForProvider(evidence.provider, modelId);
+  if (reportedModel && !modelValid) {
+    diagnostics.push({
+      code: 'unknown_reported_model',
+      message: `Could not map reported ${evidence.provider} model "${reportedModel}" to a current catalog model`,
+      reportedModel,
+    });
+  }
+
+  const reasoningEffort = trimmed(evidence.reasoningEffort);
+  const reasoningValid =
+    reasoningEffort !== undefined && isEffortValidForProvider(evidence.provider, reasoningEffort);
+  if (reasoningEffort && !reasoningValid) {
+    diagnostics.push({
+      code: 'invalid_legacy_effort',
+      message: `Ignoring unavailable ${evidence.provider} reasoning effort "${reasoningEffort}"`,
+      reasoningEffort,
+    });
+  }
+
+  return {
+    config: {
+      provider: evidence.provider,
+      model: modelValid && modelId ? { mode: 'explicit', modelId } : { mode: 'default' },
+      // Missing/unknown effort maps to disabled. Applying today's default would
+      // silently change the command used to resume a historical session.
+      reasoning:
+        reasoningValid && reasoningEffort
+          ? { mode: 'explicit', effort: reasoningEffort }
+          : { mode: 'disabled' },
+    },
+    provenance: evidence.source === 'external_session' ? 'external_discovered' : 'legacy_inferred',
+    diagnostics,
+  };
+}
+
+function trimmed(value: string | null | undefined): string | undefined {
+  const normalized = value?.trim();
+  return normalized ? normalized : undefined;
 }

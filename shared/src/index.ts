@@ -16,10 +16,6 @@ import {
 } from './conversation-config.js';
 import { CreateKindSchema, EncodedRowsSchema, RowPatchSchema } from './conversation.js';
 import {
-  decodeLegacyCodexCompositeModel,
-  encodeLegacyCodexCompositeModel,
-} from './legacy/codex-composite-model.js';
-import {
   PROVIDER_IDS,
   PROVIDER_METADATA,
   PROVIDER_OPTIONS,
@@ -34,7 +30,6 @@ export * from './conversation.js';
 export * from './buddy.js';
 export * from './buddy-access.js';
 export * from './provider-catalog.js';
-export * from './legacy/codex-composite-model.js';
 export { stripJsonc } from './utils/jsonc.js';
 
 // =============================================================================
@@ -61,8 +56,8 @@ export {
 // Claude: aliases passed to `claude --model <alias>`
 // Codex: base model IDs only. Reasoning effort is a SEPARATE field on the
 //   Conversation (Conversation.reasoningEffort), mirroring Claude. Composite IDs
-//   (e.g. "gpt-5.4-high") are a legacy wire format that survives only as a
-//   display/migration helper via toCodexModelId/fromCodexModelId.
+//   (e.g. "gpt-5.4-high") are a legacy on-disk format that survives only in
+//   fromCodexModelId, for disk-adapter.
 // OpenCode: path-style identifiers passed to `opencode run -m <id>`
 //   e.g. "opencode/big-pickle" or "opencode/gpt-5-nano"
 // We require at least one "/" segment to avoid collisions with Claude/Codex IDs.
@@ -145,34 +140,14 @@ type CodexModelRegistryItem = (typeof CODEX_MODEL_REGISTRY)[number];
 
 // Codex model IDs are base IDs only. Reasoning effort lives on
 // Conversation.reasoningEffort (same shape as Claude). Composite IDs like
-// "gpt-5.4-high" are a legacy wire format handled by toCodexModelId/fromCodexModelId.
+// "gpt-5.4-high" are a legacy on-disk format decoded by fromCodexModelId.
 export type CodexModel = CodexModelRegistryItem['modelName'];
 
 /**
- * MIGRATION HELPER for legacy composite Codex model IDs.
- *
- * Preferred path: store `model` as a base CodexModel and `reasoningEffort` as
- * a separate field on Conversation. This helper only exists for (a) decoding
- * legacy composites persisted on disk / in old in-memory state, and (b) building
- * display strings where a single combined label is still useful. The return type
- * is a plain `string` because composites are no longer valid `CodexModel` values.
- */
-export function toCodexModelId(modelName: string, thinkingOption: CodexThinkingMode): string {
-  return encodeLegacyCodexCompositeModel(
-    modelName,
-    thinkingOption === NO_CODEX_THINKING ? null : thinkingOption
-  );
-}
-
-/**
- * MIGRATION HELPER: inverse of `toCodexModelId`. Decomposes a (possibly legacy)
- * composite Codex model id into its base model + optional effort suffix.
- *
- * Used by:
- *   - disk-adapter: parse legacy composite `session.model` strings
- *   - server spawn path: self-heal in-memory conversations that still hold a
- *     composite `conv.model` from the pre-refactor wire contract
- *   - client display: recover base+effort from a composite for split dropdowns
+ * MIGRATION HELPER: decomposes a (possibly legacy) composite Codex model id
+ * (`gpt-5.4-high`) into its base model + optional effort suffix. Its one caller
+ * is server/src/adapters/disk-adapter.ts (legacy `session.model` strings);
+ * delete this with it.
  *
  * Matching strategy: try the longest known base-model prefix first, then check
  * for a known effort suffix. This disambiguates base names that themselves
@@ -185,10 +160,16 @@ export function fromCodexModelId(modelId: string): {
   baseModel: string;
   effort: string | null;
 } {
-  return decodeLegacyCodexCompositeModel(modelId, {
-    modelIds: CODEX_MODEL_REGISTRY.map((entry) => entry.modelName),
-    effortLevels: CODEX_EFFORT_LEVELS,
-  });
+  const bases = CODEX_MODEL_REGISTRY.map((entry) => entry.modelName as string).sort(
+    (a, b) => b.length - a.length
+  );
+  for (const baseModel of bases) {
+    if (modelId === baseModel) return { baseModel, effort: null };
+    if (!modelId.startsWith(`${baseModel}-`)) continue;
+    const effort = modelId.slice(baseModel.length + 1);
+    if ((CODEX_EFFORT_LEVELS as readonly string[]).includes(effort)) return { baseModel, effort };
+  }
+  return { baseModel: modelId, effort: null };
 }
 
 export const CODEX_BASE_MODEL_INFOS = CODEX_MODEL_REGISTRY.map((entry) => ({
