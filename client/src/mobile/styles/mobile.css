@@ -413,46 +413,6 @@
   white-space: nowrap;
 }
 
-/* ---- SwarmsMobile directory ---- */
-.mobile-swarm-card {
-  gap: var(--sp-3);
-}
-
-.mobile-swarm-card--running {
-  border-color: color-mix(in srgb, var(--theme-success) 35%, var(--border-subtle));
-}
-
-.mobile-swarm-card__top {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: var(--sp-5);
-  min-width: 0;
-}
-
-.mobile-swarm-card__name {
-  min-width: 0;
-  overflow: hidden;
-  color: var(--text-primary);
-  font-size: var(--fs-5);
-  font-weight: 650;
-  line-height: 1.3;
-  overflow-wrap: anywhere;
-}
-
-.mobile-swarm-card__stats .stat-running {
-  color: var(--theme-success);
-}
-
-.mobile-swarm-card__stats {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--sp-1) 0;
-  min-width: 0;
-  font-size: var(--fs-2);
-  line-height: 1.4;
-}
-
 /* ---- ChatsMobile list ---- */
 .mobile-conversation-list {
   gap: var(--sp-4);

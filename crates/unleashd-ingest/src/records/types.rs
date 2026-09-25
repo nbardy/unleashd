@@ -6,15 +6,15 @@
 //! strings as the Zod schema, so a record crosses the boundary without translation.
 //!
 //! Pattern: sum-types (docs/patterns.md#sum-types) — every Zod union is a Rust enum here:
-//! lifecycle status, provenance, model/reasoning selection, knowledge scope, placement, purpose,
-//! and the derived conversation kind of the list row.
+//! lifecycle status, provenance, model/reasoning selection, knowledge scope, and the stored
+//! conversation kind (`ConversationKindSchema`, record v2 since T09).
 //!
 //! Nullish fields (`z.string().nullish()` in `BuddyContextSchema`) are `Option<Option<T>>`:
 //! outer `None` = key absent, `Some(None)` = explicit `null`. 999 of 1,001 real Buddy contexts
 //! write `null` and 2 omit the key; keeping the difference is what lets the import verify by
 //! content hash instead of by "equal after normalisation".
 
-use crate::model::Provider;
+use crate::model::{Provider, WorkerRole};
 use serde::{Deserialize, Deserializer, Serialize};
 use std::collections::BTreeMap;
 
@@ -42,8 +42,7 @@ snake_enum!(RecordStatus { Active = "active", Deleted = "deleted" });
 // Who established the record's config: the owner, a legacy migration, or a sidecar created for a
 // transcript found on disk. Preserved verbatim by import; only `set_config` changes it (to `user`).
 snake_enum!(Provenance { User = "user", LegacyInferred = "legacy_inferred", ExternalDiscovered = "external_discovered" });
-snake_enum!(Placement { Default = "default", Background = "background" });
-snake_enum!(Purpose { General = "general", BuddyBuilder = "buddy_builder" });
+snake_enum!(BuddyVisibility { Foreground = "foreground", Background = "background" });
 
 /// Deserialize a present key (value or `null`) as `Some(..)`; `#[serde(default)]` makes an
 /// absent key `None`.
@@ -181,8 +180,6 @@ pub struct ConversationCreation {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub fingerprint: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub placement: Option<Placement>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub initial_message: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub initial_message_dispatch_claimed_at: Option<String>,
@@ -194,19 +191,41 @@ pub struct ConversationCreation {
     pub swarm_debug_prefix: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub resumed_from_conversation_id: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub buddy_context: Option<BuddyContext>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub purpose: Option<Purpose>,
 }
 
-/// One durable conversation record. `version` is not a field: every stored record is version 1
-/// (a file of a later version is refused at import, never stored).
+/// `ConversationKindSchema`: what the thread is, fixed at creation. The worker ids and role are
+/// `.nullable()` (never absent), so they serialize as `null` — `use_nullable` makes napi do the
+/// same (without it `None` crosses as an absent key, which the Zod schema rejects).
+#[cfg_attr(feature = "node", napi_derive::napi(discriminant = "t", discriminant_case = "lowercase", use_nullable = true))]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(tag = "t", rename_all = "lowercase", rename_all_fields = "camelCase", deny_unknown_fields)]
+pub enum ConversationKind {
+    Chat,
+    Buddy { context: BuddyContext, visibility: BuddyVisibility },
+    Builder,
+    Worker { swarm_id: Option<String>, worker_id: Option<String>, role: Option<WorkerRole> },
+}
+
+impl ConversationKind {
+    /// The `kind` column: the tag, for counting and eyeballing with the sqlite3 CLI.
+    pub fn tag(&self) -> &'static str {
+        match self {
+            ConversationKind::Chat => "chat",
+            ConversationKind::Buddy { .. } => "buddy",
+            ConversationKind::Builder => "builder",
+            ConversationKind::Worker { .. } => "worker",
+        }
+    }
+}
+
+/// One durable conversation record. `version` is not a field: every stored record is version 2
+/// (T09's `kind`); import refuses a v1 file (run record-migration.ts on the copy first).
 #[cfg_attr(feature = "node", napi_derive::napi(object))]
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ConversationRecord {
     pub conversation_id: String,
+    pub kind: ConversationKind,
     /// Earlier sessions of this conversation, oldest first. Indexed for transcript discovery.
     pub session_bindings: Vec<SessionBinding>,
     /// The session a new turn resumes. Absent = no provider session started yet.
@@ -239,10 +258,6 @@ impl ConversationRecord {
     pub fn all_bindings(&self) -> Vec<&SessionBinding> {
         unique_bindings(self.session_bindings.iter().chain(self.current_session.iter()))
     }
-
-    pub fn kind(&self) -> KindTag {
-        KindTag::of(self.creation.as_ref())
-    }
 }
 
 pub fn unique_bindings<'a>(bindings: impl Iterator<Item = &'a SessionBinding>) -> Vec<&'a SessionBinding> {
@@ -254,37 +269,6 @@ pub fn unique_bindings<'a>(bindings: impl Iterator<Item = &'a SessionBinding>) -
         }
     }
     out
-}
-
-/// The conversation kind the list row needs, derived once at the write path from `creation`
-/// (the rule of `conversationKindFromLegacy`: a Buddy context wins, then `purpose`).
-#[cfg_attr(feature = "node", napi_derive::napi(discriminant = "t", discriminant_case = "snake_case"))]
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum KindTag {
-    General,
-    Buddy { buddy_id: String },
-    BuddyBuilder,
-}
-
-impl KindTag {
-    pub fn of(creation: Option<&ConversationCreation>) -> KindTag {
-        match creation {
-            None => KindTag::General,
-            Some(c) => match (&c.buddy_context, c.purpose) {
-                (Some(ctx), _) => KindTag::Buddy { buddy_id: ctx.buddy_id.clone() },
-                (None, Some(Purpose::BuddyBuilder)) => KindTag::BuddyBuilder,
-                (None, Some(Purpose::General) | None) => KindTag::General,
-            },
-        }
-    }
-
-    pub fn column(&self) -> (&'static str, Option<&str>) {
-        match self {
-            KindTag::General => ("general", None),
-            KindTag::Buddy { buddy_id } => ("buddy", Some(buddy_id)),
-            KindTag::BuddyBuilder => ("buddy_builder", None),
-        }
-    }
 }
 
 /// A (provider, session id) key.
@@ -303,7 +287,7 @@ pub struct RecordSummary {
     pub conversation_id: String,
     pub status: RecordStatus,
     pub done: bool,
-    pub kind: KindTag,
+    pub kind: ConversationKind,
     pub provenance: Provenance,
     pub working_directory: Option<String>,
     pub provider: Provider,
@@ -320,6 +304,7 @@ pub struct RecordSummary {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NewRecord {
     pub conversation_id: String,
+    pub kind: ConversationKind,
     pub session_bindings: Vec<SessionBinding>,
     pub current_session: Option<SessionBinding>,
     pub working_directory: Option<String>,

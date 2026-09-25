@@ -27,12 +27,11 @@ import { useFolderFilter } from '../hooks/useFolderFilter';
 import { useUrlFolderSelection } from '../hooks/useUrlFolderSelection';
 import { isRowRunning } from '../utils/conversation-row';
 import { getProjectColor } from '../utils/projectColors';
-import { isWorktreeDirectory } from '../utils/swarmUtils';
 import { formatTimeAgo, getConversationLastActivity } from '../utils/time';
 import { FolderFilter } from './FolderFilter';
 import './Gallery.css';
 import { useTimeTick } from '../hooks/useTimeTick';
-import { shortenHomePath } from '../utils/directories';
+import { isWorktreeDirectory, shortenHomePath } from '../utils/directories';
 
 /**
  * Detect if a working directory is a temporary/ephemeral path.

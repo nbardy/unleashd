@@ -47,7 +47,9 @@ ws.on('message', (data) => {
       console.log('\n--- Turn 1: Sending first message ---');
       ws.send(
         JSON.stringify({
-          type: 'send_message',
+          type: 'queue_message',
+          // send_message was deleted (T14b); queue_message is the one send path and needs a commandId.
+          commandId: crypto.randomUUID(),
           conversationId,
           content: 'Remember the secret word: ELEPHANT. Just say "OK, I will remember ELEPHANT"',
         })
@@ -75,7 +77,9 @@ ws.on('message', (data) => {
         console.log('--- Turn 2: Asking for the secret word ---');
         ws.send(
           JSON.stringify({
-            type: 'send_message',
+            type: 'queue_message',
+            // send_message was deleted (T14b); queue_message is the one send path and needs a commandId.
+            commandId: crypto.randomUUID(),
             conversationId,
             content: 'What was the secret word I asked you to remember? Just say the word.',
           })

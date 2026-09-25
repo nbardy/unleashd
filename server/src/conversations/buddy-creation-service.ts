@@ -9,7 +9,7 @@ import { buddyKind, normalizeModelId } from '@unleashd/shared';
 import type { ResolvedBuddyConversation } from '../buddies/briefing';
 import { configFromProviderPreferences } from './config-mapping';
 import type { ConversationConfigService } from './config-service';
-import { INITIAL_MESSAGE_DISPATCH_LEASE_MS } from './config-store';
+import { INITIAL_MESSAGE_DISPATCH_LEASE_MS } from './config-records';
 import type {
   ConversationBroadcast,
   ConversationOptions,

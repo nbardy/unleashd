@@ -1,5 +1,5 @@
 import type { OompaRuntimeSnapshot } from '@unleashd/shared';
-import { usePolledFetch } from './usePolledFetch';
+import { usePolledFetch } from '../hooks/usePolledFetch';
 
 export interface SwarmProjectEntry {
   projectRoot: string;

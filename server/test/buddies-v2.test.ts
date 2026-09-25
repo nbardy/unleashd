@@ -30,13 +30,13 @@ import { createRunner } from '../src/buddies/runner';
 import { TURN_MAX_RUNTIME_MS } from '../src/constants/timeouts';
 import { createBuddyCreationService } from '../src/conversations/buddy-creation-service';
 import { ConversationConfigService } from '../src/conversations/config-service';
-import { ConversationConfigStore } from '../src/conversations/config-store';
 import {
   type ConversationRuntime,
   type ConversationRuntimeDependencies,
   createConversationRuntime,
 } from '../src/conversations/runtime';
 import { resolveConfigAgainstProviderCatalog } from '../src/providers/catalog-service';
+import { recordStore } from './fixtures/records';
 
 // The Buddy server end to end through its real boundaries: the crate on a temp DB, the HTTP MCP
 // endpoint, the runner, the channels responder, the creation service and the conversation
@@ -205,7 +205,7 @@ async function world() {
   });
   const conversations = new Map<string, ConversationRuntime>();
   const configService = new ConversationConfigService({
-    store: new ConversationConfigStore({ appDataRoot: join(scratch, 'config') }),
+    store: recordStore(join(scratch, 'config')),
     resolver: { resolve: async (config) => resolveConfigAgainstProviderCatalog(config) },
   });
   const runner = createRunner({

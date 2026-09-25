@@ -53,7 +53,9 @@ ws.on('message', (data) => {
       console.log(`[WS] Sending test message with marker: ${uniqueMarker}`);
       ws.send(
         JSON.stringify({
-          type: 'send_message',
+          type: 'queue_message',
+          // send_message was deleted (T14b); queue_message is the one send path and needs a commandId.
+          commandId: crypto.randomUUID(),
           conversationId: createdConversationId,
           content: `Just repeat this exact UUID back to me: ${uniqueMarker}`,
         })

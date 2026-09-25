@@ -144,9 +144,6 @@ impl Issues {
         self.opt_text("creation.initialMessageDispatchClaimToken", &c.initial_message_dispatch_claim_token);
         self.opt_time("creation.initialMessageDispatchedAt", &c.initial_message_dispatched_at);
         self.opt_text("creation.resumedFromConversationId", &c.resumed_from_conversation_id);
-        if let Some(b) = &c.buddy_context {
-            self.buddy("creation.buddyContext", b);
-        }
     }
 }
 
@@ -154,6 +151,10 @@ impl Issues {
 pub fn record(r: &ConversationRecord) -> Vec<String> {
     let mut issues = Issues(Vec::new());
     issues.text("conversationId", &r.conversation_id);
+    match &r.kind {
+        ConversationKind::Buddy { context, .. } => issues.buddy("kind.context", context),
+        ConversationKind::Chat | ConversationKind::Builder | ConversationKind::Worker { .. } => {}
+    }
     for b in &r.session_bindings {
         issues.binding("sessionBindings[]", b);
     }

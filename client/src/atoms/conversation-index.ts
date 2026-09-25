@@ -1,6 +1,9 @@
 import type { ConversationRow, RowKind } from '@unleashd/shared';
-import { folderGroupKey, normalizeFolderDirectory } from '../utils/directories';
-import { isWorktreeDirectory } from '../utils/swarmUtils';
+import {
+  folderGroupKey,
+  isWorktreeDirectory,
+  normalizeFolderDirectory,
+} from '../utils/directories';
 
 // =============================================================================
 // Conversation list index

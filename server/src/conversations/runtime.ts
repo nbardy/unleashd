@@ -42,7 +42,7 @@ import {
 import { SWARM_POLL_INTERVAL_MS, SWARM_POLL_THROTTLE_MS } from '../constants/timeouts';
 import type { RuntimeTurnAttemptObserver } from '../observability';
 import { resolveConfigAgainstProviderCatalog } from '../providers/catalog-service';
-import { SwarmObservers } from '../swarm/observer';
+import { SwarmObservers } from '../swarm';
 import {
   type OwnerInput,
   type SeatTurnInput,

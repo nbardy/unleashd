@@ -1,6 +1,6 @@
 import type { OompaRuntimeSnapshot } from '@unleashd/shared';
 import { useMemo } from 'react';
-import { resource, usePolledFetch } from './usePolledFetch';
+import { resource, usePolledFetch } from '../hooks/usePolledFetch';
 
 interface UseSwarmRuntimeSnapshotsOptions {
   pollMs?: number;
