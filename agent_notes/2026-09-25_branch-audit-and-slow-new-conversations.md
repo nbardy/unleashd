@@ -187,3 +187,26 @@ posts AS a Buddy. It uses the push design (30s backstop), not 5s polling.
   `useMemo`s.
 - **Tests.** The flaky `buddy-coordination` "real creation boundary" test
   fails intermittently under load.
+
+## Update: execution-selection branch merged
+
+`feat/execution-selection-2026-09-24` was replayed onto the channels branch as
+f090910, 439d28b, 6a60615 and 02c48c8, then reviewed.
+
+- **The design doc** is kept. D3/D7/D8/D9/D10 are marked superseded by the
+  shipped channel work.
+- **The Mailbox composer removal** in e4254ce is dropped: d382234 restored the
+  composer. Its polling is dropped too.
+- **The helper consolidation** is kept.
+- **The dead delegation/review dispatch chain** is deleted.
+- **Status and availability** now have one mechanism each: a single
+  initials/TASK_STATUS table and a single availability set atom.
+
+Verified on 02c48c8: typecheck OK, server 488/488 (6 live-skipped), client
+172/172, gates 6/6, `vite build` OK. The original branch remains on origin;
+its local worktree and branch are removed.
+
+Still open from the doc, not scheduled:
+- seed the mention chip from the seat config;
+- typed TurnFailure (D11);
+- harness facts in agent-cli (D12).
