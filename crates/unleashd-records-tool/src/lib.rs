@@ -203,6 +203,20 @@ fn files_in(dir: &Path) -> Vec<PathBuf> {
     out
 }
 
+/// The record files. A missing `by-conversation` directory is an error, not zero records: a wrong
+/// source path (e.g. `conversation-config` instead of `conversation-config/v1`) otherwise imported
+/// nothing, verified ok=true against the same empty listing, and passed the T15 gate with an
+/// empty store that the server would then boot on.
+fn record_files(root: &Path) -> Result<Vec<PathBuf>> {
+    let dir = root.join("by-conversation");
+    match dir.is_dir() {
+        true => Ok(files_in(&dir)),
+        false => {
+            Err(RecordsError::Corrupt(dir.display().to_string(), "no by-conversation directory; is this conversation-config/v1?".into()))
+        }
+    }
+}
+
 fn read(path: &Path) -> std::io::Result<Vec<u8>> {
     std::fs::read(path)
 }
@@ -258,8 +272,8 @@ pub fn import(root: &Path, db: &Path) -> Result<ImportReport> {
     }
     let mut report = ImportReport { source: root.display().to_string(), db: db.display().to_string(), ..Default::default() };
 
-    let files = files_in(&root.join("by-conversation"));
-    let parsed: Vec<(PathBuf, Vec<u8>, Parsed)> = files
+    let files = record_files(root)?;
+    let mut parsed: Vec<(PathBuf, Vec<u8>, Parsed)> = files
         .into_par_iter()
         .map(|path| {
             let bytes = read(&path).map_err(|e| io_err(&path, e))?;
@@ -278,6 +292,14 @@ pub fn import(root: &Path, db: &Path) -> Result<ImportReport> {
             format!("{unmigrated} record(s) are still version 1; run record-migration.ts on this copy first, then import into a new file"),
         ));
     }
+    // config-store.ts read a conversation from `<base64url(id)>.json` only, so when two files claim
+    // one id the canonically named file is the live record and any other is the stray copy. The
+    // walk used to keep whichever sorted first, so a stray `a-copy.json` beat the real record and
+    // the real one became a duplicate reject (verify still passed: its bytes were kept).
+    parsed.sort_by_key(|(path, _, p)| match p {
+        Parsed::Record { record, .. } => path.file_name().is_some_and(|n| *n != *format!("{}.json", encode_id(&record.conversation_id))),
+        _ => true,
+    });
     let quarantined: Vec<(PathBuf, Vec<u8>)> = files_in(&root.join("quarantine"))
         .into_iter()
         .map(|p| read(&p).map(|b| (p.clone(), b)).map_err(|e| io_err(&p, e)))
@@ -458,7 +480,7 @@ pub fn verify(root: &Path, db: &Path) -> Result<VerifyReport> {
     let mut seen: BTreeSet<String> = BTreeSet::new();
     let mut expected_index: BTreeSet<(String, String, String)> = BTreeSet::new();
 
-    let record_files = files_in(&root.join("by-conversation")).into_iter();
+    let record_files = record_files(root)?.into_iter();
     let quarantine = files_in(&root.join("quarantine")).into_iter();
     for path in record_files.chain(quarantine) {
         report.source_files += 1;

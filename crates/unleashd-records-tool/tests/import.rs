@@ -159,3 +159,36 @@ fn import_keeps_every_file_and_verify_proves_it_by_hash() {
     let err = import(&root, &dir.path().join("fresh.sqlite")).unwrap_err().to_string();
     assert!(err.contains("record-migration"), "{err}");
 }
+
+/// Regression (final review, 2026-09-26): a stray copy sorting before the canonical
+/// `<base64url(id)>.json` file used to become the record while the real one was rejected as a
+/// duplicate — and verify passed, since the reject kept its bytes.
+#[test]
+fn the_canonically_named_file_wins_a_duplicate_id() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().join("v1");
+    let mut real = record_json("conv-1", &[]);
+    real["workingDirectory"] = json!("/real");
+    put_record(&root, "conv-1", &real);
+    let mut stray = record_json("conv-1", &[]);
+    stray["workingDirectory"] = json!("/stray");
+    write(&root.join("by-conversation").join("0-copy.json"), &pretty(&stray));
+    let db = dir.path().join("records.sqlite");
+    let report = import(&root, &db).unwrap();
+    assert_eq!(report.imported, 1);
+    assert!(report.rejected[0].path.ends_with("0-copy.json"), "{:?}", report.rejected);
+    let record = Records::open(&db).unwrap().get("conv-1").unwrap().unwrap();
+    assert_eq!(serde_json::to_value(&record).unwrap()["workingDirectory"], json!("/real"));
+}
+
+/// Regression (final review, 2026-09-26): a wrong source path imported zero records and verified
+/// ok=true, which passed the T15 gate with an empty store.
+#[test]
+fn a_source_without_by_conversation_is_refused() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().join("conversation-config");
+    put_record(&root.join("v1"), "conv-1", &record_json("conv-1", &[]));
+    let db = dir.path().join("records.sqlite");
+    assert!(import(&root, &db).is_err());
+    assert!(verify(&root, &db).is_err());
+}
