@@ -205,37 +205,43 @@ const SETTLED_MS = 60 * 60 * 1000;
 
 /**
  * The longest settled plain chat: not running, not done, idle for an hour.
- * The conversation list only arrives over the WebSocket (`init`), so this
- * opens one, reads the first snapshot and closes — it never sends.
+ * The conversation list only arrives over the WebSocket, so this opens one,
+ * reads the first complete row snapshot and closes — it never sends.
+ * Wire v3 (shared/src/conversation.ts `EncodedRowsSchema`): `hello` carries
+ * every row, `rows` upserts more while the server is still loading. Wire rows
+ * omit their defaults, so an absent `run` is 'idle' and an absent `done` false.
+ * The v2 `init` shape this used to read made every run fail with "No init".
  */
 async function discoverConversation(baseUrl, token) {
   const wsUrl = `${baseUrl.replace(/^http/, 'ws')}/ws`;
   const socket = new WebSocket(wsUrl, {
     headers: token ? { Authorization: `Bearer ${token}` } : {},
   });
-  const conversations = await new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error(`No init from ${wsUrl} in 30s`)), 30_000);
+  const rows = await new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`No hello from ${wsUrl} in 30s`)), 30_000);
+    const seen = new Map();
     socket.addEventListener('error', () => reject(new Error(`WebSocket ${wsUrl} failed`)));
     socket.addEventListener('message', (event) => {
       const message = JSON.parse(event.data);
-      // A server still loading from disk sends an empty init first, then the
-      // list in `conversations_updated`.
-      const list = message.type === 'init' || message.type === 'conversations_updated';
-      if (!list || message.loading || !message.conversations?.length) return;
+      if (message.type === 'hello' || message.type === 'rows') {
+        for (const row of message.rows) seen.set(row.id, row);
+      }
+      const complete = (message.type === 'hello' && !message.loading) || message.type === 'ready';
+      if (!complete) return;
       clearTimeout(timer);
-      resolve(message.conversations);
+      resolve([...seen.values()]);
     });
   }).finally(() => socket.close());
   const cutoff = Date.now() - SETTLED_MS;
-  const settled = conversations.filter(
-    (c) =>
-      c.kind?.kind === 'general' &&
-      !c.isRunning &&
-      !c.done &&
-      c.messages.length > 0 &&
-      Date.parse(c.messages.at(-1).timestamp) < cutoff
+  const settled = rows.filter(
+    (row) =>
+      row.kind.t === 'chat' &&
+      (row.run ?? 'idle') === 'idle' &&
+      !row.done &&
+      row.messageCount > 0 &&
+      row.activityAt < cutoff
   );
-  const longest = settled.sort((a, b) => (b.messageCount ?? 0) - (a.messageCount ?? 0))[0];
+  const longest = settled.sort((a, b) => b.messageCount - a.messageCount)[0];
   return longest ? { conversationId: longest.id, messageCount: longest.messageCount } : null;
 }
 
