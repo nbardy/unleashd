@@ -6,11 +6,30 @@ Timelines as code. Remotion for the cut, ffmpeg underneath. Raw recordings stay 
 ```bash
 pnpm install --ignore-workspace          # standalone: not part of the repo's pnpm workspace
 pnpm studio                              # scrubbable preview in the browser
+pnpm run render:overload                 # -> out/overload.mp4 (beats 1–5, 18 s)
 pnpm run render:design-iteration         # -> out/design-iteration.mp4 (1920×1080, 60 fps)
 ```
 
 Licence: Remotion is source-available and free for individuals and companies of up to 3
 employees; a bigger company needs a paid licence (see `LICENSE.md` in `~/git/remotion`).
+
+## Overload — beats 1–5, the open
+
+Source: `src/Overload.tsx`; type motion shared with beat 9 in `src/blocks.tsx`.
+Motion draft 1, 2026-09-26: 18.0 s.
+
+| Out (s) | Shot |
+|---|---|
+| 0.25–4.2 | One chat window, centre. "Refactor the auth module and add tests" is typed, sent (bubble pops), "Thinking…", then it minimizes to the top-left tray |
+| 4.1–6.4 | Second window, faster: "Why is CI failing on main?", then it minimizes too |
+| 6.2–11.2 | The ramp: arrivals 2, 4, 8, 16, then 30 a second (`GAPS`), 60 windows, each typing and sending. Camera pushes in, shake from 9.2 s |
+| 11.7 | Hard cut to black. "AI Overload!" at 12.05, "We're all feeling it." at 12.65 |
+| ~13.4–15.0 | Room for the voice line, "Don't worry, we've got you covered." |
+| 15.0–18.0 | Plate fades to `#002b36`: "Introducing", the 3D wordmark, a "2.0" sticker |
+
+The chat windows are generic on purpose: six made-up skins, no real app UI or marks, so the
+first thing that looks like Unleashd is the title. Arrival times are the music grid: when
+the track lands, move `T` and `GAPS` onto its beats.
 
 ## DesignIteration — beat 6, "screenshots of the app being developed"
 
