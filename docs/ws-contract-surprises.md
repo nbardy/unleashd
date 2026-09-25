@@ -151,7 +151,8 @@ by a silent enqueue failure loses the user's message.
 Queue commands (`queue_message`, `interrupt_and_send`, `cancel_queued_message`,
 `clear_queue`, `promote_queued_message`) all funnel into
 `Conversation.enqueueMessage` / `interruptAndSend` / `promoteQueuedMessage` in
-[runtime.ts](../server/src/conversations/runtime.ts). The semantics, settled
+[runtime.ts](../server/src/conversations/runtime.ts), over the pure
+[TurnQueue](../server/src/turns/queue.ts). The semantics, settled
 2026-09-19 after interrupt silently discarded queued work:
 
 - `interrupt_and_send` stops the active turn and sends the new message FIRST.

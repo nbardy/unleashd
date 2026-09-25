@@ -53,7 +53,7 @@ test('a hide set over the WebSocket survives session rotation and a restart', as
       updateBuddyStatus: () => undefined,
       settleBuddyDelegation: () => undefined,
       getConversation: () => undefined,
-      readLatestOompaRuntime: () => ({ available: false, run: null, reason: 'fixture' }),
+      readLatestOompaRuntime: async () => ({ available: false, run: null, reason: 'fixture' }),
       createSessionId: () => 'rotated-session',
     });
     const conversation = new Conversation({

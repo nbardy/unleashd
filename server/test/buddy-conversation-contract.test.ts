@@ -4,7 +4,8 @@ import test from 'node:test';
 import { createDefaultConversationConfig } from '@unleashd/shared';
 import type { BuddyContext } from '@unleashd/shared';
 import { sessionToConversation } from '../src/adapters/disk-adapter';
-import { buildFirstTurnCliContent, createConversationRuntime } from '../src/conversations/runtime';
+import { buildFirstTurnCliContent } from '../src/buddies/turn-policy';
+import { type ConversationOptions, createConversationRuntime } from '../src/conversations/runtime';
 import { resolveConfigAgainstProviderCatalog } from '../src/providers/catalog-service';
 import { registerConversationWebSocket } from '../src/transport/conversation-websocket';
 
@@ -43,7 +44,7 @@ function runtimeFixture() {
     updateBuddyStatus: () => undefined,
     settleBuddyDelegation: () => undefined,
     getConversation: () => undefined,
-    readLatestOompaRuntime: () => ({
+    readLatestOompaRuntime: async () => ({
       available: false,
       run: null,
       reason: 'No Oompa runtime',
@@ -65,6 +66,7 @@ function runtimeFixture() {
 test('empty Buddy conversation construction is inert and suppresses incompatible Swarm state', () => {
   const fixture = runtimeFixture();
   const conversation = new fixture.Conversation({
+    done: false,
     id: 'buddy-conversation',
     workingDirectory: '/tmp',
     configState: fixture.configState,
@@ -157,7 +159,7 @@ test('empty Buddy WebSocket creation resolves and registers without sending a pr
         workingDirectory: '/tmp',
         provider: 'codex',
       }),
-      createConversation: (options) => {
+      createConversation: (options: ConversationOptions) => {
         runtimeCreations += 1;
         return new fixture.Conversation(options);
       },
@@ -170,8 +172,8 @@ test('empty Buddy WebSocket creation resolves and registers without sending a pr
       dispatchInitialMessage: async () => {
         initialDispatches += 1;
       },
-      broadcast: (message) => transportBroadcasts.push(message),
-      broadcastExcept: (_socket, message) => transportBroadcasts.push(message),
+      broadcast: (message: unknown) => transportBroadcasts.push(message),
+      broadcastExcept: (_socket: unknown, message: unknown) => transportBroadcasts.push(message),
       logger: { log: () => undefined, error: () => undefined },
     } as never
   );
@@ -354,6 +356,7 @@ test('replaying create_conversation reports the real failure, not a config misma
   const fixture = runtimeFixture();
   const conversationId = '00000000-0000-4000-8000-000000000456';
   const existing = new fixture.Conversation({
+    done: false,
     id: conversationId,
     workingDirectory: '/tmp',
     configState: fixture.configState,

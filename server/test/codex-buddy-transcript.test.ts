@@ -8,7 +8,7 @@ import { sessionToConversation } from '../src/adapters/disk-adapter';
 import { loadAllConversations } from '../src/adapters/loader';
 import { getDiskAdapter } from '../src/adapters/registry';
 import { NormalizedSessionCache } from '../src/adapters/session-cache';
-import { buildFirstTurnCliContent } from '../src/conversations/runtime';
+import { buildFirstTurnCliContent } from '../src/buddies/turn-policy';
 
 const timestamp = '2026-09-08T04:17:59.000Z';
 const buddyContext = { buddyId: 'buddy-1', workspaceId: 'workspace-1' };

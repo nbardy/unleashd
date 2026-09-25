@@ -7,6 +7,7 @@ import {
   type DiscoveredConversation,
   buddyKindFromContext,
 } from '@unleashd/shared';
+import { buildFirstTurnCliContent } from '../src/buddies/turn-policy';
 import type { ConversationConfigService } from '../src/conversations/config-service';
 import type { ConversationConfigStore } from '../src/conversations/config-store';
 import type {
@@ -14,7 +15,6 @@ import type {
   ConversationOptions,
   ConversationRuntime,
 } from '../src/conversations/runtime';
-import { buildFirstTurnCliContent } from '../src/conversations/runtime';
 import {
   type SessionLoaderDependencies,
   createSessionLoader,

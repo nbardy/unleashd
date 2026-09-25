@@ -20,6 +20,7 @@ import type {
   ExternalActivity,
   SessionTracking,
 } from '../application/context';
+import { type MemoryGenerationInput, extractBuddyMemorySnapshot } from '../buddies/turn-policy';
 import {
   type ConversationConfigService,
   ConversationTombstonedError,
@@ -30,9 +31,7 @@ import type {
   ConversationBroadcast,
   ConversationOptions,
   ConversationRuntime,
-  MemoryGenerationInput,
 } from '../conversations/runtime';
-import { extractBuddyMemorySnapshot } from '../conversations/runtime';
 import { summarizeConversation } from '../conversations/serialization';
 import { createFilePoller } from './file-poller';
 import { loadProgressively } from './progressive-loader';

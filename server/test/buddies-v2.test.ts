@@ -249,7 +249,7 @@ async function world() {
     persistCurrentSession: (conversation, sessionId, key) =>
       creation.persistCurrentSession(conversation, sessionId, key),
     getConversation: (id) => conversations.get(id),
-    readLatestOompaRuntime: () => ({ available: false, run: null, reason: 'fixture' }),
+    readLatestOompaRuntime: async () => ({ available: false, run: null, reason: 'fixture' }),
     createSessionId: () => `provisional-${turns.length}`,
     executeTurn,
   });

@@ -29,7 +29,8 @@ Updates cost what changed, not n.
 **Pattern:** the kinds are a sum type, fixed once at the boundary. One thin exhaustive dispatcher picks a handler,
 and each handler has one clean path with no structural branching (see ~/.claude/CLAUDE.md "One Clean Path").
 **Here:** crate `types.rs` (`ChannelKind`, `RequestState`, `RunInput`); `McpServerSpec {kind:'stdio'|'http'}` in
-agent-cli.
+agent-cli; the conversation's `TurnPolicy`, chosen once by kind (`policyFor` in `conversations/runtime.ts`:
+`ChatTurnPolicy` / `BuddyTurnPolicy` / `BuddyBuilderTurnPolicy`).
 
 ## parse-dont-validate
 **Smell:** the same validation repeated at every layer.
@@ -46,13 +47,14 @@ with no re-checks and no silent fallbacks (a typed error or a typed "unknown" va
 **Smell:** long if/switch ladders keyed by name (tools, routes, harness features).
 **Pattern:** a table of `{name, schema, handler}` rows plus one generic loop. Adding a case means adding a row.
 **Here:** the MCP tool table (T11: 47 tools → 12); agent-cli `mcp-encoding.ts` (one handler per harness per
-kind).
+kind); `SUB_AGENT_FOLDS` in `server/src/turns/subagents.ts` (codex collab threads vs the generic Task fold).
 
 ## pure-core
 **Smell:** logic interleaved with I/O and timers, so tests need heavy mocks.
 **Pattern:** state machines are pure functions `(state, event) → (state, effects)`. I/O lives at the edges.
 Test the core directly and the shell with one integration test.
-**Here:** `TurnQueue` (T08).
+**Here:** `TurnQueue` in `server/src/turns/queue.ts` (T08): transitions with no I/O, timers or broadcasts; the
+conversation applies the effects.
 
 ## one-write-path
 **Smell:** one mutation method or one table per variant of the same thing.
@@ -69,7 +71,9 @@ A replay returns the original result.
 **Smell:** one timer per entity, or fast polling of state that changes rarely.
 **Pattern:** wake the worker when the thing it waits for is written (enqueue, settle, file change), plus ONE slow
 backstop tick. Shared clocks run only while someone subscribes.
-**Here:** `client/src/hooks/useTimeTick.ts` (8 intervals → 1); Buddy runner (T11); the shared chat-admission tick.
+**Here:** `client/src/hooks/useTimeTick.ts` (8 intervals → 1); Buddy runner (T11); the shared chat-admission tick
+(`buddies/turn-policy.ts`); `SwarmObservers` in `server/src/swarm/observer.ts` (one async poller per folder, only
+while a turn runs there, replacing one blocking 2 s poller per running conversation).
 
 ## patches-not-snapshots
 **Smell:** resending whole objects on small changes (5 MB on "mark done").
