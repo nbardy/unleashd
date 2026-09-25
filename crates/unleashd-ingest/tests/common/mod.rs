@@ -57,6 +57,15 @@ pub fn assert_resume_equals_full(format: Format, dir: &Path, name: &str, text: &
         write(&path, text);
         let second = read(format, &path, Some(&first));
         apply(&mut history, &second);
+        // Usage turns: appended in file order on a resume, all replaced on a full read.
+        let mut turns = first.turns.clone();
+        if second.apply == Apply::Replace {
+            turns.clear();
+        } else {
+            assert_eq!(second.first_turn as usize, turns.len(), "{name}: turn numbering after byte {k}");
+        }
+        turns.extend(second.turns.clone());
+        assert_eq!(turns, read(format, &path, None).turns, "{name}: usage turns after split at byte {k}");
         assert_eq!(contents(&history), contents(&whole), "{name}: split after byte {k}, taken {:?}", second.taken);
         assert_eq!(history, whole, "{name}: split after byte {k}");
         // Compared against a full read of the same final bytes (Cursor rows carry the file mtime).

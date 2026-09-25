@@ -21,7 +21,7 @@ pub mod muse;
 pub mod opencode;
 
 use crate::markers::{Hints, Rebuild, Visible};
-use crate::model::{Cwd, Message, Provider, Role, SubAgent, ToolCall, Usage};
+use crate::model::{ContextReading, Cwd, Message, Provider, Role, SubAgent, ToolCall, Usage, UsageTurn};
 use crate::paths::ProjectDirResolver;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
@@ -41,6 +41,10 @@ pub struct Facts {
     pub parent_session_id: Option<String>,
     pub usage: Option<Usage>,
     pub sub_agents: Vec<SubAgent>,
+    /// The latest request's context (the context meter), when the transcript records one.
+    pub context: Option<ContextReading>,
+    /// Codex: the last `rate_limits` payload, raw JSON.
+    pub rate_limits: Option<String>,
 }
 
 /// What a parser may know about the file it reads, besides its bytes.
@@ -78,6 +82,9 @@ pub struct Sink {
     pub visible: Visible,
     pub next_seq: u32,
     pub out: Vec<Message>,
+    /// Usage turns, in transcript order; numbered from `first_turn`. Never withdrawn.
+    pub turns: Vec<UsageTurn>,
+    pub first_turn: u32,
     /// The first seq this read numbers; lower seqs are already stored.
     first_seq: u32,
     /// Stored seqs a line of this read withdrew (`withdraw`), in their stored numbering.
@@ -85,8 +92,12 @@ pub struct Sink {
 }
 
 impl Sink {
-    pub fn new(visible: Visible, next_seq: u32) -> Sink {
-        Sink { visible, next_seq, out: Vec::new(), first_seq: next_seq, withdrawn: Vec::new() }
+    pub fn new(visible: Visible, next_seq: u32, first_turn: u32) -> Sink {
+        Sink { visible, next_seq, out: Vec::new(), turns: Vec::new(), first_turn, first_seq: next_seq, withdrawn: Vec::new() }
+    }
+
+    pub fn turn(&mut self, turn: UsageTurn) {
+        self.turns.push(turn);
     }
 
     /// Take back earlier messages (ascending seqs, stored or from this read) as if they had never
@@ -135,6 +146,12 @@ pub struct DocMessage {
 pub struct Doc {
     pub facts: Facts,
     pub messages: Vec<DocMessage>,
+    pub turns: Vec<UsageTurn>,
+}
+
+/// `typeof v === 'number' && Number.isFinite(v)` (the context meter's `num`).
+pub fn finite(v: Option<&Value>) -> Option<f64> {
+    v?.as_f64().filter(|f| f.is_finite())
 }
 
 /// What a line did. `Malformed` lines are skipped and counted, as the TS parsers warned.

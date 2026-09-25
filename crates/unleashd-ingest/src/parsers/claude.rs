@@ -1,9 +1,10 @@
 //! Claude Code: `~/.claude/projects/<encoded cwd>/<session id>.jsonl`, one record per line,
-//! appended only. Port of `foldClaudeTranscript` + usage-routes.ts `parseClaudeSession`.
+//! appended only. Port of `foldClaudeTranscript` + usage-routes.ts `parseClaudeSession` (usage
+//! turns) + session-context.ts `parseClaudeLines` (the context meter).
 
-use super::{Ctx, Facts, Fold, Line, Previous, Sink, normalize_dir, parse_time, provider_from_model, widen};
+use super::{Ctx, Facts, Fold, Line, Previous, Sink, finite, normalize_dir, parse_time, provider_from_model, widen};
 use crate::markers::Rebuild;
-use crate::model::{Cwd, Role, Usage};
+use crate::model::{Compaction, ContextReading, Cwd, Role, Usage, UsageTurn};
 use crate::subagents::SubAgentFold;
 use crate::text::{format_buddy_receipt, format_tool_use, js_trim};
 use serde::{Deserialize, Serialize};
@@ -21,6 +22,11 @@ struct Entry {
     ai_title: Option<Value>,
     #[serde(rename = "customTitle")]
     custom_title: Option<Value>,
+    subtype: Option<Value>,
+    #[serde(rename = "compactMetadata")]
+    compact_metadata: Option<Value>,
+    #[serde(rename = "isSidechain")]
+    is_sidechain: Option<Value>,
 }
 
 #[derive(Debug, Default, Serialize, Deserialize)]
@@ -38,6 +44,10 @@ pub struct ClaudeFold {
     usage_ids: HashSet<u64>,
     usage: Usage,
     sub_agents: SubAgentFold,
+    /// The last main-thread request's context; sub-agent (sidechain) rows measure the
+    /// sub-agent's own window, so they are skipped here (but billed in `usage`).
+    context_tokens: Option<f64>,
+    compaction: Option<Compaction>,
 }
 
 fn number(v: Option<&Value>) -> f64 {
@@ -49,7 +59,7 @@ fn truthy_string(v: Option<&Value>) -> Option<&str> {
 }
 
 impl ClaudeFold {
-    fn observe_usage(&mut self, message: &Value) {
+    fn observe_usage(&mut self, message: &Value, at: Option<f64>, sink: &mut Sink) {
         let Some(usage) = message.get("usage").filter(|u| crate::text::truthy(Some(u))) else { return };
         // `countedMessages.has(entry.message.id)`: a missing id is the key "undefined".
         let id = match message.get("id") {
@@ -60,10 +70,37 @@ impl ClaudeFold {
         if !self.usage_ids.insert(super::digest(&id)) {
             return;
         }
-        self.usage.input += number(usage.get("input_tokens"));
-        self.usage.output += number(usage.get("output_tokens"));
-        self.usage.cache_read += number(usage.get("cache_read_input_tokens"));
-        self.usage.cache_write += number(usage.get("cache_creation_input_tokens"));
+        let turn = Usage {
+            input: number(usage.get("input_tokens")),
+            output: number(usage.get("output_tokens")),
+            cache_read: number(usage.get("cache_read_input_tokens")),
+            cache_write: number(usage.get("cache_creation_input_tokens")),
+        };
+        self.usage.input += turn.input;
+        self.usage.output += turn.output;
+        self.usage.cache_read += turn.cache_read;
+        self.usage.cache_write += turn.cache_write;
+        let model = truthy_string(message.get("model")).map(str::to_string);
+        sink.turn(UsageTurn { at, model, usage: turn, reported_cost: None });
+    }
+
+    /// Context is input + cache read + cache write: Claude reports cache hits in separate fields.
+    fn observe_context(&mut self, message: &Value) {
+        let Some(usage) = message.get("usage").filter(|u| crate::text::truthy(Some(u))) else { return };
+        let parts = ["input_tokens", "cache_read_input_tokens", "cache_creation_input_tokens"].map(|k| finite(usage.get(k)));
+        if parts.iter().any(Option::is_some) {
+            self.context_tokens = Some(parts.iter().map(|p| p.unwrap_or(0.0)).sum());
+        }
+    }
+
+    fn compact_boundary(&mut self, metadata: Option<&Value>) {
+        let count = self.compaction.as_ref().map_or(0, |c| c.count) + 1;
+        self.compaction = Some(Compaction {
+            count,
+            pre_tokens: finite(metadata.and_then(|m| m.get("preTokens"))),
+            post_tokens: finite(metadata.and_then(|m| m.get("postTokens"))),
+            trigger: metadata.and_then(|m| m.get("trigger")).and_then(Value::as_str).map(str::to_string),
+        });
     }
 
     fn push(&mut self, sink: &mut Sink, role: Role, content: String, at: Option<f64>, completed: Option<f64>) -> Result<(), Rebuild> {
@@ -91,6 +128,12 @@ impl Fold for ClaudeFold {
             "custom-title" => {
                 if let Some(t) = entry.custom_title.as_ref().and_then(Value::as_str).map(js_trim).filter(|t| !t.is_empty()) {
                     self.custom_title = Some(t.to_string());
+                }
+                return Ok(Line::Used);
+            }
+            "system" => {
+                if entry.subtype.as_ref().and_then(Value::as_str) == Some("compact_boundary") {
+                    self.compact_boundary(entry.compact_metadata.as_ref());
                 }
                 return Ok(Line::Used);
             }
@@ -135,7 +178,10 @@ impl Fold for ClaudeFold {
         {
             self.model = Some(model.to_string());
         }
-        self.observe_usage(&message);
+        self.observe_usage(&message, at, sink);
+        if entry.is_sidechain.as_ref().and_then(Value::as_bool) != Some(true) {
+            self.observe_context(&message);
+        }
         let provider = provider_from_model(self.model.as_deref());
         let mut parts: Vec<String> = Vec::new();
         if let Some(Value::Array(blocks)) = message.get("content") {
@@ -179,6 +225,12 @@ impl Fold for ClaudeFold {
             parent_session_id: None,
             usage: Some(self.usage.clone()),
             sub_agents: self.sub_agents.finished(),
+            context: self.context_tokens.map(|context_tokens| ContextReading {
+                context_tokens,
+                context_window: None,
+                compaction: self.compaction.clone(),
+            }),
+            rate_limits: None,
         })
     }
 }

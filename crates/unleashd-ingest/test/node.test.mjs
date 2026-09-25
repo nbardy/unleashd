@@ -50,7 +50,11 @@ test('ingest a root, receive an append through onChange, page by revision', asyn
     const changed = new Promise((resolve) => {
       wake = () => events.some((e) => e.t === 'changes' && e.rev > first.rev) && resolve();
     });
-    appendFileSync(file, line('assistant', [{ type: 'text', text: 'hi there' }]));
+    const usage = { input_tokens: 5, output_tokens: 3, cache_read_input_tokens: 2, cache_creation_input_tokens: 1 };
+    appendFileSync(
+      file,
+      `${JSON.stringify({ type: 'assistant', timestamp: '2026-09-25T10:00:00.000Z', cwd: '/work', message: { id: 'r1', model: 'claude-opus-5-5', usage, content: [{ type: 'text', text: 'hi there' }] } })}\n`
+    );
     await Promise.race([
       changed,
       new Promise((_, reject) =>
@@ -70,6 +74,28 @@ test('ingest a root, receive an append through onChange, page by revision', asyn
     assert.equal(tail[0].content, 'hi there');
     assert.equal(typeof tail[0].completedAt, 'number');
     assert.equal((await ingest.session('nope')) ?? null, null);
+
+    // The aggregates: discriminated group keys and optional fields cross the boundary.
+    const report = await ingest.usage({ since: 0, groupBy: 'session' });
+    assert.equal(report.groups.length, 1);
+    assert.deepEqual(report.groups[0].key, {
+      t: 'session',
+      sessionId: 'sess-1',
+      sourcePath: file,
+      provider: 'claude',
+      format: 'claude',
+      model: 'claude-opus-5-5',
+    });
+    assert.deepEqual(
+      [report.groups[0].turns, report.groups[0].input, report.groups[0].cacheWrite],
+      [1, 5, 1]
+    );
+    const days = await ingest.usage({ since: 0, until: Date.parse('2026-09-26'), groupBy: 'day' });
+    assert.deepEqual(days.groups[0].key, { t: 'day', day: '2026-09-25' });
+    const context = await ingest.latestContext('sess-1');
+    assert.equal(context.contextTokens, 8);
+    assert.equal(context.compaction ?? null, null);
+    assert.equal((await ingest.latestContext('nope')) ?? null, null);
   } finally {
     await ingest.stop();
     await ingest.stop(); // idempotent

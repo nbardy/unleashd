@@ -1,14 +1,15 @@
 //! Codex: `~/.codex/sessions/YYYY/MM/DD/rollout-<time>-<id>.jsonl`, appended only. Port of
 //! `parseCodexJsonlFile` + `extractMessagesFromCodexEntries` + the turn-interruption notices
-//! (codex-turn-lifecycle.ts) + usage-routes.ts `codexTokenTotals`.
+//! (codex-turn-lifecycle.ts) + usage-routes.ts `codexTokenTotals` (usage turns, rate limits) +
+//! session-context.ts `parseCodexLines` (the context meter).
 //!
 //! Most bytes of a rollout are tool output, reasoning and world state that no message keeps, so
 //! a line's first two `"type"` tags decide whether it is parsed at all (the TS filter). That
 //! filter is what keeps a 934 MB rollout cheap; the tail read is what keeps it cheap on change.
 
-use super::{Ctx, Facts, Fold, Line, Previous, Sink, normalize_dir, parse_time, widen};
+use super::{Ctx, Facts, Fold, Line, Previous, Sink, finite, normalize_dir, parse_time, widen};
 use crate::markers::{Hints, Rebuild, Visible};
-use crate::model::{Cwd, Provider, Role, ToolCall, Usage};
+use crate::model::{Compaction, ContextReading, Cwd, Provider, Role, ToolCall, Usage, UsageTurn};
 use crate::text::{format_buddy_receipt, format_tool_use, pretty_json};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
@@ -115,6 +116,12 @@ pub struct CodexFold {
     buffering: bool,
     buffer: Vec<Pending>,
     usage: Option<Usage>,
+    /// The last real request's input (`last_token_usage`; a 0 after a compaction is a reset
+    /// sentinel, not a request), the reported window, and top-level `compacted` records.
+    context_tokens: Option<f64>,
+    context_window: Option<f64>,
+    compactions: u32,
+    rate_limits: Option<String>,
 }
 
 fn parse_epoch(v: Option<&Value>) -> Option<f64> {
@@ -202,6 +209,36 @@ fn user_content(payload: &Value, before_first_message: bool) -> String {
 }
 
 impl CodexFold {
+    /// A `token_count` event: the cumulative total (the last one wins; its growth is one usage
+    /// turn), this request's context, the window, and the rate limits.
+    fn token_count(&mut self, sink: &mut Sink, payload: &Value, at: Option<f64>) {
+        if let Some(limits) = payload.get("rate_limits").filter(|r| crate::text::truthy(Some(r))) {
+            self.rate_limits = Some(limits.to_string());
+        }
+        let Some(info) = payload.get("info").filter(|i| crate::text::truthy(Some(i))) else { return };
+        self.context_window = finite(info.get("model_context_window")).or(self.context_window);
+        if let Some(input) = finite(info.pointer("/last_token_usage/input_tokens")).filter(|i| *i > 0.0) {
+            self.context_tokens = Some(input);
+        }
+        let Some(total) = info.get("total_token_usage").filter(|t| crate::text::truthy(Some(t))) else { return };
+        // Cached input is a subset of input; split out so `input` means uncached, as for Claude.
+        let n = |k: &str| total.get(k).and_then(Value::as_f64).unwrap_or(0.0);
+        let cached = n("cached_input_tokens");
+        let now = Usage { input: n("input_tokens") - cached, output: n("output_tokens"), cache_read: cached, cache_write: 0.0 };
+        let before = self.usage.clone().unwrap_or_default();
+        let grew = Usage {
+            input: now.input - before.input,
+            output: now.output - before.output,
+            cache_read: now.cache_read - before.cache_read,
+            cache_write: 0.0,
+        };
+        // Codex repeats an unchanged total (rate-limit refreshes); that is no request.
+        if grew != Usage::default() {
+            sink.turn(UsageTurn { at, model: self.model.clone(), usage: grew, reported_cost: None });
+        }
+        self.usage = Some(now);
+    }
+
     fn emit(&mut self, sink: &mut Sink, item: Pending, notice: bool) -> Result<(), Rebuild> {
         if self.buffering {
             self.buffer.push(item);
@@ -363,6 +400,11 @@ impl Fold for CodexFold {
 
     fn line(&mut self, text: &str, sink: &mut Sink) -> Result<Line, Rebuild> {
         let (outer, inner) = line_types(text);
+        if outer == Some("compacted") {
+            // Tagged at the top level; its payload (the replacement history) is never needed.
+            self.compactions += 1;
+            return Ok(Line::Used);
+        }
         let is_metadata = matches!(outer, Some("session_meta" | "turn_context"));
         let is_event = outer == Some("event_msg") && inner.is_some_and(|i| RETAINED_EVENTS.contains(&i));
         let is_response_message = !self.events_seen && outer == Some("response_item") && inner == Some("message");
@@ -380,14 +422,8 @@ impl Fold for CodexFold {
         let payload = entry.get("payload").cloned().unwrap_or(Value::Null);
         let payload_type = payload.get("type").and_then(Value::as_str);
         if is_token_count {
-            // The last cumulative total wins; cached input is a subset of input, split out.
-            if let (Some("event_msg"), Some("token_count")) = (entry_type, payload_type)
-                && let Some(total) = payload.get("info").and_then(|i| i.get("total_token_usage")).filter(|t| crate::text::truthy(Some(t)))
-            {
-                let n = |k: &str| total.get(k).and_then(Value::as_f64).unwrap_or(0.0);
-                let cached = n("cached_input_tokens");
-                self.usage =
-                    Some(Usage { input: n("input_tokens") - cached, output: n("output_tokens"), cache_read: cached, cache_write: 0.0 });
+            if let (Some("event_msg"), Some("token_count")) = (entry_type, payload_type) {
+                self.token_count(sink, &payload, parse_time(entry.get("timestamp")));
             }
             return Ok(Line::Used);
         }
@@ -511,6 +547,18 @@ impl Fold for CodexFold {
             parent_session_id: self.parent.clone(),
             usage: self.usage.clone(),
             sub_agents: Vec::new(),
+            context: self.context_tokens.map(|context_tokens| ContextReading {
+                context_tokens,
+                context_window: self.context_window,
+                // Codex records the boundary but no token counts alongside it.
+                compaction: (self.compactions > 0).then_some(Compaction {
+                    count: self.compactions,
+                    pre_tokens: None,
+                    post_tokens: None,
+                    trigger: None,
+                }),
+            }),
+            rate_limits: self.rate_limits.clone(),
         })
     }
 }

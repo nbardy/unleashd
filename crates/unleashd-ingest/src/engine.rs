@@ -253,10 +253,19 @@ fn flush(
 
 /// A resumed read that added nothing and left the row as stored.
 fn quiet(writer: &Writer, path: &str, outcome: &Outcome) -> bool {
-    if !matches!(outcome.taken, Taken::Resumed) || outcome.apply != Apply::Append || !outcome.messages.is_empty() {
+    if !matches!(outcome.taken, Taken::Resumed)
+        || outcome.apply != Apply::Append
+        || !outcome.messages.is_empty()
+        || !outcome.turns.is_empty()
+    {
         return false;
     }
     let Some(row) = &outcome.row else { return false };
+    // A Muse `model_completed` or a Codex rate-limit refresh changes only these.
+    match writer.extras_of(path) {
+        Ok((context, limits)) if context == row.facts.context && limits == row.facts.rate_limits => {}
+        _ => return false,
+    }
     match writer.row_of(path) {
         Ok(Some(stored)) => {
             stored.session_id == row.facts.session_id

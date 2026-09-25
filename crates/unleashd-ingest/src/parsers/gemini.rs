@@ -84,7 +84,10 @@ pub fn read(path: &Path, ctx: &Ctx) -> std::io::Result<Option<Doc>> {
             parent_session_id: None,
             usage: None,
             sub_agents: sub_agents.finished(),
+            context: None,
+            rate_limits: None,
         },
         messages,
+        turns: Vec::new(),
     }))
 }
