@@ -1,0 +1,206 @@
+//! The napi boundary. Every call is async and runs on tokio's blocking pool (libuv never waits on
+//! SQLite or a parse); the watcher runs on its own thread and reaches JS through a threadsafe
+//! function. A panic in a call becomes a rejected promise.
+
+use crate::engine::Report;
+use crate::model::{Format, Message, Root, SessionRow};
+use crate::store::Reader;
+use crate::watch::{self, IngestEvent};
+use napi::bindgen_prelude::*;
+use napi::threadsafe_function::{ThreadsafeFunction, ThreadsafeFunctionCallMode};
+use napi_derive::napi;
+use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
+
+/// What `onChange` receives.
+#[napi(discriminant = "t", discriminant_case = "camelCase")]
+#[derive(Debug, Clone)]
+pub enum ChangeEvent {
+    /// A committed batch: sessions whose rows changed (call `listSessions({ since })`) and
+    /// sessions that left the list.
+    Changes { rev: i64, session_ids: Vec<String>, removed: Vec<String> },
+    /// A batch failed as a whole. Stored rows are unchanged; the next change retries.
+    Failed { message: String },
+}
+
+#[napi(object)]
+pub struct ScanReport {
+    pub sources: u32,
+    pub unchanged: u32,
+    pub resumed: u32,
+    pub full: u32,
+    /// Why each full read happened (`unseen`, `rewritten`, `rebuild:Reordered`, …).
+    pub full_reasons: std::collections::HashMap<String, u32>,
+    pub removed: u32,
+    pub failed: u32,
+    pub messages_written: f64,
+    pub bytes_read: f64,
+    pub malformed_lines: f64,
+    pub ms: f64,
+    pub errors: Vec<String>,
+    /// Roots that do not exist; they are not watched (restart once the provider creates them).
+    pub missing_roots: Vec<String>,
+    pub rev: i64,
+}
+
+#[napi(object)]
+pub struct ListOptions {
+    /// Revision already seen; 0 lists everything.
+    pub since: i64,
+}
+
+#[napi(object)]
+pub struct RemovedSession {
+    pub session_id: String,
+    pub source_path: String,
+    pub rev: i64,
+}
+
+#[napi(object)]
+pub struct SessionPage {
+    /// Pass as `since` next time.
+    pub rev: i64,
+    pub rows: Vec<SessionRow>,
+    pub removed: Vec<RemovedSession>,
+}
+
+#[napi(object)]
+pub struct MessagesOptions {
+    /// Return messages with `seq` greater than this; -1 starts at the first message.
+    pub after_seq: i64,
+    pub limit: u32,
+}
+
+fn to_js(e: impl std::fmt::Display) -> Error {
+    Error::from_reason(e.to_string())
+}
+
+async fn blocking<T: Send + 'static>(f: impl FnOnce() -> Result<T> + Send + 'static) -> Result<T> {
+    tokio::task::spawn_blocking(f).await.map_err(|e| Error::from_reason(format!("[panic] {e}")))?
+}
+
+#[napi]
+pub struct Ingest {
+    reader: Arc<Mutex<Reader>>,
+    handle: Arc<Mutex<Option<watch::Handle>>>,
+    report: Arc<ScanReportData>,
+}
+
+struct ScanReportData {
+    report: Report,
+    missing_roots: Vec<String>,
+    rev: i64,
+}
+
+#[napi]
+impl Ingest {
+    /// Open (or create) the store at `dbPath`, bring it up to date with `roots`, and watch them.
+    /// Resolves after the initial scan is committed; `onChange` also fires during that scan.
+    #[napi(factory)]
+    pub async fn start(
+        roots: Vec<Root>,
+        db_path: String,
+        on_change: ThreadsafeFunction<ChangeEvent, (), ChangeEvent, Status, false>,
+    ) -> Result<Ingest> {
+        let path = PathBuf::from(&db_path);
+        let (handle, started) = blocking(move || {
+            let on_change = Arc::new(on_change);
+            watch::start(roots, path, move |event| {
+                let js = match event {
+                    IngestEvent::Changes(c) => ChangeEvent::Changes { rev: c.rev, session_ids: c.session_ids, removed: c.removed },
+                    IngestEvent::Failed(message) => ChangeEvent::Failed { message },
+                };
+                on_change.call(js, ThreadsafeFunctionCallMode::NonBlocking);
+            })
+            .map_err(to_js)
+        })
+        .await?;
+        let db = PathBuf::from(db_path);
+        let reader = blocking(move || Reader::open(&db).map_err(to_js)).await?;
+        Ok(Ingest {
+            reader: Arc::new(Mutex::new(reader)),
+            handle: Arc::new(Mutex::new(Some(handle))),
+            report: Arc::new(ScanReportData { report: started.report, missing_roots: started.missing_roots, rev: started.rev }),
+        })
+    }
+
+    /// The initial scan's counts and timing.
+    #[napi(getter)]
+    pub fn initial_scan(&self) -> ScanReport {
+        let r = &self.report.report;
+        ScanReport {
+            sources: r.sources as u32,
+            unchanged: r.unchanged as u32,
+            resumed: r.resumed as u32,
+            full: r.full as u32,
+            full_reasons: r.full_reasons.iter().map(|(k, v)| (k.clone(), *v as u32)).collect(),
+            removed: r.removed as u32,
+            failed: r.failed as u32,
+            messages_written: r.messages_written as f64,
+            bytes_read: r.bytes_read as f64,
+            malformed_lines: r.malformed_lines as f64,
+            ms: r.ms,
+            errors: r.errors.clone(),
+            missing_roots: self.report.missing_roots.clone(),
+            rev: self.report.rev,
+        }
+    }
+
+    #[napi]
+    pub async fn list_sessions(&self, options: ListOptions) -> Result<SessionPage> {
+        let reader = self.reader.clone();
+        blocking(move || {
+            let (rev, rows, removed) = reader.lock().map_err(to_js)?.list_sessions(options.since).map_err(to_js)?;
+            let removed =
+                removed.into_iter().map(|r| RemovedSession { session_id: r.session_id, source_path: r.source_path, rev: r.rev }).collect();
+            Ok(SessionPage { rev, rows, removed })
+        })
+        .await
+    }
+
+    #[napi]
+    pub async fn session(&self, session_id: String) -> Result<Option<SessionRow>> {
+        let reader = self.reader.clone();
+        blocking(move || reader.lock().map_err(to_js)?.session(&session_id).map_err(to_js)).await
+    }
+
+    #[napi]
+    pub async fn messages(&self, session_id: String, options: MessagesOptions) -> Result<Vec<Message>> {
+        let reader = self.reader.clone();
+        blocking(move || reader.lock().map_err(to_js)?.messages(&session_id, options.after_seq, options.limit).map_err(to_js)).await
+    }
+
+    /// Stop watching and release `onChange` (so Node can exit). Idempotent.
+    #[napi]
+    pub async fn stop(&self) -> Result<()> {
+        let handle = self.handle.clone();
+        blocking(move || {
+            if let Some(h) = handle.lock().map_err(to_js)?.take() {
+                h.stop();
+            }
+            Ok(())
+        })
+        .await
+    }
+}
+
+/// The standard provider roots under `home`, including any Gemini sandbox homes that exist.
+#[napi]
+pub fn default_roots(home: String) -> Vec<Root> {
+    let home = PathBuf::from(home);
+    let at = |format: Format, rel: &str| Root { format, path: home.join(rel).to_string_lossy().into_owned() };
+    let mut roots = vec![
+        at(Format::Claude, ".claude/projects"),
+        at(Format::Codex, ".codex/sessions"),
+        at(Format::Cursor, ".cursor/projects"),
+        at(Format::Gemini, ".gemini/tmp"),
+        at(Format::Opencode, ".local/share/opencode/storage"),
+        at(Format::Muse, ".local/share/muse/sessions"),
+    ];
+    if let Ok(sandboxes) = std::fs::read_dir(home.join(".gemini-sandbox")) {
+        for entry in sandboxes.flatten().filter(|e| e.file_type().is_ok_and(|t| t.is_dir())) {
+            roots.push(Root { format: Format::Gemini, path: entry.path().join(".gemini/tmp").to_string_lossy().into_owned() });
+        }
+    }
+    roots
+}
