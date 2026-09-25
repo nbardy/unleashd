@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { mkdtempSync, rmSync } from 'node:fs';
+import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
@@ -7,6 +8,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import type { McpServerSpec } from '@nbardy/agent-cli';
 import { BuddiesCore, type Post } from '@unleashd/buddies-core';
+import express from 'express';
 import { BUDDY_TOOL_GUIDE, createBriefings } from '../src/buddies/briefing';
 import { type StableConversationPorts, slotOf } from '../src/buddies/buddy-conversation-slots';
 import type { GateVerdict } from '../src/buddies/channel-reply-gate';
@@ -17,6 +19,7 @@ import { createGrants } from '../src/buddies/grants';
 import { startMcpEndpoint } from '../src/buddies/mcp';
 import { createMemoryReviewer } from '../src/buddies/memory-review';
 import { createBuddyPolicyPort, legacyRuntimeHooks } from '../src/buddies/policy-port';
+import { registerBuddyRoutes } from '../src/buddies/routes';
 import { createRunner } from '../src/buddies/runner';
 import { TURN_MAX_RUNTIME_MS } from '../src/constants/timeouts';
 import { createBuddyCreationService } from '../src/conversations/buddy-creation-service';
@@ -300,6 +303,8 @@ async function world() {
     channels,
     creation,
     conversations,
+    runner,
+    scratch,
     runs: (buddyId: string) => core.listRuns({ kind: 'buddy', buddyId }, 50),
     async close() {
       runner.stop();
@@ -691,6 +696,84 @@ test('follow-ups stop after three Buddy posts in a row, and a failed gate on an 
     for (const notice of notices)
       assert.match(notice.body, /could not decide whether to reply \(usage limit\)/);
   } finally {
+    await w.close();
+  }
+});
+
+test('owner routes: a DM request is answered over HTTP, typed errors keep their status, and literal paths are never read as a buddy id', async () => {
+  const w = await world();
+  const app = express();
+  app.use(express.json());
+  registerBuddyRoutes(app, {
+    core: w.core,
+    events: { emit: w.emit, on: () => () => undefined },
+    runner: w.runner,
+    channels: w.channels,
+    uploadsRoot: () => join(w.scratch, 'uploads'),
+    channelChanged: () => undefined,
+    onBuddyArchived: () => undefined,
+    createBuilderConversation: async () => ({ conversationId: 'builder' }),
+  });
+  const server = app.listen(0, '127.0.0.1');
+  await new Promise((resolve) => server.once('listening', resolve));
+  const base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+  const http = async (method: string, path: string, body?: unknown) => {
+    const response = await fetch(base + path, {
+      method,
+      headers: { 'content-type': 'application/json' },
+      body: body === undefined ? undefined : JSON.stringify(body),
+    });
+    return {
+      status: response.status,
+      body: (await response.json()) as { error: string; requests: Post[] },
+    };
+  };
+  try {
+    // /api/buddies/tasks and /runs are registered before /api/buddies/:buddyId (it would swallow them).
+    assert.equal((await http('GET', `/api/buddies/tasks?buddyId=${w.lead.id}`)).status, 200);
+    assert.equal((await http('GET', `/api/buddies/runs?buddyId=${w.lead.id}`)).status, 200);
+    assert.deepEqual((await http('GET', '/api/buddies/buddy_missing')).status, 404);
+    // The Buddy's request to the owner lands in the owner's inbox; the owner answers over HTTP.
+    const ask = await w.core.post(
+      buddyActor(w.lead.id),
+      { kind: 'direct', members: [buddyActor(w.lead.id), OWNER] },
+      { kind: 'request', body: 'May I deploy?', evidence: [], key: 'ask' }
+    );
+    const inbox = await http('GET', `/api/buddies/workspaces/${w.ws}/inbox`);
+    assert.deepEqual(
+      inbox.body.requests.map((p: Post) => p.id),
+      [ask.id]
+    );
+    const answered = await http('POST', `/api/buddies/posts/${ask.id}/answer`, {
+      body: 'Yes',
+      key: 'yes',
+    });
+    assert.equal(answered.status, 201, JSON.stringify(answered.body));
+    assert.equal((await w.core.getPost(OWNER, ask.id)).request.state, 'answered');
+    const again = await http('POST', `/api/buddies/posts/${ask.id}/answer`, {
+      body: 'Yes again',
+      key: 'yes-2',
+    });
+    assert.equal(again.status, 400, 'one answer per request');
+    assert.match(again.body.error, /^\[invalid\]/);
+    // A stale soul write is a conflict the editor can reconcile, not a 500.
+    const first = await http('PUT', `/api/buddies/${w.lead.id}/docs/soul`, {
+      content: 'v1',
+      baseRevision: 0,
+      reason: 'r',
+      key: 's1',
+    });
+    assert.equal(first.status, 200);
+    const stale = await http('PUT', `/api/buddies/${w.lead.id}/docs/soul`, {
+      content: 'v2',
+      baseRevision: 0,
+      reason: 'r',
+      key: 's2',
+    });
+    assert.equal(stale.status, 409);
+    assert.match(stale.body.error, /^\[revision_conflict\]/);
+  } finally {
+    server.close();
     await w.close();
   }
 });

@@ -1,5 +1,13 @@
 import fs from 'node:fs';
-import type { ChannelRef, DocKind, DocScope, RunQuery, TaskQuery } from '@unleashd/buddies-core';
+import type {
+  BuddyChanges,
+  ChannelRef,
+  DocKind,
+  DocScope,
+  Post,
+  RunQuery,
+  TaskQuery,
+} from '@unleashd/buddies-core';
 import { type ConversationConfig, OwnerPostMentionConfigSchema } from '@unleashd/shared';
 import type { Express, Request, Response } from 'express';
 import multer from 'multer';
@@ -130,6 +138,21 @@ const ScheduleSchema = z
     key,
   })
   .strict();
+const WorkspaceSchema = z
+  .object({ name: z.string().trim().min(1), rootPath: z.string().min(1) })
+  .strict();
+const ChannelSchema = z
+  .object({
+    name: z.string().trim().min(1).max(80),
+    purpose: z.string().trim().min(1).max(500),
+    key,
+  })
+  .strict();
+const DirectPostSchema = PostBodySchema.extend({ members: z.array(z.string().min(1)).min(1) });
+const AnswerSchema = z
+  .object({ body: z.string().trim().min(1).max(32_000), evidence, key })
+  .strict();
+const ReadSchema = z.object({ postId: z.string().min(1) }).strict();
 const CursorSchema = z.object({
   before: z.string().optional(),
   beforeId: z.string().optional(),
@@ -175,24 +198,13 @@ function mentionConfigsByBuddy(
 
 const MEDIA = new Set<string>([...CHANNEL_IMAGE_EXTENSIONS, ...CHANNEL_VIDEO_EXTENSIONS]);
 
+type Handler = (req: Request) => Promise<unknown>;
+type Method = 'get' | 'post' | 'put' | 'patch' | 'delete';
+
+// Pattern: table-driven (docs/patterns.md#table-driven) — one row per route, one registration loop.
 // Pattern: idempotency-keys (docs/patterns.md#idempotency-keys) — every owner write carries `key`.
 export function registerBuddyRoutes(app: Express, deps: BuddyRouteDeps): void {
   const { core, events, runner, channels } = deps;
-  const route =
-    (handler: (req: Request, res: Response) => Promise<unknown>, status = 200) =>
-    (req: Request, res: Response) => {
-      handler(req, res).then(
-        (body) => res.status(status).json(body ?? null),
-        (error: unknown) => {
-          const typed = coreError(error);
-          const code = typed ? httpStatus(typed) : error instanceof z.ZodError ? 400 : 500;
-          if (code >= 500) console.error('[buddies] request failed:', error);
-          res.status(code).json({
-            error: typed?.message ?? (error instanceof Error ? error.message : String(error)),
-          });
-        }
-      );
-    };
   // A write changes Buddy state: clients refresh, and the runner wakes (it may have enqueued a run).
   const write = <T>(result: Promise<T>) =>
     result.then((value) => {
@@ -202,162 +214,41 @@ export function registerBuddyRoutes(app: Express, deps: BuddyRouteDeps): void {
   const p = (req: Request, name: string) => String(req.params[name]);
   const q = (req: Request, name: string) =>
     typeof req.query[name] === 'string' ? (req.query[name] as string) : undefined;
-
-  // ---- team ----------------------------------------------------------------------------------
-  app.get(
-    '/api/buddies/overview',
-    route(async () => {
-      const workspaces = await core.listWorkspaces();
-      return Promise.all(
-        workspaces.map(async (w) => ({ ...w, buddies: await core.listBuddies(w.id) }))
-      );
-    })
-  );
-  app.post(
-    '/api/buddies/workspaces',
-    route(async (req) => {
-      const input = z
-        .object({ name: z.string().trim().min(1), rootPath: z.string().min(1) })
-        .strict()
-        .parse(req.body);
-      return write(core.createWorkspace(OWNER, input));
-    }, 201)
-  );
-  app.post(
-    '/api/buddies/builder',
-    route(() => deps.createBuilderConversation(), 201)
-  );
-  app.post(
-    '/api/buddies',
-    route(async (req) => {
-      const { managerId, ...input } = BuddyCreateSchema.parse(req.body);
-      return write(core.createBuddy(OWNER, { ...input, manager: manager(managerId) }));
-    }, 201)
-  );
-  app.post(
-    '/api/buddies/:buddyId/direct',
-    route((req) => channels.openDirect(p(req, 'buddyId')))
-  );
-  app.post(
-    '/api/buddies/:buddyId/wake',
-    route((req) => channels.wake(p(req, 'buddyId')), 202)
-  );
-
-  // ---- docs ----------------------------------------------------------------------------------
-  app.get(
-    '/api/buddies/:buddyId/docs/:kind',
-    route(async (req) => {
-      const buddyId = p(req, 'buddyId');
-      const kind = docKind.parse(p(req, 'kind')) as DocKind;
-      const scope = scopeOf(q(req, 'scope') ?? 'buddy', q(req, 'scopeId'), buddyId);
-      if (q(req, 'all') === '1') return core.listDocs(OWNER, buddyId, kind);
-      return core.readDoc(OWNER, { buddyId, scope, kind, name: q(req, 'name') ?? '' });
-    })
-  );
-  app.put(
-    '/api/buddies/:buddyId/docs/:kind',
-    route(async (req) => {
-      const buddyId = p(req, 'buddyId');
-      const input = DocWriteSchema.parse(req.body);
-      return write(
-        core.writeDoc(OWNER, {
-          doc: {
-            buddyId,
-            scope: scopeOf(input.scope, input.scopeId, buddyId),
-            kind: docKind.parse(p(req, 'kind')) as DocKind,
-            name: input.name,
-          },
-          content: input.content,
-          baseRevision: input.baseRevision,
-          reason: input.reason,
-          key: input.key,
-        })
-      );
-    })
-  );
-  app.get(
-    '/api/buddies/docs/:docId/revisions',
-    route((req) => core.docRevisions(OWNER, p(req, 'docId')))
-  );
-
-  // ---- tasks ---------------------------------------------------------------------------------
-  app.get(
-    '/api/buddies/tasks',
-    route(async (req) => {
-      const buddyId = q(req, 'buddyId');
-      const parentId = q(req, 'parentId');
-      const query: TaskQuery = buddyId
-        ? { kind: 'owner', buddyId }
-        : parentId
-          ? { kind: 'children', parentId }
-          : { kind: 'workspace', workspaceId: z.string().min(1).parse(q(req, 'workspaceId')) };
-      return core.listTasks(query);
-    })
-  );
-  app.get(
-    '/api/buddies/tasks/:taskId',
-    route(async (req) => {
-      const task = await core.getTask(p(req, 'taskId'));
-      const channel = await core.openChannel(OWNER, { kind: 'task', taskId: task.id });
-      const [children, comments, runs] = await Promise.all([
-        core.listTasks({ kind: 'children', parentId: task.id }),
-        core.listPosts(OWNER, { kind: 'channel', channelId: channel.id }, null, 100),
-        core.listRuns({ kind: 'task', taskId: task.id }, 20),
-      ]);
-      return { task, channel, children, comments: comments.posts, runs };
-    })
-  );
-  app.post(
-    '/api/buddies/tasks',
-    route(
-      async (req) =>
-        write(core.upsertTask(OWNER, { kind: 'create', ...TaskCreateSchema.parse(req.body) })),
-      201
-    )
-  );
-  app.patch(
-    '/api/buddies/tasks/:taskId',
-    route(async (req) =>
-      write(
-        core.upsertTask(OWNER, {
-          kind: 'update',
-          taskId: p(req, 'taskId'),
-          ...TaskUpdateSchema.parse(req.body),
-        })
-      )
-    )
-  );
-
-  // ---- runs ----------------------------------------------------------------------------------
-  app.get(
-    '/api/buddies/runs',
-    route(async (req) => {
-      const pick: Array<[string, (id: string) => RunQuery]> = [
-        ['buddyId', (id) => ({ kind: 'buddy', buddyId: id })],
-        ['taskId', (id) => ({ kind: 'task', taskId: id })],
-        ['conversationId', (id) => ({ kind: 'conversation', conversationId: id })],
-        ['liveInWorkspace', (id) => ({ kind: 'live', workspaceId: id })],
-      ];
-      const found = pick.find(([name]) => q(req, name));
-      if (!found)
-        throw new Error('runs need one of buddyId, taskId, conversationId, liveInWorkspace');
-      return core.listRuns(found[1](q(req, found[0])!), 100);
-    })
-  );
-  app.get(
-    '/api/buddies/runs/:runId',
-    route((req) => core.getRun(p(req, 'runId')))
-  );
-  app.post(
-    '/api/buddies/runs/:runId/cancel',
-    route((req) => runner.cancel(p(req, 'runId')))
-  );
-
-  // ---- schedules -----------------------------------------------------------------------------
-  app.get(
-    '/api/buddies/:buddyId/schedules',
-    route((req) => core.listSchedules(p(req, 'buddyId')))
-  );
+  const page = (req: Request) => {
+    const cursor = CursorSchema.parse(req.query);
+    const before =
+      cursor.before && cursor.beforeId ? { createdAt: cursor.before, id: cursor.beforeId } : null;
+    return { before, limit: cursor.limit };
+  };
+  const posted = async <T extends Post>(post: Promise<T>) => {
+    const written = await write(post);
+    const channel = await core.openChannel(OWNER, { kind: 'id', id: written.channelId });
+    events.emit({ kind: 'posted', post: written, channel });
+    return { written, channel };
+  };
+  const ownerPost = async (raw: unknown, ref: ChannelRef) => {
+    const input = PostBodySchema.parse(raw);
+    const chosen = mentionConfigsByBuddy(input.body, input.mentionConfigs);
+    const target = await core.openChannel(OWNER, ref);
+    const body = requireCanonicalPostMedia(input.body, {
+      uploadsRoot: deps.uploadsRoot(),
+      channelId: target.id,
+    });
+    const { written: post, channel } = await posted(
+      core.post(OWNER, { kind: 'id', id: target.id }, { ...input, body })
+    );
+    // Only the owner's own @mentions start turns, and only in a public channel's thread seats.
+    const mentions =
+      channel.kind.type === 'public'
+        ? await channels.respondToOwnerPost(channel, post, chosen)
+        : [];
+    return { post, mentions };
+  };
+  const archive = async (buddyId: string, changes: BuddyChanges, changeKey: string) => {
+    const buddy = await write(core.updateBuddy(OWNER, { buddyId, changes, key: changeKey }));
+    if (buddy.status === 'archived') deps.onBuddyArchived(buddy.id);
+    return buddy;
+  };
   const putSchedule = (req: Request, id: string | undefined) =>
     write(
       core.putSchedule(OWNER, {
@@ -367,18 +258,144 @@ export function registerBuddyRoutes(app: Express, deps: BuddyRouteDeps): void {
         limits: '{}',
       })
     );
-  app.post(
-    '/api/buddies/:buddyId/schedules',
-    route((req) => putSchedule(req, undefined), 201)
-  );
-  app.put(
-    '/api/buddies/:buddyId/schedules/:scheduleId',
-    route((req) => putSchedule(req, p(req, 'scheduleId')))
-  );
-  app.post(
-    '/api/buddies/:buddyId/schedules/:scheduleId/run',
-    route(
-      async (req) =>
+  const runQueries: Array<[string, (id: string) => RunQuery]> = [
+    ['buddyId', (id) => ({ kind: 'buddy', buddyId: id })],
+    ['taskId', (id) => ({ kind: 'task', taskId: id })],
+    ['conversationId', (id) => ({ kind: 'conversation', conversationId: id })],
+    ['liveInWorkspace', (id) => ({ kind: 'live', workspaceId: id })],
+  ];
+
+  const routes: Array<[Method, string, Handler, number?]> = [
+    // ---- team -----------------------------------------------------------------------------------
+    [
+      'get',
+      '/api/buddies/overview',
+      async () =>
+        Promise.all(
+          (await core.listWorkspaces()).map(async (w) => ({
+            ...w,
+            buddies: await core.listBuddies(w.id),
+          }))
+        ),
+    ],
+    [
+      'post',
+      '/api/buddies/workspaces',
+      (req) => write(core.createWorkspace(OWNER, WorkspaceSchema.parse(req.body))),
+      201,
+    ],
+    ['post', '/api/buddies/builder', () => deps.createBuilderConversation(), 201],
+    [
+      'post',
+      '/api/buddies',
+      async (req) => {
+        const { managerId, ...input } = BuddyCreateSchema.parse(req.body);
+        return write(core.createBuddy(OWNER, { ...input, manager: manager(managerId) }));
+      },
+      201,
+    ],
+    ['post', '/api/buddies/:buddyId/direct', (req) => channels.openDirect(p(req, 'buddyId'))],
+    ['post', '/api/buddies/:buddyId/wake', (req) => channels.wake(p(req, 'buddyId')), 202],
+    // ---- docs -----------------------------------------------------------------------------------
+    [
+      'get',
+      '/api/buddies/:buddyId/docs/:kind',
+      async (req) => {
+        const buddyId = p(req, 'buddyId');
+        const kind = docKind.parse(p(req, 'kind')) as DocKind;
+        if (q(req, 'all') === '1') return core.listDocs(OWNER, buddyId, kind);
+        const scope = scopeOf(q(req, 'scope') ?? 'buddy', q(req, 'scopeId'), buddyId);
+        return core.readDoc(OWNER, { buddyId, scope, kind, name: q(req, 'name') ?? '' });
+      },
+    ],
+    [
+      'put',
+      '/api/buddies/:buddyId/docs/:kind',
+      async (req) => {
+        const buddyId = p(req, 'buddyId');
+        const { scope, scopeId, name, ...write_ } = DocWriteSchema.parse(req.body);
+        const kind = docKind.parse(p(req, 'kind')) as DocKind;
+        const doc = { buddyId, scope: scopeOf(scope, scopeId, buddyId), kind, name };
+        return write(core.writeDoc(OWNER, { doc, ...write_ }));
+      },
+    ],
+    [
+      'get',
+      '/api/buddies/docs/:docId/revisions',
+      (req) => core.docRevisions(OWNER, p(req, 'docId')),
+    ],
+    // ---- tasks (todos are child tasks) ----------------------------------------------------------
+    [
+      'get',
+      '/api/buddies/tasks',
+      async (req) => {
+        const buddyId = q(req, 'buddyId');
+        const parentId = q(req, 'parentId');
+        const query: TaskQuery = buddyId
+          ? { kind: 'owner', buddyId }
+          : parentId
+            ? { kind: 'children', parentId }
+            : { kind: 'workspace', workspaceId: z.string().min(1).parse(q(req, 'workspaceId')) };
+        return core.listTasks(query);
+      },
+    ],
+    [
+      'get',
+      '/api/buddies/tasks/:taskId',
+      async (req) => {
+        const task = await core.getTask(p(req, 'taskId'));
+        const channel = await core.openChannel(OWNER, { kind: 'task', taskId: task.id });
+        const [children, comments, runs] = await Promise.all([
+          core.listTasks({ kind: 'children', parentId: task.id }),
+          core.listPosts(OWNER, { kind: 'channel', channelId: channel.id }, null, 100),
+          core.listRuns({ kind: 'task', taskId: task.id }, 20),
+        ]);
+        return { task, channel, children, comments: comments.posts, runs };
+      },
+    ],
+    [
+      'post',
+      '/api/buddies/tasks',
+      (req) =>
+        write(core.upsertTask(OWNER, { kind: 'create', ...TaskCreateSchema.parse(req.body) })),
+      201,
+    ],
+    [
+      'patch',
+      '/api/buddies/tasks/:taskId',
+      (req) =>
+        write(
+          core.upsertTask(OWNER, {
+            kind: 'update',
+            taskId: p(req, 'taskId'),
+            ...TaskUpdateSchema.parse(req.body),
+          })
+        ),
+    ],
+    // ---- runs -----------------------------------------------------------------------------------
+    [
+      'get',
+      '/api/buddies/runs',
+      async (req) => {
+        const found = runQueries.find(([name]) => q(req, name));
+        if (!found) throw new Error('runs need buddyId, taskId, conversationId or liveInWorkspace');
+        return core.listRuns(found[1](q(req, found[0])!), 100);
+      },
+    ],
+    ['get', '/api/buddies/runs/:runId', (req) => core.getRun(p(req, 'runId'))],
+    ['post', '/api/buddies/runs/:runId/cancel', (req) => runner.cancel(p(req, 'runId'))],
+    // ---- schedules ------------------------------------------------------------------------------
+    ['get', '/api/buddies/:buddyId/schedules', (req) => core.listSchedules(p(req, 'buddyId'))],
+    ['post', '/api/buddies/:buddyId/schedules', (req) => putSchedule(req, undefined), 201],
+    [
+      'put',
+      '/api/buddies/:buddyId/schedules/:scheduleId',
+      (req) => putSchedule(req, p(req, 'scheduleId')),
+    ],
+    [
+      'post',
+      '/api/buddies/:buddyId/schedules/:scheduleId/run',
+      (req) =>
         write(
           core.enqueueRun(OWNER, {
             buddyId: p(req, 'buddyId'),
@@ -389,172 +406,144 @@ export function registerBuddyRoutes(app: Express, deps: BuddyRouteDeps): void {
             },
           })
         ),
-      202
-    )
-  );
+      202,
+    ],
+    // ---- channels, DMs and the owner's inbox (everything is a post in a channel) ----------------
+    [
+      'get',
+      '/api/buddies/workspaces/:workspaceId/inbox',
+      (req) => core.inbox(OWNER, p(req, 'workspaceId')),
+    ],
+    [
+      'post',
+      '/api/buddies/workspaces/:workspaceId/channels',
+      (req) =>
+        write(
+          core.createChannel(OWNER, {
+            ...ChannelSchema.parse(req.body),
+            workspaceId: p(req, 'workspaceId'),
+          })
+        ),
+      201,
+    ],
+    [
+      'get',
+      '/api/buddies/channels/:channelId',
+      (req) => core.openChannel(OWNER, { kind: 'id', id: p(req, 'channelId') }),
+    ],
+    [
+      'get',
+      '/api/buddies/channels/:channelId/posts',
+      (req) => {
+        const { before, limit } = page(req);
+        return core.listPosts(
+          OWNER,
+          { kind: 'channel', channelId: p(req, 'channelId') },
+          before,
+          limit
+        );
+      },
+    ],
+    [
+      'get',
+      '/api/buddies/posts/:postId/thread',
+      async (req) => {
+        const root = await core.getPost(OWNER, p(req, 'postId'));
+        const { before, limit } = page(req);
+        return {
+          root,
+          ...(await core.listPosts(OWNER, { kind: 'thread', rootId: root.id }, before, limit)),
+        };
+      },
+    ],
+    [
+      'post',
+      '/api/buddies/channels/:channelId/posts',
+      (req) => ownerPost(req.body, { kind: 'id', id: p(req, 'channelId') }),
+      201,
+    ],
+    [
+      'post',
+      '/api/buddies/direct/posts',
+      (req) => {
+        const { members, ...body } = DirectPostSchema.parse(req.body);
+        return ownerPost(body, { kind: 'direct', members: [OWNER, ...members.map(buddyActor)] });
+      },
+      201,
+    ],
+    [
+      'post',
+      '/api/buddies/posts/:postId/answer',
+      async (req) => {
+        const input = AnswerSchema.parse(req.body);
+        return (await posted(core.answer(OWNER, { requestId: p(req, 'postId'), ...input })))
+          .written;
+      },
+      201,
+    ],
+    // Read through `postId`, the newest post the client rendered: a post that landed after the
+    // render stays unread. The push clears the channel on the owner's other devices.
+    [
+      'post',
+      '/api/buddies/channels/:channelId/read',
+      async (req) => {
+        const { postId } = ReadSchema.parse(req.body);
+        await core.markRead(OWNER, p(req, 'channelId'), postId);
+        deps.channelChanged(p(req, 'channelId'));
+        return { ok: true };
+      },
+    ],
+    [
+      'get',
+      '/api/buddies/channels/:channelId/responding',
+      async (req) => channels.responding(p(req, 'channelId')),
+    ],
+    // ---- one buddy: last, so `/api/buddies/tasks` and friends never read as a buddy id ----------
+    [
+      'get',
+      '/api/buddies/:buddyId',
+      async (req) => {
+        const buddyId = p(req, 'buddyId');
+        const [buddy, tasks, schedules, runs] = await Promise.all([
+          core.getBuddy(buddyId),
+          core.listTasks({ kind: 'owner', buddyId }),
+          core.listSchedules(buddyId),
+          core.listRuns({ kind: 'buddy', buddyId }, 30),
+        ]);
+        return { buddy, tasks, schedules, runs };
+      },
+    ],
+    [
+      'patch',
+      '/api/buddies/:buddyId',
+      (req) => {
+        const { key: changeKey, managerId, ...changes } = BuddyChangesSchema.parse(req.body);
+        const managerChange = managerId === undefined ? undefined : manager(managerId);
+        return archive(p(req, 'buddyId'), { ...changes, manager: managerChange }, changeKey);
+      },
+    ],
+    [
+      'delete',
+      '/api/buddies/:buddyId',
+      (req) => archive(p(req, 'buddyId'), { status: 'archived' }, `archive:${p(req, 'buddyId')}`),
+    ],
+  ];
 
-  // ---- channels, DMs and the owner's inbox ---------------------------------------------------
-  app.get(
-    '/api/buddies/workspaces/:workspaceId/inbox',
-    route((req) => core.inbox(OWNER, p(req, 'workspaceId')))
-  );
-  app.post(
-    '/api/buddies/workspaces/:workspaceId/channels',
-    route(async (req) => {
-      const input = z
-        .object({
-          name: z.string().trim().min(1).max(80),
-          purpose: z.string().trim().min(1).max(500),
-          key,
-        })
-        .strict()
-        .parse(req.body);
-      return write(core.createChannel(OWNER, { ...input, workspaceId: p(req, 'workspaceId') }));
-    }, 201)
-  );
-  app.get(
-    '/api/buddies/channels/:channelId',
-    route((req) => core.openChannel(OWNER, { kind: 'id', id: p(req, 'channelId') }))
-  );
-  app.get(
-    '/api/buddies/channels/:channelId/posts',
-    route(async (req) => {
-      const page = CursorSchema.parse(req.query);
-      const before =
-        page.before && page.beforeId ? { createdAt: page.before, id: page.beforeId } : undefined;
-      return core.listPosts(
-        OWNER,
-        { kind: 'channel', channelId: p(req, 'channelId') },
-        before,
-        page.limit
+  for (const [method, path, handle, status = 200] of routes) {
+    app[method](path, (req: Request, res: Response) => {
+      handle(req).then(
+        (body) => res.status(status).json(body ?? null),
+        (error: unknown) => {
+          const typed = coreError(error);
+          const code = typed ? httpStatus(typed) : error instanceof z.ZodError ? 400 : 500;
+          if (code >= 500) console.error('[buddies] request failed:', error);
+          const message = error instanceof Error ? error.message : String(error);
+          res.status(code).json({ error: typed?.message ?? message });
+        }
       );
-    })
-  );
-  app.get(
-    '/api/buddies/posts/:postId/thread',
-    route(async (req) => {
-      const root = await core.getPost(OWNER, p(req, 'postId'));
-      const page = CursorSchema.parse(req.query);
-      const before =
-        page.before && page.beforeId ? { createdAt: page.before, id: page.beforeId } : undefined;
-      return {
-        root,
-        ...(await core.listPosts(OWNER, { kind: 'thread', rootId: root.id }, before, page.limit)),
-      };
-    })
-  );
-  const ownerPost = async (req: Request, ref: ChannelRef) => {
-    const input = PostBodySchema.parse(req.body);
-    const chosen = mentionConfigsByBuddy(input.body, input.mentionConfigs);
-    const channel = await core.openChannel(OWNER, ref);
-    const body = requireCanonicalPostMedia(input.body, {
-      uploadsRoot: deps.uploadsRoot(),
-      channelId: channel.id,
     });
-    const post = await write(core.post(OWNER, { kind: 'id', id: channel.id }, { ...input, body }));
-    events.emit({ kind: 'posted', post, channel });
-    // Only the owner's own @mentions start turns, and only in a public channel's thread seats.
-    const mentions =
-      channel.kind.type === 'public'
-        ? await channels.respondToOwnerPost(channel, post, chosen)
-        : [];
-    return { post, mentions };
-  };
-  app.post(
-    '/api/buddies/channels/:channelId/posts',
-    route((req) => ownerPost(req, { kind: 'id', id: p(req, 'channelId') }), 201)
-  );
-  app.post(
-    '/api/buddies/direct/posts',
-    route(async (req) => {
-      const members = z.array(z.string().min(1)).min(1).parse(req.body?.members);
-      const { members: _members, ...body } = req.body;
-      req.body = body;
-      return ownerPost(req, { kind: 'direct', members: [OWNER, ...members.map(buddyActor)] });
-    }, 201)
-  );
-  app.post(
-    '/api/buddies/posts/:postId/answer',
-    route(async (req) => {
-      const input = z
-        .object({ body: z.string().trim().min(1).max(32_000), evidence, key })
-        .strict()
-        .parse(req.body);
-      const post = await write(core.answer(OWNER, { requestId: p(req, 'postId'), ...input }));
-      events.emit({
-        kind: 'posted',
-        post,
-        channel: await core.openChannel(OWNER, { kind: 'id', id: post.channelId }),
-      });
-      return post;
-    }, 201)
-  );
-  // Read through `postId`, the newest post the client rendered: a post that landed after the
-  // render stays unread. The push clears the channel on the owner's other devices.
-  app.post(
-    '/api/buddies/channels/:channelId/read',
-    route(async (req) => {
-      const { postId } = z
-        .object({ postId: z.string().min(1) })
-        .strict()
-        .parse(req.body);
-      await core.markRead(OWNER, p(req, 'channelId'), postId);
-      deps.channelChanged(p(req, 'channelId'));
-      return { ok: true };
-    })
-  );
-  app.get(
-    '/api/buddies/channels/:channelId/responding',
-    route(async (req) => channels.responding(p(req, 'channelId')))
-  );
+  }
 
-  // ---- one buddy: registered last, so `/api/buddies/tasks` etc. never read as a buddy id ----
-  app.get(
-    '/api/buddies/:buddyId',
-    route(async (req) => {
-      const buddyId = p(req, 'buddyId');
-      const [buddy, tasks, schedules, runs] = await Promise.all([
-        core.getBuddy(buddyId),
-        core.listTasks({ kind: 'owner', buddyId }),
-        core.listSchedules(buddyId),
-        core.listRuns({ kind: 'buddy', buddyId }, 30),
-      ]);
-      return { buddy, tasks, schedules, runs };
-    })
-  );
-  app.patch(
-    '/api/buddies/:buddyId',
-    route(async (req) => {
-      const { key: changeKey, managerId, ...changes } = BuddyChangesSchema.parse(req.body);
-      const buddy = await write(
-        core.updateBuddy(OWNER, {
-          buddyId: p(req, 'buddyId'),
-          changes: {
-            ...changes,
-            manager: managerId === undefined ? undefined : manager(managerId),
-          },
-          key: changeKey,
-        })
-      );
-      if (buddy.status === 'archived') deps.onBuddyArchived(buddy.id);
-      return buddy;
-    })
-  );
-  app.delete(
-    '/api/buddies/:buddyId',
-    route(async (req) => {
-      const buddyId = p(req, 'buddyId');
-      const buddy = await write(
-        core.updateBuddy(OWNER, {
-          buddyId,
-          changes: { status: 'archived' },
-          key: `archive:${buddyId}`,
-        })
-      );
-      deps.onBuddyArchived(buddyId);
-      return buddy;
-    })
-  );
   const upload = multer({
     storage: multer.diskStorage({
       destination: (req, _file, callback) => {
@@ -577,23 +566,18 @@ export function registerBuddyRoutes(app: Express, deps: BuddyRouteDeps): void {
       ),
   });
   // Lands in the channel's media directory, so the composer's ![name](absolutePath) passes as-is.
-  app.post(
-    '/api/buddies/channels/:channelId/media',
-    upload.array('files', 10),
-    (req: Request, res: Response) => {
-      const files = req.files as Express.Multer.File[];
-      if (files.length === 0)
-        return void res
-          .status(400)
-          .json({ error: `No supported media: ${[...MEDIA].join(' ')} up to 50 MB` });
-      res.status(201).json({
-        files: files.map((f) => ({
-          originalName: f.originalname,
-          absolutePath: f.path,
-          mimeType: f.mimetype,
-          size: f.size,
-        })),
-      });
-    }
-  );
+  app.post('/api/buddies/channels/:channelId/media', upload.array('files', 10), (req, res) => {
+    const files = req.files as Express.Multer.File[];
+    if (files.length === 0)
+      return void res
+        .status(400)
+        .json({ error: `No supported media: ${[...MEDIA].join(' ')} up to 50 MB` });
+    const saved = files.map((f) => ({
+      originalName: f.originalname,
+      absolutePath: f.path,
+      mimeType: f.mimetype,
+      size: f.size,
+    }));
+    res.status(201).json({ files: saved });
+  });
 }
