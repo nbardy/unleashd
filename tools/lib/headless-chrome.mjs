@@ -126,7 +126,10 @@ async function launchChrome(chromePath) {
       '--no-sandbox',
       'about:blank',
     ],
-    { stdio: ['ignore', 'ignore', 'pipe'] }
+    // No pipes: nothing reads Chrome's output, and a helper process that
+    // outlives the SIGKILL (crashpad) inherited the stderr pipe, which kept the
+    // Node process alive after a finished run (2026-09-25).
+    { stdio: 'ignore' }
   );
 
   // Chrome writes the chosen port here once the debugger is listening.
@@ -340,6 +343,9 @@ export async function openSession({ baseUrl, token, clockMs }) {
         },
         sessionId
       );
+      // A request the previous page left open gets no loadingFinished/Failed
+      // once its document is gone, and would hold every later idle wait open.
+      inFlight.clear();
       const loaded = cdp.once('Page.loadEventFired', sessionId, 30_000);
       const { errorText } = await cdp.send('Page.navigate', { url }, sessionId);
       if (errorText) throw new Error(`navigate ${url}: ${errorText}`);

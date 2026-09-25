@@ -124,6 +124,7 @@ ${rows}
  * true when any pair is over `thresholdPct`, or a shot exists in only one run
  * (a screen that stopped rendering is a regression, not a zero diff).
  */
+// Pattern: fix-guards (docs/patterns.md#fix-guards)
 export async function compareRuns(dirA, dirB, thresholdPct) {
   const manifestA = readManifest(dirA);
   const manifestB = readManifest(dirB);
