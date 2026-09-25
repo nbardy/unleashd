@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import type { McpServerSpec } from '@nbardy/agent-cli';
 import type { BuddyContext } from '@unleashd/shared';
-import type { ConversationRuntimeDependencies } from '../conversations/runtime';
+import { TURN_MAX_RUNTIME_MS } from '../constants/timeouts';
 import type { Briefings, ResolvedBuddyConversation } from './briefing';
 import { docScopeFor } from './core';
 import type { Grants, TurnGrant } from './grants';
@@ -10,27 +10,30 @@ import type { CompletedBuddyTurn, MemoryReviewer } from './memory-review';
 import type { ChatAdmission, Runner } from './runner';
 
 /**
- * The narrow interface the conversation runtime's BuddyTurnPolicy (T08) calls for one Buddy turn.
+ * The narrow interface BuddyTurnPolicy (buddies/turn-policy.ts) calls for one Buddy turn.
  * Everything Buddy-specific a turn needs goes through here: the briefing, run admission, the one
  * MCP server (an HTTP spec carrying a fresh per-turn grant), settle, and the post-turn hook.
  */
 export interface BuddyPolicyPort {
-  /** Compose the briefing for this turn's audience (and cache it for a synchronous read). */
-  briefing(context: BuddyContext): Promise<ResolvedBuddyConversation>;
+  /** The briefing composed for this context right before its turn (synchronous; see briefing.ts). */
+  currentBriefing(context: BuddyContext): ResolvedBuddyConversation;
   /** Line a chat turn up behind its Buddy's run limit; poll `admission` with the returned id. */
   enqueueChat(context: BuddyContext, conversationId: string): string;
   admission(turnId: string): ChatAdmission;
   abandon(turnId: string): void;
   /**
-   * The MCP servers of one turn. `owner` is true only for an owner-authored input (B1): it is
-   * the one thing that turns the principal into the Owner.
+   * The MCP servers of one turn: one server, one fresh grant. `owner` is true only for an
+   * owner-authored input (B1); it is the one thing that makes the principal the Owner. A grant
+   * is issued whole, so there is no issue order to keep (T08 had to issue the Buddy grant before
+   * the owner grant because issuing revoked the conversation's earlier grants).
    */
-  mcpServers(turn: { context: BuddyContext; conversationId: string; owner: boolean }): Record<
-    string,
-    McpServerSpec
-  >;
+  mcpServers(turn: {
+    context: BuddyContext;
+    conversationId: string;
+    owner: boolean;
+  }): Record<string, McpServerSpec>;
   builderMcpServers(conversationId: string): Record<string, McpServerSpec>;
-  /** The turn ended: settle its run and revoke its grants. */
+  /** The turn ended: settle its run (which also revokes the run's grants). */
   settle(
     runId: string,
     leaseToken: string,
@@ -50,8 +53,12 @@ export function createBuddyPolicyPort(deps: {
   spec(grant: TurnGrant): McpServerSpec;
 }): BuddyPolicyPort {
   const { runner, grants, briefings } = deps;
+  // A chat's deadline is its run's lease. A lease shorter than the turn budget killed healthy
+  // owner chats at 600 s on 2026-09-10; refuse to build that. Guard: buddies-v2.test.ts.
+  if (runner.leaseMs < TURN_MAX_RUNTIME_MS)
+    throw new Error(`Buddy run lease ${runner.leaseMs} ms < TURN_MAX_RUNTIME_MS`);
   return {
-    briefing: (context) => briefings.warm(context),
+    currentBriefing: (context) => briefings.current(context),
     enqueueChat(context, conversationId) {
       const turnId = randomUUID();
       runner.enqueueChat(context, conversationId, turnId);
@@ -60,6 +67,8 @@ export function createBuddyPolicyPort(deps: {
     admission: (turnId) => runner.chatAdmission(turnId),
     abandon: (turnId) => runner.abandonChat(turnId),
     mcpServers({ context, conversationId, owner }) {
+      // A new turn's grant replaces whatever this conversation still held.
+      grants.revokeConversation(conversationId);
       const grant = grants.issueBuddy({
         role: 'worker',
         buddyId: context.buddyId,
@@ -71,9 +80,10 @@ export function createBuddyPolicyPort(deps: {
       if (owner) grants.promoteToOwner(conversationId);
       return { [MCP_SERVER_NAME]: deps.spec(grant) };
     },
-    builderMcpServers: (conversationId) => ({
-      [MCP_SERVER_NAME]: deps.spec(grants.issueBuilder(conversationId)),
-    }),
+    builderMcpServers(conversationId) {
+      grants.revokeConversation(conversationId);
+      return { [MCP_SERVER_NAME]: deps.spec(grants.issueBuilder(conversationId)) };
+    },
     settle(runId, leaseToken, status, detail) {
       const outcome =
         status === 'complete'
@@ -87,98 +97,5 @@ export function createBuddyPolicyPort(deps: {
     },
     revoke: (conversationId) => grants.revokeConversation(conversationId),
     afterTurn: (turn) => deps.reviewer.enqueue(turn),
-  };
-}
-
-// ---- Legacy adapter: today's runtime.ts hooks over the port. Delete in the post-T08 wiring. ----
-//
-// runtime.ts (untouched by T11) asks for MCP servers through `mcp-config.ts` with env records it
-// got from `issueBuddyControlCapability` / `issueOwnerControlCapability`. The adapter passes the
-// endpoint URL and the grant token through those env records, and the shim builds the HTTP spec
-// from them. Owner authority rides on the same grant (promoted), so the owner server is empty.
-
-export const GRANT_URL_ENV = 'UNLEASHD_BUDDY_MCP_URL';
-export const GRANT_TOKEN_ENV = 'UNLEASHD_BUDDY_MCP_TOKEN';
-
-export function specFromEnv(env: Readonly<Record<string, string>>): Record<string, McpServerSpec> {
-  const url = env[GRANT_URL_ENV];
-  const token = env[GRANT_TOKEN_ENV];
-  // runtime.ts declares `issueBuddyControlCapability` optional: a host that wires no Buddy module
-  // (the runtime's own tests) gets no Buddy server. The production host always issues, and
-  // buddies-v2.test.ts reads the spec from every Buddy turn, so an absent spec there fails it.
-  if (url === undefined && token === undefined) return {};
-  if (!url || !token) throw new Error('A Buddy turn has half an MCP grant (URL or token missing)');
-  return {
-    [MCP_SERVER_NAME]: {
-      kind: 'http',
-      url,
-      headers: { Authorization: `Bearer ${token}` },
-      required: true,
-    },
-  };
-}
-
-type BuddyHooks = Pick<
-  ConversationRuntimeDependencies,
-  | 'readCurrentBuddyContext'
-  | 'reviewCompletedBuddyTurn'
-  | 'enqueueBuddyChatRun'
-  | 'startBuddyChatRun'
-  | 'abandonBuddyChatRun'
-  | 'finishBuddyChatRun'
-  | 'issueBuddyControlCapability'
-  | 'revokeBuddyControlCapability'
-  | 'issueOwnerControlCapability'
-  | 'updateBuddyStatus'
-  | 'settleBuddyDelegation'
->;
-
-export function legacyRuntimeHooks(
-  port: BuddyPolicyPort,
-  deps: {
-    briefings: Briefings;
-    grants: Grants;
-    leaseMs: number;
-    isBuilder(conversationId: string): boolean;
-  }
-): BuddyHooks {
-  const envOf = (servers: Record<string, McpServerSpec>): Record<string, string> => {
-    const spec = servers[MCP_SERVER_NAME];
-    if (spec?.kind !== 'http') throw new Error('Buddy MCP spec must be HTTP');
-    return {
-      [GRANT_URL_ENV]: spec.url,
-      [GRANT_TOKEN_ENV]: spec.headers!.Authorization.slice('Bearer '.length),
-    };
-  };
-  return {
-    // Warmed by the runner as it admits the turn (briefing.ts): synchronous here by contract.
-    readCurrentBuddyContext: (context) => deps.briefings.current(context),
-    reviewCompletedBuddyTurn: (turn) => port.afterTurn(turn),
-    enqueueBuddyChatRun: (context, conversationId) => ({
-      id: port.enqueueChat(context, conversationId),
-    }),
-    startBuddyChatRun(turnId, _conversationId, maxRuntimeMs) {
-      // A lease shorter than the turn budget would kill a healthy turn (2026-09-10 incident).
-      if (maxRuntimeMs > deps.leaseMs)
-        throw new Error(
-          `Buddy run lease ${deps.leaseMs} ms is shorter than the turn budget ${maxRuntimeMs} ms`
-        );
-      return port.admission(turnId);
-    },
-    abandonBuddyChatRun: (turnId) => port.abandon(turnId),
-    finishBuddyChatRun: (runId, leaseToken, status, detail) =>
-      port.settle(runId, leaseToken, status, detail ?? ''),
-    issueBuddyControlCapability: (context, conversationId) =>
-      envOf(port.mcpServers({ context, conversationId, owner: false })),
-    revokeBuddyControlCapability: (conversationId) => port.revoke(conversationId),
-    // runtime.ts calls this only for origin 'owner_input' (the B1 rule lives there and in channels.ts).
-    issueOwnerControlCapability(_input, conversationId) {
-      if (deps.isBuilder(conversationId)) return envOf(port.builderMcpServers(conversationId));
-      deps.grants.promoteToOwner(conversationId);
-      return {};
-    },
-    // Conversation link status and delegation settlement are gone with their tables.
-    updateBuddyStatus: () => undefined,
-    settleBuddyDelegation: () => undefined,
   };
 }

@@ -18,7 +18,7 @@ import { type BuddyEvent, createBuddyEvents } from '../src/buddies/events';
 import { createGrants } from '../src/buddies/grants';
 import { startMcpEndpoint } from '../src/buddies/mcp';
 import { createMemoryReviewer } from '../src/buddies/memory-review';
-import { createBuddyPolicyPort, legacyRuntimeHooks } from '../src/buddies/policy-port';
+import { createBuddyPolicyPort } from '../src/buddies/policy-port';
 import { registerBuddyRoutes } from '../src/buddies/routes';
 import { createRunner } from '../src/buddies/runner';
 import { TURN_MAX_RUNTIME_MS } from '../src/constants/timeouts';
@@ -233,13 +233,7 @@ async function world() {
   });
   const port = createBuddyPolicyPort({ runner, grants, briefings, reviewer, spec: endpoint.spec });
   const Conversation = createConversationRuntime({
-    ...legacyRuntimeHooks(port, {
-      briefings,
-      grants,
-      leaseMs: TURN_MAX_RUNTIME_MS,
-      isBuilder: () => false,
-    }),
-    reviewCompletedBuddyTurn: () => undefined,
+    buddies: port,
     broadcast: () => undefined,
     registerSessionAlias: () => undefined,
     unregisterSessionAlias: () => undefined,

@@ -18,8 +18,10 @@ import { enqueueDueSchedules } from './schedule';
  */
 
 /** Same shape as runtime.ts `BuddyChatAdmission`: a foreground chat turn waiting for its slot. */
+/** An admitted chat's run: its lease is the turn's deadline. */
+export type OwnedChatRun = { id: string; claim_token: string; deadline: string };
 export type ChatAdmission =
-  | { kind: 'admitted'; run: { id: string; claim_token: string; deadline: string } }
+  | { kind: 'admitted'; run: OwnedChatRun }
   | { kind: 'waiting'; reason: string }
   | { kind: 'gone' };
 

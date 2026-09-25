@@ -87,7 +87,7 @@ import { createBuddyEvents } from './buddies/events';
 import { createGrants } from './buddies/grants';
 import { type McpEndpoint, startMcpEndpoint } from './buddies/mcp';
 import { createMemoryReviewer } from './buddies/memory-review';
-import { createBuddyPolicyPort, legacyRuntimeHooks } from './buddies/policy-port';
+import { createBuddyPolicyPort } from './buddies/policy-port';
 import { registerBuddyRoutes } from './buddies/routes';
 import { type RunnerHost, createRunner } from './buddies/runner';
 
@@ -333,13 +333,8 @@ const buddyPolicyPort = createBuddyPolicyPort({
   spec: buddyMcpSpec,
 });
 const Conversation = createConversationRuntime({
-  // Post-T08: BuddyTurnPolicy calls buddyPolicyPort directly and this adapter goes.
-  ...legacyRuntimeHooks(buddyPolicyPort, {
-    briefings: buddyBriefings,
-    grants: buddyGrants,
-    leaseMs: TURN_MAX_RUNTIME_MS,
-    isBuilder: (conversationId) => conversations.get(conversationId)?.kind.kind === 'buddy_builder',
-  }),
+  // BuddyTurnPolicy (buddies/turn-policy.ts) reaches the Buddy module only through this port.
+  buddies: buddyPolicyPort,
   broadcast: applicationContext.broadcast,
   registerSessionAlias: applicationContext.sessions.registerAlias,
   unregisterSessionAlias: applicationContext.sessions.unregisterAlias,

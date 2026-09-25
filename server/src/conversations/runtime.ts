@@ -35,6 +35,7 @@ import {
   type BuddyPolicyHost,
   BuddyTurnPolicy,
   type BuddyTurnPolicyDependencies,
+  type BuddyTurnPolicySeed,
   type MemoryGenerationInput,
   createMemorySnapshot,
 } from '../buddies/turn-policy';
@@ -345,11 +346,7 @@ export function createConversationRuntime(
     }
     set kind(value: ConversationKind) {
       this._kind = value;
-      this._policy = this.policyFor(value, {
-        memorySnapshot: null,
-        audienceKey: null,
-        automationClaimToken: this._automationClaimToken,
-      });
+      this._policy = this.policyFor(value, { memorySnapshot: null, audienceKey: null });
     }
     // Legacy compat: buddyContext/purpose are derived from kind. New code must use `kind` + `matchConversationKind`.
     // Kept as getters so old readers (buddies integration, client) keep working.
@@ -445,7 +442,6 @@ export function createConversationRuntime(
       this._policy = this.policyFor(this._kind, {
         memorySnapshot: createMemorySnapshot(buddyBriefing, buddyMemoryGeneration),
         audienceKey: existingSessionId ? (opts.existingSessionAudienceKey ?? null) : null,
-        automationClaimToken,
       });
       this.providerUsage = opts.existingProviderUsage ?? null;
       this.subAgents = [];
@@ -468,14 +464,7 @@ export function createConversationRuntime(
      * general chat gets the no-op ChatTurnPolicy; Buddy code lives only in
      * buddies/turn-policy.ts.
      */
-    private policyFor(
-      kind: ConversationKind,
-      seed: {
-        memorySnapshot: MemorySnapshot | null;
-        audienceKey: string | null;
-        automationClaimToken: string | null;
-      }
-    ): TurnPolicy {
+    private policyFor(kind: ConversationKind, seed: BuddyTurnPolicySeed): TurnPolicy {
       return matchConversationKind<TurnPolicy>(kind, {
         general: () => new ChatTurnPolicy(() => this.swarmDebugPrefix),
         buddy: (buddyKind) => new BuddyTurnPolicy(buddyKind, this.policyHost(), dependencies, seed),
