@@ -96,7 +96,7 @@ export function NewConversationSheet({
   return (
     <dialog
       ref={dialogRef}
-      className="mobile-sheet"
+      className="mobile-sheet ui-card"
       aria-label={copy.title}
       onCancel={(event) => {
         // Esc while a create is in flight would strand the pending request.
@@ -107,13 +107,13 @@ export function NewConversationSheet({
         if (event.target === dialogRef.current && !busy) onClose();
       }}
     >
-      <div className="mobile-sheet__inner">
+      <div className="mobile-sheet__inner ui-stack">
         <div className="mobile-sheet__grabber" aria-hidden="true" />
-        <div className="mobile-sheet__header">
+        <div className="mobile-sheet__header ui-row">
           <h2 className="mobile-sheet__title">{copy.title}</h2>
           <button
             type="button"
-            className="mobile-sheet__close"
+            className="mobile-sheet__close ui-inline-row ui-card ui-muted"
             onClick={onClose}
             disabled={busy}
             aria-label="Close"
@@ -160,16 +160,18 @@ export function NewConversationSheet({
                       type="button"
                       className={
                         selected
-                          ? 'mobile-sheet__recent mobile-sheet__recent--selected'
-                          : 'mobile-sheet__recent'
+                          ? 'mobile-sheet__recent ui-card mobile-sheet__recent--selected'
+                          : 'mobile-sheet__recent ui-card'
                       }
                       onClick={() => setDirectory(dir)}
                       aria-pressed={selected}
                     >
-                      <span className="mobile-sheet__recent-name">
+                      <span className="mobile-sheet__recent-name ui-truncate">
                         {dir.split('/').filter(Boolean).pop() ?? dir}
                       </span>
-                      <span className="mobile-sheet__recent-path">{displayPath(dir)}</span>
+                      <span className="mobile-sheet__recent-path ui-truncate ui-muted">
+                        {displayPath(dir)}
+                      </span>
                     </button>
                   </li>
                 );
@@ -185,7 +187,7 @@ export function NewConversationSheet({
             the primary action must stay reachable without scrolling — and the
             error must ride with it, or a failed submit reports into dead space
             the user never scrolls back to. */}
-        <div className="mobile-sheet__footer">
+        <div className="mobile-sheet__footer ui-stack">
           {error && (
             <div className="mobile-sheet__error" role="alert">
               {error}

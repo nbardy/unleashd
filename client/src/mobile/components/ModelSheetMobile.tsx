@@ -66,20 +66,20 @@ export function ModelSheetMobile({
   return (
     <dialog
       ref={dialogRef}
-      className="mobile-sheet"
+      className="mobile-sheet ui-card"
       aria-label="Model settings"
       onCancel={onClose}
       onClick={(event) => {
         if (event.target === dialogRef.current) onClose();
       }}
     >
-      <div className="mobile-sheet__inner">
+      <div className="mobile-sheet__inner ui-stack">
         <div className="mobile-sheet__grabber" aria-hidden="true" />
-        <div className="mobile-sheet__header">
+        <div className="mobile-sheet__header ui-row">
           <h2 className="mobile-sheet__title">Model</h2>
           <button
             type="button"
-            className="mobile-sheet__close"
+            className="mobile-sheet__close ui-inline-row ui-card ui-muted"
             onClick={onClose}
             aria-label="Close"
           >
@@ -133,7 +133,7 @@ export function ModelSheetMobile({
                     onClick={() => apply({ kind: 'set_model', model: { mode: 'default' } })}
                   >
                     Provider default
-                    <span className="mobile-sheet__option-meta">
+                    <span className="mobile-sheet__option-meta ui-muted">
                       {providerEntry.defaultModelId}
                     </span>
                   </button>
@@ -191,7 +191,7 @@ export function ModelSheetMobile({
                   >
                     Model default
                     {resolvedModel.reasoning.defaultEffort ? (
-                      <span className="mobile-sheet__option-meta">
+                      <span className="mobile-sheet__option-meta ui-muted">
                         {resolvedModel.reasoning.defaultEffort}
                       </span>
                     ) : null}

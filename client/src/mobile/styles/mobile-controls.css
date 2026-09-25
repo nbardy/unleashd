@@ -10,8 +10,6 @@
    ============================================================================= */
 
 .mobile-cta {
-  display: inline-flex;
-  align-items: center;
   justify-content: center;
   gap: var(--sp-3);
   /* 44px: the affordances here are primary actions on a touch screen. */
@@ -49,21 +47,7 @@
   transform: none;
 }
 
-.mobile-cta--secondary {
-  border-color: var(--border-subtle);
-  background: var(--bg-raised-2);
-  color: var(--text-primary);
-}
-
-.mobile-cta--small {
-  min-height: 36px;
-  padding: 0 var(--sp-6);
-  font-size: var(--fs-4);
-}
-
 .mobile-link {
-  display: inline-flex;
-  align-items: center;
   gap: var(--sp-3);
   min-height: 36px;
   padding: 0;
@@ -89,21 +73,15 @@
 
 .mobile-muted {
   margin: 0;
-  color: var(--text-muted);
   font-size: var(--fs-3);
   line-height: 1.45;
 }
 
 .mobile-badge {
-  display: inline-flex;
-  align-items: center;
   flex: none;
   min-height: 20px;
   padding: var(--sp-1) var(--sp-4);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--ui-radius);
   background: var(--bg-raised-2);
-  color: var(--text-muted);
   font-size: var(--fs-1);
   font-weight: 700;
   letter-spacing: 0.04em;
@@ -133,28 +111,9 @@
   color: var(--theme-warning);
 }
 
-.mobile-toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--sp-4);
-  min-height: 44px;
-  color: var(--text-muted);
-  font-size: var(--fs-4);
-  cursor: pointer;
-}
-
-.mobile-toggle input {
-  width: 18px;
-  height: 18px;
-  accent-color: var(--accent);
-}
-
 .mobile-field {
-  display: flex;
-  flex-direction: column;
   gap: var(--sp-3);
   min-width: 0;
-  color: var(--text-muted);
   font-size: var(--fs-3);
 }
 
@@ -195,8 +154,6 @@
   padding: var(--sp-5) var(--sp-6);
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--ui-radius);
   background: var(--bg-page);
   color: var(--text-primary);
   font-family: var(--font-mono);

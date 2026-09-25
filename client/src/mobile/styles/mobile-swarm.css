@@ -7,21 +7,15 @@
    ============================================================================= */
 
 .mobile-swarm-detail {
-  display: flex;
-  flex-direction: column;
   gap: var(--sp-6);
   padding: var(--sp-7) var(--sp-7) calc(var(--sp-8) + env(safe-area-inset-bottom));
 }
 
 .mobile-back-btn {
   align-self: flex-start;
-  display: inline-flex;
-  align-items: center;
   gap: var(--sp-3);
   min-height: 40px;
   padding: 0 var(--sp-6) 0 var(--sp-4);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--ui-radius);
   background: var(--bg-raised-2);
   color: var(--text-primary);
   font: inherit;
@@ -30,8 +24,6 @@
 }
 
 .mobile-swarm-detail__header {
-  display: flex;
-  flex-direction: column;
   gap: var(--sp-3);
   min-width: 0;
 }
@@ -50,7 +42,6 @@
   display: flex;
   flex-wrap: wrap;
   gap: var(--sp-3) var(--sp-6);
-  color: var(--text-muted);
   font-size: var(--fs-3);
 }
 
@@ -98,9 +89,7 @@
 }
 
 .mobile-swarm-detail__confirm {
-  display: flex;
   flex-wrap: wrap;
-  align-items: center;
   gap: var(--sp-4);
   padding: var(--sp-5) var(--sp-6);
   border: 1px solid color-mix(in srgb, var(--theme-danger) 40%, var(--border-subtle));
@@ -121,7 +110,6 @@
   padding: var(--sp-9) var(--sp-7);
   border: 1px dashed var(--border-subtle);
   border-radius: var(--ui-radius);
-  color: var(--text-muted);
   font-size: var(--fs-4);
   text-align: center;
 }
@@ -143,8 +131,6 @@
   width: 100%;
   min-width: 0;
   padding: var(--sp-6) var(--sp-6);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--ui-radius);
   background: var(--bg-raised-1);
   color: inherit;
   font: inherit;
@@ -166,12 +152,8 @@
 }
 
 .mobile-exec-group {
-  display: flex;
-  flex-direction: column;
   gap: var(--sp-4);
   padding: var(--sp-6);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--ui-radius);
   background: var(--bg-raised-1);
 }
 
@@ -183,15 +165,12 @@
 }
 
 .mobile-exec-group__reviews {
-  display: flex;
-  flex-direction: column;
   gap: var(--sp-3);
   padding-left: var(--sp-5);
   border-left: 2px solid var(--border-subtle);
 }
 
 .mobile-exec-group__reviews-title {
-  color: var(--text-muted);
   font-size: var(--fs-2);
   font-weight: 700;
   letter-spacing: 0.06em;
@@ -200,21 +179,16 @@
 
 /* ---- Analytics ---- */
 .mobile-analytics {
-  display: flex;
-  flex-direction: column;
   gap: var(--sp-6);
   padding: var(--sp-7) var(--sp-7) calc(var(--sp-8) + env(safe-area-inset-bottom));
 }
 
 .mobile-analytics__controls {
-  display: flex;
   flex-wrap: wrap;
   gap: var(--sp-4);
-  align-items: center;
 }
 
 .mobile-analytics__disclaimer {
-  color: var(--text-muted);
   font-size: var(--fs-2);
   line-height: 1.45;
 }
@@ -227,17 +201,12 @@
 }
 
 .mobile-stat-card {
-  display: flex;
-  flex-direction: column;
   gap: var(--sp-3);
   padding: var(--sp-6) var(--sp-6);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--ui-radius);
   background: var(--bg-raised-1);
 }
 
 .mobile-stat-card__label {
-  color: var(--text-muted);
   font-size: var(--fs-2);
   font-weight: 700;
   letter-spacing: 0.05em;
@@ -273,8 +242,6 @@
 }
 
 .mobile-timeline__row {
-  display: flex;
-  flex-direction: column;
   gap: var(--sp-2);
   min-width: 0;
 }
@@ -294,7 +261,6 @@
 }
 
 .mobile-timeline__span-label {
-  color: var(--text-muted);
   font-size: var(--fs-2);
 }
 
@@ -310,8 +276,6 @@
 
 .mobile-bottom-sheet__content {
   box-sizing: border-box;
-  display: flex;
-  flex-direction: column;
   gap: var(--sp-5);
   width: 100%;
   max-height: 80vh;
@@ -321,8 +285,6 @@
 }
 
 .mobile-bottom-sheet__header {
-  display: flex;
-  align-items: center;
   justify-content: space-between;
   gap: var(--sp-6);
   color: var(--text-primary);
@@ -343,25 +305,12 @@
   min-width: 0;
 }
 
-.stat-idle {
-  color: var(--text-muted);
-}
-
-.stat-time {
-  color: var(--text-muted);
-}
-
 /* These six reach the DOM through conditional/template classNames, which the
    css-classes guard originally skipped — so they were undefined for longer than
    the rest. The guard now scans string literals, not just static attributes. */
 .mobile-swarm-detail__badge {
-  display: inline-flex;
-  align-items: center;
   min-height: 20px;
   padding: var(--sp-1) var(--sp-4);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--ui-radius);
-  color: var(--text-muted);
   font-size: var(--fs-1);
   font-weight: 700;
   letter-spacing: 0.04em;
@@ -383,13 +332,8 @@
 }
 
 .mobile-exec-group__verdict {
-  display: inline-flex;
-  align-items: center;
   min-height: 20px;
   padding: var(--sp-1) var(--sp-4);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--ui-radius);
-  color: var(--text-muted);
   font-size: var(--fs-1);
   font-weight: 700;
   text-transform: uppercase;

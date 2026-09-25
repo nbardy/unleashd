@@ -77,7 +77,7 @@ function barColor(percent: number): string {
 function RateLimitGauge({ rl }: { rl: RateLimit }) {
   const hasPercent = rl.usedPercent > 0;
   return (
-    <div className="usage-rate-gauge">
+    <div className="usage-rate-gauge ui-stack">
       <div className="usage-rate-label-row">
         <span className="usage-rate-label">{rl.label}</span>
         <span className="usage-rate-percent">
@@ -109,7 +109,7 @@ function RateLimitGauge({ rl }: { rl: RateLimit }) {
         </div>
       )}
       {rl.resetsAt && (
-        <span className="usage-rate-reset">Resets in {formatResetTime(rl.resetsAt)}</span>
+        <span className="usage-rate-reset ui-muted">Resets in {formatResetTime(rl.resetsAt)}</span>
       )}
     </div>
   );
@@ -170,15 +170,15 @@ export function UsagePanel({ onClose }: Props) {
 
   return (
     <div
-      className="usage-overlay"
+      className="usage-overlay ui-row"
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
     >
-      <div className="usage-panel">
-        <div className="usage-panel-header">
+      <div className="usage-panel ui-stack">
+        <div className="usage-panel-header ui-row">
           <h2>Usage</h2>
-          <button type="button" className="close-btn" onClick={onClose}>
+          <button type="button" className="close-btn ui-row ui-muted" onClick={onClose}>
             <svg
               aria-hidden="true"
               width="18"
@@ -192,11 +192,11 @@ export function UsagePanel({ onClose }: Props) {
             </svg>
           </button>
         </div>
-        <div className="usage-panel-body">
+        <div className="usage-panel-body ui-stack">
           {loading ? (
-            <div className="usage-empty">Loading usage data...</div>
+            <div className="usage-empty ui-muted">Loading usage data...</div>
           ) : !data ? (
-            <div className="usage-empty">Failed to load usage data.</div>
+            <div className="usage-empty ui-muted">Failed to load usage data.</div>
           ) : (
             <>
               {/* Provider toggle */}
@@ -205,7 +205,7 @@ export function UsagePanel({ onClose }: Props) {
                   <button
                     key={t}
                     type="button"
-                    className={`usage-tab ${tab === t ? 'active' : ''}`}
+                    className={`usage-tab ui-muted ${tab === t ? 'active' : ''}`}
                     onClick={() => setTab(t === 'all' ? 'all' : (t as Provider))}
                   >
                     {t === 'all' ? 'All' : getProviderMetadata(t).label}
@@ -221,8 +221,8 @@ export function UsagePanel({ onClose }: Props) {
                 if (!show) return null;
 
                 return (
-                  <div key={providerId} className="usage-rate-group">
-                    <span className="usage-rate-provider">{metadata.label}</span>
+                  <div key={providerId} className="usage-rate-group ui-stack">
+                    <span className="usage-rate-provider ui-muted">{metadata.label}</span>
                     {rls.map((rl) => (
                       <RateLimitGauge key={rl.label} rl={rl} />
                     ))}
@@ -232,33 +232,33 @@ export function UsagePanel({ onClose }: Props) {
 
               {/* Token + cost summary */}
               <div className="usage-stats-row">
-                <div className="usage-token-stat">
+                <div className="usage-token-stat ui-stack">
                   <span className="usage-token-value">{formatCost(data.totalCostUsd)}</span>
-                  <span className="usage-token-label">est. cost ({days}d)</span>
+                  <span className="usage-token-label ui-muted">est. cost ({days}d)</span>
                 </div>
-                <div className="usage-token-stat">
+                <div className="usage-token-stat ui-stack">
                   <span className="usage-token-value">{formatTokens(data.totalInputTokens)}</span>
-                  <span className="usage-token-label">input</span>
+                  <span className="usage-token-label ui-muted">input</span>
                 </div>
-                <div className="usage-token-stat">
+                <div className="usage-token-stat ui-stack">
                   <span className="usage-token-value">{formatTokens(data.totalOutputTokens)}</span>
-                  <span className="usage-token-label">output</span>
+                  <span className="usage-token-label ui-muted">output</span>
                 </div>
-                <div className="usage-token-stat">
+                <div className="usage-token-stat ui-stack">
                   <span className="usage-token-value">{data.totalSessions}</span>
-                  <span className="usage-token-label">sessions</span>
+                  <span className="usage-token-label ui-muted">sessions</span>
                 </div>
               </div>
 
               {/* Time range selector */}
-              <div className="usage-range-row">
-                <p className="usage-breakdown-header">Daily breakdown</p>
+              <div className="usage-range-row ui-row">
+                <p className="usage-breakdown-header ui-muted">Daily breakdown</p>
                 <div className="usage-range-buttons">
                   {[7, 30, 90].map((d) => (
                     <button
                       key={d}
                       type="button"
-                      className={`usage-range-btn ${days === d ? 'active' : ''}`}
+                      className={`usage-range-btn ui-muted ${days === d ? 'active' : ''}`}
                       onClick={() => setDays(d)}
                     >
                       {d}d
@@ -269,10 +269,10 @@ export function UsagePanel({ onClose }: Props) {
 
               {/* Daily chart */}
               {filteredDaily.length > 0 ? (
-                <div className="usage-daily-list">
+                <div className="usage-daily-list ui-stack">
                   {filteredDaily.map((day) => (
-                    <div key={day.date} className="usage-daily-row">
-                      <span className="usage-daily-date">{day.date.slice(5)}</span>
+                    <div key={day.date} className="usage-daily-row ui-row">
+                      <span className="usage-daily-date ui-muted">{day.date.slice(5)}</span>
                       <div className="usage-conv-bar">
                         <div
                           className="usage-conv-bar-fill"
@@ -282,26 +282,28 @@ export function UsagePanel({ onClose }: Props) {
                         />
                       </div>
                       <span className="usage-conv-cost">{formatCost(day.costUsd)}</span>
-                      <span className="usage-daily-sessions">{day.sessions}s</span>
+                      <span className="usage-daily-sessions ui-muted">{day.sessions}s</span>
                     </div>
                   ))}
                 </div>
               ) : (
-                <div className="usage-empty">No sessions found in the last {days} days.</div>
+                <div className="usage-empty ui-muted">
+                  No sessions found in the last {days} days.
+                </div>
               )}
 
               {/* Top sessions */}
               {filteredSessions.length > 0 && (
                 <>
-                  <p className="usage-breakdown-header">Top sessions by cost</p>
-                  <div className="usage-session-list">
+                  <p className="usage-breakdown-header ui-muted">Top sessions by cost</p>
+                  <div className="usage-session-list ui-stack">
                     {filteredSessions.slice(0, 10).map((s) => (
-                      <div key={s.sessionId} className="usage-daily-row">
-                        <span className="usage-session-provider">
+                      <div key={s.sessionId} className="usage-daily-row ui-row">
+                        <span className="usage-session-provider ui-muted">
                           {getProviderMetadata(s.provider).shortLabel}
                         </span>
                         <span className="usage-session-id">{s.sessionId.slice(0, 8)}</span>
-                        <span className="usage-daily-date">{s.date.slice(5)}</span>
+                        <span className="usage-daily-date ui-muted">{s.date.slice(5)}</span>
                         <div className="usage-conv-bar">
                           <div
                             className="usage-conv-bar-fill"

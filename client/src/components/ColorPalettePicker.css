@@ -11,8 +11,6 @@
   right: 0;
   bottom: 0;
   background: color-mix(in srgb, black 60%, transparent);
-  display: flex;
-  align-items: center;
   justify-content: center;
   z-index: 2000;
   padding: var(--sp-8);
@@ -26,14 +24,10 @@
   max-width: 920px;
   max-height: 90vh;
   overflow: hidden;
-  display: flex;
-  flex-direction: column;
   box-shadow: 0 20px 50px color-mix(in srgb, black 40%, transparent);
 }
 
 .palette-picker-header {
-  display: flex;
-  align-items: center;
   justify-content: space-between;
   padding: var(--sp-7) var(--sp-8);
   border-bottom: 1px solid var(--border-default);
@@ -47,15 +41,12 @@
 }
 
 .close-btn {
-  display: flex;
-  align-items: center;
   justify-content: center;
   width: 32px;
   height: 32px;
   background: transparent;
   border: none;
   border-radius: var(--ui-radius);
-  color: var(--text-muted);
   font-size: var(--fs-8);
   cursor: pointer;
   transition: all 0.15s;
@@ -78,16 +69,12 @@
 /* ─── Left: palette list ─── */
 
 .palette-list {
-  display: flex;
-  flex-direction: column;
   gap: var(--sp-3);
   min-width: 200px;
   overflow-y: auto;
 }
 
 .palette-option-row {
-  display: flex;
-  align-items: center;
   gap: var(--sp-1);
 }
 
@@ -97,15 +84,12 @@
 }
 
 .palette-delete-btn {
-  display: flex;
-  align-items: center;
   justify-content: center;
   width: 24px;
   height: 24px;
   background: transparent;
   border: none;
   border-radius: var(--ui-radius);
-  color: var(--text-muted);
   font-size: var(--fs-6);
   cursor: pointer;
   opacity: 0;
@@ -123,8 +107,6 @@
 }
 
 .palette-option {
-  display: flex;
-  flex-direction: column;
   gap: var(--sp-3);
   padding: var(--sp-4) var(--sp-5);
   background: transparent;
@@ -168,15 +150,12 @@
 }
 
 .ai-generate-btn {
-  display: flex;
-  align-items: center;
   justify-content: center;
   gap: var(--sp-4);
   padding: var(--sp-5) var(--sp-6);
   background: transparent;
   border: 1px dashed var(--border-default);
   border-radius: var(--ui-radius);
-  color: var(--text-muted);
   font-size: var(--fs-5);
   cursor: pointer;
   transition: all 0.15s;
@@ -197,8 +176,6 @@
 
 .palette-preview-section {
   flex: 1;
-  display: flex;
-  flex-direction: column;
   min-height: 0;
   overflow: hidden;
 }
@@ -206,8 +183,6 @@
 .preview-scroll {
   flex: 1;
   overflow-y: auto;
-  display: flex;
-  flex-direction: column;
   gap: var(--sp-7);
   padding-right: var(--sp-4);
 }
@@ -221,8 +196,6 @@
 }
 
 .preview-header {
-  display: flex;
-  align-items: center;
   justify-content: space-between;
   padding: var(--sp-5) var(--sp-6);
   border-bottom: 1px solid;
@@ -239,14 +212,10 @@
 
 .preview-messages {
   padding: var(--sp-6);
-  display: flex;
-  flex-direction: column;
   gap: var(--sp-6);
 }
 
 .preview-message {
-  display: flex;
-  flex-direction: column;
   gap: var(--sp-2);
 }
 
@@ -278,8 +247,6 @@
 /* ─── Section groups (accent families, bg, text, etc.) ─── */
 
 .section-group {
-  display: flex;
-  flex-direction: column;
   gap: var(--sp-3);
 }
 
@@ -295,20 +262,15 @@
 .section-subtitle {
   margin: 0;
   font-size: var(--fs-1);
-  color: var(--text-muted);
 }
 
 /* ─── Accent strips: dim → base → bright → glow per color ─── */
 
 .accent-strips {
-  display: flex;
-  flex-direction: column;
   gap: var(--sp-2);
 }
 
 .accent-strip {
-  display: flex;
-  align-items: center;
   gap: var(--sp-5);
 }
 
@@ -351,8 +313,6 @@
 
 .ramp-item {
   flex: 1;
-  display: flex;
-  flex-direction: column;
   gap: var(--sp-1);
   align-items: center;
 }
@@ -365,7 +325,6 @@
 
 .ramp-label {
   font-size: var(--fs-1);
-  color: var(--text-muted);
   text-align: center;
   line-height: 1.2;
 }
@@ -379,8 +338,6 @@
 }
 
 .semantic-item {
-  display: flex;
-  align-items: center;
   gap: var(--sp-3);
   padding: var(--sp-2) var(--sp-4);
   background: var(--bg-content);
@@ -401,15 +358,12 @@
 
 .semantic-accent {
   font-size: var(--fs-1);
-  color: var(--text-muted);
   font-family: var(--font-mono);
 }
 
 /* ─── AI input section ─── */
 
 .ai-input-section {
-  display: flex;
-  flex-direction: column;
   gap: var(--sp-7);
   flex: 1;
 }
@@ -472,11 +426,6 @@
   cursor: not-allowed;
 }
 
-.ai-generating {
-  display: inline-flex;
-  align-items: center;
-}
-
 .ai-dots::after {
   content: "";
   animation: ai-dot-animation 1.4s infinite steps(4, end);
@@ -529,7 +478,6 @@
 .cancel-btn {
   background: transparent;
   border: 1px solid var(--border-default);
-  color: var(--text-muted);
 }
 
 .cancel-btn:hover {

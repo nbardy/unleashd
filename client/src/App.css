@@ -28,8 +28,6 @@ body {
 
 .main-content {
   flex: 1;
-  display: flex;
-  flex-direction: column;
   overflow: hidden;
   position: relative;
 }
@@ -71,7 +69,6 @@ body {
 .empty-state {
   padding: var(--sp-11);
   text-align: center;
-  color: var(--text-muted);
 }
 
 .provider-badge {
@@ -131,11 +128,8 @@ body {
 }
 
 .restart-recovery__message {
-  overflow: hidden;
   color: var(--text-secondary);
   font-family: var(--font-mono);
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .restart-recovery__count {

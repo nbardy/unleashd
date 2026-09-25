@@ -111,8 +111,6 @@
 /* ---- Bottom tab bar — safe area aware ---- */
 .mobile-tab-bar {
   flex-shrink: 0;
-  display: flex;
-  align-items: center;
   justify-content: space-around;
   height: var(--mobile-tab-bar-height);
   padding-bottom: env(safe-area-inset-bottom);
@@ -135,15 +133,12 @@
 /* ---- Tab items (NavLink) ---- */
 .mobile-tab {
   flex: 1;
-  display: flex;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
   gap: var(--sp-1);
   min-height: 44px;
   padding: var(--sp-3) var(--sp-2);
   text-decoration: none;
-  color: var(--text-muted);
   font-size: var(--fs-2);
   font-weight: 500;
   letter-spacing: 0.02em;
@@ -206,8 +201,6 @@
 
 /* ---- EmptyState ---- */
 .mobile-empty {
-  display: flex;
-  flex-direction: column;
   align-items: center;
   justify-content: center;
   text-align: center;
@@ -219,7 +212,6 @@
 .mobile-empty__icon {
   font-size: var(--fs-9);
   line-height: 1;
-  color: var(--text-muted);
   opacity: 0.7;
 }
 
@@ -426,8 +418,6 @@
 
 /* ---- SwarmsMobile directory ---- */
 .mobile-swarm-card {
-  display: flex;
-  flex-direction: column;
   gap: var(--sp-3);
 }
 
@@ -462,7 +452,6 @@
   flex-wrap: wrap;
   gap: var(--sp-1) 0;
   min-width: 0;
-  color: var(--text-muted);
   font-size: var(--fs-2);
   line-height: 1.4;
 }
@@ -473,15 +462,11 @@
 }
 
 .mobile-conversation-item {
-  display: flex;
-  flex-direction: column;
   gap: var(--sp-2);
   padding: var(--sp-6) var(--sp-6);
 }
 
 .mobile-conversation-item__top {
-  display: flex;
-  align-items: center;
   justify-content: space-between;
   gap: var(--sp-4);
   min-width: 0;
@@ -490,23 +475,17 @@
 .mobile-conversation-item__title {
   flex: 1;
   min-width: 0;
-  overflow: hidden;
   color: var(--text-primary);
   font-size: var(--fs-4);
   font-weight: 650;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .mobile-conversation-item__meta {
-  display: flex;
-  align-items: center;
   flex: none;
   gap: var(--sp-3);
 }
 
 .mobile-conversation-item__time {
-  color: var(--text-muted);
   font-size: var(--fs-2);
   white-space: nowrap;
 }
@@ -528,12 +507,9 @@
 }
 
 .mobile-conversation-item__preview {
-  overflow: hidden;
   color: var(--text-secondary);
   font-size: var(--fs-3);
   line-height: 1.4;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 /* ---- BuddyDetailMobile ---- */

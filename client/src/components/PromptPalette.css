@@ -56,9 +56,7 @@
 }
 
 .prompt-item-header {
-  display: flex;
   justify-content: space-between;
-  align-items: center;
   margin-bottom: 4px;
 }
 
@@ -68,14 +66,11 @@
 }
 
 .prompt-item-actions {
-  display: flex;
-  align-items: center;
   gap: var(--sp-4);
 }
 
 .prompt-usage {
   font-size: var(--fs-2);
-  color: var(--text-muted);
 }
 
 .prompt-delete-btn {
@@ -109,13 +104,9 @@
 .prompt-preview {
   font-size: var(--fs-4);
   color: var(--text-secondary);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 .prompt-palette-empty {
   padding: var(--sp-11) var(--sp-8);
   text-align: center;
-  color: var(--text-muted);
 }

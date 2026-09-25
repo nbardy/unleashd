@@ -14,8 +14,6 @@
 
 .ask-question-card {
   background: var(--bg-content);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--ui-radius);
   padding: var(--sp-6) var(--sp-7);
 }
 
@@ -40,20 +38,14 @@
 }
 
 .ask-question-options {
-  display: flex;
-  flex-direction: column;
   gap: var(--sp-3);
 }
 
 .ask-question-option {
-  display: flex;
-  flex-direction: column;
   align-items: flex-start;
   gap: var(--sp-1);
   padding: var(--sp-5) var(--sp-6);
   background: var(--bg-secondary);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--ui-radius);
   cursor: pointer;
   text-align: left;
   font-family: inherit;

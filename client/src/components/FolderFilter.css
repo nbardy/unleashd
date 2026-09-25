@@ -1,6 +1,4 @@
 .folder-filter {
-  display: flex;
-  flex-direction: column;
   gap: var(--sp-5);
   padding: var(--sp-6) var(--sp-9);
   background: var(--bg-card); /* Tier 2 */
@@ -8,8 +6,6 @@
 }
 
 .folder-filter-header {
-  display: flex;
-  align-items: center;
   gap: var(--sp-6);
 }
 
@@ -44,10 +40,8 @@
 }
 
 .folder-filter-chips {
-  display: flex;
   flex-wrap: wrap;
   gap: var(--sp-4);
-  align-items: center;
 }
 
 .folder-chip {
@@ -88,8 +82,8 @@
 /* "N older folders..." and "show less" button */
 .folder-chip-more {
   background: transparent;
-  border: 1px dashed var(--border-default);
   color: var(--text-muted);
+  border: 1px dashed var(--border-default);
   font-style: italic;
 }
 
@@ -127,22 +121,17 @@
 
 /* Conversation search results section */
 .folder-filter-conversations {
-  display: flex;
-  flex-direction: column;
   gap: var(--sp-3);
 }
 
 .folder-filter-sublabel {
   font-size: var(--fs-2);
-  color: var(--text-muted);
   text-transform: uppercase;
   letter-spacing: 0.5px;
   font-weight: 600;
 }
 
 .conversation-results {
-  display: flex;
-  flex-direction: column;
   gap: var(--sp-2);
 }
 
@@ -152,8 +141,6 @@
   gap: var(--sp-4);
   padding: var(--sp-2) var(--sp-5);
   background: var(--bg-panel);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--ui-radius);
   color: var(--text-secondary);
   font-size: var(--fs-3);
   cursor: pointer;
@@ -169,14 +156,10 @@
 
 .conversation-result-id {
   font-family: var(--font-mono);
-  color: var(--text-muted);
   flex-shrink: 0;
   font-size: var(--fs-2);
 }
 
 .conversation-result-snippet {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
   min-width: 0;
 }

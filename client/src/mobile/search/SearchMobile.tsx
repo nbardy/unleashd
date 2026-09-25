@@ -211,7 +211,7 @@ export function SearchMobile() {
         {query && (
           <button
             type="button"
-            className="mobile-search__clear"
+            className="mobile-search__clear ui-muted"
             onClick={() => onInputChange('')}
             aria-label="Clear search"
           >
@@ -220,7 +220,7 @@ export function SearchMobile() {
         )}
       </div>
 
-      <div className="mobile-search__meta" aria-live="polite">
+      <div className="mobile-search__meta ui-muted" aria-live="polite">
         {metaLabel}
       </div>
 

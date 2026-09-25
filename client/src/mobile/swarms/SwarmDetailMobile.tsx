@@ -138,7 +138,7 @@ function WorkerRow({
   const running = conv.isRunning;
   return (
     <Link
-      className="mobile-worker-row"
+      className="mobile-worker-row ui-card"
       to={`/chat/${encodeURIComponent(conv.id)}`}
       state={routeState}
     >
@@ -275,11 +275,15 @@ export function SwarmDetailMobile() {
 
   if (!projectRoot) {
     return (
-      <div className="mobile-swarm-detail">
-        <button type="button" className="mobile-back-btn" onClick={() => navigate('/workers')}>
+      <div className="mobile-swarm-detail ui-stack">
+        <button
+          type="button"
+          className="mobile-back-btn ui-inline-row ui-card"
+          onClick={() => navigate('/workers')}
+        >
           ← Swarms
         </button>
-        <div className="mobile-swarm-detail__empty">No project selected.</div>
+        <div className="mobile-swarm-detail__empty ui-muted">No project selected.</div>
       </div>
     );
   }
@@ -287,16 +291,20 @@ export function SwarmDetailMobile() {
   const displayPath = shortenHomePath(projectRoot);
 
   return (
-    <div className="mobile-swarm-detail">
-      <div className="mobile-swarm-detail__header">
-        <button type="button" className="mobile-back-btn" onClick={() => navigate('/workers')}>
+    <div className="mobile-swarm-detail ui-stack">
+      <div className="mobile-swarm-detail__header ui-stack">
+        <button
+          type="button"
+          className="mobile-back-btn ui-inline-row ui-card"
+          onClick={() => navigate('/workers')}
+        >
           ← Swarms
         </button>
         <h2 className="mobile-swarm-detail__title" title={projectRoot}>
           {displayPath}
         </h2>
         <div
-          className={`mobile-swarm-detail__badge ${workerVisibility.runningWorkers > 0 ? 'badge-running' : 'badge-idle'}`}
+          className={`mobile-swarm-detail__badge ui-inline-row ui-card ui-muted ${workerVisibility.runningWorkers > 0 ? 'badge-running' : 'badge-idle'}`}
         >
           {workerVisibility.runningWorkers > 0
             ? `${workerVisibility.runningWorkers} running`
@@ -337,7 +345,7 @@ export function SwarmDetailMobile() {
           </div>
         )}
         {confirmAction !== null && (
-          <div className="mobile-swarm-detail__confirm">
+          <div className="mobile-swarm-detail__confirm ui-row">
             <span>
               {confirmAction === 'stop' ? 'Stop swarm gracefully?' : 'Kill swarm immediately?'}
             </span>
@@ -368,7 +376,7 @@ export function SwarmDetailMobile() {
         {signalError && <span className="mobile-swarm-detail__error">{signalError}</span>}
       </div>
 
-      <div className="mobile-swarm-detail__meta">
+      <div className="mobile-swarm-detail__meta ui-muted">
         <span>
           {workerVisibility.totalWorkers} workers · {allWorkers.length} sessions
         </span>
@@ -386,7 +394,7 @@ export function SwarmDetailMobile() {
       {/* Stacked worker list — single-pane (no side-by-side), mobile-friendly */}
       <div className="mobile-swarm-detail__list">
         {execGroups.length === 0 ? (
-          <div className="mobile-swarm-detail__empty">No workers for this project.</div>
+          <div className="mobile-swarm-detail__empty ui-muted">No workers for this project.</div>
         ) : (
           execGroups.map((group) => {
             const verdict =
@@ -396,15 +404,19 @@ export function SwarmDetailMobile() {
             const lastMsg = group.exec.messages[group.exec.messages.length - 1];
             const snippet = lastMsg ? lastMsg.content.slice(0, 140) : '— no messages —';
             return (
-              <div key={group.exec.id} className="mobile-exec-group">
+              <div key={group.exec.id} className="mobile-exec-group ui-stack ui-card">
                 <WorkerRow conversationId={group.exec.id} routeState={chatRouteState} />
                 {verdict && verdict !== 'pending' && (
-                  <span className={`mobile-exec-group__verdict verdict-${verdict}`}>{verdict}</span>
+                  <span
+                    className={`mobile-exec-group__verdict ui-inline-row ui-card ui-muted verdict-${verdict}`}
+                  >
+                    {verdict}
+                  </span>
                 )}
                 <div className="mobile-exec-group__snippet">{snippet}</div>
                 {group.reviews.length > 0 && (
-                  <div className="mobile-exec-group__reviews">
-                    <div className="mobile-exec-group__reviews-title">
+                  <div className="mobile-exec-group__reviews ui-stack">
+                    <div className="mobile-exec-group__reviews-title ui-muted">
                       {group.reviews.length} review{group.reviews.length !== 1 ? 's' : ''} paired
                     </div>
                     {group.reviews.map((r) => (

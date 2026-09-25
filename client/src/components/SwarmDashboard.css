@@ -4,15 +4,11 @@
 
 .swarm-dashboard {
   flex: 1;
-  display: flex;
-  flex-direction: column;
   overflow: hidden;
   min-height: 0;
 }
 
 .swarm-dashboard-header {
-  display: flex;
-  align-items: center;
   gap: var(--sp-7);
   padding: var(--sp-7) var(--sp-10);
   border-bottom: 1px solid var(--border-subtle);
@@ -29,8 +25,6 @@
   flex: 1;
   padding: var(--sp-9) var(--sp-10);
   overflow-y: auto;
-  display: flex;
-  flex-direction: column;
   gap: var(--sp-8);
   background: var(--bg-content);
 }
@@ -57,8 +51,6 @@
 }
 
 .swarm-project-info {
-  display: flex;
-  flex-direction: column;
   gap: var(--sp-4);
   min-width: 0;
 }
@@ -71,23 +63,15 @@
 
 .swarm-project-path {
   font-size: var(--fs-3);
-  color: var(--text-muted);
   font-family: var(--font-mono);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .swarm-project-stats {
-  display: flex;
-  align-items: center;
   gap: var(--sp-6);
   flex-wrap: wrap;
 }
 
 .swarm-stat {
-  display: inline-flex;
-  align-items: center;
   gap: var(--sp-3);
   font-size: var(--fs-3);
   color: var(--text-secondary);
@@ -113,8 +97,6 @@
 }
 
 .swarm-project-right {
-  display: flex;
-  flex-direction: column;
   align-items: flex-end;
   gap: var(--sp-5);
   flex-shrink: 0;
@@ -122,7 +104,6 @@
 
 .swarm-time-ago {
   font-size: var(--fs-2);
-  color: var(--text-muted);
 }
 
 .swarm-open-btn {

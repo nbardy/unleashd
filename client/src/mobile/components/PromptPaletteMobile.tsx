@@ -107,19 +107,19 @@ export function PromptPaletteMobile({
   return (
     <dialog
       ref={dialogRef}
-      className="mobile-sheet mobile-sheet--prompt-palette"
+      className="mobile-sheet ui-card mobile-sheet--prompt-palette"
       aria-label="Saved prompts"
       onCancel={onClose}
       onClick={handleDialogClick}
       onClose={onClose}
     >
-      <div className="mobile-sheet__inner">
+      <div className="mobile-sheet__inner ui-stack">
         <div className="mobile-sheet__grabber" aria-hidden="true" />
-        <div className="mobile-sheet__header">
+        <div className="mobile-sheet__header ui-row">
           <h2 className="mobile-sheet__title">Prompts</h2>
           <button
             type="button"
-            className="mobile-sheet__close"
+            className="mobile-sheet__close ui-inline-row ui-card ui-muted"
             onClick={onClose}
             aria-label="Close"
           >
@@ -145,7 +145,7 @@ export function PromptPaletteMobile({
                 type="button"
                 role="option"
                 aria-selected={i === selectedIndex}
-                className={`mobile-sheet__recent ${i === selectedIndex ? 'mobile-sheet__recent--selected' : ''} prompt-palette-mobile__item`}
+                className={`mobile-sheet__recent ui-card ${i === selectedIndex ? 'mobile-sheet__recent--selected' : ''} prompt-palette-mobile__item`}
                 onClick={() => {
                   incrementUsage(prompt.id);
                   onSelect(prompt.content);
@@ -153,20 +153,22 @@ export function PromptPaletteMobile({
                 }}
                 onMouseEnter={() => setSelectedIndex(i)}
               >
-                <span className="mobile-sheet__recent-name prompt-palette-mobile__name">
+                <span className="mobile-sheet__recent-name ui-truncate prompt-palette-mobile__name">
                   {prompt.name}
                 </span>
-                <span className="mobile-sheet__recent-path prompt-palette-mobile__preview">
+                <span className="mobile-sheet__recent-path ui-truncate ui-muted prompt-palette-mobile__preview">
                   {prompt.content.length > 100
                     ? `${prompt.content.substring(0, 100)}…`
                     : prompt.content}
                 </span>
-                <span className="prompt-palette-mobile__meta">
-                  <span className="prompt-palette-mobile__usage">used {prompt.usageCount}×</span>
+                <span className="prompt-palette-mobile__meta ui-row">
+                  <span className="prompt-palette-mobile__usage ui-muted">
+                    used {prompt.usageCount}×
+                  </span>
                   <span
                     role="button"
                     tabIndex={-1}
-                    className="prompt-palette-mobile__delete"
+                    className="prompt-palette-mobile__delete ui-inline-row"
                     onClick={(e) => {
                       e.stopPropagation();
                       deletePrompt(prompt.id);
@@ -180,7 +182,7 @@ export function PromptPaletteMobile({
               </button>
             ))
           ) : (
-            <div className="prompt-palette-mobile__empty">
+            <div className="prompt-palette-mobile__empty ui-muted">
               {prompts.length === 0
                 ? 'No saved prompts yet. Use the bookmark button to save one!'
                 : 'No prompts match your search'}
@@ -188,7 +190,7 @@ export function PromptPaletteMobile({
           )}
         </div>
 
-        <p className="prompt-palette-mobile__hint">
+        <p className="prompt-palette-mobile__hint ui-muted">
           Ctrl+P / ⌘P to open · ↑↓ to navigate · Enter to insert
         </p>
       </div>

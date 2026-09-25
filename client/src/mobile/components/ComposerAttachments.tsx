@@ -60,7 +60,7 @@ export function ComposerAttachments({
         {files.map((file, index) => (
           <button
             type="button"
-            className="composer-attachments__thumbnail"
+            className="composer-attachments__thumbnail ui-card"
             key={file.absolutePath}
             aria-label={`Preview ${file.originalName}`}
             aria-expanded={open}

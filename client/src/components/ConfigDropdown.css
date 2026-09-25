@@ -3,8 +3,6 @@
 }
 
 .config-trigger {
-  display: flex;
-  align-items: center;
   justify-content: center;
   width: 36px;
   height: 36px;
@@ -36,8 +34,6 @@
 }
 
 .config-item {
-  display: flex;
-  align-items: center;
   gap: var(--sp-5);
   width: 100%;
   padding: var(--sp-5) var(--sp-6);
@@ -55,10 +51,7 @@
 }
 
 .config-item-icon {
-  display: flex;
-  align-items: center;
   justify-content: center;
-  color: var(--text-muted);
 }
 
 .config-item-label {
@@ -68,6 +61,5 @@
 
 .config-item-value {
   font-size: var(--fs-3);
-  color: var(--text-muted);
   text-transform: capitalize;
 }

@@ -33,7 +33,6 @@
   border: 0;
   border-radius: var(--ui-radius);
   background: transparent;
-  color: var(--text-muted);
   font: inherit;
   font-size: var(--fs-8);
   line-height: 1;
@@ -42,7 +41,6 @@
 .mobile-search__meta {
   min-height: 18px;
   margin: 8px 2px 18px;
-  color: var(--text-muted);
   font-size: var(--fs-3);
 }
 

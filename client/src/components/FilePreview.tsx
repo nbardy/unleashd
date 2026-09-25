@@ -188,7 +188,7 @@ export function FilePreview({ path, type, workingDirectory, linkLabel }: FilePre
     position &&
     createPortal(
       <div
-        className="file-preview-popup"
+        className="file-preview-popup ui-stack"
         style={{
           // 'above': popup bottom edge aligns to `position.top` (above trigger)
           // 'below': popup top edge aligns to `position.top` (below trigger)
@@ -208,22 +208,22 @@ export function FilePreview({ path, type, workingDirectory, linkLabel }: FilePre
         {type === 'markdown' && (
           <div className="file-preview-markdown">
             {markdownError ? (
-              <div className="file-preview-markdown-status">{markdownError}</div>
+              <div className="file-preview-markdown-status ui-muted">{markdownError}</div>
             ) : markdownContent === null ? (
-              <div className="file-preview-markdown-status">Loading preview...</div>
+              <div className="file-preview-markdown-status ui-muted">Loading preview...</div>
             ) : (
               <Markdown remarkPlugins={[remarkGfm]}>{markdownContent}</Markdown>
             )}
           </div>
         )}
-        <span className="file-preview-path">{path}</span>
+        <span className="file-preview-path ui-truncate ui-muted">{path}</span>
       </div>,
       document.body
     );
 
   return (
     <span
-      className="file-preview"
+      className="file-preview ui-inline-row"
       ref={triggerRef}
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}

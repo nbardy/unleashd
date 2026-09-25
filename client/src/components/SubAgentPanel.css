@@ -19,8 +19,6 @@
 .subagent-header {
   width: 100%;
   border: 0;
-  display: flex;
-  align-items: center;
   gap: var(--sp-4);
   padding: var(--sp-4) var(--sp-6);
   cursor: pointer;
@@ -82,13 +80,11 @@
 
 /* Shortcut hint */
 .subagent-shortcut {
-  color: var(--text-muted);
   font-size: var(--fs-1);
   opacity: 0.68;
 }
 
 .subagent-chevron {
-  color: var(--text-muted);
   flex-shrink: 0;
   transition: transform 0.18s ease;
 }
@@ -130,21 +126,18 @@
 
 /* Tree connectors (Unicode box-drawing characters) */
 .tree-connector {
-  color: var(--text-muted);
   flex-shrink: 0;
   width: 20px;
   font-family: var(--font-mono);
 }
 
 .tree-connector-sub {
-  color: var(--text-muted);
   flex-shrink: 0;
   width: 20px;
   font-family: var(--font-mono);
 }
 
 .action-connector {
-  color: var(--text-muted);
   flex-shrink: 0;
   margin-right: 4px;
   font-family: var(--font-mono);
@@ -154,8 +147,6 @@
 .subagent-status {
   width: 16px;
   height: 16px;
-  display: inline-flex;
-  align-items: center;
   justify-content: center;
   flex-shrink: 0;
   margin-right: 8px;
@@ -204,24 +195,15 @@
 /* Description text */
 .subagent-description {
   color: var(--text-emphasis);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
   max-width: 100%;
 }
 
 /* Stats (tool uses, tokens) */
 .subagent-stats {
-  display: flex;
-  align-items: center;
   gap: var(--sp-2);
   color: var(--text-secondary);
   font-size: var(--fs-3);
   flex-shrink: 0;
-}
-
-.stat-divider {
-  color: var(--text-muted);
 }
 
 .stat {
@@ -230,8 +212,6 @@
 
 /* Current action line (nested under the agent) */
 .subagent-current-action {
-  display: flex;
-  align-items: center;
   width: 100%;
   margin-top: 2px;
   padding-left: var(--sp-8); /* Align with tree structure */
@@ -240,9 +220,6 @@
 .current-action {
   color: var(--text-secondary);
   font-size: var(--fs-3);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 .current-action.active {

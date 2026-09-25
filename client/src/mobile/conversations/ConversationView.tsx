@@ -685,8 +685,8 @@ export function ConversationView({
     const pendingDir = shortenHomePath(pendingCreation.workingDirectory);
     return (
       <div className="mobile-chat">
-        <div className="mobile-chat__header">
-          <div className="mobile-chat__titlebar">
+        <div className="mobile-chat__header ui-stack">
+          <div className="mobile-chat__titlebar ui-row">
             {backTo ? (
               <Link
                 to={backTo}
@@ -699,10 +699,13 @@ export function ConversationView({
               </Link>
             ) : null}
             <div className="mobile-chat__heading">
-              <div className="mobile-chat__dir" title={pendingCreation.workingDirectory}>
+              <div
+                className="mobile-chat__dir ui-truncate"
+                title={pendingCreation.workingDirectory}
+              >
                 {pendingDir}
               </div>
-              <div className="mobile-chat__status">
+              <div className="mobile-chat__status ui-muted">
                 {pendingCreation.error
                   ? 'creation failed'
                   : `starting ${pendingCreation.config.provider}…`}
@@ -765,8 +768,8 @@ export function ConversationView({
   if (!detailsLoaded) {
     return (
       <div className="mobile-chat">
-        <div className="mobile-chat__header">
-          <div className="mobile-chat__titlebar">
+        <div className="mobile-chat__header ui-stack">
+          <div className="mobile-chat__titlebar ui-row">
             {backTo ? (
               <Link
                 to={backTo}
@@ -805,8 +808,8 @@ export function ConversationView({
 
   return (
     <div className="mobile-chat">
-      <div className="mobile-chat__header">
-        <div className="mobile-chat__titlebar">
+      <div className="mobile-chat__header ui-stack">
+        <div className="mobile-chat__titlebar ui-row">
           {backTo ? (
             <Link
               to={backTo}
@@ -819,13 +822,13 @@ export function ConversationView({
             </Link>
           ) : null}
           <div className="mobile-chat__heading">
-            <div className="mobile-chat__dir" title={conversation.workingDirectory}>
+            <div className="mobile-chat__dir ui-truncate" title={conversation.workingDirectory}>
               {dirDisplay}
               {isBuddyBuilderConversation(conversation) && (
                 <span className="buddy-helper-kicker"> · Buddy Builder</span>
               )}
             </div>
-            <div className="mobile-chat__status">
+            <div className="mobile-chat__status ui-muted">
               {/* One compact line: status + model. The model used to be three
                   always-visible dropdown chips that wrapped onto two or three
                   rows on a phone and ate a third of the screen. */}
@@ -846,7 +849,7 @@ export function ConversationView({
               ) : null}
             </div>
           </div>
-          <div className="mobile-chat__actions">
+          <div className="mobile-chat__actions ui-row">
             {headerAside}
             <CopyThreadButton conversation={conversation} />
             <ForkButton conversation={conversation} />
@@ -889,9 +892,13 @@ export function ConversationView({
 
       {/* Flat message list — not virtualized (iOS momentum-scroll, §10 Phase 1),
           but windowed from a pinned first group; see `groupWindow`. */}
-      <div ref={scrollRef} className="mobile-chat__messages">
+      <div ref={scrollRef} className="mobile-chat__messages ui-stack">
         {firstShownGroup > 0 && (
-          <button type="button" className="mobile-chat__load-earlier" onClick={showEarlierGroups}>
+          <button
+            type="button"
+            className="mobile-chat__load-earlier ui-muted"
+            onClick={showEarlierGroups}
+          >
             Show {Math.min(firstShownGroup, MOBILE_GROUP_PAGE)} earlier ({firstShownGroup} hidden)
           </button>
         )}

@@ -1,6 +1,4 @@
 .swarm-analytics {
-  display: flex;
-  flex-direction: column;
   height: 100%;
   overflow: hidden;
   background-color: var(--bg-page);
@@ -8,9 +6,7 @@
 
 /* Header */
 .swarm-analytics-header {
-  display: flex;
   justify-content: space-between;
-  align-items: center;
   padding: var(--sp-7) var(--sp-8);
   border-bottom: 1px solid var(--border-subtle);
   background-color: var(--bg-content);
@@ -18,8 +14,6 @@
 }
 
 .header-left {
-  display: flex;
-  align-items: center;
   gap: var(--sp-7);
 }
 
@@ -28,8 +22,6 @@
   font-size: var(--fs-4);
   color: var(--text-secondary);
   background: var(--bg-card);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--ui-radius);
   cursor: pointer;
   transition: all 0.2s;
 }
@@ -48,8 +40,6 @@
 
 /* Project selector */
 .project-selector {
-  display: flex;
-  align-items: center;
   gap: var(--sp-4);
 }
 
@@ -111,14 +101,10 @@
 
 /* Run selector bar */
 .run-selector-bar {
-  display: flex;
-  align-items: center;
   gap: var(--sp-6);
   margin-bottom: 20px;
   padding: var(--sp-6) var(--sp-7);
   background: var(--bg-card);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--ui-radius);
 }
 
 .selector-label {
@@ -135,15 +121,11 @@
 }
 
 .run-tab {
-  display: flex;
-  align-items: center;
   gap: var(--sp-4);
   padding: var(--sp-3) var(--sp-6);
   font-size: var(--fs-3);
   color: var(--text-secondary);
   background: var(--bg-panel);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--ui-radius);
   cursor: pointer;
   transition: all 0.2s;
 }
@@ -187,12 +169,8 @@
 }
 
 .stat-card {
-  display: flex;
-  flex-direction: column;
   padding: var(--sp-7);
   background: var(--bg-card);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--ui-radius);
   text-align: center;
 }
 
@@ -234,8 +212,6 @@
 }
 
 .worker-breakdown {
-  display: flex;
-  flex-direction: column;
   gap: var(--sp-1);
   margin-top: 8px;
   font-size: var(--fs-2);
@@ -264,8 +240,6 @@
   margin-bottom: 20px;
   padding: var(--sp-7);
   background: var(--bg-card);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--ui-radius);
 }
 
 .timeline-section h3 {
@@ -297,8 +271,6 @@
 }
 
 .timeline-worker-label {
-  display: flex;
-  flex-direction: column;
   justify-content: center;
   padding: 0 var(--sp-6);
   border-bottom: 1px solid var(--border-subtle);
@@ -323,7 +295,6 @@
 
 .worker-meta {
   font-size: var(--fs-1);
-  color: var(--text-muted);
   margin-top: 2px;
 }
 
@@ -341,14 +312,11 @@
   position: absolute;
   top: 0;
   bottom: 0;
-  display: flex;
-  align-items: center;
   transform: translateX(-50%);
 }
 
 .tick-label {
   font-size: var(--fs-1);
-  color: var(--text-muted);
   font-family: var(--font-mono);
 }
 
@@ -383,8 +351,6 @@
   border-radius: var(--ui-radius);
   cursor: pointer;
   transition: opacity 0.2s, transform 0.2s;
-  display: flex;
-  align-items: center;
   justify-content: center;
   gap: var(--sp-1);
   border: 1px solid transparent;
@@ -414,8 +380,6 @@
   width: 14px;
   height: 14px;
   border-radius: 50%;
-  display: flex;
-  align-items: center;
   justify-content: center;
   font-size: var(--fs-1);
   font-weight: bold;
@@ -447,9 +411,7 @@
 }
 
 .tooltip-header {
-  display: flex;
   justify-content: space-between;
-  align-items: center;
   margin-bottom: 8px;
   padding-bottom: var(--sp-4);
   border-bottom: 1px solid var(--border-subtle);
@@ -471,15 +433,11 @@
 }
 
 .tooltip-body {
-  display: flex;
-  flex-direction: column;
   gap: var(--sp-2);
 }
 
 .tooltip-row {
-  display: flex;
   justify-content: space-between;
-  align-items: center;
   font-size: var(--fs-3);
 }
 
@@ -561,8 +519,6 @@
   margin-top: 20px;
   padding: var(--sp-7);
   background: var(--bg-card);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--ui-radius);
 }
 
 .timeline-legend h4 {
@@ -579,8 +535,6 @@
 }
 
 .legend-item {
-  display: flex;
-  align-items: center;
   gap: var(--sp-3);
   font-size: var(--fs-3);
   color: var(--text-secondary);
@@ -596,8 +550,6 @@
   width: 16px;
   height: 16px;
   border-radius: 50%;
-  display: flex;
-  align-items: center;
   justify-content: center;
   font-size: var(--fs-1);
   font-weight: bold;
@@ -658,6 +610,5 @@
 .timeline-empty {
   padding: var(--sp-11);
   text-align: center;
-  color: var(--text-muted);
   font-size: var(--fs-5);
 }

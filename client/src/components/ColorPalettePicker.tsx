@@ -229,7 +229,7 @@ function derivePalette(p: Palette16): DerivedTokens {
 /** Horizontal strip: dim → base → bright → glow for one accent */
 function AccentStrip({ name, family }: { name: string; family: DerivedTokens['accents'][string] }) {
   return (
-    <div className="accent-strip">
+    <div className="accent-strip ui-row">
       <span className="strip-label">{name}</span>
       <div className="strip-swatches">
         <div className="strip-swatch" style={{ backgroundColor: family.dim }} title="dim" />
@@ -257,7 +257,7 @@ function ColorRamp({
   return (
     <div className="color-ramp">
       {items.map((item) => (
-        <div key={item.label} className="ramp-item">
+        <div key={item.label} className="ramp-item ui-stack">
           <div
             className="ramp-swatch"
             style={{
@@ -265,7 +265,7 @@ function ColorRamp({
               ...(bgColor ? { border: `1px solid ${bgColor}` } : {}),
             }}
           />
-          <span className="ramp-label">{item.label}</span>
+          <span className="ramp-label ui-muted">{item.label}</span>
         </div>
       ))}
     </div>
@@ -277,10 +277,10 @@ function SemanticMap({ items }: { items: DerivedTokens['semantic'] }) {
   return (
     <div className="semantic-map">
       {items.map((item) => (
-        <div key={item.label} className="semantic-item">
+        <div key={item.label} className="semantic-item ui-row">
           <div className="semantic-swatch" style={{ backgroundColor: item.color }} />
           <span className="semantic-label">{item.label}</span>
-          <span className="semantic-accent">{item.accent}</span>
+          <span className="semantic-accent ui-muted">{item.accent}</span>
         </div>
       ))}
     </div>
@@ -295,7 +295,7 @@ function ChatPreview({ palette, derived }: { palette: Palette16; derived: Derive
       className="chat-preview"
       style={{ backgroundColor: palette.bgCanvas, borderColor: palette.bgSurface }}
     >
-      <div className="preview-header" style={{ borderColor: palette.bgSurface }}>
+      <div className="preview-header ui-row" style={{ borderColor: palette.bgSurface }}>
         <span style={{ color: palette.textBody }}>Chat Preview</span>
         <span
           className="preview-badge"
@@ -304,8 +304,8 @@ function ChatPreview({ palette, derived }: { palette: Palette16; derived: Derive
           claude
         </span>
       </div>
-      <div className="preview-messages">
-        <div className="preview-message user">
+      <div className="preview-messages ui-stack">
+        <div className="preview-message ui-stack user">
           <span className="preview-role" style={{ color: palette.user }}>
             user
           </span>
@@ -320,7 +320,7 @@ function ChatPreview({ palette, derived }: { palette: Palette16; derived: Derive
             How do I implement a binary search?
           </div>
         </div>
-        <div className="preview-message assistant">
+        <div className="preview-message ui-stack assistant">
           <span className="preview-role" style={{ color: palette.ai }}>
             assistant
           </span>
@@ -428,25 +428,25 @@ export function ColorPalettePicker({ onClose }: Props) {
   };
 
   return (
-    <div className="palette-picker-overlay" onClick={handleCancel}>
-      <div className="palette-picker" onClick={(e) => e.stopPropagation()}>
-        <div className="palette-picker-header">
+    <div className="palette-picker-overlay ui-row" onClick={handleCancel}>
+      <div className="palette-picker ui-stack" onClick={(e) => e.stopPropagation()}>
+        <div className="palette-picker-header ui-row">
           <h2>Color Palette</h2>
-          <button type="button" className="close-btn" onClick={handleCancel}>
+          <button type="button" className="close-btn ui-row ui-muted" onClick={handleCancel}>
             &times;
           </button>
         </div>
 
         <div className="palette-picker-content">
           {/* ─── Left: palette list ─── */}
-          <div className="palette-list">
+          <div className="palette-list ui-stack">
             {Object.entries(allPalettes).map(([key, palette]) => {
               const isCustom = key in customPalettes;
               return (
-                <div key={key} className="palette-option-row">
+                <div key={key} className="palette-option-row ui-row">
                   <button
                     type="button"
-                    className={`palette-option ${selectedPalette === key ? 'selected' : ''}`}
+                    className={`palette-option ui-stack ${selectedPalette === key ? 'selected' : ''}`}
                     onClick={() => handleSelect(key)}
                   >
                     <div className="palette-swatches">
@@ -463,7 +463,7 @@ export function ColorPalettePicker({ onClose }: Props) {
                   {isCustom && (
                     <button
                       type="button"
-                      className="palette-delete-btn"
+                      className="palette-delete-btn ui-row ui-muted"
                       title="Delete palette"
                       onClick={(e) => {
                         e.stopPropagation();
@@ -484,7 +484,7 @@ export function ColorPalettePicker({ onClose }: Props) {
 
             <button
               type="button"
-              className={`ai-generate-btn ${aiMode ? 'active' : ''}`}
+              className={`ai-generate-btn ui-row ui-muted ${aiMode ? 'active' : ''}`}
               onClick={() => setAiMode(!aiMode)}
             >
               <span className="ai-sparkle">&#10022;</span>
@@ -493,9 +493,9 @@ export function ColorPalettePicker({ onClose }: Props) {
           </div>
 
           {/* ─── Right: preview + token visualization ─── */}
-          <div className="palette-preview-section">
+          <div className="palette-preview-section ui-stack">
             {aiMode ? (
-              <div className="ai-input-section">
+              <div className="ai-input-section ui-stack">
                 <div className="ai-chat-row">
                   <textarea
                     ref={aiInputRef}
@@ -519,7 +519,7 @@ export function ColorPalettePicker({ onClose }: Props) {
                     disabled={isGenerating || !aiDescription.trim()}
                   >
                     {isGenerating ? (
-                      <span className="ai-generating">
+                      <span className="ui-inline-row">
                         Generating
                         <span className="ai-dots" />
                       </span>
@@ -531,16 +531,16 @@ export function ColorPalettePicker({ onClose }: Props) {
                 {aiError && <div className="ai-error">{aiError}</div>}
               </div>
             ) : (
-              <div className="preview-scroll">
+              <div className="preview-scroll ui-stack">
                 <ChatPreview palette={currentPalette} derived={derived} />
 
                 {/* Accent families: dim → base → bright → glow strips */}
-                <div className="section-group">
+                <div className="section-group ui-stack">
                   <h3 className="section-title">Accent Families</h3>
-                  <p className="section-subtitle">
+                  <p className="section-subtitle ui-muted">
                     dim &middot; base &middot; bright &middot; glow
                   </p>
-                  <div className="accent-strips">
+                  <div className="accent-strips ui-stack">
                     {ACCENT_KEYS.map((key) => (
                       <AccentStrip key={key} name={key} family={derived.accents[key]} />
                     ))}
@@ -548,31 +548,31 @@ export function ColorPalettePicker({ onClose }: Props) {
                 </div>
 
                 {/* Background elevation */}
-                <div className="section-group">
+                <div className="section-group ui-stack">
                   <h3 className="section-title">Background Elevation</h3>
                   <ColorRamp items={derived.bg} />
                 </div>
 
                 {/* Text scale */}
-                <div className="section-group">
+                <div className="section-group ui-stack">
                   <h3 className="section-title">Text Scale</h3>
                   <ColorRamp items={derived.text} bgColor={currentPalette.bgCanvas} />
                 </div>
 
                 {/* Borders */}
-                <div className="section-group">
+                <div className="section-group ui-stack">
                   <h3 className="section-title">Border Scale</h3>
                   <ColorRamp items={derived.borders} bgColor={currentPalette.bgCanvas} />
                 </div>
 
                 {/* Semantic roles */}
-                <div className="section-group">
+                <div className="section-group ui-stack">
                   <h3 className="section-title">Semantic Roles</h3>
                   <SemanticMap items={derived.semantic} />
                 </div>
 
                 {/* Message tints */}
-                <div className="section-group">
+                <div className="section-group ui-stack">
                   <h3 className="section-title">Message Tints</h3>
                   <ColorRamp items={derived.messages} />
                 </div>
@@ -582,7 +582,7 @@ export function ColorPalettePicker({ onClose }: Props) {
         </div>
 
         <div className="palette-picker-footer">
-          <button type="button" className="cancel-btn" onClick={handleCancel}>
+          <button type="button" className="cancel-btn ui-muted" onClick={handleCancel}>
             Cancel
           </button>
           <button type="button" className="save-btn" onClick={handleSave}>

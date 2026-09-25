@@ -4,8 +4,6 @@
 
 .chat-view {
   flex: 1;
-  display: flex;
-  flex-direction: column;
   width: 100%;
   min-width: 0;
   min-height: 0; /* Critical for flex child scrolling */
@@ -18,9 +16,7 @@
   padding: var(--sp-4) var(--sp-9);
   background: var(--bg-card);
   border-bottom: 1px solid var(--border-default);
-  display: flex;
   justify-content: space-between;
-  align-items: center;
   gap: var(--sp-6) var(--sp-7);
   flex-wrap: wrap;
   min-width: 0;
@@ -30,9 +26,7 @@
   font-size: var(--fs-5);
   color: var(--text-secondary);
   font-family: var(--font-mono);
-  display: flex;
   gap: var(--sp-4) var(--sp-6);
-  align-items: center;
   flex: 1;
   min-width: 0;
   flex-wrap: wrap;
@@ -42,9 +36,7 @@
    owns that name globally with `flex-direction: column`, which stacked
    "Opus 5 / · High / ▾" onto three lines. Keep this prefix. */
 .chat-config-summary {
-  display: inline-flex;
   flex-wrap: nowrap;
-  align-items: center;
   gap: var(--sp-3);
   padding: var(--sp-1) var(--sp-4);
   border-radius: var(--ui-radius);
@@ -69,7 +61,6 @@
 }
 
 .chat-config-summary-effort {
-  color: var(--text-muted);
   font-weight: 500;
   text-transform: none;
 }
@@ -82,12 +73,8 @@
 }
 
 .chat-dir {
-  color: var(--text-muted);
   font-size: var(--fs-3);
   text-decoration: none;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
   max-width: 240px;
   min-width: 0;
   flex-shrink: 1;
@@ -99,7 +86,6 @@
 }
 
 .chat-time-ago {
-  color: var(--text-muted);
   font-size: var(--fs-2);
   opacity: 0.7;
   white-space: nowrap;
@@ -108,111 +94,10 @@
 
 /* Provider badge */
 
-.provider-picker {
-  position: relative;
-  display: inline-flex;
-}
-
 .header-config-controls {
-  display: inline-flex;
-  align-items: center;
   gap: var(--sp-3);
   min-width: 0;
   flex-wrap: wrap;
-}
-
-.provider-picker-trigger {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--sp-2);
-  padding: var(--sp-1) var(--sp-4);
-  border-radius: var(--ui-radius);
-  font-size: var(--fs-1);
-  font-weight: 600;
-  border: 1px solid transparent;
-  cursor: pointer;
-  transition: border-color 0.15s, background 0.15s;
-  font-family: inherit;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-}
-
-.provider-picker-trigger:hover {
-  border-color: color-mix(in srgb, var(--warning) 40%, transparent);
-  background: color-mix(in srgb, var(--warning) 22%, transparent);
-}
-
-.provider-picker-trigger:disabled {
-  cursor: wait;
-  opacity: 0.65;
-}
-
-.provider-picker-trigger.claude {
-  background: color-mix(in srgb, var(--primary) 20%, transparent);
-  color: var(--primary);
-}
-
-.provider-picker-trigger.codex {
-  background: color-mix(in srgb, var(--meta) 20%, transparent);
-  color: var(--meta);
-}
-
-.provider-picker-trigger.opencode {
-  background: color-mix(in srgb, var(--success) 20%, transparent);
-  color: var(--success);
-}
-
-.provider-picker-trigger.gemini {
-  background: color-mix(in oklch, var(--user), transparent 75%);
-  color: var(--user-bright);
-}
-
-.provider-picker-caret {
-  font-size: var(--fs-1);
-  opacity: 0.7;
-}
-
-.provider-picker-menu {
-  position: absolute;
-  top: calc(100% + 6px);
-  left: 0;
-  min-width: 140px;
-  background: var(--bg-panel);
-  border: 1px solid var(--border-default);
-  border-radius: var(--ui-radius);
-  padding: var(--sp-2);
-  z-index: 1000;
-  box-shadow: 0 8px 24px color-mix(in srgb, var(--bg-darkest) 40%, transparent);
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-1);
-}
-
-.provider-picker-option {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: var(--sp-3) var(--sp-5);
-  border: none;
-  border-radius: var(--ui-radius);
-  background: transparent;
-  color: var(--text-primary);
-  font-size: var(--fs-3);
-  font-family: inherit;
-  cursor: pointer;
-  transition: background 0.1s;
-  text-align: left;
-  white-space: nowrap;
-}
-
-.provider-picker-option:hover {
-  background: color-mix(in srgb, var(--accent-primary) 15%, transparent);
-}
-
-.provider-picker-option.selected {
-  background: color-mix(in srgb, var(--accent-primary) 25%, transparent);
-  color: var(--accent-primary);
-  font-weight: 600;
 }
 
 /* Model picker — inline dropdown in chat header */
@@ -223,7 +108,6 @@
 }
 
 .config-save-state {
-  color: var(--text-muted);
   font-size: var(--fs-1);
   white-space: nowrap;
 }
@@ -238,8 +122,6 @@
 /* Wrapper for virtualized message list — contains the list + overlays */
 .messages-container-wrapper {
   flex: 1;
-  display: flex;
-  flex-direction: column;
   position: relative;
   min-height: 0; /* Critical for flex child to allow shrinking */
   overflow: hidden;
@@ -352,8 +234,6 @@
   bottom: 16px;
   left: 50%;
   transform: translateX(-50%);
-  display: flex;
-  align-items: center;
   justify-content: center;
   width: 38px;
   height: 38px;
@@ -498,8 +378,6 @@
 
 /* Header status area */
 .header-status {
-  display: flex;
-  align-items: center;
   gap: var(--sp-4) var(--sp-6);
   flex-shrink: 0;
   flex-wrap: wrap;
@@ -562,8 +440,6 @@
 
 /* Ready badge in header */
 .ready-badge {
-  display: inline-flex;
-  align-items: center;
   gap: var(--sp-2);
   padding: var(--sp-2) var(--sp-5);
   border-radius: var(--ui-radius);
@@ -615,14 +491,11 @@
 }
 
 .send-action {
-  display: flex;
-  flex-direction: column;
   align-items: stretch;
   gap: var(--sp-2);
 }
 
 .send-queue-hint {
-  color: var(--text-muted);
   font-size: var(--fs-2);
   font-family: var(--font-mono);
   line-height: 1;
@@ -957,14 +830,11 @@
 }
 
 .message-action-btn {
-  display: inline-flex;
-  align-items: center;
   gap: var(--sp-2);
   padding: var(--sp-1) var(--sp-3);
   border: none;
   border-radius: var(--ui-radius);
   background: transparent;
-  color: var(--text-muted);
   font: inherit;
   font-size: var(--fs-2);
   line-height: 1;
@@ -1187,8 +1057,6 @@
    Left padding (20px) aligns text with .message-content and .message-input text. */
 .current-message-indicator {
   margin: 0 0 8px;
-  display: flex;
-  align-items: center;
   gap: var(--sp-5);
   padding: var(--sp-4) var(--sp-6) var(--sp-4) var(--sp-7);
   background: color-mix(in srgb, var(--ai) 10%, transparent);
@@ -1211,9 +1079,6 @@
 .current-message-content {
   flex: 1;
   color: var(--text-emphasis);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
   font-family: var(--font-mono);
   opacity: 0.85;
   transition: max-height 0.2s ease, white-space 0.2s ease;
@@ -1230,8 +1095,6 @@
 
 /* Queue badge in header - shows when messages are queued */
 .queue-badge {
-  display: inline-flex;
-  align-items: center;
   gap: var(--sp-4);
   padding: var(--sp-2) var(--sp-5);
   background: var(--accent-queue);
@@ -1268,8 +1131,6 @@
 
 .queued-messages-header {
   margin-bottom: 8px;
-  display: flex;
-  align-items: center;
   justify-content: space-between;
 }
 
@@ -1306,8 +1167,6 @@
   list-style: none;
   margin: 0;
   padding: 0;
-  display: flex;
-  flex-direction: column;
   gap: var(--sp-3);
 }
 
@@ -1365,8 +1224,6 @@
   font-size: var(--fs-5);
   font-weight: bold;
   line-height: 1;
-  display: flex;
-  align-items: center;
   justify-content: center;
   transition: all 0.2s;
 }
@@ -1423,8 +1280,6 @@
   border-radius: var(--ui-radius);
   cursor: pointer;
   transition: all 0.2s;
-  display: flex;
-  align-items: center;
   justify-content: center;
   overflow: hidden;
 }
@@ -1442,8 +1297,6 @@
 .upload-icon {
   width: 28px;
   height: 28px;
-  display: flex;
-  align-items: center;
   justify-content: center;
   font-size: var(--fs-7);
 }
@@ -1457,8 +1310,6 @@
   position: absolute;
   inset: 0;
   z-index: 100;
-  display: flex;
-  align-items: center;
   justify-content: center;
   background: color-mix(in srgb, var(--bg-primary) 85%, transparent);
   border: 3px dashed var(--accent-primary);
@@ -1467,8 +1318,6 @@
 }
 
 .dropzone-overlay-content {
-  display: flex;
-  flex-direction: column;
   align-items: center;
   gap: var(--sp-6);
 }
@@ -1493,13 +1342,9 @@
 }
 
 .pending-file-item {
-  display: flex;
-  align-items: center;
   gap: var(--sp-3);
   padding: var(--sp-2) var(--sp-4);
   background: var(--bg-tertiary);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--ui-radius);
   font-size: var(--fs-3);
   color: var(--text-secondary);
 }
@@ -1518,9 +1363,6 @@
 
 .pending-file-name {
   max-width: 120px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .pending-file-remove {
@@ -1534,8 +1376,6 @@
   font-size: var(--fs-3);
   font-weight: bold;
   line-height: 1;
-  display: flex;
-  align-items: center;
   justify-content: center;
   transition: all 0.2s;
 }
@@ -1550,8 +1390,6 @@
    2026-08-20 hot-reload drain the upload 503'd and only console.error'd, so
    drag-and-drop read as silently broken. See hooks/usePendingAttachments.ts. */
 .chat-upload-error {
-  display: flex;
-  align-items: center;
   gap: var(--sp-4);
   margin: 0 0 6px 0;
   padding: var(--sp-3) var(--sp-5);
@@ -1595,8 +1433,6 @@
 .chat-config-modal {
   position: relative;
   margin: 0;
-  display: flex;
-  flex-direction: column;
   gap: var(--sp-5);
   width: min(960px, calc(100vw - 48px));
   max-height: 80vh;
@@ -1609,14 +1445,11 @@
 }
 
 .chat-config-modal__header {
-  display: flex;
-  align-items: center;
   justify-content: space-between;
   font-size: var(--fs-2);
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
-  color: var(--text-muted);
 }
 
 .chat-config-modal__close {
@@ -1624,7 +1457,6 @@
   border: 1px solid transparent;
   border-radius: var(--ui-radius);
   background: transparent;
-  color: var(--text-muted);
   font: inherit;
   cursor: pointer;
 }
@@ -1635,8 +1467,6 @@
 }
 
 .chat-config-options {
-  display: flex;
-  flex-direction: column;
   gap: var(--sp-4);
 }
 
@@ -1703,7 +1533,6 @@
 .chat-config-note {
   margin: 4px 0 0;
   font-size: var(--fs-3);
-  color: var(--text-muted);
 }
 
 .chat-config-default-hint {
@@ -1712,7 +1541,6 @@
   left: 0;
   right: 0;
   text-align: center;
-  color: var(--text-muted);
   font-size: var(--fs-1);
   font-weight: 400;
   line-height: 1;

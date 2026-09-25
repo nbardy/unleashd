@@ -47,7 +47,6 @@
 
 .mobile-ui-page__subtitle {
   margin: 6px 0 0;
-  color: var(--text-muted);
   font-size: var(--fs-4);
   line-height: 1.45;
 }
@@ -82,9 +81,6 @@
 
 .mobile-ui-section__meta {
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .mobile-ui-stack {
@@ -106,8 +102,6 @@
   min-width: 0;
   max-width: 100%;
   overflow: hidden;
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--ui-radius);
   background: var(--bg-raised-1);
   color: inherit;
 }
@@ -141,15 +135,10 @@
 }
 
 .mobile-ui-badge {
-  display: inline-flex;
-  align-items: center;
   flex: none;
   min-height: 20px;
   padding: var(--sp-1) var(--sp-3);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--ui-radius);
   background: var(--bg-raised-2);
-  color: var(--text-muted);
   font-size: var(--fs-1);
   font-weight: 700;
   line-height: 1.2;
@@ -173,13 +162,9 @@
   display: block;
   width: 100%;
   min-width: 0;
-  overflow: hidden;
-  color: var(--text-muted);
   font-family: var(--font-mono);
   font-size: var(--fs-2);
   line-height: 1.4;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .mobile-ui-empty-panel {
@@ -188,7 +173,6 @@
   padding: var(--sp-9) var(--sp-7);
   border: 1px dashed var(--border-subtle);
   border-radius: var(--ui-radius);
-  color: var(--text-muted);
   font-size: var(--fs-4);
   line-height: 1.5;
   text-align: center;
@@ -203,8 +187,6 @@
 /* ---- Header action ("+ New" on Chats / Swarms / Buddies) ---- */
 
 .mobile-ui-header-action {
-  display: inline-flex;
-  align-items: center;
   justify-content: center;
   min-height: 44px;
   padding: 0 var(--sp-7);
@@ -251,9 +233,7 @@
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
   overscroll-behavior: contain;
-  border: 1px solid var(--border-subtle);
   border-bottom: none;
-  border-radius: var(--ui-radius);
   background: var(--bg-raised-1);
   color: var(--text-primary);
 }
@@ -263,8 +243,6 @@
 }
 
 .mobile-sheet__inner {
-  display: flex;
-  flex-direction: column;
   gap: var(--sp-5);
   padding: var(--sp-5) var(--sp-7) calc(var(--sp-8) + env(safe-area-inset-bottom));
 }
@@ -285,8 +263,6 @@
 }
 
 .mobile-sheet__header {
-  display: flex;
-  align-items: center;
   justify-content: space-between;
   gap: var(--sp-6);
 }
@@ -300,16 +276,11 @@
 }
 
 .mobile-sheet__close {
-  display: inline-flex;
-  align-items: center;
   justify-content: center;
   flex: none;
   width: 36px;
   height: 36px;
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--ui-radius);
   background: var(--bg-raised-2);
-  color: var(--text-muted);
   font: inherit;
   font-size: var(--fs-5);
   cursor: pointer;
@@ -365,8 +336,6 @@
   width: 100%;
   min-width: 0;
   padding: var(--sp-5) var(--sp-6);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--ui-radius);
   background: var(--bg-raised-2);
   color: inherit;
   font: inherit;
@@ -381,22 +350,15 @@
 
 .mobile-sheet__recent-name {
   display: block;
-  overflow: hidden;
   color: var(--text-primary);
   font-size: var(--fs-5);
   font-weight: 600;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .mobile-sheet__recent-path {
   display: block;
-  overflow: hidden;
-  color: var(--text-muted);
   font-family: var(--font-mono);
   font-size: var(--fs-2);
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .mobile-sheet__no-matches,
@@ -420,8 +382,6 @@
 .mobile-sheet__footer {
   position: sticky;
   bottom: calc(-20px - env(safe-area-inset-bottom));
-  display: flex;
-  flex-direction: column;
   gap: var(--sp-4);
   margin: 0 -16px calc(-20px - env(safe-area-inset-bottom));
   padding: var(--sp-5) var(--sp-7) calc(var(--sp-8) + env(safe-area-inset-bottom));
@@ -473,8 +433,6 @@
 
 .mobile-chat__header {
   flex-shrink: 0;
-  display: flex;
-  flex-direction: column;
   gap: var(--sp-4);
   padding: var(--sp-4) var(--sp-6);
   border-bottom: 1px solid var(--border-subtle);
@@ -482,8 +440,6 @@
 }
 
 .mobile-chat__titlebar {
-  display: flex;
-  align-items: center;
   gap: var(--sp-4);
   min-width: 0;
 }
@@ -504,23 +460,17 @@
 }
 
 .mobile-chat__dir {
-  overflow: hidden;
   color: var(--text-primary);
   font-size: var(--fs-4);
   font-weight: 600;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .mobile-chat__status {
-  color: var(--text-muted);
   font-size: var(--fs-2);
 }
 
 .mobile-chat__actions {
-  display: flex;
   flex: none;
-  align-items: center;
   gap: var(--sp-3);
 }
 
@@ -554,9 +504,7 @@
 }
 
 .mobile-chat__messages {
-  display: flex;
   flex: 1;
-  flex-direction: column;
   gap: var(--sp-4);
   min-height: 0;
   padding: var(--sp-6) var(--sp-6) var(--sp-4);
@@ -572,7 +520,6 @@
   border: 1px solid var(--border-subtle);
   border-radius: 999px;
   background: transparent;
-  color: var(--text-muted);
   font-size: var(--fs-3);
 }
 
@@ -932,7 +879,6 @@
 }
 
 .mobile-sheet__option-meta {
-  color: var(--text-muted);
   font-family: var(--font-mono);
   font-size: var(--fs-2);
 }
@@ -958,10 +904,7 @@
   min-height: 28px;
   margin-left: auto;
   padding: 0 var(--sp-5);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--ui-radius);
   background: transparent;
-  color: var(--text-muted);
   font: inherit;
   font-size: var(--fs-2);
   font-weight: 600;
@@ -1032,11 +975,8 @@
 }
 
 .mobile-turn-status__reason {
-  overflow: hidden;
   min-width: 0;
   max-width: 32ch;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .mobile-turn-status--neutral {
@@ -1165,21 +1105,16 @@
 }
 
 .prompt-palette-mobile__meta {
-  display: flex;
-  align-items: center;
   justify-content: space-between;
   gap: var(--sp-4);
   margin-top: 2px;
 }
 
 .prompt-palette-mobile__usage {
-  color: var(--text-muted);
   font-size: var(--fs-2);
 }
 
 .prompt-palette-mobile__delete {
-  display: inline-flex;
-  align-items: center;
   justify-content: center;
   width: 22px;
   height: 22px;
@@ -1195,14 +1130,12 @@
 
 .prompt-palette-mobile__empty {
   padding: var(--sp-9) var(--sp-6);
-  color: var(--text-muted);
   font-size: var(--fs-4);
   text-align: center;
 }
 
 .prompt-palette-mobile__hint {
   margin: 2px 0 0;
-  color: var(--text-muted);
   font-size: var(--fs-2);
   text-align: center;
 }
@@ -1230,8 +1163,6 @@
    Same contract: a failed drop/paste must announce itself rather than look
    like an ignored one. See hooks/usePendingAttachments.ts (uploadError). */
 .mobile-upload-error {
-  display: flex;
-  align-items: center;
   gap: var(--sp-4);
   margin: 0 0 6px 0;
   padding: var(--sp-4) var(--sp-5);
@@ -1261,8 +1192,6 @@
 
 /* One assistant response owns text, tool activity, and one footer. */
 .mobile-assistant-response {
-  display: flex;
-  flex-direction: column;
   gap: var(--sp-1);
   padding: var(--sp-5) var(--sp-6);
 }
@@ -1283,15 +1212,12 @@
 }
 
 .mobile-response-activity__toggle {
-  display: inline-flex;
   vertical-align: middle;
-  align-items: center;
   gap: var(--sp-3);
   min-height: 32px;
   padding: 0;
   border: 0;
   background: transparent;
-  color: var(--text-muted);
   font: inherit;
   font-size: var(--fs-3);
   cursor: pointer;

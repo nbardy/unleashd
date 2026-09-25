@@ -272,12 +272,10 @@ body {
 
 .client-error-fallback {
   box-sizing: border-box;
-  display: flex;
   min-height: 100vh;
   max-width: 560px;
   margin: 0 auto;
   padding: var(--sp-11) var(--sp-9);
-  flex-direction: column;
   align-items: flex-start;
   justify-content: center;
   gap: var(--sp-6);

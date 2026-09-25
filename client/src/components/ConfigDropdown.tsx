@@ -32,7 +32,7 @@ export function ConfigDropdown() {
     <div className="config-dropdown" ref={dropdownRef}>
       <button
         type="button"
-        className="config-trigger"
+        className="config-trigger ui-row"
         onClick={() => setIsOpen(!isOpen)}
         title="Settings"
       >
@@ -52,8 +52,8 @@ export function ConfigDropdown() {
 
       {isOpen && (
         <div className="config-menu">
-          <div className="config-item status-item">
-            <span className="config-item-icon">
+          <div className="config-item ui-row status-item">
+            <span className="config-item-icon ui-row ui-muted">
               <span className={`status-dot ${wsStatus}`} style={{ marginLeft: '4px' }} />
             </span>
             <span className="config-item-label" style={{ textTransform: 'capitalize' }}>
@@ -62,13 +62,13 @@ export function ConfigDropdown() {
           </div>
           <button
             type="button"
-            className="config-item"
+            className="config-item ui-row"
             onClick={() => {
               setShowPalettePicker(true);
               setIsOpen(false);
             }}
           >
-            <span className="config-item-icon">
+            <span className="config-item-icon ui-row ui-muted">
               <svg
                 width="16"
                 height="16"
@@ -86,17 +86,17 @@ export function ConfigDropdown() {
               </svg>
             </span>
             <span className="config-item-label">Color Palette</span>
-            <span className="config-item-value">{settings.colorPalette}</span>
+            <span className="config-item-value ui-muted">{settings.colorPalette}</span>
           </button>
           <button
             type="button"
-            className="config-item"
+            className="config-item ui-row"
             onClick={() => {
               setShowUsagePanel(true);
               setIsOpen(false);
             }}
           >
-            <span className="config-item-icon">
+            <span className="config-item-icon ui-row ui-muted">
               <svg
                 width="16"
                 height="16"

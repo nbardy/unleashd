@@ -272,12 +272,12 @@ export function SearchPalette({
 
   return (
     <div className="search-palette-overlay" onClick={onClose}>
-      <div className="search-palette" onClick={(e) => e.stopPropagation()}>
-        <div className="search-palette-input-row">
+      <div className="search-palette ui-stack" onClick={(e) => e.stopPropagation()}>
+        <div className="search-palette-input-row ui-row">
           <svg
             role="img"
             aria-label="Search"
-            className="search-palette-icon"
+            className="search-palette-icon ui-muted"
             width="16"
             height="16"
             viewBox="0 0 16 16"
@@ -307,13 +307,13 @@ export function SearchPalette({
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={handleKeyDown}
           />
-          <kbd className="search-palette-shortcut">esc</kbd>
+          <kbd className="search-palette-shortcut ui-card ui-muted">esc</kbd>
         </div>
         <div className="search-palette-results" ref={resultsRef}>
           {isSearching && buddyResults.length === 0 && results.length === 0 ? (
-            <div className="search-palette-empty">Searching…</div>
+            <div className="search-palette-empty ui-muted">Searching…</div>
           ) : searchError && buddyResults.length === 0 && results.length === 0 ? (
-            <div className="search-palette-empty">{searchError}</div>
+            <div className="search-palette-empty ui-muted">{searchError}</div>
           ) : buddyResults.length > 0 || results.length > 0 ? (
             <>
               {buddyResults.map((employee, i) => (
@@ -328,10 +328,10 @@ export function SearchPalette({
                 >
                   <SearchResultIcon kind="buddy" />
                   <div className="search-result-content">
-                    <div className="search-result-header">
+                    <div className="search-result-header ui-row">
                       <span className="search-result-kind">Buddy</span>
                       <span className="search-result-folder">{employee.buddy.name}</span>
-                      <span className="search-result-time">{employee.buddy.status}</span>
+                      <span className="search-result-time ui-muted">{employee.buddy.status}</span>
                     </div>
                     <div className="search-result-snippet">
                       {highlightMatch(employee.buddy.role, debouncedQuery.trim())}
@@ -351,15 +351,19 @@ export function SearchPalette({
                 >
                   <SearchResultIcon kind="chat" />
                   <div className="search-result-content">
-                    <div className="search-result-header">
+                    <div className="search-result-header ui-row">
                       <span className="search-result-kind">Chat</span>
                       <span className="search-result-folder">
                         {folderName(result.workingDirectory)}
                       </span>
-                      <span className={`search-result-role search-result-role--${result.role}`}>
+                      <span
+                        className={`search-result-role ui-muted search-result-role--${result.role}`}
+                      >
                         {result.role}
                       </span>
-                      <span className="search-result-time">{formatTimeAgo(result.timestamp)}</span>
+                      <span className="search-result-time ui-muted">
+                        {formatTimeAgo(result.timestamp)}
+                      </span>
                     </div>
                     <div className="search-result-snippet">
                       {highlightMatch(result.snippet, debouncedQuery.trim())}
@@ -369,15 +373,15 @@ export function SearchPalette({
               ))}
             </>
           ) : debouncedQuery.trim().length >= MIN_SEARCH_QUERY_LENGTH ? (
-            <div className="search-palette-empty">No matches found</div>
+            <div className="search-palette-empty ui-muted">No matches found</div>
           ) : (
-            <div className="search-palette-empty">
+            <div className="search-palette-empty ui-muted">
               Type at least {MIN_SEARCH_QUERY_LENGTH} characters to search
             </div>
           )}
         </div>
         {results.length >= MAX_RESULTS && (
-          <div className="search-palette-footer">
+          <div className="search-palette-footer ui-muted">
             Showing first {MAX_RESULTS} results — refine your query for more
           </div>
         )}

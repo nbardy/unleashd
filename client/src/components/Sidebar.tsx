@@ -306,11 +306,11 @@ export function Sidebar() {
 
   return (
     <div className="sidebar">
-      <div className="sidebar-header">
+      <div className="sidebar-header ui-stack">
         <div className="sidebar-actions" aria-label="Quick actions">
           <button
             type="button"
-            className="sidebar-search-field"
+            className="sidebar-search-field ui-row ui-card"
             aria-label="Search Buddies and conversations"
             onClick={() => {
               setSearchFilterDir(undefined);
@@ -338,12 +338,12 @@ export function Sidebar() {
                 strokeLinecap="round"
               />
             </svg>
-            <span className="sidebar-search-field-label">search</span>
-            <span className="sidebar-search-field-shortcut">⌘P</span>
+            <span className="sidebar-search-field-label ui-truncate">search</span>
+            <span className="sidebar-search-field-shortcut ui-card ui-muted">⌘P</span>
           </button>
           <button
             type="button"
-            className="sidebar-new-btn"
+            className="sidebar-new-btn ui-inline-row ui-card"
             onClick={handleNewConversation}
             aria-label="New conversation"
             title="New conversation (Shift+Space)"
@@ -354,8 +354,8 @@ export function Sidebar() {
         </div>
 
         {showPicker && (
-          <div className="new-conv-overlay" onClick={handleCancel}>
-            <div className="new-conv-modal" onClick={(e) => e.stopPropagation()}>
+          <div className="new-conv-overlay ui-row" onClick={handleCancel}>
+            <div className="new-conv-modal ui-stack" onClick={(e) => e.stopPropagation()}>
               <h3 className="new-conv-title">New Conversation</h3>
               <div className="new-conv-label">Working Directory</div>
               <PathAutocomplete
@@ -393,7 +393,7 @@ export function Sidebar() {
               <div className="directory-actions">
                 <button
                   type="button"
-                  className="dir-action-btn dir-confirm-btn"
+                  className="dir-action-btn dir-confirm-btn ui-row"
                   onClick={handleConfirm}
                   disabled={
                     wsStatus !== 'connected' || !isDirectoryValid || isCreatingSwarm || !catalog
@@ -454,12 +454,12 @@ export function Sidebar() {
             <button
               type="button"
               key={creation.conversationId}
-              className={`conversation-item pending-creation ${
+              className={`conversation-item ui-row pending-creation ${
                 creation.conversationId === activeConversationId ? 'active' : ''
               }`}
               onClick={() => navigate(`/chat/${creation.conversationId}`)}
             >
-              <div className="conversation-row">
+              <div className="conversation-row ui-row">
                 <span className="folder-badge">
                   {creation.workingDirectory.split('/').filter(Boolean).pop() ?? '/'}
                 </span>
@@ -475,13 +475,13 @@ export function Sidebar() {
         <div className="sidebar-section">
           <div className="folder-group folder-group--buddies">
             <div
-              className="folder-group-header"
+              className="folder-group-header ui-row"
               style={{ borderLeftColor: 'var(--ai)' }}
               onClick={() => toggleGalleryCollapsed('__buddies__')}
             >
               <button
                 type="button"
-                className="folder-group-name folder-group-name-button"
+                className="folder-group-name ui-truncate folder-group-name-button"
                 onClick={(event) => {
                   event.stopPropagation();
                   navigate('/buddies');
@@ -491,7 +491,7 @@ export function Sidebar() {
               </button>
               <button
                 type="button"
-                className="folder-group-add-btn folder-group-add-btn--section"
+                className="folder-group-add-btn ui-row folder-group-add-btn--section"
                 aria-label="Create a new Buddy"
                 title="Create a new Buddy"
                 disabled={isOpeningBuddyBuilder}
@@ -502,7 +502,7 @@ export function Sidebar() {
               >
                 +
               </button>
-              <span className="folder-group-count">{buddyCount || ''}</span>
+              <span className="folder-group-count ui-muted">{buddyCount || ''}</span>
             </div>
             {buddyBuilderError && (
               <div className="sidebar-buddy-error" role="alert">
@@ -510,7 +510,7 @@ export function Sidebar() {
               </div>
             )}
             {!collapsedSet.has('__buddies__') && buddyCount === 0 && (
-              <div className="folder-group-all-done">No Buddies yet</div>
+              <div className="folder-group-all-done ui-muted">No Buddies yet</div>
             )}
             {!collapsedSet.has('__buddies__') &&
               buddySidebarGroups.map((group) => {
@@ -518,16 +518,19 @@ export function Sidebar() {
                   return (
                     <div key={group.key} className="folder-group folder-group--builder">
                       <div
-                        className="folder-group-header"
+                        className="folder-group-header ui-row"
                         style={{ borderLeftColor: 'var(--ai)' }}
                         onClick={() => toggleGalleryCollapsed('__builder__')}
                       >
-                        <span className="folder-group-name" title="Buddy Builder conversations">
+                        <span
+                          className="folder-group-name ui-truncate"
+                          title="Buddy Builder conversations"
+                        >
                           Buddy Builder
                         </span>
                         <button
                           type="button"
-                          className="folder-group-add-btn folder-group-add-btn--section"
+                          className="folder-group-add-btn ui-row folder-group-add-btn--section"
                           aria-label="Start a new Buddy Builder conversation"
                           title="Start a new Buddy Builder conversation"
                           disabled={isOpeningBuddyBuilder}
@@ -538,7 +541,7 @@ export function Sidebar() {
                         >
                           +
                         </button>
-                        <span className="folder-group-count">
+                        <span className="folder-group-count ui-muted">
                           {builderConversations.filter((entry) => !entry.done).length || ''}
                         </span>
                       </div>
@@ -566,7 +569,7 @@ export function Sidebar() {
                               {builderActive.length > 3 && (
                                 <button
                                   type="button"
-                                  className="show-more-btn"
+                                  className="show-more-btn ui-muted"
                                   onClick={(e) => {
                                     e.stopPropagation();
                                     setExpandedDirectories((prev) => {
@@ -592,14 +595,14 @@ export function Sidebar() {
                 const isProjectCollapsed = collapsedSet.has(projectKey);
                 return (
                   <div key={project.workspaceId} className="sidebar-buddy-project">
-                    <div className="folder-group-header sidebar-buddy-project-header sidebar-project-divider">
+                    <div className="folder-group-header ui-row sidebar-buddy-project-header sidebar-project-divider">
                       <Link
                         className="sidebar-project-link"
                         to={`/buddies/workspaces/${encodeURIComponent(project.workspaceId)}`}
                         title={`Open ${project.name} workspace activity`}
                       >
                         <SidebarFolderIcon />
-                        <span className="folder-group-name">{project.name}</span>
+                        <span className="folder-group-name ui-truncate">{project.name}</span>
                       </Link>
                       <button
                         type="button"
@@ -610,8 +613,8 @@ export function Sidebar() {
                       >
                         <span className="sidebar-project-rule" aria-hidden="true" />
                         <FolderRunningStatus count={project.runningCount} />
-                        <span className="folder-group-count">{project.items.length}</span>
-                        <span className="sidebar-project-chevron" aria-hidden="true">
+                        <span className="folder-group-count ui-muted">{project.items.length}</span>
+                        <span className="sidebar-project-chevron ui-muted" aria-hidden="true">
                           {isProjectCollapsed ? '›' : '⌄'}
                         </span>
                       </button>
@@ -630,7 +633,7 @@ export function Sidebar() {
                         return (
                           <div key={item.buddyId} className="buddy-subgroup">
                             <div
-                              className={`folder-group-header folder-group-header--buddy ${isBuddyActive ? 'active' : ''}`}
+                              className={`folder-group-header ui-row folder-group-header--buddy ${isBuddyActive ? 'active' : ''}`}
                             >
                               <Link
                                 className="sidebar-buddy-row-link"
@@ -640,7 +643,7 @@ export function Sidebar() {
                               />
                               <button
                                 type="button"
-                                className="folder-group-add-btn"
+                                className="folder-group-add-btn ui-row"
                                 aria-label={`New conversation with ${item.buddyName}`}
                                 title={`New conversation with ${item.buddyName}`}
                                 onClick={(e) => {
@@ -652,7 +655,7 @@ export function Sidebar() {
                               </button>
                               <SidebarBuddyIcon />
                               <span
-                                className="folder-group-name sidebar-buddy-link"
+                                className="folder-group-name ui-truncate sidebar-buddy-link"
                                 title={item.buddyName}
                               >
                                 {item.buddyName}
@@ -673,8 +676,8 @@ export function Sidebar() {
                                   />
                                 ))
                               ) : item.pendingCreation ? (
-                                <div className="conversation-item pending-creation">
-                                  <div className="conversation-row">
+                                <div className="conversation-item ui-row pending-creation">
+                                  <div className="conversation-row ui-row">
                                     <span className="conversation-title">
                                       {item.pendingCreation.error
                                         ? `Failed: ${item.pendingCreation.error}`
@@ -684,12 +687,14 @@ export function Sidebar() {
                                   </div>
                                 </div>
                               ) : item.backgroundConversationCount === 0 ? (
-                                <div className="folder-group-all-done">No conversations yet</div>
+                                <div className="folder-group-all-done ui-muted">
+                                  No conversations yet
+                                </div>
                               ) : null}
                               {convs.length > 3 && (
                                 <button
                                   type="button"
-                                  className="show-more-btn"
+                                  className="show-more-btn ui-muted"
                                   onClick={(e) => {
                                     e.stopPropagation();
                                     setExpandedBuddies((prev) => {
@@ -716,12 +721,12 @@ export function Sidebar() {
           <div className="sidebar-section">
             <div className="folder-group">
               <div
-                className="folder-group-header"
+                className="folder-group-header ui-row"
                 onClick={() => toggleGalleryCollapsed('__channels__')}
               >
                 <button
                   type="button"
-                  className="folder-group-name folder-group-name-button"
+                  className="folder-group-name ui-truncate folder-group-name-button"
                   onClick={(event) => {
                     event.stopPropagation();
                     navigate(
@@ -731,7 +736,9 @@ export function Sidebar() {
                 >
                   Channels
                 </button>
-                <span className="folder-group-count">{channelsWorkspaces.length || ''}</span>
+                <span className="folder-group-count ui-muted">
+                  {channelsWorkspaces.length || ''}
+                </span>
               </div>
               {!collapsedSet.has('__channels__') &&
                 channelsWorkspaces.map((project) => {
@@ -741,16 +748,16 @@ export function Sidebar() {
                   return (
                     <div
                       key={project.workspaceId}
-                      className={`folder-group-header sidebar-channels-row ${isActive ? 'active' : ''}`}
+                      className={`folder-group-header ui-row sidebar-channels-row ${isActive ? 'active' : ''}`}
                     >
                       <Link
-                        className="folder-group-name sidebar-project-link"
+                        className="folder-group-name ui-truncate sidebar-project-link"
                         to={path}
                         aria-current={isActive ? 'page' : undefined}
                         data-unread={unread.unreadChannels > 0 || undefined}
                         title={`${project.name} channels`}
                       >
-                        <span className="folder-group-name"># {project.name}</span>
+                        <span className="folder-group-name ui-truncate"># {project.name}</span>
                       </Link>
                       {unread.requests > 0 && (
                         <span
@@ -781,18 +788,18 @@ export function Sidebar() {
                   return (
                     <div key={group.directory} className="folder-group">
                       <div
-                        className="folder-group-header sidebar-project-divider"
+                        className="folder-group-header ui-row sidebar-project-divider"
                         onClick={() => toggleGalleryCollapsed(group.directory)}
                         style={{ borderLeftColor: projectColor }}
                       >
                         <SidebarFolderIcon />
-                        <span className="folder-group-name" title={group.directory}>
+                        <span className="folder-group-name ui-truncate" title={group.directory}>
                           {dirDisplay}
                         </span>
                         <span className="sidebar-project-rule" aria-hidden="true" />
                         <button
                           type="button"
-                          className="folder-group-add-btn"
+                          className="folder-group-add-btn ui-row"
                           aria-label={`Search in ${dirDisplay}`}
                           title={`Search in ${dirDisplay}`}
                           onClick={(e) => {
@@ -823,7 +830,7 @@ export function Sidebar() {
                         </button>
                         <button
                           type="button"
-                          className="folder-group-add-btn"
+                          className="folder-group-add-btn ui-row"
                           title={`New conversation in ${dirDisplay}`}
                           onClick={(e) => {
                             e.stopPropagation();
@@ -836,7 +843,9 @@ export function Sidebar() {
                           +
                         </button>
                         <FolderRunningStatus count={runningCount} />
-                        <span className="folder-group-count">{activeConvs.length || ''}</span>
+                        <span className="folder-group-count ui-muted">
+                          {activeConvs.length || ''}
+                        </span>
                       </div>
                       {!isCollapsed &&
                         (() => {
@@ -858,7 +867,7 @@ export function Sidebar() {
                               {activeConvs.length > 3 && (
                                 <button
                                   type="button"
-                                  className="show-more-btn"
+                                  className="show-more-btn ui-muted"
                                   onClick={(e) => {
                                     e.stopPropagation();
                                     setExpandedDirectories((prev) => {
@@ -874,7 +883,7 @@ export function Sidebar() {
                               )}
                             </>
                           ) : (
-                            <div className="folder-group-all-done">
+                            <div className="folder-group-all-done ui-muted">
                               All conversations marked done
                             </div>
                           );
@@ -893,7 +902,7 @@ export function Sidebar() {
               const remainingOlder = olderActive.length - visibleOlder.length;
               return (
                 <div className="sidebar-section">
-                  <div className="sidebar-section-header">Older</div>
+                  <div className="sidebar-section-header ui-muted">Older</div>
                   {visibleOlder.map((id) => (
                     <SidebarConversationRow
                       key={id}
@@ -907,7 +916,7 @@ export function Sidebar() {
                   {olderActive.length > 3 && (
                     <button
                       type="button"
-                      className="show-more-btn"
+                      className="show-more-btn ui-muted"
                       onClick={() => {
                         setExpandedDirectories((prev) => {
                           const next = new Set(prev);
@@ -944,7 +953,7 @@ function SidebarBuddyActions({ item }: { item: BuddySidebarItemData }) {
           key={direct.woken.attempt}
           conversationId={direct.woken.conversationId}
           name={item.buddyName}
-          className="sidebar-buddy-wake"
+          className="sidebar-buddy-wake ui-inline-row ui-muted"
           doneClassName="sidebar-buddy-wake-done"
         />
       )}
@@ -987,7 +996,7 @@ function SidebarBuddyActions({ item }: { item: BuddySidebarItemData }) {
 function BuddyRunningStatus({ item }: { item: BuddySidebarItemData }) {
   const backgroundPath = buddyTabPath(item.buddyId, 'background');
   return (
-    <span className="sidebar-buddy-running">
+    <span className="sidebar-buddy-running ui-inline-row ui-muted">
       <Link
         to={buddyTabPath(item.buddyId, 'conversations')}
         className={item.foregroundRunningCount ? 'sidebar-buddy-running-active' : ''}
@@ -1035,7 +1044,11 @@ function FolderRunningStatus({ count }: { count: number }) {
   if (count === 0) return null;
   const label = `${count} running`;
   return (
-    <span className="folder-group-running" aria-label={`${label} in this project`} title={label}>
+    <span
+      className="folder-group-running ui-inline-row"
+      aria-label={`${label} in this project`}
+      title={label}
+    >
       <span className="status-indicator running" aria-hidden="true" />
       <span>{label}</span>
     </span>
@@ -1114,7 +1127,7 @@ function ConversationItem({
   const timeAgo = lastTime ? formatTimeAgo(lastTime) : null;
   const timeColor = lastTime ? timeAgoColor(getMinutesElapsed(lastTime)) : undefined;
 
-  const itemClasses = isActive ? 'conversation-item active' : 'conversation-item';
+  const itemClasses = isActive ? 'conversation-item ui-row active' : 'conversation-item ui-row';
 
   // ONE row shape for every conversation, buddy or not:
   //   [folder badge] title — time [status]  (+ Done on hover)
@@ -1127,7 +1140,7 @@ function ConversationItem({
       onClick={() => onSelect(conv)}
       title={`${title}${timeAgo ? ` — ${timeAgo}` : ''}`}
     >
-      <div className="conversation-row">
+      <div className="conversation-row ui-row">
         {showFolderBadge && (
           <span className="folder-badge" style={{ color: projectColor }} title={dirDisplay}>
             {isBuddyBuilderConversation(conv)
@@ -1142,10 +1155,10 @@ function ConversationItem({
         </span>
         {timeAgo && (
           <>
-            <span className="conversation-row-sep" aria-hidden="true">
+            <span className="conversation-row-sep ui-muted" aria-hidden="true">
               —
             </span>
-            <span className="conversation-time-ago" style={{ color: timeColor }}>
+            <span className="conversation-time-ago ui-muted" style={{ color: timeColor }}>
               {timeAgo}
             </span>
           </>
@@ -1167,7 +1180,7 @@ function ConversationItem({
       </div>
       <button
         type="button"
-        className="done-btn"
+        className="done-btn ui-card"
         disabled={onDone === null}
         title={onDone === null ? 'Reconnecting to the server' : undefined}
         onClick={(e) => onDone?.(conv, e)}

@@ -196,8 +196,8 @@ export function FolderFilter({
   const visibleFolders = shouldTruncate ? matchedFolders.slice(0, VISIBLE_COUNT) : matchedFolders;
 
   return (
-    <div className="folder-filter">
-      <div className="folder-filter-header">
+    <div className="folder-filter ui-stack">
+      <div className="folder-filter-header ui-row">
         <span className="folder-filter-label">Folders</span>
         <input
           type="text"
@@ -210,7 +210,7 @@ export function FolderFilter({
           }}
         />
       </div>
-      <div className="folder-filter-chips">
+      <div className="folder-filter-chips ui-row">
         {visibleFolders.map(({ folder, matches, matchedFormatted }) => {
           const isSelected = selected.has(folder);
           const isActive = selected.size === 0 || isSelected;
@@ -252,18 +252,20 @@ export function FolderFilter({
 
       {/* Fuzzy-matched conversations */}
       {isSearching && matchedConversations.length > 0 && onSelectConversation && (
-        <div className="folder-filter-conversations">
-          <span className="folder-filter-sublabel">Conversations</span>
-          <div className="conversation-results">
+        <div className="folder-filter-conversations ui-stack">
+          <span className="folder-filter-sublabel ui-muted">Conversations</span>
+          <div className="conversation-results ui-stack">
             {matchedConversations.map(({ conversation, snippet, matches }) => (
               <button
                 key={conversation.id}
                 type="button"
-                className="conversation-result"
+                className="conversation-result ui-card"
                 onClick={() => onSelectConversation(conversation.id)}
               >
-                <span className="conversation-result-id">{conversation.id.substring(0, 8)}</span>
-                <span className="conversation-result-snippet">
+                <span className="conversation-result-id ui-muted">
+                  {conversation.id.substring(0, 8)}
+                </span>
+                <span className="conversation-result-snippet ui-truncate">
                   {matches.length > 0 ? renderHighlighted(snippet, matches) : snippet}
                 </span>
               </button>

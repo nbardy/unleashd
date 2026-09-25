@@ -1,6 +1,4 @@
 .turn-status {
-  display: inline-flex;
-  align-items: center;
   gap: var(--sp-3);
   min-width: 0;
   padding: var(--sp-1) var(--sp-4);
@@ -33,12 +31,9 @@
 }
 
 .turn-status__reason {
-  overflow: hidden;
   min-width: 0;
   max-width: 36ch;
   color: var(--theme-base0);
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .turn-status--neutral {

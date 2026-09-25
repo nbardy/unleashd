@@ -13,8 +13,8 @@ type EmptyStateProps = {
 
 export function EmptyState({ icon = '∅', title, message, actionLabel, onAction }: EmptyStateProps) {
   return (
-    <div className="mobile-empty" role="status" aria-live="polite">
-      <div className="mobile-empty__icon" aria-hidden="true">
+    <div className="mobile-empty ui-stack" role="status" aria-live="polite">
+      <div className="mobile-empty__icon ui-muted" aria-hidden="true">
         {icon}
       </div>
       {title ? <h2 className="mobile-empty__title">{title}</h2> : null}

@@ -6,8 +6,6 @@
 }
 
 .resume-thread-widget__trigger {
-  display: inline-flex;
-  align-items: center;
   justify-content: center;
   width: 26px;
   height: 26px;
@@ -15,7 +13,6 @@
   border: 0;
   border-radius: var(--ui-radius);
   background: transparent;
-  color: var(--text-muted);
   cursor: pointer;
 }
 

@@ -20,8 +20,6 @@
   justify-content: center;
   padding: var(--sp-4) var(--sp-5);
   border-bottom: 1px solid var(--border-emphasis);
-  display: flex;
-  flex-direction: column;
   gap: var(--sp-4);
   background: transparent;
 }
@@ -36,14 +34,10 @@
 
 /* Universal search field — input-like pill, searches all (chats/swarms/buddies) */
 .sidebar-search-field {
-  display: flex;
-  align-items: center;
   gap: var(--sp-3);
   min-width: 0;
   height: 26px;
   padding: 0 var(--sp-4);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--ui-radius);
   background: transparent;
   color: var(--text-secondary);
   font: 500 11px / 1 var(--font-mono);
@@ -79,31 +73,21 @@
 .sidebar-search-field-label {
   flex: 1;
   text-align: left;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .sidebar-search-field-shortcut {
   flex-shrink: 0;
   font: 500 9px / 1 var(--font-mono);
-  color: var(--text-muted);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--ui-radius);
   padding: var(--sp-1) var(--sp-2);
   background: color-mix(in srgb, var(--bg-base) 60%, transparent);
 }
 
 /* Universal new — creates a conversation (buddy/swarm are just conversations) */
 .sidebar-new-btn {
-  display: inline-flex;
-  align-items: center;
   justify-content: center;
   gap: var(--sp-2);
   height: 26px;
   padding: 0 var(--sp-5);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--ui-radius);
   background: transparent;
   color: var(--text-secondary);
   font: 600 11px / 1 var(--font-mono);
@@ -130,8 +114,6 @@
   position: fixed;
   inset: 0;
   z-index: 1000;
-  display: flex;
-  align-items: center;
   justify-content: center;
   background: color-mix(in srgb, var(--bg-darkest) 60%, transparent);
   backdrop-filter: blur(4px);
@@ -147,8 +129,6 @@
   border-radius: var(--ui-radius);
   padding: var(--sp-9) var(--sp-10);
   box-shadow: 0 16px 48px color-mix(in srgb, var(--bg-darkest) 40%, transparent);
-  display: flex;
-  flex-direction: column;
   gap: var(--sp-4);
 }
 
@@ -194,14 +174,10 @@
 .provider-option {
   flex: 1 1 0;
   min-width: 0;
-  display: flex;
-  align-items: center;
   justify-content: center;
   gap: var(--sp-3);
   padding: var(--sp-5) var(--sp-4);
   background: var(--bg-tertiary);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--ui-radius);
   color: var(--text-secondary);
   font-size: var(--fs-4);
   cursor: pointer;
@@ -233,14 +209,10 @@
 .model-option {
   flex: 1;
   min-width: 100px;
-  display: flex;
-  align-items: center;
   justify-content: center;
   gap: var(--sp-3);
   padding: var(--sp-4) var(--sp-6);
   background: var(--bg-tertiary);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--ui-radius);
   color: var(--text-secondary);
   font-size: var(--fs-3);
   cursor: pointer;
@@ -310,8 +282,6 @@
 .dir-confirm-btn {
   background: var(--accent-success);
   color: var(--text-on-accent);
-  display: flex;
-  align-items: center;
   justify-content: center;
   gap: var(--sp-4);
 }
@@ -395,8 +365,6 @@
 .conversation-item {
   --sidebar-row-hover: color-mix(in srgb, var(--text-emphasis) 5%, transparent);
   --sidebar-row-fill: transparent;
-  display: flex;
-  align-items: center;
   padding: var(--sp-3) var(--sp-6);
   margin: 1px 0;
   border-radius: 0;
@@ -459,8 +427,6 @@
    Deliberately NO hover padding here: .done-btn is a right-aligned overlay and
    reserving space for it on hover shifts the whole row left, which reads as jitter. */
 .conversation-row {
-  display: flex;
-  align-items: center;
   gap: var(--sp-3);
   flex: 1;
   min-width: 0;
@@ -555,7 +521,6 @@
   width: 100%;
   padding: var(--sp-3) var(--sp-6);
   background: transparent;
-  color: var(--text-muted);
   border: none;
   border-top: none;
   font: 600 10px / 1 var(--font-mono);
@@ -632,7 +597,6 @@
 .sidebar-project-chevron {
   width: 8px;
   flex: 0 0 8px;
-  color: var(--text-muted);
   font-size: var(--fs-3);
   text-align: center;
 }
@@ -743,11 +707,8 @@
 .sidebar-buddy-wake {
   position: relative;
   z-index: 2;
-  display: inline-flex;
   flex: none;
-  align-items: center;
   margin-left: 6px;
-  color: var(--text-muted);
 }
 
 a.sidebar-buddy-wake-done {
@@ -757,12 +718,9 @@ a.sidebar-buddy-wake-done {
 }
 
 .sidebar-buddy-running {
-  display: inline-flex;
-  align-items: center;
   flex: 0 0 auto;
   margin-left: auto;
   gap: var(--sp-2);
-  color: var(--text-muted);
   font: 500 10px / 1 var(--font-mono);
   font-variant-numeric: tabular-nums;
 }
@@ -808,7 +766,6 @@ a.sidebar-buddy-wake-done {
 }
 
 .conversation-row-sep {
-  color: var(--text-muted);
   font-size: var(--fs-2);
   flex-shrink: 0;
 }
@@ -820,7 +777,6 @@ a.sidebar-buddy-wake-done {
 
 .conversation-time-ago {
   font-size: var(--fs-1);
-  color: var(--text-muted);
   white-space: nowrap;
 }
 
@@ -835,8 +791,6 @@ a.sidebar-buddy-wake-done {
   padding: var(--sp-2) var(--sp-4);
   background: var(--bg-tertiary);
   color: var(--text-primary);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--ui-radius);
   font-size: var(--fs-2);
   cursor: pointer;
   opacity: 0;
@@ -867,7 +821,6 @@ a.sidebar-buddy-wake-done {
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  color: var(--text-muted);
   padding: var(--sp-4) var(--sp-3) var(--sp-2) var(--sp-3);
 }
 
@@ -877,8 +830,6 @@ a.sidebar-buddy-wake-done {
 }
 
 .folder-group-header {
-  display: flex;
-  align-items: center;
   gap: var(--sp-3);
   padding: var(--sp-2) var(--sp-6);
   min-height: 28px;
@@ -952,14 +903,10 @@ a.sidebar-buddy-wake-done {
   min-width: 0;
   font: 500 11px / 20px var(--font-mono);
   color: var(--text-primary);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .folder-group-count {
   font-size: var(--fs-1);
-  color: var(--text-muted);
   background: transparent;
   padding: 0;
   border-radius: 0;
@@ -973,8 +920,6 @@ a.sidebar-buddy-wake-done {
    while the folder is collapsed. Individual conversation rows retain their own
    status dots when expanded. */
 .folder-group-running {
-  display: inline-flex;
-  align-items: center;
   gap: var(--sp-2);
   flex: 0 0 auto;
   color: var(--success-bright);
@@ -990,7 +935,6 @@ a.sidebar-buddy-wake-done {
 
 .folder-group-all-done {
   font-style: italic;
-  color: var(--text-muted);
   font-size: var(--font-xs);
   padding: var(--sp-3) var(--sp-6) var(--sp-3) var(--sp-9);
 }
@@ -1007,8 +951,6 @@ a.sidebar-buddy-wake-done {
   font-weight: 600;
   line-height: 1;
   cursor: pointer;
-  display: flex;
-  align-items: center;
   justify-content: center;
   padding: 0;
   transition: opacity 0.15s, background 0.15s, color 0.15s;

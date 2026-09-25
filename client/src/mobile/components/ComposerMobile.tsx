@@ -323,7 +323,7 @@ export function ComposerMobile({
         {/* Upload failure — parity with desktop. A failed drop/paste must never
           look like an ignored one; see usePendingAttachments' uploadError. */}
         {uploadError && (
-          <div className="mobile-upload-error" role="alert">
+          <div className="mobile-upload-error ui-row" role="alert">
             <span className="mobile-upload-error__text">{uploadError}</span>
             <button
               type="button"

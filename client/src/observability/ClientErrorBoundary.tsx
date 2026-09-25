@@ -57,7 +57,7 @@ export function ClientErrorFallback({ failure }: { failure: ClientErrorDescripti
   const report = [failure.message, failure.stack].filter(Boolean).join('\n\n');
   const { state: copyState, copy } = useCopyAction(report);
   return (
-    <main className="client-error-fallback" role="alert">
+    <main className="client-error-fallback ui-stack" role="alert">
       <h1>Unleashd hit an unexpected error</h1>
       <p className="client-error-fallback-message">{failure.message}</p>
       <p>Reload the page to restore the application.</p>
