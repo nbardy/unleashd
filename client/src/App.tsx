@@ -8,6 +8,7 @@ import { jotaiStore } from './atoms/store';
 import { savedActiveConversationIdAtom } from './atoms/ui';
 import { BuddiesDashboard } from './components/BuddiesDashboard';
 import { ChatRoute } from './components/Chat';
+import { useOwnerUnreadTitle } from './components/buddies/channel-data';
 import { Gallery } from './components/Gallery';
 import { RobotLoader } from './components/RobotLoader';
 import { ShellDesktop } from './components/ShellDesktop';
@@ -228,6 +229,7 @@ function AppInner() {
   const device = useDeviceKind();
   useWebSocketBridge();
   useRestoreOnLoad(device);
+  useOwnerUnreadTitle();
 
   useEffect(() => {
     initSettings().catch(console.error);

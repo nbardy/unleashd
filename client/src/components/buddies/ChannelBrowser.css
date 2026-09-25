@@ -229,14 +229,25 @@
   white-space: nowrap;
 }
 
-.channel-browser-count {
-  color: var(--text-muted);
-  font: 500 11px / 1 var(--font-mono);
+/* Owner unread (Slack): new → bold and bright, read → dimmed. */
+.channel-browser-channels button[data-unread="new"] {
+  color: var(--text-bright);
+  font-weight: 700;
 }
 
-.channel-browser-channels button[aria-current="page"] .channel-browser-count {
-  color: inherit;
-  opacity: 0.75;
+.channel-browser-channels button[data-unread="read"]:not([aria-current="page"]) {
+  color: var(--text-muted);
+}
+
+/* Replies waiting on the owner. Only this is counted; plain new posts are bold. */
+.channel-browser-badge {
+  min-width: 18px;
+  padding: 3px 6px;
+  border-radius: 999px;
+  background: var(--danger);
+  color: #fff;
+  font: 700 11px / 1 var(--font-mono);
+  text-align: center;
 }
 
 .channel-browser-workspace-mark {
@@ -434,6 +445,22 @@
   position: absolute;
   inset: 50% 24px auto;
   border-top: 1px solid var(--border-subtle);
+}
+
+.channel-browser-new-messages {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 24px 2px;
+  color: var(--danger);
+  font-size: 11.5px;
+  font-weight: 700;
+}
+
+.channel-browser-new-messages::before {
+  content: "";
+  flex: 1;
+  border-top: 1px solid var(--danger);
 }
 
 .channel-browser-day span {
@@ -863,6 +890,18 @@ a.channel-browser-buddy-done {
 .channel-browser-thread-summary button strong {
   color: var(--theme-user);
   font-weight: 600;
+}
+
+.channel-browser-thread-summary button[data-unread] strong {
+  font-weight: 800;
+}
+
+.channel-browser-thread-unread {
+  align-self: center;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--danger);
 }
 
 .channel-browser-thread-summary button:hover {

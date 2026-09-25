@@ -2,6 +2,7 @@ import {
   type BuddyListAuthor,
   type BuddyMailingListPost,
   type BuddyOwnerPostResult,
+  type OwnerListUnread,
   getBuddyContext,
 } from '@unleashd/shared';
 import { useAtomValue } from 'jotai';
@@ -30,7 +31,10 @@ import {
   clockTime,
   createChannel,
   feedPhase,
+  arrivalMarks,
+  channelUnreadAttr,
   joinNames,
+  ownerUnreadByList,
   listsUrl,
   postsResource,
   renderFeed,
@@ -38,6 +42,8 @@ import {
   useChannelFeed,
   useChannelResponding,
   useFollowBottom,
+  useOwnerChannelVisit,
+  useOwnerUnread,
   useWarmChannelPosts,
   useWithOutbox,
   useWorkspaceDirectory,
@@ -66,6 +72,8 @@ type RowPlace =
       kind: 'channel';
       openThread(rootId: string): void;
       responding: ReadonlyMap<string, readonly string[]>;
+      // Roots with replies the owner had not seen when they arrived.
+      unreadThreads: ReadonlySet<string>;
     }
   | { kind: 'thread' };
 
@@ -164,7 +172,14 @@ function ThreadSummary({ post, context }: { post: BuddyMailingListPost; context:
       return (
         <div className="channel-browser-thread-summary">
           {post.replyCount > 0 && (
-            <button type="button" onClick={() => place.openThread(post.id)}>
+            <button
+              type="button"
+              data-unread={place.unreadThreads.has(post.id) || undefined}
+              onClick={() => place.openThread(post.id)}
+            >
+              {place.unreadThreads.has(post.id) && (
+                <span className="channel-browser-thread-unread" aria-label="New replies" />
+              )}
               <strong>
                 {post.replyCount} {post.replyCount === 1 ? 'reply' : 'replies'}
               </strong>
@@ -301,6 +316,24 @@ function DayRow({ label }: { label: string }) {
   );
 }
 
+// Slack's "New messages" line, above the first post the owner had not read
+// when they opened the channel.
+function NewMessagesRow() {
+  return (
+    <li className="channel-browser-new-messages" aria-label="New messages">
+      <span>New messages</span>
+    </li>
+  );
+}
+
+function renderRows(rows: readonly ChannelRow[], context: RowContext, firstUnread: string | null) {
+  return rows.flatMap((row) =>
+    row.kind !== 'day' && row.post.id === firstUnread
+      ? [<NewMessagesRow key="new-messages" />, renderRow(row, context)]
+      : [renderRow(row, context)]
+  );
+}
+
 function renderRow(row: ChannelRow, context: RowContext) {
   switch (row.kind) {
     case 'day':
@@ -418,8 +451,10 @@ function ChannelPane({
   linkedPostId,
   onThread,
   openDm,
+  ownerUnread,
 }: {
   list: BuddyMailingListSummary;
+  ownerUnread: OwnerListUnread | undefined;
   workspaceId: string;
   channelNameById: ReadonlyMap<string, string>;
   buddyNames: Readonly<Record<string, string>>;
@@ -440,6 +475,9 @@ function ChannelPane({
     CHANNEL_BACKSTOP_MS
   );
   const respondingByRoot = useChannelResponding(list.id);
+  const visit = useOwnerChannelVisit(list.id, ownerUnread);
+  // Threads opened since arriving are no longer new, even after closing them.
+  const [openedThreads, setOpenedThreads] = useState<ReadonlySet<string>>(() => new Set());
   const channelPosts = useWithOutbox(workspaceId, list.id, null, channelFeed.data);
   const shown = taskFilter ? taskFeed : { ...channelFeed, data: channelPosts };
   const rows = useMemo(() => channelRows(shown.data ?? []), [shown.data]);
@@ -456,6 +494,14 @@ function ChannelPane({
     [channelFeed.data]
   );
   const follow = useFollowBottom(rows.length, shown.data, null);
+  const arrival = arrivalMarks(visit, channelFeed.data ?? []);
+  const unreadThreads = new Set(
+    arrival.unreadThreads.filter((rootId) => !openedThreads.has(rootId) && rootId !== threadId)
+  );
+  const openThread = (rootId: string) => {
+    setOpenedThreads((opened) => new Set(opened).add(rootId));
+    onThread(rootId);
+  };
   const base = {
     workspaceId,
     buddyNames,
@@ -468,7 +514,7 @@ function ChannelPane({
   };
   const channelContext: RowContext = {
     ...base,
-    place: { kind: 'channel', openThread: onThread, responding: respondingByRoot },
+    place: { kind: 'channel', openThread, responding: respondingByRoot, unreadThreads },
   };
   const threadContext: RowContext = { ...base, showChannel: false, place: { kind: 'thread' } };
   return (
@@ -542,7 +588,7 @@ function ChannelPane({
                   />
                 )}
                 <ol className="channel-browser-messages">
-                  {rows.map((row) => renderRow(row, channelContext))}
+                  {renderRows(rows, channelContext, taskFilter ? null : arrival.firstUnread)}
                 </ol>
               </>
             ),
@@ -743,6 +789,16 @@ function NewChannelForm({
   );
 }
 
+// The red count is only what waits on the owner: replies in their threads.
+function RepliesBadge({ unread }: { unread: OwnerListUnread | undefined }) {
+  const count = unread?.repliesToYou ?? 0;
+  return count === 0 ? null : (
+    <span className="channel-browser-badge" aria-label={`${count} new replies to you`}>
+      {count}
+    </span>
+  );
+}
+
 // Full-screen Slack layout. Mounted OUTSIDE the app shell (see App.tsx): the
 // channel rail replaces the conversations sidebar instead of nesting beside
 // it. Selection lives in the URL (?channel=, ?task=, ?thread=, ?post=, ?dm=) so
@@ -768,6 +824,11 @@ export function ChannelBrowser({
   );
   const { data, error } = lists;
   useWarmChannelPosts(data);
+  const ownerUnread = useOwnerUnread();
+  const unreadByList = useMemo(
+    () => ownerUnreadByList(ownerUnread.data, workspaceId),
+    [ownerUnread.data, workspaceId]
+  );
   const [params, setParams] = useSearchParams();
   const [creating, setCreating] = useState(false);
   const channelNameById = useMemo(
@@ -838,6 +899,7 @@ export function ChannelBrowser({
                 <li key={list.id}>
                   <button
                     type="button"
+                    data-unread={channelUnreadAttr(unreadByList.get(list.id))}
                     aria-current={!dm && selected?.id === list.id ? 'page' : undefined}
                     onClick={() => select({ channel: list.id, task: null, thread: null })}
                     title={list.purpose}
@@ -846,7 +908,7 @@ export function ChannelBrowser({
                       #
                     </span>
                     <span className="channel-browser-channel-name">{list.name}</span>
-                    <span className="channel-browser-count">{list.postCount}</span>
+                    <RepliesBadge unread={unreadByList.get(list.id)} />
                   </button>
                 </li>
               ))}
@@ -893,6 +955,7 @@ export function ChannelBrowser({
               select({ channel: selected.id, task: params.get('task'), thread })
             }
             openDm={openDm}
+            ownerUnread={unreadByList.get(selected.id)}
           />
         ) : (
           <div className="channel-browser-empty">

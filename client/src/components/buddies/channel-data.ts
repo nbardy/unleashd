@@ -14,6 +14,11 @@ import {
   type BuddyMemberExecution,
   type BuddyWorkspaceActivity,
   BuddyWorkspaceActivitySchema,
+  type OwnerChannelUnread,
+  OwnerChannelUnreadSchema,
+  type OwnerListUnread,
+  type OwnerReadThrough,
+  isAfterReadThrough,
 } from '@unleashd/shared';
 import { useAtomValue } from 'jotai';
 import { type UIEvent, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
@@ -546,4 +551,162 @@ export async function createChannel(
     body: JSON.stringify({ workspaceId, author: { kind: 'owner' }, key: newId(), name, purpose }),
   });
   return result.list.id;
+}
+
+// ── Owner unread (server/src/buddies/owner-channel-reads.ts) ──────────────
+// The owner's own read marks, separate from every Buddy's. One resource for
+// every workspace: the rail, the sidebar, the mobile tab and the tab title all
+// read it, and `channel_changed` refreshes it (atoms/resources.ts).
+
+export const OWNER_UNREAD_PATH = '/api/buddies/channels/unread';
+
+export function useOwnerUnread() {
+  return usePolledFetch(
+    resource(OWNER_UNREAD_PATH, async (signal: AbortSignal) =>
+      OwnerChannelUnreadSchema.parse(await buddyApi(OWNER_UNREAD_PATH, { signal }))
+    ),
+    CHANNEL_BACKSTOP_MS
+  );
+}
+
+const NO_LIST_UNREAD: ReadonlyMap<string, OwnerListUnread> = new Map();
+
+export function ownerUnreadByList(
+  unread: OwnerChannelUnread | null,
+  workspaceId: string
+): ReadonlyMap<string, OwnerListUnread> {
+  const workspace = unread?.workspaces.find((entry) => entry.workspaceId === workspaceId);
+  return workspace ? new Map(workspace.lists.map((list) => [list.listId, list])) : NO_LIST_UNREAD;
+}
+
+// What a nav item shows: the badge counts replies waiting on the owner, the
+// dot says some channel has anything new. `workspaceId` null sums them all.
+export type OwnerUnreadTotal = { repliesToYou: number; unreadChannels: number };
+
+export function ownerUnreadTotal(
+  unread: OwnerChannelUnread | null,
+  workspaceId: string | null
+): OwnerUnreadTotal {
+  const total = { repliesToYou: 0, unreadChannels: 0 };
+  for (const workspace of unread?.workspaces ?? []) {
+    if (workspaceId !== null && workspace.workspaceId !== workspaceId) continue;
+    for (const list of workspace.lists) {
+      total.repliesToYou += list.repliesToYou;
+      if (hasOwnerUnread(list)) total.unreadChannels += 1;
+    }
+  }
+  return total;
+}
+
+export function hasOwnerUnread(list: OwnerListUnread): boolean {
+  return list.unread > 0 || list.repliesToYou > 0 || list.unreadThreads.length > 0;
+}
+
+/** Where "New messages" goes: the oldest top-level post by someone else after the mark. */
+export function firstUnreadPostId(
+  newestFirst: readonly BuddyMailingListPost[],
+  readThrough: OwnerReadThrough
+): string | null {
+  let first: string | null = null;
+  for (const post of newestFirst) {
+    if (post.author.kind === 'owner' || post.threadRootId !== null) continue;
+    if (isAfterReadThrough(post, readThrough)) first = post.id;
+  }
+  return first;
+}
+
+// Slack's rail: a channel with anything new reads bold; a quiet one dims.
+// Unknown until the owner's unread state loads, so it renders as neither.
+export function channelUnreadAttr(unread: OwnerListUnread | undefined): 'new' | 'read' | undefined {
+  if (unread === undefined) return undefined;
+  return hasOwnerUnread(unread) ? 'new' : 'read';
+}
+
+async function markOwnerRead(listId: string, postId: string): Promise<void> {
+  await buddyApi(`/api/buddies/lists/${encodeURIComponent(listId)}/owner-read`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ postId }),
+  });
+}
+
+// Starts false and reads `document` only in the effect: components render
+// through react-dom/server in client tests, where there is no document.
+function useDocumentVisible(): boolean {
+  const [visible, setVisible] = useState(false);
+  useEffect(() => {
+    const update = () => setVisible(document.visibilityState === 'visible');
+    update();
+    document.addEventListener('visibilitychange', update);
+    return () => document.removeEventListener('visibilitychange', update);
+  }, []);
+  return visible;
+}
+
+/**
+ * The owner is looking at a channel. Returns what was unread when they
+ * arrived — the snapshot the "New messages" line and bold thread links draw
+ * from, held until they leave, the way Slack does — and marks the channel
+ * read through its newest post whenever it is on screen with something newer
+ * than the mark. The mark echoes the server's `newestPostId`, so a post that
+ * lands after this render stays unread until the next refresh shows it.
+ * D = Arriving (unread state not loaded yet) ⊕ Arrived(snapshot).
+ */
+export type OwnerChannelVisit =
+  | { kind: 'arriving' }
+  | { kind: 'arrived'; snapshot: OwnerListUnread };
+
+export function useOwnerChannelVisit(
+  listId: string,
+  current: OwnerListUnread | undefined
+): OwnerChannelVisit {
+  const [visit, setVisit] = useState<OwnerChannelVisit>(() =>
+    current ? { kind: 'arrived', snapshot: current } : { kind: 'arriving' }
+  );
+  useEffect(() => {
+    if (current && visit.kind === 'arriving') setVisit({ kind: 'arrived', snapshot: current });
+  }, [current, visit.kind]);
+  const visible = useDocumentVisible();
+  const newest = current?.newestPostId ?? null;
+  const readThrough = current?.readThrough;
+  const alreadyRead = readThrough?.kind === 'post' && readThrough.postId === newest;
+  useEffect(() => {
+    if (!visible || newest === null || alreadyRead) return;
+    void markOwnerRead(listId, newest).catch((error: unknown) =>
+      console.warn(`[channels] could not mark #${listId} read:`, error)
+    );
+  }, [listId, newest, alreadyRead, visible]);
+  return visit;
+}
+
+/**
+ * The browser tab title carries the owner's unread state: `(3) Unleashd` for
+ * replies waiting on them, `• Unleashd` when channels only have new posts.
+ * Mounted once, in AppInner, so it holds on every route.
+ */
+export function useOwnerUnreadTitle(): void {
+  const unread = useOwnerUnread();
+  const total = ownerUnreadTotal(unread.data, null);
+  const baseTitle = useRef(document.title);
+  useEffect(() => {
+    const prefix =
+      total.repliesToYou > 0 ? `(${total.repliesToYou}) ` : total.unreadChannels > 0 ? '• ' : '';
+    document.title = `${prefix}${baseTitle.current}`;
+  }, [total.repliesToYou, total.unreadChannels]);
+}
+
+// What the owner's arrival leaves on screen: D = Arriving ⊕ Arrived.
+export function arrivalMarks(
+  visit: OwnerChannelVisit,
+  posts: readonly BuddyMailingListPost[]
+): { firstUnread: string | null; unreadThreads: readonly string[] } {
+  switch (visit.kind) {
+    case 'arriving':
+      return { firstUnread: null, unreadThreads: [] };
+    case 'arrived':
+      return {
+        firstUnread: firstUnreadPostId(posts, visit.snapshot.readThrough),
+        unreadThreads: visit.snapshot.unreadThreads,
+      };
+  }
 }

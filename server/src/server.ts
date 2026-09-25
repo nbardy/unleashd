@@ -86,6 +86,7 @@ import { onChannelPost } from './buddies/channel-post-feed';
 import { createCliReplyGate } from './buddies/channel-reply-gate';
 import { createChannelResponder } from './buddies/channel-responder';
 import { registerChannelRoutes } from './buddies/channel-routes';
+import { ownerChannelReads } from './buddies/owner-channel-reads';
 import { BuddyControlServer } from './buddies/control-server';
 import {
   createBuddyDispatchService,
@@ -576,6 +577,8 @@ onChannelPost((post) => {
 registerChannelRoutes(app, {
   getStore: getBuddiesStore,
   uploadsRoot: UPLOADS_DIR,
+  ownerReads: ownerChannelReads(path.join(appDataDirectory(), 'owner-channel-reads.json')),
+  channelChanged,
   sendError: sendBuddiesError,
   responder: channelResponder,
   direct: createBuddyDirect({ getStore: getBuddiesStore, conversations: buddyConversations }),

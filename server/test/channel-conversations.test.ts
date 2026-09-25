@@ -18,6 +18,7 @@ import {
 } from '../src/buddies/channel-reply-gate';
 import { createChannelResponder, threadConversationId } from '../src/buddies/channel-responder';
 import { registerChannelRoutes } from '../src/buddies/channel-routes';
+import { ownerChannelReads } from '../src/buddies/owner-channel-reads';
 import type { BuddiesStorePort, BuddyMailingListPost } from '../src/buddies/contract';
 import { coordinationStore } from '../src/buddies/coordination-store';
 import { BuddyOperationsService } from '../src/buddies/operations';
@@ -168,6 +169,8 @@ async function harness() {
   registerChannelRoutes(app, {
     getStore: async () => store,
     uploadsRoot,
+    ownerReads: ownerChannelReads(join(uploadsRoot, 'owner-channel-reads.json')),
+    channelChanged: (listId) => channelChanges.push(listId),
     sendError,
     responder,
     direct: createBuddyDirect({ getStore: async () => store, conversations }),

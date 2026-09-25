@@ -9,6 +9,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { BuddiesStore } from '@nbardy/buddies';
+import { OwnerChannelUnreadSchema } from '@unleashd/shared';
 import express from 'express';
 import { createBuddyDirect } from '../src/buddies/buddy-direct';
 import { createChannelResponder } from '../src/buddies/channel-responder';
@@ -22,6 +23,7 @@ import {
   BuddyOperationsService,
   MESSAGE_BUDDY_OPERATIONS,
 } from '../src/buddies/operations';
+import { ownerChannelReads } from '../src/buddies/owner-channel-reads';
 import { registerBuddyRoutes } from '../src/buddies/routes';
 
 type Id = { id: string };
@@ -96,7 +98,10 @@ async function linkedClient(
   };
 }
 
-function routeTestApp(store: BuddiesStorePort) {
+function routeTestApp(
+  store: BuddiesStorePort,
+  ownerReads = ownerChannelReads(join(mkdtempSync(join(tmpdir(), 'owner-reads-')), 'reads.json'))
+) {
   const app = express();
   app.use(express.json());
   registerBuddyRoutes(app, {
@@ -117,6 +122,8 @@ function routeTestApp(store: BuddiesStorePort) {
   registerChannelRoutes(app, {
     getStore: async () => store,
     uploadsRoot: mkdtempSync(join(tmpdir(), 'lists-uploads-')),
+    ownerReads,
+    channelChanged: () => undefined,
     sendError(response, error, fallbackStatus) {
       response
         .status(fallbackStatus)
@@ -961,6 +968,122 @@ test('owner channel paging: every root reachable once by keyset, even with a pos
       );
     }
   } finally {
+    raw.close();
+  }
+});
+
+// Owner decision 2026-09-25: the owner's read state is separate from the
+// Buddies'. Owner reads must never move a Buddy's package read mark (that
+// would silently hide posts from its get_list/get_inbox), and a Buddy reading
+// must never clear the owner's unread. Also pins what the rail counts: the
+// owner's own posts never count, and the badge is replies in the owner's threads.
+test('owner channel unread is separate from Buddy read marks, forward-only and durable', async () => {
+  const { raw, store, w, a, b } = fixture();
+  const readsFile = join(mkdtempSync(join(tmpdir(), 'owner-reads-')), 'reads.json');
+  const app = routeTestApp(store, ownerChannelReads(readsFile));
+  const server = app.listen(0, '127.0.0.1');
+  try {
+    await new Promise<void>((resolve, reject) => {
+      server.once('listening', resolve);
+      server.once('error', reject);
+    });
+    const { port } = server.address() as AddressInfo;
+    const call = async (path: string, body?: unknown) => {
+      const response = await fetch(`http://127.0.0.1:${port}${path}`, {
+        method: body === undefined ? 'GET' : 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: body === undefined ? undefined : JSON.stringify(body),
+      });
+      return { status: response.status, json: (await response.json()) as unknown };
+    };
+    const { list } = store.createList({
+      workspace: w.id,
+      author: { kind: 'buddy', buddyId: a.id },
+      key: 'general',
+      name: 'general',
+      purpose: 'Talk',
+    });
+    const listUnread = async () => {
+      const { json } = await call('/api/buddies/channels/unread');
+      const unread = OwnerChannelUnreadSchema.parse(json);
+      const lists = unread.workspaces.find((workspace) => workspace.workspaceId === w.id)!.lists;
+      return lists.find((entry) => entry.listId === list.id)!;
+    };
+    // A channel that predates owner read state starts read: the baseline.
+    const before = store.createPost({
+      list: list.id,
+      author: { kind: 'buddy', buddyId: a.id },
+      key: 'old',
+      purpose: 'message',
+      body: 'before owner reads existed',
+    }).post;
+    assert.equal((await listUnread()).unread, 0);
+    await new Promise((resolve) => setTimeout(resolve, 5));
+
+    let key = 0;
+    const post = (
+      author: { kind: 'owner' } | { kind: 'buddy'; buddyId: string },
+      threadRoot: string | null = null
+    ) =>
+      store.createPost({
+        list: list.id,
+        author,
+        key: `k${key++}`,
+        purpose: 'message',
+        body: 'hello',
+        threadRoot,
+      }).post;
+    const buddyRoot = post({ kind: 'buddy', buddyId: a.id });
+    const ownerRoot = post({ kind: 'owner' });
+    post({ kind: 'buddy', buddyId: b.id }, ownerRoot.id);
+    post({ kind: 'buddy', buddyId: a.id }, buddyRoot.id);
+
+    const fresh = await listUnread();
+    assert.equal(fresh.unread, 1, "the owner's own root is never unread");
+    assert.equal(fresh.repliesToYou, 1, "only the reply in the owner's thread is waiting on them");
+    assert.deepEqual(new Set(fresh.unreadThreads), new Set([buddyRoot.id, ownerRoot.id]));
+
+    const buddyMarkBefore = store.listUnread({ buddy: b.id, workspace: w.id });
+    const marked = await call(`/api/buddies/lists/${list.id}/owner-read`, {
+      postId: fresh.newestPostId,
+    });
+    assert.equal(marked.status, 200, JSON.stringify(marked.json));
+    const caughtUp = await listUnread();
+    assert.deepEqual([caughtUp.unread, caughtUp.repliesToYou, caughtUp.unreadThreads], [0, 0, []]);
+    assert.deepEqual(
+      store.listUnread({ buddy: b.id, workspace: w.id }),
+      buddyMarkBefore,
+      "the owner catching up moved a Buddy's read mark"
+    );
+
+    // A Buddy reading does not clear the owner's unread.
+    const late = post({ kind: 'buddy', buddyId: a.id });
+    store.markListRead({ buddy: b.id, list: list.id, post: late.id });
+    assert.equal((await listUnread()).unread, 1);
+
+    // Forward only: a stale tab echoing an older post un-reads nothing.
+    await call(`/api/buddies/lists/${list.id}/owner-read`, { postId: late.id });
+    await call(`/api/buddies/lists/${list.id}/owner-read`, { postId: before.id });
+    assert.deepEqual((await listUnread()).readThrough, {
+      kind: 'post',
+      postId: late.id,
+      createdAt: late.createdAt,
+    });
+    assert.equal(
+      (await call(`/api/buddies/lists/${list.id}/owner-read`, { postId: 'post_missing' })).status,
+      404
+    );
+
+    // Durable: a restarted server reads the same marks from disk.
+    const reloaded = ownerChannelReads(readsFile).unread(store);
+    const entry = reloaded.workspaces
+      .find((workspace) => workspace.workspaceId === w.id)!
+      .lists.find((candidate) => candidate.listId === list.id)!;
+    assert.equal(entry.unread, 0);
+  } finally {
+    await new Promise<void>((resolve, reject) =>
+      server.close((error) => (error ? reject(error) : resolve()))
+    );
     raw.close();
   }
 });
