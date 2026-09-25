@@ -212,6 +212,7 @@ test('Buddy MCP specification binds trusted context outside tool input', () => {
 
   assert.deepEqual(servers, {
     unleashd_buddy: {
+      kind: 'stdio',
       command: '/usr/bin/node',
       args: [
         '/app/server/dist/buddies/mcp-server.js',
@@ -314,6 +315,7 @@ test('Buddy Builder MCP specification is required and conversation-scoped', () =
     }),
     {
       unleashd_buddy: {
+        kind: 'stdio',
         command: '/usr/bin/node',
         args: [
           '/app/server/dist/buddies/mcp-server.js',

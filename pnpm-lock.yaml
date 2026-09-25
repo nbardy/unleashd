@@ -218,12 +218,18 @@ importers:
 
   vendor/agent-cli-tool:
     devDependencies:
+      '@modelcontextprotocol/sdk':
+        specifier: ^1.30.0
+        version: 1.30.0(zod@3.25.76)
       '@types/node':
         specifier: ^20.11.0
         version: 20.19.30
       typescript:
         specifier: ^5.8.0
         version: 5.9.3
+      zod:
+        specifier: ^3.25.76
+        version: 3.25.76
 
 packages:
 
