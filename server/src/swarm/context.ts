@@ -1,4 +1,4 @@
-import fs from 'node:fs';
+import fs from 'node:fs/promises';
 import path from 'node:path';
 import type { OompaContextCommand } from './commands';
 
@@ -21,10 +21,17 @@ export async function buildSwarmContext(
     dependencies.captureCommand('status', projectRoot),
     dependencies.captureCommand('info', projectRoot),
   ]);
-  const availableConfigs = listAvailableConfigFiles(projectRoot);
+  // All file reads are async: this route used existsSync/readFileSync over up to
+  // 6 docs + configs on the event loop until 2026-09-26.
+  // Guard: `swarm routes never touch synchronous fs` (swarm-routes.test.ts).
+  const availableConfigs = await listAvailableConfigFiles(projectRoot);
   const primaryConfigPath = path.join(projectRoot, 'oompa.json');
-  const documentation = findDocumentation(projectRoot).map((absolutePath) =>
-    readDocumentation(projectRoot, absolutePath)
+  const primaryConfigExists = await pathExists(primaryConfigPath);
+  const configSummary = await summarizeOompaConfig(primaryConfigPath);
+  const documentation = await Promise.all(
+    (await findDocumentation(projectRoot)).map((absolutePath) =>
+      readDocumentation(projectRoot, absolutePath)
+    )
   );
   return [
     'You are helping create and run a NEW oompa swarm configuration.',
@@ -33,8 +40,8 @@ export async function buildSwarmContext(
     '## Project Context',
     `- Project: ${projectRoot}`,
     `- Generated At: ${dependencies.now().toISOString()}`,
-    `- Primary Config: ${fs.existsSync(primaryConfigPath) ? primaryConfigPath : 'not found'}`,
-    `- Oompa Config Summary: ${summarizeOompaConfig(primaryConfigPath)}`,
+    `- Primary Config: ${primaryConfigExists ? primaryConfigPath : 'not found'}`,
+    `- Oompa Config Summary: ${configSummary}`,
     '',
     '## Available Oompa Config Files',
     ...(availableConfigs.length > 0
@@ -61,17 +68,16 @@ export async function buildSwarmContext(
   ].join('\n');
 }
 
-export function listAvailableConfigFiles(projectRoot: string): string[] {
+async function listAvailableConfigFiles(projectRoot: string): Promise<string[]> {
   const files = new Set<string>();
-  collectConfigFiles(projectRoot, files);
-  const oompaDirectory = path.join(projectRoot, 'oompa');
-  if (fs.existsSync(oompaDirectory)) collectConfigFiles(oompaDirectory, files);
+  await collectConfigFiles(projectRoot, files);
+  await collectConfigFiles(path.join(projectRoot, 'oompa'), files);
   return Array.from(files).sort((left, right) => left.localeCompare(right));
 }
 
-function collectConfigFiles(directory: string, result: Set<string>): void {
+async function collectConfigFiles(directory: string, result: Set<string>): Promise<void> {
   try {
-    for (const file of fs.readdirSync(directory)) {
+    for (const file of await fs.readdir(directory)) {
       if (file.toLowerCase().startsWith('oompa') && file.toLowerCase().endsWith('.json')) {
         result.add(path.join(directory, file));
       }
@@ -81,10 +87,10 @@ function collectConfigFiles(directory: string, result: Set<string>): void {
   }
 }
 
-function summarizeOompaConfig(configPath: string): string {
-  if (!fs.existsSync(configPath)) return 'No oompa.json found';
+async function summarizeOompaConfig(configPath: string): Promise<string> {
+  if (!(await pathExists(configPath))) return 'No oompa.json found';
   try {
-    const value = JSON.parse(fs.readFileSync(configPath, 'utf-8')) as Record<string, unknown>;
+    const value = JSON.parse(await fs.readFile(configPath, 'utf-8')) as Record<string, unknown>;
     const workers = Array.isArray(value.workers)
       ? (value.workers as Array<Record<string, unknown>>)
       : [];
@@ -107,7 +113,7 @@ function summarizeOompaConfig(configPath: string): string {
   }
 }
 
-function findDocumentation(projectRoot: string): string[] {
+async function findDocumentation(projectRoot: string): Promise<string[]> {
   const candidates = [
     'README.md',
     'AGENTS.md',
@@ -121,8 +127,7 @@ function findDocumentation(projectRoot: string): string[] {
   const docsDirectory = path.join(projectRoot, 'docs');
   try {
     candidates.push(
-      ...fs
-        .readdirSync(docsDirectory)
+      ...(await fs.readdir(docsDirectory))
         .filter((file) => file.toLowerCase().endsWith('.md'))
         .sort((left, right) => left.localeCompare(right))
         .map((file) => path.join(docsDirectory, file))
@@ -130,22 +135,31 @@ function findDocumentation(projectRoot: string): string[] {
   } catch {
     // The fixed candidate list still applies when docs/ is absent.
   }
-  return Array.from(new Set(candidates))
-    .filter((candidate) => fs.existsSync(candidate))
-    .slice(0, MAX_DOCUMENT_FILES);
+  const unique = Array.from(new Set(candidates));
+  const present = await Promise.all(unique.map(pathExists));
+  return unique.filter((_, index) => present[index]).slice(0, MAX_DOCUMENT_FILES);
 }
 
-function readDocumentation(projectRoot: string, absolutePath: string): string {
+async function readDocumentation(projectRoot: string, absolutePath: string): Promise<string> {
   const relativePath = path.relative(projectRoot, absolutePath) || path.basename(absolutePath);
   try {
     return `### ${relativePath}\n${clip(
-      fs.readFileSync(absolutePath, 'utf-8'),
+      await fs.readFile(absolutePath, 'utf-8'),
       MAX_DOCUMENT_CHARS
     )}`;
   } catch (error) {
     return `### ${relativePath}\nFailed to read file: ${
       error instanceof Error ? error.message : String(error)
     }`;
+  }
+}
+
+async function pathExists(filePath: string): Promise<boolean> {
+  try {
+    await fs.access(filePath);
+    return true;
+  } catch {
+    return false;
   }
 }
 
