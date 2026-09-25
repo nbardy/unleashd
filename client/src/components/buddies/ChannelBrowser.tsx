@@ -17,6 +17,7 @@ import {
   type ChannelHeading,
   type ChannelRow,
   type WorkspaceDirectory,
+  arrivalOf,
   authorName,
   channelFeed,
   channelHeading,
@@ -26,12 +27,14 @@ import {
   clockTime,
   createChannel,
   feedPhase,
+  firstUnreadPostId,
   newestServedId,
   postPurposeLabel,
   postPurposeTag,
   railChannels,
   renderFeed,
   threadFeed,
+  unreadThreadIds,
   useChannelFeed,
   useChannelResponding,
   useFollowBottom,
@@ -43,9 +46,11 @@ import {
 } from './channel-data';
 import { channelLinkPath, postLink } from './channel-link';
 import { plainChannelText } from './channel-text';
-import type { ChannelUnread, Post } from './types';
+import type { ChannelUnread, Post, ThreadStat } from './types';
 import { initials } from './ui-contract';
 import './ChannelBrowser.css';
+
+const NO_THREADS: ReadonlySet<string> = new Set();
 
 // Where a row renders decides what its thread affordance does:
 // D = Channel(open a thread, show who is replying) ⊕ Thread(already inside one).
@@ -54,6 +59,8 @@ type RowPlace =
       kind: 'channel';
       openThread(rootId: string): void;
       responding: ReadonlyMap<string, string>;
+      threads: ReadonlyMap<string, ThreadStat>;
+      unreadThreads: ReadonlySet<string>;
     }
   | { kind: 'thread' };
 
@@ -125,9 +132,9 @@ function Replying({ text }: { text: string }) {
   );
 }
 
-// Who is replying in a root's thread, under the root in the channel. Posts
-// carry no reply count (the API has none), so every root offers its thread
-// through the hover toolbar and this line shows only live replies.
+// "N replies · Last reply 10:42" under a thread root in the channel, bold with
+// a dot while it has replies the owner has not read, plus the live replying
+// indicator. The T11 migration dropped the count (the API had none); T22.
 function ThreadSummary({ post, context }: { post: Post; context: RowContext }) {
   switch (context.place.kind) {
     case 'thread':
@@ -135,13 +142,29 @@ function ThreadSummary({ post, context }: { post: Post; context: RowContext }) {
     case 'channel': {
       const place = context.place;
       const replying = place.responding.get(post.id);
-      if (replying === undefined) return null;
+      const stat = place.threads.get(post.id);
+      if (stat === undefined && replying === undefined) return null;
+      const unread = place.unreadThreads.has(post.id);
       return (
         <div className="channel-browser-thread-summary">
-          <button type="button" onClick={() => place.openThread(post.id)}>
-            <strong>Open thread</strong>
-          </button>
-          <Replying text={replying} />
+          {stat === undefined ? (
+            <button type="button" onClick={() => place.openThread(post.id)}>
+              <strong>Open thread</strong>
+            </button>
+          ) : (
+            <button
+              type="button"
+              data-unread={unread || undefined}
+              onClick={() => place.openThread(post.id)}
+            >
+              {unread && <span className="channel-browser-thread-unread" aria-label="New replies" />}
+              <strong>
+                {stat.replies} {stat.replies === 1 ? 'reply' : 'replies'}
+              </strong>
+              <span>Last reply {clockTime(stat.lastReplyAt)}</span>
+            </button>
+          )}
+          {replying !== undefined && <Replying text={replying} />}
         </div>
       );
     }
@@ -276,6 +299,24 @@ function DayRow({ label }: { label: string }) {
   );
 }
 
+// Slack's "New messages" line, above the first post the owner had not read
+// when they opened the channel (T22).
+function NewMessagesRow() {
+  return (
+    <li className="channel-browser-new-messages" aria-label="New messages">
+      <span>New messages</span>
+    </li>
+  );
+}
+
+function renderRows(rows: readonly ChannelRow[], context: RowContext, firstUnread: string | null) {
+  return rows.flatMap((row) =>
+    row.kind !== 'day' && row.post.id === firstUnread
+      ? [<NewMessagesRow key="new-messages" />, renderRow(row, context)]
+      : [renderRow(row, context)]
+  );
+}
+
 function renderRow(row: ChannelRow, context: RowContext) {
   switch (row.kind) {
     case 'day':
@@ -303,7 +344,7 @@ function ThreadPane({
   onClose(): void;
 }) {
   const channelId = entry.channel.id;
-  const thread = useChannelFeed(threadFeed(rootId));
+  const thread = useChannelFeed(threadFeed(rootId, context.linkedPostId));
   const root = thread.latest.data?.root;
   const replies = useWithOutbox(channelId, rootId, thread.posts);
   const replyRows = useMemo(() => channelRows(replies ?? []), [replies]);
@@ -409,11 +450,34 @@ function ChannelPane({
   const posts = useWithOutbox(channelId, null, feed.posts);
   const rows = useMemo(() => channelRows(posts ?? []), [posts]);
   const follow = useFollowBottom(rows.length, posts, null);
+  // What was unread when the owner arrived; this visit's read marks never move it.
+  const [arrival] = useState(() => arrivalOf(entry));
+  const [opened, setOpened] = useState<ReadonlySet<string>>(NO_THREADS);
   useMarkChannelRead(channelId, entry.unread, newestServedId(feed.posts));
+  const unreadThreads = useMemo(() => {
+    const unread = new Set(unreadThreadIds(feed.threads, arrival));
+    for (const rootId of opened) unread.delete(rootId);
+    if (threadId !== null) unread.delete(threadId);
+    return unread;
+  }, [feed.threads, arrival, opened, threadId]);
+  const firstUnread = useMemo(
+    () => (feed.posts === null ? null : firstUnreadPostId(feed.posts, arrival)),
+    [feed.posts, arrival]
+  );
+  const openThread = (rootId: string | null) => {
+    if (rootId !== null) setOpened((was) => new Set([...was, rootId]));
+    onThread(rootId);
+  };
   const base = { workspaceId, directory, availableConversationIds, linkedPostId, openDm };
   const channelContext: RowContext = {
     ...base,
-    place: { kind: 'channel', openThread: onThread, responding: respondingByRoot },
+    place: {
+      kind: 'channel',
+      openThread,
+      responding: respondingByRoot,
+      threads: feed.threads,
+      unreadThreads,
+    },
   };
   const threadContext: RowContext = { ...base, place: { kind: 'thread' } };
   return (
@@ -459,7 +523,7 @@ function ChannelPane({
                   onReach={() => void feed.loadOlder(follow.hold)}
                 />
                 <ol className="channel-browser-messages">
-                  {rows.map((row) => renderRow(row, channelContext))}
+                  {renderRows(rows, channelContext, firstUnread)}
                 </ol>
               </>
             ),
@@ -476,7 +540,7 @@ function ChannelPane({
             void feed.latest.refetch();
             // Mentioning a Buddy opens the thread its reply will land in.
             if (result.mentions.some((mention) => mention.status === 'started'))
-              onThread(result.post.id);
+              openThread(result.post.id);
           }}
         />
       </section>

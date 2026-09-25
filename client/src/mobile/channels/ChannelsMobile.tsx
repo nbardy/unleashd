@@ -575,7 +575,7 @@ function ThreadScreen({
   const heading = entry
     ? channelHeading(entry.channel.kind, directory.buddyNames)
     : LOADING_HEADING;
-  const thread = useChannelFeed(threadFeed(rootId));
+  const thread = useChannelFeed(threadFeed(rootId, linkedPostId));
   const root = thread.latest.data?.root;
   const replying = useChannelResponding(channelId, directory.buddyNames).get(rootId);
   const replies = useWithOutbox(channelId, rootId, thread.posts);

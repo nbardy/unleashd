@@ -30,6 +30,7 @@ import type {
   BuddyOverview,
   Channel,
   ChannelKind,
+  ChannelPage,
   ChannelResponse,
   ChannelUnread,
   Cursor,
@@ -38,6 +39,7 @@ import type {
   PostPage,
   Task,
   ThreadPage,
+  ThreadStat,
 } from './types';
 import { taskStatusView } from './ui-contract';
 
@@ -153,28 +155,55 @@ export function createChannel(workspaceId: string, name: string, purpose: string
  * the replies. `base` is the URL up to the query (ending in `?`); every
  * per-channel key starts with it, which is what invalidation matches.
  */
-type FeedPage = { posts: readonly Post[]; next?: Cursor };
-export type PostFeed<V> = { base: string; page(value: V): FeedPage };
+type FeedPage = { posts: readonly Post[]; next?: Cursor; threads: readonly ThreadStat[] };
+export type PostFeed<V> = { base: string; opens: FeedOpening; page(value: V): FeedPage };
 
-export function channelFeed(channelId: string): PostFeed<PostPage> {
+// Where a feed's live page starts: D = Newest ⊕ From(a linked post). A reply permalink opens its
+// thread FROM the reply (the reply and everything newer), so a reply older than the newest page
+// still renders and is scrolled to; the T11 migration opened on the newest page only (T22).
+export type FeedOpening = { kind: 'newest' } | { kind: 'from'; postId: string };
+const NEWEST: FeedOpening = { kind: 'newest' };
+const NO_STATS: readonly ThreadStat[] = [];
+
+export function channelFeed(channelId: string): PostFeed<ChannelPage> {
   return {
     base: `/api/buddies/channels/${encodeURIComponent(channelId)}/posts?`,
+    opens: NEWEST,
     page: (value) => value,
   };
 }
 
-export function threadFeed(rootId: string): PostFeed<ThreadPage> {
+export function threadFeed(rootId: string, linkedPostId: string | null): PostFeed<ThreadPage> {
   return {
     base: `/api/buddies/posts/${encodeURIComponent(rootId)}/thread?`,
-    page: (value) => value,
+    opens: linkedPostId === null ? NEWEST : { kind: 'from', postId: linkedPostId },
+    page: (value) => ({ ...value, threads: NO_STATS }),
+  };
+}
+
+/** One Task's posts across every channel: the channel browser's Task filter (T22). */
+export function taskPostsFeed(taskId: string): PostFeed<PostPage> {
+  return {
+    base: `/api/buddies/tasks/${encodeURIComponent(taskId)}/posts?`,
+    opens: NEWEST,
+    page: (value) => ({ ...value, threads: NO_STATS }),
   };
 }
 
 // Pages go back by the post's ordered id (a UUIDv7 the server issues in write order).
 const cursorQuery = (cursor: Cursor) => `before=${encodeURIComponent(cursor.ord)}`;
 
+function openingQuery(opening: FeedOpening): string {
+  switch (opening.kind) {
+    case 'newest':
+      return '';
+    case 'from':
+      return `&from=${encodeURIComponent(opening.postId)}`;
+  }
+}
+
 function latestResource<V>(feed: PostFeed<V>) {
-  const url = `${feed.base}limit=${CHANNEL_PAGE}`;
+  const url = `${feed.base}limit=${CHANNEL_PAGE}${openingQuery(feed.opens)}`;
   return resource(url, (signal) => buddyApi<V>(url, { signal }));
 }
 
@@ -187,15 +216,17 @@ function historyResource<V>(feed: PostFeed<V>, history: History) {
   const url = `${feed.base}limit=${CHANNEL_PAGE}&${cursorQuery(history.start)}`;
   return resource(`${url}&pages=${history.pages}`, async (signal): Promise<FeedPage> => {
     const posts: Post[] = [];
+    const threads: ThreadStat[] = [];
     let cursor: Cursor | undefined = history.start;
     for (let page = 0; page < history.pages && cursor; page += 1) {
       const next: FeedPage = feed.page(
         await buddyApi<V>(`${feed.base}limit=${CHANNEL_PAGE}&${cursorQuery(cursor)}`, { signal })
       );
       posts.push(...next.posts);
+      threads.push(...next.threads);
       cursor = next.next;
     }
-    return { posts, next: cursor };
+    return { posts, next: cursor, threads };
   });
 }
 
@@ -235,9 +266,11 @@ function edgeOf(request: OlderRequest, next: Cursor | undefined | null): OlderEd
  * has no "posts after" query to close it).
  */
 export function useChannelFeed<V>(feed: PostFeed<V>) {
-  const [held, setHeld] = useState<Paging>({ base: feed.base, history: null, request: IDLE });
+  // Paging belongs to one feed AND where it opened: a new permalink starts over.
+  const identity = `${feed.base}${openingQuery(feed.opens)}`;
+  const [held, setHeld] = useState<Paging>({ base: identity, history: null, request: IDLE });
   const paging: Paging =
-    held.base === feed.base ? held : { base: feed.base, history: null, request: IDLE };
+    held.base === identity ? held : { base: identity, history: null, request: IDLE };
   const latest = usePolledFetch(latestResource(feed), CHANNEL_BACKSTOP_MS);
   const history = usePolledFetch(
     paging.history === null ? null : historyResource(feed, paging.history),
@@ -250,6 +283,16 @@ export function useChannelFeed<V>(feed: PostFeed<V>) {
     const seen = new Set(newest.posts.map((post) => post.id));
     return [...newest.posts, ...history.data.posts.filter((post) => !seen.has(post.id))];
   }, [newest, history.data]);
+  // The newest page's stats win: they are refreshed with every poll.
+  const threads = useMemo(
+    () =>
+      new Map(
+        [...(history.data?.threads ?? NO_STATS), ...(newest?.threads ?? NO_STATS)].map(
+          (stat) => [stat.rootId, stat] as const
+        )
+      ),
+    [newest, history.data]
+  );
   // `null`: the page that decides the edge has not loaded yet.
   const next =
     paging.history === null
@@ -275,14 +318,15 @@ export function useChannelFeed<V>(feed: PostFeed<V>) {
       seedResource(historyResource(feed, grown), {
         posts: [...(history.data?.posts ?? []), ...page.posts],
         next: page.next,
+        threads: [...(history.data?.threads ?? NO_STATS), ...page.threads],
       });
-      setHeld({ base: feed.base, history: grown, request: IDLE });
+      setHeld({ base: identity, history: grown, request: IDLE });
     } catch (cause) {
       const error = cause instanceof Error ? cause : new Error(String(cause));
       setHeld({ ...paging, request: { kind: 'failed', error } });
     }
   };
-  return { latest, posts, edge, loadOlder };
+  return { latest, posts, threads, edge, loadOlder };
 }
 
 /** The newest post a feed has served (never an outbox stand-in): what "read" marks through. */
@@ -720,6 +764,52 @@ export function channelRequestCount(inbox: Inbox | null, channelId: string): num
 export function channelUnreadAttr(unread: number | undefined): 'new' | 'read' | undefined {
   if (unread === undefined) return undefined;
   return unread > 0 ? 'new' : 'read';
+}
+
+/**
+ * Where the owner stood when they opened a channel, from the inbox's read cursor:
+ * D = NeverRead ⊕ ReadThrough(ord). Snapshotted once per visit, so the "New messages" line and
+ * the bold threads stay put while this visit marks the channel read (T22: both were dropped in
+ * the T11 migration because the inbox exposed no cursor).
+ */
+export type ChannelArrival = { kind: 'never-read' } | { kind: 'read-through'; ord: string };
+
+export function arrivalOf(entry: ChannelUnread): ChannelArrival {
+  return entry.lastReadOrd === undefined
+    ? { kind: 'never-read' }
+    : { kind: 'read-through', ord: entry.lastReadOrd };
+}
+
+function unreadAt(arrival: ChannelArrival, ord: string): boolean {
+  switch (arrival.kind) {
+    case 'never-read':
+      return true;
+    case 'read-through':
+      return ord > arrival.ord;
+  }
+}
+
+/** Where "New messages" goes: the oldest loaded top-level post by someone else after the mark. */
+export function firstUnreadPostId(
+  newestFirst: readonly Post[],
+  arrival: ChannelArrival
+): string | null {
+  let first: string | null = null;
+  for (const post of newestFirst)
+    if (post.author.kind !== 'owner' && unreadAt(arrival, post.ord)) first = post.id;
+  return first;
+}
+
+/** Thread roots whose newest reply, by someone else, landed after the mark: bold in the channel. */
+export function unreadThreadIds(
+  threads: ReadonlyMap<string, ThreadStat>,
+  arrival: ChannelArrival
+): ReadonlySet<string> {
+  const unread = new Set<string>();
+  for (const stat of threads.values())
+    if (stat.lastReplyAuthor.kind !== 'owner' && unreadAt(arrival, stat.lastReplyOrd))
+      unread.add(stat.rootId);
+  return unread;
 }
 
 // Starts false and reads `document` only in the effect: components render

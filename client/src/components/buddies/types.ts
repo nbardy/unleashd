@@ -12,6 +12,8 @@ import type {
   Channel,
   Cursor,
   Post,
+  PostPage,
+  ThreadStat,
   Run,
   Schedule,
   Task,
@@ -39,6 +41,7 @@ export type {
   Schedule,
   Task,
   TaskStatus,
+  ThreadStat,
   Workspace,
 } from '@unleashd/buddies-core';
 
@@ -72,6 +75,9 @@ export interface TaskDetail {
   comments: Post[];
   runs: Run[];
 }
+
+/** GET /api/buddies/channels/:channelId/posts — top-level posts, each root's reply stats beside. */
+export type ChannelPage = PostPage & { threads: ThreadStat[] };
 
 /** GET /api/buddies/posts/:postId/thread — replies newest first. */
 export interface ThreadPage {
