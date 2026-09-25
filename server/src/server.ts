@@ -482,9 +482,8 @@ const buddyConversations: StableConversationPorts = {
 };
 
 // One channel's posts or responders changed: clients refresh only that channel's views.
-// (The wire field is still `listId`; renaming it is a client+server change for T14.)
 const channelChanged = (channelId: string) =>
-  applicationContext.broadcast({ type: 'channel_changed', listId: channelId });
+  applicationContext.broadcast({ type: 'channel_changed', channelId });
 const buddyChannels = createChannels({
   core: buddiesCore,
   events: buddyEvents,

@@ -717,7 +717,11 @@ const ServerMessageSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('buddies_changed') }),
   // One channel's posts or responders changed; clients refresh only that
   // channel's views (client atoms/resources.ts invalidateChannelResources).
-  z.object({ type: z.literal('channel_changed'), listId: z.string() }),
+  // `channelId` was `listId` until T14b (2026-09-26); it names a channel of any kind. No
+  // `.default()` on purpose: the frame only invalidates a cache, so an older backend's
+  // `listId` frame during a dev reload is classified `invalid` and dropped (one missed
+  // refresh), never applied to a made-up channel. Guard: client/test/protocol-skew.test.ts.
+  z.object({ type: z.literal('channel_changed'), channelId: z.string() }),
 ]);
 
 export type ServerMessage = z.infer<typeof ServerMessageSchema>;
@@ -763,7 +767,6 @@ export function classifyServerFrame(raw: unknown): ServerFrame {
     ? { t: 'message', message: parsed.data }
     : { t: 'invalid', issues: parsed.error.issues.map((issue) => issue.message).join('; ') };
 }
-
 
 // =============================================================================
 // JSONL Adapter Types (for persistence layer)
