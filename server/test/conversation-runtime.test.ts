@@ -86,6 +86,29 @@ function runtimeFixture(
   return { aliases, broadcasts, configState, Conversation, conversation };
 }
 
+/** Capture what reaches the provider boundary; the turn never answers. */
+function captureSpawns() {
+  const spawns: Array<{ content: string; forkSourceSessionId?: string }> = [];
+  const stubs: Array<ReturnType<typeof openTurnStub>> = [];
+  return {
+    spawns,
+    executeTurn: fakeExecuteTurn((request) => {
+      spawns.push({
+        content: request.prompt,
+        ...(request.forkSessionId ? { forkSourceSessionId: request.forkSessionId } : {}),
+      });
+      const stub = openTurnStub();
+      stubs.push(stub);
+      return stub.turn;
+    }),
+    /** Stop the open turn and its timers so the test process can exit. */
+    release(conversation: { resetProcess(): void }) {
+      conversation.resetProcess();
+      for (const stub of stubs) stub.child.emit('close');
+    },
+  };
+}
+
 function deferred<T>() {
   let resolve!: (value: T) => void;
   const promise = new Promise<T>((resolvePromise) => {
@@ -628,7 +651,9 @@ test('first message in a user fork inherits the native source session without co
     string,
     ReturnType<ConversationRuntimeDependencies['getConversation']>
   >();
+  const capture = captureSpawns();
   const fixture = runtimeFixture({
+    executeTurn: capture.executeTurn,
     getConversation: (id) => conversations.get(id),
   });
   const source = new fixture.Conversation({
@@ -647,20 +672,10 @@ test('first message in a user fork inherits the native source session without co
     configState: fixture.configState,
     resumedFromConversationId: source.id,
   });
-  let spawned: { content: string; forkSourceSessionId?: string } | undefined;
-  (
-    child as unknown as {
-      spawnForMessage(
-        content: string,
-        executionConfig: unknown,
-        forkSourceSessionId?: string
-      ): void;
-    }
-  ).spawnForMessage = (content, _executionConfig, forkSourceSessionId) => {
-    spawned = { content, forkSourceSessionId };
-  };
 
   child.enqueueMessage('Continue the original objective from this fork.');
+  const spawned = capture.spawns[0];
+  capture.release(child);
 
   assert.deepEqual(spawned, {
     content: 'Continue the original objective from this fork.',
@@ -705,7 +720,9 @@ test('native session fork falls back to a fresh handoff when memory generation c
     string,
     ReturnType<ConversationRuntimeDependencies['getConversation']>
   >();
+  const capture = captureSpawns();
   const fixture = runtimeFixture({
+    executeTurn: capture.executeTurn,
     getConversation: (id) => conversations.get(id),
   });
   const buddyContext = {
@@ -739,20 +756,10 @@ test('native session fork falls back to a fresh handoff when memory generation c
     buddyBriefing: 'New memory',
     buddyMemoryGeneration: 'generation-7',
   });
-  let spawned: { content: string; forkSourceSessionId?: string } | undefined;
-  (
-    child as unknown as {
-      spawnForMessage(
-        content: string,
-        executionConfig: unknown,
-        forkSourceSessionId?: string
-      ): void;
-    }
-  ).spawnForMessage = (content, _executionConfig, forkSourceSessionId) => {
-    spawned = { content, forkSourceSessionId };
-  };
 
   child.enqueueMessage('Continue with current memory.');
+  const spawned = capture.spawns[0];
+  capture.release(child);
 
   assert.equal(spawned?.forkSourceSessionId, undefined);
   assert.match(spawned?.content ?? '', /New memory/);
@@ -824,7 +831,9 @@ test('same-provider fork on a fork-incapable harness falls back to string handof
     string,
     ReturnType<ConversationRuntimeDependencies['getConversation']>
   >();
+  const capture = captureSpawns();
   const fixture = runtimeFixture({
+    executeTurn: capture.executeTurn,
     provider: 'muse',
     getConversation: (id) => conversations.get(id),
   });
@@ -844,20 +853,10 @@ test('same-provider fork on a fork-incapable harness falls back to string handof
     configState: fixture.configState,
     resumedFromConversationId: source.id,
   });
-  let spawned: { content: string; forkSourceSessionId?: string } | undefined;
-  (
-    child as unknown as {
-      spawnForMessage(
-        content: string,
-        executionConfig: unknown,
-        forkSourceSessionId?: string
-      ): void;
-    }
-  ).spawnForMessage = (content, _executionConfig, forkSourceSessionId) => {
-    spawned = { content, forkSourceSessionId };
-  };
 
   child.enqueueMessage('Continue the original objective from this fork.');
+  const spawned = capture.spawns[0];
+  capture.release(child);
 
   assert.equal(spawned?.forkSourceSessionId, undefined);
   assert.ok(spawned?.content.includes('Continue the original objective from this fork.'));
