@@ -130,8 +130,6 @@ export const CodexReasoningSchema = z.object({
     .passthrough(),
 });
 
-export type CodexReasoning = z.infer<typeof CodexReasoningSchema>;
-
 // Custom tool calls
 export const CodexCustomToolCallSchema = z.object({
   timestamp: z.string(),
@@ -143,8 +141,6 @@ export const CodexCustomToolCallSchema = z.object({
     .passthrough(),
 });
 
-export type CodexCustomToolCall = z.infer<typeof CodexCustomToolCallSchema>;
-
 // Custom tool call outputs
 export const CodexCustomToolCallOutputSchema = z.object({
   timestamp: z.string(),
@@ -155,8 +151,6 @@ export const CodexCustomToolCallOutputSchema = z.object({
     })
     .passthrough(),
 });
-
-export type CodexCustomToolCallOutput = z.infer<typeof CodexCustomToolCallOutputSchema>;
 
 // =============================================================================
 // Event Messages — user prompts, agent responses, token counts
@@ -198,8 +192,6 @@ export const CodexAgentReasoningEventSchema = z.object({
     .passthrough(),
 });
 
-export type CodexAgentReasoningEvent = z.infer<typeof CodexAgentReasoningEventSchema>;
-
 export const CodexTokenCountEventSchema = z.object({
   timestamp: z.string(),
   type: z.literal('event_msg'),
@@ -209,8 +201,6 @@ export const CodexTokenCountEventSchema = z.object({
     })
     .passthrough(),
 });
-
-export type CodexTokenCountEvent = z.infer<typeof CodexTokenCountEventSchema>;
 
 // =============================================================================
 // Turn Context — per-turn config

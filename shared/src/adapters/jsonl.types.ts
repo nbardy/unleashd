@@ -88,8 +88,6 @@ export const JsonlUserMessageSchema = z.object({
   ]),
 });
 
-export type JsonlUserMessage = z.infer<typeof JsonlUserMessageSchema>;
-
 /**
  * Assistant message - array of content blocks with model metadata
  */
@@ -111,8 +109,6 @@ export const JsonlAssistantMessageSchema = z.object({
     .passthrough()
     .optional(),
 });
-
-export type JsonlAssistantMessage = z.infer<typeof JsonlAssistantMessageSchema>;
 
 // =============================================================================
 // Entry Schemas (top-level JSONL lines)

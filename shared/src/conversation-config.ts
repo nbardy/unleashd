@@ -12,7 +12,6 @@ export const ModelIdSchema = z.string().min(1);
 export type ModelId = z.infer<typeof ModelIdSchema>;
 
 export const ReasoningEffortSchema = z.string().min(1);
-export type ReasoningEffort = z.infer<typeof ReasoningEffortSchema>;
 
 export const ModelSelectionSchema = z.discriminatedUnion('mode', [
   z.object({ mode: z.literal('default') }),
@@ -61,7 +60,6 @@ export const ConfigErrorCodeSchema = z.enum([
   'conversation_busy',
   'revision_conflict',
 ]);
-export type ConfigErrorCode = z.infer<typeof ConfigErrorCodeSchema>;
 
 export const ConfigErrorSchema = z.object({
   code: ConfigErrorCodeSchema,
@@ -88,12 +86,6 @@ export const ConfigResolutionSchema = z.discriminatedUnion('status', [
   }),
 ]);
 export type ConfigResolution = z.infer<typeof ConfigResolutionSchema>;
-
-export const RuntimeObservationSchema = z.object({
-  reportedModel: z.string().min(1).optional(),
-  providerSessionId: z.string().min(1).optional(),
-});
-export type RuntimeObservation = z.infer<typeof RuntimeObservationSchema>;
 
 export const ConversationConfigStateSchema = z.object({
   config: ConversationConfigSchema,
@@ -141,7 +133,6 @@ export const ConversationSessionBindingSchema = z.object({
 export type ConversationSessionBinding = z.infer<typeof ConversationSessionBindingSchema>;
 
 export const ConversationLifecycleStatusSchema = z.enum(['active', 'deleted']);
-export type ConversationLifecycleStatus = z.infer<typeof ConversationLifecycleStatusSchema>;
 
 // Conversation IDs are opaque: Buddy runs use deterministic prefixed IDs and
 // older provider imports can be non-UUIDs. Use the same contract on disk and
@@ -352,28 +343,4 @@ export function resolveConversationConfig(
       ...(reasoningEffort === undefined ? {} : { reasoningEffort }),
     },
   };
-}
-
-export function validateConversationConfig(
-  config: ConversationConfig,
-  catalog: ProviderCatalog
-): Result<ResolvedExecutionConfig, ConfigError> {
-  const resolution = resolveConversationConfig(config, catalog);
-  return resolution.status === 'resolved'
-    ? { ok: true, value: resolution.value }
-    : { ok: false, error: resolution.error };
-}
-
-/**
- * Atomic pure transition for creation/update paths. If the candidate cannot
- * resolve, the caller keeps `current` unchanged.
- */
-export function transitionConversationConfig(
-  current: ConversationConfig,
-  patch: ConversationConfigPatch,
-  catalog: ProviderCatalog
-): Result<ConversationConfig, ConfigError> {
-  const candidate = applyConversationConfigPatch(current, patch);
-  const validation = validateConversationConfig(candidate, catalog);
-  return validation.ok ? { ok: true, value: candidate } : validation;
 }

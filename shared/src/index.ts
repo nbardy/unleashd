@@ -105,9 +105,6 @@ export const CODEX_UNIFIED_THINKING_OPTIONS = GEN_CODEX_UNIFIED_THINKING_OPTIONS
 export const CURSOR_MODEL_REGISTRY = GEN_CURSOR_MODEL_REGISTRY;
 export const CODEX_MODEL_REGISTRY = GEN_CODEX_MODEL_REGISTRY;
 
-export type ClaudeEffortLevel = (typeof CLAUDE_EFFORT_LEVELS)[number];
-export type CodexEffortLevel = (typeof CODEX_EFFORT_LEVELS)[number];
-export type MuseEffortLevel = (typeof MUSE_EFFORT_LEVELS)[number];
 export type CodexThinkingOption = (typeof CODEX_THINKING_OPTIONS)[number];
 export type CodexThinkingMode = typeof NO_CODEX_THINKING | CodexThinkingOption;
 
@@ -125,10 +122,8 @@ export type CodexModelRegistryEntry = {
 const _codexRegistryCheck: ReadonlyArray<CodexModelRegistryEntry> = CODEX_MODEL_REGISTRY;
 
 export const ClaudeModelSchema = z.enum(GEN_CLAUDE_MODEL_IDS as unknown as [string, ...string[]]);
-export type ClaudeModel = z.infer<typeof ClaudeModelSchema>;
 
 export const GeminiModelSchema = z.enum(GEN_GEMINI_MODEL_IDS as unknown as [string, ...string[]]);
-export type GeminiModel = z.infer<typeof GeminiModelSchema>;
 
 export type CursorModel = (typeof CURSOR_MODEL_REGISTRY)[number]['id'];
 export const CURSOR_MODEL_IDS = CURSOR_MODEL_REGISTRY.map((entry) => entry.id);
@@ -137,7 +132,6 @@ export const CursorModelSchema = z.enum(
 );
 
 export const MuseModelSchema = z.enum(GEN_MUSE_MODEL_IDS as unknown as [string, ...string[]]);
-export type MuseModel = z.infer<typeof MuseModelSchema>;
 
 /** Retired / shorthand ids → canonical Cursor `--model` value. */
 export const CURSOR_MODEL_ALIASES: Readonly<Record<string, CursorModel>> = {
@@ -155,16 +149,6 @@ type CodexModelRegistryItem = (typeof CODEX_MODEL_REGISTRY)[number];
 // Conversation.reasoningEffort (same shape as Claude). Composite IDs like
 // "gpt-5.4-high" are a legacy wire format handled by toCodexModelId/fromCodexModelId.
 export type CodexModel = CodexModelRegistryItem['modelName'];
-
-export const CODEX_THINKING_DISPLAY_NAMES: Record<CodexThinkingOption, string> = {
-  minimal: 'Minimal Effort',
-  low: 'Low Effort',
-  medium: 'Medium Effort',
-  high: 'High Effort',
-  xhigh: 'Extra High Effort',
-  max: 'Max Effort',
-  ultra: 'Ultra Effort',
-};
 
 /**
  * MIGRATION HELPER for legacy composite Codex model IDs.
@@ -452,18 +436,6 @@ export function isEffortValidForProvider(
   if (effort == null) return true;
   return effortLevelsForProvider(provider).includes(effort);
 }
-
-// Display labels for the union of every level any provider accepts. Keyed by
-// plain string since the wire shape is string, not a typed enum.
-export const EFFORT_DISPLAY_NAMES: Record<string, string> = {
-  minimal: 'Minimal',
-  low: 'Low',
-  medium: 'Medium',
-  high: 'High',
-  xhigh: 'xHigh',
-  max: 'Max',
-  ultra: 'Ultra',
-};
 
 export const ConversationSchema = z.object({
   id: ConversationIdSchema,
