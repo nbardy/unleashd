@@ -24,7 +24,13 @@ import {
   parseGateVerdict,
 } from '../src/buddies/channel-reply-gate';
 import { createChannels } from '../src/buddies/channels';
-import { OWNER, buddiesLocation, buddyActor, openBuddiesCore } from '../src/buddies/core';
+import {
+  OWNER,
+  buddiesLocation,
+  buddyActor,
+  legacyBuddiesDatabasePath,
+  openBuddiesCore,
+} from '../src/buddies/core';
 import { type BuddyEvent, createBuddyEvents } from '../src/buddies/events';
 import { createGrants } from '../src/buddies/grants';
 import { startMcpEndpoint } from '../src/buddies/mcp';
@@ -682,6 +688,20 @@ test('a first-time install with no Buddies database at all opens an empty one', 
     const file = join(scratch, 'nested', 'buddies-v3.sqlite');
     const core = await openBuddiesCore(buddiesLocation(file, join(scratch, 'buddies.sqlite')));
     assert.deepEqual(await core.listWorkspaces(), []);
+  } finally {
+    rmSync(scratch, { recursive: true, force: true });
+  }
+});
+
+// Regression (final review 2026-09-26): the v33 package kept its file under BUDDIES_HOME. Looking
+// only at ~/.buddies classified such an owner as `fresh` and ran an empty DB over their data.
+test('an unimported v33 file under BUDDIES_HOME is still found', async () => {
+  const scratch = mkdtempSync(join(tmpdir(), 'buddies-location-'));
+  try {
+    writeFileSync(join(scratch, 'buddies.sqlite'), '');
+    const legacy = legacyBuddiesDatabasePath({ BUDDIES_HOME: scratch });
+    const file = join(scratch, 'buddies-v3.sqlite');
+    assert.equal(buddiesLocation(file, legacy).t, 'unimported');
   } finally {
     rmSync(scratch, { recursive: true, force: true });
   }

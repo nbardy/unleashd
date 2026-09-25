@@ -90,9 +90,19 @@ export type BuddiesLocation =
   | { t: 'fresh'; file: string }
   | { t: 'unimported'; file: string; legacy: string };
 
+/**
+ * The v33 file the old Buddies package used: `$BUDDIES_HOME/buddies.sqlite`, default
+ * `~/.buddies` (the package's store.js). Ignoring BUDDIES_HOME classified an owner who had set it
+ * as a `fresh` install and opened an EMPTY database next to their unimported data.
+ */
+export function legacyBuddiesDatabasePath(env: NodeJS.ProcessEnv = process.env): string {
+  const home = env.BUDDIES_HOME?.trim() || path.join(os.homedir(), '.buddies');
+  return path.join(home, 'buddies.sqlite');
+}
+
 export function buddiesLocation(
   file: string,
-  legacy: string = path.join(os.homedir(), '.buddies', 'buddies.sqlite')
+  legacy: string = legacyBuddiesDatabasePath()
 ): BuddiesLocation {
   if (fs.existsSync(file)) return { t: 'database', file };
   if (fs.existsSync(legacy)) return { t: 'unimported', file, legacy };
