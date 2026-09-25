@@ -65,22 +65,6 @@
   line-height: 1.5;
 }
 
-/* ---- Sections ---- */
-.mobile-buddy-section {
-  display: flex;
-  flex-direction: column;
-  gap: var(--sp-5);
-  min-width: 0;
-}
-
-/* Folded in from mobile.css, which defined these same classes earlier in the
-   bundle. Everything else it declared was already redeclared below; these four
-   properties were the only ones still reaching the DOM, so they move here to
-   keep the rendering identical with one owner per class. */
-.mobile-buddy-section {
-  padding: var(--sp-7) 0;
-}
-
 .mobile-buddy-detail__description {
   margin: 4px 0;
 }
@@ -151,9 +135,6 @@
   outline-offset: 3px;
 }
 
-.mobile-buddy-detail > .mobile-buddy-section {
-  padding-top: 0;
-}
 .mobile-buddy-detail__hero {
   gap: var(--sp-3);
 }
