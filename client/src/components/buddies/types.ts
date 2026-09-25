@@ -13,10 +13,10 @@ import type {
   Cursor,
   Post,
   PostPage,
-  ThreadStat,
   Run,
   Schedule,
   Task,
+  ThreadStat,
   Workspace,
 } from '@unleashd/buddies-core';
 
@@ -31,6 +31,7 @@ export type {
   Doc,
   DocKind,
   DocRevision,
+  DocScope,
   Inbox,
   Post,
   PostPage,

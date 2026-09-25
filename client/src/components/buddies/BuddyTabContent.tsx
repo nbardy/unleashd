@@ -62,7 +62,9 @@ const TABS: { [K in EmployeeTab]: (page: BuddyPageModel) => ReactElement } = {
       refresh={page.refresh}
     />
   ),
-  memory: (page) => <BuddyMemory buddyId={page.detail.buddy.id} />,
+  memory: (page) => (
+    <BuddyMemory buddyId={page.detail.buddy.id} workspaceId={page.detail.buddy.workspaceId} />
+  ),
   schedules: (page) => (
     <BuddySchedules
       buddyId={page.detail.buddy.id}
