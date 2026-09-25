@@ -3,7 +3,6 @@ import { useMemo, useState } from 'react';
 import { Link, useLocation, useParams } from 'react-router-dom';
 import { BuddySigil } from '../../components/buddies/BuddySigil';
 import { ChannelAuthor, useChatPageDm } from '../../components/buddies/ChannelAuthor';
-import { ChannelComposer } from '../../components/buddies/ChannelComposer';
 import { ChannelHistory, ChannelLoader } from '../../components/buddies/ChannelLoader';
 import { ChannelMarkdown, TypingDots } from '../../components/buddies/ChannelMarkdown';
 import { CopyLinkButton } from '../../components/buddies/CopyLinkButton';
@@ -48,6 +47,7 @@ import {
   MobilePage,
   MobileSection,
 } from '../components/MobileUI';
+import { ChannelComposerMobile } from './ChannelComposerMobile';
 import { buddyWorkspaceActivityAtom, overviewWorkspaces } from './ChannelsIndex';
 import { type MobileChannelScreen, channelsHref, mobileChannelScreen } from './channel-route';
 
@@ -542,7 +542,8 @@ function ChannelScreen({ channelId, context }: { channelId: string; context: Scr
           ),
         })}
       </div>
-      <ChannelComposer
+      <ChannelComposerMobile
+        title={title}
         channelId={channelId}
         rootId={null}
         placeholder={`Message ${heading.mark}${heading.name}`}
@@ -629,7 +630,8 @@ function ThreadScreen({
           </p>
         )}
       </div>
-      <ChannelComposer
+      <ChannelComposerMobile
+        title={`Thread in ${heading.mark} ${heading.name}`}
         channelId={channelId}
         rootId={rootId}
         placeholder="Reply…"

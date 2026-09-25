@@ -171,7 +171,7 @@ const KNOWN_LITERAL = {
   'components/buddies/ChannelContent.css': 23,
   'components/buddies/ChannelLoader.css': 11,
   'mobile/styles/mobile-buddy.css': 22,
-  'mobile/styles/mobile-channels.css': 53,
+  'mobile/styles/mobile-channels.css': 49,
 };
 const walk = (d) => fs.readdirSync(d, { withFileTypes: true }).flatMap((e) => {
   const p = path.join(d, e.name);
@@ -214,7 +214,7 @@ echo "==> Gate G8: total client CSS lines must not grow"
 # Ratchet: the lean rewrite takes CSS from 18.4k lines to a ~3.75k budget
 # (lean-scope 06 §3). When a change cuts CSS, lower CSS_LINE_CEILING to the new
 # total in the same commit so the cut cannot silently grow back.
-CSS_LINE_CEILING=14975 # T22-S4, 2026-09-26 (T21a 14980; 15834 on lean/integration 4e5a01c)
+CSS_LINE_CEILING=14961 # port a2e4135 (Gallery dedupe), 2026-09-26; T22-S4 14975 (T21a 14980; 15834 on lean/integration 4e5a01c)
 CSS_LINES="$(find client/src -name '*.css' -print0 | xargs -0 cat | wc -l | tr -d ' ')"
 if [ "$CSS_LINES" -gt "$CSS_LINE_CEILING" ]; then
   echo "G8 FAIL: client CSS is $CSS_LINES lines, ceiling $CSS_LINE_CEILING. Reuse a primitive (ui/primitives.css) or cut elsewhere."

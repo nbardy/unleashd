@@ -258,47 +258,30 @@
    Temporary Sessions Section - Hidden by default, toggle to show
    ============================================================================= */
 
-.temp-sessions-section {
-  margin-top: 16px;
-  padding-top: var(--sp-7);
-  border-top: 1px dashed var(--border-subtle);
-}
-
-.temp-sessions-toggle {
-  gap: var(--sp-5);
-  width: 100%;
-  padding: var(--sp-6) var(--sp-7);
-  background: transparent;
-  border: 1px dashed var(--border-subtle);
-  color: var(--text-secondary);
-  font-size: var(--fs-4);
-  transition: all 0.2s;
-  text-align: left;
-}
-
+.temp-sessions-section,
+.done-sessions-section,
+.temp-sessions-toggle,
+.done-sessions-toggle,
 .temp-sessions-toggle:hover {
   background: var(--bg-tertiary);
   border-color: var(--queue);
   color: var(--text-primary);
 }
 
-.temp-sessions-hint {
-  font-size: var(--fs-2);
-  font-style: italic;
-}
-
-/* Temp project sections have slightly different styling */
-.temp-project .project-header {
+.temp-sessions-hint,
+/* Temp, done and worker project sections: dashed and dimmed */
+  :is(.temp-project, .done-project, .worker-project)
+  .project-header {
   background: var(--bg-tertiary);
   border: 1px dashed var(--border-subtle);
   opacity: 0.85;
 }
 
-.temp-project.has-done-toggle .project-header {
+:is(.temp-project, .done-project, .worker-project).has-done-toggle .project-header {
   border-right: none;
 }
 
-.temp-project.has-done-toggle .project-done-toggle {
+:is(.temp-project, .done-project, .worker-project).has-done-toggle .project-done-toggle {
   background: var(--bg-tertiary);
   border-top: 1px dashed var(--border-subtle);
   border-right: 1px dashed var(--border-subtle);
@@ -306,31 +289,13 @@
   opacity: 0.85;
 }
 
-.temp-project .project-path {
+:is(.temp-project, .done-project, .worker-project) .project-path {
   color: var(--text-secondary);
 }
 
 /* =============================================================================
    Done Conversations Section - Hidden by default, toggle to show/restore
    ============================================================================= */
-
-.done-sessions-section {
-  margin-top: 16px;
-  padding-top: var(--sp-7);
-  border-top: 1px dashed var(--border-subtle);
-}
-
-.done-sessions-toggle {
-  gap: var(--sp-5);
-  width: 100%;
-  padding: var(--sp-6) var(--sp-7);
-  background: transparent;
-  border: 1px dashed var(--border-subtle);
-  color: var(--text-secondary);
-  font-size: var(--fs-4);
-  transition: all 0.2s;
-  text-align: left;
-}
 
 .done-sessions-toggle:hover {
   background: var(--bg-tertiary);
@@ -340,39 +305,21 @@
 
 /* Done project sections — slightly dimmed */
 .done-project .project-header {
-  background: var(--bg-tertiary);
-  border: 1px dashed var(--border-subtle);
   border-left: 4px solid var(--success);
-  opacity: 0.85;
-}
-
-.done-project.has-done-toggle .project-header {
-  border-right: none;
-}
-
-.done-project.has-done-toggle .project-done-toggle {
-  background: var(--bg-tertiary);
-  border-top: 1px dashed var(--border-subtle);
-  border-right: 1px dashed var(--border-subtle);
-  border-bottom: 1px dashed var(--border-subtle);
-  opacity: 0.85;
-}
-
-.done-project .project-path {
-  color: var(--text-secondary);
 }
 
 /* Done card — slightly dimmed */
-.gallery-card.done-card {
+.gallery-card:is(.done-card, .worker-card) {
   opacity: 0.75;
 }
 
-.gallery-card.done-card:hover {
+.gallery-card:is(.done-card, .worker-card):hover {
   opacity: 1;
 }
 
 /* Restore button on done cards */
-.undo-done-btn {
+.undo-done-btn,
+.promote-worker-btn {
   padding: var(--sp-1) var(--sp-5);
   background: transparent;
   color: var(--text-secondary);
@@ -450,53 +397,13 @@
 
 /* Worker project sections — violet accent, slightly dimmed */
 .worker-project .project-header {
-  background: var(--bg-tertiary);
-  border: 1px dashed var(--border-subtle);
   border-left: 4px solid var(--primary);
-  opacity: 0.85;
-}
-
-.worker-project.has-done-toggle .project-header {
-  border-right: none;
-}
-
-.worker-project.has-done-toggle .project-done-toggle {
-  background: var(--bg-tertiary);
-  border-top: 1px dashed var(--border-subtle);
-  border-right: 1px dashed var(--border-subtle);
-  border-bottom: 1px dashed var(--border-subtle);
-  opacity: 0.85;
-}
-
-.worker-project .project-path {
-  color: var(--text-secondary);
 }
 
 .worker-project .project-count {
   color: var(--primary-bright);
   background: var(--primary-glow);
   border-color: color-mix(in srgb, var(--primary) 35%, transparent);
-}
-
-/* Worker card — slightly dimmed */
-.gallery-card.worker-card {
-  opacity: 0.75;
-}
-
-.gallery-card.worker-card:hover {
-  opacity: 1;
-}
-
-/* Worker provider badge — violet */
-
-/* Promote button on worker cards */
-.promote-worker-btn {
-  padding: var(--sp-1) var(--sp-5);
-  background: transparent;
-  color: var(--text-secondary);
-  font-size: var(--fs-2);
-  cursor: pointer;
-  transition: all 0.2s;
 }
 
 .promote-worker-btn:hover {

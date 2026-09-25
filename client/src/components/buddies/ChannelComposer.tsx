@@ -254,7 +254,7 @@ export function ChannelComposer({
           }}
           onClose={() => {
             setChoosingFor(null);
-            textareaRef.current?.focus();
+            if (submit === 'enter') textareaRef.current?.focus();
           }}
         />
       )}
@@ -371,7 +371,13 @@ export function ChannelComposer({
                 choice={mentionChoice(buddy, choices)}
                 catalog={catalog}
                 open={buddy.id === choosingFor}
-                onOpen={() => setChoosingFor(buddy.id === choosingFor ? null : buddy.id)}
+                onOpen={() => {
+                  // Touch: the keyboard pushed the picker above the screen,
+                  // out of reach (#bugfixes 2026-09-25). Dismiss it; the
+                  // picker opens as a bottom sheet (mobile-channels.css).
+                  if (submit === 'button') textareaRef.current?.blur();
+                  setChoosingFor(buddy.id === choosingFor ? null : buddy.id);
+                }}
               />
             ))}
           </div>

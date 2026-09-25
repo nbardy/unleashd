@@ -135,6 +135,14 @@ the keyboard shrinks the visual viewport. Text scrolls inside a bounded flex chi
 the action row cannot shrink. Do not remount/portal the textarea on focus or restore
 `:focus-within` pane expansion: both disturb native keyboard/focus behavior.
 
+Channel and thread screens use the same frame through `ChannelComposerMobile`
+(mobile/channels): focusing the field enters editing, a slim head carries Done,
+and the @ menu sits in flow above the bar. Opening a mention chip's harness/model
+picker on touch dismisses the keyboard and shows the picker as a bottom sheet; as
+a popover above the composer the keyboard pushed it off-screen. Pane headers under
+`.mobile-shell` never add `env(safe-area-inset-top)` — the shell already pads it,
+and doubling it left a status-bar-sized gap above the channel header.
+
 `ComposerAttachments` presents one horizontally scrolling thumbnail row, with a
 bounded overlay of swipeable previews and explicit Remove controls. It reuses the
 shared attachment lifecycle and leaves the draft untouched. The tab bar retains an

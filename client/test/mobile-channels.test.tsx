@@ -157,6 +157,13 @@ test('mobile channel screen: back to Home, thread link, touch composer', async (
   // Touch composer: Return is a newline, so no Shift+Enter hint.
   assert.match(html, /placeholder="Message #general"/);
   assert.doesNotMatch(html, /new line/);
+  // a2e4135 (#bugfixes 2026-09-25): pinned in the pane, iOS panning left the
+  // composer floating mid-screen. It rides FullscreenComposer, whose editing
+  // head names the channel and carries Done.
+  assert.match(
+    html,
+    /class="fullscreen-composer"[\s\S]*class="mobile-channel-compose__head"><span># general<\/span><button type="button">Done<\/button>[\s\S]*placeholder="Message #general"/
+  );
 });
 
 // A reply permalink opens its thread FROM the reply (`&from=`, T22): the
@@ -192,6 +199,7 @@ test('a reply permalink opens its thread with the reply highlighted and the root
     'root, flame, linked reply, newest'
   );
   assert.match(html, /data-post-id="reply-120" data-linked="true"/);
+  assert.match(html, /class="mobile-channel-compose__head"><span>Thread in # general<\/span>/);
 });
 
 test('mobile channels Home lists channels, DMs by Buddy, and Buddies with a visible Wake', async () => {
