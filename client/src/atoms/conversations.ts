@@ -5,11 +5,17 @@ import type {
   Conversation,
   ConversationConfig,
   ConversationConfigPatch,
+  Message,
   QueuedMessage,
 } from '@unleashd/shared';
 import { atom } from 'jotai';
 import { atomFamily } from 'jotai-family';
-import { type MessageGroup, groupChatMessages } from '../utils/chat-message-groups';
+import {
+  type MessageGroup,
+  groupChatMessages,
+  regroupChatMessages,
+  withStreamingTail,
+} from '../utils/chat-message-groups';
 import { archivedBuddyIdsAtom } from './buddy-visibility';
 import {
   type ConversationIndex,
@@ -18,7 +24,14 @@ import {
   directoryFacts,
   updateConversationIndex,
 } from './conversation-index';
-import { keyedAtoms, sameItems, sameMap, sameSet, stableAtom } from './structural';
+import {
+  atomWithPrevious,
+  keyedAtoms,
+  sameItems,
+  sameMap,
+  sameSet,
+  stableAtom,
+} from './structural';
 import { savedActiveConversationIdAtom } from './ui';
 
 export type { ConversationListEntry } from './conversation-index';
@@ -157,26 +170,59 @@ export const pendingConfigCommandAtomFamily = atomFamily((conversationId: string
 // Live streaming text for one conversation — use for Chat.tsx merge display
 export const streamingAtomFamily = streamingText.byKey;
 
-const EMPTY_CHAT_GROUPS: MessageGroup[] = [];
+const EMPTY_MESSAGES: readonly Message[] = [];
 
-// Shared response projection; streaming content never enters the durable snapshot.
+// The transcript records alone: the same array while only status, queue or
+// other fields change, so grouping does not rerun for those.
+const conversationMessagesAtomFamily = atomFamily((id: string) =>
+  atom((get) => get(conversationAtomFamily(id))?.messages ?? EMPTY_MESSAGES)
+);
+
+// Swarm debug prefix stripped from the first user record (never for Buddies).
+const groupPrefixAtomFamily = atomFamily((id: string) =>
+  atom((get) => {
+    const conversation = get(conversationAtomFamily(id));
+    if (!conversation) return null;
+    return isBuddyKind(getConversationKind(conversation)) || getBuddyContext(conversation)
+      ? null
+      : (conversation.swarmDebugPrefix ?? null);
+  })
+);
+
+interface SettledGroups {
+  messages: readonly Message[];
+  prefix: string | null;
+  groups: MessageGroup[];
+}
+
+// Groups of the committed records. A new record (or a grown last response)
+// rebuilds only the last group; earlier groups keep their identity.
+const settledMessageGroupsAtomFamily = atomFamily((id: string) =>
+  atomWithPrevious((get, previous: SettledGroups | undefined): SettledGroups => {
+    const messages = get(conversationMessagesAtomFamily(id));
+    const prefix = get(groupPrefixAtomFamily(id));
+    if (previous && previous.messages === messages && previous.prefix === prefix) return previous;
+    const groups =
+      previous && previous.prefix === prefix
+        ? regroupChatMessages(previous.groups, previous.messages, messages, prefix)
+        : groupChatMessages(messages, prefix);
+    return { messages, prefix, groups };
+  })
+);
+
+// Shared response projection; streaming content never enters the durable
+// snapshot. While a reply streams (~60 frames a second) only the last group is
+// rebuilt: every other group is the settled object, so VirtualizedGroup skips.
 export const chatMessageGroupsAtomFamily = atomFamily((id: string) =>
   labelled(
     atom((get) => {
-      const conversation = get(conversationAtomFamily(id));
-      if (!conversation) return EMPTY_CHAT_GROUPS;
-      const streamingText = get(streamingAtomFamily(id));
-      let messages = conversation.messages;
-      const last = messages[messages.length - 1];
-      if (streamingText && last?.role === 'assistant') {
-        messages = messages.slice();
-        messages[messages.length - 1] = { ...last, content: last.content + streamingText };
-      }
-      const prefix =
-        isBuddyKind(getConversationKind(conversation)) || getBuddyContext(conversation)
-          ? null
-          : (conversation.swarmDebugPrefix ?? null);
-      return groupChatMessages(messages, prefix);
+      const settled = get(settledMessageGroupsAtomFamily(id));
+      return withStreamingTail(
+        settled.groups,
+        settled.messages,
+        get(streamingAtomFamily(id)),
+        settled.prefix
+      );
     }),
     `chatMessageGroups:${id}`
   )
@@ -395,6 +441,9 @@ export function forgetConversationAtoms(id: string): void {
   conversationRecords.forget(id);
   streamingText.forget(id);
   conversationAtomFamily.remove(id);
+  conversationMessagesAtomFamily.remove(id);
+  groupPrefixAtomFamily.remove(id);
+  settledMessageGroupsAtomFamily.remove(id);
   chatMessageGroupsAtomFamily.remove(id);
   conversationDetailsLoadedAtomFamily.remove(id);
   pendingCreationAtomFamily.remove(id);

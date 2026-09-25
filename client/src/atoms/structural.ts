@@ -93,23 +93,33 @@ export function keyedAtoms<V, A>(options: {
 }
 
 /**
+ * A derived atom whose read also receives its own previous value (undefined
+ * on the first read), for incremental recomputation. Same self-reference
+ * technique as jotai's `selectAtom`, which keeps the previous value per store
+ * rather than in a closure.
+ */
+export function atomWithPrevious<T>(read: (get: Getter, previous: T | undefined) => T): Atom<T> {
+  const EMPTY = Symbol('atomWithPrevious.empty');
+  const self: Atom<T | typeof EMPTY> & { init?: typeof EMPTY } = atom((get) => {
+    const previous = get(self);
+    return read(get, previous === EMPTY ? undefined : (previous as T));
+  });
+  self.init = EMPTY;
+  return self as Atom<T>;
+}
+
+/**
  * A derived atom that hands back its PREVIOUS value when `equals(previous,
  * next)` holds, so subscribers see the same reference and skip re-rendering.
- * Same self-reference technique as jotai's `selectAtom`, which keeps the
- * previous value per store rather than in a closure.
  */
 export function stableAtom<T>(
   read: (get: Getter) => T,
   equals: (previous: T, next: T) => boolean
 ): Atom<T> {
-  const EMPTY = Symbol('stableAtom.empty');
-  const self: Atom<T | typeof EMPTY> & { init?: typeof EMPTY } = atom((get) => {
-    const previous = get(self);
+  return atomWithPrevious((get, previous: T | undefined) => {
     const next = read(get);
-    return previous !== EMPTY && equals(previous as T, next) ? previous : next;
+    return previous !== undefined && equals(previous, next) ? previous : next;
   });
-  self.init = EMPTY;
-  return self as Atom<T>;
 }
 
 export function sameItems<T>(a: readonly T[], b: readonly T[]): boolean {

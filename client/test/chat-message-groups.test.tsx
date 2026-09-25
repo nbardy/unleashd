@@ -5,9 +5,8 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import { type Conversation, type Message, MessageSchema } from '@unleashd/shared';
-import { createStore, Provider } from 'jotai';
 import { formatBuddyWorkerToolResult } from '@unleashd/shared';
-import { groupChatMessages } from '../src/utils/chat-message-groups';
+import { Provider, createStore } from 'jotai';
 // biome-ignore lint/correctness/noUnusedImports: tsx's test transform uses the classic JSX runtime.
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -17,6 +16,7 @@ import {
   conversationsAtom,
   streamingContentAtom,
 } from '../src/atoms/conversations';
+import { groupChatMessages, regroupChatMessages } from '../src/utils/chat-message-groups';
 import { buildForkDraft, messageTranscriptContent } from '../src/utils/conversation-transcript';
 
 const require = createRequire(import.meta.url);
@@ -301,7 +301,7 @@ test('saved freeform input reaches desktop and mobile as literal code, with comp
   for (const view of [
     <VirtualizedGroup
       key="desktop"
-      group={{ type: 'single', messages: [toolMessage] }}
+      group={{ type: 'single', messages: [toolMessage], firstMessageIndex: 0 }}
       isLastGroup
       lastMessageRef={{ current: null }}
       workingDirectory={directory}
@@ -577,4 +577,89 @@ test('persisted Codex launch tool output rehydrates the worker badge', async (t)
     throw new Error('Expected tool row');
   assert.equal(response.parts[0].count, 1);
   assert.equal(response.parts[0].workerThreads?.[0].conversationId, 'durable-worker');
+});
+
+// A transcript long enough to make whole-transcript regrouping visible, with
+// tool records and multi-part responses so the tail is not trivially simple.
+function longTranscript(turns: number): Message[] {
+  const records: Message[] = [];
+  for (let turn = 0; turn < turns; turn++) {
+    records.push(message('user', `Question ${turn}`));
+    records.push(message('assistant', `Looking at ${turn}`));
+    records.push({
+      ...message('assistant', ''),
+      toolCall: { name: 'Read', input: `{"path":"/f${turn}"}` },
+    } as Message);
+    records.push(message('assistant', `Answer ${turn}`, true));
+  }
+  return records;
+}
+
+test('a streaming frame rebuilds only the last group, and matches a full regroup', () => {
+  const store = createStore();
+  const messages = longTranscript(40);
+  const conversation = { id: 'streaming-tail', kind: { kind: 'general' }, messages };
+  store.set(
+    conversationsAtom,
+    new Map([[conversation.id, conversation as unknown as Conversation]])
+  );
+  const groupsAtom = chatMessageGroupsAtomFamily(conversation.id);
+  const settled = store.get(groupsAtom);
+
+  for (const text of [' streamed', ' streamed text', ' streamed text, more']) {
+    store.set(streamingContentAtom, new Map([[conversation.id, text]]));
+    const live = store.get(groupsAtom);
+    assert.equal(live.length, settled.length);
+    // Every group before the tail is the SAME object, so VirtualizedGroup
+    // (memo on group identity) skips all of them on a frame.
+    for (let i = 0; i < live.length - 1; i++) assert.equal(live[i], settled[i]);
+    assert.notEqual(live.at(-1), settled.at(-1));
+    const streamed = messages.slice();
+    streamed[streamed.length - 1] = {
+      ...messages[messages.length - 1],
+      content: messages[messages.length - 1].content + text,
+    };
+    assert.deepEqual(live, groupChatMessages(streamed, null));
+  }
+});
+
+test('regrouping after records change matches a full pass for every transcript prefix', () => {
+  const roles: Array<() => Message> = [
+    () => message('user', 'ask'),
+    () => message('assistant', 'prose'),
+    () => message('assistant', 'done', true),
+    () => message('system', 'note'),
+    () =>
+      ({
+        ...message('assistant', ''),
+        toolCall: { name: 'Bash', input: '{"command":"ls"}' },
+      }) as Message,
+  ];
+  // Deterministic pseudo-random role sequences.
+  let seed = 7;
+  const next = () => {
+    seed = (seed * 1103515245 + 12345) % 2147483648;
+    return seed;
+  };
+  for (let run = 0; run < 25; run++) {
+    const records = Array.from({ length: 30 }, () => roles[next() % roles.length]());
+    let previous = groupChatMessages([], null);
+    let previousRecords: Message[] = [];
+    for (let length = 1; length <= records.length; length++) {
+      const current = records.slice(0, length);
+      const regrouped = regroupChatMessages(previous, previousRecords, current, null);
+      assert.deepEqual(regrouped, groupChatMessages(current, null));
+      // Only the last group may be new.
+      for (let i = 0; i < previous.length - 1; i++) assert.equal(regrouped[i], previous[i]);
+      previous = regrouped;
+      previousRecords = current;
+    }
+    // A replaced earlier record (a fresh snapshot) falls back to a full pass.
+    const replaced = records.slice();
+    replaced[0] = { ...records[0], content: `${records[0].content}!` };
+    assert.deepEqual(
+      regroupChatMessages(previous, previousRecords, replaced, null),
+      groupChatMessages(replaced, null)
+    );
+  }
 });

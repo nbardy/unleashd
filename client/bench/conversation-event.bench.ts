@@ -43,6 +43,7 @@ import { runEventBench } from './event-bench-harness';
 runEventBench({
   store: jotaiStore,
   handleMessage,
+  groups: (openId) => chatMessageGroupsAtomFamily(openId),
   mount: (ids, openId): Atom<unknown>[] => [
     // Sidebar
     sidebarFolderViewAtom,

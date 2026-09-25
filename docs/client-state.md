@@ -131,6 +131,18 @@ See [WS contract notes](ws-contract-surprises.md) for replay and reconciliation.
 flush writes only `streamingContentAtom`; the chat renders that alongside the
 conversation snapshot. Never append individual chunks to `conversation.messages`.
 
+A frame rebuilds only the last message group (`withStreamingTail` in
+`utils/chat-message-groups.ts`); every earlier group is the settled object, so
+`VirtualizedGroup` (memoized on group identity) skips it. Settled groups
+recompute only when the records array changes, and an appended record
+regroups from the last group (`regroupChatMessages`). Until 2026-09-25 each
+frame regrouped the whole transcript and replaced all ~300 groups of a
+600-record chat (0.53 ms of grouping per frame, then a re-render of every
+visible group). Only the last group gets `isLiveTurn`, so a turn starting or
+ending does not re-render the list. `client/test/chat-message-groups.test.tsx`
+checks group identity across frames and compares the incremental regroup with
+a full pass for every prefix of random transcripts.
+
 `message_complete` flushes buffered chunks synchronously. When `status` says
 streaming ended, its handler flushes pending chunks and clears transient text.
 Committed message content comes from authoritative `conversations_updated`

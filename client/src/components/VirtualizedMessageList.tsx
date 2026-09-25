@@ -712,13 +712,15 @@ export function VirtualizedMessageList({
   const visibleSwarmDebugPrefix = effectiveSwarmDebugPrefix(buddyContext, swarmDebugPrefix);
   const contextItemCount = (buddyContext ? 1 : 0) + (visibleSwarmDebugPrefix ? 1 : 0);
   const totalItems = messageGroups.length + contextItemCount;
-  const estimatedInitialOffset = useMemo(() => {
+  // Read once, when the virtualizer first needs a scroll offset. A memo here
+  // re-summed every group on each streaming frame for a value used at mount.
+  const estimateInitialOffset = () => {
     let total = 0;
     if (buddyContext) total += 88;
     if (visibleSwarmDebugPrefix) total += 80;
     for (const group of messageGroups) total += estimateGroupSize(group);
     return total;
-  }, [buddyContext, messageGroups, visibleSwarmDebugPrefix]);
+  };
 
   const virtualizer = useVirtualizer({
     count: totalItems,
@@ -731,7 +733,7 @@ export function VirtualizedMessageList({
     // offset zero briefly rendered the oldest item before the layout effect
     // scrolled down; a large first prompt could spend hundreds of milliseconds
     // in Markdown parsing even though the user never saw it.
-    initialOffset: () => estimatedInitialOffset,
+    initialOffset: estimateInitialOffset,
     estimateSize: (index) => {
       if (buddyContext && index === 0) return 88;
       if (visibleSwarmDebugPrefix && index === (buddyContext ? 1 : 0)) return 80;
@@ -901,7 +903,9 @@ export function VirtualizedMessageList({
                   isLastGroup={isLastGroup}
                   lastMessageRef={lastMessageRef}
                   workingDirectory={workingDirectory}
-                  isLiveTurn={isTurnActive}
+                  // Only the last group can be live; passing the flag to every
+                  // group re-rendered the whole list when a turn started or ended.
+                  isLiveTurn={isTurnActive && isLastGroup}
                 />
               </div>
             );

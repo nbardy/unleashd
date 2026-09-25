@@ -1,6 +1,10 @@
 import type { Conversation, ServerMessage } from '@unleashd/shared';
 import type { Atom, createStore } from 'jotai';
-import { syntheticConversations, syntheticMessage } from '../test/fixtures/synthetic-conversations';
+import {
+  syntheticConversations,
+  syntheticMessage,
+  syntheticTranscript,
+} from '../test/fixtures/synthetic-conversations';
 
 type Store = ReturnType<typeof createStore>;
 
@@ -9,6 +13,8 @@ export interface BenchTarget {
   handleMessage: (message: ServerMessage) => void;
   /** Every atom the mounted components read; subscribed like useAtomValue does. */
   mount: (idsNewestFirst: readonly string[], openId: string) => Atom<unknown>[];
+  /** The open chat's message groups; a replaced group is a re-rendered row. */
+  groups: (openId: string) => Atom<readonly unknown[]>;
   /** Render-time work a component redoes when an atom it reads changes. */
   renderWork?: Array<{ atom: Atom<unknown>; run: (value: unknown) => void }>;
 }
@@ -46,6 +52,14 @@ export function runEventBench(target: BenchTarget): void {
     for (const frame of frames.splice(0)) frame(0);
   };
   const conversations = syntheticConversations(COUNT);
+  // The open chat carries a long transcript (150 turns, 600 records), so a
+  // stream frame shows whether it regroups the whole thing.
+  const newest = conversations.length - 1;
+  conversations[newest] = {
+    ...conversations[newest],
+    messages: syntheticTranscript(150),
+    messageCount: 600,
+  };
   target.handleMessage({
     type: 'init',
     conversations,
@@ -118,11 +132,15 @@ export function runEventBench(target: BenchTarget): void {
     },
   };
 
+  const groupsAtom = target.groups(openId);
+  target.store.sub(groupsAtom, () => {});
   const rows: string[] = [];
   for (const [name, run] of Object.entries(kinds)) {
     const timings: number[] = [];
     let changed = 0;
+    let replacedGroups = 0;
     for (let i = 0; i < WARMUP + RUNS; i++) {
+      const groupsBefore = target.store.get(groupsAtom);
       const start = performance.now();
       run(i);
       const elapsed = performance.now() - start;
@@ -131,6 +149,8 @@ export function runEventBench(target: BenchTarget): void {
         continue;
       }
       timings.push(elapsed);
+      const groupsAfter = target.store.get(groupsAtom);
+      replacedGroups += groupsAfter.filter((group, index) => group !== groupsBefore[index]).length;
       for (const atom of atoms) {
         const value = target.store.get(atom);
         if (value !== last.get(atom)) changed += 1;
@@ -139,15 +159,15 @@ export function runEventBench(target: BenchTarget): void {
     }
     timings.sort((a, b) => a - b);
     rows.push(
-      `| ${name} | ${percentile(timings, 0.5).toFixed(3)} | ${percentile(timings, 0.95).toFixed(3)} | ${(changed / RUNS).toFixed(1)} |`
+      `| ${name} | ${percentile(timings, 0.5).toFixed(3)} | ${percentile(timings, 0.95).toFixed(3)} | ${(changed / RUNS).toFixed(1)} | ${(replacedGroups / RUNS).toFixed(1)} |`
     );
   }
   process.stdout.write(
     [
       `${COUNT} conversations, ${atoms.length} mounted atoms, ${RUNS} runs per event (after ${WARMUP} warm-up)`,
       '',
-      '| event | median ms | p95 ms | subscribed atoms changed per event |',
-      '|---|---:|---:|---:|',
+      '| event | median ms | p95 ms | subscribed atoms changed | open-chat groups replaced |',
+      '|---|---:|---:|---:|---:|',
       ...rows,
       '',
     ].join('\n')
