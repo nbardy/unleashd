@@ -6,8 +6,6 @@ import {
   type TeamSetupResult,
   formatBuddyTeamConfigurationToolResult,
 } from '@unleashd/shared';
-// biome-ignore lint/correctness/noUnusedImports: tsx's test transform uses the classic JSX runtime.
-import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { MemoryRouter } from 'react-router-dom';
 import { splitStructuredMessageContent } from '../src/utils/structured-message-segments';
@@ -139,10 +137,9 @@ test('canonical owner tool result renders setup and unfinished original work in 
     <MemoryRouter>
       <MessageRow
         message={{
-          id: 'setup-message',
           role: 'assistant',
           content: marker,
-          timestamp: '2026-09-10T13:00:00Z',
+          timestamp: new Date('2026-09-10T13:00:00Z'),
         }}
         isLast={false}
       />
@@ -194,9 +191,27 @@ test('primary roster setup keeps private access and admission explicit while pre
         workspaceId="font-maker"
         initialTargetId="pixel"
         targets={[
-          { id: 'chief', name: 'Chief Scientist', managerId: null, backgroundEnabled: false },
-          { id: 'pixel', name: 'Pixel', managerId: null, backgroundEnabled: false },
-          { id: 'path', name: 'Path', managerId: 'former-manager', backgroundEnabled: false },
+          {
+            id: 'chief',
+            name: 'Chief Scientist',
+            managerId: null,
+            backgroundEnabled: false,
+            permissionsEditable: true,
+          },
+          {
+            id: 'pixel',
+            name: 'Pixel',
+            managerId: null,
+            backgroundEnabled: false,
+            permissionsEditable: true,
+          },
+          {
+            id: 'path',
+            name: 'Path',
+            managerId: 'former-manager',
+            backgroundEnabled: false,
+            permissionsEditable: true,
+          },
           {
             id: 'former',
             name: 'Former member',

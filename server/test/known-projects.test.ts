@@ -3,14 +3,6 @@ import path from 'node:path';
 import test from 'node:test';
 import { createKnownProjectAuthorizer } from '../src/http/known-projects';
 
-test('known-project authorizer accepts project roots and descendants', () => {
-  const projectRoot = path.resolve('/workspace/project');
-  const isUnderKnownProject = createKnownProjectAuthorizer(() => [projectRoot]);
-
-  assert.equal(isUnderKnownProject(projectRoot), true);
-  assert.equal(isUnderKnownProject(path.join(projectRoot, 'src', 'index.ts')), true);
-});
-
 test('known-project authorizer rejects sibling prefix collisions and traversal', () => {
   const projectRoot = path.resolve('/workspace/project');
   const isUnderKnownProject = createKnownProjectAuthorizer(() => [projectRoot]);

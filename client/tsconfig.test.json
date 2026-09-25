@@ -1,0 +1,10 @@
+{
+  "extends": "./tsconfig.app.json",
+  "compilerOptions": {
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.test.tsbuildinfo",
+    "types": ["vite/client", "node"],
+    "erasableSyntaxOnly": false
+  },
+  "include": ["src", "test"],
+  "exclude": ["test/fixtures/*-server.mts"]
+}

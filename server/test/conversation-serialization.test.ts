@@ -2,17 +2,21 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { type Conversation, createDefaultConversationConfig } from '@unleashd/shared';
 import { summarizeConversation } from '../src/conversations/serialization';
+import { resolveConfigAgainstProviderCatalog } from '../src/providers/catalog-service';
 
+// Summaries ride every `init` / `conversations_updated` broadcast. A summary
+// that carried the full transcript (or mutated the runtime's messages while
+// trimming) would silently bloat the wire or truncate live history.
 test('summarizeConversation keeps metadata, message count, and a bounded last-message preview', () => {
+  const config = createDefaultConversationConfig('codex');
   const conversation: Conversation = {
     id: '00000000-0000-4000-8000-000000000001',
     sessionId: 'session-1',
     workingDirectory: '/tmp',
-    config: createDefaultConversationConfig('codex'),
+    config,
+    configRevision: 0,
+    configResolution: resolveConfigAgainstProviderCatalog(config),
     provider: 'codex',
-    model: 'gpt-5.6-sol',
-    reasoningEffort: null,
-    permissionMode: null,
     createdAt: new Date('2026-01-01T00:00:00.000Z'),
     messages: [
       {
@@ -27,18 +31,13 @@ test('summarizeConversation keeps metadata, message count, and a bounded last-me
       },
     ],
     isRunning: false,
-    isExternalRunning: false,
-    exitCode: null,
+    done: false,
+    isStreaming: false,
+    confirmed: true,
+    subAgents: [],
     queue: [],
-    parentConversationId: null,
-    resumedFromConversationId: null,
     isWorker: false,
-    swarmId: null,
-    workerId: null,
-    workerRole: null,
-    swarmDebugPrefix: null,
-    buddyContext: null,
-    purpose: 'general',
+    kind: { kind: 'general' },
   };
 
   const summary = summarizeConversation(conversation);
