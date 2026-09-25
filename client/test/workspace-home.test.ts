@@ -1,7 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { BuddyOverview } from '../src/components/buddies/types';
-import { RECENT_TILES, workspaceHomeSections } from '../src/components/buddies/workspace-home';
+import {
+  RECENT_TILES,
+  createReady,
+  workspaceHomeSections,
+} from '../src/components/buddies/workspace-home';
 
 // Port of 6d04860's tests onto the T19 list index: activity now comes from the
 // Buddy conversations in `listField('buddyEntries')`, names from the overview.
@@ -63,4 +67,13 @@ test('workspace faces are distinct Buddies, most recently active first', () => {
       { id: 'old', name: 'OLD' },
     ],
   });
+});
+
+// 89b27ad: PathAutocomplete calls onValidationChange(true) for an empty input,
+// so gating on validity alone enabled "Create workspace" with no folder.
+test('Create workspace needs a folder even when the path finder calls the empty input valid', () => {
+  assert.equal(createReady('', true), false);
+  assert.equal(createReady('   ', true), false);
+  assert.equal(createReady('/tmp/atlas', false), false);
+  assert.equal(createReady('/tmp/atlas', true), true);
 });

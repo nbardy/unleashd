@@ -14,6 +14,7 @@ import type { Workspace } from './types';
 import {
   type WorkspaceActivity,
   type WorkspaceHomeRow,
+  createReady,
   workspaceHomeSections,
 } from './workspace-home';
 import './WorkspaceHome.css';
@@ -177,7 +178,7 @@ function CreateWorkspace({ onClose }: { onClose: () => void }) {
 
   const folder = directory.trim();
   const folderName = folder.replace(/\/+$/, '').split('/').pop() ?? '';
-  const ready = valid;
+  const ready = createReady(folder, valid);
 
   const handleCreate = async (event: FormEvent) => {
     event.preventDefault();

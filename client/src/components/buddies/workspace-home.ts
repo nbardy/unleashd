@@ -84,3 +84,12 @@ function workspaceActivity(
 function lastActive(row: WorkspaceHomeRow): number {
   return row.activity.kind === 'active' ? row.activity.lastActiveMs : 0;
 }
+
+/**
+ * Whether "Create workspace" may submit. PathAutocomplete reports an EMPTY
+ * input as valid, so validity alone let an empty folder through (89b27ad);
+ * a folder is required on top.
+ */
+export function createReady(folder: string, pathValid: boolean): boolean {
+  return pathValid && folder.trim().length > 0;
+}
