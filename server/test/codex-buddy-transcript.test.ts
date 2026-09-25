@@ -3,7 +3,7 @@ import { promises as fs } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
-import { buddyKindFromContext } from '@unleashd/shared';
+import { buddyKind } from '@unleashd/shared';
 import { sessionToConversation } from '../src/adapters/disk-adapter';
 import { loadAllConversations } from '../src/adapters/loader';
 import { getDiskAdapter } from '../src/adapters/registry';
@@ -24,7 +24,7 @@ function briefing(content: string): string {
     content,
     messageCount: 0,
     hasStartedSession: false,
-    buddyContext,
+    kind: buddyKind(buddyContext),
     buddyBriefing: 'PRIVATE BRIEFING 🐱',
     swarmDebugPrefix: null,
   });
@@ -46,7 +46,7 @@ function response(role: string, texts: string[], kinds?: string[]) {
   };
 }
 
-test('Codex app import hides setup on every turn and recovers the Buddy behind it, including cached reloads', async (t) => {
+test('Codex app import hides setup on every turn and strips the Buddy briefing, including cached reloads', async (t) => {
   const directory = await fs.mkdtemp(path.join(tmpdir(), 'codex-buddy-transcript-'));
   t.after(() => fs.rm(directory, { recursive: true, force: true }));
   const source = path.join(directory, 'session.jsonl');
@@ -97,8 +97,8 @@ test('Codex app import hides setup on every turn and recovers the Buddy behind i
     const loaded = await loadAllConversations({ adapters: [adapter], cache });
     const conversation = loaded.conversations.get('session');
     assert.ok(conversation);
-    assert.equal(conversation.kind?.kind, 'buddy');
-    assert.equal(conversation.buddyContext?.buddyId, buddyContext.buddyId);
+    // The Buddy owner lives on the conversation record (T09), never in the transcript.
+    assert.deepEqual(conversation.discoveredKind, { t: 'chat' });
     assert.deepEqual(
       conversation.messages.map((message) => message.content),
       [
@@ -114,39 +114,32 @@ test('Codex app import hides setup on every turn and recovers the Buddy behind i
   }
 });
 
-test('Buddy cleanup strips envelopes beyond the first message without overriding durable identity', () => {
-  for (const kind of [
-    undefined,
-    buddyKindFromContext({ ...buddyContext, buddyId: 'durable-buddy' }),
-  ]) {
-    const conversation = sessionToConversation({
-      sessionId: 'session',
-      filePath: '/tmp/session.jsonl',
-      workingDirectory: '/tmp/project',
-      provider: 'codex',
-      model: 'unknown',
-      createdAt: new Date(timestamp),
-      modifiedAt: new Date(timestamp),
-      kind,
-      messages: [
-        { role: 'user', content: 'Earlier user message.', timestamp: new Date(timestamp) },
-        { role: 'user', content: briefing(prompt), timestamp: new Date(timestamp) },
-        { role: 'assistant', content: 'Yes.', timestamp: new Date(timestamp) },
-        { role: 'user', content: briefing('Follow-up.'), timestamp: new Date(timestamp) },
-      ],
-    });
-    assert.ok(conversation);
-    assert.equal(conversation.buddyContext?.buddyId, kind ? 'durable-buddy' : 'buddy-1');
-    assert.deepEqual(
-      conversation.messages.map((message) => message.content),
-      ['Earlier user message.', prompt, 'Yes.', 'Follow-up.']
-    );
-  }
+test('Buddy cleanup strips envelopes beyond the first message', () => {
+  const conversation = sessionToConversation({
+    sessionId: 'session',
+    filePath: '/tmp/session.jsonl',
+    workingDirectory: '/tmp/project',
+    provider: 'codex',
+    model: 'unknown',
+    createdAt: new Date(timestamp),
+    modifiedAt: new Date(timestamp),
+    messages: [
+      { role: 'user', content: 'Earlier user message.', timestamp: new Date(timestamp) },
+      { role: 'user', content: briefing(prompt), timestamp: new Date(timestamp) },
+      { role: 'assistant', content: 'Yes.', timestamp: new Date(timestamp) },
+      { role: 'user', content: briefing('Follow-up.'), timestamp: new Date(timestamp) },
+    ],
+  });
+  assert.ok(conversation);
+  assert.deepEqual(
+    conversation.messages.map((message) => message.content),
+    ['Earlier user message.', prompt, 'Yes.', 'Follow-up.']
+  );
 });
 
-test('durable Builder and swarm identity does not bypass hidden setup cleanup', () => {
+test('Builder and swarm first turns lose their hidden setup on disk', () => {
   for (const builder of [true, false]) {
-    const kind = builder ? ({ kind: 'buddy_builder' } as const) : ({ kind: 'general' } as const);
+    const kind = builder ? ({ t: 'builder' } as const) : ({ t: 'chat' } as const);
     const swarmDebugPrefix = builder ? null : 'Internal swarm debugging context';
     const content = buildFirstTurnCliContent({
       content: prompt,
@@ -156,24 +149,18 @@ test('durable Builder and swarm identity does not bypass hidden setup cleanup', 
       buddyBriefing: null,
       swarmDebugPrefix,
     });
-    for (const durable of [true, false]) {
-      const conversation = sessionToConversation({
-        sessionId: 'session',
-        filePath: '/tmp/session.jsonl',
-        workingDirectory: '/tmp/project',
-        provider: 'codex',
-        model: 'unknown',
-        createdAt: new Date(timestamp),
-        modifiedAt: new Date(timestamp),
-        kind: durable ? kind : undefined,
-        purpose: builder ? 'buddy_builder' : undefined,
-        swarmDebugPrefix,
-        messages: [{ role: 'user', content, timestamp: new Date(timestamp) }],
-      });
-      assert.ok(conversation);
-      assert.equal(conversation.messages[0].content, prompt);
-      assert.equal(conversation.kind?.kind, kind.kind);
-      assert.equal(conversation.swarmDebugPrefix, swarmDebugPrefix);
-    }
+    const conversation = sessionToConversation({
+      sessionId: 'session',
+      filePath: '/tmp/session.jsonl',
+      workingDirectory: '/tmp/project',
+      provider: 'codex',
+      model: 'unknown',
+      createdAt: new Date(timestamp),
+      modifiedAt: new Date(timestamp),
+      messages: [{ role: 'user', content, timestamp: new Date(timestamp) }],
+    });
+    assert.ok(conversation);
+    assert.equal(conversation.messages[0].content, prompt);
+    assert.equal(conversation.swarmDebugPrefix, swarmDebugPrefix);
   }
 });

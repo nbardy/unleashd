@@ -2,8 +2,10 @@ import { randomUUID } from 'node:crypto';
 import { mkdir, open, readFile, readdir, rename, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import {
+  CONVERSATION_RECORD_VERSION,
   type ConversationConfig,
   type ConversationCreationMetadata,
+  type ConversationKind,
   type PersistedConversationConfigRecord,
   PersistedConversationConfigRecordSchema,
   type Provider,
@@ -14,7 +16,9 @@ import {
 } from '@unleashd/shared';
 import { z } from 'zod';
 
-export const CONFIG_STORE_VERSION = 1 as const;
+export const CONFIG_STORE_VERSION = CONVERSATION_RECORD_VERSION;
+// The by-session index files keep their own version: their shape did not change.
+const SESSION_INDEX_VERSION = 1 as const;
 export const INITIAL_MESSAGE_DISPATCH_LEASE_MS = 15_000;
 
 export { PersistedConversationConfigRecordSchema };
@@ -30,7 +34,7 @@ export const ConfigProvenanceSchema = PersistedConversationConfigRecordSchema.sh
 export type ConfigProvenance = PersistedConversationConfigRecord['provenance'];
 
 const SessionIndexRecordSchema = z.object({
-  version: z.literal(CONFIG_STORE_VERSION),
+  version: z.literal(SESSION_INDEX_VERSION),
   conversationId: z.string().min(1),
 });
 
@@ -122,6 +126,18 @@ export class ConfigRevisionConflictError extends Error {
       }`
     );
     this.name = 'ConfigRevisionConflictError';
+  }
+}
+
+/**
+ * A v1 record met after boot's one-time migration (record-migration.ts) did
+ * not rewrite it. Refused, never quarantined: quarantining would move a
+ * user's conversation out of the store because of OUR schema change.
+ */
+export class UnmigratedConfigRecordError extends Error {
+  constructor(readonly filePath: string) {
+    super(`Conversation config record ${filePath} is v1; restart to run the v2 migration`);
+    this.name = 'UnmigratedConfigRecordError';
   }
 }
 
@@ -407,6 +423,7 @@ export class ConversationConfigStore {
     currentSession?: SessionBinding;
     workingDirectory?: string;
     creation?: ConversationCreationMetadata;
+    kind: ConversationKind;
     config: ConversationConfig;
     lastResolvedConfig?: ResolvedExecutionConfig;
     provenance: ConfigProvenance;
@@ -416,6 +433,7 @@ export class ConversationConfigStore {
       {
         version: CONFIG_STORE_VERSION,
         conversationId: input.conversationId,
+        kind: input.kind,
         sessionBindings: [...(input.sessionBindings ?? [])],
         status: 'active',
         done: false,
@@ -697,7 +715,7 @@ export class ConversationConfigStore {
         await this.atomicWriteJson(
           this.sessionIndexPath(binding, rebuiltRoot),
           {
-            version: CONFIG_STORE_VERSION,
+            version: SESSION_INDEX_VERSION,
             conversationId: record.conversationId,
           },
           rebuiltRoot
@@ -794,6 +812,7 @@ export class ConversationConfigStore {
     }
 
     const version = objectVersion(decoded);
+    if (version === 1) throw new UnmigratedConfigRecordError(filePath);
     if (version !== undefined && version > CONFIG_STORE_VERSION) {
       this.logger?.warn({ code: 'future_record_version', filePath, version });
       throw new UnsupportedConfigRecordVersionError(filePath, version);
@@ -884,7 +903,7 @@ export class ConversationConfigStore {
 
   private async writeSessionIndex(binding: SessionBinding, conversationId: string): Promise<void> {
     await this.atomicWriteJson(this.sessionIndexPath(binding), {
-      version: CONFIG_STORE_VERSION,
+      version: SESSION_INDEX_VERSION,
       conversationId,
     });
   }

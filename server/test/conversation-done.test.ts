@@ -38,6 +38,7 @@ test('a hide set over the WebSocket survives session rotation and a restart', as
     const config = createDefaultConversationConfig('codex');
     const { store, service } = configLayer(root);
     const record = await store.create({
+      kind: { t: 'chat' },
       conversationId: CONVERSATION_ID,
       config,
       workingDirectory: '/tmp',
@@ -57,6 +58,7 @@ test('a hide set over the WebSocket survives session rotation and a restart', as
       createSessionId: () => 'rotated-session',
     });
     const conversation = new Conversation({
+      kind: { t: 'chat' },
       id: CONVERSATION_ID,
       workingDirectory: '/tmp',
       configState: { config, revision: 0, resolution: resolveConfigAgainstProviderCatalog(config) },
@@ -107,15 +109,21 @@ test('a hide set over the WebSocket survives session rotation and a restart', as
     };
 
     const hidden = await setDone(true);
-    assert.equal(hidden?.type, 'conversation_updated');
-    assert.equal(hidden?.type === 'conversation_updated' && hidden.conversation.done, true);
+    assert.deepEqual(hidden, {
+      type: 'patch',
+      id: CONVERSATION_ID,
+      patch: { t: 'done', done: true },
+    });
 
     await service.setCurrentSession(CONVERSATION_ID, { provider: 'codex', sessionId: 'rotated' });
     const afterRestart = await configLayer(root).store.getByConversationId(CONVERSATION_ID);
     assert.equal(afterRestart?.done, true, 'hide must survive rotation and a store reopen');
 
     const restored = await setDone(false);
-    assert.equal(restored?.type === 'conversation_updated' && restored.conversation.done, false);
+    assert.equal(
+      restored?.type === 'patch' && restored.patch.t === 'done' && restored.patch.done,
+      false
+    );
     assert.equal((await configLayer(root).store.getByConversationId(CONVERSATION_ID))?.done, false);
   } finally {
     await rm(root, { recursive: true, force: true });
@@ -133,11 +141,13 @@ test('retiring ui-state.json moves hides onto records and reports unknown keys',
   try {
     const { store } = configLayer(root);
     await store.create({
+      kind: { t: 'chat' },
       conversationId: CONVERSATION_ID,
       config: createDefaultConversationConfig('claude'),
       provenance: 'user',
     });
     await store.create({
+      kind: { t: 'chat' },
       conversationId: ROTATED_CONVERSATION_ID,
       config: createDefaultConversationConfig('codex'),
       currentSession: { provider: 'codex', sessionId: 'codex-thread' },

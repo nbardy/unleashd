@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { register } from 'node:module';
 import test from 'node:test';
-import type { ServerMessage } from '@unleashd/shared';
+import { type ServerMessage, encodeRows } from '@unleashd/shared';
 import { type Atom, Provider } from 'jotai';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { MemoryRouter } from 'react-router-dom';
@@ -12,15 +12,18 @@ import {
   availableConversationIdSetAtom,
   chatConversationInboxAtom,
   conversationListAtom,
+  detailPatchAtom,
   galleryConversationsAtom,
   recentDirectoriesAtom,
+  transcriptPatchAtom,
 } from '../src/atoms/conversations';
 import { jotaiStore } from '../src/atoms/store';
 import {
   syntheticConversation,
   syntheticConversations,
+  syntheticDetail,
   syntheticId,
-  syntheticMessage,
+  syntheticMessages,
 } from './fixtures/synthetic-conversations';
 
 register(
@@ -76,17 +79,34 @@ function flushFrames(): void {
 }
 
 function seed(): void {
-  const conversations = [
+  const rows = [
     ...syntheticConversations(300),
-    syntheticConversation(1_000_001, { id: A, workingDirectory: '/Users/dev/git/alpha' }),
-    syntheticConversation(1_000_002, { id: B, workingDirectory: '/Users/dev/git/beta' }),
+    syntheticConversation(1_000_001, { id: A, cwd: '/Users/dev/git/alpha' }),
+    syntheticConversation(1_000_002, { id: B, cwd: '/Users/dev/git/beta' }),
   ];
   handleMessage({
-    type: 'init',
-    conversations,
+    type: 'hello',
+    protocol: { version: 3 },
     defaultCwd: '/',
-    summaries: false,
-  } as unknown as Extract<ServerMessage, { type: 'init' }>);
+    loading: false,
+    archivedBuddyIds: [],
+    ...encodeRows(rows),
+  } as unknown as ServerMessage);
+  // Both chats are open: detail and bodies loaded (as useConversationBodies would).
+  jotaiStore.set(detailPatchAtom, {
+    set: [
+      [A, syntheticDetail(A)],
+      [B, syntheticDetail(B)],
+    ],
+    remove: [],
+  });
+  jotaiStore.set(transcriptPatchAtom, {
+    set: [
+      [A, { epoch: 0, messages: syntheticMessages(1_000_001) }],
+      [B, { epoch: 0, messages: syntheticMessages(1_000_002) }],
+    ],
+    remove: [],
+  });
 }
 
 /** Render Chat for `id` and return every atom it read, with the value read. */
@@ -156,23 +176,29 @@ function eventsForA(kind: 'content' | 'list'): Array<() => void> {
     return [
       () =>
         handleMessage({
-          type: 'queue_updated',
-          conversationId: A,
-          queue: [{ id: 'q1', content: 'next', status: 'pending', createdAt: new Date(now) }],
-        } as unknown as Extract<ServerMessage, { type: 'queue_updated' }>),
+          type: 'patch',
+          id: A,
+          patch: {
+            t: 'queue',
+            queue: [{ id: 'q1', content: 'next', status: 'pending', queuedAt: new Date(now) }],
+          },
+        }),
       () =>
         handleMessage({
-          type: 'subagent_start',
-          conversationId: A,
-          subAgent: {
-            id: 'agent-1',
-            description: 'look around',
-            status: 'running',
-            toolUses: 0,
-            tokens: 0,
-            startedAt: new Date(now),
+          type: 'patch',
+          id: A,
+          patch: {
+            t: 'subagent',
+            subAgent: {
+              id: 'agent-1',
+              description: 'look around',
+              status: 'running',
+              toolUses: 0,
+              tokens: 0,
+              startedAt: new Date(now),
+            },
           },
-        } as unknown as Extract<ServerMessage, { type: 'subagent_start' }>),
+        }),
       () => {
         // A's last record is an assistant reply, so chunks stream into it.
         handleMessage({ type: 'chunk', conversationId: A, text: 'streaming…' });
@@ -184,23 +210,28 @@ function eventsForA(kind: 'content' | 'list'): Array<() => void> {
   }
   return [
     // A new record moves A's last activity, so it re-sorts the list.
-    () => handleMessage({ type: 'message', conversationId: A, role: 'user', content: 'hi' }),
-    () => handleMessage({ type: 'status', conversationId: A, isRunning: true, isStreaming: true }),
+    () => {
+      handleMessage({ type: 'message', conversationId: A, role: 'user', content: 'hi' });
+      handleMessage({
+        type: 'patch',
+        id: A,
+        patch: { t: 'activity', activityAt: now, messageCount: 3 },
+      });
+    },
+    () => handleMessage({ type: 'patch', id: A, patch: { t: 'run', run: 'streaming' } }),
     () =>
       handleMessage({
-        type: 'conversations_updated',
-        summaries: true,
-        conversations: [
+        type: 'rows',
+        ...encodeRows([
           syntheticConversation(1_000_001, {
             id: A,
-            workingDirectory: '/Users/dev/git/alpha',
-            messages: [syntheticMessage('assistant', 'polled', new Date(now))],
+            cwd: '/Users/dev/git/alpha',
+            activityAt: now + 1,
             messageCount: 9,
           }),
-        ],
-      }),
-    () =>
-      handleMessage({ type: 'status', conversationId: A, isRunning: false, isStreaming: false }),
+        ]),
+      } as unknown as ServerMessage),
+    () => handleMessage({ type: 'patch', id: A, patch: { t: 'run', run: 'idle' } }),
   ];
 }
 

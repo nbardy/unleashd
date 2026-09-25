@@ -1,7 +1,7 @@
 // Solarized Dark theme for syntax highlighting - matches app aesthetic
 // highlight.js + katex stylesheets load lazily with their plugins —
 // see utils/lazyMarkdownPlugins.ts. Do not re-add a static CSS import here.
-import { getBuddyContext, isBuddyBuilderConversation } from '@unleashd/shared';
+import type { BuddyContext, ConversationRow } from '@unleashd/shared';
 import { useAtomValue } from 'jotai';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useDropzone } from 'react-dropzone';
@@ -10,7 +10,6 @@ import {
   cancelQueuedMessage,
   clearQueue,
   interruptAndSend,
-  loadConversationDetails,
   promoteQueuedMessage,
   queueMessage,
   setActiveConversationId,
@@ -21,17 +20,20 @@ import {
   chatMessageGroupsAtomFamily,
   childConversationsAtomFamily,
   conversationAtomFamily,
-  conversationDetailsLoadedAtomFamily,
+  conversationDetailAtomFamily,
   conversationLoadCompleteAtom,
+  conversationMessagesAtomFamily,
   hasConversationsAtom,
   pendingConfigCommandAtomFamily,
   pendingCreationAtomFamily,
+  queueAtomFamily,
   streamingAtomFamily,
+  subAgentsAtomFamily,
 } from '../atoms/conversations';
 import { forkConversation } from '../atoms/fork-actions';
-import type { BuddyContext } from '../atoms/pending-creations';
 import { markMessagesSeen, setSavedActiveConversationId } from '../atoms/ui';
 import { useComposerSubmission } from '../hooks/useComposerSubmission';
+import { useConversationBodies } from '../hooks/useConversationBodies';
 import { useConversationDraft } from '../hooks/useConversationDraft';
 import { usePendingAttachments } from '../hooks/usePendingAttachments';
 import { useProviderCatalog } from '../hooks/useProviderCatalog';
@@ -52,7 +54,6 @@ import { SubAgentPanel } from './SubAgentPanel';
 import { SwarmConvoPrefix } from './SwarmConvoPrefix';
 import { TurnStatus } from './TurnStatus';
 import { VirtualizedMessageList } from './VirtualizedMessageList';
-import { effectiveSwarmDebugPrefix } from './buddies/ui-contract';
 import {
   shouldPresentTurnAttempt,
   shouldShowTypingIndicator,
@@ -63,7 +64,6 @@ import { useTimeTick } from '../hooks/useTimeTick';
 import { shortenHomePath } from '../utils/directories';
 
 // Stable reference for empty queue — avoids new [] on every render triggering re-renders
-const EMPTY_QUEUE: QueuedMessage[] = [];
 const BUDDY_STARTER_PROMPTS = [
   'Create a Buddy who owns product research for my team.',
   'Create a team for this workspace: a researcher, a designer, and an engineer.',
@@ -71,10 +71,12 @@ const BUDDY_STARTER_PROMPTS = [
 
 // Deprecated helper kept for local parity — use getBuddyContext (kind-aware) instead.
 // The holistic kind type is the canonical source; legacy buddyContext is compat only.
-function readBuddyContext(value: unknown): BuddyContext | undefined {
-  return (getBuddyContext(
-    value as { kind?: unknown; buddyContext?: unknown } as Parameters<typeof getBuddyContext>[0]
-  ) ?? undefined) as BuddyContext | undefined;
+// The Buddy header needs only the ids the row carries (the run data stays on
+// the server since T09).
+function headerBuddyContext(kind: ConversationRow['kind'] | undefined): BuddyContext | undefined {
+  return kind?.t === 'buddy'
+    ? { buddyId: kind.buddyId, workspaceId: kind.workspaceId, buddyProjectId: null }
+    : undefined;
 }
 
 /**
@@ -100,7 +102,12 @@ export function Chat({ id }: { id: string }) {
 
   // Per-ID atoms — only re-render when THIS conversation changes, not others
   const conversation = useAtomValue(conversationAtomFamily(id ?? ''));
-  const conversationDetailsLoaded = useAtomValue(conversationDetailsLoadedAtomFamily(id ?? ''));
+  const detail = useAtomValue(conversationDetailAtomFamily(id ?? ''));
+  const messages = useAtomValue(conversationMessagesAtomFamily(id ?? ''));
+  const subAgents = useAtomValue(subAgentsAtomFamily(id ?? ''));
+  const { loaded: conversationDetailsLoaded, error: detailLoadError } = useConversationBodies(
+    id || null
+  );
   const conversationLoadComplete = useAtomValue(conversationLoadCompleteAtom);
   const pendingCreation = useAtomValue(pendingCreationAtomFamily(id ?? ''));
   const pendingConfigCommand = useAtomValue(pendingConfigCommandAtomFamily(id ?? ''));
@@ -108,8 +115,8 @@ export function Chat({ id }: { id: string }) {
   const streamingText = useAtomValue(streamingAtomFamily(id ?? ''));
   const childSessionConversations = useAtomValue(childConversationsAtomFamily(id ?? ''));
   const hasConversations = useAtomValue(hasConversationsAtom);
-  const queue = conversation?.queue?.length ? conversation.queue : EMPTY_QUEUE;
-  const resumedFromConversationId = conversation?.resumedFromConversationId ?? '';
+  const queue: readonly QueuedMessage[] = useAtomValue(queueAtomFamily(id ?? ''));
+  const resumedFromConversationId = conversation?.resumedFrom ?? '';
   const resumedFromConversation = useAtomValue(conversationAtomFamily(resumedFromConversationId));
 
   const {
@@ -156,7 +163,6 @@ export function Chat({ id }: { id: string }) {
   const [threadCopied, setThreadCopied] = useState(false);
   const [showPalette, setShowPalette] = useState(false);
   const [showScrollToBottom, setShowScrollToBottom] = useState(false);
-  const [detailLoadError, setDetailLoadError] = useState<string | null>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const lastMessageRef = useRef<HTMLDivElement>(null);
 
@@ -195,14 +201,15 @@ export function Chat({ id }: { id: string }) {
     setError: setSubmissionError,
   } = useComposerSubmission(id, draft, attachments);
 
-  const confirmed = conversation?.confirmed ?? false;
+  // A row exists only once the server acknowledged the creation.
+  const confirmed = conversation !== null;
   // Persistent Builder identity — canonical kind, never the transient
   // ?helper=buddies query param (lost on refresh/sidebar nav, which made
   // Builder threads indistinguishable from normal chats).
-  const isBuddyBuilder = conversation !== undefined && isBuddyBuilderConversation(conversation);
+  const isBuddyBuilder = conversation?.kind.t === 'builder';
   const isBuddyBuilderHelper = confirmed && isBuddyBuilder;
-  const isRunning = conversation?.isRunning ?? false;
-  const isStreaming = conversation?.isStreaming ?? false;
+  const isRunning = conversation?.run === 'running' || conversation?.run === 'streaming';
+  const isStreaming = conversation?.run === 'streaming';
   const runtimeTurnActive = isRunning || isStreaming;
   const { attempt: latestTurnAttempt } = useTurnDiagnostics(id, runtimeTurnActive);
   const restartRecovery = useRestartRecovery(id ?? '', latestTurnAttempt, runtimeTurnActive);
@@ -212,8 +219,8 @@ export function Chat({ id }: { id: string }) {
       : null;
   const canChangeHarness =
     confirmed &&
-    (conversation?.messages.length ?? 0) === 0 &&
-    (conversation?.queue.length ?? 0) === 0 &&
+    (conversation?.messageCount ?? 0) === 0 &&
+    queue.length === 0 &&
     !isRunning &&
     !isStreaming;
 
@@ -257,23 +264,6 @@ export function Chat({ id }: { id: string }) {
   }, [id, conversation, pendingCreation, hasConversations, conversationLoadComplete, navigate]);
 
   useEffect(() => {
-    if (!id || !conversation || conversationDetailsLoaded) {
-      setDetailLoadError(null);
-      return;
-    }
-    let cancelled = false;
-    setDetailLoadError(null);
-    void loadConversationDetails(id).catch((error) => {
-      if (!cancelled) {
-        setDetailLoadError(error instanceof Error ? error.message : String(error));
-      }
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [id, conversation, conversationDetailsLoaded]);
-
-  useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key === 'p') {
         e.preventDefault();
@@ -301,43 +291,36 @@ export function Chat({ id }: { id: string }) {
   const handlePaste = handlePasteFromHook;
 
   // IMPORTANT: All hooks must be called before any early return.
-  const conversationMessagesSnapshot = conversation?.messages;
-  const messageCount = conversationMessagesSnapshot?.length ?? 0;
-  const lastMessageTime = useMemo(() => {
-    if (!conversationMessagesSnapshot || messageCount === 0) return undefined;
-    const last = conversationMessagesSnapshot[messageCount - 1];
-    return last.timestamp ? new Date(last.timestamp) : undefined;
-  }, [conversationMessagesSnapshot, messageCount]);
+  const activityAt = conversation && conversation.messageCount > 0 ? conversation.activityAt : null;
+  const lastMessageTime = useMemo(
+    () => (activityAt === null ? undefined : new Date(activityAt)),
+    [activityAt]
+  );
 
   const timeAgo = useTimeAgo(lastMessageTime);
 
   const messageGroups = useAtomValue(chatMessageGroupsAtomFamily(id ?? ''));
 
-  const swarmDebugPrefix = conversation?.swarmDebugPrefix;
-  // readBuddyContext derives a FRESH object from conversation.kind on every call, so
-  // calling it inline made buddyContext a new reference each render and invalidated the
-  // memos in VirtualizedMessageList on every streaming chunk. Streaming text lives in a
-  // separate atom (streamingAtomFamily), so the `conversation` reference only changes on
-  // structural updates — it is a safe memo key.
-  const buddyContext = useMemo(() => readBuddyContext(conversation), [conversation]);
-  const visibleSwarmDebugPrefix = effectiveSwarmDebugPrefix(
-    buddyContext,
-    swarmDebugPrefix,
-    conversation?.kind ?? null
+  // The server sets a swarm prefix only on chats, so no kind check here.
+  const visibleSwarmDebugPrefix = detail?.swarmDebugPrefix ?? null;
+  // A fresh object each render would invalidate VirtualizedMessageList's memos
+  // on every streaming chunk; the row kind only changes on structural updates.
+  const rowKind = conversation?.kind;
+  const buddyContext = useMemo(() => headerBuddyContext(rowKind), [rowKind]);
+  const unifiedSubAgents = useMemo(
+    () => buildUnifiedSubAgents(subAgents, childSessionConversations),
+    [subAgents, childSessionConversations]
   );
-  const unifiedSubAgents = useMemo(() => {
-    if (!conversation) return [];
-    return buildUnifiedSubAgents(conversation, childSessionConversations);
-  }, [conversation, childSessionConversations]);
 
-  const conversationConfig = conversation?.config ?? null;
+  const conversationConfig = detail?.config.config ?? null;
 
   // Transcript and fork draft live in utils/conversation-transcript.ts so the
   // mobile conversation header produces byte-identical output. The swarm-debug
   // prefix strip that messageGroups does for display happens in there too.
   const threadCopyText = useMemo(
-    () => (conversation ? buildThreadTranscript(conversation) : ''),
-    [conversation]
+    () =>
+      conversation && detail ? buildThreadTranscript({ row: conversation, detail, messages }) : '',
+    [conversation, detail, messages]
   );
 
   // Was an unguarded navigator.clipboard.writeText: secure-context gated, so
@@ -359,11 +342,9 @@ export function Chat({ id }: { id: string }) {
   // one fork implementation, so the two trees cannot drift on draft contents
   // or lineage.
   const handleForkThread = useCallback(() => {
-    if (!conversation || !id) return;
-    const forkedId = forkConversation(conversation);
-    if (!forkedId) return;
-    navigate(`/chat/${forkedId}`);
-  }, [conversation, id, navigate]);
+    if (!conversation || !detail || !id) return;
+    navigate(`/chat/${forkConversation({ row: conversation, detail, messages })}`);
+  }, [conversation, detail, messages, id, navigate]);
 
   if (!conversation) {
     return (
@@ -386,7 +367,7 @@ export function Chat({ id }: { id: string }) {
     );
   }
 
-  const dirDisplay = shortenHomePath(conversation.workingDirectory);
+  const dirDisplay = shortenHomePath(conversation.cwd);
 
   if (!conversationDetailsLoaded) {
     return (
@@ -412,11 +393,13 @@ export function Chat({ id }: { id: string }) {
   // supportsRequiredMcp providers are offered. getBuddyContext covers the
   // buddy kind only; the Builder kind needs its own check — the server gate
   // (runtime preflight) enforces both, this menu just steers early.
-  const requiresBuddyMcp = Boolean(buddyContext) || isBuddyBuilderConversation(conversation);
-  const resolvedHeaderModelId =
-    conversationConfig?.model.mode === 'explicit'
-      ? conversationConfig.model.modelId
-      : headerProvider?.defaultModelId;
+  const requiresBuddyMcp = conversation.kind.t === 'buddy' || conversation.kind.t === 'builder';
+  // The server's resolution names the model and effort; the header only
+  // looks up display names (no client-side re-derivation, T09).
+  const resolution = detail?.config.resolution;
+  const resolvedConfig =
+    resolution?.status === 'resolved' ? resolution.value : resolution?.lastResolved;
+  const resolvedHeaderModelId = resolvedConfig?.modelId;
   const resolvedHeaderModel = headerProvider?.models.find(
     (model) => model.id === resolvedHeaderModelId
   );
@@ -426,8 +409,8 @@ export function Chat({ id }: { id: string }) {
       ? headerReasoning.effort
       : headerReasoning?.mode === 'disabled'
         ? 'No reasoning'
-        : resolvedHeaderModel?.reasoning?.defaultEffort
-          ? `Default · ${resolvedHeaderModel.reasoning.defaultEffort}`
+        : resolvedConfig?.reasoningEffort
+          ? `Default · ${resolvedConfig.reasoningEffort}`
           : 'Default';
   const headerModelLabel = resolvedHeaderModel?.displayName ?? resolvedHeaderModelId ?? 'Default';
   // "Claude Opus 5" under the Claude provider is redundant — the summary drops
@@ -441,7 +424,7 @@ export function Chat({ id }: { id: string }) {
       ? headerReasoning.effort
       : headerReasoning?.mode === 'disabled'
         ? null
-        : (resolvedHeaderModel?.reasoning?.defaultEffort ?? null);
+        : (resolvedConfig?.reasoningEffort ?? null);
   const headerEffortShortLabel = headerEffort
     ? headerEffort.charAt(0).toUpperCase() + headerEffort.slice(1)
     : null;
@@ -449,7 +432,7 @@ export function Chat({ id }: { id: string }) {
   const updateHeaderConfig = (patch: Parameters<typeof setConversationConfig>[0]['patch']) => {
     setConversationConfig({
       conversationId: conversation.id,
-      expectedRevision: conversation.configRevision,
+      expectedRevision: detail?.config.revision ?? 0,
       patch,
     });
   };
@@ -634,7 +617,7 @@ export function Chat({ id }: { id: string }) {
           )}
           <Link
             className="chat-dir ui-truncate ui-muted"
-            to={`/?folders=${encodeURIComponent(conversation.workingDirectory)}`}
+            to={`/?folders=${encodeURIComponent(conversation.cwd)}`}
           >
             {dirDisplay}
           </Link>
@@ -643,9 +626,9 @@ export function Chat({ id }: { id: string }) {
               conversations, so the same number sat in two different places. */}
           <ContextBreakdownMeter conversationId={conversation.id} />
           {timeAgo && <span className="chat-time-ago ui-muted">{timeAgo}</span>}
-          {conversation.resumedFromConversationId && (
+          {conversation.resumedFrom && (
             <ResumeThreadWidget
-              sourceConversationId={conversation.resumedFromConversationId}
+              sourceConversationId={conversation.resumedFrom}
               sourceConversation={resumedFromConversation}
             />
           )}
@@ -727,21 +710,18 @@ export function Chat({ id }: { id: string }) {
 
       {unifiedSubAgents.length > 0 && (
         <div className="thread-context">
-          <SubAgentPanel
-            subAgents={unifiedSubAgents}
-            workingDirectory={conversation.workingDirectory}
-          />
+          <SubAgentPanel subAgents={unifiedSubAgents} workingDirectory={conversation.cwd} />
         </div>
       )}
 
-      {conversation.messages.length === 0 ? (
+      {messages.length === 0 ? (
         <div className="messages-container">
           {buddyContext && <BuddyConvoHeader context={buddyContext} />}
           {visibleSwarmDebugPrefix && (
             <div style={{ paddingBottom: '24px' }}>
               <SwarmConvoPrefix
                 prefix={visibleSwarmDebugPrefix}
-                swarmId={conversation.swarmId ?? null}
+                swarmId={conversation.kind.t === 'worker' ? conversation.kind.swarmId : null}
               />
             </div>
           )}
@@ -768,13 +748,9 @@ export function Chat({ id }: { id: string }) {
             </div>
           ) : (
             <div className="empty-state ui-muted">
-              {
-                confirmed
-                  ? isBuddyBuilderConversation(conversation)
-                    ? 'Describe the Buddy or team you want to create.'
-                    : 'Send a message to start the conversation.'
-                  : `Waiting for ${conversation.provider || 'claude'} to be ready...` /* fallback 'claude' matches shared DEFAULT_PROVIDER */
-              }
+              {isBuddyBuilder
+                ? 'Describe the Buddy or team you want to create.'
+                : 'Send a message to start the conversation.'}
             </div>
           )}
         </div>
@@ -789,11 +765,11 @@ export function Chat({ id }: { id: string }) {
             onScrollStateChange={handleScrollStateChange}
             conversationId={id!}
             markMessagesSeen={markMessagesSeen}
-            totalMessageCount={conversation.messages.length}
+            totalMessageCount={messages.length}
             scrollToBottomRef={scrollToBottomRef}
-            workingDirectory={conversation.workingDirectory}
+            workingDirectory={conversation.cwd}
             swarmDebugPrefix={visibleSwarmDebugPrefix}
-            swarmId={conversation.swarmId ?? null}
+            swarmId={conversation.kind.t === 'worker' ? conversation.kind.swarmId : null}
             buddyContext={buddyContext}
           />
           {shouldShowTypingIndicator(isStreaming, streamingText) && (
@@ -922,13 +898,11 @@ export function Chat({ id }: { id: string }) {
             onKeyDown={handleKeyDown}
             onPaste={handlePaste}
             placeholder={
-              !confirmed
-                ? `Waiting for ${conversation.provider || 'claude'}...` // fallback 'claude' matches shared DEFAULT_PROVIDER
-                : hasActiveTurn
-                  ? 'Enter to interrupt, Tab to queue...'
-                  : isBuddyBuilderConversation(conversation)
-                    ? 'I want a Buddy or team for…'
-                    : 'Type your message...'
+              hasActiveTurn
+                ? 'Enter to interrupt, Tab to queue...'
+                : isBuddyBuilder
+                  ? 'I want a Buddy or team for…'
+                  : 'Type your message...'
             }
             disabled={!canInput}
           />

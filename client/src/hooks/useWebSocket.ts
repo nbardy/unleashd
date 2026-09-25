@@ -1,5 +1,6 @@
-import { type ServerMessage, safeParseServerMessage } from '@unleashd/shared';
+import { type ServerMessage, classifyServerFrame } from '@unleashd/shared';
 import { useCallback, useEffect, useRef, useState } from 'react';
+import { noteProtocolMismatch } from '../atoms/actions';
 import { probeSessionAfterSocketFailure } from '../auth/session';
 
 type Status = 'connecting' | 'connected' | 'disconnected';
@@ -38,12 +39,21 @@ export function useWebSocket(url: string, onMessage: (data: ServerMessage) => vo
     ws.onmessage = (event) => {
       if (wsRef.current !== ws) return;
       try {
-        const parsed = safeParseServerMessage(JSON.parse(event.data));
-        if (!parsed.success) {
-          console.error('Rejected invalid WebSocket server message:', parsed.error.issues);
-          return;
+        const frame = classifyServerFrame(JSON.parse(event.data));
+        switch (frame.t) {
+          case 'message':
+            onMessageRef.current(frame.message);
+            return;
+          case 'skew':
+            // An older backend is still up (dev reload in flight). Keep every
+            // row; close so onclose reconnects until the v3 backend answers.
+            noteProtocolMismatch(frame.serverVersion);
+            ws.close();
+            return;
+          case 'invalid':
+            console.error('Rejected invalid WebSocket server message:', frame.issues);
+            return;
         }
-        onMessageRef.current(parsed.data);
       } catch (e) {
         console.error('Failed to parse WebSocket message:', e);
       }

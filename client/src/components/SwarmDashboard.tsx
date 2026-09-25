@@ -1,14 +1,15 @@
-import type { Conversation } from '@unleashd/shared';
+import type { ConversationRow } from '@unleashd/shared';
 import { useAtomValue } from 'jotai';
 import { useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { swarmWorkersByProjectAtom } from '../atoms/conversations';
 import { useSwarmProjects } from '../hooks/useSwarmProjects';
 import { useSwarmRuntimeSnapshots } from '../hooks/useSwarmRuntimeSnapshots';
+import { isRowRunning, rowWorker } from '../utils/conversation-row';
 import { getProjectColor } from '../utils/projectColors';
 import { getProjectName } from '../utils/swarmUtils';
 import { getWorkerVisibilitySummary } from '../utils/swarmWorkerVisibility';
-import { formatTimeAgo, getLastMessageTime } from '../utils/time';
+import { formatTimeAgo } from '../utils/time';
 import './SwarmDashboard.css';
 import { useTimeTick } from '../hooks/useTimeTick';
 import { shortenHomePath } from '../utils/directories';
@@ -17,7 +18,7 @@ interface SwarmProject {
   projectRoot: string;
   projectName: string;
   /** Historical JSONL session files (one per worker iteration) */
-  sessions: readonly Conversation[];
+  sessions: readonly ConversationRow[];
   /** Configured worker slots (from runtime or distinct workerIds) */
   workerCount: number;
   runningCount: number;
@@ -54,18 +55,18 @@ export function SwarmDashboard() {
     for (const [projectRoot, sessions] of workerConversationsByProject.entries()) {
       const runtime = runtimeSnapshots[projectRoot];
       const runtimeRun = runtime?.available ? runtime.run : null;
-      const visibility = getWorkerVisibilitySummary(
-        sessions,
-        runtime,
-        (worker) => worker.isRunning
+      const visibility = getWorkerVisibilitySummary(sessions, runtime, (worker) =>
+        isRowRunning(worker)
       );
 
-      const distinctSwarmIds = new Set(sessions.map((s) => s.swarmId).filter(Boolean));
+      const distinctSwarmIds = new Set(
+        sessions.map((s) => rowWorker(s)?.swarmId ?? null).filter(Boolean)
+      );
       const runCount = runtimeRun?.runCount ?? distinctSwarmIds.size;
 
       let latestActivity: Date | undefined;
       for (const w of sessions) {
-        const lastTime = getLastMessageTime(w.messages);
+        const lastTime = new Date(w.activityAt);
         if (lastTime && (!latestActivity || lastTime > latestActivity)) {
           latestActivity = lastTime;
         }

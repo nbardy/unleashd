@@ -1,13 +1,14 @@
-import type { Conversation, ConversationConfig } from '@unleashd/shared';
-import {
-  createDefaultConversationConfig,
-  isBuddyBuilderConversation,
-  isBuddyConversation,
-} from '@unleashd/shared';
+import type { ConversationConfig, ConversationRow } from '@unleashd/shared';
+import { createDefaultConversationConfig } from '@unleashd/shared';
 import { useAtom, useAtomValue } from 'jotai';
 import { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { createConversation, readConversation, setConversationDone } from '../atoms/actions';
+import {
+  createConversation,
+  readConversation,
+  readConversationDetail,
+  setConversationDone,
+} from '../atoms/actions';
 import {
   type BuddySidebarItemData,
   buddyBuilderConversationsAtom,
@@ -37,6 +38,7 @@ import {
 } from '../atoms/ui';
 import { useBuddyOverview } from '../hooks/useBuddyData';
 import { useProviderCatalog } from '../hooks/useProviderCatalog';
+import { isRowRunning } from '../utils/conversation-row';
 import { normalizeFolderDirectory, shortenHomePath } from '../utils/directories';
 import { getProjectColor } from '../utils/projectColors';
 import { formatTimeAgo, getConversationLastActivity, getMinutesElapsed } from '../utils/time';
@@ -48,7 +50,6 @@ import { useBuddyDirectActions } from './buddies/buddy-direct-actions';
 import { buddyTabPath } from './buddies/buddy-tabs';
 import { ownerUnreadTotal, useOwnerInboxes } from './buddies/channel-data';
 import { createBuddyViaBuilder } from './buddies/create-buddy-builder';
-import { getConversationTitle } from './conversation-title';
 import './Sidebar.css';
 import { useTimeTick } from '../hooks/useTimeTick';
 
@@ -187,23 +188,22 @@ export function Sidebar() {
         ? readConversation(item.latestConversation.id)
         : null;
       const workingDirectory =
-        latestConversation?.workingDirectory ??
-        item.pendingCreation?.workingDirectory ??
-        item.workingDirectory;
+        latestConversation?.cwd ?? item.pendingCreation?.workingDirectory ?? item.workingDirectory;
       // Seed the harness from this buddy's latest thread so a provider/model
       // picked there sticks for the next thread. Falls back to the global
       // new-conversation draft only when the buddy has no prior thread.
       // (The dashboard talk() path seeds from the saved Execution profile
       // instead; the sidebar has last-used config locally, so it uses that.)
-      const seedConfig = latestConversation?.config ?? configDraft;
+      const seedConfig =
+        (latestConversation && readConversationDetail(latestConversation.id)?.config.config) ??
+        configDraft;
       // Direct create — reuses pending-creations createConversation + buddyContext shape
       const id = createConversation({
         workingDirectory,
         config: seedConfig,
-        buddyContext: {
-          buddyId: item.buddyId,
-          workspaceId: item.workspaceId,
-          buddyProjectId: null,
+        kind: {
+          t: 'buddy',
+          context: { buddyId: item.buddyId, workspaceId: item.workspaceId, buddyProjectId: null },
         },
       });
       navigate(`/chat/${id}`);
@@ -244,7 +244,11 @@ export function Sidebar() {
     if (!directory.trim()) return;
     setModalError(null);
     setLastWorkingDirectory(directory);
-    const newId = createConversation({ workingDirectory: directory, config: configDraft });
+    const newId = createConversation({
+      workingDirectory: directory,
+      config: configDraft,
+      kind: { t: 'chat' },
+    });
     setShowPicker(false);
     navigate(`/chat/${newId}`);
   }, [directory, configDraft, navigate]);
@@ -268,6 +272,7 @@ export function Sidebar() {
         workingDirectory: directory,
         config: configDraft,
         swarmDebugPrefix: payload.prefix,
+        kind: { t: 'chat' },
       });
       setShowPicker(false);
       navigate(`/chat/${newId}`);
@@ -287,13 +292,13 @@ export function Sidebar() {
   // Stable callbacks: rows are memoized per id, so a new function identity
   // here would re-render every row on every Sidebar render.
   const handleSelectConversation = useCallback(
-    (conv: Conversation) => navigate(`/chat/${conv.id}`),
+    (conv: ConversationRow) => navigate(`/chat/${conv.id}`),
     [navigate]
   );
 
   const pathname = location.pathname;
   const handleDone = useCallback(
-    (conv: Conversation, e: React.MouseEvent) => {
+    (conv: ConversationRow, e: React.MouseEvent) => {
       e.stopPropagation();
       setConversationDone(conv.id, true);
       if (pathname.includes(conv.id)) {
@@ -449,7 +454,7 @@ export function Sidebar() {
 
       <div className="conversations-list">
         {pendingCreations
-          .filter((creation) => !isBuddyConversation(creation as unknown as Conversation))
+          .filter((creation) => creation.createKind.t !== 'buddy')
           .map((creation) => (
             <button
               type="button"
@@ -1055,13 +1060,6 @@ function FolderRunningStatus({ count }: { count: number }) {
   );
 }
 
-/** Re-exported pure (CSS-free, unit-tested) for external callers. */
-export { getConversationTitle };
-
-function conversationMessageCount(conversation: Conversation): number {
-  return conversation.messageCount ?? conversation.messages.length;
-}
-
 /**
  * One sidebar row. Subscribes to its own conversation and seen index, and is
  * memoized, so an event for another conversation re-renders nothing here.
@@ -1077,9 +1075,9 @@ const SidebarConversationRow = memo(function SidebarConversationRow({
   id: string;
   isActive: boolean;
   showFolderBadge: boolean;
-  onSelect: (conv: Conversation) => void;
+  onSelect: (conv: ConversationRow) => void;
   /** Null while disconnected: the command would be dropped, so the button is disabled. */
-  onDone: ((conv: Conversation, e: React.MouseEvent) => void) | null;
+  onDone: ((conv: ConversationRow, e: React.MouseEvent) => void) | null;
 }) {
   const conv = useAtomValue(conversationAtomFamily(id));
   useTimeTick();
@@ -1089,7 +1087,7 @@ const SidebarConversationRow = memo(function SidebarConversationRow({
     <ConversationItem
       conv={conv}
       isActive={isActive}
-      hasUnseen={hasUnseenAfter(lastSeen, conversationMessageCount(conv))}
+      hasUnseen={hasUnseenAfter(lastSeen, conv.messageCount)}
       showFolderBadge={showFolderBadge}
       onSelect={onSelect}
       onDone={onDone}
@@ -1109,19 +1107,19 @@ function ConversationItem({
   onSelect,
   onDone,
 }: {
-  conv: Conversation;
+  conv: ConversationRow;
   isActive: boolean;
   hasUnseen: boolean;
   showFolderBadge: boolean;
-  onSelect: (conv: Conversation) => void;
+  onSelect: (conv: ConversationRow) => void;
   /** Null while disconnected: the command would be dropped, so the button is disabled. */
-  onDone: ((conv: Conversation, e: React.MouseEvent) => void) | null;
+  onDone: ((conv: ConversationRow, e: React.MouseEvent) => void) | null;
 }) {
-  const workingDirectory = normalizeFolderDirectory(conv.workingDirectory);
+  const workingDirectory = normalizeFolderDirectory(conv.cwd);
   const projectColor = getProjectColor(workingDirectory);
   const dirDisplay = shortenHomePath(workingDirectory);
   const folderName = workingDirectory.split('/').filter(Boolean).pop() ?? dirDisplay;
-  const title = getConversationTitle(conv);
+  const title = conv.label;
 
   const lastTime = getConversationLastActivity(conv);
   const timeAgo = lastTime ? formatTimeAgo(lastTime) : null;
@@ -1147,9 +1145,9 @@ function ConversationItem({
             style={{ color: projectColor }}
             title={dirDisplay}
           >
-            {isBuddyBuilderConversation(conv)
+            {conv.kind.t === 'builder'
               ? 'Builder'
-              : isBuddyConversation(conv)
+              : conv.kind.t === 'buddy'
                 ? 'Buddies'
                 : folderName}
           </span>
@@ -1167,13 +1165,13 @@ function ConversationItem({
             </span>
           </>
         )}
-        {conv.isRunning ? (
+        {isRowRunning(conv) ? (
           <span className="status-indicator running" aria-label="Conversation is running" />
         ) : (
           <span
-            className={`status-indicator ${conv.queue?.length ? 'pending' : hasUnseen ? 'unread' : ''}`}
+            className={`status-indicator ${conv.run === 'queued' ? 'pending' : hasUnseen ? 'unread' : ''}`}
             aria-label={
-              conv.queue?.length
+              conv.run === 'queued'
                 ? 'Conversation has queued work'
                 : hasUnseen
                   ? 'Conversation finished with unread messages'

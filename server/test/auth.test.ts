@@ -289,7 +289,7 @@ describe('shared-secret auth (real server)', () => {
     });
     try {
       const first = await new Promise<string>((resolve, reject) => {
-        const timer = setTimeout(() => reject(new Error('no init within 10s')), 10_000);
+        const timer = setTimeout(() => reject(new Error('no hello within 10s')), 10_000);
         socket.once('message', (data) => {
           clearTimeout(timer);
           resolve(data.toString());
@@ -297,7 +297,7 @@ describe('shared-secret auth (real server)', () => {
         socket.once('error', reject);
       });
       assert.match(socket.extensions, /permessage-deflate/);
-      assert.equal(JSON.parse(first).type, 'init');
+      assert.equal(JSON.parse(first).type, 'hello');
     } finally {
       socket.close();
     }

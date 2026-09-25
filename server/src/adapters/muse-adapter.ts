@@ -13,9 +13,8 @@ import {
  * Discovery scans all *.jsonl/*.json under MUSE_SESSIONS_DIR (recursive, includes subagent
  * sessions as separate files but they are filtered by empty-message check in loader).
  * Parsing reuses the Muse durable JSONL parsing in jsonl.ts (which handles
- * stream.id, route_facts cwd, model, timestamps, messages, and durable buddyContext).
- * Hidden buddy prefix fallback is handled downstream in sessionToConversation via
- * extractBuddyContext on messages.
+ * stream.id, route_facts cwd, model, timestamps and messages). Identity comes from the
+ * conversation record; hidden envelopes are stripped downstream in sessionToConversation.
  */
 export const museAdapter: DiskAdapter = {
   provider: 'muse',
@@ -44,11 +43,8 @@ export const museAdapter: DiskAdapter = {
       messages: session.messages,
       subAgents: [],
       parentSessionId: null,
-      kind: session.kind ?? null,
-      buddyContext: session.buddyContext,
       swarmDebugPrefix: session.swarmDebugPrefix,
       resumedFromConversationId: session.resumedFromConversationId,
-      purpose: session.purpose,
     };
   },
 };

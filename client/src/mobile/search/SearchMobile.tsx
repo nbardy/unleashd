@@ -45,11 +45,10 @@ function ClientResultRow({
 }) {
   const conv = useAtomValue(conversationAtomFamily(id));
   if (!conv) return null;
-  const lastMsg = conv.messages[conv.messages.length - 1];
-  const preview = lastMsg ? lastMsg.content.substring(0, 180) : 'No messages yet';
-  const roleBadge = lastMsg ? lastMsg.role : '—';
+  const preview = conv.label;
+  const roleBadge = `${conv.messageCount} msg`;
   const timeAgo = formatTimeAgo(getConversationLastActivity(conv));
-  const shortDir = shortenHomePath(conv.workingDirectory) || conv.id.slice(0, 8);
+  const shortDir = shortenHomePath(conv.cwd) || conv.id.slice(0, 8);
   return (
     <MobileCardLink
       className="mobile-search-row"
@@ -57,7 +56,7 @@ function ClientResultRow({
       state={routeState}
     >
       <div className="mobile-search-row__top">
-        <span className="mobile-search-row__dir" title={conv.workingDirectory}>
+        <span className="mobile-search-row__dir" title={conv.cwd}>
           {shortDir}
         </span>
         <span className="mobile-search-row__role">{roleBadge}</span>

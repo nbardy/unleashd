@@ -1,9 +1,10 @@
 import assert from 'node:assert/strict';
 import { register } from 'node:module';
 import test from 'node:test';
-import type { Conversation } from '@unleashd/shared';
+import type { ConversationRow } from '@unleashd/shared';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { MemoryRouter } from 'react-router-dom';
+import { syntheticConversation } from './fixtures/synthetic-conversations';
 register(
   `data:text/javascript,${encodeURIComponent(`
     export async function load(url, context, nextLoad) {
@@ -20,17 +21,17 @@ const { conversationLoadCompleteAtom, conversationsAtom } = await import(
 );
 const { BuddyBackgroundTasks } = await import('../src/components/buddies/BuddyBackgroundTasks');
 
-const make = (id: string, overrides: Partial<Conversation> = {}) =>
-  ({
+const T0 = Date.parse('2026-09-13T00:00:00Z');
+const make = (id: string, overrides: Partial<ConversationRow> = {}) =>
+  syntheticConversation(1, {
     id,
-    kind: { kind: 'buddy', buddyId: 'lead', workspaceId: 'wave' },
-    placement: 'background',
-    createdAt: new Date('2026-09-13T00:00:00Z'),
-    messages: [],
+    kind: { t: 'buddy', buddyId: 'lead', workspaceId: 'wave', visibility: 'background' },
+    createdAt: T0,
+    activityAt: T0,
+    messageCount: 0,
     provider: 'codex',
-    isRunning: false,
     ...overrides,
-  }) as Conversation;
+  });
 
 const hrefs = (html: string) => [...html.matchAll(/href="(\/chat\/[^"]+)"/g)].map((m) => m[1]);
 
@@ -38,10 +39,15 @@ test('background destination shows running work first, keeps history and drops d
   const store = createStore();
   const conversations = new Map(
     [
-      make('past', { createdAt: new Date('2026-09-13T01:00:00Z') }),
-      make('active', { isRunning: true, parentConversationId: 'owner' }),
-      make('owner', { placement: 'default', isRunning: true }),
-      make('other-buddy', { kind: { kind: 'buddy', buddyId: 'engineer', workspaceId: 'wave' } }),
+      make('past', { activityAt: Date.parse('2026-09-13T01:00:00Z') }),
+      make('active', { run: 'running', parent: 'owner' }),
+      make('owner', {
+        kind: { t: 'buddy', buddyId: 'lead', workspaceId: 'wave', visibility: 'foreground' },
+        run: 'running',
+      }),
+      make('other-buddy', {
+        kind: { t: 'buddy', buddyId: 'engineer', workspaceId: 'wave', visibility: 'background' },
+      }),
     ].map((conversation) => [conversation.id, conversation])
   );
   store.set(conversationsAtom, conversations);

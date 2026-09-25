@@ -157,7 +157,7 @@ function startSwarmAgent(host: SubAgentHost, run: NonNullable<OompaRuntimeSnapsh
     startedAt: new Date(),
   };
   host.agents.push(subAgent);
-  host.broadcast({ type: 'subagent_start', conversationId: host.conversationId, subAgent });
+  host.changed(subAgent);
 }
 
 function completeSwarmAgent(host: SubAgentHost, runId: string): void {
@@ -168,11 +168,5 @@ function completeSwarmAgent(host: SubAgentHost, runId: string): void {
   agent.status = 'completed';
   agent.currentAction = 'Done';
   agent.completedAt = completedAt;
-  host.broadcast({
-    type: 'subagent_complete',
-    conversationId: host.conversationId,
-    subAgentId: agentId,
-    status: 'completed',
-    completedAt,
-  });
+  host.changed(agent);
 }

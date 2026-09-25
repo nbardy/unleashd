@@ -20,13 +20,14 @@ function pending(overrides: Partial<PersistedPendingCreation> = {}): PersistedPe
     workingDirectory: '/tmp/project',
     config,
     createdAt: '2026-08-04T00:00:00.000Z',
+    kind: { t: 'chat' },
     ...overrides,
   };
 }
 
 test('server lifecycle rejections are retryable after reconnect', () => {
-  assert.equal(isRetryableCreationRejection('server_draining', 'draining'), true);
-  assert.equal(isRetryableCreationRejection('server_starting', 'starting'), true);
+  assert.equal(isRetryableCreationRejection('server_draining'), true);
+  assert.equal(isRetryableCreationRejection('server_starting'), true);
 
   const original = pending({ error: 'draining', errorCode: 'server_draining' });
   const retried = preparePendingCreationForReconnect(original);
@@ -38,20 +39,12 @@ test('server lifecycle rejections are retryable after reconnect', () => {
   assert.equal(retried.conversationId, original.conversationId);
 });
 
-test('legacy persisted draining rejection recovers without an error code', () => {
-  const original = pending({
-    error: 'Backend reload is draining active turns; try again after reconnecting',
-  });
-
-  assert.equal(preparePendingCreationForReconnect(original).error, undefined);
-});
-
 test('permanent creation rejection remains failed after reconnect', () => {
   const original = pending({
     error: 'Working directory does not exist',
     errorCode: 'create_failed',
   });
 
-  assert.equal(isRetryableCreationRejection(original.errorCode, original.error), false);
+  assert.equal(isRetryableCreationRejection(original.errorCode), false);
   assert.equal(preparePendingCreationForReconnect(original), original);
 });

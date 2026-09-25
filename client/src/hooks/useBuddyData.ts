@@ -59,7 +59,10 @@ export function useBuddyPage(
           ? { mode: 'explicit', effort: buddy.reasoningEffort }
           : { mode: 'default' },
       },
-      buddyContext: { buddyId: buddy.id, workspaceId: workspace.id, buddyProjectId: null },
+      kind: {
+        t: 'buddy',
+        context: { buddyId: buddy.id, workspaceId: workspace.id, buddyProjectId: null },
+      },
     });
     openRef.current(id);
   }, [buddy, workspace]);

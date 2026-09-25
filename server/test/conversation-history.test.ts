@@ -4,12 +4,14 @@ import os from 'node:os';
 import path from 'node:path';
 import test, { type TestContext } from 'node:test';
 import {
-  type DiscoveredConversation,
+  EncodedRowsSchema,
   type Message,
+  buddyKind,
   createDefaultConversationConfig,
+  decodeRows,
 } from '@unleashd/shared';
 import { WebSocketServer } from 'ws';
-import type { SessionHistorySource } from '../src/adapters/disk-adapter';
+import type { DiscoveredSession, SessionHistorySource } from '../src/adapters/disk-adapter';
 import { createConversationApplicationContext } from '../src/application/context';
 import { ConversationConfigService } from '../src/conversations/config-service';
 import { ConversationConfigStore } from '../src/conversations/config-store';
@@ -22,6 +24,7 @@ import {
 import { createSessionLoader } from '../src/lifecycle/session-loader';
 import { resolveConfigAgainstProviderCatalog } from '../src/providers/catalog-service';
 import { fakeBuddyPort } from './fixtures/buddy-port';
+import { discoveredSession } from './fixtures/discovered-session';
 
 const CONVERSATION_ID = 'dddddddd-0000-4000-8000-000000000004';
 const ORIGINAL_SESSION = 'eeeeeeee-0000-4000-8000-000000000005';
@@ -81,31 +84,24 @@ async function fixture(
     config: CONFIG,
     workingDirectory: root,
     provenance: options.provenance ?? 'user',
-    creation: { buddyContext: { buddyId: 'fixture-buddy', workspaceId: 'fixture-workspace' } },
+    kind: buddyKind({ buddyId: 'fixture-buddy', workspaceId: 'fixture-workspace' }),
   });
 
   function source(
     sessionId: string,
     transcript: Message[],
     createdAt: string,
-    overrides: Partial<DiscoveredConversation> = {}
-  ): DiscoveredConversation {
-    return {
+    overrides: Partial<DiscoveredSession> = {}
+  ): DiscoveredSession {
+    return discoveredSession({
       sessionId,
       messages: transcript,
       createdAt: new Date(createdAt),
       workingDirectory: root,
       provider: 'codex',
-      modelName: sessionId === CURRENT_SESSION ? 'current-model' : 'original-model',
-      isRunning: false,
-      isStreaming: false,
-      confirmed: true,
-      subAgents: [],
-      queue: [],
-      isWorker: false,
-      kind: { kind: 'general' },
+      observedModel: sessionId === CURRENT_SESSION ? 'current-model' : 'original-model',
       ...overrides,
-    };
+    });
   }
 
   function host(options: { finishTurn?: Promise<void>; startupLimit?: number } = {}) {
@@ -178,7 +174,7 @@ async function fixture(
       }) as unknown as NonNullable<ConversationRuntimeDependencies['executeTurn']>,
     });
     let discovered: SessionHistorySource[] = [];
-    let pendingUpdates = new Map<string, DiscoveredConversation>();
+    let pendingUpdates = new Map<string, DiscoveredSession>();
     let cycleStarted: (() => void) | undefined;
     const loader = createSessionLoader({
       options: {
@@ -229,7 +225,7 @@ async function fixture(
         discovered = sources;
         await loader.loadExistingConversations();
       },
-      async poll(sources: DiscoveredConversation[]) {
+      async poll(sources: DiscoveredSession[]) {
         pendingUpdates = new Map(
           sources.map((transcript) => [transcript.sessionId, structuredClone(transcript)])
         );
@@ -297,28 +293,23 @@ test('privacy rotation retains display history and durable birth date through po
   await live.poll([current]);
   assert.deepEqual(contents(conversation), [...ORIGINAL_CONTENT, ...CURRENT_CONTENT]);
   assert.equal(conversation.createdAt.toISOString(), ORIGINAL_DATE);
-  // The poller broadcasts summaries; clients refetch history when messageCount moves.
+  // The poller broadcasts rows; clients page in the tail when messageCount moves.
   const update = live.broadcasts
     .slice(broadcastsBeforePoll)
-    .filter((event) => event.type === 'conversations_updated')
+    .filter((event) => event.type === 'rows')
     .at(-1);
-  assert.equal(update?.type, 'conversations_updated');
-  if (update?.type === 'conversations_updated') {
-    assert.equal(update.summaries, true);
-    assert.equal(
-      update.conversations[0].messageCount,
-      ORIGINAL_CONTENT.length + CURRENT_CONTENT.length
-    );
-    assert.equal(new Date(update.conversations[0].createdAt).toISOString(), ORIGINAL_DATE);
-  }
+  assert.ok(update?.type === 'rows');
+  const [row] = decodeRows(EncodedRowsSchema.parse(update));
+  assert.equal(row.messageCount, ORIGINAL_CONTENT.length + CURRENT_CONTENT.length);
+  assert.equal(new Date(row.createdAt).toISOString(), ORIGINAL_DATE);
 
   const restarted = f.host();
   await restarted.load([current, original]);
   const restored = restarted.conversation();
-  assert.deepEqual(contents(restored.toJSON()), [...ORIGINAL_CONTENT, ...CURRENT_CONTENT]);
+  assert.deepEqual(contents(restored), [...ORIGINAL_CONTENT, ...CURRENT_CONTENT]);
   assert.equal(restored.createdAt.toISOString(), ORIGINAL_DATE);
   assert.equal(restored.sessionId, CURRENT_SESSION);
-  assert.equal(restored.modelName, 'current-model');
+  assert.equal(restored.observedModel, 'current-model');
   const durable = await restarted.configStore.getByConversationId(CONVERSATION_ID);
   assert.equal(durable?.createdAt, ORIGINAL_DATE);
   assert.equal(durable?.currentSession?.sessionId, CURRENT_SESSION);
@@ -371,8 +362,9 @@ test('late historical-session polling enriches display without rolling back curr
   const historyUpdate = {
     ...original,
     messages: [...original.messages, lateMessage],
-    isWorker: true,
-    modelName: 'obsolete-model',
+    // A transcript never changes the record's identity (T09).
+    discoveredKind: { t: 'worker', swarmId: 'swarm', workerId: 'w0', role: 'work' } as const,
+    observedModel: 'obsolete-model',
   };
   await live.poll([historyUpdate]);
   const conversation = live.conversation();
@@ -382,8 +374,8 @@ test('late historical-session polling enriches display without rolling back curr
     ...CURRENT_CONTENT,
   ]);
   assert.equal(conversation.sessionId, CURRENT_SESSION);
-  assert.equal(conversation.modelName, 'current-model');
-  assert.equal(conversation.isWorker, false);
+  assert.equal(conversation.observedModel, 'current-model');
+  assert.equal(conversation.kind.t, 'buddy');
   assert.equal(conversation.createdAt.toISOString(), ORIGINAL_DATE);
   assert.equal(
     (await live.configStore.getByConversationId(CONVERSATION_ID))?.currentSession?.sessionId,
@@ -444,7 +436,7 @@ test('one selected current transcript hydrates its attached bound history withou
   assert.deepEqual(contents(live.conversation()), [...ORIGINAL_CONTENT, ...CURRENT_CONTENT]);
   assert.equal(live.conversation().createdAt.toISOString(), ORIGINAL_DATE);
   assert.equal(live.conversation().sessionId, CURRENT_SESSION);
-  assert.equal(live.conversation().modelName, 'current-model');
+  assert.equal(live.conversation().observedModel, 'current-model');
 });
 
 test('a discovered sidecar keeps the transcript birth date instead of its later import date', async (t) => {

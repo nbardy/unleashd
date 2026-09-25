@@ -2,19 +2,13 @@ import crypto from 'node:crypto';
 import type {
   BuddyContext,
   BuddyKind,
+  BuddyVisibility,
   ConversationKind,
-  ConversationPlacement,
-  ConversationPurpose,
   Message,
   Provider as ProviderName,
   ResolvedExecutionConfig,
 } from '@unleashd/shared';
-import {
-  buddyContextFromKind,
-  conversationKindFromLegacy,
-  formatBuddyBuilderToolResult,
-  matchConversationKind,
-} from '@unleashd/shared';
+import { formatBuddyBuilderToolResult, matchConversationKind } from '@unleashd/shared';
 import type { ConversationRuntimeView } from '../conversations/runtime';
 import type { TurnTerminalCause } from '../observability';
 import { noteActivity } from '../observability/event-loop-stall';
@@ -53,7 +47,7 @@ export interface BuddyTurnPolicyDependencies {
 export interface BuddyPolicyHost {
   readonly id: string;
   readonly view: ConversationRuntimeView;
-  placement(): ConversationPlacement;
+  visibility(): BuddyVisibility;
   provider(): ProviderName;
   hasProcess(): boolean;
   hasStartedSession(): boolean;
@@ -143,7 +137,7 @@ function buddyFirstTurnPrompt(input: {
 }): string {
   if ((!input.firstUnstartedTurn && !input.refreshBriefing) || input.briefing === null)
     return input.content;
-  const ctx: BuddyContext = buddyContextFromKind(input.kind);
+  const ctx: BuddyContext = input.kind.context;
   const encodedContext = Buffer.from(JSON.stringify(ctx), 'utf8').toString('base64url');
   const snapshot = createMemorySnapshot(input.briefing, input.memoryGeneration) as MemorySnapshot;
   const encodedGeneration = Buffer.from(snapshot.generation, 'utf8').toString('base64url');
@@ -165,23 +159,20 @@ export function buildFirstTurnCliContent(input: {
   content: string;
   messageCount: number;
   hasStartedSession: boolean;
-  kind?: ConversationKind | null;
-  buddyContext?: BuddyContext | null;
+  kind: ConversationKind;
   buddyBriefing: string | null;
   buddyMemoryGeneration?: MemoryGenerationInput | null;
   refreshBuddyContext?: boolean;
   swarmDebugPrefix: string | null;
-  purpose?: ConversationPurpose;
 }): string {
   const firstUnstartedTurn = input.messageCount === 0 && !input.hasStartedSession;
-  const effectiveKind: ConversationKind =
-    input.kind ??
-    conversationKindFromLegacy({
-      buddyContext: input.buddyContext ?? null,
-      purpose: input.purpose ?? null,
-      kind: null,
+  const chatPrompt = () =>
+    chatFirstTurnPrompt({
+      content: input.content,
+      firstUnstartedTurn,
+      swarmDebugPrefix: input.swarmDebugPrefix,
     });
-  return matchConversationKind(effectiveKind, {
+  return matchConversationKind(input.kind, {
     buddy: (kind) =>
       buddyFirstTurnPrompt({
         kind,
@@ -191,13 +182,9 @@ export function buildFirstTurnCliContent(input: {
         briefing: input.buddyBriefing,
         memoryGeneration: input.buddyMemoryGeneration ?? null,
       }),
-    buddy_builder: () => builderFirstTurnPrompt(input.content, firstUnstartedTurn),
-    general: () =>
-      chatFirstTurnPrompt({
-        content: input.content,
-        firstUnstartedTurn,
-        swarmDebugPrefix: input.swarmDebugPrefix,
-      }),
+    builder: () => builderFirstTurnPrompt(input.content, firstUnstartedTurn),
+    chat: chatPrompt,
+    worker: chatPrompt,
   });
 }
 
@@ -357,7 +344,7 @@ export class BuddyTurnPolicy implements TurnPolicy {
 
   // A pre-T11 automation transcript stays read-only.
   get acceptsUserInput(): boolean {
-    return !this.kind.automationRunId;
+    return !this.kind.context.automationRunId;
   }
 
   // --- admission -------------------------------------------------------------
@@ -442,7 +429,7 @@ export class BuddyTurnPolicy implements TurnPolicy {
    * its own context.
    */
   private contextForInput(input: TurnInput): BuddyContext {
-    const context = this.execution?.context ?? buddyContextFromKind(this.kind);
+    const context = this.execution?.context ?? this.kind.context;
     switch (input.origin) {
       case 'owner_input':
       case 'buddy_post':
@@ -650,8 +637,8 @@ export class BuddyTurnPolicy implements TurnPolicy {
     if (
       !context.coordinationRunId ||
       !leaseToken ||
-      context.buddyId !== this.kind.buddyId ||
-      context.workspaceId !== this.kind.workspaceId
+      context.buddyId !== this.kind.context.buddyId ||
+      context.workspaceId !== this.kind.context.workspaceId
     ) {
       return Promise.reject(new Error('Run identity or lease is missing'));
     }

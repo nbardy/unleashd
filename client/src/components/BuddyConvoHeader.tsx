@@ -1,6 +1,6 @@
+import type { BuddyContext } from '@unleashd/shared';
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import type { BuddyContext } from '../atoms/pending-creations';
 import { useBuddyDetail, useBuddyOverview } from '../hooks/useBuddyData';
 import { findWorkspace } from './buddies/roster';
 import { taskStatusView } from './buddies/ui-contract';

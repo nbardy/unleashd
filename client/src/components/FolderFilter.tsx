@@ -15,7 +15,7 @@
  * score higher, so exact substring matches rank above scattered matches.
  */
 
-import type { Conversation } from '@unleashd/shared';
+import type { ConversationRow } from '@unleashd/shared';
 import { useMemo, useState } from 'react';
 import { readConversation } from '../atoms/actions';
 import { fuzzyMatch, highlightMatches } from '../utils/fuzzyMatch';
@@ -46,7 +46,7 @@ interface FolderMatch {
 }
 
 interface ConversationMatch {
-  conversation: Conversation;
+  conversation: ConversationRow;
   score: number;
   /** Snippet of the matched message content */
   snippet: string;
@@ -140,7 +140,7 @@ export function FolderFilter({
       let bestMatches: number[] = [];
 
       // Match against working directory basename
-      const dirName = conv.workingDirectory.split('/').filter(Boolean).pop() ?? '';
+      const dirName = conv.cwd.split('/').filter(Boolean).pop() ?? '';
       const dirResult = fuzzyMatch(query, dirName);
       if (dirResult && dirResult.score > bestScore) {
         bestScore = dirResult.score;
@@ -148,11 +148,8 @@ export function FolderFilter({
         bestMatches = dirResult.matches;
       }
 
-      // Match against message content (check last 10 messages for performance)
-      const recentMessages = conv.messages.slice(-10);
-      for (const msg of recentMessages) {
-        // Try matching against the first 200 chars of content
-        const content = msg.content.substring(0, 200);
+      // Match against the row label (lists carry no bodies; /api/search is deep search)
+      for (const content of [conv.label]) {
         const result = fuzzyMatch(query, content);
         if (result && result.score > bestScore) {
           bestScore = result.score;

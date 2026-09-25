@@ -16,7 +16,7 @@ export const buddyConversationIdsAtomFamily = atomFamily((buddyId: string) =>
           (entry) =>
             entry.kind === 'buddy' &&
             entry.buddyId === buddyId &&
-            entry.placement !== 'background' &&
+            !entry.background &&
             !entry.isWorker &&
             entry.parentConversationId === null
         )

@@ -1,13 +1,42 @@
-import type { Conversation, ConversationBranch } from '@unleashd/shared';
+import type {
+  ConfigResolution,
+  ConversationBranch,
+  ConversationDetail,
+  ConversationKind,
+  Message,
+  Provider,
+  ProviderTurnUsage,
+} from '@unleashd/shared';
 import type { Express } from 'express';
 import { BUDDY_BUILDER_BRIEFING } from '../buddies/builder';
 import { toolManifest } from '../buddies/mcp';
 import { type ContextWindow, resolveContextWindow } from '../conversations/context-window';
+import {
+  MESSAGE_PAGE_DEFAULT_LIMIT,
+  MESSAGE_PAGE_MAX_LIMIT,
+  type MessageSource,
+} from '../conversations/messages';
 import { type SessionContextReading, lookupSessionContext } from '../conversations/session-context';
 import { type SessionProviderUsage, lookupProviderUsageForSession } from './usage-routes';
 
-export interface ConversationDetail {
-  toJSON(): Conversation;
+/** What the context meter reads about a conversation. */
+export interface ContextSubject {
+  readonly id: string;
+  readonly sessionId: string;
+  readonly provider: Provider;
+  readonly kind: ConversationKind;
+  readonly messages: readonly Message[];
+  /** Provider-reported model of the latest turn. */
+  readonly observedModel: string | null;
+  readonly providerUsage: ProviderTurnUsage | null;
+  readonly swarmDebugPrefix: string | null;
+  readonly resumedFromConversationId: string | null;
+}
+
+/** The conversation as these routes see it. */
+export interface RoutedConversation extends ContextSubject {
+  readonly configResolution: ConfigResolution;
+  toDetail(): ConversationDetail;
   getMemorySnapshot?: () => { briefing: string; generation: string } | null;
 }
 
@@ -32,7 +61,7 @@ export type ContextReadingSource = 'measured' | 'estimated';
 export interface ContextBreakdownResponse {
   conversationId: string;
   sessionId: string;
-  provider: Conversation['provider'];
+  provider: Provider;
   modelName: string | null;
   /**
    * The meter's denominator and where it came from. Replaces the former
@@ -145,19 +174,20 @@ export function splitBriefing(briefing: string): { briefing: string; memory: str
 }
 
 // The tool definitions a turn's provider loads from the one Buddy endpoint (mcp.ts).
-function mcpSpecJson(conversation: Conversation): string {
-  switch (conversation.kind.kind) {
-    case 'buddy_builder':
+function mcpSpecJson(conversation: ContextSubject): string {
+  switch (conversation.kind.t) {
+    case 'builder':
       return toolManifest('builder');
     case 'buddy':
       return toolManifest('worker');
-    case 'general':
+    case 'chat':
+    case 'worker':
       return '';
   }
 }
 
 export function buildContextBreakdown(
-  conversation: Conversation,
+  conversation: ContextSubject,
   snapshotBriefing: string | null,
   branch: ConversationBranch | null | undefined,
   usage: SessionProviderUsage | null,
@@ -171,9 +201,9 @@ export function buildContextBreakdown(
 
   let briefingText = '';
   let memoryText = '';
-  if (conversation.kind.kind === 'buddy_builder') {
+  if (conversation.kind.t === 'builder') {
     briefingText = BUDDY_BUILDER_BRIEFING;
-  } else if (conversation.kind.kind === 'buddy') {
+  } else if (conversation.kind.t === 'buddy') {
     const split = splitBriefing(snapshotBriefing ?? '');
     briefingText = split.briefing;
     memoryText = split.memory;
@@ -331,7 +361,7 @@ export function buildContextBreakdown(
     // join then yields null usage and the meter shows estimates only.
     sessionId: conversation.sessionId ?? '',
     provider: conversation.provider,
-    modelName: conversation.modelName ?? null,
+    modelName: conversation.observedModel,
     contextWindow,
     budgetTokens,
     readingSource: reading.source,
@@ -362,7 +392,8 @@ export function buildContextBreakdown(
 
 export function registerConversationRoutes(
   app: Express,
-  getConversation: (id: string) => ConversationDetail | undefined,
+  getConversation: (id: string) => RoutedConversation | undefined,
+  messages: MessageSource,
   deps: ContextBreakdownDeps = {}
 ): void {
   app.get('/api/conversations/:conversationId/context-breakdown', async (request, response) => {
@@ -371,7 +402,7 @@ export function registerConversationRoutes(
       response.status(404).json({ error: 'Conversation not found' });
       return;
     }
-    const data = conversation.toJSON();
+    const data = conversation;
     let branch: ConversationBranch | null | undefined;
     try {
       branch = (await deps.getBranch?.(data.id)) ?? null;
@@ -404,9 +435,13 @@ export function registerConversationRoutes(
     } catch {
       sessionContext = null;
     }
+    const resolved =
+      data.configResolution.status === 'resolved'
+        ? data.configResolution.value
+        : data.configResolution.lastResolved;
     const contextWindow = resolveContextWindow({
-      modelId: data.model ?? null,
-      reportedModelName: data.modelName ?? data.reportedModel ?? null,
+      modelId: resolved?.modelId ?? null,
+      reportedModelName: data.observedModel,
       // codex reports its window on the same record as its usage, so the file
       // supplies the denominator too when the live event has not run.
       reportedWindow: data.providerUsage?.contextWindow ?? sessionContext?.contextWindow ?? null,
@@ -416,12 +451,39 @@ export function registerConversationRoutes(
     );
   });
 
+  // Detail: config, queue, sub-agents, latest turn. No message bodies.
   app.get('/api/conversations/:conversationId', (request, response) => {
     const conversation = getConversation(request.params.conversationId);
     if (!conversation) {
       response.status(404).json({ error: 'Conversation not found' });
       return;
     }
-    response.json(conversation.toJSON());
+    response.json(conversation.toDetail());
   });
+
+  // Bodies, paged: messages with seq > afterSeq, at most `limit` of them.
+  app.get('/api/conversations/:conversationId/messages', (request, response) => {
+    const afterSeq = integerParam(request.query.afterSeq, -1);
+    const limit = integerParam(request.query.limit, MESSAGE_PAGE_DEFAULT_LIMIT);
+    if (afterSeq === null || afterSeq < -1 || limit === null || limit < 1) {
+      response.status(400).json({ error: 'afterSeq must be an integer >= -1, limit >= 1' });
+      return;
+    }
+    const page = messages(request.params.conversationId, {
+      afterSeq,
+      limit: Math.min(limit, MESSAGE_PAGE_MAX_LIMIT),
+    });
+    if (!page) {
+      response.status(404).json({ error: 'Conversation not found' });
+      return;
+    }
+    response.json(page);
+  });
+}
+
+/** An absent param takes the default; anything but an integer is null (a 400). */
+function integerParam(value: unknown, fallback: number): number | null {
+  if (value === undefined) return fallback;
+  if (typeof value !== 'string' || !/^-?\d+$/.test(value)) return null;
+  return Number(value);
 }

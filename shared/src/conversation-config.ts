@@ -157,11 +157,87 @@ export const BuddyContextSchema = z.object({
 });
 export type BuddyContext = z.infer<typeof BuddyContextSchema>;
 
-export const ConversationPurposeSchema = z.enum(['general', 'buddy_builder']);
-export type ConversationPurpose = z.infer<typeof ConversationPurposeSchema>;
+// Pattern: sum-types (docs/patterns.md#sum-types)
+// The ONE encoding of "what is this thread", fixed at creation and stored in
+// the record. Until T09 (2026-09-25) kind was encoded four ways (`kind`,
+// `creation.buddyContext`, `purpose`, a transcript text marker) next to
+// `placement` and five nullable worker fields, and hydration picked "the first
+// specific candidate" among them. Records were migrated once
+// (server/src/conversations/record-migration.ts); nothing else derives kind.
+export const BuddyVisibilitySchema = z.enum(['foreground', 'background']);
+export type BuddyVisibility = z.infer<typeof BuddyVisibilitySchema>;
 
-export const ConversationPlacementSchema = z.enum(['default', 'background']);
-export type ConversationPlacement = z.infer<typeof ConversationPlacementSchema>;
+export const WorkerRoleSchema = z.enum(['work', 'review', 'fix']);
+export type WorkerRole = z.infer<typeof WorkerRoleSchema>;
+
+export const ConversationKindSchema = z.discriminatedUnion('t', [
+  z.object({ t: z.literal('chat') }),
+  z.object({
+    t: z.literal('buddy'),
+    // Buddy run data (delegation, automation, allowed ops), owned by the Buddy
+    // module. It never goes on the wire: the list row carries only the ids.
+    context: BuddyContextSchema,
+    visibility: BuddyVisibilitySchema,
+  }),
+  z.object({ t: z.literal('builder') }),
+  // Quarantined swarm (DESIGN C.5): classified once from the oompa tag when a
+  // transcript is discovered. Null ids mean an untagged `[oompa]`; a null role
+  // means the first message did not say.
+  z.object({
+    t: z.literal('worker'),
+    swarmId: z.string().nullable(),
+    workerId: z.string().nullable(),
+    role: WorkerRoleSchema.nullable(),
+  }),
+]);
+export type ConversationKind = z.infer<typeof ConversationKindSchema>;
+export type BuddyKind = Extract<ConversationKind, { t: 'buddy' }>;
+export type WorkerKind = Extract<ConversationKind, { t: 'worker' }>;
+
+export const CHAT_KIND: ConversationKind = Object.freeze({ t: 'chat' });
+
+/** Thin exhaustive dispatcher over the kind: the one structural switch on it. */
+export function matchConversationKind<T>(
+  kind: ConversationKind,
+  handlers: {
+    chat: () => T;
+    buddy: (kind: BuddyKind) => T;
+    builder: () => T;
+    worker: (kind: WorkerKind) => T;
+  }
+): T {
+  switch (kind.t) {
+    case 'chat':
+      return handlers.chat();
+    case 'buddy':
+      return handlers.buddy(kind);
+    case 'builder':
+      return handlers.builder();
+    case 'worker':
+      return handlers.worker(kind);
+  }
+}
+
+/** A Buddy thread's run data, or null for every other kind. */
+export function kindBuddyContext(kind: ConversationKind): BuddyContext | null {
+  return kind.t === 'buddy' ? kind.context : null;
+}
+
+/**
+ * Visibility of a new Buddy thread: runs a Buddy starts on its own
+ * (automation, delegation, coordination) are background work, owner chats are
+ * foreground. Decided once at creation and stored in the kind.
+ */
+export function defaultBuddyVisibility(context: BuddyContext): BuddyVisibility {
+  return context.automationRunId || context.coordinationRunId || context.delegatedByBuddyId
+    ? 'background'
+    : 'foreground';
+}
+
+/** A new Buddy thread's kind, with its visibility decided from the context. */
+export function buddyKind(context: BuddyContext, visibility?: BuddyVisibility): BuddyKind {
+  return { t: 'buddy', context, visibility: visibility ?? defaultBuddyVisibility(context) };
+}
 
 export const ConversationBranchSchema = z.object({
   sourceConversationId: ConversationIdSchema,
@@ -176,21 +252,23 @@ export const ConversationCreationMetadataSchema = z.object({
   branch: ConversationBranchSchema.optional(),
   commandId: z.string().min(1).optional(),
   fingerprint: z.string().min(1).optional(),
-  placement: ConversationPlacementSchema.optional(),
   initialMessage: z.string().min(1).optional(),
   initialMessageDispatchClaimedAt: z.string().datetime().optional(),
   initialMessageDispatchClaimToken: z.string().min(1).optional(),
   initialMessageDispatchedAt: z.string().datetime().optional(),
   swarmDebugPrefix: z.string().optional(),
   resumedFromConversationId: ConversationIdSchema.optional(),
-  buddyContext: BuddyContextSchema.optional(),
-  purpose: ConversationPurposeSchema.optional(),
 });
 export type ConversationCreationMetadata = z.infer<typeof ConversationCreationMetadataSchema>;
 
+// v2 (T09, 2026-09-25): `kind` is required and is the only identity; v1's
+// creation.buddyContext / purpose / placement are gone. The one-time v1 → v2
+// rewrite is server/src/conversations/record-migration.ts.
+export const CONVERSATION_RECORD_VERSION = 2;
 export const PersistedConversationConfigRecordSchema = z.object({
-  version: z.literal(1),
+  version: z.literal(CONVERSATION_RECORD_VERSION),
   conversationId: ConversationIdSchema,
+  kind: ConversationKindSchema,
   // Historical aliases remain indexed for transcript discovery. The session to
   // resume is stored separately so rotation never depends on array ordering.
   sessionBindings: z.array(ConversationSessionBindingSchema),

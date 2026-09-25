@@ -56,8 +56,8 @@ test('server Buddy creation persists, registers, broadcasts, links, and dispatch
       queued.push(message);
     }
 
-    toJSON() {
-      return { id: this.id };
+    publishRow(): void {
+      broadcasts.push({ type: 'rows', id: this.id });
     }
   }
 

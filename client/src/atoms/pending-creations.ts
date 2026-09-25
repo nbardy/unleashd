@@ -1,20 +1,15 @@
 import {
-  type BuddyContext,
-  BuddyContextSchema,
   type ConversationConfig,
   ConversationConfigSchema,
   type CreateConversationCommand,
-  type ModelId,
-  type Provider,
-  normalizeModelId,
+  type CreateKind,
+  CreateKindSchema,
 } from '@unleashd/shared';
 import { produce } from 'immer';
 import { newId } from '../utils/ids';
 import { activeConversationIdAtom, pendingCreationsAtom, sendFnAtom } from './conversations';
 import { jotaiStore } from './store';
 import { PENDING_CONVERSATIONS_KEY } from './ui';
-
-export type { BuddyContext } from '@unleashd/shared';
 
 export interface PersistedPendingCreation {
   commandId: string;
@@ -23,15 +18,18 @@ export interface PersistedPendingCreation {
   config: ConversationConfig;
   createdAt: string;
   swarmDebugPrefix?: string;
-  resumedFromConversationId?: string;
   initialMessage?: string;
-  buddyContext?: BuddyContext;
+  /** chat | buddy{context} | fork{from}: the one kind encoding (T09). */
+  kind: CreateKind;
   error?: string;
   errorCode?: string;
 }
 
-interface PendingCreationStoreV2 {
-  version: 2;
+// v3 (T09, 2026-09-25): creations carry `kind`. Older stores are dropped, not
+// migrated: a pending creation lives for the seconds before its ack, and its
+// first message survives in the `draft:<id>` key.
+interface PendingCreationStoreV3 {
+  version: 3;
   creations: PersistedPendingCreation[];
 }
 
@@ -39,27 +37,15 @@ export interface CreateConversationArgs {
   workingDirectory: string;
   config: ConversationConfig;
   swarmDebugPrefix?: string;
-  resumedFromConversationId?: string;
   initialMessage?: string;
-  buddyContext?: BuddyContext;
+  kind: CreateKind;
 }
 
 const PENDING_CREATION_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000;
 const RETRYABLE_CREATION_ERROR_CODES = new Set(['server_draining', 'server_starting']);
-const LEGACY_RETRYABLE_CREATION_ERRORS = [
-  'Backend reload is draining active turns; try again after reconnecting',
-];
 
-export function isRetryableCreationRejection(
-  errorCode: string | undefined,
-  error: string | undefined
-): boolean {
-  return (
-    (errorCode !== undefined && RETRYABLE_CREATION_ERROR_CODES.has(errorCode)) ||
-    (errorCode === undefined &&
-      error !== undefined &&
-      LEGACY_RETRYABLE_CREATION_ERRORS.includes(error))
-  );
+export function isRetryableCreationRejection(errorCode: string | undefined): boolean {
+  return errorCode !== undefined && RETRYABLE_CREATION_ERROR_CODES.has(errorCode);
 }
 
 export function normalizeWorkingDirectory(input: string): string {
@@ -92,13 +78,15 @@ function parsePersistedPendingCreation(value: unknown): PersistedPendingCreation
   const createdAt =
     typeof candidate.createdAt === 'string' ? Date.parse(candidate.createdAt) : Number.NaN;
   const config = ConversationConfigSchema.safeParse(candidate.config);
+  const kind = CreateKindSchema.safeParse(candidate.kind);
   if (
     typeof candidate.commandId !== 'string' ||
     typeof candidate.conversationId !== 'string' ||
     typeof candidate.workingDirectory !== 'string' ||
     !Number.isFinite(createdAt) ||
     Date.now() - createdAt > PENDING_CREATION_MAX_AGE_MS ||
-    !config.success
+    !config.success ||
+    !kind.success
   ) {
     return null;
   }
@@ -110,54 +98,11 @@ function parsePersistedPendingCreation(value: unknown): PersistedPendingCreation
     createdAt: candidate.createdAt as string,
     swarmDebugPrefix:
       typeof candidate.swarmDebugPrefix === 'string' ? candidate.swarmDebugPrefix : undefined,
-    resumedFromConversationId:
-      typeof candidate.resumedFromConversationId === 'string'
-        ? candidate.resumedFromConversationId
-        : undefined,
     initialMessage:
       typeof candidate.initialMessage === 'string' ? candidate.initialMessage : undefined,
-    buddyContext: parseBuddyContext(candidate.buddyContext),
+    kind: kind.data,
     error: typeof candidate.error === 'string' ? candidate.error : undefined,
     errorCode: typeof candidate.errorCode === 'string' ? candidate.errorCode : undefined,
-  };
-}
-
-function parseBuddyContext(value: unknown): BuddyContext | undefined {
-  const parsed = BuddyContextSchema.safeParse(value);
-  return parsed.success ? parsed.data : undefined;
-}
-
-function migrateLegacyPendingConversation(value: unknown): PersistedPendingCreation | null {
-  if (!value || typeof value !== 'object') return null;
-  const legacy = value as {
-    id?: string;
-    workingDirectory?: string;
-    provider?: Provider;
-    model?: ModelId;
-    createdAt?: string;
-    swarmDebugPrefix?: string;
-    resumedFromConversationId?: string;
-    reasoningEffort?: string | null;
-  };
-  if (!legacy.id || !legacy.workingDirectory || !legacy.provider || !legacy.createdAt) return null;
-  const model = normalizeModelId(legacy.provider, legacy.model);
-  return {
-    commandId: newId(),
-    conversationId: legacy.id,
-    workingDirectory: legacy.workingDirectory,
-    config: {
-      provider: legacy.provider,
-      model: model ? { mode: 'explicit', modelId: model } : { mode: 'default' },
-      reasoning:
-        legacy.reasoningEffort === null
-          ? { mode: 'disabled' }
-          : legacy.reasoningEffort === undefined
-            ? { mode: 'default' }
-            : { mode: 'explicit', effort: legacy.reasoningEffort },
-    },
-    createdAt: legacy.createdAt,
-    swarmDebugPrefix: legacy.swarmDebugPrefix,
-    resumedFromConversationId: legacy.resumedFromConversationId,
   };
 }
 
@@ -166,7 +111,7 @@ function persistPendingConversations(creations: PersistedPendingCreation[]): voi
     localStorage.removeItem(PENDING_CONVERSATIONS_KEY);
     return;
   }
-  const store: PendingCreationStoreV2 = { version: 2, creations };
+  const store: PendingCreationStoreV3 = { version: 3, creations };
   localStorage.setItem(PENDING_CONVERSATIONS_KEY, JSON.stringify(store));
 }
 
@@ -174,21 +119,14 @@ export function loadPendingConversations(): PersistedPendingCreation[] {
   const raw = localStorage.getItem(PENDING_CONVERSATIONS_KEY);
   if (!raw) return [];
   try {
-    const parsed = JSON.parse(raw) as PendingCreationStoreV2 | unknown[];
-    const rawCreations =
-      !Array.isArray(parsed) && parsed.version === 2 && Array.isArray(parsed.creations)
-        ? parsed.creations
-        : Array.isArray(parsed)
-          ? parsed.map(migrateLegacyPendingConversation)
-          : null;
-    if (!rawCreations) throw new Error('Unsupported pending creation store');
-
-    const creations = rawCreations
+    const parsed = JSON.parse(raw) as Partial<PendingCreationStoreV3>;
+    if (parsed.version !== 3 || !Array.isArray(parsed.creations)) {
+      throw new Error('Unsupported pending creation store');
+    }
+    const creations = parsed.creations
       .map(parsePersistedPendingCreation)
       .filter((value): value is PersistedPendingCreation => value !== null);
-    if (Array.isArray(parsed) || creations.length !== rawCreations.length) {
-      persistPendingConversations(creations);
-    }
+    if (creations.length !== parsed.creations.length) persistPendingConversations(creations);
     return creations;
   } catch {
     console.warn('[PendingConversations] Corrupt localStorage data — clearing');
@@ -228,7 +166,7 @@ export function markPendingCreationRejected(
 export function preparePendingCreationForReconnect(
   creation: PersistedPendingCreation
 ): PersistedPendingCreation {
-  if (!isRetryableCreationRejection(creation.errorCode, creation.error)) return creation;
+  if (!isRetryableCreationRejection(creation.errorCode)) return creation;
   return { ...creation, error: undefined, errorCode: undefined };
 }
 
@@ -249,8 +187,7 @@ function sendCreateCommand(creation: Omit<PersistedPendingCreation, 'createdAt' 
     config: creation.config,
     initialMessage: creation.initialMessage,
     swarmDebugPrefix: creation.swarmDebugPrefix,
-    resumedFromConversationId: creation.resumedFromConversationId,
-    buddyContext: creation.buddyContext,
+    kind: creation.kind,
   };
   jotaiStore.get(sendFnAtom).send(command);
 }
@@ -271,9 +208,8 @@ export function createConversation(args: CreateConversationArgs): string {
     config: args.config,
     createdAt: createdAt.toISOString(),
     swarmDebugPrefix: args.swarmDebugPrefix,
-    resumedFromConversationId: args.resumedFromConversationId,
     initialMessage: args.initialMessage,
-    buddyContext: args.buddyContext,
+    kind: args.kind,
   };
 
   jotaiStore.set(
@@ -285,7 +221,7 @@ export function createConversation(args: CreateConversationArgs): string {
         conversationId,
         workingDirectory,
         config: args.config,
-        buddyContext: args.buddyContext,
+        createKind: args.kind,
         createdAt,
       });
     })

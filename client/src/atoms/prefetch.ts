@@ -1,8 +1,8 @@
 import { loadConversationDetails } from './actions';
 import {
   chatConversationIdsAtom,
-  conversationDetailsLoadedAtom,
   conversationLoadCompleteAtom,
+  transcriptsAtom,
 } from './conversations';
 import { type Resource, isResourceCached, loadResource } from './resources';
 import { jotaiStore } from './store';
@@ -58,7 +58,7 @@ async function drain(jobs: readonly (() => Promise<unknown>)[]): Promise<void> {
  */
 export function prefetchRecentConversationDetails(): void {
   scheduleIdle(() => {
-    const loaded = jotaiStore.get(conversationDetailsLoadedAtom);
+    const loaded = jotaiStore.get(transcriptsAtom);
     const cold = jotaiStore
       .get(chatConversationIdsAtom)
       .slice(0, PREFETCH_CONVERSATION_LIMIT)

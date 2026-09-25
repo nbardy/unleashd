@@ -154,6 +154,7 @@ test('create, update, fork, and hydrate preserve selection intent and revisions'
   await withService(async (service, store) => {
     const created = await service.create({
       conversationId: CONVERSATION_ID,
+      kind: { t: 'chat' },
       config: DEFAULT_CONFIG,
     });
     assert.equal(created.revision, 0);
@@ -184,6 +185,7 @@ test('create, update, fork, and hydrate preserve selection intent and revisions'
 
     const fork = await service.fork({
       conversationId: FORK_ID,
+      kind: { t: 'chat' },
       source: updated.value.next,
     });
     assert.equal(fork.revision, 0);
@@ -191,6 +193,7 @@ test('create, update, fork, and hydrate preserve selection intent and revisions'
 
     const hydrated = await service.hydrate({
       conversationId: CONVERSATION_ID,
+      discoveredKind: { t: 'chat' },
       sessionBindings: [{ provider: 'codex', sessionId: 'native-session' }],
       legacy: { provider: 'codex', reportedModel: 'gpt-5.4-high' },
     });
@@ -203,6 +206,7 @@ test('create, update, fork, and hydrate preserve selection intent and revisions'
 
     const recoveredByNativeSession = await service.hydrate({
       conversationId: 'native-session',
+      discoveredKind: { t: 'chat' },
       sessionBindings: [{ provider: 'codex', sessionId: 'native-session' }],
       legacy: { provider: 'codex', reportedModel: 'gpt-5.6-sol' },
     });
@@ -225,6 +229,7 @@ test('Fable session hydration recovers reported model names and preserves saved 
     };
     const imported = await service.hydrate({
       conversationId: CONVERSATION_ID,
+      discoveredKind: { t: 'chat' },
       sessionBindings: [{ provider: 'claude', sessionId: 'imported-fable-session' }],
       legacy,
     });
@@ -242,9 +247,10 @@ test('Fable session hydration recovers reported model names and preserves saved 
       model: { mode: 'explicit', modelId: 'opus' },
       reasoning: { mode: 'explicit', effort: 'high' },
     };
-    await service.create({ conversationId: FORK_ID, config: savedConfig });
+    await service.create({ kind: { t: 'chat' }, conversationId: FORK_ID, config: savedConfig });
     const existing = await service.hydrate({
       conversationId: FORK_ID,
+      discoveredKind: { t: 'chat' },
       sessionBindings: [{ provider: 'claude', sessionId: 'saved-claude-session' }],
       legacy,
     });
@@ -258,6 +264,7 @@ test('matching create replay recovers crash metadata without duplicating the rec
   await withService(async (service, store) => {
     const input = {
       conversationId: CONVERSATION_ID,
+      kind: { t: 'chat' } as const,
       config: DEFAULT_CONFIG,
       workingDirectory: '/tmp/project',
       creation: {
@@ -292,6 +299,7 @@ test('current session rotation is authoritative and tombstones block hydration',
   await withService(async (service, store) => {
     await service.create({
       conversationId: CONVERSATION_ID,
+      kind: { t: 'chat' },
       config: DEFAULT_CONFIG,
       currentSession: { provider: 'codex', sessionId: 'session-1' },
     });
@@ -307,6 +315,7 @@ test('current session rotation is authoritative and tombstones block hydration',
     await assert.rejects(
       service.hydrate({
         conversationId: 'session-2',
+        discoveredKind: { t: 'chat' },
         sessionBindings: [{ provider: 'codex', sessionId: 'session-2' }],
         legacy: { provider: 'codex', reportedModel: 'gpt-5.6-sol' },
       }),
@@ -320,6 +329,7 @@ test('updates reject stale revisions and unavailable combinations without persis
   await withService(async (service, store) => {
     const created = await service.create({
       conversationId: CONVERSATION_ID,
+      kind: { t: 'chat' },
       config: DEFAULT_CONFIG,
     });
     const stale = await service.update(
@@ -358,6 +368,7 @@ test('create and fork require a currently resolved configuration', async () => {
     await assert.rejects(
       service.create({
         conversationId: CONVERSATION_ID,
+        kind: { t: 'chat' },
         config: {
           ...DEFAULT_CONFIG,
           model: { mode: 'explicit', modelId: 'retired-model' },

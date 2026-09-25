@@ -1,8 +1,6 @@
-import type { Conversation, ConversationKind } from '@unleashd/shared';
-import { getBuddyContext, getConversationKind } from '@unleashd/shared';
+import type { ConversationRow, RowKind } from '@unleashd/shared';
 import { folderGroupKey, normalizeFolderDirectory } from '../utils/directories';
 import { isWorktreeDirectory } from '../utils/swarmUtils';
-import { conversationActivityMs } from '../utils/time';
 
 // =============================================================================
 // Conversation list index
@@ -47,10 +45,11 @@ export interface ConversationListEntry {
   readonly createdAtMs: number;
   /** Raw working directory; `directoryFacts(workingDirectory)` for derived facts. */
   readonly workingDirectory: string;
-  readonly kind: ConversationKind['kind'];
+  readonly kind: RowKind['t'];
   readonly buddyId: string | null;
   readonly buddyWorkspaceId: string | null;
-  readonly placement: Conversation['placement'];
+  /** A background Buddy run (automation, delegation): not an owner chat. */
+  readonly background: boolean;
   readonly isRunning: boolean;
   readonly done: boolean;
   readonly isWorker: boolean;
@@ -109,21 +108,21 @@ export function directoryFacts(raw: string): DirectoryFacts {
   return facts;
 }
 
-function buildEntry(conversation: Conversation): ConversationListEntry {
-  const buddy = getBuddyContext(conversation);
+function buildEntry(row: ConversationRow): ConversationListEntry {
+  const buddy = row.kind.t === 'buddy' ? row.kind : null;
   return {
-    id: conversation.id,
-    activityMs: conversationActivityMs(conversation),
-    createdAtMs: new Date(conversation.createdAt).getTime(),
-    workingDirectory: conversation.workingDirectory,
-    kind: getConversationKind(conversation).kind,
+    id: row.id,
+    activityMs: row.activityAt,
+    createdAtMs: row.createdAt,
+    workingDirectory: row.cwd,
+    kind: row.kind.t,
     buddyId: buddy?.buddyId ?? null,
     buddyWorkspaceId: buddy?.workspaceId ?? null,
-    placement: conversation.placement,
-    isRunning: conversation.isRunning,
-    done: conversation.done,
-    isWorker: conversation.isWorker,
-    parentConversationId: conversation.parentConversationId ?? null,
+    background: buddy?.visibility === 'background',
+    isRunning: row.run === 'running' || row.run === 'streaming',
+    done: row.done,
+    isWorker: row.kind.t === 'worker',
+    parentConversationId: row.parent,
   };
 }
 
@@ -135,7 +134,7 @@ function sameEntry(a: ConversationListEntry, b: ConversationListEntry): boolean 
     a.kind === b.kind &&
     a.buddyId === b.buddyId &&
     a.buddyWorkspaceId === b.buddyWorkspaceId &&
-    a.placement === b.placement &&
+    a.background === b.background &&
     a.isRunning === b.isRunning &&
     a.done === b.done &&
     a.isWorker === b.isWorker &&
@@ -188,7 +187,7 @@ function sortedList(byId: ReadonlyMap<string, ConversationListEntry>): Conversat
  */
 export function updateConversationIndex(
   index: ConversationIndex,
-  conversations: ReadonlyMap<string, Conversation>,
+  conversations: ReadonlyMap<string, ConversationRow>,
   changed: Iterable<string>
 ): ConversationIndex {
   const replaced: Array<{

@@ -2,10 +2,11 @@ import assert from 'node:assert/strict';
 import { once } from 'node:events';
 import type { AddressInfo } from 'node:net';
 import test from 'node:test';
-import type { Conversation } from '@unleashd/shared';
 import express from 'express';
 import { type ContextWindow, resolveContextWindow } from '../src/conversations/context-window';
+import { runtimeMessageSource } from '../src/conversations/messages';
 import {
+  type RoutedConversation,
   buildContextBreakdown,
   registerConversationRoutes,
   splitBriefing,
@@ -13,40 +14,29 @@ import {
 
 const WINDOW_200K: ContextWindow = { source: 'model', tokens: 200_000, modelId: 'haiku' };
 
-function conversation(overrides: Record<string, unknown> = {}): Conversation {
+function conversation(overrides: Record<string, unknown> = {}): RoutedConversation {
   return {
     id: 'convo-1',
     sessionId: 'sess-1',
     messages: [],
-    messageCount: 0,
-    isRunning: false,
-    isStreaming: false,
-    confirmed: true,
-    createdAt: new Date('2026-09-18T00:00:00Z'),
-    workingDirectory: '/tmp',
     provider: 'claude',
-    model: null,
-    reasoningEffort: null,
-    config: {},
-    configRevision: 1,
-    configResolution: { status: 'resolved', value: {} },
-    reportedModel: null,
-    subAgents: [],
-    queue: [],
-    isWorker: false,
-    swarmId: null,
-    workerId: null,
-    workerRole: null,
-    parentConversationId: null,
-    resumedFromConversationId: null,
-    modelName: 'claude-sonnet-4-5-20250929',
+    kind: { t: 'chat' },
+    observedModel: 'claude-sonnet-4-5-20250929',
+    providerUsage: null,
     swarmDebugPrefix: null,
-    kind: { kind: 'general' },
-    buddyContext: null,
-    purpose: 'general',
-    placement: 'default',
+    resumedFromConversationId: null,
+    // No resolved model: the window comes from the provider-reported model.
+    configResolution: {
+      status: 'unavailable',
+      catalogRevision: 'test',
+      error: { code: 'model_unavailable', message: 'fixture' },
+    },
+    toDetail: () => {
+      throw new Error('not used by the meter');
+    },
+    getMemorySnapshot: () => null,
     ...overrides,
-  } as unknown as Conversation;
+  } as RoutedConversation;
 }
 
 test('splitBriefing keeps the memory tail separate from the briefing head', () => {
@@ -144,7 +134,11 @@ test('buildContextBreakdown derives handoff from branch and resume lineage', () 
 
 test('context-breakdown route 404s identically to the conversation route', async () => {
   const app = express();
-  registerConversationRoutes(app, () => undefined);
+  registerConversationRoutes(
+    app,
+    () => undefined,
+    runtimeMessageSource(() => undefined)
+  );
   const server = app.listen(0, '127.0.0.1');
   await once(server, 'listening');
   try {
@@ -161,13 +155,14 @@ test('context-breakdown route 404s identically to the conversation route', async
 
 test('context-breakdown route returns the meter payload for a known conversation', async () => {
   const convo = conversation({
-    kind: { kind: 'buddy_builder' },
+    kind: { t: 'builder' },
     messages: [{ role: 'user', content: 'build a team', timestamp: new Date() }],
   });
   const app = express();
   registerConversationRoutes(
     app,
-    (id) => (id === 'convo-1' ? { toJSON: () => convo, getMemorySnapshot: () => null } : undefined),
+    (id) => (id === 'convo-1' ? convo : undefined),
+    runtimeMessageSource(() => undefined),
     {
       getBranch: () => null,
       lookupUsage: async () => null,

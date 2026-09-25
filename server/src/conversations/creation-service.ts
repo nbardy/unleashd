@@ -1,12 +1,5 @@
 import crypto from 'node:crypto';
-import type {
-  BuddyContext,
-  ConversationBranch,
-  ConversationConfig,
-  ConversationKind,
-  ConversationPlacement,
-  ConversationPurpose,
-} from '@unleashd/shared';
+import type { ConversationBranch, ConversationConfig, ConversationKind } from '@unleashd/shared';
 import type { ConversationConfigService } from './config-service';
 import type { ConversationOptions, ConversationRuntime } from './runtime';
 
@@ -16,16 +9,14 @@ export interface CreationFingerprintInput {
   initialMessage?: string;
   swarmDebugPrefix?: string;
   resumedFromConversationId?: string;
-  buddyContext?: BuddyContext;
-  purpose?: ConversationPurpose;
-  placement?: ConversationPlacement;
+  /** The one identity, written to the record once. */
+  kind: ConversationKind;
   branch?: ConversationBranch;
 }
 
 export interface CreateConversationInput extends CreationFingerprintInput {
   conversationId: string;
   commandId: string;
-  kind?: ConversationKind;
   buddyBriefing?: string;
   automationClaimToken?: string;
 }
@@ -48,9 +39,8 @@ export function creationFingerprint(input: CreationFingerprintInput): string {
         initialMessage: input.initialMessage ?? null,
         swarmDebugPrefix: input.swarmDebugPrefix ?? null,
         resumedFromConversationId: input.resumedFromConversationId ?? null,
-        buddyContext: input.buddyContext ?? null,
+        kind: input.kind,
         ...(input.branch ? { branch: input.branch } : {}),
-        ...(input.purpose === undefined ? {} : { purpose: input.purpose }),
       })
     )
     .digest('hex');
@@ -67,6 +57,7 @@ export function createConversationService(ports: ConversationCreationPorts) {
     const creation = await ports.configService.createOrReplay({
       conversationId: input.conversationId,
       workingDirectory: input.workingDirectory,
+      kind: input.kind,
       config: input.config,
       creation: {
         commandId: input.commandId,
@@ -74,9 +65,6 @@ export function createConversationService(ports: ConversationCreationPorts) {
         initialMessage: input.initialMessage,
         swarmDebugPrefix: input.swarmDebugPrefix,
         resumedFromConversationId: input.resumedFromConversationId,
-        buddyContext: input.buddyContext,
-        purpose: input.purpose,
-        placement: input.placement,
         branch: input.branch,
       },
     });
@@ -93,15 +81,13 @@ export function createConversationService(ports: ConversationCreationPorts) {
         workingDirectory: creation.record.workingDirectory ?? input.workingDirectory,
         configState: creation.state,
         done: creation.record.done,
-        placement: creation.record.creation?.placement ?? input.placement,
+        // The record's kind: a replay keeps what the first create stored.
+        kind: creation.record.kind,
         existingSessionId: currentSession?.sessionId,
         existingSessionAudienceKey: currentSession?.buddyAudienceKey,
         swarmDebugPrefix: input.swarmDebugPrefix ?? null,
         resumedFromConversationId: input.resumedFromConversationId ?? null,
-        kind: input.kind,
-        buddyContext: input.buddyContext,
         buddyBriefing: input.buddyBriefing,
-        purpose: input.purpose,
         automationClaimToken: input.automationClaimToken,
       });
       ports.registerConversation(conversation);

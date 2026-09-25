@@ -1,8 +1,9 @@
-import type { Conversation } from '@unleashd/shared';
+import type { ConversationRow } from '@unleashd/shared';
 import { useAtomValue } from 'jotai';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { swarmWorkersByProjectAtom } from '../../atoms/conversations';
+import { rowWorker } from '../../utils/conversation-row';
 import { getProjectColor } from '../../utils/projectColors';
 import {
   type IterationSpan,
@@ -29,7 +30,7 @@ import { EmptyState } from '../components/EmptyState';
 interface SwarmProject {
   projectRoot: string;
   projectName: string;
-  workers: readonly Conversation[];
+  workers: readonly ConversationRow[];
   swarmIds: Set<string>;
   accentColor: string;
 }
@@ -47,7 +48,10 @@ export function SwarmAnalyticsMobile() {
     return Array.from(workersByProject.entries())
       .map(([projectRoot, workers]) => {
         const swarmIds = new Set<string>();
-        for (const worker of workers) if (worker.swarmId) swarmIds.add(worker.swarmId);
+        for (const worker of workers) {
+          const swarmId = rowWorker(worker)?.swarmId;
+          if (swarmId) swarmIds.add(swarmId);
+        }
         return {
           projectRoot,
           projectName: getProjectName(projectRoot),

@@ -1,5 +1,5 @@
 import type {
-  Conversation,
+  ConversationRow,
   OompaRuntimeWorker,
   SwarmReviewLog,
   SwarmRun,
@@ -8,17 +8,19 @@ import type {
 import { useAtomValue } from 'jotai';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
-import { createConversation } from '../atoms/actions';
+import { createConversation, readConversationMessages } from '../atoms/actions';
 import {
   chatMessageGroupsAtomFamily,
   conversationAtomFamily,
   swarmWorkersForProjectAtomFamily,
 } from '../atoms/conversations';
 import { markMessagesSeen } from '../atoms/ui';
+import { useConversationBodies } from '../hooks/useConversationBodies';
 import { usePolledFetch } from '../hooks/usePolledFetch';
 import { useSwarmRuntimeSnapshots } from '../hooks/useSwarmRuntimeSnapshots';
+import { isRowRunning, rowWorker } from '../utils/conversation-row';
 import { getWorkerVisibilitySummary } from '../utils/swarmWorkerVisibility';
-import { formatTimeAgo, getLastMessageTime } from '../utils/time';
+import { formatTimeAgo } from '../utils/time';
 import { VirtualizedMessageList } from './VirtualizedMessageList';
 import './SwarmDetail.css';
 import { useTimeTick } from '../hooks/useTimeTick';
@@ -96,8 +98,12 @@ const ROLE_LABELS: Record<string, string> = {
 };
 
 /** Extract verdict from a review conversation's assistant messages */
-function extractVerdict(conv: Conversation): 'approved' | 'needs-changes' | 'rejected' | 'pending' {
-  for (const msg of conv.messages) {
+function extractVerdict(
+  conv: ConversationRow
+): 'approved' | 'needs-changes' | 'rejected' | 'pending' {
+  // Bodies are loaded only for a review that was opened (protocol v3); an
+  // unopened review reads as pending.
+  for (const msg of readConversationMessages(conv.id)) {
     if (msg.role !== 'assistant') continue;
     if (msg.content.includes('VERDICT: APPROVED')) return 'approved';
     if (msg.content.includes('VERDICT: NEEDS_CHANGES')) return 'needs-changes';
@@ -193,8 +199,8 @@ type SwarmTab = 'workers' | 'runs';
 // =============================================================================
 
 interface ExecGroup {
-  exec: Conversation;
-  reviews: Conversation[]; // review + fix sessions matched to this exec, newest first
+  exec: ConversationRow;
+  reviews: ConversationRow[]; // review + fix sessions matched to this exec, newest first
 }
 
 // =============================================================================
@@ -215,14 +221,15 @@ function WorkerChatPane({
   runningState: 'running' | 'idle';
 }) {
   const conversation = useAtomValue(conversationAtomFamily(conversationId ?? ''));
-  const isStreaming = conversation?.isStreaming ?? false;
+  const isStreaming = conversation?.run === 'streaming';
+  useConversationBodies(conversationId);
 
   // ALL hooks before any early return (React hook ordering rule)
   const messageGroups = useAtomValue(chatMessageGroupsAtomFamily(conversationId ?? ''));
 
   const lastMessageRef = useRef<HTMLDivElement>(null);
   const scrollToBottomRef = useRef<(() => void) | null>(null);
-  const workingDirectory = conversation?.workingDirectory ?? '';
+  const workingDirectory = conversation?.cwd ?? '';
 
   if (!conversationId || !conversation) {
     return (
@@ -232,8 +239,8 @@ function WorkerChatPane({
     );
   }
 
-  const role = conversation.workerRole ?? 'work';
-  const model = shortModelName(conversation.modelName);
+  const role = rowWorker(conversation)?.role ?? 'work';
+  const model = shortModelName(null);
 
   return (
     <div className="worker-chat-pane ui-stack">
@@ -259,7 +266,7 @@ function WorkerChatPane({
           onScrollStateChange={NO_OP_SCROLL}
           conversationId={conversationId}
           markMessagesSeen={markMessagesSeen}
-          totalMessageCount={conversation.messages.length}
+          totalMessageCount={conversation.messageCount}
           scrollToBottomRef={scrollToBottomRef}
           workingDirectory={workingDirectory}
         />
@@ -666,10 +673,10 @@ export function SwarmDetail() {
   }, [runtimeSnapshot]);
 
   const isWorkerRunningLive = useCallback(
-    (worker: Conversation): boolean => {
-      const key = worker.workerId ?? worker.id;
+    (worker: ConversationRow): boolean => {
+      const key = rowWorker(worker)?.workerId ?? worker.id;
       const state = runtimeWorkerStates.get(key);
-      if (!state) return worker.isRunning;
+      if (!state) return isRowRunning(worker);
       return state.status === 'running' || state.status === 'starting';
     },
     [runtimeWorkerStates]
@@ -725,6 +732,7 @@ export function SwarmDetail() {
         reasoning: { mode: 'default' },
       },
       swarmDebugPrefix: prefix,
+      kind: { t: 'chat' },
     });
     navigate(`/chat/${id}`);
   }, [projectRoot, effectiveRunId, runtimeSnapshot, navigate]);
@@ -732,13 +740,13 @@ export function SwarmDetail() {
   // Filter workers belonging to this project, build exec groups with paired reviews/fixes.
   // Reviews/fixes are matched to exec workers by time proximity within the same swarmId.
   const { execGroups, allWorkers, workCount, reviewCount, fixCount } = useMemo(() => {
-    const execs: Conversation[] = [];
-    const reviewsAndFixes: Conversation[] = [];
+    const execs: ConversationRow[] = [];
+    const reviewsAndFixes: ConversationRow[] = [];
 
     for (const conv of projectWorkers) {
-      if (effectiveRunId && conv.swarmId !== effectiveRunId) continue;
+      if (effectiveRunId && (rowWorker(conv)?.swarmId ?? null) !== effectiveRunId) continue;
 
-      if (conv.workerRole === 'review' || conv.workerRole === 'fix') {
+      if (rowWorker(conv)?.role === 'review' || rowWorker(conv)?.role === 'fix') {
         reviewsAndFixes.push(conv);
       } else {
         execs.push(conv);
@@ -746,13 +754,13 @@ export function SwarmDetail() {
     }
 
     // Sort execs: running first, then by most recent activity
-    const sortByActivity = (a: Conversation, b: Conversation) => {
+    const sortByActivity = (a: ConversationRow, b: ConversationRow) => {
       const aRunning = isWorkerRunningLive(a);
       const bRunning = isWorkerRunningLive(b);
       if (aRunning && !bRunning) return -1;
       if (!aRunning && bRunning) return 1;
-      const aTime = getLastMessageTime(a.messages)?.getTime() ?? 0;
-      const bTime = getLastMessageTime(b.messages)?.getTime() ?? 0;
+      const aTime = a.activityAt;
+      const bTime = b.activityAt;
       return bTime - aTime;
     };
     execs.sort(sortByActivity);
@@ -766,9 +774,8 @@ export function SwarmDetail() {
       let bestDelta = Number.POSITIVE_INFINITY;
       for (const g of groups) {
         // Must share swarmId (or both null)
-        if (g.exec.swarmId !== rf.swarmId) continue;
-        const execTime =
-          getLastMessageTime(g.exec.messages)?.getTime() ?? new Date(g.exec.createdAt).getTime();
+        if ((rowWorker(g.exec)?.swarmId ?? null) !== (rowWorker(rf)?.swarmId ?? null)) continue;
+        const execTime = g.exec.activityAt;
         const delta = Math.abs(rfCreated - execTime);
         if (delta < bestDelta) {
           bestDelta = delta;
@@ -792,8 +799,8 @@ export function SwarmDetail() {
       execGroups: groups,
       allWorkers: all,
       workCount: execs.length,
-      reviewCount: reviewsAndFixes.filter((r) => r.workerRole === 'review').length,
-      fixCount: reviewsAndFixes.filter((r) => r.workerRole === 'fix').length,
+      reviewCount: reviewsAndFixes.filter((r) => rowWorker(r)?.role === 'review').length,
+      fixCount: reviewsAndFixes.filter((r) => rowWorker(r)?.role === 'fix').length,
     };
   }, [projectWorkers, effectiveRunId, isWorkerRunningLive]);
 
@@ -1062,12 +1069,12 @@ export function SwarmDetail() {
               {execGroups.map((group, groupIdx) => {
                 const w = group.exec;
                 const isSelected = groupIdx === selectedGroupIdx;
-                const model = shortModelName(w.modelName);
+                const model = shortModelName(null);
                 const isRunning = isWorkerRunningLive(w);
                 const statusClass = isRunning ? 'running' : 'idle';
                 // Aggregate verdict from most recent review
                 const latestVerdict =
-                  group.reviews.length > 0 && group.reviews[0].workerRole === 'review'
+                  group.reviews.length > 0 && rowWorker(group.reviews[0])?.role === 'review'
                     ? extractVerdict(group.reviews[0])
                     : null;
                 return (
@@ -1079,10 +1086,10 @@ export function SwarmDetail() {
                     <div className={`roster-worker ui-row ${isSelected ? 'selected' : ''}`}>
                       <span className={`roster-status-dot ${statusClass}`} />
                       <span className="roster-worker-id ui-truncate">
-                        {w.workerId ?? w.id.substring(0, 8)}
+                        {rowWorker(w)?.workerId ?? w.id.substring(0, 8)}
                       </span>
                       {model && <span className="roster-model ui-muted">{model}</span>}
-                      <span className="roster-worker-msgs ui-muted">{w.messages.length}m</span>
+                      <span className="roster-worker-msgs ui-muted">{w.messageCount}m</span>
                       {group.reviews.length > 0 && (
                         <span className="roster-review-count">{group.reviews.length}r</span>
                       )}

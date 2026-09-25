@@ -52,6 +52,7 @@ test('config store round-trips durable selection intent and resolves session bin
   await withStore(async (store) => {
     const created = await store.create({
       conversationId: CONVERSATION_ID,
+      kind: { t: 'chat' },
       sessionBindings: [{ provider: 'codex', sessionId: 'thread/with unsafe chars' }],
       config: CONFIG,
       lastResolvedConfig: RESOLVED,
@@ -70,6 +71,7 @@ test('config store rekeys opaque legacy application IDs without losing session i
     const opaqueId = 'ses_native-provider-id';
     await store.create({
       conversationId: opaqueId,
+      kind: { t: 'chat' },
       currentSession: { provider: 'opencode', sessionId: opaqueId },
       config: { ...CONFIG, provider: 'opencode' },
       provenance: 'legacy_inferred',
@@ -86,10 +88,11 @@ test('config store rekeys opaque legacy application IDs without losing session i
   });
 });
 
-test('legacy v1 records parse as active without inventing a current session', () => {
+test('records without lifecycle fields parse as active without inventing a current session', () => {
   const parsed = PersistedConversationConfigRecordSchema.parse({
-    version: 1,
+    version: 2,
     conversationId: CONVERSATION_ID,
+    kind: { t: 'chat' },
     sessionBindings: [{ provider: 'codex', sessionId: 'legacy-session' }],
     config: CONFIG,
     configRevision: 0,
@@ -105,6 +108,7 @@ test('config store serializes concurrent revision checks', async () => {
   await withStore(async (store) => {
     const initial = await store.create({
       conversationId: CONVERSATION_ID,
+      kind: { t: 'chat' },
       config: CONFIG,
       provenance: 'user',
     });
@@ -134,6 +138,7 @@ test('session binding rotation removes the old index and lookup repairs a missin
   await withStore(async (store) => {
     const initial = await store.create({
       conversationId: CONVERSATION_ID,
+      kind: { t: 'chat' },
       sessionBindings: [{ provider: 'codex', sessionId: 'old-session' }],
       config: CONFIG,
       provenance: 'user',
@@ -179,6 +184,7 @@ test('bulk session lookups scan once while imports, rotations, tombstones, and r
         assert.equal(await store.findBySession('codex', sessionId), undefined);
         await store.create({
           conversationId: `import-${i}`,
+          kind: { t: 'chat' },
           currentSession: { provider: 'codex', sessionId },
           config: CONFIG,
           provenance: 'legacy_inferred',
@@ -219,12 +225,14 @@ test('bulk lookup repairs stale indexes, reads current records, and releases its
     const binding = { provider: 'codex' as const, sessionId: 'native-session' };
     await store.create({
       conversationId: CONVERSATION_ID,
+      kind: { t: 'chat' },
       currentSession: binding,
       config: CONFIG,
       provenance: 'user',
     });
     await store.create({
       conversationId: OTHER_CONVERSATION_ID,
+      kind: { t: 'chat' },
       config: CONFIG,
       provenance: 'user',
     });
@@ -253,6 +261,7 @@ test('bulk lookup repairs stale indexes, reads current records, and releases its
 
         await otherStore.create({
           conversationId: 'external-record',
+          kind: { t: 'chat' },
           currentSession: { provider: 'codex', sessionId: 'external-session' },
           config: CONFIG,
           provenance: 'user',
@@ -286,6 +295,7 @@ test('bulk lookup includes writes and purges committed while its initial record 
   await withStore(async (store) => {
     await store.create({
       conversationId: CONVERSATION_ID,
+      kind: { t: 'chat' },
       currentSession: { provider: 'codex', sessionId: 'removed-during-scan' },
       config: CONFIG,
       provenance: 'user',
@@ -327,6 +337,7 @@ test('bulk lookup includes writes and purges committed while its initial record 
       await store.purge(CONVERSATION_ID);
       await store.create({
         conversationId: OTHER_CONVERSATION_ID,
+        kind: { t: 'chat' },
         currentSession: { provider: 'codex', sessionId: 'created-during-scan' },
         config: CONFIG,
         provenance: 'user',
@@ -345,8 +356,18 @@ test('list inside a bulk scope serves its one scan and never a record this store
   // already read them all (2026-09-25); reusing that scan must not hide writes
   // made after it.
   await withStore(async (store) => {
-    await store.create({ conversationId: CONVERSATION_ID, config: CONFIG, provenance: 'user' });
-    await store.create({ conversationId: 'purged', config: CONFIG, provenance: 'user' });
+    await store.create({
+      kind: { t: 'chat' },
+      conversationId: CONVERSATION_ID,
+      config: CONFIG,
+      provenance: 'user',
+    });
+    await store.create({
+      kind: { t: 'chat' },
+      conversationId: 'purged',
+      config: CONFIG,
+      provenance: 'user',
+    });
     const scanner = store as unknown as { scanRecords: () => ReturnType<typeof store.list> };
     const scan = scanner.scanRecords.bind(store);
     let scans = 0;
@@ -360,6 +381,7 @@ test('list inside a bulk scope serves its one scan and never a record this store
       await store.purge('purged');
       await store.create({
         conversationId: OTHER_CONVERSATION_ID,
+        kind: { t: 'chat' },
         config: CONFIG,
         provenance: 'user',
       });
@@ -434,12 +456,14 @@ test('after the startup scope, a session lookup miss never scans every record', 
   await withStore(async (store, root) => {
     await store.create({
       conversationId: CONVERSATION_ID,
+      kind: { t: 'chat' },
       currentSession: { provider: 'codex', sessionId: 'known-session' },
       config: CONFIG,
       provenance: 'user',
     });
     await store.create({
       conversationId: OTHER_CONVERSATION_ID,
+      kind: { t: 'chat' },
       currentSession: { provider: 'claude', sessionId: 'unindexed-on-disk' },
       config: CONFIG,
       provenance: 'user',
@@ -468,6 +492,7 @@ test('after the startup scope, a session lookup miss never scans every record', 
     // Writes after startup keep the retained index current.
     await restarted.create({
       conversationId: 'created-after-startup',
+      kind: { t: 'chat' },
       currentSession: { provider: 'codex', sessionId: 'late-session' },
       config: CONFIG,
       provenance: 'user',
@@ -486,6 +511,7 @@ test('deleting a config persists a tombstone and keeps session identity across r
   await withStore(async (store, root) => {
     await store.create({
       conversationId: CONVERSATION_ID,
+      kind: { t: 'chat' },
       currentSession: { provider: 'codex', sessionId: 'native-session' },
       config: CONFIG,
       provenance: 'user',
@@ -520,6 +546,7 @@ test('current session rotation preserves historical aliases without ambiguous re
   await withStore(async (store) => {
     await store.create({
       conversationId: CONVERSATION_ID,
+      kind: { t: 'chat' },
       currentSession: { provider: 'codex', sessionId: 'old-session' },
       config: CONFIG,
       provenance: 'user',
@@ -550,6 +577,7 @@ test('concurrent session rotations retain every alias through record-level CAS',
   await withStore(async (store) => {
     await store.create({
       conversationId: CONVERSATION_ID,
+      kind: { t: 'chat' },
       currentSession: { provider: 'codex', sessionId: 'session-1' },
       config: CONFIG,
       provenance: 'user',
@@ -580,6 +608,7 @@ test('creation recovery metadata and initial-message delivery marker are durable
   await withStore(async (store) => {
     await store.create({
       conversationId: CONVERSATION_ID,
+      kind: { t: 'chat' },
       workingDirectory: '/tmp/project',
       creation: {
         commandId: 'create-command',
@@ -617,6 +646,7 @@ test('corrupt records are quarantined once and do not prevent loading valid reco
   await withStore(async (store, _root, warnings) => {
     await store.create({
       conversationId: CONVERSATION_ID,
+      kind: { t: 'chat' },
       config: CONFIG,
       provenance: 'user',
     });
@@ -659,6 +689,7 @@ test('future-version records are preserved and never quarantined or overwritten'
     await assert.rejects(
       store.create({
         conversationId: CONVERSATION_ID,
+        kind: { t: 'chat' },
         config: CONFIG,
         provenance: 'user',
       }),
@@ -681,6 +712,7 @@ test('provider usage persists on the current session and survives a reopen', asy
   await withStore(async (store, root) => {
     await store.create({
       conversationId: CONVERSATION_ID,
+      kind: { t: 'chat' },
       sessionBindings: [],
       config: CONFIG,
       provenance: 'user',
@@ -709,6 +741,7 @@ test('usage for a superseded session is dropped, not filed against the new one',
   await withStore(async (store) => {
     await store.create({
       conversationId: CONVERSATION_ID,
+      kind: { t: 'chat' },
       sessionBindings: [],
       config: CONFIG,
       provenance: 'user',
@@ -733,6 +766,7 @@ test('re-binding the same session keeps its measured usage', async () => {
   await withStore(async (store) => {
     await store.create({
       conversationId: CONVERSATION_ID,
+      kind: { t: 'chat' },
       sessionBindings: [],
       config: CONFIG,
       provenance: 'user',

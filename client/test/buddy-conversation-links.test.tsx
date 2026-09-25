@@ -19,7 +19,7 @@
  */
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import type { Conversation } from '@unleashd/shared';
+import type { ConversationRow } from '@unleashd/shared';
 import { Provider, createStore } from 'jotai';
 import type { ReactElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -29,19 +29,19 @@ import { BuddyConversationList } from '../src/components/buddies/BuddyConversati
 import { BuddyRunList } from '../src/components/buddies/BuddyRunList';
 import { BuddySectionNav } from '../src/components/buddies/BuddySectionNav';
 import type { Run } from '../src/components/buddies/types';
+import { syntheticConversation } from './fixtures/synthetic-conversations';
 
 const LIVE = 'live-conversation-id';
 const DEAD = 'dead-conversation-id';
 
-const buddyConversation = (id: string, overrides: Partial<Conversation> = {}) =>
-  ({
+const buddyConversation = (id: string, overrides: Partial<ConversationRow> = {}) =>
+  syntheticConversation(1, {
     id,
-    kind: { kind: 'buddy', buddyId: 'lead', workspaceId: 'ws-1' },
-    messages: [],
-    isRunning: false,
-    createdAt: new Date('2026-09-15'),
+    kind: { t: 'buddy', buddyId: 'lead', workspaceId: 'ws-1', visibility: 'foreground' },
+    createdAt: Date.parse('2026-09-15'),
+    activityAt: Date.parse('2026-09-15'),
     ...overrides,
-  }) as Conversation;
+  });
 
 /** A store holding exactly the LIVE conversation; DEAD is deliberately absent. */
 function storeWithLive() {
@@ -91,21 +91,17 @@ test('run lists link live run conversations and never link dead ones', () => {
 
 test('Buddy conversations show real previews, sort running first, and react to completion', () => {
   const store = createStore();
-  const running = buddyConversation(LIVE, {
-    messages: [
-      { role: 'user', content: 'Review the launch plan', timestamp: new Date('2026-09-15') },
-    ],
-    isRunning: true,
-  });
+  const running = buddyConversation(LIVE, { label: 'Review the launch plan', run: 'running' });
   const recent = buddyConversation('recent', {
-    messages: [
-      { role: 'assistant', content: 'The rollout is ready', timestamp: new Date('2026-09-16') },
-    ],
-    createdAt: new Date('2026-09-16'),
+    label: 'The rollout is ready',
+    createdAt: Date.parse('2026-09-16'),
+    activityAt: Date.parse('2026-09-16'),
   });
-  const background = buddyConversation('background', { placement: 'background' });
+  const background = buddyConversation('background', {
+    kind: { t: 'buddy', buddyId: 'lead', workspaceId: 'ws-1', visibility: 'background' },
+  });
   const otherBuddy = buddyConversation('other', {
-    kind: { kind: 'buddy', buddyId: 'engineer', workspaceId: 'ws-1' },
+    kind: { t: 'buddy', buddyId: 'engineer', workspaceId: 'ws-1', visibility: 'foreground' },
   });
   store.set(
     conversationsAtom,
@@ -126,7 +122,7 @@ test('Buddy conversations show real previews, sort running first, and react to c
   store.set(
     conversationsAtom,
     new Map([
-      [LIVE, { ...running, isRunning: false }],
+      [LIVE, { ...running, run: 'idle' }],
       ['recent', recent],
     ])
   );

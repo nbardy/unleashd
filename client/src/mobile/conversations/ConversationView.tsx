@@ -1,5 +1,4 @@
-import type { Conversation, SubAgent } from '@unleashd/shared';
-import { getBuddyContext, isBuddyBuilderConversation } from '@unleashd/shared';
+import type { ConversationRow, SubAgent } from '@unleashd/shared';
 import { useAtomValue } from 'jotai';
 import {
   type MouseEventHandler,
@@ -11,27 +10,29 @@ import {
   useState,
 } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { loadConversationDetails, setActiveConversationId } from '../../atoms/actions';
+import { setActiveConversationId } from '../../atoms/actions';
 import {
   chatMessageGroupsAtomFamily,
   childConversationsAtomFamily,
   conversationAtomFamily,
-  conversationDetailsLoadedAtomFamily,
+  conversationDetailAtomFamily,
   conversationLoadCompleteAtom,
+  conversationMessagesAtomFamily,
   pendingConfigCommandAtomFamily,
   pendingCreationAtomFamily,
   queueAtomFamily,
   streamingAtomFamily,
+  subAgentsAtomFamily,
 } from '../../atoms/conversations';
 import { forkConversation } from '../../atoms/fork-actions';
 import { markMessagesSeen, setSavedActiveConversationId } from '../../atoms/ui';
-import { effectiveSwarmDebugPrefix } from '../../components/buddies/ui-contract';
+import { useConversationBodies } from '../../hooks/useConversationBodies';
 import { useCopyAction } from '../../hooks/useCopyAction';
 import { useProviderCatalog } from '../../hooks/useProviderCatalog';
 import { useSavedPrompts } from '../../hooks/useSavedPrompts';
 import { useTurnDiagnostics } from '../../hooks/useTurnDiagnostics';
 import { mobileConversationRouteState } from '../../utils/conversation-route-state';
-import { buildThreadTranscript } from '../../utils/conversation-transcript';
+import { type OpenConversation, buildThreadTranscript } from '../../utils/conversation-transcript';
 import { shortenHomePath } from '../../utils/directories';
 import { buildUnifiedSubAgents } from '../../utils/subAgents';
 import { parseStatsFromPrefix } from '../../utils/swarmConvoParsers';
@@ -80,7 +81,7 @@ type GroupWindow = { readonly conversationId: string; readonly firstShown: numbe
 /** Matches no conversation, so the first render with history pins a window. */
 const UNPINNED_GROUP_WINDOW: GroupWindow = { conversationId: '', firstShown: 0 };
 
-function CopyThreadButton({ conversation }: { conversation: Conversation }) {
+function CopyThreadButton({ conversation }: { conversation: OpenConversation }) {
   const text = buildThreadTranscript(conversation);
   const { state, copy } = useCopyAction(text);
   const label = state === 'copied' ? 'Copied' : state === 'failed' ? 'Copy failed' : 'Copy thread';
@@ -97,42 +98,22 @@ function CopyThreadButton({ conversation }: { conversation: Conversation }) {
   );
 }
 
-function ForkButton({ conversation }: { conversation: Conversation }) {
+function ForkButton({ conversation }: { conversation: OpenConversation }) {
   const navigate = useNavigate();
   const location = useLocation();
-  const [error, setError] = useState<string | null>(null);
-
-  // A conversation the server has not confirmed yet has no config to fork from.
-  const disabled = !conversation.config;
-
+  // Offered only once the source is loaded (row + detail + bodies).
   return (
-    <>
-      <button
-        type="button"
-        className="mobile-chat__action"
-        disabled={disabled}
-        title={
-          disabled
-            ? 'Waiting for the server to confirm this conversation'
-            : 'Fork into a new thread (soft handoff — carries the transcript as a draft)'
-        }
-        onClick={() => {
-          const forkedId = forkConversation(conversation);
-          if (!forkedId) {
-            setError('Cannot fork yet — conversation is still being created.');
-            return;
-          }
-          navigate(`/chat/${forkedId}`, { state: mobileConversationRouteState(location) });
-        }}
-      >
-        Fork
-      </button>
-      {error ? (
-        <span role="alert" className="mobile-chat__action-error">
-          {error}
-        </span>
-      ) : null}
-    </>
+    <button
+      type="button"
+      className="mobile-chat__action"
+      title="Fork into a new thread (soft handoff — carries the transcript as a draft)"
+      onClick={() => {
+        const forkedId = forkConversation(conversation);
+        navigate(`/chat/${forkedId}`, { state: mobileConversationRouteState(location) });
+      }}
+    >
+      Fork
+    </button>
   );
 }
 
@@ -237,12 +218,12 @@ function MobileResumeWidget({
   sourceConversation,
 }: {
   sourceConversationId: string;
-  sourceConversation: Conversation | null;
+  sourceConversation: ConversationRow | null;
 }) {
   const location = useLocation();
   const displayId = sourceConversation?.id?.substring(0, 8) ?? sourceConversationId.substring(0, 8);
   const provider = sourceConversation?.provider ?? 'claude';
-  const folder = sourceConversation && shortenHomePath(sourceConversation.workingDirectory);
+  const folder = sourceConversation && shortenHomePath(sourceConversation.cwd);
   return (
     <MobileSection title="Resumed from">
       <Link
@@ -468,10 +449,13 @@ export function ConversationView({
   headerAside?: ReactNode;
 }) {
   const conversation = useAtomValue(conversationAtomFamily(conversationId));
-  const detailsLoaded = useAtomValue(conversationDetailsLoadedAtomFamily(conversationId));
+  const detail = useAtomValue(conversationDetailAtomFamily(conversationId));
+  const messages = useAtomValue(conversationMessagesAtomFamily(conversationId));
+  const subAgents = useAtomValue(subAgentsAtomFamily(conversationId));
+  const { loaded: detailsLoaded, error: detailError } = useConversationBodies(conversationId);
   const streamingText = useAtomValue(streamingAtomFamily(conversationId));
   const messageGroups = useAtomValue(chatMessageGroupsAtomFamily(conversationId));
-  const totalMessageCount = conversation?.messages.length ?? 0;
+  const totalMessageCount = messages.length;
   const pendingCreation = useAtomValue(pendingCreationAtomFamily(conversationId));
   const conversationLoadComplete = useAtomValue(conversationLoadCompleteAtom);
   const pendingConfigCommand = useAtomValue(pendingConfigCommandAtomFamily(conversationId));
@@ -480,7 +464,6 @@ export function ConversationView({
   const queue = useAtomValue(queueAtomFamily(conversationId ?? ''));
   const { catalog } = useProviderCatalog();
 
-  const [detailError, setDetailError] = useState<string | null>(null);
   const [modelSheetOpen, setModelSheetOpen] = useState(false);
   const lastMessageRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -540,44 +523,17 @@ export function ConversationView({
     };
   }, [conversationId]);
 
-  // Load boundary: gate on conversationDetailsLoadedAtomFamily, lazy HTTP fetch
-  useEffect(() => {
-    if (!conversationId || !conversation || detailsLoaded) {
-      setDetailError(null);
-      return;
-    }
-    let cancelled = false;
-    setDetailError(null);
-    void loadConversationDetails(conversationId).catch((e) => {
-      if (!cancelled) setDetailError(e instanceof Error ? e.message : String(e));
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [conversationId, conversation, detailsLoaded]);
-
   // Same derivation as Chat.tsx: unified sub-agents + swarm prefix + resume lineage.
   // Reuses shared utils so desktop and mobile cannot drift.
-  const unifiedSubAgents = useMemo(() => {
-    if (!conversation) return [];
-    return buildUnifiedSubAgents(conversation, childConversations);
-  }, [conversation, childConversations]);
-
-  const buddyContext = useMemo(
-    () => getBuddyContext(conversation as Parameters<typeof getBuddyContext>[0]),
-    [conversation]
+  const unifiedSubAgents = useMemo(
+    () => buildUnifiedSubAgents(subAgents, childConversations),
+    [subAgents, childConversations]
   );
 
-  const visibleSwarmDebugPrefix = useMemo(() => {
-    if (!conversation) return null;
-    return effectiveSwarmDebugPrefix(
-      buddyContext,
-      conversation.swarmDebugPrefix ?? null,
-      conversation.kind ?? null
-    );
-  }, [buddyContext, conversation]);
+  // The server sets a swarm prefix only on chats (T09), so no kind check here.
+  const visibleSwarmDebugPrefix = detail?.swarmDebugPrefix ?? null;
 
-  const resumedFromConversationId = conversation?.resumedFromConversationId ?? '';
+  const resumedFromConversationId = conversation?.resumedFrom ?? '';
   const resumedFromConversation = useAtomValue(conversationAtomFamily(resumedFromConversationId));
 
   // Mark seen when last message becomes visible (IntersectionObserver plumbing §4)
@@ -659,8 +615,8 @@ export function ConversationView({
   // Turn diagnostics — same hook desktop Chat.tsx uses (hooks/useTurnDiagnostics)
   // + same derived view model (utils/turn-diagnostics). Reuses existing atoms
   // and polling, not new state. Must stay before early returns.
-  const runtimeIsRunning = conversation?.isRunning ?? false;
-  const runtimeIsStreaming = conversation?.isStreaming ?? false;
+  const runtimeIsRunning = conversation?.run === 'running' || conversation?.run === 'streaming';
+  const runtimeIsStreaming = conversation?.run === 'streaming';
   const runtimeTurnActive = runtimeIsRunning || runtimeIsStreaming;
   const { attempt: latestTurnAttempt } = useTurnDiagnostics(
     conversationId || undefined,
@@ -765,7 +721,7 @@ export function ConversationView({
     );
   }
 
-  if (!detailsLoaded) {
+  if (!detailsLoaded || !detail) {
     return (
       <div className="mobile-chat">
         <div className="mobile-chat__header ui-stack">
@@ -789,9 +745,10 @@ export function ConversationView({
     );
   }
 
-  const dirDisplay = shortenHomePath(conversation.workingDirectory);
-  const isRunning = conversation.isRunning ?? false;
-  const isStreaming = conversation.isStreaming ?? false;
+  const dirDisplay = shortenHomePath(conversation.cwd);
+  const isRunning = runtimeIsRunning;
+  const isStreaming = runtimeIsStreaming;
+  const open: OpenConversation = { row: conversation, detail, messages };
   const turnActive = isRunning || isStreaming;
   // The live assistant bubble hosts its own working indicator when it has no
   // renderable parts yet; the standalone row below covers every other shape
@@ -803,7 +760,7 @@ export function ConversationView({
   const configSaving = !!pendingConfigCommand && !pendingConfigCommand.error;
   const configError = pendingConfigCommand?.error ?? null;
 
-  const hasThreadContext = unifiedSubAgents.length > 0 || !!conversation.resumedFromConversationId;
+  const hasThreadContext = unifiedSubAgents.length > 0 || !!conversation.resumedFrom;
   const showSwarmPrefix = !!visibleSwarmDebugPrefix;
 
   return (
@@ -822,9 +779,9 @@ export function ConversationView({
             </Link>
           ) : null}
           <div className="mobile-chat__heading">
-            <div className="mobile-chat__dir ui-truncate" title={conversation.workingDirectory}>
+            <div className="mobile-chat__dir ui-truncate" title={conversation.cwd}>
               {dirDisplay}
-              {isBuddyBuilderConversation(conversation) && (
+              {conversation.kind.t === 'builder' && (
                 <span className="buddy-helper-kicker"> · Buddy Builder</span>
               )}
             </div>
@@ -832,7 +789,7 @@ export function ConversationView({
               {/* One compact line: status + model. The model used to be three
                   always-visible dropdown chips that wrapped onto two or three
                   rows on a phone and ate a third of the screen. */}
-              {conversation.config ? (
+              {detail ? (
                 <>
                   <button
                     type="button"
@@ -841,7 +798,7 @@ export function ConversationView({
                     aria-haspopup="dialog"
                     title="Change model"
                   >
-                    {modelSummary(conversation.config, catalog)}
+                    {modelSummary(detail.config.config, catalog)}
                     {configSaving ? ' …' : ''}
                     <span aria-hidden="true"> ▾</span>
                   </button>
@@ -851,8 +808,8 @@ export function ConversationView({
           </div>
           <div className="mobile-chat__actions ui-row">
             {headerAside}
-            <CopyThreadButton conversation={conversation} />
-            <ForkButton conversation={conversation} />
+            <CopyThreadButton conversation={open} />
+            <ForkButton conversation={open} />
           </div>
         </div>
 
@@ -875,16 +832,16 @@ export function ConversationView({
           {unifiedSubAgents.length > 0 ? (
             <MobileSubAgentPanel subAgents={unifiedSubAgents} />
           ) : null}
-          {conversation.resumedFromConversationId ? (
+          {conversation.resumedFrom ? (
             <MobileResumeWidget
-              sourceConversationId={conversation.resumedFromConversationId}
+              sourceConversationId={conversation.resumedFrom}
               sourceConversation={resumedFromConversation ?? null}
             />
           ) : null}
           {showSwarmPrefix ? (
             <MobileSwarmPrefix
               prefix={visibleSwarmDebugPrefix!}
-              swarmId={conversation.swarmId ?? null}
+              swarmId={conversation.kind.t === 'worker' ? conversation.kind.swarmId : null}
             />
           ) : null}
         </div>
@@ -904,7 +861,7 @@ export function ConversationView({
         )}
         {messageGroups.length === 0 ? (
           <div className="mobile-chat__empty">
-            {isBuddyBuilderConversation(conversation)
+            {conversation.kind.t === 'builder'
               ? 'Describe a Buddy or a whole team, their workspace, and what they should accomplish.'
               : 'No messages yet. Send a message to start.'}
           </div>
@@ -953,11 +910,11 @@ export function ConversationView({
         paletteSelectedContent={paletteSelectedContent}
       />
 
-      {modelSheetOpen && conversation.config ? (
+      {modelSheetOpen ? (
         <ModelSheetMobile
           conversationId={conversation.id}
-          config={conversation.config}
-          configRevision={conversation.configRevision}
+          config={detail.config.config}
+          configRevision={detail.config.revision}
           onClose={() => setModelSheetOpen(false)}
         />
       ) : null}

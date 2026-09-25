@@ -39,18 +39,11 @@ const RUN_STATUS: Record<RunStatus, string> = {
   cancelled: 'Cancelled',
 };
 
-function conversationTitle(messages: Array<{ role?: string; content?: string }>): string | null {
-  const source = messages.find((message) => message.role === 'user') ?? messages[0];
-  const firstLine = source?.content?.split('\n')[0]?.trim();
-  if (!firstLine) return null;
-  return firstLine.length > 90 ? `${firstLine.slice(0, 87)}…` : firstLine;
-}
-
 function RunRow({ run, available }: { run: Run; available: boolean }) {
   const conversation = useAtomValue(
     conversationAtomFamily(run.conversationId ?? NO_CONVERSATION_ID)
   );
-  const title = conversationTitle(conversation?.messages ?? []) ?? `Run ${run.id.slice(0, 8)}`;
+  const title = conversation?.label ?? `Run ${run.id.slice(0, 8)}`;
   const body = (
     <>
       <span className="buddy-workspace-job-dot" aria-hidden="true" />

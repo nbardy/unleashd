@@ -19,26 +19,29 @@ function queueAndCapture(): { settled: Promise<void>; commandId: string } {
 
 test('queued composer text waits for an exact server acknowledgement', async () => {
   const { settled, commandId } = queueAndCapture();
-  handleMessage({ type: 'command_accepted', commandId, conversationId });
+  handleMessage({ type: 'ack', commandId, result: { t: 'accepted' } });
   await settled;
 });
 
 test('draining rejection rejects the exact queued command so the composer can retain text', async () => {
   const { settled, commandId } = queueAndCapture();
   handleMessage({
-    type: 'command_rejected',
+    type: 'ack',
     commandId,
-    conversationId,
-    error: {
-      code: 'server_draining',
-      message: 'Backend reload is draining active turns; try again after reconnecting',
+    result: {
+      t: 'rejected',
+      conversationId,
+      error: {
+        code: 'server_draining',
+        message: 'Backend reload is draining active turns; try again after reconnecting',
+      },
     },
   });
 
   await assert.rejects(settled, /Backend reload is draining active turns/);
 });
 
-test('legacy uncorrelated server errors release pending composers without losing their draft', async () => {
+test('uncorrelated server errors release pending composers without losing their draft', async () => {
   setSendFn(() => undefined);
   const rejected = queueMessage(conversationId, 'cont');
 

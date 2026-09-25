@@ -11,10 +11,9 @@ export type MobileSearchState = { kind: 'idle' } | { kind: 'searching'; query: s
 export const mobileSearchStateAtom = atom<MobileSearchState>({ kind: 'idle' });
 
 // Derived: matching conversation ids, newest-first. Idle → every id (rows
-// subscribe per id). Searching → fuzzyMatch over workingDirectory + id +
-// last-message preview. Only a live query reads full records, so an idle
-// search page does no work on conversation events.
-// Conversation has no title field.
+// subscribe per id). Searching → fuzzyMatch over the folder, id and label
+// (rows carry no bodies; deep search is /api/search). Only a live query reads
+// rows, so an idle search page does no work on conversation events.
 export const mobileSearchResultsAtom = atom((get): readonly string[] => {
   const state = get(mobileSearchStateAtom);
   const ids = get(allConversationIdsAtom);
@@ -25,16 +24,10 @@ export const mobileSearchResultsAtom = atom((get): readonly string[] => {
   return ids.filter((id) => {
     const conv = conversations.get(id);
     if (!conv) return false;
-    // Try workingDirectory
-    if (fuzzyMatch(query, conv.workingDirectory) !== null) return true;
-    // Try conversation id
-    if (fuzzyMatch(query, conv.id) !== null) return true;
-    // Try last-message preview (full content truncated to 500 chars for perf)
-    const lastMsg = conv.messages[conv.messages.length - 1];
-    if (lastMsg) {
-      const preview = lastMsg.content.substring(0, 500);
-      if (fuzzyMatch(query, preview) !== null) return true;
-    }
-    return false;
+    return (
+      fuzzyMatch(query, conv.cwd) !== null ||
+      fuzzyMatch(query, conv.id) !== null ||
+      fuzzyMatch(query, conv.label) !== null
+    );
   });
 });

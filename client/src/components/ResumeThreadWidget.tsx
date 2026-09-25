@@ -1,4 +1,4 @@
-import type { Conversation } from '@unleashd/shared';
+import type { ConversationRow } from '@unleashd/shared';
 import { useAtomValue } from 'jotai';
 import { useId } from 'react';
 import { Link } from 'react-router-dom';
@@ -16,7 +16,7 @@ import { shortenHomePath } from '../utils/directories';
  */
 interface ResumeThreadWidgetProps {
   sourceConversationId: string;
-  sourceConversation: Conversation | null;
+  sourceConversation: ConversationRow | null;
 }
 
 export function ResumeThreadWidget({
@@ -26,7 +26,7 @@ export function ResumeThreadWidget({
   const tooltipId = useId();
   const sourceAvailable = useAtomValue(availableConversationIdSetAtom).has(sourceConversationId);
   const displayId = sourceConversationId.substring(0, 8);
-  const folder = sourceConversation && shortenHomePath(sourceConversation.workingDirectory);
+  const folder = sourceConversation && shortenHomePath(sourceConversation.cwd);
   const icon = (
     <svg
       aria-hidden="true"

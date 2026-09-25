@@ -1,6 +1,7 @@
-import type { Conversation } from '@unleashd/shared';
+import type { ConversationRow } from '@unleashd/shared';
 import { atom } from 'jotai';
 import { atomFamily } from 'jotai-family';
+import { isRowRunning } from '../utils/conversation-row';
 import { conversationAtomFamily, conversationListAtom } from './conversations';
 import { sameItems, stableAtom } from './structural';
 
@@ -10,7 +11,7 @@ const backgroundIdsAtomFamily = atomFamily((buddyId: string) =>
   stableAtom(
     (get) =>
       get(conversationListAtom)
-        .filter((entry) => entry.placement === 'background' && entry.buddyId === buddyId)
+        .filter((entry) => entry.background && entry.buddyId === buddyId)
         .sort((a, b) => Number(b.isRunning) - Number(a.isRunning) || b.activityMs - a.activityMs)
         .map((entry) => entry.id),
     sameItems
@@ -19,13 +20,13 @@ const backgroundIdsAtomFamily = atomFamily((buddyId: string) =>
 
 export const buddyBackgroundConversationsAtomFamily = atomFamily((buddyId: string) =>
   atom((get) => {
-    const conversations = get(backgroundIdsAtomFamily(buddyId)).flatMap((id): Conversation[] => {
+    const conversations = get(backgroundIdsAtomFamily(buddyId)).flatMap((id): ConversationRow[] => {
       const conversation = get(conversationAtomFamily(id));
       return conversation ? [conversation] : [];
     });
     return {
       conversations,
-      runningCount: conversations.filter((conversation) => conversation.isRunning).length,
+      runningCount: conversations.filter(isRowRunning).length,
     };
   })
 );

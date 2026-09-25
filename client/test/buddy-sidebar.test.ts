@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { type Conversation, createDefaultConversationConfig } from '@unleashd/shared';
+import { type ConversationRow, createDefaultConversationConfig } from '@unleashd/shared';
 import { createStore } from 'jotai';
 import {
   buddyBuilderConversationsAtom,
@@ -16,6 +16,7 @@ import {
   conversationsAtom,
   pendingCreationsAtom,
 } from '../src/atoms/conversations';
+import { syntheticConversation } from './fixtures/synthetic-conversations';
 
 // The sidebar's overview slice: workspaces with their Buddies (status decides the roster).
 const roster = (
@@ -37,13 +38,7 @@ const roster = (
 test('only roster memberships create workspace rows; orphan history remains accessible', () => {
   const store = createStore();
   const make = (id: string, buddyId: string, workspaceId: string) =>
-    ({
-      id,
-      kind: { kind: 'buddy' as const, buddyId, workspaceId },
-      createdAt: new Date('2026-09-13'),
-      messages: [] as Conversation['messages'],
-      isRunning: true,
-    }) as Conversation;
+    buddyRow(id, buddyId, workspaceId, { run: 'running' });
   const live = make('owner-thread', 'lead', 'work');
   const orphan = make('imported-test', 'missing', 'project_uuid');
   const detached = make('detached-thread', 'lead', 'other');
@@ -56,9 +51,12 @@ test('only roster memberships create workspace rows; orphan history remains acce
     kind: 'create_conversation' as const,
     commandId: `create-${c.id}`,
     conversationId: `pending-${c.id}`,
-    buddyContext: {
-      buddyId: c.id === orphan.id ? 'missing' : 'lead',
-      workspaceId: c.id === orphan.id ? 'project_uuid' : c.id === detached.id ? 'other' : 'work',
+    createKind: {
+      t: 'buddy' as const,
+      context: {
+        buddyId: c.id === orphan.id ? 'missing' : 'lead',
+        workspaceId: c.id === orphan.id ? 'project_uuid' : c.id === detached.id ? 'other' : 'work',
+      },
     },
     config: createDefaultConversationConfig('codex'),
     workingDirectory: '/work',
@@ -124,13 +122,11 @@ test('sidebar groups Buddies by workspace and orders projects by their threads',
     roster('c', 'Cold', '/cold', [['new', 'New Buddy']]),
   ]);
   const conversation = (id: string, workspaceId: string, date: string) =>
-    ({
-      id,
-      kind: { kind: 'buddy' as const, buddyId: `lead-${workspaceId}`, workspaceId },
-      createdAt: new Date(date),
-      messages: [] as Conversation['messages'],
-      workingDirectory: `/${workspaceId}`,
-    }) as Conversation;
+    buddyRow(id, `lead-${workspaceId}`, workspaceId, {
+      createdAt: Date.parse(date),
+      activityAt: Date.parse(date),
+      cwd: `/${workspaceId}`,
+    });
   const a = conversation('thread-a', 'a', '2026-09-01');
   const b = conversation('thread-b', 'b', '2026-09-08');
   store.set(
@@ -164,7 +160,7 @@ test('sidebar groups Buddies by workspace and orders projects by their threads',
   store.set(
     conversationsAtom,
     new Map([
-      [a.id, { ...a, messages: [{ timestamp: new Date('2026-09-09') }] } as Conversation],
+      [a.id, { ...a, activityAt: Date.parse('2026-09-09') }],
       [b.id, b],
     ])
   );
@@ -177,19 +173,19 @@ test('Builder joins project recency ordering and moves when an older thread rece
     roster('project', 'Project', '/project', [['lead', 'Lead']]),
   ]);
   const conversation = (id: string, date: string, builder = false) =>
-    ({
-      id,
-      ...(builder
-        ? { kind: { kind: 'buddy_builder' as const } }
-        : { kind: { kind: 'buddy' as const, buddyId: 'lead', workspaceId: 'project' } }),
-      createdAt: new Date(date),
-      messages: [] as Conversation['messages'],
-    }) as Conversation;
+    buddyRow(id, 'lead', 'project', {
+      ...(builder ? { kind: { t: 'builder' as const } } : {}),
+      createdAt: Date.parse(date),
+      activityAt: Date.parse(date),
+    });
   const project = conversation('project-thread', '2026-09-08');
   const older = conversation('older-builder', '2026-09-01', true);
   const newer = conversation('newer-builder', '2026-09-07', true);
-  const hiddenWorker = { ...conversation('worker', '2026-09-10', true), isWorker: true };
-  const child = { ...conversation('child', '2026-09-10', true), parentConversationId: older.id };
+  const hiddenWorker = {
+    ...conversation('worker', '2026-09-10', true),
+    kind: { t: 'worker' as const, swarmId: null, workerId: null, role: null },
+  };
+  const child = { ...conversation('child', '2026-09-10', true), parent: older.id };
   const conversations = new Map([project, older, newer, hiddenWorker, child].map((c) => [c.id, c]));
   store.set(conversationsAtom, conversations);
   assert.deepEqual(
@@ -203,10 +199,7 @@ test('Builder joins project recency ordering and moves when an older thread rece
 
   store.set(
     conversationsAtom,
-    new Map(conversations).set(older.id, {
-      ...older,
-      messages: [{ timestamp: new Date('2026-09-09') }],
-    } as Conversation)
+    new Map(conversations).set(older.id, { ...older, activityAt: Date.parse('2026-09-09') })
   );
   assert.deepEqual(
     store.get(buddySidebarGroupsAtom).map((group) => group.kind),
@@ -229,25 +222,25 @@ test('sidebar exposes active process counts at project-folder scope', () => {
   store.set(buddySidebarOverviewAtom, [
     roster('wave', 'wave_sim', '/repo/wave_sim', [['lead', 'Lead']]),
   ]);
-  const conversation = (input: Partial<Conversation> & Pick<Conversation, 'id'>) =>
-    ({
-      createdAt: new Date('2026-09-12T00:00:00.000Z'),
-      messages: [] as Conversation['messages'],
-      workingDirectory: '/repo/wave_sim',
+  const conversation = (input: Partial<ConversationRow> & Pick<ConversationRow, 'id'>) =>
+    syntheticConversation(1, {
+      createdAt: Date.parse('2026-09-12T00:00:00.000Z'),
+      activityAt: Date.parse('2026-09-12T00:00:00.000Z'),
+      cwd: '/repo/wave_sim',
+      kind: { t: 'chat' },
       ...input,
-    }) as Conversation;
+    });
   const buddyForeground = conversation({
     id: 'buddy-foreground',
-    isRunning: true,
-    buddyContext: { buddyId: 'lead', workspaceId: 'wave', buddyProjectId: null },
+    run: 'running',
+    kind: { t: 'buddy', buddyId: 'lead', workspaceId: 'wave', visibility: 'foreground' },
   });
   const buddyBackground = conversation({
     id: 'buddy-background',
-    isRunning: true,
-    placement: 'background',
-    buddyContext: { buddyId: 'lead', workspaceId: 'wave', buddyProjectId: null },
+    run: 'running',
+    kind: { t: 'buddy', buddyId: 'lead', workspaceId: 'wave', visibility: 'background' },
   });
-  const regular = conversation({ id: 'regular', isRunning: true });
+  const regular = conversation({ id: 'regular', run: 'running' });
   store.set(
     conversationsAtom,
     new Map([buddyForeground, buddyBackground, regular].map((entry) => [entry.id, entry] as const))
@@ -265,15 +258,20 @@ test('sidebar exposes active process counts at project-folder scope', () => {
   store.set(
     conversationsAtom,
     new Map([
-      [buddyForeground.id, { ...buddyForeground, isRunning: false }],
-      [buddyBackground.id, { ...buddyBackground, parentConversationId: buddyForeground.id }],
-      ['past', { ...buddyBackground, id: 'past', isRunning: false }],
+      [buddyForeground.id, { ...buddyForeground, run: 'idle' as const }],
+      [buddyBackground.id, { ...buddyBackground, parent: buddyForeground.id }],
+      ['past', { ...buddyBackground, id: 'past', run: 'idle' as const }],
       [
         'other-workspace',
         {
           ...buddyBackground,
           id: 'other-workspace',
-          buddyContext: { buddyId: 'lead', workspaceId: 'other', buddyProjectId: null },
+          kind: {
+            t: 'buddy' as const,
+            buddyId: 'lead',
+            workspaceId: 'other',
+            visibility: 'background' as const,
+          },
         },
       ],
     ])
@@ -284,3 +282,18 @@ test('sidebar exposes active process counts at project-folder scope', () => {
   assert.equal(updated.items[0].backgroundRunningCount, 1);
   assert.equal(updated.items[0].backgroundConversationCount, 2);
 });
+
+function buddyRow(
+  id: string,
+  buddyId: string,
+  workspaceId: string,
+  overrides: Partial<ConversationRow> = {}
+): ConversationRow {
+  return syntheticConversation(1, {
+    id,
+    kind: { t: 'buddy', buddyId, workspaceId, visibility: 'foreground' },
+    createdAt: Date.parse('2026-09-13'),
+    activityAt: Date.parse('2026-09-13'),
+    ...overrides,
+  });
+}

@@ -1,11 +1,11 @@
 import type {
   BuddyContext,
+  BuddyVisibility,
   ConversationBranch,
   ConversationConfig,
-  ConversationPlacement,
   Provider,
 } from '@unleashd/shared';
-import { normalizeModelId } from '@unleashd/shared';
+import { buddyKind, normalizeModelId } from '@unleashd/shared';
 import type { ResolvedBuddyConversation } from '../buddies/briefing';
 import { configFromProviderPreferences } from './config-mapping';
 import type { ConversationConfigService } from './config-service';
@@ -30,7 +30,8 @@ export interface CreateServerBuddyConversationInput {
   conversationId?: string;
   /** Register/link the transcript but leave its first provider turn dormant. */
   deferInitialMessage?: boolean;
-  placement?: ConversationPlacement;
+  /** Default: decided from the context (defaultBuddyVisibility). */
+  visibility?: BuddyVisibility;
   branch?: ConversationBranch;
   ownerInput?: Readonly<{ origin: 'owner_input'; inputId: string }>;
 }
@@ -227,7 +228,7 @@ export function createBuddyCreationService(ports: BuddyCreationServicePorts): Bu
     config: ConversationConfig;
     commandId: string;
     initialMessage?: string;
-    placement?: ConversationPlacement;
+    visibility?: BuddyVisibility;
     branch?: ConversationBranch;
   }): Promise<ConversationRuntime> {
     const conversation = await createOrReuse({
@@ -237,20 +238,10 @@ export function createBuddyCreationService(ports: BuddyCreationServicePorts): Bu
       commandId: input.commandId,
       initialMessage: input.initialMessage,
       branch: input.branch,
-      buddyContext: input.resolved.context,
-      placement:
-        input.placement ??
-        (input.resolved.context.coordinationRunId ||
-        input.resolved.context.automationRunId ||
-        input.resolved.context.delegatedByBuddyId
-          ? 'background'
-          : 'default'),
+      kind: buddyKind(input.resolved.context, input.visibility),
       buddyBriefing: input.resolved.briefing,
     });
-    ports.broadcast({
-      type: 'conversations_updated',
-      conversations: [conversation.toJSON()],
-    });
+    conversation.publishRow();
     return conversation;
   }
 
@@ -266,7 +257,7 @@ export function createBuddyCreationService(ports: BuddyCreationServicePorts): Bu
       commandId: input.commandId,
       initialMessage: input.initialMessage,
       branch: input.branch,
-      placement: input.placement,
+      visibility: input.visibility,
     });
     if (!input.deferInitialMessage)
       await dispatchInitialMessageIfPending(
@@ -284,7 +275,6 @@ export function createBuddyCreationService(ports: BuddyCreationServicePorts): Bu
     }
     const conversationId = input.conversationId ?? ports.createId();
     const workingDirectory = ports.resolveWorkingDirectory(input.workingDirectory);
-    const purpose = 'buddy_builder' as const;
     const config = configFromProviderPreferences({
       provider: 'codex',
       model: 'gpt-6-astra',
@@ -294,13 +284,10 @@ export function createBuddyCreationService(ports: BuddyCreationServicePorts): Bu
       conversationId,
       workingDirectory,
       config,
-      purpose,
+      kind: { t: 'builder' },
       commandId: input.commandId,
     });
-    ports.broadcast({
-      type: 'conversations_updated',
-      conversations: [conversation.toJSON()],
-    });
+    conversation.publishRow();
     return conversation;
   }
 
