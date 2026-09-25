@@ -63,7 +63,6 @@ import type {
   TurnTerminalCause,
 } from '../observability';
 import { noteActivity } from '../observability/event-loop-stall';
-import type { ProviderEvent } from '../providers';
 import { resolveConfigAgainstProviderCatalog } from '../providers/catalog-service';
 import {
   extractCodexCollabToolInput,
@@ -127,6 +126,9 @@ interface MessageData {
   role: 'user' | 'assistant' | 'system';
   content: string;
 }
+type ToolUseEvent = Extract<UnifiedAgentEvent, { type: 'tool.use' }>;
+type CompletionReason = Extract<UnifiedAgentEvent, { type: 'turn.complete' }>['reason'];
+
 export type ConversationBroadcast = ServerMessage | ChunkData | MessageCompleteData | MessageData;
 
 /**
@@ -1313,17 +1315,12 @@ export function createConversationRuntime(
             }
             case 'text.delta': {
               this._sawMeaningfulProviderOutputThisRun = true;
-              this.handleOutput({ type: 'text_delta', text: event.text });
+              this.appendText(event.text);
               break;
             }
             case 'tool.use': {
               this._sawMeaningfulProviderOutputThisRun = true;
-              this.handleOutput({
-                type: 'tool_use',
-                name: event.name,
-                input: event.input,
-                displayText: event.displayText,
-              });
+              this.applyToolUse(event);
               break;
             }
             case 'tool.result': {
@@ -1334,7 +1331,7 @@ export function createConversationRuntime(
                 (this.kind.kind === 'buddy_builder'
                   ? formatBuddyBuilderToolResult(event.output)
                   : null);
-              if (content) this.handleOutput({ type: 'text_delta', text: `\n${content}\n` });
+              if (content) this.appendText(`\n${content}\n`);
               break;
             }
             case 'turn.complete': {
@@ -1343,23 +1340,17 @@ export function createConversationRuntime(
               } else if (event.reason === 'killed') {
                 automationCompletionError = 'Provider turn was interrupted';
               }
-              this.handleOutput({ type: 'message_complete', reason: event.reason });
+              this.completeMessage(event.reason);
               break;
             }
             case 'out_of_tokens': {
               this._terminalCauseHint = 'out_of_tokens';
-              this.handleOutput({
-                type: 'error',
-                message: normalizeProviderErrorMessage(event.message),
-              });
+              this.surfaceError(normalizeProviderErrorMessage(event.message));
               break;
             }
             case 'error': {
               this._terminalCauseHint = 'provider_error';
-              this.handleOutput({
-                type: 'error',
-                message: normalizeProviderErrorMessage(event.message),
-              });
+              this.surfaceError(normalizeProviderErrorMessage(event.message));
               break;
             }
             case 'stderr': {
@@ -1412,7 +1403,7 @@ export function createConversationRuntime(
         const message = eventConsumptionError.message;
         console.error(`[${this.id}] Event stream error: ${message}`);
         this._terminalCauseHint = 'provider_error';
-        this.handleOutput({ type: 'error', message: normalizeProviderErrorMessage(message) });
+        this.surfaceError(normalizeProviderErrorMessage(message));
       });
 
       const turnDrain = turn.completed
@@ -1631,7 +1622,7 @@ export function createConversationRuntime(
           const message = err instanceof Error ? err.message : String(err);
           console.error(`[${this.id}] Process completion error: ${message}`);
           this._finishTurnAttempt('failed', 'process_exit');
-          this.handleOutput({ type: 'error', message: normalizeProviderErrorMessage(message) });
+          this.surfaceError(normalizeProviderErrorMessage(message));
           this.isStreaming = false;
           this.isRunning = false;
           dependencies.revokeBuddyControlCapability?.(this.id);
@@ -1770,7 +1761,7 @@ export function createConversationRuntime(
     }
 
     private _handleCodexCollabToolUse(
-      event: Extract<ProviderEvent, { type: 'tool_use' }>
+      event: ToolUseEvent
     ): { suppressGenericSubagentHandling: boolean; suppressFormattedOutput: boolean } | null {
       if (this.provider !== 'codex' || !isCodexCollabToolName(event.name)) {
         return null;
@@ -1844,259 +1835,145 @@ export function createConversationRuntime(
       };
     }
 
-    /**
-     * Unified output handler from executeCommand normalized events.
-     */
-    handleOutput(event: ProviderEvent): void {
-      switch (event.type) {
-        case 'message_start':
-          // Only create assistant message if we don't have one pending
-          // The actual message creation happens when we get text content
-          break;
+    // Turn events are typed once, by agent-cli (`UnifiedAgentEvent`). The
+    // consumer in spawnForMessage calls these folds directly; the former
+    // ProviderEvent re-typing layer and its second switch are gone (T08 S1).
 
-        case 'text_delta': {
-          this._ensureAssistantMessage();
+    private appendText(text: string): void {
+      this._ensureAssistantMessage();
+      const currentMsg = this.messages[this.messages.length - 1];
+      if (currentMsg.role === 'assistant') {
+        currentMsg.content += text;
+      }
+      if (VERBOSE)
+        console.log(
+          `[${this.id}] chunk (${text.length} chars): "${text.substring(0, 30).replace(/\n/g, '\\n')}..."`
+        );
+      this.broadcastChunk({ type: 'chunk', conversationId: this.id, text });
+    }
 
-          // Accumulate content server-side too (for debugging)
-          const currentMsg = this.messages[this.messages.length - 1];
-          if (currentMsg.role === 'assistant') {
-            currentMsg.content += event.text;
-          }
-          // Now send the text chunk - client will append to the assistant message
-          if (VERBOSE)
-            console.log(
-              `[${this.id}] chunk (${event.text.length} chars): "${event.text.substring(0, 30).replace(/\n/g, '\\n')}..."`
-            );
-          this.broadcastChunk({
-            type: 'chunk',
-            conversationId: this.id,
-            text: event.text,
-          });
-          break;
-        }
-
-        case 'tool_use': {
-          this._ensureAssistantMessage();
-          const codexCollabHandling = this._handleCodexCollabToolUse(event);
-          // Check if this tool spawns a sub-agent
-          if (!codexCollabHandling && isSubagentSpawnTool(this.provider, event.name)) {
-            const description = getSubagentDescription(this.provider, event.name, event.input);
-            const blockId = (event.input as { _blockId?: string })._blockId || createSessionId();
-
-            // Create a new sub-agent
-            const subAgent: SubAgent = {
-              id: blockId,
-              description,
-              status: 'running',
-              toolUses: 0,
-              tokens: 0,
-              currentAction: undefined,
-              startedAt: new Date(),
-            };
-
-            this.subAgents.push(subAgent);
-            this._pendingTaskTools.set(blockId, { id: blockId, startedAt: new Date() });
-
-            console.log(
-              `[${this.id}] Sub-agent started: ${blockId.substring(0, 8)} - "${description.substring(0, 50)}"`
-            );
-
-            // Broadcast sub-agent start
-            broadcast({
-              type: 'subagent_start',
-              conversationId: this.id,
-              subAgent,
-            });
-          } else if (!codexCollabHandling?.suppressGenericSubagentHandling) {
-            // For non-Task tools, check if we have an active sub-agent and update its current action
-            if (this.subAgents.length > 0) {
-              const activeAgent = this.subAgents.find((a) => a.status === 'running');
-              if (activeAgent) {
-                // Format the current action based on tool name
-                let actionDisplay = event.name;
-                if (event.input) {
-                  // Extract file path if present
-                  const filePath =
-                    (event.input as { file_path?: string; path?: string }).file_path ||
-                    (event.input as { file_path?: string; path?: string }).path;
-                  if (filePath) {
-                    // Show just the filename for brevity
-                    const fileName = filePath.split('/').pop() || filePath;
-                    actionDisplay = `${event.name}: ${fileName}`;
-                  }
-                }
-
-                activeAgent.toolUses += 1;
-                activeAgent.currentAction = actionDisplay;
-
-                // Broadcast sub-agent update
-                broadcast({
-                  type: 'subagent_update',
-                  conversationId: this.id,
-                  subAgentId: activeAgent.id,
-                  toolUses: activeAgent.toolUses,
-                  currentAction: activeAgent.currentAction,
-                });
-              }
-            }
-
-            // Normalize tool line formatting across providers (Claude/Gemini/Codex).
-            // Suppress Codex shell completion-only events to avoid duplicate lines.
-            if (
-              !codexCollabHandling?.suppressFormattedOutput &&
-              !isCompletionOnlyToolUse(event.name, event.input, event.displayText)
-            ) {
-              const formattedTool = formatToolUse(event.name, event.input, event.displayText);
-              if (formattedTool) {
-                const currentMsg = this.messages[this.messages.length - 1];
-                const needsLeadingNewline =
-                  !formattedTool.startsWith('<!--ask_user_question:') &&
-                  currentMsg?.role === 'assistant' &&
-                  currentMsg.content.length > 0 &&
-                  !currentMsg.content.endsWith('\n');
-                const chunkText = formattedTool.startsWith('<!--ask_user_question:')
-                  ? formattedTool
-                  : `${needsLeadingNewline ? '\n' : ''}${formattedTool}\n`;
-                if (currentMsg?.role === 'assistant') {
-                  // Keep server-side message text aligned with streamed chunks.
-                  currentMsg.content += chunkText;
-                }
-                this.broadcastChunk({
-                  type: 'chunk',
-                  conversationId: this.id,
-                  text: chunkText,
-                });
-              }
-            }
-          } else if (
-            !codexCollabHandling.suppressFormattedOutput &&
-            !isCompletionOnlyToolUse(event.name, event.input, event.displayText)
-          ) {
-            const formattedTool = formatToolUse(event.name, event.input, event.displayText);
-            if (formattedTool) {
-              const currentMsg = this.messages[this.messages.length - 1];
-              const needsLeadingNewline =
-                !formattedTool.startsWith('<!--ask_user_question:') &&
-                currentMsg?.role === 'assistant' &&
-                currentMsg.content.length > 0 &&
-                !currentMsg.content.endsWith('\n');
-              const chunkText = formattedTool.startsWith('<!--ask_user_question:')
-                ? formattedTool
-                : `${needsLeadingNewline ? '\n' : ''}${formattedTool}\n`;
-              if (currentMsg?.role === 'assistant') {
-                currentMsg.content += chunkText;
-              }
-              this.broadcastChunk({
-                type: 'chunk',
-                conversationId: this.id,
-                text: chunkText,
-              });
-            }
-          }
-          break;
-        }
-
-        case 'message_complete': {
-          // Clear watchdog timers immediately — the turn completed normally.
-          // Without this they dangle until process close, risking a spurious timeout.
-          this._clearTurnWatchdogs();
-          // This closes the UI stream, not execution ownership. The attempt is
-          // terminalized only after child exit and event EOF join above. See
-          // invariant I8 and its alternatives in the ownership design note.
-          // Mark all running sub-agents as complete
-          const completedAt = new Date();
-
-          // Update the last assistant message with completion metadata
-          const lastMsg = this.messages[this.messages.length - 1];
-          if (lastMsg && lastMsg.role === 'assistant' && !lastMsg.completedAt) {
-            lastMsg.completedAt = completedAt;
-            lastMsg.completionReason = event.reason;
-          }
-
-          for (const agent of this.subAgents) {
-            if (agent.status === 'running') {
-              if (this.provider === 'codex' && agent.providerThreadId) {
-                continue;
-              }
-              agent.status = 'completed';
-              agent.completedAt = completedAt;
-              if (!agent.statusSource) {
-                agent.statusSource = 'inferred_parent_completion';
-              }
-              agent.currentAction = 'Done';
-
-              console.log(`[${this.id}] Sub-agent completed: ${agent.id.substring(0, 8)}`);
-
-              // Broadcast sub-agent complete
-              broadcast({
-                type: 'subagent_complete',
-                conversationId: this.id,
-                subAgentId: agent.id,
-                status: 'completed',
-                completedAt,
-              });
-            }
-          }
-
-          // Clear pending task tools
-          this._pendingTaskTools.clear();
-
-          // Broadcast message_complete BEFORE status(isStreaming=false).
-          // Client's message_complete handler calls flushChunkBuffer() — the last
-          // buffered text must be flushed before isStreaming=false triggers a re-render
-          // that hides typing dots. Preserves the documented broadcast sequence.
-          this.broadcastChunk({
-            type: 'message_complete',
-            conversationId: this.id,
-            reason: event.reason,
-          });
-
-          // turn.complete means the assistant has finished this turn from the
-          // user's perspective; clear busy state now instead of waiting for
-          // child-process teardown.
-          this.isStreaming = false;
-          this.isRunning = false;
-          clearExternalRunningStatus(this.id, this.sessionId);
-          markLocalCompletionSuppression(this.id, this.sessionId);
-          this.broadcastStatus();
-
+    private applyToolUse(event: ToolUseEvent): void {
+      this._ensureAssistantMessage();
+      const codexCollabHandling = this._handleCodexCollabToolUse(event);
+      if (!codexCollabHandling && isSubagentSpawnTool(this.provider, event.name)) {
+        const description = getSubagentDescription(this.provider, event.name, event.input);
+        const blockId = (event.input as { _blockId?: string })._blockId || createSessionId();
+        const subAgent: SubAgent = {
+          id: blockId,
+          description,
+          status: 'running',
+          toolUses: 0,
+          tokens: 0,
+          currentAction: undefined,
+          startedAt: new Date(),
+        };
+        this.subAgents.push(subAgent);
+        this._pendingTaskTools.set(blockId, { id: blockId, startedAt: new Date() });
+        console.log(
+          `[${this.id}] Sub-agent started: ${blockId.substring(0, 8)} - "${description.substring(0, 50)}"`
+        );
+        broadcast({ type: 'subagent_start', conversationId: this.id, subAgent });
+        return;
+      }
+      if (!codexCollabHandling?.suppressGenericSubagentHandling) {
+        // A non-spawn tool updates the active sub-agent's current action.
+        const activeAgent = this.subAgents.find((a) => a.status === 'running');
+        if (activeAgent) {
+          const filePath =
+            (event.input as { file_path?: string; path?: string }).file_path ||
+            (event.input as { file_path?: string; path?: string }).path;
+          activeAgent.toolUses += 1;
+          activeAgent.currentAction = filePath
+            ? `${event.name}: ${filePath.split('/').pop() || filePath}`
+            : event.name;
           broadcast({
-            type: 'conversations_updated',
-            conversations: [this.toJSON()],
-          });
-
-          // Signal to the close handler that cleanup already happened.
-          // Close handler will skip redundant state changes and broadcasts.
-          this._turnCompletedCleanly = true;
-          updateBuddyConversationLink(this, 'active');
-          break;
-        }
-
-        case 'error': {
-          // Surface provider errors (usage limits, auth failures, turn errors)
-          // to the client as a system message so the user sees what happened.
-          console.error(`[${this.id}] Provider error: ${event.message}`);
-          const errorMessage: Message = {
-            role: 'system',
-            content: event.message,
-            timestamp: new Date(),
-          };
-          this.messages.push(errorMessage);
-          broadcast({
-            type: 'message',
+            type: 'subagent_update',
             conversationId: this.id,
-            role: 'system',
-            content: event.message,
+            subAgentId: activeAgent.id,
+            toolUses: activeAgent.toolUses,
+            currentAction: activeAgent.currentAction,
           });
-          break;
-        }
-
-        default: {
-          // TypeScript exhaustive check - this should never happen
-          const _exhaustive: never = event;
-          throw new Error(`Unhandled event type: ${JSON.stringify(_exhaustive)}`);
         }
       }
+      if (codexCollabHandling?.suppressFormattedOutput) return;
+      // Normalize tool line formatting across providers (Claude/Gemini/Codex).
+      // Suppress Codex shell completion-only events to avoid duplicate lines.
+      if (isCompletionOnlyToolUse(event.name, event.input, event.displayText)) return;
+      const formattedTool = formatToolUse(event.name, event.input, event.displayText);
+      if (!formattedTool) return;
+      const currentMsg = this.messages[this.messages.length - 1];
+      const isQuestion = formattedTool.startsWith('<!--ask_user_question:');
+      const needsLeadingNewline =
+        !isQuestion &&
+        currentMsg?.role === 'assistant' &&
+        currentMsg.content.length > 0 &&
+        !currentMsg.content.endsWith('\n');
+      const chunkText = isQuestion
+        ? formattedTool
+        : `${needsLeadingNewline ? '\n' : ''}${formattedTool}\n`;
+      // Keep server-side message text aligned with streamed chunks.
+      if (currentMsg?.role === 'assistant') currentMsg.content += chunkText;
+      this.broadcastChunk({ type: 'chunk', conversationId: this.id, text: chunkText });
+    }
+
+    private completeMessage(reason: CompletionReason): void {
+      // Clear watchdog timers immediately — the turn completed normally.
+      // Without this they dangle until process close, risking a spurious timeout.
+      this._clearTurnWatchdogs();
+      // This closes the UI stream, not execution ownership. The attempt is
+      // terminalized only after child exit and event EOF join above. See
+      // invariant I8 and its alternatives in the ownership design note.
+      const completedAt = new Date();
+      const lastMsg = this.messages[this.messages.length - 1];
+      if (lastMsg && lastMsg.role === 'assistant' && !lastMsg.completedAt) {
+        lastMsg.completedAt = completedAt;
+        lastMsg.completionReason = reason;
+      }
+      for (const agent of this.subAgents) {
+        if (agent.status !== 'running') continue;
+        if (this.provider === 'codex' && agent.providerThreadId) continue;
+        agent.status = 'completed';
+        agent.completedAt = completedAt;
+        if (!agent.statusSource) agent.statusSource = 'inferred_parent_completion';
+        agent.currentAction = 'Done';
+        console.log(`[${this.id}] Sub-agent completed: ${agent.id.substring(0, 8)}`);
+        broadcast({
+          type: 'subagent_complete',
+          conversationId: this.id,
+          subAgentId: agent.id,
+          status: 'completed',
+          completedAt,
+        });
+      }
+      this._pendingTaskTools.clear();
+
+      // Broadcast message_complete BEFORE status(isStreaming=false).
+      // Client's message_complete handler calls flushChunkBuffer() — the last
+      // buffered text must be flushed before isStreaming=false triggers a re-render
+      // that hides typing dots. Preserves the documented broadcast sequence.
+      this.broadcastChunk({ type: 'message_complete', conversationId: this.id, reason });
+
+      // turn.complete means the assistant has finished this turn from the
+      // user's perspective; clear busy state now instead of waiting for
+      // child-process teardown.
+      this.isStreaming = false;
+      this.isRunning = false;
+      clearExternalRunningStatus(this.id, this.sessionId);
+      markLocalCompletionSuppression(this.id, this.sessionId);
+      this.broadcastStatus();
+      broadcast({ type: 'conversations_updated', conversations: [this.toJSON()] });
+
+      // Signal to the close handler that cleanup already happened.
+      // Close handler will skip redundant state changes and broadcasts.
+      this._turnCompletedCleanly = true;
+      updateBuddyConversationLink(this, 'active');
+    }
+
+    /** Surface provider errors (usage limits, auth failures, turn errors) as a system message. */
+    private surfaceError(message: string): void {
+      console.error(`[${this.id}] Provider error: ${message}`);
+      this.messages.push({ role: 'system', content: message, timestamp: new Date() });
+      broadcast({ type: 'message', conversationId: this.id, role: 'system', content: message });
     }
 
     runCoordinationMessage(
@@ -2928,7 +2805,7 @@ export function createConversationRuntime(
         `[${this.id}] ${timeout.message} | timeoutKind=${kind} terminalCause=${timeout.terminalCause} sawMeaningfulOutput=${sawMeaningfulOutput} elapsed=${elapsedSec}s bridgeIdle=${bridgeIdleSec}s providerIdle=${providerIdleSec}s lastActivitySource=${lastActivity?.source ?? 'none'} lastProviderEvent=${lastActivity?.providerEventType ?? 'none'} stderr=${this._stderrBuffer.length > 0 ? 'yes' : 'no'}`
       );
       this._clearTurnWatchdogs();
-      this.handleOutput({ type: 'error', message: timeout.message });
+      this.surfaceError(timeout.message);
       this._finishTurnAttempt('failed', timeout.terminalCause);
 
       const completedAt = new Date();
