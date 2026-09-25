@@ -515,6 +515,45 @@ test('stopping a turn that waits for a run slot drops it and releases its place'
   assert.deepEqual(abandoned, ['queued-turn'], 'a waiting row left behind would pin the FIFO line');
 });
 
+test('waiting Buddy chats share one admission tick, which stops when the last one leaves', () => {
+  // Regression guard for 03-app-core.md §5 #2: each waiting conversation used
+  // to own a 1 s setInterval into sync SQLite, so N queued chats meant N timers.
+  const realSetInterval = globalThis.setInterval;
+  const realClearInterval = globalThis.clearInterval;
+  const ticks = new Set<unknown>();
+  let cleared = 0;
+  globalThis.setInterval = ((handler: () => void, ms?: number) => {
+    const timer = realSetInterval(handler, ms);
+    if (ms === 1000) ticks.add(timer);
+    return timer;
+  }) as typeof setInterval;
+  globalThis.clearInterval = ((timer: Parameters<typeof clearInterval>[0]) => {
+    if (ticks.has(timer)) cleared += 1;
+    realClearInterval(timer);
+  }) as typeof clearInterval;
+  try {
+    const waiting = ['a', 'b', 'c'].map((id) => {
+      const fixture = runtimeFixture({
+        buddyContext: { buddyId: 'busy-buddy', workspaceId: 'workspace-1' },
+        enqueueBuddyChatRun: () => ({ id: `queued-${id}` }),
+        startBuddyChatRun: () => ({ kind: 'waiting', reason: 'full' }),
+        abandonBuddyChatRun: () => undefined,
+      });
+      fixture.conversation.enqueueMessage('Wait', { origin: 'owner_input', inputId: id });
+      return fixture.conversation;
+    });
+    assert.equal(ticks.size, 1, 'three waiting chats must share one admission timer');
+    waiting[0].stop();
+    waiting[1].stop();
+    assert.equal(cleared, 0, 'the tick must survive while a chat still waits');
+    waiting[2].stop();
+    assert.equal(cleared, 1, 'the tick must stop once nobody waits');
+  } finally {
+    globalThis.setInterval = realSetInterval;
+    globalThis.clearInterval = realClearInterval;
+  }
+});
+
 test('historical automation transcripts refuse every user turn-admission path', () => {
   let providerStarts = 0;
   const fixture = runtimeFixture({

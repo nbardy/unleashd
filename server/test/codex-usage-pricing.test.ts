@@ -14,7 +14,7 @@ import test from 'node:test';
 
 import { lookupProviderUsageForSession } from '../src/http/usage-routes';
 
-test('codex usage splits cached input out of input_tokens', () => {
+test('codex usage splits cached input out of input_tokens', async () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'codex-usage-'));
   const previousHome = process.env.HOME;
   process.env.HOME = home;
@@ -41,7 +41,7 @@ test('codex usage splits cached input out of input_tokens', () => {
       // Cumulative totals: the last event wins.
       `${tokenCount(1_000, 0, 10)}\n${tokenCount(40_000_000, 39_000_000, 100_000)}\n`
     );
-    const usage = lookupProviderUsageForSession(sessionId);
+    const usage = await lookupProviderUsageForSession(sessionId);
     assert.ok(usage);
     assert.equal(usage.inputTokens, 1_000_000);
     assert.equal(usage.cacheReadTokens, 39_000_000);

@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import type { BuddyRun } from '@unleashd/shared';
+import { noteActivity } from '../observability/event-loop-stall';
 import type { BuddiesStorePort, BuddyAutomation, BuddyAutomationRun } from './contract';
 import type { BuddyRunExecutor } from './run-executor';
 
@@ -373,6 +374,7 @@ export class BuddyScheduler {
   }
 
   async poll(): Promise<void> {
+    noteActivity('timer buddy-scheduler');
     const polledAt = this.now();
     this.lastPollAt = polledAt.toISOString();
     let due: BuddyAutomation[];

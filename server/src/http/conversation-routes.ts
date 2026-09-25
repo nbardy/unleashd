@@ -105,8 +105,8 @@ export interface ContextBreakdownDeps {
   getBranch?: (
     conversationId: string
   ) => Promise<ConversationBranch | null | undefined> | ConversationBranch | null | undefined;
-  lookupUsage?: (sessionId: string) => SessionProviderUsage | null;
-  lookupContext?: (sessionId: string) => SessionContextReading | null;
+  lookupUsage?: (sessionId: string) => Promise<SessionProviderUsage | null>;
+  lookupContext?: (sessionId: string) => Promise<SessionContextReading | null>;
 }
 
 /**
@@ -383,7 +383,7 @@ export function registerConversationRoutes(
     let usage: SessionProviderUsage | null = null;
     try {
       usage = data.sessionId
-        ? (deps.lookupUsage ?? lookupProviderUsageForSession)(data.sessionId)
+        ? await (deps.lookupUsage ?? lookupProviderUsageForSession)(data.sessionId)
         : null;
     } catch {
       usage = null;
@@ -401,7 +401,7 @@ export function registerConversationRoutes(
     let sessionContext: SessionContextReading | null = null;
     try {
       sessionContext = data.sessionId
-        ? (deps.lookupContext ?? lookupSessionContext)(data.sessionId)
+        ? await (deps.lookupContext ?? lookupSessionContext)(data.sessionId)
         : null;
     } catch {
       sessionContext = null;

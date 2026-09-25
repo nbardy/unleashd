@@ -62,6 +62,7 @@ import type {
   TurnAttemptActivity,
   TurnTerminalCause,
 } from '../observability';
+import { noteActivity } from '../observability/event-loop-stall';
 import type { ProviderEvent } from '../providers';
 import { resolveConfigAgainstProviderCatalog } from '../providers/catalog-service';
 import {
@@ -82,6 +83,33 @@ export type BuddyChatAdmission =
   | { kind: 'gone' };
 
 const CHAT_ADMISSION_POLL_MS = 1000;
+
+/**
+ * ONE admission tick shared by every Buddy chat waiting for a run slot. Until
+ * 2026-09-25 each waiting conversation owned its own 1 s setInterval, so N
+ * queued chats meant N timers at unrelated phases, each hitting sync SQLite
+ * (03-app-core.md §5 #2). Waiters retry in the order they began waiting, and
+ * the tick exists only while someone waits. Slots are also released by runs
+ * this process never sees finish (automations, lease expiry), so a tick is
+ * still needed rather than wake-on-release alone.
+ */
+const admissionWaiters = new Set<() => void>();
+let admissionTick: ReturnType<typeof setInterval> | null = null;
+
+/** Retry `admit` on the shared tick until the returned function is called. */
+function waitForChatRunSlot(admit: () => void): () => void {
+  admissionWaiters.add(admit);
+  admissionTick ??= setInterval(() => {
+    noteActivity('timer buddy-chat-admission');
+    for (const waiter of [...admissionWaiters]) waiter();
+  }, CHAT_ADMISSION_POLL_MS);
+  return () => {
+    admissionWaiters.delete(admit);
+    if (admissionWaiters.size > 0 || !admissionTick) return;
+    clearInterval(admissionTick);
+    admissionTick = null;
+  };
+}
 
 interface ChunkData {
   type: 'chunk';
@@ -765,9 +793,10 @@ export function createConversationRuntime(
     }
     private _automationClaimToken: string | null;
     // Buddy chat turns wait here for a run slot. The head of this.queue stays
-    // pending while _chatRunTicket polls. On admission, the run is held in
-    // _admittedChatRun until spawnForMessage takes ownership of it.
-    private _chatRunTicket: { runId: string; poll: ReturnType<typeof setInterval> } | null = null;
+    // pending while _chatRunTicket waits on the shared admission tick. On
+    // admission, the run is held in _admittedChatRun until spawnForMessage
+    // takes ownership of it.
+    private _chatRunTicket: { runId: string; stopWaiting: () => void } | null = null;
     private _admittedChatRun: OwnedBuddyChatRun | null = null;
     private _sendingFromQueue = false;
     private _coordinationExecution: {
@@ -2373,7 +2402,7 @@ export function createConversationRuntime(
       // its turn (contextForInput). The run's allowed operations come from it.
       this._chatRunTicket ??= {
         runId: dependencies.enqueueBuddyChatRun!(this.contextForInput(input)!, this.id).id,
-        poll: setInterval(() => this.processQueue(), CHAT_ADMISSION_POLL_MS),
+        stopWaiting: waitForChatRunSlot(() => this.processQueue()),
       };
       const admission = dependencies.startBuddyChatRun!(
         this._chatRunTicket.runId,
@@ -2394,7 +2423,7 @@ export function createConversationRuntime(
         }
         case 'gone':
           // Lost its place; rejoin at the back of the line on the next poll.
-          clearInterval(this._chatRunTicket.poll);
+          this._chatRunTicket.stopWaiting();
           this._chatRunTicket = null;
           setTimeout(() => this.processQueue(), CHAT_ADMISSION_POLL_MS);
           if (this.queue[0]?.status === 'sending') this.queue[0].status = 'pending';
@@ -2405,7 +2434,7 @@ export function createConversationRuntime(
     private releaseChatRunTicket(abandon = false): void {
       const ticket = this._chatRunTicket;
       if (!ticket) return;
-      clearInterval(ticket.poll);
+      ticket.stopWaiting();
       this._chatRunTicket = null;
       if (abandon) dependencies.abandonBuddyChatRun?.(ticket.runId);
     }

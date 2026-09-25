@@ -3,12 +3,19 @@ import os from 'node:os';
 import path from 'node:path';
 import type { Provider as ProviderName } from '@unleashd/shared';
 import type { Express, Request, Response } from 'express';
+import { readJsonlLines } from '../adapters/jsonl-lines';
 import { USAGE_CACHE_TTL_MS } from '../constants/timeouts';
 
 // =============================================================================
 // GET /api/usage — Aggregate token usage from Claude + Codex + OpenCode sessions.
 //
 // Reads persisted files on disk, sums token counts, and computes approximate cost.
+// Every read is async and transcripts are STREAMED (readJsonlLines, 1 MiB
+// chunks). Until 2026-09-25 this readFileSync'd whole transcripts on the event
+// loop, up to 3.1 GB Claude + 6.8 GB codex per uncached request, so one
+// UsagePanel open stalled every other request for seconds. Each parser skips a
+// line that cannot contain its key before JSON.parse; that only drops lines the
+// same test would have rejected after parsing.
 // Claude: ~/.claude/projects/**/*.jsonl → assistant entries with message.usage
 // Codex:  ~/.codex/sessions/**/*.jsonl  → event_msg with payload.type=token_count
 // OpenCode: ~/.local/share/opencode/storage/message/{session-id}/*.json
@@ -89,10 +96,10 @@ const usageResponseCache = new Map<number, { time: number; data: UsageResponse }
 // Parse a single Claude JSONL file. Returns cached result if mtime unchanged.
 // Exported for the per-conversation context-breakdown meter (same parser,
 // scoped to one session id instead of aggregated across all sessions).
-export function parseClaudeSession(
+export async function parseClaudeSession(
   filePath: string,
   stat: fs.Stats
-): UsageEntry & { timestampedTokens: { ts: number; tokens: number }[] } {
+): Promise<UsageEntry & { timestampedTokens: { ts: number; tokens: number }[] }> {
   const cached = usageFileCache.get(filePath);
   if (cached && cached.mtimeMs === stat.mtimeMs) return cached.data;
 
@@ -108,9 +115,8 @@ export function parseClaudeSession(
   // session: 1,081 usage lines, 446 requests). Count each message id once.
   const countedMessages = new Set<string>();
 
-  const content = fs.readFileSync(filePath, 'utf-8');
-  for (const line of content.split('\n')) {
-    if (!line.trim()) continue;
+  for await (const { text: line } of readJsonlLines(filePath, 0)) {
+    if (!line.includes('"usage"')) continue;
     try {
       const entry = JSON.parse(line);
       if (entry.type === 'assistant' && entry.message?.usage) {
@@ -155,10 +161,12 @@ export function parseClaudeSession(
   return data;
 }
 
-function parseOpenCodeSessionUsage(
+async function parseOpenCodeSessionUsage(
   sessionDirPath: string
-): (UsageEntry & { lastTimestampMs: number }) | null {
-  const messageFiles = fs.readdirSync(sessionDirPath).filter((f) => f.endsWith('.json'));
+): Promise<(UsageEntry & { lastTimestampMs: number }) | null> {
+  const messageFiles = (await fs.promises.readdir(sessionDirPath)).filter((f) =>
+    f.endsWith('.json')
+  );
   if (messageFiles.length === 0) {
     return null;
   }
@@ -166,7 +174,7 @@ function parseOpenCodeSessionUsage(
   let maxMtimeMs = 0;
   for (const file of messageFiles) {
     try {
-      const stat = fs.statSync(path.join(sessionDirPath, file));
+      const stat = await fs.promises.stat(path.join(sessionDirPath, file));
       if (stat.mtimeMs > maxMtimeMs) {
         maxMtimeMs = stat.mtimeMs;
       }
@@ -193,7 +201,7 @@ function parseOpenCodeSessionUsage(
   for (const file of messageFiles) {
     const filePath = path.join(sessionDirPath, file);
     try {
-      const parsed = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+      const parsed = JSON.parse(await fs.promises.readFile(filePath, 'utf-8'));
       if (parsed?.role !== 'assistant') {
         continue;
       }
@@ -288,10 +296,10 @@ export interface SessionProviderUsage {
 // so `input` means uncached input, as it does for Claude.
 type CodexTokenTotals = { input: number; cacheRead: number; output: number };
 
-function codexTokenTotals(content: string): CodexTokenTotals | null {
+async function codexTokenTotals(filePath: string): Promise<CodexTokenTotals | null> {
   let totals: CodexTokenTotals | null = null;
-  for (const line of content.split('\n')) {
-    if (!line.trim()) continue;
+  for await (const { text: line } of readJsonlLines(filePath, 0)) {
+    if (!line.includes('token_count')) continue;
     try {
       const entry = JSON.parse(line);
       if (
@@ -314,9 +322,9 @@ function codexTokenTotals(content: string): CodexTokenTotals | null {
   return totals;
 }
 
-function parseCodexTokenTotals(filePath: string): CodexTokenTotals | null {
+async function parseCodexTokenTotals(filePath: string): Promise<CodexTokenTotals | null> {
   try {
-    return codexTokenTotals(fs.readFileSync(filePath, 'utf-8'));
+    return await codexTokenTotals(filePath);
   } catch {
     return null;
   }
@@ -348,16 +356,16 @@ export function codexSessionIdFromFilename(fileName: string): string {
  * carries BOTH the cumulative totals this module bills from and the
  * per-request `last_token_usage` the context meter needs.
  */
-export function findCodexSessionFile(sessionId: string): string | null {
+export async function findCodexSessionFile(sessionId: string): Promise<string | null> {
   const codexDir = path.join(os.homedir(), '.codex', 'sessions');
   try {
-    for (const year of fs.readdirSync(codexDir, { withFileTypes: true })) {
+    for (const year of await fs.promises.readdir(codexDir, { withFileTypes: true })) {
       if (!year.isDirectory()) continue;
       const yearPath = path.join(codexDir, year.name);
-      for (const month of fs.readdirSync(yearPath, { withFileTypes: true })) {
+      for (const month of await fs.promises.readdir(yearPath, { withFileTypes: true })) {
         if (!month.isDirectory()) continue;
         const monthPath = path.join(yearPath, month.name);
-        for (const day of fs.readdirSync(monthPath, { withFileTypes: true })) {
+        for (const day of await fs.promises.readdir(monthPath, { withFileTypes: true })) {
           if (!day.isDirectory()) continue;
           const dayPath = path.join(monthPath, day.name);
           // Codex names rollouts `rollout-<timestamp>-<sessionId>.jsonl`, NOT
@@ -365,7 +373,7 @@ export function findCodexSessionFile(sessionId: string): string | null {
           // real ~/.codex/sessions tree, so this lookup silently never
           // resolved and every codex thread fell back to estimates.
           try {
-            for (const file of fs.readdirSync(dayPath)) {
+            for (const file of await fs.promises.readdir(dayPath)) {
               if (!file.endsWith('.jsonl')) continue;
               if (file === `${sessionId}.jsonl` || file.endsWith(`-${sessionId}.jsonl`)) {
                 return path.join(dayPath, file);
@@ -389,14 +397,16 @@ export function findCodexSessionFile(sessionId: string): string | null {
  * lookup is a scan across project dirs. Exported for the same reason as
  * findCodexSessionFile.
  */
-export function findClaudeSessionFile(sessionId: string): { path: string; stat: fs.Stats } | null {
+export async function findClaudeSessionFile(
+  sessionId: string
+): Promise<{ path: string; stat: fs.Stats } | null> {
   const claudeDir = path.join(os.homedir(), '.claude', 'projects');
   try {
-    for (const project of fs.readdirSync(claudeDir, { withFileTypes: true })) {
+    for (const project of await fs.promises.readdir(claudeDir, { withFileTypes: true })) {
       if (!project.isDirectory()) continue;
       const candidate = path.join(claudeDir, project.name, `${sessionId}.jsonl`);
       try {
-        const stat = fs.statSync(candidate);
+        const stat = await fs.promises.stat(candidate);
         if (stat.isFile()) return { path: candidate, stat };
       } catch {
         /* not in this project dir */
@@ -414,13 +424,15 @@ export function findClaudeSessionFile(sessionId: string): { path: string; stat: 
  * tokens). Returns null when no provider file matches — the meter then shows
  * only our estimated stack. Never throws; never recomputes pricing.
  */
-export function lookupProviderUsageForSession(sessionId: string): SessionProviderUsage | null {
+export async function lookupProviderUsageForSession(
+  sessionId: string
+): Promise<SessionProviderUsage | null> {
   if (!sessionId) return null;
 
   // Claude: file basename is the session id.
-  const claudeFile = findClaudeSessionFile(sessionId);
+  const claudeFile = await findClaudeSessionFile(sessionId);
   if (claudeFile) {
-    const data = parseClaudeSession(claudeFile.path, claudeFile.stat);
+    const data = await parseClaudeSession(claudeFile.path, claudeFile.stat);
     return {
       sessionId,
       provider: 'claude',
@@ -434,9 +446,9 @@ export function lookupProviderUsageForSession(sessionId: string): SessionProvide
   }
 
   // Codex: latest token_count totals are already cumulative for the session.
-  const codexFile = findCodexSessionFile(sessionId);
+  const codexFile = await findCodexSessionFile(sessionId);
   if (codexFile) {
-    const totals = parseCodexTokenTotals(codexFile);
+    const totals = await parseCodexTokenTotals(codexFile);
     if (totals) {
       return {
         sessionId,
@@ -462,7 +474,7 @@ export function lookupProviderUsageForSession(sessionId: string): SessionProvide
       'message',
       sessionId
     );
-    const usage = parseOpenCodeSessionUsage(sessionDir);
+    const usage = await parseOpenCodeSessionUsage(sessionDir);
     if (usage) {
       return {
         sessionId,
@@ -512,20 +524,19 @@ export function registerUsageRoutes(app: Express, providerNames: readonly Provid
     // --- Claude sessions (single pass: usage entries + rate limit token counts) ---
     const claudeDir = path.join(os.homedir(), '.claude', 'projects');
     try {
-      const projectDirs = fs
-        .readdirSync(claudeDir, { withFileTypes: true })
+      const projectDirs = (await fs.promises.readdir(claudeDir, { withFileTypes: true }))
         .filter((d) => d.isDirectory())
         .map((d) => path.join(claudeDir, d.name));
 
       for (const projDir of projectDirs) {
-        const jsonlFiles = fs.readdirSync(projDir).filter((f) => f.endsWith('.jsonl'));
+        const jsonlFiles = (await fs.promises.readdir(projDir)).filter((f) => f.endsWith('.jsonl'));
         for (const file of jsonlFiles) {
           const filePath = path.join(projDir, file);
-          const stat = fs.statSync(filePath);
+          const stat = await fs.promises.stat(filePath);
           // Skip files older than both the query window AND the 7-day rate-limit window
           if (stat.mtimeMs < cutoffMs && stat.mtimeMs < sevenDaysAgo) continue;
 
-          const data = parseClaudeSession(filePath, stat);
+          const data = await parseClaudeSession(filePath, stat);
 
           // Usage entry (for the requested days window)
           if (stat.mtimeMs >= cutoffMs && data.inputTokens + data.outputTokens > 0) {
@@ -553,17 +564,19 @@ export function registerUsageRoutes(app: Express, providerNames: readonly Provid
     let newestCodexMtime = 0;
 
     try {
-      const years = fs
-        .readdirSync(codexDir, { withFileTypes: true })
-        .filter((d) => d.isDirectory());
+      const years = (await fs.promises.readdir(codexDir, { withFileTypes: true })).filter((d) =>
+        d.isDirectory()
+      );
       for (const year of years) {
-        const months = fs
-          .readdirSync(path.join(codexDir, year.name), { withFileTypes: true })
-          .filter((d) => d.isDirectory());
+        const months = (
+          await fs.promises.readdir(path.join(codexDir, year.name), { withFileTypes: true })
+        ).filter((d) => d.isDirectory());
         for (const month of months) {
-          const dayDirs = fs
-            .readdirSync(path.join(codexDir, year.name, month.name), { withFileTypes: true })
-            .filter((d) => d.isDirectory());
+          const dayDirs = (
+            await fs.promises.readdir(path.join(codexDir, year.name, month.name), {
+              withFileTypes: true,
+            })
+          ).filter((d) => d.isDirectory());
           for (const day of dayDirs) {
             const dateStr = `${year.name}-${month.name}-${day.name}`;
             const dateMs = new Date(dateStr).getTime();
@@ -571,10 +584,10 @@ export function registerUsageRoutes(app: Express, providerNames: readonly Provid
             if (dateMs < cutoffMs && dateMs < sevenDaysAgo) continue;
 
             const dayPath = path.join(codexDir, year.name, month.name, day.name);
-            const files = fs.readdirSync(dayPath).filter((f) => f.endsWith('.jsonl'));
+            const files = (await fs.promises.readdir(dayPath)).filter((f) => f.endsWith('.jsonl'));
             for (const file of files) {
               const filePath = path.join(dayPath, file);
-              const stat = fs.statSync(filePath);
+              const stat = await fs.promises.stat(filePath);
 
               // Track most recent for rate limits
               if (stat.mtimeMs > newestCodexMtime) {
@@ -586,7 +599,7 @@ export function registerUsageRoutes(app: Express, providerNames: readonly Provid
               if (dateMs < cutoffMs) continue;
 
               const sessionId = codexSessionIdFromFilename(file);
-              const totals = codexTokenTotals(fs.readFileSync(filePath, 'utf-8'));
+              const totals = await codexTokenTotals(filePath);
               if (totals && totals.input + totals.cacheRead + totals.output > 0) {
                 entries.push({
                   sessionId,
@@ -618,13 +631,14 @@ export function registerUsageRoutes(app: Express, providerNames: readonly Provid
       'message'
     );
     try {
-      const openCodeSessionDirs = fs
-        .readdirSync(openCodeMessageDir, { withFileTypes: true })
+      const openCodeSessionDirs = (
+        await fs.promises.readdir(openCodeMessageDir, { withFileTypes: true })
+      )
         .filter((d) => d.isDirectory())
         .map((d) => path.join(openCodeMessageDir, d.name));
 
       for (const sessionDirPath of openCodeSessionDirs) {
-        const usage = parseOpenCodeSessionUsage(sessionDirPath);
+        const usage = await parseOpenCodeSessionUsage(sessionDirPath);
         if (!usage) {
           continue;
         }
@@ -652,34 +666,37 @@ export function registerUsageRoutes(app: Express, providerNames: readonly Provid
     // Extract rate limits from the most recent Codex session file
     if (newestCodexFile) {
       try {
-        const content = fs.readFileSync(newestCodexFile, 'utf-8');
-        const lines = content.split('\n').filter((l) => l.trim());
-        for (let i = lines.length - 1; i >= 0; i--) {
+        // The LAST rate_limits event wins. Keeping the latest match while
+        // streaming forward gives the same answer as the old backwards scan
+        // over the whole file held in memory.
+        // biome-ignore lint/suspicious/noExplicitAny: raw provider JSON, read as the old code did
+        let r: any = null;
+        for await (const { text: line } of readJsonlLines(newestCodexFile, 0)) {
+          if (!line.includes('rate_limits')) continue;
           try {
-            const entry = JSON.parse(lines[i]);
+            const entry = JSON.parse(line);
             if (entry.type === 'event_msg' && entry.payload?.rate_limits) {
-              const r = entry.payload.rate_limits;
-              if (r.primary) {
-                rateLimits.codex.push({
-                  label: `${r.primary.window_minutes / 60}h limit`,
-                  usedPercent: r.primary.used_percent,
-                  windowMinutes: r.primary.window_minutes,
-                  resetsAt: r.primary.resets_at ?? null,
-                });
-              }
-              if (r.secondary) {
-                rateLimits.codex.push({
-                  label: 'Weekly limit',
-                  usedPercent: r.secondary.used_percent,
-                  windowMinutes: r.secondary.window_minutes,
-                  resetsAt: r.secondary.resets_at ?? null,
-                });
-              }
-              break;
+              r = entry.payload.rate_limits;
             }
           } catch {
             /* skip */
           }
+        }
+        if (r?.primary) {
+          rateLimits.codex.push({
+            label: `${r.primary.window_minutes / 60}h limit`,
+            usedPercent: r.primary.used_percent,
+            windowMinutes: r.primary.window_minutes,
+            resetsAt: r.primary.resets_at ?? null,
+          });
+        }
+        if (r?.secondary) {
+          rateLimits.codex.push({
+            label: 'Weekly limit',
+            usedPercent: r.secondary.used_percent,
+            windowMinutes: r.secondary.window_minutes,
+            resetsAt: r.secondary.resets_at ?? null,
+          });
         }
       } catch {
         /* file may have been deleted */

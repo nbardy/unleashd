@@ -33,6 +33,7 @@ import type {
 } from '../conversations/runtime';
 import { updateRuntimeConfig } from '../conversations/runtime-config';
 import { summarizeConversation } from '../conversations/serialization';
+import { noteActivity } from '../observability/event-loop-stall';
 import {
   sendCommandAccepted,
   sendCommandRejected,
@@ -109,6 +110,7 @@ export function registerConversationWebSocket(
         }
 
         const data = result.data;
+        noteActivity(`ws ${data.type}`);
         if ('commandId' in data) {
           activeCommand = {
             commandId: data.commandId,

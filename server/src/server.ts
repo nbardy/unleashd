@@ -60,6 +60,8 @@ import {
   TurnAttemptJournal,
   createJournalTurnAttemptObserver,
   installConsoleErrorCapture,
+  noteActivity,
+  startEventLoopStallMonitor,
 } from './observability';
 import { createPaletteService } from './palettes/palette-service';
 import { buildPalettePrompt } from './palettes/prompt';
@@ -88,6 +90,7 @@ import {
   createReturnConversationPreparer,
 } from './buddies/dispatch-service';
 import { createBuddiesIntegration } from './buddies/integration';
+import { startMcpBundleWatch } from './buddies/mcp-bundle';
 import { BuddyMemoryReviewer } from './buddies/memory-review';
 import { createMemoryReviewRunner } from './buddies/memory-review-runner';
 import { ownerWorkspaceIds } from './buddies/owner-team-configuration';
@@ -426,6 +429,13 @@ registerAuthRoutes(app, AUTH_POLICY);
 // added it must call `res.flush()` after each write or compression buffers it.
 app.use(compression({ threshold: 1024 }));
 
+// Event-loop stall attribution (observability/event-loop-stall.ts): a label and
+// a timestamp per request, nothing else.
+app.use((request, _response, next) => {
+  noteActivity(`${request.method} ${request.path}`);
+  next();
+});
+
 // JSON body parser for API routes.
 // Default limit is 100kb which is far too small — queue-message and other
 // endpoints routinely carry pasted content, inline images, or full
@@ -686,12 +696,14 @@ const sessionLoader = createSessionLoader({
   configService: conversationConfigService,
   loadConversations: (options) =>
     loadAllConversations({ ...options, cache: normalizedSessionCache }),
-  pollConversations: (mtimes, activeIds, options) =>
-    pollForChanges(mtimes, activeIds, {
+  pollConversations: (mtimes, activeIds, options) => {
+    noteActivity('timer session-poll');
+    return pollForChanges(mtimes, activeIds, {
       ...options,
       cache: normalizedSessionCache,
       tails: transcriptTails,
-    }),
+    });
+  },
   createConversation: (options) => new Conversation(options),
   createId: uuidv4,
   resolveBuddyConversation,
@@ -716,6 +728,14 @@ void runServerStartup(
     initialize: async () => {
       await errorJournal.initialize();
       installConsoleErrorCapture(errorJournal);
+      startEventLoopStallMonitor(errorJournal);
+      // A dev backend has no compiled MCP helpers; bundle them once and keep
+      // them fresh so each Buddy turn does not pay tsx startup (mcp-bundle.ts).
+      if (process.env.NODE_ENV === 'development') {
+        void startMcpBundleWatch().catch((error) => {
+          console.error('[buddies-mcp] Could not start the MCP helper bundler:', error);
+        });
+      }
       await buddyControlServer.start();
       startupAuditResults = auditLocalAgents();
       await normalizedSessionCache.initialize();

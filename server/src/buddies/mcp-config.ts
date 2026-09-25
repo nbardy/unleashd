@@ -4,6 +4,12 @@ import path from 'node:path';
 import type { McpServerSpec } from '@nbardy/agent-cli';
 import type { BuddyContext } from '@unleashd/shared';
 import { APP_DATA_DIR_ENV, appDataDirectory } from '../app-data';
+import {
+  type McpBundleState,
+  type McpEntrypoint,
+  bundledEntrypointPath,
+  mcpBundleState,
+} from './mcp-bundle';
 
 export const BUDDY_MCP_SERVER_NAME = 'unleashd_buddy';
 export const BUDDY_AUTOMATION_CLAIM_TOKEN_ENV = 'UNLEASHD_BUDDY_AUTOMATION_CLAIM_TOKEN';
@@ -15,18 +21,49 @@ export interface BuddyMcpLaunch {
   env?: Readonly<Record<string, string>>;
 }
 
-export function resolveBuddyMcpLaunch(
-  entrypoint: 'mcp-server' | 'memory-review-mcp' | 'owner-mcp' = 'mcp-server'
-): BuddyMcpLaunch {
+/**
+ * How to start one Buddy MCP helper, in order of preference:
+ *   compiled — a packaged backend (server/dist) has the `.js` helper beside it;
+ *   bundle   — a dev backend's esbuild bundle (mcp-bundle.ts), ~0.3-0.7 s start;
+ *   source   — `node --import tsx <entry>.ts`, 2.5-4.5 s start, and only when
+ *              the bundle is not ready. That fallback is logged, because paid on
+ *              every helper of every turn it is the dev-mode slowdown this avoids.
+ */
+export function resolveBuddyMcpLaunch(entrypoint: McpEntrypoint = 'mcp-server'): BuddyMcpLaunch {
+  const serverRoot = path.resolve(__dirname, '../..');
   const compiledEntrypoint = path.resolve(__dirname, `../buddies/${entrypoint}.js`);
   if (fs.existsSync(compiledEntrypoint)) {
-    return {
-      command: process.execPath,
-      args: [compiledEntrypoint],
-      cwd: path.resolve(__dirname, '../..'),
-    };
+    return { command: process.execPath, args: [compiledEntrypoint], cwd: serverRoot };
   }
+  const bundle = mcpBundleState();
+  switch (bundle.kind) {
+    case 'ready':
+      return {
+        command: process.execPath,
+        args: [bundledEntrypointPath(bundle.directory, entrypoint)],
+        cwd: serverRoot,
+      };
+    case 'not_started':
+    case 'building':
+    case 'failed':
+      warnSourceFallback(entrypoint, bundle);
+      return sourceLaunch(entrypoint);
+  }
+}
 
+const warnedFallbacks = new Map<McpEntrypoint, McpBundleState>();
+
+/** Once per entrypoint per bundle state, so a stuck state is loud without flooding every turn. */
+function warnSourceFallback(entrypoint: McpEntrypoint, bundle: McpBundleState): void {
+  if (warnedFallbacks.get(entrypoint) === bundle) return;
+  warnedFallbacks.set(entrypoint, bundle);
+  const reason = bundle.kind === 'failed' ? `failed: ${bundle.message}` : bundle.kind;
+  console.warn(
+    `[buddies-mcp] Launching ${entrypoint} from TypeScript source through tsx (2.5-4.5 s per start); prebuilt bundle is ${reason}`
+  );
+}
+
+function sourceLaunch(entrypoint: McpEntrypoint): BuddyMcpLaunch {
   const sourceEntrypoint = path.resolve(__dirname, `../buddies/${entrypoint}.ts`);
   return {
     command: process.execPath,

@@ -13,7 +13,7 @@ import test from 'node:test';
 
 import { parseClaudeSession } from '../src/http/usage-routes';
 
-test('a request split across content-block lines is counted once', () => {
+test('a request split across content-block lines is counted once', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'claude-usage-'));
   try {
     const usage = {
@@ -38,7 +38,7 @@ test('a request split across content-block lines is counted once', () => {
         line('msg_b', 'text'),
       ].join('\n')
     );
-    const parsed = parseClaudeSession(file, fs.statSync(file));
+    const parsed = await parseClaudeSession(file, fs.statSync(file));
     assert.equal(parsed.cacheReadTokens, 80_000);
     assert.equal(parsed.cacheWriteTokens, 6_000);
     assert.equal(parsed.outputTokens, 400);

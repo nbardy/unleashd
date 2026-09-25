@@ -6,6 +6,8 @@ node_modules/
 
 # Build output
 dist/
+# Dev-only esbuild bundle of the Buddy MCP helpers (server/src/buddies/mcp-bundle.ts)
+server/.mcp-bundle/
 build/
 *.tsbuildinfo
 
