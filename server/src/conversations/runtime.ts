@@ -1077,11 +1077,12 @@ export function createConversationRuntime(
         );
       }
 
-      // Per-provider narrowing: ExecuteCommandRequest is a discriminated union
-      // keyed on `harness`. Reasoning effort is a pass-through string — the
-      // Configuration validation rejects any level not accepted by the target
-      // provider before we get here. The submodule
-      // harness wraps the string in the correct CLI flag.
+      // One request shape for every harness. Effort is a pass-through string:
+      // configuration validation rejects levels the provider does not accept, and
+      // agent-cli maps it to a flag only for harnesses that take one
+      // (execute.ts), so the cast covers only its `never` typing on the rest.
+      // Replaces three identical per-provider branches (T08 S2). Guard:
+      // `every harness receives its resolved effort in one request shape`.
       const baseRequest = {
         mode: 'conversation' as const,
         prompt: content,
@@ -1200,34 +1201,12 @@ export function createConversationRuntime(
 
         // Capture exactly the resolved request at the provider boundary, after all awaits.
         this._coordinationExecution?.onAdmitted?.(executionConfig);
-        turn = executeTurn(
-          executionConfig.provider === 'claude'
-            ? {
-                harness: 'claude',
-                ...baseRequest,
-                reasoningEffort: executionConfig.reasoningEffort,
-                ...buddyRequest,
-              }
-            : executionConfig.provider === 'codex'
-              ? {
-                  harness: 'codex',
-                  ...baseRequest,
-                  reasoningEffort: executionConfig.reasoningEffort,
-                  ...buddyRequest,
-                }
-              : executionConfig.provider === 'muse'
-                ? {
-                    harness: 'muse',
-                    ...baseRequest,
-                    reasoningEffort: executionConfig.reasoningEffort,
-                    ...buddyRequest,
-                  }
-                : ({
-                    harness: executionConfig.provider,
-                    ...baseRequest,
-                    ...buddyRequest,
-                  } as ExecuteCommandRequest)
-        );
+        turn = executeTurn({
+          ...baseRequest,
+          harness: executionConfig.provider,
+          reasoningEffort: executionConfig.reasoningEffort,
+          ...buddyRequest,
+        } as ExecuteCommandRequest);
       } catch (error) {
         dependencies.revokeBuddyControlCapability?.(this.id);
         // The briefing in this prompt never reached the provider transcript.

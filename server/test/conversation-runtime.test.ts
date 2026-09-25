@@ -848,6 +848,40 @@ test('same-provider fork on a fork-incapable harness falls back to string handof
   );
 });
 
+test('every harness receives its resolved effort in one request shape', () => {
+  // Guards T08 S2: the request builder used to be three identical per-harness
+  // branches plus a cast fallback. A regression here drops a claude/codex/muse
+  // effort silently (the provider would run at its own default).
+  type Request = Parameters<NonNullable<ConversationRuntimeDependencies['executeTurn']>>[0];
+  const expected: Record<Provider, string | undefined> = {
+    claude: 'high',
+    codex: 'ultra',
+    muse: 'high',
+    gemini: undefined,
+    opencode: undefined,
+    cursor: undefined,
+  };
+  for (const provider of Object.keys(expected) as Provider[]) {
+    const requests: Request[] = [];
+    const stub = openTurnStub();
+    const { conversation } = runtimeFixture({
+      provider,
+      executeTurn: ((request) => {
+        requests.push(request);
+        return stub.turn;
+      }) as NonNullable<ConversationRuntimeDependencies['executeTurn']>,
+    });
+    conversation.sendMessage('effort probe');
+    assert.equal(requests.length, 1, provider);
+    const request = requests[0] as Request & { reasoningEffort?: string };
+    assert.equal(request.harness, provider);
+    assert.equal(request.reasoningEffort, expected[provider], provider);
+    assert.equal(request.prompt, 'effort probe');
+    conversation.resetProcess();
+    stub.child.emit('close');
+  }
+});
+
 test('conversation runtime binds server capabilities without importing server orchestration', () => {
   const { aliases, broadcasts, conversation } = runtimeFixture();
 
