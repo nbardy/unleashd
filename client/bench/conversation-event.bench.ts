@@ -13,6 +13,7 @@
  * against the lean/integration tree, with its subscriptions (allConversationsAtom
  * + the Sidebar useMemo chain that re-ran whenever that array changed).
  */
+import { classifyServerFrame } from '@unleashd/shared';
 import type { Atom } from 'jotai';
 import { handleMessage } from '../src/atoms/actions';
 import {
@@ -30,11 +31,13 @@ import {
   childConversationsAtomFamily,
   conversationAtomFamily,
   conversationDetailsLoadedAtomFamily,
+  detailPatchAtom,
   hasConversationsAtom,
   latestWorkingDirectoryAtom,
   queueAtomFamily,
   recentDirectoriesAtom,
   streamingAtomFamily,
+  transcriptPatchAtom,
 } from '../src/atoms/conversations';
 import { jotaiStore } from '../src/atoms/store';
 import { lastSeenMessageIndexAtomFamily } from '../src/atoms/ui';
@@ -43,6 +46,14 @@ import { runEventBench } from './event-bench-harness';
 runEventBench({
   store: jotaiStore,
   handleMessage,
+  parseFrame: (raw) => {
+    const frame = classifyServerFrame(raw);
+    return frame.t === 'message' ? frame.message : null;
+  },
+  open: (id, detail, messages) => {
+    jotaiStore.set(detailPatchAtom, { set: [[id, detail]], remove: [] });
+    jotaiStore.set(transcriptPatchAtom, { set: [[id, { epoch: 0, messages }]], remove: [] });
+  },
   groups: (openId) => chatMessageGroupsAtomFamily(openId),
   mount: (ids, openId): Atom<unknown>[] => [
     // Sidebar
