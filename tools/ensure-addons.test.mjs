@@ -46,7 +46,10 @@ function fixture(t) {
   };
   write('crates/Cargo.toml', '[workspace]\nmembers = ["demo", "tool"]\n');
   write('crates/Cargo.lock', LOCK);
-  write('crates/demo/package.json', JSON.stringify({ napi: { binaryName: 'demo' } }));
+  write(
+    'crates/demo/package.json',
+    JSON.stringify({ napi: { binaryName: 'demo' }, scripts: { build: 'napi build' } })
+  );
   write('crates/demo/Cargo.toml', '[package]\nname = "demo"\n');
   write('crates/demo/build.rs', 'fn main() {}\n');
   write('crates/demo/src/lib.rs', 'pub fn a() {}\n');
@@ -66,7 +69,18 @@ test('the key moves with the addon crate build inputs and nothing else', (t) => 
   write('crates/Cargo.toml', '[workspace]\nmembers = ["demo", "tool", "tool2"]\n');
   write('crates/Cargo.lock', LOCK.replace('checksum = "bbb"', 'checksum = "ccc"'));
   write('crates/demo/index.d.ts', 'export declare function a(): void\n');
-  assert.equal(key(), base, 'a TS file, a tool crate, members and an unreachable lock entry');
+  write(
+    'crates/demo/package.json',
+    JSON.stringify({
+      napi: { binaryName: 'demo' },
+      scripts: { build: 'napi build', test: 'edited' },
+    })
+  );
+  assert.equal(
+    key(),
+    base,
+    'a TS file, a tool crate, members, the test script, an unreachable lock entry'
+  );
 
   write('crates/demo/src/nested/deep.rs', '// new file\n');
   const withFile = key();

@@ -10,7 +10,7 @@
 //   node tools/ensure-addons.mjs [crate ...]     (default: every addon crate)
 //
 // Key = sha256 of the crate's build inputs: src/**, build.rs, Cargo.toml,
-// package.json (the napi flags), the workspace Cargo.toml minus `members`, the
+// package.json's `napi` + `scripts.build`, the workspace Cargo.toml minus `members`, the
 // Cargo.lock entries the crate can reach, `rustc -vV` (version + host triple),
 // CARGO_BUILD_TARGET and RUSTFLAGS. Nothing outside the crate directory is an
 // input, so a TS edit or an importer edit (its own crate) never changes a key.
@@ -106,6 +106,11 @@ function reachableLock(lockText, crate) {
   return [...seen].map((p) => p.block).sort();
 }
 
+function napiBuildOf(dir) {
+  const manifest = JSON.parse(fs.readFileSync(path.join(dir, 'package.json'), 'utf8'));
+  return [manifest.napi, manifest.scripts.build];
+}
+
 /** The cache key of one addon's build inputs. */
 export function addonKey(root, { crate, dir }, toolchain) {
   const workspace = path.join(root, 'crates');
@@ -114,10 +119,12 @@ export function addonKey(root, { crate, dir }, toolchain) {
       path.relative(dir, file),
       sha256(fs.readFileSync(file)),
     ]),
-    ...['build.rs', 'Cargo.toml', 'package.json'].map((name) => [
+    ...['build.rs', 'Cargo.toml'].map((name) => [
       name,
       sha256(fs.readFileSync(path.join(dir, name))),
     ]),
+    // Only what shapes the output: the napi flags. Editing the `test` script must not miss.
+    ['package.json', sha256(JSON.stringify(napiBuildOf(dir)))],
     // `members` lists the tool crates too; editing it changes no addon's output.
     [
       'workspace',
