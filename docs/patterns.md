@@ -114,6 +114,14 @@ keep an older id carry the ordered id in a separate column assigned in their ori
 **Pattern:** few modules with small interfaces that hide real work. Delete pass-through layers.
 **Here:** the `owner-mcp.ts` relay and the `ProviderEvent` re-typing layer were deleted (T11/T08).
 
+## quarantine
+**Smell:** an optional feature's imports spread through the core, so removing it later means an archaeology dig.
+**Pattern:** the feature lives in one folder with ONE entry module. Code outside the folder imports only that
+entry, from a fixed list of files that a guard test pins; on the client every entry export is lazy, so core chunks
+carry none of its code or CSS. Deleting the feature = delete the folder + the call sites of the entry.
+**Here:** swarm/oompa (T10): `server/src/swarm/index.ts`, `client/src/swarm/index.ts`; guards
+`server/test/swarm-quarantine.test.ts`, `client/test/swarm-quarantine.test.ts`.
+
 ## delete-and-migrate
 **Smell:** compatibility shims, permanent flags, migration chains (33 schema versions).
 **Pattern:** a one-time export into a clean shape, with zero-loss verification (counts plus content hashes). Then
