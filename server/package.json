@@ -12,6 +12,7 @@
     "@modelcontextprotocol/sdk": "^1.30.0",
     "@nbardy/agent-cli": "workspace:*",
     "@unleashd/buddies-core": "workspace:*",
+    "@unleashd/ingest": "workspace:*",
     "@unleashd/shared": "workspace:*",
     "compression": "^1.8.1",
     "express": "^4.18.2",
