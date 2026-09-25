@@ -234,7 +234,7 @@ async function discoverSession(session: SessionRow) {
               role: session.identity.role,
             }
           : { t: 'chat' },
-      legacy: {
+      sessionEvidence: {
         provider: session.provider,
         reportedModel: session.observedModel ?? undefined,
         source: 'external_session',
