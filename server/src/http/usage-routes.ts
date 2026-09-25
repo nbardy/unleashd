@@ -344,6 +344,13 @@ export async function parseCodexTokenTotals(filePath: string): Promise<CodexToke
 const CODEX_ROLLOUT_NAME =
   /^rollout-.+-([0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12})$/;
 
+/** A rate-limit window's duration as a short label: 300 → "5h", 10080 → "7d", 90 → "90m". */
+export function rateWindowLabel(minutes: number): string {
+  if (minutes % 1440 === 0) return `${minutes / 1440}d`;
+  if (minutes % 60 === 0) return `${minutes / 60}h`;
+  return `${minutes}m`;
+}
+
 export function codexSessionIdFromFilename(fileName: string): string {
   const base = fileName.replace(/\.jsonl$/, '');
   const rollout = base.match(CODEX_ROLLOUT_NAME);
@@ -682,20 +689,16 @@ export function registerUsageRoutes(app: Express, providerNames: readonly Provid
             /* skip */
           }
         }
-        if (r?.primary) {
+        // Codex sends whichever windows the plan has: the weekly window can
+        // arrive as `primary` with `secondary` absent, so the slot name says
+        // nothing about the duration — label every window from its minutes.
+        for (const w of [r?.primary, r?.secondary]) {
+          if (!w) continue;
           rateLimits.codex.push({
-            label: `${r.primary.window_minutes / 60}h limit`,
-            usedPercent: r.primary.used_percent,
-            windowMinutes: r.primary.window_minutes,
-            resetsAt: r.primary.resets_at ?? null,
-          });
-        }
-        if (r?.secondary) {
-          rateLimits.codex.push({
-            label: 'Weekly limit',
-            usedPercent: r.secondary.used_percent,
-            windowMinutes: r.secondary.window_minutes,
-            resetsAt: r.secondary.resets_at ?? null,
+            label: `${rateWindowLabel(w.window_minutes)} limit`,
+            usedPercent: w.used_percent,
+            windowMinutes: w.window_minutes,
+            resetsAt: w.resets_at ?? null,
           });
         }
       } catch {

@@ -24,7 +24,7 @@ interface SessionUsage {
   date: string;
 }
 
-interface RateLimit {
+export interface RateLimit {
   label: string;
   usedPercent: number;
   windowMinutes: number;
@@ -117,6 +117,18 @@ function RateLimitGauge({ rl }: { rl: RateLimit }) {
 
 // Module-level cache so reopening the panel is instant
 let clientCache: { days: number; data: UsageData; time: number } | null = null;
+
+/** One provider's gauges: whichever windows it reported, each labelled by its duration. */
+export function RateLimitGroup({ provider, limits }: { provider: Provider; limits: RateLimit[] }) {
+  return (
+    <div className="usage-rate-group ui-stack">
+      <span className="usage-rate-provider ui-muted">{getProviderMetadata(provider).label}</span>
+      {limits.map((rl) => (
+        <RateLimitGauge key={rl.label} rl={rl} />
+      ))}
+    </div>
+  );
+}
 
 export function UsagePanel({ onClose }: Props) {
   // Seed from cache if available for the same days value
@@ -216,18 +228,9 @@ export function UsagePanel({ onClose }: Props) {
               {/* Rate Limit Gauges (Dynamic for all providers) */}
               {Object.entries(data.rateLimits).map(([p, rls]) => {
                 const providerId = p as Provider;
-                const metadata = getProviderMetadata(providerId);
                 const show = (tab === 'all' || tab === providerId) && rls.length > 0;
                 if (!show) return null;
-
-                return (
-                  <div key={providerId} className="usage-rate-group ui-stack">
-                    <span className="usage-rate-provider ui-muted">{metadata.label}</span>
-                    {rls.map((rl) => (
-                      <RateLimitGauge key={rl.label} rl={rl} />
-                    ))}
-                  </div>
-                );
+                return <RateLimitGroup key={providerId} provider={providerId} limits={rls} />;
               })}
 
               {/* Token + cost summary */}
