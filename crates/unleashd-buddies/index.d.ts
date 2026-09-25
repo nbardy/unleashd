@@ -5,9 +5,11 @@ export declare class BuddiesCore {
   /** Opens (or creates) the database. Refuses a file that is not a buddies-core database. */
   static open(path: string): Promise<BuddiesCore>
   authorize(actor: Actor, op: Op, subject: Subject): Promise<Decision>
-  post(actor: Actor, input: PostInput): Promise<Post>
-  reply(actor: Actor, input: ReplyInput): Promise<Post>
-  listPosts(query: PostQuery, before: Cursor | undefined | null, limit: number): Promise<PostPage>
+  post(actor: Actor, channel: ChannelRef, input: PostInput): Promise<Post>
+  answer(actor: Actor, input: AnswerInput): Promise<Post>
+  getPost(actor: Actor, id: string): Promise<Post>
+  openChannel(actor: Actor, channel: ChannelRef): Promise<Channel>
+  listPosts(actor: Actor, query: PostQuery, before: Cursor | undefined | null, limit: number): Promise<PostPage>
   inbox(actor: Actor, workspaceId: string): Promise<Inbox>
   markRead(actor: Actor, channelId: string, postId: string): Promise<void>
   createChannel(actor: Actor, input: ChannelInput): Promise<Channel>
@@ -39,10 +41,20 @@ export declare class BuddiesCore {
   getConversation(id: string): Promise<Conversation | null>
 }
 
-/** Who acts. Stored as NULL (post author / channel creator) or the key `'owner'` (events, read cursors). */
+/**
+ * Who acts. Stored as NULL (post author / channel creator) or the key `'owner'` (events, read
+ * cursors, channel members).
+ */
 export type Actor =
   | { kind: 'owner' }
   | { kind: 'buddy'; id: string }
+
+export interface AnswerInput {
+  requestId: string
+  body: string
+  evidence: Array<string>
+  key: string
+}
 
 export interface Buddy {
   id: string
@@ -66,8 +78,7 @@ export type BuddyStatus = 'active' | 'archived'
 export interface Channel {
   id: string
   workspaceId: string
-  name: string
-  purpose: string
+  kind: ChannelKind
   createdBy: Actor
   createdAt: string
 }
@@ -79,9 +90,21 @@ export interface ChannelInput {
   key: string
 }
 
+/** What a channel is. Columns: `kind` plus (name, purpose) | member_key | task_id. */
+export type ChannelKind =
+  | { type: 'public'; name: string; purpose: string }
+  | { type: 'direct'; members: Array<Actor> }
+  | { type: 'task'; taskId: string }
+
+/** Where a post goes. A direct or task channel is found, or created on first use. */
+export type ChannelRef =
+  | { kind: 'id'; id: string }
+  | { kind: 'direct'; members: Array<Actor> }
+  | { kind: 'task'; taskId: string }
+
 export interface ChannelUnread {
-  channelId: string
-  name: string
+  channel: Channel
+  /** Posts by others after the reader's cursor (all of them when it has none). */
   unread: number
 }
 
@@ -194,14 +217,15 @@ export interface EventInput {
 }
 
 export interface Inbox {
-  /** Requests addressed to the actor that still await its reply. */
+  /** Requests addressed to the actor that still await its answer. */
   requests: Array<Post>
-  /** The actor's own requests still awaiting someone else's reply. */
+  /** The actor's own requests still awaiting someone else's answer. */
   waitingOn: Array<Post>
-  unread: Array<ChannelUnread>
+  /** The actor's channels in the workspace: every public one, its direct ones, and any it has read. */
+  channels: Array<ChannelUnread>
 }
 
-export type Op = 'read_doc' | 'write_doc' | 'post' | 'reply' | 'write_task' | 'enqueue_run' | 'cancel_run' | 'write_schedule' | 'admin'
+export type Op = 'read_doc' | 'write_doc' | 'post' | 'read_channel' | 'create_channel' | 'write_task' | 'enqueue_run' | 'cancel_run' | 'write_schedule' | 'admin'
 
 /** How a run ended, reported by the runner. */
 export type Outcome =
@@ -211,31 +235,30 @@ export type Outcome =
 
 export interface Post {
   id: string
-  workspaceId: string
+  channelId: string
   author: Actor
-  target: Target
   rootId?: string
   replyToId?: string
   taskId?: string
   purpose?: string
   body: string
   evidence: Array<string>
-  reply: Reply
+  request: RequestState
   conversationId?: string
   returnConversationId?: string
   createdAt: string
 }
 
 export interface PostInput {
-  target: Target
+  /** `Request` needs a direct channel: the other members owe the answer. */
   kind: PostKind
   body: string
   purpose?: string
   evidence: Array<string>
-  /** Reply inside a thread: the post being answered. Absent = a new top-level post. */
+  /** A reply in a thread: the post it responds to, in the same channel. Absent = a new top-level post. */
   replyToId?: string
   taskId?: string
-  /** The sender's conversation; a `Request`'s reply returns there. */
+  /** The sender's conversation; a `Request`'s answer returns there. */
   fromConversationId?: string
   key: string
 }
@@ -250,24 +273,14 @@ export interface PostPage {
 export type PostQuery =
   | { kind: 'channel'; channelId: string }
   | { kind: 'thread'; rootId: string }
-  | { kind: 'task'; taskId: string }
-  | { kind: 'to'; target: Target }
-  | { kind: 'from'; author: Actor }
 
-/** A post's reply lifecycle. `reply_state` NULL is `NotOwed`. */
-export type Reply =
-  | { state: 'not_owed' }
+/** A post's request lifecycle. Column `request` NULL is `None`; `Answered` names the answer post. */
+export type RequestState =
+  | { state: 'none' }
   | { state: 'awaiting' }
-  | { state: 'replied'; body: string; evidence: Array<string>; repliedAt: string }
+  | { state: 'answered'; answerId: string }
   | { state: 'cancelled' }
   | { state: 'failed' }
-
-export interface ReplyInput {
-  postId: string
-  body: string
-  evidence: Array<string>
-  key: string
-}
 
 export interface Run {
   id: string
@@ -344,13 +357,7 @@ export interface ScheduleInput {
 export type Subject =
   | { kind: 'owner' }
   | { kind: 'buddy'; id: string }
-
-/** Where a post is addressed. Columns: (target_kind, target_id), target_id NULL for the owner. */
-export type Target =
-  | { kind: 'buddy'; id: string }
-  | { kind: 'owner' }
   | { kind: 'channel'; id: string }
-  | { kind: 'task'; id: string }
 
 export interface Task {
   id: string

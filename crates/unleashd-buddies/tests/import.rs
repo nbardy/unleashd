@@ -4,7 +4,7 @@
 use rusqlite::Connection;
 use rusqlite::functions::FunctionFlags;
 use std::path::Path;
-use unleashd_buddies::import::{SoulFileState, import};
+use unleashd_buddies::import::{OwnerReads, SoulFileState, import};
 use unleashd_buddies::store::sha256_hex;
 use unleashd_buddies::verify::verify;
 
@@ -27,11 +27,14 @@ INSERT INTO buddy_todos (id, buddy_project_id, title, status, position, created_
 INSERT INTO buddy_task_comments VALUES ('c1','t1','b2','started','["log.txt"]','2026-07-03T01:00:00.000Z'),
                                        ('c2','t1','owner','looks good','[]','2026-07-03T02:00:00.000Z');
 INSERT INTO buddy_messages (id, from_buddy_id, to_buddy_id, workspace_id, buddy_project_id, purpose, body, evidence, status, reply_body,
-    reply_evidence, wait_status, created_at, updated_at, replied_at, expects_reply, return_policy, command_key)
-  VALUES ('m1','b1','b2','p1','t1','ask','please build','[]','replied','built','["pr/1"]','none','2026-07-04T00:00:00.000Z','2026-07-04T01:00:00.000Z','2026-07-04T01:00:00.000Z',1,'{"return_conversation_id":"conv-b1"}','key-1'),
-         ('m2','b2',NULL,'p1',NULL,'fyi','for the owner','[]','pending',NULL,'[]','none','2026-07-04T02:00:00.000Z','2026-07-04T02:00:00.000Z',NULL,1,'{}',NULL),
-         ('m3','b1','b2','p1',NULL,'note','no reply needed','[]','active',NULL,'[]','none','2026-07-04T03:00:00.000Z','2026-07-04T03:00:00.000Z',NULL,0,'{}',NULL);
-INSERT INTO buddy_lists VALUES ('l1','p1','general','chat','owner',NULL,'2026-07-05T00:00:00.000Z');
+    reply_evidence, wait_status, created_at, updated_at, replied_at, expects_reply, return_policy, command_key, root_message_id, in_reply_to_id)
+  VALUES ('m1','b1','b2','p1','t1','ask','please build','[]','replied','built','["pr/1"]','none','2026-07-04T00:00:00.000Z','2026-07-04T01:00:00.000Z','2026-07-04T01:00:00.000Z',1,'{"return_conversation_id":"conv-b1"}','key-1','m1',NULL),
+         ('m2','b2',NULL,'p1',NULL,'fyi','for the owner','[]','pending',NULL,'[]','none','2026-07-04T02:00:00.000Z','2026-07-04T02:00:00.000Z',NULL,1,'{}',NULL,'m2',NULL),
+         ('m3','b1','b2','p1',NULL,'note','no reply needed','[]','active',NULL,'[]','none','2026-07-04T03:00:00.000Z','2026-07-04T03:00:00.000Z',NULL,0,'{}',NULL,'m1',NULL),
+         ('m4','b2','b1','p1',NULL,'follow-up','on it','[]','active',NULL,'[]','none','2026-07-04T04:00:00.000Z','2026-07-04T04:00:00.000Z',NULL,0,'{}',NULL,'m1','m1'),
+         ('m5','b2','b2','p1',NULL,'note','note to self','[]','replied','noted','[]','none','2026-07-04T05:00:00.000Z','2026-07-04T05:30:00.000Z','2026-07-04T05:30:00.000Z',1,'{}',NULL,'m1',NULL);
+INSERT INTO buddy_lists VALUES ('l1','p1','general','chat','owner',NULL,'2026-07-05T00:00:00.000Z'),
+                               ('l2','p1','random','misc','buddy','b1','2026-07-05T00:00:00.000Z');
 INSERT INTO buddy_list_posts VALUES
   ('lp1','l1','p1','owner',NULL,NULL,'post','hello team','[]',NULL,NULL,NULL,'2026-07-05T01:00:00.000Z'),
   ('lp2','l1','p1','buddy','b2','lp1','post','hi','[]','t1','conv-b2','run-x','2026-07-05T02:00:00.000Z');
@@ -81,24 +84,32 @@ fn fixture(root: &Path) -> std::path::PathBuf {
     conn.execute_batch(&SEED.replace("{ROOT}", &root.to_string_lossy())).unwrap();
     std::fs::create_dir_all(root.join("lead")).unwrap();
     std::fs::write(root.join("lead/SOUL.md"), "---\nversion: 2\nupdated: 2026-07-02\ndocument: soul\n---\n\nI lead the team.\n").unwrap();
+    std::fs::write(root.join("owner-channel-reads.json"), OWNER_READS).unwrap();
     path
 }
+
+/// The shape `server/src/buddies/owner-channel-reads.ts` writes: l1 was read, l2 never opened.
+const OWNER_READS: &str = r#"{"version": 1, "baselineAt": "2026-07-05T00:30:00.000Z", "marks": {"l1": {"postId": "lp1", "createdAt": "2026-07-05T01:00:00.000Z"}}}"#;
 
 #[test]
 fn import_then_verify_then_catch_tampering() {
     let dir = tempfile::tempdir().unwrap();
     let old = fixture(dir.path());
     let new = dir.path().join("new.sqlite");
-    let report = import(&old, &new).unwrap();
+    let owner_reads = dir.path().join("owner-channel-reads.json");
+    let report = import(&old, &new, &owner_reads).unwrap();
 
     assert_eq!(report.dropped_read_events, 1, "buddy.get_inbox is a read");
     assert_eq!(report.non_home_memberships.len(), 1);
     assert_eq!(report.divergent_thread_souls[0]["doc_id"], "k1");
     assert_eq!(report.converted_schedules[0]["cron"], "*/30 * * * *");
     assert!(matches!(report.soul_files.iter().find(|s| s.slug == "lead").unwrap().state, SoulFileState::Present { .. }));
-    assert!(import(&old, &new).is_err(), "an existing target is never overwritten");
+    assert!(import(&old, &new, &owner_reads).is_err(), "an existing target is never overwritten");
+    assert_eq!(report.cross_channel_roots, 1, "m5's delegation root is in another channel");
+    let without = import(&old, &dir.path().join("no-reads.sqlite"), &dir.path().join("absent.json")).unwrap();
+    assert!(matches!(without.owner_reads, OwnerReads::Absent { .. }), "no owner file: skipped and recorded, not an error");
 
-    let ok = verify(&old, &new, &report.soul_files).unwrap();
+    let ok = verify(&old, &new, &report.soul_files, &report.owner_reads).unwrap();
     assert!(ok.ok, "{}", serde_json::to_string_pretty(&ok).unwrap());
     assert_eq!(ok.soul.split.get("match"), Some(&1));
     assert_eq!(ok.soul.split.get("no_path_empty"), Some(&2));
@@ -107,8 +118,29 @@ fn import_then_verify_then_catch_tampering() {
     let conn = Connection::open(&new).unwrap();
     let row = |sql: &str| conn.query_row(sql, [], |r| r.get::<_, String>(0)).unwrap();
     assert_eq!(row("SELECT manager_id FROM buddy WHERE id = 'b2'"), "b1");
-    assert_eq!(row("SELECT reply_state FROM post WHERE id = 'm2'"), "awaiting");
-    assert_eq!(row("SELECT coalesce(reply_state, 'none') FROM post WHERE id = 'm3'"), "none", "expects_reply = 0 owes nothing");
+    assert_eq!(row("SELECT request FROM post WHERE id = 'm2'"), "awaiting");
+    assert_eq!(row("SELECT coalesce(request, 'none') FROM post WHERE id = 'm3'"), "none", "expects_reply = 0 owes nothing");
+    assert_eq!(
+        row("SELECT group_concat(member_key, ' ') FROM (SELECT member_key FROM channel WHERE kind = 'direct' ORDER BY 1)"),
+        "b1,b2 b2 b2,owner"
+    );
+    // An inline reply is now its own post: the recipient's, in the request's channel and thread.
+    assert_eq!(
+        row("SELECT a.body || '/' || a.author_id || '/' || a.created_at || '/' || (a.channel_id = q.channel_id) || '/' || a.root_id || '/' || a.evidence
+             FROM post q JOIN post a ON a.id = q.answer_id WHERE q.id = 'm1' AND q.request = 'answered' AND a.reply_to_id = 'm1'"),
+        "built/b2/2026-07-04T01:00:00.000Z/1/m1/[\"pr/1\"]"
+    );
+    assert_eq!(row("SELECT root_id FROM post WHERE id = 'm3'"), "m1", "a same-channel v33 root is the thread");
+    assert_eq!(row("SELECT root_id || '/' || reply_to_id FROM post WHERE id = 'm4'"), "m1/m1");
+    assert_eq!(
+        row("SELECT coalesce(root_id, 'top') || '/' || json_extract(legacy, '$.root_message_id') FROM post WHERE id = 'm5'"),
+        "top/m1"
+    );
+    assert_eq!(
+        row("SELECT group_concat(channel_id || '=' || last_post_id || '@' || last_post_at, ' ') FROM post_read WHERE reader = 'owner'"),
+        "l1=lp1@2026-07-05T01:00:00.000Z l2=@2026-07-05T00:30:00.000Z",
+        "a mark, and the baseline for a list the owner never opened"
+    );
     assert_eq!(row("SELECT json_extract(legacy, '$.priority') || '/' || status || '/' || paused FROM task WHERE id = 't1'"), "7/open/1");
     assert_eq!(row("SELECT input_kind || '/' || task_epoch FROM run WHERE id = 'run2'"), "post/3");
     drop(conn);
@@ -116,13 +148,19 @@ fn import_then_verify_then_catch_tampering() {
     // Tampering with one message body, one revision or the soul file must fail verification.
     let conn = Connection::open(&new).unwrap();
     conn.execute("UPDATE post SET body = 'please build!' WHERE id = 'm1'", []).unwrap();
+    conn.execute("UPDATE post SET body = 'built!' WHERE id = 'reply_m1'", []).unwrap();
+    conn.execute("UPDATE post SET root_id = NULL WHERE id = 'm3'", []).unwrap();
     conn.execute("UPDATE doc_revision SET content = 'use postgres' WHERE doc_id = 'k2'", []).unwrap();
     drop(conn);
     std::fs::write(dir.path().join("lead/SOUL.md"), "rewritten").unwrap();
-    let bad = verify(&old, &new, &report.soul_files).unwrap();
+    std::fs::write(&owner_reads, OWNER_READS.replace("lp1", "lp2")).unwrap();
+    let bad = verify(&old, &new, &report.soul_files, &report.owner_reads).unwrap();
     assert!(!bad.ok);
     let failed: Vec<&str> = bad.classes.iter().filter(|c| !c.ok).map(|c| c.class.as_str()).collect();
     assert!(failed.contains(&"messages_by_sender") && failed.contains(&"knowledge_revisions_by_buddy_scope_kind"), "{failed:?}");
+    assert_eq!(bad.answers.mismatches, ["m1"], "the answer text must be byte-identical to the v33 reply");
+    assert_eq!(bad.links.mismatches, ["m3: same-channel v33 root lost"]);
+    assert!(!bad.read_cursors.ok, "owner-channel-reads.json changed since the import");
     assert!(!bad.revision_chains.ok && !bad.soul.ok);
     assert_eq!(bad.soul.files_changed, ["lead"]);
 }

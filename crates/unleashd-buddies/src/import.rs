@@ -4,6 +4,10 @@
 //! column without a home in the new schema is kept in the row's `legacy` JSON. Soul files are
 //! hashed (baseline for the verifier) and never written. Any source value outside the mapped
 //! domains aborts the import with a typed error before anything is written.
+//!
+//! Messages, channel posts and task comments all become posts in channels (T06b): a message goes
+//! to the direct channel of {sender, recipient}, its inline reply becomes its own answer post, and
+//! owner-channel-reads.json (read-only, optional) becomes the owner's `post_read` cursors.
 
 use crate::error::{CoreError, Result};
 use crate::runs::next_run;
@@ -11,8 +15,9 @@ use crate::schema;
 use crate::store::{now_iso, sha256_hex};
 use rusqlite::functions::FunctionFlags;
 use rusqlite::{Connection, OpenFlags};
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
+use std::collections::BTreeMap;
 use std::path::Path;
 
 pub const SOURCE_VERSION: i64 = 33;
@@ -32,6 +37,97 @@ pub struct ImportReport {
     /// Dangling references carried over from the source (`PRAGMA foreign_key_check`), reported, not repaired.
     pub foreign_key_violations: Vec<Value>,
     pub soul_files: Vec<SoulFile>,
+    /// Messages whose v33 `root_message_id` (the delegation-chain root) is in another direct
+    /// channel. It is kept in `legacy.root_message_id`; `root_id` is the thread in the channel.
+    pub cross_channel_roots: i64,
+    pub owner_reads: OwnerReads,
+}
+
+/// owner-channel-reads.json, as `server/src/buddies/owner-channel-reads.ts` writes it.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct OwnerMark {
+    pub post_id: String,
+    pub created_at: String,
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct OwnerReadFile {
+    version: i64,
+    baseline_at: String,
+    marks: BTreeMap<String, OwnerMark>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(tag = "state", rename_all = "snake_case")]
+pub enum OwnerReads {
+    /// No file: the owner has no cursors to import.
+    Absent {
+        path: String,
+    },
+    Loaded {
+        path: String,
+        sha256: String,
+        baseline_at: String,
+        marks: BTreeMap<String, OwnerMark>,
+    },
+}
+
+pub fn load_owner_reads(path: &Path) -> Result<OwnerReads> {
+    let shown = path.display().to_string();
+    let bytes = match std::fs::read(path) {
+        Ok(bytes) => bytes,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(OwnerReads::Absent { path: shown }),
+        Err(e) => return Err(e.into()),
+    };
+    let file: OwnerReadFile = serde_json::from_slice(&bytes)?;
+    match file.version {
+        1 => Ok(OwnerReads::Loaded { path: shown, sha256: sha256_hex(&bytes), baseline_at: file.baseline_at, marks: file.marks }),
+        v => Err(CoreError::WrongDatabase(format!("{shown}: owner read state version {v}, expected 1"))),
+    }
+}
+
+impl OwnerReads {
+    /// The owner's cursors as (channel, post id, instant): each mark, and for every other list the
+    /// file's baseline, the floor the TS reader applies to a list the owner never opened. A
+    /// baseline cursor has post id '' and means "read through that instant".
+    pub fn cursors(&self, lists: &[String]) -> Vec<(String, String, String)> {
+        match self {
+            OwnerReads::Absent { .. } => vec![],
+            OwnerReads::Loaded { baseline_at, marks, .. } => {
+                let baseline = lists.iter().filter(|l| !marks.contains_key(*l)).map(|l| (l.clone(), String::new(), baseline_at.clone()));
+                marks.iter().map(|(l, m)| (l.clone(), m.post_id.clone(), m.created_at.clone())).chain(baseline).collect()
+            }
+        }
+    }
+}
+
+/// A message's direct channel: its {sender, recipient} set spelled as `types::member_key` spells
+/// it (byte-sorted, deduplicated, ','-joined; a NULL recipient is the owner).
+pub const DM_KEY: &str = "CASE WHEN from_buddy_id = coalesce(to_buddy_id, 'owner') THEN from_buddy_id
+    ELSE min(from_buddy_id, coalesce(to_buddy_id, 'owner')) || ',' || max(from_buddy_id, coalesce(to_buddy_id, 'owner')) END";
+
+/// Every direct channel's (member_key, member) rows.
+const DM_MEMBERS: &str =
+    "SELECT member_key, from_buddy_id AS member FROM msg UNION SELECT member_key, coalesce(to_buddy_id, 'owner') FROM msg";
+
+/// Temp objects the mapping reads. `msg_thread` is each message's thread root inside its channel:
+/// a message answering another (`in_reply_to_id`) joins the thread of its chain's top message; a
+/// top message is threaded under its v33 root only when that root is in the same channel.
+fn setup_sql() -> Vec<String> {
+    vec![
+        format!("CREATE TEMP VIEW msg AS SELECT *, {DM_KEY} AS member_key FROM old.buddy_messages"),
+        "CREATE TEMP TABLE msg_thread AS
+         WITH RECURSIVE chain(id, top) AS (
+           SELECT id, id FROM old.buddy_messages WHERE in_reply_to_id IS NULL
+           UNION ALL SELECT m.id, chain.top FROM old.buddy_messages m JOIN chain ON m.in_reply_to_id = chain.id)
+         SELECT chain.id, CASE WHEN chain.id = chain.top THEN top.local ELSE coalesce(top.local, chain.top) END AS root_id
+         FROM chain JOIN (SELECT a.id, CASE WHEN r.member_key = a.member_key AND a.root_message_id != a.id THEN a.root_message_id END AS local
+                          FROM msg a LEFT JOIN msg r ON r.id = a.root_message_id) top ON top.id = chain.top"
+            .into(),
+        "CREATE TEMP TABLE owner_read (list_id TEXT NOT NULL, post_id TEXT NOT NULL, created_at TEXT NOT NULL)".into(),
+    ]
 }
 
 #[derive(Debug, Clone, Serialize, serde::Deserialize, PartialEq)]
@@ -129,6 +225,24 @@ const DOMAIN_CHECKS: &[(&str, &str)] = &[
         "buddy_task_comments without a task",
         "SELECT count(*) FROM old.buddy_task_comments WHERE project_id NOT IN (SELECT id FROM old.owned_projects)",
     ),
+    (
+        "buddy_messages reply columns disagree with status",
+        "SELECT count(*) FROM old.buddy_messages WHERE (status = 'replied') != (reply_body IS NOT NULL AND replied_at IS NOT NULL)
+           OR (status != 'replied' AND reply_evidence != '[]')",
+    ),
+    (
+        "buddy_messages in_reply_to in another channel or delegation root",
+        "SELECT count(*) FROM msg a JOIN msg p ON p.id = a.in_reply_to_id WHERE p.member_key != a.member_key OR p.root_message_id != a.root_message_id",
+    ),
+    (
+        "buddy_list_posts outside their list's workspace",
+        "SELECT count(*) FROM old.buddy_list_posts p JOIN old.buddy_lists l ON l.id = p.list_id WHERE p.workspace_id != l.workspace_id",
+    ),
+    (
+        "answer ids ('reply_' || message id) already taken",
+        "SELECT count(*) FROM old.buddy_messages WHERE 'reply_' || id IN (SELECT id FROM old.buddy_messages
+           UNION ALL SELECT id FROM old.buddy_list_posts UNION ALL SELECT id FROM old.buddy_task_comments)",
+    ),
 ];
 
 /// A pure read in the audit log: `<actor>.get_*`, `.list_*`, `.search_*`, `.recall`.
@@ -173,33 +287,51 @@ fn mapping_sql() -> Vec<String> {
            t.next_action, t.blocked_reason, t.completion_evidence, t.position, 1, t.created_at, t.updated_at,
            json_object('source', 'buddy_todos', 'definition_of_done', t.definition_of_done, 'completed_at', t.completed_at)
          FROM old.buddy_todos t JOIN old.owned_projects p ON p.id = t.buddy_project_id".into(),
-        "INSERT INTO channel SELECT id, workspace_id, name, purpose, created_by_buddy_id, created_at FROM old.buddy_lists".into(),
-        "INSERT INTO post (id, workspace_id, author_id, target_kind, target_id, root_id, reply_to_id, task_id, purpose, body, evidence,
-           reply_state, reply_body, reply_evidence, replied_at, conversation_id, return_conversation_id, created_at, legacy)
-         SELECT id, workspace_id, from_buddy_id, CASE WHEN to_buddy_id IS NULL THEN 'owner' ELSE 'buddy' END, to_buddy_id,
-           root_message_id, in_reply_to_id, buddy_project_id, purpose, body, evidence,
-           CASE WHEN status = 'replied' THEN 'replied' WHEN expects_reply = 0 THEN NULL
-                WHEN status IN ('pending','active') THEN 'awaiting' ELSE status END,
-           reply_body, reply_evidence, replied_at, child_conversation_id, json_extract(return_policy, '$.return_conversation_id'), created_at,
-           json_object('source', 'buddy_messages', 'status', status, 'expects_reply', expects_reply, 'outcome', outcome,
-             'replied_by', replied_by, 'parent_conversation_id', parent_conversation_id, 'wait_until', wait_until,
-             'wait_status', wait_status, 'updated_at', updated_at, 'notification_pending', notification_pending,
-             'source_project_id', source_project_id, 'source_workspace_id', source_workspace_id, 'caused_by_run_id', caused_by_run_id,
-             'not_before', not_before, 'after_run_id', after_run_id, 'continue_from_message_id', continue_from_message_id,
-             'superseded_by_message_id', superseded_by_message_id, 'root_stopped_at', root_stopped_at, 'command_key', command_key,
-             'payload_hash', payload_hash, 'return_policy', json(return_policy), 'visibility', visibility)
-         FROM old.buddy_messages".into(),
-        "INSERT INTO post (id, workspace_id, author_id, target_kind, target_id, root_id, task_id, purpose, body, evidence,
-           return_conversation_id, created_at, legacy)
-         SELECT id, workspace_id, from_buddy_id, 'channel', list_id, thread_root_id, buddy_project_id, purpose, body, evidence,
-           sender_conversation_id, created_at,
+        // Channels: lists are public; each {sender, recipient} set of messages is one direct channel
+        // (the owner is the member 'owner'); each task with comments gets its task channel.
+        "INSERT INTO channel (id, workspace_id, kind, name, purpose, created_by, created_at)
+         SELECT id, workspace_id, 'public', name, purpose, created_by_buddy_id, created_at FROM old.buddy_lists".into(),
+        "INSERT INTO channel (id, workspace_id, kind, member_key, created_by, created_at)
+         SELECT 'dm_' || substr(sha256(member_key), 1, 32), workspace_id, 'direct', member_key, from_buddy_id, created_at
+         FROM (SELECT *, row_number() OVER (PARTITION BY member_key ORDER BY created_at, id) AS n FROM msg) WHERE n = 1".into(),
+        format!("INSERT INTO channel_member SELECT c.id, m.member FROM ({DM_MEMBERS}) m JOIN channel c ON c.member_key = m.member_key"),
+        "INSERT INTO channel (id, workspace_id, kind, task_id, created_by, created_at)
+         SELECT 'tc_' || p.id, p.workspace_id, 'task', p.id, nullif(f.author, 'owner'), f.created_at FROM old.owned_projects p
+         JOIN (SELECT project_id, author, created_at, row_number() OVER (PARTITION BY project_id ORDER BY created_at, id) AS n
+               FROM old.buddy_task_comments) f ON f.project_id = p.id AND f.n = 1".into(),
+        // A message is a post in its direct channel. Its v33 root_message_id is the delegation-chain
+        // root, often in another channel, so it stays in legacy and `root_id` is the channel thread
+        // (msg_thread). An inline reply becomes its own post, answering the request.
+        "INSERT INTO post (id, channel_id, author_id, root_id, reply_to_id, task_id, purpose, body, evidence, request, answer_id,
+           conversation_id, return_conversation_id, created_at, legacy)
+         SELECT m.id, c.id, m.from_buddy_id, t.root_id, m.in_reply_to_id, m.buddy_project_id, m.purpose, m.body, m.evidence,
+           CASE WHEN m.status = 'replied' THEN 'answered' WHEN m.expects_reply = 0 THEN NULL
+                WHEN m.status IN ('pending','active') THEN 'awaiting' ELSE m.status END,
+           CASE WHEN m.status = 'replied' THEN 'reply_' || m.id END,
+           m.child_conversation_id, json_extract(m.return_policy, '$.return_conversation_id'), m.created_at,
+           json_object('source', 'buddy_messages', 'workspace_id', m.workspace_id, 'root_message_id', m.root_message_id,
+             'status', m.status, 'expects_reply', m.expects_reply, 'outcome', m.outcome,
+             'replied_by', m.replied_by, 'parent_conversation_id', m.parent_conversation_id, 'wait_until', m.wait_until,
+             'wait_status', m.wait_status, 'updated_at', m.updated_at, 'notification_pending', m.notification_pending,
+             'source_project_id', m.source_project_id, 'source_workspace_id', m.source_workspace_id, 'caused_by_run_id', m.caused_by_run_id,
+             'not_before', m.not_before, 'after_run_id', m.after_run_id, 'continue_from_message_id', m.continue_from_message_id,
+             'superseded_by_message_id', m.superseded_by_message_id, 'root_stopped_at', m.root_stopped_at, 'command_key', m.command_key,
+             'payload_hash', m.payload_hash, 'return_policy', json(m.return_policy), 'visibility', m.visibility)
+         FROM msg m JOIN channel c ON c.member_key = m.member_key JOIN msg_thread t ON t.id = m.id".into(),
+        "INSERT INTO post (id, channel_id, author_id, root_id, reply_to_id, task_id, body, evidence, created_at, legacy)
+         SELECT 'reply_' || m.id, c.id, m.to_buddy_id, coalesce(t.root_id, m.id), m.id, m.buddy_project_id, m.reply_body,
+           m.reply_evidence, m.replied_at, json_object('source', 'buddy_messages.reply')
+         FROM msg m JOIN channel c ON c.member_key = m.member_key JOIN msg_thread t ON t.id = m.id WHERE m.status = 'replied'".into(),
+        "INSERT INTO post (id, channel_id, author_id, root_id, task_id, purpose, body, evidence, return_conversation_id, created_at, legacy)
+         SELECT id, list_id, from_buddy_id, thread_root_id, buddy_project_id, purpose, body, evidence, sender_conversation_id, created_at,
            json_object('source', 'buddy_list_posts', 'sender_conversation_id', sender_conversation_id, 'sender_run_id', sender_run_id)
          FROM old.buddy_list_posts".into(),
-        "INSERT INTO post (id, workspace_id, author_id, target_kind, target_id, task_id, body, evidence, created_at, legacy)
-         SELECT c.id, p.workspace_id, CASE WHEN c.author = 'owner' THEN NULL ELSE c.author END, 'task', c.project_id, c.project_id,
-           c.body, c.evidence, c.created_at, json_object('source', 'buddy_task_comments')
-         FROM old.buddy_task_comments c JOIN old.owned_projects p ON p.id = c.project_id".into(),
-        "INSERT INTO post_read SELECT buddy_id, list_id, last_post_id, last_post_created_at, updated_at FROM old.buddy_list_reads".into(),
+        "INSERT INTO post (id, channel_id, author_id, task_id, body, evidence, created_at, legacy)
+         SELECT id, 'tc_' || project_id, nullif(author, 'owner'), project_id, body, evidence, created_at,
+           json_object('source', 'buddy_task_comments')
+         FROM old.buddy_task_comments".into(),
+        "INSERT INTO post_read SELECT buddy_id, list_id, last_post_id, last_post_created_at, updated_at,
+           json_object('source', 'buddy_list_reads') FROM old.buddy_list_reads".into(),
         "INSERT INTO doc (id, buddy_id, workspace_id, scope_kind, scope_id, kind, name, revision, content, updated_at, legacy)
          SELECT 'mem_' || h.buddy_id || '_' || h.document_kind, h.buddy_id, b.project_id, 'buddy', h.buddy_id, h.document_kind, '',
            r.revision, r.body, h.updated_at,
@@ -278,19 +410,36 @@ fn count_pairs() -> Vec<(&'static str, String, &'static str)> {
             "SELECT (SELECT count(*) FROM old.owned_projects) + (SELECT count(*) FROM old.buddy_todos)".into(),
             "SELECT count(*) FROM task",
         ),
-        ("channel", "SELECT count(*) FROM old.buddy_lists".into(), "SELECT count(*) FROM channel"),
+        ("channel:public", "SELECT count(*) FROM old.buddy_lists".into(), "SELECT count(*) FROM channel WHERE kind = 'public'"),
+        ("channel:direct", "SELECT count(DISTINCT member_key) FROM msg".into(), "SELECT count(*) FROM channel WHERE kind = 'direct'"),
         (
-            "post:message",
-            "SELECT count(*) FROM old.buddy_messages".into(),
-            "SELECT count(*) FROM post WHERE target_kind IN ('buddy','owner')",
+            "channel:task",
+            "SELECT count(DISTINCT project_id) FROM old.buddy_task_comments".into(),
+            "SELECT count(*) FROM channel WHERE kind = 'task'",
         ),
-        ("post:channel", "SELECT count(*) FROM old.buddy_list_posts".into(), "SELECT count(*) FROM post WHERE target_kind = 'channel'"),
+        ("channel_member", format!("SELECT count(*) FROM ({DM_MEMBERS})"), "SELECT count(*) FROM channel_member"),
         (
-            "post:task_comment",
+            "post:direct (messages + replies)",
+            "SELECT (SELECT count(*) FROM old.buddy_messages) + (SELECT count(*) FROM old.buddy_messages WHERE status = 'replied')".into(),
+            "SELECT count(*) FROM post p JOIN channel c ON c.id = p.channel_id WHERE c.kind = 'direct'",
+        ),
+        (
+            "post:answered request",
+            "SELECT count(*) FROM old.buddy_messages WHERE status = 'replied'".into(),
+            "SELECT count(*) FROM post WHERE request = 'answered'",
+        ),
+        (
+            "post:public",
+            "SELECT count(*) FROM old.buddy_list_posts".into(),
+            "SELECT count(*) FROM post p JOIN channel c ON c.id = p.channel_id WHERE c.kind = 'public'",
+        ),
+        (
+            "post:task",
             "SELECT count(*) FROM old.buddy_task_comments".into(),
-            "SELECT count(*) FROM post WHERE target_kind = 'task'",
+            "SELECT count(*) FROM post p JOIN channel c ON c.id = p.channel_id WHERE c.kind = 'task'",
         ),
-        ("post_read", "SELECT count(*) FROM old.buddy_list_reads".into(), "SELECT count(*) FROM post_read"),
+        ("post_read:buddy", "SELECT count(*) FROM old.buddy_list_reads".into(), "SELECT count(*) FROM post_read WHERE reader != 'owner'"),
+        ("post_read:owner", "SELECT count(*) FROM owner_read".into(), "SELECT count(*) FROM post_read WHERE reader = 'owner'"),
         (
             "doc",
             "SELECT (SELECT count(*) FROM old.buddy_memory_heads) + (SELECT count(*) FROM old.buddy_knowledge)".into(),
@@ -373,13 +522,15 @@ fn json_rows(conn: &Connection, sql: &str) -> Result<Vec<Value>> {
     texts.iter().map(|t| serde_json::from_str(t).map_err(Into::into)).collect()
 }
 
-pub fn import(source: &Path, target: &Path) -> Result<ImportReport> {
+pub fn import(source: &Path, target: &Path, owner_reads: &Path) -> Result<ImportReport> {
     if target.exists() {
         return Err(CoreError::Invalid(format!("target {} already exists; the import only writes a new file", target.display())));
     }
     let src = open_source(source)?;
     let soul_baseline = soul_files(&src, V33_SOUL_PATHS)?;
+    let lists: Vec<String> = crate::store::collect(src.prepare("SELECT id FROM buddy_lists")?.query_map([], |r| r.get(0))?)?;
     drop(src);
+    let owner_reads = load_owner_reads(owner_reads)?;
 
     let conn = schema::open(&target.to_string_lossy())?;
     conn.execute_batch("PRAGMA foreign_keys = OFF")?;
@@ -390,6 +541,12 @@ pub fn import(source: &Path, target: &Path) -> Result<ImportReport> {
     let old_version: i64 = conn.query_row("PRAGMA old.user_version", [], |r| r.get(0))?;
     if old_version != SOURCE_VERSION {
         return Err(CoreError::WrongDatabase(format!("attached source has user_version {old_version}")));
+    }
+    for sql in setup_sql() {
+        conn.execute(&sql, [])?;
+    }
+    for (list, post, at) in owner_reads.cursors(&lists) {
+        conn.execute("INSERT INTO owner_read VALUES (?1, ?2, ?3)", [list, post, at])?;
     }
     let violations: Vec<String> = DOMAIN_CHECKS
         .iter()
@@ -408,6 +565,11 @@ pub fn import(source: &Path, target: &Path) -> Result<ImportReport> {
     for sql in mapping_sql() {
         conn.execute(&sql, [])?;
     }
+    conn.execute(
+        "INSERT INTO post_read SELECT 'owner', list_id, post_id, created_at, ?1, json_object('source', 'owner-channel-reads.json')
+         FROM owner_read",
+        [&now],
+    )?;
     let converted_schedules = import_schedules(&conn, &now)?;
     let counts: Vec<(String, i64, i64)> = count_pairs()
         .into_iter()
@@ -433,8 +595,12 @@ pub fn import(source: &Path, target: &Path) -> Result<ImportReport> {
         "SELECT json_object('doc_id', d.id, 'buddy_id', d.buddy_id, 'slug', b.slug, 'thread_id', d.scope_id, 'revision', d.revision)
          FROM doc d JOIN buddy b ON b.id = d.buddy_id WHERE json_extract(d.legacy, '$.flag') = 'divergent_thread_soul' ORDER BY b.slug",
     )?;
+    let cross_channel_roots: i64 =
+        conn.query_row("SELECT count(*) FROM msg a JOIN msg r ON r.id = a.root_message_id WHERE r.member_key != a.member_key", [], |r| {
+            r.get(0)
+        })?;
     conn.execute_batch("COMMIT")?;
-    conn.execute_batch("DETACH DATABASE old; PRAGMA foreign_keys = ON")?;
+    conn.execute_batch("DROP VIEW msg; DETACH DATABASE old; PRAGMA foreign_keys = ON")?;
     let foreign_key_violations = crate::store::collect(conn.prepare("PRAGMA foreign_key_check")?.query_map([], |r| {
         Ok(serde_json::json!({"table": r.get::<_, String>(0)?, "rowid": r.get::<_, Option<i64>>(1)?, "parent": r.get::<_, String>(2)?}))
     })?)?;
@@ -449,5 +615,7 @@ pub fn import(source: &Path, target: &Path) -> Result<ImportReport> {
         converted_schedules,
         foreign_key_violations,
         soul_files: soul_baseline,
+        cross_channel_roots,
+        owner_reads,
     })
 }

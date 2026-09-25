@@ -47,18 +47,28 @@ impl BuddiesCore {
     }
 
     #[napi]
-    pub async fn post(&self, actor: Actor, input: PostInput) -> napi::Result<Post> {
-        call(&self.store, move |s| s.post(&actor, input)).await
+    pub async fn post(&self, actor: Actor, channel: ChannelRef, input: PostInput) -> napi::Result<Post> {
+        call(&self.store, move |s| s.post(&actor, channel, input)).await
     }
 
     #[napi]
-    pub async fn reply(&self, actor: Actor, input: ReplyInput) -> napi::Result<Post> {
-        call(&self.store, move |s| s.reply(&actor, input)).await
+    pub async fn answer(&self, actor: Actor, input: AnswerInput) -> napi::Result<Post> {
+        call(&self.store, move |s| s.answer(&actor, input)).await
     }
 
     #[napi]
-    pub async fn list_posts(&self, query: PostQuery, before: Option<Cursor>, limit: i64) -> napi::Result<PostPage> {
-        call(&self.store, move |s| s.list_posts(query, before, limit)).await
+    pub async fn get_post(&self, actor: Actor, id: String) -> napi::Result<Post> {
+        call(&self.store, move |s| s.get_post(&actor, &id)).await
+    }
+
+    #[napi]
+    pub async fn open_channel(&self, actor: Actor, channel: ChannelRef) -> napi::Result<Channel> {
+        call(&self.store, move |s| s.open_channel(&actor, channel)).await
+    }
+
+    #[napi]
+    pub async fn list_posts(&self, actor: Actor, query: PostQuery, before: Option<Cursor>, limit: i64) -> napi::Result<PostPage> {
+        call(&self.store, move |s| s.list_posts(&actor, query, before, limit)).await
     }
 
     #[napi]
