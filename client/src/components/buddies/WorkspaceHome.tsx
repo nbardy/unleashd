@@ -7,7 +7,7 @@ import { useTimeTick } from '../../hooks/useTimeTick';
 import { shortenHomePath } from '../../utils/directories';
 import { formatTimeAgo } from '../../utils/time';
 import { PathAutocomplete } from '../PathAutocomplete';
-import { BuddySigil } from './BuddySigil';
+import { BuddySigil, WorkspaceEmblem } from './BuddySigil';
 import { buddyApi, errorText } from './api';
 import { CHANNEL_BACKSTOP_MS, ownerUnreadTotal, useOwnerInboxes } from './channel-data';
 import type { Workspace } from './types';
@@ -112,7 +112,7 @@ function WorkspaceLink({ row, variant }: { row: WorkspaceHomeRow; variant: 'tile
       className={`workspace-home-link ui-card workspace-home-${variant}`}
       to={channelsPath(row.id)}
     >
-      <BuddySigil className="workspace-home-icon" name={row.name} />
+      <WorkspaceEmblem className="workspace-home-icon" name={row.name} />
       <span className="workspace-home-copy ui-stack">
         <span className="workspace-home-name ui-truncate">{row.name}</span>
         <span className="workspace-home-path ui-truncate ui-muted">

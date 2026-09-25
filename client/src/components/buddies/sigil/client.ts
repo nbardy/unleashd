@@ -7,7 +7,9 @@
 // pane mounted, so "Loading thread…" waited on avatars. Guard:
 // client/test/sigil-off-main-thread.test.ts.
 
-export type SigilRequest = { id: number; name: string };
+/** What the worker draws: a Buddy's sigil, or a workspace's emblem (emblem.ts). */
+export type SigilKind = 'sigil' | 'emblem';
+export type SigilRequest = { id: number; kind: SigilKind; name: string };
 export type SigilReply =
   | { kind: 'png'; id: number; png: Blob }
   | { kind: 'failed'; id: number; error: string };
@@ -37,18 +39,19 @@ function start(): Worker {
   // The worker itself failed (no module workers, a load error): every render
   // still waiting fails, and the avatar keeps its ground colour.
   started.onerror = (event) => {
-    for (const waiter of waiting.values()) waiter.reject(new Error(`Sigil worker: ${event.message}`));
+    for (const waiter of waiting.values())
+      waiter.reject(new Error(`Sigil worker: ${event.message}`));
     waiting.clear();
   };
   return started;
 }
 
-/** A Buddy's sigil as a PNG object URL, rendered off the main thread. */
-export function renderSigilUrl(name: string): Promise<string> {
+/** A sigil or emblem as a PNG object URL, rendered off the main thread. */
+export function renderSigilUrl(kind: SigilKind, name: string): Promise<string> {
   return new Promise((resolve, reject) => {
     const id = nextId++;
     waiting.set(id, { resolve, reject });
     worker ??= start();
-    worker.postMessage({ id, name } satisfies SigilRequest);
+    worker.postMessage({ id, kind, name } satisfies SigilRequest);
   });
 }

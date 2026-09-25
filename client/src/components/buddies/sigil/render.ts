@@ -14,10 +14,15 @@
 // The palette is built once in JS (OKLCH → sRGB) and uploaded as a 256×1
 // texture, so the shader and the strokes share one colour definition.
 //
+// Workspace emblems (emblem.ts) reuse the same field and colouring with a
+// second fragment `main`: dark ground, the pattern glowing inside a
+// superformula kernel. Two programs, one context.
+//
 // Rendering is ~ms on the GPU; results are cached by name (see BuddySigil).
 // One shared WebGL context serves every sigil — browsers cap live contexts
 // at ~16, so a context per avatar would start evicting after one screenful.
 
+import { EMBLEM_EDGE_OPACITY, type EmblemGenome } from './emblem';
 import type { SigilGenome } from './genome';
 
 export const SIGIL_SIZE = 144;
@@ -28,26 +33,22 @@ const VERTEX = `#version 300 es
 in vec2 a_pos;
 void main() { gl_Position = vec4(a_pos, 0.0, 1.0); }`;
 
-const FRAGMENT = `#version 300 es
+// Shared by both programs: the scalar field and how it is coloured.
+const FIELD = `#version 300 es
 precision highp float;
 uniform vec2 u_res;
-uniform int u_mode;          // 0 = field readback, 1 = colour
 uniform sampler2D u_palette;
 uniform vec3 u_ink;
 uniform vec4 u_frame;        // zoom, centerX, centerY, rotation
 uniform vec4 u_sym;          // order, amount, mirror, -
 uniform vec4 u_warp;         // amount, frequency, offsetX, offsetY
 uniform vec4 u_mix;          // cppn, rings, noise, bands (outer pattern)
-uniform vec4 u_innerMix;     // same, inner pattern
-uniform vec4 u_innerFrame;   // zoom, offsetX, offsetY, rotation
-uniform vec4 u_fill;         // silhouette rgb, inner pattern strength
 uniform vec4 u_rings;        // frequency, phase, centerX, centerY
 uniform vec4 u_bands;        // frequency, angle, noiseFrequency, gain
 uniform vec4 u_post;         // amount, levels, softness, -
 uniform vec4 u_contour;      // width px, count, -, -
 uniform vec4 u_mask;         // -, radius, exponent, softness
 uniform vec4 u_maskShape;    // aspect, warp, warpFrequency, warpPhase
-uniform vec2 u_profile;      // angle, bias
 uniform vec4 u_finish;       // grain, vignette, seed, -
 uniform vec4 u_w1[12];       // input i → neurons 0-3 at [2i], 4-7 at [2i+1]
 uniform vec4 u_w2[18];       // hidden j (and bias j = 8) likewise
@@ -105,12 +106,43 @@ float field(vec2 p0, float k, vec4 w) {
 
 // Seamless noise around the unit circle: sampling on (cos θ, sin θ) closes
 // the loop, so the warped outline never shows a seam at θ = ±π.
-float radialNoise(float theta) {
-  vec2 c = vec2(cos(theta), sin(theta)) * u_maskShape.z + u_maskShape.w;
+float radialNoise(float theta, float frequency, float phase) {
+  vec2 c = vec2(cos(theta), sin(theta)) * frequency + phase;
   float s = 0.0, a = 0.5;
   for (int i = 0; i < 3; i++) { s += a * vnoise(c); c = c * 2.1 + 7.3; a *= 0.45; }
   return s / 0.7 * 2.0 - 1.0;
 }
+
+// Symmetry order is continuous: crossfade the two neighbouring integer folds.
+float fieldAt(vec2 p, vec4 w) {
+  float k0 = floor(u_sym.x);
+  float blend = smoothstep(0.35, 0.65, fract(u_sym.x));
+  return mix(field(p, k0, w), field(p, k0 + 1.0, w), blend);
+}
+
+// Palette colour of field value t: continuous posterization, then contours.
+vec3 patternColor(float t) {
+  float x = t * u_post.y;
+  float soft = max(u_post.z, fwidth(x));
+  float stepped = (floor(x) + smoothstep(0.5 - soft, 0.5 + soft, fract(x))) / u_post.y;
+  float tq = clamp(mix(t, stepped, u_post.x), 0.0, 1.0);
+  vec3 col = texture(u_palette, vec2(tq, 0.5)).rgb;
+
+  float cx = t * u_contour.y;
+  float fc = fract(cx);
+  float px = min(fc, 1.0 - fc) / max(fwidth(cx), 1e-5);
+  float line = 1.0 - clamp(px - u_contour.x * 0.5, 0.0, 1.0);
+  return mix(col, u_ink, line * step(0.01, u_contour.x));
+}
+`;
+
+// Buddy sigil: the pattern around an almost-solid silhouette.
+const SIGIL_MAIN = `
+uniform int u_mode;          // 0 = field readback, 1 = colour
+uniform vec4 u_innerMix;     // same as u_mix, inner pattern
+uniform vec4 u_innerFrame;   // zoom, offsetX, offsetY, rotation
+uniform vec4 u_fill;         // silhouette rgb, inner pattern strength
+uniform vec2 u_profile;      // angle, bias
 
 // Central figure: a superellipse whose aspect and squareness move together
 // (tall rectangle ↔ wide oval), its radius modulated by radial noise weighted
@@ -120,16 +152,9 @@ float figureMask(vec2 q) {
   float theta = atan(q.y, q.x);
   float side = smoothstep(-0.3, 1.0, cos(theta - u_profile.x));
   float weight = mix(1.0, side, u_profile.y);
-  float radius = u_mask.y * (1.0 + u_maskShape.y * weight * radialNoise(theta));
+  float radius = u_mask.y * (1.0 + u_maskShape.y * weight * radialNoise(theta, u_maskShape.z, u_maskShape.w));
   float aa = fwidth(d);
   return 1.0 - smoothstep(radius - u_mask.w - aa, radius + u_mask.w + aa, d);
-}
-
-// Symmetry order is continuous: crossfade the two neighbouring integer folds.
-float fieldAt(vec2 p, vec4 w) {
-  float k0 = floor(u_sym.x);
-  float blend = smoothstep(0.35, 0.65, fract(u_sym.x));
-  return mix(field(p, k0, w), field(p, k0 + 1.0, w), blend);
 }
 
 void main() {
@@ -144,23 +169,54 @@ void main() {
     return;
   }
 
-  float x = t * u_post.y;
-  float soft = max(u_post.z, fwidth(x));
-  float stepped = (floor(x) + smoothstep(0.5 - soft, 0.5 + soft, fract(x))) / u_post.y;
-  float tq = clamp(mix(t, stepped, u_post.x), 0.0, 1.0);
-  vec3 col = texture(u_palette, vec2(tq, 0.5)).rgb;
-
-  float cx = t * u_contour.y;
-  float fc = fract(cx);
-  float px = min(fc, 1.0 - fc) / max(fwidth(cx), 1e-5);
-  float line = 1.0 - clamp(px - u_contour.x * 0.5, 0.0, 1.0);
-  col = mix(col, u_ink, line * step(0.01, u_contour.x));
-
+  vec3 col = patternColor(t);
   vec2 pi = rot((q - u_innerFrame.yz) * u_innerFrame.x, u_innerFrame.w);
   vec3 innerPattern = texture(u_palette, vec2(fieldAt(pi, u_innerMix), 0.5)).rgb;
   vec3 silhouette = mix(u_fill.rgb, innerPattern, u_fill.w);
   col = mix(col, silhouette, figure);
   col *= 1.0 - u_finish.y * dot(q, q) * 0.35;
+  col += (hash(gl_FragCoord.xy + u_finish.z) - 0.5) * u_finish.x;
+  outColor = vec4(col, 1.0);
+}`;
+
+// Workspace emblem (sigil/emblem.ts): the inverse. A dark ground, the pattern
+// at full strength inside a superformula kernel, fading to the edge opacity.
+const EMBLEM_MAIN = `
+uniform vec3 u_ground;
+uniform vec4 u_kernel;       // lobes, n1, n2, n3
+uniform vec2 u_kernelScale;  // 1 / max radius at floor(lobes) and floor(lobes) + 1
+uniform vec4 u_kernelShape;  // radius, softness, rotation, edge opacity
+uniform vec3 u_kernelWarp;   // amount, frequency, phase
+
+float superformula(float theta, float m) {
+  float a = pow(abs(cos(m * theta / 4.0)), u_kernel.z);
+  float b = pow(abs(sin(m * theta / 4.0)), u_kernel.w);
+  return pow(a + b + 1e-6, -1.0 / u_kernel.y);
+}
+
+// Lobe count is continuous: crossfade the two neighbouring integer shapes,
+// each normalised to the same outer radius.
+float kernelRadius(float theta) {
+  float m0 = floor(u_kernel.x);
+  float blend = smoothstep(0.35, 0.65, fract(u_kernel.x));
+  float r = mix(superformula(theta, m0) * u_kernelScale.x,
+                superformula(theta, m0 + 1.0) * u_kernelScale.y, blend);
+  float wobble = 1.0 + u_kernelWarp.x * radialNoise(theta, u_kernelWarp.y, u_kernelWarp.z);
+  return u_kernelShape.x * r * wobble;
+}
+
+void main() {
+  vec2 q = (gl_FragCoord.xy / u_res - 0.5) * 2.0;
+  vec2 p = rot((q - u_frame.yz) * u_frame.x, u_frame.w);
+  vec3 pattern = patternColor(fieldAt(p, u_mix));
+
+  vec2 k = rot(q, u_kernelShape.z);
+  float d = length(q) / max(kernelRadius(atan(k.y, k.x)), 1e-3);
+  float core = 1.0 - smoothstep(1.0 - u_kernelShape.y, 1.0 + u_kernelShape.y, d);
+  float heart = 1.0 - 0.3 * smoothstep(0.0, 1.0, d);
+  float glow = 0.4 * exp(-4.0 * max(d - 1.0, 0.0));
+  float halo = u_kernelShape.w * (1.0 - smoothstep(0.35, 1.4, length(q)));
+  vec3 col = mix(u_ground, pattern, max(core * heart, max(glow, halo)));
   col += (hash(gl_FragCoord.xy + u_finish.z) - 0.5) * u_finish.x;
   outColor = vec4(col, 1.0);
 }`;
@@ -215,11 +271,19 @@ function paletteLut(genome: SigilGenome): Uint8Array {
 // =============================================================================
 // GPU: one lazily created context + program shared by every sigil.
 // =============================================================================
+type ProgramKind = 'sigil' | 'emblem';
+
+const FRAGMENTS: Record<ProgramKind, string> = {
+  sigil: FIELD + SIGIL_MAIN,
+  emblem: FIELD + EMBLEM_MAIN,
+};
+
+type Program = { program: WebGLProgram; uniforms: Map<string, WebGLUniformLocation> };
+
 type Gpu = {
   gl: WebGL2RenderingContext;
-  program: WebGLProgram;
   palette: WebGLTexture;
-  uniforms: Map<string, WebGLUniformLocation>;
+  programs: Map<ProgramKind, Program>;
 };
 
 let sharedGpu: Gpu | undefined;
@@ -240,22 +304,13 @@ function createGpu(): Gpu {
   const gl = canvas.getContext('webgl2', { preserveDrawingBuffer: true, antialias: false });
   if (!gl) throw new Error('Sigil: WebGL2 is unavailable');
 
-  const program = gl.createProgram();
-  gl.attachShader(program, compile(gl, gl.VERTEX_SHADER, VERTEX));
-  gl.attachShader(program, compile(gl, gl.FRAGMENT_SHADER, FRAGMENT));
-  gl.linkProgram(program);
-  if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
-    throw new Error(`Sigil program: ${gl.getProgramInfoLog(program)}`);
-  }
-  gl.useProgram(program);
-
-  // One oversized triangle covers the viewport.
+  // One oversized triangle covers the viewport. Both programs bind a_pos to
+  // location 0, so this one vertex array serves them both.
   gl.bindVertexArray(gl.createVertexArray());
   gl.bindBuffer(gl.ARRAY_BUFFER, gl.createBuffer());
   gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 3, -1, -1, 3]), gl.STATIC_DRAW);
-  const position = gl.getAttribLocation(program, 'a_pos');
-  gl.enableVertexAttribArray(position);
-  gl.vertexAttribPointer(position, 2, gl.FLOAT, false, 0, 0);
+  gl.enableVertexAttribArray(0);
+  gl.vertexAttribPointer(0, 2, gl.FLOAT, false, 0, 0);
 
   const palette = gl.createTexture();
   gl.bindTexture(gl.TEXTURE_2D, palette);
@@ -264,7 +319,18 @@ function createGpu(): Gpu {
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
   gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
   gl.viewport(0, 0, GL_SIZE, GL_SIZE);
+  return { gl, palette, programs: new Map() };
+}
 
+function link(gl: WebGL2RenderingContext, fragment: string): Program {
+  const program = gl.createProgram();
+  gl.attachShader(program, compile(gl, gl.VERTEX_SHADER, VERTEX));
+  gl.attachShader(program, compile(gl, gl.FRAGMENT_SHADER, fragment));
+  gl.bindAttribLocation(program, 0, 'a_pos');
+  gl.linkProgram(program);
+  if (!gl.getProgramParameter(program, gl.LINK_STATUS)) {
+    throw new Error(`Sigil program: ${gl.getProgramInfoLog(program)}`);
+  }
   const uniforms = new Map<string, WebGLUniformLocation>();
   const count = gl.getProgramParameter(program, gl.ACTIVE_UNIFORMS) as number;
   for (let i = 0; i < count; i++) {
@@ -274,23 +340,49 @@ function createGpu(): Gpu {
     const location = gl.getUniformLocation(program, info.name);
     if (location) uniforms.set(name, location);
   }
-  return { gl, program, palette, uniforms };
+  return { program, uniforms };
 }
 
-function gpu(): Gpu {
+/** The shared context with `kind`'s program linked (once) and in use. */
+function gpu(kind: ProgramKind): {
+  gl: WebGL2RenderingContext;
+  palette: WebGLTexture;
+  program: Program;
+} {
   sharedGpu ??= createGpu();
-  return sharedGpu;
+  const { gl, palette, programs } = sharedGpu;
+  const program = programs.get(kind) ?? link(gl, FRAGMENTS[kind]);
+  programs.set(kind, program);
+  gl.useProgram(program.program);
+  return { gl, palette, program };
 }
 
-function uniform({ uniforms }: Gpu, name: string): WebGLUniformLocation {
-  const location = uniforms.get(name);
+type Device = ReturnType<typeof gpu>;
+
+function uniform({ program }: Device, name: string): WebGLUniformLocation {
+  const location = program.uniforms.get(name);
   if (!location) throw new Error(`Sigil: missing uniform ${name}`);
   return location;
 }
 
-type Inks = { background: Rgb; ink: Rgb; fill: Rgb };
+function uploadPalette({ gl, palette }: Device, genome: SigilGenome): void {
+  gl.activeTexture(gl.TEXTURE0);
+  gl.bindTexture(gl.TEXTURE_2D, palette);
+  gl.texImage2D(
+    gl.TEXTURE_2D,
+    0,
+    gl.RGBA,
+    LUT_SIZE,
+    1,
+    0,
+    gl.RGBA,
+    gl.UNSIGNED_BYTE,
+    paletteLut(genome)
+  );
+}
 
-function setUniforms(device: Gpu, g: SigilGenome, { ink, fill }: Inks): void {
+/** Everything FIELD reads: the pattern, its colouring and the finish. */
+function setFieldUniforms(device: Device, g: SigilGenome, ink: Rgb): void {
   const { gl } = device;
   const u = (name: string) => uniform(device, name);
   gl.uniform2f(u('u_res'), GL_SIZE, GL_SIZE);
@@ -300,10 +392,6 @@ function setUniforms(device: Gpu, g: SigilGenome, { ink, fill }: Inks): void {
   gl.uniform4f(u('u_sym'), g.symmetry.order, g.symmetry.amount, g.symmetry.mirror, 0);
   gl.uniform4f(u('u_warp'), g.warp.amount, g.warp.frequency, g.warp.offsetX, g.warp.offsetY);
   gl.uniform4f(u('u_mix'), g.mix.cppn, g.mix.rings, g.mix.noise, g.mix.bands);
-  const im = g.inner.mix;
-  gl.uniform4f(u('u_innerMix'), im.cppn, im.rings, im.noise, im.bands);
-  gl.uniform4f(u('u_innerFrame'), g.inner.zoom, g.inner.offsetX, g.inner.offsetY, g.inner.rotation);
-  gl.uniform4f(u('u_fill'), ...fill, g.inner.strength);
   gl.uniform4f(u('u_rings'), g.rings.frequency, g.rings.phase, g.rings.centerX, g.rings.centerY);
   gl.uniform4f(u('u_bands'), g.bands.frequency, g.bands.angle, g.noiseFrequency, g.gain);
   gl.uniform4f(u('u_post'), g.posterize.amount, g.posterize.levels, g.posterize.softness, 0);
@@ -314,7 +402,6 @@ function setUniforms(device: Gpu, g: SigilGenome, { ink, fill }: Inks): void {
   const exponent = 6 + (2 - 6) * k;
   gl.uniform4f(u('u_mask'), 0, g.mask.radius, exponent, g.mask.softness);
   gl.uniform4f(u('u_maskShape'), aspect, g.mask.warp, g.mask.warpFrequency, g.mask.warpPhase);
-  gl.uniform2f(u('u_profile'), g.mask.profileAngle, g.mask.profileBias);
   gl.uniform4f(u('u_finish'), g.finish.grain, g.finish.vignette, g.strokes.seed % 1000, 0);
   gl.uniform4fv(u('u_w1'), g.cppn.layer1);
   gl.uniform4fv(u('u_w2'), g.cppn.layer2);
@@ -322,6 +409,27 @@ function setUniforms(device: Gpu, g: SigilGenome, { ink, fill }: Inks): void {
   gl.uniform1f(u('u_w3bias'), g.cppn.out[8]);
   gl.uniform4fv(u('u_act'), g.cppn.activation);
   gl.uniform1f(u('u_actFreq'), g.cppn.frequency);
+}
+
+function setSigilUniforms(device: Device, g: SigilGenome, fill: Rgb): void {
+  const { gl } = device;
+  const u = (name: string) => uniform(device, name);
+  const im = g.inner.mix;
+  gl.uniform4f(u('u_innerMix'), im.cppn, im.rings, im.noise, im.bands);
+  gl.uniform4f(u('u_innerFrame'), g.inner.zoom, g.inner.offsetX, g.inner.offsetY, g.inner.rotation);
+  gl.uniform4f(u('u_fill'), ...fill, g.inner.strength);
+  gl.uniform2f(u('u_profile'), g.mask.profileAngle, g.mask.profileBias);
+}
+
+function setEmblemUniforms(device: Device, e: EmblemGenome): void {
+  const { gl } = device;
+  const u = (name: string) => uniform(device, name);
+  const k = e.kernel;
+  gl.uniform3f(u('u_ground'), ...oklchToRgb(e.ground.lightness, e.ground.chroma, e.ground.hue));
+  gl.uniform4f(u('u_kernel'), k.lobes, k.n1, k.n2, k.n3);
+  gl.uniform2f(u('u_kernelScale'), k.scale[0], k.scale[1]);
+  gl.uniform4f(u('u_kernelShape'), k.radius, k.softness, k.rotation, EMBLEM_EDGE_OPACITY);
+  gl.uniform3f(u('u_kernelWarp'), k.warp, k.warpFrequency, k.warpPhase);
 }
 
 type FieldSample = { t: Float32Array; figure: Float32Array };
@@ -356,7 +464,11 @@ function streamFor(seed: number): () => number {
   };
 }
 
-function drawStrokes(ctx: OffscreenCanvasRenderingContext2D, g: SigilGenome, field: FieldSample): void {
+function drawStrokes(
+  ctx: OffscreenCanvasRenderingContext2D,
+  g: SigilGenome,
+  field: FieldSample
+): void {
   const s = g.strokes;
   const next = streamFor(s.seed);
   const scale = GL_SIZE / SIGIL_SIZE;
@@ -414,9 +526,22 @@ function drawStrokes(ctx: OffscreenCanvasRenderingContext2D, g: SigilGenome, fie
   }
 }
 
-/** Render a genome to a PNG. Worker or window (WebGL2 + OffscreenCanvas). */
+/** Downsample the 2× framebuffer into a SIGIL_SIZE canvas. */
+function downsample(gl: WebGL2RenderingContext): {
+  canvas: OffscreenCanvas;
+  ctx: OffscreenCanvasRenderingContext2D;
+} {
+  const canvas = new OffscreenCanvas(SIGIL_SIZE, SIGIL_SIZE);
+  const ctx = canvas.getContext('2d');
+  if (!ctx) throw new Error('Sigil: 2D canvas is unavailable');
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(gl.canvas, 0, 0, SIGIL_SIZE, SIGIL_SIZE);
+  return { canvas, ctx };
+}
+
+/** Render a Buddy genome to a PNG. Worker or window (WebGL2 + OffscreenCanvas). */
 export function renderSigil(genome: SigilGenome): Promise<Blob> {
-  const device = gpu();
+  const device = gpu('sigil');
   const { gl } = device;
   const background = oklchToRgb(
     genome.background.lightness,
@@ -427,20 +552,9 @@ export function renderSigil(genome: SigilGenome): Promise<Blob> {
   const tone = paletteRgb(genome, genome.inner.fillTone);
   const fill = mixRgb(background, tone, genome.inner.fill);
 
-  gl.activeTexture(gl.TEXTURE0);
-  gl.bindTexture(gl.TEXTURE_2D, device.palette);
-  gl.texImage2D(
-    gl.TEXTURE_2D,
-    0,
-    gl.RGBA,
-    LUT_SIZE,
-    1,
-    0,
-    gl.RGBA,
-    gl.UNSIGNED_BYTE,
-    paletteLut(genome)
-  );
-  setUniforms(device, genome, { background, ink, fill });
+  uploadPalette(device, genome);
+  setFieldUniforms(device, genome, ink);
+  setSigilUniforms(device, genome, fill);
 
   gl.uniform1i(uniform(device, 'u_mode'), 0);
   gl.drawArrays(gl.TRIANGLES, 0, 3);
@@ -448,11 +562,21 @@ export function renderSigil(genome: SigilGenome): Promise<Blob> {
   gl.uniform1i(uniform(device, 'u_mode'), 1);
   gl.drawArrays(gl.TRIANGLES, 0, 3);
 
-  const canvas = new OffscreenCanvas(SIGIL_SIZE, SIGIL_SIZE);
-  const ctx = canvas.getContext('2d');
-  if (!ctx) throw new Error('Sigil: 2D canvas is unavailable');
-  ctx.imageSmoothingQuality = 'high';
-  ctx.drawImage(gl.canvas, 0, 0, SIGIL_SIZE, SIGIL_SIZE);
+  const { canvas, ctx } = downsample(gl);
   drawStrokes(ctx, genome, field);
   return canvas.convertToBlob({ type: 'image/png' });
+}
+
+/**
+ * Render a workspace emblem to a PNG. No strokes: the emblem is soft by
+ * design, and strokes would draw hard lines across its fade.
+ */
+export function renderEmblem(emblem: EmblemGenome): Promise<Blob> {
+  const device = gpu('emblem');
+  const { gl } = device;
+  uploadPalette(device, emblem.field);
+  setFieldUniforms(device, emblem.field, paletteRgb(emblem.field, 1));
+  setEmblemUniforms(device, emblem);
+  gl.drawArrays(gl.TRIANGLES, 0, 3);
+  return downsample(gl).canvas.convertToBlob({ type: 'image/png' });
 }
