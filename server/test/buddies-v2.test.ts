@@ -16,7 +16,7 @@ import {
 } from '@unleashd/buddies-core';
 import { createDefaultConversationConfig } from '@unleashd/shared';
 import express from 'express';
-import { BUDDY_TOOL_GUIDE, createBriefings } from '../src/buddies/briefing';
+import { BUDDY_TOOL_GUIDE, composeBriefing, createBriefings } from '../src/buddies/briefing';
 import { type StableConversationPorts, slotOf } from '../src/buddies/buddy-conversation-slots';
 import {
   type GateVerdict,
@@ -656,6 +656,111 @@ test('the reviewer climbs the ladder on credit exhaustion and curates memory on 
     rmSync(scratch, { recursive: true, force: true });
   }
 });
+
+// Regression (2026-09-26): memory the reviewer saved after a chat never reached the next chat.
+// Real turns carry an owner_thread scope, so each chat read and wrote its own working and
+// long-term memory; a new chat opened on "(No working memory yet.)" while 77 per-chat copies
+// piled up for one Buddy. The ladder test above passed anyway: its turn had no scope, a shape
+// production never sends. This one uses the real shape end to end: a chat turn, the reviewer
+// writing through its own grant with the default scope, then a DIFFERENT chat's briefing.
+test(
+  "memory the reviewer saves after one chat is in the next chat's briefing",
+  {
+    // Fails today: memory is scoped per chat. Remove when working/long-term become per-Buddy.
+    todo: 'memory is per-chat (owner_thread scope)',
+  },
+  async () => {
+    const scratch = mkdtempSync(join(tmpdir(), 'buddies-carry-'));
+    const core = await BuddiesCore.open(join(scratch, 'db.sqlite'));
+    const ws = (await core.createWorkspace(OWNER, { name: 'Team', rootPath: scratch })).id;
+    const lead = await core.createBuddy(OWNER, {
+      workspaceId: ws,
+      slug: 'lead',
+      name: 'Lead',
+      role: 'r',
+      manager: { kind: 'nobody' },
+      backgroundEnabled: true,
+      key: 'lead',
+    });
+    const grants = createGrants({ ttlMs: 60_000 });
+    const reviewEndpoint = await startMcpEndpoint({
+      core,
+      events: createBuddyEvents(),
+      grants,
+      uploadsRoot: () => scratch,
+    });
+    const chat = (conversationId: string) => ({
+      buddyId: lead.id,
+      workspaceId: ws,
+      knowledgeScope: { kind: 'owner_thread' as const, conversationId },
+    });
+    const reviewer = createMemoryReviewer({
+      core,
+      grants,
+      spec: reviewEndpoint.spec,
+      logger: { warn: () => undefined },
+      execute: ((request: ProviderRequest) => {
+        const spec = request.mcpServers!.unleashd_memory;
+        const completed = (async () => {
+          for (const [kind, content] of [
+            ['working', 'Mid-migration: step 2 of 3 done, waiting on the owner for step 3'],
+            ['long_term', 'Owner prefers restrained UI'],
+          ]) {
+            const read = await call(spec, 'doc_read', { kind });
+            assert.equal(read.isError, false, read.text);
+            const write = await call(spec, 'doc_write', {
+              kind,
+              content,
+              baseRevision: 0,
+              reason: 'from the chat',
+              key: kind,
+            });
+            assert.equal(write.isError, false, write.text);
+          }
+          return { exitCode: 0, signal: null, sessionId: 's', reason: 'success' };
+        })();
+        return {
+          child: { exitCode: 0 },
+          events: (async function* () {
+            await completed;
+            yield* [];
+          })(),
+          completed,
+          stop: () => undefined,
+        };
+      }) as never,
+    });
+    try {
+      reviewer.start();
+      reviewer.enqueue({
+        attemptId: 'a1',
+        conversationId: 'chat-A',
+        context: chat('chat-A'),
+        completedAt: new Date().toISOString(),
+        messages: [
+          { role: 'user', content: 'Do steps 1 and 2 of the migration; I will approve step 3.' },
+          { role: 'assistant', content: 'Steps 1 and 2 are done.' },
+        ],
+      });
+      const receipt = await until(
+        async () =>
+          (await core.listEvents(lead.id, Number.MAX_SAFE_INTEGER, 20)).find(
+            (e) => e.op === 'memory_review'
+          ),
+        'the review receipt'
+      );
+      assert.equal(JSON.parse(receipt.payload).status, 'complete');
+
+      const next = await composeBriefing(core, chat('chat-B'));
+      assert.match(next.briefing, /step 2 of 3 done/, 'working memory reaches the next chat');
+      assert.match(next.briefing, /Owner prefers restrained UI/, 'long-term memory reaches it');
+    } finally {
+      reviewer.stop();
+      await reviewEndpoint.close();
+      rmSync(scratch, { recursive: true, force: true });
+    }
+  }
+);
 
 test('the server never runs on a missing Buddies database: it names the import command', async () => {
   await assert.rejects(
