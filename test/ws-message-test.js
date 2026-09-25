@@ -49,7 +49,9 @@ ws.on('message', (data) => {
       console.log('[WS] Sending test message...');
       ws.send(
         JSON.stringify({
-          type: 'send_message',
+          type: 'queue_message',
+          // send_message was deleted (T14b); queue_message is the one send path and needs a commandId.
+          commandId: crypto.randomUUID(),
           conversationId,
           content: 'Say "hello test" and nothing else.',
         })

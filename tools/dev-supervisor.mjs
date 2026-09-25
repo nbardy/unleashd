@@ -51,7 +51,8 @@ export function taskPlan(task) {
   const buildShared = pnpm('--filter', '@unleashd/shared', 'build');
   const buildCli = pnpm('--dir', 'vendor/agent-cli-tool', 'build');
   // The Buddies core addon (napi-rs; needs cargo). Dev builds it once by hand:
-  // `pnpm --dir crates/unleashd-buddies build` (crates/unleashd-buddies/README.md).
+  // `pnpm --dir crates/unleashd-buddies build` (crates/unleashd-buddies/README.md);
+  // after that the backend runner rebuilds a crate when one of its sources is saved.
   const buildBuddiesCore = pnpm('--dir', 'crates/unleashd-buddies', 'build');
   switch (task) {
     case 'build':

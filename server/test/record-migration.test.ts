@@ -3,11 +3,10 @@ import { mkdir, mkdtemp, readFile, readdir, rm, writeFile } from 'node:fs/promis
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
-import { createDefaultConversationConfig } from '@unleashd/shared';
 import {
-  ConversationConfigStore,
-  UnmigratedConfigRecordError,
-} from '../src/conversations/config-store';
+  PersistedConversationConfigRecordSchema,
+  createDefaultConversationConfig,
+} from '@unleashd/shared';
 import { migrateConversationRecords } from '../src/conversations/record-migration';
 
 // The one-time v1 → v2 record rewrite (T09). v1 re-derived kind at every
@@ -43,7 +42,18 @@ async function fixture() {
   const root = await mkdtemp(path.join(tmpdir(), 'record-migration-'));
   const byConversation = path.join(root, 'conversation-config', 'v1', 'by-conversation');
   await mkdir(byConversation, { recursive: true });
-  const store = new ConversationConfigStore({ appDataRoot: root });
+  // What records-tool import reads: each migrated file, parsed as record v2.
+  const store = {
+    getByConversationId: async (id: string) =>
+      PersistedConversationConfigRecordSchema.parse(
+        JSON.parse(
+          await readFile(
+            path.join(byConversation, `${Buffer.from(id).toString('base64url')}.json`),
+            'utf8'
+          )
+        )
+      ),
+  };
   const records = {
     builder: v1('builder', { commandId: 'c1', purpose: 'buddy_builder' }),
     owner: v1('owner', { commandId: 'c2', buddyContext: BUDDY }),
@@ -98,8 +108,8 @@ test('v1 records become v2 with one stored kind; everything else is preserved', 
   const { root, store } = await fixture();
   t.after(() => rm(root, { recursive: true, force: true }));
 
-  // Before migration the store refuses a v1 record instead of quarantining it.
-  await assert.rejects(store.getByConversationId('chat'), UnmigratedConfigRecordError);
+  // Before migration a record is v1, which the importer refuses.
+  await assert.rejects(store.getByConversationId('chat'));
 
   const result = await migrateConversationRecords({
     appDataRoot: root,

@@ -17,7 +17,7 @@ import {
   regroupChatMessages,
   withStreamingTail,
 } from '../utils/chat-message-groups';
-import { getProjectRoot } from '../utils/swarmUtils';
+import { getProjectRoot } from '../utils/directories';
 import { archivedBuddyIdsAtom } from './buddy-visibility';
 import {
   type ConversationIndex,

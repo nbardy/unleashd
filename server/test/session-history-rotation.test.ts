@@ -20,7 +20,6 @@ import { NormalizedSessionCache } from '../src/adapters/session-cache';
 import { TranscriptTails } from '../src/adapters/transcript-tails';
 import { createConversationApplicationContext } from '../src/application/context';
 import { ConversationConfigService } from '../src/conversations/config-service';
-import { ConversationConfigStore } from '../src/conversations/config-store';
 import {
   type ConversationBroadcast,
   type ConversationRuntime,
@@ -30,6 +29,7 @@ import {
 import { createSessionLoader } from '../src/lifecycle/session-loader';
 import { resolveConfigAgainstProviderCatalog } from '../src/providers/catalog-service';
 import { fakeBuddyPort } from './fixtures/buddy-port';
+import { recordStore, replaceRecord } from './fixtures/records';
 
 const conversationId = 'dddddddd-0000-4000-8000-000000000004';
 const sessionIds = [
@@ -97,10 +97,7 @@ test('bound native sessions retain display history across capped startup, pollin
   ]);
   await fs.utimes(unrelated, 1, 1);
 
-  const store = new ConversationConfigStore({
-    appDataRoot: root,
-    now: () => new Date(originalDate),
-  });
+  const store = recordStore(root, () => new Date(originalDate));
   await store.create({
     kind: { t: 'chat' },
     conversationId,
@@ -383,7 +380,7 @@ test('bound native sessions retain display history across capped startup, pollin
     ...saved.currentSession!,
     buddyAudienceKey: JSON.stringify({ kind: 'thread', threadId: conversationId }),
   };
-  await store.save({
+  await replaceRecord(store, {
     ...saved,
     kind: buddyKind({ buddyId: 'buddy', workspaceId: 'workspace' }),
     currentSession: verified,
@@ -395,7 +392,11 @@ test('bound native sessions retain display history across capped startup, pollin
     }
     if (mode === 'inferred-session') {
       const record = (await store.getByConversationId(conversationId))!;
-      await store.save({ ...record, currentSession: undefined, sessionBindings: [verified] });
+      await replaceRecord(store, {
+        ...record,
+        currentSession: undefined,
+        sessionBindings: [verified],
+      });
     }
     const restarted = boot();
     await restarted.loader.loadExistingConversations();
@@ -411,7 +412,7 @@ test('bound native sessions retain display history across capped startup, pollin
 
   // A mismatched saved provider must not restore either half of the binding.
   const record = (await store.getByConversationId(conversationId))!;
-  await store.save({ ...record, config: { ...config, provider: 'claude' } });
+  await replaceRecord(store, { ...record, config: { ...config, provider: 'claude' } });
   for (const withTranscript of [false, true]) {
     if (withTranscript) await writeTranscript(files[3], sessionIds[3], originalDate, messages[3]);
     const restarted = boot();

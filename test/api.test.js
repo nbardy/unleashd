@@ -575,7 +575,7 @@ async function runTests() {
       await waitForMessage(ws, 'init');
 
       // Send a message missing required fields
-      send(ws, { type: 'send_message' }); // missing conversationId and content
+      send(ws, { type: 'queue_message' }); // missing commandId, conversationId and content
       // Server should not crash — verify by sending a valid message after
       send(ws, createConversationCommand());
       const msg = await waitForMessage(ws, 'conversation_created');

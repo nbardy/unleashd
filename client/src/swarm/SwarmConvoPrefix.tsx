@@ -1,18 +1,14 @@
 import { useMemo, useState } from 'react';
 import './SwarmConvoPrefix.css';
 
-import {
-  parseAvailableConfigs,
-  parseStatsFromPrefix,
-  parseWorkerTable,
-} from '../utils/swarmConvoParsers';
+import { parseAvailableConfigs, parseStatsFromPrefix, parseWorkerTable } from './swarmConvoParsers';
 
 // Re-export parsers for mobile (utils path is canonical; component re-export keeps old import paths working)
 export {
   parseAvailableConfigs,
   parseStatsFromPrefix,
   parseWorkerTable,
-} from '../utils/swarmConvoParsers';
+} from './swarmConvoParsers';
 
 interface SwarmConvoPrefixProps {
   prefix: string;

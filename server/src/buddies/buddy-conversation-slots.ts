@@ -1,9 +1,6 @@
 import { createHash } from 'node:crypto';
-import type {
-  BuddyContext,
-  ConversationConfig,
-  PersistedConversationConfigRecord,
-} from '@unleashd/shared';
+import type { BuddyContext, ConversationConfig } from '@unleashd/shared';
+import type { ConversationRecord } from '../conversations/config-records';
 import type { ConversationRuntime } from '../conversations/runtime';
 
 // A Buddy's STABLE conversations — its DM and its seat in each channel thread
@@ -24,7 +21,7 @@ export type ConversationSlot =
   | { kind: 'deleted' }
   | { kind: 'live'; config: ConversationConfig };
 
-export function slotOf(record: PersistedConversationConfigRecord | undefined): ConversationSlot {
+export function slotOf(record: ConversationRecord | undefined): ConversationSlot {
   if (!record) return { kind: 'absent' };
   if (record.status === 'deleted') return { kind: 'deleted' };
   return { kind: 'live', config: record.config };

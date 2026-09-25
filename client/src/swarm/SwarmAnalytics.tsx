@@ -7,27 +7,27 @@ import { swarmWorkersByProjectAtom } from '../atoms/conversations';
 import { resource, usePolledFetch } from '../hooks/usePolledFetch';
 import { rowWorker } from '../utils/conversation-row';
 import { getProjectColor } from '../utils/projectColors';
+import { formatDuration, formatTimeAgo } from '../utils/time';
 import {
   type IterationSpan,
   type RunData,
   buildTimelineData,
   computeSwarmStats,
-} from '../utils/swarmAnalyticsParsers';
-import { getProjectName } from '../utils/swarmUtils';
-import { formatDuration, formatTimeAgo } from '../utils/time';
+} from './swarmAnalyticsParsers';
+import { getProjectName } from './swarmUtils';
 import './SwarmAnalytics.css';
 
 // Stable empty fallback (AGENTS.md: stable fallbacks are module constants).
 const NO_RUNS_DATA = new Map<string, RunData>();
 
 // Re-export analytics parsers for mobile (utils is canonical)
-export { buildTimelineData, computeSwarmStats } from '../utils/swarmAnalyticsParsers';
+export { buildTimelineData, computeSwarmStats } from './swarmAnalyticsParsers';
 export type {
   IterationSpan,
   RunData,
   SwarmStats,
   WorkerTimeline,
-} from '../utils/swarmAnalyticsParsers';
+} from './swarmAnalyticsParsers';
 // =============================================================================
 // Types (component-local)
 // =============================================================================

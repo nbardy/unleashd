@@ -77,6 +77,8 @@ export interface BuddyContext {
   allowedBuddyOperations?: Array<string>
 }
 
+export type BuddyVisibility = 'foreground' | 'background'
+
 /** What `onChange` receives. */
 export type ChangeEvent =
   | { t: 'changes'; rev: number; sessionIds: Array<string>; removed: Array<string> }
@@ -130,23 +132,32 @@ export interface ConversationCreation {
   branch?: ConversationBranch
   commandId?: string
   fingerprint?: string
-  placement?: Placement
   initialMessage?: string
   initialMessageDispatchClaimedAt?: string
   initialMessageDispatchClaimToken?: string
   initialMessageDispatchedAt?: string
   swarmDebugPrefix?: string
   resumedFromConversationId?: string
-  buddyContext?: BuddyContext
-  purpose?: Purpose
 }
 
 /**
- * One durable conversation record. `version` is not a field: every stored record is version 1
- * (a file of a later version is refused at import, never stored).
+ * `ConversationKindSchema`: what the thread is, fixed at creation. The worker ids and role are
+ * `.nullable()` (never absent), so they serialize as `null` — `use_nullable` makes napi do the
+ * same (without it `None` crosses as an absent key, which the Zod schema rejects).
+ */
+export type ConversationKind =
+  | { t: 'chat' }
+  | { t: 'buddy'; context: BuddyContext; visibility: BuddyVisibility }
+  | { t: 'builder' }
+  | { t: 'worker'; swarmId: string | null; workerId: string | null; role: WorkerRole | null }
+
+/**
+ * One durable conversation record. `version` is not a field: every stored record is version 2
+ * (T09's `kind`); import refuses a v1 file (run record-migration.ts on the copy first).
  */
 export interface ConversationRecord {
   conversationId: string
+  kind: ConversationKind
   /** Earlier sessions of this conversation, oldest first. Indexed for transcript discovery. */
   sessionBindings: Array<SessionBinding>
   /** The session a new turn resumes. Absent = no provider session started yet. */
@@ -191,15 +202,6 @@ export type Identity =
   | { t: 'builder' }
   | { t: 'worker'; swarmId?: string; workerId?: string; role: WorkerRole }
 
-/**
- * The conversation kind the list row needs, derived once at the write path from `creation`
- * (the rule of `conversationKindFromLegacy`: a Buddy context wins, then `purpose`).
- */
-export type KindTag =
-  | { t: 'general' }
-  | { t: 'buddy'; buddyId: string }
-  | { t: 'buddy_builder' }
-
 /** `BuddyKnowledgeScopeSchema` (strict objects). */
 export type KnowledgeScope =
   | { kind: 'owner_thread'; conversationId: string }
@@ -236,6 +238,7 @@ export type ModelSelection =
 /** `create`'s input: a record at revision 0, stamped by the store. */
 export interface NewRecord {
   conversationId: string
+  kind: ConversationKind
   sessionBindings: Array<SessionBinding>
   currentSession?: SessionBinding
   workingDirectory?: string
@@ -244,8 +247,6 @@ export interface NewRecord {
   lastResolvedConfig?: ResolvedExecutionConfig
   provenance: Provenance
 }
-
-export type Placement = 'default' | 'background'
 
 export type Provenance = 'user' | 'legacy_inferred' | 'external_discovered'
 
@@ -262,8 +263,6 @@ export interface ProviderTurnUsage {
   observedAt: string
 }
 
-export type Purpose = 'general' | 'buddy_builder'
-
 export type ReasoningSelection =
   | { mode: 'default' }
   | { mode: 'disabled' }
@@ -279,7 +278,7 @@ export interface RecordSummary {
   conversationId: string
   status: RecordStatus
   done: boolean
-  kind: KindTag
+  kind: ConversationKind
   provenance: Provenance
   workingDirectory?: string
   provider: Provider

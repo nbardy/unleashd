@@ -32,8 +32,16 @@ import {
  * marker file is written last. A crash before the marker reruns the
  * migration over the partly migrated directory (v2 records are skipped).
  *
- * Delete this module (and its boot call) once the live data dir carries the
- * marker: it is the only remaining reader of v1 records and of the markers.
+ * Since T23b (2026-09-26) the server no longer reads these files at all: it
+ * reads conversation-records.sqlite. This is now step 2 of the owner-gated
+ * import, run on a COPY of the data dir before `records-tool import` (which
+ * refuses v1 files):
+ *
+ *   pnpm --dir server exec tsx src/conversations/record-migration.ts <copy>
+ *
+ * where <copy> holds `conversation-config/` (copied) and `session-cache-v1/`
+ * (read only; a symlink to the live one is fine). Delete this module with
+ * crates/unleashd-ingest/src/records/import.rs after the live swap.
  */
 
 export const RECORD_MIGRATION_MARKER = '.migrated-to-v2';
@@ -336,4 +344,21 @@ async function exists(file: string): Promise<boolean> {
   } catch {
     return false;
   }
+}
+
+// The CLI step of the import (see the module comment). Exit 1 when any record
+// failed, so the sequence stops before `records-tool import`.
+if (require.main === module) {
+  const [appDataRoot] = process.argv.slice(2);
+  if (!appDataRoot || !path.isAbsolute(appDataRoot)) {
+    console.error('usage: record-migration.ts <absolute path of the data-dir copy>');
+    process.exit(2);
+  }
+  migrateConversationRecords({ appDataRoot }).then(
+    (result) => process.exit(result.t === 'migrated' && result.report.failures.length > 0 ? 1 : 0),
+    (error) => {
+      console.error(error);
+      process.exit(1);
+    }
+  );
 }
