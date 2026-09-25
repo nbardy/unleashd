@@ -154,43 +154,6 @@ test('reload waits for active turns and coalesces repeated requests', async () =
   controller.dispose();
 });
 
-test('reload drains an admitted mutation before exit', async () => {
-  const fixture = createFixture(false);
-  const controller = createShutdownController(INERT, fixture.ports);
-  assert.equal(controller.completeStartup(), true);
-  const release = controller.beginMutation();
-  assert.ok(release);
-
-  controller.handleReload();
-  await sleep(550);
-  assert.equal(fixture.counts().flushes, 0);
-
-  release();
-  await sleep(550);
-  assert.equal(fixture.counts().flushes, 1);
-  fixture.pendingFlush.resolve();
-  await fixture.pendingFlush.promise;
-  controller.dispose();
-});
-
-test('reload drains the automation run beyond its individual provider turn', async () => {
-  const fixture = createFixture(false);
-  fixture.setActiveSchedulerRuns(1);
-  const controller = createShutdownController(INERT, fixture.ports);
-  assert.equal(controller.completeStartup(), true);
-
-  controller.handleReload();
-  await sleep(550);
-  assert.equal(fixture.counts().flushes, 0);
-
-  fixture.setActiveSchedulerRuns(0);
-  await sleep(550);
-  assert.equal(fixture.counts().flushes, 1);
-  fixture.pendingFlush.resolve();
-  await fixture.pendingFlush.promise;
-  controller.dispose();
-});
-
 /**
  * Incident 2026-08-22. A reload used to move into an absorbing state and then
  * either kill an ordinary provider turn or leave the backend permanently

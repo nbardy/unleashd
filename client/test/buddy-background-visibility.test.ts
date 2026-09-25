@@ -22,9 +22,9 @@ test('background placement hides rows but preserves direct transcript access and
     ({
       id,
       placement,
-      kind: { kind: 'buddy', buddyId: 'lead', workspaceId: 'work' },
+      kind: { kind: 'buddy' as const, buddyId: 'lead', workspaceId: 'work' },
       createdAt: new Date(),
-      messages: [],
+      messages: [] as Conversation['messages'],
       workingDirectory: '/project',
     }) as Conversation;
   const owner = make('owner-thread', 'default');

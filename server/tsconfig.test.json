@@ -1,0 +1,65 @@
+// `pnpm typecheck` runs this (server/package.json "typecheck"): it checks src AND
+// test in one no-emit program. rootDir is widened because tests import
+// ../shared/src; `pnpm build` (tsconfig.json) still enforces rootDir ./src.
+// Until 2026-09-25 nothing typechecked server/test, and fixtures drifted from
+// the real types (missing `done`, stale provider handles) while tsx ran them.
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "rootDir": "..",
+    "declaration": false,
+    "declarationMap": false,
+    "sourceMap": false
+  },
+  "include": ["src/**/*", "test/**/*"],
+  "exclude": [
+    "node_modules",
+    "dist",
+    // TEMPORARY. These files still carry type drift and belong to other tasks of
+    // the lean rewrite. Each task removes its entries; the goal is an empty list.
+    // T08 (conversation runtime restructure):
+    "test/conversation-runtime.test.ts",
+    "test/buddy-conversation-contract.test.ts",
+    // T11 (Buddy test replacement):
+    "test/buddy-assignment-config.test.ts",
+    "test/buddy-background-routes.test.ts",
+    "test/buddy-background-runtime.test.ts",
+    "test/buddy-builder-team.test.ts",
+    "test/buddy-builder.integration.test.ts",
+    "test/buddy-change-feed.test.ts",
+    "test/buddy-closure.test.ts",
+    "test/buddy-control-server.test.ts",
+    "test/buddy-coordination-observation.test.ts",
+    "test/buddy-coordination.test.ts",
+    "test/buddy-creation-service.test.ts",
+    "test/buddy-delete-admission.test.ts",
+    "test/buddy-dispatch-service.test.ts",
+    "test/buddy-efficiency-reads.test.ts",
+    "test/buddy-employee-contracts.test.ts",
+    "test/buddy-inactive-access.test.ts",
+    "test/buddy-launcher-creation.test.ts",
+    "test/buddy-mailing-lists.test.ts",
+    "test/buddy-mcp.test.ts",
+    "test/buddy-memory-capture.test.ts",
+    "test/buddy-memory-curation.test.ts",
+    "test/buddy-memory-review.test.ts",
+    "test/buddy-messages.test.ts",
+    "test/buddy-operations.test.ts",
+    "test/buddy-owner-authority.test.ts",
+    "test/buddy-owner-inputs.test.ts",
+    "test/buddy-owner-live.test.ts",
+    "test/buddy-owner-runtime.test.ts",
+    "test/buddy-readiness-privacy.test.ts",
+    "test/buddy-resource-consistency.test.ts",
+    "test/buddy-scheduler.test.ts",
+    "test/buddy-soul-conflict.test.ts",
+    "test/buddy-soul.test.ts",
+    "test/buddy-team-access.test.ts",
+    "test/buddy-team-permissions.test.ts",
+    "test/buddy-team-recovery.test.ts",
+    "test/buddy-worker-return-live.test.ts",
+    "test/channel-conversations.test.ts",
+    "test/channel-seat-continuity.test.ts"
+  ]
+}

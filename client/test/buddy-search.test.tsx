@@ -1,7 +1,5 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-// biome-ignore lint/correctness/noUnusedImports: tsx's test transform uses the classic JSX runtime.
-import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { MemoryRouter } from 'react-router-dom';
 import { BuddyDirectory } from '../src/components/buddies/BuddyDirectory';
@@ -43,17 +41,6 @@ function renderDirectoryWithTeam(team: BuddyOverviewEmployee['team']) {
     </MemoryRouter>
   );
 }
-
-test('Buddy directory exposes a search control in its rendered page', () => {
-  const html = renderToStaticMarkup(
-    <MemoryRouter>
-      <BuddyDirectory overview={overview} onOpen={() => {}} onNew={() => {}} creating={false} />
-    </MemoryRouter>
-  );
-
-  assert.match(html, /placeholder="Search buddies…"/);
-  assert.match(html, /Product Lead/);
-});
 
 test('Buddy directory search matches role, workspace, and report metadata', () => {
   assert.deepEqual(filterDirectoryEmployees([employee], 'release planning'), [employee]);

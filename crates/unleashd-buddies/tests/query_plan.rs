@@ -31,74 +31,32 @@ fn workload(s: &mut unleashd_buddies::Store) {
     let channel = s
         .create_channel(&owner, ChannelInput { workspace_id: WS.into(), name: "general".into(), purpose: "p".into(), key: "ch".into() })
         .unwrap();
-    let top = s
-        .post(
-            &owner,
-            PostInput {
-                target: Target::Channel { id: channel.id.clone() },
-                kind: PostKind::Inform,
-                body: "hi".into(),
-                purpose: None,
-                evidence: vec![],
-                reply_to_id: None,
-                task_id: None,
-                from_conversation_id: None,
-                key: "p1".into(),
-            },
-        )
-        .unwrap();
-    s.post(
-        &ic,
-        PostInput {
-            target: Target::Channel { id: channel.id.clone() },
-            kind: PostKind::Inform,
-            body: "reply".into(),
-            purpose: None,
-            evidence: vec![],
-            reply_to_id: Some(top.id.clone()),
-            task_id: None,
-            from_conversation_id: None,
-            key: "p2".into(),
-        },
-    )
-    .unwrap();
-    let ask = s
-        .post(
-            &mid,
-            PostInput {
-                target: Target::Buddy { id: "ic".into() },
-                kind: PostKind::Request,
-                body: "do".into(),
-                purpose: None,
-                evidence: vec![],
-                reply_to_id: None,
-                task_id: None,
-                from_conversation_id: Some("c-mid".into()),
-                key: "p3".into(),
-            },
-        )
-        .unwrap();
+    let public = ChannelRef::Id { id: channel.id.clone() };
+    let top = s.post(&owner, public.clone(), input(PostKind::Inform, "hi", "p1")).unwrap();
+    s.post(&ic, public, PostInput { reply_to_id: Some(top.id.clone()), ..input(PostKind::Inform, "reply", "p2") }).unwrap();
+    let dm = ChannelRef::Direct { members: vec![mid.clone(), ic.clone()] };
+    let ask =
+        s.post(&mid, dm.clone(), PostInput { from_conversation_id: Some("c-mid".into()), ..input(PostKind::Request, "do", "p3") }).unwrap();
+    s.post(&ic, dm, input(PostKind::Inform, "on it", "p4")).unwrap();
     let cursor = Some(Cursor { created_at: "2999-01-01T00:00:00.000Z".into(), id: "z".into() });
     for q in [
         PostQuery::Channel { channel_id: channel.id.clone() },
         PostQuery::Thread { root_id: top.id.clone() },
-        PostQuery::Task { task_id: "none".into() },
-        PostQuery::To { target: Target::Owner },
-        PostQuery::To { target: Target::Buddy { id: "ic".into() } },
-        PostQuery::From { author: mid.clone() },
-        PostQuery::From { author: owner.clone() },
+        PostQuery::Channel { channel_id: ask.channel_id.clone() },
     ] {
-        s.list_posts(q.clone(), None, 5).unwrap();
-        s.list_posts(q, cursor.clone(), 5).unwrap();
+        s.list_posts(&ic, q.clone(), None, 5).unwrap();
+        s.list_posts(&ic, q, cursor.clone(), 5).unwrap();
     }
+    s.get_post(&ic, &ask.id).unwrap();
     s.inbox(&ic, WS).unwrap();
     s.inbox(&owner, WS).unwrap();
     s.mark_read(&ic, &channel.id, &top.id).unwrap();
+    s.mark_read(&ic, &ask.channel_id, &ask.id).unwrap();
     s.list_channels(WS).unwrap();
 
     let claim = s.claim_run(60_000).unwrap().unwrap();
     s.bind_run(&claim.run.id, &claim.lease_token, "c-ic").unwrap();
-    s.reply(&ic, ReplyInput { post_id: ask.id.clone(), body: "done".into(), evidence: vec![], key: "r".into() }).unwrap();
+    s.answer(&ic, AnswerInput { request_id: ask.id.clone(), body: "done".into(), evidence: vec![], key: "r".into() }).unwrap();
     s.settle_run(&claim.run.id, &claim.lease_token, Outcome::Failed { code: "x".into(), error: "y".into() }).unwrap();
 
     let doc = DocRef { buddy_id: "ic".into(), scope: DocScope::Buddy, kind: DocKind::Working, name: String::new() };
@@ -158,6 +116,7 @@ fn workload(s: &mut unleashd_buddies::Store) {
         s.list_tasks(q).unwrap();
     }
     s.get_task(&parent.id).unwrap();
+    s.post(&ic, ChannelRef::Task { task_id: parent.id.clone() }, input(PostKind::Inform, "comment", "p5")).unwrap();
 
     let run = s
         .enqueue_run(
@@ -218,6 +177,19 @@ fn workload(s: &mut unleashd_buddies::Store) {
     s.list_buddies(WS).unwrap();
     s.bind_conversation(&owner, ConversationInput { id: "c-new".into(), buddy_id: "ic".into(), task_id: None }).unwrap();
     s.get_conversation("c-new").unwrap();
+}
+
+fn input(kind: PostKind, body: &str, key: &str) -> PostInput {
+    PostInput {
+        kind,
+        body: body.into(),
+        purpose: None,
+        evidence: vec![],
+        reply_to_id: None,
+        task_id: None,
+        from_conversation_id: None,
+        key: key.into(),
+    }
 }
 
 #[test]

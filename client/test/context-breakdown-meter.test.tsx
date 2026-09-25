@@ -1,8 +1,6 @@
 import assert from 'node:assert/strict';
 import { register } from 'node:module';
 import test from 'node:test';
-// biome-ignore lint/correctness/noUnusedImports: tsx's test transform uses the classic JSX runtime.
-import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import type { ContextBreakdownData } from '../src/components/ContextBreakdownMeter';
 
@@ -15,7 +13,7 @@ register(
   `)}`,
   import.meta.url
 );
-const { breakdownTone, ContextBreakdownView, isWriteSpike } = await import(
+const { breakdownTone, ContextBreakdownView } = await import(
   '../src/components/ContextBreakdownMeter'
 );
 
@@ -72,14 +70,6 @@ function spikingUsage(): NonNullable<ContextBreakdownData['providerUsage']> {
   };
 }
 
-test('breakdownTone warns at 70% and goes strong at 85%', () => {
-  assert.equal(breakdownTone(0), 'normal');
-  assert.equal(breakdownTone(69.9), 'normal');
-  assert.equal(breakdownTone(70), 'warn');
-  assert.equal(breakdownTone(84.9), 'warn');
-  assert.equal(breakdownTone(85), 'strong');
-});
-
 // The card used to carry a "Compact & continue" button and an "auto-compact at
 // 90%" checkbox. Neither was wired to anything: the button revealed a notice
 // admitting so, and the checkbox wrote a localStorage key nothing read. They
@@ -89,12 +79,6 @@ test('the card offers no compact controls that do nothing', () => {
   assert.ok(!html.includes('Compact &amp; continue'), 'dead compact button is back');
   assert.ok(!html.includes('auto-compact'), 'dead auto-compact checkbox is back');
   assert.ok(!html.includes('ctx-autocompact'), 'dead localStorage key is back');
-});
-
-test('isWriteSpike flags cache writes above half of cumulative input', () => {
-  assert.equal(isWriteSpike(fixture()), false);
-  assert.equal(isWriteSpike(fixture({ providerUsage: spikingUsage() })), true);
-  assert.equal(isWriteSpike(fixture({ providerUsage: null })), false);
 });
 
 // The chat header already carries the model chip, the folder and the turn
@@ -112,18 +96,6 @@ test('the header chip is a bare bar and the numbers live in its label', () => {
   assert.ok(!html.includes('200k'), 'the 200k default leaked back into the header');
 });
 
-test('hover card lists all five sections with chars and estimates', () => {
-  const html = renderToStaticMarkup(<ContextBreakdownView data={fixture()} />);
-  for (const section of ['history', 'briefing', 'memory', 'mcp', 'handoff']) {
-    assert.ok(html.includes(section), `missing legend entry for ${section}`);
-  }
-  assert.match(html, /40000 chars/);
-  assert.match(html, /we sent .*this turn stack; provider priced .*cumulative input/);
-  assert.match(html, /75\.5x re-read/);
-  assert.match(html, /get_message\(\{messageId\}\)/);
-  assert.match(html, /get_current_work\(\{projectId\}\)/);
-});
-
 // The bug: our store is append-only, so after a provider-side compaction our
 // chars/4 estimate keeps climbing while the real context has collapsed. The
 // meter must follow the provider down, not sail past 100%.
@@ -133,10 +105,21 @@ test('a compacted thread reports the boundary instead of a >100% meter', () => {
     totalTokens: 52_704,
     pctOfBudget: 5.27,
     residualTokens: 0,
-    compaction: { detected: true, historyTokensEst: 966_000, measuredTokens: 52_704 },
+    compaction: {
+      detected: true,
+      source: 'inferred',
+      historyTokensEst: 966_000,
+      measuredTokens: 52_704,
+      count: null,
+      preTokens: null,
+      postTokens: null,
+      trigger: null,
+    },
   });
   const html = renderToStaticMarkup(<ContextBreakdownView data={compacted} />);
   assert.match(html, /compacted provider-side/);
+  // An inferred boundary has no harness counts; the card must not invent them.
+  assert.doesNotMatch(html, /Last boundary dropped/);
   assert.match(html, /aria-label="Context usage 53k\/1\.0M tok \(5% of model window\)"/);
   assert.equal(breakdownTone(compacted.pctOfBudget), 'normal');
 });

@@ -5,8 +5,14 @@
 //! - every imported table has `legacy TEXT` (JSON of the source columns with no new home; §7.1);
 //! - `run.lease_expires_at` (claims need an expiry), no `run.allowed_ops` (02 §8.3: the grant's
 //!   role picks the tools; imported op lists stay in `legacy.policy`);
-//! - `post_read.last_post_at` (unread counts use the keyset without a join) and `reader` holds
-//!   `'owner'` or a buddy id, so owner cursors replace owner-channel-reads.json;
+//! - messages, channel posts and task comments are ONE kind of row: a post in a channel (owner
+//!   decision 2026-09-25, T06b). A channel is `public` (name, purpose), `direct` (a member set,
+//!   one channel per set: `member_key` is the sorted member keys joined by ',', and
+//!   `channel_member` indexes it by member) or `task` (one per task). A reply is its own post
+//!   (`reply_to_id`, same thread); a request carries `request` and, once answered, `answer_id`;
+//! - `post_read` covers every channel kind. `reader` is `'owner'` or a buddy id and the cursor is a
+//!   keyset position (`last_post_at`, `last_post_id`); owner cursors replace owner-channel-reads.json,
+//!   whose baseline imports as (baselineAt, '') = "read through that instant";
 //! - `schedule.name`, `schedule.created_at`;
 //! - the optional 12th table `conversation` (§6): 976 conversation↔buddy bindings, 213 of them
 //!   with no run, would otherwise be lost.
@@ -49,31 +55,36 @@ CREATE INDEX task_parent ON task(parent_id, position) WHERE parent_id IS NOT NUL
 
 CREATE TABLE channel (
   id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL REFERENCES workspace(id),
-  name TEXT NOT NULL COLLATE NOCASE, purpose TEXT NOT NULL,
+  kind TEXT NOT NULL CHECK(kind IN ('public','direct','task')),
+  name TEXT COLLATE NOCASE, purpose TEXT, member_key TEXT UNIQUE, task_id TEXT UNIQUE REFERENCES task(id),
   created_by TEXT REFERENCES buddy(id), created_at TEXT NOT NULL,
+  CHECK((kind = 'public') = (name IS NOT NULL AND purpose IS NOT NULL)),
+  CHECK((kind = 'direct') = (member_key IS NOT NULL)),
+  CHECK((kind = 'task') = (task_id IS NOT NULL)),
   UNIQUE(workspace_id, name)) STRICT;
+CREATE TABLE channel_member (
+  channel_id TEXT NOT NULL REFERENCES channel(id), member TEXT NOT NULL,
+  PRIMARY KEY(channel_id, member)) STRICT, WITHOUT ROWID;
+CREATE INDEX channel_member_by_member ON channel_member(member, channel_id);
 
 CREATE TABLE post (
-  id TEXT PRIMARY KEY, workspace_id TEXT NOT NULL REFERENCES workspace(id),
+  id TEXT PRIMARY KEY, channel_id TEXT NOT NULL REFERENCES channel(id),
   author_id TEXT REFERENCES buddy(id),
-  target_kind TEXT NOT NULL CHECK(target_kind IN ('buddy','owner','channel','task')),
-  target_id TEXT CHECK((target_kind = 'owner') = (target_id IS NULL)),
   root_id TEXT REFERENCES post(id), reply_to_id TEXT REFERENCES post(id),
   task_id TEXT REFERENCES task(id),
   purpose TEXT, body TEXT NOT NULL, evidence TEXT NOT NULL DEFAULT '[]',
-  reply_state TEXT CHECK(reply_state IN ('awaiting','replied','cancelled','failed')),
-  reply_body TEXT, reply_evidence TEXT, replied_at TEXT,
+  request TEXT CHECK(request IN ('awaiting','answered','cancelled','failed')),
+  answer_id TEXT REFERENCES post(id),
   conversation_id TEXT, return_conversation_id TEXT, created_at TEXT NOT NULL, legacy TEXT,
-  CHECK((reply_state = 'replied') = (reply_body IS NOT NULL AND replied_at IS NOT NULL))) STRICT;
-CREATE INDEX post_target ON post(target_kind, target_id, created_at, id);
+  CHECK((request IS 'answered') = (answer_id IS NOT NULL))) STRICT;
+CREATE INDEX post_channel ON post(channel_id, created_at, id);
 CREATE INDEX post_root ON post(root_id, created_at, id) WHERE root_id IS NOT NULL;
-CREATE INDEX post_author ON post(author_id, created_at, id);
-CREATE INDEX post_awaiting_target ON post(target_kind, target_id, created_at) WHERE reply_state = 'awaiting';
-CREATE INDEX post_awaiting_author ON post(author_id, created_at) WHERE reply_state = 'awaiting';
+CREATE INDEX post_awaiting ON post(channel_id, created_at) WHERE request = 'awaiting';
+CREATE INDEX post_awaiting_author ON post(author_id, created_at) WHERE request = 'awaiting';
 
 CREATE TABLE post_read (
   reader TEXT NOT NULL, channel_id TEXT NOT NULL REFERENCES channel(id),
-  last_post_id TEXT NOT NULL, last_post_at TEXT NOT NULL, updated_at TEXT NOT NULL,
+  last_post_id TEXT NOT NULL, last_post_at TEXT NOT NULL, updated_at TEXT NOT NULL, legacy TEXT,
   PRIMARY KEY(reader, channel_id)) STRICT;
 
 CREATE TABLE doc (

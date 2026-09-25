@@ -13,9 +13,12 @@ fn write(buddy_id: &str, content: &str, base: i64, key: &str) -> DocWrite {
     DocWrite { doc: soul(buddy_id), content: content.into(), base_revision: base, reason: "test".into(), key: key.into() }
 }
 
-fn request(to: &str, body: &str, key: &str) -> PostInput {
+fn dm(a: &str, b: &str) -> ChannelRef {
+    ChannelRef::Direct { members: vec![buddy(a), buddy(b)] }
+}
+
+fn request(body: &str, key: &str) -> PostInput {
     PostInput {
-        target: Target::Buddy { id: to.into() },
         kind: PostKind::Request,
         body: body.into(),
         purpose: None,
@@ -50,10 +53,83 @@ fn authorize_is_owner_self_or_transitive_manager() {
     assert!(allowed(&buddy("lead"), Op::WriteDoc, &on("ic")), "manager of a manager");
     assert!(!allowed(&buddy("ic"), Op::WriteDoc, &on("lead")), "reports do not manage upward");
     assert!(!allowed(&buddy("peer"), Op::WriteDoc, &on("mid")), "peers are not managers");
-    assert!(allowed(&buddy("peer"), Op::Post, &on("mid")), "anyone may post to anyone");
+    assert!(!allowed(&buddy("peer"), Op::Post, &on("mid")), "posts go to channels, not to buddies");
     assert!(!allowed(&buddy("lead"), Op::Admin, &Subject::Owner), "admin is owner only");
-    assert!(!allowed(&buddy("gone"), Op::Post, &on("gone")), "archived buddies are denied");
+    assert!(!allowed(&buddy("gone"), Op::CreateChannel, &Subject::Owner), "archived buddies are denied");
     assert!(!allowed(&buddy("mid"), Op::WriteDoc, &Subject::Owner));
+}
+
+#[test]
+fn channel_access_is_membership_for_direct_and_open_for_public_and_task() {
+    let mut f = fixture();
+    let s = &mut f.store;
+    let direct = s.open_channel(&buddy("mid"), dm("mid", "ic")).unwrap();
+    let public = s
+        .create_channel(
+            &buddy("ic"),
+            ChannelInput { workspace_id: WS.into(), name: "general".into(), purpose: "p".into(), key: "c".into() },
+        )
+        .unwrap();
+    let task = s
+        .upsert_task(
+            &buddy("ic"),
+            TaskWrite::Create { owner_id: "ic".into(), parent_id: None, title: "t".into(), done_criteria: "d".into(), key: "t".into() },
+        )
+        .unwrap();
+    let task = s.open_channel(&buddy("peer"), ChannelRef::Task { task_id: task.id }).unwrap();
+    let allowed = |s: &Store, actor: &Actor, op: Op, channel: &Channel| {
+        s.authorize(actor, op, &Subject::Channel { id: channel.id.clone() }).unwrap() == Decision::Allowed
+    };
+    for op in [Op::Post, Op::ReadChannel] {
+        assert!(allowed(s, &buddy("ic"), op, &direct) && allowed(s, &Actor::Owner, op, &direct));
+        assert!(!allowed(s, &buddy("lead"), op, &direct), "a manager is not a member of its reports' direct channels");
+        assert!(allowed(s, &buddy("peer"), op, &public) && allowed(s, &buddy("peer"), op, &task));
+        assert!(!allowed(s, &buddy("gone"), op, &public), "archived buddies are denied");
+    }
+    let read = s.list_posts(&buddy("peer"), PostQuery::Channel { channel_id: direct.id.clone() }, None, 10).unwrap_err();
+    assert!(matches!(read, CoreError::Denied(_)), "{read}");
+    let wrote = s.post(&buddy("peer"), ChannelRef::Id { id: direct.id.clone() }, request("hi", "k")).unwrap_err();
+    assert!(matches!(wrote, CoreError::Denied(_)), "{wrote}");
+    // Opening someone else's direct channel is denied, and the attempt leaves no channel behind.
+    let opened = s.post(&buddy("peer"), dm("lead", "ic"), request("hi", "k2")).unwrap_err();
+    assert!(matches!(opened, CoreError::Denied(_)), "{opened}");
+    let conn = rusqlite::Connection::open(&f.path).unwrap();
+    assert_eq!(conn.query_row("SELECT count(*) FROM channel WHERE kind = 'direct'", [], |r| r.get::<_, i64>(0)).unwrap(), 1);
+}
+
+#[test]
+fn one_direct_channel_per_member_set_even_under_a_race() {
+    let f = fixture();
+    let path = f.path.to_str().unwrap().to_string();
+    let mut s = Store::open(&path).unwrap();
+    let a = s.open_channel(&buddy("mid"), dm("mid", "ic")).unwrap();
+    let members = ChannelRef::Direct { members: vec![buddy("ic"), buddy("mid"), buddy("ic")] };
+    assert_eq!(s.open_channel(&buddy("ic"), members).unwrap().id, a.id, "order and duplicates do not make a new channel");
+    assert_ne!(s.open_channel(&Actor::Owner, ChannelRef::Direct { members: vec![Actor::Owner, buddy("ic")] }).unwrap().id, a.id);
+
+    for round in 0..10 {
+        let pair = ["lead", "peer"];
+        let barrier = Arc::new(Barrier::new(2));
+        let posts: Vec<Post> = (0..2)
+            .map(|i| {
+                let (barrier, path) = (barrier.clone(), path.clone());
+                std::thread::spawn(move || {
+                    let mut store = Store::open(&path).unwrap();
+                    barrier.wait();
+                    let input = PostInput { kind: PostKind::Inform, ..request("hi", &format!("race-{round}-{i}")) };
+                    store.post(&buddy(pair[i]), dm(pair[0], pair[1]), input).unwrap()
+                })
+            })
+            .collect::<Vec<_>>()
+            .into_iter()
+            .map(|h| h.join().unwrap())
+            .collect();
+        assert_eq!(posts[0].channel_id, posts[1].channel_id, "round {round}: both posts land in one channel");
+    }
+    let conn = rusqlite::Connection::open(&f.path).unwrap();
+    let count = |sql: &str| conn.query_row(sql, [], |r| r.get::<_, i64>(0)).unwrap();
+    assert_eq!(count("SELECT count(*) FROM channel WHERE kind = 'direct' AND member_key = 'lead,peer'"), 1);
+    assert_eq!(count("SELECT count(*) FROM channel_member WHERE channel_id = (SELECT id FROM channel WHERE member_key = 'lead,peer')"), 2);
 }
 
 #[test]
@@ -114,13 +190,13 @@ fn upsert_task_is_compare_and_swap() {
 fn idempotency_key_replays_and_rejects_a_changed_payload() {
     let mut f = fixture();
     let s = &mut f.store;
-    let a = s.post(&buddy("peer"), request("mid", "hello", "k1")).unwrap();
-    let again = s.post(&buddy("peer"), request("mid", "hello", "k1")).unwrap();
+    let a = s.post(&buddy("peer"), dm("peer", "mid"), request("hello", "k1")).unwrap();
+    let again = s.post(&buddy("peer"), dm("peer", "mid"), request("hello", "k1")).unwrap();
     assert_eq!(a.id, again.id, "a replay returns the first result");
-    let page = s.list_posts(PostQuery::To { target: Target::Buddy { id: "mid".into() } }, None, 10).unwrap();
+    let page = s.list_posts(&buddy("mid"), PostQuery::Channel { channel_id: a.channel_id.clone() }, None, 10).unwrap();
     assert_eq!(page.posts.len(), 1, "a replay writes nothing");
     assert_eq!(s.list_runs(RunQuery::Buddy { buddy_id: "mid".into() }, 10).unwrap().len(), 1, "and queues no second run");
-    let changed = s.post(&buddy("peer"), request("mid", "a different body", "k1")).unwrap_err();
+    let changed = s.post(&buddy("peer"), dm("peer", "mid"), request("a different body", "k1")).unwrap_err();
     assert!(matches!(changed, CoreError::IdempotencyConflict(_)), "{changed}");
 }
 
@@ -182,35 +258,81 @@ fn one_running_run_per_conversation() {
 }
 
 #[test]
-fn request_reply_round_trip_and_failure_notice() {
+fn request_answer_round_trip_and_failure_notice() {
     let mut f = fixture();
     let s = &mut f.store;
-    let asked = s.post(&buddy("mid"), request("ic", "please do X", "r1")).unwrap();
-    assert_eq!(asked.reply, Reply::Awaiting);
+    let asked = s.post(&buddy("mid"), dm("mid", "ic"), request("please do X", "r1")).unwrap();
+    assert_eq!(asked.request, RequestState::Awaiting);
     assert_eq!(s.inbox(&buddy("ic"), WS).unwrap().requests.len(), 1);
+    assert_eq!(s.inbox(&buddy("mid"), WS).unwrap().requests.len(), 0, "the asker owes nothing");
     assert_eq!(s.inbox(&buddy("mid"), WS).unwrap().waiting_on.len(), 1);
+    let unread = |s: &Store, who: &str| s.inbox(&buddy(who), WS).unwrap().channels.iter().map(|c| c.unread).sum::<i64>();
+    assert_eq!((unread(s, "ic"), unread(s, "mid")), (1, 0), "a direct channel has read cursors like any channel");
 
     let claim = s.claim_run(60_000).unwrap().unwrap();
     assert_eq!((claim.run.buddy_id.as_str(), &claim.run.input), ("ic", &RunInput::Post { post_id: asked.id.clone() }));
-    let replied = s
-        .reply(
+    let answer = s
+        .answer(
             &buddy("ic"),
-            ReplyInput { post_id: asked.id.clone(), body: "done".into(), evidence: vec!["a.md".into()], key: "rep".into() },
+            AnswerInput { request_id: asked.id.clone(), body: "done".into(), evidence: vec!["a.md".into()], key: "rep".into() },
         )
         .unwrap();
-    assert!(matches!(replied.reply, Reply::Replied { ref body, .. } if body == "done"));
+    assert_eq!(
+        (answer.channel_id.as_str(), answer.reply_to_id.as_deref(), answer.root_id.as_deref(), &answer.author),
+        (asked.channel_id.as_str(), Some(asked.id.as_str()), Some(asked.id.as_str()), &buddy("ic")),
+        "the answer is a reply post in the request's thread"
+    );
+    assert_eq!(s.get_post(&buddy("mid"), &asked.id).unwrap().request, RequestState::Answered { answer_id: answer.id.clone() });
+    let again =
+        s.answer(&buddy("ic"), AnswerInput { request_id: asked.id.clone(), body: "twice".into(), evidence: vec![], key: "rep2".into() });
+    assert!(matches!(again, Err(CoreError::Invalid(_))), "a request is answered once");
     s.settle_run(&claim.run.id, &claim.lease_token, Outcome::Complete { text: "ok".into() }).unwrap();
     let back = s.claim_run(60_000).unwrap().unwrap();
     assert_eq!((back.run.buddy_id.as_str(), back.run.conversation_id.as_deref()), ("mid", Some("conv-sender")));
     assert_eq!(back.run.input, RunInput::Reply { post_id: asked.id.clone() });
     s.settle_run(&back.run.id, &back.lease_token, Outcome::Complete { text: "read".into() }).unwrap();
 
-    s.post(&buddy("mid"), request("ic", "will fail", "r2")).unwrap();
+    s.mark_read(&buddy("ic"), &asked.channel_id, &answer.id).unwrap();
+    s.mark_read(&buddy("ic"), &asked.channel_id, &asked.id).unwrap();
+    assert_eq!(unread(s, "ic"), 0, "a cursor only moves forward");
+
+    let failing = s.post(&buddy("mid"), dm("mid", "ic"), request("will fail", "r2")).unwrap();
     let claim = s.claim_run(60_000).unwrap().unwrap();
     s.settle_run(&claim.run.id, &claim.lease_token, Outcome::Failed { code: "provider_error".into(), error: "boom".into() }).unwrap();
-    assert_eq!(s.list_posts(PostQuery::From { author: buddy("mid") }, None, 10).unwrap().posts[0].reply, Reply::Failed);
+    assert_eq!(s.get_post(&buddy("mid"), &failing.id).unwrap().request, RequestState::Failed);
     let notice = s.claim_run(60_000).unwrap().unwrap();
     assert_eq!((notice.run.buddy_id.as_str(), notice.run.input), ("mid", RunInput::FailureNotice { run_id: claim.run.id }));
+}
+
+#[test]
+fn two_answerers_race_and_exactly_one_answer_lands() {
+    let f = fixture();
+    let path = f.path.to_str().unwrap().to_string();
+    let mut s = Store::open(&path).unwrap();
+    for round in 0..10 {
+        let asked = s.post(&buddy("mid"), dm("mid", "ic"), request("which?", &format!("ask-{round}"))).unwrap();
+        let barrier = Arc::new(Barrier::new(2));
+        let results: Vec<Result<Post, CoreError>> = [buddy("ic"), Actor::Owner]
+            .into_iter()
+            .map(|who| {
+                let (barrier, path, id) = (barrier.clone(), path.clone(), asked.id.clone());
+                std::thread::spawn(move || {
+                    let mut store = Store::open(&path).unwrap();
+                    barrier.wait();
+                    store
+                        .answer(&who, AnswerInput { request_id: id, body: format!("{who:?}"), evidence: vec![], key: format!("a-{round}") })
+                })
+            })
+            .collect::<Vec<_>>()
+            .into_iter()
+            .map(|h| h.join().unwrap())
+            .collect();
+        let won: Vec<&Post> = results.iter().flatten().collect();
+        assert_eq!(won.len(), 1, "round {round}: {results:?}");
+        let thread = s.list_posts(&Actor::Owner, PostQuery::Thread { root_id: asked.id.clone() }, None, 10).unwrap();
+        assert_eq!(thread.posts.iter().map(|p| &p.id).collect::<Vec<_>>(), [&won[0].id], "round {round}: no orphan answer post");
+        assert_eq!(s.get_post(&Actor::Owner, &asked.id).unwrap().request, RequestState::Answered { answer_id: won[0].id.clone() });
+    }
 }
 
 #[test]

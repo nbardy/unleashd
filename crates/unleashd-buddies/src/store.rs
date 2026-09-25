@@ -3,6 +3,7 @@
 //! modules as further `impl Store` blocks.
 
 use crate::error::{CoreError, Result};
+use crate::posts::get_channel;
 use crate::schema;
 use crate::types::*;
 use rusqlite::{Connection, OptionalExtension, Row, Transaction, TransactionBehavior, params};
@@ -29,13 +30,16 @@ enum Rule {
     OwnerOnly,
     SelfOrManager,
     AnyBuddy,
+    /// Public and task channels: any active buddy. Direct channels: members only.
+    ChannelAccess,
 }
 
 fn rule(op: Op) -> Rule {
     match op {
         Op::Admin => Rule::OwnerOnly,
-        Op::Post => Rule::AnyBuddy,
-        Op::ReadDoc | Op::WriteDoc | Op::Reply | Op::WriteTask | Op::EnqueueRun | Op::CancelRun | Op::WriteSchedule => Rule::SelfOrManager,
+        Op::CreateChannel => Rule::AnyBuddy,
+        Op::Post | Op::ReadChannel => Rule::ChannelAccess,
+        Op::ReadDoc | Op::WriteDoc | Op::WriteTask | Op::EnqueueRun | Op::CancelRun | Op::WriteSchedule => Rule::SelfOrManager,
     }
 }
 
@@ -137,7 +141,8 @@ impl Store {
 
 // ---- authorize -------------------------------------------------------------------------------
 
-/// `owner | self | manager-of (transitive)`. The only authorization point.
+/// `owner | self | manager-of (transitive) | channel member`. The only authorization point.
+// Pattern: capability-grants (docs/patterns.md#capability-grants) — the only authorization rule.
 pub fn authorize(conn: &Connection, actor: &Actor, op: Op, subject: &Subject) -> Result<Decision> {
     match actor {
         Actor::Owner => Ok(Decision::Allowed),
@@ -152,11 +157,24 @@ fn buddy_decision(conn: &Connection, actor: &str, rule: Rule, subject: &Subject)
         (BuddyStatus::Archived, _, _) => denied(format!("{actor} is archived")),
         (_, Rule::OwnerOnly, _) => denied("owner only".into()),
         (_, Rule::AnyBuddy, _) => Ok(Decision::Allowed),
+        (_, Rule::ChannelAccess, Subject::Channel { id }) => channel_access(conn, actor, id),
+        (_, Rule::ChannelAccess, Subject::Owner | Subject::Buddy { .. }) => denied("posts live in channels".into()),
         (_, Rule::SelfOrManager, Subject::Owner) => denied("the owner's resources are owner only".into()),
+        (_, Rule::SelfOrManager, Subject::Channel { .. }) => denied("a channel is not a buddy's resource".into()),
         (_, Rule::SelfOrManager, Subject::Buddy { id }) if id == actor => Ok(Decision::Allowed),
         (_, Rule::SelfOrManager, Subject::Buddy { id }) => match manages(conn, actor, id)? {
             true => Ok(Decision::Allowed),
             false => denied(format!("{actor} is neither {id} nor one of its managers")),
+        },
+    }
+}
+
+fn channel_access(conn: &Connection, actor: &str, channel_id: &str) -> Result<Decision> {
+    match get_channel(conn, channel_id)?.kind {
+        ChannelKind::Public { .. } | ChannelKind::Task { .. } => Ok(Decision::Allowed),
+        ChannelKind::Direct { members } => match members.contains(&Actor::Buddy { id: actor.to_string() }) {
+            true => Ok(Decision::Allowed),
+            false => Ok(Decision::Denied { reason: format!("{actor} is not a member of {channel_id}") }),
         },
     }
 }
@@ -178,6 +196,7 @@ pub(crate) fn require(conn: &Connection, actor: &Actor, op: Op, subject: &Subjec
 }
 
 // ---- events and idempotency ------------------------------------------------------------------
+// Pattern: idempotency-keys (docs/patterns.md#idempotency-keys)
 
 enum Prior {
     Fresh,

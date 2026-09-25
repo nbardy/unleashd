@@ -26,6 +26,7 @@ function briefing(content: string): string {
     hasStartedSession: false,
     buddyContext,
     buddyBriefing: 'PRIVATE BRIEFING 🐱',
+    swarmDebugPrefix: null,
   });
 }
 

@@ -361,7 +361,7 @@ fn after_settle(tx: &Transaction, run: &Run, outcome: &Outcome) -> Result<()> {
 }
 
 fn close_request(tx: &Transaction, post_id: &str, state: &str, failed_run: Option<&str>) -> Result<()> {
-    let closed = tx.execute("UPDATE post SET reply_state = ?2 WHERE id = ?1 AND reply_state = 'awaiting'", params![post_id, state])?;
+    let closed = tx.execute("UPDATE post SET request = ?2 WHERE id = ?1 AND request = 'awaiting'", params![post_id, state])?;
     let post = get_post(tx, post_id)?;
     match (closed, failed_run, post.author) {
         (1, Some(run_id), Actor::Buddy { id }) => tx

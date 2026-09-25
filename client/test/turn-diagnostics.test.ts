@@ -7,9 +7,7 @@ import {
   type TurnDiagnosticsInput,
   buildTurnDiagnosticsViewModel,
   isActiveTurnStatus,
-  isNonterminalAttemptState,
   shouldPresentTurnAttempt,
-  shouldShowTypingIndicator,
   turnDiagnosticsFromAttempt,
   turnDiagnosticsPollDelay,
 } from '../src/components/turn-diagnostics';
@@ -32,7 +30,6 @@ test('attempt projection preserves every nonterminal lifecycle state', () => {
     assert.equal(view.label, expected);
     assert.equal(view.duration, '5s');
     assert.equal(isActiveTurnStatus(diagnostics.status), true);
-    assert.equal(isNonterminalAttemptState(state), true);
   }
 });
 
@@ -68,7 +65,6 @@ test('terminal projection remains distinct from active lifecycle states', () => 
   assert.equal(view.label, 'Interrupted by restart');
   assert.equal(view.duration, '4s');
   assert.equal(isActiveTurnStatus(interrupted.status), false);
-  assert.equal(isNonterminalAttemptState('interrupted'), false);
 });
 
 test('terminal updates do not masquerade as provider activity', () => {
@@ -131,34 +127,6 @@ test('maximum runtime and legacy timeout causes remain distinguishable', () => {
   assert.equal(legacy.reason, 'Legacy timeout (watchdog type unavailable)');
 });
 
-test('startup bridge heartbeat reports provider silence instead of generic activity', () => {
-  const diagnostics = turnDiagnosticsFromAttempt({
-    ...baseAttempt,
-    state: 'running',
-    lastActivityAt: '2026-07-29T00:11:15.000Z',
-    lastActivity: {
-      source: 'agent_cli_heartbeat',
-      providerEventType: 'progress',
-      providerEventSource: 'agent-cli.heartbeat',
-      heartbeat: {
-        unifiedEventSilentSeconds: 675,
-        rawStdoutSilentSeconds: 675,
-        phase: 'startup',
-      },
-    },
-  });
-  const view = buildTurnDiagnosticsViewModel(
-    diagnostics,
-    new Date('2026-07-29T00:11:37.000Z').getTime()
-  );
-
-  assert.equal(diagnostics.activity?.kind, 'bridge_heartbeat');
-  assert.equal(view.label, 'Waiting for provider output');
-  assert.equal(view.tone, 'warning');
-  assert.equal(view.lastActivity, 'Bridge heartbeat 22s ago · provider output silent 11m 15s');
-  assert.doesNotMatch(view.title, /Last activity/);
-});
-
 test('status component renders heartbeat-only startup as waiting, not generic activity', () => {
   const diagnostics = turnDiagnosticsFromAttempt({
     ...baseAttempt,
@@ -172,6 +140,8 @@ test('status component renders heartbeat-only startup as waiting, not generic ac
   });
   const now = new Date('2026-07-29T00:11:37.000Z').getTime();
   const view = buildTurnDiagnosticsViewModel(diagnostics, now);
+  assert.equal(diagnostics.activity?.kind, 'bridge_heartbeat');
+  assert.equal(view.tone, 'warning');
   for (const component of [
     createElement(TurnStatusView, { view }),
     createElement(TurnStatusMobile, { diagnostics, now }),
@@ -283,10 +253,4 @@ test('heartbeat-embedded native advancement is native progress, not a bridge-onl
   assert.equal(diagnostics.activity?.kind, 'native_progress');
   assert.equal(view.label, 'Working');
   assert.equal(view.lastActivity, 'Native Codex progress 22s ago · UI output silent 11m 15s');
-});
-
-test('typing indicator requires an actual text delta', () => {
-  assert.equal(shouldShowTypingIndicator(true, ''), false);
-  assert.equal(shouldShowTypingIndicator(true, 'First visible delta'), true);
-  assert.equal(shouldShowTypingIndicator(false, 'Buffered text'), false);
 });

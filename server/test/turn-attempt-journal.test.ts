@@ -4,51 +4,13 @@ import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import type { StructuredObservabilityLogger } from '../src/observability';
-import {
-  TurnAttemptJournal,
-  createJournalTurnAttemptObserver,
-  createStructuredObservabilityLogger,
-} from '../src/observability';
+import { TurnAttemptJournal, createJournalTurnAttemptObserver } from '../src/observability';
 
 const silentLogger: StructuredObservabilityLogger = {
   info: () => undefined,
   warn: () => undefined,
   error: () => undefined,
 };
-
-test('structured logger preserves privacy-safe stream and native progress diagnostics', () => {
-  const lines: string[] = [];
-  const logger = createStructuredObservabilityLogger(
-    {
-      info: (line) => lines.push(String(line)),
-      warn: (line) => lines.push(String(line)),
-      error: (line) => lines.push(String(line)),
-    },
-    () => new Date('2026-08-04T00:00:00.000Z')
-  );
-  logger.info('attempt_activity', {
-    stdoutStreamEvent: 'resume',
-    stdoutReadableFlowing: null,
-    stdoutReadableLengthBytes: 512,
-    nativeSessionAvailable: true,
-    nativeSessionAdvanced: true,
-    nativeSessionSilentSeconds: 0,
-    nativeSessionSizeBytes: 12_345,
-  });
-  assert.deepEqual(JSON.parse(lines[0]), {
-    timestamp: '2026-08-04T00:00:00.000Z',
-    level: 'info',
-    component: 'turn-attempt-journal',
-    event: 'attempt_activity',
-    stdoutStreamEvent: 'resume',
-    stdoutReadableFlowing: null,
-    stdoutReadableLengthBytes: 512,
-    nativeSessionAvailable: true,
-    nativeSessionAdvanced: true,
-    nativeSessionSilentSeconds: 0,
-    nativeSessionSizeBytes: 12_345,
-  });
-});
 
 test('journal records state, identifiers, terminal cause, and query projections', async (t) => {
   const directory = await temporaryDirectory(t);

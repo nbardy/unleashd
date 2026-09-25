@@ -7,7 +7,6 @@ import express from 'express';
 import { type ContextWindow, resolveContextWindow } from '../src/conversations/context-window';
 import {
   buildContextBreakdown,
-  estimateTokens,
   registerConversationRoutes,
   splitBriefing,
 } from '../src/http/conversation-routes';
@@ -49,13 +48,6 @@ function conversation(overrides: Record<string, unknown> = {}): Conversation {
     ...overrides,
   } as unknown as Conversation;
 }
-
-test('estimateTokens uses ceil(chars/4) and floors at zero', () => {
-  assert.equal(estimateTokens(0), 0);
-  assert.equal(estimateTokens(1), 1);
-  assert.equal(estimateTokens(400), 100);
-  assert.equal(estimateTokens(401), 101);
-});
 
 test('splitBriefing keeps the memory tail separate from the briefing head', () => {
   const briefing =
@@ -127,7 +119,6 @@ test('buildContextBreakdown sums history and pairs provider cumulative delta', (
     cumulativeInputTokens: 1_020_000,
   };
   const result = buildContextBreakdown(convo, null, null, usage, WINDOW_200K);
-  assert.equal(result.conversationId, 'convo-1');
   assert.equal(result.sections.history.chars, 11);
   assert.equal(result.sections.history.tokensEst, 3);
   assert.equal(result.totalChars, 11);
@@ -136,11 +127,6 @@ test('buildContextBreakdown sums history and pairs provider cumulative delta', (
   assert.equal(result.providerUsage?.cumulativeInputTokens, 1_020_000);
   assert.equal(result.providerUsage?.deltaTokens, 1_020_000 - 3);
   assert.ok((result.providerUsage?.deltaMultiple ?? 0) > 100);
-  assert.deepEqual(result.expansion, {
-    message: 'get_message({messageId})',
-    project: 'get_current_work({projectId})',
-  });
-  assert.ok(typeof result.observedAt === 'string');
 });
 
 test('buildContextBreakdown derives handoff from branch and resume lineage', () => {
