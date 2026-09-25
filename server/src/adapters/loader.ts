@@ -87,6 +87,7 @@ async function discoverAll(adapters: DiskAdapter[]): Promise<Discovery> {
         failed.push(adapter.provider);
         return;
       }
+      let statFailed = false;
 
       const statResults = await Promise.all(
         paths.map(async (filePath) => {
@@ -103,12 +104,18 @@ async function discoverAll(adapters: DiskAdapter[]): Promise<Discovery> {
               sizeBytes: adapter.provider === 'opencode' ? 1 : stat.size,
               adapter,
             };
-          } catch {
-            // File may have been deleted between discoverFiles() and stat()
+          } catch (error: unknown) {
+            // Deleted between discoverFiles() and stat(): simply gone. Any other
+            // error leaves the source unknown, so the discovery is incomplete.
+            if ((error as NodeJS.ErrnoException).code !== 'ENOENT') statFailed = true;
             return null;
           }
         })
       );
+      if (statFailed) {
+        console.warn(`[discover] ${adapter.provider}: some sources could not be stat'ed`);
+        failed.push(adapter.provider);
+      }
 
       for (const result of statResults) {
         if (result) files.push(result);
@@ -589,6 +596,7 @@ export async function pollForChanges(
   // Any path absent from this poll's discovery is deleted on disk and falls out naturally,
   // preventing the map from accumulating dead paths forever.
   const mtimes = new Map<string, number>();
+  let discoveryFailed = false;
   const adapters = options.adapters ?? diskAdapters;
   const readHistory = createHistoryReader(options, () =>
     discoverAll([...adapters]).then((discovery) => discovery.files)
@@ -602,6 +610,7 @@ export async function pollForChanges(
       console.warn(
         `[poll] ${adapter.provider}: discoverFiles() failed: ${err instanceof Error ? err.message : err}`
       );
+      discoveryFailed = true;
       continue;
     }
 
@@ -709,6 +718,16 @@ export async function pollForChanges(
           `[Poll] Failed to parse ${adapter.provider} session: ${path.basename(filePath)} (${error instanceof Error ? error.message : error})`
         );
       }
+    }
+  }
+
+  // A failed discovery observed nothing about its sources. Dropping them from
+  // the baseline made the next successful poll treat that provider's entire
+  // history as new and re-parse all of it. Keep every unseen prior entry this
+  // round; a later complete poll drops the ones that are really gone.
+  if (discoveryFailed) {
+    for (const [filePath, mtimeMs] of prevMtimes) {
+      if (!mtimes.has(filePath)) mtimes.set(filePath, mtimeMs);
     }
   }
 

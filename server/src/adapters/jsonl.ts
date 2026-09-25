@@ -91,45 +91,42 @@ export const CURSOR_PROJECTS_DIR = path.join(os.homedir(), '.cursor', 'projects'
 export async function getProjectDirectories(
   projectsDir: string = CLAUDE_PROJECTS_DIR
 ): Promise<string[]> {
-  try {
-    const entries = await fs.promises.readdir(projectsDir, { withFileTypes: true });
-    return entries
-      .filter((entry) => entry.isDirectory() && !entry.name.startsWith('.'))
-      .map((entry) => path.join(projectsDir, entry.name));
-  } catch (error: unknown) {
-    const code =
-      error instanceof Error && 'code' in error ? (error as NodeJS.ErrnoException).code : undefined;
-    if (code === 'ENOENT') {
-      // Optional provider storage does not exist until that CLI creates a session.
-      return [];
-    }
-    console.warn(
-      `Failed to read projects directory: ${projectsDir} (${error instanceof Error ? error.message : error})`
-    );
-    return [];
-  }
+  // Optional provider storage does not exist until that CLI creates a session.
+  const entries = await readDiscoveryDirectory(projectsDir);
+  return entries
+    .filter((entry) => entry.isDirectory() && !entry.name.startsWith('.'))
+    .map((entry) => path.join(projectsDir, entry.name));
 }
 
 /**
  * Scan a directory for files with a specific extension.
  */
-async function scanDirectoryByExtension(projectPath: string, extension: string): Promise<string[]> {
+/**
+ * Discovery reads: a directory that does not exist (yet) is empty; any other
+ * failure throws, so the loader marks the provider's discovery failed.
+ *
+ * These used to log and return [] for every error. A transient EACCES/EMFILE
+ * then read as "this provider has no sessions": startup dropped them, the next
+ * poll saw them all as new and re-parsed the whole history, and since 2026-09-25
+ * the session-cache prune would delete their records (loader.ts).
+ */
+async function readDiscoveryDirectory(directory: string): Promise<fs.Dirent[]> {
   try {
-    const entries = await fs.promises.readdir(projectPath, { withFileTypes: true });
-    return entries
-      .filter((entry) => entry.isFile() && entry.name.endsWith(extension))
-      .map((entry) => path.join(projectPath, entry.name));
+    return await fs.promises.readdir(directory, { withFileTypes: true });
   } catch (error: unknown) {
-    const code =
-      error instanceof Error && 'code' in error ? (error as NodeJS.ErrnoException).code : undefined;
-    if (code === 'ENOENT') {
-      return [];
-    }
-    console.warn(
-      `Failed to scan project directory: ${projectPath} (${error instanceof Error ? error.message : error})`
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === 'ENOENT' || code === 'ENOTDIR') return [];
+    throw new Error(
+      `Cannot read ${directory}: ${error instanceof Error ? error.message : String(error)}`
     );
-    return [];
   }
+}
+
+async function scanDirectoryByExtension(projectPath: string, extension: string): Promise<string[]> {
+  const entries = await readDiscoveryDirectory(projectPath);
+  return entries
+    .filter((entry) => entry.isFile() && entry.name.endsWith(extension))
+    .map((entry) => path.join(projectPath, entry.name));
 }
 
 /**
@@ -2110,12 +2107,7 @@ function parseMuseTimestamp(recordedAt: unknown): Date | null {
 }
 
 async function collectMuseSessionFiles(dir: string, out: string[]): Promise<void> {
-  let entries: fs.Dirent[];
-  try {
-    entries = await fs.promises.readdir(dir, { withFileTypes: true });
-  } catch {
-    return;
-  }
+  const entries = await readDiscoveryDirectory(dir);
   for (const entry of entries) {
     const full = path.join(dir, entry.name);
     if (entry.isDirectory()) {

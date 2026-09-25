@@ -4,8 +4,10 @@ import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import type { DiskAdapter, ParsedSession } from '../src/adapters/disk-adapter';
-import { loadAllConversations } from '../src/adapters/loader';
+import { getProjectDirectories } from '../src/adapters/jsonl';
+import { loadAllConversations, pollForChanges } from '../src/adapters/loader';
 import { NormalizedSessionCache } from '../src/adapters/session-cache';
+import { TranscriptTails } from '../src/adapters/transcript-tails';
 
 function parsedSession(filePath: string): ParsedSession {
   const now = new Date();
@@ -203,4 +205,40 @@ test('startup emits a small first batch before returning to the steady batch siz
   });
 
   assert.deepEqual(batchSizes, [3, 10, 5]);
+});
+
+test('discovery reads a missing directory as empty but refuses to guess past an unreadable one', async (t) => {
+  // Until 2026-09-25 every readdir error returned [], so a transient EACCES or
+  // EMFILE read as "this provider has no sessions" (see readDiscoveryDirectory).
+  const root = await fs.mkdtemp(path.join(tmpdir(), 'unleashd-discovery-'));
+  const locked = path.join(root, 'locked');
+  await fs.mkdir(path.join(locked, 'project'), { recursive: true });
+  await fs.chmod(locked, 0o000);
+  t.after(async () => {
+    await fs.chmod(locked, 0o700);
+    await fs.rm(root, { recursive: true, force: true });
+  });
+
+  assert.deepEqual(await getProjectDirectories(path.join(root, 'missing')), []);
+  await assert.rejects(getProjectDirectories(locked), /Cannot read/);
+});
+
+test('a poll whose discovery failed keeps the previous baseline', async () => {
+  // Dropping the failed provider's sources from the baseline made the next
+  // successful poll treat its whole history as new and re-parse all of it.
+  const previous = new Map([['/sessions/a.jsonl', 1_000]]);
+  const failing: DiskAdapter = {
+    provider: 'claude',
+    sessionFileKeys: () => [],
+    discoverFiles: async () => {
+      throw new Error('EMFILE');
+    },
+    parseFile: async () => null,
+  };
+  const result = await pollForChanges(previous, new Set(), {
+    adapters: [failing],
+    tails: new TranscriptTails(),
+  });
+  assert.equal(result.mtimes.get('/sessions/a.jsonl'), 1_000);
+  assert.equal(result.updated.size, 0);
 });
