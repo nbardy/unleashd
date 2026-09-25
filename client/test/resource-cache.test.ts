@@ -188,13 +188,13 @@ test('eviction never discards a key a mounted view is reading', async () => {
 // unconditionally again brings that back without failing anything else.
 test('a refresh that returns equal data leaves the entry itself untouched', async () => {
   const resource: Resource<Array<{ id: string; body: string }>> = {
-    key: '/api/buddies/lists/l/posts',
+    key: '/api/buddies/channels/c/posts',
     load: async () => [{ id: 'p1', body: 'hello' }],
   };
   await loadResource(resource);
-  const before = read('/api/buddies/lists/l/posts');
+  const before = read('/api/buddies/channels/c/posts');
   await loadResource(resource);
-  assert.equal(read('/api/buddies/lists/l/posts'), before);
+  assert.equal(read('/api/buddies/channels/c/posts'), before);
 });
 
 // Posts arrive as a sliding "latest N" window: a new post shifts every index.
@@ -206,14 +206,14 @@ test('a new post keeps the identity of every unchanged post in the window', asyn
     { id: 'p2', body: 'two' },
   ];
   const resource: Resource<typeof posts> = {
-    key: '/api/buddies/lists/l/posts',
+    key: '/api/buddies/channels/c/posts',
     load: async () => structuredClone(posts),
   };
   await loadResource(resource);
-  const first = read<typeof posts>('/api/buddies/lists/l/posts');
+  const first = read<typeof posts>('/api/buddies/channels/c/posts');
   posts = [{ id: 'p4', body: 'four' }, ...posts.slice(0, 1)];
   await loadResource(resource);
-  const second = read<typeof posts>('/api/buddies/lists/l/posts');
+  const second = read<typeof posts>('/api/buddies/channels/c/posts');
   assert.ok(first.kind === 'ready' && second.kind === 'ready');
   assert.equal(second.value[1], first.value[0], 'p3 keeps its identity');
   assert.deepEqual(second.value[0], { id: 'p4', body: 'four' });
@@ -227,7 +227,7 @@ test('an invalidation while a load is in flight loads once more after it', async
   let server = 'before';
   let calls = 0;
   const resource: Resource<string> = {
-    key: '/api/buddies/lists/l/responding',
+    key: '/api/buddies/channels/c/responding',
     load: () => {
       calls += 1;
       return calls === 1 ? gate.promise : Promise.resolve(server);
@@ -247,19 +247,23 @@ test('an invalidation while a load is in flight loads once more after it', async
   release();
 });
 
-// A Buddy's mention reply reaches the client only as `channel_changed`. The
-// rail row counts that reply and sorts by it, so the channel list refreshes
-// with the channel; until 2026-09-25 it waited out the 30 s backstop poll.
-test('a channel change refreshes that channel and the channel list, not other channels', async () => {
+// A Buddy's mention reply reaches the client only as `channel_changed`, whose
+// id may be any channel kind. The channel's own keys refresh, and so do the
+// keys the push cannot address by channel: the open thread, the owner's
+// inboxes (rail unread counts, requests, the tab title) and task details
+// (their comments are the task channel). Until 2026-09-25 the rail waited out
+// the 30 s backstop poll for a reply.
+test('a channel change refreshes that channel, threads and inboxes, not other channels', async () => {
   const loads = new Map<string, number>();
   const keys = [
-    '/api/buddies/lists/list_a/posts?limit=50',
-    '/api/buddies/lists/list_a/responding',
-    '/api/buddies/lists?workspaceId=w',
-    // The Task-filtered feed spans channels and is keyed by Task, not list;
-    // until 2026-09-25 it missed the push and a reply showed up to 30 s late.
-    '/api/buddies/posts?workspaceId=w&projectId=p&limit=50',
-    '/api/buddies/lists/list_b/posts?limit=50',
+    '/api/buddies/channels/ch_a/posts?limit=50',
+    '/api/buddies/channels/ch_a/responding',
+    '/api/buddies/posts/root/thread?limit=50',
+    '/api/buddies/workspaces/w/inbox',
+    'buddy-owner-inboxes:w,v',
+    '/api/buddies/tasks/t1',
+    '/api/buddies/channels/ch_b/posts?limit=50',
+    '/api/buddies/channels/ch_ab/posts?limit=50',
   ];
   const releases = keys.map((key) => retainResourceKey(key));
   const counted = (key: string): Resource<string> => ({
@@ -270,11 +274,11 @@ test('a channel change refreshes that channel and the channel list, not other ch
     },
   });
   await Promise.all(keys.map((key) => loadResource(counted(key))));
-  invalidateChannelResources('list_a');
+  invalidateChannelResources('ch_a');
   await new Promise((resolve) => setImmediate(resolve));
   assert.deepEqual(
     keys.map((key) => loads.get(key)),
-    [2, 2, 2, 2, 1]
+    [2, 2, 2, 2, 2, 2, 1, 1]
   );
   for (const release of releases) release();
 });

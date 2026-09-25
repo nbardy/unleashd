@@ -3,6 +3,8 @@ import { register } from 'node:module';
 import test from 'node:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
+import { buddyFixture, rosterFixture } from './fixtures/buddy-roster';
+import { inboxFixture, postFixture, publicChannel } from './fixtures/channel-posts';
 register(
   `data:text/javascript,${encodeURIComponent(`
     export async function load(url, context, nextLoad) {
@@ -31,38 +33,30 @@ const CHANNELS = `/buddies/workspaces/${WS}/channels`;
 // mobile router (channel-route.ts). A link pasted into a bug report from the
 // desktop must open the same thread, and the same reply, on a phone.
 test('a desktop message permalink opens its thread and reply on mobile', () => {
-  const post = {
+  const post = postFixture({
     id: 'post_reply',
-    listId: 'list_a',
-    workspaceId: WS,
-    author: { kind: 'buddy' as const, buddyId: 'b1' },
-    threadRootId: 'post_root',
-    replyCount: 0,
-    latestReplyAt: null,
+    channelId: 'ch_a',
+    author: { kind: 'buddy', id: 'b1' },
+    rootId: 'post_root',
+    replyToId: 'post_root',
     purpose: 'reply',
-    body: 'A confusing answer.',
-    evidence: [],
-    projectId: null,
-    createdAt: '2026-09-24T00:00:00.000Z',
-    senderConversationId: null,
-    senderRunId: null,
-  };
+  });
   const reply = new URL(channelLinkPath(WS, postLink(post)), 'http://host');
   assert.equal(reply.pathname, CHANNELS);
   assert.deepEqual(mobileChannelScreen(reply.search), {
     kind: 'thread',
-    listId: 'list_a',
+    channelId: 'ch_a',
     rootId: 'post_root',
     linkedPostId: 'post_reply',
   });
   // A top-level message links to its own thread, which loads it by id however old it is.
   const root = new URL(
-    channelLinkPath(WS, postLink({ ...post, id: 'post_root', threadRootId: null })),
+    channelLinkPath(WS, postLink(postFixture({ id: 'post_root', channelId: 'ch_a' }))),
     'http://host'
   );
   assert.deepEqual(mobileChannelScreen(root.search), {
     kind: 'thread',
-    listId: 'list_a',
+    channelId: 'ch_a',
     rootId: 'post_root',
     linkedPostId: null,
   });
@@ -94,58 +88,43 @@ test('channel URLs belong to the Channels tab; only channel and thread screens a
   assert.deepEqual(back, { path: `${CHANNELS}?channel=list_a`, section: 'channels' });
 });
 
-const post = (overrides: Record<string, unknown>) => ({
-  listId: 'list_a',
-  workspaceId: WS,
-  threadRootId: null,
-  replyCount: 0,
-  latestReplyAt: null,
-  purpose: 'message',
-  evidence: [],
-  projectId: null,
-  senderConversationId: null,
-  senderRunId: null,
-  ...overrides,
-});
+const lead = buddyFixture({ id: 'lead', name: 'Lead', role: 'Own the work', workspaceId: WS });
 
 async function seed() {
   await loadResource({
-    key: `/api/buddies/lists?workspaceId=${WS}`,
-    load: async () => [
-      {
-        id: 'list_a',
-        workspaceId: WS,
-        name: 'general',
-        purpose: 'Team chat',
-        createdBy: { kind: 'owner' },
-        createdAt: '2026-09-24T00:00:00.000Z',
-        postCount: 2,
-        latestPostAt: '2026-09-24T01:00:00.000Z',
-      },
-    ],
+    key: '/api/buddies/overview',
+    load: async () => [rosterFixture([lead], { id: WS, name: 'unleashd' })],
   });
   await loadResource({
-    key: `/api/buddies/workspaces/${WS}/activity`,
+    key: `/api/buddies/workspaces/${WS}/inbox`,
+    load: async () =>
+      inboxFixture([
+        { channel: publicChannel('ch_a', 'general', WS), unread: 0 },
+        {
+          channel: {
+            id: 'ch_dm',
+            workspaceId: WS,
+            kind: { type: 'direct', members: [{ kind: 'owner' }, { kind: 'buddy', id: 'lead' }] },
+            createdBy: { kind: 'owner' },
+            createdAt: '2026-09-24T00:00:00.000Z',
+          },
+          unread: 0,
+        },
+      ]),
+  });
+  await loadResource({ key: `/api/buddies/tasks?workspaceId=${WS}`, load: async () => [] });
+  await loadResource({ key: '/api/buddies/channels/ch_a/responding', load: async () => [] });
+  await loadResource({
+    key: '/api/buddies/channels/ch_a/posts?limit=50',
     load: async () => ({
-      generatedAt: '2026-09-24T00:00:00.000Z',
-      workspace: { id: WS, name: 'unleashd', rootPath: '~/git/unleashd' },
-      members: [{ id: 'lead', name: 'Lead', role: 'Own the work', status: 'active', jobs: [] }],
+      posts: [
+        postFixture({
+          id: 'post_ask',
+          body: '[@Lead](buddy:lead) ship it?',
+          createdAt: '2026-09-24T01:00:00.000Z',
+        }),
+      ],
     }),
-  });
-  await loadResource({ key: `/api/buddies/workspaces/${WS}/tasks`, load: async () => [] });
-  await loadResource({ key: '/api/buddies/lists/list_a/responding', load: async () => [] });
-  await loadResource({
-    key: '/api/buddies/lists/list_a/posts?limit=50',
-    load: async () => [
-      post({
-        id: 'post_ask',
-        author: { kind: 'owner' },
-        body: '[@Lead](buddy:lead) ship it?',
-        replyCount: 1,
-        latestReplyAt: '2026-09-24T01:05:00.000Z',
-        createdAt: '2026-09-24T01:00:00.000Z',
-      }),
-    ],
   });
 }
 
@@ -163,54 +142,45 @@ function render(url: string) {
 
 test('mobile channel screen: back to Home, thread link, touch composer', async () => {
   await seed();
-  const html = render(`${CHANNELS}?channel=list_a`);
+  const html = render(`${CHANNELS}?channel=ch_a`);
   assert.match(
     html,
     /class="mobile-channel-header__back"[^>]*href="\/buddies\/workspaces\/ws-phone\/channels"/
   );
   assert.match(html, /<h1># general<\/h1>/);
   assert.match(html, /<a class="channel-mention" href="\/buddies\/lead"[^>]*>@Lead<\/a>/);
-  // "1 reply" opens the thread screen at the shared URL.
+  // Every root opens its thread screen at the shared URL (posts carry no reply count).
   assert.match(
     html,
-    /class="mobile-channel-post__replies" href="\/buddies\/workspaces\/ws-phone\/channels\?channel=list_a&amp;thread=post_ask"/
+    /class="mobile-channel-post__reply" href="\/buddies\/workspaces\/ws-phone\/channels\?channel=ch_a&amp;thread=post_ask"/
   );
   // Touch composer: Return is a newline, so no Shift+Enter hint.
   assert.match(html, /placeholder="Message #general"/);
   assert.doesNotMatch(html, /new line/);
 });
 
-// A thread now opens on its newest page, so a permalink to an older reply
-// would open without it. It opens from that reply instead (`from=`): the
-// linked reply and everything after it, the root above the older replies'
-// flame.
-test('a reply permalink opens a long thread from that reply, root on top, older ones behind the flame', async () => {
+// A reply permalink opens its thread; the linked reply is highlighted, the
+// root sits on top and older replies wait behind the flame.
+test('a reply permalink opens its thread with the reply highlighted and the root on top', async () => {
   await seed();
-  const root = post({
-    id: 'post_ask',
-    author: { kind: 'owner' },
-    body: '[@Lead](buddy:lead) ship it?',
-    replyCount: 126,
-    latestReplyAt: '2026-09-24T02:25:00.000Z',
-    createdAt: '2026-09-24T01:00:00.000Z',
-  });
+  const reply = (number: number) =>
+    postFixture({
+      id: `reply-${number}`,
+      author: { kind: 'buddy', id: 'lead' },
+      rootId: 'post_ask',
+      purpose: 'reply',
+      body: `Reply number ${number}.`,
+      createdAt: new Date(Date.UTC(2026, 8, 24, 2, number - 100)).toISOString(),
+    });
   await loadResource({
-    key: '/api/buddies/lists/list_a/threads/post_ask?from=reply-120',
+    key: '/api/buddies/posts/post_ask/thread?limit=50',
     load: async () => ({
-      root,
-      replies: [125, 124, 123, 122, 121, 120].map((number) =>
-        post({
-          id: `reply-${number}`,
-          author: { kind: 'buddy', buddyId: 'lead' },
-          threadRootId: 'post_ask',
-          purpose: 'reply',
-          body: `Reply number ${number}.`,
-          createdAt: new Date(Date.UTC(2026, 8, 24, 2, number - 100)).toISOString(),
-        })
-      ),
+      root: postFixture({ id: 'post_ask', body: '[@Lead](buddy:lead) ship it?' }),
+      posts: [125, 124, 123, 122, 121, 120].map(reply),
+      next: { createdAt: '2026-09-24T02:19:00.000Z', id: 'reply-119' },
     }),
   });
-  const html = render(`${CHANNELS}?channel=list_a&thread=post_ask&post=reply-120`);
+  const html = render(`${CHANNELS}?channel=ch_a&thread=post_ask&post=reply-120`);
   const at = ['ship it?', 'class="channel-history"', 'Reply number 120.', 'Reply number 125.'].map(
     (needle) => html.indexOf(needle)
   );
@@ -223,11 +193,13 @@ test('a reply permalink opens a long thread from that reply, root on top, older 
   assert.match(html, /data-post-id="reply-120" data-linked="true"/);
 });
 
-test('mobile channels Home lists channels and Buddies with a visible Wake', async () => {
+test('mobile channels Home lists channels, DMs by Buddy, and Buddies with a visible Wake', async () => {
   await seed();
   const html = render(CHANNELS);
   assert.match(html, /mobile-channels-row__name">general</);
   assert.match(html, /Add channel/);
+  const dms = html.slice(html.indexOf('Direct messages'));
+  assert.match(dms, /href="\/buddies\/workspaces\/ws-phone\/channels\?channel=ch_dm"/);
   assert.match(html, /mobile-channels-row__name">Lead</);
   assert.match(html, /aria-label="Wake Lead: catch up on the channels and act"/);
 });
@@ -236,29 +208,13 @@ test('mobile channels Home lists channels and Buddies with a visible Wake', asyn
 // workspace (an empty one) instead of where the team was active.
 test('the Channels tab opens the most recently active workspace first', async () => {
   const { overviewWorkspaces } = await import('../src/mobile/channels/ChannelsIndex');
-  const workspace = (id: string, name: string) => ({ id, name, root_path: `/tmp/${id}` });
-  const employee = (workspaces: ReturnType<typeof workspace>[]) =>
-    ({ workspaces }) as unknown as Parameters<typeof overviewWorkspaces>[0] extends infer O
-      ? O extends { employees: Array<infer E> }
-        ? E
-        : never
-      : never;
-  const ordered = overviewWorkspaces({
-    generatedAt: '2026-09-24T00:00:00.000Z',
-    employees: [employee([workspace('a', 'alpha-empty')]), employee([workspace('u', 'unleashd')])],
-    topLevel: [],
-    recentRuns: [
-      {
-        conversationId: 'c',
-        buddyId: 'b',
-        buddyName: 'B',
-        workspaceId: 'u',
-        workspaceName: 'unleashd',
-        status: 'complete',
-        lastActiveAt: '2026-09-24T01:00:00.000Z',
-      },
+  const ordered = overviewWorkspaces(
+    [
+      rosterFixture([], { id: 'a', name: 'alpha-empty' }),
+      rosterFixture([], { id: 'u', name: 'unleashd' }),
     ],
-  });
+    new Map([['u', Date.parse('2026-09-24T01:00:00.000Z')]])
+  );
   assert.deepEqual(
     ordered.map((entry) => entry.id),
     ['u', 'a']

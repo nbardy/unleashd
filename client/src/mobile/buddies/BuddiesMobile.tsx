@@ -4,7 +4,7 @@ import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { initials } from '../../components/buddies/ui-contract';
 import { useBuddyOverview } from '../../hooks/useBuddyData';
 import { mobileConversationRouteState } from '../../utils/conversation-route-state';
-import { type BuddyDirectorySort, mobileBuddyDirectoryAtom } from '../atoms/buddies';
+import { mobileBuddyDirectoryAtom } from '../atoms/buddies';
 import { createBuddyViaBuilder } from '../atoms/create';
 import { EmptyState } from '../components/EmptyState';
 import { MobileHeaderAction, MobilePage, MobileRefreshNotice } from '../components/MobileUI';
@@ -16,11 +16,7 @@ export function BuddiesMobile() {
   const overviewFetch = useBuddyOverview();
   const overview = overviewFetch.data;
   const [query, setQuery] = useState('');
-  const [sortKey, setSortKey] = useState<BuddyDirectorySort>('project');
-  const directoryAtom = useMemo(
-    () => mobileBuddyDirectoryAtom(overview, query, sortKey),
-    [overview, query, sortKey]
-  );
+  const directoryAtom = useMemo(() => mobileBuddyDirectoryAtom(overview, query), [overview, query]);
   const { groups, total, matched } = useAtomValue(directoryAtom);
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | null>(null);
@@ -121,17 +117,6 @@ export function BuddiesMobile() {
             spellCheck={false}
           />
         </label>
-        <label className="mobile-buddies__sort" aria-label="Sort buddies">
-          <select
-            value={sortKey}
-            onChange={(event) => setSortKey(event.target.value as BuddyDirectorySort)}
-            className="mobile-buddies__sort-select"
-            aria-label="Group buddies"
-          >
-            <option value="project">Project</option>
-            <option value="recent">Recent</option>
-          </select>
-        </label>
       </div>
 
       {matched === 0 ? (
@@ -141,10 +126,10 @@ export function BuddiesMobile() {
           <section className="mobile-buddies__group" key={group.id} aria-label={group.name}>
             <h2 className="mobile-buddies__group-heading">
               {group.name}
-              <span>{group.employees.length}</span>
+              <span>{group.entries.length}</span>
             </h2>
             <ul className="mobile-buddies__grid">
-              {group.employees.map((entry) => (
+              {group.entries.map((entry) => (
                 <li key={entry.buddy.id}>
                   <Link
                     className="mobile-buddy-card"
@@ -156,18 +141,9 @@ export function BuddiesMobile() {
                     <span className="mobile-buddy-card__identity">
                       <strong className="mobile-buddy-card__name">{entry.buddy.name}</strong>
                       <span className="mobile-buddy-card__role">{entry.buddy.role}</span>
-                      {(entry.currentWork.blocked > 0 ||
-                        entry.currentWork.active > 0 ||
-                        entry.buddy.status !== 'active') && (
-                        <span
-                          className="mobile-buddy-card__activity"
-                          data-blocked={entry.currentWork.blocked > 0 || undefined}
-                        >
-                          {entry.currentWork.blocked > 0
-                            ? `${entry.currentWork.blocked} blocked`
-                            : entry.currentWork.active > 0
-                              ? `${entry.currentWork.active} in progress`
-                              : entry.buddy.status}
+                      {entry.reports.length > 0 && (
+                        <span className="mobile-buddy-card__activity">
+                          {entry.reports.length} {entry.reports.length === 1 ? 'report' : 'reports'}
                         </span>
                       )}
                     </span>

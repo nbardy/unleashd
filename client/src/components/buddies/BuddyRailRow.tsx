@@ -2,6 +2,7 @@ import { BuddySigil } from './BuddySigil';
 import type { OpenDm } from './ChannelAuthor';
 import { WakeIcon, WakeIndicator } from './WakeIndicator';
 import { useBuddyDirectActions } from './buddy-direct-actions';
+import type { Buddy } from './types';
 
 // One Buddy in the desktop channels rail. Like Slack (and the mobile Buddies
 // home), the name opens the DM — the ongoing owner chat, history kept; on
@@ -10,16 +11,14 @@ import { useBuddyDirectActions } from './buddy-direct-actions';
 // current while it is open, like a selected channel.
 export function BuddyRailRow({
   member,
-  workspaceId,
   openDm,
   current,
 }: {
-  member: { id: string; name: string; role: string };
-  workspaceId: string;
+  member: Pick<Buddy, 'id' | 'name' | 'role'>;
   openDm: OpenDm;
   current: boolean;
 }) {
-  const direct = useBuddyDirectActions(member.id, workspaceId);
+  const direct = useBuddyDirectActions(member.id);
   const { action } = direct;
   return (
     <li className="channel-browser-buddy" data-failed={action.kind === 'failed' || undefined}>

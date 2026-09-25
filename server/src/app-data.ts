@@ -1,11 +1,8 @@
 import os from 'node:os';
 import path from 'node:path';
 
-// One derivation of the app data root, shared by the server and the Buddy MCP
-// child. The child gets UNLEASHD_DATA_DIR explicitly in its MCP env
-// (mcp-config.ts), because a provider CLI may not forward the server's own
-// environment — a child that fell back to ~/.agent-viewer would copy channel
-// media somewhere the server never serves from.
+// One derivation of the app data root. (Buddy tools now run in this process,
+// on the HTTP MCP endpoint, so no child needs it passed down any more.)
 export const APP_DATA_DIR_ENV = 'UNLEASHD_DATA_DIR';
 
 export function appDataDirectory(): string {

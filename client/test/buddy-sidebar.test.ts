@@ -1,13 +1,13 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { createDefaultConversationConfig, type Conversation } from '@unleashd/shared';
+import { type Conversation, createDefaultConversationConfig } from '@unleashd/shared';
 import { createStore } from 'jotai';
 import {
-  buddySidebarOverviewAtom,
-  buddySidebarProjectsAtom,
+  buddyBuilderConversationsAtom,
   buddySidebarCountAtom,
   buddySidebarGroupsAtom,
-  buddyBuilderConversationsAtom,
+  buddySidebarOverviewAtom,
+  buddySidebarProjectsAtom,
   sidebarRunningCountByFolderAtom,
 } from '../src/atoms/buddy-sidebar';
 import {
@@ -16,6 +16,23 @@ import {
   conversationsAtom,
   pendingCreationsAtom,
 } from '../src/atoms/conversations';
+
+// The sidebar's overview slice: workspaces with their Buddies (status decides the roster).
+const roster = (
+  id: string,
+  name: string,
+  rootPath: string,
+  buddies: Array<[id: string, name: string]>
+) => ({
+  id,
+  name,
+  rootPath,
+  buddies: buddies.map(([buddyId, buddyName]) => ({
+    id: buddyId,
+    name: buddyName,
+    status: 'active' as const,
+  })),
+});
 
 test('only roster memberships create workspace rows; orphan history remains accessible', () => {
   const store = createStore();
@@ -48,27 +65,10 @@ test('only roster memberships create workspace rows; orphan history remains acce
     createdAt: new Date('2026-09-13'),
   }));
   store.set(pendingCreationsAtom, new Map(pending.map((p) => [p.conversationId, p])));
-  const overview = {
-    employees: [
-      {
-        buddy: { id: 'lead', name: 'Real Lead' },
-        workspaces: [{ id: 'work', name: 'Real workspace', root_path: '/work' }],
-      },
-      {
-        buddy: { id: 'other-lead', name: 'Other Lead' },
-        workspaces: [{ id: 'other', name: 'Other' }],
-      },
-    ],
-    recentRuns: pending.map((p) => ({
-      conversationId: p.conversationId,
-      buddyId: p.buddyContext.buddyId,
-      workspaceId: p.buddyContext.workspaceId,
-      buddyName: 'Stale name',
-      workspaceName: 'Stale workspace',
-      status: 'completed',
-      lastActiveAt: '2026-09-13',
-    })),
-  };
+  const overview = [
+    roster('work', 'Real workspace', '/work', [['lead', 'Real Lead']]),
+    roster('other', 'Other', '/other', [['other-lead', 'Other Lead']]),
+  ];
   store.set(buddySidebarOverviewAtom, overview);
   const projects = store.get(buddySidebarProjectsAtom);
   assert.deepEqual(
@@ -93,16 +93,10 @@ test('only roster memberships create workspace rows; orphan history remains acce
   assert.equal(store.get(allConversationIdsAtom).length, 4);
 
   // Newly saved membership makes an already-imported thread visible on refresh.
-  store.set(buddySidebarOverviewAtom, {
+  store.set(buddySidebarOverviewAtom, [
     ...overview,
-    employees: [
-      ...overview.employees,
-      {
-        buddy: { id: 'missing', name: 'Recovered Lead' },
-        workspaces: [{ id: 'project_uuid', name: 'Recovered workspace' }],
-      },
-    ],
-  });
+    roster('project_uuid', 'Recovered workspace', '/recovered', [['missing', 'Recovered Lead']]),
+  ]);
   const recovered = store
     .get(buddySidebarProjectsAtom)
     .find((p) => p.workspaceId === 'project_uuid');
@@ -122,29 +116,17 @@ test('only roster memberships create workspace rows; orphan history remains acce
   assert.equal(store.get(conversationAtomFamily(orphan.id)), orphan);
 });
 
-test('sidebar groups memberships and scopes recency and threads to each project', () => {
+test('sidebar groups Buddies by workspace and orders projects by their threads', () => {
   const store = createStore();
-  store.set(buddySidebarOverviewAtom, {
-    employees: [
-      {
-        buddy: { id: 'lead', name: 'Lead' },
-        workspaces: [
-          { id: 'a', name: 'Alpha', root_path: '/alpha' },
-          { id: 'b', name: 'Beta', root_path: '/beta' },
-        ],
-      },
-      {
-        buddy: { id: 'new', name: 'New Buddy' },
-        workspaces: [{ id: 'c', name: 'Cold', root_path: '/cold' }],
-      },
-      { buddy: { id: 'free', name: 'Free Buddy' }, workspaces: [] },
-    ],
-    recentRuns: [],
-  });
+  store.set(buddySidebarOverviewAtom, [
+    roster('a', 'Alpha', '/alpha', [['lead-a', 'Lead A']]),
+    roster('b', 'Beta', '/beta', [['lead-b', 'Lead B']]),
+    roster('c', 'Cold', '/cold', [['new', 'New Buddy']]),
+  ]);
   const conversation = (id: string, workspaceId: string, date: string) =>
     ({
       id,
-      kind: { kind: 'buddy' as const, buddyId: 'lead', workspaceId },
+      kind: { kind: 'buddy' as const, buddyId: `lead-${workspaceId}`, workspaceId },
       createdAt: new Date(date),
       messages: [] as Conversation['messages'],
       workingDirectory: `/${workspaceId}`,
@@ -161,11 +143,11 @@ test('sidebar groups memberships and scopes recency and threads to each project'
   const projects = store.get(buddySidebarProjectsAtom);
   assert.deepEqual(
     projects.map((p) => p.name),
-    ['Beta', 'Alpha', 'Cold', 'Unassigned']
+    ['Beta', 'Alpha', 'Cold']
   );
   assert.deepEqual(
     projects.slice(0, 2).map((p) => p.items.map((i) => i.buddyId)),
-    [['lead'], ['lead']]
+    [['lead-b'], ['lead-a']]
   );
   assert.deepEqual(
     projects[0].items[0].conversations.map((c) => c.id),
@@ -191,12 +173,9 @@ test('sidebar groups memberships and scopes recency and threads to each project'
 
 test('Builder joins project recency ordering and moves when an older thread receives a message', () => {
   const store = createStore();
-  store.set(buddySidebarOverviewAtom, {
-    employees: [
-      { buddy: { id: 'lead', name: 'Lead' }, workspaces: [{ id: 'project', name: 'Project' }] },
-    ],
-    recentRuns: [],
-  });
+  store.set(buddySidebarOverviewAtom, [
+    roster('project', 'Project', '/project', [['lead', 'Lead']]),
+  ]);
   const conversation = (id: string, date: string, builder = false) =>
     ({
       id,
@@ -247,15 +226,9 @@ test('Builder joins project recency ordering and moves when an older thread rece
 
 test('sidebar exposes active process counts at project-folder scope', () => {
   const store = createStore();
-  store.set(buddySidebarOverviewAtom, {
-    employees: [
-      {
-        buddy: { id: 'lead', name: 'Lead' },
-        workspaces: [{ id: 'wave', name: 'wave_sim', root_path: '/repo/wave_sim' }],
-      },
-    ],
-    recentRuns: [],
-  });
+  store.set(buddySidebarOverviewAtom, [
+    roster('wave', 'wave_sim', '/repo/wave_sim', [['lead', 'Lead']]),
+  ]);
   const conversation = (input: Partial<Conversation> & Pick<Conversation, 'id'>) =>
     ({
       createdAt: new Date('2026-09-12T00:00:00.000Z'),

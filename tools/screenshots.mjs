@@ -126,25 +126,38 @@ function apiClient(baseUrl, token) {
   };
 }
 
-/** One workspace's best channel: the most-replied thread, then the most posts. */
+// Roots whose threads are measured per channel: posts carry no reply count,
+// so each candidate thread is read once (newest roots first).
+const THREAD_PROBES = 20;
+
+/** One workspace's best public channel: its most-replied recent thread, then the most posts. */
 async function discoverWorkspace(api, workspace) {
-  const lists = await api(`/api/buddies/lists?workspaceId=${encodeURIComponent(workspace.id)}`);
+  const inbox = await api(`/api/buddies/workspaces/${encodeURIComponent(workspace.id)}/inbox`);
   const candidates = await Promise.all(
-    lists
-      .filter((list) => list.postCount > 0)
-      .map(async (list) => {
-        const posts = await api(`/api/buddies/lists/${encodeURIComponent(list.id)}/posts?limit=50`);
-        const thread = posts
-          .filter((post) => post.threadRootId === null && post.replyCount > 0)
-          .sort((a, b) => b.replyCount - a.replyCount)[0];
+    inbox.channels
+      .filter((entry) => entry.channel.kind.type === 'public')
+      .map(async ({ channel }) => {
+        const page = await api(
+          `/api/buddies/channels/${encodeURIComponent(channel.id)}/posts?limit=50`
+        );
+        const threads = await Promise.all(
+          page.posts.slice(0, THREAD_PROBES).map(async (post) => {
+            const thread = await api(
+              `/api/buddies/posts/${encodeURIComponent(post.id)}/thread?limit=200`
+            );
+            return { id: post.id, replies: thread.posts.length };
+          })
+        );
+        const thread = threads
+          .filter((candidate) => candidate.replies > 0)
+          .sort((a, b) => b.replies - a.replies)[0];
         return {
           workspaceId: workspace.id,
           workspaceName: workspace.name,
-          channelId: list.id,
-          channelName: list.name,
+          channelId: channel.id,
+          channelName: channel.kind.name,
           threadRootId: thread?.id ?? null,
-          taskId: posts.find((post) => post.projectId)?.projectId ?? null,
-          postCount: list.postCount,
+          postCount: page.posts.length,
         };
       })
   );
@@ -155,33 +168,31 @@ async function discoverWorkspace(api, workspace) {
       channelId: null,
       channelName: null,
       threadRootId: null,
-      taskId: null,
       postCount: 0,
     }
   );
 }
 
-// Richest first: a channel that fills every screen (a thread, a Task filter)
-// beats a merely busy one, so a default run leaves as few blanks as possible.
+// Richest first: a channel that fills every screen (a thread) beats a merely
+// busy one, so a default run leaves as few blanks as possible.
 function richness(a, b) {
   return (
-    Number(b.threadRootId !== null) - Number(a.threadRootId !== null) ||
-    Number(b.taskId !== null) - Number(a.taskId !== null) ||
-    b.postCount - a.postCount
+    Number(b.threadRootId !== null) - Number(a.threadRootId !== null) || b.postCount - a.postCount
   );
 }
 
 /**
- * --workspace pins one; otherwise every workspace a Buddy belongs to is
+ * --workspace pins one; otherwise every workspace with an active Buddy is
  * scanned and the richest channel wins. Deliberately NOT the workspace
  * `/channels` opens: that is the most recently active one, which is often a
  * quiet channel with no threads, and the sheet came back half empty.
  */
 async function discoverChannel(api, overview, pinnedWorkspaceId) {
-  const byId = new Map();
-  for (const employee of overview.employees) {
-    for (const workspace of employee.workspaces) byId.set(workspace.id, workspace);
-  }
+  const byId = new Map(
+    overview
+      .filter((workspace) => workspace.buddies.some((buddy) => buddy.status === 'active'))
+      .map((workspace) => [workspace.id, workspace])
+  );
   if (pinnedWorkspaceId) {
     const pinned = byId.get(pinnedWorkspaceId);
     if (!pinned) {
@@ -243,6 +254,13 @@ async function discoverSwarm(api) {
   return projects[0]?.projectRoot ?? null;
 }
 
+function firstBuddy(overview, workspaceId) {
+  const buddy = overview
+    .find((workspace) => workspace.id === workspaceId)
+    ?.buddies.find((candidate) => candidate.status === 'active');
+  return { buddyId: buddy?.id ?? null, buddyName: buddy?.name ?? null };
+}
+
 async function discover(api, args, token) {
   const overview = await api('/api/buddies/overview');
   const channel = await discoverChannel(api, overview, args.workspace);
@@ -254,8 +272,8 @@ async function discover(api, args, token) {
     ...(args.thread ? { threadRootId: args.thread } : {}),
     conversationId: conversation?.conversationId ?? null,
     conversationMessages: conversation?.messageCount ?? null,
-    buddyId: overview.employees[0]?.buddy.id ?? null,
-    buddyName: overview.employees[0]?.buddy.name ?? null,
+    // The first active Buddy of the discovered workspace (its detail tabs are screens).
+    ...firstBuddy(overview, channel.workspaceId),
     swarmProject: await discoverSwarm(api),
   };
 }
@@ -519,14 +537,6 @@ function buildScreens(found, focus) {
     },
     { name: 'focus', missing: noFocus, views: onBoth(thread, focus && scrollToText(focus)) },
     { name: 'task-hover', missing: noFocus, views: onBoth(thread, focus && hoverTaskIn(focus)) },
-    {
-      name: 'task-filter',
-      missing: noChannel ?? (found.taskId ? null : 'no Task-linked post in this channel'),
-      // The Task filter has no mobile UI.
-      views: {
-        desktop: { path: `${channels}?${channel}&task=${enc(found.taskId)}`, prepare: null },
-      },
-    },
     // ── Swarm (quarantined, still shipped) ──
     { name: 'swarm', missing: null, views: onBoth('/workers') },
     { name: 'swarm-detail', missing: swarm ? null : 'no swarm project', views: onBoth(swarm) },

@@ -1,15 +1,9 @@
-import {
-  type BuddyMailingListPost,
-  type BuddyOwnerPostResult,
-  type OwnerListUnread,
-  getBuddyContext,
-} from '@unleashd/shared';
+import { getBuddyContext } from '@unleashd/shared';
 import { useAtomValue } from 'jotai';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
-import { buddySidebarChannelsAtom } from '../../atoms/buddy-sidebar';
 import { availableConversationIdSetAtom, conversationAtomFamily } from '../../atoms/conversations';
-import { usePolledFetch } from '../../hooks/usePolledFetch';
+import { useBuddyOverview } from '../../hooks/useBuddyData';
 import { Chat } from '../Chat';
 import { BuddyRailRow } from './BuddyRailRow';
 import { BuddySigil } from './BuddySigil';
@@ -18,44 +12,40 @@ import { ChannelComposer } from './ChannelComposer';
 import { ChannelHistory, ChannelLoader } from './ChannelLoader';
 import { ChannelMarkdown, TypingDots } from './ChannelMarkdown';
 import { CopyLinkButton } from './CopyLinkButton';
+import { errorText } from './api';
 import {
-  type BuddyMailingListSummary,
-  CHANNEL_BACKSTOP_MS,
-  type ChannelMember,
+  type ChannelHeading,
   type ChannelRow,
-  arrivalMarks,
+  type WorkspaceDirectory,
   authorName,
-  channelPostFeed,
+  channelFeed,
+  channelHeading,
+  channelRequestCount,
   channelRows,
   channelUnreadAttr,
   clockTime,
   createChannel,
   feedPhase,
-  listsUrl,
-  ownerUnreadByList,
+  newestServedId,
   postPurposeLabel,
   postPurposeTag,
+  railChannels,
   renderFeed,
-  taskPostFeed,
-  threadPostFeed,
+  threadFeed,
   useChannelFeed,
   useChannelResponding,
   useFollowBottom,
-  useOwnerChannelVisit,
-  useOwnerUnread,
+  useMarkChannelRead,
   useWarmChannelPosts,
   useWithOutbox,
   useWorkspaceDirectory,
-  workspaceDirectory,
+  useWorkspaceInbox,
 } from './channel-data';
 import { channelLinkPath, postLink } from './channel-link';
-import { type ChannelReference, type ChannelTask, plainChannelText } from './channel-text';
+import { plainChannelText } from './channel-text';
+import type { ChannelUnread, Post } from './types';
 import { initials } from './ui-contract';
 import './ChannelBrowser.css';
-
-function shortTaskId(projectId: string): string {
-  return projectId.replace(/^buddy_project_/, '').slice(0, 8);
-}
 
 // Where a row renders decides what its thread affordance does:
 // D = Channel(open a thread, show who is replying) ⊕ Thread(already inside one).
@@ -64,8 +54,6 @@ type RowPlace =
       kind: 'channel';
       openThread(rootId: string): void;
       responding: ReadonlyMap<string, string>;
-      // Roots with replies the owner had not seen when they arrived.
-      unreadThreads: ReadonlySet<string>;
     }
   | { kind: 'thread' };
 
@@ -73,10 +61,7 @@ type RowContext = {
   workspaceId: string;
   // The post a permalink named (`?post=`); its row is highlighted.
   linkedPostId: string | null;
-  buddyNames: Readonly<Record<string, string>>;
-  tasks: ReadonlyMap<string, ChannelTask>;
-  channelNameById: ReadonlyMap<string, string>;
-  showChannel: boolean;
+  directory: WorkspaceDirectory;
   availableConversationIds: ReadonlySet<string>;
   openDm: OpenDm;
   place: RowPlace;
@@ -108,7 +93,7 @@ function InstanceTag({
   );
 }
 
-function PostPurpose({ post }: { post: BuddyMailingListPost }) {
+function PostPurpose({ post }: { post: Post }) {
   const label = postPurposeLabel(post);
   return label === null ? null : (
     <span className="channel-browser-purpose" data-purpose={postPurposeTag(post)}>
@@ -117,19 +102,14 @@ function PostPurpose({ post }: { post: BuddyMailingListPost }) {
   );
 }
 
-function PostMeta({ post, context }: { post: BuddyMailingListPost; context: RowContext }) {
+function PostMeta({ post, context }: { post: Post; context: RowContext }) {
   return (
     <>
       <PostPurpose post={post} />
-      {context.showChannel && (
-        <span className="channel-browser-channel-tag">
-          #{context.channelNameById.get(post.listId) ?? post.listId}
-        </span>
-      )}
-      {post.senderConversationId && (
+      {post.conversationId && (
         <InstanceTag
-          conversationId={post.senderConversationId}
-          available={context.availableConversationIds.has(post.senderConversationId)}
+          conversationId={post.conversationId}
+          available={context.availableConversationIds.has(post.conversationId)}
         />
       )}
     </>
@@ -145,34 +125,23 @@ function Replying({ text }: { text: string }) {
   );
 }
 
-// "N replies · last reply 10:42" under a thread root in the channel, plus the
-// live replying indicator. Inside the thread pane there is nothing to show.
-function ThreadSummary({ post, context }: { post: BuddyMailingListPost; context: RowContext }) {
+// Who is replying in a root's thread, under the root in the channel. Posts
+// carry no reply count (the API has none), so every root offers its thread
+// through the hover toolbar and this line shows only live replies.
+function ThreadSummary({ post, context }: { post: Post; context: RowContext }) {
   switch (context.place.kind) {
     case 'thread':
       return null;
     case 'channel': {
       const place = context.place;
       const replying = place.responding.get(post.id);
-      if (post.replyCount === 0 && replying === undefined) return null;
+      if (replying === undefined) return null;
       return (
         <div className="channel-browser-thread-summary">
-          {post.replyCount > 0 && (
-            <button
-              type="button"
-              data-unread={place.unreadThreads.has(post.id) || undefined}
-              onClick={() => place.openThread(post.id)}
-            >
-              {place.unreadThreads.has(post.id) && (
-                <span className="channel-browser-thread-unread" aria-label="New replies" />
-              )}
-              <strong>
-                {post.replyCount} {post.replyCount === 1 ? 'reply' : 'replies'}
-              </strong>
-              {post.latestReplyAt && <span>Last reply {clockTime(post.latestReplyAt)}</span>}
-            </button>
-          )}
-          {replying !== undefined && <Replying text={replying} />}
+          <button type="button" onClick={() => place.openThread(post.id)}>
+            <strong>Open thread</strong>
+          </button>
+          <Replying text={replying} />
         </div>
       );
     }
@@ -193,7 +162,7 @@ function ReplyIcon() {
   );
 }
 
-function ReplyAction({ post, context }: { post: BuddyMailingListPost; context: RowContext }) {
+function ReplyAction({ post, context }: { post: Post; context: RowContext }) {
   switch (context.place.kind) {
     case 'thread':
       return null;
@@ -203,7 +172,7 @@ function ReplyAction({ post, context }: { post: BuddyMailingListPost; context: R
         <button
           type="button"
           className="channel-browser-message-action"
-          onClick={() => place.openThread(post.threadRootId ?? post.id)}
+          onClick={() => place.openThread(post.rootId ?? post.id)}
           title="Reply in thread"
           aria-label="Reply in thread"
         >
@@ -216,7 +185,7 @@ function ReplyAction({ post, context }: { post: BuddyMailingListPost; context: R
 
 // Slack's hover toolbar: a small floating group pinned to the message's
 // top-right corner, straddling its top edge so it never covers the text.
-function MessageActions({ post, context }: { post: BuddyMailingListPost; context: RowContext }) {
+function MessageActions({ post, context }: { post: Post; context: RowContext }) {
   return (
     <div className="channel-browser-message-actions" role="toolbar" aria-label="Message actions">
       <ReplyAction post={post} context={context} />
@@ -229,29 +198,34 @@ function MessageActions({ post, context }: { post: BuddyMailingListPost; context
   );
 }
 
-function PostBody({ post, context }: { post: BuddyMailingListPost; context: RowContext }) {
-  return <ChannelMarkdown body={post.body} buddyNames={context.buddyNames} tasks={context.tasks} />;
+function PostBody({ post, context }: { post: Post; context: RowContext }) {
+  return (
+    <ChannelMarkdown
+      body={post.body}
+      buddyNames={context.directory.buddyNames}
+      tasks={context.directory.taskById}
+    />
+  );
 }
 
-function LeadRow({ post, context }: { post: BuddyMailingListPost; context: RowContext }) {
+function LeadRow({ post, context }: { post: Post; context: RowContext }) {
   return (
     <li
       className="channel-browser-message channel-browser-message--lead"
-      data-purpose={post.purpose}
+      data-purpose={postPurposeTag(post)}
       data-post-id={post.id}
       data-linked={post.id === context.linkedPostId ? 'true' : undefined}
     >
       <BuddySigil
         className="channel-browser-avatar"
-        name={authorName(post.author, context.buddyNames)}
+        name={authorName(post.author, context.directory.buddyNames)}
       />
       <div className="channel-browser-message-content">
         <div className="channel-browser-message-heading">
           <ChannelAuthor
             className="channel-browser-author"
             author={post.author}
-            buddyNames={context.buddyNames}
-            workspaceId={context.workspaceId}
+            buddyNames={context.directory.buddyNames}
             openDm={context.openDm}
           />
           <time dateTime={post.createdAt} title={new Date(post.createdAt).toLocaleString()}>
@@ -267,11 +241,11 @@ function LeadRow({ post, context }: { post: BuddyMailingListPost; context: RowCo
   );
 }
 
-function ContinuationRow({ post, context }: { post: BuddyMailingListPost; context: RowContext }) {
+function ContinuationRow({ post, context }: { post: Post; context: RowContext }) {
   return (
     <li
       className="channel-browser-message channel-browser-message--continuation"
-      data-purpose={post.purpose}
+      data-purpose={postPurposeTag(post)}
       data-post-id={post.id}
       data-linked={post.id === context.linkedPostId ? 'true' : undefined}
     >
@@ -302,24 +276,6 @@ function DayRow({ label }: { label: string }) {
   );
 }
 
-// Slack's "New messages" line, above the first post the owner had not read
-// when they opened the channel.
-function NewMessagesRow() {
-  return (
-    <li className="channel-browser-new-messages" aria-label="New messages">
-      <span>New messages</span>
-    </li>
-  );
-}
-
-function renderRows(rows: readonly ChannelRow[], context: RowContext, firstUnread: string | null) {
-  return rows.flatMap((row) =>
-    row.kind !== 'day' && row.post.id === firstUnread
-      ? [<NewMessagesRow key="new-messages" />, renderRow(row, context)]
-      : [renderRow(row, context)]
-  );
-}
-
 function renderRow(row: ChannelRow, context: RowContext) {
   switch (row.kind) {
     case 'day':
@@ -332,45 +288,45 @@ function renderRow(row: ChannelRow, context: RowContext) {
 }
 
 function ThreadPane({
-  list,
+  entry,
+  heading,
   rootId,
   context,
-  references,
   replying,
   onClose,
 }: {
-  list: BuddyMailingListSummary;
+  entry: ChannelUnread;
+  heading: ChannelHeading;
   rootId: string;
   context: RowContext;
-  references: readonly ChannelReference[];
   replying: string | undefined;
   onClose(): void;
 }) {
-  const paged = useChannelFeed(threadPostFeed(list.id, rootId, context.linkedPostId));
-  const thread = paged.feed;
-  const replies = useWithOutbox(list.workspaceId, list.id, rootId, thread.data?.replies ?? null);
+  const channelId = entry.channel.id;
+  const thread = useChannelFeed(threadFeed(rootId));
+  const root = thread.latest.data?.root;
+  const replies = useWithOutbox(channelId, rootId, thread.posts);
   const replyRows = useMemo(() => channelRows(replies ?? []), [replies]);
   const follow = useFollowBottom(
     replyRows.length + (replying === undefined ? 0 : 1),
-    thread.data,
+    thread.posts,
     context.linkedPostId
   );
-  const root = thread.data?.root;
+  useMarkChannelRead(channelId, entry.unread, newestServedId(thread.posts) ?? root?.id ?? null);
   return (
     <aside className="channel-thread" aria-label="Thread">
       <header className="channel-thread-header">
         <div>
           <h2>Thread</h2>
-          <p>#{list.name}</p>
+          <p>
+            {heading.mark}
+            {heading.name}
+          </p>
         </div>
         <div className="channel-thread-header-actions">
           <CopyLinkButton
             className="channel-browser-header-action"
-            path={channelLinkPath(context.workspaceId, {
-              kind: 'thread',
-              listId: list.id,
-              rootId,
-            })}
+            path={channelLinkPath(context.workspaceId, { kind: 'thread', channelId, rootId })}
             label="Copy link to thread"
           />
           <button type="button" onClick={onClose} aria-label="Close thread" title="Close thread">
@@ -379,12 +335,12 @@ function ThreadPane({
         </div>
       </header>
       <div className="channel-browser-scroll" ref={follow.scrollRef} onScroll={follow.onScroll}>
-        {(thread.kind === 'failed' || thread.kind === 'stale') && (
+        {(thread.latest.kind === 'failed' || thread.latest.kind === 'stale') && (
           <p className="channel-browser-error" role="alert">
-            Thread could not refresh: {thread.error.message}
+            Thread could not refresh: {thread.latest.error.message}
           </p>
         )}
-        {thread.kind === 'loading' && <ChannelLoader label="Loading thread…" />}
+        {thread.latest.kind === 'loading' && <ChannelLoader label="Loading thread…" />}
         {root && (
           <ol className="channel-browser-messages channel-thread-root">
             <LeadRow post={root} context={context} />
@@ -392,16 +348,14 @@ function ThreadPane({
         )}
         {root && (
           <div className="channel-thread-divider">
-            <span>
-              {root.replyCount} {root.replyCount === 1 ? 'reply' : 'replies'}
-            </span>
+            <span>Replies</span>
           </div>
         )}
         {root && (
           <ChannelHistory
-            edge={paged.edge}
+            edge={thread.edge}
             scrollRef={follow.scrollRef}
-            onReach={() => void paged.loadOlder(follow.hold)}
+            onReach={() => void thread.loadOlder(follow.hold)}
           />
         )}
         <ol className="channel-browser-messages">
@@ -415,14 +369,14 @@ function ThreadPane({
       </div>
       <ChannelComposer
         key={rootId}
-        listId={list.id}
-        threadRootId={rootId}
+        channelId={channelId}
+        rootId={rootId}
         placeholder={root ? `Reply to ${plainChannelText(root.body).slice(0, 40)}…` : 'Reply…'}
-        references={references}
+        references={context.directory.references}
         submit="enter"
         onPosted={() => {
           follow.pin();
-          void thread.refetch();
+          void thread.latest.refetch();
         }}
       />
     </aside>
@@ -430,171 +384,96 @@ function ThreadPane({
 }
 
 function ChannelPane({
-  list,
+  entry,
   workspaceId,
-  channelNameById,
-  buddyNames,
-  tasks,
-  references,
+  directory,
   availableConversationIds,
-  taskFilter,
-  onTaskFilter,
   threadId,
   linkedPostId,
   onThread,
   openDm,
-  ownerUnread,
 }: {
-  list: BuddyMailingListSummary;
-  ownerUnread: OwnerListUnread | undefined;
+  entry: ChannelUnread;
   workspaceId: string;
-  channelNameById: ReadonlyMap<string, string>;
-  buddyNames: Readonly<Record<string, string>>;
-  tasks: ReadonlyMap<string, ChannelTask>;
-  references: readonly ChannelReference[];
+  directory: WorkspaceDirectory;
   availableConversationIds: ReadonlySet<string>;
-  taskFilter: string | null;
-  onTaskFilter: (projectId: string | null) => void;
   threadId: string | null;
   linkedPostId: string | null;
   onThread: (rootId: string | null) => void;
   openDm: OpenDm;
 }) {
-  const channel = useChannelFeed(channelPostFeed(list.id));
-  const channelFeed = channel.feed;
-  // The Task filter's cross-channel feed pages back the same way.
-  const task = useChannelFeed(taskFilter ? taskPostFeed(workspaceId, taskFilter) : null);
-  const paged = taskFilter ? task : channel;
-  const respondingByRoot = useChannelResponding(list.id, buddyNames);
-  const visit = useOwnerChannelVisit(list.id, ownerUnread);
-  // Threads opened since arriving are no longer new, even after closing them.
-  const [openedThreads, setOpenedThreads] = useState<ReadonlySet<string>>(() => new Set());
-  const channelPosts = useWithOutbox(workspaceId, list.id, null, channelFeed.data);
-  const shown = taskFilter ? task.feed : { ...channelFeed, data: channelPosts };
-  const rows = useMemo(() => channelRows(shown.data ?? []), [shown.data]);
-  // Task options come from the channel itself so the picker never offers a
-  // Task with nothing to read here.
-  const taskIds = useMemo(
-    () => [
-      ...new Set(
-        (channelFeed.data ?? [])
-          .map((post) => post.projectId)
-          .filter((id): id is string => id !== null)
-      ),
-    ],
-    [channelFeed.data]
-  );
-  const follow = useFollowBottom(rows.length, shown.data, null);
-  const arrival = arrivalMarks(visit, channelFeed.data ?? []);
-  const unreadThreads = new Set(
-    arrival.unreadThreads.filter((rootId) => !openedThreads.has(rootId) && rootId !== threadId)
-  );
-  const openThread = (rootId: string) => {
-    setOpenedThreads((opened) => new Set(opened).add(rootId));
-    onThread(rootId);
-  };
-  const base = {
-    workspaceId,
-    buddyNames,
-    tasks,
-    channelNameById,
-    showChannel: taskFilter !== null,
-    availableConversationIds,
-    linkedPostId,
-    openDm,
-  };
+  const channelId = entry.channel.id;
+  const heading = channelHeading(entry.channel.kind, directory.buddyNames);
+  const feed = useChannelFeed(channelFeed(channelId));
+  const respondingByRoot = useChannelResponding(channelId, directory.buddyNames);
+  const posts = useWithOutbox(channelId, null, feed.posts);
+  const rows = useMemo(() => channelRows(posts ?? []), [posts]);
+  const follow = useFollowBottom(rows.length, posts, null);
+  useMarkChannelRead(channelId, entry.unread, newestServedId(feed.posts));
+  const base = { workspaceId, directory, availableConversationIds, linkedPostId, openDm };
   const channelContext: RowContext = {
     ...base,
-    place: { kind: 'channel', openThread, responding: respondingByRoot, unreadThreads },
+    place: { kind: 'channel', openThread: onThread, responding: respondingByRoot },
   };
-  const threadContext: RowContext = { ...base, showChannel: false, place: { kind: 'thread' } };
+  const threadContext: RowContext = { ...base, place: { kind: 'thread' } };
   return (
     <div className="channel-browser-panes" data-thread={threadId ? 'open' : undefined}>
-      <section className="channel-browser-pane" aria-label={`#${list.name}`}>
+      <section className="channel-browser-pane" aria-label={`${heading.mark}${heading.name}`}>
         <header className="channel-browser-pane-header">
           <div className="channel-browser-pane-title">
             <h2>
-              <span aria-hidden="true">#</span>
-              {list.name}
+              <span aria-hidden="true">{heading.mark}</span>
+              {heading.name}
             </h2>
-            <p title={list.purpose}>{list.purpose}</p>
+            <p title={heading.about}>{heading.about}</p>
           </div>
           <CopyLinkButton
             className="channel-browser-header-action"
-            path={channelLinkPath(workspaceId, { kind: 'channel', listId: list.id })}
+            path={channelLinkPath(workspaceId, { kind: 'channel', channelId })}
             label="Copy link to channel"
           />
-          {taskIds.length > 0 && (
-            <label className="channel-browser-task-filter">
-              <span>Task</span>
-              <select
-                value={taskFilter ?? ''}
-                onChange={(event) => onTaskFilter(event.target.value || null)}
-              >
-                <option value="">All posts</option>
-                {taskIds.map((projectId) => (
-                  <option key={projectId} value={projectId} title={projectId}>
-                    {tasks.get(projectId)?.title ?? shortTaskId(projectId)}
-                  </option>
-                ))}
-              </select>
-            </label>
-          )}
         </header>
-        {taskFilter && (
-          <div className="channel-browser-filter-banner">
-            Task{' '}
-            <code title={taskFilter}>
-              {tasks.get(taskFilter)?.title ?? shortTaskId(taskFilter)}
-            </code>{' '}
-            across every channel
-            <button type="button" onClick={() => onTaskFilter(null)}>
-              Clear
-            </button>
-          </div>
-        )}
         <div className="channel-browser-scroll" ref={follow.scrollRef} onScroll={follow.onScroll}>
-          {(shown.kind === 'failed' || shown.kind === 'stale') && (
+          {(feed.latest.kind === 'failed' || feed.latest.kind === 'stale') && (
             <p className="channel-browser-error" role="alert">
-              Posts could not refresh: {shown.error.message}
+              Posts could not refresh: {feed.latest.error.message}
             </p>
           )}
-          {renderFeed(feedPhase(shown), {
-            loading: () => <ChannelLoader label={`Loading #${list.name}…`} />,
+          {renderFeed(feedPhase(feed.latest.kind, posts), {
+            loading: () => <ChannelLoader label={`Loading ${heading.mark}${heading.name}…`} />,
             failed: () => null,
             empty: () => (
               <div className="channel-browser-empty">
-                <strong>#{list.name}</strong>
+                <strong>
+                  {heading.mark}
+                  {heading.name}
+                </strong>
                 <span>No posts yet. Say hello, or @mention a Buddy to ask it something.</span>
               </div>
             ),
             posts: () => (
               <>
-                {/* Keyed by feed. Switching the Task filter to a cached feed keeps
-                    the posts mounted, and only a fresh observer asks the new
-                    feed for older posts when its top is already in range. */}
                 <ChannelHistory
-                  key={taskFilter}
-                  edge={paged.edge}
+                  edge={feed.edge}
                   scrollRef={follow.scrollRef}
-                  onReach={() => void paged.loadOlder(follow.hold)}
+                  onReach={() => void feed.loadOlder(follow.hold)}
                 />
                 <ol className="channel-browser-messages">
-                  {renderRows(rows, channelContext, taskFilter ? null : arrival.firstUnread)}
+                  {rows.map((row) => renderRow(row, channelContext))}
                 </ol>
               </>
             ),
           })}
         </div>
         <ChannelComposer
-          listId={list.id}
-          threadRootId={null}
-          placeholder={`Message #${list.name}`}
-          references={references}
+          channelId={channelId}
+          rootId={null}
+          placeholder={`Message ${heading.mark}${heading.name}`}
+          references={directory.references}
           submit="enter"
-          onPosted={(result: BuddyOwnerPostResult) => {
+          onPosted={(result) => {
             follow.pin();
-            void channelFeed.refetch();
+            void feed.latest.refetch();
             // Mentioning a Buddy opens the thread its reply will land in.
             if (result.mentions.some((mention) => mention.status === 'started'))
               onThread(result.post.id);
@@ -604,10 +483,10 @@ function ChannelPane({
       {threadId && (
         <ThreadPane
           key={threadId}
-          list={list}
+          entry={entry}
+          heading={heading}
           rootId={threadId}
           context={threadContext}
-          references={references}
           replying={respondingByRoot.get(threadId)}
           onClose={() => onThread(null)}
         />
@@ -638,7 +517,7 @@ function WorkspaceSwitcher({
   workspaceId: string;
   workspaceName: string;
 }) {
-  const workspaces = useAtomValue(buddySidebarChannelsAtom);
+  const workspaces = useBuddyOverview().data ?? [];
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
@@ -676,18 +555,18 @@ function WorkspaceSwitcher({
         <div className="channel-browser-switcher-menu" role="menu">
           <ul>
             {workspaces.map((workspace) => (
-              <li key={workspace.workspaceId}>
+              <li key={workspace.id}>
                 <Link
                   role="menuitem"
-                  to={`/buddies/workspaces/${encodeURIComponent(workspace.workspaceId)}/channels`}
-                  aria-current={workspace.workspaceId === workspaceId ? 'page' : undefined}
+                  to={`/buddies/workspaces/${encodeURIComponent(workspace.id)}/channels`}
+                  aria-current={workspace.id === workspaceId ? 'page' : undefined}
                   onClick={() => setOpen(false)}
                 >
                   <span className="channel-browser-workspace-mark" aria-hidden="true">
                     {initials(workspace.name).slice(0, 1)}
                   </span>
                   {workspace.name}
-                  {workspace.workspaceId === workspaceId && (
+                  {workspace.id === workspaceId && (
                     <span className="channel-browser-switcher-check" aria-hidden="true">
                       ✓
                     </span>
@@ -716,7 +595,7 @@ function NewChannelForm({
   onCancel,
 }: {
   workspaceId: string;
-  onCreated(listId: string): void;
+  onCreated(channelId: string): void;
   onCancel(): void;
 }) {
   const [name, setName] = useState('');
@@ -733,10 +612,8 @@ function NewChannelForm({
         setBusy(true);
         setProblem(null);
         void createChannel(workspaceId, cleanName, purpose.trim())
-          .then(onCreated)
-          .catch((cause: unknown) =>
-            setProblem(cause instanceof Error ? cause.message : String(cause))
-          )
+          .then((channel) => onCreated(channel.id))
+          .catch((cause: unknown) => setProblem(errorText(cause)))
           .finally(() => setBusy(false));
       }}
     >
@@ -779,68 +656,89 @@ function NewChannelForm({
   );
 }
 
-// The red count is only what waits on the owner: replies in their threads.
-function RepliesBadge({ unread }: { unread: OwnerListUnread | undefined }) {
-  const count = unread?.repliesToYou ?? 0;
+// The red count is only what waits on the owner: requests in a DM.
+function RequestsBadge({ count }: { count: number }) {
   return count === 0 ? null : (
-    <span className="channel-browser-badge" aria-label={`${count} new replies to you`}>
+    <span className="channel-browser-badge" aria-label={`${count} requests waiting on you`}>
       {count}
     </span>
   );
 }
 
+function RailChannel({
+  entry,
+  heading,
+  requests,
+  current,
+  onSelect,
+}: {
+  entry: ChannelUnread;
+  heading: ChannelHeading;
+  requests: number;
+  current: boolean;
+  onSelect(): void;
+}) {
+  return (
+    <li>
+      <button
+        type="button"
+        data-unread={channelUnreadAttr(entry.unread)}
+        aria-current={current ? 'page' : undefined}
+        onClick={onSelect}
+        title={heading.about}
+      >
+        <span className="channel-browser-hash" aria-hidden="true">
+          {heading.mark}
+        </span>
+        <span className="channel-browser-channel-name">{heading.name}</span>
+        <RequestsBadge count={requests} />
+      </button>
+    </li>
+  );
+}
+
 // Full-screen Slack layout. Mounted OUTSIDE the app shell (see App.tsx): the
 // channel rail replaces the conversations sidebar instead of nesting beside
-// it. Selection lives in the URL (?channel=, ?task=, ?thread=, ?post=, ?dm=) so
+// it. Selection lives in the URL (?channel=, ?thread=, ?post=, ?dm=) so
 // reload and Back keep the reader where they were, and any of it can be shared
 // as a permalink (channel-link.ts). Selecting anything drops `post`: the
 // highlight belongs to the link that was opened, not to later navigation.
+// `?channel=` names a public channel or a DM channel; `?dm=` is the owner's
+// ongoing chat with a Buddy (a conversation, not a channel).
 export function ChannelBrowser({
   workspaceId,
-  workspaceName,
-  members,
-  tasks,
+  directory,
   availableConversationIds,
 }: {
   workspaceId: string;
-  workspaceName: string;
-  members: readonly ChannelMember[];
-  tasks: readonly ChannelTask[];
+  directory: WorkspaceDirectory;
   availableConversationIds: ReadonlySet<string>;
 }) {
-  const lists = usePolledFetch<BuddyMailingListSummary[]>(
-    listsUrl(workspaceId),
-    CHANNEL_BACKSTOP_MS
-  );
-  const { data } = lists;
-  useWarmChannelPosts(data);
-  const ownerUnread = useOwnerUnread();
-  const unreadByList = useMemo(
-    () => ownerUnreadByList(ownerUnread.data, workspaceId),
-    [ownerUnread.data, workspaceId]
-  );
+  const inbox = useWorkspaceInbox(workspaceId);
+  const rail = useMemo(() => railChannels(inbox.data), [inbox.data]);
+  useWarmChannelPosts(rail.channels);
   const [params, setParams] = useSearchParams();
   const [creating, setCreating] = useState(false);
-  const channelNameById = useMemo(
-    () => new Map((data ?? []).map((list) => [list.id, list.name])),
-    [data]
-  );
-  const { buddyNames, activeMembers, taskById, references } = useMemo(
-    () => workspaceDirectory(workspaceName, members, tasks),
-    [workspaceName, members, tasks]
-  );
-  const selected = data?.find((list) => list.id === params.get('channel')) ?? data?.[0] ?? null;
-  const select = (next: { channel: string; task: string | null; thread: string | null }) =>
-    setParams({
-      channel: next.channel,
-      ...(next.task ? { task: next.task } : {}),
-      ...(next.thread ? { thread: next.thread } : {}),
-    });
+  const listed = [...rail.channels, ...rail.direct];
+  const selected =
+    listed.find((entry) => entry.channel.id === params.get('channel')) ?? rail.channels[0] ?? null;
+  const select = (next: { channel: string; thread: string | null }) =>
+    setParams({ channel: next.channel, ...(next.thread ? { thread: next.thread } : {}) });
   // An open DM replaces the channel in the main pane; picking a channel closes it.
   const dm = params.get('dm');
   const openDm: OpenDm = (conversationId) => setParams({ dm: conversationId });
   const dmConversation = useAtomValue(conversationAtomFamily(dm ?? ''));
   const dmBuddyId = getBuddyContext(dmConversation)?.buddyId;
+  const railRow = (entry: ChannelUnread) => (
+    <RailChannel
+      key={entry.channel.id}
+      entry={entry}
+      heading={channelHeading(entry.channel.kind, directory.buddyNames)}
+      requests={channelRequestCount(inbox.data, entry.channel.id)}
+      current={!dm && selected?.channel.id === entry.channel.id}
+      onSelect={() => select({ channel: entry.channel.id, thread: null })}
+    />
+  );
   return (
     <div className="channel-browser" aria-label="Channels">
       <nav className="channel-browser-rail">
@@ -848,7 +746,7 @@ export function ChannelBrowser({
           <Link className="channel-browser-exit" to="/" title="Back to conversations">
             ← Conversations
           </Link>
-          <WorkspaceSwitcher workspaceId={workspaceId} workspaceName={workspaceName} />
+          <WorkspaceSwitcher workspaceId={workspaceId} workspaceName={directory.workspaceName} />
         </header>
         <div className="channel-browser-rail-scroll">
           <div className="channel-browser-rail-section-row">
@@ -867,48 +765,35 @@ export function ChannelBrowser({
             <NewChannelForm
               workspaceId={workspaceId}
               onCancel={() => setCreating(false)}
-              onCreated={(listId) => {
+              onCreated={(channelId) => {
                 setCreating(false);
-                void lists.refetch();
-                select({ channel: listId, task: null, thread: null });
+                void inbox.refetch();
+                select({ channel: channelId, thread: null });
               }}
             />
           )}
-          {(lists.kind === 'failed' || lists.kind === 'stale') && (
-            <p role="alert">Channels could not refresh: {lists.error.message}</p>
+          {(inbox.kind === 'failed' || inbox.kind === 'stale') && (
+            <p role="alert">Channels could not refresh: {inbox.error.message}</p>
           )}
-          {data && data.length === 0 ? (
+          {inbox.data && rail.channels.length === 0 ? (
             <p className="channel-browser-rail-empty">No channels yet.</p>
           ) : (
-            <ul className="channel-browser-channels">
-              {(data ?? []).map((list) => (
-                <li key={list.id}>
-                  <button
-                    type="button"
-                    data-unread={channelUnreadAttr(unreadByList.get(list.id))}
-                    aria-current={!dm && selected?.id === list.id ? 'page' : undefined}
-                    onClick={() => select({ channel: list.id, task: null, thread: null })}
-                    title={list.purpose}
-                  >
-                    <span className="channel-browser-hash" aria-hidden="true">
-                      #
-                    </span>
-                    <span className="channel-browser-channel-name">{list.name}</span>
-                    <RepliesBadge unread={unreadByList.get(list.id)} />
-                  </button>
-                </li>
-              ))}
-            </ul>
+            <ul className="channel-browser-channels">{rail.channels.map(railRow)}</ul>
           )}
-          {activeMembers.length > 0 && (
+          {rail.direct.length > 0 && (
+            <>
+              <h3 className="channel-browser-rail-section">Direct messages</h3>
+              <ul className="channel-browser-channels">{rail.direct.map(railRow)}</ul>
+            </>
+          )}
+          {directory.activeMembers.length > 0 && (
             <>
               <h3 className="channel-browser-rail-section">Buddies</h3>
               <ul className="channel-browser-buddies">
-                {activeMembers.map((member) => (
+                {directory.activeMembers.map((member) => (
                   <BuddyRailRow
                     key={member.id}
                     member={member}
-                    workspaceId={workspaceId}
                     openDm={openDm}
                     current={member.id === dmBuddyId}
                   />
@@ -923,30 +808,20 @@ export function ChannelBrowser({
           <DmPane conversationId={dm} available={availableConversationIds.has(dm)} />
         ) : selected ? (
           <ChannelPane
-            key={selected.id}
-            list={selected}
+            key={selected.channel.id}
+            entry={selected}
             workspaceId={workspaceId}
-            channelNameById={channelNameById}
-            buddyNames={buddyNames}
-            tasks={taskById}
-            references={references}
+            directory={directory}
             availableConversationIds={availableConversationIds}
-            taskFilter={params.get('task')}
-            onTaskFilter={(task) =>
-              select({ channel: selected.id, task, thread: params.get('thread') })
-            }
             threadId={params.get('thread')}
             linkedPostId={params.get('post')}
-            onThread={(thread) =>
-              select({ channel: selected.id, task: params.get('task'), thread })
-            }
+            onThread={(thread) => select({ channel: selected.channel.id, thread })}
             openDm={openDm}
-            ownerUnread={unreadByList.get(selected.id)}
           />
         ) : (
           <div className="channel-browser-empty">
-            <strong>{data ? 'No channels yet' : 'Loading channels…'}</strong>
-            {data && (
+            <strong>{inbox.data ? 'No channels yet' : 'Loading channels…'}</strong>
+            {inbox.data && (
               <button
                 type="button"
                 className="channel-browser-empty-action"
@@ -970,9 +845,7 @@ export function WorkspaceSlack() {
   return (
     <ChannelBrowser
       workspaceId={workspaceId}
-      workspaceName={directory.workspaceName}
-      members={directory.members}
-      tasks={directory.tasks}
+      directory={directory}
       availableConversationIds={availableConversationIds}
     />
   );

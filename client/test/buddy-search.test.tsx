@@ -3,68 +3,49 @@ import test from 'node:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { MemoryRouter } from 'react-router-dom';
 import { BuddyDirectory } from '../src/components/buddies/BuddyDirectory';
-import type { BuddyOverview, BuddyOverviewEmployee } from '../src/components/buddies/types';
-import { filterDirectoryEmployees } from '../src/components/buddies/ui-contract';
+import type { Buddy } from '../src/components/buddies/types';
+import { directoryEntries, filterDirectoryEntries } from '../src/components/buddies/ui-contract';
+import { buddyFixture, rosterFixture } from './fixtures/buddy-roster';
 
-const employee: BuddyOverviewEmployee = {
-  buddy: {
-    id: 'buddy-product',
-    name: 'Product Lead',
-    role: 'Owns roadmap and release planning',
-    status: 'active',
-    manager_id: null,
-    soul_path: null,
-    memory_path: null,
-    provider: 'codex',
-    model: 'gpt-6-astra',
-    reasoning_effort: 'high',
-  },
-  employment: { kind: 'top_level' },
-  workspaces: [{ id: 'workspace-1', name: 'Unleashd', root_path: '/tmp/unleashd' }],
-  team: [{ id: 'buddy-design', name: 'Design Buddy', role: 'Design', status: 'active' }],
-  currentWork: { open: 2, active: 1, blocked: 0, review: 0, nextActionMissing: 0 },
-};
+const lead = buddyFixture({
+  id: 'buddy-product',
+  name: 'Product Lead',
+  role: 'Owns roadmap and release planning',
+});
 
-const overview: BuddyOverview = {
-  generatedAt: '2026-09-06T00:00:00.000Z',
-  employees: [employee],
-  topLevel: [employee],
-  recentRuns: [],
-};
-
-function renderDirectoryWithTeam(team: BuddyOverviewEmployee['team']) {
-  const manager = { ...employee, team };
-  const view = { ...overview, employees: [manager], topLevel: [manager] };
+function renderDirectory(reports: Buddy[]) {
   return renderToStaticMarkup(
     <MemoryRouter>
-      <BuddyDirectory overview={view} onOpen={() => {}} onNew={() => {}} creating={false} />
+      <BuddyDirectory
+        overview={[rosterFixture([lead, ...reports])]}
+        onOpen={() => {}}
+        onNew={() => {}}
+        creating={false}
+      />
     </MemoryRouter>
   );
 }
 
 test('Buddy directory search matches role, workspace, and report metadata', () => {
-  assert.deepEqual(filterDirectoryEmployees([employee], 'release planning'), [employee]);
-  assert.deepEqual(filterDirectoryEmployees([employee], 'unleashd'), [employee]);
-  assert.deepEqual(filterDirectoryEmployees([employee], 'design buddy'), [employee]);
-  assert.deepEqual(filterDirectoryEmployees([employee], 'missing'), []);
+  const design = buddyFixture({ id: 'buddy-design', name: 'Design Buddy', managerId: lead.id });
+  const entries = directoryEntries([rosterFixture([lead, design])]);
+  const names = (query: string) =>
+    filterDirectoryEntries(entries, query).map((entry) => entry.buddy.name);
+  assert.deepEqual(names('release planning'), ['Product Lead']);
+  assert.deepEqual(names('unleashd'), ['Design Buddy', 'Product Lead']);
+  assert.deepEqual(names('design buddy'), ['Design Buddy', 'Product Lead']);
+  assert.deepEqual(names('missing'), []);
 });
 
-test('Buddy directory omits the report badge when every direct report is archived', () => {
-  const html = renderDirectoryWithTeam([
-    { id: 'buddy-former', name: 'Former Buddy', role: 'Design', status: 'archived' },
+// The overview includes archived Buddies (they still author old posts), so the
+// directory must filter them out of both the cards and the report counts.
+test('Buddy directory omits archived Buddies and does not count them as reports', () => {
+  const html = renderDirectory([
+    buddyFixture({ id: 'buddy-a', name: 'Active Buddy', managerId: lead.id }),
+    buddyFixture({ id: 'buddy-b', name: 'Former Buddy', managerId: lead.id, status: 'archived' }),
   ]);
-
   assert.match(html, /Product Lead/);
-  assert.doesNotMatch(html, />\d+ reports</);
-});
-
-test('Buddy directory counts active and paused reports but excludes archived reports', () => {
-  const html = renderDirectoryWithTeam([
-    { id: 'buddy-active', name: 'Active Buddy', role: 'Design', status: 'active' },
-    { id: 'buddy-paused', name: 'Paused Buddy', role: 'Research', status: 'paused' },
-    { id: 'buddy-archived', name: 'Archived Buddy', role: 'Writing', status: 'archived' },
-  ]);
-
-  assert.match(html, />2 reports</);
-  assert.doesNotMatch(html, />3 reports</);
+  assert.match(html, /Active Buddy/);
+  assert.doesNotMatch(html, /Former Buddy/);
+  assert.match(html, />1 report</);
 });

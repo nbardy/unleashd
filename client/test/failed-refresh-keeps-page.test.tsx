@@ -34,69 +34,17 @@ const { Provider } = await import('jotai');
 const { jotaiStore } = await import('../src/atoms/store');
 const { clearResourceCache, loadResource } = await import('../src/atoms/resources');
 const { buddyApi } = await import('../src/components/buddies/api');
-const { OWNER_UNREAD_PATH } = await import('../src/components/buddies/channel-data');
-const { BUDDY_OVERVIEW_URL, buddyDetailResource } = await import('../src/hooks/useBuddyData');
+const { BUDDY_OVERVIEW_URL, buddyDetailUrl } = await import('../src/hooks/useBuddyData');
 const { BuddiesDashboard } = await import('../src/components/BuddiesDashboard');
 const { BuddyDetailMobile } = await import('../src/mobile/buddies/BuddyDetailMobile');
 const { ShellMobile } = await import('../src/mobile/components/ShellMobile');
+const { buddyFixture, rosterFixture } = await import('./fixtures/buddy-roster');
 
-const buddy = {
-  id: 'b1',
-  name: 'Ada',
-  role: 'Keeps the release train moving',
-  status: 'active',
-  manager_id: null,
-  soul_path: null,
-  memory_path: null,
-  provider: 'codex',
-  reasoning_effort: null,
-};
-const workspace = { id: 'w1', name: 'unleashd', slug: 'unleashd', root_path: '/tmp/unleashd' };
+const buddy = buddyFixture({ id: 'b1', name: 'Ada', role: 'Keeps the release train moving' });
 
 const SERVER: Record<string, unknown> = {
-  '/api/buddies/b1': {
-    buddy,
-    workspaces: [workspace],
-    employment: { kind: 'top_level' },
-    manager: null,
-    team: [],
-    conversations: [],
-  },
-  '/api/buddies/b1/context': {},
-  '/api/buddies/b1/projects?includeClosed=true': { projects: [] },
-  [OWNER_UNREAD_PATH]: {
-    workspaces: [
-      {
-        workspaceId: 'w1',
-        lists: [
-          {
-            listId: 'l1',
-            readThrough: { kind: 'baseline', at: '2026-09-24T00:00:00.000Z' },
-            newestPostId: 'p1',
-            unread: 2,
-            repliesToYou: 0,
-            unreadThreads: [],
-          },
-        ],
-      },
-    ],
-    capped: false,
-  },
-  [BUDDY_OVERVIEW_URL]: (() => {
-    const employee = {
-      buddy,
-      employment: { kind: 'top_level' },
-      workspaces: [workspace],
-      team: [],
-      currentWork: { open: 0, active: 0, blocked: 0, review: 0, nextActionMissing: 0 },
-    };
-    return {
-      generatedAt: '2026-09-24T00:00:00.000Z',
-      employees: [employee],
-      topLevel: [employee],
-      recentRuns: [],
-    };
-  })(),
+  [buddyDetailUrl('b1')]: { buddy, tasks: [], schedules: [], runs: [] },
+  [BUDDY_OVERVIEW_URL]: [rosterFixture([buddy])],
 };
 
 // Offline is the slow server dropping a request: fetch rejects as a browser's does.
@@ -144,7 +92,7 @@ const phone = () =>
   );
 
 test('a failed refresh keeps a loaded Buddy page on the phone, with a notice', async () => {
-  const reads = [buddyDetailResource('b1'), urlResource(OWNER_UNREAD_PATH)];
+  const reads = [urlResource(buddyDetailUrl('b1')), urlResource(BUDDY_OVERVIEW_URL)];
   const refresh = () => Promise.all(reads.map((read) => loadResource(read)));
 
   // Nothing ever loaded: the full-screen failure is the whole page.
@@ -163,8 +111,6 @@ test('a failed refresh keeps a loaded Buddy page on the phone, with a notice', a
   assert.match(html, /<h1 class="mobile-buddy-detail__name">Ada<\/h1>/);
   assert.doesNotMatch(html, /Could not load buddy/);
   assert.match(html, /Could not refresh: Failed to fetch/);
-  // The owner's unread badge reads the same cache: a failed refresh keeps it.
-  assert.match(html, /aria-label="Channels"[^>]*>(?:(?!<\/a>).)*data-unread="true"/);
 });
 
 test('a failed poll of the overview keeps the desktop Buddies directory', async () => {

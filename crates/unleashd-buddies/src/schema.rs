@@ -141,6 +141,39 @@ CREATE INDEX event_at ON event(at);
 CREATE INDEX event_buddy ON event(buddy_id, seq) WHERE buddy_id IS NOT NULL;
 "#;
 
+/// Full-text search over post bodies: an external-content FTS5 index kept in step by triggers.
+/// Added after the T06b schema, so `open` creates it on a file that lacks it (and fills it once).
+const POST_SEARCH: &str = r#"
+CREATE VIRTUAL TABLE post_search USING fts5(body, content='post', content_rowid='rowid');
+CREATE TRIGGER post_search_insert AFTER INSERT ON post BEGIN
+  INSERT INTO post_search(rowid, body) VALUES (new.rowid, new.body);
+END;
+CREATE TRIGGER post_search_delete AFTER DELETE ON post BEGIN
+  INSERT INTO post_search(post_search, rowid, body) VALUES ('delete', old.rowid, old.body);
+END;
+CREATE TRIGGER post_search_update AFTER UPDATE OF body ON post BEGIN
+  INSERT INTO post_search(post_search, rowid, body) VALUES ('delete', old.rowid, old.body);
+  INSERT INTO post_search(rowid, body) VALUES (new.rowid, new.body);
+END;
+INSERT INTO post_search(post_search) VALUES ('rebuild');
+"#;
+
+/// Indexes for the self-references of `post`. With the search triggers in place SQLite plans the
+/// foreign-key parent checks of every post insert, and without these they are full scans of
+/// `post` (the query-plan guard caught it). Added after T06b, so created on open when missing.
+const POST_REFERENCE_INDEXES: &str = "
+CREATE INDEX IF NOT EXISTS post_reply_to ON post(reply_to_id) WHERE reply_to_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS post_answer ON post(answer_id) WHERE answer_id IS NOT NULL;";
+
+fn ensure_post_search(conn: &Connection) -> Result<()> {
+    conn.execute_batch(POST_REFERENCE_INDEXES)?;
+    let present: bool = conn.query_row("SELECT EXISTS(SELECT 1 FROM sqlite_schema WHERE name = 'post_search')", [], |r| r.get(0))?;
+    match present {
+        true => Ok(()),
+        false => Ok(conn.execute_batch(&format!("BEGIN; {POST_SEARCH} COMMIT;"))?),
+    }
+}
+
 fn configure(conn: &Connection) -> Result<()> {
     conn.execute_batch("PRAGMA journal_mode = WAL; PRAGMA synchronous = NORMAL; PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;")?;
     Ok(())
@@ -153,9 +186,13 @@ pub fn open(path: &str) -> Result<Connection> {
     let app_id: i64 = conn.query_row("PRAGMA application_id", [], |r| r.get(0))?;
     let tables: i64 = conn.query_row("SELECT count(*) FROM sqlite_schema WHERE type = 'table'", [], |r| r.get(0))?;
     match (app_id == APPLICATION_ID, tables) {
-        (true, _) => Ok(conn),
+        (true, _) => {
+            ensure_post_search(&conn)?;
+            Ok(conn)
+        }
         (false, 0) => {
             conn.execute_batch(&format!("BEGIN; {DDL} PRAGMA application_id = {APPLICATION_ID}; COMMIT;"))?;
+            ensure_post_search(&conn)?;
             Ok(conn)
         }
         (false, n) => Err(CoreError::WrongDatabase(format!("{path}: {n} tables, application_id {app_id}"))),

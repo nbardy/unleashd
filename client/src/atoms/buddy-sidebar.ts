@@ -1,5 +1,5 @@
 import { atom } from 'jotai';
-import type { Buddy, BuddyOverview, Workspace } from '../components/buddies/types';
+import type { Buddy, WorkspaceRoster } from '../components/buddies/types';
 import { archivedBuddyIdsAtom } from './buddy-visibility';
 import { directoryFacts } from './conversation-index';
 import {
@@ -18,14 +18,11 @@ import { promotedWorkersAtom } from './ui';
  * minimal so tests can seed rows without fabricating whole Buddy records.
  * `useBuddyOverview()`'s full `BuddyOverview` is assignable to it.
  */
-type SidebarBuddy = Pick<Buddy, 'id' | 'name'>;
-type SidebarWorkspace = Pick<Workspace, 'id' | 'name'> & Partial<Pick<Workspace, 'root_path'>>;
-type BuddySidebarRun = BuddyOverview['recentRuns'][number];
-
-export interface BuddySidebarOverview {
-  employees: Array<{ buddy: SidebarBuddy; workspaces: SidebarWorkspace[] }>;
-  recentRuns: BuddySidebarRun[];
-}
+type SidebarBuddy = Pick<Buddy, 'id' | 'name' | 'status'>;
+type SidebarWorkspace = Pick<WorkspaceRoster, 'id' | 'name' | 'rootPath'> & {
+  buddies: SidebarBuddy[];
+};
+export type BuddySidebarOverview = readonly SidebarWorkspace[];
 
 // Conversations appear here as list entries (atoms/conversation-index.ts):
 // the sidebar needs their ids, order and flags, and each row subscribes to its
@@ -38,11 +35,10 @@ export interface BuddySidebarItemData {
   backgroundRunningCount: number;
   backgroundConversationCount: number;
   latestConversation: ConversationListEntry | null;
-  latestRun: BuddySidebarRun | null;
   pendingCreation: PendingConversationCreation | null;
   workspaceId: string;
-  workingDirectory?: string;
-  workspaceName: string | null;
+  workingDirectory: string;
+  workspaceName: string;
   lastActiveAt: Date | null;
 }
 
@@ -67,7 +63,6 @@ function sameBuddyItem(a: BuddySidebarItemData, b: BuddySidebarItemData): boolea
     a.backgroundRunningCount === b.backgroundRunningCount &&
     a.backgroundConversationCount === b.backgroundConversationCount &&
     a.latestConversation === b.latestConversation &&
-    a.latestRun === b.latestRun &&
     a.pendingCreation === b.pendingCreation &&
     a.lastActiveAt?.getTime() === b.lastActiveAt?.getTime() &&
     sameItems(a.conversations, b.conversations)
@@ -102,41 +97,34 @@ export const buddySidebarProjectsAtom = stableAtom((get): BuddySidebarProject[] 
   const projects = new Map<string, BuddySidebarProject>();
   const entries = new Map<string, BuddySidebarItemData>();
   const entryKey = (buddyId: string, workspaceId: string) => JSON.stringify([workspaceId, buddyId]);
-  const ensure = (buddy: SidebarBuddy, workspace?: SidebarWorkspace) => {
-    const workspaceId = workspace?.id ?? '';
-    let project = projects.get(workspaceId);
+  const ensure = (buddy: SidebarBuddy, workspace: SidebarWorkspace) => {
+    let project = projects.get(workspace.id);
     if (!project) {
       project = {
-        workspaceId,
-        name: workspace?.name ?? 'Unassigned',
+        workspaceId: workspace.id,
+        name: workspace.name,
         lastActiveMs: 0,
         runningCount: 0,
         items: [],
       };
-      projects.set(workspaceId, project);
+      projects.set(workspace.id, project);
     }
-    const key = entryKey(buddy.id, workspaceId);
-    let item = entries.get(key);
-    if (!item) {
-      item = {
-        buddyId: buddy.id,
-        buddyName: buddy.name,
-        workspaceId,
-        workspaceName: project.name,
-        workingDirectory: workspace?.root_path,
-        conversations: [],
-        foregroundRunningCount: 0,
-        backgroundRunningCount: 0,
-        backgroundConversationCount: 0,
-        latestConversation: null,
-        latestRun: null,
-        pendingCreation: null,
-        lastActiveAt: null,
-      };
-      entries.set(key, item);
-      project.items.push(item);
-    }
-    return item;
+    const item: BuddySidebarItemData = {
+      buddyId: buddy.id,
+      buddyName: buddy.name,
+      workspaceId: workspace.id,
+      workspaceName: workspace.name,
+      workingDirectory: workspace.rootPath,
+      conversations: [],
+      foregroundRunningCount: 0,
+      backgroundRunningCount: 0,
+      backgroundConversationCount: 0,
+      latestConversation: null,
+      pendingCreation: null,
+      lastActiveAt: null,
+    };
+    entries.set(entryKey(buddy.id, workspace.id), item);
+    project.items.push(item);
   };
   const touch = (item: BuddySidebarItemData, ms: number) => {
     if (!Number.isFinite(ms)) return;
@@ -144,21 +132,14 @@ export const buddySidebarProjectsAtom = stableAtom((get): BuddySidebarProject[] 
     const project = projects.get(item.workspaceId)!;
     project.lastActiveMs = Math.max(project.lastActiveMs, ms);
   };
-  for (const { buddy, workspaces: memberships } of overview?.employees ?? []) {
-    if (archived.has(buddy.id)) continue;
-    for (const workspace of memberships) ensure(buddy, workspace);
-    if (!memberships.length) ensure(buddy);
-  }
   // Only the roster creates navigable workspace/member rows. Imported transcripts
-  // (including live-test sessions) can outlive their Buddy store, and stale runs
-  // can outlive memberships. Keep their history in the conversation store without
-  // inventing UUID folders, unnamed Buddies, or creation targets from those IDs.
-  for (const run of overview?.recentRuns ?? []) {
-    const item = entries.get(entryKey(run.buddyId, run.workspaceId));
-    if (!item) continue;
-    if (!item.latestRun || Date.parse(run.lastActiveAt) > Date.parse(item.latestRun.lastActiveAt))
-      item.latestRun = run;
-    touch(item, Date.parse(run.lastActiveAt));
+  // (including live-test sessions) can outlive their Buddy store; keep their
+  // history in the conversation store without inventing UUID folders, unnamed
+  // Buddies, or creation targets from those IDs.
+  for (const workspace of overview ?? []) {
+    for (const buddy of workspace.buddies) {
+      if (buddy.status === 'active' && !archived.has(buddy.id)) ensure(buddy, workspace);
+    }
   }
   // `all` is newest-first, so the first foreground entry per item is its latest
   // and pushing in order keeps each item's list sorted.
@@ -213,9 +194,10 @@ export const buddySidebarProjectsAtom = stableAtom((get): BuddySidebarProject[] 
 // Derived here (not a component useMemo) so every sidebar reads one list.
 export const buddySidebarChannelsAtom = stableAtom(
   (get) =>
-    get(buddySidebarProjectsAtom)
-      .filter((project) => project.workspaceId)
-      .map((project) => ({ workspaceId: project.workspaceId, name: project.name })),
+    get(buddySidebarProjectsAtom).map((project) => ({
+      workspaceId: project.workspaceId,
+      name: project.name,
+    })),
   (a, b) =>
     a.length === b.length &&
     a.every((row, i) => row.workspaceId === b[i].workspaceId && row.name === b[i].name)

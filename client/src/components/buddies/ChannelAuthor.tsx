@@ -1,7 +1,7 @@
-import type { BuddyListAuthor } from '@unleashd/shared';
 import { useLocation, useNavigate } from 'react-router-dom';
 import { mobileConversationRouteState } from '../../utils/conversation-route-state';
 import { useBuddyDirectActions } from './buddy-direct-actions';
+import type { Actor } from './types';
 
 /** Where a resolved DM opens. The caller's surface decides (see useChatPageDm). */
 export type OpenDm = (conversationId: string) => void;
@@ -21,18 +21,15 @@ export function useChatPageDm(): OpenDm {
 
 // A post's author inside Channels, desktop and mobile. Like Slack, a Buddy's
 // name opens the DM with it (the one ongoing owner chat, history kept —
-// server/src/buddies/buddy-direct.ts), not its profile page. PostAuthor in
-// BuddyMessages.tsx keeps the profile link for the Buddy pages themselves.
+// server/src/buddies/channels.ts openDirect), not its profile page.
 export function ChannelAuthor({
   author,
   buddyNames,
-  workspaceId,
   openDm,
   className,
 }: {
-  author: BuddyListAuthor;
+  author: Actor;
   buddyNames: Readonly<Record<string, string>>;
-  workspaceId: string;
   openDm: OpenDm;
   className: string;
 }) {
@@ -42,9 +39,8 @@ export function ChannelAuthor({
     case 'buddy':
       return (
         <DmName
-          buddyId={author.buddyId}
-          name={buddyNames[author.buddyId] ?? author.buddyId}
-          workspaceId={workspaceId}
+          buddyId={author.id}
+          name={buddyNames[author.id] ?? author.id}
           openDm={openDm}
           className={className}
         />
@@ -55,17 +51,15 @@ export function ChannelAuthor({
 function DmName({
   buddyId,
   name,
-  workspaceId,
   openDm,
   className,
 }: {
   buddyId: string;
   name: string;
-  workspaceId: string;
   openDm: OpenDm;
   className: string;
 }) {
-  const direct = useBuddyDirectActions(buddyId, workspaceId);
+  const direct = useBuddyDirectActions(buddyId);
   const { action } = direct;
   return (
     <button

@@ -1,0 +1,124 @@
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { type Actor, BuddiesCore, type DocScope } from '@unleashd/buddies-core';
+import type { BuddyContext } from '@unleashd/shared';
+
+export type { BuddiesCore } from '@unleashd/buddies-core';
+
+export const OWNER: Actor = { kind: 'owner' };
+export const buddyActor = (id: string): Actor => ({ kind: 'buddy', id });
+
+/** The crate's error codes; a rejection's message is `[code] detail` (crate README). */
+export type CoreErrorCode =
+  | 'denied'
+  | 'not_found'
+  | 'revision_conflict'
+  | 'idempotency_conflict'
+  | 'invalid'
+  | 'lease_lost'
+  | 'conversation_busy'
+  | 'corrupt'
+  | 'wrong_database'
+  | 'sqlite'
+  | 'json'
+  | 'io';
+
+export class CoreError extends Error {
+  constructor(
+    readonly code: CoreErrorCode,
+    readonly detail: string
+  ) {
+    super(`[${code}] ${detail}`);
+    this.name = 'CoreError';
+  }
+}
+
+/** Parse a crate rejection once, at the boundary. Anything else is not a core error. */
+export function coreError(error: unknown): CoreError | null {
+  if (error instanceof CoreError) return error;
+  const match = error instanceof Error ? /^\[([a-z_]+)\] ([\s\S]*)$/.exec(error.message) : null;
+  return match ? new CoreError(match[1] as CoreErrorCode, match[2]) : null;
+}
+
+/** HTTP status for a core error: the owner's request was wrong, or the data moved under it. */
+export function httpStatus(error: CoreError): number {
+  switch (error.code) {
+    case 'denied':
+      return 403;
+    case 'not_found':
+      return 404;
+    case 'revision_conflict':
+    case 'idempotency_conflict':
+    case 'conversation_busy':
+    case 'lease_lost':
+      return 409;
+    case 'invalid':
+      return 400;
+    case 'corrupt':
+    case 'wrong_database':
+    case 'sqlite':
+    case 'json':
+    case 'io':
+      return 500;
+  }
+}
+
+/**
+ * The new-schema database. It is never the v33 `~/.buddies/buddies.sqlite`: the swap is the
+ * owner-gated import (crates/unleashd-buddies/README.md, "Deploy").
+ */
+export function buddiesDatabasePath(env: NodeJS.ProcessEnv = process.env): string {
+  return env.UNLEASHD_BUDDIES_DB ?? path.join(os.homedir(), '.buddies', 'buddies-v3.sqlite');
+}
+
+/**
+ * Open the core. A missing file fails loudly with the import command: `BuddiesCore.open`
+ * would otherwise create an EMPTY database there, and the server would run with no buddies
+ * instead of the owner's (no silent fallback to the old file either).
+ */
+export async function openBuddiesCore(file: string): Promise<BuddiesCore> {
+  if (!fs.existsSync(file)) {
+    throw new Error(
+      `Buddies database ${file} does not exist. Import the v33 database first:\n  buddies-import import --from ~/.buddies/buddies.sqlite --to ${file} --report ${file}.import.json\n  buddies-import verify --from ~/.buddies/buddies.sqlite --to ${file} --import-report ${file}.import.json --out ${file}.verify.json\n(or set UNLEASHD_BUDDIES_DB). See crates/unleashd-buddies/README.md "Deploy".`
+    );
+  }
+  return BuddiesCore.open(file);
+}
+
+/**
+ * The core behind a promise, so routes and modules can be built while it opens. Every method is
+ * async already; a failed open rejects every call with the open error (the import command).
+ */
+export function lateBoundCore(ready: Promise<BuddiesCore>): BuddiesCore {
+  return new Proxy({} as BuddiesCore, {
+    // Not a thenable: `await lateBoundCore(...)` must not treat the proxy as a promise.
+    get: (_target, name) =>
+      name === 'then'
+        ? undefined
+        : (...args: unknown[]) =>
+            ready.then((core) =>
+              (core[name as keyof BuddiesCore] as (...a: unknown[]) => unknown).apply(core, args)
+            ),
+  });
+}
+
+export async function archivedBuddyIds(core: BuddiesCore): Promise<Set<string>> {
+  const workspaces = await core.listWorkspaces();
+  const buddies = (await Promise.all(workspaces.map((w) => core.listBuddies(w.id)))).flat();
+  return new Set(buddies.filter((buddy) => buddy.status === 'archived').map((buddy) => buddy.id));
+}
+
+/** The doc audience a turn reads and writes under (CORE_DESIGN "audience"). */
+export function docScopeFor(context: Pick<BuddyContext, 'knowledgeScope'>): DocScope {
+  const scope = context.knowledgeScope;
+  if (!scope) return { kind: 'buddy' };
+  switch (scope.kind) {
+    case 'owner_thread':
+      return { kind: 'thread', threadId: scope.conversationId };
+    case 'project':
+      return { kind: 'task', taskId: scope.projectId };
+    case 'workspace':
+      return { kind: 'workspace', workspaceId: scope.workspaceId };
+  }
+}

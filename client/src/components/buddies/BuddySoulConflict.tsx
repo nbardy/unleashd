@@ -1,14 +1,17 @@
-import { BUDDY_SOUL_MAX_CHARACTERS } from '@unleashd/shared';
 import { useState } from 'react';
 import { type SoulMergeBlock, resolveSoulMerge } from './soul-merge';
 
 export function BuddySoulConflict({
+  label,
+  maxCharacters,
   blocks,
   baseRevision,
   savedRevision,
   onContinue,
   onCancel,
 }: {
+  label: string;
+  maxCharacters: number;
   blocks: SoulMergeBlock[];
   baseRevision: number;
   savedRevision: number;
@@ -23,12 +26,13 @@ export function BuddySoulConflict({
   const remaining = conflicts.filter(({ index }) => resolutions[index] === undefined).length;
 
   return (
-    <section className="buddy-soul-conflict" aria-label="Resolve soul changes">
+    <section className="buddy-soul-conflict" aria-label={`Resolve ${label} changes`}>
       <div aria-live="polite">
         <strong>Another edit was saved. Your draft is preserved.</strong>
         <p>
-          Your draft started at revision {baseRevision}; the saved soul is revision {savedRevision}.
-          Separate changes have been combined. Nothing has been saved from this review.
+          Your draft started at revision {baseRevision}; the saved {label} is revision{' '}
+          {savedRevision}. Separate changes have been combined. Nothing has been saved from this
+          review.
         </p>
       </div>
       {conflicts.map(({ block, index }, number) => (
@@ -91,12 +95,12 @@ export function BuddySoulConflict({
       </output>
       {merged !== null && (
         <label>
-          Combined soul preview
+          Combined preview
           <textarea readOnly rows={10} value={merged} />
-          {merged.length > BUDDY_SOUL_MAX_CHARACTERS && (
+          {merged.length > maxCharacters && (
             <small>
-              The combined soul exceeds {BUDDY_SOUL_MAX_CHARACTERS.toLocaleString()} characters.
-              Continue to the editor to shorten it before saving.
+              The combined text exceeds {maxCharacters.toLocaleString()} characters. Continue to the
+              editor to shorten it before saving.
             </small>
           )}
         </label>

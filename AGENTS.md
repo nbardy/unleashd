@@ -18,6 +18,11 @@ server/src/observability/error-journal.ts → durable grouped server/client fail
 server/src/adapters/*              → registry/disk-adapter/loader: session persistence
 server/src/auth/*                  → shared-secret gate (policy/gate/express)
 server/src/providers/*             → thin Provider impls per CLI
+server/src/buddies/*               → Buddy server over the crate: grants, mcp (one HTTP
+                                     endpoint, 12 tools), runner, channels, routes,
+                                     briefing, memory-review, policy-port (T08 seam)
+crates/unleashd-buddies/           → Buddies core (Rust, napi-rs addon): schema,
+                                     authorize, posts/docs/tasks/runs, v33 importer
 vendor/agent-cli-tool/             → GIT SUBMODULE: canonical request → argv →
                                      process → unified event stream. Thin wrapper;
                                      harness differences live at its edges only.
@@ -182,7 +187,7 @@ magenta). Run 1 and 3 back-to-back: live data drifts (sidebar badges,
   turn always differs); the tail-regroup test covers it.
 - iPad portrait (768px) renders the MOBILE tree; the switch is
   `matchMedia('(max-width: 768px)')`. A screen with no view on a tree
-  (`task-filter`, `settings-menu`, `usage` on mobile) is skipped there by design.
+  (`settings-menu`, `usage` on mobile) is skipped there by design.
 - Add a screen in `buildScreens()` in `tools/screenshots.mjs`: `views` maps a
   tree to `{ path, prepare }` (prepare = page JS run before the shot; return
   `'SKIP'` when its precondition is missing), `missing` is the skip reason when
@@ -268,13 +273,16 @@ magenta). Run 1 and 3 back-to-back: live data drifts (sidebar badges,
   failed on the new NOT NULL column until the app was vendored and restarted,
   and a v32 build refuses to open a v33 database at all (`CURRENT_SCHEMA_VERSION`
   ceiling). Package tests are safe: they set `BUDDIES_HOME` themselves.
-- After pulling a new `vendor/nbardy-buddies-0.1.0.tgz`, confirm the INSTALLED
-  package changed. The tarball name never changes, so `pnpm install` can report
-  "Already up to date" while `node_modules/.pnpm/@nbardy+buddies@file+vendor+…`
-  still holds an older extract. On 2026-09-25, after the beceb77 vendor merged,
-  the main tree still lacked `src/run-capacity.js` (the worktree that vendored it
-  had it). Check with `rg <new symbol> node_modules/@nbardy/buddies/src`; to fix,
-  `mv` that `.pnpm` directory aside and `pnpm install --frozen-lockfile --offline`.
+- The server's Buddies are the crate (`@unleashd/buddies-core`) over the NEW-schema
+  DB: `UNLEASHD_BUDDIES_DB`, default `~/.buddies/buddies-v3.sqlite`. It is never the
+  v33 `~/.buddies/buddies.sqlite`; a missing file fails every Buddy call with the
+  import command (`server/src/buddies/core.ts`), never an empty DB. Build the addon
+  once (`pnpm --dir crates/unleashd-buddies build`, needs cargo) and after any Rust
+  change, then restart the backend. Deploy sequence: crate README "Deploy".
+- The Buddy MCP endpoint (`server/src/buddies/mcp.ts`) listens on its OWN loopback
+  port. Never mount it on the gated Express app: a turn's bearer is not the owner
+  secret, and the owner secret must never reach a turn. Each turn's grant is
+  revoked at settle (the token is readable by the agent's shell).
 - When source is broken, `server/dist/*.js` (and `shared/dist/`) is the oracle
   for the author's prior intent — check it before git archaeology.
 - The formatter is **biome** (`pnpm format`, `pnpm lint:fix`; config in

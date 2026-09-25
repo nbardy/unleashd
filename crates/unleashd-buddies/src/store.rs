@@ -37,7 +37,7 @@ enum Rule {
 fn rule(op: Op) -> Rule {
     match op {
         Op::Admin => Rule::OwnerOnly,
-        Op::CreateChannel => Rule::AnyBuddy,
+        Op::CreateChannel | Op::SearchPosts => Rule::AnyBuddy,
         Op::Post | Op::ReadChannel => Rule::ChannelAccess,
         Op::ReadDoc | Op::WriteDoc | Op::WriteTask | Op::EnqueueRun | Op::CancelRun | Op::WriteSchedule => Rule::SelfOrManager,
     }

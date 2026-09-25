@@ -19,7 +19,10 @@ and one-hour ceiling. Deadline failures enter the existing `max_runtime_timeout`
 path; process and event drain still precede ownership settlement. Cancellation
 and expired tool authority remain enforced.
 
-Regression coverage lives in `server/test/buddy-coordination.test.ts` (real
+Since T11 (2026-09-25) the Buddy side of the guard is `server/test/buddies-v2.test.ts`: the
+runner leases every chat run for exactly `TURN_MAX_RUNTIME_MS`, and that lease is the chat's
+deadline. The runtime side stays in `conversation-runtime.test.ts`. Originally, regression
+coverage lived in `server/test/buddy-coordination.test.ts` (real
 packaged store, authority after 11 simulated minutes, explicit budget, expiry,
 cancellation, and unchanged background limits) and
 `server/test/conversation-runtime.test.ts` (budget propagation, truthful timeout

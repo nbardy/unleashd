@@ -9,10 +9,10 @@
  *     Buttons have no href: no middle-click, no open-in-new-tab, no status-bar
  *     target, and nothing in history. Reported 2026-08-21, fixed in 42dc28a.
  *
- *   - A buddy link row outlives its thread (deleting a conversation only
- *     terminalises the row) and an automation run keeps its `conversation_id`
- *     forever. Linking one of those lands on Chat.tsx's `navigate('/')` bounce,
- *     which reads to the user as "Open took me to the conversation list."
+ *   - A run keeps its `conversationId` forever (schedule runs, task runs), but
+ *     the conversation can be deleted. Linking one of those lands on Chat.tsx's
+ *     `navigate('/')` bounce, which reads to the user as "Open took me to the
+ *     conversation list." The run list is where both shells render them now.
  *
  * Renders the real components through a real MemoryRouter — no mocks, no
  * assertions on TSX source text.
@@ -25,162 +25,104 @@ import type { ReactElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { MemoryRouter } from 'react-router-dom';
 import { conversationsAtom } from '../src/atoms/conversations';
-import { BuddyAutomationsTab } from '../src/components/buddies/BuddyAutomationsTab';
 import { BuddyConversationList } from '../src/components/buddies/BuddyConversationList';
+import { BuddyRunList } from '../src/components/buddies/BuddyRunList';
 import { BuddySectionNav } from '../src/components/buddies/BuddySectionNav';
-import type { BuddyAutomation, ConversationLink } from '../src/components/buddies/types';
-import { AutomationsTab } from '../src/mobile/buddies/BuddyDetailAutomationsTab';
-import { ConversationsTab } from '../src/mobile/buddies/BuddyDetailConversationsTab';
+import type { Run } from '../src/components/buddies/types';
 
 const LIVE = 'live-conversation-id';
 const DEAD = 'dead-conversation-id';
 
-/** Ids the client actually holds. DEAD is deliberately absent. */
-const AVAILABLE = new Set([LIVE]);
+const buddyConversation = (id: string, overrides: Partial<Conversation> = {}) =>
+  ({
+    id,
+    kind: { kind: 'buddy', buddyId: 'lead', workspaceId: 'ws-1' },
+    messages: [],
+    isRunning: false,
+    createdAt: new Date('2026-09-15'),
+    ...overrides,
+  }) as Conversation;
 
-function link(conversationId: string, kind: ConversationLink['kind']): ConversationLink {
+/** A store holding exactly the LIVE conversation; DEAD is deliberately absent. */
+function storeWithLive() {
+  const store = createStore();
+  store.set(conversationsAtom, new Map([[LIVE, buddyConversation(LIVE)]]));
+  return store;
+}
+
+function scheduleRun(id: string, conversationId: string): Run {
   return {
-    id: `link-${conversationId}`,
-    unleashd_conversation_id: conversationId,
-    status: 'active',
-    kind,
-    last_active_at: '2026-08-21T00:00:00.000Z',
+    id,
+    inputKey: `schedule:${id}`,
+    attempt: 1,
+    input: { kind: 'schedule', scheduleId: 'nightly', slot: '2026-09-15T22:00:00Z' },
+    buddyId: 'lead',
+    workspaceId: 'ws-1',
+    conversationId,
+    status: 'complete',
+    readyAt: '2026-09-15T22:00:00Z',
+    createdAt: '2026-09-15T22:00:00Z',
   };
 }
 
-const AUTOMATION: BuddyAutomation = {
-  id: 'automation-1',
-  name: 'Nightly report',
-  schedule_kind: 'cron',
-  schedule_expression: '0 22 * * *',
-  timezone: 'UTC',
-  job_kind: 'prompt',
-  job_payload: { prompt: 'go' },
-  policy: {
-    max_runtime_seconds: 3600,
-    max_iterations: 1,
-    max_tokens: 1000,
-    max_cost_usd: 1,
-    allowed_operations: [],
-  },
-  // No `runs`: both shells fetch run history separately (mobile behind History),
-  // so an inline runs array would be fixture data no component reads.
-  enabled: true,
-};
-
-const render = (element: ReactElement): string =>
-  renderToStaticMarkup(<MemoryRouter>{element}</MemoryRouter>);
+const render = (element: ReactElement, store = storeWithLive()): string =>
+  renderToStaticMarkup(
+    <Provider store={store}>
+      <MemoryRouter>{element}</MemoryRouter>
+    </Provider>
+  );
 
 /** Hrefs of anchors pointing at a chat route, in document order. */
 function chatHrefs(html: string): string[] {
   return [...html.matchAll(/<a[^>]*href="(\/chat\/[^"]*)"/g)].map((match) => match[1]);
 }
 
-test('desktop automations tab links live automation threads and never links dead ones', () => {
+test('run lists link live run conversations and never link dead ones', () => {
   const html = render(
-    <BuddyAutomationsTab
-      automations={[]}
-      approvals={[]}
-      busy={false}
-      mutate={async () => {}}
-      availableConversationIds={AVAILABLE}
-      automationConversations={[link(LIVE, 'automation'), link(DEAD, 'automation')]}
+    <BuddyRunList
+      runs={[scheduleRun('run-live', LIVE), scheduleRun('run-dead', DEAD)]}
+      refresh={async () => {}}
+      empty="none"
     />
   );
-
   assert.deepEqual(chatHrefs(html), [`/chat/${LIVE}`]);
   assert.ok(!html.includes(DEAD), 'a dead conversation id must not reach the markup as a target');
-});
-
-test('mobile automations tab exposes explicit history and links only loaded live threads', () => {
-  const html = render(
-    <AutomationsTab
-      buddyId="buddy-1"
-      automations={[AUTOMATION]}
-      automationConversations={[link(LIVE, 'automation'), link(DEAD, 'automation')]}
-      busy={null}
-      setBusy={() => {}}
-      error={null}
-      availableIds={AVAILABLE}
-      onRefresh={() => {}}
-    />
-  );
-
-  // Runs are fetched only after History instead of pretending the bare automation-list
-  // response contains them. The already-loaded live automation conversation remains a link.
-  assert.ok(html.includes('History'));
-  assert.deepEqual(chatHrefs(html), [`/chat/${LIVE}`]);
-  assert.ok(!html.includes(DEAD), 'a dead conversation id must not reach the markup as a target');
-});
-
-test('mobile chats tab opens a conversation through an anchor, not an onClick', () => {
-  // Availability is derived from the store (allConversationIdsAtom) rather than
-  // passed in, so the tab needs a store holding exactly the live conversation.
-  const store = createStore();
-  store.set(
-    conversationsAtom,
-    new Map([[LIVE, { id: LIVE, messages: [] } as unknown as Conversation]])
-  );
-  const html = render(
-    <Provider store={store}>
-      <ConversationsTab
-        conversations={[link(LIVE, 'conversation'), link(DEAD, 'conversation')]}
-        reviewCount={0}
-        showReviewConversations={false}
-        onToggleReviews={() => {}}
-        workspace={undefined}
-        onTalk={() => {}}
-      />
-    </Provider>
-  );
-
-  assert.deepEqual(chatHrefs(html), [`/chat/${LIVE}`]);
-  assert.ok(!html.includes(`/chat/${DEAD}`), 'a dead conversation must not be linked');
 });
 
 test('Buddy conversations show real previews, sort running first, and react to completion', () => {
   const store = createStore();
-  const running = {
-    id: LIVE,
+  const running = buddyConversation(LIVE, {
     messages: [
       { role: 'user', content: 'Review the launch plan', timestamp: new Date('2026-09-15') },
     ],
     isRunning: true,
-    createdAt: new Date('2026-09-15'),
-  } as Conversation;
-  const recent = {
-    id: 'recent',
+  });
+  const recent = buddyConversation('recent', {
     messages: [
       { role: 'assistant', content: 'The rollout is ready', timestamp: new Date('2026-09-16') },
     ],
-    isRunning: false,
     createdAt: new Date('2026-09-16'),
-  } as Conversation;
+  });
+  const background = buddyConversation('background', { placement: 'background' });
+  const otherBuddy = buddyConversation('other', {
+    kind: { kind: 'buddy', buddyId: 'engineer', workspaceId: 'ws-1' },
+  });
   store.set(
     conversationsAtom,
     new Map([
       [LIVE, running],
       ['recent', recent],
+      ['background', background],
+      ['other', otherBuddy],
     ])
   );
-  const links = [
-    link('recent', 'conversation'),
-    link(LIVE, 'conversation'),
-    link(LIVE, 'conversation'),
-    link(DEAD, 'conversation'),
-  ];
-  const renderList = () =>
-    render(
-      <Provider store={store}>
-        <BuddyConversationList links={links} />
-      </Provider>
-    );
+  const renderList = () => render(<BuddyConversationList buddyId="lead" />, store);
   const html = renderList();
+  // Background work and other Buddies' chats have their own surfaces.
   assert.deepEqual(chatHrefs(html), [`/chat/${LIVE}`, '/chat/recent']);
   assert.ok(html.includes('Review the launch plan'));
   assert.ok(html.includes('The rollout is ready'));
   assert.ok(html.includes('Running'));
-  assert.ok(html.includes('Unavailable'));
   store.set(
     conversationsAtom,
     new Map([
@@ -199,4 +141,5 @@ test('Buddy navigation keeps secondary sections reachable as real routes', () =>
   const memoryLink = html.match(/<a[^>]*href="\/buddies\/buddy-1\/memory"[^>]*>/)?.[0];
   assert.ok(memoryLink?.includes('aria-current="page"'));
   assert.ok(html.includes('href="/buddies/buddy-1/settings"'));
+  assert.ok(html.includes('href="/buddies/buddy-1/schedules"'));
 });

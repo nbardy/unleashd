@@ -22,7 +22,6 @@ test('desktop slack rail: buddy name is a DM button, never a buddy-page link', (
     <MemoryRouter>
       <BuddyRailRow
         member={{ id: 'b1', name: 'Lead', role: 'Own the work' }}
-        workspaceId="ws"
         openDm={() => {}}
         current={false}
       />

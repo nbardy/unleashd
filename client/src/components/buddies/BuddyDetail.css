@@ -130,35 +130,6 @@
   cursor: pointer;
 }
 
-.buddy-memory-workspace {
-  display: grid;
-  gap: 12px;
-  min-width: 0;
-}
-.buddy-memory-workspace > label {
-  display: grid;
-  gap: 6px;
-  color: var(--text-secondary);
-  font-size: 12px;
-}
-.buddy-memory-workspace > label select {
-  width: 100%;
-  min-width: 0;
-  min-height: 44px;
-  padding: 8px 12px;
-  border: 1px solid var(--border-default);
-  border-radius: var(--ui-radius);
-  background: var(--bg-raised-1);
-  color: var(--text-emphasis);
-  font: inherit;
-  font-size: 16px;
-}
-.buddy-memory-workspace > p {
-  color: var(--text-secondary);
-  font-size: 12px;
-  line-height: 1.5;
-}
-
 .buddy-work-disclosure {
   border-bottom: 1px solid var(--border-subtle);
 }
@@ -200,4 +171,186 @@
   color: var(--text-secondary);
   font-size: 13px;
   cursor: pointer;
+}
+
+/* Buddy page panels (components/buddies/BuddyTabContent.tsx), both shells. */
+.buddy-panel {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+.buddy-panel__title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+.buddy-panel__title h2 {
+  margin: 0;
+  font-size: 18px;
+}
+.buddy-panel__title > span,
+.buddy-panel__hint,
+.buddy-panel__empty {
+  margin: 0;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+.buddy-panel__heading {
+  margin: 12px 0 4px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+.buddy-panel__error {
+  margin: 0;
+  color: var(--danger);
+  font-size: 13px;
+}
+.buddy-panel__criteria {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.buddy-panel__form {
+  display: grid;
+  gap: 8px;
+  max-width: 640px;
+}
+.buddy-panel__form label {
+  display: grid;
+  gap: 4px;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+.buddy-panel__form input,
+.buddy-panel__form select,
+.buddy-panel__form textarea {
+  min-height: 40px;
+  padding: 8px 10px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--ui-radius);
+  background: var(--bg-raised-1);
+  color: var(--text-emphasis);
+  font: inherit;
+  font-size: 16px;
+}
+.buddy-panel__form label.buddy-panel__check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.buddy-panel__form label.buddy-panel__check input {
+  min-height: 0;
+}
+.buddy-panel__form button,
+.buddy-panel__actions button,
+.buddy-panel__title button,
+.buddy-page-actions button,
+.buddy-run-list button {
+  justify-self: start;
+  min-height: 40px;
+  padding: 8px 14px;
+  border: 1px solid var(--border-default);
+  border-radius: var(--ui-radius);
+  background: var(--bg-raised-1);
+  color: var(--text-primary);
+  cursor: pointer;
+}
+.buddy-panel__actions,
+.buddy-page-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.buddy-post-list,
+.buddy-run-list,
+.buddy-task-list__todos {
+  display: grid;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.buddy-post-list > li,
+.buddy-run-list > li {
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.buddy-post-list__meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+.buddy-post-list__meta strong {
+  color: var(--text-bright);
+}
+.buddy-post-list__body {
+  margin: 6px 0 0;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  line-height: 1.5;
+}
+.buddy-post-list__evidence {
+  margin: 6px 0 0;
+  padding-left: 18px;
+  color: var(--text-secondary);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+.buddy-dm__request {
+  color: var(--accent-primary);
+}
+.buddy-run-list > li {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.buddy-run-list__what {
+  display: grid;
+  flex: 1;
+  gap: 2px;
+  min-width: 0;
+  font-size: 13px;
+}
+.buddy-run-list__what > span {
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+.buddy-run-list__error {
+  overflow-wrap: anywhere;
+}
+.buddy-relations {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px 16px;
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+.buddy-relations__reports {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.buddy-doc {
+  display: grid;
+  gap: 6px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid var(--border-subtle);
+}
+.buddy-doc__heading {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+}
+.buddy-doc__heading h3 {
+  margin: 0;
+  font-size: 15px;
+}
+.buddy-doc__heading small {
+  color: var(--text-secondary);
 }

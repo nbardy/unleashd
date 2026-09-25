@@ -327,66 +327,6 @@
   white-space: nowrap;
 }
 
-.channel-browser-task-filter {
-  display: flex;
-  flex: none;
-  align-items: center;
-  gap: 8px;
-  color: var(--text-muted);
-  font: 500 11px / 1 var(--font-mono);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-}
-
-.channel-browser-task-filter select {
-  /* Uncapped, this picker stretched across the header and squeezed the
-     channel name into three wrapped lines. */
-  width: auto;
-  max-width: 220px;
-  height: 28px;
-  padding: 0 8px;
-  border: 1px solid var(--border-default);
-  border-radius: 6px;
-  background: var(--bg-content);
-  color: var(--text-primary);
-  font: 500 12px / 1 var(--font-mono);
-  text-transform: none;
-  cursor: pointer;
-}
-
-.channel-browser-filter-banner {
-  display: flex;
-  flex: none;
-  align-items: center;
-  gap: 6px;
-  padding: 8px 24px;
-  border-bottom: 1px solid var(--border-subtle);
-  background: color-mix(in srgb, var(--theme-user) 10%, transparent);
-  color: var(--text-secondary);
-  font-size: 12.5px;
-}
-
-.channel-browser-filter-banner code {
-  color: var(--text-emphasis);
-  font-family: var(--font-mono);
-}
-
-.channel-browser-filter-banner button {
-  margin-left: auto;
-  padding: 3px 10px;
-  border: 1px solid var(--border-default);
-  border-radius: 6px;
-  background: transparent;
-  color: var(--text-primary);
-  font-size: 12px;
-  cursor: pointer;
-}
-
-.channel-browser-filter-banner button:hover {
-  color: var(--text-bright);
-  border-color: var(--border-emphasis);
-}
-
 .channel-browser-scroll {
   display: flex;
   flex: 1;
@@ -445,22 +385,6 @@
   position: absolute;
   inset: 50% 24px auto;
   border-top: 1px solid var(--border-subtle);
-}
-
-.channel-browser-new-messages {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin: 8px 24px 2px;
-  color: var(--danger);
-  font-size: 11.5px;
-  font-weight: 700;
-}
-
-.channel-browser-new-messages::before {
-  content: "";
-  flex: 1;
-  border-top: 1px solid var(--danger);
 }
 
 .channel-browser-day span {
@@ -563,7 +487,6 @@
 }
 
 .channel-browser-purpose,
-.channel-browser-channel-tag,
 .channel-browser-instance {
   padding: 1px 6px;
   border-radius: 4px;
@@ -573,11 +496,6 @@
 .channel-browser-purpose {
   background: color-mix(in srgb, var(--theme-ai) 14%, transparent);
   color: var(--ai-bright);
-}
-
-.channel-browser-channel-tag {
-  background: color-mix(in srgb, var(--text-emphasis) 8%, transparent);
-  color: var(--text-secondary);
 }
 
 .channel-browser-instance {
@@ -892,18 +810,6 @@ a.channel-browser-buddy-done {
   font-weight: 600;
 }
 
-.channel-browser-thread-summary button[data-unread] strong {
-  font-weight: 800;
-}
-
-.channel-browser-thread-unread {
-  align-self: center;
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
-  background: var(--danger);
-}
-
 .channel-browser-thread-summary button:hover {
   border-color: var(--border-subtle);
   background: var(--bg-base);
@@ -1045,7 +951,6 @@ a.channel-browser-buddy-done {
   }
 
   .channel-browser-pane-header,
-  .channel-browser-filter-banner,
   .channel-browser-message {
     padding-right: 14px;
     padding-left: 14px;

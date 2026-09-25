@@ -3,188 +3,200 @@
  *
  * Channel data shared by the desktop channel browser and the mobile channel
  * screens: resource URLs, transcript rows, the workspace directory (members,
- * Tasks, @ references) and who is replying. No JSX, no CSS — mobile may import
- * it (gate G3 allows components/buddies/).
+ * Tasks, @ references), who is replying and the owner's unread state. No JSX,
+ * no CSS — mobile may import it (gate G3 allows components/buddies/).
+ *
+ * Server: server/src/buddies/routes.ts. Everything is a post in a channel;
+ * a channel is public (#name), direct (DM between members) or a task's.
  */
 import {
-  type BuddyChannelThread,
-  BuddyChannelThreadSchema,
-  type BuddyListAuthor,
-  type BuddyMailingListPost,
-  BuddyMailingListPostsSchema,
   type BuddyMemberExecution,
-  type BuddyWorkspaceActivity,
-  BuddyWorkspaceActivitySchema,
-  type OwnerChannelUnread,
-  OwnerChannelUnreadSchema,
-  type OwnerListUnread,
-  type OwnerReadThrough,
-  isAfterReadThrough,
+  type ConversationConfig,
+  ConversationConfigSchema,
 } from '@unleashd/shared';
 import { useAtomValue } from 'jotai';
 import { type UIEvent, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { type OutboxEntry, channelOutboxAtom, outboxDrop } from '../../atoms/channel-outbox';
 import { warmResources } from '../../atoms/prefetch';
 import { seedResource } from '../../atoms/resources';
+import { useBuddyOverview } from '../../hooks/useBuddyData';
 import { type PolledState, resource, usePolledFetch } from '../../hooks/usePolledFetch';
-import { newId } from '../../utils/ids';
-import { buddyApi } from './api';
-import { type ChannelReference, type ChannelTask, workspaceTasksUrl } from './channel-text';
+import { buddyApi, buddyWrite } from './api';
+import { type ChannelReference, type ChannelTask, channelTasks } from './channel-text';
+import { activeBuddies, buddyNamesOf, findWorkspace } from './roster';
+import type {
+  Actor,
+  Buddy,
+  BuddyOverview,
+  Channel,
+  ChannelKind,
+  ChannelResponse,
+  ChannelUnread,
+  Cursor,
+  Inbox,
+  Post,
+  PostPage,
+  Task,
+  ThreadPage,
+} from './types';
 import { taskStatusView } from './ui-contract';
 
-export function workspaceActivityResource(workspaceId: string) {
-  const path = `/api/buddies/workspaces/${encodeURIComponent(workspaceId)}/activity`;
-  return resource(path, async (signal: AbortSignal) =>
-    BuddyWorkspaceActivitySchema.parse(await buddyApi(path, { signal }))
-  );
-}
-
-export interface BuddyMailingListSummary {
-  id: string;
-  workspaceId: string;
-  name: string;
-  purpose: string;
-  createdBy: BuddyListAuthor;
-  createdAt: string;
-  postCount: number;
-  latestPostAt: string | null;
-}
-
-export function authorKey(author: BuddyListAuthor): string {
+export function authorKey(author: Actor): string {
   switch (author.kind) {
     case 'owner':
       return 'owner';
     case 'buddy':
-      return author.buddyId;
+      return author.id;
   }
 }
 
 /** The name a post's author shows as: the owner is "You", a Buddy its name. */
-export function authorName(
-  author: BuddyListAuthor,
-  buddyNames: Readonly<Record<string, string>>
-): string {
+export function authorName(author: Actor, buddyNames: Readonly<Record<string, string>>): string {
   switch (author.kind) {
     case 'owner':
       return 'You';
     case 'buddy':
-      return buddyNames[author.buddyId] ?? author.buddyId;
+      return buddyNames[author.id] ?? author.id;
   }
 }
 
-// Channels are pushed, not polled: the server's `channel_changed` (a post, or
-// who is replying) and `buddies_changed` (any other write) refresh exactly the
-// views they touch, and a reconnect or a tab returning to view refreshes
-// everything. This poll is only a backstop for a lost push.
+// Channels are pushed, not polled: the server's `channel_changed` (a post, a
+// read mark, or who is replying) and `buddies_changed` (any other write)
+// refresh exactly the views they touch (atoms/resources.ts), and a reconnect
+// or a tab returning to view refreshes everything. This poll is only a
+// backstop for a lost push.
 export const CHANNEL_BACKSTOP_MS = 30_000;
-
-export function listsUrl(workspaceId: string): string {
-  return `/api/buddies/lists?workspaceId=${encodeURIComponent(workspaceId)}`;
-}
 
 /** Posts per page read; the newest page is what every channel warms. */
 export const CHANNEL_PAGE = 50;
 
-// What a feed reads: D = Latest ⊕ From(floor).
-// Latest is the newest page. Once the reader pages back, the feed reads from
-// its oldest loaded post (the floor) to the newest instead. Re-reading the
-// newest page would slide the window: every new post would push the oldest
-// one out above the reader, and open a gap between it and the history they
-// loaded. `complete`: the floor is the feed's first post.
-export type ChannelRange = { kind: 'latest' } | { kind: 'from'; floor: string; complete: boolean };
+// ── The rail ────────────────────────────────────────────────────────────────
 
-const LATEST_RANGE: ChannelRange = { kind: 'latest' };
-
-// Where a feed's posts sit in its answer. Every post read parses here: the
-// fetch boundary checks the v33 wire shape once, so a stale or foreign server
-// surfaces as the view's refresh error instead of a crash (or a silent
-// "Unknown") deep in rendering.
-type FeedWindow<V> = {
-  parse(json: unknown): V;
-  posts(value: V): readonly BuddyMailingListPost[];
-  withOlder(value: V, older: readonly BuddyMailingListPost[]): V;
-};
-
-// A channel's or a Task's answer is its posts.
-const POSTS: FeedWindow<BuddyMailingListPost[]> = {
-  parse: (json) => BuddyMailingListPostsSchema.parse(json),
-  posts: (posts) => posts,
-  withOlder: (posts, older) => [...posts, ...older],
-};
-
-// A thread's answer is its root beside the replies read.
-const THREAD: FeedWindow<BuddyChannelThread> = {
-  parse: (json) => BuddyChannelThreadSchema.parse(json),
-  posts: (thread) => thread.replies,
-  withOlder: (thread, older) => ({ ...thread, replies: [...thread.replies, ...older] }),
-};
-
-/**
- * A feed the owner reads, paged by keyset: D = Channel ⊕ Task ⊕ Thread
- * (server/src/buddies/channel-pages.ts OwnerFeed). Every feed route answers
- * the same query, newest-first: the newest page (`limit`), the page before a
- * post (`before`), or a post and everything newer (`from`). So a feed is only
- * its URL up to that query (`query`, ending in `?` or `&`), where its posts
- * sit in the answer, and the range it opens on.
- */
-export type PostFeed<V> = { query: string; window: FeedWindow<V>; opens: ChannelRange };
-
-export function channelPostFeed(listId: string): PostFeed<BuddyMailingListPost[]> {
-  return {
-    query: `/api/buddies/lists/${encodeURIComponent(listId)}/posts?`,
-    window: POSTS,
-    opens: LATEST_RANGE,
-  };
+/** GET: the owner's requests, its channels in the workspace, unread per channel. */
+export function inboxUrl(workspaceId: string): string {
+  return `/api/buddies/workspaces/${encodeURIComponent(workspaceId)}/inbox`;
 }
 
-// A Task filter reads the workspace-wide feed so one Task's discussion is
-// visible across every channel, not just the selected one.
-export function taskPostFeed(
-  workspaceId: string,
-  projectId: string
-): PostFeed<BuddyMailingListPost[]> {
-  return {
-    query: `/api/buddies/posts?workspaceId=${encodeURIComponent(workspaceId)}&projectId=${encodeURIComponent(projectId)}&`,
-    window: POSTS,
-    opens: LATEST_RANGE,
-  };
+export function useWorkspaceInbox(workspaceId: string) {
+  return usePolledFetch<Inbox>(inboxUrl(workspaceId), CHANNEL_BACKSTOP_MS);
 }
 
-// A thread opens on its newest replies, or from the reply a permalink names
-// (`post=`) so that reply renders however far back it is; whether it is the
-// first reply shows when the page before it comes back empty. Opening on the
-// newest 50 alone would leave an older linked reply unrendered, unscrolled-to.
-export function threadPostFeed(
-  listId: string,
-  rootId: string,
-  linkedPostId: string | null
-): PostFeed<BuddyChannelThread> {
-  return {
-    query: `/api/buddies/lists/${encodeURIComponent(listId)}/threads/${encodeURIComponent(rootId)}?`,
-    window: THREAD,
-    opens:
-      linkedPostId === null ? LATEST_RANGE : { kind: 'from', floor: linkedPostId, complete: false },
-  };
+/** What the rail lists: public channels and the owner's DMs. Task channels live on their task. */
+export type RailChannels = { channels: ChannelUnread[]; direct: ChannelUnread[] };
+
+const NO_RAIL: RailChannels = { channels: [], direct: [] };
+
+export function railChannels(inbox: Inbox | null): RailChannels {
+  if (inbox === null) return NO_RAIL;
+  const rail: RailChannels = { channels: [], direct: [] };
+  for (const entry of inbox.channels) {
+    switch (entry.channel.kind.type) {
+      case 'public':
+        rail.channels.push(entry);
+        break;
+      case 'direct':
+        rail.direct.push(entry);
+        break;
+      case 'task':
+        break;
+    }
+  }
+  return rail;
 }
 
-function rangeQuery(range: ChannelRange): string {
-  switch (range.kind) {
-    case 'latest':
-      return `limit=${CHANNEL_PAGE}`;
-    case 'from':
-      return `from=${encodeURIComponent(range.floor)}`;
+/** A channel's heading: `#name` and its purpose, a DM's other members, a task's channel. */
+export type ChannelHeading = { mark: '#' | '@' | '◇'; name: string; about: string };
+
+export function channelHeading(
+  kind: ChannelKind,
+  buddyNames: Readonly<Record<string, string>>
+): ChannelHeading {
+  switch (kind.type) {
+    case 'public':
+      return { mark: '#', name: kind.name, about: kind.purpose };
+    case 'direct':
+      return {
+        mark: '@',
+        name: kind.members
+          .filter((member) => member.kind === 'buddy')
+          .map((member) => authorName(member, buddyNames))
+          .join(', '),
+        about: 'Direct messages',
+      };
+    case 'task':
+      return { mark: '◇', name: 'Task discussion', about: kind.taskId };
   }
 }
 
-function feedResource<V>(feed: PostFeed<V>, range: ChannelRange) {
-  const url = `${feed.query}${rangeQuery(range)}`;
-  return resource(url, async (signal: AbortSignal) =>
-    feed.window.parse(await buddyApi(url, { signal }))
+/** Warm every rail channel's newest page at idle, so a first switch renders from cache. */
+export function useWarmChannelPosts(entries: readonly ChannelUnread[]): void {
+  const ids = entries.map((entry) => entry.channel.id).join('\n');
+  useEffect(() => {
+    if (ids) warmResources(ids.split('\n').map((id) => latestResource(channelFeed(id))));
+  }, [ids]);
+}
+
+/** Create a public channel as the owner; resolves to the new channel. */
+export function createChannel(workspaceId: string, name: string, purpose: string) {
+  return buddyWrite<Channel>(
+    `/api/buddies/workspaces/${encodeURIComponent(workspaceId)}/channels`,
+    'POST',
+    { name, purpose }
   );
 }
 
-export function channelPostsResource(listId: string) {
-  return feedResource(channelPostFeed(listId), LATEST_RANGE);
+// ── Feeds ───────────────────────────────────────────────────────────────────
+
+/**
+ * A feed the owner reads, newest first, keyset-paged: D = Channel ⊕ Thread.
+ * A channel's answer is its top-level posts; a thread's is its root beside
+ * the replies. `base` is the URL up to the query (ending in `?`); every
+ * per-channel key starts with it, which is what invalidation matches.
+ */
+type FeedPage = { posts: readonly Post[]; next?: Cursor };
+export type PostFeed<V> = { base: string; page(value: V): FeedPage };
+
+export function channelFeed(channelId: string): PostFeed<PostPage> {
+  return {
+    base: `/api/buddies/channels/${encodeURIComponent(channelId)}/posts?`,
+    page: (value) => value,
+  };
+}
+
+export function threadFeed(rootId: string): PostFeed<ThreadPage> {
+  return {
+    base: `/api/buddies/posts/${encodeURIComponent(rootId)}/thread?`,
+    page: (value) => value,
+  };
+}
+
+const cursorQuery = (cursor: Cursor) =>
+  `before=${encodeURIComponent(cursor.createdAt)}&beforeId=${encodeURIComponent(cursor.id)}`;
+
+function latestResource<V>(feed: PostFeed<V>) {
+  const url = `${feed.base}limit=${CHANNEL_PAGE}`;
+  return resource(url, (signal) => buddyApi<V>(url, { signal }));
+}
+
+// History the reader paged back into: `pages` pages before `start`, the
+// cursor the newest page ended on when paging began. Keyed by its start, so
+// new posts landing on the newest page never move it.
+type History = { start: Cursor; pages: number };
+
+function historyResource<V>(feed: PostFeed<V>, history: History) {
+  const url = `${feed.base}limit=${CHANNEL_PAGE}&${cursorQuery(history.start)}`;
+  return resource(`${url}&pages=${history.pages}`, async (signal): Promise<FeedPage> => {
+    const posts: Post[] = [];
+    let cursor: Cursor | undefined = history.start;
+    for (let page = 0; page < history.pages && cursor; page += 1) {
+      const next: FeedPage = feed.page(
+        await buddyApi<V>(`${feed.base}limit=${CHANNEL_PAGE}&${cursorQuery(cursor)}`, { signal })
+      );
+      posts.push(...next.posts);
+      cursor = next.next;
+    }
+    return { posts, next: cursor };
+  });
 }
 
 // The top of a feed: D = More ⊕ Loading ⊕ Failed ⊕ Complete.
@@ -195,138 +207,99 @@ export type OlderEdge =
   | { kind: 'complete' };
 
 type OlderRequest = { kind: 'idle' } | { kind: 'loading' } | { kind: 'failed'; error: Error };
+type Paging = { base: string; history: History | null; request: OlderRequest };
 
-const IDLE_REQUEST: OlderRequest = { kind: 'idle' };
-const LOADING_REQUEST: OlderRequest = { kind: 'loading' };
-const NO_POSTS: readonly BuddyMailingListPost[] = [];
+const IDLE: OlderRequest = { kind: 'idle' };
 
-function olderEdge(
-  range: ChannelRange,
-  request: OlderRequest,
-  posts: readonly BuddyMailingListPost[]
-): OlderEdge {
+function edgeOf(request: OlderRequest, next: Cursor | undefined | null): OlderEdge {
   switch (request.kind) {
-    case 'idle':
-      return settledEdge(range, posts);
     case 'loading':
     case 'failed':
       return request;
+    case 'idle':
+      if (next === null) return { kind: 'loading' };
+      return next === undefined ? { kind: 'complete' } : { kind: 'more' };
   }
-}
-
-// A newest page shorter than a full page is the whole feed.
-function settledEdge(range: ChannelRange, posts: readonly BuddyMailingListPost[]): OlderEdge {
-  switch (range.kind) {
-    case 'latest':
-      return { kind: posts.length < CHANNEL_PAGE ? 'complete' : 'more' };
-    case 'from':
-      return { kind: range.complete ? 'complete' : 'more' };
-  }
-}
-
-// Paging belongs to the feed it paged (its `query`). A pane switched to
-// another feed, another Task in the filter, starts that one where it opens
-// instead of asking it for the last feed's floor, which it would refuse.
-type Paging = { query: string | null; range: ChannelRange; request: OlderRequest };
-
-function opening<V>(feed: PostFeed<V> | null): Paging {
-  return feed === null
-    ? { query: null, range: LATEST_RANGE, request: IDLE_REQUEST }
-    : { query: feed.query, range: feed.opens, request: IDLE_REQUEST };
 }
 
 /**
- * One feed's posts, newest-first, with history on demand; `null` reads
- * nothing (no Task filtered). `loadOlder` reads the page before the oldest
- * post held and moves the feed to a From range covering it, seeded with what
- * it already holds so the switch renders at once. `beforePrepend` runs just
- * before the older rows render above the reader (useFollowBottom's `hold`).
+ * One feed's posts, newest-first, with history on demand. `loadOlder` reads
+ * the page before the oldest post held and seeds the grown history key with
+ * everything it already holds, so the switch renders at once. `beforePrepend`
+ * runs just before the older rows render above the reader (useFollowBottom's
+ * `hold`).
+ *
+ * The newest page keeps polling while history is open; history is fixed at
+ * where paging began. Only if more than a page of new posts lands while the
+ * reader is paged back does a gap open between the two (left for T14: the API
+ * has no "posts after" query to close it).
  */
-export function useChannelFeed<V>(feed: PostFeed<V> | null) {
-  const opened = opening(feed);
-  const [held, setHeld] = useState(opened);
-  const paging = held.query === opened.query ? held : opened;
-  const view = usePolledFetch(
-    feed === null ? null : feedResource(feed, paging.range),
-    CHANNEL_BACKSTOP_MS
+export function useChannelFeed<V>(feed: PostFeed<V>) {
+  const [held, setHeld] = useState<Paging>({ base: feed.base, history: null, request: IDLE });
+  const paging: Paging =
+    held.base === feed.base ? held : { base: feed.base, history: null, request: IDLE };
+  const latest = usePolledFetch(latestResource(feed), CHANNEL_BACKSTOP_MS);
+  const history = usePolledFetch(
+    paging.history === null ? null : historyResource(feed, paging.history),
+    0
   );
-  const posts = feed === null || view.data === null ? NO_POSTS : feed.window.posts(view.data);
-  const edge = olderEdge(paging.range, paging.request, posts);
+  const newest = latest.data === null ? null : feed.page(latest.data);
+  const posts = useMemo(() => {
+    if (newest === null) return null;
+    if (history.data === null) return newest.posts;
+    const seen = new Set(newest.posts.map((post) => post.id));
+    return [...newest.posts, ...history.data.posts.filter((post) => !seen.has(post.id))];
+  }, [newest, history.data]);
+  // `null`: the page that decides the edge has not loaded yet.
+  const next =
+    paging.history === null
+      ? newest === null
+        ? null
+        : newest.next
+      : history.data === null
+        ? null
+        : history.data.next;
+  const edge = edgeOf(paging.request, next);
   const loadOlder = async (beforePrepend: () => void) => {
-    const shown = view.data;
-    const oldest = posts[posts.length - 1];
-    if (feed === null || shown === null || !oldest) return;
-    if (edge.kind === 'loading' || edge.kind === 'complete') return;
-    setHeld({ ...paging, request: LOADING_REQUEST });
+    if (edge.kind !== 'more' || !next) return;
+    setHeld({ ...paging, request: { kind: 'loading' } });
     try {
-      const page = feed.window.posts(
-        feed.window.parse(
-          await buddyApi(
-            `${feed.query}before=${encodeURIComponent(oldest.id)}&limit=${CHANNEL_PAGE}`
-          )
-        )
+      const page = feed.page(
+        await buddyApi<V>(`${feed.base}limit=${CHANNEL_PAGE}&${cursorQuery(next)}`)
       );
-      const next: ChannelRange = {
-        kind: 'from',
-        floor: (page[page.length - 1] ?? oldest).id,
-        complete: page.length < CHANNEL_PAGE,
-      };
-      if (page.length > 0) beforePrepend();
-      seedResource(feedResource(feed, next), feed.window.withOlder(shown, page));
-      setHeld({ query: feed.query, range: next, request: IDLE_REQUEST });
+      const grown: History =
+        paging.history === null
+          ? { start: next, pages: 1 }
+          : { start: paging.history.start, pages: paging.history.pages + 1 };
+      if (page.posts.length > 0) beforePrepend();
+      seedResource(historyResource(feed, grown), {
+        posts: [...(history.data?.posts ?? []), ...page.posts],
+        next: page.next,
+      });
+      setHeld({ base: feed.base, history: grown, request: IDLE });
     } catch (cause) {
       const error = cause instanceof Error ? cause : new Error(String(cause));
       setHeld({ ...paging, request: { kind: 'failed', error } });
     }
   };
-  return { feed: view, edge, loadOlder };
+  return { latest, posts, edge, loadOlder };
 }
 
-/**
- * Warm every channel's posts at idle once the rail knows them, so switching
- * to a channel for the first time renders from cache like switching back does.
- * Keyed on the id set, not the polled array, so a poll does not re-schedule.
- */
-export function useWarmChannelPosts(lists: readonly { id: string }[] | null): void {
-  const ids = lists?.map((list) => list.id).join('\n') ?? '';
-  useEffect(() => {
-    if (ids) warmResources(ids.split('\n').map(channelPostsResource));
-  }, [ids]);
+/** The newest post a feed has served (never an outbox stand-in): what "read" marks through. */
+export function newestServedId(posts: readonly Post[] | null): string | null {
+  return posts?.[0]?.id ?? null;
 }
 
-export function respondingUrl(listId: string): string {
-  return `/api/buddies/lists/${encodeURIComponent(listId)}/responding`;
-}
+// ── Transcript rows ─────────────────────────────────────────────────────────
 
-// Every workspace member names posts (archived authors included); only active
-// ones appear in the rail and the @ menu.
-export type ChannelMember = {
-  id: string;
-  name: string;
-  role: string;
-  status: string;
-  execution: BuddyMemberExecution;
-};
-
-// 'queued': the reply waits for a free slot under the Buddy's run limit
-// (server channel-responder.ts). Optional on the wire: a backend that has not
-// reloaded yet sends rows without it, and those are all replying.
-export type ChannelResponse = {
-  threadRootId: string;
-  buddyId: string;
-  state?: 'replying' | 'queued';
-};
-
-// =============================================================================
-// Transcript rows: D = Day ⊕ Lead ⊕ Continuation.
-// A Lead opens a sender run (avatar + name); a Continuation is a later post by
-// the same instance (Buddy AND conversation) within GROUP_WINDOW_MS, so two
-// concurrent conversations running as one Buddy never merge into one run.
-// =============================================================================
+// D = Day ⊕ Lead ⊕ Continuation. A Lead opens a sender run (avatar + name); a
+// Continuation is a later post by the same instance (author AND the
+// conversation it was written from) within GROUP_WINDOW_MS, so two concurrent
+// conversations running as one Buddy never merge into one run.
 export type ChannelRow =
   | { kind: 'day'; key: string; label: string }
-  | { kind: 'lead'; key: string; post: BuddyMailingListPost }
-  | { kind: 'continuation'; key: string; post: BuddyMailingListPost };
+  | { kind: 'lead'; key: string; post: Post }
+  | { kind: 'continuation'; key: string; post: Post };
 
 const GROUP_WINDOW_MS = 5 * 60_000;
 
@@ -334,35 +307,34 @@ function dayKey(iso: string): string {
   return new Date(iso).toDateString();
 }
 
-function sameInstance(a: BuddyMailingListPost, b: BuddyMailingListPost): boolean {
-  return (
-    authorKey(a.author) === authorKey(b.author) && a.senderConversationId === b.senderConversationId
-  );
+function sameInstance(a: Post, b: Post): boolean {
+  return authorKey(a.author) === authorKey(b.author) && a.conversationId === b.conversationId;
 }
 
 /**
- * `posts` (one channel's roots, or one thread's replies) plus the owner's
- * posts the server has not returned yet (atoms/channel-outbox.ts), so Send
- * shows the message at once. Entries a refetch now includes leave the outbox.
- * `null` stays `null`: nothing loaded yet is not the same as no posts.
+ * `posts` (one channel's top-level posts, or one thread's replies) plus the
+ * owner's posts the server has not returned yet (atoms/channel-outbox.ts), so
+ * Send shows the message at once. Entries a refetch now includes leave the
+ * outbox. `null` stays `null`: nothing loaded yet is not the same as no posts.
  */
 export function useWithOutbox(
-  workspaceId: string,
-  listId: string,
-  threadRootId: string | null,
-  posts: readonly BuddyMailingListPost[] | null
-): readonly BuddyMailingListPost[] | null {
+  channelId: string,
+  rootId: string | null,
+  posts: readonly Post[] | null
+): readonly Post[] | null {
   const outbox = useAtomValue(channelOutboxAtom);
   const served = useMemo(() => new Set(posts?.map((post) => post.id)), [posts]);
   const pending = useMemo(
     () =>
-      outbox.flatMap((entry): BuddyMailingListPost[] => {
-        const post = outboxPost(workspaceId, entry);
-        return post.listId === listId && post.threadRootId === threadRootId && !served.has(post.id)
+      outbox.flatMap((entry): Post[] => {
+        const post = outboxPost(entry);
+        return post.channelId === channelId &&
+          (post.rootId ?? null) === rootId &&
+          !served.has(post.id)
           ? [post]
           : [];
       }),
-    [outbox, workspaceId, listId, threadRootId, served]
+    [outbox, channelId, rootId, served]
   );
   const confirmed = useMemo(
     () =>
@@ -377,38 +349,32 @@ export function useWithOutbox(
   return useMemo(() => (posts === null ? null : [...pending, ...posts]), [pending, posts]);
 }
 
-function outboxPost(workspaceId: string, entry: OutboxEntry): BuddyMailingListPost {
+function outboxPost(entry: OutboxEntry): Post {
   switch (entry.kind) {
     case 'sent':
       return entry.post;
     case 'sending':
       return {
         id: `outbox:${entry.key}`,
-        listId: entry.listId,
-        workspaceId,
+        channelId: entry.channelId,
         author: { kind: 'owner' },
-        threadRootId: entry.threadRootId,
-        replyCount: 0,
-        latestReplyAt: null,
-        purpose: 'message',
+        ...(entry.rootId === null ? {} : { rootId: entry.rootId, replyToId: entry.rootId }),
         body: entry.body,
         evidence: [],
-        projectId: null,
+        request: { state: 'none' },
         createdAt: entry.createdAt,
-        senderConversationId: null,
-        senderRunId: null,
       };
   }
 }
 
 // Posts arrive newest-first; a Slack transcript reads oldest-first with the
 // newest message at the bottom, next to the composer.
-export function channelRows(newestFirst: readonly BuddyMailingListPost[]): ChannelRow[] {
+export function channelRows(newestFirst: readonly Post[]): ChannelRow[] {
   const posts = [...newestFirst].sort(
     (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
   );
   const rows: ChannelRow[] = [];
-  let previous: BuddyMailingListPost | null = null;
+  let previous: Post | null = null;
   for (const post of posts) {
     const newDay = previous === null || dayKey(previous.createdAt) !== dayKey(post.createdAt);
     if (newDay) {
@@ -438,12 +404,12 @@ export function channelRows(newestFirst: readonly BuddyMailingListPost[]): Chann
 // so every cold channel said "No posts yet" and then flashed its posts in.
 export type FeedPhase = 'loading' | 'failed' | 'empty' | 'posts';
 
-export function feedPhase(feed: {
-  kind: PolledState<unknown>['kind'];
-  data: readonly unknown[] | null;
-}): FeedPhase {
-  if (feed.data === null) return feed.kind === 'failed' ? 'failed' : 'loading';
-  return feed.data.length === 0 ? 'empty' : 'posts';
+export function feedPhase(
+  kind: PolledState<unknown>['kind'],
+  posts: readonly unknown[] | null
+): FeedPhase {
+  if (posts === null) return kind === 'failed' ? 'failed' : 'loading';
+  return posts.length === 0 ? 'empty' : 'posts';
 }
 
 /** Thin dispatcher: one handler per phase, exhaustive by the Record type. */
@@ -461,41 +427,60 @@ export function joinNames(names: readonly string[]): string {
     : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
 }
 
-// Conversational purposes read as plain chat; every other purpose (standup,
-// handoff, decision, reply_failed…) is a label worth showing.
-const CONVERSATIONAL_PURPOSES: ReadonlySet<string> = new Set(['message', 'reply']);
-
-// A post's purpose as UI: the raw tag (styling hook, e.g. reply_failed) and the
-// label to show, which is null for plain conversation. Kept here so the mobile
-// tree never reads a raw `.purpose` (gate G2 guards Conversation.purpose there).
-export function postPurposeTag(post: BuddyMailingListPost): string {
+// A post without a purpose is plain conversation, and so is a Buddy's channel
+// reply; every other purpose (standup, handoff, reply_failed…) is a label.
+// Kept here so the mobile tree never reads a raw `.purpose` (gate G2 guards
+// Conversation.purpose there).
+export function postPurposeTag(post: Post): string | undefined {
   return post.purpose;
 }
 
-export function postPurposeLabel(post: BuddyMailingListPost): string | null {
-  return CONVERSATIONAL_PURPOSES.has(post.purpose) ? null : post.purpose.replaceAll('_', ' ');
+export function postPurposeLabel(post: Post): string | null {
+  return post.purpose === undefined || post.purpose === 'reply'
+    ? null
+    : post.purpose.replaceAll('_', ' ');
 }
 
-// The universal @ menu: active Buddies and every non-cancelled Task; the fuzzy
-// ranker orders them together by match quality.
+// ── The workspace directory ─────────────────────────────────────────────────
+
+/**
+ * What a mentioned Buddy's reply runs on when nobody picks: its profile, the
+ * way the server builds a seat (server/src/buddies/channels.ts profileConfig,
+ * whose missing-provider default is codex). A provider the client's schema
+ * does not know is `unreported` — the picker cannot open at it honestly.
+ */
+function profileExecution(buddy: Buddy): BuddyMemberExecution {
+  const candidate: unknown = {
+    provider: buddy.provider ?? 'codex',
+    model: buddy.model ? { mode: 'explicit', modelId: buddy.model } : { mode: 'default' },
+    reasoning: buddy.reasoningEffort
+      ? { mode: 'explicit', effort: buddy.reasoningEffort }
+      : { mode: 'default' },
+  };
+  const parsed = ConversationConfigSchema.safeParse(candidate);
+  return parsed.success
+    ? { kind: 'profile', config: parsed.data satisfies ConversationConfig }
+    : { kind: 'unreported' };
+}
+
+// The universal @ menu: active Buddies and every live top-level Task (todos
+// are child tasks and stay out); the fuzzy ranker orders them together.
 function channelReferences(
-  members: readonly ChannelMember[],
+  members: readonly Buddy[],
   tasks: readonly ChannelTask[]
 ): ChannelReference[] {
   return [
-    ...members
-      .filter((member) => member.status === 'active')
-      .map(
-        (member): ChannelReference => ({
-          kind: 'buddy',
-          id: member.id,
-          label: member.name,
-          detail: member.role,
-          execution: member.execution,
-        })
-      ),
+    ...members.map(
+      (member): ChannelReference => ({
+        kind: 'buddy',
+        id: member.id,
+        label: member.name,
+        detail: member.role,
+        execution: profileExecution(member),
+      })
+    ),
     ...tasks
-      .filter((task) => task.status !== 'cancelled')
+      .filter((task) => task.topLevel && task.status !== 'cancelled')
       .map(
         (task): ChannelReference => ({
           kind: 'task',
@@ -510,54 +495,54 @@ function channelReferences(
 
 export type WorkspaceDirectory = {
   workspaceName: string;
-  members: readonly ChannelMember[];
-  activeMembers: readonly ChannelMember[];
-  tasks: readonly ChannelTask[];
+  /** Active Buddies of the workspace: the rail and the @ menu. */
+  activeMembers: readonly Buddy[];
+  /** Every Buddy's name, archived and other workspaces' included: they author posts. */
   buddyNames: Readonly<Record<string, string>>;
   taskById: ReadonlyMap<string, ChannelTask>;
   references: readonly ChannelReference[];
 };
 
-const NO_TASKS: readonly ChannelTask[] = [];
+const NO_TASKS: readonly Task[] = [];
+const NO_OVERVIEW: BuddyOverview = [];
 
-/** Every lookup the channel views derive from a workspace's members and Tasks. */
+/** Every lookup the channel views derive from the overview and a workspace's Tasks. */
 export function workspaceDirectory(
-  workspaceName: string,
-  members: readonly ChannelMember[],
-  tasks: readonly ChannelTask[]
+  overview: BuddyOverview,
+  workspaceId: string,
+  tasks: readonly Task[]
 ): WorkspaceDirectory {
+  const workspace = findWorkspace(overview, workspaceId);
+  const buddyNames = buddyNamesOf(overview);
+  const activeMembers = workspace ? activeBuddies(workspace) : [];
+  const viewed = channelTasks(tasks, buddyNames);
   return {
-    workspaceName,
-    members,
-    activeMembers: members.filter((member) => member.status === 'active'),
-    tasks,
-    buddyNames: Object.fromEntries(members.map((member) => [member.id, member.name])),
-    taskById: new Map(tasks.map((task) => [task.id, task])),
-    references: channelReferences(members, tasks),
+    workspaceName: workspace?.name ?? 'Channels',
+    activeMembers,
+    buddyNames,
+    taskById: new Map(viewed.map((task) => [task.id, task])),
+    references: channelReferences(activeMembers, viewed),
   };
+}
+
+export function workspaceTasksUrl(workspaceId: string): string {
+  return `/api/buddies/tasks?workspaceId=${encodeURIComponent(workspaceId)}`;
 }
 
 /** Members, Tasks and the @ index for one workspace, polled and cached. */
 export function useWorkspaceDirectory(workspaceId: string): WorkspaceDirectory {
-  const loadActivity = useMemo(() => workspaceActivityResource(workspaceId), [workspaceId]);
-  const activity = usePolledFetch<BuddyWorkspaceActivity>(loadActivity, 10_000);
-  const tasksFeed = usePolledFetch<ChannelTask[]>(workspaceTasksUrl(workspaceId), 15_000);
-  const tasks = tasksFeed.data ?? NO_TASKS;
+  const overview = useBuddyOverview(CHANNEL_BACKSTOP_MS);
+  const tasks = usePolledFetch<Task[]>(workspaceTasksUrl(workspaceId), 15_000);
   return useMemo(
-    () =>
-      workspaceDirectory(
-        activity.data?.workspace.name ?? 'Channels',
-        (activity.data?.members ?? []).map((member) => ({
-          id: member.id,
-          name: member.name,
-          role: member.role,
-          status: member.status,
-          execution: member.execution,
-        })),
-        tasks
-      ),
-    [activity.data, tasks]
+    () => workspaceDirectory(overview.data ?? NO_OVERVIEW, workspaceId, tasks.data ?? NO_TASKS),
+    [overview.data, workspaceId, tasks.data]
   );
+}
+
+// ── Who is replying ─────────────────────────────────────────────────────────
+
+export function respondingUrl(channelId: string): string {
+  return `/api/buddies/channels/${encodeURIComponent(channelId)}/responding`;
 }
 
 /**
@@ -571,7 +556,7 @@ export function respondingText(
   const byRoot = new Map<string, { replying: string[]; queued: string[] }>();
   for (const row of rows) {
     const entry = byRoot.get(row.threadRootId) ?? { replying: [], queued: [] };
-    entry[row.state ?? 'replying'].push(buddyNames[row.buddyId] ?? row.buddyId);
+    entry[row.state].push(buddyNames[row.buddyId] ?? row.buddyId);
     byRoot.set(row.threadRootId, entry);
   }
   const phrase = (names: string[], verb: string) =>
@@ -586,15 +571,20 @@ export function respondingText(
 
 /** Who is composing a reply, as display text by thread root. */
 export function useChannelResponding(
-  listId: string,
+  channelId: string,
   buddyNames: Readonly<Record<string, string>>
 ): ReadonlyMap<string, string> {
-  const responding = usePolledFetch<ChannelResponse[]>(respondingUrl(listId), CHANNEL_BACKSTOP_MS);
+  const responding = usePolledFetch<ChannelResponse[]>(
+    respondingUrl(channelId),
+    CHANNEL_BACKSTOP_MS
+  );
   return useMemo(
     () => respondingText(responding.data ?? [], buddyNames),
     [responding.data, buddyNames]
   );
 }
+
+// ── Scrolling ───────────────────────────────────────────────────────────────
 
 // Pin to the newest message on open, and keep following new posts only while
 // the reader is already at the bottom — never yank someone reading history
@@ -654,95 +644,80 @@ export function useFollowBottom(rowCount: number, version: unknown, linkedPostId
   return { scrollRef, onScroll, pin, hold };
 }
 
-/** Create a channel as the owner; resolves to the new list id. */
-export async function createChannel(
-  workspaceId: string,
-  name: string,
-  purpose: string
-): Promise<string> {
-  const result = await buddyApi<{ list: { id: string } }>('/api/buddies/lists', {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ workspaceId, author: { kind: 'owner' }, key: newId(), name, purpose }),
-  });
-  return result.list.id;
-}
+// ── Owner unread ────────────────────────────────────────────────────────────
+// The owner's read cursor per channel (post_read, reader 'owner'). The inbox
+// counts posts by others after it — replies included — per channel, and lists
+// the requests awaiting the owner (DM requests; across workspaces).
 
-// ── Owner unread (server/src/buddies/owner-channel-reads.ts) ──────────────
-// The owner's own read marks, separate from every Buddy's. One resource for
-// every workspace: the rail, the sidebar, the mobile tab and the tab title all
-// read it, and `channel_changed` refreshes it (atoms/resources.ts).
+/**
+ * Every workspace's inbox, one keyed resource: the tab title, the sidebar and
+ * the mobile tab read it. The key names the workspaces, so a new workspace in
+ * the overview is a new entry rather than a stale one; `channel_changed`
+ * refreshes it (atoms/resources.ts invalidateChannelResources).
+ */
+export const OWNER_INBOXES_KEY = 'buddy-owner-inboxes:';
 
-export const OWNER_UNREAD_PATH = '/api/buddies/channels/unread';
-
-export function useOwnerUnread() {
-  return usePolledFetch(
-    resource(OWNER_UNREAD_PATH, async (signal: AbortSignal) =>
-      OwnerChannelUnreadSchema.parse(await buddyApi(OWNER_UNREAD_PATH, { signal }))
-    ),
-    CHANNEL_BACKSTOP_MS
+function ownerInboxesResource(workspaceIds: readonly string[]) {
+  return resource(`${OWNER_INBOXES_KEY}${workspaceIds.join(',')}`, async (signal) =>
+    Object.fromEntries(
+      await Promise.all(
+        workspaceIds.map(
+          async (id) => [id, await buddyApi<Inbox>(inboxUrl(id), { signal })] as const
+        )
+      )
+    )
   );
 }
 
-const NO_LIST_UNREAD: ReadonlyMap<string, OwnerListUnread> = new Map();
+export type OwnerInboxes = Readonly<Record<string, Inbox>>;
 
-export function ownerUnreadByList(
-  unread: OwnerChannelUnread | null,
-  workspaceId: string
-): ReadonlyMap<string, OwnerListUnread> {
-  const workspace = unread?.workspaces.find((entry) => entry.workspaceId === workspaceId);
-  return workspace ? new Map(workspace.lists.map((list) => [list.listId, list])) : NO_LIST_UNREAD;
+export function useOwnerInboxes() {
+  const overview = useBuddyOverview(CHANNEL_BACKSTOP_MS);
+  const ids = overview.data?.map((workspace) => workspace.id).join(',') ?? null;
+  const source = useMemo(
+    () => (ids === null ? null : ownerInboxesResource(ids === '' ? [] : ids.split(','))),
+    [ids]
+  );
+  return usePolledFetch<OwnerInboxes>(source, CHANNEL_BACKSTOP_MS);
 }
 
-// What a nav item shows: the badge counts replies waiting on the owner, the
-// dot says some channel has anything new. `workspaceId` null sums them all.
-export type OwnerUnreadTotal = { repliesToYou: number; unreadChannels: number };
+const isListed = (entry: ChannelUnread) => entry.channel.kind.type !== 'task';
+
+/** Requests awaiting the owner that sit in one of `inbox`'s channels. */
+export function inboxRequests(inbox: Inbox): Post[] {
+  const channels = new Set(inbox.channels.map((entry) => entry.channel.id));
+  return inbox.requests.filter((post) => channels.has(post.channelId));
+}
+
+// What a nav item shows: the badge counts requests waiting on the owner, the
+// dot says some rail channel has anything new. `workspaceId` null sums all.
+// `requests` is global in every inbox, so it is counted by post id, once.
+export type OwnerUnreadTotal = { requests: number; unreadChannels: number };
 
 export function ownerUnreadTotal(
-  unread: OwnerChannelUnread | null,
+  inboxes: OwnerInboxes | null,
   workspaceId: string | null
 ): OwnerUnreadTotal {
-  const total = { repliesToYou: 0, unreadChannels: 0 };
-  for (const workspace of unread?.workspaces ?? []) {
-    if (workspaceId !== null && workspace.workspaceId !== workspaceId) continue;
-    for (const list of workspace.lists) {
-      total.repliesToYou += list.repliesToYou;
-      if (hasOwnerUnread(list)) total.unreadChannels += 1;
-    }
+  const requests = new Set<string>();
+  let unreadChannels = 0;
+  for (const [id, inbox] of Object.entries(inboxes ?? {})) {
+    if (workspaceId !== null && id !== workspaceId) continue;
+    for (const post of inboxRequests(inbox)) requests.add(post.id);
+    unreadChannels += inbox.channels.filter((entry) => isListed(entry) && entry.unread > 0).length;
   }
-  return total;
+  return { requests: requests.size, unreadChannels };
 }
 
-export function hasOwnerUnread(list: OwnerListUnread): boolean {
-  return list.unread > 0 || list.repliesToYou > 0 || list.unreadThreads.length > 0;
-}
-
-/** Where "New messages" goes: the oldest top-level post by someone else after the mark. */
-export function firstUnreadPostId(
-  newestFirst: readonly BuddyMailingListPost[],
-  readThrough: OwnerReadThrough
-): string | null {
-  let first: string | null = null;
-  for (const post of newestFirst) {
-    if (post.author.kind === 'owner' || post.threadRootId !== null) continue;
-    if (isAfterReadThrough(post, readThrough)) first = post.id;
-  }
-  return first;
+/** Requests awaiting the owner in one channel: a DM row's badge. */
+export function channelRequestCount(inbox: Inbox | null, channelId: string): number {
+  return inbox?.requests.filter((post) => post.channelId === channelId).length ?? 0;
 }
 
 // Slack's rail: a channel with anything new reads bold; a quiet one dims.
-// Unknown until the owner's unread state loads, so it renders as neither.
-export function channelUnreadAttr(unread: OwnerListUnread | undefined): 'new' | 'read' | undefined {
+// Unknown until the inbox loads, so it renders as neither.
+export function channelUnreadAttr(unread: number | undefined): 'new' | 'read' | undefined {
   if (unread === undefined) return undefined;
-  return hasOwnerUnread(unread) ? 'new' : 'read';
-}
-
-async function markOwnerRead(listId: string, postId: string): Promise<void> {
-  await buddyApi(`/api/buddies/lists/${encodeURIComponent(listId)}/owner-read`, {
-    method: 'POST',
-    headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({ postId }),
-  });
+  return unread > 0 ? 'new' : 'read';
 }
 
 // Starts false and reads `document` only in the effect: components render
@@ -759,69 +734,42 @@ function useDocumentVisible(): boolean {
 }
 
 /**
- * The owner is looking at a channel. Returns what was unread when they
- * arrived — the snapshot the "New messages" line and bold thread links draw
- * from, held until they leave, the way Slack does — and marks the channel
- * read through its newest post whenever it is on screen with something newer
- * than the mark. The mark echoes the server's `newestPostId`, so a post that
- * lands after this render stays unread until the next refresh shows it.
- * D = Arriving (unread state not loaded yet) ⊕ Arrived(snapshot).
+ * The owner is looking at a channel (or thread): mark it read through the
+ * newest post rendered whenever it is on screen with something unread. A post
+ * that lands after this render stays unread until the next refresh shows it;
+ * the server's push clears the channel on the owner's other devices.
  */
-export type OwnerChannelVisit =
-  | { kind: 'arriving' }
-  | { kind: 'arrived'; snapshot: OwnerListUnread };
-
-export function useOwnerChannelVisit(
-  listId: string,
-  current: OwnerListUnread | undefined
-): OwnerChannelVisit {
-  const [visit, setVisit] = useState<OwnerChannelVisit>(() =>
-    current ? { kind: 'arrived', snapshot: current } : { kind: 'arriving' }
-  );
-  useEffect(() => {
-    if (current && visit.kind === 'arriving') setVisit({ kind: 'arrived', snapshot: current });
-  }, [current, visit.kind]);
+export function useMarkChannelRead(
+  channelId: string,
+  unread: number | undefined,
+  newestPostId: string | null
+): void {
   const visible = useDocumentVisible();
-  const newest = current?.newestPostId ?? null;
-  const readThrough = current?.readThrough;
-  const alreadyRead = readThrough?.kind === 'post' && readThrough.postId === newest;
+  const hasUnread = unread !== undefined && unread > 0;
   useEffect(() => {
-    if (!visible || newest === null || alreadyRead) return;
-    void markOwnerRead(listId, newest).catch((error: unknown) =>
-      console.warn(`[channels] could not mark #${listId} read:`, error)
+    if (!visible || !hasUnread || newestPostId === null) return;
+    void buddyApi(`/api/buddies/channels/${encodeURIComponent(channelId)}/read`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ postId: newestPostId }),
+    }).catch((error: unknown) =>
+      console.warn(`[channels] could not mark ${channelId} read:`, error)
     );
-  }, [listId, newest, alreadyRead, visible]);
-  return visit;
+  }, [channelId, newestPostId, hasUnread, visible]);
 }
 
 /**
  * The browser tab title carries the owner's unread state: `(3) Unleashd` for
- * replies waiting on them, `• Unleashd` when channels only have new posts.
+ * requests waiting on them, `• Unleashd` when channels only have new posts.
  * Mounted once, in AppInner, so it holds on every route.
  */
 export function useOwnerUnreadTitle(): void {
-  const unread = useOwnerUnread();
-  const total = ownerUnreadTotal(unread.data, null);
+  const inboxes = useOwnerInboxes();
+  const total = ownerUnreadTotal(inboxes.data, null);
   const baseTitle = useRef(document.title);
   useEffect(() => {
     const prefix =
-      total.repliesToYou > 0 ? `(${total.repliesToYou}) ` : total.unreadChannels > 0 ? '• ' : '';
+      total.requests > 0 ? `(${total.requests}) ` : total.unreadChannels > 0 ? '• ' : '';
     document.title = `${prefix}${baseTitle.current}`;
-  }, [total.repliesToYou, total.unreadChannels]);
-}
-
-// What the owner's arrival leaves on screen: D = Arriving ⊕ Arrived.
-export function arrivalMarks(
-  visit: OwnerChannelVisit,
-  posts: readonly BuddyMailingListPost[]
-): { firstUnread: string | null; unreadThreads: readonly string[] } {
-  switch (visit.kind) {
-    case 'arriving':
-      return { firstUnread: null, unreadThreads: [] };
-    case 'arrived':
-      return {
-        firstUnread: firstUnreadPostId(posts, visit.snapshot.readThrough),
-        unreadThreads: visit.snapshot.unreadThreads,
-      };
-  }
+  }, [total.requests, total.unreadChannels]);
 }
