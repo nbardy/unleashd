@@ -31,9 +31,6 @@ test('Buddy overview route forwards the optional cutoff and returns one projecti
   registerBuddyRoutes(app, {
     getStore: async () => store,
     getScheduler: () => null,
-    createConversation: async () => {
-      throw new Error('not used');
-    },
     sendError(response, error, fallbackStatus) {
       response
         .status(fallbackStatus)
@@ -131,9 +128,6 @@ test('workspace activity exposes foreground, delegated and automation jobs witho
   registerBuddyRoutes(app, {
     getStore: async () => store,
     getScheduler: () => null,
-    createConversation: async () => {
-      throw new Error('not used');
-    },
     sendError(response, error, fallbackStatus) {
       response
         .status(fallbackStatus)
@@ -221,9 +215,6 @@ test('Buddy detail classifies review and automation conversations for separate U
   registerBuddyRoutes(app, {
     getStore: async () => store,
     getScheduler: () => null,
-    createConversation: async () => {
-      throw new Error('not used');
-    },
     sendError(response, error, fallbackStatus) {
       response
         .status(fallbackStatus)
@@ -309,9 +300,6 @@ test('automation routes validate before persistence and keep claim credentials p
       cancel: async () => run,
       health: () => ({ running: true, pollIntervalMs: 30_000, activeRunIds: [] }),
     }),
-    createConversation: async () => {
-      throw new Error('not used');
-    },
     sendError(response, error, fallbackStatus) {
       response
         .status(fallbackStatus)
@@ -381,9 +369,6 @@ test('human approval routes list pending requests and persist one terminal owner
   registerBuddyRoutes(app, {
     getStore: async () => store as unknown as BuddiesStorePort,
     getScheduler: () => null,
-    createConversation: async () => {
-      throw new Error('not used');
-    },
     sendError(response, error, fallbackStatus) {
       response
         .status(fallbackStatus)
@@ -476,16 +461,11 @@ test('manager review request dispatches one least-privilege reviewer conversatio
     },
     dispatchInitialMessage: async (_conversation, options) => options.enqueueAuthorized(() => {}),
     abandonConversation: () => {},
-    createId: () => conversationId,
   });
   registerBuddyRoutes(app, {
     getStore: async () => store as unknown as BuddiesStorePort,
     getScheduler: () => null,
     dispatchMessage: dispatch.send,
-    createConversation: async (input) => {
-      created.push(input as unknown as Record<string, unknown>);
-      return { id: conversationId, toJSON: () => ({ id: conversationId }) };
-    },
     sendError(response, error, fallbackStatus) {
       response
         .status(fallbackStatus)
@@ -587,9 +567,6 @@ test('memory-v2 HTTP routes use the Buddy operation authority boundary', async (
   registerBuddyRoutes(app, {
     getStore: async () => store,
     getScheduler: () => null,
-    createConversation: async () => {
-      throw new Error('not used');
-    },
     sendError(response, error, fallbackStatus) {
       response
         .status(fallbackStatus)

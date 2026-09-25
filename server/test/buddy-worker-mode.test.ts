@@ -34,7 +34,6 @@ test('current MCP creates a Worker and dispatches two projects through the exist
     },
     dispatchInitialMessage: async () => {},
     abandonConversation: () => {},
-    createId: () => 'unused',
   });
   const server = createBuddyMcpServer(raw as unknown as BuddiesStorePort, context, {
     dispatchMessage: (input) => dispatch.send(context, input),

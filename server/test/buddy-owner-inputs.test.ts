@@ -63,11 +63,8 @@ async function runtimeFixture(
     // A malformed request tests the real token gate without touching store state.
     getStore: async () => (options.store ?? {}) as unknown as BuddiesStorePort,
     isConversationActive: (id) => conversation?.id === id && conversation.isRunning,
-    dispatchDelegation: async () => {
+    dispatchMessage: async () => {
       throw new Error('No dispatch in this fixture');
-    },
-    dispatchReview: async () => {
-      throw new Error('No review in this fixture');
     },
   });
   await control.start();

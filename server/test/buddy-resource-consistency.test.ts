@@ -294,9 +294,6 @@ test('Memory HTTP selects the same owner-thread head and notes as document tools
   registerBuddyRoutes(app, {
     getStore: async () => store,
     getScheduler: () => null,
-    createConversation: async () => {
-      throw new Error('unused');
-    },
     sendError: (res, error, status) => {
       res.status(status).json({ error: String(error) });
     },

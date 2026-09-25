@@ -63,9 +63,6 @@ test('Delete archives durably, drains automation claims and removes public Buddy
       assert.equal(store.getBuddy(id)?.status, 'archived');
       archived.push(id);
     },
-    createConversation: async () => {
-      throw new Error('unused');
-    },
     sendError: (res, error, status) => res.status(status).json({ error: String(error) }),
     getNextAutomationRunAt: nextAutomationRunAt,
     createId: () => 'test-id',

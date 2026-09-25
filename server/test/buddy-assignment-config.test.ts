@@ -135,7 +135,6 @@ test('native assignment preview, durable admission, real conversation creation a
     createConversation: creation.createServerBuddyConversation,
     dispatchInitialMessage: async () => {},
     abandonConversation: () => {},
-    createId: randomUUID,
   });
   const context = { buddyId: lead.id, workspaceId: workspace.id, conversationId: 'owner' };
   const server = createBuddyMcpServer(store, context, {

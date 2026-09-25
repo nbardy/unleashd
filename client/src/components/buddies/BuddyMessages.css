@@ -220,19 +220,3 @@
   color: var(--text-secondary);
   font-size: 12px;
 }
-.buddy-messages-list-composer,
-.buddy-messages-list-composer label {
-  display: grid;
-  gap: 8px;
-}
-.buddy-messages-list-composer textarea,
-.buddy-messages-list-composer input,
-.buddy-messages-list-composer button {
-  min-height: 44px;
-  padding: 10px;
-  border: 1px solid var(--border-color);
-  border-radius: var(--ui-radius);
-  background: var(--bg-primary);
-  color: var(--text-primary);
-  font: inherit;
-}

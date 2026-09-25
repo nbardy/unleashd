@@ -29,20 +29,7 @@ import { resource, usePolledFetch } from '../../hooks/usePolledFetch';
 import { newId } from '../../utils/ids';
 import { buddyApi } from './api';
 import { type ChannelReference, type ChannelTask, workspaceTasksUrl } from './channel-text';
-
-export function workspaceActivityResource(workspaceId: string) {
-  const path = `/api/buddies/workspaces/${encodeURIComponent(workspaceId)}/activity`;
-  return resource(path, async (signal: AbortSignal) => {
-    const response = await fetch(path, { signal });
-    if (!response.ok) {
-      const payload = (await response.json().catch(() => ({}))) as { error?: string };
-      throw new Error(
-        payload.error ?? `Unable to load workspace activity (HTTP ${response.status})`
-      );
-    }
-    return BuddyWorkspaceActivitySchema.parse(await response.json());
-  });
-}
+import { taskStatusView } from './ui-contract';
 
 export interface BuddyMailingListSummary {
   id: string;
@@ -55,28 +42,11 @@ export interface BuddyMailingListSummary {
   latestPostAt: string | null;
 }
 
-// Every post read goes through here: the fetch boundary parses the v33 wire
-// shape once, so a stale or foreign server surfaces as the view's refresh
-// error instead of a crash (or a silent "Unknown") deep in rendering.
-export function postsResource(path: string) {
+export function workspaceActivityResource(workspaceId: string) {
+  const path = `/api/buddies/workspaces/${encodeURIComponent(workspaceId)}/activity`;
   return resource(path, async (signal: AbortSignal) =>
-    BuddyMailingListPostsSchema.parse(await buddyApi(path, { signal }))
+    BuddyWorkspaceActivitySchema.parse(await buddyApi(path, { signal }))
   );
-}
-
-// A Task filter reads the workspace-wide feed so one Task's discussion is
-// visible across every channel, not just the selected one.
-export function taskChannelFeedUrl(workspaceId: string, projectId: string): string {
-  return `/api/buddies/posts?workspaceId=${encodeURIComponent(workspaceId)}&projectId=${encodeURIComponent(projectId)}&limit=50`;
-}
-
-export function authorKey(author: BuddyListAuthor): string {
-  switch (author.kind) {
-    case 'owner':
-      return 'owner';
-    case 'buddy':
-      return author.buddyId;
-  }
 }
 
 // Channels are pushed, not polled: the server's `channel_changed` (a post, or
@@ -85,8 +55,22 @@ export function authorKey(author: BuddyListAuthor): string {
 // everything. This poll is only a backstop for a lost push.
 export const CHANNEL_BACKSTOP_MS = 30_000;
 
-export function listsUrl(workspaceId: string): string {
+function listsUrl(workspaceId: string): string {
   return `/api/buddies/lists?workspaceId=${encodeURIComponent(workspaceId)}`;
+}
+
+/** A workspace's channels, cached under one key for every surface; push-refreshed. */
+export function useChannelLists(workspaceId: string) {
+  return usePolledFetch<BuddyMailingListSummary[]>(listsUrl(workspaceId), CHANNEL_BACKSTOP_MS);
+}
+
+// Every post read goes through here: the fetch boundary parses the v33 wire
+// shape once, so a stale or foreign server surfaces as the view's refresh
+// error instead of a crash (or a silent "Unknown") deep in rendering.
+export function postsResource(path: string) {
+  return resource(path, async (signal: AbortSignal) =>
+    BuddyMailingListPostsSchema.parse(await buddyApi(path, { signal }))
+  );
 }
 
 /** Top-level posts per page read; the newest page is what every channel warms. */
@@ -208,6 +192,34 @@ export function useWarmChannelPosts(lists: readonly { id: string }[] | null): vo
   }, [ids]);
 }
 
+// A Task filter reads the workspace-wide feed so one Task's discussion is
+// visible across every channel, not just the selected one.
+export function taskChannelFeedUrl(workspaceId: string, projectId: string): string {
+  return `/api/buddies/posts?workspaceId=${encodeURIComponent(workspaceId)}&projectId=${encodeURIComponent(projectId)}&limit=50`;
+}
+
+export function authorKey(author: BuddyListAuthor): string {
+  switch (author.kind) {
+    case 'owner':
+      return 'owner';
+    case 'buddy':
+      return author.buddyId;
+  }
+}
+
+/** The name a post's author shows as: the owner is "You", a Buddy its name. */
+export function authorName(
+  author: BuddyListAuthor,
+  buddyNames: Readonly<Record<string, string>>
+): string {
+  switch (author.kind) {
+    case 'owner':
+      return 'You';
+    case 'buddy':
+      return buddyNames[author.buddyId] ?? author.buddyId;
+  }
+}
+
 export function channelThreadResource(listId: string, rootId: string) {
   const path = `/api/buddies/lists/${encodeURIComponent(listId)}/threads/${encodeURIComponent(rootId)}`;
   return resource(path, async (signal: AbortSignal) =>
@@ -215,7 +227,7 @@ export function channelThreadResource(listId: string, rootId: string) {
   );
 }
 
-export function respondingUrl(listId: string): string {
+function respondingUrl(listId: string): string {
   return `/api/buddies/lists/${encodeURIComponent(listId)}/responding`;
 }
 
@@ -229,7 +241,7 @@ export type ChannelMember = {
   execution: BuddyMemberExecution;
 };
 
-export type ChannelResponse = { threadRootId: string; buddyId: string };
+type ChannelResponse = { threadRootId: string; buddyId: string };
 
 // =============================================================================
 // Transcript rows: D = Day ⊕ Lead ⊕ Continuation.
@@ -390,19 +402,9 @@ export function postPurposeLabel(post: BuddyMailingListPost): string | null {
   return CONVERSATIONAL_PURPOSES.has(post.purpose) ? null : post.purpose.replaceAll('_', ' ');
 }
 
-const TASK_STATUS_LABELS: Readonly<Record<string, string>> = {
-  backlog: 'Backlog',
-  ready: 'Ready',
-  in_progress: 'In progress',
-  review: 'In review',
-  blocked: 'Blocked',
-  done: 'Done',
-  cancelled: 'Cancelled',
-};
-
 // The universal @ menu: active Buddies and every non-cancelled Task; the fuzzy
 // ranker orders them together by match quality.
-export function channelReferences(
+function channelReferences(
   members: readonly ChannelMember[],
   tasks: readonly ChannelTask[]
 ): ChannelReference[] {
@@ -426,7 +428,7 @@ export function channelReferences(
           id: task.id,
           label: task.title,
           status: task.status,
-          detail: `${TASK_STATUS_LABELS[task.status] ?? task.status} · ${task.ownerName}`,
+          detail: `${taskStatusView(task.status).label} · ${task.ownerName}`,
         })
       ),
   ];
@@ -444,30 +446,44 @@ export type WorkspaceDirectory = {
 
 const NO_TASKS: readonly ChannelTask[] = [];
 
+/** Every lookup the channel views derive from a workspace's members and Tasks. */
+export function workspaceDirectory(
+  workspaceName: string,
+  members: readonly ChannelMember[],
+  tasks: readonly ChannelTask[]
+): WorkspaceDirectory {
+  return {
+    workspaceName,
+    members,
+    activeMembers: members.filter((member) => member.status === 'active'),
+    tasks,
+    buddyNames: Object.fromEntries(members.map((member) => [member.id, member.name])),
+    taskById: new Map(tasks.map((task) => [task.id, task])),
+    references: channelReferences(members, tasks),
+  };
+}
+
 /** Members, Tasks and the @ index for one workspace, polled and cached. */
 export function useWorkspaceDirectory(workspaceId: string): WorkspaceDirectory {
   const loadActivity = useMemo(() => workspaceActivityResource(workspaceId), [workspaceId]);
   const activity = usePolledFetch<BuddyWorkspaceActivity>(loadActivity, 10_000);
   const tasksFeed = usePolledFetch<ChannelTask[]>(workspaceTasksUrl(workspaceId), 15_000);
   const tasks = tasksFeed.data ?? NO_TASKS;
-  return useMemo(() => {
-    const members = (activity.data?.members ?? []).map((member) => ({
-      id: member.id,
-      name: member.name,
-      role: member.role,
-      status: member.status,
-      execution: member.execution,
-    }));
-    return {
-      workspaceName: activity.data?.workspace.name ?? 'Channels',
-      members,
-      activeMembers: members.filter((member) => member.status === 'active'),
-      tasks,
-      buddyNames: Object.fromEntries(members.map((member) => [member.id, member.name])),
-      taskById: new Map(tasks.map((task) => [task.id, task])),
-      references: channelReferences(members, tasks),
-    };
-  }, [activity.data, tasks]);
+  return useMemo(
+    () =>
+      workspaceDirectory(
+        activity.data?.workspace.name ?? 'Channels',
+        (activity.data?.members ?? []).map((member) => ({
+          id: member.id,
+          name: member.name,
+          role: member.role,
+          status: member.status,
+          execution: member.execution,
+        })),
+        tasks
+      ),
+    [activity.data, tasks]
+  );
 }
 
 /** Buddies composing a reply, by thread root. */

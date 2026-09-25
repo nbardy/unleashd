@@ -1,5 +1,4 @@
 import {
-  type BuddyListAuthor,
   type BuddyMailingListPost,
   type BuddyOwnerPostResult,
   type OwnerListUnread,
@@ -9,7 +8,7 @@ import { useAtomValue } from 'jotai';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { buddySidebarChannelsAtom } from '../../atoms/buddy-sidebar';
-import { allConversationIdsAtom, conversationAtomFamily } from '../../atoms/conversations';
+import { availableConversationIdSetAtom, conversationAtomFamily } from '../../atoms/conversations';
 import { usePolledFetch } from '../../hooks/usePolledFetch';
 import { Chat } from '../Chat';
 import { BuddyRailRow } from './BuddyRailRow';
@@ -22,24 +21,25 @@ import { CopyLinkButton } from './CopyLinkButton';
 import {
   type BuddyMailingListSummary,
   CHANNEL_BACKSTOP_MS,
-  CONVERSATIONAL_PURPOSES,
   type ChannelMember,
   type ChannelRow,
-  channelReferences,
+  arrivalMarks,
+  authorName,
   channelRows,
   channelThreadResource,
+  channelUnreadAttr,
   clockTime,
   createChannel,
   feedPhase,
-  arrivalMarks,
-  channelUnreadAttr,
   joinNames,
   ownerUnreadByList,
-  listsUrl,
+  postPurposeLabel,
+  postPurposeTag,
   postsResource,
   renderFeed,
   taskChannelFeedUrl,
   useChannelFeed,
+  useChannelLists,
   useChannelResponding,
   useFollowBottom,
   useOwnerChannelVisit,
@@ -47,19 +47,12 @@ import {
   useWarmChannelPosts,
   useWithOutbox,
   useWorkspaceDirectory,
+  workspaceDirectory,
 } from './channel-data';
 import { channelLinkPath, postLink } from './channel-link';
 import { type ChannelReference, type ChannelTask, plainChannelText } from './channel-text';
+import { initials } from './ui-contract';
 import './ChannelBrowser.css';
-
-function initials(name: string): string {
-  return name
-    .split(/[\s_-]+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((word) => word[0].toUpperCase())
-    .join('');
-}
 
 function shortTaskId(projectId: string): string {
   return projectId.replace(/^buddy_project_/, '').slice(0, 8);
@@ -116,14 +109,19 @@ function InstanceTag({
   );
 }
 
+function PostPurpose({ post }: { post: BuddyMailingListPost }) {
+  const label = postPurposeLabel(post);
+  return label === null ? null : (
+    <span className="channel-browser-purpose" data-purpose={postPurposeTag(post)}>
+      {label}
+    </span>
+  );
+}
+
 function PostMeta({ post, context }: { post: BuddyMailingListPost; context: RowContext }) {
   return (
     <>
-      {!CONVERSATIONAL_PURPOSES.has(post.purpose) && (
-        <span className="channel-browser-purpose" data-purpose={post.purpose}>
-          {post.purpose.replaceAll('_', ' ')}
-        </span>
-      )}
+      <PostPurpose post={post} />
       {context.showChannel && (
         <span className="channel-browser-channel-tag">
           #{context.channelNameById.get(post.listId) ?? post.listId}
@@ -137,15 +135,6 @@ function PostMeta({ post, context }: { post: BuddyMailingListPost; context: RowC
       )}
     </>
   );
-}
-
-function authorName(author: BuddyListAuthor, buddyNames: Readonly<Record<string, string>>) {
-  switch (author.kind) {
-    case 'owner':
-      return 'You';
-    case 'buddy':
-      return buddyNames[author.buddyId] ?? author.buddyId;
-  }
 }
 
 function Replying({ names }: { names: readonly string[] }) {
@@ -818,10 +807,7 @@ export function ChannelBrowser({
   tasks: readonly ChannelTask[];
   availableConversationIds: ReadonlySet<string>;
 }) {
-  const lists = usePolledFetch<BuddyMailingListSummary[]>(
-    listsUrl(workspaceId),
-    CHANNEL_BACKSTOP_MS
-  );
+  const lists = useChannelLists(workspaceId);
   const { data, error } = lists;
   useWarmChannelPosts(data);
   const ownerUnread = useOwnerUnread();
@@ -835,16 +821,10 @@ export function ChannelBrowser({
     () => new Map((data ?? []).map((list) => [list.id, list.name])),
     [data]
   );
-  const buddyNames = useMemo(
-    () => Object.fromEntries(members.map((member) => [member.id, member.name])),
-    [members]
+  const { buddyNames, activeMembers, taskById, references } = useMemo(
+    () => workspaceDirectory(workspaceName, members, tasks),
+    [workspaceName, members, tasks]
   );
-  const activeMembers = useMemo(
-    () => members.filter((member) => member.status === 'active'),
-    [members]
-  );
-  const taskById = useMemo(() => new Map(tasks.map((task) => [task.id, task])), [tasks]);
-  const references = useMemo(() => channelReferences(members, tasks), [members, tasks]);
   const selected = data?.find((list) => list.id === params.get('channel')) ?? data?.[0] ?? null;
   const select = (next: { channel: string; task: string | null; thread: string | null }) =>
     setParams({
@@ -979,8 +959,7 @@ export function ChannelBrowser({
 // The desktop route: the full-screen Slack surface for one workspace.
 export function WorkspaceSlack() {
   const { workspaceId = '' } = useParams();
-  const conversationIds = useAtomValue(allConversationIdsAtom);
-  const availableConversationIds = useMemo(() => new Set(conversationIds), [conversationIds]);
+  const availableConversationIds = useAtomValue(availableConversationIdSetAtom);
   const directory = useWorkspaceDirectory(workspaceId);
   return (
     <ChannelBrowser

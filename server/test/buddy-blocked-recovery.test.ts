@@ -44,8 +44,10 @@ test('MCP diagnoses project scope and recovers blocked-success work on the same 
       },
       dispatchInitialMessage: async () => {},
       abandonConversation: () => {},
-      createId: () => 'unused',
-      getReturnConversationId: () => 'manager-review',
+      prepareReturnConversation: async () => ({
+        returnConversationId: 'manager-review',
+        launch: { through_message_id: 'snapshot-sha256:fixture' },
+      }),
     });
     const server = createBuddyMcpServer(raw as unknown as BuddiesStorePort, context, {
       dispatchMessage: (input) => dispatch.send(context, input),

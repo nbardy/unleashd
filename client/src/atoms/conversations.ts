@@ -207,6 +207,13 @@ export const savedActiveConversationPresentAtom = atom((get) => {
 // Use with atomFamily for per-item subtree pruning (see CLAUDE.md).
 export const allConversationIdsAtom = atom((get) => get(allConversationsAtom).map((c) => c.id));
 
+// "Does the client still hold this conversation?" — the check every
+// open-conversation affordance makes before rendering a Link (AGENTS.md). One
+// Set for every surface instead of a `new Set(ids)` memo per component.
+export const availableConversationIdSetAtom = atom<ReadonlySet<string>>(
+  (get) => new Set(get(allConversationIdsAtom))
+);
+
 // Distinct real project folders, newest-first (allConversationsAtom is sorted).
 // Worktrees are excluded — they are worker scratch dirs, never a folder a human
 // would start a new conversation in. Feeds every "pick a directory" surface:

@@ -43,14 +43,11 @@ test('private send waits for its assigned reply, times out durably, and releases
     },
     dispatchInitialMessage: async (_conversation, options) => options.enqueueAuthorized(() => {}),
     abandonConversation: () => {},
-    createId: () => 'unused',
   });
   const control = new BuddyControlServer({
     getStore: async () => port,
     isConversationActive: () => true,
     dispatchMessage: dispatch.send,
-    dispatchDelegation: dispatch.delegation,
-    dispatchReview: dispatch.review,
   });
   await control.start();
   const context: BuddyContext = {
@@ -224,7 +221,6 @@ test('message dispatch deadlines cover deferred creation and prevent late enqueu
     abandonConversation: () => {
       abandoned += 1;
     },
-    createId: () => 'unused',
   });
   try {
     await assert.rejects(service.send(context, input), /deadline reached/);
@@ -251,7 +247,6 @@ test('message dispatch deadlines cover deferred creation and prevent late enqueu
       abandonConversation: () => {
         abandoned += 1;
       },
-      createId: () => 'unused',
     });
     const pending = delayedDispatch.send(
       context,
@@ -274,7 +269,6 @@ test('message dispatch deadlines cover deferred creation and prevent late enqueu
       abandonConversation: () => {
         abandoned += 1;
       },
-      createId: () => 'unused',
     });
     await assert.rejects(noEnqueue.send(context, { ...input, wait: false }), /authorized start/);
     await until(() => abandoned === 3);
@@ -283,7 +277,7 @@ test('message dispatch deadlines cover deferred creation and prevent late enqueu
   }
 });
 
-test('legacy private dispatch binds the trusted parent and cannot enqueue after capability revocation', async () => {
+test('un-keyed private send binds the capability conversation as parent and cannot enqueue after revocation', async () => {
   const store = new BuddiesStore(':memory:');
   const workspace = store.createWorkspace({
     name: 'Legacy dispatch',
@@ -312,34 +306,33 @@ test('legacy private dispatch binds the trusted parent and cannot enqueue after 
     abandonConversation: () => {
       abandoned += 1;
     },
-    createId: () => 'unused',
   });
   const control = new BuddyControlServer({
     getStore: async () => store as unknown as BuddiesStorePort,
     isConversationActive: () => true,
     dispatchMessage: dispatch.send,
-    dispatchDelegation: dispatch.delegation,
-    dispatchReview: dispatch.review,
   });
   await control.start();
   const context: BuddyContext = {
     buddyId: sender.id,
     workspaceId: workspace.id,
     buddyProjectId: null,
-    allowedBuddyOperations: ['buddy.delegate'],
+    allowedBuddyOperations: ['buddy.send'],
   };
   const environment = control.issue(context, 'trusted-parent');
   try {
-    const request = fetch(`${environment[BUDDY_CONTROL_URL_ENV]}/v1/delegations`, {
+    // The strict send schema has no parent field: the parent is always the
+    // conversation the capability was issued to.
+    const request = fetch(`${environment[BUDDY_CONTROL_URL_ENV]}/v1/messages`, {
       method: 'POST',
       headers: {
         authorization: `Bearer ${environment[BUDDY_CONTROL_TOKEN_ENV]}`,
         'content-type': 'application/json',
       },
       body: JSON.stringify({
-        toBuddyId: recipient.id,
-        purpose: 'A legacy request',
-        parentConversationId: 'spoofed-parent',
+        to: recipient.id,
+        purpose: 'delegation',
+        body: 'An un-keyed request',
       }),
     });
     await until(() => Boolean(resolveCreate));

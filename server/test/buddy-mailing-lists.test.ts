@@ -108,9 +108,6 @@ function routeTestApp(
   registerBuddyRoutes(app, {
     getStore: async () => store,
     getScheduler: () => null,
-    createConversation: async () => {
-      throw new Error('not used');
-    },
     sendError(response, error, fallbackStatus) {
       response
         .status(fallbackStatus)

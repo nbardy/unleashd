@@ -133,16 +133,12 @@ async function fixture() {
     },
     dispatchInitialMessage: async () => {},
     abandonConversation: () => {},
-    createId: () => 'unused-dispatch-id',
   });
   const app = express();
   app.use(express.json());
   registerBuddyRoutes(app, {
     getStore: async () => store,
     getScheduler: () => null,
-    createConversation: async () => {
-      throw new Error('Use the queued executor');
-    },
     dispatchMessage: dispatch.send,
     sendError: (response, error, status) => response.status(status).json({ error: String(error) }),
     getNextAutomationRunAt: () => '2026-09-11T00:00:00Z',

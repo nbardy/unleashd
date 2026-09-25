@@ -59,10 +59,7 @@ test('owner MCP configures unconfigured staff, releases original work, and compl
   const control = new BuddyControlServer({
     getStore: async () => store,
     isConversationActive: (id) => conversations.get(id)?.isRunning === true,
-    dispatchDelegation: async () => {
-      throw new Error('unused');
-    },
-    dispatchReview: async () => {
+    dispatchMessage: async () => {
       throw new Error('unused');
     },
   });
@@ -344,7 +341,6 @@ test('owner MCP configures unconfigured staff, releases original work, and compl
     },
     dispatchInitialMessage: async () => {},
     abandonConversation: () => {},
-    createId: () => 'unused',
   });
   let originalMessageId = '';
   try {

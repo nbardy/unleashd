@@ -617,27 +617,6 @@ export class ConversationConfigStore {
     });
   }
 
-  async markInitialMessageDispatched(
-    conversationId: string,
-    dispatchedAt = this.now()
-  ): Promise<PersistedConversationConfigRecord | undefined> {
-    return this.updateRecord(conversationId, (record) => {
-      if (!record.creation?.initialMessage || record.creation.initialMessageDispatchedAt) {
-        return record;
-      }
-      return {
-        ...record,
-        creation: {
-          ...record.creation,
-          initialMessageDispatchClaimedAt: undefined,
-          initialMessageDispatchClaimToken: undefined,
-          initialMessageDispatchedAt: dispatchedAt.toISOString(),
-        },
-        updatedAt: this.now().toISOString(),
-      };
-    });
-  }
-
   /**
    * Atomically leases delivery of the creation message. Delivery is
    * acknowledged separately, so a crashed dispatcher can be recovered.

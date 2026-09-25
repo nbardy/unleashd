@@ -1,21 +1,23 @@
 import type { BuddyListAuthor, BuddyMailingListPost, BuddyMessage } from '@unleashd/shared';
 import { useMemo, useState } from 'react';
-import type { ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { usePolledFetch } from '../../hooks/usePolledFetch';
-import { newId } from '../../utils/ids';
 import { BuddyTeamConfigurationRequest } from './BuddyTeamConfiguration';
+import { ChannelComposer } from './ChannelComposer';
 import { ChannelLoader } from './ChannelLoader';
 import { buddyApi } from './api';
 import {
   type BuddyMailingListSummary,
   CHANNEL_BACKSTOP_MS,
+  authorName,
   feedPhase,
-  listsUrl,
   postsResource,
   renderFeed,
   taskChannelFeedUrl,
+  useChannelLists,
+  useWorkspaceDirectory,
 } from './channel-data';
+import type { ChannelReference } from './channel-text';
 
 const EMPTY_NAMES: Readonly<Record<string, string>> = {};
 
@@ -67,7 +69,6 @@ export function BuddyMessages({
       {workspaceId && (
         <BuddyListsSection
           workspaceId={workspaceId}
-          buddyId={buddyId}
           buddyNames={buddyNames}
           availableConversationIds={availableConversationIds}
         />
@@ -87,38 +88,34 @@ function PostAuthor({
 }) {
   switch (author.kind) {
     case 'owner':
-      return <span className={className}>You</span>;
+      return <span className={className}>{authorName(author, buddyNames)}</span>;
     case 'buddy':
       return (
         <Link className={className} to={`/buddies/${encodeURIComponent(author.buddyId)}`}>
-          {buddyNames[author.buddyId] ?? author.buddyId}
+          {authorName(author, buddyNames)}
         </Link>
       );
   }
 }
 
 // The Buddy's own view of its workspace channels. Not a duplicate of Channels:
-// it is the one place the owner can post AS this Buddy (standups, handoffs),
-// and on mobile the only Task filter over channel posts. dcd8856 deleted it as
-// a duplicate; restored under the owner's rule that a deletion stays only if
-// it removes no feature (2026-09-25). Its keys sit under the Channels view's
-// push invalidation (`channel_changed` / `buddies_changed`), so its polls are
-// only the backstop.
+// on mobile it is the only Task filter over channel posts. dcd8856 deleted it
+// as a duplicate; restored under the owner's rule that a deletion stays only
+// if it removes no feature (2026-09-25). Its composer is the owner's own
+// (EXECUTION_SELECTION_2026-09-24 D3): the restored one posted AS this Buddy.
+// Its keys sit under the Channels view's push invalidation (`channel_changed`
+// / `buddies_changed`), so its polls are only the backstop.
 function BuddyListsSection({
   workspaceId,
-  buddyId,
   buddyNames,
   availableConversationIds,
 }: {
   workspaceId: string;
-  buddyId?: string;
   buddyNames: Readonly<Record<string, string>>;
   availableConversationIds: ReadonlySet<string>;
 }) {
-  const lists = usePolledFetch<BuddyMailingListSummary[]>(
-    listsUrl(workspaceId),
-    CHANNEL_BACKSTOP_MS
-  );
+  const lists = useChannelLists(workspaceId);
+  const { references } = useWorkspaceDirectory(workspaceId);
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const data = lists.data ?? [];
   const selected = data.find((list) => list.id === selectedId) ?? data[0] ?? null;
@@ -148,13 +145,13 @@ function BuddyListsSection({
             </ul>
             <div className="buddy-messages-list-main">
               {selected && (
-                <BuddyListFeed
+                <ChannelFeed
                   key={selected.id}
                   list={selected}
                   workspaceId={workspaceId}
                   channelNameById={new Map(data.map((entry) => [entry.id, entry.name]))}
-                  buddyId={buddyId}
                   buddyNames={buddyNames}
+                  references={references}
                   availableConversationIds={availableConversationIds}
                   onPosted={lists.refetch}
                 />
@@ -203,20 +200,26 @@ function ChannelPostItem({
   );
 }
 
+// The owner writes as themself (the shared owner composer, purpose 'message').
+// This feed used to carry its own composer that posted AS the viewed Buddy
+// with a free-text purpose; that let the owner put words in a Buddy's mouth
+// and was removed (EXECUTION_SELECTION_2026-09-24 D3).
 function ChannelFeed({
   list,
   workspaceId,
   channelNameById,
   buddyNames,
+  references,
   availableConversationIds,
-  composer,
+  onPosted,
 }: {
   list: BuddyMailingListSummary;
   workspaceId: string;
   channelNameById: ReadonlyMap<string, string>;
   buddyNames: Readonly<Record<string, string>>;
+  references: readonly ChannelReference[];
   availableConversationIds: ReadonlySet<string>;
-  composer?: (refetch: () => void) => ReactNode;
+  onPosted(): void;
 }) {
   const [projectFilter, setProjectFilter] = useState<string | null>(null);
   const feed = usePolledFetch(
@@ -298,121 +301,18 @@ function ChannelFeed({
           </ul>
         ),
       })}
-      {composer?.(refetch)}
-    </article>
-  );
-}
-
-function ChannelComposer({
-  list,
-  buddyId,
-  onPosted,
-  refetch,
-}: {
-  list: BuddyMailingListSummary;
-  buddyId: string;
-  onPosted(): void;
-  refetch(): void;
-}) {
-  const [purpose, setPurpose] = useState('standup');
-  const [body, setBody] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [problem, setProblem] = useState<string | null>(null);
-  return (
-    <>
-      <form
-        className="buddy-messages-list-composer"
-        onSubmit={(event) => {
-          event.preventDefault();
-          setBusy(true);
-          setProblem(null);
-          void buddyApi(`/api/buddies/lists/${encodeURIComponent(list.id)}/posts`, {
-            method: 'POST',
-            headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({
-              author: { kind: 'buddy', buddyId },
-              key: newId(),
-              purpose: purpose.trim(),
-              body: body.trim(),
-            }),
-          })
-            .then(() => {
-              setBody('');
-              refetch();
-              onPosted();
-            })
-            .catch((cause: unknown) => {
-              setProblem(cause instanceof Error ? cause.message : String(cause));
-            })
-            .finally(() => setBusy(false));
+      <ChannelComposer
+        listId={list.id}
+        threadRootId={null}
+        placeholder={`Message #${list.name}`}
+        references={references}
+        submit="button"
+        onPosted={() => {
+          void refetch();
+          onPosted();
         }}
-      >
-        <label>
-          Kind
-          <input
-            required
-            value={purpose}
-            maxLength={200}
-            onChange={(event) => setPurpose(event.target.value)}
-            disabled={busy}
-            placeholder="standup, handoff, announcement, decision"
-          />
-        </label>
-        <label>
-          Post
-          <textarea
-            required
-            value={body}
-            onChange={(event) => setBody(event.target.value)}
-            disabled={busy}
-          />
-        </label>
-        <button type="submit" disabled={busy || !purpose.trim() || !body.trim()}>
-          {busy ? 'Posting…' : 'Post'}
-        </button>
-      </form>
-      {problem && <p role="alert">{problem}</p>}
-    </>
-  );
-}
-
-function BuddyListFeed({
-  list,
-  workspaceId,
-  channelNameById,
-  buddyId,
-  buddyNames,
-  availableConversationIds,
-  onPosted,
-}: {
-  list: BuddyMailingListSummary;
-  workspaceId: string;
-  channelNameById: ReadonlyMap<string, string>;
-  buddyId?: string;
-  buddyNames: Readonly<Record<string, string>>;
-  availableConversationIds: ReadonlySet<string>;
-  onPosted(): void;
-}) {
-  return (
-    <ChannelFeed
-      list={list}
-      workspaceId={workspaceId}
-      channelNameById={channelNameById}
-      buddyNames={buddyNames}
-      availableConversationIds={availableConversationIds}
-      composer={
-        buddyId
-          ? (refetch) => (
-              <ChannelComposer
-                list={list}
-                buddyId={buddyId}
-                onPosted={onPosted}
-                refetch={refetch}
-              />
-            )
-          : undefined
-      }
-    />
+      />
+    </article>
   );
 }
 
