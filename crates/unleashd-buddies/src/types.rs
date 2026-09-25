@@ -627,6 +627,8 @@ pub struct BuddyCreate {
     pub provider: Option<String>,
     pub model: Option<String>,
     pub reasoning_effort: Option<String>,
+    /// Whether requests and schedules may start its turns (off: they wait, queued).
+    pub background_enabled: bool,
     pub key: String,
 }
 

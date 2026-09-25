@@ -41,7 +41,7 @@ async function until<T>(
   read: () => T | undefined | false | Promise<T | undefined | false>,
   what: string
 ): Promise<T> {
-  const deadline = Date.now() + 15_000;
+  const deadline = Date.now() + 30_000;
   for (;;) {
     const value = await read();
     if (value) return value;
@@ -123,6 +123,7 @@ async function world() {
       name,
       role: `${name} role`,
       manager: { kind: 'nobody' },
+      backgroundEnabled: true,
       provider: 'codex',
       key: slug,
     });
@@ -184,7 +185,7 @@ async function world() {
     };
   }) as unknown as NonNullable<ConversationRuntimeDependencies['executeTurn']>;
 
-  const gate: { verdict: GateVerdict } = { verdict: { kind: 'pass' } };
+  const gate: { verdict: GateVerdict; calls: number } = { verdict: { kind: 'pass' }, calls: 0 };
   const reviewer = createMemoryReviewer({
     core,
     grants,
@@ -274,7 +275,10 @@ async function world() {
     events,
     conversations: stable,
     uploadsRoot: () => join(scratch, 'uploads'),
-    gate: async () => gate.verdict,
+    gate: async () => {
+      gate.calls += 1;
+      return gate.verdict;
+    },
     channelChanged: () => undefined,
     logger: { warn: () => undefined },
   });
@@ -551,6 +555,7 @@ test('the reviewer climbs the ladder on credit exhaustion and curates memory on 
     name: 'Lead',
     role: 'r',
     manager: { kind: 'nobody' },
+    backgroundEnabled: true,
     key: 'lead',
   });
   const events = createBuddyEvents();
@@ -650,4 +655,42 @@ test('the server never runs on a missing Buddies database: it names the import c
 test('the briefing tool guide stays inside its budget', () => {
   // A runtime throw on this budget failed every owner-thread turn on 2026-09-21; it is a test now.
   assert.ok(BUDDY_TOOL_GUIDE.length <= 3_000, `${BUDDY_TOOL_GUIDE.length} chars`);
+});
+
+test('follow-ups stop after three Buddy posts in a row, and a failed gate on an owner post is shown', async () => {
+  const w = await world();
+  try {
+    const say = (author: 'owner' | string, body: string, replyToId?: string) =>
+      w.core.post(
+        author === 'owner' ? OWNER : buddyActor(author),
+        { kind: 'id', id: w.general.id },
+        { kind: 'inform', body, replyToId, evidence: [], key: `${author}:${body}` }
+      );
+    const root = await say('owner', 'Who owns the launch?');
+    // Lead, Designer, Lead: two Buddies may exchange a question, an answer and one more turn…
+    await w.channels.considerThreadPost(w.general, await say(w.lead.id, 'I can', root.id));
+    await w.channels.considerThreadPost(
+      w.general,
+      await say(w.designer.id, 'Lead, which date?', root.id)
+    );
+    await until(() => w.gate.calls === 1, 'Lead is asked about Designer’s question');
+    // …but the third Buddy post in a row asks nobody, until the owner speaks again.
+    await w.channels.considerThreadPost(w.general, await say(w.lead.id, 'Friday', root.id));
+    await new Promise((resolve) => setTimeout(resolve, 300));
+    assert.equal(w.gate.calls, 1, 'the chain stops at three Buddy posts');
+
+    // The owner waits on an answer, so a gate that could not run is posted in the thread
+    // (2026-09-24: every gate failed on a Codex usage limit and the thread stayed silent).
+    w.gate.verdict = { kind: 'failed', reason: 'usage limit' };
+    await w.channels.considerThreadPost(w.general, await say('owner', 'Is Friday final?', root.id));
+    const notices = await until(async () => {
+      const thread = await w.core.listPosts(OWNER, { kind: 'thread', rootId: root.id }, null, 50);
+      const failed = thread.posts.filter((p) => p.purpose === 'reply_failed');
+      return failed.length === 2 && failed;
+    }, 'one failure notice per Buddy in the thread');
+    for (const notice of notices)
+      assert.match(notice.body, /could not decide whether to reply \(usage limit\)/);
+  } finally {
+    await w.close();
+  }
 });

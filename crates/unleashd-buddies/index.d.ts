@@ -99,6 +99,8 @@ export interface BuddyCreate {
   provider?: string
   model?: string
   reasoningEffort?: string
+  /** Whether requests and schedules may start its turns (off: they wait, queued). */
+  backgroundEnabled: boolean
   key: string
 }
 

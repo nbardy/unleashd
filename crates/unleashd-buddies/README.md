@@ -71,13 +71,17 @@ const answer = await core.answer(them, { requestId: ask.id, body: 'done', eviden
 | Schedules | `putSchedule(actor, ScheduleInput)`: cron plus IANA timezone, with the next slot computed on write<br>`listSchedules`<br>`dueSchedules(now)`: one run per due schedule; missed slots collapse into one |
 | Events | `appendEvent(actor, {op, payload, key?})`: mutations only, idempotent per (actor, workspace, key)<br>Every core mutation records its own event<br>`pruneEvents(before)` (retention), `listEvents(buddyId, beforeSeq, limit)` |
 | Identity | `listWorkspaces`, `getBuddy`, `listBuddies(workspaceId)`, `bindConversation`, `getConversation` |
+| Team admin (owner only) | `createWorkspace({name, rootPath})` (idempotent by root path), `createBuddy`, `updateBuddy({buddyId, changes, key})`: a patch of profile, `manager` (`ManagerRef = nobody \| buddy{id}`, a reporting cycle is `[invalid]`), model, limits, `status`. Archiving cancels the buddy's queued runs |
+| Background hold | `claimRun` skips every run but a foreground `chat` while its buddy's `background_enabled` is off; `createBuddy` takes `backgroundEnabled` explicitly |
+| Recovery | `recoverRuns()`: once at server start. Every running run was held by a dead host: it ends `failed{interrupted}` (a request tells its sender, as a failed settle would); queued `chat` runs are cancelled, since their conversation queue died with that host. `listRuns({kind:'live', workspaceId})` lists what a workspace runs now |
 
 The schema is in `src/schema.rs`: the §6 tables of 01-buddies-package.md, `channel_member`, and the optional
 `conversation` table. The file header lists each deviation from §6 and its reason. There is no
 version and no migration chain: `open` creates the schema in an empty file, and refuses any file
 that lacks the schema's `application_id`.
 
-Not in this crate yet: writes to buddies and workspaces (team admin) and full-text post search.
+Not in this crate yet: full-text post search. A post's `conversation_id` is the conversation it was
+written from (provenance); `return_conversation_id` is set only on a request, where its answer goes.
 They arrive with the server rewrite (T11), when a route needs them.
 
 ## Import and verify (v33 → this schema)
@@ -123,6 +127,38 @@ buddies-import verify --from old.sqlite --to new.sqlite --import-report import.j
 - Stored hashes match the content.
 - Heads equal their last revision.
 - Soul files are unchanged, and the soul-check split holds (match / no header / empty).
+
+### Direct channels are imported read (T11, owner decision)
+
+v33 kept no read state for messages. `import` therefore marks every imported direct channel read
+through its newest post, for the owner and for each member, so the first inbox after the swap is
+not a flood of every historical DM. It is ON by default; `--keep-direct-unread` turns it off. The
+report records `direct_reads: {state: marked, cursors}` and `verify` recomputes the same cursors
+from the imported posts (on the copy: 188 cursors; 271 read cursors in total, all identical).
+
+## Deploy (the live swap, T15: owner-gated)
+
+The server opens `UNLEASHD_BUDDIES_DB` (default `~/.buddies/buddies-v3.sqlite`). It never opens the
+v33 `~/.buddies/buddies.sqlite`, and it never falls back to it: while the new file is missing, every
+Buddy call fails with the import command, and ordinary chats keep working.
+
+1. **Stop the server** (no turn may write v33 during the copy), then take a consistent copy:
+   `sqlite3 ~/.buddies/buddies.sqlite "VACUUM INTO '/path/backup-v33.sqlite'"`.
+2. **Import** the copy into the new file (the importer refuses an existing target):
+   `buddies-import import --from /path/backup-v33.sqlite --to ~/.buddies/buddies-v3.sqlite --report ~/.buddies/buddies-v3.import.json`
+   (`--owner-reads` defaults to `$UNLEASHD_DATA_DIR/owner-channel-reads.json`).
+3. **Verify** (exit 1 on any mismatch; do not switch unless `"ok": true`):
+   `buddies-import verify --from /path/backup-v33.sqlite --to ~/.buddies/buddies-v3.sqlite --import-report ~/.buddies/buddies-v3.import.json --out ~/.buddies/buddies-v3.verify.json`
+4. **Switch**: build the addon (`pnpm --dir crates/unleashd-buddies build`) and deploy the server
+   commit that runs on the crate. `UNLEASHD_BUDDIES_DB` only if the file lives elsewhere.
+5. **Restart** the backend. Startup runs `recoverRuns` once: any run v33 had running ends
+   `interrupted`. Queued runs START once the runner wakes, except those of buddies whose background
+   work is off (they stay queued, "delivered but held"). On the 2026-09-25 copy that is 18 runs for
+   background-enabled buddies (11 failure notices, 4 replies, 3 requests) and 1 held request.
+   Cancel any that should not run before step 5 (`POST /api/buddies/runs/:id/cancel`, or decide
+   in T15). Check `pnpm errors:list` for Buddy errors.
+
+Rollback: stop the server, deploy the previous commit; v33 was never written after step 1.
 
 ## Tests
 

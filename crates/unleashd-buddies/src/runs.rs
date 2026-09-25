@@ -126,10 +126,13 @@ impl Store {
                 [now],
             )?;
             // Ready, predecessor finished, conversation free, buddy under its limit, task not paused.
+            // Background work (every input but a foreground chat) waits while the owner has the
+            // buddy's background work switched off: it stays queued ("delivered but held").
             let candidate: Option<String> = tx
                 .prepare_cached(
                     "SELECT r.id FROM run r JOIN buddy b ON b.id = r.buddy_id
                      WHERE r.status = 'queued' AND r.ready_at <= ?1 AND b.status = 'active'
+                       AND (r.input_kind = 'chat' OR b.background_enabled = 1)
                        AND (r.after_run_id IS NULL OR EXISTS (SELECT 1 FROM run a WHERE a.id = r.after_run_id
                             AND a.status IN ('complete','failed','cancelled')))
                        AND (r.conversation_id IS NULL OR NOT EXISTS (SELECT 1 FROM run c WHERE c.conversation_id = r.conversation_id

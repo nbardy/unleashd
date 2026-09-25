@@ -62,6 +62,7 @@ const BuddyCreateSchema = z
     provider: z.string().min(1).optional(),
     model: z.string().min(1).optional(),
     reasoningEffort: z.string().min(1).optional(),
+    backgroundEnabled: z.boolean(),
     key,
   })
   .strict();

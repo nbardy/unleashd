@@ -47,7 +47,8 @@ impl Store {
                 task_id: None,
                 op: "buddy.create",
                 payload: json!({"slug": input.slug, "name": input.name, "role": input.role, "manager": manager_id(&input.manager),
-                    "provider": input.provider, "model": input.model, "effort": input.reasoning_effort}),
+                    "provider": input.provider, "model": input.model, "effort": input.reasoning_effort,
+                    "background": input.background_enabled}),
                 key: Some(&input.key),
             };
             let id = idempotent(tx, &m, |tx| {
@@ -56,8 +57,9 @@ impl Store {
                 }
                 let id = new_id("buddy");
                 tx.execute(
-                    "INSERT INTO buddy (id, workspace_id, slug, name, role, status, manager_id, provider, model, reasoning_effort, created_at)
-                     VALUES (?1, ?2, ?3, ?4, ?5, 'active', ?6, ?7, ?8, ?9, ?10)",
+                    "INSERT INTO buddy (id, workspace_id, slug, name, role, status, manager_id, provider, model, reasoning_effort,
+                       background_enabled, created_at)
+                     VALUES (?1, ?2, ?3, ?4, ?5, 'active', ?6, ?7, ?8, ?9, ?10, ?11)",
                     params![
                         id,
                         input.workspace_id,
@@ -68,6 +70,7 @@ impl Store {
                         input.provider,
                         input.model,
                         input.reasoning_effort,
+                        input.background_enabled,
                         now_iso()
                     ],
                 )?;

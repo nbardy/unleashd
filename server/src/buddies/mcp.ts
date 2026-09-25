@@ -449,6 +449,9 @@ const TEAM_TOOLS = {
           provider: z.string().optional(),
           model: z.string().optional(),
           reasoningEffort: z.string().optional(),
+          backgroundEnabled: z
+            .boolean()
+            .describe('Whether requests and schedules may start its turns (off: they wait)'),
           soul: z
             .string()
             .max(10_000)

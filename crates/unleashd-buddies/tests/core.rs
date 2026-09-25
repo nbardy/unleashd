@@ -422,6 +422,7 @@ fn team_admin_is_owner_only_and_refuses_a_reporting_cycle() {
         provider: Some("codex".into()),
         model: None,
         reasoning_effort: None,
+        background_enabled: true,
         key: key.into(),
     };
     let folder = WorkspaceInput { name: "Docs".into(), root_path: "/tmp/docs".into() };
@@ -481,4 +482,25 @@ fn startup_recovery_ends_runs_a_dead_host_held() {
         s.settle_run(&claim.run.id, &claim.lease_token, Outcome::Complete { text: "late".into() }).unwrap_err().code(),
         "lease_lost"
     );
+}
+
+#[test]
+fn background_work_waits_while_the_buddy_has_it_switched_off() {
+    let mut f = fixture();
+    let s = &mut f.store;
+    let switch = |on: bool, key: &str| BuddyUpdate {
+        buddy_id: "ic".into(),
+        changes: BuddyChanges { background_enabled: Some(on), ..BuddyChanges::default() },
+        key: key.into(),
+    };
+    s.update_buddy(&Actor::Owner, switch(false, "off")).unwrap();
+    // A request to a buddy whose background work is off is delivered (the post exists) but held.
+    s.post(&buddy("mid"), dm("mid", "ic"), request("build it", "held")).unwrap();
+    assert!(s.claim_run(60_000).unwrap().is_none(), "held while background work is off");
+    // The owner's own chat with the buddy is foreground: it is admitted regardless.
+    let chat_run = s.enqueue_run(&Actor::Owner, chat("ic", "t", "c-ic")).unwrap();
+    assert_eq!(s.claim_run(60_000).unwrap().unwrap().run.id, chat_run.id);
+    s.update_buddy(&Actor::Owner, switch(true, "on")).unwrap();
+    let released = s.claim_run(60_000).unwrap().unwrap();
+    assert!(matches!(released.run.input, RunInput::Post { .. }), "released when switched back on");
 }
