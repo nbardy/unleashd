@@ -1,7 +1,7 @@
 .buddy-workspace-page {
   width: min(1040px, calc(100% - 48px));
   margin: 0 auto;
-  padding: 32px 0 56px;
+  padding: var(--sp-10) 0 var(--sp-11);
 }
 
 .buddy-workspace-header {
@@ -9,7 +9,6 @@
 }
 
 .buddy-workspace-back {
-  color: var(--text-muted);
   font: 500 11px / 1 var(--font-mono);
   text-decoration: none;
 }
@@ -22,15 +21,14 @@
   display: flex;
   align-items: flex-end;
   justify-content: space-between;
-  gap: 24px;
+  gap: var(--sp-9);
   margin-top: 20px;
-  padding-bottom: 18px;
+  padding-bottom: var(--sp-7);
   border-bottom: 1px solid var(--border-subtle);
 }
 
 .buddy-workspace-eyebrow {
   margin: 0 0 5px;
-  color: var(--text-muted);
   font: 600 10px / 1 var(--font-mono);
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -39,21 +37,17 @@
 .buddy-workspace-heading-row h1 {
   margin: 0;
   color: var(--text-emphasis);
-  font-size: 24px;
+  font-size: var(--fs-8);
   line-height: 1.2;
 }
 
 .buddy-workspace-path {
   margin: 7px 0 0;
-  color: var(--text-muted);
   font: 500 11px / 1.4 var(--font-mono);
 }
 
 .buddy-workspace-active-summary {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  color: var(--text-muted);
+  gap: var(--sp-3);
   font: 600 11px / 1 var(--font-mono);
   white-space: nowrap;
 }
@@ -72,27 +66,21 @@
 
 .buddy-workspace-members {
   display: grid;
-  gap: 10px;
+  gap: var(--sp-5);
 }
 
 .buddy-workspace-member {
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--ui-radius);
   background: color-mix(in srgb, var(--bg-panel) 55%, transparent);
   overflow: hidden;
 }
 
 .buddy-workspace-member-header {
-  display: flex;
-  align-items: center;
-  gap: 11px;
+  gap: var(--sp-5);
   min-height: 58px;
-  padding: 10px 14px;
+  padding: var(--sp-5) var(--sp-6);
 }
 
 .buddy-workspace-avatar {
-  display: inline-flex;
-  align-items: center;
   justify-content: center;
   width: 30px;
   height: 30px;
@@ -105,14 +93,14 @@
 
 .buddy-workspace-identity {
   display: grid;
-  gap: 3px;
+  gap: var(--sp-1);
   min-width: 0;
   flex: 1;
 }
 
 .buddy-workspace-identity a {
   color: var(--text-primary);
-  font-size: 13px;
+  font-size: var(--fs-4);
   font-weight: 600;
   text-decoration: none;
   overflow: hidden;
@@ -142,9 +130,9 @@
   display: grid;
   grid-template-columns: 7px auto minmax(0, 1fr) auto;
   align-items: center;
-  gap: 9px;
+  gap: var(--sp-4);
   min-height: 38px;
-  padding: 7px 14px;
+  padding: var(--sp-3) var(--sp-6);
   color: inherit;
   text-decoration: none;
   border-bottom: 1px solid color-mix(in srgb, var(--border-subtle) 45%, transparent);
@@ -169,7 +157,7 @@ a.buddy-workspace-job:hover {
 .buddy-workspace-job-kind {
   color: var(--ai-bright);
   background: color-mix(in srgb, var(--ai) 12%, transparent);
-  padding: 3px 5px;
+  padding: var(--sp-1) var(--sp-2);
   border-radius: var(--ui-radius);
   font: 650 9px / 1 var(--font-mono);
   letter-spacing: 0.02em;
@@ -178,15 +166,11 @@ a.buddy-workspace-job:hover {
 
 .buddy-workspace-job-title {
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
   color: var(--text-primary);
-  font-size: 12px;
+  font-size: var(--fs-3);
 }
 
 .buddy-workspace-job-meta {
-  color: var(--text-muted);
   font: 500 10px / 1 var(--font-mono);
   white-space: nowrap;
 }
@@ -194,14 +178,9 @@ a.buddy-workspace-job:hover {
 .buddy-workspace-idle,
 .buddy-workspace-state {
   margin: 0;
-  padding: 13px 14px;
+  padding: var(--sp-6) var(--sp-6);
   color: var(--text-muted);
-  font-size: 12px;
-}
-
-.buddy-workspace-state {
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--ui-radius);
+  font-size: var(--fs-3);
 }
 
 .buddy-workspace-state--error {
@@ -209,7 +188,7 @@ a.buddy-workspace-job:hover {
 }
 
 .buddy-workspace-state--error button {
-  padding: 5px 9px;
+  padding: var(--sp-2) var(--sp-4);
   border: 1px solid var(--border-subtle);
   border-radius: var(--ui-radius);
   background: transparent;
@@ -220,13 +199,13 @@ a.buddy-workspace-job:hover {
 @media (max-width: 768px) {
   .buddy-workspace-page {
     width: auto;
-    padding: 20px 14px 40px;
+    padding: var(--sp-8) var(--sp-6) var(--sp-11);
   }
 
   .buddy-workspace-heading-row {
     align-items: flex-start;
     flex-direction: column;
-    gap: 14px;
+    gap: var(--sp-6);
   }
 
   .buddy-workspace-job {
@@ -240,9 +219,7 @@ a.buddy-workspace-job:hover {
 
 .buddy-workspace-channels-open {
   display: inline-block;
-  padding: 7px 12px;
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--ui-radius);
+  padding: var(--sp-3) var(--sp-6);
   color: var(--text-primary);
   font: 600 11px / 1 var(--font-mono);
   text-decoration: none;

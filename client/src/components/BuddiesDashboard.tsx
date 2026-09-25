@@ -89,11 +89,11 @@ function BuddyPage({ buddyId }: { buddyId: string }) {
   return (
     <div className="buddies-dashboard">
       <header className="buddies-hero">
-        <div className="buddies-hero-main">
-          <div className="buddy-identity">
+        <div className="buddies-hero-main ui-row">
+          <div className="buddy-identity ui-row">
             <button
               type="button"
-              className="buddy-back-button"
+              className="buddy-back-button ui-control"
               onClick={() => navigate('/buddies')}
               aria-label="Back to all Buddies"
             >
@@ -103,7 +103,7 @@ function BuddyPage({ buddyId }: { buddyId: string }) {
               {initials(buddy.name)}
             </div>
             <div className="buddy-identity-copy">
-              <div className="buddy-identity-title">
+              <div className="buddy-identity-title ui-row">
                 <h1>{buddy.name}</h1>
                 <span>{buddy.status}</span>
               </div>

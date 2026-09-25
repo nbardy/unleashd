@@ -9,13 +9,11 @@
    ============================================================================= */
 
 .mobile-buddy-detail {
-  padding: 12px 20px calc(20px + env(safe-area-inset-bottom));
+  padding: var(--sp-6) var(--sp-8) calc(var(--sp-8) + env(safe-area-inset-bottom));
 }
 
 .mobile-buddy-detail__back {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
+  gap: var(--sp-3);
   min-height: 40px;
   align-self: flex-start;
   margin-bottom: 2px;
@@ -23,28 +21,28 @@
   text-decoration: none;
   color: var(--text-primary);
   font: inherit;
-  font-size: 13px;
+  font-size: var(--fs-4);
   cursor: pointer;
 }
 
 .mobile-buddy-detail__hero {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding-bottom: 8px;
+  gap: var(--sp-5);
+  padding-bottom: var(--sp-4);
 }
 
 .mobile-buddy-detail__identity {
   display: flex;
   align-items: flex-start;
-  gap: 12px;
+  gap: var(--sp-6);
   min-width: 0;
 }
 
 .mobile-buddy-detail__name {
   margin: 0;
   color: var(--text-bright);
-  font-size: 26px;
+  font-size: var(--fs-8);
   font-weight: 600;
   line-height: 1.15;
   letter-spacing: -0.02em;
@@ -54,8 +52,7 @@
 .mobile-buddy-detail__role {
   display: block;
   margin-top: 2px;
-  color: var(--text-muted);
-  font-size: 13px;
+  font-size: var(--fs-4);
   line-height: 1.45;
 }
 
@@ -64,24 +61,8 @@
   flex: 1;
   margin: 0;
   color: var(--text-secondary);
-  font-size: 13px;
+  font-size: var(--fs-4);
   line-height: 1.5;
-}
-
-/* ---- Sections ---- */
-.mobile-buddy-section {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-  min-width: 0;
-}
-
-/* Folded in from mobile.css, which defined these same classes earlier in the
-   bundle. Everything else it declared was already redeclared below; these four
-   properties were the only ones still reaching the DOM, so they move here to
-   keep the rendering identical with one owner per class. */
-.mobile-buddy-section {
-  padding: 16px 0;
 }
 
 .mobile-buddy-detail__description {
@@ -92,9 +73,9 @@
   min-height: 44px;
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--sp-3);
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: var(--fs-3);
   cursor: pointer;
   list-style: none;
 }
@@ -118,14 +99,14 @@
 .mobile-buddy-detail :where(h2) {
   margin: 0;
   color: var(--text-bright);
-  font-size: 20px;
+  font-size: var(--fs-7);
   font-weight: 600;
   letter-spacing: -0.02em;
 }
 .mobile-buddy-detail :where(h3) {
   margin: 16px 0 0;
   color: var(--text-emphasis);
-  font-size: 15px;
+  font-size: var(--fs-5);
   font-weight: 600;
 }
 .mobile-buddy-detail :where(p) {
@@ -133,7 +114,7 @@
 }
 .mobile-buddy-detail > section {
   margin-top: 16px;
-  font-size: 13px;
+  font-size: var(--fs-4);
   line-height: 1.6;
 }
 .mobile-buddy-detail :where(input:not([type="checkbox"]), select, textarea) {
@@ -141,22 +122,19 @@
   min-width: 0;
   max-width: 100%;
   min-height: 44px;
-  padding: 10px 12px;
+  padding: var(--sp-5) var(--sp-6);
   border: 1px solid var(--border-default);
   border-radius: var(--ui-radius);
   background: var(--bg-raised-1);
   color: var(--text-emphasis);
   font-family: inherit;
-  font-size: 16px;
+  font-size: var(--fs-6);
 }
 .mobile-buddy-detail :where(button, summary, a):focus-visible {
   outline: 2px solid var(--accent-primary);
   outline-offset: 3px;
 }
 
-.mobile-buddy-detail > .mobile-buddy-section {
-  padding-top: 0;
-}
 .mobile-buddy-detail__hero {
-  gap: 6px;
+  gap: var(--sp-3);
 }

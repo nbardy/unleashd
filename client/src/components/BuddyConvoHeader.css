@@ -7,11 +7,9 @@
 }
 
 .buddy-convo-header__summary {
-  display: flex;
-  align-items: center;
   width: 100%;
-  gap: 8px;
-  padding: 10px 12px;
+  gap: var(--sp-4);
+  padding: var(--sp-5) var(--sp-6);
   border: 0;
   color: var(--text-secondary);
   background: transparent;
@@ -20,19 +18,17 @@
 }
 
 .buddy-convo-header__mark {
-  padding: 2px 6px;
+  padding: var(--sp-1) var(--sp-3);
   border: 1px solid color-mix(in srgb, var(--ai) 55%, transparent);
   color: var(--ai-bright);
   font-family: var(--font-mono);
-  font-size: 9px;
+  font-size: var(--fs-1);
   font-weight: 800;
   letter-spacing: 0.08em;
 }
 
 .buddy-convo-header__identity {
-  display: inline-flex;
-  gap: 6px;
-  align-items: center;
+  gap: var(--sp-3);
   white-space: nowrap;
 }
 
@@ -40,26 +36,17 @@
   color: var(--text-emphasis);
 }
 
-.buddy-convo-header__project {
-  overflow: hidden;
-  color: var(--text-muted);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .buddy-convo-header__chevron {
   margin-left: auto;
-  color: var(--text-muted);
 }
 
 .buddy-convo-header__details {
   display: flex;
   justify-content: space-between;
-  gap: 16px;
-  padding: 9px 12px;
+  gap: var(--sp-7);
+  padding: var(--sp-4) var(--sp-6);
   border-top: 1px solid var(--border-subtle);
-  color: var(--text-muted);
-  font-size: 11px;
+  font-size: var(--fs-2);
 }
 
 .buddy-convo-header__details a {
@@ -67,7 +54,7 @@
   text-decoration: none;
 }
 
-@media (max-width: 720px) {
+@media (max-width: 768px) {
   .buddy-convo-header__summary {
     flex-wrap: wrap;
   }
@@ -75,6 +62,6 @@
   .buddy-convo-header__project {
     flex-basis: 100%;
     order: 3;
-    padding-left: 54px;
+    padding-left: var(--sp-11);
   }
 }

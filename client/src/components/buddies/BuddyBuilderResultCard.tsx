@@ -40,7 +40,7 @@ export function BuddyBuilderResultCard({ event }: { event: BuddyBuilderEvent }) 
 
   if (archived.has(buddy.id)) return null;
   return (
-    <article className="buddy-created-card">
+    <article className="buddy-created-card ui-row">
       <Link className="buddy-created-card__name" to={route} title={buddy.name}>
         {buddy.name}
       </Link>
@@ -68,7 +68,7 @@ export function BuddyBuilderResultCard({ event }: { event: BuddyBuilderEvent }) 
         ⓘ
       </button>
       <div id={detailsId} popover="auto" className="buddy-created-card__details">
-        <header className="buddy-created-card__details-header">
+        <header className="buddy-created-card__details-header ui-row">
           <strong>{buddy.name}</strong>
           <button
             type="button"

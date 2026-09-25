@@ -46,8 +46,8 @@ function RunRow({ run, available }: { run: Run; available: boolean }) {
     <>
       <span className="buddy-workspace-job-dot" aria-hidden="true" />
       <span className="buddy-workspace-job-kind">{RUN_KIND[run.input.kind]}</span>
-      <span className="buddy-workspace-job-title">{title}</span>
-      <span className="buddy-workspace-job-meta">
+      <span className="buddy-workspace-job-title ui-truncate">{title}</span>
+      <span className="buddy-workspace-job-meta ui-muted">
         {RUN_STATUS[run.status]}
         {run.startedAt ? ` · ${formatTimeAgo(new Date(run.startedAt))}` : ''}
       </span>
@@ -74,19 +74,22 @@ export function BuddyWorkspaceActivity() {
   return (
     <main className="buddy-workspace-page">
       <header className="buddy-workspace-header">
-        <Link className="buddy-workspace-back" to="/buddies">
+        <Link className="buddy-workspace-back ui-muted" to="/buddies">
           ← Buddies
         </Link>
         <div className="buddy-workspace-heading-row">
           <div>
-            <p className="buddy-workspace-eyebrow">Workspace</p>
+            <p className="buddy-workspace-eyebrow ui-muted">Workspace</p>
             <h1>{workspace?.name ?? 'Workspace activity'}</h1>
             {workspace && (
-              <p className="buddy-workspace-path">{shortenHomePath(workspace.rootPath)}</p>
+              <p className="buddy-workspace-path ui-muted">{shortenHomePath(workspace.rootPath)}</p>
             )}
           </div>
           {live.data && (
-            <div className="buddy-workspace-active-summary" aria-live="polite">
+            <div
+              className="buddy-workspace-active-summary ui-inline-row ui-muted"
+              aria-live="polite"
+            >
               <span className={runs.length ? 'is-running' : ''} aria-hidden="true" />
               {runs.length ? `${runs.length} running` : 'No active runs'}
             </div>
@@ -94,7 +97,7 @@ export function BuddyWorkspaceActivity() {
         </div>
         <p>
           <Link
-            className="buddy-workspace-channels-open"
+            className="buddy-workspace-channels-open ui-card"
             to={`/buddies/workspaces/${encodeURIComponent(workspaceId)}/channels`}
           >
             Open channels
@@ -103,10 +106,10 @@ export function BuddyWorkspaceActivity() {
       </header>
 
       {(overview.kind === 'loading' || live.kind === 'loading') && (
-        <p className="buddy-workspace-state">Loading workspace activity…</p>
+        <p className="buddy-workspace-state ui-card">Loading workspace activity…</p>
       )}
       {failed && (
-        <div className="buddy-workspace-state buddy-workspace-state--error" role="alert">
+        <div className="buddy-workspace-state ui-card buddy-workspace-state--error" role="alert">
           <p>{failed.error.message}</p>
           <button type="button" onClick={failed.refetch}>
             Retry
@@ -118,9 +121,9 @@ export function BuddyWorkspaceActivity() {
           {activeBuddies(workspace).map((member) => {
             const own = runs.filter((run) => run.buddyId === member.id);
             return (
-              <article className="buddy-workspace-member" key={member.id}>
-                <div className="buddy-workspace-member-header">
-                  <span className="buddy-workspace-avatar" aria-hidden="true">
+              <article className="buddy-workspace-member ui-card" key={member.id}>
+                <div className="buddy-workspace-member-header ui-row">
+                  <span className="buddy-workspace-avatar ui-inline-row" aria-hidden="true">
                     {initials(member.name)}
                   </span>
                   <div className="buddy-workspace-identity">

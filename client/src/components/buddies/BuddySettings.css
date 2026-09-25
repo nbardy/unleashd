@@ -1,9 +1,9 @@
 .buddy-settings {
   max-width: 560px;
-  padding: 20px 0;
+  padding: var(--sp-8) 0;
 }
 .buddy-settings h2 {
-  font-size: 16px;
+  font-size: var(--fs-6);
   margin: 0 0 12px;
 }
 .buddy-settings p {
@@ -13,7 +13,7 @@
 }
 .buddy-settings button {
   min-height: 44px;
-  padding: 8px 16px;
+  padding: var(--sp-4) var(--sp-7);
   border: 1px solid var(--border-color);
   border-radius: var(--ui-radius);
   background: var(--bg-secondary);
@@ -29,5 +29,5 @@
 }
 .buddy-settings-actions {
   display: flex;
-  gap: 8px;
+  gap: var(--sp-4);
 }

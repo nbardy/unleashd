@@ -13,7 +13,7 @@
 
 .buddies-loading,
 .buddies-error {
-  padding: 24px;
+  padding: var(--sp-9);
   color: var(--text-secondary);
 }
 
@@ -24,14 +24,14 @@
 .buddies-directory-content {
   width: min(100%, 1320px);
   margin: 0 auto;
-  padding: 30px 36px 56px;
+  padding: var(--sp-10) var(--sp-10) var(--sp-11);
 }
 
 .buddies-directory-header {
   display: flex;
   align-items: end;
   justify-content: space-between;
-  gap: 24px;
+  gap: var(--sp-9);
   margin-bottom: 22px;
 }
 
@@ -45,39 +45,31 @@
 .buddies-directory-header h1 {
   margin: 7px 0 3px;
   color: var(--text-bright);
-  font-size: clamp(26px, 3vw, 36px);
+  font-size: clamp(var(--fs-8), 3vw, var(--fs-9));
   letter-spacing: -0.035em;
 }
 
 .buddies-directory-header p {
   margin: 0;
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: var(--fs-3);
 }
 
 .buddies-directory-count {
-  padding-bottom: 4px;
-  color: var(--text-muted);
+  padding-bottom: var(--sp-2);
   font: 500 10px / 1 var(--font-mono);
   letter-spacing: 0.06em;
   text-transform: uppercase;
 }
 
 .buddies-directory-tools {
-  display: flex;
-  align-items: center;
-  gap: 14px;
+  gap: var(--sp-6);
 }
 
 .buddies-directory-search {
-  display: flex;
-  align-items: center;
-  gap: 8px;
+  gap: var(--sp-4);
   min-width: min(280px, 34vw);
-  padding: 9px 11px;
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--ui-radius);
-  color: var(--text-muted);
+  padding: var(--sp-4) var(--sp-5);
   background: var(--bg-panel);
 }
 
@@ -115,7 +107,7 @@
 .buddies-directory-empty {
   display: block;
   margin: 0 0 16px;
-  padding: 24px;
+  padding: var(--sp-9);
   border: 1px dashed var(--border-subtle);
   color: var(--text-secondary);
   background: var(--bg-card);
@@ -125,21 +117,17 @@
 .buddy-card-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 16px;
+  gap: var(--sp-7);
 }
 
 .buddy-directory-card {
-  display: flex;
   position: relative;
   align-items: stretch;
-  flex-direction: column;
   justify-content: flex-end;
   min-height: 330px;
   gap: 0;
   padding: 0;
   overflow: hidden;
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--ui-radius);
   background: var(--bg-card);
   color: inherit;
   font: inherit;
@@ -280,9 +268,9 @@
   position: relative;
   z-index: 2;
   display: block;
-  padding: 0 20px 20px;
+  padding: 0 var(--sp-8) var(--sp-8);
   color: var(--text-bright);
-  font-size: clamp(18px, 1.6vw, 23px);
+  font-size: clamp(var(--fs-7), 1.6vw, var(--fs-8));
   font-weight: 700;
   letter-spacing: -0.025em;
   line-height: 1.1;
@@ -296,14 +284,14 @@
   bottom: 14px;
   left: 14px;
   display: grid;
-  gap: 12px;
-  padding: 15px;
+  gap: var(--sp-6);
+  padding: var(--sp-7);
   border: 1px solid color-mix(in srgb, var(--text-bright) 18%, transparent);
   border-radius: var(--ui-radius);
   color: var(--text-primary);
   background: color-mix(in srgb, var(--bg-popup) 88%, transparent);
   box-shadow: 0 14px 34px color-mix(in srgb, var(--pole-bg-deep) 28%, transparent);
-  font-size: 11px;
+  font-size: var(--fs-2);
   line-height: 1.45;
   opacity: 0;
   transform: translateY(12px);
@@ -323,11 +311,8 @@
 }
 
 .buddy-card-hover-meta {
-  display: flex;
   flex-wrap: wrap;
-  align-items: center;
-  gap: 6px 8px;
-  color: var(--text-muted);
+  gap: var(--sp-3) var(--sp-4);
   font: 500 9px / 1.2 var(--font-mono);
 }
 
@@ -337,14 +322,11 @@
 
 .buddy-card-workspace {
   max-width: 130px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .buddy-card-hover-action {
   color: var(--ai-bright);
-  font-size: 10px;
+  font-size: var(--fs-1);
   font-weight: 700;
 }
 
@@ -382,7 +364,7 @@
   color: var(--ai-bright);
   background: color-mix(in srgb, var(--ai) 15%, transparent);
   box-shadow: 0 0 36px color-mix(in srgb, var(--ai) 22%, transparent);
-  font-size: 34px;
+  font-size: var(--fs-9);
   font-weight: 300;
   line-height: 1;
   transform: translate(-50%, -50%);
@@ -394,11 +376,11 @@
 }
 
 .buddy-presence {
-  padding: 3px 8px;
+  padding: var(--sp-1) var(--sp-4);
   border-radius: var(--ui-radius);
   color: var(--text-secondary);
   background: var(--bg-panel);
-  font-size: 9px;
+  font-size: var(--fs-1);
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -409,54 +391,19 @@
   background: var(--ai-glow);
 }
 
-@media (max-width: 720px) {
-  .buddy-card-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .buddies-directory-content {
-    padding: 24px 18px 40px;
-  }
-
-  .buddies-directory-header {
-    align-items: start;
-    flex-direction: column;
-    gap: 10px;
-  }
-
-  .buddies-directory-tools {
-    width: 100%;
-    align-items: stretch;
-    flex-direction: column-reverse;
-    gap: 10px;
-  }
-
-  .buddies-directory-search {
-    min-width: 0;
-  }
-
-  .buddy-directory-card {
-    min-height: 280px;
-  }
-}
-
 .buddies-hero {
-  padding: 18px 32px 0;
+  padding: var(--sp-7) var(--sp-10) 0;
   background: color-mix(in oklch, var(--bg-card) 86%, transparent);
 }
 
 .buddies-hero-main {
-  display: flex;
-  align-items: center;
   justify-content: space-between;
-  gap: 28px;
-  padding-bottom: 18px;
+  gap: var(--sp-9);
+  padding-bottom: var(--sp-7);
 }
 
 .buddy-identity {
-  display: flex;
-  align-items: center;
-  gap: 14px;
+  gap: var(--sp-6);
   min-width: 0;
 }
 
@@ -467,10 +414,8 @@
   height: 30px;
   margin-right: -6px;
   border: 1px solid var(--border-default);
-  border-radius: var(--ui-radius);
   color: var(--text-secondary);
   background: var(--bg-card);
-  cursor: pointer;
 }
 
 .buddy-back-button:hover {
@@ -487,7 +432,7 @@
   border-radius: var(--ui-radius);
   color: var(--ai-bright);
   background: linear-gradient(145deg, var(--ai-glow), var(--bg-panel));
-  font-size: 15px;
+  font-size: var(--fs-5);
   font-weight: 700;
   letter-spacing: 0.08em;
 }
@@ -497,16 +442,14 @@
 }
 
 .buddy-identity-title {
-  display: flex;
-  align-items: center;
-  gap: 9px;
+  gap: var(--sp-4);
 }
 
 .buddy-identity-title > span {
-  padding: 2px 5px;
+  padding: var(--sp-1) var(--sp-2);
   color: var(--ai-bright);
   background: var(--ai-glow);
-  font-size: 8px;
+  font-size: var(--fs-1);
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -519,23 +462,27 @@
 
 .buddy-identity h1 {
   margin: 0;
-  font-size: 22px;
+  font-size: var(--fs-8);
   line-height: 1.2;
 }
 
 .buddy-identity p {
   margin: 2px 0 0;
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: var(--fs-3);
 }
 
 .buddies-content {
   width: min(1220px, calc(100% - 64px));
   margin: 0 auto;
-  padding: 18px 0 64px;
+  padding: var(--sp-7) 0 var(--sp-11);
 }
 
-@media (max-width: 900px) {
+/* One narrow-window block at the 768px device switch (was 720px + 900px; at
+   <=720px both fired and the 900px padding won, so that is the value kept). This
+   sheet is desktop-tree only, so it applies to a desktop window narrowed below
+   768px. */
+@media (max-width: 768px) {
   .buddies-hero-main {
     align-items: flex-start;
     flex-direction: column;
@@ -545,11 +492,33 @@
     width: min(100% - 32px, 1220px);
   }
 
+  .buddy-card-grid {
+    grid-template-columns: 1fr;
+  }
+
   .buddies-directory-content {
-    padding: 16px;
+    padding: var(--sp-7);
+  }
+
+  .buddies-directory-header {
+    align-items: start;
+    flex-direction: column;
+    gap: var(--sp-5);
+  }
+
+  .buddies-directory-tools {
+    width: 100%;
+    align-items: stretch;
+    flex-direction: column-reverse;
+    gap: var(--sp-5);
+  }
+
+  .buddies-directory-search {
+    min-width: 0;
   }
 
   .buddy-directory-card {
+    min-height: 280px;
     align-items: stretch;
     flex-direction: column;
   }

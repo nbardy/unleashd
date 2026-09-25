@@ -9,7 +9,7 @@ export function BuddyWorkerThreadBadge({ thread }: { thread: BuddyWorkerThread }
   const label = `${thread.label} · worker`;
   return available.has(thread.conversationId) ? (
     <Link
-      className="buddy-worker-thread-badge"
+      className="buddy-worker-thread-badge ui-inline-row ui-card"
       to={`/chat/${thread.conversationId}`}
       aria-label={`Open ${thread.label} worker thread`}
     >
@@ -17,7 +17,7 @@ export function BuddyWorkerThreadBadge({ thread }: { thread: BuddyWorkerThread }
     </Link>
   ) : (
     <span
-      className="buddy-worker-thread-badge"
+      className="buddy-worker-thread-badge ui-inline-row ui-card"
       title="Thread is not available yet or has been removed"
     >
       {label} · unavailable

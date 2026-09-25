@@ -156,21 +156,12 @@ const SRC = 'client/src';
 const TOKENS = 'ui/tokens.css';
 const BREAKPOINTS = new Set(['768px', '340px']);
 const KNOWN_LITERAL = {
-  // Buddy UI, owned by T11/T22 when T21a ran (2026-09-25). Only goes down.
-  'components/BuddiesDashboard.css': 51,
-  'components/BuddyConvoHeader.css': 13,
-  'components/buddies/BuddyBackgroundTasks.css': 11,
-  'components/buddies/BuddyBuilderResultCard.css': 14,
-  'components/buddies/BuddyDetail.css': 61,
-  'components/buddies/BuddySettings.css': 5,
-  'components/buddies/BuddySoulConflict.css': 6,
-  'components/buddies/BuddyWorkerThreadBadge.css': 3,
-  'components/buddies/BuddyWorkspaceActivity.css': 29,
+  // Channel UI, owned by T11/T22 when T21a ran (2026-09-25). Only goes down.
+  // The Buddy files reached 0 in S6 (2026-09-26) and left the list.
   'components/buddies/ChannelBrowser.css': 107,
   'components/buddies/ChannelComposer.css': 43,
   'components/buddies/ChannelContent.css': 23,
   'components/buddies/ChannelLoader.css': 11,
-  'mobile/styles/mobile-buddy.css': 22,
   'mobile/styles/mobile-channels.css': 49,
 };
 const walk = (d) => fs.readdirSync(d, { withFileTypes: true }).flatMap((e) => {
@@ -214,7 +205,7 @@ echo "==> Gate G8: total client CSS lines must not grow"
 # Ratchet: the lean rewrite takes CSS from 18.4k lines to a ~3.75k budget
 # (lean-scope 06 §3). When a change cuts CSS, lower CSS_LINE_CEILING to the new
 # total in the same commit so the cut cannot silently grow back.
-CSS_LINE_CEILING=14961 # port a2e4135 (Gallery dedupe), 2026-09-26; T22-S4 14975 (T21a 14980; 15834 on lean/integration 4e5a01c)
+CSS_LINE_CEILING=14855 # S6 Buddy CSS tokens + primitives, 2026-09-26; 14961 port a2e4135 (Gallery dedupe); T22-S4 14975 (T21a 14980; 15834 on lean/integration 4e5a01c)
 CSS_LINES="$(find client/src -name '*.css' -print0 | xargs -0 cat | wc -l | tr -d ' ')"
 if [ "$CSS_LINES" -gt "$CSS_LINE_CEILING" ]; then
   echo "G8 FAIL: client CSS is $CSS_LINES lines, ceiling $CSS_LINE_CEILING. Reuse a primitive (ui/primitives.css) or cut elsewhere."

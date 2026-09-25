@@ -151,7 +151,7 @@ export function BuddySchedules({
   const live = schedules.filter((schedule) => schedule.archivedAt === undefined);
   return (
     <section className="buddy-panel" aria-label="Schedules">
-      <div className="buddy-panel__title">
+      <div className="buddy-panel__title ui-row">
         <h2>Schedules</h2>
         <span>{live.filter((schedule) => schedule.enabled).length} enabled</span>
       </div>

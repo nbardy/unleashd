@@ -70,7 +70,7 @@ export function BuddyBackgroundTasks({
                     </span>
                   </div>
                   {preview && <p className="buddy-background-tasks-preview">{preview}</p>}
-                  <div className="buddy-background-tasks-row buddy-background-tasks-meta">
+                  <div className="buddy-background-tasks-row buddy-background-tasks-meta ui-muted">
                     <span>
                       {conversation.provider} ·{' '}
                       {getConversationLastActivity(conversation).toLocaleString()}
