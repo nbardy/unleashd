@@ -223,6 +223,13 @@ pnpm screenshot:mobile --out /tmp/shots       # the older phone-only gallery (ch
   failed on the new NOT NULL column until the app was vendored and restarted,
   and a v32 build refuses to open a v33 database at all (`CURRENT_SCHEMA_VERSION`
   ceiling). Package tests are safe: they set `BUDDIES_HOME` themselves.
+- After pulling a new `vendor/nbardy-buddies-0.1.0.tgz`, confirm the INSTALLED
+  package changed. The tarball name never changes, so `pnpm install` can report
+  "Already up to date" while `node_modules/.pnpm/@nbardy+buddies@file+vendor+…`
+  still holds an older extract. On 2026-09-25, after the beceb77 vendor merged,
+  the main tree still lacked `src/run-capacity.js` (the worktree that vendored it
+  had it). Check with `rg <new symbol> node_modules/@nbardy/buddies/src`; to fix,
+  `mv` that `.pnpm` directory aside and `pnpm install --frozen-lockfile --offline`.
 - When source is broken, `server/dist/*.js` (and `shared/dist/`) is the oracle
   for the author's prior intent — check it before git archaeology.
 - The formatter is **biome** (`pnpm format`, `pnpm lint:fix`; config in
