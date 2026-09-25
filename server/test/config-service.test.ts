@@ -32,6 +32,7 @@ const DEFAULTS: Record<Provider, string> = {
   opencode: 'opencode/big-pickle',
   gemini: 'gemini-3.1-pro-preview',
   cursor: 'composer-2.5',
+  muse: 'muse-spark-1.3',
 };
 
 const resolver: ConversationConfigResolver = {

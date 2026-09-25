@@ -2,8 +2,6 @@ import assert from 'node:assert/strict';
 import { register } from 'node:module';
 import test from 'node:test';
 import { type TeamSetupResult, formatBuddyTeamConfigurationToolResult } from '@unleashd/shared';
-// biome-ignore lint/correctness/noUnusedImports: tsx's test transform uses the classic JSX runtime.
-import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { MemoryRouter } from 'react-router-dom';
 register(

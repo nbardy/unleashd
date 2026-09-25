@@ -7,70 +7,140 @@
 //!      the content hash (memory: source hash = imported hash); the head is the last revision.
 //! 4.   Soul files are re-hashed against the import baseline and classified against the new soul
 //!      docs the way `tools/soul-check.mjs` does.
+//!
+//! Posts (T06b, everything is a post in a channel) add three checks:
+//! - answers: every v33 inline reply is byte-identical to the body of the post that answers its
+//!   request, written by the recipient, in the request's channel and thread;
+//! - links: every `reply_to_id` and `root_id` resolves inside its own channel, a reply sits in its
+//!   parent's thread, and a message whose v33 root is in the same channel is threaded under it;
+//! - read cursors: `post_read` equals buddy_list_reads plus the owner's cursors from
+//!   owner-channel-reads.json, re-read now and required to be unchanged since the import.
 
 use crate::error::Result;
-use crate::import::{SoulFile, SoulFileState, open_source, soul_files, uri};
+use crate::import::{DM_KEY, OwnerReads, SoulFile, SoulFileState, load_owner_reads, open_source, soul_files, uri};
 use crate::store::{collect, sha256_hex};
 use rusqlite::{Connection, OpenFlags};
 use serde::Serialize;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
+/// Imported messages, as the direct-channel posts that answer nothing. `recipient` is the other
+/// member of the channel, or the author in a channel of one.
+const MESSAGES: &str = "SELECT p.*, c.member_key, coalesce(p.author_id, 'owner') AS sender,
+      coalesce((SELECT m.member FROM channel_member m WHERE m.channel_id = p.channel_id AND m.member != coalesce(p.author_id, 'owner')),
+               coalesce(p.author_id, 'owner')) AS recipient
+    FROM post p JOIN channel c ON c.id = p.channel_id
+    WHERE c.kind = 'direct' AND NOT EXISTS (SELECT 1 FROM post q WHERE q.answer_id = p.id)";
+
+/// The request state a v33 message maps to (01 §7.1).
+const V33_REQUEST: &str = "CASE WHEN status = 'replied' THEN 'answered' WHEN expects_reply = 0 THEN NULL
+    WHEN status IN ('pending','active') THEN 'awaiting' ELSE status END";
+
 /// (class, v33 query, new query). Each query yields (group key, canonical line).
-const CLASSES: &[(&str, &str, &str)] = &[
-    (
-        "messages_by_sender",
-        "SELECT from_buddy_id, json_array(id, created_at, body, evidence) FROM buddy_messages",
-        "SELECT coalesce(author_id, 'owner'), json_array(id, created_at, body, evidence) FROM post WHERE target_kind IN ('buddy','owner')",
-    ),
-    (
-        "messages_by_recipient_with_replies",
-        "SELECT coalesce(to_buddy_id, 'owner'), json_array(id, created_at, body, evidence, reply_body, reply_evidence, replied_at) FROM buddy_messages",
-        "SELECT coalesce(target_id, 'owner'), json_array(id, created_at, body, evidence, reply_body, reply_evidence, replied_at)
-         FROM post WHERE target_kind IN ('buddy','owner')",
-    ),
-    (
-        "channel_posts_by_author",
-        "SELECT coalesce(from_buddy_id, 'owner'), json_array(id, created_at, body, evidence) FROM buddy_list_posts",
-        "SELECT coalesce(author_id, 'owner'), json_array(id, created_at, body, evidence) FROM post WHERE target_kind = 'channel'",
-    ),
-    (
-        "channel_posts_by_channel_and_author",
-        "SELECT list_id || '/' || coalesce(from_buddy_id, 'owner'), json_array(id, thread_root_id) FROM buddy_list_posts",
-        "SELECT target_id || '/' || coalesce(author_id, 'owner'), json_array(id, root_id) FROM post WHERE target_kind = 'channel'",
-    ),
-    (
-        "task_comments_by_task",
-        "SELECT project_id, json_array(id, author, created_at, body, evidence) FROM buddy_task_comments",
-        "SELECT target_id, json_array(id, coalesce(author_id, 'owner'), created_at, body, evidence) FROM post WHERE target_kind = 'task'",
-    ),
-    (
-        "memory_revisions_by_buddy_kind",
-        "SELECT buddy_id || '/' || document_kind, json_array(revision, body) FROM buddy_memory_revisions",
-        "SELECT coalesce(d.buddy_id || '/' || d.kind, 'orphan:' || r.doc_id), json_array(r.revision, r.content)
-         FROM doc_revision r LEFT JOIN doc d ON d.id = r.doc_id WHERE r.doc_id GLOB 'mem_*'",
-    ),
-    (
-        "memory_heads_by_buddy_kind",
-        "SELECT h.buddy_id || '/' || h.document_kind, json_array(r.revision, r.body) FROM buddy_memory_heads h
-         JOIN buddy_memory_revisions r ON r.id = h.revision_id",
-        "SELECT buddy_id || '/' || kind, json_array(revision, content) FROM doc WHERE scope_kind = 'buddy'",
-    ),
-    (
-        "knowledge_docs_by_buddy_scope_kind",
-        "SELECT buddy_id || '/' || CASE scope_kind WHEN 'owner_thread' THEN 'thread' WHEN 'project' THEN 'task' ELSE scope_kind END
-           || '/' || kind, json_array(id, scope_id, name, revision, content) FROM buddy_knowledge",
-        "SELECT buddy_id || '/' || scope_kind || '/' || kind, json_array(id, scope_id, name, revision, content) FROM doc WHERE scope_kind != 'buddy'",
-    ),
-    (
-        "knowledge_revisions_by_buddy_scope_kind",
-        "SELECT coalesce(k.buddy_id || '/' || CASE k.scope_kind WHEN 'owner_thread' THEN 'thread' WHEN 'project' THEN 'task'
-           ELSE k.scope_kind END || '/' || k.kind, 'orphan:' || r.document_id), json_array(r.document_id, r.revision, r.content)
-         FROM buddy_knowledge_revisions r LEFT JOIN buddy_knowledge k ON k.id = r.document_id",
-        "SELECT coalesce(d.buddy_id || '/' || d.scope_kind || '/' || d.kind, 'orphan:' || r.doc_id), json_array(r.doc_id, r.revision, r.content)
-         FROM doc_revision r LEFT JOIN doc d ON d.id = r.doc_id WHERE r.doc_id NOT GLOB 'mem_*'",
-    ),
-];
+fn classes() -> Vec<(&'static str, String, String)> {
+    vec![
+        (
+            "messages_by_sender",
+            "SELECT from_buddy_id, json_array(id, created_at, body, evidence) FROM buddy_messages".into(),
+            format!("SELECT sender, json_array(id, created_at, body, evidence) FROM ({MESSAGES})"),
+        ),
+        (
+            "messages_by_recipient_with_request_state",
+            format!("SELECT coalesce(to_buddy_id, 'owner'), json_array(id, created_at, body, evidence, {V33_REQUEST}) FROM buddy_messages"),
+            format!("SELECT recipient, json_array(id, created_at, body, evidence, request) FROM ({MESSAGES})"),
+        ),
+        (
+            "messages_by_channel_with_links",
+            format!(
+                "SELECT {DM_KEY}, json_array(id, created_at, body, evidence, purpose, in_reply_to_id, root_message_id, buddy_project_id)
+                 FROM buddy_messages"
+            ),
+            format!(
+                "SELECT member_key, json_array(id, created_at, body, evidence, purpose, reply_to_id, json_extract(legacy, '$.root_message_id'),
+                   task_id) FROM ({MESSAGES})"
+            ),
+        ),
+        (
+            "answers_by_channel_and_author",
+            format!(
+                "SELECT {DM_KEY} || '/' || coalesce(to_buddy_id, 'owner'), json_array(id, reply_body, reply_evidence, replied_at)
+                 FROM buddy_messages WHERE status = 'replied'"
+            ),
+            "SELECT c.member_key || '/' || coalesce(a.author_id, 'owner'), json_array(q.id, a.body, a.evidence, a.created_at)
+             FROM post q JOIN post a ON a.id = q.answer_id JOIN channel c ON c.id = a.channel_id"
+                .into(),
+        ),
+        (
+            "channel_posts_by_author",
+            "SELECT coalesce(from_buddy_id, 'owner'), json_array(id, created_at, body, evidence) FROM buddy_list_posts".into(),
+            "SELECT coalesce(p.author_id, 'owner'), json_array(p.id, p.created_at, p.body, p.evidence)
+             FROM post p JOIN channel c ON c.id = p.channel_id WHERE c.kind = 'public'"
+                .into(),
+        ),
+        (
+            "channel_posts_by_channel_and_author",
+            "SELECT list_id || '/' || coalesce(from_buddy_id, 'owner'), json_array(id, created_at, body, evidence, thread_root_id)
+             FROM buddy_list_posts"
+                .into(),
+            "SELECT p.channel_id || '/' || coalesce(p.author_id, 'owner'), json_array(p.id, p.created_at, p.body, p.evidence, p.root_id)
+             FROM post p JOIN channel c ON c.id = p.channel_id WHERE c.kind = 'public'"
+                .into(),
+        ),
+        (
+            "task_comments_by_task_and_author",
+            "SELECT project_id || '/' || author, json_array(id, created_at, body, evidence) FROM buddy_task_comments".into(),
+            "SELECT c.task_id || '/' || coalesce(p.author_id, 'owner'), json_array(p.id, p.created_at, p.body, p.evidence)
+             FROM post p JOIN channel c ON c.id = p.channel_id WHERE c.kind = 'task'"
+                .into(),
+        ),
+        (
+            "memory_revisions_by_buddy_kind",
+            "SELECT buddy_id || '/' || document_kind, json_array(revision, body) FROM buddy_memory_revisions".into(),
+            "SELECT coalesce(d.buddy_id || '/' || d.kind, 'orphan:' || r.doc_id), json_array(r.revision, r.content)
+             FROM doc_revision r LEFT JOIN doc d ON d.id = r.doc_id WHERE r.doc_id GLOB 'mem_*'"
+                .into(),
+        ),
+        (
+            "memory_heads_by_buddy_kind",
+            "SELECT h.buddy_id || '/' || h.document_kind, json_array(r.revision, r.body) FROM buddy_memory_heads h
+             JOIN buddy_memory_revisions r ON r.id = h.revision_id"
+                .into(),
+            "SELECT buddy_id || '/' || kind, json_array(revision, content) FROM doc WHERE scope_kind = 'buddy'".into(),
+        ),
+        (
+            "knowledge_docs_by_buddy_scope_kind",
+            "SELECT buddy_id || '/' || CASE scope_kind WHEN 'owner_thread' THEN 'thread' WHEN 'project' THEN 'task' ELSE scope_kind END
+               || '/' || kind, json_array(id, scope_id, name, revision, content) FROM buddy_knowledge"
+                .into(),
+            "SELECT buddy_id || '/' || scope_kind || '/' || kind, json_array(id, scope_id, name, revision, content) FROM doc WHERE scope_kind != 'buddy'"
+                .into(),
+        ),
+        (
+            "knowledge_revisions_by_buddy_scope_kind",
+            "SELECT coalesce(k.buddy_id || '/' || CASE k.scope_kind WHEN 'owner_thread' THEN 'thread' WHEN 'project' THEN 'task'
+               ELSE k.scope_kind END || '/' || k.kind, 'orphan:' || r.document_id), json_array(r.document_id, r.revision, r.content)
+             FROM buddy_knowledge_revisions r LEFT JOIN buddy_knowledge k ON k.id = r.document_id"
+                .into(),
+            "SELECT coalesce(d.buddy_id || '/' || d.scope_kind || '/' || d.kind, 'orphan:' || r.doc_id), json_array(r.doc_id, r.revision, r.content)
+             FROM doc_revision r LEFT JOIN doc d ON d.id = r.doc_id WHERE r.doc_id NOT GLOB 'mem_*'"
+                .into(),
+        ),
+    ]
+}
+
+/// Posts that break a thread or reply link: (post id, what is wrong).
+const BROKEN_LINKS: &str = "
+    SELECT p.id, 'reply_to outside the channel or thread' FROM post p LEFT JOIN post q ON q.id = p.reply_to_id
+    WHERE p.reply_to_id IS NOT NULL AND (q.id IS NULL OR q.channel_id != p.channel_id OR p.root_id IS NOT coalesce(q.root_id, q.id))
+    UNION ALL
+    SELECT p.id, 'root outside the channel or not a root' FROM post p LEFT JOIN post r ON r.id = p.root_id
+    WHERE p.root_id IS NOT NULL AND (r.id IS NULL OR r.channel_id != p.channel_id OR r.root_id IS NOT NULL)
+    UNION ALL
+    SELECT p.id, 'same-channel v33 root lost' FROM post p JOIN post r ON r.id = json_extract(p.legacy, '$.root_message_id')
+    WHERE r.id != p.id AND r.channel_id = p.channel_id AND p.reply_to_id IS NULL AND p.root_id IS NOT r.id
+    UNION ALL
+    SELECT q.id, 'answer is not a reply to its request' FROM post q JOIN post a ON a.id = q.answer_id
+    WHERE a.reply_to_id IS NOT q.id OR a.channel_id != q.channel_id";
 
 #[derive(Debug, Serialize)]
 pub struct GroupDiff {
@@ -109,10 +179,24 @@ pub struct SoulCheck {
     pub differ: Vec<String>,
 }
 
+/// One v33 row per request (or cursor) compared to its new row, exactly.
+#[derive(Debug, Serialize)]
+pub struct RowCheck {
+    pub ok: bool,
+    pub rows_old: usize,
+    pub rows_new: usize,
+    pub identical: usize,
+    pub mismatches: Vec<String>,
+}
+
 #[derive(Debug, Serialize)]
 pub struct VerifyReport {
     pub ok: bool,
     pub classes: Vec<ClassCheck>,
+    /// Every inline reply, byte for byte, against its answer post.
+    pub answers: RowCheck,
+    pub links: RowCheck,
+    pub read_cursors: RowCheck,
     pub revision_chains: ChainCheck,
     pub soul: SoulCheck,
 }
@@ -135,7 +219,7 @@ fn digest(lines: &[String]) -> String {
     sha256_hex(lines.join("\n").as_bytes())
 }
 
-fn check_class(old: &Connection, new: &Connection, (class, old_sql, new_sql): &(&str, &str, &str)) -> Result<ClassCheck> {
+fn check_class(old: &Connection, new: &Connection, (class, old_sql, new_sql): &(&str, String, String)) -> Result<ClassCheck> {
     let (a, b) = (groups(old, old_sql)?, groups(new, new_sql)?);
     let keys: BTreeSet<&String> = a.keys().chain(b.keys()).collect();
     let empty = Vec::new();
@@ -261,11 +345,76 @@ fn check_soul(new: &Connection, baseline: &[SoulFile]) -> Result<SoulCheck> {
     })
 }
 
-pub fn verify(source: &Path, target: &Path, soul_baseline: &[SoulFile]) -> Result<VerifyReport> {
+type Rows = BTreeMap<String, String>;
+
+fn rows(conn: &Connection, sql: &str) -> Result<Rows> {
+    Ok(collect(conn.prepare(sql)?.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?)?.into_iter().collect())
+}
+
+/// Row-by-row equality of two id → value maps.
+fn compare(old: &Rows, new: &Rows) -> RowCheck {
+    let ids: BTreeSet<&String> = old.keys().chain(new.keys()).collect();
+    let mismatches: Vec<String> = ids.into_iter().filter(|id| old.get(*id) != new.get(*id)).map(|id| id.to_string()).collect();
+    let identical = old.iter().filter(|(id, v)| new.get(*id) == Some(v)).count();
+    RowCheck { ok: mismatches.is_empty(), rows_old: old.len(), rows_new: new.len(), identical, mismatches }
+}
+
+/// The answer post's body compared as bytes (a BLOB cast), with its author, time and thread.
+fn check_answers(old: &Connection, new: &Connection) -> Result<RowCheck> {
+    let a = rows(
+        old,
+        "SELECT id, hex(CAST(reply_body AS BLOB)) || '|' || coalesce(to_buddy_id, 'owner') || '|' || replied_at FROM buddy_messages
+         WHERE status = 'replied'",
+    )?;
+    let b = rows(
+        new,
+        "SELECT q.id, hex(CAST(a.body AS BLOB)) || '|' || coalesce(a.author_id, 'owner') || '|' || a.created_at
+         FROM post q JOIN post a ON a.id = q.answer_id AND a.reply_to_id = q.id AND a.root_id IS coalesce(q.root_id, q.id)",
+    )?;
+    Ok(compare(&a, &b))
+}
+
+fn check_links(new: &Connection) -> Result<RowCheck> {
+    let broken = rows(new, BROKEN_LINKS)?;
+    let linked: usize =
+        new.query_row("SELECT count(*) FROM post WHERE reply_to_id IS NOT NULL OR root_id IS NOT NULL", [], |r| r.get(0))?;
+    Ok(RowCheck {
+        ok: broken.is_empty(),
+        rows_old: linked,
+        rows_new: linked,
+        identical: linked - broken.len(),
+        mismatches: broken.into_iter().map(|(id, why)| format!("{id}: {why}")).collect(),
+    })
+}
+
+/// buddy_list_reads plus the owner's cursors from owner-channel-reads.json, which must read the
+/// same now as at import (it is live server state).
+fn check_reads(old: &Connection, new: &Connection, imported: &OwnerReads) -> Result<RowCheck> {
+    let path = match imported {
+        OwnerReads::Absent { path } | OwnerReads::Loaded { path, .. } => Path::new(path),
+    };
+    let now = load_owner_reads(path)?;
+    let lists: Vec<String> = collect(old.prepare("SELECT id FROM buddy_lists")?.query_map([], |r| r.get(0))?)?;
+    let mut a = rows(old, "SELECT buddy_id || '/' || list_id, last_post_id || '@' || last_post_created_at FROM buddy_list_reads")?;
+    a.extend(now.cursors(&lists).into_iter().map(|(list, post, at)| (format!("owner/{list}"), format!("{post}@{at}"))));
+    let b = rows(new, "SELECT reader || '/' || channel_id, last_post_id || '@' || last_post_at FROM post_read")?;
+    let mut check = compare(&a, &b);
+    if &now != imported {
+        check.ok = false;
+        check.mismatches.push(format!("{}: changed since the import", path.display()));
+    }
+    Ok(check)
+}
+
+pub fn verify(source: &Path, target: &Path, soul_baseline: &[SoulFile], owner_reads: &OwnerReads) -> Result<VerifyReport> {
     let old = open_source(source)?;
     let new = open_new(target)?;
-    let classes = CLASSES.iter().map(|c| check_class(&old, &new, c)).collect::<Result<Vec<_>>>()?;
+    let classes = classes().iter().map(|c| check_class(&old, &new, c)).collect::<Result<Vec<_>>>()?;
+    let answers = check_answers(&old, &new)?;
+    let links = check_links(&new)?;
+    let read_cursors = check_reads(&old, &new, owner_reads)?;
     let revision_chains = check_chains(&old, &new)?;
     let soul = check_soul(&new, soul_baseline)?;
-    Ok(VerifyReport { ok: classes.iter().all(|c| c.ok) && revision_chains.ok && soul.ok, classes, revision_chains, soul })
+    let ok = classes.iter().all(|c| c.ok) && answers.ok && links.ok && read_cursors.ok && revision_chains.ok && soul.ok;
+    Ok(VerifyReport { ok, classes, answers, links, read_cursors, revision_chains, soul })
 }

@@ -39,9 +39,10 @@ import { BuddiesCore, type Actor } from '@unleashd/buddies-core';
 
 const core = await BuddiesCore.open(path);            // one instance per process
 const me: Actor = { kind: 'buddy', id: grant.buddyId }; // or { kind: 'owner' }
-const post = await core.post(me, {
-  target: { kind: 'buddy', id: to }, kind: 'request', body, evidence: [], key,
+const ask = await core.post(me, { kind: 'direct', members: [me, { kind: 'buddy', id: to }] }, {
+  kind: 'request', body, evidence: [], key,
 });
+const answer = await core.answer(them, { requestId: ask.id, body: 'done', evidence: [], key: key2 });
 ```
 
 - The server passes the actor from the turn's grant. It never checks permissions itself: every
@@ -55,14 +56,15 @@ const post = await core.post(me, {
   - Wake the runner on enqueue and settle, and keep a slow backstop tick.
   - `dueSchedules(now)` only enqueues runs. The runner executes them like any other run.
 - Sum types cross the boundary as tagged objects: `{ kind: 'buddy', id }`,
-  `{ state: 'replied', body, … }`. The d.ts spells out every variant.
+  `{ state: 'answered', answerId }`, a channel's `{ type: 'direct', members }`. The d.ts spells
+  out every variant.
 
 ## API
 
 | Area | Functions |
 |---|---|
-| Authorization | `authorize(actor, op, subject)` → `Allowed \| Denied{reason}`. Rules: owner always; `admin` owner only; `post` any active buddy; everything else self or a transitive manager (walks `buddy.manager_id`) |
-| Posts | `post(actor, PostInput)`: a `request` to a buddy sets `reply: awaiting` and queues a `post` run for the recipient<br>`reply(actor, {postId, body, evidence, key})`: queues a `reply` run back to a buddy author, in the sender's conversation<br>`listPosts(PostQuery, before?, limit)`: newest first, keyset on `(created_at, id)`. Queries are `channel` (top level), `thread`, `task` (comments), `to`, `from`<br>`inbox(actor, workspaceId)`: requests owed, requests awaiting others, unread per channel<br>`markRead`, `createChannel`, `listChannels` |
+| Authorization | `authorize(actor, op, subject)` → `Allowed \| Denied{reason}`. Rules: owner always; `admin` owner only; `create_channel` any active buddy; `post` and `read_channel` on a channel: any active buddy for public and task channels, members only for direct ones; everything else self or a transitive manager (walks `buddy.manager_id`) |
+| Posts | Everything is a post in a channel. A channel is `public{name, purpose}`, `direct{members}` (one per member set; the owner is a member like a buddy) or `task{taskId}`<br>`post(actor, ChannelRef, PostInput)`: `ChannelRef` is `id \| direct{members} \| task{taskId}`; a direct or task channel is created on first use. A `request` needs a direct channel: it sets `request: awaiting` and queues a `post` run for each buddy among the other members<br>`answer(actor, {requestId, body, evidence, key})`: one transaction inserts the answer (a reply post in the request's thread), flips the request to `answered{answerId}` and queues a `reply` run back to a buddy author, in the sender's conversation<br>`getPost`, `openChannel(actor, ChannelRef)`, `listPosts(actor, channel \| thread, before?, limit)`: newest first, keyset on `(created_at, id)`<br>`inbox(actor, workspaceId)`: requests owed to the actor, its own open requests, and its channels (public, its direct ones, any it has read) with unread counts<br>`markRead` (forward only, any channel kind), `createChannel` (public), `listChannels` (public) |
 | Docs | `readDoc(actor, DocRef)` → `Doc \| null`<br>`writeDoc(actor, {doc, content, baseRevision, reason, key})`: compare-and-swap; `baseRevision` 0 creates the doc; every revision is kept with its sha256<br>`listDocs(actor, buddyId, kind)`, `docRevisions(actor, docId)`<br>Scopes are `buddy \| workspace \| task \| thread` |
 | Tasks | `upsertTask(actor, create \| update)`: an update is compare-and-swap on `revision`<br>Pausing, cancelling or reassigning a task bumps its `epoch` and cancels runs queued under the old epoch. A blocked task needs a `blockedReason`<br>`getTask`, `listTasks(owner \| workspace \| children)` |
 | Runs | `enqueueRun(actor, {buddyId, input, …})`: idempotent on the input key<br>`RunInput` is `chat \| post \| reply \| schedule \| failure_notice`<br>`claimRun(leaseMs)`: oldest ready run whose predecessor has finished, whose conversation is free, whose buddy is under `max_active_runs` and whose task is not paused. It first fails any expired lease as `lease_expired`<br>`settleRun(runId, leaseToken, complete \| failed \| cancelled)`: a failed `post` run marks the request failed and sends the sender a `failure_notice` run<br>`bindRun`, `cancelRun`, `getRun`, `listRuns(buddy \| conversation \| task \| queued)` |
@@ -70,7 +72,7 @@ const post = await core.post(me, {
 | Events | `appendEvent(actor, {op, payload, key?})`: mutations only, idempotent per (actor, workspace, key)<br>Every core mutation records its own event<br>`pruneEvents(before)` (retention), `listEvents(buddyId, beforeSeq, limit)` |
 | Identity | `listWorkspaces`, `getBuddy`, `listBuddies(workspaceId)`, `bindConversation`, `getConversation` |
 
-The schema is in `src/schema.rs`: the §6 tables of 01-buddies-package.md plus the optional
+The schema is in `src/schema.rs`: the §6 tables of 01-buddies-package.md, `channel_member`, and the optional
 `conversation` table. The file header lists each deviation from §6 and its reason. There is no
 version and no migration chain: `open` creates the schema in an empty file, and refuses any file
 that lacks the schema's `application_id`.
@@ -85,7 +87,16 @@ buddies-import import --from old.sqlite --to new.sqlite --report import.json
 buddies-import verify --from old.sqlite --to new.sqlite --import-report import.json --out verify.json  # exit 1 on mismatch
 ```
 
-**Import.** Follows 01 §7.1.
+**Import.** Follows 01 §7.1, with the T06b post model.
+- `buddy_messages` → posts in the direct channel of {sender, recipient} (a NULL recipient is the
+  owner). An inline reply becomes its own post (`reply_<message id>`), written by the recipient at
+  `replied_at`, with `reply_to_id` = the request and the request's `answer_id` pointing at it.
+  The v33 `root_message_id` is the delegation-chain root and is often in another channel, so it is
+  kept in `legacy`; `root_id` is the thread inside the channel.
+- `buddy_list_posts` → public channel posts; `buddy_task_comments` → the task's channel.
+- `buddy_list_reads` and `owner-channel-reads.json` → `post_read`. The JSON is read, never written
+  (`--owner-reads`, default `$UNLEASHD_DATA_DIR` or `~/.agent-viewer`); a missing file is
+  recorded as `absent`. A list the owner never opened gets the file's baseline as its cursor.
 - It opens the v33 file with `mode=ro`, refuses to write an existing target, and never writes a
   soul file.
 - Every source column with no new home goes into the row's `legacy` JSON.
@@ -102,8 +113,12 @@ buddies-import verify --from old.sqlite --to new.sqlite --import-report import.j
   - the soul-file hashes, which are the verifier's baseline.
 
 **Verify.** Implements 01 §7.3 checks 1–4, with both databases opened read-only.
-- Per-buddy counts and a content hash for each data class. Both sides use the same SQLite
-  `json_array` serializer.
+- Per-author and per-channel counts and a content hash for each data class. Both sides use the
+  same SQLite `json_array` serializer.
+- Every v33 inline reply is byte-identical to its answer post, by the recipient, in the request's
+  thread.
+- Thread and reply links: every `reply_to_id` and `root_id` resolves inside its own channel.
+- Read cursors equal `buddy_list_reads` plus the owner JSON, which must be unchanged since import.
 - Revision sets per doc, as (revision, sha256).
 - Stored hashes match the content.
 - Heads equal their last revision.
@@ -117,24 +132,28 @@ node --test crates/unleashd-buddies/test/node.test.mjs               # after pnp
 ```
 
 - `tests/core.rs`:
-  - `authorize`;
+  - `authorize`, including channel membership;
+  - one direct channel per member set, including two posters racing on separate connections;
+  - answer atomicity: two answerers race and exactly one answer post lands;
   - compare-and-swap on docs and tasks;
   - the idempotency key;
   - two claimers where exactly one wins, over 25 rounds on separate connections;
   - lease expiry;
   - one run per conversation;
-  - the request → reply → return loop and the failure notice;
+  - the request → answer → return loop, read cursors on a direct channel, and the failure notice;
   - epoch cancellation;
   - schedules and event pruning.
 - `tests/import.rs`:
   - a v33 fixture (the real v33 schema, `tests/fixtures/v33-schema.sql`) is imported and
     verified;
-  - then a message body, a revision and a soul file are tampered with, and the verifier must
-    report each one.
+  - it has inline replies, a same-channel thread, a cross-channel root, a note to self and an
+    owner read file;
+  - then a message body, an answer body, a thread link, the owner read file, a revision and a
+    soul file are tampered with, and the verifier must report each one.
 - `tests/query_plan.rs` guards query plans:
   - it traces every statement that a workload over every public function runs;
   - it fails on any plain `SCAN <table>` in `EXPLAIN QUERY PLAN`, the regression class behind
     the 2026-09-25 tick incident;
   - the one allowed scan is `listWorkspaces`, which reads the whole table by design.
-- `test/node.test.mjs` loads the built `.node`, runs a request/claim/reply/settle cycle with
+- `test/node.test.mjs` loads the built `.node`, runs a request/claim/answer/settle cycle with
   tagged objects, and checks the error codes.

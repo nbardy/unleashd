@@ -1,8 +1,6 @@
 import assert from 'node:assert/strict';
 import { register } from 'node:module';
 import test from 'node:test';
-// biome-ignore lint/correctness/noUnusedImports: tsx's test transform uses the classic JSX runtime.
-import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { MemoryRouter, Route, Routes } from 'react-router-dom';
 register(
@@ -19,6 +17,8 @@ const { channelRows } = await import('../src/components/buddies/channel-data');
 const { Provider } = await import('jotai');
 const { jotaiStore } = await import('../src/atoms/store');
 const { loadResource } = await import('../src/atoms/resources');
+
+const UNREPORTED = { kind: 'unreported' } as const;
 
 async function seed() {
   await loadResource({
@@ -107,8 +107,20 @@ test('channel browser renders a Slack transcript, oldest first, with instance ta
           workspaceId="ws-slack"
           workspaceName="unleashd"
           members={[
-            { id: 'lead', name: 'Lead', role: 'Own the work', status: 'active' },
-            { id: 'dev', name: 'Dev', role: 'Build the work', status: 'active' },
+            {
+              id: 'lead',
+              name: 'Lead',
+              role: 'Own the work',
+              status: 'active',
+              execution: UNREPORTED,
+            },
+            {
+              id: 'dev',
+              name: 'Dev',
+              role: 'Build the work',
+              status: 'active',
+              execution: UNREPORTED,
+            },
           ]}
           tasks={[]}
           availableConversationIds={new Set(['conv-aaaa111122223333'])}
@@ -252,8 +264,20 @@ test('posts render markdown mentions, live Task chips, inline media and thread s
           workspaceId="ws-rich"
           workspaceName="rich"
           members={[
-            { id: 'lead', name: 'Lead', role: 'Own the work', status: 'active' },
-            { id: 'gone', name: 'Gone', role: 'Retired', status: 'archived' },
+            {
+              id: 'lead',
+              name: 'Lead',
+              role: 'Own the work',
+              status: 'active',
+              execution: UNREPORTED,
+            },
+            {
+              id: 'gone',
+              name: 'Gone',
+              role: 'Retired',
+              status: 'archived',
+              execution: UNREPORTED,
+            },
           ]}
           tasks={[
             {
@@ -358,7 +382,15 @@ test('the thread pane and the Task filter open on their newest page and page bac
         <ChannelBrowser
           workspaceId="ws-long"
           workspaceName="long"
-          members={[{ id: 'lead', name: 'Lead', role: 'Own the work', status: 'active' }]}
+          members={[
+            {
+              id: 'lead',
+              name: 'Lead',
+              role: 'Own the work',
+              status: 'active',
+              execution: UNREPORTED,
+            },
+          ]}
           tasks={[]}
           availableConversationIds={new Set()}
         />

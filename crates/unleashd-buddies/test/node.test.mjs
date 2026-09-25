@@ -10,7 +10,7 @@ import { test } from 'node:test';
 
 const { BuddiesCore } = createRequire(import.meta.url)('../index.js');
 
-test('a request, its run and its reply cross the napi boundary', async () => {
+test('a request, its run and its answer cross the napi boundary', async () => {
   const dir = mkdtempSync(join(tmpdir(), 'buddies-core-'));
   const path = join(dir, 'core.sqlite');
   const core = await BuddiesCore.open(path);
@@ -30,25 +30,30 @@ test('a request, its run and its reply cross the napi boundary', async () => {
     reason: 'a is neither b nor one of its managers',
   });
 
-  const post = await core.post(a, {
-    target: { kind: 'buddy', id: 'b' },
-    kind: 'request',
-    body: 'review this',
-    evidence: [],
-    key: 'k1',
-  });
-  assert.deepEqual(post.reply, { state: 'awaiting' });
+  const post = await core.post(
+    a,
+    { kind: 'direct', members: [a, b] },
+    { kind: 'request', body: 'review this', evidence: [], key: 'k1' }
+  );
+  assert.deepEqual(post.request, { state: 'awaiting' });
+  const channel = await core.openChannel(b, { kind: 'direct', members: [b, a] });
+  assert.equal(channel.id, post.channelId);
+  assert.deepEqual(channel.kind, { type: 'direct', members: [a, b] });
 
   const claim = await core.claimRun(60_000);
   assert.deepEqual(claim.run.input, { kind: 'post', postId: post.id });
-  const replied = await core.reply(b, {
-    postId: post.id,
+  const answer = await core.answer(b, {
+    requestId: post.id,
     body: 'lgtm',
     evidence: ['ci'],
     key: 'k2',
   });
-  assert.equal(replied.reply.state, 'replied');
-  assert.deepEqual(replied.reply.evidence, ['ci']);
+  assert.equal(answer.replyToId, post.id);
+  assert.deepEqual(answer.evidence, ['ci']);
+  assert.deepEqual((await core.getPost(a, post.id)).request, {
+    state: 'answered',
+    answerId: answer.id,
+  });
   const settled = await core.settleRun(claim.run.id, claim.leaseToken, {
     kind: 'complete',
     text: 'ok',

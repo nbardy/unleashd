@@ -1,8 +1,11 @@
 import assert from 'node:assert/strict';
+import type { ChildProcess } from 'node:child_process';
+import { EventEmitter } from 'node:events';
 import { promises as fs } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
+import { type UnifiedAgentEvent, buildCommand } from '@nbardy/agent-cli';
 import type { ConversationConfig, Message } from '@unleashd/shared';
 import { WebSocketServer } from 'ws';
 import { loadAllConversations, pollForChanges } from '../src/adapters/loader';
@@ -152,24 +155,36 @@ test('bound native sessions retain display history across capped startup, pollin
       settleBuddyDelegation: () => {},
       getConversation: context.registry.get,
       readLatestOompaRuntime: () => ({ available: false, run: null, reason: 'fixture' }),
+      createSessionId: () => 'fresh-session',
       readCurrentBuddyContext: () => ({
         briefing: 'CURRENT_BRIEFING',
         memoryGeneration: 'updated-memory',
         audience: sameKeyAudience('verified-owner'),
       }),
-      executeTurn: ((request) => {
+      executeTurn: (request) => {
         requests.push(request);
         const sessionId = request.resumeSessionId ?? 'fresh-session';
+        const spec = buildCommand('codex', { prompt: request.prompt });
         return {
-          child: { exitCode: 0 },
-          events: (async function* () {
-            yield { type: 'session.started' as const, sessionId };
-            yield { type: 'turn.complete' as const, reason: 'success' as const };
+          // No process is spawned: an exited EventEmitter is the part of
+          // ChildProcess the runtime observes, so this one cast is the fake's seam.
+          child: Object.assign(new EventEmitter(), { exitCode: 0 }) as unknown as ChildProcess,
+          spec,
+          sessionId: Promise.resolve(sessionId),
+          events: (async function* (): AsyncGenerator<UnifiedAgentEvent> {
+            yield { type: 'session.started', sessionId };
+            yield { type: 'turn.complete', reason: 'success' };
           })(),
-          completed: Promise.resolve({ exitCode: 0, signal: null, reason: 'success' }),
+          completed: Promise.resolve({
+            exitCode: 0,
+            signal: null,
+            reason: 'success' as const,
+            sessionId,
+            spec,
+          }),
           stop: () => {},
         };
-      }) as NonNullable<ConversationRuntimeDependencies['executeTurn']>,
+      },
     });
     let onPoll: (() => void) | undefined;
     const loader = createSessionLoader({
@@ -232,6 +247,7 @@ test('bound native sessions retain display history across capped startup, pollin
             revision: 0,
             resolution: resolveConfigAgainstProviderCatalog(config),
           },
+          done: false,
         });
         live.messages = structuredClone(history);
         live.createdAt = new Date(originalDate);
@@ -291,7 +307,7 @@ test('bound native sessions retain display history across capped startup, pollin
     'persisted live rows replace, rather than duplicate, streamed rows'
   );
   assert.equal(runtime.createdAt.toISOString(), originalDate);
-  const update = first.broadcasts.findLast((entry) => entry.type === 'conversations_updated');
+  const update = first.broadcasts.filter((entry) => entry.type === 'conversations_updated').at(-1);
   assert.ok(update && update.type === 'conversations_updated');
   assert.equal(update.summaries, true);
   assert.equal(update.conversations[0].messageCount, expected.length);

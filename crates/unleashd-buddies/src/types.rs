@@ -32,9 +32,10 @@ str_enum!(TaskStatus { Open = "open", InProgress = "in_progress", Blocked = "blo
 str_enum!(RunStatus { Queued = "queued", Running = "running", CancelRequested = "cancel_requested", Complete = "complete", Failed = "failed", Cancelled = "cancelled" });
 str_enum!(DocKind { Soul = "soul", Working = "working", LongTerm = "long_term", Note = "note", Shared = "shared" });
 str_enum!(PostKind { Inform = "inform", Request = "request" });
-str_enum!(Op { ReadDoc = "read_doc", WriteDoc = "write_doc", Post = "post", Reply = "reply", WriteTask = "write_task", EnqueueRun = "enqueue_run", CancelRun = "cancel_run", WriteSchedule = "write_schedule", Admin = "admin" });
+str_enum!(Op { ReadDoc = "read_doc", WriteDoc = "write_doc", Post = "post", ReadChannel = "read_channel", CreateChannel = "create_channel", WriteTask = "write_task", EnqueueRun = "enqueue_run", CancelRun = "cancel_run", WriteSchedule = "write_schedule", Admin = "admin" });
 
-/// Who acts. Stored as NULL (post author / channel creator) or the key `'owner'` (events, read cursors).
+/// Who acts. Stored as NULL (post author / channel creator) or the key `'owner'` (events, read
+/// cursors, channel members).
 #[cfg_attr(feature = "node", napi_derive::napi(discriminant = "kind", discriminant_case = "lowercase"))]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Actor {
@@ -60,6 +61,12 @@ impl Actor {
     pub fn from_nullable(id: Option<String>) -> Actor {
         id.map_or(Actor::Owner, |id| Actor::Buddy { id })
     }
+    pub fn from_key(key: &str) -> Actor {
+        match key {
+            OWNER_KEY => Actor::Owner,
+            id => Actor::Buddy { id: id.to_string() },
+        }
+    }
 }
 
 /// Whose resource an operation touches (the `target` of `authorize`).
@@ -68,6 +75,7 @@ impl Actor {
 pub enum Subject {
     Owner,
     Buddy { id: String },
+    Channel { id: String },
 }
 
 #[cfg_attr(feature = "node", napi_derive::napi(discriminant = "kind", discriminant_case = "lowercase"))]
@@ -77,43 +85,52 @@ pub enum Decision {
     Denied { reason: String },
 }
 
-/// Where a post is addressed. Columns: (target_kind, target_id), target_id NULL for the owner.
+// Pattern: sum-types (docs/patterns.md#sum-types) — kinds are enums; handlers match exhaustively.
+/// What a channel is. Columns: `kind` plus (name, purpose) | member_key | task_id.
+#[cfg_attr(feature = "node", napi_derive::napi(discriminant = "type", discriminant_case = "lowercase"))]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ChannelKind {
+    Public {
+        name: String,
+        purpose: String,
+    },
+    /// One channel per member set; the owner is a member like a buddy.
+    Direct {
+        members: Vec<Actor>,
+    },
+    Task {
+        task_id: String,
+    },
+}
+
+/// The canonical member set of a direct channel: keys sorted and deduplicated, joined by ','.
+pub fn member_key(members: &[Actor]) -> String {
+    let mut keys: Vec<&str> = members.iter().map(Actor::key).collect();
+    keys.sort_unstable();
+    keys.dedup();
+    keys.join(",")
+}
+
+pub fn members_of(member_key: &str) -> Vec<Actor> {
+    member_key.split(',').map(Actor::from_key).collect()
+}
+
+/// Where a post goes. A direct or task channel is found, or created on first use.
 #[cfg_attr(feature = "node", napi_derive::napi(discriminant = "kind", discriminant_case = "lowercase"))]
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Target {
-    Buddy { id: String },
-    Owner,
-    Channel { id: String },
-    Task { id: String },
+pub enum ChannelRef {
+    Id { id: String },
+    Direct { members: Vec<Actor> },
+    Task { task_id: String },
 }
 
-impl Target {
-    pub fn columns(&self) -> (&'static str, Option<&str>) {
-        match self {
-            Target::Buddy { id } => ("buddy", Some(id)),
-            Target::Owner => ("owner", None),
-            Target::Channel { id } => ("channel", Some(id)),
-            Target::Task { id } => ("task", Some(id)),
-        }
-    }
-    pub fn from_columns(kind: &str, id: Option<String>) -> Result<Target> {
-        match (kind, id) {
-            ("buddy", Some(id)) => Ok(Target::Buddy { id }),
-            ("owner", None) => Ok(Target::Owner),
-            ("channel", Some(id)) => Ok(Target::Channel { id }),
-            ("task", Some(id)) => Ok(Target::Task { id }),
-            (kind, id) => Err(CoreError::Corrupt(format!("post target {kind}/{id:?}"))),
-        }
-    }
-}
-
-/// A post's reply lifecycle. `reply_state` NULL is `NotOwed`.
+/// A post's request lifecycle. Column `request` NULL is `None`; `Answered` names the answer post.
 #[cfg_attr(feature = "node", napi_derive::napi(discriminant = "state", discriminant_case = "snake_case"))]
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum Reply {
-    NotOwed,
+pub enum RequestState {
+    None,
     Awaiting,
-    Replied { body: String, evidence: Vec<String>, replied_at: String },
+    Answered { answer_id: String },
     Cancelled,
     Failed,
 }
@@ -122,11 +139,24 @@ pub enum Reply {
 #[cfg_attr(feature = "node", napi_derive::napi(discriminant = "kind", discriminant_case = "snake_case"))]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum RunInput {
-    Chat { turn_id: String },
-    Post { post_id: String },
-    Reply { post_id: String },
-    Schedule { schedule_id: String, slot: String },
-    FailureNotice { run_id: String },
+    Chat {
+        turn_id: String,
+    },
+    /// A request the buddy owes an answer to.
+    Post {
+        post_id: String,
+    },
+    /// The buddy's request was answered; `post_id` is the request.
+    Reply {
+        post_id: String,
+    },
+    Schedule {
+        schedule_id: String,
+        slot: String,
+    },
+    FailureNotice {
+        run_id: String,
+    },
 }
 
 impl RunInput {
@@ -247,8 +277,7 @@ pub struct Task {
 pub struct Channel {
     pub id: String,
     pub workspace_id: String,
-    pub name: String,
-    pub purpose: String,
+    pub kind: ChannelKind,
     pub created_by: Actor,
     pub created_at: String,
 }
@@ -257,16 +286,15 @@ pub struct Channel {
 #[derive(Debug, Clone)]
 pub struct Post {
     pub id: String,
-    pub workspace_id: String,
+    pub channel_id: String,
     pub author: Actor,
-    pub target: Target,
     pub root_id: Option<String>,
     pub reply_to_id: Option<String>,
     pub task_id: Option<String>,
     pub purpose: Option<String>,
     pub body: String,
     pub evidence: Vec<String>,
-    pub reply: Reply,
+    pub request: RequestState,
     pub conversation_id: Option<String>,
     pub return_conversation_id: Option<String>,
     pub created_at: String,
@@ -381,23 +409,23 @@ pub struct Conversation {
 #[cfg_attr(feature = "node", napi_derive::napi(object))]
 #[derive(Debug, Clone)]
 pub struct PostInput {
-    pub target: Target,
+    /// `Request` needs a direct channel: the other members owe the answer.
     pub kind: PostKind,
     pub body: String,
     pub purpose: Option<String>,
     pub evidence: Vec<String>,
-    /// Reply inside a thread: the post being answered. Absent = a new top-level post.
+    /// A reply in a thread: the post it responds to, in the same channel. Absent = a new top-level post.
     pub reply_to_id: Option<String>,
     pub task_id: Option<String>,
-    /// The sender's conversation; a `Request`'s reply returns there.
+    /// The sender's conversation; a `Request`'s answer returns there.
     pub from_conversation_id: Option<String>,
     pub key: String,
 }
 
 #[cfg_attr(feature = "node", napi_derive::napi(object))]
 #[derive(Debug, Clone)]
-pub struct ReplyInput {
-    pub post_id: String,
+pub struct AnswerInput {
+    pub request_id: String,
     pub body: String,
     pub evidence: Vec<String>,
     pub key: String,
@@ -488,12 +516,6 @@ pub enum PostQuery {
     Channel { channel_id: String },
     /// Replies under a thread root.
     Thread { root_id: String },
-    /// Comments on a task.
-    Task { task_id: String },
-    /// Posts addressed to a buddy, or to the owner.
-    To { target: Target },
-    /// Posts written by an actor.
-    From { author: Actor },
 }
 
 #[cfg_attr(feature = "node", napi_derive::napi(object))]
@@ -506,19 +528,20 @@ pub struct PostPage {
 #[cfg_attr(feature = "node", napi_derive::napi(object))]
 #[derive(Debug, Clone)]
 pub struct ChannelUnread {
-    pub channel_id: String,
-    pub name: String,
+    pub channel: Channel,
+    /// Posts by others after the reader's cursor (all of them when it has none).
     pub unread: i64,
 }
 
 #[cfg_attr(feature = "node", napi_derive::napi(object))]
 #[derive(Debug, Clone)]
 pub struct Inbox {
-    /// Requests addressed to the actor that still await its reply.
+    /// Requests addressed to the actor that still await its answer.
     pub requests: Vec<Post>,
-    /// The actor's own requests still awaiting someone else's reply.
+    /// The actor's own requests still awaiting someone else's answer.
     pub waiting_on: Vec<Post>,
-    pub unread: Vec<ChannelUnread>,
+    /// The actor's channels in the workspace: every public one, its direct ones, and any it has read.
+    pub channels: Vec<ChannelUnread>,
 }
 
 #[cfg_attr(feature = "node", napi_derive::napi(object))]

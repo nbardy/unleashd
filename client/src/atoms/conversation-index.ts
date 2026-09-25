@@ -6,6 +6,7 @@ import { conversationActivityMs } from '../utils/time';
 
 // =============================================================================
 // Conversation list index
+// Pattern: one-store-one-index (docs/patterns.md#one-store-one-index)
 //
 // Every collection view (sidebar groups, gallery, inbox, buddy sidebar, running
 // counts, swarm workers, child sessions) filters, groups and sorts on a handful
