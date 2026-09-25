@@ -11,7 +11,7 @@
   height: 44px;
   padding: 0 42px 0 14px;
   border-radius: var(--ui-radius);
-  font-size: 16px;
+  font-size: var(--fs-6);
   -webkit-appearance: none;
   appearance: none;
 }
@@ -43,18 +43,18 @@
   min-height: 18px;
   margin: 8px 2px 18px;
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: var(--fs-3);
 }
 
 .mobile-search__list {
   display: grid;
   width: 100%;
   min-width: 0;
-  gap: 8px;
+  gap: var(--sp-4);
 }
 
 .mobile-search-row {
-  padding: 11px 12px;
+  padding: 11px var(--sp-6);
 }
 
 .mobile-search-row:active,
@@ -85,7 +85,7 @@
   flex: 1;
   overflow: hidden;
   color: var(--text-primary);
-  font-size: 13px;
+  font-size: var(--fs-4);
   font-weight: 650;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -96,7 +96,7 @@
 .mobile-search-group__count {
   flex: none;
   color: var(--text-muted);
-  font-size: 10px;
+  font-size: var(--fs-1);
   font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -106,7 +106,7 @@
 .mobile-search-group__time {
   flex: none;
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: var(--fs-2);
   white-space: nowrap;
 }
 
@@ -115,7 +115,7 @@
   margin-top: 6px;
   overflow: hidden;
   color: var(--text-secondary);
-  font-size: 13px;
+  font-size: var(--fs-4);
   line-height: 1.4;
   overflow-wrap: anywhere;
   -webkit-box-orient: vertical;
@@ -123,7 +123,7 @@
 }
 
 .mobile-search-group__header {
-  padding: 10px 12px;
+  padding: var(--sp-5) var(--sp-6);
   border: 0;
   background: transparent;
   color: inherit;
@@ -143,8 +143,8 @@
   grid-template-columns: auto minmax(0, 1fr);
   align-items: start;
   min-width: 0;
-  gap: 8px;
-  padding: 9px 12px;
+  gap: var(--sp-4);
+  padding: 9px var(--sp-6);
   border: 0;
   border-bottom: 1px solid var(--border-subtle);
   background: transparent;
@@ -159,7 +159,7 @@
   min-width: 0;
   overflow: hidden;
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: var(--fs-3);
   line-height: 1.4;
   overflow-wrap: anywhere;
   -webkit-box-orient: vertical;
@@ -170,24 +170,24 @@
 .mobile-search__limit-note,
 .mobile-search__hint {
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: var(--fs-3);
   line-height: 1.45;
   text-align: center;
 }
 
 .mobile-search-hit__more {
-  padding: 8px 12px;
+  padding: var(--sp-4) var(--sp-6);
 }
 
 .mobile-search__limit-note {
-  padding: 10px 12px;
+  padding: var(--sp-5) var(--sp-6);
   border: 1px dashed var(--border-subtle);
   border-radius: var(--ui-radius);
 }
 
 .mobile-search__hint {
   margin-top: 18px;
-  padding: 12px;
+  padding: var(--sp-6);
 }
 
 @media (max-width: 340px) {

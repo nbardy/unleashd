@@ -14,11 +14,11 @@
 .gallery-content {
   --gallery-content-padding-inline: 32px;
   flex: 1;
-  padding: 24px var(--gallery-content-padding-inline);
+  padding: var(--sp-9) var(--gallery-content-padding-inline);
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 32px;
+  gap: var(--sp-10);
   background: var(--bg-content); /* Tier 1 - content background */
 }
 
@@ -29,7 +29,7 @@
 .project-section {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: var(--sp-7);
 }
 
 .project-header-row {
@@ -55,8 +55,8 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  gap: 12px;
-  padding: 10px var(--gallery-content-padding-inline);
+  gap: var(--sp-6);
+  padding: var(--sp-5) var(--gallery-content-padding-inline);
   background: var(--bg-tertiary);
   border-radius: 0;
   border-left: 4px solid var(--ai);
@@ -73,13 +73,13 @@
 .project-header-left {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--sp-5);
   min-width: 0;
 }
 
 /* Chevron indicator for collapse state */
 .project-chevron {
-  font-size: 10px;
+  font-size: var(--fs-1);
   color: var(--text-secondary);
   transition: transform 0.2s;
 }
@@ -91,7 +91,7 @@
 /* Project path display */
 .project-path {
   font-family: var(--font-mono);
-  font-size: 14px;
+  font-size: var(--fs-5);
   color: var(--text-primary);
   font-weight: 500;
   overflow: hidden;
@@ -102,9 +102,9 @@
 /* Conversation count badge */
 .project-count {
   flex-shrink: 0;
-  font-size: 12px;
+  font-size: var(--fs-3);
   color: var(--text-muted);
-  padding: 2px 8px;
+  padding: var(--sp-1) var(--sp-4);
   background: var(--bg-base);
   border: 1px solid var(--border-subtle);
   border-radius: var(--ui-radius);
@@ -115,11 +115,11 @@
   appearance: none;
   border: none;
   border-left: 1px solid var(--border-subtle);
-  padding: 0 20px;
+  padding: 0 var(--sp-8);
   background: var(--bg-tertiary);
   color: var(--text-secondary);
   cursor: pointer;
-  font-size: 10px;
+  font-size: var(--fs-1);
   font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -139,20 +139,20 @@
 .project-grid {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-  gap: 20px;
+  gap: var(--sp-8);
   align-content: start;
 }
 
 /* Show more/less button */
 .gallery-show-more-btn {
   margin-top: 16px;
-  padding: 10px 20px;
+  padding: var(--sp-5) var(--sp-8);
   background: transparent;
   border: 1px dashed var(--border-subtle);
   border-radius: var(--ui-radius);
   color: var(--text-secondary);
   cursor: pointer;
-  font-size: 13px;
+  font-size: var(--fs-4);
   transition: all 0.2s;
   align-self: center;
 }
@@ -166,7 +166,7 @@
 .gallery-card {
   background: var(--bg-card); /* Tier 2 */
   border-radius: var(--ui-radius);
-  padding: 20px;
+  padding: var(--sp-8);
   border: 1px solid var(--border-subtle);
   border-top: 4px solid transparent; /* Viridis accent color applied via inline style */
   cursor: pointer;
@@ -188,12 +188,12 @@
 }
 
 .gallery-card-id {
-  font-size: 13px;
+  font-size: var(--fs-4);
   color: var(--text-secondary);
   font-family: var(--font-mono);
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--sp-4);
 }
 
 /* Provider badge */
@@ -201,17 +201,17 @@
 .gallery-card-status {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--sp-4);
 }
 
 /* State badge - unified indicator for running/looping/idle states */
 .state-badge {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  padding: 3px 10px;
+  gap: var(--sp-3);
+  padding: 3px var(--sp-5);
   border-radius: var(--ui-radius);
-  font-size: 11px;
+  font-size: var(--fs-2);
   font-weight: 500;
 }
 
@@ -263,11 +263,11 @@
 }
 
 .gallery-message {
-  padding: 8px 12px;
+  padding: var(--sp-4) var(--sp-6);
   margin-bottom: 8px;
   background: var(--bg-tertiary);
   border-radius: var(--ui-radius);
-  font-size: 13px;
+  font-size: var(--fs-4);
 }
 
 .gallery-message.user {
@@ -286,22 +286,22 @@
 
 .temp-sessions-section {
   margin-top: 16px;
-  padding-top: 16px;
+  padding-top: var(--sp-7);
   border-top: 1px dashed var(--border-subtle);
 }
 
 .temp-sessions-toggle {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--sp-5);
   width: 100%;
-  padding: 12px 16px;
+  padding: var(--sp-6) var(--sp-7);
   background: transparent;
   border: 1px dashed var(--border-subtle);
   border-radius: var(--ui-radius);
   color: var(--text-secondary);
   cursor: pointer;
-  font-size: 13px;
+  font-size: var(--fs-4);
   transition: all 0.2s;
   text-align: left;
 }
@@ -313,7 +313,7 @@
 }
 
 .temp-sessions-hint {
-  font-size: 11px;
+  font-size: var(--fs-2);
   color: var(--text-muted);
   font-style: italic;
 }
@@ -347,22 +347,22 @@
 
 .done-sessions-section {
   margin-top: 16px;
-  padding-top: 16px;
+  padding-top: var(--sp-7);
   border-top: 1px dashed var(--border-subtle);
 }
 
 .done-sessions-toggle {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--sp-5);
   width: 100%;
-  padding: 12px 16px;
+  padding: var(--sp-6) var(--sp-7);
   background: transparent;
   border: 1px dashed var(--border-subtle);
   border-radius: var(--ui-radius);
   color: var(--text-secondary);
   cursor: pointer;
-  font-size: 13px;
+  font-size: var(--fs-4);
   transition: all 0.2s;
   text-align: left;
 }
@@ -408,12 +408,12 @@
 
 /* Restore button on done cards */
 .undo-done-btn {
-  padding: 3px 10px;
+  padding: 3px var(--sp-5);
   background: transparent;
   border: 1px solid var(--border-subtle);
   border-radius: var(--ui-radius);
   color: var(--text-secondary);
-  font-size: 11px;
+  font-size: var(--fs-2);
   cursor: pointer;
   transition: all 0.2s;
 }
@@ -422,26 +422,26 @@
 .gallery-done-header {
   display: flex;
   align-items: center;
-  gap: 16px;
-  padding: 16px 32px;
+  gap: var(--sp-7);
+  padding: var(--sp-7) var(--sp-10);
   border-bottom: 1px solid var(--border-subtle);
 }
 
 .gallery-done-header h2 {
   margin: 0;
-  font-size: 16px;
+  font-size: var(--fs-6);
   color: var(--text-emphasis);
   font-weight: 500;
 }
 
 .back-to-gallery-btn {
-  padding: 6px 14px;
+  padding: var(--sp-3) 14px;
   background: var(--bg-tertiary);
   border: 1px solid var(--border-color);
   border-radius: var(--ui-radius);
   color: var(--text-secondary);
   cursor: pointer;
-  font-size: 13px;
+  font-size: var(--fs-4);
   transition: all 0.2s;
 }
 
@@ -462,22 +462,22 @@
 
 .worker-sessions-section {
   margin-top: 16px;
-  padding-top: 16px;
+  padding-top: var(--sp-7);
   border-top: 1px dashed var(--border-subtle);
 }
 
 .worker-sessions-toggle {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--sp-5);
   width: 100%;
-  padding: 12px 16px;
+  padding: var(--sp-6) var(--sp-7);
   background: transparent;
   border: 1px dashed var(--border-subtle);
   border-radius: var(--ui-radius);
   color: var(--text-secondary);
   cursor: pointer;
-  font-size: 13px;
+  font-size: var(--fs-4);
   transition: all 0.2s;
   text-align: left;
 }
@@ -489,7 +489,7 @@
 }
 
 .worker-sessions-hint {
-  font-size: 11px;
+  font-size: var(--fs-2);
   color: var(--text-muted);
   font-style: italic;
 }
@@ -537,12 +537,12 @@
 
 /* Promote button on worker cards */
 .promote-worker-btn {
-  padding: 3px 10px;
+  padding: 3px var(--sp-5);
   background: transparent;
   border: 1px solid var(--border-subtle);
   border-radius: var(--ui-radius);
   color: var(--text-secondary);
-  font-size: 11px;
+  font-size: var(--fs-2);
   cursor: pointer;
   transition: all 0.2s;
 }
@@ -556,13 +556,13 @@
 @media (max-width: 768px) {
   .gallery-content {
     --gallery-content-padding-inline: 16px;
-    padding-top: 16px;
-    padding-bottom: 16px;
+    padding-top: var(--sp-7);
+    padding-bottom: var(--sp-7);
   }
 
   .project-header {
-    padding-top: 12px;
-    padding-bottom: 12px;
+    padding-top: var(--sp-6);
+    padding-bottom: var(--sp-6);
   }
 
   .project-done-toggle {

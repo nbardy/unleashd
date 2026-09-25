@@ -30,7 +30,7 @@
   background: var(--bg-panel);
   border: 1px solid var(--border-default);
   border-radius: var(--ui-radius);
-  padding: 4px;
+  padding: var(--sp-2);
   box-shadow: 0 8px 24px color-mix(in srgb, var(--bg-darkest) 30%, transparent);
   z-index: 1000;
 }
@@ -38,9 +38,9 @@
 .config-item {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: var(--sp-5);
   width: 100%;
-  padding: 10px 12px;
+  padding: var(--sp-5) var(--sp-6);
   background: transparent;
   border: none;
   border-radius: var(--ui-radius);
@@ -63,11 +63,11 @@
 
 .config-item-label {
   flex: 1;
-  font-size: 14px;
+  font-size: var(--fs-5);
 }
 
 .config-item-value {
-  font-size: 12px;
+  font-size: var(--fs-3);
   color: var(--text-muted);
   text-transform: capitalize;
 }

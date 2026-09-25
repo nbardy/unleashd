@@ -5,8 +5,8 @@
 }
 .composer-attachments__strip {
   display: flex;
-  gap: 8px;
-  padding: 8px 12px;
+  gap: var(--sp-4);
+  padding: var(--sp-4) var(--sp-6);
   overflow-x: auto;
   overscroll-behavior: contain;
 }
@@ -20,7 +20,7 @@
   border-radius: var(--ui-radius);
   background: var(--bg-panel);
   color: var(--text-primary);
-  font-size: 10px;
+  font-size: var(--fs-1);
   overflow-wrap: anywhere;
 }
 .composer-attachments__thumbnail img {
@@ -43,9 +43,9 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
-  padding: 0 8px;
-  font-size: 12px;
+  gap: var(--sp-4);
+  padding: 0 var(--sp-4);
+  font-size: var(--fs-3);
 }
 .composer-attachments__gallery button {
   flex: none;

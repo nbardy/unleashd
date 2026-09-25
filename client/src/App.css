@@ -76,9 +76,9 @@ body {
 
 .provider-badge {
   display: inline-block;
-  padding: 2px 8px;
+  padding: var(--sp-1) var(--sp-4);
   border-radius: var(--ui-radius);
-  font-size: 10px;
+  font-size: var(--fs-1);
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.5px;
@@ -113,9 +113,9 @@ body {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 16px;
+  gap: var(--sp-7);
   margin: 0 0 10px;
-  padding: 10px 12px;
+  padding: var(--sp-5) var(--sp-6);
   border: 1px solid color-mix(in srgb, var(--warning) 38%, transparent);
   border-left: 3px solid var(--warning);
   border-radius: var(--ui-radius);
@@ -127,7 +127,7 @@ body {
   min-width: 0;
   display: grid;
   gap: 3px;
-  font-size: 12px;
+  font-size: var(--fs-3);
 }
 
 .restart-recovery__message {
@@ -149,7 +149,7 @@ body {
 .restart-recovery__actions {
   flex-shrink: 0;
   display: flex;
-  gap: 6px;
+  gap: var(--sp-3);
 }
 
 .restart-recovery__actions button {
@@ -174,7 +174,7 @@ body {
   .restart-recovery {
     align-items: stretch;
     flex-direction: column;
-    gap: 8px;
+    gap: var(--sp-4);
   }
 
   .restart-recovery__actions button {

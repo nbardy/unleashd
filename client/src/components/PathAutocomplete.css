@@ -18,12 +18,12 @@
 
 .path-input {
   width: 100%;
-  padding: 8px 12px;
+  padding: var(--sp-4) var(--sp-6);
   background: var(--bg-primary);
   border: 1px solid var(--border-subtle);
   border-radius: var(--ui-radius);
   color: var(--text-emphasis);
-  font-size: 12px;
+  font-size: var(--fs-3);
   font-family: var(--font-mono);
   box-sizing: border-box;
   transition: border-color 0.2s;
@@ -81,8 +81,8 @@
 .path-suggestion-item {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
+  gap: var(--sp-4);
+  padding: var(--sp-4) var(--sp-6);
   cursor: pointer;
   transition: background 0.15s;
   border-bottom: 1px solid var(--border-subtle);
@@ -133,13 +133,13 @@
 .path-suggestion-name {
   font-weight: 500;
   color: var(--text-emphasis);
-  font-size: 12px;
+  font-size: var(--fs-3);
   white-space: nowrap;
 }
 
 /* Full path (dimmed, truncated) */
 .path-suggestion-path {
-  font-size: 11px;
+  font-size: var(--fs-2);
   color: var(--text-muted);
   font-family: var(--font-mono);
   white-space: nowrap;
@@ -164,10 +164,10 @@
 
 /* No results message */
 .path-no-results {
-  padding: 12px;
+  padding: var(--sp-6);
   text-align: center;
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: var(--fs-3);
 }
 
 /* Scrollbar styling for suggestions dropdown */

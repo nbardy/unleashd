@@ -25,12 +25,12 @@
 
 .prompt-palette-input {
   width: 100%;
-  padding: 16px 20px;
+  padding: var(--sp-7) var(--sp-8);
   background: transparent;
   border: none;
   border-bottom: 1px solid var(--bg-hover);
   color: var(--text-emphasis);
-  font-size: 16px;
+  font-size: var(--fs-6);
   outline: none;
   box-sizing: border-box;
 }
@@ -45,7 +45,7 @@
 }
 
 .prompt-palette-item {
-  padding: 12px 20px;
+  padding: var(--sp-6) var(--sp-8);
   cursor: pointer;
   border-bottom: 1px solid var(--border-default);
 }
@@ -70,11 +70,11 @@
 .prompt-item-actions {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--sp-4);
 }
 
 .prompt-usage {
-  font-size: 11px;
+  font-size: var(--fs-2);
   color: var(--text-muted);
 }
 
@@ -87,7 +87,7 @@
   color: var(--accent-error);
   border-radius: var(--ui-radius);
   cursor: pointer;
-  font-size: 14px;
+  font-size: var(--fs-5);
   font-weight: bold;
   line-height: 1;
   align-items: center;
@@ -107,7 +107,7 @@
 }
 
 .prompt-preview {
-  font-size: 13px;
+  font-size: var(--fs-4);
   color: var(--text-secondary);
   white-space: nowrap;
   overflow: hidden;
@@ -115,7 +115,7 @@
 }
 
 .prompt-palette-empty {
-  padding: 40px 20px;
+  padding: 40px var(--sp-8);
   text-align: center;
   color: var(--text-muted);
 }

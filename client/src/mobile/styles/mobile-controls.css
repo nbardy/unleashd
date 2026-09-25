@@ -13,16 +13,16 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 6px;
+  gap: var(--sp-3);
   /* 44px: the affordances here are primary actions on a touch screen. */
   min-height: 44px;
-  padding: 0 16px;
+  padding: 0 var(--sp-7);
   border: 1px solid transparent;
   border-radius: var(--ui-radius);
   background: var(--accent);
   color: var(--text-on-accent);
   font: inherit;
-  font-size: 14px;
+  font-size: var(--fs-5);
   font-weight: 600;
   line-height: 1;
   text-align: center;
@@ -57,21 +57,21 @@
 
 .mobile-cta--small {
   min-height: 36px;
-  padding: 0 12px;
-  font-size: 13px;
+  padding: 0 var(--sp-6);
+  font-size: var(--fs-4);
 }
 
 .mobile-link {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--sp-3);
   min-height: 36px;
   padding: 0;
   border: none;
   background: none;
   color: var(--accent);
   font: inherit;
-  font-size: 13px;
+  font-size: var(--fs-4);
   text-align: left;
   text-decoration: none;
   cursor: pointer;
@@ -90,7 +90,7 @@
 .mobile-muted {
   margin: 0;
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: var(--fs-3);
   line-height: 1.45;
 }
 
@@ -99,12 +99,12 @@
   align-items: center;
   flex: none;
   min-height: 20px;
-  padding: 3px 8px;
+  padding: 3px var(--sp-4);
   border: 1px solid var(--border-subtle);
   border-radius: var(--ui-radius);
   background: var(--bg-raised-2);
   color: var(--text-muted);
-  font-size: 10px;
+  font-size: var(--fs-1);
   font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -136,10 +136,10 @@
 .mobile-toggle {
   display: inline-flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--sp-4);
   min-height: 44px;
   color: var(--text-muted);
-  font-size: 13px;
+  font-size: var(--fs-4);
   cursor: pointer;
 }
 
@@ -152,10 +152,10 @@
 .mobile-field {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--sp-3);
   min-width: 0;
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: var(--fs-3);
 }
 
 .mobile-field input,
@@ -163,14 +163,14 @@
 .mobile-field select {
   width: 100%;
   min-width: 0;
-  padding: 10px 12px;
+  padding: var(--sp-5) var(--sp-6);
   border: 1px solid var(--border-subtle);
   border-radius: var(--ui-radius);
   background: var(--bg-raised-2);
   color: var(--text-primary);
   font-family: inherit;
   /* 16px prevents iOS Safari from auto-zooming the viewport on focus. */
-  font-size: 16px;
+  font-size: var(--fs-6);
   line-height: 1.4;
 }
 
@@ -182,17 +182,17 @@
 }
 
 .mobile-error {
-  padding: 10px 12px;
+  padding: var(--sp-5) var(--sp-6);
   border: 1px solid color-mix(in srgb, var(--theme-danger) 45%, var(--border-subtle));
   border-radius: var(--ui-radius);
   color: var(--theme-danger);
-  font-size: 13px;
+  font-size: var(--fs-4);
   line-height: 1.45;
 }
 
 .mobile-pre {
   margin: 0;
-  padding: 10px 12px;
+  padding: var(--sp-5) var(--sp-6);
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
   border: 1px solid var(--border-subtle);
@@ -200,7 +200,7 @@
   background: var(--bg-page);
   color: var(--text-primary);
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: var(--fs-3);
   line-height: 1.5;
   white-space: pre-wrap;
   overflow-wrap: anywhere;

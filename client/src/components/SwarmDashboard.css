@@ -13,25 +13,25 @@
 .swarm-dashboard-header {
   display: flex;
   align-items: center;
-  gap: 16px;
-  padding: 16px 32px;
+  gap: var(--sp-7);
+  padding: var(--sp-7) var(--sp-10);
   border-bottom: 1px solid var(--border-subtle);
 }
 
 .swarm-dashboard-header h2 {
   margin: 0;
-  font-size: 16px;
+  font-size: var(--fs-6);
   color: var(--text-emphasis);
   font-weight: 500;
 }
 
 .swarm-dashboard-content {
   flex: 1;
-  padding: 24px 32px;
+  padding: var(--sp-9) var(--sp-10);
   overflow-y: auto;
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: var(--sp-8);
   background: var(--bg-content);
 }
 
@@ -39,7 +39,7 @@
 .swarm-project-card {
   background: var(--bg-card);
   border-radius: var(--ui-radius);
-  padding: 20px 24px;
+  padding: var(--sp-8) var(--sp-9);
   border: 1px solid var(--border-subtle);
   border-left: 4px solid transparent;
   cursor: pointer;
@@ -47,7 +47,7 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  gap: 20px;
+  gap: var(--sp-8);
 }
 
 .swarm-project-card:hover {
@@ -59,18 +59,18 @@
 .swarm-project-info {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--sp-4);
   min-width: 0;
 }
 
 .swarm-project-name {
-  font-size: 18px;
+  font-size: var(--fs-7);
   font-weight: 600;
   color: var(--text-emphasis);
 }
 
 .swarm-project-path {
-  font-size: 12px;
+  font-size: var(--fs-3);
   color: var(--text-muted);
   font-family: var(--font-mono);
   overflow: hidden;
@@ -81,21 +81,21 @@
 .swarm-project-stats {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: var(--sp-6);
   flex-wrap: wrap;
 }
 
 .swarm-stat {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
-  font-size: 12px;
+  gap: var(--sp-3);
+  font-size: var(--fs-3);
   color: var(--text-secondary);
 }
 
 .swarm-stat-value {
   font-weight: 600;
-  font-size: 14px;
+  font-size: var(--fs-5);
 }
 
 .swarm-stat-value.running {
@@ -116,22 +116,22 @@
   display: flex;
   flex-direction: column;
   align-items: flex-end;
-  gap: 10px;
+  gap: var(--sp-5);
   flex-shrink: 0;
 }
 
 .swarm-time-ago {
-  font-size: 11px;
+  font-size: var(--fs-2);
   color: var(--text-muted);
 }
 
 .swarm-open-btn {
-  padding: 8px 18px;
+  padding: var(--sp-4) 18px;
   background: color-mix(in srgb, var(--primary) 15%, transparent);
   border: 1px solid color-mix(in srgb, var(--primary) 40%, transparent);
   border-radius: var(--ui-radius);
   color: var(--primary-bright);
-  font-size: 13px;
+  font-size: var(--fs-4);
   font-weight: 500;
   cursor: pointer;
   transition: all 0.2s;

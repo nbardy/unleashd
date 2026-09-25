@@ -24,8 +24,8 @@
 .swarm-detail-header {
   display: flex;
   align-items: center;
-  gap: 16px;
-  padding: 12px 24px;
+  gap: var(--sp-7);
+  padding: var(--sp-6) var(--sp-9);
   border-bottom: 1px solid var(--border-subtle);
   background: var(--bg-card);
   flex-shrink: 0;
@@ -33,7 +33,7 @@
 
 .swarm-detail-header h2 {
   margin: 0;
-  font-size: 16px;
+  font-size: var(--fs-6);
   color: var(--text-emphasis);
   font-weight: 600;
 }
@@ -41,25 +41,25 @@
 .swarm-detail-title-block {
   display: flex;
   flex-direction: column;
-  gap: 2px;
+  gap: var(--sp-1);
 }
 
 .swarm-detail-header-stats {
   margin-left: auto;
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: var(--sp-6);
 }
 
 .swarm-run-controls {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--sp-4);
 }
 
 .swarm-run-actions {
   display: flex;
-  gap: 6px;
+  gap: var(--sp-3);
   opacity: 0;
   pointer-events: none;
   transition: opacity 0.2s ease-in-out;
@@ -71,8 +71,8 @@
 }
 
 .swarm-header-badge.state-running {
-  padding: 5px 12px;
-  font-size: 13px;
+  padding: 5px var(--sp-6);
+  font-size: var(--fs-4);
 }
 
 .swarm-header-badge.state-running .state-indicator {
@@ -90,8 +90,8 @@
 .swarm-info-btn {
   background: none;
   border: none;
-  padding: 0 4px;
-  font-size: 14px;
+  padding: 0 var(--sp-2);
+  font-size: var(--fs-5);
   color: var(--text-muted);
   cursor: default;
   line-height: 1;
@@ -109,13 +109,13 @@
   background: var(--bg-elevated);
   border: 1px solid var(--border-subtle);
   border-radius: var(--ui-radius);
-  padding: 8px 12px;
-  font-size: 11px;
+  padding: var(--sp-4) var(--sp-6);
+  font-size: var(--fs-2);
   color: var(--text-secondary);
   white-space: nowrap;
   z-index: 100;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--sp-2);
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
   pointer-events: none;
 }
@@ -152,18 +152,18 @@
 .swarm-roster-list {
   flex: 1;
   overflow-y: auto;
-  padding: 6px 0;
+  padding: var(--sp-3) 0;
 }
 
 .roster-worker {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 8px;
-  padding: 8px 14px;
+  gap: var(--sp-4);
+  padding: var(--sp-4) 14px;
   cursor: pointer;
   transition: background 0.15s;
-  font-size: 13px;
+  font-size: var(--fs-4);
   color: var(--text-secondary);
 }
 
@@ -201,14 +201,14 @@
 .roster-worker-id {
   flex: 1;
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: var(--fs-3);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .roster-worker-msgs {
-  font-size: 10px;
+  font-size: var(--fs-1);
   color: var(--text-muted);
 }
 
@@ -216,12 +216,12 @@
 
 /* Roster summary stats */
 .roster-stats {
-  padding: 12px 14px;
+  padding: var(--sp-6) 14px;
   border-top: 1px solid var(--border-subtle);
   display: flex;
   flex-direction: column;
-  gap: 4px;
-  font-size: 12px;
+  gap: var(--sp-2);
+  font-size: var(--fs-3);
   color: var(--text-muted);
 }
 
@@ -268,8 +268,8 @@
 .worker-pane-header {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 8px 16px;
+  gap: var(--sp-5);
+  padding: var(--sp-4) var(--sp-7);
   background: var(--bg-card);
   border-bottom: 1px solid var(--border-subtle);
   flex-shrink: 0;
@@ -285,13 +285,13 @@
 
 .worker-pane-id {
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: var(--fs-3);
   color: var(--text-muted);
 }
 
 .worker-pane-provider {
-  font-size: 10px;
-  padding: 2px 6px;
+  font-size: var(--fs-1);
+  padding: var(--sp-1) var(--sp-3);
   border-radius: var(--ui-radius);
   font-weight: 600;
   text-transform: uppercase;
@@ -326,11 +326,11 @@
 
 /* Pane label — Task Log / Review */
 .pane-label {
-  font-size: 10px;
+  font-size: var(--fs-1);
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.5px;
-  padding: 2px 6px;
+  padding: var(--sp-1) var(--sp-3);
   border-radius: var(--ui-radius);
 }
 
@@ -375,8 +375,8 @@
 }
 
 .swarm-panel-header {
-  padding: 10px 16px;
-  font-size: 12px;
+  padding: var(--sp-5) var(--sp-7);
+  font-size: var(--fs-3);
   font-weight: 600;
   color: var(--text-secondary);
   background: var(--bg-card);
@@ -384,7 +384,7 @@
   flex-shrink: 0;
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--sp-4);
 }
 
 /* Clickable variant — used when panel has collapse toggle */
@@ -420,7 +420,7 @@
 .swarm-panel-content {
   flex: 1;
   overflow-y: auto;
-  padding: 8px 0;
+  padding: var(--sp-4) 0;
   background: var(--bg-content);
 }
 
@@ -428,9 +428,9 @@
 .git-log-entry {
   display: flex;
   align-items: baseline;
-  gap: 10px;
-  padding: 4px 16px;
-  font-size: 12px;
+  gap: var(--sp-5);
+  padding: var(--sp-2) var(--sp-7);
+  font-size: var(--fs-3);
   transition: background 0.1s;
 }
 
@@ -455,36 +455,36 @@
 .git-author {
   color: var(--text-muted);
   flex-shrink: 0;
-  font-size: 11px;
+  font-size: var(--fs-2);
 }
 
 .git-date {
   color: var(--text-muted);
   flex-shrink: 0;
-  font-size: 11px;
+  font-size: var(--fs-2);
   white-space: nowrap;
 }
 
 /* Config section */
 .config-summary {
-  padding: 8px 16px;
+  padding: var(--sp-4) var(--sp-7);
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--sp-4);
 }
 
 .config-worker-row {
   display: flex;
   align-items: center;
-  gap: 10px;
-  font-size: 12px;
+  gap: var(--sp-5);
+  font-size: var(--fs-3);
   color: var(--text-primary);
-  padding: 4px 0;
+  padding: var(--sp-2) 0;
 }
 
 .config-model-badge {
-  font-size: 10px;
-  padding: 2px 8px;
+  font-size: var(--fs-1);
+  padding: var(--sp-1) var(--sp-4);
   border-radius: var(--ui-radius);
   font-weight: 600;
   background: color-mix(in srgb, var(--primary) 15%, transparent);
@@ -493,12 +493,12 @@
 
 .config-count {
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: var(--fs-2);
 }
 
 .config-prompt-path {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--fs-2);
   color: var(--ai);
   cursor: pointer;
   transition: color 0.15s;
@@ -511,11 +511,11 @@
 
 .config-prompt-content {
   margin: 4px 0 8px 16px;
-  padding: 8px 12px;
+  padding: var(--sp-4) var(--sp-6);
   background: var(--bg-panel);
   border-radius: var(--ui-radius);
   border-left: 2px solid var(--ai-dim);
-  font-size: 11px;
+  font-size: var(--fs-2);
   font-family: var(--font-mono);
   color: var(--text-secondary);
   white-space: pre-wrap;
@@ -527,10 +527,10 @@
 .panel-loading,
 .panel-error,
 .panel-empty {
-  padding: 16px;
+  padding: var(--sp-7);
   text-align: center;
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: var(--fs-3);
 }
 
 /* =============================================================================
@@ -539,7 +539,7 @@
 
 .role-badge {
   display: inline-block;
-  padding: 1px 6px;
+  padding: 1px var(--sp-3);
   border-radius: var(--ui-radius);
   font-size: 9px;
   font-weight: 700;
@@ -584,7 +584,7 @@
 /* Review count badge on exec row */
 .roster-review-count {
   font-size: 9px;
-  padding: 1px 4px;
+  padding: 1px var(--sp-2);
   border-radius: var(--ui-radius);
   background: color-mix(in srgb, var(--meta) 15%, transparent);
   color: var(--meta);
@@ -625,19 +625,19 @@
   display: flex;
   gap: 0;
   border-bottom: 1px solid var(--border-subtle);
-  padding: 0 24px;
+  padding: 0 var(--sp-9);
   flex-shrink: 0;
   background: var(--bg-card);
 }
 
 .swarm-tab {
-  padding: 10px 20px;
+  padding: var(--sp-5) var(--sp-8);
   border: none;
   border-radius: 0;
   outline: none;
   background: transparent;
   color: var(--text-muted);
-  font-size: 13px;
+  font-size: var(--fs-4);
   font-weight: 500;
   cursor: pointer;
   border-bottom: 2px solid transparent;
@@ -659,9 +659,9 @@
 
 /* Verdict badges */
 .verdict-badge {
-  padding: 2px 8px;
+  padding: var(--sp-1) var(--sp-4);
   border-radius: var(--ui-radius);
-  font-size: 10px;
+  font-size: var(--fs-1);
   font-weight: 700;
   letter-spacing: 0.5px;
   margin-left: auto;
@@ -699,23 +699,23 @@
 .swarm-runs-body {
   flex: 1;
   overflow-y: auto;
-  padding: 16px 24px;
+  padding: var(--sp-7) var(--sp-9);
   min-height: 0;
 }
 
 .swarm-runs-panel {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: var(--sp-7);
 }
 
 /* Run selector — single horizontal scrollable row */
 .runs-selector {
   display: flex;
-  gap: 8px;
+  gap: var(--sp-4);
   flex-wrap: nowrap;
   overflow-x: auto;
-  padding-bottom: 12px;
+  padding-bottom: var(--sp-6);
   border-bottom: 1px solid var(--border-subtle);
   scrollbar-width: thin;
   scrollbar-color: var(--border-subtle) transparent;
@@ -733,13 +733,13 @@
 .run-selector-btn {
   display: flex;
   align-items: center;
-  gap: 6px;
-  padding: 6px 12px;
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-6);
   border: 1px solid var(--border-subtle);
   border-radius: var(--ui-radius);
   background: var(--bg-card);
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: var(--fs-3);
   cursor: pointer;
   transition: border-color 0.15s;
 }
@@ -758,13 +758,13 @@
 }
 .run-time {
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: var(--fs-2);
 }
 
 .run-status-badge {
-  padding: 1px 6px;
+  padding: 1px var(--sp-3);
   border-radius: var(--ui-radius);
-  font-size: 10px;
+  font-size: var(--fs-1);
   font-weight: 600;
   background: var(--bg-elevated);
   color: var(--text-muted);
@@ -779,32 +779,32 @@
   background: var(--bg-card);
   border: 1px solid var(--border-subtle);
   border-radius: var(--ui-radius);
-  padding: 16px;
+  padding: var(--sp-7);
 }
 
 .run-summary-header {
   display: flex;
   align-items: baseline;
-  gap: 12px;
+  gap: var(--sp-6);
   margin-bottom: 12px;
 }
 .run-summary-header h4 {
   margin: 0;
   color: var(--text-primary);
-  font-size: 14px;
+  font-size: var(--fs-5);
 }
 .run-started,
 .run-finished {
-  font-size: 11px;
+  font-size: var(--fs-2);
   color: var(--text-muted);
 }
 
 .run-summary-stats {
   display: flex;
-  gap: 24px;
+  gap: var(--sp-9);
   justify-content: space-between;
   margin-bottom: 16px;
-  padding: 12px;
+  padding: var(--sp-6);
   background: var(--bg-elevated);
   border-radius: var(--ui-radius);
 }
@@ -813,7 +813,7 @@
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 2px;
+  gap: var(--sp-1);
 }
 .run-stat-value {
   font-size: 20px;
@@ -821,7 +821,7 @@
   color: var(--text-primary);
 }
 .run-stat-label {
-  font-size: 10px;
+  font-size: var(--fs-1);
   color: var(--text-muted);
   text-transform: uppercase;
   letter-spacing: 0.5px;
@@ -832,17 +832,17 @@
 }
 .run-stat-tasks-breakdown {
   display: flex;
-  gap: 12px;
+  gap: var(--sp-6);
   margin-top: 4px;
 }
 .task-row {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 2px;
+  gap: var(--sp-1);
 }
 .task-count {
-  font-size: 18px;
+  font-size: var(--fs-7);
   font-weight: 700;
 }
 .task-sublabel {
@@ -867,7 +867,7 @@
 .run-stat-cycles-progress {
   display: flex;
   align-items: baseline;
-  gap: 2px;
+  gap: var(--sp-1);
   margin-top: 2px;
 }
 .cycles-done {
@@ -876,26 +876,26 @@
   color: var(--text-primary);
 }
 .cycles-sep {
-  font-size: 14px;
+  font-size: var(--fs-5);
   color: var(--text-muted);
 }
 .cycles-total {
-  font-size: 14px;
+  font-size: var(--fs-5);
   font-weight: 600;
   color: var(--text-muted);
 }
 .run-stat-cycles-breakdown {
   display: flex;
-  gap: 10px;
+  gap: var(--sp-5);
   margin-top: 4px;
 }
 .cycles-merges {
-  font-size: 11px;
+  font-size: var(--fs-2);
   font-weight: 600;
   color: #4a9e6a;
 }
 .cycles-rejected {
-  font-size: 11px;
+  font-size: var(--fs-2);
   font-weight: 600;
   color: #c0504a;
 }
@@ -904,20 +904,20 @@
 .run-workers-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 12px;
+  font-size: var(--fs-3);
 }
 .run-workers-table th {
   text-align: left;
-  padding: 6px 8px;
+  padding: var(--sp-3) var(--sp-4);
   color: var(--text-muted);
   font-weight: 600;
-  font-size: 10px;
+  font-size: var(--fs-1);
   text-transform: uppercase;
   letter-spacing: 0.5px;
   border-bottom: 1px solid var(--border-subtle);
 }
 .run-workers-table td {
-  padding: 6px 8px;
+  padding: var(--sp-3) var(--sp-4);
   color: var(--text-secondary);
   border-bottom: 1px solid var(--border-subtle);
 }
@@ -970,18 +970,18 @@
   background: var(--bg-card);
   border: 1px solid var(--border-subtle);
   border-radius: var(--ui-radius);
-  padding: 16px;
+  padding: var(--sp-7);
 }
 .run-reviews h4 {
   margin: 0 0 12px 0;
   color: var(--text-primary);
-  font-size: 14px;
+  font-size: var(--fs-5);
 }
 
 .run-reviews-list {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--sp-2);
 }
 
 .run-review-entry {
@@ -993,10 +993,10 @@
 .run-review-header {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
+  gap: var(--sp-4);
+  padding: var(--sp-4) var(--sp-6);
   cursor: pointer;
-  font-size: 12px;
+  font-size: var(--fs-3);
   transition: background 0.15s;
 }
 .run-review-header:hover {
@@ -1019,15 +1019,15 @@
 }
 .run-review-time {
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: var(--fs-2);
 }
 .expand-indicator {
   color: var(--text-muted);
-  font-size: 10px;
+  font-size: var(--fs-1);
 }
 
 .run-review-output {
-  padding: 12px;
+  padding: var(--sp-6);
   background: var(--bg-base);
   border-top: 1px solid var(--border-subtle);
   max-height: 400px;
@@ -1035,7 +1035,7 @@
 }
 .run-review-output pre {
   margin: 0;
-  font-size: 12px;
+  font-size: var(--fs-3);
   line-height: 1.5;
   color: var(--text-secondary);
   white-space: pre-wrap;
@@ -1047,9 +1047,9 @@
    ============================================================================= */
 
 .swarm-debug-btn {
-  padding: 3px 10px;
+  padding: 3px var(--sp-5);
   border-radius: var(--ui-radius);
-  font-size: 11px;
+  font-size: var(--fs-2);
   font-weight: 500;
   cursor: pointer;
   border: 1px solid var(--primary);

@@ -139,12 +139,12 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 2px;
+  gap: var(--sp-1);
   min-height: 44px;
-  padding: 6px 4px;
+  padding: var(--sp-3) var(--sp-2);
   text-decoration: none;
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: var(--fs-2);
   font-weight: 500;
   letter-spacing: 0.02em;
   border-radius: var(--ui-radius);
@@ -153,7 +153,7 @@
 }
 
 .mobile-tab__icon {
-  font-size: 18px;
+  font-size: var(--fs-7);
   line-height: 1;
 }
 
@@ -189,7 +189,7 @@
 
 /* ---- Legacy detail-page layout (primary routes use MobilePage) ---- */
 .mobile-hub {
-  padding: 20px 16px calc(20px + env(safe-area-inset-bottom));
+  padding: var(--sp-8) var(--sp-7) calc(var(--sp-8) + env(safe-area-inset-bottom));
 }
 
 .mobile-hub__header {
@@ -211,8 +211,8 @@
   align-items: center;
   justify-content: center;
   text-align: center;
-  padding: 40px 24px;
-  gap: 12px;
+  padding: 40px var(--sp-9);
+  gap: var(--sp-6);
   min-height: 40dvh;
 }
 
@@ -224,13 +224,13 @@
 }
 
 .mobile-empty__title {
-  font-size: 16px;
+  font-size: var(--fs-6);
   font-weight: 600;
   color: var(--text-primary);
 }
 
 .mobile-empty__message {
-  font-size: 14px;
+  font-size: var(--fs-5);
   color: var(--text-muted);
   max-width: 28ch;
   line-height: 1.5;
@@ -238,12 +238,12 @@
 
 .mobile-empty__cta {
   margin-top: 8px;
-  padding: 10px 18px;
+  padding: var(--sp-5) 18px;
   border-radius: var(--ui-radius);
   border: 1px solid var(--border-subtle);
   background: var(--bg-raised-2);
   color: var(--text-primary);
-  font-size: 14px;
+  font-size: var(--fs-5);
   font-weight: 600;
   cursor: pointer;
 }
@@ -259,19 +259,19 @@
 
 /* ---- BuddiesMobile directory ---- */
 .mobile-buddies {
-  padding-bottom: calc(16px + env(safe-area-inset-bottom));
+  padding-bottom: calc(var(--sp-7) + env(safe-area-inset-bottom));
 }
 
 .mobile-buddies__controls {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  gap: 8px;
+  gap: var(--sp-4);
 }
 
 .mobile-buddies .mobile-search__input {
   height: 44px;
-  font-size: 16px;
+  font-size: var(--fs-6);
 }
 
 .mobile-buddies .mobile-ui-header-action {
@@ -289,11 +289,11 @@
 .mobile-buddies__group-heading {
   display: flex;
   align-items: baseline;
-  gap: 8px;
+  gap: var(--sp-4);
   margin: 22px 0 2px;
   padding-bottom: 0;
   border-bottom: 0;
-  font-size: 11px;
+  font-size: var(--fs-2);
   letter-spacing: 0.07em;
   text-transform: uppercase;
   font-weight: 500;
@@ -303,7 +303,7 @@
 
 .mobile-buddies__group-heading span {
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: var(--fs-2);
   font-weight: 400;
 }
 
@@ -316,12 +316,12 @@
   width: 100%;
   min-width: 0;
   height: 36px;
-  padding: 0 12px;
+  padding: 0 var(--sp-6);
   border-radius: var(--ui-radius);
   border: 1px solid var(--border-subtle);
   background: var(--bg-raised-1);
   color: var(--text-primary);
-  font-size: 14px;
+  font-size: var(--fs-5);
   outline: none;
 }
 
@@ -337,20 +337,20 @@
 .mobile-buddies__sort {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--sp-3);
   flex-shrink: 0;
 }
 
 .mobile-buddies__sort-select {
   min-height: 44px;
   max-width: 110px;
-  padding: 0 8px;
+  padding: 0 var(--sp-4);
   border-radius: var(--ui-radius);
   border: 1px solid var(--border-subtle);
   background: var(--bg-page);
   color: var(--text-secondary);
   font: inherit;
-  font-size: 16px;
+  font-size: var(--fs-6);
 }
 
 .mobile-buddies__grid {
@@ -394,7 +394,7 @@
 
 .mobile-buddy-card__activity {
   color: var(--text-secondary);
-  font-size: 11px;
+  font-size: var(--fs-2);
   line-height: 1.4;
 }
 
@@ -412,7 +412,7 @@
   background: var(--bg-raised-2);
   border: 0;
   color: var(--text-secondary);
-  font-size: 10px;
+  font-size: var(--fs-1);
   font-weight: 700;
   letter-spacing: 0.02em;
 }
@@ -422,7 +422,7 @@
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--sp-2);
 }
 
 .mobile-buddy-card__name {
@@ -439,7 +439,7 @@
 }
 
 .mobile-buddy-card__role {
-  font-size: 12px;
+  font-size: var(--fs-3);
   line-height: 1.5;
   color: var(--text-secondary);
   overflow: hidden;
@@ -462,7 +462,7 @@
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
-  gap: 10px;
+  gap: var(--sp-5);
   min-width: 0;
 }
 
@@ -483,30 +483,30 @@
 .mobile-swarm-card__stats {
   display: flex;
   flex-wrap: wrap;
-  gap: 2px 0;
+  gap: var(--sp-1) 0;
   min-width: 0;
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: var(--fs-2);
   line-height: 1.4;
 }
 
 /* ---- ChatsMobile list ---- */
 .mobile-conversation-list {
-  gap: 8px;
+  gap: var(--sp-4);
 }
 
 .mobile-conversation-item {
   display: flex;
   flex-direction: column;
   gap: 5px;
-  padding: 12px 14px;
+  padding: var(--sp-6) 14px;
 }
 
 .mobile-conversation-item__top {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 8px;
+  gap: var(--sp-4);
   min-width: 0;
 }
 
@@ -515,7 +515,7 @@
   min-width: 0;
   overflow: hidden;
   color: var(--text-primary);
-  font-size: 13px;
+  font-size: var(--fs-4);
   font-weight: 650;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -525,12 +525,12 @@
   display: flex;
   align-items: center;
   flex: none;
-  gap: 6px;
+  gap: var(--sp-3);
 }
 
 .mobile-conversation-item__time {
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: var(--fs-2);
   white-space: nowrap;
 }
 
@@ -553,7 +553,7 @@
 .mobile-conversation-item__preview {
   overflow: hidden;
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: var(--fs-3);
   line-height: 1.4;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -565,7 +565,7 @@
    tab instead of leaving the buddy. */
 
 .mobile-buddy-section__heading {
-  font-size: 13px;
+  font-size: var(--fs-4);
   font-weight: 700;
   color: var(--text-primary);
   letter-spacing: -0.01em;

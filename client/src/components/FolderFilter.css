@@ -1,8 +1,8 @@
 .folder-filter {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  padding: 12px 24px;
+  gap: var(--sp-5);
+  padding: var(--sp-6) var(--sp-9);
   background: var(--bg-card); /* Tier 2 */
   border-bottom: 1px solid var(--border-default);
 }
@@ -10,11 +10,11 @@
 .folder-filter-header {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: var(--sp-6);
 }
 
 .folder-filter-label {
-  font-size: 12px;
+  font-size: var(--fs-3);
   color: var(--text-secondary);
   text-transform: uppercase;
   letter-spacing: 0.5px;
@@ -25,12 +25,12 @@
 .folder-search {
   flex: 1;
   max-width: 240px;
-  padding: 4px 10px;
+  padding: var(--sp-2) var(--sp-5);
   background: var(--bg-content);
   border: 1px solid var(--border-default);
   border-radius: var(--ui-radius);
   color: var(--text-primary);
-  font-size: 12px;
+  font-size: var(--fs-3);
   outline: none;
   transition: border-color 0.15s;
 }
@@ -46,17 +46,17 @@
 .folder-filter-chips {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: var(--sp-4);
   align-items: center;
 }
 
 .folder-chip {
-  padding: 4px 12px;
+  padding: var(--sp-2) var(--sp-6);
   background: var(--bg-panel); /* Tier 3 */
   border: 1px solid var(--border-subtle);
   border-radius: var(--ui-radius);
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: var(--fs-3);
   cursor: pointer;
   transition: all 0.15s ease;
   max-width: 200px;
@@ -101,12 +101,12 @@
 }
 
 .folder-filter-clear {
-  padding: 4px 10px;
+  padding: var(--sp-2) var(--sp-5);
   background: transparent;
   border: 1px solid var(--border-default);
   border-radius: var(--ui-radius);
   color: var(--text-secondary);
-  font-size: 11px;
+  font-size: var(--fs-2);
   cursor: pointer;
   transition: all 0.15s ease;
   align-self: flex-start;
@@ -129,11 +129,11 @@
 .folder-filter-conversations {
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: var(--sp-3);
 }
 
 .folder-filter-sublabel {
-  font-size: 11px;
+  font-size: var(--fs-2);
   color: var(--text-muted);
   text-transform: uppercase;
   letter-spacing: 0.5px;
@@ -143,19 +143,19 @@
 .conversation-results {
   display: flex;
   flex-direction: column;
-  gap: 4px;
+  gap: var(--sp-2);
 }
 
 .conversation-result {
   display: flex;
   align-items: baseline;
-  gap: 8px;
-  padding: 4px 10px;
+  gap: var(--sp-4);
+  padding: var(--sp-2) var(--sp-5);
   background: var(--bg-panel);
   border: 1px solid var(--border-subtle);
   border-radius: var(--ui-radius);
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: var(--fs-3);
   cursor: pointer;
   transition: all 0.15s ease;
   text-align: left;
@@ -171,7 +171,7 @@
   font-family: var(--font-mono);
   color: var(--text-muted);
   flex-shrink: 0;
-  font-size: 11px;
+  font-size: var(--fs-2);
 }
 
 .conversation-result-snippet {
