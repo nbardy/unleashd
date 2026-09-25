@@ -87,10 +87,10 @@ one-command Tailscale https setup.
 
 ## Buddies (persistent employees)
 
-The Unleashd package includes a versioned `@nbardy/buddies` snapshot; no manual
-`node_modules` symlink is required. Buddy identity, canonical work, memory,
-reporting lines, reviews, and automation runs live in
-`~/.buddies/buddies.sqlite`.
+Buddies run on the in-repo Rust core (`crates/unleashd-buddies`, loaded as the
+`@unleashd/buddies-core` addon; `pnpm addons` builds it). Buddy identity, work,
+memory docs, channels and runs live in `~/.buddies/buddies-v3.sqlite`
+(override with `UNLEASHD_BUDDIES_DB`).
 
 Each Buddy also has a private curated `MEMORY.md` plus append-only journal
 notes. Unleashd injects the bounded curated summary and recent journal excerpts
@@ -101,43 +101,10 @@ references. `BUDDY_SOUL.md` remains a stable, owner-reviewed behavior and
 authority contract: Buddies may record `SOUL_CHANGE_PROPOSAL` journal entries,
 but cannot silently rewrite their own Soul.
 
-Initialize the Growth Lead team for the Magic Genie and EventMap checkouts:
-
-```bash
-MAGIC_GENIE_ROOT=../magic_genie \
-EVENTMAP_ROOT=../event_calendars \
-node node_modules/@nbardy/buddies/scripts/initialize-growth-lead.js
-```
-
-The initializer is idempotent. Confirm every imported campaign has a canonical
-project with:
-
-```bash
-node node_modules/@nbardy/buddies/bin/buddies.js audit work
-```
-
-Back up the database before migrations or material manual changes:
-
-```bash
-node node_modules/@nbardy/buddies/bin/buddies.js \
-  backup ~/.buddies/backups/buddies-$(date +%Y-%m-%d).sqlite
-```
-
-The store refuses to open a database whose schema is newer than the installed
-library. Restore a backup rather than attempting an in-place downgrade.
-
-When updating the sibling Buddies source, regenerate the vendored snapshot
-twice and verify byte-for-byte reproducibility with:
-
-```bash
-pnpm vendor:buddies
-```
-
-Release packaging refuses an uncommitted or commit-less source tree. For a
-clearly marked local development snapshot only, use
-`pnpm vendor:buddies -- --allow-uncommitted`. The corresponding
-`vendor/nbardy-buddies-0.1.0.provenance.json` records the archive SHA-256 and
-whether the source was release-ready. Package smoke verifies that record.
+A missing database fails every Buddy call with the import command; ordinary
+chats keep working. Importing a v33 `~/.buddies/buddies.sqlite`, backup and the
+live swap are in [crates/unleashd-buddies/README.md](crates/unleashd-buddies/README.md)
+("Import and verify", "Deploy").
 
 ## Supported Agents
 
