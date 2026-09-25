@@ -1,30 +1,32 @@
 import { type CSSProperties, useMemo } from 'react';
 import { resource, usePolledFetch } from '../../hooks/usePolledFetch';
+import { EMBLEM_VERSION, emblemGroundCss, workspaceEmblemGenome } from './sigil/emblem';
 import { SIGIL_VERSION, backgroundCss, nameGenome } from './sigil/genome';
-import { renderSigil } from './sigil/render';
+import { renderEmblem, renderSigil } from './sigil/render';
 
-// One render per name per session: the resource cache dedupes concurrent
+// One render per key per session: the resource cache dedupes concurrent
 // mounts, and this memo keeps a WS-reconnect revalidation from re-rendering.
 const rendered = new Map<string, Promise<string>>();
 
-function sigilResource(name: string) {
-  const key = `sigil:v${SIGIL_VERSION}:${name}`;
+function renderedResource(key: string, render: () => Promise<string>) {
   return resource(key, () => {
     const existing = rendered.get(key);
     if (existing) return existing;
-    const pending = renderSigil(nameGenome(name));
+    const pending = render();
     rendered.set(key, pending);
     return pending;
   });
 }
 
-/**
- * Generative avatar for a Buddy, seeded by its name. Until the WebGL render
- * lands (and under react-dom/server) it shows the piece's own ground colour.
- */
-export function BuddySigil({ name, className }: { name: string; className: string }) {
-  const source = useMemo(() => sigilResource(name), [name]);
-  const ground = useMemo(() => backgroundCss(nameGenome(name)), [name]);
+function GeneratedImage({
+  source,
+  ground,
+  className,
+}: {
+  source: ReturnType<typeof renderedResource>;
+  ground: string;
+  className: string;
+}) {
   const { data } = usePolledFetch(source, 0);
   const style: CSSProperties = { background: ground };
   return data ? (
@@ -32,4 +34,30 @@ export function BuddySigil({ name, className }: { name: string; className: strin
   ) : (
     <span className={className} style={style} aria-hidden="true" />
   );
+}
+
+/**
+ * Generative avatar for a Buddy, seeded by its name. Until the WebGL render
+ * lands (and under react-dom/server) it shows the piece's own ground colour.
+ */
+export function BuddySigil({ name, className }: { name: string; className: string }) {
+  const source = useMemo(
+    () => renderedResource(`sigil:v${SIGIL_VERSION}:${name}`, () => renderSigil(nameGenome(name))),
+    [name]
+  );
+  const ground = useMemo(() => backgroundCss(nameGenome(name)), [name]);
+  return <GeneratedImage source={source} ground={ground} className={className} />;
+}
+
+/** A workspace's emblem: the Buddy sigil inverted (sigil/emblem.ts). */
+export function WorkspaceEmblem({ name, className }: { name: string; className: string }) {
+  const source = useMemo(
+    () =>
+      renderedResource(`emblem:v${EMBLEM_VERSION}:${name}`, () =>
+        renderEmblem(workspaceEmblemGenome(name))
+      ),
+    [name]
+  );
+  const ground = useMemo(() => emblemGroundCss(workspaceEmblemGenome(name)), [name]);
+  return <GeneratedImage source={source} ground={ground} className={className} />;
 }

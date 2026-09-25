@@ -9,7 +9,7 @@ import { useTimeTick } from '../../hooks/useTimeTick';
 import { shortenHomePath } from '../../utils/directories';
 import { formatTimeAgo } from '../../utils/time';
 import { PathAutocomplete } from '../PathAutocomplete';
-import { BuddySigil } from './BuddySigil';
+import { BuddySigil, WorkspaceEmblem } from './BuddySigil';
 import { buddyApi } from './api';
 import { ownerUnreadTotal, useOwnerUnread } from './channel-data';
 import {
@@ -154,7 +154,10 @@ function WorkspaceTile({ row }: { row: WorkspaceHomeRow }) {
   return (
     <Link className="workspace-home-tile" to={channelsPath(row.id)}>
       <span className="workspace-home-tile-top">
-        <BuddySigil className="workspace-home-icon workspace-home-icon--large" name={row.name} />
+        <WorkspaceEmblem
+          className="workspace-home-icon workspace-home-icon--large"
+          name={row.name}
+        />
         <Notifications row={row} />
       </span>
       <span className="workspace-home-name">{row.name}</span>
@@ -167,7 +170,7 @@ function WorkspaceTile({ row }: { row: WorkspaceHomeRow }) {
 function WorkspaceListRow({ row }: { row: WorkspaceHomeRow }) {
   return (
     <Link className="workspace-home-row" to={channelsPath(row.id)}>
-      <BuddySigil className="workspace-home-icon" name={row.name} />
+      <WorkspaceEmblem className="workspace-home-icon" name={row.name} />
       <span className="workspace-home-row-copy">
         <span className="workspace-home-name">{row.name}</span>
         <span className="workspace-home-path">{shortenHomePath(row.root_path)}</span>

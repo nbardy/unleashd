@@ -97,7 +97,7 @@ export type SigilGenome = {
   };
 };
 
-function hash32(text: string): number {
+export function hash32(text: string): number {
   let h1 = 0xdeadbeef;
   let h2 = 0x41c6ce57;
   for (let i = 0; i < text.length; i++) {
@@ -121,7 +121,7 @@ function uniformStream(seed: number): () => number {
 }
 
 // Box–Muller; 1 − u keeps log() off zero.
-function gaussianStream(seed: number): () => number {
+export function gaussianStream(seed: number): () => number {
   const next = uniformStream(seed);
   return () => Math.sqrt(-2 * Math.log(1 - next())) * Math.cos(2 * Math.PI * next());
 }

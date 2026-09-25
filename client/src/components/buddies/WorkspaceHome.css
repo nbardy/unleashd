@@ -206,7 +206,7 @@ section + section .workspace-home-section {
 
 /* ── Shared pieces ────────────────────────────────────────────────────── */
 
-/* Workspace icons are rounded squares; Buddy faces are circles. */
+/* Workspace emblems (sigil/emblem.ts) are rounded squares; Buddy faces are circles. */
 .workspace-home-icon {
   flex: none;
   display: block;
@@ -216,9 +216,9 @@ section + section .workspace-home-section {
 }
 
 .workspace-home-icon--large {
-  width: 44px;
-  height: 44px;
-  border-radius: 10px;
+  width: 52px;
+  height: 52px;
+  border-radius: 12px;
 }
 
 .workspace-home-name {

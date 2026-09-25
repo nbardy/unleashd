@@ -8,7 +8,8 @@ import {
   nameLatent,
   nameSeed,
 } from '../components/buddies/sigil/genome';
-import { renderSigil } from '../components/buddies/sigil/render';
+import { workspaceEmblemGenome } from '../components/buddies/sigil/emblem';
+import { renderEmblem, renderSigil } from '../components/buddies/sigil/render';
 
 const params = new URLSearchParams(location.search);
 const count = Number(params.get('count') ?? 60);
@@ -38,7 +39,28 @@ function image(url: string, size: number) {
   return img;
 }
 
+// `?emblems` shows only workspace emblems, at home-screen tile and row sizes.
+async function emblems() {
+  const names = (params.get('names') ?? '').split(',').filter(Boolean);
+  heading('Workspace emblems (88px / 44px / 32px)');
+  const grid = document.createElement('div');
+  grid.style.cssText =
+    'display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:18px 12px;max-width:760px';
+  document.body.append(grid);
+  for (const name of names) {
+    const url = await renderEmblem(workspaceEmblemGenome(name));
+    const cell = document.createElement('div');
+    cell.style.cssText = 'display:flex;flex-direction:column;gap:8px;font-size:12px;color:#9aa4ad';
+    const sizes = document.createElement('div');
+    sizes.style.cssText = 'display:flex;gap:10px;align-items:flex-end';
+    sizes.append(image(url, 88), image(url, 44), image(url, 32));
+    cell.append(sizes, name);
+    grid.append(cell);
+  }
+}
+
 async function main() {
+  if (params.has('emblems')) return emblems();
   heading('Channel size (36px)');
   const names = [
     'Product Development Lead',
