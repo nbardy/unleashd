@@ -88,10 +88,7 @@ test('owner MCP uses a real active-turn capability and rejects employee, mainten
   const control = new BuddyControlServer({
     getStore: async () => f.raw as unknown as BuddiesStorePort,
     isConversationActive: (id) => active.has(id),
-    dispatchDelegation: async () => {
-      throw new Error('Unexpected dispatch');
-    },
-    dispatchReview: async () => {
+    dispatchMessage: async () => {
       throw new Error('Unexpected dispatch');
     },
   });
@@ -237,10 +234,7 @@ test('cancellation while owner control awaits the store fences the configuration
       return f.raw as unknown as BuddiesStorePort;
     },
     isConversationActive: () => true,
-    dispatchDelegation: async () => {
-      throw new Error('Unexpected dispatch');
-    },
-    dispatchReview: async () => {
+    dispatchMessage: async () => {
       throw new Error('Unexpected dispatch');
     },
   });
@@ -279,10 +273,7 @@ test('legacy Builder control requires a host-issued full owner Builder turn and 
   const control = new BuddyControlServer({
     getStore: async () => f.raw as unknown as BuddiesStorePort,
     isConversationActive: () => true,
-    dispatchDelegation: async () => {
-      throw new Error('Unexpected dispatch');
-    },
-    dispatchReview: async () => {
+    dispatchMessage: async () => {
       throw new Error('Unexpected dispatch');
     },
   });
@@ -370,9 +361,6 @@ test('owner proposal HTTP applies its exact attachment and repairs interrupted a
   registerBuddyRoutes(app, {
     getStore: async () => f.raw as unknown as BuddiesStorePort,
     getScheduler: () => null,
-    createConversation: async () => {
-      throw new Error('Configuration must not create provider work');
-    },
     sendError(response, error, status) {
       response.status(status).json({ error: String(error) });
     },

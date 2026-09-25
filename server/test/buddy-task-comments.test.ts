@@ -48,9 +48,6 @@ test('Task comments share one durable contract across native tools and owner HTT
   registerBuddyRoutes(app, {
     getStore: async () => store,
     getScheduler: () => null,
-    createConversation: async () => {
-      throw new Error('Comments cannot launch work');
-    },
     sendError: (response, error, status) => {
       response
         .status(status)

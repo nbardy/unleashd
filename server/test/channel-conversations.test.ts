@@ -167,9 +167,6 @@ async function harness() {
   registerBuddyRoutes(app, {
     getStore: async () => store,
     getScheduler: () => null,
-    createConversation: async () => {
-      throw new Error('not used');
-    },
     sendError,
     getNextAutomationRunAt: () => new Date().toISOString(),
     createId: () => 'test-id',

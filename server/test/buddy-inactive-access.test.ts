@@ -37,9 +37,6 @@ test('inactive-access inventory finds archived, detached and former-target grant
   registerBuddyRoutes(app, {
     getStore: async () => store,
     getScheduler: () => null,
-    createConversation: async () => {
-      throw new Error('Reading or revoking access must not start work');
-    },
     sendError: (response, error, status) => response.status(status).json({ error: String(error) }),
     getNextAutomationRunAt: () => '',
     createId: () => 'inventory-fixture',

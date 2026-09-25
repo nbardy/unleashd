@@ -8,9 +8,7 @@ import type { BuddiesStorePort } from './contract';
 import {
   type BuddyOperationName,
   BuddyOperationsService,
-  type PreparedBuddyDelegation,
   type PreparedBuddyMessage,
-  type PreparedBuddyReviewRequest,
 } from './operations';
 import { type OwnerResourceName, executeOwnerResource } from './owner-resources';
 import {
@@ -40,21 +38,9 @@ type Capability = {
 export interface BuddyControlServerDependencies {
   getStore(): Promise<BuddiesStorePort>;
   isConversationActive(conversationId: string): boolean;
-  dispatchMessage?(
+  dispatchMessage(
     context: BuddyContext,
     input: PreparedBuddyMessage,
-    automationClaimToken?: string,
-    signal?: AbortSignal
-  ): Promise<unknown>;
-  dispatchDelegation(
-    context: BuddyContext,
-    input: PreparedBuddyDelegation,
-    automationClaimToken?: string,
-    signal?: AbortSignal
-  ): Promise<unknown>;
-  dispatchReview(
-    context: BuddyContext,
-    input: PreparedBuddyReviewRequest,
     automationClaimToken?: string,
     signal?: AbortSignal
   ): Promise<unknown>;
@@ -62,7 +48,7 @@ export interface BuddyControlServerDependencies {
 
 /**
  * Private capability transport for operations that must re-enter the owning
- * server process (currently delegation and review conversation creation).
+ * server process (currently Buddy message dispatch).
  *
  * This is deliberately a separate loopback listener, not an exemption in the
  * public Express auth or reload mutation gates. The admitted turn's old server
@@ -388,40 +374,9 @@ export class BuddyControlServer {
     if (request.url === '/v1/messages') {
       this.requireAllowed(capability.context, 'buddy.send');
       this.requireAutomationOwner(store, capability, 'buddy.send');
-      const dispatchMessage = this.dependencies.dispatchMessage;
-      if (!dispatchMessage) throw new Error('Message dispatch is unavailable');
       const prepared = operations.prepareMessage(body);
       await dispatch((signal) =>
-        dispatchMessage(capability.context, prepared, capability.automationClaimToken, signal)
-      );
-      return;
-    }
-    if (request.url === '/v1/delegations') {
-      this.requireAllowed(capability.context, 'buddy.delegate');
-      this.requireAutomationOwner(store, capability, 'buddy.delegate');
-      const prepared = {
-        ...operations.prepareDelegation(body),
-        parentConversationId: capability.conversationId,
-      };
-      await dispatch((signal) =>
-        this.dependencies.dispatchDelegation(
-          capability.context,
-          prepared,
-          capability.automationClaimToken,
-          signal
-        )
-      );
-      return;
-    }
-    if (request.url === '/v1/reviews') {
-      this.requireAllowed(capability.context, 'buddy.request_review');
-      this.requireAutomationOwner(store, capability, 'buddy.request_review');
-      const prepared = {
-        ...operations.prepareReviewRequest(body),
-        parentConversationId: capability.conversationId,
-      };
-      await dispatch((signal) =>
-        this.dependencies.dispatchReview(
+        this.dependencies.dispatchMessage(
           capability.context,
           prepared,
           capability.automationClaimToken,

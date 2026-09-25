@@ -27,9 +27,6 @@ test('owner team settings preserve independent saved permissions, expiry and rev
   registerBuddyRoutes(app, {
     getStore: async () => store,
     getScheduler: () => null,
-    createConversation: async () => {
-      throw new Error('Permission editing must not start work');
-    },
     sendError: (response, error, status) => response.status(status).json({ error: String(error) }),
     getNextAutomationRunAt: () => '',
     createId: () => 'owner-settings-fixture',

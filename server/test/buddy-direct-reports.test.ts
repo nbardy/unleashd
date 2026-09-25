@@ -140,9 +140,6 @@ test('owner profile rejects obsolete quotas and detail exposes canonical reporti
   registerBuddyRoutes(app, {
     getStore: async () => store as unknown as BuddiesStorePort,
     getScheduler: () => null,
-    createConversation: async () => {
-      throw new Error('not used');
-    },
     sendError: (response, error, status) => {
       response.status(status).json({ error: String(error) });
     },

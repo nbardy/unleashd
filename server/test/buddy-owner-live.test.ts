@@ -72,10 +72,7 @@ test(
     const control = new BuddyControlServer({
       getStore: async () => store,
       isConversationActive: (id) => conversations.get(id)?.isRunning === true,
-      dispatchDelegation: async () => {
-        throw new Error('unused');
-      },
-      dispatchReview: async () => {
+      dispatchMessage: async () => {
         throw new Error('unused');
       },
     });
@@ -215,7 +212,6 @@ test(
       },
       dispatchInitialMessage: async () => {},
       abandonConversation: () => {},
-      createId: () => 'unused',
     });
     let originalMessageId = '';
     try {

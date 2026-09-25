@@ -129,9 +129,6 @@ test('competing HTTP/MCP soul edits preserve all changes through repeated revisi
   registerBuddyRoutes(app, {
     getStore: async () => port,
     getScheduler: () => null,
-    createConversation: async () => {
-      throw new Error('unused');
-    },
     sendError: (res, error, status) => res.status(status).json({ error: String(error) }),
     getNextAutomationRunAt: () => null,
     createId: () => 'test-id',

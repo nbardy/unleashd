@@ -88,14 +88,6 @@ export function parseBuddyReviewResult(outcome: string) {
   return BuddyReviewSettlementSchema.parse(decoded);
 }
 
-export const BUDDY_REVIEW_RESULT_INSTRUCTIONS = [
-  'End the review with exactly one structured result block using these literal marker lines:',
-  BUDDY_REVIEW_RESULT_START,
-  '{"verdict":"pass|needs_work|fail","score":0,"summary":"...","evidence":[{"kind":"file|conversation|project|metric","reference":"...","observation":"..."}],"requiredActions":[]}',
-  BUDDY_REVIEW_RESULT_END,
-  'Put raw JSON between the markers, without a Markdown code fence.',
-].join('\n');
-
 function buddyTurnAudience(key: string): BuddyTurnAudience {
   return {
     key,

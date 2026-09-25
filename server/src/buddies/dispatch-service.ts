@@ -10,9 +10,7 @@ import { coordinationStore } from './coordination-store';
 import {
   type BuddyOperationName,
   MESSAGE_BUDDY_OPERATIONS,
-  type PreparedBuddyDelegation,
   type PreparedBuddyMessage,
-  type PreparedBuddyReviewRequest,
 } from './operations';
 import { messageExecution } from './team-access';
 
@@ -34,7 +32,6 @@ export interface BuddyDispatchServiceDependencies {
     options: { enqueueAuthorized(enqueue: () => void): void }
   ): Promise<void>;
   abandonConversation(conversation: BuddyDispatchConversation): Promise<void> | void;
-  createId(): string;
   /** Host-resolved route; never a model-selected destination or copied private transcript. */
   prepareReturnConversation?(
     context: BuddyContext,
@@ -46,7 +43,6 @@ export interface BuddyDispatchServiceDependencies {
       }
     | undefined
   >;
-  getReturnConversationId?(context: BuddyContext, sourceId: string): string | undefined;
   /** Config of the conversation that is sending, when it belongs to this Buddy. */
   launchConfig?(context: BuddyContext, sourceId: string): ConversationConfig | undefined;
 }
@@ -164,7 +160,7 @@ export function createBuddyDispatchService(dependencies: BuddyDispatchServiceDep
           approval: input.approval,
           waitUntil: input.wait ? new Date(deadline).toISOString() : undefined,
         };
-        const preliminaryAuthority = {
+        const authority = {
           policy: {
             allowed_operations: MESSAGE_BUDDY_OPERATIONS.filter(
               (op) => !context.allowedBuddyOperations || context.allowedBuddyOperations.includes(op)
@@ -188,7 +184,7 @@ export function createBuddyDispatchService(dependencies: BuddyDispatchServiceDep
           if (!dependencies.resolveAssignmentConfig)
             throw new Error('This host does not support assignment configuration');
           // Validate participant/project/continuation scope before looking up its config.
-          const route = store.previewCoordinatedMessage(messageInput, preliminaryAuthority) as {
+          const route = store.previewCoordinatedMessage(messageInput, authority) as {
             conversationId?: string | null;
           };
           assignmentConfig = await beforeMessageDeadline(
@@ -209,22 +205,10 @@ export function createBuddyDispatchService(dependencies: BuddyDispatchServiceDep
             : store.sendCoordinatedMessage.bind(store))(
             { ...messageInput, ...(config ? { config } : {}) },
             {
-              policy: {
-                allowed_operations: MESSAGE_BUDDY_OPERATIONS.filter(
-                  (op) =>
-                    !context.allowedBuddyOperations || context.allowedBuddyOperations.includes(op)
-                ),
-              },
-              runId: context.coordinationRunId ?? undefined,
-              sourceProjectId: context.buddyProjectId,
-              sourceWorkspaceId: context.workspaceId,
+              ...authority,
               assignmentConfig,
               launch: launch?.launch,
-              returnConversationId:
-                launch?.returnConversationId ??
-                (input.parentConversationId
-                  ? dependencies.getReturnConversationId?.(context, input.parentConversationId)
-                  : undefined),
+              returnConversationId: launch?.returnConversationId,
             }
           );
         const message = (
@@ -415,57 +399,6 @@ export function createBuddyDispatchService(dependencies: BuddyDispatchServiceDep
         },
         audit: { recordedAtomicallyByStore: true },
       };
-    },
-
-    // Adapt pre-migration callers; new work always uses the durable mailbox.
-    async delegation(
-      context: BuddyContext,
-      input: PreparedBuddyDelegation,
-      automationClaimToken?: string,
-      signal?: AbortSignal
-    ) {
-      return service.send(
-        context,
-        {
-          to: input.toBuddyId,
-          purpose: 'delegation',
-          body: input.purpose,
-          evidence: [],
-          projectId: input.projectId,
-          parentConversationId: input.parentConversationId,
-          expectsReply: true,
-          wait: false,
-          timeoutSeconds: 120,
-        },
-        automationClaimToken,
-        signal
-      );
-    },
-
-    async review(
-      context: BuddyContext,
-      input: PreparedBuddyReviewRequest,
-      automationClaimToken?: string,
-      signal?: AbortSignal
-    ) {
-      return service.send(
-        context,
-        {
-          to: input.reviewerBuddyId,
-          purpose: 'review',
-          body: `Review Buddy ${input.subjectBuddyId}. ${input.purpose}`,
-          evidence: [
-            ...input.evidence.map((item) => JSON.stringify(item)),
-            ...(input.projectId ? [`project:${input.projectId}`] : []),
-          ],
-          parentConversationId: input.parentConversationId,
-          expectsReply: true,
-          wait: false,
-          timeoutSeconds: 120,
-        },
-        automationClaimToken,
-        signal
-      );
     },
   };
   return service;
