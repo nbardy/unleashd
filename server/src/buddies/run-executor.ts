@@ -136,6 +136,11 @@ export class BuddyRunExecutor {
         );
     }
     this.store.retryUndeliveredInputs();
+    // Runs every tick because background deadlines expire with no event to
+    // react to. It must stay index-driven: without buddy_runs(input_id) it did
+    // ~15 full buddy_runs scans per outstanding message, 1.6-2.5s per tick on
+    // 2026-09-25 (p50 157ms on a trivial 404). The package guards this with
+    // "the reconcile tick never scans a table" (test/background-work.test.js).
     this.store.reconcileBackgroundWork?.();
     for (const run of this.store.listNonterminalAutomationRuns())
       if (run.status === 'cancel_requested')
