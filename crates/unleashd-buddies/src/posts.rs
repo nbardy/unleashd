@@ -358,8 +358,8 @@ fn insert_post(tx: &Transaction, actor: &Actor, channel: &Channel, input: &PostI
     let id = new_id("post");
     tx.prepare_cached(
         "INSERT INTO post (id, channel_id, author_id, root_id, reply_to_id, task_id, purpose, body, evidence, request,
-           return_conversation_id, created_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+           conversation_id, return_conversation_id, created_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
     )?
     .execute(params![
         id,
@@ -372,7 +372,10 @@ fn insert_post(tx: &Transaction, actor: &Actor, channel: &Channel, input: &PostI
         input.body,
         evidence_json(&input.evidence),
         ask.column(),
+        // Provenance: the conversation the post was written from. A thread seat reads it to skip
+        // its own posts. Only a request's answer returns to it.
         input.from_conversation_id,
+        ask.column().and(input.from_conversation_id.as_deref()),
         now_iso()
     ])?;
     for recipient in ask.owed_by().iter().filter_map(Actor::buddy_id) {

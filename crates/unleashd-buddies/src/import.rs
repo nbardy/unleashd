@@ -41,7 +41,41 @@ pub struct ImportReport {
     /// channel. It is kept in `legacy.root_message_id`; `root_id` is the thread in the channel.
     pub cross_channel_roots: i64,
     pub owner_reads: OwnerReads,
+    pub direct_reads: DirectReads,
 }
+
+/// Import choices. `mark_direct_read` is ON by default (owner decision, T11): v33 kept no read
+/// state for messages, so without it every imported DM counts as unread for the owner and each
+/// member — a flood of hundreds of stale unread posts on the first inbox after the swap.
+#[derive(Debug, Clone, Copy)]
+pub struct ImportOptions {
+    pub mark_direct_read: bool,
+}
+
+impl Default for ImportOptions {
+    fn default() -> Self {
+        ImportOptions { mark_direct_read: true }
+    }
+}
+
+/// Whether imported direct channels were marked read through their newest post.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(tag = "state", rename_all = "snake_case")]
+pub enum DirectReads {
+    NotMarked,
+    Marked { cursors: i64 },
+}
+
+/// The cursors `mark_direct_read` writes: for every direct channel, the owner and each member,
+/// at the channel's newest post. The verifier recomputes the same set from the imported posts.
+pub const DIRECT_READ_CURSORS: &str = "SELECT r.reader, c.id AS channel_id, last.id AS post_id, last.created_at AS post_at
+    FROM channel c
+    JOIN (SELECT channel_id, member AS reader FROM channel_member UNION SELECT id, 'owner' FROM channel WHERE kind = 'direct') r
+      ON r.channel_id = c.id
+    JOIN post last ON last.id = (SELECT p.id FROM post p WHERE p.channel_id = c.id ORDER BY p.created_at DESC, p.id DESC LIMIT 1)
+    WHERE c.kind = 'direct'";
+
+pub const DIRECT_READ_SOURCE: &str = "import:direct-read";
 
 /// owner-channel-reads.json, as `server/src/buddies/owner-channel-reads.ts` writes it.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -438,8 +472,16 @@ fn count_pairs() -> Vec<(&'static str, String, &'static str)> {
             "SELECT count(*) FROM old.buddy_task_comments".into(),
             "SELECT count(*) FROM post p JOIN channel c ON c.id = p.channel_id WHERE c.kind = 'task'",
         ),
-        ("post_read:buddy", "SELECT count(*) FROM old.buddy_list_reads".into(), "SELECT count(*) FROM post_read WHERE reader != 'owner'"),
-        ("post_read:owner", "SELECT count(*) FROM owner_read".into(), "SELECT count(*) FROM post_read WHERE reader = 'owner'"),
+        (
+            "post_read:buddy",
+            "SELECT count(*) FROM old.buddy_list_reads".into(),
+            "SELECT count(*) FROM post_read WHERE reader != 'owner' AND json_extract(legacy, '$.source') IS NOT 'import:direct-read'",
+        ),
+        (
+            "post_read:owner",
+            "SELECT count(*) FROM owner_read".into(),
+            "SELECT count(*) FROM post_read WHERE reader = 'owner' AND json_extract(legacy, '$.source') IS NOT 'import:direct-read'",
+        ),
         (
             "doc",
             "SELECT (SELECT count(*) FROM old.buddy_memory_heads) + (SELECT count(*) FROM old.buddy_knowledge)".into(),
@@ -522,7 +564,7 @@ fn json_rows(conn: &Connection, sql: &str) -> Result<Vec<Value>> {
     texts.iter().map(|t| serde_json::from_str(t).map_err(Into::into)).collect()
 }
 
-pub fn import(source: &Path, target: &Path, owner_reads: &Path) -> Result<ImportReport> {
+pub fn import(source: &Path, target: &Path, owner_reads: &Path, options: ImportOptions) -> Result<ImportReport> {
     if target.exists() {
         return Err(CoreError::Invalid(format!("target {} already exists; the import only writes a new file", target.display())));
     }
@@ -570,6 +612,20 @@ pub fn import(source: &Path, target: &Path, owner_reads: &Path) -> Result<Import
          FROM owner_read",
         [&now],
     )?;
+    let direct_reads = match options.mark_direct_read {
+        false => DirectReads::NotMarked,
+        true => {
+            let cursors = conn.execute(
+                &format!(
+                    "INSERT INTO post_read (reader, channel_id, last_post_id, last_post_at, updated_at, legacy)
+                     SELECT reader, channel_id, post_id, post_at, ?1, json_object('source', '{DIRECT_READ_SOURCE}')
+                     FROM ({DIRECT_READ_CURSORS}) WHERE true ON CONFLICT(reader, channel_id) DO NOTHING"
+                ),
+                [&now],
+            )?;
+            DirectReads::Marked { cursors: cursors as i64 }
+        }
+    };
     let converted_schedules = import_schedules(&conn, &now)?;
     let counts: Vec<(String, i64, i64)> = count_pairs()
         .into_iter()
@@ -617,5 +673,6 @@ pub fn import(source: &Path, target: &Path, owner_reads: &Path) -> Result<Import
         soul_files: soul_baseline,
         cross_channel_roots,
         owner_reads,
+        direct_reads,
     })
 }

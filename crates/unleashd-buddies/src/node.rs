@@ -152,6 +152,21 @@ impl BuddiesCore {
     }
 
     #[napi]
+    pub async fn recover_runs(&self) -> napi::Result<Recovery> {
+        call(&self.store, move |s| s.recover_runs()).await
+    }
+
+    #[napi]
+    pub async fn create_buddy(&self, actor: Actor, input: BuddyCreate) -> napi::Result<Buddy> {
+        call(&self.store, move |s| s.create_buddy(&actor, input)).await
+    }
+
+    #[napi]
+    pub async fn update_buddy(&self, actor: Actor, input: BuddyUpdate) -> napi::Result<Buddy> {
+        call(&self.store, move |s| s.update_buddy(&actor, input)).await
+    }
+
+    #[napi]
     pub async fn get_run(&self, id: String) -> napi::Result<Run> {
         call(&self.store, move |s| s.get_run(&id)).await
     }

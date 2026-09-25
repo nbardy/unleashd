@@ -408,3 +408,73 @@ fn events_prune_by_age() {
     assert_eq!(s.prune_events("2000-01-01T00:00:00.000Z").unwrap(), 0);
     assert_eq!(s.prune_events("2999-01-01T00:00:00.000Z").unwrap(), 1);
 }
+
+#[test]
+fn team_admin_is_owner_only_and_refuses_a_reporting_cycle() {
+    let mut f = fixture();
+    let s = &mut f.store;
+    let hire = |key: &str| BuddyCreate {
+        workspace_id: WS.into(),
+        slug: key.into(),
+        name: key.into(),
+        role: "r".into(),
+        manager: ManagerRef::Buddy { id: "lead".into() },
+        provider: Some("codex".into()),
+        model: None,
+        reasoning_effort: None,
+        key: key.into(),
+    };
+    // A manager is not the owner: team edits stay owner-only (02 §8.3 team_admin).
+    assert!(matches!(s.create_buddy(&buddy("lead"), hire("x")), Err(CoreError::Denied(_))));
+    let new = s.create_buddy(&Actor::Owner, hire("x")).unwrap();
+    assert_eq!(new.manager_id.as_deref(), Some("lead"));
+    let cycle = |manager: &str| BuddyUpdate {
+        buddy_id: "lead".into(),
+        changes: BuddyChanges { manager: Some(ManagerRef::Buddy { id: manager.into() }), ..BuddyChanges::default() },
+        key: format!("cycle-{manager}"),
+    };
+    assert!(matches!(s.update_buddy(&Actor::Owner, cycle("ic")), Err(CoreError::Invalid(_))), "ic reports (via mid) to lead");
+    assert!(matches!(s.update_buddy(&Actor::Owner, cycle("lead")), Err(CoreError::Invalid(_))), "nobody manages themselves");
+    let top = BuddyUpdate {
+        buddy_id: "mid".into(),
+        changes: BuddyChanges { manager: Some(ManagerRef::Nobody), name: Some("Mid".into()), ..BuddyChanges::default() },
+        key: "top".into(),
+    };
+    let mid = s.update_buddy(&Actor::Owner, top).unwrap();
+    assert_eq!((mid.manager_id, mid.name.as_str(), mid.role.as_str()), (None, "Mid", "role"), "absent fields are unchanged");
+
+    // Archiving cancels the buddy's queued runs: an archived buddy is never claimed again.
+    let queued = s.enqueue_run(&Actor::Owner, chat("peer", "t1", "c-peer")).unwrap();
+    let archive = BuddyUpdate {
+        buddy_id: "peer".into(),
+        changes: BuddyChanges { status: Some(BuddyStatus::Archived), ..BuddyChanges::default() },
+        key: "archive".into(),
+    };
+    s.update_buddy(&Actor::Owner, archive).unwrap();
+    assert_eq!(s.get_run(&queued.id).unwrap().status, RunStatus::Cancelled);
+}
+
+#[test]
+fn startup_recovery_ends_runs_a_dead_host_held() {
+    let mut f = fixture();
+    let s = &mut f.store;
+    // A request whose recipient was mid-run when the host died must stop awaiting and tell its
+    // sender, exactly as a failed settle would; otherwise it waits out a 24 h foreground lease.
+    let ask = s.post(&buddy("mid"), dm("mid", "ic"), request("build it", "ask")).unwrap();
+    let claim = s.claim_run(86_400_000).unwrap().unwrap();
+    assert_eq!(claim.run.input, RunInput::Post { post_id: ask.id.clone() });
+    let waiting_chat = s.enqueue_run(&Actor::Owner, chat("lead", "turn", "c-lead")).unwrap();
+
+    let recovery = s.recover_runs().unwrap();
+    assert_eq!(recovery, Recovery { interrupted: 1, abandoned_chats: 1 });
+    let run = s.get_run(&claim.run.id).unwrap();
+    assert_eq!((run.status, run.error_code.as_deref()), (RunStatus::Failed, Some("interrupted")));
+    assert_eq!(s.get_run(&waiting_chat.id).unwrap().status, RunStatus::Cancelled);
+    assert!(matches!(s.get_post(&Actor::Owner, &ask.id).unwrap().request, RequestState::Failed));
+    let notice = s.list_runs(RunQuery::Buddy { buddy_id: "mid".into() }, 5).unwrap();
+    assert!(notice.iter().any(|r| r.input == RunInput::FailureNotice { run_id: claim.run.id.clone() }));
+    assert_eq!(
+        s.settle_run(&claim.run.id, &claim.lease_token, Outcome::Complete { text: "late".into() }).unwrap_err().code(),
+        "lease_lost"
+    );
+}

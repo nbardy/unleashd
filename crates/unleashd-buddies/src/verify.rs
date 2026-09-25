@@ -17,7 +17,9 @@
 //!   owner-channel-reads.json, re-read now and required to be unchanged since the import.
 
 use crate::error::Result;
-use crate::import::{DM_KEY, OwnerReads, SoulFile, SoulFileState, load_owner_reads, open_source, soul_files, uri};
+use crate::import::{
+    DIRECT_READ_CURSORS, DM_KEY, DirectReads, OwnerReads, SoulFile, SoulFileState, load_owner_reads, open_source, soul_files, uri,
+};
 use crate::store::{collect, sha256_hex};
 use rusqlite::{Connection, OpenFlags};
 use serde::Serialize;
@@ -389,7 +391,7 @@ fn check_links(new: &Connection) -> Result<RowCheck> {
 
 /// buddy_list_reads plus the owner's cursors from owner-channel-reads.json, which must read the
 /// same now as at import (it is live server state).
-fn check_reads(old: &Connection, new: &Connection, imported: &OwnerReads) -> Result<RowCheck> {
+fn check_reads(old: &Connection, new: &Connection, imported: &OwnerReads, direct: &DirectReads) -> Result<RowCheck> {
     let path = match imported {
         OwnerReads::Absent { path } | OwnerReads::Loaded { path, .. } => Path::new(path),
     };
@@ -397,6 +399,13 @@ fn check_reads(old: &Connection, new: &Connection, imported: &OwnerReads) -> Res
     let lists: Vec<String> = collect(old.prepare("SELECT id FROM buddy_lists")?.query_map([], |r| r.get(0))?)?;
     let mut a = rows(old, "SELECT buddy_id || '/' || list_id, last_post_id || '@' || last_post_created_at FROM buddy_list_reads")?;
     a.extend(now.cursors(&lists).into_iter().map(|(list, post, at)| (format!("owner/{list}"), format!("{post}@{at}"))));
+    // Direct cursors are derived from the imported posts, which the classes above verify.
+    match direct {
+        DirectReads::NotMarked => {}
+        DirectReads::Marked { .. } => {
+            a.extend(rows(new, &format!("SELECT reader || '/' || channel_id, post_id || '@' || post_at FROM ({DIRECT_READ_CURSORS})"))?)
+        }
+    }
     let b = rows(new, "SELECT reader || '/' || channel_id, last_post_id || '@' || last_post_at FROM post_read")?;
     let mut check = compare(&a, &b);
     if &now != imported {
@@ -406,13 +415,19 @@ fn check_reads(old: &Connection, new: &Connection, imported: &OwnerReads) -> Res
     Ok(check)
 }
 
-pub fn verify(source: &Path, target: &Path, soul_baseline: &[SoulFile], owner_reads: &OwnerReads) -> Result<VerifyReport> {
+pub fn verify(
+    source: &Path,
+    target: &Path,
+    soul_baseline: &[SoulFile],
+    owner_reads: &OwnerReads,
+    direct_reads: &DirectReads,
+) -> Result<VerifyReport> {
     let old = open_source(source)?;
     let new = open_new(target)?;
     let classes = classes().iter().map(|c| check_class(&old, &new, c)).collect::<Result<Vec<_>>>()?;
     let answers = check_answers(&old, &new)?;
     let links = check_links(&new)?;
-    let read_cursors = check_reads(&old, &new, owner_reads)?;
+    let read_cursors = check_reads(&old, &new, owner_reads, direct_reads)?;
     let revision_chains = check_chains(&old, &new)?;
     let soul = check_soul(&new, soul_baseline)?;
     let ok = classes.iter().all(|c| c.ok) && answers.ok && links.ok && read_cursors.ok && revision_chains.ok && soul.ok;

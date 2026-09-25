@@ -26,6 +26,9 @@ export declare class BuddiesCore {
   settleRun(runId: string, leaseToken: string, outcome: Outcome): Promise<Run>
   bindRun(runId: string, leaseToken: string, conversationId: string): Promise<Run>
   cancelRun(actor: Actor, runId: string): Promise<Run>
+  recoverRuns(): Promise<Recovery>
+  createBuddy(actor: Actor, input: BuddyCreate): Promise<Buddy>
+  updateBuddy(actor: Actor, input: BuddyUpdate): Promise<Buddy>
   getRun(id: string): Promise<Run>
   listRuns(query: RunQuery, limit: number): Promise<Array<Run>>
   putSchedule(actor: Actor, input: ScheduleInput): Promise<Schedule>
@@ -73,7 +76,38 @@ export interface Buddy {
   createdAt: string
 }
 
+/** A patch: every absent field is unchanged. */
+export interface BuddyChanges {
+  name?: string
+  role?: string
+  manager?: ManagerRef
+  provider?: string
+  model?: string
+  reasoningEffort?: string
+  backgroundEnabled?: boolean
+  maxActiveRuns?: number
+  status?: BuddyStatus
+}
+
+export interface BuddyCreate {
+  workspaceId: string
+  slug: string
+  name: string
+  role: string
+  manager: ManagerRef
+  provider?: string
+  model?: string
+  reasoningEffort?: string
+  key: string
+}
+
 export type BuddyStatus = 'active' | 'archived'
+
+export interface BuddyUpdate {
+  buddyId: string
+  changes: BuddyChanges
+  key: string
+}
 
 export interface Channel {
   id: string
@@ -225,6 +259,11 @@ export interface Inbox {
   channels: Array<ChannelUnread>
 }
 
+/** Who a buddy reports to. `Nobody` makes it a top-level buddy. */
+export type ManagerRef =
+  | { kind: 'nobody' }
+  | { kind: 'buddy'; id: string }
+
 export type Op = 'read_doc' | 'write_doc' | 'post' | 'read_channel' | 'create_channel' | 'write_task' | 'enqueue_run' | 'cancel_run' | 'write_schedule' | 'admin'
 
 /** How a run ended, reported by the runner. */
@@ -274,6 +313,12 @@ export type PostQuery =
   | { kind: 'channel'; channelId: string }
   | { kind: 'thread'; rootId: string }
 
+/** What startup recovery ended: runs a dead process held, and chat turns nobody waits for. */
+export interface Recovery {
+  interrupted: number
+  abandonedChats: number
+}
+
 /** A post's request lifecycle. Column `request` NULL is `None`; `Answered` names the answer post. */
 export type RequestState =
   | { state: 'none' }
@@ -320,6 +365,7 @@ export type RunQuery =
   | { kind: 'conversation'; conversationId: string }
   | { kind: 'task'; taskId: string }
   | { kind: 'queued' }
+  | { kind: 'live'; workspaceId: string }
 
 export type RunStatus = 'queued' | 'running' | 'cancel_requested' | 'complete' | 'failed' | 'cancelled'
 

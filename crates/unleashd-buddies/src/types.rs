@@ -494,10 +494,20 @@ pub struct EnqueueInput {
 #[cfg_attr(feature = "node", napi_derive::napi(discriminant = "kind", discriminant_case = "lowercase"))]
 #[derive(Debug, Clone)]
 pub enum RunQuery {
-    Buddy { buddy_id: String },
-    Conversation { conversation_id: String },
-    Task { task_id: String },
+    Buddy {
+        buddy_id: String,
+    },
+    Conversation {
+        conversation_id: String,
+    },
+    Task {
+        task_id: String,
+    },
     Queued,
+    /// Running (or cancel-requested) runs in a workspace: what its buddies are doing now.
+    Live {
+        workspace_id: String,
+    },
 }
 
 /// Keyset position: posts strictly older than (created_at, id).
@@ -593,4 +603,59 @@ pub fn evidence_json(v: &[String]) -> String {
 
 pub fn parse_evidence(s: &str) -> Result<Vec<String>> {
     serde_json::from_str(s).map_err(|e| CoreError::Corrupt(format!("evidence {s:?}: {e}")))
+}
+
+// ---- team admin (owner only) ------------------------------------------------------------------
+
+/// Who a buddy reports to. `Nobody` makes it a top-level buddy.
+#[cfg_attr(feature = "node", napi_derive::napi(discriminant = "kind", discriminant_case = "lowercase"))]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ManagerRef {
+    Nobody,
+    Buddy { id: String },
+}
+
+#[cfg_attr(feature = "node", napi_derive::napi(object))]
+#[derive(Debug, Clone)]
+pub struct BuddyCreate {
+    pub workspace_id: String,
+    pub slug: String,
+    pub name: String,
+    pub role: String,
+    pub manager: ManagerRef,
+    pub provider: Option<String>,
+    pub model: Option<String>,
+    pub reasoning_effort: Option<String>,
+    pub key: String,
+}
+
+/// A patch: every absent field is unchanged.
+#[cfg_attr(feature = "node", napi_derive::napi(object))]
+#[derive(Debug, Clone, Default)]
+pub struct BuddyChanges {
+    pub name: Option<String>,
+    pub role: Option<String>,
+    pub manager: Option<ManagerRef>,
+    pub provider: Option<String>,
+    pub model: Option<String>,
+    pub reasoning_effort: Option<String>,
+    pub background_enabled: Option<bool>,
+    pub max_active_runs: Option<i64>,
+    pub status: Option<BuddyStatus>,
+}
+
+#[cfg_attr(feature = "node", napi_derive::napi(object))]
+#[derive(Debug, Clone)]
+pub struct BuddyUpdate {
+    pub buddy_id: String,
+    pub changes: BuddyChanges,
+    pub key: String,
+}
+
+/// What startup recovery ended: runs a dead process held, and chat turns nobody waits for.
+#[cfg_attr(feature = "node", napi_derive::napi(object))]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Recovery {
+    pub interrupted: i64,
+    pub abandoned_chats: i64,
 }

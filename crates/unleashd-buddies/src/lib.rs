@@ -11,6 +11,7 @@ pub mod runs;
 pub mod schema;
 pub mod store;
 pub mod tasks;
+pub mod team;
 pub mod types;
 pub mod verify;
 

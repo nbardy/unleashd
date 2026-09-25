@@ -137,9 +137,40 @@ fn workload(s: &mut unleashd_buddies::Store) {
         RunQuery::Conversation { conversation_id: "c-ic".into() },
         RunQuery::Task { task_id: parent.id.clone() },
         RunQuery::Queued,
+        RunQuery::Live { workspace_id: WS.into() },
     ] {
         s.list_runs(q, 10).unwrap();
     }
+    s.recover_runs().unwrap();
+    let hired = s
+        .create_buddy(
+            &owner,
+            BuddyCreate {
+                workspace_id: WS.into(),
+                slug: "new".into(),
+                name: "New".into(),
+                role: "r".into(),
+                manager: ManagerRef::Buddy { id: "lead".into() },
+                provider: None,
+                model: None,
+                reasoning_effort: None,
+                key: "hire".into(),
+            },
+        )
+        .unwrap();
+    s.update_buddy(
+        &owner,
+        BuddyUpdate {
+            buddy_id: hired.id,
+            changes: BuddyChanges {
+                manager: Some(ManagerRef::Buddy { id: "mid".into() }),
+                status: Some(BuddyStatus::Archived),
+                ..BuddyChanges::default()
+            },
+            key: "move".into(),
+        },
+    )
+    .unwrap();
     s.put_schedule(
         &ic,
         ScheduleInput {
