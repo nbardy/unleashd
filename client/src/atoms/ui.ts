@@ -1,5 +1,6 @@
 import { type DeviceUiPrefs, DeviceUiPrefsSchema, SeenMessageIndexSchema } from '@unleashd/shared';
 import { atom } from 'jotai';
+import { atomFamily } from 'jotai-family';
 import { atomWithStorage } from 'jotai/utils';
 import type { SyncStorage } from 'jotai/vanilla/utils/atomWithStorage';
 import { jotaiStore } from './store';
@@ -135,6 +136,11 @@ export const promotedWorkersAtom = atom((get) => get(prefsAtom).promotedWorkers)
 export const lastWorkingDirectoryAtom = atom((get) => get(prefsAtom).lastWorkingDirectory);
 export const lastSeenMessageIndexAtom = atom((get) => get(seenAtom));
 
+/** One conversation's seen index, so a row re-renders only when ITS index moves. */
+export const lastSeenMessageIndexAtomFamily = atomFamily((conversationId: string) =>
+  atom((get): number | undefined => get(seenAtom)[conversationId])
+);
+
 // ---------------------------------------------------------------------------
 // Actions — the only mutation surface.
 // ---------------------------------------------------------------------------
@@ -211,6 +217,7 @@ export function markConversationsSeenBulk(updates: Record<string, number>): void
 
 /** Drop the seen-index entry for a deleted conversation. */
 export function removeSeenIndex(conversationId: string): void {
+  lastSeenMessageIndexAtomFamily.remove(conversationId);
   const current = jotaiStore.get(seenAtom);
   if (!(conversationId in current)) return;
   const { [conversationId]: _removed, ...rest } = current;
@@ -226,9 +233,12 @@ export function hasUnseenMessages(
   conversationId: string,
   totalMessages: number
 ): boolean {
-  if (totalMessages === 0) return false;
-  const lastSeen = lastSeenMessageIndex[conversationId];
-  if (lastSeen === undefined) return false;
+  return hasUnseenAfter(lastSeenMessageIndex[conversationId], totalMessages);
+}
+
+/** Same rule for one conversation's index (`lastSeenMessageIndexAtomFamily`). */
+export function hasUnseenAfter(lastSeen: number | undefined, totalMessages: number): boolean {
+  if (totalMessages === 0 || lastSeen === undefined) return false;
   return lastSeen < totalMessages - 1;
 }
 

@@ -9,7 +9,7 @@ exported actions; all `jotaiStore.set` calls stay inside `client/src/atoms/`.
 | UI needs | Subscribe to |
 |---|---|
 | One server conversation | `conversationAtomFamily(id)` |
-| A sorted or filtered collection | A derived view in `atoms/conversations.ts` |
+| A sorted or filtered collection | A derived view over `conversationListAtom` in `atoms/` (ids or list entries) |
 | Conversation IDs | `allConversationIdsAtom` or a derived ID list such as `chatConversationIdsAtom` |
 | Chat response blocks, including live text | `chatMessageGroupsAtomFamily(id)` |
 | Live text for one conversation | `streamingAtomFamily(id)` |
@@ -22,48 +22,90 @@ exported actions; all `jotaiStore.set` calls stay inside `client/src/atoms/`.
 
 Never call `useAtomValue(conversationsAtom)` in a component. For lists, subscribe
 the parent to the appropriate derived ID view and have each row subscribe to its
-own conversation. Structural sharing preserves unaffected conversation objects;
-`React.memo` can then skip rows whose props and selected conversation are unchanged.
+own conversation (`conversationAtomFamily(id)`), wrapped in `React.memo` with
+stable callbacks, so an event re-renders only the row it is about. Sidebar
+(`SidebarConversationRow`) and Gallery (`GalleryCard`) are the models.
 
-Keep sorting, filtering, and grouping in derived atoms, not component `useMemo`:
+### An event costs what it changed (2026-09-25)
+
+There are ~1,200 conversations in real use, and every event (status, queue,
+message, each 5 s poller batch) used to run ~10 full-list passes and re-render
+the open Chat for whichever conversation it was about. The store is now built so
+work follows the ids an event touched:
+
+- **Per-id records.** `conversationsAtom` is a `keyedAtoms` store
+  (`atoms/structural.ts`): one primitive atom per conversation, and a write sets
+  only the ids it touched. Per-id atoms (`conversationAtomFamily`,
+  `chatMessageGroupsAtomFamily`, `childConversationsAtomFamily`, `queueAtomFamily`)
+  read their own record, never the map. Streaming text is keyed the same way.
+- **One list index.** `atoms/conversation-index.ts` keeps a
+  `ConversationListEntry` per conversation (only the fields views filter, group
+  and sort on) and one newest-first list. A write rebuilds entries for the
+  touched ids only, keeps an entry that did not change, and moves a changed one
+  by binary search. So queue, sub-agent and streaming events never touch the
+  list, and no collection view recomputes.
+- **Stable views.** Every collection view reads `conversationListAtom` and is a
+  `stableAtom(read, equals)`: when it recomputes to an equal value it hands back
+  the previous reference, so its subscribers do not re-render. Sidebar grouping
+  (`sidebarFolderViewAtom`), the gallery list, the Buddy sidebar and the running
+  counts all work like this; they used to be `useMemo` chains in the components.
+
+Add a view like this:
 
 ```ts
 // client/src/atoms/conversations.ts
-export const runningConversationIdsAtom = atom((get) =>
-  get(allConversationsAtom)
-    .filter((conversation) => conversation.isRunning)
-    .map((conversation) => conversation.id)
+export const runningConversationIdsAtom = stableAtom(
+  (get) => get(conversationListAtom).filter((entry) => entry.isRunning).map((entry) => entry.id),
+  sameItems
 );
 ```
 
-Collection atoms recompute on every message, status and queue event, over every
-conversation (1,100+ in real use), so their per-item work must be cheap:
+If a view needs a field the entry lacks, add it to `ConversationListEntry`
+(`buildEntry` and `sameEntry`). Never read `conversationsAtom` from a derived atom
+that is mounted all the time. Mobile search reads it only while a query is typed.
+Per-directory facts (`folderGroupKey`, worktree and temp checks) come from
+`directoryFacts(dir)`, which runs each regex once per distinct directory.
 
-- Sort by recency with `sortByActivityDesc` / `conversationActivityMs` from
-  `utils/time.ts`, never `getConversationLastActivity` inside a comparator. That
-  parsed two dates per comparison (~22k per sort, measured 2026-09-25); the
-  helper computes one key per conversation snapshot and caches it in a WeakMap.
+`client/test/conversation-event-isolation.test.tsx` guards this. It renders Chat
+for B, records every atom Chat reads, then drives events for A through
+`handleMessage`. It fails if any of those values changes (which would re-render
+Chat), if an atom labelled for B recomputes, or if a queue, sub-agent or stream
+event recomputes a collection view. Label new per-id atoms `name:<id>` so the
+test covers them.
+`client/bench/conversation-event.bench.ts` times one event at 1,200
+conversations (numbers in the T05 report).
+
+Other rules for per-item work:
+
 - The kind accessors (`getConversationKind`, `isBuddyConversation`,
   `getBuddyContext`) read `conversation.kind` directly; the wire schema already
   validated it. Do not re-add a zod parse on that read path
   (`client/test/buddy-builder-kind.test.ts` trips if you do).
 - A component that only needs "are there any conversations" subscribes to
-  `hasConversationsAtom`, not `allConversationsAtom` — the array is a new
-  reference on every event and re-renders the subscriber each time.
+  `hasConversationsAtom`, a boolean.
+- A component that needs a conversation only inside an event handler (the
+  gallery's message search, the sidebar's "seed from latest thread") calls
+  `readConversation(id)` from actions at that moment instead of subscribing.
 
 ## Mutations and state ownership
 
 These are separate atoms, not fields of one combined state object:
 
-- `conversationsAtom`: `Map<string, Conversation>` of server snapshots.
-- `streamingContentAtom`: `Map<string, string>` of transient live text.
+- `conversationsAtom`: server snapshots, keyed per conversation (read as a
+  `ReadonlyMap`; writing a whole map replaces everything and diffs by identity).
+- `streamingContentAtom`: transient live text, keyed per conversation.
 - `pendingCreationsAtom`: client-owned creation commands, separate from conversations.
 - `pendingConfigCommandsAtom`: pending revision-checked config writes and errors.
 - `restartRecoveryAtomFamily`: per-conversation local mirror of the accepted
   in-flight message and server queue, retained only for optional restart replay.
 
-Use [mutate](../client/src/atoms/mutate.ts) for partial collection updates inside
-atom modules; scalar or complete replacements can use `jotaiStore.set` there.
+Conversation writes go through `putConversations`, `removeConversations` and
+`updateConversation(id, recipe)` in actions.ts: an immer recipe over one
+conversation, written through `conversationPatchAtom` for that id only. Never
+`mutate()` the whole conversations map. That copied the map and invalidated
+every reader on each event. For other collections, use
+[mutate](../client/src/atoms/mutate.ts) for partial updates inside atom modules;
+scalar or complete replacements can use `jotaiStore.set` there.
 Add a separate atom for new high-frequency state and document its clearing or
 commit boundary. Do not put it into each authoritative conversation entry.
 

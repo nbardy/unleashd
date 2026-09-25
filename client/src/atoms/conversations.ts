@@ -10,11 +10,18 @@ import type {
 import { atom } from 'jotai';
 import { atomFamily } from 'jotai-family';
 import { type MessageGroup, groupChatMessages } from '../utils/chat-message-groups';
-import { normalizeFolderDirectory } from '../utils/directories';
-import { isWorktreeDirectory } from '../utils/swarmUtils';
-import { sortByActivityDesc } from '../utils/time';
 import { archivedBuddyIdsAtom } from './buddy-visibility';
+import {
+  type ConversationIndex,
+  type ConversationListEntry,
+  EMPTY_CONVERSATION_INDEX,
+  directoryFacts,
+  updateConversationIndex,
+} from './conversation-index';
+import { keyedAtoms, sameItems, sameMap, sameSet, stableAtom } from './structural';
 import { savedActiveConversationIdAtom } from './ui';
+
+export type { ConversationListEntry } from './conversation-index';
 
 // =============================================================================
 // Primary State Atoms
@@ -24,8 +31,28 @@ import { savedActiveConversationIdAtom } from './ui';
 // they never mutate these maps directly.
 // =============================================================================
 
-export const conversationsAtom = atom(new Map<string, Conversation>());
-export const conversationDetailsLoadedAtom = atom(new Set<string>());
+// The authoritative conversations. Components never subscribe to the whole
+// map (AGENTS.md); actions read it imperatively and write it through
+// `conversationsAtom` (replace everything: init, reconnect, tests) or
+// `conversationPatchAtom` (named ids). Each write sets only the per-id record
+// atoms it touched and moves the list index in the same step, so an event
+// about conversation A does no work for conversation B. Reading the map from
+// every per-id atom made all of them recompute on every event (03-app-core
+// §6.2 #7).
+const conversationIndexAtom = atom<ConversationIndex>(EMPTY_CONVERSATION_INDEX);
+
+const conversationRecords = keyedAtoms<Conversation, null>({
+  label: 'conversation',
+  absent: null,
+  onCommit: (get, set, next, changed) =>
+    set(conversationIndexAtom, updateConversationIndex(get(conversationIndexAtom), next, changed)),
+});
+
+export const conversationsAtom = conversationRecords.all;
+export const conversationPatchAtom = conversationRecords.patch;
+const conversationRecordAtomFamily = conversationRecords.byKey;
+
+export const conversationDetailsLoadedAtom = atom<ReadonlySet<string>>(new Set<string>());
 export const conversationLoadCompleteAtom = atom(false);
 
 export interface PendingConversationCreation {
@@ -61,8 +88,11 @@ export const allPendingCreationsAtom = atom((get) =>
 );
 
 // Streaming text — kept separate from conversations so Sidebar never re-renders
-// at 60Hz during streaming. Flushed into conversations on stream end.
-export const streamingContentAtom = atom(new Map<string, string>());
+// at 60Hz during streaming. Keyed per conversation: a frame of text for A
+// touches only A's atom (the plain Map form recomputed every mounted reader).
+const streamingText = keyedAtoms<string, ''>({ label: 'streaming', absent: '' });
+export const streamingContentAtom = streamingText.all;
+export const streamingPatchAtom = streamingText.patch;
 
 export const activeConversationIdAtom = atom<string | null>(null);
 export const wsStatusAtom = atom<'connecting' | 'connected' | 'disconnected'>('connecting');
@@ -77,28 +107,38 @@ export const sendFnAtom = atom<{ send: (msg: ClientMessage) => void }>({
 // =============================================================================
 // Per-Item Derived Atoms (atomFamily)
 //
-// atomFamily memoizes one atom per ID. Components subscribing via
-// useAtomValue(conversationAtomFamily(id)) only re-render when THAT conversation
-// changes — not when unrelated conversations update. This is the Jotai equivalent
-// of the Zustand per-ID selector pattern and is more principled: the dependency
-// graph is explicit and tracked automatically.
+// Each reads its own conversation's record atom, never the whole map, so it
+// recomputes only when THAT conversation changes. The debug labels
+// (`chatMessageGroups:<id>`) let the render-isolation test find every atom
+// scoped to one id (client/test/conversation-event-isolation.test.tsx).
 //
 // §5 #10 — atomFamily leaks: jotai-family memoizes per-ID atoms forever.
-// handleMessage's conversation_deleted handler calls .remove(id) on every
-// family below to free the memoized atom for long-lived (PWA) sessions.
+// handleMessage's conversation_deleted handler calls forgetConversationAtoms
+// to free them for long-lived (PWA) sessions.
 // =============================================================================
+
+function labelled<T extends { debugLabel?: string }>(value: T, label: string): T {
+  value.debugLabel = label;
+  return value;
+}
 
 // Single conversation by ID — use instead of s.conversations.get(id)
 export const conversationAtomFamily = atomFamily((id: string) =>
-  atom((get) => {
-    const conversation = get(conversationsAtom).get(id);
-    const buddyId = conversation && getBuddyContext(conversation)?.buddyId;
-    return buddyId && get(archivedBuddyIdsAtom).has(buddyId) ? null : (conversation ?? null);
-  })
+  labelled(
+    atom((get) => {
+      const conversation = get(conversationRecordAtomFamily(id));
+      const buddyId = conversation && getBuddyContext(conversation)?.buddyId;
+      return buddyId && get(archivedBuddyIdsAtom).has(buddyId) ? null : conversation;
+    }),
+    `conversationView:${id}`
+  )
 );
 
 export const conversationDetailsLoadedAtomFamily = atomFamily((id: string) =>
-  atom((get) => get(conversationDetailsLoadedAtom).has(id))
+  labelled(
+    atom((get) => get(conversationDetailsLoadedAtom).has(id)),
+    `detailsLoaded:${id}`
+  )
 );
 
 export const pendingCreationAtomFamily = atomFamily((id: string) =>
@@ -115,203 +155,251 @@ export const pendingConfigCommandAtomFamily = atomFamily((conversationId: string
 );
 
 // Live streaming text for one conversation — use for Chat.tsx merge display
-export const streamingAtomFamily = atomFamily((id: string) =>
-  atom((get) => get(streamingContentAtom).get(id) ?? '')
-);
+export const streamingAtomFamily = streamingText.byKey;
 
 const EMPTY_CHAT_GROUPS: MessageGroup[] = [];
 
 // Shared response projection; streaming content never enters the durable snapshot.
 export const chatMessageGroupsAtomFamily = atomFamily((id: string) =>
-  atom((get) => {
-    const conversation = get(conversationAtomFamily(id));
-    if (!conversation) return EMPTY_CHAT_GROUPS;
-    const streamingText = get(streamingAtomFamily(id));
-    let messages = conversation.messages;
-    const last = messages[messages.length - 1];
-    if (streamingText && last?.role === 'assistant') {
-      messages = messages.slice();
-      messages[messages.length - 1] = { ...last, content: last.content + streamingText };
-    }
-    const prefix =
-      isBuddyKind(getConversationKind(conversation)) || getBuddyContext(conversation)
-        ? null
-        : (conversation.swarmDebugPrefix ?? null);
-    return groupChatMessages(messages, prefix);
-  })
-);
-
-// Child sessions for sub-agent panel (Chat.tsx) — scoped by parent ID
-export const childConversationsAtomFamily = atomFamily((parentId: string) =>
-  atom((get) => {
-    const all = get(conversationsAtom);
-    const children: Conversation[] = [];
-    for (const conv of all.values()) {
-      if (conv.parentConversationId === parentId) children.push(conv);
-    }
-    return children.sort(
-      (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
-    );
-  })
+  labelled(
+    atom((get) => {
+      const conversation = get(conversationAtomFamily(id));
+      if (!conversation) return EMPTY_CHAT_GROUPS;
+      const streamingText = get(streamingAtomFamily(id));
+      let messages = conversation.messages;
+      const last = messages[messages.length - 1];
+      if (streamingText && last?.role === 'assistant') {
+        messages = messages.slice();
+        messages[messages.length - 1] = { ...last, content: last.content + streamingText };
+      }
+      const prefix =
+        isBuddyKind(getConversationKind(conversation)) || getBuddyContext(conversation)
+          ? null
+          : (conversation.swarmDebugPrefix ?? null);
+      return groupChatMessages(messages, prefix);
+    }),
+    `chatMessageGroups:${id}`
+  )
 );
 
 // Stable empty queue — shared reference avoids new [] on every read
 const EMPTY_QUEUE: QueuedMessage[] = [];
 
-// Queue for one conversation — derived from conversationsAtom so mobile and
-// desktop share the same authoritative server queue. No new state; this is a
-// pure view over Conversation.queue. Components subscribe via
-// useAtomValue(queueAtomFamily(id)) and get per-item cancel via
-// cancelQueuedMessage/clearQueue (atoms/actions).
+// Queue for one conversation — a pure view over Conversation.queue, so mobile
+// and desktop share the authoritative server queue. Per-item cancel goes
+// through cancelQueuedMessage/clearQueue (atoms/actions).
 export const queueAtomFamily = atomFamily((id: string) =>
-  atom((get) => get(conversationsAtom).get(id)?.queue ?? EMPTY_QUEUE)
+  labelled(
+    atom((get) => get(conversationRecordAtomFamily(id))?.queue ?? EMPTY_QUEUE),
+    `queue:${id}`
+  )
 );
 
 // =============================================================================
-// Derived Collection Atoms  (replaces derivedStore.ts entirely)
+// Derived Collection Atoms
 //
-// Pure computed views — no subscribe(), no recompute(), no seed call.
-// Jotai recomputes lazily when conversationsAtom changes. Never fires during
-// streaming (streamingContentAtom changes don't affect these).
+// All read the list index (atoms/conversation-index.ts): entries holding only
+// the fields views filter, group and sort on. The list is a new array only
+// when one of those fields changed, so message, queue, sub-agent and
+// streaming events recompute none of these. When they do recompute, each
+// hands back its previous value if its output is unchanged (`stableAtom`), so
+// a subscriber re-renders only when its own view moved.
 //
-// ADDING A NEW VIEW: add one atom below. Components subscribe via
-// useAtomValue(yourNewAtom). No other plumbing needed.
+// ADDING A NEW VIEW: read `conversationListAtom` (add a field to
+// ConversationListEntry if you need one), return ids or entries, and wrap it
+// in `stableAtom`. Rows subscribe per id through `conversationAtomFamily`.
 // =============================================================================
 
-// All conversations sorted newest-first by last activity:
-// last message timestamp when present, otherwise conversation creation time.
-export const allConversationsAtom = atom((get) => {
-  const map = get(conversationsAtom);
+/** Every visible conversation (archived Buddies excluded), newest-first. */
+export const conversationListAtom = stableAtom((get): readonly ConversationListEntry[] => {
+  const { list } = get(conversationIndexAtom);
   const archived = get(archivedBuddyIdsAtom);
-  return sortByActivityDesc(
-    Array.from(map.values()).filter((conversation) => {
-      const buddyId = getBuddyContext(conversation)?.buddyId;
-      return !buddyId || !archived.has(buddyId);
-    })
-  );
-});
+  if (archived.size === 0) return list;
+  return list.filter((entry) => !entry.buddyId || !archived.has(entry.buddyId));
+}, sameItems);
 
 // True once the conversation restore-on-load wants to reopen has hydrated. A
-// boolean, so App re-renders once rather than on every conversation event (it
-// used to subscribe to allConversationsAtom just to read `.length`, which
-// re-rendered AppInner and the whole route tree per message/status event).
+// boolean, so App re-renders once rather than on every conversation event.
 // It must track the SAVED id, not "any conversation": startup hydrates in
 // batches, and a "has any" flag flips on the first batch and never again, so a
 // saved chat arriving in a later batch was never restored (review of 984d00f).
 export const savedActiveConversationPresentAtom = atom((get) => {
   const savedId = get(savedActiveConversationIdAtom);
-  return savedId !== null && get(conversationsAtom).has(savedId);
+  return savedId !== null && get(conversationRecordAtomFamily(savedId)) !== null;
 });
 
-// Stable sorted ID list — only changes on add/delete/reorder.
+// Stable sorted ID list — a new array only on add/delete/reorder.
 // Use with atomFamily for per-item subtree pruning (see CLAUDE.md).
-export const allConversationIdsAtom = atom((get) => get(allConversationsAtom).map((c) => c.id));
+export const allConversationIdsAtom = stableAtom(
+  (get) => get(conversationListAtom).map((entry) => entry.id),
+  sameItems
+);
 
 // "Does the client still hold this conversation?" — the check every
 // open-conversation affordance makes before rendering a Link (AGENTS.md). One
-// Set for every surface instead of a `new Set(ids)` memo per component.
-export const availableConversationIdSetAtom = atom<ReadonlySet<string>>(
-  (get) => new Set(get(allConversationIdsAtom))
+// Set for every surface, and the SAME Set until membership changes: a reorder
+// used to rebuild it and re-render every subscriber (each BuddyWorkerThreadBadge).
+export const availableConversationIdSetAtom = stableAtom<ReadonlySet<string>>(
+  (get) => new Set(get(allConversationIdsAtom)),
+  sameSet
 );
 
-// Distinct real project folders, newest-first (allConversationsAtom is sorted).
-// Worktrees are excluded — they are worker scratch dirs, never a folder a human
-// would start a new conversation in. Feeds every "pick a directory" surface:
-// desktop PathAutocomplete and the mobile create sheet.
-export const recentDirectoriesAtom = atom((get) => {
+// Distinct real project folders, newest-first. Worktrees are excluded — they
+// are worker scratch dirs, never a folder a human would start a new
+// conversation in. Feeds every "pick a directory" surface: desktop
+// PathAutocomplete and the mobile create sheet.
+export const recentDirectoriesAtom = stableAtom((get) => {
   const seen = new Set<string>();
-  for (const conv of get(allConversationsAtom)) {
-    const dir = normalizeFolderDirectory(conv.workingDirectory);
-    if (!isWorktreeDirectory(dir)) seen.add(dir);
+  for (const entry of get(conversationListAtom)) {
+    const directory = directoryFacts(entry.workingDirectory);
+    if (!directory.isWorktree) seen.add(directory.folder);
   }
   return Array.from(seen);
-});
+}, sameItems);
+
+/** Working directory of the most recently active conversation, if any. */
+export const latestWorkingDirectoryAtom = atom(
+  (get) => get(conversationListAtom)[0]?.workingDirectory ?? null
+);
 
 const CHAT_INBOX_LIMIT = 50;
 
-function isTemporaryDirectory(workingDirectory: string): boolean {
-  const directory = workingDirectory.toLowerCase();
+// Swarm workers, provider-native child sessions, worktrees, and temporary
+// directories are operational noise rather than chats.
+function isUserChat(entry: ConversationListEntry): boolean {
   return (
-    directory === '/tmp' ||
-    directory.startsWith('/tmp/') ||
-    directory === '/private/tmp' ||
-    directory.startsWith('/private/tmp/') ||
-    directory === '/var/tmp' ||
-    directory.startsWith('/var/tmp/') ||
-    directory.includes('/private/var/folders/') ||
-    directory.includes('/var/folders/') ||
-    directory.includes('/temporaryitems/') ||
-    directory.includes('/temp/')
-  );
-}
-
-function isNestedWorktreeDirectory(workingDirectory: string): boolean {
-  return (
-    isWorktreeDirectory(workingDirectory) ||
-    /\/\.w[^/]+-i\d+(?:\/|$)/.test(workingDirectory) ||
-    /\/\.workers\/worker-\d+(?:\/|$)/.test(workingDirectory) ||
-    workingDirectory.includes('/.claude/worktrees/')
-  );
-}
-
-function isUserChatConversation(conversation: Conversation): boolean {
-  return (
-    conversation.placement !== 'background' &&
-    !conversation.isWorker &&
-    !conversation.parentConversationId &&
-    !isNestedWorktreeDirectory(conversation.workingDirectory) &&
-    !isTemporaryDirectory(conversation.workingDirectory)
+    entry.placement !== 'background' &&
+    !entry.isWorker &&
+    !entry.parentConversationId &&
+    !directoryFacts(entry.workingDirectory).isScratch
   );
 }
 
 export interface ChatConversationInbox {
   /** Recent conversation IDs, already ordered newest-first and capped for rendering. */
-  ids: string[];
+  ids: readonly string[];
   /** All user chat conversations before the render cap is applied. */
   total: number;
 }
 
-// User-facing chat inbox. Swarm workers, provider-native child sessions,
-// worktrees, and temporary directories are operational noise rather than chats.
-// Keep both filtering and the render cap in this derived view so mobile list
-// components retain per-ID subscriptions and never materialize thousands of rows.
-export const chatConversationInboxAtom = atom((get): ChatConversationInbox => {
-  const conversations = get(allConversationsAtom).filter(isUserChatConversation);
-  return {
-    ids: conversations.slice(0, CHAT_INBOX_LIMIT).map((conversation) => conversation.id),
-    total: conversations.length,
-  };
-});
+// User-facing chat inbox. Keep both filtering and the render cap in this
+// derived view so mobile list components retain per-ID subscriptions and never
+// materialize thousands of rows.
+export const chatConversationInboxAtom = stableAtom(
+  (get): ChatConversationInbox => {
+    const ids: string[] = [];
+    let total = 0;
+    for (const entry of get(conversationListAtom)) {
+      if (!isUserChat(entry)) continue;
+      total += 1;
+      if (ids.length < CHAT_INBOX_LIMIT) ids.push(entry.id);
+    }
+    return { ids, total };
+  },
+  (a, b) => a.total === b.total && sameItems(a.ids, b.ids)
+);
 
 export const chatConversationIdsAtom = atom((get) => get(chatConversationInboxAtom).ids);
 
-// Total count — cheaper than subscribing to allConversationsAtom for existence checks
-export const conversationCountAtom = atom((get) => get(conversationsAtom).size);
+// Desktop gallery: top-level conversations (no child whose parent is listed),
+// newest-CREATED first. The gallery used to derive
+// this in a component memo with a date parse per comparison.
+export const galleryConversationsAtom = stableAtom((get) => {
+  const listed = get(availableConversationIdSetAtom);
+  return get(conversationListAtom)
+    .filter((entry) => !(entry.parentConversationId && listed.has(entry.parentConversationId)))
+    .sort((a, b) => b.createdAtMs - a.createdAtMs);
+}, sameItems);
+
+// "Are there any conversations?" — a boolean, so subscribers re-render only
+// when it flips, not on every add/delete.
+export const hasConversationsAtom = atom((get) => get(conversationIndexAtom).byId.size > 0);
+
+// =============================================================================
+// Child sessions (sub-agent panel in Chat) — scoped by parent ID
+// =============================================================================
+
+const EMPTY_IDS: readonly string[] = [];
+
+// parent id → child ids, oldest first. Rebuilt only when the list moves; a
+// parent whose children did not change keeps the same array.
+const childIdsByParentAtom = stableAtom(
+  (get) => {
+    const children = new Map<string, ConversationListEntry[]>();
+    for (const entry of get(conversationIndexAtom).list) {
+      const parentId = entry.parentConversationId;
+      if (!parentId) continue;
+      const siblings = children.get(parentId);
+      if (siblings) siblings.push(entry);
+      else children.set(parentId, [entry]);
+    }
+    const ids = new Map<string, readonly string[]>();
+    for (const [parentId, siblings] of children) {
+      ids.set(
+        parentId,
+        siblings.sort((a, b) => a.createdAtMs - b.createdAtMs).map((entry) => entry.id)
+      );
+    }
+    return ids;
+  },
+  (a, b) => sameMap(a, b, sameItems)
+);
+
+const childIdsAtomFamily = atomFamily((parentId: string) =>
+  stableAtom((get) => get(childIdsByParentAtom).get(parentId) ?? EMPTY_IDS, sameItems)
+);
+
+const EMPTY_CONVERSATIONS: readonly Conversation[] = [];
+
+export const childConversationsAtomFamily = atomFamily((parentId: string) =>
+  labelled(
+    atom((get): readonly Conversation[] => {
+      const ids = get(childIdsAtomFamily(parentId));
+      if (ids.length === 0) return EMPTY_CONVERSATIONS;
+      return ids.flatMap((id) => get(conversationRecordAtomFamily(id)) ?? []);
+    }),
+    `childConversations:${parentId}`
+  )
+);
 
 // =============================================================================
 // Worker / Swarm Derived Atoms
 //
-// These atoms only read worker conversations from conversationsAtom. Because the
-// Map uses structural sharing (non-worker updates don't change worker entries),
-// these atoms produce the same result when only non-worker conversations change,
-// so swarm components skip re-render on unrelated conversation events.
+// Worker ids come from the list index; worker records are read per id, so
+// swarm views recompute only when a worker conversation changes.
 // =============================================================================
 
-// Workers grouped by project directory (workingDirectory stripped to project root).
-// Used by SwarmDashboard and SwarmAnalytics to build per-project views without
-// subscribing to allConversationsAtom (which sorts ALL conversations on every change).
+const workerIdsAtom = stableAtom(
+  (get) =>
+    get(conversationIndexAtom)
+      .list.filter((entry) => entry.isWorker)
+      .map((entry) => entry.id),
+  sameItems
+);
+
+// Workers grouped by raw working directory.
 export const workersByProjectAtom = atom((get) => {
-  const convs = get(conversationsAtom);
   const groups = new Map<string, Conversation[]>();
-  for (const conv of convs.values()) {
-    if (!conv.isWorker) continue;
-    const root = conv.workingDirectory ?? 'unknown';
-    let group = groups.get(root);
-    if (!group) {
-      group = [];
-      groups.set(root, group);
-    }
-    group.push(conv);
+  for (const id of get(workerIdsAtom)) {
+    const conv = get(conversationRecordAtomFamily(id));
+    if (!conv) continue;
+    const group = groups.get(conv.workingDirectory);
+    if (group) group.push(conv);
+    else groups.set(conv.workingDirectory, [conv]);
   }
   return groups;
 });
+
+/** Free every per-id atom memoized for a deleted conversation. */
+export function forgetConversationAtoms(id: string): void {
+  conversationRecords.forget(id);
+  streamingText.forget(id);
+  conversationAtomFamily.remove(id);
+  chatMessageGroupsAtomFamily.remove(id);
+  conversationDetailsLoadedAtomFamily.remove(id);
+  pendingCreationAtomFamily.remove(id);
+  pendingConfigCommandAtomFamily.remove(id);
+  childIdsAtomFamily.remove(id);
+  childConversationsAtomFamily.remove(id);
+  queueAtomFamily.remove(id);
+}

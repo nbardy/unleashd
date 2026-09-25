@@ -2,10 +2,10 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { Conversation } from '@unleashd/shared';
 import { createStore } from 'jotai';
-import { archivedBuddyIdsAtom } from '../src/atoms/buddy-visibility';
 import { buddySidebarOverviewAtom, buddySidebarProjectsAtom } from '../src/atoms/buddy-sidebar';
+import { archivedBuddyIdsAtom } from '../src/atoms/buddy-visibility';
 import {
-  allConversationsAtom,
+  allConversationIdsAtom,
   conversationAtomFamily,
   conversationsAtom,
 } from '../src/atoms/conversations';
@@ -26,7 +26,7 @@ test('archived Buddy threads stay hidden despite stale overview and later conver
   });
   store.set(archivedBuddyIdsAtom, new Set(['retired']));
   store.set(conversationsAtom, new Map([[thread.id, { ...thread, title: 'Late update' }]]));
-  assert.deepEqual(store.get(allConversationsAtom), []);
+  assert.deepEqual(store.get(allConversationIdsAtom), []);
   assert.equal(store.get(conversationAtomFamily(thread.id)), null);
   assert.deepEqual(store.get(buddySidebarProjectsAtom), []);
 });

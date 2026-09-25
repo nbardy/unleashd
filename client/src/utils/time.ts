@@ -57,7 +57,8 @@ const activityMsCache = new WeakMap<ActivitySource, number>();
  * Why it exists: recency sorts called `getConversationLastActivity` inside the
  * comparator, i.e. two `new Date(iso)` parses per comparison — ~22k parses and
  * ~50ms per sort of 1,100 conversations, re-run on every message/status/queue
- * event (measured 2026-09-25). Sort with `sortByActivityDesc` instead.
+ * event (measured 2026-09-25). The list index (atoms/conversation-index.ts)
+ * now stores this key once per changed conversation; sort on its entries.
  */
 export function conversationActivityMs(conversation: ActivitySource): number {
   const cached = activityMsCache.get(conversation);
@@ -65,14 +66,6 @@ export function conversationActivityMs(conversation: ActivitySource): number {
   const ms = getConversationLastActivity(conversation).getTime();
   activityMsCache.set(conversation, ms);
   return ms;
-}
-
-/** Newest-first by last activity; one key lookup per item (decorate-sort-undecorate). */
-export function sortByActivityDesc<T extends ActivitySource>(items: readonly T[]): T[] {
-  return items
-    .map((item) => ({ item, ms: conversationActivityMs(item) }))
-    .sort((a, b) => b.ms - a.ms)
-    .map(({ item }) => item);
 }
 
 /**

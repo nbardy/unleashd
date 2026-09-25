@@ -21,9 +21,9 @@ import {
   chatMessageGroupsAtomFamily,
   childConversationsAtomFamily,
   conversationAtomFamily,
-  conversationCountAtom,
   conversationDetailsLoadedAtomFamily,
   conversationLoadCompleteAtom,
+  hasConversationsAtom,
   pendingConfigCommandAtomFamily,
   pendingCreationAtomFamily,
   streamingAtomFamily,
@@ -112,7 +112,7 @@ export function Chat({ id }: { id: string }) {
   const configIsSaving = !!pendingConfigCommand && !pendingConfigCommand.error;
   const streamingText = useAtomValue(streamingAtomFamily(id ?? ''));
   const childSessionConversations = useAtomValue(childConversationsAtomFamily(id ?? ''));
-  const conversationCount = useAtomValue(conversationCountAtom);
+  const hasConversations = useAtomValue(hasConversationsAtom);
   const queue = conversation?.queue?.length ? conversation.queue : EMPTY_QUEUE;
   const resumedFromConversationId = conversation?.resumedFromConversationId ?? '';
   const resumedFromConversation = useAtomValue(conversationAtomFamily(resumedFromConversationId));
@@ -255,11 +255,11 @@ export function Chat({ id }: { id: string }) {
   }, [id]);
 
   useEffect(() => {
-    if (id && !conversation && !pendingCreation && conversationCount > 0) {
+    if (id && !conversation && !pendingCreation && hasConversations) {
       if (!conversationLoadComplete) return;
       navigate('/');
     }
-  }, [id, conversation, pendingCreation, conversationCount, conversationLoadComplete, navigate]);
+  }, [id, conversation, pendingCreation, hasConversations, conversationLoadComplete, navigate]);
 
   useEffect(() => {
     if (!id || !conversation || conversationDetailsLoaded) {

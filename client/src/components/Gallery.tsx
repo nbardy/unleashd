@@ -1,9 +1,15 @@
-import type { Conversation, Message } from '@unleashd/shared';
+import type { Message } from '@unleashd/shared';
 import { useAtomValue } from 'jotai';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { setConversationDone } from '../atoms/actions';
-import { allConversationsAtom, wsStatusAtom } from '../atoms/conversations';
+import {
+  type ConversationListEntry,
+  conversationAtomFamily,
+  galleryConversationsAtom,
+  hasConversationsAtom,
+  wsStatusAtom,
+} from '../atoms/conversations';
 import {
   galleryCollapsedProjectsAtom,
   galleryExpandedProjectsAtom,
@@ -40,20 +46,24 @@ function isTempDirectory(workingDirectory: string): boolean {
   );
 }
 
-// Project group interface for grouping conversations by working directory
+// Project group interface for grouping conversations by working directory.
+// Entries carry the list fields; each card subscribes to its own conversation.
 interface ProjectGroup {
   directory: string;
-  conversations: Conversation[];
+  conversations: ConversationListEntry[];
 }
 
 // Number of conversations to show per project before "Show more" button
 const CONVERSATIONS_PER_PROJECT = 10;
-const EMPTY_CONVERSATIONS: Conversation[] = [];
+const EMPTY_CONVERSATIONS: ConversationListEntry[] = [];
 
 type ProjectProjection = 'real' | 'temp' | 'worker' | 'done';
 
-function compareConversationsByCreatedAtDesc(a: Conversation, b: Conversation): number {
-  return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
+function compareConversationsByCreatedAtDesc(
+  a: ConversationListEntry,
+  b: ConversationListEntry
+): number {
+  return b.createdAtMs - a.createdAtMs;
 }
 
 interface GalleryProps {
@@ -61,11 +71,13 @@ interface GalleryProps {
 }
 
 export function Gallery({ filter }: GalleryProps = {}) {
-  const allConversations = useAtomValue(allConversationsAtom);
+  // Top-level conversations, newest-created first (atoms/conversations.ts).
+  const sortedConversations = useAtomValue(galleryConversationsAtom);
+  const hasConversations = useAtomValue(hasConversationsAtom);
   const navigate = useNavigate();
 
   // Tick every 30s to keep time-ago displays current
-  const [, setTick] = useState(0);
+  const [tick, setTick] = useState(0);
   useEffect(() => {
     const id = setInterval(() => setTick((t) => t + 1), 30_000);
     return () => clearInterval(id);
@@ -92,20 +104,8 @@ export function Gallery({ filter }: GalleryProps = {}) {
   );
   const promotedSet = useMemo(() => new Set(promotedWorkers), [promotedWorkers]);
 
-  // Filter to top-level conversations and sort by createdAt (newest first).
-  // allConversations only changes on structural events, not streaming — cheap useMemo.
-  const sortedConversations = useMemo(() => {
-    const byId = new Set(allConversations.map((conv) => conv.id));
-    const topLevel = allConversations.filter((conv) => {
-      const parentId = conv.parentConversationId;
-      return !(parentId && byId.has(parentId));
-    });
-
-    return topLevel.sort(compareConversationsByCreatedAtDesc);
-  }, [allConversations]);
-
   // Get folder from conversation
-  const getFolder = useCallback((conv: { workingDirectory: string }) => conv.workingDirectory, []);
+  const getFolder = useCallback((conv: ConversationListEntry) => conv.workingDirectory, []);
 
   // Format folder for display (shorten home directory)
   const formatFolder = useCallback((folder: string) => {
@@ -141,7 +141,7 @@ export function Gallery({ filter }: GalleryProps = {}) {
       const dir = conv.workingDirectory;
       if (!folderRecency.has(dir)) {
         // First encounter is the newest since sortedConversations is newest-first
-        folderRecency.set(dir, new Date(conv.createdAt).getTime());
+        folderRecency.set(dir, conv.createdAtMs);
       }
     }
 
@@ -166,13 +166,13 @@ export function Gallery({ filter }: GalleryProps = {}) {
     doneTempGroups,
     doneWorkerGroups,
   } = useMemo(() => {
-    const realGroups = new Map<string, Conversation[]>();
-    const tempGroupsMap = new Map<string, Conversation[]>();
-    const doneGroupsMap = new Map<string, Conversation[]>();
-    const workerGroupsMap = new Map<string, Conversation[]>();
-    const doneRealGroupsMap = new Map<string, Conversation[]>();
-    const doneTempGroupsMap = new Map<string, Conversation[]>();
-    const doneWorkerGroupsMap = new Map<string, Conversation[]>();
+    const realGroups = new Map<string, ConversationListEntry[]>();
+    const tempGroupsMap = new Map<string, ConversationListEntry[]>();
+    const doneGroupsMap = new Map<string, ConversationListEntry[]>();
+    const workerGroupsMap = new Map<string, ConversationListEntry[]>();
+    const doneRealGroupsMap = new Map<string, ConversationListEntry[]>();
+    const doneTempGroupsMap = new Map<string, ConversationListEntry[]>();
+    const doneWorkerGroupsMap = new Map<string, ConversationListEntry[]>();
 
     // Group by working directory, separating done → worker → temp → real
     for (const conv of filtered) {
@@ -204,7 +204,7 @@ export function Gallery({ filter }: GalleryProps = {}) {
     }
 
     // Convert to array of ProjectGroup objects
-    const toGroupArray = (groups: Map<string, Conversation[]>): ProjectGroup[] => {
+    const toGroupArray = (groups: Map<string, ConversationListEntry[]>): ProjectGroup[] => {
       const groupArray: ProjectGroup[] = Array.from(groups.entries()).map(([directory, convs]) => ({
         directory,
         conversations: convs,
@@ -251,6 +251,10 @@ export function Gallery({ filter }: GalleryProps = {}) {
   }, [filtered, promotedSet]);
 
   const isDoneView = filter === 'done';
+  const sortedConversationIds = useMemo(
+    () => sortedConversations.map((conv) => conv.id),
+    [sortedConversations]
+  );
   const isWorkersView = filter === 'workers';
 
   const getSectionKey = useCallback(
@@ -284,97 +288,7 @@ export function Gallery({ filter }: GalleryProps = {}) {
     [doneRealGroups, doneTempGroups, doneWorkerGroups]
   );
 
-  const renderConversationCard = useCallback(
-    (conv: Conversation, showWorkerBadge = false) => {
-      const isDoneConversation = conv.done;
-      const state = conv.isRunning ? 'running' : 'idle';
-      const accentColor = getProjectColor(conv.workingDirectory);
-      const cardClassName = [
-        'gallery-card',
-        isDoneConversation && !isDoneView ? 'done-card' : '',
-        showWorkerBadge && !isWorkersView && !isDoneConversation ? 'worker-card' : '',
-      ]
-        .filter(Boolean)
-        .join(' ');
-
-      const getStateLabel = () => {
-        if (state === 'running') return 'Running';
-        const lastTime = getLastMessageTime(conv.messages);
-        return lastTime ? `Idle · ${formatTimeAgo(lastTime)}` : 'Idle';
-      };
-
-      return (
-        <div
-          key={conv.id}
-          className={cardClassName}
-          onClick={() => navigate(`/chat/${conv.id}`)}
-          style={{ borderTopColor: accentColor }}
-        >
-          <div className="gallery-card-header">
-            <div className="gallery-card-id">
-              {conv.id.substring(0, 8)}
-              {showWorkerBadge ? (
-                <span className="provider-badge provider-worker">worker</span>
-              ) : (
-                <span className={`provider-badge provider-${conv.provider || 'claude'}`}>
-                  {conv.provider || 'claude'}
-                </span>
-              )}
-            </div>
-            <div className="gallery-card-status">
-              {isDoneConversation ? (
-                <button
-                  type="button"
-                  className="undo-done-btn"
-                  disabled={!connected}
-                  title={connected ? undefined : 'Reconnecting to the server'}
-                  onClick={(e) => {
-                    // Restore opens the thread as well as un-marking it. Un-marking
-                    // alone makes the card vanish from the Done view with no visible
-                    // destination, which reads as "Restore did nothing".
-                    e.stopPropagation();
-                    setConversationDone(conv.id, false);
-                    navigate(`/chat/${conv.id}`);
-                  }}
-                >
-                  Restore
-                </button>
-              ) : showWorkerBadge ? (
-                <button
-                  type="button"
-                  className="promote-worker-btn"
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    promoteWorker(conv.id);
-                  }}
-                >
-                  Promote
-                </button>
-              ) : null}
-              <div className={`state-badge state-${state}`}>
-                <div className="state-indicator" />
-                <span className="state-label">{getStateLabel()}</span>
-              </div>
-            </div>
-          </div>
-          <div>{conv.messageCount ?? conv.messages.length} messages</div>
-          <div className="gallery-messages">
-            {conv.messages.length === 0 ? (
-              <div className="empty-state">No messages yet</div>
-            ) : (
-              conv.messages.slice(-3).map((msg: Message, i: number) => (
-                <div key={i} className={`gallery-message ${msg.role}`}>
-                  <strong>{msg.role}:</strong> {msg.content.substring(0, 100)}
-                  {msg.content.length > 100 ? '...' : ''}
-                </div>
-              ))
-            )}
-          </div>
-        </div>
-      );
-    },
-    [connected, isDoneView, isWorkersView, navigate]
-  );
+  const openConversation = useCallback((id: string) => navigate(`/chat/${id}`), [navigate]);
 
   const renderProjectSection = useCallback(
     ({
@@ -460,7 +374,18 @@ export function Gallery({ filter }: GalleryProps = {}) {
           {!isCollapsed && (
             <>
               <div className="project-grid">
-                {visibleConversations.map((conv) => renderConversationCard(conv, showWorkerBadge))}
+                {visibleConversations.map((conv) => (
+                  <GalleryCard
+                    key={conv.id}
+                    id={conv.id}
+                    showWorkerBadge={showWorkerBadge}
+                    isDoneView={isDoneView}
+                    isWorkersView={isWorkersView}
+                    connected={connected}
+                    onOpen={openConversation}
+                    tick={tick}
+                  />
+                ))}
               </div>
 
               {showMoreButton && (
@@ -499,13 +424,17 @@ export function Gallery({ filter }: GalleryProps = {}) {
       formatFolder,
       getDoneConversationsForSection,
       getSectionKey,
-      renderConversationCard,
       showDoneBySection,
       toggleSectionDoneVisibility,
+      isDoneView,
+      isWorkersView,
+      connected,
+      openConversation,
+      tick,
     ]
   );
 
-  if (allConversations.length === 0) {
+  if (!hasConversations) {
     return (
       <div className="gallery-view">
         <div className="empty-state">
@@ -570,8 +499,8 @@ export function Gallery({ filter }: GalleryProps = {}) {
           onToggle={toggle}
           onClear={clear}
           formatFolder={formatFolder}
-          conversations={sortedConversations}
-          onSelectConversation={(id) => navigate(`/chat/${id}`)}
+          conversationIds={sortedConversationIds}
+          onSelectConversation={openConversation}
         />
       )}
       <div className="gallery-content">
@@ -677,3 +606,113 @@ export function Gallery({ filter }: GalleryProps = {}) {
     </div>
   );
 }
+
+/**
+ * One gallery card. Subscribes to its own conversation (for messages, provider
+ * and state) and is memoized, so an event for another conversation re-renders
+ * nothing here. `tick` only forces the 30 s time-ago refresh.
+ */
+const GalleryCard = memo(function GalleryCard({
+  id,
+  showWorkerBadge,
+  isDoneView,
+  isWorkersView,
+  connected,
+  onOpen,
+}: {
+  id: string;
+  showWorkerBadge: boolean;
+  isDoneView: boolean;
+  isWorkersView: boolean;
+  connected: boolean;
+  onOpen: (id: string) => void;
+  tick: number;
+}) {
+  const conv = useAtomValue(conversationAtomFamily(id));
+  if (!conv) return null;
+  const isDoneConversation = conv.done;
+  const state = conv.isRunning ? 'running' : 'idle';
+  const accentColor = getProjectColor(conv.workingDirectory);
+  const cardClassName = [
+    'gallery-card',
+    isDoneConversation && !isDoneView ? 'done-card' : '',
+    showWorkerBadge && !isWorkersView && !isDoneConversation ? 'worker-card' : '',
+  ]
+    .filter(Boolean)
+    .join(' ');
+
+  const getStateLabel = () => {
+    if (state === 'running') return 'Running';
+    const lastTime = getLastMessageTime(conv.messages);
+    return lastTime ? `Idle · ${formatTimeAgo(lastTime)}` : 'Idle';
+  };
+
+  return (
+    <div
+      className={cardClassName}
+      onClick={() => onOpen(conv.id)}
+      style={{ borderTopColor: accentColor }}
+    >
+      <div className="gallery-card-header">
+        <div className="gallery-card-id">
+          {conv.id.substring(0, 8)}
+          {showWorkerBadge ? (
+            <span className="provider-badge provider-worker">worker</span>
+          ) : (
+            <span className={`provider-badge provider-${conv.provider || 'claude'}`}>
+              {conv.provider || 'claude'}
+            </span>
+          )}
+        </div>
+        <div className="gallery-card-status">
+          {isDoneConversation ? (
+            <button
+              type="button"
+              className="undo-done-btn"
+              disabled={!connected}
+              title={connected ? undefined : 'Reconnecting to the server'}
+              onClick={(e) => {
+                // Restore opens the thread as well as un-marking it. Un-marking
+                // alone makes the card vanish from the Done view with no visible
+                // destination, which reads as "Restore did nothing".
+                e.stopPropagation();
+                setConversationDone(conv.id, false);
+                onOpen(conv.id);
+              }}
+            >
+              Restore
+            </button>
+          ) : showWorkerBadge ? (
+            <button
+              type="button"
+              className="promote-worker-btn"
+              onClick={(e) => {
+                e.stopPropagation();
+                promoteWorker(conv.id);
+              }}
+            >
+              Promote
+            </button>
+          ) : null}
+          <div className={`state-badge state-${state}`}>
+            <div className="state-indicator" />
+            <span className="state-label">{getStateLabel()}</span>
+          </div>
+        </div>
+      </div>
+      <div>{conv.messageCount ?? conv.messages.length} messages</div>
+      <div className="gallery-messages">
+        {conv.messages.length === 0 ? (
+          <div className="empty-state">No messages yet</div>
+        ) : (
+          conv.messages.slice(-3).map((msg: Message, i: number) => (
+            <div key={i} className={`gallery-message ${msg.role}`}>
+              <strong>{msg.role}:</strong> {msg.content.substring(0, 100)}
+              {msg.content.length > 100 ? '...' : ''}
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  );
+});

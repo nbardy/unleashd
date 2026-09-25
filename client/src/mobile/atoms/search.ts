@@ -1,5 +1,5 @@
 import { atom } from 'jotai';
-import { allConversationsAtom } from '../../atoms/conversations';
+import { allConversationIdsAtom, conversationsAtom } from '../../atoms/conversations';
 import { fuzzyMatch } from '../../utils/fuzzyMatch';
 
 // =============================================================================
@@ -10,18 +10,21 @@ export type MobileSearchState = { kind: 'idle' } | { kind: 'searching'; query: s
 
 export const mobileSearchStateAtom = atom<MobileSearchState>({ kind: 'idle' });
 
-// Derived: filtered conversation list. If idle → full sorted list, else
-// filter via fuzzyMatch over workingDirectory + last-message preview/id.
+// Derived: matching conversation ids, newest-first. Idle → every id (rows
+// subscribe per id). Searching → fuzzyMatch over workingDirectory + id +
+// last-message preview. Only a live query reads full records, so an idle
+// search page does no work on conversation events.
 // Conversation has no title field.
-export const mobileSearchResultsAtom = atom((get) => {
+export const mobileSearchResultsAtom = atom((get): readonly string[] => {
   const state = get(mobileSearchStateAtom);
-  const all = get(allConversationsAtom);
-  if (state.kind === 'idle') return all;
+  const ids = get(allConversationIdsAtom);
+  if (state.kind === 'idle' || state.query.length === 0) return ids;
 
   const query = state.query;
-  if (query.length === 0) return all;
-
-  return all.filter((conv) => {
+  const conversations = get(conversationsAtom);
+  return ids.filter((id) => {
+    const conv = conversations.get(id);
+    if (!conv) return false;
     // Try workingDirectory
     if (fuzzyMatch(query, conv.workingDirectory) !== null) return true;
     // Try conversation id

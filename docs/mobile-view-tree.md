@@ -38,8 +38,8 @@ export function useDeviceKind(): DeviceKind { /* sticky per page load */ }
 export type MobileSearchState = { kind: 'idle' } | { kind: 'searching'; query: string };
 export const mobileSearchStateAtom = atom<MobileSearchState>({ kind: 'idle' });
 export const mobileSearchResultsAtom = atom((get) => get(mobileSearchStateAtom).kind === 'idle'
-  ? get(allConversationsAtom)
-  : filter(allConversationsAtom, query) /* via utils/fuzzyMatch */);
+  ? get(allConversationIdsAtom)
+  : filter(allConversationIdsAtom, query) /* via utils/fuzzyMatch; rows subscribe per id */);
 ```
 
 `T2`: `MobileSearchState` sum type, never `atom<string>('')` sentinel. `mobile/atoms/search.ts → atoms/conversations.ts` is allowed; core never imports mobile.

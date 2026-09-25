@@ -1,26 +1,21 @@
 import type { ClientMessage, Conversation, ServerMessage } from '@unleashd/shared';
 import { ConversationSchema, getBuddyContext } from '@unleashd/shared';
-import { enableMapSet, produce } from 'immer';
+import { type Draft, enableMapSet, produce } from 'immer';
 import { newId } from '../utils/ids';
 import { archivedBuddyIdsAtom, hideArchivedBuddy } from './buddy-visibility';
 import {
   activeConversationIdAtom,
-  chatMessageGroupsAtomFamily,
-  childConversationsAtomFamily,
-  conversationAtomFamily,
   conversationDetailsLoadedAtom,
-  conversationDetailsLoadedAtomFamily,
   conversationLoadCompleteAtom,
+  conversationPatchAtom,
   conversationsAtom,
   defaultCwdAtom,
-  pendingConfigCommandAtomFamily,
+  forgetConversationAtoms,
   pendingConfigCommandsAtom,
-  pendingCreationAtomFamily,
   pendingCreationsAtom,
-  queueAtomFamily,
   sendFnAtom,
-  streamingAtomFamily,
   streamingContentAtom,
+  streamingPatchAtom,
   wsStatusAtom,
 } from './conversations';
 import { applyStableSnapshot } from './detail-loader';
@@ -83,13 +78,51 @@ function rejectPendingMessageCommands(error: Error): void {
   pendingMessageCommands.clear();
 }
 
+// Writes only when an id is new to the set. Every conversation_updated marks
+// its conversation loaded; copying the whole set each time also re-ran every
+// mounted conversationDetailsLoadedAtomFamily reader.
 function markConversationDetailsLoaded(ids: Iterable<string>): void {
-  const next = new Set(jotaiStore.get(conversationDetailsLoadedAtom));
+  const current = jotaiStore.get(conversationDetailsLoadedAtom);
+  let next: Set<string> | null = null;
   for (const id of ids) {
-    next.add(id);
     staleDetailIds.delete(id);
+    if (current.has(id)) continue;
+    next ??= new Set(current);
+    next.add(id);
   }
-  jotaiStore.set(conversationDetailsLoadedAtom, next);
+  if (next) jotaiStore.set(conversationDetailsLoadedAtom, next);
+}
+
+// =============================================================================
+// Conversation writes. Each names the ids it touches, so the per-id record
+// atoms and the list index update for those ids only (atoms/conversations.ts).
+// Use these instead of mutate() on the whole map.
+// =============================================================================
+
+function putConversations(conversations: readonly Conversation[]): void {
+  if (conversations.length === 0) return;
+  jotaiStore.set(conversationPatchAtom, {
+    set: conversations.map((conversation) => [conversation.id, conversation] as const),
+    remove: [],
+  });
+}
+
+function removeConversations(ids: readonly string[]): void {
+  if (ids.length === 0) return;
+  jotaiStore.set(conversationPatchAtom, { set: [], remove: ids });
+}
+
+/** Immer recipe over ONE conversation; a recipe that changes nothing writes nothing. */
+function updateConversation(id: string, recipe: (draft: Draft<Conversation>) => void): void {
+  const existing = jotaiStore.get(conversationsAtom).get(id);
+  if (!existing) return;
+  const next = produce(existing, recipe);
+  if (next !== existing) putConversations([next]);
+}
+
+/** Snapshot read for event handlers in components (never a subscription). */
+export function readConversation(id: string): Conversation | null {
+  return jotaiStore.get(conversationsAtom).get(id) ?? null;
 }
 
 // Loaded histories that a summary says have moved on since they were fetched.
@@ -113,14 +146,13 @@ function refreshIfStale(id: string): void {
  * to and keeps this boundary readable at call sites.
  */
 function replaceConversationSnapshot(snapshot: Conversation): void {
-  const conversations = jotaiStore.get(conversationsAtom);
-  const existing = conversations.get(snapshot.id);
-  const next = new Map(conversations);
-  next.set(snapshot.id, {
-    ...snapshot,
-    swarmDebugPrefix: snapshot.swarmDebugPrefix ?? existing?.swarmDebugPrefix ?? null,
-  });
-  jotaiStore.set(conversationsAtom, next);
+  const existing = jotaiStore.get(conversationsAtom).get(snapshot.id);
+  putConversations([
+    {
+      ...snapshot,
+      swarmDebugPrefix: snapshot.swarmDebugPrefix ?? existing?.swarmDebugPrefix ?? null,
+    },
+  ]);
 }
 
 export function loadConversationDetails(conversationId: string): Promise<void> {
@@ -168,24 +200,21 @@ function flushChunkBuffer(): void {
   const pending = new Map(chunkBuffer);
   chunkBuffer.clear();
 
-  // Write to streamingContentAtom only — never to conversationsAtom.
-  // Sidebar/Gallery subscribe to allConversationsAtom (derived from conversationsAtom)
-  // and therefore never see chunk updates. Chat.tsx merges streamingContent at render time.
+  // Write to streamingContentAtom only — never to conversationsAtom, so the
+  // list views never see chunk updates. Chat merges the streaming text into
+  // its message groups (chatMessageGroupsAtomFamily).
   const conversations = jotaiStore.get(conversationsAtom);
-  const next = produce(jotaiStore.get(streamingContentAtom), (draft) => {
-    for (const [id, text] of pending) {
-      const conv = conversations.get(id);
-      if (!conv || conv.messages.length === 0) continue;
-      const lastMsg = conv.messages[conv.messages.length - 1];
-      if (lastMsg.role !== 'assistant') continue;
-      draft.set(id, (draft.get(id) ?? '') + text);
-    }
-  });
-
-  // Only notify if something actually changed
-  if (next !== jotaiStore.get(streamingContentAtom)) {
-    jotaiStore.set(streamingContentAtom, next);
+  const streaming = jotaiStore.get(streamingContentAtom);
+  const updates: Array<readonly [string, string]> = [];
+  for (const [id, text] of pending) {
+    const conv = conversations.get(id);
+    if (!conv || conv.messages.length === 0) continue;
+    const lastMsg = conv.messages[conv.messages.length - 1];
+    if (lastMsg.role !== 'assistant') continue;
+    updates.push([id, (streaming.get(id) ?? '') + text]);
   }
+  // Writes only the streaming conversations' own atoms.
+  if (updates.length > 0) jotaiStore.set(streamingPatchAtom, { set: updates, remove: [] });
 }
 
 function scheduleChunkFlush(): void {
@@ -441,10 +470,8 @@ function handleCommandAccepted(data: Extract<ServerMessage, { type: 'command_acc
 }
 
 function handleSessionBound(data: Extract<ServerMessage, { type: 'session_bound' }>): void {
-  console.log(`[WS] session_bound: UI ${data.conversationId} -> CLI ${data.sessionId}`);
-  mutate(conversationsAtom, (draft) => {
-    const conv = draft.get(data.conversationId);
-    if (conv) conv.sessionId = data.sessionId;
+  updateConversation(data.conversationId, (conv) => {
+    conv.sessionId = data.sessionId;
   });
 }
 
@@ -454,13 +481,14 @@ function handleConversationDeleted(
   // Read before the delete: the Buddy views that cache this conversation can
   // only be identified while the record is still here.
   const deleted = jotaiStore.get(conversationsAtom).get(data.conversationId);
-  mutate(conversationsAtom, (draft) => {
-    draft.delete(data.conversationId);
-  });
+  removeConversations([data.conversationId]);
   if (deleted && getBuddyContext(deleted)) invalidateBuddyResources();
-  const loadedDetails = new Set(jotaiStore.get(conversationDetailsLoadedAtom));
-  loadedDetails.delete(data.conversationId);
-  jotaiStore.set(conversationDetailsLoadedAtom, loadedDetails);
+  const loadedDetails = jotaiStore.get(conversationDetailsLoadedAtom);
+  if (loadedDetails.has(data.conversationId)) {
+    const next = new Set(loadedDetails);
+    next.delete(data.conversationId);
+    jotaiStore.set(conversationDetailsLoadedAtom, next);
+  }
   const currentActive = jotaiStore.get(activeConversationIdAtom);
   if (currentActive === data.conversationId) {
     jotaiStore.set(activeConversationIdAtom, null);
@@ -476,32 +504,17 @@ function handleConversationDeleted(
   removeSeenIndex(data.conversationId);
   // §5 #10 — atomFamily memoizes per-ID atoms forever; deleted conversations
   // leak one atom per family. Remove all families keyed by this id.
-  conversationAtomFamily.remove(data.conversationId);
-  streamingAtomFamily.remove(data.conversationId);
-  chatMessageGroupsAtomFamily.remove(data.conversationId);
-  conversationDetailsLoadedAtomFamily.remove(data.conversationId);
-  pendingCreationAtomFamily.remove(data.conversationId);
-  pendingConfigCommandAtomFamily.remove(data.conversationId);
-  childConversationsAtomFamily.remove(data.conversationId);
-  queueAtomFamily.remove(data.conversationId);
+  forgetConversationAtoms(data.conversationId);
 }
 
 function handleMessageEvent(data: Extract<ServerMessage, { type: 'message' }>): void {
-  console.log(`[WS] message event: role=${data.role}, content="${data.content.substring(0, 50)}"`);
   let newMessageIndex: number | null = null;
 
-  mutate(conversationsAtom, (draft) => {
-    const conv = draft.get(data.conversationId);
-    if (!conv) return;
-
+  updateConversation(data.conversationId, (conv) => {
     const lastMsg = conv.messages[conv.messages.length - 1];
-    if (data.role === 'assistant' && lastMsg?.role === 'assistant') {
-      console.log('[WS] Skipping duplicate assistant message');
-      return;
-    }
-
+    // A duplicate assistant record; the live one is already growing.
+    if (data.role === 'assistant' && lastMsg?.role === 'assistant') return;
     newMessageIndex = conv.messages.length;
-    console.log(`[WS] Adding message #${newMessageIndex + 1} (role=${data.role})`);
     conv.messages.push({ role: data.role, content: data.content, timestamp: new Date() });
   });
 
@@ -531,22 +544,15 @@ function handleStatus(data: Extract<ServerMessage, { type: 'status' }>): void {
     flushChunkBuffer();
   }
 
-  const streamingContent = jotaiStore.get(streamingContentAtom);
-
-  mutate(conversationsAtom, (draft) => {
-    const c = draft.get(data.conversationId);
-    if (c) {
-      c.isRunning = data.isRunning;
-      c.isStreaming = data.isStreaming;
-    }
+  updateConversation(data.conversationId, (c) => {
+    c.isRunning = data.isRunning;
+    c.isStreaming = data.isStreaming;
   });
 
   // If streaming stopped, nuke the transient streaming buffer.
   // The committed truth will come via conversations_updated.
-  if (!data.isStreaming && streamingContent.has(data.conversationId)) {
-    mutate(streamingContentAtom, (draft) => {
-      draft.delete(data.conversationId);
-    });
+  if (!data.isStreaming) {
+    jotaiStore.set(streamingPatchAtom, { set: [], remove: [data.conversationId] });
   }
 }
 
@@ -573,7 +579,6 @@ function handleMessageComplete(data: Extract<ServerMessage, { type: 'message_com
 function handleConversationsUpdated(
   data: Extract<ServerMessage, { type: 'conversations_updated' }>
 ): void {
-  console.log(`[WS] conversations_updated: ${data.conversations.length} changed`);
   const loadedDetails = jotaiStore.get(conversationDetailsLoadedAtom);
   // A summary keeps the loaded history, so one reporting a different message
   // count means that history is stale. The disk poller sends only summaries
@@ -591,22 +596,23 @@ function handleConversationsUpdated(
         );
       })
     : [];
-  mutate(conversationsAtom, (draft) => {
-    for (const conv of data.conversations) {
+  const current = jotaiStore.get(conversationsAtom);
+  putConversations(
+    data.conversations.map((conv) => {
       // Preserve client-only swarmDebugPrefix — the disk poller doesn't
       // persist it, so the server sends null. Without this merge the
       // prefix vanishes after every poll cycle.
-      const existing = draft.get(conv.id);
-      draft.set(conv.id, {
+      const existing = current.get(conv.id);
+      return {
         ...conv,
         messages:
           data.summaries && existing && loadedDetails.has(conv.id)
             ? existing.messages
             : conv.messages,
         swarmDebugPrefix: conv.swarmDebugPrefix ?? existing?.swarmDebugPrefix ?? null,
-      });
-    }
-  });
+      };
+    })
+  );
   if (!data.summaries) {
     markConversationDetailsLoaded(data.conversations.map((conversation) => conversation.id));
   }
@@ -636,42 +642,28 @@ function handleConversationLoadComplete(
 ): void {
   if (data.conversationIds) {
     const authoritativeIds = new Set(data.conversationIds);
-    mutate(conversationsAtom, (draft) => {
-      for (const id of draft.keys()) {
-        if (!authoritativeIds.has(id)) draft.delete(id);
-      }
-    });
+    removeConversations(
+      Array.from(jotaiStore.get(conversationsAtom).keys()).filter((id) => !authoritativeIds.has(id))
+    );
   }
   jotaiStore.set(conversationLoadCompleteAtom, true);
 }
 
 function handleQueueUpdated(data: Extract<ServerMessage, { type: 'queue_updated' }>): void {
   captureRestartRecoveryQueue(data.conversationId, data.queue);
-  mutate(conversationsAtom, (draft) => {
-    const conv = draft.get(data.conversationId);
-    if (conv) conv.queue = data.queue;
+  updateConversation(data.conversationId, (conv) => {
+    conv.queue = data.queue;
   });
 }
 
 function handleSubagentStart(data: Extract<ServerMessage, { type: 'subagent_start' }>): void {
-  console.log(
-    `[WS] subagent_start: ${data.subAgent.id.substring(0, 8)} - "${data.subAgent.description.substring(0, 30)}"`
-  );
-  mutate(conversationsAtom, (draft) => {
-    const conv = draft.get(data.conversationId);
-    if (conv) {
-      conv.subAgents = [...conv.subAgents, data.subAgent].slice(-10);
-    }
+  updateConversation(data.conversationId, (conv) => {
+    conv.subAgents = [...conv.subAgents, data.subAgent].slice(-10);
   });
 }
 
 function handleSubagentUpdate(data: Extract<ServerMessage, { type: 'subagent_update' }>): void {
-  console.log(
-    `[WS] subagent_update: ${data.subAgentId.substring(0, 8)} - action: ${data.currentAction || 'none'}`
-  );
-  mutate(conversationsAtom, (draft) => {
-    const conv = draft.get(data.conversationId);
-    if (!conv) return;
+  updateConversation(data.conversationId, (conv) => {
     const agent = conv.subAgents.find((a) => a.id === data.subAgentId);
     if (!agent) return;
     if (data.toolUses !== undefined) agent.toolUses = data.toolUses;
@@ -684,12 +676,7 @@ function handleSubagentUpdate(data: Extract<ServerMessage, { type: 'subagent_upd
 }
 
 function handleSubagentComplete(data: Extract<ServerMessage, { type: 'subagent_complete' }>): void {
-  console.log(
-    `[WS] subagent_complete: ${data.subAgentId.substring(0, 8)} - status: ${data.status}`
-  );
-  mutate(conversationsAtom, (draft) => {
-    const conv = draft.get(data.conversationId);
-    if (!conv) return;
+  updateConversation(data.conversationId, (conv) => {
     const agent = conv.subAgents.find((a) => a.id === data.subAgentId);
     if (!agent) return;
     agent.status = data.status;

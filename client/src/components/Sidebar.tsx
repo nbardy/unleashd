@@ -5,9 +5,9 @@ import {
   isBuddyConversation,
 } from '@unleashd/shared';
 import { useAtom, useAtomValue } from 'jotai';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { createConversation, setConversationDone } from '../atoms/actions';
+import { createConversation, readConversation, setConversationDone } from '../atoms/actions';
 import {
   type BuddySidebarItemData,
   buddyBuilderConversationsAtom,
@@ -15,28 +15,29 @@ import {
   buddySidebarCountAtom,
   buddySidebarGroupsAtom,
   buddySidebarOverviewAtom,
+  sidebarFolderViewAtom,
   sidebarRunningCountByFolderAtom,
 } from '../atoms/buddy-sidebar';
 import {
   activeConversationIdAtom,
-  allConversationsAtom,
   allPendingCreationsAtom,
+  conversationAtomFamily,
   defaultCwdAtom,
+  latestWorkingDirectoryAtom,
   recentDirectoriesAtom,
   wsStatusAtom,
 } from '../atoms/conversations';
 import {
   galleryCollapsedProjectsAtom,
-  hasUnseenMessages,
-  lastSeenMessageIndexAtom,
+  hasUnseenAfter,
+  lastSeenMessageIndexAtomFamily,
   lastWorkingDirectoryAtom,
-  promotedWorkersAtom,
   setLastWorkingDirectory,
   toggleGalleryCollapsed,
 } from '../atoms/ui';
 import { useBuddyOverview } from '../hooks/useBuddyData';
 import { useProviderCatalog } from '../hooks/useProviderCatalog';
-import { folderGroupKey, normalizeFolderDirectory } from '../utils/directories';
+import { normalizeFolderDirectory } from '../utils/directories';
 import { getProjectColor } from '../utils/projectColors';
 import { formatTimeAgo, getConversationLastActivity, getMinutesElapsed } from '../utils/time';
 import { ConversationConfigPicker } from './ConversationConfigPicker';
@@ -49,8 +50,6 @@ import { ownerUnreadTotal, useOwnerUnread } from './buddies/channel-data';
 import { createBuddyViaBuilder } from './buddies/create-buddy-builder';
 import { getConversationTitle } from './conversation-title';
 import './Sidebar.css';
-
-const RECENT_CUTOFF_MS = 7 * 24 * 60 * 60 * 1000;
 
 function SidebarFolderIcon() {
   return (
@@ -90,12 +89,6 @@ function SidebarBuddyIcon() {
   );
 }
 
-interface FolderGroup {
-  directory: string;
-  conversations: Conversation[];
-  lastMessageTime: number;
-}
-
 /**
  * Exponential decay for time-ago text brightness.
  * Recent ("just now") = near-white, older = fades toward muted grey.
@@ -110,88 +103,24 @@ function timeAgoColor(minutesElapsed: number): string {
 }
 
 export function Sidebar() {
-  const allConversations = useAtomValue(allConversationsAtom);
+  const latestWorkingDirectory = useAtomValue(latestWorkingDirectoryAtom);
+  const { recent: recentGroups, olderIds } = useAtomValue(sidebarFolderViewAtom);
   const pendingCreations = useAtomValue(allPendingCreationsAtom);
   const activeConversationId = useAtomValue(activeConversationIdAtom);
   const defaultCwd = useAtomValue(defaultCwdAtom);
   const wsStatus = useAtomValue(wsStatusAtom);
 
   const lastWorkingDirectory = useAtomValue(lastWorkingDirectoryAtom);
-  const lastSeenMessageIndex = useAtomValue(lastSeenMessageIndexAtom);
-  const promotedWorkers = useAtomValue(promotedWorkersAtom);
   const galleryCollapsedProjects = useAtomValue(galleryCollapsedProjectsAtom);
 
   // Tick every 30s to keep time-ago displays current
-  const [, setTick] = useState(0);
+  const [tick, setTick] = useState(0);
   useEffect(() => {
     const id = setInterval(() => setTick((t) => t + 1), 30_000);
     return () => clearInterval(id);
   }, []);
 
-  const promotedSet = useMemo(() => new Set(promotedWorkers), [promotedWorkers]);
-  // allConversations is already sorted newest-first by allConversationsAtom
-  // Done conversations stay in the list for stable sort order — filtered at render time.
-  // This prevents group/item order thrashing when marking conversations done.
-  const visibleConversations = useMemo(
-    () =>
-      allConversations.filter(
-        (conv) =>
-          // Hide workers unless promoted to main view — they belong in the Swarm UI.
-          !(conv.isWorker && !promotedSet.has(conv.id)) &&
-          // Buddy conversations live in the virtual Buddies recent-project group.
-          !isBuddyConversation(conv) &&
-          // Builder threads live in their own Buddy Builder folder below.
-          !isBuddyBuilderConversation(conv)
-      ),
-    [allConversations, promotedSet]
-  );
-
-  const conversationIds = useMemo(
-    () => new Set(allConversations.map((c) => c.id)),
-    [allConversations]
-  );
-
-  const topLevelConversations = useMemo(
-    () =>
-      visibleConversations.filter(
-        (conv) => !(conv.parentConversationId && conversationIds.has(conv.parentConversationId))
-      ),
-    [visibleConversations, conversationIds]
-  );
   const builderConversations = useAtomValue(buddyBuilderConversationsAtom);
-  // Grouped view: split conversations into recent (48h, by folder) + older (flat)
-  const { recentGroups, olderConversations } = useMemo(() => {
-    const now = Date.now();
-    const recentMap = new Map<string, Conversation[]>();
-    const older: Conversation[] = [];
-
-    for (const conv of topLevelConversations) {
-      const lastTime = getConversationLastActivity(conv);
-      const isRecent = now - lastTime.getTime() < RECENT_CUTOFF_MS;
-      const folderDirectory = folderGroupKey(conv.workingDirectory);
-
-      if (isRecent) {
-        const existing = recentMap.get(folderDirectory);
-        if (existing) {
-          existing.push(conv);
-        } else {
-          recentMap.set(folderDirectory, [conv]);
-        }
-      } else {
-        older.push(conv);
-      }
-    }
-
-    const groups: FolderGroup[] = Array.from(recentMap.entries()).map(([directory, convs]) => ({
-      directory,
-      conversations: convs,
-      lastMessageTime: Math.max(...convs.map((c) => getConversationLastActivity(c).getTime())),
-    }));
-    groups.sort((a, b) => b.lastMessageTime - a.lastMessageTime);
-
-    return { recentGroups: groups, olderConversations: older };
-  }, [topLevelConversations]);
-
   const collapsedSet = useMemo(() => new Set(galleryCollapsedProjects), [galleryCollapsedProjects]);
 
   // Deduplicated working directories from all conversations — fed to PathAutocomplete for fuzzy
@@ -234,15 +163,14 @@ export function Sidebar() {
   const handleNewConversation = useCallback(() => {
     // Default to the most recently active conversation's working directory,
     // then lastWorkingDirectory fallback, then server cwd.
-    const latestConv = allConversations[0];
-    const lastDir = latestConv?.workingDirectory ?? lastWorkingDirectory ?? defaultCwd ?? '/';
+    const lastDir = latestWorkingDirectory ?? lastWorkingDirectory ?? defaultCwd ?? '/';
     setDirectory(lastDir);
     setHasPendingDefault(true);
     setModalError(null);
     // Provider default is catalog-derived; fallback 'claude' matches shared DEFAULT_PROVIDER.
     setConfigDraft(createDefaultConversationConfig(defaultProvider));
     setShowPicker(true);
-  }, [allConversations, lastWorkingDirectory, defaultCwd, defaultProvider]);
+  }, [latestWorkingDirectory, lastWorkingDirectory, defaultCwd, defaultProvider]);
 
   const handleNewBuddyBuilder = useCallback(async () => {
     setIsOpeningBuddyBuilder(true);
@@ -262,8 +190,11 @@ export function Sidebar() {
       // Reuse existing new-conversation flow but seed buddyContext so the
       // new thread is owned by that buddy — mirrors BuddiesDashboard talk().
       const workspaceId = item.workspaceId;
+      const latestConversation = item.latestConversation
+        ? readConversation(item.latestConversation.id)
+        : null;
       const workingDirectory =
-        item.latestConversation?.workingDirectory ??
+        latestConversation?.workingDirectory ??
         item.pendingCreation?.workingDirectory ??
         item.workingDirectory ??
         lastWorkingDirectory ??
@@ -274,7 +205,7 @@ export function Sidebar() {
       // new-conversation draft only when the buddy has no prior thread.
       // (The dashboard talk() path seeds from the saved Execution profile
       // instead; the sidebar has last-used config locally, so it uses that.)
-      const seedConfig = item.latestConversation?.config ?? configDraft;
+      const seedConfig = latestConversation?.config ?? configDraft;
       // Direct create — reuses pending-creations createConversation + buddyContext shape
       const id = createConversation({
         workingDirectory,
@@ -361,17 +292,24 @@ export function Sidebar() {
     setModalError(null);
   };
 
-  const handleSelectConversation = (id: string) => {
-    navigate(`/chat/${id}`);
-  };
+  // Stable callbacks: rows are memoized per id, so a new function identity
+  // here would re-render every row on every Sidebar render.
+  const handleSelectConversation = useCallback(
+    (conv: Conversation) => navigate(`/chat/${conv.id}`),
+    [navigate]
+  );
 
-  const handleDone = (conv: Conversation, e: React.MouseEvent) => {
-    e.stopPropagation();
-    setConversationDone(conv.id, true);
-    if (location.pathname.includes(conv.id)) {
-      navigate('/');
-    }
-  };
+  const pathname = location.pathname;
+  const handleDone = useCallback(
+    (conv: Conversation, e: React.MouseEvent) => {
+      e.stopPropagation();
+      setConversationDone(conv.id, true);
+      if (pathname.includes(conv.id)) {
+        navigate('/');
+      }
+    },
+    [navigate, pathname]
+  );
   const onDone = wsStatus === 'connected' ? handleDone : null;
 
   return (
@@ -609,12 +547,12 @@ export function Sidebar() {
                           +
                         </button>
                         <span className="folder-group-count">
-                          {builderConversations.filter((c) => !c.done).length || ''}
+                          {builderConversations.filter((entry) => !entry.done).length || ''}
                         </span>
                       </div>
                       {!collapsedSet.has('__builder__') &&
                         (() => {
-                          const builderActive = builderConversations.filter((c) => !c.done);
+                          const builderActive = builderConversations.filter((entry) => !entry.done);
                           if (builderActive.length === 0) return null;
                           const isBuilderExpanded = expandedDirectories.has('__builder__');
                           const visibleBuilder = isBuilderExpanded
@@ -623,19 +561,15 @@ export function Sidebar() {
                           const remainingBuilder = builderActive.length - visibleBuilder.length;
                           return (
                             <>
-                              {visibleBuilder.map((conv) => (
-                                <ConversationItem
-                                  key={conv.id}
-                                  conv={conv}
-                                  isActive={conv.id === activeConversationId}
-                                  hasUnseen={hasUnseenMessages(
-                                    lastSeenMessageIndex,
-                                    conv.id,
-                                    conversationMessageCount(conv)
-                                  )}
+                              {visibleBuilder.map((entry) => (
+                                <SidebarConversationRow
+                                  key={entry.id}
+                                  id={entry.id}
+                                  isActive={entry.id === activeConversationId}
                                   showFolderBadge={false}
                                   onSelect={handleSelectConversation}
                                   onDone={onDone}
+                                  tick={tick}
                                 />
                               ))}
                               {builderActive.length > 3 && (
@@ -737,19 +671,15 @@ export function Sidebar() {
                             </div>
                             <>
                               {visibleConvs.length > 0 ? (
-                                visibleConvs.map((conv) => (
-                                  <ConversationItem
-                                    key={conv.id}
-                                    conv={conv}
-                                    isActive={conv.id === activeConversationId}
-                                    hasUnseen={hasUnseenMessages(
-                                      lastSeenMessageIndex,
-                                      conv.id,
-                                      conversationMessageCount(conv)
-                                    )}
+                                visibleConvs.map((entry) => (
+                                  <SidebarConversationRow
+                                    key={entry.id}
+                                    id={entry.id}
+                                    isActive={entry.id === activeConversationId}
                                     showFolderBadge={false}
                                     onSelect={handleSelectConversation}
                                     onDone={onDone}
+                                    tick={tick}
                                   />
                                 ))
                               ) : item.pendingCreation ? (
@@ -855,8 +785,8 @@ export function Sidebar() {
                   const dirDisplay = group.directory.replace(/^\/Users\/[^/]+/, '~');
                   const projectColor = getProjectColor(group.directory);
                   const runningCount = runningCountByFolder.get(group.directory) ?? 0;
-                  // Filter done at render time — group position stays stable
-                  const activeConvs = group.conversations.filter((c) => !c.done);
+                  // Done rows are already out; the group keeps its position.
+                  const activeConvs = group.activeIds;
 
                   return (
                     <div key={group.directory} className="folder-group">
@@ -925,19 +855,15 @@ export function Sidebar() {
                           const remaining = activeConvs.length - visibleConvs.length;
                           return activeConvs.length > 0 ? (
                             <>
-                              {visibleConvs.map((conv) => (
-                                <ConversationItem
-                                  key={conv.id}
-                                  conv={conv}
-                                  isActive={conv.id === activeConversationId}
-                                  hasUnseen={hasUnseenMessages(
-                                    lastSeenMessageIndex,
-                                    conv.id,
-                                    conversationMessageCount(conv)
-                                  )}
+                              {visibleConvs.map((id) => (
+                                <SidebarConversationRow
+                                  key={id}
+                                  id={id}
+                                  isActive={id === activeConversationId}
                                   showFolderBadge={false}
                                   onSelect={handleSelectConversation}
                                   onDone={onDone}
+                                  tick={tick}
                                 />
                               ))}
                               {activeConvs.length > 3 && (
@@ -971,13 +897,7 @@ export function Sidebar() {
             )}
 
             {(() => {
-              const olderActive = olderConversations
-                .filter((conv) => !conv.done)
-                .sort(
-                  (left, right) =>
-                    getConversationLastActivity(right).getTime() -
-                    getConversationLastActivity(left).getTime()
-                );
+              const olderActive = olderIds;
               if (olderActive.length === 0) return null;
               const isOlderExpanded = expandedDirectories.has('__older__');
               const visibleOlder = isOlderExpanded ? olderActive : olderActive.slice(0, 3);
@@ -985,19 +905,15 @@ export function Sidebar() {
               return (
                 <div className="sidebar-section">
                   <div className="sidebar-section-header">Older</div>
-                  {visibleOlder.map((conv) => (
-                    <ConversationItem
-                      key={conv.id}
-                      conv={conv}
-                      isActive={conv.id === activeConversationId}
-                      hasUnseen={hasUnseenMessages(
-                        lastSeenMessageIndex,
-                        conv.id,
-                        conversationMessageCount(conv)
-                      )}
+                  {visibleOlder.map((id) => (
+                    <SidebarConversationRow
+                      key={id}
+                      id={id}
+                      isActive={id === activeConversationId}
                       showFolderBadge
                       onSelect={handleSelectConversation}
                       onDone={onDone}
+                      tick={tick}
                     />
                   ))}
                   {olderActive.length > 3 && (
@@ -1146,14 +1062,49 @@ function FolderRunningStatus({ count }: { count: number }) {
 /** Re-exported pure (CSS-free, unit-tested) for external callers. */
 export { getConversationTitle };
 
-/**
- * Extracted conversation item — avoids duplicating JSX across list/grouped modes.
- * showFolderBadge=false in grouped mode since the folder header already shows the path.
- */
 function conversationMessageCount(conversation: Conversation): number {
   return conversation.messageCount ?? conversation.messages.length;
 }
 
+/**
+ * One sidebar row. Subscribes to its own conversation and seen index, and is
+ * memoized, so an event for another conversation re-renders nothing here.
+ * `tick` only forces the 30 s time-ago refresh.
+ */
+const SidebarConversationRow = memo(function SidebarConversationRow({
+  id,
+  isActive,
+  showFolderBadge,
+  onSelect,
+  onDone,
+}: {
+  id: string;
+  isActive: boolean;
+  showFolderBadge: boolean;
+  onSelect: (conv: Conversation) => void;
+  /** Null while disconnected: the command would be dropped, so the button is disabled. */
+  onDone: ((conv: Conversation, e: React.MouseEvent) => void) | null;
+  tick: number;
+}) {
+  const conv = useAtomValue(conversationAtomFamily(id));
+  const lastSeen = useAtomValue(lastSeenMessageIndexAtomFamily(id));
+  if (!conv) return null;
+  return (
+    <ConversationItem
+      conv={conv}
+      isActive={isActive}
+      hasUnseen={hasUnseenAfter(lastSeen, conversationMessageCount(conv))}
+      showFolderBadge={showFolderBadge}
+      onSelect={onSelect}
+      onDone={onDone}
+    />
+  );
+});
+
+/**
+ * Extracted conversation item — avoids duplicating JSX across list/grouped modes.
+ * showFolderBadge=false in grouped mode since the folder header already shows the path.
+ */
 function ConversationItem({
   conv,
   isActive,
@@ -1166,7 +1117,7 @@ function ConversationItem({
   isActive: boolean;
   hasUnseen: boolean;
   showFolderBadge: boolean;
-  onSelect: (id: string) => void;
+  onSelect: (conv: Conversation) => void;
   /** Null while disconnected: the command would be dropped, so the button is disabled. */
   onDone: ((conv: Conversation, e: React.MouseEvent) => void) | null;
 }) {
@@ -1190,7 +1141,7 @@ function ConversationItem({
   return (
     <div
       className={itemClasses}
-      onClick={() => onSelect(conv.id)}
+      onClick={() => onSelect(conv)}
       title={`${title}${timeAgo ? ` — ${timeAgo}` : ''}`}
     >
       <div className="conversation-row">

@@ -17,6 +17,7 @@
 
 import type { Conversation } from '@unleashd/shared';
 import { useMemo, useState } from 'react';
+import { readConversation } from '../atoms/actions';
 import { fuzzyMatch, highlightMatches } from '../utils/fuzzyMatch';
 import './FolderFilter.css';
 
@@ -30,8 +31,8 @@ interface FolderFilterProps {
   onToggle: (folder: string) => void;
   onClear: () => void;
   formatFolder?: (folder: string) => string;
-  /** Optional: conversations for fuzzy-matching messages */
-  conversations?: Conversation[];
+  /** Optional: conversations (ids) whose messages the search also fuzzy-matches */
+  conversationIds?: readonly string[];
   /** Optional: callback when a conversation is selected from search results */
   onSelectConversation?: (conversationId: string) => void;
 }
@@ -59,7 +60,7 @@ export function FolderFilter({
   onToggle,
   onClear,
   formatFolder,
-  conversations,
+  conversationIds,
   onSelectConversation,
 }: FolderFilterProps) {
   const [search, setSearch] = useState('');
@@ -125,11 +126,15 @@ export function FolderFilter({
 
   // Fuzzy-match conversations by message content
   const matchedConversations = useMemo((): ConversationMatch[] => {
-    if (!isSearching || !conversations || !onSelectConversation) return [];
+    if (!isSearching || !conversationIds || !onSelectConversation) return [];
     const query = search.trim();
     const results: ConversationMatch[] = [];
 
-    for (const conv of conversations) {
+    // A snapshot per keystroke, not a subscription: the gallery must not
+    // re-render on every conversation event just because search is possible.
+    for (const id of conversationIds) {
+      const conv = readConversation(id);
+      if (!conv) continue;
       let bestScore = Number.NEGATIVE_INFINITY;
       let bestSnippet = '';
       let bestMatches: number[] = [];
@@ -181,7 +186,7 @@ export function FolderFilter({
 
     results.sort((a, b) => b.score - a.score);
     return results.slice(0, MAX_CONVERSATION_RESULTS);
-  }, [conversations, search, isSearching, onSelectConversation]);
+  }, [conversationIds, search, isSearching, onSelectConversation]);
 
   if (folders.length === 0) return null;
 

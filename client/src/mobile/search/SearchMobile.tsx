@@ -232,8 +232,8 @@ export function SearchMobile() {
           <MobileEmptyPanel>No matches on this device.</MobileEmptyPanel>
         ) : (
           <div className="mobile-search__list">
-            {clientResults.slice(0, visibleClientLimit).map((conv) => (
-              <ClientResultRow key={conv.id} id={conv.id} routeState={routeState} />
+            {clientResults.slice(0, visibleClientLimit).map((id) => (
+              <ClientResultRow key={id} id={id} routeState={routeState} />
             ))}
             {hiddenClientCount > 0 && (
               <div className="mobile-search__limit-note">

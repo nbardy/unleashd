@@ -371,7 +371,9 @@ running the code on disk.
 
 Streaming is separated from structural state:
 
-- Structural: `conversationsAtom`, `allConversationsAtom`, IDs.
+- Structural: `conversationsAtom` (per-id records), the list index
+  (`conversationListAtom`) and the views derived from it. See
+  [client state](client-state.md#an-event-costs-what-it-changed-2026-09-25).
 - High-frequency stream text: dedicated stream buffers / streaming atoms.
 
 `streamingContentAtom` is separate from `conversationsAtom`. Pending creation
