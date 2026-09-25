@@ -273,9 +273,7 @@
 }
 
 .channel-browser-pane-header {
-  display: flex;
   flex: none;
-  align-items: center;
   gap: 16px;
   min-height: var(--channel-header-height);
   padding: 10px 24px;
@@ -323,10 +321,8 @@
 }
 
 .channel-browser-empty {
-  display: flex;
   flex: 1;
   flex-direction: column;
-  align-items: center;
   justify-content: center;
   gap: 6px;
   height: 100%;
@@ -352,8 +348,6 @@
   position: sticky;
   top: 0;
   z-index: 1;
-  display: flex;
-  align-items: center;
   margin: 10px 0 2px;
   padding: 4px 24px;
   /* Solid band: when stuck, the rule must not draw across scrolled text. */
@@ -579,8 +573,6 @@ a.channel-browser-buddy-done {
 }
 
 .channel-browser-rail-section-row {
-  display: flex;
-  align-items: center;
   justify-content: space-between;
   margin-bottom: 6px;
 }
@@ -776,9 +768,7 @@ a.channel-browser-buddy-done {
 }
 
 .channel-browser-thread-summary {
-  display: flex;
   flex-wrap: wrap;
-  align-items: center;
   gap: 4px 12px;
   margin-top: 4px;
 }
@@ -820,6 +810,15 @@ a.channel-browser-buddy-done {
   background: var(--theme-user);
 }
 
+.channel-browser-task-filter {
+  max-width: 220px;
+  height: 28px;
+  border: 1px solid var(--border-default);
+  background: var(--bg-content);
+  color: var(--text-primary);
+  font-size: var(--fs-3);
+}
+
 .channel-browser-replying {
   display: inline-flex;
   align-items: center;
@@ -839,9 +838,7 @@ a.channel-browser-buddy-done {
 }
 
 .channel-thread-header {
-  display: flex;
   flex: none;
-  align-items: center;
   justify-content: space-between;
   min-height: var(--channel-header-height);
   padding: 0 16px 0 20px;
@@ -878,8 +875,6 @@ a.channel-browser-buddy-done {
 }
 
 .channel-thread-divider {
-  display: flex;
-  align-items: center;
   gap: 10px;
   margin: 8px 16px 0;
   color: var(--text-muted);

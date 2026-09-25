@@ -126,10 +126,6 @@ function apiClient(baseUrl, token) {
   };
 }
 
-// Roots whose threads are measured per channel: posts carry no reply count,
-// so each candidate thread is read once (newest roots first).
-const THREAD_PROBES = 20;
-
 /** One workspace's best public channel: its most-replied recent thread, then the most posts. */
 async function discoverWorkspace(api, workspace) {
   const inbox = await api(`/api/buddies/workspaces/${encodeURIComponent(workspace.id)}/inbox`);
@@ -140,23 +136,15 @@ async function discoverWorkspace(api, workspace) {
         const page = await api(
           `/api/buddies/channels/${encodeURIComponent(channel.id)}/posts?limit=50`
         );
-        const threads = await Promise.all(
-          page.posts.slice(0, THREAD_PROBES).map(async (post) => {
-            const thread = await api(
-              `/api/buddies/posts/${encodeURIComponent(post.id)}/thread?limit=200`
-            );
-            return { id: post.id, replies: thread.posts.length };
-          })
-        );
-        const thread = threads
-          .filter((candidate) => candidate.replies > 0)
-          .sort((a, b) => b.replies - a.replies)[0];
+        // The page carries each root's reply count (`threads`, T22).
+        const thread = [...page.threads].sort((a, b) => b.replies - a.replies)[0];
         return {
           workspaceId: workspace.id,
           workspaceName: workspace.name,
           channelId: channel.id,
           channelName: channel.kind.name,
-          threadRootId: thread?.id ?? null,
+          threadRootId: thread?.rootId ?? null,
+          taskId: page.posts.find((post) => post.taskId)?.taskId ?? null,
           postCount: page.posts.length,
         };
       })
@@ -168,16 +156,19 @@ async function discoverWorkspace(api, workspace) {
       channelId: null,
       channelName: null,
       threadRootId: null,
+      taskId: null,
       postCount: 0,
     }
   );
 }
 
-// Richest first: a channel that fills every screen (a thread) beats a merely
-// busy one, so a default run leaves as few blanks as possible.
+// Richest first: a channel that fills every screen (a thread, a Task filter)
+// beats a merely busy one, so a default run leaves as few blanks as possible.
 function richness(a, b) {
   return (
-    Number(b.threadRootId !== null) - Number(a.threadRootId !== null) || b.postCount - a.postCount
+    Number(b.threadRootId !== null) - Number(a.threadRootId !== null) ||
+    Number(b.taskId !== null) - Number(a.taskId !== null) ||
+    b.postCount - a.postCount
   );
 }
 
@@ -525,6 +516,14 @@ function buildScreens(found, focus) {
     { name: 'channels', missing: null, views: onBoth(channels) },
     { name: 'channel', missing: noChannel, views: onBoth(`${channels}?${channel}`) },
     { name: 'thread', missing: noThread, views: onBoth(thread) },
+    // The Task filter is desktop-only (the mobile channel screen has no picker).
+    {
+      name: 'task-filter',
+      missing: noChannel ?? (found.taskId ? null : 'no post about a Task in this channel'),
+      views: {
+        desktop: { path: `${channels}?${channel}&task=${enc(found.taskId)}`, prepare: null },
+      },
+    },
     {
       name: 'mention-menu',
       missing: noChannel,

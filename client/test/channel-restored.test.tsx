@@ -57,7 +57,10 @@ async function renderChannel(opts: {
       threads: opts.threads ?? [],
     }),
   });
-  await loadResource({ key: `/api/buddies/channels/${channelId}/responding`, load: async () => [] });
+  await loadResource({
+    key: `/api/buddies/channels/${channelId}/responding`,
+    load: async () => [],
+  });
   return renderToStaticMarkup(
     <MemoryRouter initialEntries={[opts.url ?? '/']}>
       <Provider store={jotaiStore}>
@@ -149,4 +152,77 @@ test('a reply permalink opens the desktop thread on the linked reply', async () 
   const thread = html.slice(html.indexOf('aria-label="Thread"'));
   assert.match(thread, /data-post-id="old-reply" data-linked="true"/);
   assert.ok(thread.indexOf('Body of root.') < thread.indexOf('Body of old-reply.'));
+});
+
+// Feature 4: `?task=` swaps the channel transcript for one Task's posts across
+// every channel. Each row names its channel and links to the post there (a
+// reply's link opens its thread), and the picker offers the channel's Tasks.
+test('the Task filter shows one Task across channels, each post linked into its channel', async () => {
+  const ws = 'ws-task';
+  await loadResource({
+    key: `/api/buddies/workspaces/${ws}/inbox`,
+    load: async () =>
+      inboxFixture([
+        { channel: publicChannel('ch_main', 'general', ws), unread: 0 },
+        { channel: publicChannel('ch_ops', 'ops', ws), unread: 0 },
+      ]),
+  });
+  await loadResource({
+    key: '/api/buddies/channels/ch_main/posts?limit=50',
+    load: async () => ({
+      posts: [
+        post('about-task', 2, { channelId: 'ch_main', taskId: 'task-ship' }),
+        post('unrelated', 1, { channelId: 'ch_main', body: 'Only in general.' }),
+      ],
+      threads: [],
+    }),
+  });
+  await loadResource({ key: '/api/buddies/channels/ch_main/responding', load: async () => [] });
+  await loadResource({
+    key: '/api/buddies/tasks/task-ship/posts?limit=50',
+    load: async () => ({
+      posts: [
+        post('ops-reply', 4, { channelId: 'ch_ops', rootId: 'ops-root', taskId: 'task-ship' }),
+        post('about-task', 2, { channelId: 'ch_main', taskId: 'task-ship' }),
+      ],
+    }),
+  });
+  const task = {
+    id: 'task-ship',
+    workspaceId: ws,
+    ownerId: 'lead',
+    title: 'Ship channels',
+    doneCriteria: 'Shipped',
+    status: 'in_progress' as const,
+    paused: false,
+    epoch: 1,
+    evidence: [],
+    position: 0,
+    revision: 1,
+    createdAt: at(0),
+    updatedAt: at(0),
+  };
+  const directory = workspaceDirectory([rosterFixture([lead], { id: ws })], ws, [task]);
+  const html = renderToStaticMarkup(
+    <MemoryRouter initialEntries={['/?channel=ch_main&task=task-ship']}>
+      <Provider store={jotaiStore}>
+        <ChannelBrowser
+          workspaceId={ws}
+          directory={directory}
+          availableConversationIds={new Set()}
+        />
+      </Provider>
+    </MemoryRouter>
+  );
+  assert.match(html, /<option value="task-ship" selected="">Task: Ship channels<\/option>/);
+  assert.doesNotMatch(html, /Only in general\./, 'the channel transcript is replaced');
+  const channels = `/buddies/workspaces/${ws}/channels`;
+  assert.match(
+    rowOf(html, 'ops-reply'),
+    new RegExp(`href="${channels}\\?channel=ch_ops&amp;thread=ops-root&amp;post=ops-reply"[^>]*>#ops<`)
+  );
+  assert.match(
+    rowOf(html, 'about-task'),
+    new RegExp(`href="${channels}\\?channel=ch_main&amp;thread=about-task"[^>]*>#general<`)
+  );
 });

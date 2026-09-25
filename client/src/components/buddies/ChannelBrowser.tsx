@@ -33,6 +33,7 @@ import {
   postPurposeTag,
   railChannels,
   renderFeed,
+  taskPostsFeed,
   threadFeed,
   unreadThreadIds,
   useChannelFeed,
@@ -53,7 +54,8 @@ import './ChannelBrowser.css';
 const NO_THREADS: ReadonlySet<string> = new Set();
 
 // Where a row renders decides what its thread affordance does:
-// D = Channel(open a thread, show who is replying) ⊕ Thread(already inside one).
+// D = Channel(open a thread, show who is replying) ⊕ Thread(already inside one)
+//   ⊕ Task(the Task filter: posts from any channel, each linked into its own).
 type RowPlace =
   | {
       kind: 'channel';
@@ -62,7 +64,8 @@ type RowPlace =
       threads: ReadonlyMap<string, ThreadStat>;
       unreadThreads: ReadonlySet<string>;
     }
-  | { kind: 'thread' };
+  | { kind: 'thread' }
+  | { kind: 'task'; channelNames: ReadonlyMap<string, string> };
 
 type RowContext = {
   workspaceId: string;
@@ -109,9 +112,29 @@ function PostPurpose({ post }: { post: Post }) {
   );
 }
 
+// In the Task filter a row may come from any channel: name it, linked to the
+// post in its own channel (the permalink opens the thread when it is a reply).
+function PostChannel({ post, context }: { post: Post; context: RowContext }) {
+  switch (context.place.kind) {
+    case 'channel':
+    case 'thread':
+      return null;
+    case 'task':
+      return (
+        <Link
+          className="channel-browser-instance"
+          to={channelLinkPath(context.workspaceId, postLink(post))}
+        >
+          {context.place.channelNames.get(post.channelId) ?? 'another channel'}
+        </Link>
+      );
+  }
+}
+
 function PostMeta({ post, context }: { post: Post; context: RowContext }) {
   return (
     <>
+      <PostChannel post={post} context={context} />
       <PostPurpose post={post} />
       {post.conversationId && (
         <InstanceTag
@@ -138,6 +161,7 @@ function Replying({ text }: { text: string }) {
 function ThreadSummary({ post, context }: { post: Post; context: RowContext }) {
   switch (context.place.kind) {
     case 'thread':
+    case 'task':
       return null;
     case 'channel': {
       const place = context.place;
@@ -146,7 +170,7 @@ function ThreadSummary({ post, context }: { post: Post; context: RowContext }) {
       if (stat === undefined && replying === undefined) return null;
       const unread = place.unreadThreads.has(post.id);
       return (
-        <div className="channel-browser-thread-summary">
+        <div className="channel-browser-thread-summary ui-row">
           {stat === undefined ? (
             <button type="button" onClick={() => place.openThread(post.id)}>
               <strong>Open thread</strong>
@@ -157,7 +181,9 @@ function ThreadSummary({ post, context }: { post: Post; context: RowContext }) {
               data-unread={unread || undefined}
               onClick={() => place.openThread(post.id)}
             >
-              {unread && <span className="channel-browser-thread-unread" aria-label="New replies" />}
+              {unread && (
+                <span className="channel-browser-thread-unread" aria-label="New replies" />
+              )}
               <strong>
                 {stat.replies} {stat.replies === 1 ? 'reply' : 'replies'}
               </strong>
@@ -188,6 +214,7 @@ function ReplyIcon() {
 function ReplyAction({ post, context }: { post: Post; context: RowContext }) {
   switch (context.place.kind) {
     case 'thread':
+    case 'task':
       return null;
     case 'channel': {
       const place = context.place;
@@ -293,7 +320,7 @@ function ContinuationRow({ post, context }: { post: Post; context: RowContext })
 
 function DayRow({ label }: { label: string }) {
   return (
-    <li className="channel-browser-day" aria-label={label}>
+    <li className="channel-browser-day ui-row" aria-label={label}>
       <span>{label}</span>
     </li>
   );
@@ -303,7 +330,10 @@ function DayRow({ label }: { label: string }) {
 // when they opened the channel (T22). The day divider's rule, in red.
 function NewMessagesRow() {
   return (
-    <li className="channel-browser-day channel-browser-new-messages" aria-label="New messages">
+    <li
+      className="channel-browser-day channel-browser-new-messages ui-row"
+      aria-label="New messages"
+    >
       <span>New messages</span>
     </li>
   );
@@ -356,7 +386,7 @@ function ThreadPane({
   useMarkChannelRead(channelId, entry.unread, newestServedId(thread.posts) ?? root?.id ?? null);
   return (
     <aside className="channel-thread" aria-label="Thread">
-      <header className="channel-thread-header">
+      <header className="channel-thread-header ui-row">
         <div>
           <h2>Thread</h2>
           <p>
@@ -388,7 +418,7 @@ function ThreadPane({
           </ol>
         )}
         {root && (
-          <div className="channel-thread-divider">
+          <div className="channel-thread-divider ui-row">
             <span>Replies</span>
           </div>
         )}
@@ -424,6 +454,80 @@ function ThreadPane({
   );
 }
 
+// The Task filter's transcript: one Task's posts across every channel, paged
+// back like a channel (T22: dropped in the T11 client migration). Keyed by the
+// Task, so a switch starts a fresh feed and scroll position.
+function TaskTranscript({ taskId, context }: { taskId: string; context: RowContext }) {
+  const feed = useChannelFeed(taskPostsFeed(taskId));
+  const rows = useMemo(() => channelRows(feed.posts ?? []), [feed.posts]);
+  const follow = useFollowBottom(rows.length, feed.posts, null);
+  return (
+    <div className="channel-browser-scroll" ref={follow.scrollRef} onScroll={follow.onScroll}>
+      {(feed.latest.kind === 'failed' || feed.latest.kind === 'stale') && (
+        <p className="channel-browser-error" role="alert">
+          Task posts could not refresh: {feed.latest.error.message}
+        </p>
+      )}
+      {renderFeed(feedPhase(feed.latest.kind, feed.posts), {
+        loading: () => <ChannelLoader label="Loading the Task's posts…" />,
+        failed: () => null,
+        empty: () => (
+          <div className="channel-browser-empty ui-row">
+            <span>No posts about this Task yet.</span>
+          </div>
+        ),
+        posts: () => (
+          <>
+            <ChannelHistory
+              edge={feed.edge}
+              scrollRef={follow.scrollRef}
+              onReach={() => void feed.loadOlder(follow.hold)}
+            />
+            <ol className="channel-browser-messages">
+              {rows.map((row) => renderRow(row, context))}
+            </ol>
+          </>
+        ),
+      })}
+    </div>
+  );
+}
+
+// The Task picker offers the Tasks this channel's loaded posts are about, plus
+// the one the URL names (a pasted link may name a Task this page has not loaded).
+function TaskFilter({
+  posts,
+  taskFilter,
+  tasks,
+  onTaskFilter,
+}: {
+  posts: readonly Post[] | null;
+  taskFilter: string | null;
+  tasks: WorkspaceDirectory['taskById'];
+  onTaskFilter: (taskId: string | null) => void;
+}) {
+  const taskIds = useMemo(() => {
+    const ids = new Set(posts?.flatMap((post) => (post.taskId === undefined ? [] : [post.taskId])));
+    if (taskFilter !== null) ids.add(taskFilter);
+    return [...ids];
+  }, [posts, taskFilter]);
+  return taskIds.length === 0 ? null : (
+    <select
+      className="channel-browser-task-filter ui-control"
+      aria-label="Filter by Task"
+      value={taskFilter ?? ''}
+      onChange={(event) => onTaskFilter(event.target.value || null)}
+    >
+      <option value="">All posts</option>
+      {taskIds.map((taskId) => (
+        <option key={taskId} value={taskId}>
+          Task: {tasks.get(taskId)?.title ?? taskId}
+        </option>
+      ))}
+    </select>
+  );
+}
+
 function ChannelPane({
   entry,
   workspaceId,
@@ -431,7 +535,10 @@ function ChannelPane({
   availableConversationIds,
   threadId,
   linkedPostId,
+  taskFilter,
+  channelNames,
   onThread,
+  onTaskFilter,
   openDm,
 }: {
   entry: ChannelUnread;
@@ -440,7 +547,10 @@ function ChannelPane({
   availableConversationIds: ReadonlySet<string>;
   threadId: string | null;
   linkedPostId: string | null;
+  taskFilter: string | null;
+  channelNames: ReadonlyMap<string, string>;
   onThread: (rootId: string | null) => void;
+  onTaskFilter: (taskId: string | null) => void;
   openDm: OpenDm;
 }) {
   const channelId = entry.channel.id;
@@ -480,55 +590,68 @@ function ChannelPane({
     },
   };
   const threadContext: RowContext = { ...base, place: { kind: 'thread' } };
+  const taskContext: RowContext = { ...base, place: { kind: 'task', channelNames } };
   return (
     <div className="channel-browser-panes" data-thread={threadId ? 'open' : undefined}>
       <section className="channel-browser-pane" aria-label={`${heading.mark}${heading.name}`}>
-        <header className="channel-browser-pane-header">
+        <header className="channel-browser-pane-header ui-row">
           <div className="channel-browser-pane-title">
             <h2>
               <span aria-hidden="true">{heading.mark}</span>
               {heading.name}
             </h2>
-            <p title={heading.about}>{heading.about}</p>
+            <p title={heading.about}>
+              {taskFilter === null ? heading.about : 'One Task, across every channel'}
+            </p>
           </div>
+          <TaskFilter
+            posts={feed.posts}
+            taskFilter={taskFilter}
+            tasks={directory.taskById}
+            onTaskFilter={onTaskFilter}
+          />
           <CopyLinkButton
             className="channel-browser-header-action"
             path={channelLinkPath(workspaceId, { kind: 'channel', channelId })}
             label="Copy link to channel"
           />
         </header>
-        <div className="channel-browser-scroll" ref={follow.scrollRef} onScroll={follow.onScroll}>
-          {(feed.latest.kind === 'failed' || feed.latest.kind === 'stale') && (
-            <p className="channel-browser-error" role="alert">
-              Posts could not refresh: {feed.latest.error.message}
-            </p>
-          )}
-          {renderFeed(feedPhase(feed.latest.kind, posts), {
-            loading: () => <ChannelLoader label={`Loading ${heading.mark}${heading.name}…`} />,
-            failed: () => null,
-            empty: () => (
-              <div className="channel-browser-empty">
-                <strong>
-                  {heading.mark}
-                  {heading.name}
-                </strong>
-                <span>No posts yet. Say hello, or @mention a Buddy to ask it something.</span>
-              </div>
-            ),
-            posts: () => (
-              <>
-                <ChannelHistory
-                  edge={feed.edge}
-                  scrollRef={follow.scrollRef}
-                  onReach={() => void feed.loadOlder(follow.hold)}
-                />
-                <ol className="channel-browser-messages">
-                  {renderRows(rows, channelContext, firstUnread)}
-                </ol>
-              </>
-            ),
-          })}
-        </div>
+        {taskFilter === null ? (
+          <div className="channel-browser-scroll" ref={follow.scrollRef} onScroll={follow.onScroll}>
+            {(feed.latest.kind === 'failed' || feed.latest.kind === 'stale') && (
+              <p className="channel-browser-error" role="alert">
+                Posts could not refresh: {feed.latest.error.message}
+              </p>
+            )}
+            {renderFeed(feedPhase(feed.latest.kind, posts), {
+              loading: () => <ChannelLoader label={`Loading ${heading.mark}${heading.name}…`} />,
+              failed: () => null,
+              empty: () => (
+                <div className="channel-browser-empty ui-row">
+                  <strong>
+                    {heading.mark}
+                    {heading.name}
+                  </strong>
+                  <span>No posts yet. Say hello, or @mention a Buddy to ask it something.</span>
+                </div>
+              ),
+              posts: () => (
+                <>
+                  <ChannelHistory
+                    edge={feed.edge}
+                    scrollRef={follow.scrollRef}
+                    onReach={() => void feed.loadOlder(follow.hold)}
+                  />
+                  <ol className="channel-browser-messages">
+                    {renderRows(rows, channelContext, firstUnread)}
+                  </ol>
+                </>
+              ),
+            })}
+          </div>
+        ) : (
+          <TaskTranscript key={taskFilter} taskId={taskFilter} context={taskContext} />
+        )}
         <ChannelComposer
           channelId={channelId}
           rootId={null}
@@ -763,7 +886,7 @@ function RailChannel({
 
 // Full-screen Slack layout. Mounted OUTSIDE the app shell (see App.tsx): the
 // channel rail replaces the conversations sidebar instead of nesting beside
-// it. Selection lives in the URL (?channel=, ?thread=, ?post=, ?dm=) so
+// it. Selection lives in the URL (?channel=, ?task=, ?thread=, ?post=, ?dm=) so
 // reload and Back keep the reader where they were, and any of it can be shared
 // as a permalink (channel-link.ts). Selecting anything drops `post`: the
 // highlight belongs to the link that was opened, not to later navigation.
@@ -786,8 +909,23 @@ export function ChannelBrowser({
   const listed = [...rail.channels, ...rail.direct];
   const selected =
     listed.find((entry) => entry.channel.id === params.get('channel')) ?? rail.channels[0] ?? null;
-  const select = (next: { channel: string; thread: string | null }) =>
-    setParams({ channel: next.channel, ...(next.thread ? { thread: next.thread } : {}) });
+  const select = (next: { channel: string; thread: string | null; task?: string | null }) =>
+    setParams({
+      channel: next.channel,
+      ...(next.task ? { task: next.task } : {}),
+      ...(next.thread ? { thread: next.thread } : {}),
+    });
+  // The Task filter names each post's channel; DMs by their Buddy, like the rail.
+  const channelNames = useMemo(
+    () =>
+      new Map(
+        (inbox.data?.channels ?? []).map((entry) => {
+          const heading = channelHeading(entry.channel.kind, directory.buddyNames);
+          return [entry.channel.id, `${heading.mark}${heading.name}`] as const;
+        })
+      ),
+    [inbox.data, directory.buddyNames]
+  );
   // An open DM replaces the channel in the main pane; picking a channel closes it.
   const dm = params.get('dm');
   const openDm: OpenDm = (conversationId) => setParams({ dm: conversationId });
@@ -813,7 +951,7 @@ export function ChannelBrowser({
           <WorkspaceSwitcher workspaceId={workspaceId} workspaceName={directory.workspaceName} />
         </header>
         <div className="channel-browser-rail-scroll">
-          <div className="channel-browser-rail-section-row">
+          <div className="channel-browser-rail-section-row ui-row">
             <h3 className="channel-browser-rail-section">Channels</h3>
             <button
               type="button"
@@ -879,11 +1017,18 @@ export function ChannelBrowser({
             availableConversationIds={availableConversationIds}
             threadId={params.get('thread')}
             linkedPostId={params.get('post')}
-            onThread={(thread) => select({ channel: selected.channel.id, thread })}
+            taskFilter={params.get('task')}
+            channelNames={channelNames}
+            onThread={(thread) =>
+              select({ channel: selected.channel.id, thread, task: params.get('task') })
+            }
+            onTaskFilter={(task) =>
+              select({ channel: selected.channel.id, thread: params.get('thread'), task })
+            }
             openDm={openDm}
           />
         ) : (
-          <div className="channel-browser-empty">
+          <div className="channel-browser-empty ui-row">
             <strong>{inbox.data ? 'No channels yet' : 'Loading channels…'}</strong>
             {inbox.data && (
               <button
