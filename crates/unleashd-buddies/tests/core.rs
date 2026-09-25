@@ -527,3 +527,32 @@ fn post_search_finds_words_only_in_channels_the_reader_may_read() {
     assert!(hits(&Actor::Owner, "rank* OR NEAR(").is_empty(), "operators are words, not syntax");
     assert!(matches!(s.search_posts(&buddy("gone"), WS, "ranking", 10), Err(CoreError::Denied(_))), "archived buddies cannot search");
 }
+
+#[test]
+fn posts_read_back_in_write_order_within_a_millisecond() {
+    let mut f = fixture();
+    let s = &mut f.store;
+    let general = s
+        .create_channel(
+            &Actor::Owner,
+            ChannelInput { workspace_id: WS.into(), name: "general".into(), purpose: "p".into(), key: "g".into() },
+        )
+        .unwrap();
+    let to = || ChannelRef::Id { id: general.id.clone() };
+    let say = |body: &str, reply: Option<String>| PostInput { kind: PostKind::Inform, reply_to_id: reply, ..request(body, body) };
+    for round in 0..20 {
+        let root = s.post(&Actor::Owner, to(), say(&format!("root {round}"), None)).unwrap();
+        // Written back to back: most land in the same millisecond.
+        let written: Vec<String> =
+            (0..4).map(|i| s.post(&buddy("ic"), to(), say(&format!("r{round}-{i}"), Some(root.id.clone()))).unwrap().id).collect();
+        let mut read: Vec<String> = s
+            .list_posts(&Actor::Owner, PostQuery::Thread { root_id: root.id.clone() }, None, 10)
+            .unwrap()
+            .posts
+            .into_iter()
+            .map(|p| p.id)
+            .collect();
+        read.reverse();
+        assert_eq!(read, written, "round {round}: a thread reads back in the order it was written");
+    }
+}

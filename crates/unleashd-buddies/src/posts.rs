@@ -9,7 +9,7 @@
 //! a buddy author, all in one transaction.
 
 use crate::error::{CoreError, Result};
-use crate::runs::Enqueue;
+use crate::runs::{Enqueue, plus_ms};
 use crate::store::{Mutation, Store, collect, corrupt, get_buddy, idempotent, new_id, now_iso, require};
 use crate::tasks::get_task;
 use crate::types::*;
@@ -212,7 +212,7 @@ impl Store {
                         request.task_id,
                         input.body,
                         evidence_json(&input.evidence),
-                        now_iso()
+                        post_time(tx, &request.channel_id)?
                     ],
                 )?;
                 let flipped = tx.execute(
@@ -396,7 +396,7 @@ fn insert_post(tx: &Transaction, actor: &Actor, channel: &Channel, input: &PostI
         // its own posts. Only a request's answer returns to it.
         input.from_conversation_id,
         ask.column().and(input.from_conversation_id.as_deref()),
-        now_iso()
+        post_time(tx, &channel.id)?
     ])?;
     for recipient in ask.owed_by().iter().filter_map(Actor::buddy_id) {
         tx.enqueue(EnqueueInput {
@@ -409,6 +409,21 @@ fn insert_post(tx: &Transaction, actor: &Actor, channel: &Channel, input: &PostI
         })?;
     }
     Ok(id)
+}
+
+/// A post's time: now, or 1 ms after the channel's newest post when that is not earlier. Posts
+/// order by (created_at, id) and ids are random, so two posts written in one millisecond read
+/// back in a random order: 29 of 50 three-reply threads came back shuffled (2026-09-25), which
+/// broke "is this the thread's newest post" (follow-up gating), the Buddy-chain bound, read
+/// cursors and keyset paging. Guard: core.rs `posts_read_back_in_write_order_within_a_millisecond`.
+fn post_time(tx: &Connection, channel_id: &str) -> Result<String> {
+    let now = now_iso();
+    let newest: Option<String> =
+        tx.prepare_cached("SELECT max(created_at) FROM post WHERE channel_id = ?1")?.query_row([channel_id], |r| r.get(0))?;
+    match newest {
+        Some(newest) if newest >= now => plus_ms(&newest, 1),
+        Some(_) | None => Ok(now),
+    }
 }
 
 /// A reply joins its parent's thread, which must be in the same channel.

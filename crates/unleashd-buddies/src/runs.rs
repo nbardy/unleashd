@@ -52,7 +52,7 @@ pub(crate) fn get_run(conn: &Connection, id: &str) -> Result<Run> {
         .ok_or_else(|| CoreError::not_found("run", id))
 }
 
-fn plus_ms(now: &str, ms: i64) -> Result<String> {
+pub(crate) fn plus_ms(now: &str, ms: i64) -> Result<String> {
     let t = DateTime::parse_from_rfc3339(now).map_err(|e| CoreError::Invalid(format!("time {now:?}: {e}")))?;
     Ok((t.with_timezone(&Utc) + Duration::milliseconds(ms)).format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string())
 }
