@@ -102,10 +102,13 @@ fn parts(root: &Path, message_id: &str) -> Vec<Part> {
 /// A text part may hold a JSON-encoded string; decode it when it is one.
 fn decode_text(text: &str) -> String {
     let trimmed = js_trim(text);
-    if trimmed.len() >= 2 && trimmed.starts_with('"') && trimmed.ends_with('"')
-        && let Ok(Value::String(decoded)) = serde_json::from_str::<Value>(trimmed) {
-            return js_trim(&decoded).to_string();
-        }
+    if trimmed.len() >= 2
+        && trimmed.starts_with('"')
+        && trimmed.ends_with('"')
+        && let Ok(Value::String(decoded)) = serde_json::from_str::<Value>(trimmed)
+    {
+        return js_trim(&decoded).to_string();
+    }
     trimmed.to_string()
 }
 

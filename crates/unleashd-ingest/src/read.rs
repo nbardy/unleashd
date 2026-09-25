@@ -202,10 +202,9 @@ fn run<F: Fold>(
     if let Some(rebuild) = failure {
         return Ok(Err(rebuild));
     }
-    if full
-        && let Err(rebuild) = fold.end_full(&mut sink) {
-            return Ok(Err(rebuild));
-        }
+    if full && let Err(rebuild) = fold.end_full(&mut sink) {
+        return Ok(Err(rebuild));
+    }
     Ok(Ok(Pass { fold, sink, offset, malformed }))
 }
 

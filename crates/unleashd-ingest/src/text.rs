@@ -305,12 +305,13 @@ fn detect_oompa_subcommand(command: &str, depth: usize) -> Option<&'static str> 
         let args = &normalized[1..];
         if command_name == "oompa" {
             if let Some(sub) = subcommand.as_deref()
-                && (sub == "run" || sub == "swarm") {
-                    if is_non_launch_oompa(args) {
-                        continue;
-                    }
-                    return Some(if sub == "run" { "run" } else { "swarm" });
+                && (sub == "run" || sub == "swarm")
+            {
+                if is_non_launch_oompa(args) {
+                    continue;
                 }
+                return Some(if sub == "run" { "run" } else { "swarm" });
+            }
             let first = normalized.get(1).map(String::as_str).unwrap_or("");
             if !first.is_empty() && !first.starts_with('-') && first.to_lowercase().ends_with(".json") {
                 if is_non_launch_oompa(args) {
@@ -321,9 +322,10 @@ fn detect_oompa_subcommand(command: &str, depth: usize) -> Option<&'static str> 
         }
         if SHELL_WRAPPER_NAMES.contains(&command_name.as_str())
             && let Some(inline) = find_shell_inline_command(normalized)
-                && let Some(nested) = detect_oompa_subcommand(&inline, depth + 1) {
-                    return Some(nested);
-                }
+            && let Some(nested) = detect_oompa_subcommand(&inline, depth + 1)
+        {
+            return Some(nested);
+        }
     }
     None
 }
@@ -406,12 +408,12 @@ pub fn format_buddy_worker_result(output: Option<&Value>) -> Option<String> {
                 if let Some(Value::Object(thread)) = record.get("buddyWorkerThread")
                     && let (Some(c), Some(b), Some(l)) =
                         (nonempty_field(thread, "conversationId"), nonempty_field(thread, "buddyId"), nonempty_field(thread, "label"))
-                    {
-                        match threads.iter_mut().find(|t| t.0 == c) {
-                            Some(slot) => *slot = (c, b, l),
-                            None => threads.push((c, b, l)),
-                        }
+                {
+                    match threads.iter_mut().find(|t| t.0 == c) {
+                        Some(slot) => *slot = (c, b, l),
+                        None => threads.push((c, b, l)),
                     }
+                }
                 for key in ["structuredContent", "content", "text", "result", "data"] {
                     if let Some(nested) = record.get(key) {
                         visit(nested, depth + 1, threads);

@@ -5,7 +5,7 @@
 use crate::discover::{Touched, classify, discover};
 use crate::model::{Format, Root};
 use crate::paths::ProjectDirResolver;
-use crate::read::{Outcome, Stamp, Taken, read_source};
+use crate::read::{FullReason, Outcome, Stamp, Taken, read_source};
 use crate::store::{Committed, Known, Writer};
 use rayon::prelude::*;
 use std::collections::{BTreeSet, HashMap};
@@ -36,6 +36,8 @@ pub struct Report {
 /// reader sees progress during a cold scan.
 const BATCH_SOURCES: usize = 256;
 const BATCH_MESSAGES: usize = 50_000;
+/// Full re-reads of known sources above this size are logged.
+const LOUD_FULL_READ_BYTES: u64 = 16 << 20;
 
 pub struct Engine {
     pub roots: Vec<Root>,
@@ -172,6 +174,11 @@ impl Engine {
                             Taken::Unchanged => report.unchanged += 1,
                             Taken::Resumed => report.resumed += 1,
                             Taken::Full(reason) => {
+                                // A known source read from byte 0 costs its whole size (4 s for the
+                                // 934 MB rollout): say so in the server log, never silently.
+                                if reason != FullReason::Unseen && outcome.bytes_read > LOUD_FULL_READ_BYTES {
+                                    eprintln!("[ingest] full re-read ({}) of {path}: {} MB", reason.label(), outcome.bytes_read >> 20);
+                                }
                                 report.full += 1;
                                 *report.full_reasons.entry(reason.label()).or_default() += 1;
                             }
@@ -179,9 +186,10 @@ impl Engine {
                         if quiet(writer, &path, &outcome) {
                             // Nothing shown changed (a touch, a partial line): new stamp, no revision.
                             if writer.restamp(&path, &outcome).is_ok()
-                                && let Some(k) = known.get_mut(&path) {
-                                    k.stamp = outcome.stamp;
-                                }
+                                && let Some(k) = known.get_mut(&path)
+                            {
+                                k.stamp = outcome.stamp;
+                            }
                             continue;
                         }
                         batch_messages += outcome.messages.len();

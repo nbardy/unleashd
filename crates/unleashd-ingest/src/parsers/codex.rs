@@ -166,24 +166,29 @@ fn user_content(payload: &Value, before_first_message: bool) -> String {
     let kinds = metadata.and_then(|m| m.get("content_item_kinds"));
     let content = payload.get("content");
     if let (Some(Value::Array(blocks)), Some(Value::Array(kinds))) = (content, kinds)
-        && kinds.len() == blocks.len() {
-            let kept: Vec<Value> = blocks
-                .iter()
-                .zip(kinds)
-                .filter(|(_, kind)| !kind.as_str().is_some_and(|k| SETUP_KINDS.contains(&k)))
-                .map(|(block, _)| block.clone())
-                .collect();
-            return content_text(Some(&Value::Array(kept)));
-        }
+        && kinds.len() == blocks.len()
+    {
+        let kept: Vec<Value> = blocks
+            .iter()
+            .zip(kinds)
+            .filter(|(_, kind)| !kind.as_str().is_some_and(|k| SETUP_KINDS.contains(&k)))
+            .map(|(block, _)| block.clone())
+            .collect();
+        return content_text(Some(&Value::Array(kept)));
+    }
     // Codex 0.146 did not tag its startup bundle; only that exact three-block envelope is removed.
-    if before_first_message && kinds.is_none() && metadata.and_then(|m| m.get("turn_id")).is_some_and(Value::is_string)
+    if before_first_message
+        && kinds.is_none()
+        && metadata.and_then(|m| m.get("turn_id")).is_some_and(Value::is_string)
         && let Some(Value::Array(blocks)) = content
-            && blocks.len() == 3 && blocks.iter().all(|b| b.get("type").and_then(Value::as_str) == Some("input_text")) {
-                let texts: Vec<String> = blocks.iter().map(|b| content_text(Some(&Value::Array(vec![b.clone()])))).collect();
-                if PLUGINS_BLOCK.is_match(&texts[0]) && AGENTS_BLOCK.is_match(&texts[1]) && ENVIRONMENT_BLOCK.is_match(&texts[2]) {
-                    return String::new();
-                }
-            }
+        && blocks.len() == 3
+        && blocks.iter().all(|b| b.get("type").and_then(Value::as_str) == Some("input_text"))
+    {
+        let texts: Vec<String> = blocks.iter().map(|b| content_text(Some(&Value::Array(vec![b.clone()])))).collect();
+        if PLUGINS_BLOCK.is_match(&texts[0]) && AGENTS_BLOCK.is_match(&texts[1]) && ENVIRONMENT_BLOCK.is_match(&texts[2]) {
+            return String::new();
+        }
+    }
     content_text(content)
 }
 
@@ -225,9 +230,10 @@ impl CodexFold {
         let Some(name) = payload.get("name").and_then(Value::as_str).filter(|n| !n.is_empty()) else { return Ok(()) };
         let call_id = payload.get("call_id").or_else(|| payload.get("id")).and_then(Value::as_str);
         if let Some(id) = call_id.filter(|id| !id.is_empty())
-            && !self.seen_calls.insert(super::digest(id)) {
-                return Ok(());
-            }
+            && !self.seen_calls.insert(super::digest(id))
+        {
+            return Ok(());
+        }
         let raw = payload.get("arguments").filter(|v| !v.is_null()).or_else(|| payload.get("input"));
         let mut input = raw.cloned();
         let mut input_text = match raw {
@@ -236,10 +242,11 @@ impl CodexFold {
             None => None,
         };
         if let (true, Some(Value::String(s))) = (kind == "function_call", raw)
-            && let Ok(parsed) = serde_json::from_str::<Value>(s) {
-                input_text = Some(pretty_json(&parsed));
-                input = Some(parsed);
-            }
+            && let Ok(parsed) = serde_json::from_str::<Value>(s)
+        {
+            input_text = Some(pretty_json(&parsed));
+            input = Some(parsed);
+        }
         // Native shell calls use function names; the live CLI stream calls them shell.
         let bare = name.strip_prefix("functions.").unwrap_or(name);
         let display = if bare == "exec_command" || bare == "shell_command" { "shell" } else { name };
@@ -333,12 +340,13 @@ impl Fold for CodexFold {
         if is_token_count {
             // The last cumulative total wins; cached input is a subset of input, split out.
             if let (Some("event_msg"), Some("token_count")) = (entry_type, payload_type)
-                && let Some(total) = payload.get("info").and_then(|i| i.get("total_token_usage")).filter(|t| crate::text::truthy(Some(t))) {
-                    let n = |k: &str| total.get(k).and_then(Value::as_f64).unwrap_or(0.0);
-                    let cached = n("cached_input_tokens");
-                    self.usage =
-                        Some(Usage { input: n("input_tokens") - cached, output: n("output_tokens"), cache_read: cached, cache_write: 0.0 });
-                }
+                && let Some(total) = payload.get("info").and_then(|i| i.get("total_token_usage")).filter(|t| crate::text::truthy(Some(t)))
+            {
+                let n = |k: &str| total.get(k).and_then(Value::as_f64).unwrap_or(0.0);
+                let cached = n("cached_input_tokens");
+                self.usage =
+                    Some(Usage { input: n("input_tokens") - cached, output: n("output_tokens"), cache_read: cached, cache_write: 0.0 });
+            }
             return Ok(Line::Used);
         }
         let at = parse_time(entry.get("timestamp"));

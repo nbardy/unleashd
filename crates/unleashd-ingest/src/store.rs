@@ -228,10 +228,11 @@ impl Writer {
                 let Some(id): Option<i64> = find.query_row([path], |r| r.get(0)).optional()? else { continue };
                 if let Some((session_id, listed)) =
                     old_row.query_row([id], |r| Ok((r.get::<_, String>(0)?, r.get::<_, bool>(1)?))).optional()?
-                    && listed {
-                        tombstone.execute(params![path, session_id, rev])?;
-                        committed.removed.push(session_id);
-                    }
+                    && listed
+                {
+                    tombstone.execute(params![path, session_id, rev])?;
+                    committed.removed.push(session_id);
+                }
                 clear_messages.execute([id])?;
                 delete_row.execute([id])?;
                 delete_source.execute([id])?;

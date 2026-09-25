@@ -98,9 +98,10 @@ impl MuseFold {
             }
         }
         if durable.buddy.is_none()
-            && let Some(context) = payload.get("buddyContext").filter(|b| b.is_object()).and_then(buddy_context_from_value) {
-                durable.buddy = Some(context);
-            }
+            && let Some(context) = payload.get("buddyContext").filter(|b| b.is_object()).and_then(buddy_context_from_value)
+        {
+            durable.buddy = Some(context);
+        }
         sink.visible.check()
     }
 }

@@ -121,16 +121,19 @@ impl Fold for ClaudeFold {
             // Array content only ever renders as "[Tool result: …]" lines, which are dropped; a
             // user message is string content (extractUserContent + its filter).
             if let Some(content) = message.get("content").and_then(Value::as_str)
-                && !content.is_empty() && !content.starts_with("[Tool result:") {
-                    self.push(sink, Role::User, content.to_string(), at, None)?;
-                }
+                && !content.is_empty()
+                && !content.starts_with("[Tool result:")
+            {
+                self.push(sink, Role::User, content.to_string(), at, None)?;
+            }
             return Ok(Line::Used);
         }
         // assistant
         if self.model.as_deref().is_none_or(|m| m == "unknown")
-            && let Some(model) = truthy_string(message.get("model")) {
-                self.model = Some(model.to_string());
-            }
+            && let Some(model) = truthy_string(message.get("model"))
+        {
+            self.model = Some(model.to_string());
+        }
         self.observe_usage(&message);
         let provider = provider_from_model(self.model.as_deref());
         let mut parts: Vec<String> = Vec::new();

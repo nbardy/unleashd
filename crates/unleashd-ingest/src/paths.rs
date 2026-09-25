@@ -69,9 +69,10 @@ fn search(encoded: &str) -> Option<String> {
             for name in [run.clone(), format!(".{run}")] {
                 let candidate = format!("{parent}/{name}");
                 if is_dir(&candidate)
-                    && let Some(found) = walk(tokens, &candidate, end) {
-                        return Some(found);
-                    }
+                    && let Some(found) = walk(tokens, &candidate, end)
+                {
+                    return Some(found);
+                }
             }
         }
         None

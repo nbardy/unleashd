@@ -141,9 +141,10 @@ pub fn strip_merge_prefix(content: &str) -> String {
         };
     }
     if let Some(m) = MERGE_V0.find(content)
-        && content.rfind(MERGE_V0_SUFFIX) == Some(m.end() - MERGE_V0_SUFFIX.len()) {
-            return content[m.end()..].to_string();
-        }
+        && content.rfind(MERGE_V0_SUFFIX) == Some(m.end() - MERGE_V0_SUFFIX.len())
+    {
+        return content[m.end()..].to_string();
+    }
     content.to_string()
 }
 
