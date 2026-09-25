@@ -3,3 +3,4 @@ packages:
   - "server"
   - "client"
   - "vendor/agent-cli-tool"
+  - "crates/unleashd-buddies"

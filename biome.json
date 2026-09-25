@@ -59,7 +59,9 @@
       "runs",
       "vendor",
       "agent_notes",
-      "shared/src/generated"
+      "shared/src/generated",
+      "crates/target",
+      "crates/*/index.d.ts"
     ]
   }
 }
