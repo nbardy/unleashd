@@ -76,7 +76,8 @@ WebSocket command. Until 2026-09-24 it lived with the NEW-badge indexes in a
 server-synced blob (`ui-state.json`, debounced `POST /api/ui-state`) keyed by
 `sessionId ?? id`. The server rotates sessionId, and the snapshot POST lost
 writes on refresh and reconnect, so hidden conversations kept reappearing.
-The server retires that file on first start (`retireLegacyUiState`).
+The server retired that file on first start; the retirement code was deleted in T14b
+(2026-09-26) after the live store showed it done (`ui-state.retired.json` stays on disk).
 
 Storage reads go through `DeviceUiPrefsSchema.partial().safeParse` (discard whole
 blob on failure — no silent half-merge). Subscribe via per-field derived atoms

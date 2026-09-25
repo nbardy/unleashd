@@ -35,7 +35,6 @@ import {
 } from './conversations/buddy-creation-service';
 import { ConversationConfigService } from './conversations/config-service';
 import { ConversationConfigStore } from './conversations/config-store';
-import { retireLegacyUiState } from './conversations/legacy-ui-state';
 import { runtimeMessageSource } from './conversations/messages';
 import { migrateConversationRecords } from './conversations/record-migration';
 import { type ConversationRuntime, createConversationRuntime } from './conversations/runtime';
@@ -689,8 +688,6 @@ void runServerStartup(
       // Before the config store reads a record: v1 records carry no kind.
       // One-time; the module goes once the live data dir is migrated (T09).
       await migrateConversationRecords({ appDataRoot: APP_DATA_DIR });
-      // Before any conversation loads: runtimes copy record.done at construction.
-      await retireLegacyUiState({ dataDirectory: APP_DATA_DIR, store: conversationConfigStore });
       await paletteService.initialize();
       // Uploads retention: a worker-thread pass now and daily. Every place a message or post can
       // name an upload is a reference root; see uploads/gc.ts for the deletion rule.
