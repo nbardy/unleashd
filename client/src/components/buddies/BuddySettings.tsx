@@ -28,7 +28,9 @@ export function BuddySettings({ buddyId, name }: { buddyId: string; name: string
     []
   );
   const availability = usePolledFetch(checkAvailability, 5_000);
-  const canDelete = availability.data === true && !availability.error;
+  // Only a check that just succeeded enables Delete; a failed recheck (`stale`)
+  // does not ride on the last answer.
+  const canDelete = availability.kind === 'ready' && availability.data;
   async function archive() {
     if (!canDelete) return;
     setBusy(true);
@@ -90,10 +92,10 @@ export function BuddySettings({ buddyId, name }: { buddyId: string; name: string
           can reload safely. This button will enable automatically.
         </p>
       )}
-      {availability.loading && availability.data === null && (
-        <p role="status">Checking availability…</p>
+      {availability.kind === 'loading' && <p role="status">Checking availability…</p>}
+      {(availability.kind === 'failed' || availability.kind === 'stale') && (
+        <p role="alert">{availability.error.message}</p>
       )}
-      {availability.error && <p role="alert">{availability.error.message}</p>}
       {error && <p role="alert">{error}</p>}
     </section>
   );

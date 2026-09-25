@@ -40,16 +40,19 @@ export function BuddyMessages({
   onReply(messageId: string, reply: BuddyOwnerReply): Promise<void>;
   workspaceId?: string;
 }) {
-  const { data, error, refetch } = usePolledFetch<BuddyMessage[]>(
+  const mailbox = usePolledFetch<BuddyMessage[]>(
     buddyId ? `/api/buddies/messages?buddyId=${encodeURIComponent(buddyId)}` : null,
     5000
   );
+  const { data, refetch } = mailbox;
   const visibleMessages = data ?? messages;
   return (
     <section className="buddy-messages" aria-label="Mailbox">
       <h2>Mailbox</h2>
       <p>Messages, replies, and requests for your approval.</p>
-      {error && <p role="alert">Mailbox could not refresh: {error.message}</p>}
+      {(mailbox.kind === 'failed' || mailbox.kind === 'stale') && (
+        <p role="alert">Mailbox could not refresh: {mailbox.error.message}</p>
+      )}
       {visibleMessages.length === 0 && <p>No messages yet.</p>}
       {visibleMessages.map((message) => (
         <BuddyMessageCard
@@ -126,7 +129,9 @@ function BuddyListsSection({
     <section className="buddy-messages-list-section" aria-label="Channels">
       <h3>Channels</h3>
       <p>Public workspace streams for standups, handoffs, and announcements.</p>
-      {lists.error && <p role="alert">Channels could not refresh: {lists.error.message}</p>}
+      {(lists.kind === 'failed' || lists.kind === 'stale') && (
+        <p role="alert">Channels could not refresh: {lists.error.message}</p>
+      )}
       {renderFeed(feedPhase(lists), {
         loading: () => <ChannelLoader label="Loading channels…" />,
         failed: () => null,
@@ -227,7 +232,7 @@ function ChannelFeed({
     ),
     CHANNEL_BACKSTOP_MS
   );
-  const { data, error, refetch } = feed;
+  const { data, refetch } = feed;
   const sortedPosts = useMemo(
     () =>
       [...(data ?? [])].sort(
@@ -250,7 +255,9 @@ function ChannelFeed({
     <article className="buddy-messages-list-feed">
       <h4>{list.name}</h4>
       <p>{list.purpose}</p>
-      {error && <p role="alert">Posts could not refresh: {error.message}</p>}
+      {(feed.kind === 'failed' || feed.kind === 'stale') && (
+        <p role="alert">Posts could not refresh: {feed.error.message}</p>
+      )}
       {projectIds.length > 0 && (
         <div className="buddy-messages-list-filter">
           <span>Task</span>

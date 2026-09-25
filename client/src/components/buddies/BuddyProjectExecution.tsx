@@ -73,7 +73,12 @@ export function BuddyProjectExecution({
       ),
     [path]
   );
-  const { data: polled, error, refetch } = usePolledFetch<BuddyProjectExecutionView>(source, 5000);
+  const statusFetch = usePolledFetch<BuddyProjectExecutionView>(source, 5000);
+  const { data: polled, refetch } = statusFetch;
+  // Criteria and starts act on the work status, so they wait for a current
+  // one: a failed refresh (`stale`) disables them as a failed load does.
+  const error =
+    statusFetch.kind === 'failed' || statusFetch.kind === 'stale' ? statusFetch.error : null;
   const [startReceipt, setStartReceipt] = useState<{
     view: BuddyProjectExecutionView;
     previousPoll: BuddyProjectExecutionView | null;

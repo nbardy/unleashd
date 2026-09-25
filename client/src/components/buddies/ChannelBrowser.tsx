@@ -389,14 +389,12 @@ function ThreadPane({
         </div>
       </header>
       <div className="channel-browser-scroll" ref={follow.scrollRef} onScroll={follow.onScroll}>
-        {thread.error && (
+        {(thread.kind === 'failed' || thread.kind === 'stale') && (
           <p className="channel-browser-error" role="alert">
             Thread could not refresh: {thread.error.message}
           </p>
         )}
-        {feedPhase({ data: thread.data?.replies ?? null, error: thread.error }) === 'loading' && (
-          <ChannelLoader label="Loading thread…" />
-        )}
+        {thread.kind === 'loading' && <ChannelLoader label="Loading thread…" />}
         {root && (
           <ol className="channel-browser-messages channel-thread-root">
             <LeadRow post={root} context={context} />
@@ -560,7 +558,7 @@ function ChannelPane({
           </div>
         )}
         <div className="channel-browser-scroll" ref={follow.scrollRef} onScroll={follow.onScroll}>
-          {shown.error && (
+          {(shown.kind === 'failed' || shown.kind === 'stale') && (
             <p className="channel-browser-error" role="alert">
               Posts could not refresh: {shown.error.message}
             </p>
@@ -817,7 +815,7 @@ export function ChannelBrowser({
     listsUrl(workspaceId),
     CHANNEL_BACKSTOP_MS
   );
-  const { data, error } = lists;
+  const { data } = lists;
   useWarmChannelPosts(data);
   const ownerUnread = useOwnerUnread();
   const unreadByList = useMemo(
@@ -885,7 +883,9 @@ export function ChannelBrowser({
               }}
             />
           )}
-          {error && <p role="alert">Channels could not refresh: {error.message}</p>}
+          {(lists.kind === 'failed' || lists.kind === 'stale') && (
+            <p role="alert">Channels could not refresh: {lists.error.message}</p>
+          )}
           {data && data.length === 0 ? (
             <p className="channel-browser-rail-empty">No channels yet.</p>
           ) : (

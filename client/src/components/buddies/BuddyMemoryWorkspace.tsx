@@ -43,7 +43,9 @@ export function BuddyMemoryWorkspace({
             )}
         </select>
       </label>
-      {audiences.error && <p role="alert">{audiences.error.message}</p>}
+      {(audiences.kind === 'failed' || audiences.kind === 'stale') && (
+        <p role="alert">{audiences.error.message}</p>
+      )}
       <p>
         {scope
           ? 'These documents belong to the selected conversation or work audience.'
@@ -81,7 +83,8 @@ function ScopedMemory({
       ),
     [base, query]
   );
-  const { data, loading, error, refetch } = usePolledFetch(load, 0, !!workspaceId);
+  const memory = usePolledFetch(load, 0, !!workspaceId);
+  const { data, refetch } = memory;
   const request = async <T,>(suffix: string, input: unknown, method = 'POST') =>
     buddyApi<T>(`${base}${suffix}`, {
       method,
@@ -98,10 +101,10 @@ function ScopedMemory({
       memory={data ?? EMPTY_MEMORY}
       variant={variant}
       scoped={!!scope}
-      error={error?.message ?? null}
+      error={memory.kind === 'failed' || memory.kind === 'stale' ? memory.error.message : null}
       onRetry={refetch}
       onUpdate={
-        !data || loading
+        !data
           ? undefined
           : (kind, content, reasoning, baseVersion) =>
               save(
@@ -110,9 +113,9 @@ function ScopedMemory({
                 'PUT'
               )
       }
-      onRememberNote={!data || loading ? undefined : (input) => save('/notes', input)}
+      onRememberNote={!data ? undefined : (input) => save('/notes', input)}
       onRecall={
-        !data || loading
+        !data
           ? undefined
           : async (input) =>
               (await request<{ data: BuddyMemoryRecallResult }>('/recall', input)).data

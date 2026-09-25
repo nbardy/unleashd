@@ -77,7 +77,6 @@ export function BuddiesDashboard() {
     employee,
     automationsFetch,
     automations,
-    automationError,
     setSelectedWorkspaceId,
     showReviewConversations,
     setShowReviewConversations,
@@ -91,7 +90,8 @@ export function BuddiesDashboard() {
     talk,
     openProjectConversation,
   } = useBuddyPage(buddyId, activeTab, availableConversationIds, openConversation);
-  const loadError = (buddyId ? detail.error : overviewFetch.error)?.message ?? null;
+  // The route's own read: one Buddy's detail, or the directory.
+  const pageFetch = buddyId ? detail : overviewFetch;
   const workGroupsAtom = useMemo(() => buddyWorkGroupsAtom(workspaceProjects), [workspaceProjects]);
   const workGroups = useAtomValue(workGroupsAtom);
 
@@ -135,13 +135,25 @@ export function BuddiesDashboard() {
     return <Navigate to={buddyTabPath(buddyId, activeTab)} replace />;
   }
 
-  if (loadError && !employee) {
+  // Only a read that never loaded replaces the page. A failed refresh is
+  // `stale`: the page stays, with `refreshNotice` under its heading. Until
+  // 2026-09-25 the directory tested the refresh's error first, so one failed
+  // poll of the overview (the Sidebar polls the same key) blanked it.
+  if (pageFetch.kind === 'failed') {
     return (
       <div className="buddies-dashboard buddies-dashboard--centered">
-        <div className="buddies-error">{loadError}</div>
+        <div className="buddies-error">{pageFetch.error.message}</div>
       </div>
     );
   }
+  const refreshNotice = pageFetch.kind === 'stale' && (
+    <p>
+      <output>Could not refresh: {pageFetch.error.message}</output>{' '}
+      <button type="button" onClick={pageFetch.refetch}>
+        Retry
+      </button>
+    </p>
+  );
   if (!buddyId && overview) {
     return (
       <div className="buddies-dashboard">
@@ -151,6 +163,7 @@ export function BuddiesDashboard() {
           onOpen={(id) => navigate(`/buddies/${id}`)}
           onNew={() => void openBuddyBuilder()}
           creating={busy === 'buddy-builder'}
+          notice={refreshNotice}
         />
       </div>
     );
@@ -279,6 +292,7 @@ export function BuddiesDashboard() {
                   </span>
                 </div>
               </details>
+              {refreshNotice}
             </div>
           </div>
           <div className="buddy-hero-actions">
@@ -543,9 +557,9 @@ export function BuddiesDashboard() {
 
         {activeTab === 'automations' && (
           <>
-            {automationError && (
+            {(automationsFetch.kind === 'failed' || automationsFetch.kind === 'stale') && (
               <div className="buddies-error" role="alert">
-                Automations are unavailable: {automationError}
+                Automations are unavailable: {automationsFetch.error.message}
               </div>
             )}
             <BuddyAutomationsTab

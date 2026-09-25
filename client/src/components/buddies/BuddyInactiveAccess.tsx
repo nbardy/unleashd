@@ -38,7 +38,9 @@ export function BuddyInactiveAccess({ workspaceId }: { workspaceId: string }) {
       ),
     [path]
   );
-  const { data, error, refetch } = usePolledFetch(source, 5_000);
+  const access = usePolledFetch(source, 5_000);
+  const { data, refetch } = access;
+  const error = access.kind === 'failed' || access.kind === 'stale' ? access.error : null;
   // The open pair is held apart from the list: a successful revocation drops
   // the row on the next poll, and the receipt must stay on screen when it does.
   const [open, setOpen] = useState<Entry | null>(null);

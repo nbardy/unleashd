@@ -21,7 +21,9 @@ export function BuddySoulEditor({ buddyId, className }: { buddyId: string; class
       ),
     [url]
   );
-  const { data, error, loading, refetch } = usePolledFetch(source, 0);
+  const soul = usePolledFetch(source, 0);
+  const { data, refetch } = soul;
+  const loading = soul.kind === 'loading';
   const [draft, setDraft] = useState<{ base: BuddySoul; content: string } | null>(null);
   const [conflict, setConflict] = useState<{
     saved: BuddySoul;
@@ -49,7 +51,7 @@ export function BuddySoulEditor({ buddyId, className }: { buddyId: string; class
         <span>Soul</span>
         {current && <small>Based on revision {current.base.revision}</small>}
       </div>
-      {error && (
+      {(soul.kind === 'failed' || soul.kind === 'stale') && (
         <p role="alert">
           Could not load soul.{' '}
           <button type="button" onClick={refetch}>

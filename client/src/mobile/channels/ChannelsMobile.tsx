@@ -566,7 +566,7 @@ function ChannelScreen({ listId, context }: { listId: string; context: ScreenCon
         }}
       />
       <div className="mobile-channel__scroll" ref={follow.scrollRef} onScroll={follow.onScroll}>
-        {feed.error && (
+        {(feed.kind === 'failed' || feed.kind === 'stale') && (
           <p className="mobile-channel__error" role="alert">
             Posts could not refresh: {feed.error.message}
           </p>
@@ -656,14 +656,12 @@ function ThreadScreen({
         }}
       />
       <div className="mobile-channel__scroll" ref={follow.scrollRef} onScroll={follow.onScroll}>
-        {thread.error && (
+        {(thread.kind === 'failed' || thread.kind === 'stale') && (
           <p className="mobile-channel__error" role="alert">
             Thread could not refresh: {thread.error.message}
           </p>
         )}
-        {feedPhase({ data: thread.data?.replies ?? null, error: thread.error }) === 'loading' && (
-          <ChannelLoader label="Loading thread…" />
-        )}
+        {thread.kind === 'loading' && <ChannelLoader label="Loading thread…" />}
         {root && (
           <ol className="mobile-channel__posts">
             <Row row={{ kind: 'lead', key: root.id, post: root }} context={rowContext} />

@@ -446,7 +446,7 @@ export function SwarmAnalytics() {
   // nothing — never the previously selected project's data. A project visited
   // earlier in the session renders from cache with no spinner at all.
   const runsData = runsFetch.data ?? NO_RUNS_DATA;
-  const loading = runsFetch.loading;
+  const loading = runsFetch.kind === 'loading';
 
   // Track whether we've auto-selected the first swarm run for this project.
   // Without this, auto-selection of setSelectedSwarmId triggers the fetch effect

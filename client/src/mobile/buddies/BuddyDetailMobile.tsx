@@ -21,6 +21,7 @@ import type { EmployeeTab } from '../../components/buddies/types';
 import { useBuddyPage } from '../../hooks/useBuddyData';
 import { mobileConversationRouteState } from '../../utils/conversation-route-state';
 import { EmptyState } from '../components/EmptyState';
+import { MobileRefreshNotice } from '../components/MobileUI';
 import { AutomationsTab } from './BuddyDetailAutomationsTab';
 import { ConversationsTab } from './BuddyDetailConversationsTab';
 import { BuddyProfileEditor } from './BuddyDetailProfileEditor';
@@ -80,7 +81,6 @@ export function BuddyDetailMobile() {
     employee,
     automationsFetch,
     automations,
-    automationError,
     setSelectedWorkspaceId,
     showReviewConversations,
     setShowReviewConversations,
@@ -94,8 +94,6 @@ export function BuddyDetailMobile() {
     talk,
     openProjectConversation,
   } = useBuddyPage(buddyId, activeTab, availableIds, openConversation);
-  const loading = detail.loading;
-  const error = detail.error?.message ?? null;
 
   if (!buddyId) {
     return (
@@ -112,24 +110,25 @@ export function BuddyDetailMobile() {
     return <Navigate to={buddyTabPath(buddyId, activeTab)} replace />;
   }
 
-  if (loading) {
-    return (
-      <div className="mobile-hub" aria-live="polite" aria-busy="true">
-        <p className="mobile-empty__message">Loading buddy…</p>
-      </div>
-    );
-  }
-
-  if (error || !employee) {
-    return (
+  // No Buddy to show yet. `employee` is held in `stale` as well as `ready`, so
+  // a failed background refresh never lands here: it keeps the page and shows
+  // a notice in the hero. Until 2026-09-25 this branch tested the refresh's
+  // error before the data, and one "Failed to fetch" on a slow server replaced
+  // a loaded page with "Could not load buddy".
+  if (!employee) {
+    return detail.kind === 'failed' ? (
       <div className="mobile-hub">
         <EmptyState
           icon="⚠"
           title="Could not load buddy"
-          message={error ?? 'Buddy not found.'}
+          message={detail.error.message}
           actionLabel="Back to Buddies"
           onAction={() => navigate('/buddies')}
         />
+      </div>
+    ) : (
+      <div className="mobile-hub" aria-live="polite" aria-busy="true">
+        <p className="mobile-empty__message">Loading buddy…</p>
       </div>
     );
   }
@@ -152,6 +151,9 @@ export function BuddyDetailMobile() {
             </details>
           </div>
         </div>
+        {detail.kind === 'stale' && (
+          <MobileRefreshNotice error={detail.error} onRetry={detail.refetch} />
+        )}
       </header>
 
       <BuddySectionNav buddyId={buddyId} activeTab={activeTab} compact />
@@ -297,17 +299,25 @@ export function BuddyDetailMobile() {
       )}
 
       {activeTab === 'automations' && (
-        <AutomationsTab
-          buddyId={employee.buddy.id}
-          workspaceId={workspace?.id}
-          automations={automations}
-          automationConversations={automationConversations}
-          busy={busy}
-          setBusy={setBusy}
-          error={automationError}
-          availableIds={availableIds}
-          onRefresh={() => void automationsFetch.refetch()}
-        />
+        <>
+          {automationsFetch.kind === 'stale' && (
+            <MobileRefreshNotice
+              error={automationsFetch.error}
+              onRetry={automationsFetch.refetch}
+            />
+          )}
+          <AutomationsTab
+            buddyId={employee.buddy.id}
+            workspaceId={workspace?.id}
+            automations={automations}
+            automationConversations={automationConversations}
+            busy={busy}
+            setBusy={setBusy}
+            error={automationsFetch.kind === 'failed' ? automationsFetch.error.message : null}
+            availableIds={availableIds}
+            onRefresh={() => void automationsFetch.refetch()}
+          />
+        </>
       )}
     </div>
   );

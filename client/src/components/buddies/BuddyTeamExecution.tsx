@@ -28,10 +28,15 @@ function BuddyTeamExecutionScope({
   } | null>(null);
   const [failure, setFailure] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
-  const { data, error, refetch } = usePolledFetch<BuddyTeamObservation>(
+  const observation = usePolledFetch<BuddyTeamObservation>(
     `/api/buddies/${encodeURIComponent(buddyId)}/team-state?workspaceId=${encodeURIComponent(workspaceId)}&offset=${detail ? 0 : offset}${detail ? `&runId=${encodeURIComponent(detail.runId)}&checkpointOffset=${detail.checkpointOffset}&deliveryOffset=${detail.deliveryOffset}` : ''}`,
     5000
   );
+  const { data, refetch } = observation;
+  const loadFailure =
+    observation.kind === 'failed' || observation.kind === 'stale'
+      ? observation.error.message
+      : null;
   return (
     <section className="buddy-team-execution" aria-label="Team execution">
       <h2>Team execution</h2>
@@ -40,8 +45,8 @@ function BuddyTeamExecutionScope({
           All executions
         </button>
       )}
-      {(failure || error) && <p role="alert">{failure ?? error?.message}</p>}
-      {!data && !error && <p>Loading execution receipts…</p>}
+      {(failure ?? loadFailure) && <p role="alert">{failure ?? loadFailure}</p>}
+      {observation.kind === 'loading' && <p>Loading execution receipts…</p>}
       {data && (
         <>
           <BuddyTeamExecutionList

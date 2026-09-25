@@ -5,6 +5,7 @@ import { resource, usePolledFetch } from './usePolledFetch';
 export interface ProviderCatalogState {
   catalog: ProviderCatalog | null;
   isLoading: boolean;
+  /** The catalog never loaded. A failed re-read keeps `catalog` and is not an error here. */
   error: Error | null;
   retry: () => void;
 }
@@ -25,6 +26,11 @@ const PROVIDER_CATALOG = resource<ProviderCatalog>('/api/provider-catalog', asyn
 
 /** Shared catalog resource for every configuration surface. */
 export function useProviderCatalog(): ProviderCatalogState {
-  const { data, loading, error, refetch } = usePolledFetch<ProviderCatalog>(PROVIDER_CATALOG, 0);
-  return { catalog: data, isLoading: loading, error, retry: refetch };
+  const catalog = usePolledFetch<ProviderCatalog>(PROVIDER_CATALOG, 0);
+  return {
+    catalog: catalog.data,
+    isLoading: catalog.kind === 'loading',
+    error: catalog.kind === 'failed' ? catalog.error : null,
+    retry: catalog.refetch,
+  };
 }

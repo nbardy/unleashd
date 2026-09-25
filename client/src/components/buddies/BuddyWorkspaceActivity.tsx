@@ -79,7 +79,8 @@ export function BuddyWorkspaceActivity() {
     () => (workspaceId ? workspaceActivityResource(workspaceId) : null),
     [workspaceId]
   );
-  const { data, loading, error, refetch } = usePolledFetch(loadActivity, 2_000);
+  const activity = usePolledFetch(loadActivity, 2_000);
+  const { data, refetch } = activity;
   const activeCount = data?.members.reduce((sum, member) => sum + member.jobs.length, 0) ?? 0;
 
   return (
@@ -113,10 +114,12 @@ export function BuddyWorkspaceActivity() {
         )}
       </header>
 
-      {loading && !data && <p className="buddy-workspace-state">Loading workspace activity…</p>}
-      {error && !data && (
+      {activity.kind === 'loading' && (
+        <p className="buddy-workspace-state">Loading workspace activity…</p>
+      )}
+      {activity.kind === 'failed' && (
         <div className="buddy-workspace-state buddy-workspace-state--error" role="alert">
-          <p>{error.message}</p>
+          <p>{activity.error.message}</p>
           <button type="button" onClick={refetch}>
             Retry
           </button>

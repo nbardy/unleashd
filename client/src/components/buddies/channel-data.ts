@@ -25,7 +25,7 @@ import { type UIEvent, useEffect, useLayoutEffect, useMemo, useRef, useState } f
 import { type OutboxEntry, channelOutboxAtom, outboxDrop } from '../../atoms/channel-outbox';
 import { warmResources } from '../../atoms/prefetch';
 import { seedResource } from '../../atoms/resources';
-import { resource, usePolledFetch } from '../../hooks/usePolledFetch';
+import { type PolledState, resource, usePolledFetch } from '../../hooks/usePolledFetch';
 import { newId } from '../../utils/ids';
 import { buddyApi } from './api';
 import { type ChannelReference, type ChannelTask, workspaceTasksUrl } from './channel-text';
@@ -360,10 +360,10 @@ export function channelRows(newestFirst: readonly BuddyMailingListPost[]): Chann
 export type FeedPhase = 'loading' | 'failed' | 'empty' | 'posts';
 
 export function feedPhase(feed: {
+  kind: PolledState<unknown>['kind'];
   data: readonly unknown[] | null;
-  error: Error | null;
 }): FeedPhase {
-  if (feed.data === null) return feed.error ? 'failed' : 'loading';
+  if (feed.data === null) return feed.kind === 'failed' ? 'failed' : 'loading';
   return feed.data.length === 0 ? 'empty' : 'posts';
 }
 

@@ -25,6 +25,9 @@ Import from `mobile/components/MobileUI.tsx`:
 - `MobileBadge` for compact status labels.
 - `MobilePath` for a safe, truncated working-directory label.
 - `MobileEmptyPanel` for an empty result inside an otherwise populated page.
+- `MobileRefreshNotice` for a page whose background refresh failed while it
+  still shows what loaded before (a `stale` polled state): one muted line and a
+  Retry link, never a replacement for the page.
 
 Use the `mobile-ui-stack` class for one-column card lists. Keep data fetching,
 domain copy, feature state, and feature-specific inner layouts in the feature.

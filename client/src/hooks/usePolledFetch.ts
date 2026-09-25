@@ -10,12 +10,31 @@ import {
   retainResourceKey,
 } from '../atoms/resources';
 
-export interface UsePolledFetchResult<T> {
-  data: T | null;
-  loading: boolean;
-  error: Error | null;
-  refetch: () => Promise<void>;
-}
+/**
+ * What a polled view renders from: the cache variant itself, with the value
+ * it holds surfaced as `data` on every variant (null where none is held).
+ *
+ * A sum, not the `{data, loading, error}` this hook returned until 2026-09-25.
+ * That product put a first load that failed and a background refresh that
+ * failed into the same `error` field, so a view that tested `error` before
+ * `data` swapped a page it was already showing for its full-screen failure:
+ * on a slow server one "Failed to fetch" replaced a loaded Buddy page on the
+ * phone with "Could not load buddy" (2026-09-24), and the Buddies directory,
+ * team settings and swarm reviews blanked the same way. Here the two are
+ * different variants, and `error` exists only on them, so reading it means
+ * saying which one you mean:
+ *
+ *   failed — nothing to show; the error IS the view.
+ *   stale  — `data` is still the view; the error is a notice beside it.
+ */
+export type PolledState<T> =
+  | { kind: 'idle'; data: null }
+  | { kind: 'loading'; data: null }
+  | { kind: 'ready'; data: T }
+  | { kind: 'failed'; data: null; error: Error }
+  | { kind: 'stale'; data: T; error: Error };
+
+export type UsePolledFetchResult<T> = PolledState<T> & { refetch: () => Promise<void> };
 
 /**
  * A poll source is either a plain URL (the common case — one GET per cycle) or
@@ -47,19 +66,19 @@ const toResource = <T>(source: PolledSource<T>): Resource<T> =>
     ? { key: source, load: (signal) => fetchJson<T>(source, signal) }
     : source;
 
-/** Thin dispatcher: one cache variant in, one view out, no work in any arm. */
-function viewOf<T>(entry: ResourceEntry<T>): Omit<UsePolledFetchResult<T>, 'refetch'> {
+/** Thin dispatcher: one cache variant in, the same variant out, no work in any arm. */
+function viewOf<T>(entry: ResourceEntry<T>): PolledState<T> {
   switch (entry.kind) {
     case 'idle':
-      return { data: null, loading: false, error: null };
+      return { kind: 'idle', data: null };
     case 'loading':
-      return { data: null, loading: true, error: null };
+      return { kind: 'loading', data: null };
     case 'ready':
-      return { data: entry.value, loading: false, error: null };
+      return { kind: 'ready', data: entry.value };
     case 'failed':
-      return { data: null, loading: false, error: entry.error };
+      return { kind: 'failed', data: null, error: entry.error };
     case 'stale':
-      return { data: entry.value, loading: false, error: entry.error };
+      return { kind: 'stale', data: entry.value, error: entry.error };
   }
 }
 
@@ -67,12 +86,14 @@ function viewOf<T>(entry: ResourceEntry<T>): Omit<UsePolledFetchResult<T>, 'refe
  * Read a server resource into the shared keyed cache (`atoms/resources.ts`).
  *
  * This hook owns no data. It subscribes to one cache key, asks for a refresh
- * when appropriate, and maps the cache variant onto the `{data, loading,
- * error}` shape call sites already use. Consequences worth knowing:
+ * when appropriate, and hands back the cache variant as a {@link PolledState}.
+ * Consequences worth knowing:
  *
  *   - Remount on a cached key renders instantly and revalidates behind the
- *     scenes. `loading` is true only when there is genuinely nothing to show,
- *     so navigating back to a page no longer flashes a spinner.
+ *     scenes. `loading` is the variant only when there is genuinely nothing
+ *     to show, so navigating back to a page no longer flashes a spinner.
+ *   - A failed refresh never takes data away: it is `stale`, which still
+ *     carries `data`. Render the page from `data` and the failure as a notice.
  *   - Two components on the same key share one request and one entry.
  *   - Stale-response races are structurally impossible. The old hook needed
  *     abort-on-source-change so the SLOWEST response could not win; a keyed

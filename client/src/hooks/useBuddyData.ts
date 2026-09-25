@@ -105,16 +105,13 @@ async function loadBuddyDetailData(buddyId: string, signal: AbortSignal): Promis
  * buddies switches entries and a late response for the previous buddy is
  * simply never read — no generation counter, no "is this mine?" check.
  */
+export const buddyDetailResource = (buddyId: string) =>
+  resource(`buddy-detail:${buddyId}`, (signal) => loadBuddyDetailData(buddyId, signal));
+
 export function useBuddyDetailData(
   buddyId: string | null | undefined
 ): UsePolledFetchResult<BuddyDetailData> {
-  const source = useMemo(
-    () =>
-      buddyId
-        ? resource(`buddy-detail:${buddyId}`, (signal) => loadBuddyDetailData(buddyId, signal))
-        : null,
-    [buddyId]
-  );
+  const source = useMemo(() => (buddyId ? buddyDetailResource(buddyId) : null), [buddyId]);
   return usePolledFetch<BuddyDetailData>(source, 0);
 }
 
@@ -159,7 +156,6 @@ export function useBuddyPage(
   const employee = detail.data?.employee ?? null;
   const automationsFetch = useBuddyAutomations(buddyId, activeTab === 'automations');
   const automations = automationsFetch.data ?? EMPTY_AUTOMATIONS;
-  const automationError = automationsFetch.error?.message ?? null;
 
   const [selectedWorkspaceId, setSelectedWorkspaceId] = useState('');
   const [showReviewConversations, setShowReviewConversations] = useState(false);
@@ -261,7 +257,6 @@ export function useBuddyPage(
     employee,
     automationsFetch,
     automations,
-    automationError,
     setSelectedWorkspaceId,
     showReviewConversations,
     setShowReviewConversations,

@@ -159,7 +159,8 @@ export function FilePreview({ path, type, workingDirectory, linkLabel }: FilePre
   );
   const markdown = usePolledFetch<string>(markdownSource, 0, hovered && type === 'markdown');
   const markdownContent = markdown.data;
-  const markdownError = markdown.error?.message ?? null;
+  // Each hover re-reads the file; one that fails keeps the preview it has (`stale`).
+  const markdownError = markdown.kind === 'failed' ? markdown.error.message : null;
 
   const handleMouseEnter = () => {
     const rect = triggerRef.current!.getBoundingClientRect();

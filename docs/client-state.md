@@ -118,8 +118,8 @@ usePolledFetch(resource(`buddy-detail:${buddyId}`, load), 0);     // multi-reque
 Why this and not component `useState`:
 
 - **Remount is free.** A cached key renders immediately and revalidates behind
-  the scenes. `loading` is true only when there is genuinely nothing to show,
-  so navigation never blanks — the mobile "every page makes me wait" symptom.
+  the scenes. `loading` is the state only when there is genuinely nothing to
+  show, so navigation never blanks — the mobile "every page makes me wait" symptom.
 - **One request per key.** Two panels on the same key share one fetch.
 - **Cross-key races are unrepresentable.** A late response for buddy A lands on
   buddy A's key; a component showing buddy B reads B's entry and cannot see it.
@@ -130,19 +130,34 @@ Why this and not component `useState`:
 - **The effect keys on the KEY, not the source object**, so an unstable inline
   resource no longer refetches every render.
 
-The cache entry is a sum, not `{data, loading, error}`:
+The cache entry is a sum, not `{data, loading, error}`, and `usePolledFetch`
+hands the same sum to the view (`PolledState` in
+[hooks/usePolledFetch.ts](../client/src/hooks/usePolledFetch.ts)), with the
+value as `data` on every variant:
 
-| Variant | Meaning | `usePolledFetch` reports |
+| Variant | Meaning | The view shows |
 |---|---|---|
-| `idle` | no resource requested (disabled / null source) | no data, not loading |
-| `loading` | first load, nothing cached | loading |
-| `ready` | value in hand | data |
-| `failed` | failed with nothing cached | error |
-| `stale` | failed refresh over a value we still hold | data AND error |
+| `idle` | no resource requested (disabled / null source) | nothing |
+| `loading` | first load, nothing cached | its loading state |
+| `ready` | value in hand | `data` |
+| `failed` | failed with nothing cached | its failure, in place of the page |
+| `stale` | failed refresh over a value we still hold | `data`, and the failure as a notice |
 
-`stale` is why `useSwarmProjects` no longer keeps a `prevProjectsRef` shadow
-copy: retaining the last-known value across a failed refresh is the cache's job,
-and the error is still reported rather than silently swallowed.
+`error` exists only on `failed` and `stale`, so reading it means naming which
+one. Render the page from `data`; replace it only on `failed`. Until 2026-09-25
+the hook flattened this to `{data, loading, error}`, one `error` field for both
+failures, and views that tested `error` before `data` threw away pages they
+held: on 2026-09-24 one "Failed to fetch" on a slow server replaced a loaded
+Buddy page on the phone with "Could not load buddy", and the desktop directory
+(one failed Sidebar poll of the shared overview key), team settings, swarm
+reviews and the mobile Automations tab blanked the same way. A stale page says
+so quietly (`MobileRefreshNotice` on mobile, a "Could not refresh" line under
+the heading on the desktop Buddy page). Guarded by
+`client/test/failed-refresh-keeps-page.test.tsx`.
+
+`stale` is also why `useSwarmProjects` no longer keeps a `prevProjectsRef`
+shadow copy: retaining the last-known value across a failed refresh is the
+cache's job, and the error is still reported rather than silently swallowed.
 
 A successful refresh is **structurally shared** with the value it replaces
 (`settledEntry` in resources.ts): an equal answer writes nothing, so no

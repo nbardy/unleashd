@@ -1,6 +1,6 @@
 import { useAtomValue } from 'jotai';
 import { archivedBuddyIdsAtom } from '../../atoms/buddy-visibility';
-import { useState } from 'react';
+import { type ReactNode, useState } from 'react';
 import type { BuddyOverview } from './types';
 import {
   buddyCardMetrics,
@@ -15,11 +15,14 @@ export function BuddyDirectory({
   onOpen,
   onNew,
   creating,
+  notice,
 }: {
   overview: BuddyOverview;
   onOpen: (id: string) => void;
   onNew: () => void;
   creating: boolean;
+  /** Under the intro: the overview's last refresh failed, but this is what it holds. */
+  notice?: ReactNode;
 }) {
   const archived = useAtomValue(archivedBuddyIdsAtom);
   const [query, setQuery] = useState('');
@@ -32,6 +35,7 @@ export function BuddyDirectory({
           <span className="buddies-directory-eyebrow">Workspace directory</span>
           <h1>Buddies</h1>
           <p>Meet the specialist teammates shaping work across your projects.</p>
+          {notice}
         </div>
         <div className="buddies-directory-tools">
           <label className="buddies-directory-search">

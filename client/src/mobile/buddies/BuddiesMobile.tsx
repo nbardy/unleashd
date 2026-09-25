@@ -6,7 +6,7 @@ import { mobileConversationRouteState } from '../../utils/conversation-route-sta
 import { type BuddyDirectorySort, mobileBuddyDirectoryAtom } from '../atoms/buddies';
 import { createBuddyViaBuilder } from '../atoms/create';
 import { EmptyState } from '../components/EmptyState';
-import { MobileHeaderAction, MobilePage } from '../components/MobileUI';
+import { MobileHeaderAction, MobilePage, MobileRefreshNotice } from '../components/MobileUI';
 
 function initials(name: string): string {
   return name
@@ -21,7 +21,8 @@ export function BuddiesMobile() {
   const navigate = useNavigate();
   const location = useLocation();
   const chatRouteState = useMemo(() => mobileConversationRouteState(location), [location]);
-  const { data: overview, loading, error, refetch } = useBuddyOverview();
+  const overviewFetch = useBuddyOverview();
+  const overview = overviewFetch.data;
   const [query, setQuery] = useState('');
   const [sortKey, setSortKey] = useState<BuddyDirectorySort>('project');
   const directoryAtom = useMemo(
@@ -71,7 +72,7 @@ export function BuddiesMobile() {
     </MobilePage>
   );
 
-  if (loading && !overview) {
+  if (overviewFetch.kind === 'loading') {
     return shell(
       <output className="mobile-buddies__status" aria-live="polite" aria-busy="true">
         <p className="mobile-empty__message">Loading buddies…</p>
@@ -80,14 +81,17 @@ export function BuddiesMobile() {
     );
   }
 
-  if (error) {
+  // Only a directory that never loaded is unavailable. A failed refresh is
+  // `stale` and keeps the list below with a notice (until 2026-09-25 it
+  // replaced the list with this screen).
+  if (overviewFetch.kind === 'failed') {
     return shell(
       <EmptyState
         icon="⚠"
         title="Could not load buddies"
-        message={error.message}
+        message={overviewFetch.error.message}
         actionLabel="Retry"
-        onAction={refetch}
+        onAction={overviewFetch.refetch}
       />,
       'Unavailable'
     );
@@ -108,6 +112,9 @@ export function BuddiesMobile() {
 
   return shell(
     <>
+      {overviewFetch.kind === 'stale' && (
+        <MobileRefreshNotice error={overviewFetch.error} onRetry={overviewFetch.refetch} />
+      )}
       <div className="mobile-buddies__controls">
         <label className="mobile-search__field" aria-label="Filter buddies">
           <input

@@ -54,7 +54,12 @@ export function BuddyCoordination({
       ),
     [coordinationPath]
   );
-  const { data, error, refetch } = usePolledFetch<CoordinationView>(source, 5000);
+  const coordination = usePolledFetch<CoordinationView>(source, 5000);
+  const { data, refetch } = coordination;
+  const loadFailure =
+    coordination.kind === 'failed' || coordination.kind === 'stale'
+      ? coordination.error.message
+      : null;
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [failure, setFailure] = useState<string | null>(null);
@@ -79,7 +84,7 @@ export function BuddyCoordination({
   return (
     <section className="buddy-coordination" aria-label="Coordination">
       {saved && <output>Saved.</output>}
-      {(error || failure) && <p role="alert">{failure ?? error?.message}</p>}
+      {(failure ?? loadFailure) && <p role="alert">{failure ?? loadFailure}</p>}
       <details className="buddy-coordination__section">
         <summary>Background work & team</summary>
         {data?.memberships.map((m) => (

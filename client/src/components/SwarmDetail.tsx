@@ -274,11 +274,12 @@ function WorkerChatPane({
 function GitLogPanel({ projectRoot }: { projectRoot: string }) {
   const [isCollapsed, setIsCollapsed] = useState(false);
   // intervalMs 0: one fetch per projectRoot, aborted if projectRoot changes first.
-  const { data, loading } = usePolledFetch<GitLogEntry[]>(
+  const log = usePolledFetch<GitLogEntry[]>(
     `/api/git-log?dir=${encodeURIComponent(projectRoot)}`,
     0
   );
-  const commits = data ?? NO_COMMITS;
+  const loading = log.kind === 'loading';
+  const commits = log.data ?? NO_COMMITS;
 
   return (
     <div className={`swarm-bottom-panel ${isCollapsed ? 'collapsed' : ''}`}>
@@ -316,11 +317,11 @@ function OompaConfigPanel({ projectRoot }: { projectRoot: string }) {
   const [expandedPrompts, setExpandedPrompts] = useState<Map<string, string>>(new Map());
   const [isCollapsed, setIsCollapsed] = useState(false);
   // intervalMs 0: one fetch per projectRoot, aborted if projectRoot changes first.
-  // `error` is only ever tested for truthiness below, so the Error object serves as-is.
-  const { data: config, error } = usePolledFetch<OompaConfig>(
+  const configFetch = usePolledFetch<OompaConfig>(
     `/api/oompa-config?dir=${encodeURIComponent(projectRoot)}`,
     0
   );
+  const config = configFetch.data;
 
   // Move fetch outside setState updater — StrictMode double-fires updater callbacks,
   // which would duplicate the fetch. Instead, read current state and branch outside.
@@ -360,8 +361,11 @@ function OompaConfigPanel({ projectRoot }: { projectRoot: string }) {
       </button>
       {!isCollapsed && (
         <div className="swarm-panel-content">
-          {error && <div className="panel-error">No oompa config found</div>}
-          {!config && !error && <div className="panel-loading">Loading config...</div>}
+          {/* A config that loaded once stays shown if a re-read fails (`stale`). */}
+          {configFetch.kind === 'failed' && (
+            <div className="panel-error">No oompa config found</div>
+          )}
+          {configFetch.kind === 'loading' && <div className="panel-loading">Loading config...</div>}
           {config && (
             <div className="config-summary">
               {config.workers.map((w, i) => {
@@ -421,11 +425,12 @@ function SwarmRunsPanel({
   // All three loads use intervalMs 0: one fetch per key, aborted if the key
   // changes first. The effects they replace had no such guard, so switching
   // projects or runs quickly let the slowest response win.
-  const { data: runsData, loading } = usePolledFetch<{ runs: SwarmRun[] }>(
+  const runsFetch = usePolledFetch<{ runs: SwarmRun[] }>(
     `/api/swarm-runs?dir=${encodeURIComponent(projectRoot)}`,
     0
   );
-  const runs = runsData?.runs ?? NO_RUNS;
+  const loading = runsFetch.kind === 'loading';
+  const runs = runsFetch.data?.runs ?? NO_RUNS;
 
   // Seeding the selection is its own concern. It used to sit inside the runs
   // fetch with selectedRunId in that effect's deps, which re-fetched the whole
@@ -443,17 +448,19 @@ function SwarmRunsPanel({
     runScoped('/api/swarm-reviews'),
     0
   );
-  // The hook keeps last-good data across a failed fetch (right for polling
-  // callers); this panel showed an empty list on failure, so keep that.
-  const reviews = reviewsFetch.error ? NO_REVIEWS : (reviewsFetch.data?.reviews ?? NO_REVIEWS);
+  // A failed re-read keeps the reviews already shown (`stale`). Until
+  // 2026-09-25 any error emptied the list, which read as "no reviews".
+  const reviews = reviewsFetch.data?.reviews ?? NO_REVIEWS;
 
   const newFiles = usePolledFetch<{ count: number }>(runScoped('/api/swarm-new-files'), 0);
-  // null while loading (the old effect reset to null on each run change), 0 on error.
-  const newFilesCount = newFiles.loading
-    ? null
-    : newFiles.error
-      ? 0
-      : (newFiles.data?.count ?? null);
+  // null while loading (the old effect reset to null on each run change), 0
+  // when the count never loaded; a failed re-read keeps the last count.
+  const newFilesCount =
+    newFiles.kind === 'loading'
+      ? null
+      : newFiles.kind === 'failed'
+        ? 0
+        : (newFiles.data?.count ?? null);
 
   if (loading) return <div className="empty-state">Loading run history...</div>;
   if (runs.length === 0) return <div className="empty-state">No runs recorded yet</div>;

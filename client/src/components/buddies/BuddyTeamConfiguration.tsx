@@ -170,7 +170,9 @@ export function BuddyTeamConfigurationResult({
           Settings have changed since this receipt. Replaying it will not restore old access.
         </output>
       )}
-      {live.error && <p role="alert">Work status could not refresh: {live.error.message}</p>}
+      {(live.kind === 'failed' || live.kind === 'stale') && (
+        <p role="alert">Work status could not refresh: {live.error.message}</p>
+      )}
       {view.blockers.length > 0 && (
         <div role="alert">
           <strong>Configuration blockers</strong>
@@ -363,6 +365,7 @@ export function BuddyTeamConfigurationRequest({
     [request, messageId, applied]
   );
   const previewResult = usePolledFetch(previewSource, 0);
+  const previewLoading = previewResult.kind === 'loading';
   const shownResult = result ?? previewResult.data;
   async function submit(preview: boolean) {
     setBusy(true);
@@ -410,20 +413,16 @@ export function BuddyTeamConfigurationRequest({
           workspaceId={request.configuration.workspaceId}
         />
       )}
-      {!shownResult && previewResult.loading && <output>Checking team setup…</output>}
+      {!shownResult && previewLoading && <output>Checking team setup…</output>}
       {!shownResult?.receipt && !applied && (
         <div className="buddy-team-configuration__actions">
-          <button
-            type="button"
-            disabled={busy || previewResult.loading}
-            onClick={() => void submit(true)}
-          >
+          <button type="button" disabled={busy || previewLoading} onClick={() => void submit(true)}>
             {busy ? 'Checking…' : 'Refresh preview'}
           </button>
           {shownResult && (
             <button
               type="button"
-              disabled={busy || previewResult.loading || !shownResult.canApply}
+              disabled={busy || previewLoading || !shownResult.canApply}
               onClick={() => void submit(false)}
             >
               Apply this team setup
@@ -434,11 +433,13 @@ export function BuddyTeamConfigurationRequest({
       {error && (
         <p role="alert">{error} You can retry the same setup request without duplicating it.</p>
       )}
-      {previewResult.error && <p role="alert">{previewResult.error.message}</p>}
+      {(previewResult.kind === 'failed' || previewResult.kind === 'stale') && (
+        <p role="alert">{previewResult.error.message}</p>
+      )}
       {onEdit && (
         <button
           type="button"
-          disabled={busy || previewResult.loading || (refreshing && !!shownResult?.receipt)}
+          disabled={busy || previewLoading || (refreshing && !!shownResult?.receipt)}
           onClick={onEdit}
         >
           {shownResult?.receipt
@@ -931,29 +932,36 @@ export function BuddyTeamSettings({
       ),
     [accessPath]
   );
-  const { data, loading, error, refetch } = usePolledFetch(source, 0);
-  if (error)
-    return (
-      <p role="alert">
-        {error.message}{' '}
-        <button type="button" onClick={refetch}>
-          Reload team settings
-        </button>
-      </p>
-    );
-  if (!data) return <output>Loading team settings…</output>;
+  const access = usePolledFetch(source, 0);
+  const { data, refetch } = access;
+  // A failed reload keeps the settings, and any edit in progress, under the
+  // alert; only a first load that failed has nothing else to show. Until
+  // 2026-09-25 any failure replaced the form and unmounted the edit.
+  const reload = (access.kind === 'failed' || access.kind === 'stale') && (
+    <p role="alert">
+      {access.error.message}{' '}
+      <button type="button" onClick={refetch}>
+        Reload team settings
+      </button>
+    </p>
+  );
+  if (!data) return reload || <output>Loading team settings…</output>;
+  // No `refreshing`: a reload over loaded settings keeps them (`ready`/`stale`)
+  // and has no in-flight variant. The `loading` this passed was never true here.
   return (
-    <BuddyTeamSetup
-      key={`${buddyId}:${workspaceId}:${initialTargetId ?? ''}`}
-      buddyId={buddyId}
-      workspaceId={workspaceId}
-      targets={data.targets}
-      grants={data.grants}
-      initialTargetId={initialTargetId}
-      initialMode={initialTargetId ? 'permissions' : 'roster'}
-      refreshing={loading}
-      onApplied={refetch}
-    />
+    <>
+      {reload}
+      <BuddyTeamSetup
+        key={`${buddyId}:${workspaceId}:${initialTargetId ?? ''}`}
+        buddyId={buddyId}
+        workspaceId={workspaceId}
+        targets={data.targets}
+        grants={data.grants}
+        initialTargetId={initialTargetId}
+        initialMode={initialTargetId ? 'permissions' : 'roster'}
+        onApplied={refetch}
+      />
+    </>
   );
 }
 

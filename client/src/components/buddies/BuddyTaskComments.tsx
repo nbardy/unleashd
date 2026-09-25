@@ -33,7 +33,9 @@ function BuddyTaskCommentsScope({ projectId }: { projectId: string }) {
       ),
     [path, cursor]
   );
-  const { data: page, loading, error, refetch } = usePolledFetch(source, 5000);
+  const comments = usePolledFetch(source, 5000);
+  const { data: page, refetch } = comments;
+  const loading = comments.kind === 'loading';
 
   async function append() {
     if (submitting.current || !body.trim()) return;
@@ -73,9 +75,9 @@ function BuddyTaskCommentsScope({ projectId }: { projectId: string }) {
   return (
     <section className="buddy-task-comments" aria-label="Task comments">
       <h3>Task comments</h3>
-      {error && (
+      {(comments.kind === 'failed' || comments.kind === 'stale') && (
         <p role="alert">
-          {error.message}{' '}
+          {comments.error.message}{' '}
           <button type="button" onClick={refetch}>
             Retry loading comments
           </button>

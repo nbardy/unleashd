@@ -121,6 +121,23 @@ export function MobilePath({ className, children, ...props }: HTMLAttributes<HTM
   );
 }
 
+/**
+ * A background refresh failed while the page still shows what loaded before
+ * (a `stale` PolledState, hooks/usePolledFetch.ts). Quiet on purpose: what is
+ * on screen is still right to read, only possibly behind. A failure replaces
+ * the page only when nothing ever loaded (`failed`).
+ */
+export function MobileRefreshNotice({ error, onRetry }: { error: Error; onRetry: () => void }) {
+  return (
+    <p className="mobile-muted">
+      <output>Could not refresh: {error.message}</output>{' '}
+      <button type="button" className="mobile-link" onClick={onRetry}>
+        Retry
+      </button>
+    </p>
+  );
+}
+
 export function MobileEmptyPanel({
   className,
   children,
