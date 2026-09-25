@@ -34,6 +34,7 @@ pub struct ClaudeFold {
     prev: Previous,
     /// Claude Code stamps the same request usage on every content-block line of a reply;
     /// counting each line overcounted ~2.4x (usage-routes.ts, 2026-09-25). One count per id.
+    #[serde(with = "super::digest_set")]
     usage_ids: HashSet<u64>,
     usage: Usage,
     sub_agents: SubAgentFold,

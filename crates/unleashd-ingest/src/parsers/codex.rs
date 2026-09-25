@@ -98,6 +98,7 @@ pub struct CodexFold {
     /// (and widen the time span) even in event mode, as the single-pass TS parser did.
     events_seen: bool,
     response_messages_shown: bool,
+    #[serde(with = "super::digest_set")]
     seen_calls: HashSet<u64>,
     prev: Previous,
     turns: HashMap<String, Turn>,

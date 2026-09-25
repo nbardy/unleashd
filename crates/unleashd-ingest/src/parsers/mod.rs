@@ -135,6 +135,33 @@ pub fn digest(text: &str) -> u64 {
     hash ^ (text.len() as u64).rotate_left(32)
 }
 
+/// Serde for a set of digests: one base64 string of the sorted little-endian values. A checkpoint
+/// is rewritten on every append, and the 934 MB rollout's 8.4k Codex call ids as a JSON number
+/// array were 176 KB of its 188 KB checkpoint: ~2.4 ms of every append (T13a). Base64 is 11 bytes
+/// per id and decodes without number parsing.
+pub mod digest_set {
+    use base64::Engine;
+    use base64::engine::general_purpose::STANDARD_NO_PAD;
+    use serde::{Deserialize, Deserializer, Serializer};
+    use std::collections::HashSet;
+
+    pub fn serialize<S: Serializer>(set: &HashSet<u64>, s: S) -> Result<S::Ok, S::Error> {
+        let mut sorted: Vec<u64> = set.iter().copied().collect();
+        sorted.sort_unstable();
+        let bytes: Vec<u8> = sorted.iter().flat_map(|d| d.to_le_bytes()).collect();
+        s.serialize_str(&STANDARD_NO_PAD.encode(bytes))
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<HashSet<u64>, D::Error> {
+        let text = <std::borrow::Cow<'de, str>>::deserialize(d)?;
+        let bytes = STANDARD_NO_PAD.decode(text.as_bytes()).map_err(serde::de::Error::custom)?;
+        if bytes.len() % 8 != 0 {
+            return Err(serde::de::Error::custom("digest set length is not a multiple of 8"));
+        }
+        Ok(bytes.chunks_exact(8).map(|c| u64::from_le_bytes(c.try_into().expect("8 bytes"))).collect())
+    }
+}
+
 /// Consecutive duplicate suppression plus the "an assistant reply starts when the message before
 /// it did" rule, shared by every parser that has it. Holds the previous *raw* message.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]

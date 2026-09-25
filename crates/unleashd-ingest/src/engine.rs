@@ -91,6 +91,17 @@ impl Engine {
         self.process(found, gone, on_commit)
     }
 
+    /// The event paths that name an append-only JSONL source (every format but the Gemini and
+    /// OpenCode documents), as given: the watcher watches these directly once written.
+    pub fn appendable(&self, paths: &BTreeSet<PathBuf>) -> Vec<PathBuf> {
+        paths
+            .iter()
+            .filter(|p| p.extension().is_some_and(|e| e == "jsonl"))
+            .filter(|p| self.root_of(p).is_some_and(|(root, path)| matches!(classify(&root, &path), Touched::Source(_))))
+            .cloned()
+            .collect()
+    }
+
     /// Apply a set of changed paths from the watcher.
     pub fn changed(&mut self, paths: BTreeSet<PathBuf>, on_commit: &mut dyn FnMut(&Committed)) -> Report {
         let mut sources = Vec::new();

@@ -61,3 +61,25 @@ fn checkpoints_stay_small_for_huge_prompts_and_replies() {
     assert!(size < 16 * 1024, "checkpoint is {size} bytes");
     assert_eq!(outcome.row.unwrap().label.chars().count(), 60);
 }
+
+#[test]
+fn codex_call_id_digests_cost_about_eleven_bytes_each_in_the_checkpoint() {
+    // The digest set was a JSON number array: 176 KB of the 934 MB rollout's 188 KB checkpoint,
+    // re-decoded and re-encoded on every append (T13a). Guard: one base64 string, ~11 bytes/id.
+    let dir = tempfile::tempdir().unwrap();
+    let calls: Vec<Value> = (0..2000)
+        .map(|i| {
+            json!({ "timestamp": "2026-09-10T07:00:00.000Z", "type": "response_item",
+                    "payload": { "type": "function_call", "name": "shell", "call_id": format!("call_{i:024}"), "arguments": "{}" } })
+        })
+        .collect();
+    let path = dir.path().join("rollout-calls.jsonl");
+    write(&path, &jsonl(&calls));
+    let outcome = read(Format::Codex, &path, None);
+    let size = serde_json::to_vec(outcome.checkpoint.as_ref().unwrap()).unwrap().len();
+    assert!(size < 2000 * 12 + 4096, "checkpoint is {size} bytes for 2000 call ids");
+    // It still dedupes after a round trip through the stored encoding.
+    append(&path, &jsonl(&calls[..1]));
+    let again = read(Format::Codex, &path, Some(&outcome));
+    assert!(again.messages.is_empty(), "a repeated call id is shown once");
+}
