@@ -1088,3 +1088,211 @@ test('owner channel unread is separate from Buddy read marks, forward-only and d
     raw.close();
   }
 });
+
+// ── Paging the owner's other feeds: a thread's replies, a Task's posts ──
+
+type WirePost = { id: string; createdAt: string };
+
+async function withServer(app: express.Express, body: (base: string) => Promise<void>) {
+  const server = app.listen(0, '127.0.0.1');
+  try {
+    await new Promise<void>((resolve, reject) => {
+      server.once('listening', resolve);
+      server.once('error', reject);
+    });
+    const { port } = server.address() as AddressInfo;
+    await body(`http://127.0.0.1:${port}`);
+  } finally {
+    await new Promise<void>((resolve, reject) =>
+      server.close((error) => (error ? reject(error) : resolve()))
+    );
+  }
+}
+
+// Posts in one millisecond tie on createdAt and order by random id; a post
+// that lands later must sort newest, so wait for the clock to move first.
+function nextMillisecond(): void {
+  for (const start = Date.now(); Date.now() === start; ) {}
+}
+
+// Walk a feed back from its newest page by `before`, the way the client pages.
+// `land` runs once, after the first page: a post arriving mid-walk.
+async function walkBack<T>(page: (query: string) => Promise<WirePost[]>, land: () => T) {
+  const walked: WirePost[] = [];
+  let current = await page('limit=50');
+  walked.push(...current);
+  const landed = land();
+  while (current.length === 50) {
+    current = await page(`before=${walked[walked.length - 1].id}&limit=50`);
+    walked.push(...current);
+  }
+  for (let index = 1; index < walked.length; index++) {
+    const [newer, older] = [walked[index - 1], walked[index]];
+    assert.ok(
+      newer.createdAt > older.createdAt ||
+        (newer.createdAt === older.createdAt && newer.id > older.id),
+      'pages must read newest-first'
+    );
+  }
+  const ids = walked.map((post) => post.id);
+  assert.equal(new Set(ids).size, ids.length, 'a post repeated across pages');
+  return { ids, landed };
+}
+
+// Until 2026-09-25 the thread route returned a thread's first 200 replies and
+// nothing past them, so reply 201 on never reached the owner. It now pages
+// like a channel, back from the newest reply, with the root on every read.
+test('owner thread paging: 250 replies walked back by keyset, each once, a reply landing mid-walk; from= holds the window', async () => {
+  const { raw, store, w, a } = fixture();
+  try {
+    const author = { kind: 'buddy' as const, buddyId: a.id };
+    const { list } = store.createList({
+      workspace: w.id,
+      author,
+      key: 'long',
+      name: 'Long',
+      purpose: 'Threads',
+    });
+    let key = 0;
+    const post = (threadRoot: string | null) =>
+      store.createPost({
+        list: list.id,
+        author,
+        key: `p${key++}`,
+        purpose: 'reply',
+        body: 'text',
+        threadRoot,
+      }).post;
+    const root = post(null);
+    const foreign = post(post(null).id);
+    const replies = Array.from({ length: 250 }, () => post(root.id));
+
+    await withServer(routeTestApp(store), async (base) => {
+      const thread = `${base}/api/buddies/lists/${list.id}/threads/${root.id}`;
+      const read = async (query: string) => {
+        const response = await fetch(`${thread}?${query}`);
+        return {
+          status: response.status,
+          json: (await response.json()) as { root: WirePost; replies: WirePost[] },
+        };
+      };
+      const page = async (query: string) => {
+        const { status, json } = await read(query);
+        assert.equal(status, 200, JSON.stringify(json));
+        assert.equal(json.root.id, root.id, 'every read carries the root');
+        return json.replies;
+      };
+
+      const { ids, landed } = await walkBack(page, () => {
+        nextMillisecond();
+        return post(root.id);
+      });
+      assert.deepEqual(new Set(ids), new Set(replies.map((reply) => reply.id)));
+      // The reply that landed mid-walk sits above the first page, so walking
+      // back never meets it; the window the reader then holds has it once.
+      const window = async (floor: string) =>
+        (await page(`from=${floor}`)).map((reply) => reply.id);
+      assert.deepEqual(await window(ids[ids.length - 1]), [landed.id, ...ids]);
+      assert.deepEqual(await window(ids[120]), [landed.id, ...ids.slice(0, 121)]);
+
+      // An anchor outside this thread is a 400, never someone else's replies.
+      assert.equal((await read(`before=${foreign.id}`)).status, 400);
+      assert.equal((await read(`from=${root.id}`)).status, 400);
+      assert.equal((await read(`from=${ids[3]}&limit=50`)).status, 400);
+      // A reply is not a thread.
+      const replyAsRoot = await fetch(`${base}/api/buddies/lists/${list.id}/threads/${ids[0]}`);
+      assert.equal(replyAsRoot.status, 404);
+    });
+  } finally {
+    raw.close();
+  }
+});
+
+// The Task filter read one page (by offset), so a Task's older posts were out
+// of reach. It now pages like a channel. The package reads a Task's posts
+// only by offset, so the route keeps the keyset itself (channel-pages.ts
+// offsetOlder). A post landing between two of its store reads inside one
+// request, which another process writing the database can do, shifts every
+// offset by one: forced here once, since nothing else reaches that path.
+test('task feed paging: every post once across channels and threads, with posts landing between and within reads', async () => {
+  const { raw, store, w, a } = fixture();
+  try {
+    const author = { kind: 'buddy' as const, buddyId: a.id };
+    const task = ownProject(raw, a.id, w.id, 'Long task');
+    const otherTask = ownProject(raw, a.id, w.id, 'Other task');
+    const channel = (name: string) =>
+      store.createList({ workspace: w.id, author, key: name, name, purpose: name }).list.id;
+    const [one, two] = [channel('one'), channel('two')];
+    let key = 0;
+    const post = (list: string, project: string | null, threadRoot: string | null = null) =>
+      store.createPost({
+        list,
+        author,
+        key: `t${key++}`,
+        purpose: 'standup',
+        body: 'text',
+        project,
+        threadRoot,
+      }).post;
+    const root = post(one, task);
+    const taskPosts = [root];
+    for (let index = 0; index < 130; index++) {
+      taskPosts.push(index % 2 === 0 ? post(two, task) : post(one, task, root.id));
+      post(one, index % 3 === 0 ? otherTask : null);
+    }
+
+    let landWithinNextRead = false;
+    const racing = new Proxy(store, {
+      get(target, property) {
+        const value = Reflect.get(target, property, target);
+        if (property !== 'listPosts')
+          return typeof value === 'function' ? value.bind(target) : value;
+        return (input: Parameters<typeof store.listPosts>[0]) => {
+          const rows = target.listPosts(input);
+          if (landWithinNextRead) {
+            landWithinNextRead = false;
+            nextMillisecond();
+            post(two, task);
+          }
+          return rows;
+        };
+      },
+    });
+
+    await withServer(routeTestApp(racing), async (base) => {
+      const feed = `${base}/api/buddies/posts?workspaceId=${w.id}&projectId=${task}`;
+      const read = async (query: string) => {
+        const response = await fetch(`${feed}&${query}`);
+        return { status: response.status, posts: (await response.json()) as WirePost[] };
+      };
+      const page = async (query: string) => {
+        const { status, posts } = await read(query);
+        assert.equal(status, 200, JSON.stringify(posts));
+        return posts;
+      };
+
+      const { ids, landed } = await walkBack(page, () => {
+        nextMillisecond();
+        return post(one, task);
+      });
+      assert.deepEqual(new Set(ids), new Set(taskPosts.map((entry) => entry.id)));
+
+      // The window from the oldest post takes three store reads of 50; a post
+      // lands after the first. Nothing repeats and nothing already there drops.
+      landWithinNextRead = true;
+      const window = (await page(`from=${ids[ids.length - 1]}`)).map((entry) => entry.id);
+      assert.equal(landWithinNextRead, false, 'the landing was never forced');
+      assert.deepEqual(window, [landed.id, ...ids]);
+      // The post that landed mid-read is in the next read, once, on top.
+      const next = (await page(`from=${ids[ids.length - 1]}`)).map((entry) => entry.id);
+      assert.deepEqual(next.slice(1), window);
+      assert.equal(new Set(next).size, window.length + 1);
+
+      const outside = post(one, otherTask);
+      assert.equal((await read(`before=${outside.id}&limit=50`)).status, 400);
+      assert.equal((await read('offset=50')).status, 400);
+    });
+  } finally {
+    raw.close();
+  }
+});

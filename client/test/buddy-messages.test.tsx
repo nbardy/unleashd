@@ -16,18 +16,6 @@ register(
   import.meta.url
 );
 const { BuddyMessages } = await import('../src/components/buddies/BuddyMessages');
-const { taskChannelFeedUrl } = await import('../src/components/buddies/channel-data');
-
-test('task channel feed URL matches the server cross-list route contract', () => {
-  assert.equal(
-    taskChannelFeedUrl('ws-1', 'task-9'),
-    '/api/buddies/posts?workspaceId=ws-1&projectId=task-9&limit=50'
-  );
-  assert.equal(
-    taskChannelFeedUrl('ws a', 'task/b'),
-    '/api/buddies/posts?workspaceId=ws%20a&projectId=task%2Fb&limit=50'
-  );
-});
 
 const message: BuddyMessage = {
   id: 'message-owner',
@@ -290,7 +278,7 @@ test('channel feed renders newest-first with project filter and sender instance 
     ],
   });
   await loadResource({
-    key: '/api/buddies/lists/list_a/posts?limit=20',
+    key: '/api/buddies/lists/list_a/posts?limit=50',
     load: async () => [
       {
         id: 'post_old',
@@ -373,4 +361,67 @@ test('channel feed renders newest-first with project filter and sender instance 
   assert.match(html, /href="\/chat\/conv-aaaa111122223333"/);
   assert.doesNotMatch(html, /href="\/chat\/conv-bbbb444455556666"/);
   assert.match(html, /Lead/);
+});
+
+// The reader read one page of 20 and nothing older. It now reads the Channels
+// feed: a full page means there may be more, asked for by button because the
+// composer sits below the list.
+test('the Mailbox channel reader pages the Channels feed: a full page offers older posts', async () => {
+  const { Provider } = await import('jotai');
+  const { jotaiStore } = await import('../src/atoms/store');
+  const { loadResource } = await import('../src/atoms/resources');
+  await loadResource({
+    key: '/api/buddies/lists?workspaceId=ws-long',
+    load: async () => [
+      {
+        id: 'list_long',
+        workspaceId: 'ws-long',
+        name: 'Standups',
+        purpose: 'Daily notes',
+        createdBy: { kind: 'buddy', buddyId: 'lead' },
+        createdAt: '2026-09-21T00:00:00.000Z',
+        postCount: 80,
+        latestPostAt: '2026-09-21T02:00:00.000Z',
+      },
+    ],
+  });
+  await loadResource({
+    key: '/api/buddies/lists/list_long/posts?limit=50',
+    load: async () =>
+      Array.from({ length: 50 }, (_, index) => ({
+        id: `post_${index}`,
+        listId: 'list_long',
+        workspaceId: 'ws-long',
+        author: { kind: 'buddy', buddyId: 'lead' },
+        threadRootId: null,
+        replyCount: 0,
+        latestReplyAt: null,
+        purpose: 'standup',
+        body: `Standup number ${index}.`,
+        evidence: [],
+        projectId: null,
+        createdAt: new Date(Date.UTC(2026, 8, 21, 2, -index)).toISOString(),
+        senderConversationId: null,
+        senderRunId: null,
+      })),
+  });
+  const html = renderToStaticMarkup(
+    <MemoryRouter>
+      <Provider store={jotaiStore}>
+        <BuddyMessages
+          buddyId="lead"
+          messages={[]}
+          availableConversationIds={new Set()}
+          onReply={async () => {}}
+          workspaceId="ws-long"
+        />
+      </Provider>
+    </MemoryRouter>
+  );
+  const newestAt = html.indexOf('Standup number 0.');
+  const oldestShownAt = html.indexOf('Standup number 49.');
+  const olderAt = html.indexOf('Show older posts');
+  assert.ok(newestAt !== -1 && newestAt < oldestShownAt, 'newest-first');
+  assert.ok(oldestShownAt < olderAt, 'older posts are asked for below the oldest shown');
+  assert.match(html, /<button type="button" class="channel-history-more">Show older posts/);
 });

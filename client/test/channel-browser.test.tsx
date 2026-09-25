@@ -295,3 +295,93 @@ test('posts render markdown mentions, live Task chips, inline media and thread s
   assert.match(html, /channel-browser-buddies/);
   assert.doesNotMatch(html, />Gone</);
 });
+
+// Until 2026-09-25 the thread pane read a thread's first 200 replies and the
+// Task filter one page, and neither could page back. Both now read through
+// the channel's keyset feed: each opens on its newest page with the flame
+// above it while older posts may remain, and a thread keeps its root on top.
+test('the thread pane and the Task filter open on their newest page and page back like the channel', async () => {
+  const post = (id: string, minute: number, overrides: Record<string, unknown> = {}) => ({
+    id,
+    listId: 'list_long',
+    workspaceId: 'ws-long',
+    author: { kind: 'buddy', buddyId: 'lead' },
+    threadRootId: null,
+    replyCount: 0,
+    latestReplyAt: null,
+    purpose: 'message',
+    body: `Body of ${id}.`,
+    evidence: [],
+    projectId: null,
+    createdAt: new Date(Date.UTC(2026, 8, 24, 9, minute)).toISOString(),
+    senderConversationId: null,
+    senderRunId: null,
+    ...overrides,
+  });
+  // A full page, newest-first: more may sit before it.
+  const fullPage = (prefix: string, overrides: Record<string, unknown>) =>
+    Array.from({ length: 50 }, (_, index) =>
+      post(`${prefix}-${49 - index}`, 200 - index, overrides)
+    );
+  const root = post('root', 1, { replyCount: 260, latestReplyAt: '2026-09-24T12:20:00.000Z' });
+  await loadResource({
+    key: '/api/buddies/lists?workspaceId=ws-long',
+    load: async () => [
+      {
+        id: 'list_long',
+        workspaceId: 'ws-long',
+        name: 'general',
+        purpose: 'Team chat',
+        createdBy: { kind: 'owner' },
+        createdAt: '2026-09-24T00:00:00.000Z',
+        postCount: 400,
+        latestPostAt: '2026-09-24T12:20:00.000Z',
+      },
+    ],
+  });
+  await loadResource({
+    key: '/api/buddies/lists/list_long/posts?limit=50',
+    load: async () => [post('tasked', 2, { projectId: 'task-long' }), root],
+  });
+  await loadResource({
+    key: '/api/buddies/posts?workspaceId=ws-long&projectId=task-long&limit=50',
+    load: async () => fullPage('task', { projectId: 'task-long' }),
+  });
+  await loadResource({
+    key: '/api/buddies/lists/list_long/threads/root?limit=50',
+    load: async () => ({ root, replies: fullPage('reply', { threadRootId: 'root' }) }),
+  });
+  await loadResource({ key: '/api/buddies/lists/list_long/responding', load: async () => [] });
+  const html = renderToStaticMarkup(
+    <MemoryRouter initialEntries={['/?channel=list_long&task=task-long&thread=root']}>
+      <Provider store={jotaiStore}>
+        <ChannelBrowser
+          workspaceId="ws-long"
+          workspaceName="long"
+          members={[{ id: 'lead', name: 'Lead', role: 'Own the work', status: 'active' }]}
+          tasks={[]}
+          availableConversationIds={new Set()}
+        />
+      </Provider>
+    </MemoryRouter>
+  );
+  const [channelPane, threadPane = ''] = html.split('aria-label="Thread"');
+  const inOrder = (pane: string, needles: string[]) => {
+    const at = needles.map((needle) => pane.indexOf(needle));
+    assert.deepEqual(
+      needles.filter((_, index) => at[index] === -1),
+      [],
+      'missing from the pane'
+    );
+    assert.deepEqual(
+      at,
+      [...at].sort((a, b) => a - b),
+      `out of order: ${needles.join(' < ')}`
+    );
+  };
+  const flame = 'class="channel-history"';
+  // The Task filter pages its cross-channel feed.
+  inOrder(channelPane, [flame, 'Body of task-0.', 'Body of task-49.']);
+  // The thread opens on its newest replies, the root above the older ones' flame.
+  inOrder(threadPane, ['Body of root.', flame, 'Body of reply-0.', 'Body of reply-49.']);
+});

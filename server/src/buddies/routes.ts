@@ -35,7 +35,7 @@ import {
   buddyExecutionPreferences,
   configFromProviderPreferences,
 } from '../conversations/config-mapping';
-import { type ChannelRead, readChannel } from './channel-pages';
+import { type FeedRead, type OwnerFeed, inFeed, readFeed } from './channel-pages';
 import { ListAuthorSchema } from './channel-routes';
 import type { BuddiesStorePort, BuddyAutomation, BuddyAutomationRun } from './contract';
 import { coordinationStore } from './coordination-store';
@@ -111,26 +111,34 @@ export interface BuddyRouteDependencies {
   isConversationDeleted(conversationId: string): Promise<boolean>;
 }
 
-const ChannelReadQuerySchema = z
-  .object({
-    limit: z.coerce.number().int().min(1).max(50).optional(),
-    before: z.string().min(1).optional(),
-    from: z.string().min(1).optional(),
-  })
-  .strict();
+// The page query every owner feed route reads (channel-pages.ts FeedRead).
+const FeedQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(50).optional(),
+  before: z.string().min(1).optional(),
+  from: z.string().min(1).optional(),
+});
 
-// κ for the owner's channel read. A floor that is not a top-level post here
-// is a 400, not an empty window.
-function channelRead(buddies: BuddiesStorePort, listId: string, query: unknown): ChannelRead {
-  const input = ChannelReadQuerySchema.parse(query);
-  if (input.from === undefined)
-    return { kind: 'older', anchor: input.before ?? null, limit: input.limit ?? 20 };
-  if (input.before !== undefined || input.limit !== undefined)
+// κ for an owner feed read. An anchor or floor that is not a post in this
+// feed is a 400, not an empty or foreign page.
+function feedRead(
+  buddies: BuddiesStorePort,
+  feed: OwnerFeed,
+  query: z.infer<typeof FeedQuerySchema>
+): FeedRead {
+  const member = (postId: string) => {
+    const post = buddies.getPost(postId);
+    if (!post || !inFeed(feed, post)) throw new Error(`Post ${postId} is not in this feed`);
+    return post;
+  };
+  if (query.from === undefined)
+    return {
+      kind: 'older',
+      anchor: query.before === undefined ? null : member(query.before),
+      limit: query.limit ?? 20,
+    };
+  if (query.before !== undefined || query.limit !== undefined)
     throw new Error('`from` reads everything from one post on; it takes no `before` or `limit`');
-  const floor = buddies.getPost(input.from);
-  if (!floor || floor.listId !== listId || floor.threadRootId !== null)
-    throw new Error('`from` must name a top-level post in this list');
-  return { kind: 'from', floor };
+  return { kind: 'from', floor: member(query.from) };
 }
 
 function memoryPayload(req: Request): Record<string, unknown> {
@@ -841,7 +849,7 @@ export function registerBuddyRoutes(app: Express, dependencies: BuddyRouteDepend
 
   // Top-level posts, newest-first: the newest page, `before=<post>` for the
   // page older than it, or `from=<post>` for that post and everything newer
-  // (channel-pages.ts ChannelRead). Keyset, never offsets: an offset read of
+  // (channel-pages.ts FeedRead). Keyset, never offsets: an offset read of
   // the next page repeats a post whenever one lands between the two reads.
   route.get('/api/buddies/lists/:listId/posts', 400, async (req, res) => {
     const buddies = await getStore();
@@ -850,21 +858,32 @@ export function registerBuddyRoutes(app: Express, dependencies: BuddyRouteDepend
       res.status(404).json({ error: 'Mailing list not found' });
       return;
     }
-    const read = channelRead(buddies, list.id, req.query);
-    res.json(readChannel(buddies, list.id, read).map(withPostProvenanceFields));
+    const feed: OwnerFeed = { kind: 'channel', list: list.id };
+    const read = feedRead(buddies, feed, FeedQuerySchema.strict().parse(req.query));
+    res.json(readFeed(buddies, feed, read).map(withPostProvenanceFields));
   });
 
+  // One thread: its root, with its replies paged by the same query as a
+  // channel's posts, newest-first like them. A thread reads the other way up,
+  // root on top and oldest reply first, but pages the same way: it opens on
+  // its newest replies, beside the composer where new ones land, and pages
+  // back (`before`) toward the root, which comes with every read so it is
+  // never out of reach. Paging forward from the root would open a long thread
+  // on its oldest replies, pages away from the live end, where a reply landing
+  // mid-read could not show until the reader caught up.
+  // Until 2026-09-25 this read the first 200 replies and nothing past them.
   route.get('/api/buddies/lists/:listId/threads/:postId', 400, async (req, res) => {
     const buddies = await getStore();
     const root = buddies.getPost(req.params.postId);
-    if (!root || root.listId !== req.params.listId) {
+    if (!root || root.listId !== req.params.listId || root.threadRootId !== null) {
       res.status(404).json({ error: 'Thread not found in this list' });
       return;
     }
-    const thread = buddies.listThread({ root: root.id });
+    const feed: OwnerFeed = { kind: 'thread', root: root.id };
+    const read = feedRead(buddies, feed, FeedQuerySchema.strict().parse(req.query));
     res.json({
-      root: withPostProvenanceFields(thread.root),
-      replies: thread.replies.map(withPostProvenanceFields),
+      root: withPostProvenanceFields(root),
+      replies: readFeed(buddies, feed, read).map(withPostProvenanceFields),
     });
   });
 
@@ -872,34 +891,25 @@ export function registerBuddyRoutes(app: Express, dependencies: BuddyRouteDepend
   // posts canonicalize media and dispatch @mentions, which need the responder.
 
   // Task channel feed: newest-first posts across every workspace list linked
-  // to one Task. Owner reads move no read mark; Buddy MCP reads keep the
-  // single-list get_list cursor rule, so there is no MCP equivalent.
+  // to one Task, paged like a channel (FeedRead). Owner reads move no read
+  // mark; Buddy MCP reads keep the single-list get_list cursor rule, so there
+  // is no MCP equivalent.
   route.get('/api/buddies/posts', 400, async (req, res) => {
     const buddies = await getStore();
-    const input = z
-      .object({
-        workspaceId: z.string().min(1),
-        projectId: z.string().min(1),
-        limit: z.coerce.number().int().min(1).max(50).optional(),
-        offset: z.coerce.number().int().min(0).optional(),
-      })
+    const { workspaceId, projectId, ...page } = FeedQuerySchema.extend({
+      workspaceId: z.string().min(1),
+      projectId: z.string().min(1),
+    })
       .strict()
       .parse(req.query);
-    const project = buddies.getBuddyProject(input.projectId);
-    if (!project || project.workspace_id !== input.workspaceId) {
+    const project = buddies.getBuddyProject(projectId);
+    if (!project || project.workspace_id !== workspaceId) {
       res.status(404).json({ error: 'Task project not found in this workspace' });
       return;
     }
-    res.json(
-      buddies
-        .listPosts({
-          workspace: input.workspaceId,
-          project: project.id,
-          limit: input.limit,
-          offset: input.offset,
-        })
-        .map(withPostProvenanceFields)
-    );
+    const feed: OwnerFeed = { kind: 'task', workspace: workspaceId, project: project.id };
+    const read = feedRead(buddies, feed, page);
+    res.json(readFeed(buddies, feed, read).map(withPostProvenanceFields));
   });
 
   // The attachment is untrusted proposal data; the authenticated click supplies authority.

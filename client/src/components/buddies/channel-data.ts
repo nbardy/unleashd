@@ -7,6 +7,7 @@
  * it (gate G3 allows components/buddies/).
  */
 import {
+  type BuddyChannelThread,
   BuddyChannelThreadSchema,
   type BuddyListAuthor,
   type BuddyMailingListPost,
@@ -55,21 +56,6 @@ export interface BuddyMailingListSummary {
   latestPostAt: string | null;
 }
 
-// Every post read goes through here: the fetch boundary parses the v33 wire
-// shape once, so a stale or foreign server surfaces as the view's refresh
-// error instead of a crash (or a silent "Unknown") deep in rendering.
-export function postsResource(path: string) {
-  return resource(path, async (signal: AbortSignal) =>
-    BuddyMailingListPostsSchema.parse(await buddyApi(path, { signal }))
-  );
-}
-
-// A Task filter reads the workspace-wide feed so one Task's discussion is
-// visible across every channel, not just the selected one.
-export function taskChannelFeedUrl(workspaceId: string, projectId: string): string {
-  return `/api/buddies/posts?workspaceId=${encodeURIComponent(workspaceId)}&projectId=${encodeURIComponent(projectId)}&limit=50`;
-}
-
 export function authorKey(author: BuddyListAuthor): string {
   switch (author.kind) {
     case 'owner':
@@ -89,37 +75,112 @@ export function listsUrl(workspaceId: string): string {
   return `/api/buddies/lists?workspaceId=${encodeURIComponent(workspaceId)}`;
 }
 
-/** Top-level posts per page read; the newest page is what every channel warms. */
+/** Posts per page read; the newest page is what every channel warms. */
 export const CHANNEL_PAGE = 50;
 
-function channelPostsPath(listId: string): string {
-  return `/api/buddies/lists/${encodeURIComponent(listId)}/posts`;
-}
-
-export function channelPostsResource(listId: string) {
-  return postsResource(`${channelPostsPath(listId)}?limit=${CHANNEL_PAGE}`);
-}
-
-// What a channel feed reads: D = Latest ⊕ From(floor).
+// What a feed reads: D = Latest ⊕ From(floor).
 // Latest is the newest page. Once the reader pages back, the feed reads from
 // its oldest loaded post (the floor) to the newest instead. Re-reading the
 // newest page would slide the window: every new post would push the oldest
 // one out above the reader, and open a gap between it and the history they
-// loaded. `complete`: the floor is the channel's first post.
+// loaded. `complete`: the floor is the feed's first post.
 export type ChannelRange = { kind: 'latest' } | { kind: 'from'; floor: string; complete: boolean };
 
 const LATEST_RANGE: ChannelRange = { kind: 'latest' };
 
-function channelRangeResource(listId: string, range: ChannelRange) {
+// Where a feed's posts sit in its answer. Every post read parses here: the
+// fetch boundary checks the v33 wire shape once, so a stale or foreign server
+// surfaces as the view's refresh error instead of a crash (or a silent
+// "Unknown") deep in rendering.
+type FeedWindow<V> = {
+  parse(json: unknown): V;
+  posts(value: V): readonly BuddyMailingListPost[];
+  withOlder(value: V, older: readonly BuddyMailingListPost[]): V;
+};
+
+// A channel's or a Task's answer is its posts.
+const POSTS: FeedWindow<BuddyMailingListPost[]> = {
+  parse: (json) => BuddyMailingListPostsSchema.parse(json),
+  posts: (posts) => posts,
+  withOlder: (posts, older) => [...posts, ...older],
+};
+
+// A thread's answer is its root beside the replies read.
+const THREAD: FeedWindow<BuddyChannelThread> = {
+  parse: (json) => BuddyChannelThreadSchema.parse(json),
+  posts: (thread) => thread.replies,
+  withOlder: (thread, older) => ({ ...thread, replies: [...thread.replies, ...older] }),
+};
+
+/**
+ * A feed the owner reads, paged by keyset: D = Channel ⊕ Task ⊕ Thread
+ * (server/src/buddies/channel-pages.ts OwnerFeed). Every feed route answers
+ * the same query, newest-first: the newest page (`limit`), the page before a
+ * post (`before`), or a post and everything newer (`from`). So a feed is only
+ * its URL up to that query (`query`, ending in `?` or `&`), where its posts
+ * sit in the answer, and the range it opens on.
+ */
+export type PostFeed<V> = { query: string; window: FeedWindow<V>; opens: ChannelRange };
+
+export function channelPostFeed(listId: string): PostFeed<BuddyMailingListPost[]> {
+  return {
+    query: `/api/buddies/lists/${encodeURIComponent(listId)}/posts?`,
+    window: POSTS,
+    opens: LATEST_RANGE,
+  };
+}
+
+// A Task filter reads the workspace-wide feed so one Task's discussion is
+// visible across every channel, not just the selected one.
+export function taskPostFeed(
+  workspaceId: string,
+  projectId: string
+): PostFeed<BuddyMailingListPost[]> {
+  return {
+    query: `/api/buddies/posts?workspaceId=${encodeURIComponent(workspaceId)}&projectId=${encodeURIComponent(projectId)}&`,
+    window: POSTS,
+    opens: LATEST_RANGE,
+  };
+}
+
+// A thread opens on its newest replies, or from the reply a permalink names
+// (`post=`) so that reply renders however far back it is; whether it is the
+// first reply shows when the page before it comes back empty. Opening on the
+// newest 50 alone would leave an older linked reply unrendered, unscrolled-to.
+export function threadPostFeed(
+  listId: string,
+  rootId: string,
+  linkedPostId: string | null
+): PostFeed<BuddyChannelThread> {
+  return {
+    query: `/api/buddies/lists/${encodeURIComponent(listId)}/threads/${encodeURIComponent(rootId)}?`,
+    window: THREAD,
+    opens:
+      linkedPostId === null ? LATEST_RANGE : { kind: 'from', floor: linkedPostId, complete: false },
+  };
+}
+
+function rangeQuery(range: ChannelRange): string {
   switch (range.kind) {
     case 'latest':
-      return channelPostsResource(listId);
+      return `limit=${CHANNEL_PAGE}`;
     case 'from':
-      return postsResource(`${channelPostsPath(listId)}?from=${encodeURIComponent(range.floor)}`);
+      return `from=${encodeURIComponent(range.floor)}`;
   }
 }
 
-// The top of a channel feed: D = More ⊕ Loading ⊕ Failed ⊕ Complete.
+function feedResource<V>(feed: PostFeed<V>, range: ChannelRange) {
+  const url = `${feed.query}${rangeQuery(range)}`;
+  return resource(url, async (signal: AbortSignal) =>
+    feed.window.parse(await buddyApi(url, { signal }))
+  );
+}
+
+export function channelPostsResource(listId: string) {
+  return feedResource(channelPostFeed(listId), LATEST_RANGE);
+}
+
+// The top of a feed: D = More ⊕ Loading ⊕ Failed ⊕ Complete.
 export type OlderEdge =
   | { kind: 'more' }
   | { kind: 'loading' }
@@ -146,7 +207,7 @@ function olderEdge(
   }
 }
 
-// A newest page shorter than a full page is the whole channel.
+// A newest page shorter than a full page is the whole feed.
 function settledEdge(range: ChannelRange, posts: readonly BuddyMailingListPost[]): OlderEdge {
   switch (range.kind) {
     case 'latest':
@@ -156,27 +217,46 @@ function settledEdge(range: ChannelRange, posts: readonly BuddyMailingListPost[]
   }
 }
 
+// Paging belongs to the feed it paged (its `query`). A pane switched to
+// another feed, another Task in the filter, starts that one where it opens
+// instead of asking it for the last feed's floor, which it would refuse.
+type Paging = { query: string | null; range: ChannelRange; request: OlderRequest };
+
+function opening<V>(feed: PostFeed<V> | null): Paging {
+  return feed === null
+    ? { query: null, range: LATEST_RANGE, request: IDLE_REQUEST }
+    : { query: feed.query, range: feed.opens, request: IDLE_REQUEST };
+}
+
 /**
- * One channel's top-level posts, newest-first, with history on demand.
- * `loadOlder` reads the page before the oldest post held and moves the feed
- * to a From range covering it, seeded with what it already holds so the
- * switch renders at once. `beforePrepend` runs just before the older rows
- * render above the reader (useFollowBottom's `hold`).
+ * One feed's posts, newest-first, with history on demand; `null` reads
+ * nothing (no Task filtered). `loadOlder` reads the page before the oldest
+ * post held and moves the feed to a From range covering it, seeded with what
+ * it already holds so the switch renders at once. `beforePrepend` runs just
+ * before the older rows render above the reader (useFollowBottom's `hold`).
  */
-export function useChannelFeed(listId: string) {
-  const [range, setRange] = useState(LATEST_RANGE);
-  const [request, setRequest] = useState(IDLE_REQUEST);
-  const feed = usePolledFetch(channelRangeResource(listId, range), CHANNEL_BACKSTOP_MS);
-  const posts = feed.data ?? NO_POSTS;
-  const edge = olderEdge(range, request, posts);
+export function useChannelFeed<V>(feed: PostFeed<V> | null) {
+  const opened = opening(feed);
+  const [held, setHeld] = useState(opened);
+  const paging = held.query === opened.query ? held : opened;
+  const view = usePolledFetch(
+    feed === null ? null : feedResource(feed, paging.range),
+    CHANNEL_BACKSTOP_MS
+  );
+  const posts = feed === null || view.data === null ? NO_POSTS : feed.window.posts(view.data);
+  const edge = olderEdge(paging.range, paging.request, posts);
   const loadOlder = async (beforePrepend: () => void) => {
+    const shown = view.data;
     const oldest = posts[posts.length - 1];
-    if (edge.kind === 'loading' || edge.kind === 'complete' || !oldest) return;
-    setRequest(LOADING_REQUEST);
+    if (feed === null || shown === null || !oldest) return;
+    if (edge.kind === 'loading' || edge.kind === 'complete') return;
+    setHeld({ ...paging, request: LOADING_REQUEST });
     try {
-      const page = BuddyMailingListPostsSchema.parse(
-        await buddyApi(
-          `${channelPostsPath(listId)}?before=${encodeURIComponent(oldest.id)}&limit=${CHANNEL_PAGE}`
+      const page = feed.window.posts(
+        feed.window.parse(
+          await buddyApi(
+            `${feed.query}before=${encodeURIComponent(oldest.id)}&limit=${CHANNEL_PAGE}`
+          )
         )
       );
       const next: ChannelRange = {
@@ -185,15 +265,14 @@ export function useChannelFeed(listId: string) {
         complete: page.length < CHANNEL_PAGE,
       };
       if (page.length > 0) beforePrepend();
-      seedResource(channelRangeResource(listId, next), [...posts, ...page]);
-      setRange(next);
-      setRequest(IDLE_REQUEST);
+      seedResource(feedResource(feed, next), feed.window.withOlder(shown, page));
+      setHeld({ query: feed.query, range: next, request: IDLE_REQUEST });
     } catch (cause) {
       const error = cause instanceof Error ? cause : new Error(String(cause));
-      setRequest({ kind: 'failed', error });
+      setHeld({ ...paging, request: { kind: 'failed', error } });
     }
   };
-  return { feed, edge, loadOlder };
+  return { feed: view, edge, loadOlder };
 }
 
 /**
@@ -206,13 +285,6 @@ export function useWarmChannelPosts(lists: readonly { id: string }[] | null): vo
   useEffect(() => {
     if (ids) warmResources(ids.split('\n').map(channelPostsResource));
   }, [ids]);
-}
-
-export function channelThreadResource(listId: string, rootId: string) {
-  const path = `/api/buddies/lists/${encodeURIComponent(listId)}/threads/${encodeURIComponent(rootId)}`;
-  return resource(path, async (signal: AbortSignal) =>
-    BuddyChannelThreadSchema.parse(await buddyApi(path, { signal }))
-  );
 }
 
 export function respondingUrl(listId: string): string {

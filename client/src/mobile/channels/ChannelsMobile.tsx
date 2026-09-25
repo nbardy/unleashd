@@ -16,8 +16,8 @@ import {
   type ChannelRow,
   type WorkspaceDirectory,
   arrivalMarks,
+  channelPostFeed,
   channelRows,
-  channelThreadResource,
   channelUnreadAttr,
   clockTime,
   createChannel,
@@ -27,6 +27,7 @@ import {
   postPurposeLabel,
   postPurposeTag,
   renderFeed,
+  threadPostFeed,
   useChannelFeed,
   useChannelResponding,
   useFollowBottom,
@@ -532,7 +533,7 @@ function ScreenHeader({
 function ChannelScreen({ listId, context }: { listId: string; context: ScreenContext }) {
   const { workspaceId, directory, lists } = context;
   const list = lists?.find((candidate) => candidate.id === listId) ?? null;
-  const channel = useChannelFeed(listId);
+  const channel = useChannelFeed(channelPostFeed(listId));
   const feed = channel.feed;
   const responding = useChannelResponding(listId, directory.buddyNames);
   const posts = useWithOutbox(workspaceId, listId, null, feed.data);
@@ -628,7 +629,8 @@ function ThreadScreen({
 }) {
   const { workspaceId, directory, lists } = context;
   const list = lists?.find((candidate) => candidate.id === listId) ?? null;
-  const thread = usePolledFetch(channelThreadResource(listId, rootId), CHANNEL_BACKSTOP_MS);
+  const paged = useChannelFeed(threadPostFeed(listId, rootId, linkedPostId));
+  const thread = paged.feed;
   const replying = useChannelResponding(listId, directory.buddyNames).get(rootId);
   const replies = useWithOutbox(workspaceId, listId, rootId, thread.data?.replies ?? null);
   const replyRows = useMemo(() => channelRows(replies ?? []), [replies]);
@@ -671,6 +673,13 @@ function ThreadScreen({
           <div className="mobile-channel-divider">
             {root.replyCount} {root.replyCount === 1 ? 'reply' : 'replies'}
           </div>
+        )}
+        {root && (
+          <ChannelHistory
+            edge={paged.edge}
+            scrollRef={follow.scrollRef}
+            onReach={() => void paged.loadOlder(follow.hold)}
+          />
         )}
         <ol className="mobile-channel__posts">
           {replyRows.map((row) => (

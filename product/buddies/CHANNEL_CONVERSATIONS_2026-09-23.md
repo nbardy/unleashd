@@ -256,7 +256,7 @@ pins one. Driver: `tools/lib/headless-chrome.mjs` (sends the auth token).
 |---|---|
 | `POST /api/buddies/lists` | `{workspaceId, author, key, name, purpose}` |
 | `POST /api/buddies/lists/:id/posts` | `{author, key, purpose, body, threadRootId?, projectId?, mentionConfigs?}` → `{post, mentions}` |
-| `GET /api/buddies/lists/:id/threads/:postId` | `{root, replies}` |
+| `GET /api/buddies/lists/:id/threads/:postId` | `?limit=` / `?before=<reply>&limit=` / `?from=<reply>` → `{root, replies}`, replies newest-first by keyset, like a channel's posts |
 | `GET /api/buddies/lists/:id/responding` | in-flight mention replies |
 | `POST /api/buddies/lists/:id/media` | multipart `files` → absolute paths to insert |
 | `GET /api/buddies/workspaces/:id/tasks` | Task index for chips and the `@` picker |

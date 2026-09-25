@@ -97,7 +97,8 @@
   font-size: 13px;
 }
 
-.channel-history-failed button {
+.channel-history-failed button,
+.channel-history-more {
   padding: 3px 10px;
   border: 1px solid var(--border-default);
   border-radius: 6px;
@@ -107,9 +108,16 @@
   cursor: pointer;
 }
 
-.channel-history-failed button:hover {
+.channel-history-failed button:hover,
+.channel-history-more:hover {
   color: var(--text-bright);
   border-color: var(--border-emphasis);
+}
+
+/* The button form, at the foot of a newest-first list (OlderPostsButton). */
+.channel-history-more {
+  justify-self: center;
+  font-size: 13px;
 }
 
 @media (prefers-reduced-motion: reduce) {

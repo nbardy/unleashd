@@ -6,7 +6,7 @@ import type { BuddiesStorePort, BuddyMailingListPost } from './contract';
 // nothing further that way. Anchors are keyset positions in the package, so a
 // post landing between two reads can neither repeat nor skip a post.
 //
-// The owner's channel view pages the same keyset (`readChannel` below).
+// The owner's feeds page the same keyset (`readFeed` below).
 
 export type PageScope = { list: string } | { thread: string };
 
@@ -96,47 +96,130 @@ export function readPage(
   }
 }
 
-// The owner's channel read (GET /api/buddies/lists/:listId/posts), newest-first:
-//   D = Older(anchor, limit) ⊕ From(floor)
+// The owner's feeds (routes.ts), each read newest-first the same way:
+//   D = Channel(its top-level posts) ⊕ Thread(one root's replies)
+//     ⊕ Task(one Task's posts across a workspace's channels, replies included)
+export type OwnerFeed =
+  | { kind: 'channel'; list: string }
+  | { kind: 'thread'; root: string }
+  | { kind: 'task'; workspace: string; project: string };
+
+// One read of a feed: D = Older(anchor, limit) ⊕ From(floor).
 // Older with a null anchor is the newest page; with a post, the page before
 // it. From is the window a reader holds once they have paged back: the floor
 // and every newer post. Re-reading the newest page instead would slide the
 // window, pushing the oldest post out above the reader on every new post,
 // and leave a gap between it and the history they loaded.
-export type ChannelRead =
-  | { kind: 'older'; anchor: string | null; limit: number }
+export type FeedRead =
+  | { kind: 'older'; anchor: BuddyMailingListPost | null; limit: number }
   | { kind: 'from'; floor: BuddyMailingListPost };
 
-// The package's per-read ceiling (MAX_THREAD_REPLIES_PER_READ).
-const READ_CHUNK = 200;
-
-export function readChannel(
-  store: BuddiesStorePort,
-  list: string,
-  read: ChannelRead
-): BuddyMailingListPost[] {
-  switch (read.kind) {
-    case 'older':
-      return store
-        .pagePosts({ list, direction: 'older', anchor: read.anchor, limit: read.limit })
-        .reverse();
-    case 'from':
-      return readFrom(store, list, read.floor).reverse();
+/** κ's membership check for a read's anchor or floor. */
+export function inFeed(feed: OwnerFeed, post: BuddyMailingListPost): boolean {
+  switch (feed.kind) {
+    case 'channel':
+      return post.listId === feed.list && post.threadRootId === null;
+    case 'thread':
+      return post.threadRootId === feed.root;
+    case 'task':
+      return post.workspaceId === feed.workspace && post.projectId === feed.project;
   }
 }
 
-// Unbounded on purpose: it is exactly what the reader already scrolled back
-// through, in chunks of the package ceiling.
-function readFrom(
+// A From read's chunk: the most listPosts returns at once (pagePosts allows 200).
+const FROM_CHUNK = 50;
+
+export function readFeed(
   store: BuddiesStorePort,
-  list: string,
-  floor: BuddyMailingListPost
+  feed: OwnerFeed,
+  read: FeedRead
 ): BuddyMailingListPost[] {
-  const posts = [floor];
-  for (let anchor = floor.id; ; ) {
-    const rows = store.pagePosts({ list, direction: 'newer', anchor, limit: READ_CHUNK });
-    posts.push(...rows);
-    if (rows.length < READ_CHUNK) return posts;
-    anchor = rows[rows.length - 1].id;
+  switch (read.kind) {
+    case 'older': {
+      const page: BuddyMailingListPost[] = [];
+      for (const post of olderPosts(store, feed, read.anchor, read.limit)) {
+        page.push(post);
+        if (page.length === read.limit) break;
+      }
+      return page;
+    }
+    case 'from': {
+      // Unbounded on purpose: it is exactly what the reader already paged back through.
+      const window: BuddyMailingListPost[] = [];
+      for (const post of olderPosts(store, feed, null, FROM_CHUNK)) {
+        if (!newer(post, read.floor)) break;
+        window.push(post);
+      }
+      return [...window, read.floor];
+    }
+  }
+}
+
+// The package's post order: createdAt, then id.
+function newer(a: BuddyMailingListPost, b: BuddyMailingListPost): boolean {
+  return a.createdAt > b.createdAt || (a.createdAt === b.createdAt && a.id > b.id);
+}
+
+// One feed newest-first, strictly older than `anchor` (from the newest when
+// null), `chunk` posts per store read and only as far as the caller reads on.
+function olderPosts(
+  store: BuddiesStorePort,
+  feed: OwnerFeed,
+  anchor: BuddyMailingListPost | null,
+  chunk: number
+): Iterable<BuddyMailingListPost> {
+  switch (feed.kind) {
+    case 'channel':
+      return keysetOlder(store, { list: feed.list }, anchor, chunk);
+    case 'thread':
+      return keysetOlder(store, { thread: feed.root }, anchor, chunk);
+    case 'task':
+      return offsetOlder(store, feed, anchor, chunk);
+  }
+}
+
+// A channel's roots and a thread's replies page by keyset in the package.
+function* keysetOlder(
+  store: BuddiesStorePort,
+  scope: PageScope,
+  anchor: BuddyMailingListPost | null,
+  chunk: number
+): Generator<BuddyMailingListPost> {
+  for (let cursor = anchor?.id ?? null; ; ) {
+    const rows = store
+      .pagePosts({ ...scope, direction: 'older', anchor: cursor, limit: chunk })
+      .reverse();
+    yield* rows;
+    if (rows.length < chunk) return;
+    cursor = rows[rows.length - 1].id;
+  }
+}
+
+// The package reads a Task's posts only by offset (listPosts, newest-first).
+// The keyset holds anyway: a read keeps only posts older than the last one
+// taken, so a post landing between two reads (another process writes the same
+// database), which shifts every later offset by one, repeats nothing; and
+// posts are never deleted, so no offset skips one. The price is reading down
+// from the newest to the anchor, which a From read of that window pays anyway.
+function* offsetOlder(
+  store: BuddiesStorePort,
+  task: { workspace: string; project: string },
+  anchor: BuddyMailingListPost | null,
+  chunk: number
+): Generator<BuddyMailingListPost> {
+  let last = anchor;
+  for (let offset = 0; ; offset += chunk) {
+    const rows = store.listPosts({
+      workspace: task.workspace,
+      project: task.project,
+      limit: chunk,
+      offset,
+    });
+    for (const post of rows) {
+      if (last !== null && !newer(last, post)) continue;
+      last = post;
+      yield post;
+    }
+    if (rows.length < chunk) return;
   }
 }

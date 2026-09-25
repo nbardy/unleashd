@@ -169,15 +169,28 @@ and re-parsed their markdown every few seconds with nothing new. Keep derived
 values keyed on `data` identity (`useMemo(..., [feed.data])`, `memo` on heavy
 leaves such as `ChannelMarkdown`) so the sharing reaches the DOM.
 
-A channel feed pages back by keyset (`useChannelFeed` in
-components/buddies/channel-data.ts). It reads the newest page until the reader
+Every owner feed pages back by keyset through one hook, `useChannelFeed` in
+components/buddies/channel-data.ts, over a `PostFeed`: a channel's posts, a
+thread's replies, or a Task's posts across channels (the Task filter and the
+Mailbox reader's Task chips). All three routes answer the same query
+newest-first (`limit`, `before=<post>`, `from=<post>`; server
+`channel-pages.ts` `readFeed`). A feed reads its newest page until the reader
 nears the top, then reads `from=<oldest loaded post>` down to the newest, so
 the window grows at the bottom and never slides. Re-reading the newest page
 after paging back would push the oldest post out above the reader on every new
 post and leave a gap between the pages. The switch to the new key is seeded
 (`seedResource`) with the posts already held plus the fetched page, so it
-renders without the loader and revalidates behind it. Until 2026-09-25 the view
-read the newest 50 posts and nothing older was reachable.
+renders without the loader and revalidates behind it. Paging state belongs to
+the feed it paged: picking another Task starts that feed from its newest page.
+
+A thread reads the other way up (root on top, oldest reply first) but pages
+the same way: it opens on its newest replies and pages back toward the root,
+which comes with every read. A reply permalink (`post=`) opens the thread
+`from=` that reply instead, or a reply older than the newest page would not
+render. The Mailbox reader lists newest-first with its composer below, so it
+asks for older posts with a button (`OlderPostsButton`) rather than on reach.
+Until 2026-09-25 a channel read its newest 50 posts, a thread its first 200
+replies and a Task filter one page, and nothing past them was reachable.
 
 Every Buddy read model is declared once in
 [hooks/useBuddyData.ts](../client/src/hooks/useBuddyData.ts) and consumed by

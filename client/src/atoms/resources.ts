@@ -238,7 +238,7 @@ export function loadResource<T>(resource: Resource<T>): Promise<void> {
 
 /**
  * Hold `value` under `resource.key` as though it had just loaded. For a value
- * assembled from reads already made: a channel that paged back seeds its new
+ * assembled from reads already made: a feed that paged back seeds its new
  * window key with the posts it holds plus the page it fetched
  * (components/buddies/channel-data.ts `useChannelFeed`), so switching to that
  * key renders at once instead of flashing the loader. Mounting it still
@@ -294,7 +294,7 @@ export const invalidateBuddyResources = (): void =>
  * newest. A Buddy's mention reply is announced only here, never by
  * `buddies_changed`, so without it the rail lagged by up to the 30 s backstop.
  *
- * The Task-filtered feed (`taskChannelFeedUrl`, `/api/buddies/posts?…`) is a
+ * The Task-filtered feed (`taskPostFeed`, `/api/buddies/posts?…`) is a
  * cross-channel query keyed by workspace + Task, not by list, and the push
  * carries only `listId`, so every mounted Task feed refreshes. Only mounted
  * keys refetch — in practice the one feed on screen. Before 2026-09-25 a

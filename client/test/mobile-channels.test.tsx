@@ -182,6 +182,49 @@ test('mobile channel screen: back to Home, thread link, touch composer', async (
   assert.doesNotMatch(html, /new line/);
 });
 
+// A thread now opens on its newest page, so a permalink to an older reply
+// would open without it. It opens from that reply instead (`from=`): the
+// linked reply and everything after it, the root above the older replies'
+// flame.
+test('a reply permalink opens a long thread from that reply, root on top, older ones behind the flame', async () => {
+  await seed();
+  const root = post({
+    id: 'post_ask',
+    author: { kind: 'owner' },
+    body: '[@Lead](buddy:lead) ship it?',
+    replyCount: 126,
+    latestReplyAt: '2026-09-24T02:25:00.000Z',
+    createdAt: '2026-09-24T01:00:00.000Z',
+  });
+  await loadResource({
+    key: '/api/buddies/lists/list_a/threads/post_ask?from=reply-120',
+    load: async () => ({
+      root,
+      replies: [125, 124, 123, 122, 121, 120].map((number) =>
+        post({
+          id: `reply-${number}`,
+          author: { kind: 'buddy', buddyId: 'lead' },
+          threadRootId: 'post_ask',
+          purpose: 'reply',
+          body: `Reply number ${number}.`,
+          createdAt: new Date(Date.UTC(2026, 8, 24, 2, number - 100)).toISOString(),
+        })
+      ),
+    }),
+  });
+  const html = render(`${CHANNELS}?channel=list_a&thread=post_ask&post=reply-120`);
+  const at = ['ship it?', 'class="channel-history"', 'Reply number 120.', 'Reply number 125.'].map(
+    (needle) => html.indexOf(needle)
+  );
+  assert.ok(!at.includes(-1), `missing: ${at}`);
+  assert.deepEqual(
+    at,
+    [...at].sort((a, b) => a - b),
+    'root, flame, linked reply, newest'
+  );
+  assert.match(html, /data-post-id="reply-120" data-linked="true"/);
+});
+
 test('mobile channels Home lists channels and Buddies with a visible Wake', async () => {
   await seed();
   const html = render(CHANNELS);

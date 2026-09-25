@@ -25,19 +25,19 @@ import {
   CONVERSATIONAL_PURPOSES,
   type ChannelMember,
   type ChannelRow,
+  arrivalMarks,
+  channelPostFeed,
   channelReferences,
   channelRows,
-  channelThreadResource,
+  channelUnreadAttr,
   clockTime,
   createChannel,
   feedPhase,
-  arrivalMarks,
-  channelUnreadAttr,
-  ownerUnreadByList,
   listsUrl,
-  postsResource,
+  ownerUnreadByList,
   renderFeed,
-  taskChannelFeedUrl,
+  taskPostFeed,
+  threadPostFeed,
   useChannelFeed,
   useChannelResponding,
   useFollowBottom,
@@ -357,7 +357,8 @@ function ThreadPane({
   replying: string | undefined;
   onClose(): void;
 }) {
-  const thread = usePolledFetch(channelThreadResource(list.id, rootId), CHANNEL_BACKSTOP_MS);
+  const paged = useChannelFeed(threadPostFeed(list.id, rootId, context.linkedPostId));
+  const thread = paged.feed;
   const replies = useWithOutbox(list.workspaceId, list.id, rootId, thread.data?.replies ?? null);
   const replyRows = useMemo(() => channelRows(replies ?? []), [replies]);
   const follow = useFollowBottom(
@@ -406,6 +407,13 @@ function ThreadPane({
               {root.replyCount} {root.replyCount === 1 ? 'reply' : 'replies'}
             </span>
           </div>
+        )}
+        {root && (
+          <ChannelHistory
+            edge={paged.edge}
+            scrollRef={follow.scrollRef}
+            onReach={() => void paged.loadOlder(follow.hold)}
+          />
         )}
         <ol className="channel-browser-messages">
           {replyRows.map((row) => renderRow(row, context))}
@@ -463,18 +471,17 @@ function ChannelPane({
   onThread: (rootId: string | null) => void;
   openDm: OpenDm;
 }) {
-  const channel = useChannelFeed(list.id);
+  const channel = useChannelFeed(channelPostFeed(list.id));
   const channelFeed = channel.feed;
-  const taskFeed = usePolledFetch(
-    taskFilter ? postsResource(taskChannelFeedUrl(workspaceId, taskFilter)) : null,
-    CHANNEL_BACKSTOP_MS
-  );
+  // The Task filter's cross-channel feed pages back the same way.
+  const task = useChannelFeed(taskFilter ? taskPostFeed(workspaceId, taskFilter) : null);
+  const paged = taskFilter ? task : channel;
   const respondingByRoot = useChannelResponding(list.id, buddyNames);
   const visit = useOwnerChannelVisit(list.id, ownerUnread);
   // Threads opened since arriving are no longer new, even after closing them.
   const [openedThreads, setOpenedThreads] = useState<ReadonlySet<string>>(() => new Set());
   const channelPosts = useWithOutbox(workspaceId, list.id, null, channelFeed.data);
-  const shown = taskFilter ? taskFeed : { ...channelFeed, data: channelPosts };
+  const shown = taskFilter ? task.feed : { ...channelFeed, data: channelPosts };
   const rows = useMemo(() => channelRows(shown.data ?? []), [shown.data]);
   // Task options come from the channel itself so the picker never offers a
   // Task with nothing to read here.
@@ -574,14 +581,15 @@ function ChannelPane({
             ),
             posts: () => (
               <>
-                {/* The Task feed is one cross-channel page; only a channel pages back. */}
-                {!taskFilter && (
-                  <ChannelHistory
-                    edge={channel.edge}
-                    scrollRef={follow.scrollRef}
-                    onReach={() => void channel.loadOlder(follow.hold)}
-                  />
-                )}
+                {/* Keyed by feed. Switching the Task filter to a cached feed keeps
+                    the posts mounted, and only a fresh observer asks the new
+                    feed for older posts when its top is already in range. */}
+                <ChannelHistory
+                  key={taskFilter}
+                  edge={paged.edge}
+                  scrollRef={follow.scrollRef}
+                  onReach={() => void paged.loadOlder(follow.hold)}
+                />
                 <ol className="channel-browser-messages">
                   {renderRows(rows, channelContext, taskFilter ? null : arrival.firstUnread)}
                 </ol>

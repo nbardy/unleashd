@@ -5,19 +5,24 @@ import { Link } from 'react-router-dom';
 import { usePolledFetch } from '../../hooks/usePolledFetch';
 import { newId } from '../../utils/ids';
 import { BuddyTeamConfigurationRequest } from './BuddyTeamConfiguration';
-import { ChannelLoader } from './ChannelLoader';
+import { ChannelLoader, OlderPostsButton } from './ChannelLoader';
 import { buddyApi } from './api';
 import {
   type BuddyMailingListSummary,
   CHANNEL_BACKSTOP_MS,
+  channelPostFeed,
   feedPhase,
   listsUrl,
-  postsResource,
   renderFeed,
-  taskChannelFeedUrl,
+  taskPostFeed,
+  useChannelFeed,
 } from './channel-data';
 
 const EMPTY_NAMES: Readonly<Record<string, string>> = {};
+
+// Older posts land below a newest-first list, so nothing above the reader
+// moves and there is no scroll position to hold (useFollowBottom's `hold`).
+const NOTHING_TO_HOLD = () => {};
 
 export interface BuddyOwnerReply {
   outcome: string;
@@ -224,14 +229,11 @@ function ChannelFeed({
   composer?: (refetch: () => void) => ReactNode;
 }) {
   const [projectFilter, setProjectFilter] = useState<string | null>(null);
-  const feed = usePolledFetch(
-    postsResource(
-      projectFilter
-        ? taskChannelFeedUrl(workspaceId, projectFilter)
-        : `/api/buddies/lists/${encodeURIComponent(list.id)}/posts?limit=20`
-    ),
-    CHANNEL_BACKSTOP_MS
+  // The Channels view's feeds and paging, read newest-first with older pages below.
+  const paged = useChannelFeed(
+    projectFilter ? taskPostFeed(workspaceId, projectFilter) : channelPostFeed(list.id)
   );
+  const feed = paged.feed;
   const { data, refetch } = feed;
   const sortedPosts = useMemo(
     () =>
@@ -290,19 +292,25 @@ function ChannelFeed({
         failed: () => null,
         empty: () => <p className="empty-state">No posts yet.</p>,
         posts: () => (
-          <ul className="buddy-messages-list-posts">
-            {visiblePosts.map((post) => (
-              <ChannelPostItem
-                key={post.id}
-                post={post}
-                channelName={
-                  projectFilter ? (channelNameById.get(post.listId) ?? post.listId) : null
-                }
-                buddyNames={buddyNames}
-                availableConversationIds={availableConversationIds}
-              />
-            ))}
-          </ul>
+          <>
+            <ul className="buddy-messages-list-posts">
+              {visiblePosts.map((post) => (
+                <ChannelPostItem
+                  key={post.id}
+                  post={post}
+                  channelName={
+                    projectFilter ? (channelNameById.get(post.listId) ?? post.listId) : null
+                  }
+                  buddyNames={buddyNames}
+                  availableConversationIds={availableConversationIds}
+                />
+              ))}
+            </ul>
+            <OlderPostsButton
+              edge={paged.edge}
+              onLoad={() => void paged.loadOlder(NOTHING_TO_HOLD)}
+            />
+          </>
         ),
       })}
       {composer?.(refetch)}
