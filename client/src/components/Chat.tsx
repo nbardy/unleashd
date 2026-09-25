@@ -118,7 +118,8 @@ export function Chat({ id }: { id: string }) {
     pendingConfigCommand?.state.tag === 'rejected' ? pendingConfigCommand.state.message : null;
   const streamingText = useAtomValue(streamFamily(id ?? ''));
   const childSessionConversations = useAtomValue(childRowsFamily(id ?? ''));
-  const hasConversations = useAtomValue(listField('order')).length > 0;
+  // idSet, not order: a re-sort of other conversations must not re-render this chat.
+  const hasConversations = useAtomValue(listField('idSet')).size > 0;
   const queue: readonly QueuedMessage[] = queueOf(transcript);
   const resumedFromConversationId = conversation?.resumedFrom ?? '';
   const resumedFromConversation = useAtomValue(rowFamily(resumedFromConversationId));

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { type ServerMessage, classifyServerFrame, encodeRows } from '@unleashd/shared';
 import { handleMessage, noteProtocolMismatch } from '../src/atoms/actions';
-import { conversationsAtom, protocolMismatchAtom } from '../src/atoms/conversations';
+import { connectionAtom, rowsAtom } from '../src/atoms/conversations';
 import { jotaiStore } from '../src/atoms/store';
 import { syntheticConversation } from './fixtures/synthetic-conversations';
 
@@ -25,18 +25,18 @@ const V2_INIT = {
 
 test('a v2 init is a version skew that leaves the rows the client holds', () => {
   const held = syntheticConversation(1, { id: 'held' });
-  jotaiStore.set(conversationsAtom, new Map([[held.id, held]]));
+  jotaiStore.set(rowsAtom, new Map([[held.id, held]]));
 
   const frame = classifyServerFrame(V2_INIT);
   assert.deepEqual(frame, { t: 'skew', serverVersion: 2 });
   if (frame.t === 'skew') noteProtocolMismatch(frame.serverVersion);
 
-  assert.deepEqual([...jotaiStore.get(conversationsAtom).keys()], ['held']);
-  assert.deepEqual(jotaiStore.get(protocolMismatchAtom), { serverVersion: 2 });
+  assert.deepEqual([...jotaiStore.get(rowsAtom).keys()], ['held']);
+  assert.deepEqual(jotaiStore.get(connectionAtom).server, { tag: 'skew', serverVersion: 2 });
 });
 
 test('a v3 hello parses, replaces the rows and clears the skew state', () => {
-  // `hello` reconciles the device's pending creations, which live in localStorage.
+  // `hello` resets per-device state that lives in localStorage.
   const stored = new Map<string, string>();
   Object.defineProperty(globalThis, 'localStorage', {
     configurable: true,
@@ -56,8 +56,8 @@ test('a v3 hello parses, replaces the rows and clears the skew state', () => {
   });
   assert.equal(frame.t, 'message');
   if (frame.t === 'message') handleMessage(frame.message as ServerMessage);
-  assert.deepEqual([...jotaiStore.get(conversationsAtom).keys()], ['fresh']);
-  assert.equal(jotaiStore.get(protocolMismatchAtom), null);
+  assert.deepEqual([...jotaiStore.get(rowsAtom).keys()], ['fresh']);
+  assert.equal(jotaiStore.get(connectionAtom).server.tag, 'v3');
 });
 
 // T14b renamed channel_changed's `listId` to `channelId`. A backend that has not

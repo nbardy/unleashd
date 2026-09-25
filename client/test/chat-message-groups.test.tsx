@@ -10,10 +10,12 @@ import { Provider, createStore } from 'jotai';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { MemoryRouter } from 'react-router-dom';
 import {
-  chatMessageGroupsAtomFamily,
-  conversationsAtom,
-  streamingContentAtom,
-  transcriptsAtom,
+  groupsFamily,
+  messagesOf,
+  rowsAtom,
+  streamStore,
+  transcriptFamily,
+  transcriptStore,
 } from '../src/atoms/conversations';
 import { groupChatMessages, regroupChatMessages } from '../src/utils/chat-message-groups';
 import { buildForkDraft, messageTranscriptContent } from '../src/utils/conversation-transcript';
@@ -38,8 +40,18 @@ const timestamp = new Date('2026-09-10T00:00:00Z');
 type TestConversation = { id: string; messages: Message[] } & Record<string, unknown>;
 function seed(store: ReturnType<typeof createStore>, conversation: TestConversation): void {
   store.set(
-    transcriptsAtom,
-    new Map([[conversation.id, { epoch: 0, messages: conversation.messages }]])
+    transcriptStore.all,
+    new Map([
+      [
+        conversation.id,
+        {
+          tag: 'loaded',
+          epoch: 0,
+          messages: conversation.messages,
+          detail: syntheticDetail(conversation.id),
+        },
+      ],
+    ])
   );
 }
 
@@ -84,8 +96,8 @@ test('one assistant response contains all prose and widgets while streaming stay
     messages,
   } as TestConversation;
   seed(store, conversation);
-  store.set(streamingContentAtom, new Map([[conversation.id, ' streamed text']]));
-  const groups = store.get(chatMessageGroupsAtomFamily(conversation.id));
+  store.set(streamStore.all, new Map([[conversation.id, ' streamed text']]));
+  const groups = store.get(groupsFamily(conversation.id));
   const markup = renderToStaticMarkup(
     <MemoryRouter>
       {groups.map((group, index) => (
@@ -116,12 +128,12 @@ test('one assistant response contains all prose and widgets while streaming stay
     response.copyText,
     `${messages.slice(1).map(messageTranscriptContent).join('\n\n')} streamed text`
   );
-  assert.equal(store.get(transcriptsAtom).get(conversation.id)?.messages, messages);
+  assert.equal(messagesOf(store.get(transcriptFamily(conversation.id))), messages);
   assert.equal(messages.at(-1)?.content, 'Current');
 
-  store.set(streamingContentAtom, new Map());
+  store.set(streamStore.all, new Map());
   assert.equal(
-    store.get(chatMessageGroupsAtomFamily(conversation.id)).at(-1)?.messages.at(-1)?.content,
+    store.get(groupsFamily(conversation.id)).at(-1)?.messages.at(-1)?.content,
     'Current'
   );
 });
@@ -150,7 +162,7 @@ test('response boundaries own one Copy action and preserve ordered tool runs and
     ],
   } as TestConversation;
   seed(store, conversation);
-  const groups = store.get(chatMessageGroupsAtomFamily(conversation.id));
+  const groups = store.get(groupsFamily(conversation.id));
   const markup = renderToStaticMarkup(
     <MemoryRouter>
       {groups.map((group, index) => (
@@ -216,7 +228,7 @@ test('streamed tool runs and saved calls render the same compact disclosure with
   const render = () =>
     renderToStaticMarkup(
       <MemoryRouter>
-        {store.get(chatMessageGroupsAtomFamily(conversation.id)).map((group, index) => (
+        {store.get(groupsFamily(conversation.id)).map((group, index) => (
           <VirtualizedGroup
             key={index}
             group={group}
@@ -235,17 +247,14 @@ test('streamed tool runs and saved calls render the same compact disclosure with
       (match) => match[0]
     );
   const calls = '🔧 exec\n\n⚡ shell pwd';
-  store.set(streamingContentAtom, new Map([[conversation.id, calls]]));
+  store.set(streamStore.all, new Map([[conversation.id, calls]]));
   const first = render();
   assert.equal(disclosures(first).length, 1);
   assert.match(disclosures(first)[0], /2 tool calls/);
 
   const answer =
     'Result:\n\n```text\n🔧 fenced example\n⚡ another example\n📖 third example\n```\n\nFinished.';
-  store.set(
-    streamingContentAtom,
-    new Map([[conversation.id, `${calls}\n📖 source.ts\n\n${answer}`]])
-  );
+  store.set(streamStore.all, new Map([[conversation.id, `${calls}\n📖 source.ts\n\n${answer}`]]));
   const live = render();
   assert.equal(disclosures(live).length, 1);
   assert.match(disclosures(live)[0], /aria-expanded="false".*3 tool calls/);
@@ -255,7 +264,7 @@ test('streamed tool runs and saved calls render the same compact disclosure with
   assert.doesNotMatch(live, /tool uses|×|shell pwd|source\.ts/);
   assert.equal(conversation.messages[1].content, '');
 
-  store.set(streamingContentAtom, new Map());
+  store.set(streamStore.all, new Map());
   seed(store, {
     ...conversation,
     messages: [
@@ -328,7 +337,7 @@ test('saved freeform input reaches desktop and mobile as literal code, with comp
     ],
   } as TestConversation;
   seed(store, conversation);
-  const response = store.get(chatMessageGroupsAtomFamily(conversation.id))[1];
+  const response = store.get(groupsFamily(conversation.id))[1];
   assert.equal(response.type, 'assistant');
   if (response.type !== 'assistant') throw new Error('Missing saved response');
   assert.equal(response.copyText, `Before tool\n\n🔧 exec\n\n${input}\n\nAfter tool`);
@@ -392,7 +401,7 @@ test('worker launch receipts stay inline in collapsed tool rows on both shells',
       const store = createStore();
       if (available)
         store.set(
-          conversationsAtom,
+          rowsAtom,
           new Map([
             [thread.conversationId, syntheticConversation(1, { id: thread.conversationId })],
           ])
@@ -433,7 +442,7 @@ test('live empty assistant responses show a working indicator on both shells', (
     messages: [message('user', 'How is it going?'), message('assistant', '')],
   } as TestConversation;
   seed(store, conversation);
-  const groups = store.get(chatMessageGroupsAtomFamily(conversation.id));
+  const groups = store.get(groupsFamily(conversation.id));
   assert.equal(groups.length, 2);
   const response = groups[1];
   assert.equal(response.type, 'assistant');
@@ -587,11 +596,11 @@ test('a streaming frame rebuilds only the last group, and matches a full regroup
   const messages = longTranscript(40);
   const conversation = { id: 'streaming-tail', kind: { kind: 'general' }, messages };
   seed(store, conversation);
-  const groupsAtom = chatMessageGroupsAtomFamily(conversation.id);
+  const groupsAtom = groupsFamily(conversation.id);
   const settled = store.get(groupsAtom);
 
   for (const text of [' streamed', ' streamed text', ' streamed text, more']) {
-    store.set(streamingContentAtom, new Map([[conversation.id, text]]));
+    store.set(streamStore.all, new Map([[conversation.id, text]]));
     const live = store.get(groupsAtom);
     assert.equal(live.length, settled.length);
     // Every group before the tail is the SAME object, so VirtualizedGroup

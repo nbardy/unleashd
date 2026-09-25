@@ -24,7 +24,7 @@ import { Provider, createStore } from 'jotai';
 import type { ReactElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { MemoryRouter } from 'react-router-dom';
-import { conversationsAtom } from '../src/atoms/conversations';
+import { rowsAtom } from '../src/atoms/conversations';
 import { BuddyConversationList } from '../src/components/buddies/BuddyConversationList';
 import { BuddyRunList } from '../src/components/buddies/BuddyRunList';
 import { BuddySectionNav } from '../src/components/buddies/BuddySectionNav';
@@ -46,7 +46,7 @@ const buddyConversation = (id: string, overrides: Partial<ConversationRow> = {})
 /** A store holding exactly the LIVE conversation; DEAD is deliberately absent. */
 function storeWithLive() {
   const store = createStore();
-  store.set(conversationsAtom, new Map([[LIVE, buddyConversation(LIVE)]]));
+  store.set(rowsAtom, new Map([[LIVE, buddyConversation(LIVE)]]));
   return store;
 }
 
@@ -104,7 +104,7 @@ test('Buddy conversations show real previews, sort running first, and react to c
     kind: { t: 'buddy', buddyId: 'engineer', workspaceId: 'ws-1', visibility: 'foreground' },
   });
   store.set(
-    conversationsAtom,
+    rowsAtom,
     new Map([
       [LIVE, running],
       ['recent', recent],
@@ -120,7 +120,7 @@ test('Buddy conversations show real previews, sort running first, and react to c
   assert.ok(html.includes('The rollout is ready'));
   assert.ok(html.includes('Running'));
   store.set(
-    conversationsAtom,
+    rowsAtom,
     new Map([
       [LIVE, { ...running, run: 'idle' }],
       ['recent', recent],

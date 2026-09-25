@@ -13,71 +13,62 @@
  * against the lean/integration tree, with its subscriptions (allConversationsAtom
  * + the Sidebar useMemo chain that re-ran whenever that array changed).
  */
-import { classifyServerFrame } from '@unleashd/shared';
 import type { Atom } from 'jotai';
 import { handleMessage } from '../src/atoms/actions';
+import { buddySidebarAtom } from '../src/atoms/buddy-sidebar';
 import {
-  buddyBuilderConversationsAtom,
-  buddySidebarChannelsAtom,
-  buddySidebarCountAtom,
-  buddySidebarGroupsAtom,
-  sidebarFolderViewAtom,
-  sidebarRunningCountByFolderAtom,
-} from '../src/atoms/buddy-sidebar';
-import {
-  allPendingCreationsAtom,
-  availableConversationIdSetAtom,
-  chatMessageGroupsAtomFamily,
-  childConversationsAtomFamily,
-  conversationAtomFamily,
-  conversationDetailsLoadedAtomFamily,
-  detailPatchAtom,
-  hasConversationsAtom,
-  latestWorkingDirectoryAtom,
-  queueAtomFamily,
-  recentDirectoriesAtom,
-  streamingAtomFamily,
-  transcriptPatchAtom,
+  childRowsFamily,
+  commandFor,
+  commandsAtom,
+  connectionAtom,
+  groupsFamily,
+  listField,
+  rowFamily,
+  streamFamily,
+  transcriptFamily,
+  transcriptStore,
+  unreadFamily,
 } from '../src/atoms/conversations';
 import { jotaiStore } from '../src/atoms/store';
-import { lastSeenMessageIndexAtomFamily } from '../src/atoms/ui';
+import { prefsAtom } from '../src/atoms/ui';
+import { parseServerFrame } from '../src/hooks/useWebSocket';
 import { runEventBench } from './event-bench-harness';
 
 runEventBench({
   store: jotaiStore,
   handleMessage,
+  // The client's real boundary: chunks get the light tag check (T19).
   parseFrame: (raw) => {
-    const frame = classifyServerFrame(raw);
+    const frame = parseServerFrame(raw);
     return frame.t === 'message' ? frame.message : null;
   },
   open: (id, detail, messages) => {
-    jotaiStore.set(detailPatchAtom, { set: [[id, detail]], remove: [] });
-    jotaiStore.set(transcriptPatchAtom, { set: [[id, { epoch: 0, messages }]], remove: [] });
+    jotaiStore.set(transcriptStore.patch, {
+      set: [[id, { tag: 'loaded', epoch: 0, messages, detail }]],
+      remove: [],
+    });
   },
-  groups: (openId) => chatMessageGroupsAtomFamily(openId),
+  groups: (openId) => groupsFamily(openId),
   mount: (ids, openId): Atom<unknown>[] => [
     // Sidebar
-    sidebarFolderViewAtom,
-    recentDirectoriesAtom,
-    latestWorkingDirectoryAtom,
-    sidebarRunningCountByFolderAtom,
-    buddyBuilderConversationsAtom,
-    buddySidebarGroupsAtom,
-    buddySidebarCountAtom,
-    buddySidebarChannelsAtom,
-    allPendingCreationsAtom,
-    availableConversationIdSetAtom,
+    listField('folders'),
+    listField('recentDirs'),
+    listField('latestCwd'),
+    listField('runningByFolder'),
+    listField('builders'),
+    buddySidebarAtom,
+    commandsAtom,
+    connectionAtom,
+    prefsAtom,
     // Sidebar rows (60 visible)
-    ...ids
-      .slice(0, 60)
-      .flatMap((id) => [conversationAtomFamily(id), lastSeenMessageIndexAtomFamily(id)]),
+    ...ids.slice(0, 60).flatMap((id) => [rowFamily(id), unreadFamily(id)]),
     // Chat
-    conversationAtomFamily(openId),
-    chatMessageGroupsAtomFamily(openId),
-    childConversationsAtomFamily(openId),
-    hasConversationsAtom,
-    queueAtomFamily(openId),
-    streamingAtomFamily(openId),
-    conversationDetailsLoadedAtomFamily(openId),
+    rowFamily(openId),
+    transcriptFamily(openId),
+    groupsFamily(openId),
+    childRowsFamily(openId),
+    listField('idSet'),
+    commandFor(openId),
+    streamFamily(openId),
   ],
 });

@@ -1,4 +1,9 @@
-import { type ConversationDetail, type Message, type ServerMessage, encodeRows } from '@unleashd/shared';
+import {
+  type ConversationDetail,
+  type Message,
+  type ServerMessage,
+  encodeRows,
+} from '@unleashd/shared';
 import type { Atom, createStore } from 'jotai';
 import {
   syntheticConversation,
@@ -122,7 +127,11 @@ export function runEventBench(target: BenchTarget): void {
       clock += 1_000;
       const id = others[(i * 13) % others.length].id;
       deliver({ type: 'message', conversationId: id, role: 'user', content: `message ${i}` });
-      deliver({ type: 'patch', id, patch: { t: 'activity', activityAt: clock, messageCount: 3 + i } });
+      deliver({
+        type: 'patch',
+        id,
+        patch: { t: 'activity', activityAt: clock, messageCount: 3 + i },
+      });
     },
     'stream frame (open chat)': (i) => {
       deliver({ type: 'chunk', conversationId: openId, text: ` token${i}` });
