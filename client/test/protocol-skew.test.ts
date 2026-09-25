@@ -59,3 +59,16 @@ test('a v3 hello parses, replaces the rows and clears the skew state', () => {
   assert.deepEqual([...jotaiStore.get(conversationsAtom).keys()], ['fresh']);
   assert.equal(jotaiStore.get(protocolMismatchAtom), null);
 });
+
+// T14b renamed channel_changed's `listId` to `channelId`. A backend that has not
+// reloaded yet still sends `listId`; that frame must be dropped as invalid, not
+// applied, or the client would invalidate `/api/buddies/channels/undefined` and
+// miss the real channel silently.
+test('a pre-rename channel_changed frame is invalid; the renamed one names its channel', () => {
+  assert.equal(classifyServerFrame({ type: 'channel_changed', listId: 'ch_a' }).t, 'invalid');
+  const frame = classifyServerFrame({ type: 'channel_changed', channelId: 'ch_a' });
+  assert.deepEqual(frame, {
+    t: 'message',
+    message: { type: 'channel_changed', channelId: 'ch_a' },
+  });
+});

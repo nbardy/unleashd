@@ -1,9 +1,4 @@
-import type {
-  BuddyContext,
-  ConversationRow,
-  Message,
-  PersistedConversationConfigRecord,
-} from '@unleashd/shared';
+import type { BuddyContext, ConversationRow, Message } from '@unleashd/shared';
 import { encodeRows } from '@unleashd/shared';
 import { validate as isUuid } from 'uuid';
 import type {
@@ -21,12 +16,12 @@ import type {
   SessionTracking,
 } from '../application/context';
 import { type MemoryGenerationInput, extractBuddyMemorySnapshot } from '../buddies/turn-policy';
+import type { ConversationRecord, ConversationRecordStore } from '../conversations/config-records';
 import {
   type ConversationConfigService,
   ConversationTombstonedError,
   type HydratedConversationConfig,
 } from '../conversations/config-service';
-import type { ConversationConfigStore } from '../conversations/config-store';
 import type {
   ConversationBroadcast,
   ConversationOptions,
@@ -55,7 +50,7 @@ export interface SessionLoaderDependencies {
   sessions: SessionTracking;
   externalActivity: ExternalActivity;
   completionSuppression: CompletionSuppression;
-  configStore: ConversationConfigStore;
+  configStore: ConversationRecordStore;
   configService: ConversationConfigService;
   loadConversations: typeof loadAllConversations;
   pollConversations(
@@ -125,7 +120,7 @@ export function createSessionLoader(dependencies: SessionLoaderDependencies): Se
     return rememberBindings(record);
   }
 
-  function rememberBindings(record: PersistedConversationConfigRecord) {
+  function rememberBindings(record: ConversationRecord) {
     const bindings = [
       ...record.sessionBindings,
       ...(record.currentSession ? [record.currentSession] : []),
@@ -137,7 +132,7 @@ export function createSessionLoader(dependencies: SessionLoaderDependencies): Se
 
   function restoreDisplayHistory(
     conversation: ConversationRuntime,
-    record: PersistedConversationConfigRecord,
+    record: ConversationRecord,
     source: DiscoveredSession
   ): void {
     const bindings = rememberBindings(record);
@@ -325,9 +320,7 @@ export function createSessionLoader(dependencies: SessionLoaderDependencies): Se
     flush();
   }
 
-  async function recoverRecord(
-    record: PersistedConversationConfigRecord
-  ): Promise<ConversationRuntime | null> {
+  async function recoverRecord(record: ConversationRecord): Promise<ConversationRuntime | null> {
     if (dependencies.registry.has(record.conversationId) || !record.workingDirectory) {
       return null;
     }

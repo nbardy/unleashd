@@ -1,6 +1,6 @@
 import { useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { useSwarmRuntimeSnapshots } from '../hooks/useSwarmRuntimeSnapshots';
+import { useSwarmRuntimeSnapshots } from './useSwarmRuntimeSnapshots';
 import './InlineSwarmRunWidget.css';
 
 interface InlineSwarmRunWidgetProps {

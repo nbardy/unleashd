@@ -71,6 +71,48 @@ export function esbuildCheck(entry, cwd) {
   };
 }
 
+// Rust sources are never loaded by the backend; the addon they compile to is
+// (`crates/<c>/*.node`, reported like any other file). So a saved `.rs` only has
+// to rebuild its crate: the rewritten addon then reloads the backend through the
+// digest path below, and a build that changes nothing restarts nothing. Until
+// T14b (2026-09-26) every crate edit needed a hand-run `pnpm --dir crates/<c> build`.
+const CRATE_SOURCE = /^crates\/([^/]+)\/(?:src\/.+\.rs|build\.rs|Cargo\.toml)$/;
+
+/** The crate a repository-relative path is a build input of, or null. */
+export function crateOfSource(relativePath) {
+  return CRATE_SOURCE.exec(relativePath.split(path.sep).join('/'))?.[1] ?? null;
+}
+
+/** Builds one crate with its package script (napi-rs; writes the addon on success only). */
+export function pnpmCrateBuild(repositoryRoot) {
+  // Through the invoking pnpm when there is one: under nvm, pnpm may not be on PATH.
+  const pnpmScript = process.env.npm_execpath;
+  const [command, prefix] = pnpmScript?.includes('pnpm')
+    ? [process.execPath, [pnpmScript]]
+    : ['pnpm', []];
+  return (crate) =>
+    new Promise((resolve) => {
+      const dir = path.join(repositoryRoot, 'crates', crate);
+      const child = spawn(command, [...prefix, '--dir', dir, 'run', 'build'], {
+        stdio: ['ignore', 'pipe', 'pipe'],
+      });
+      let output = '';
+      const collect = (chunk) => {
+        output = (output + chunk).slice(-8000);
+      };
+      child.stdout.setEncoding('utf8').on('data', collect);
+      child.stderr.setEncoding('utf8').on('data', collect);
+      child.once('error', (error) => resolve({ ok: false, message: String(error) }));
+      child.once('exit', (code, signal) =>
+        resolve(
+          code === 0
+            ? { ok: true }
+            : { ok: false, message: `${describeExit(code, signal)}\n${output}` }
+        )
+      );
+    });
+}
+
 export function createBackendRunner({
   command,
   args,
@@ -78,6 +120,8 @@ export function createBackendRunner({
   env = {},
   watchRoot,
   check,
+  // (crate) => Promise<{ ok } | { ok: false, message }>; see crateOfSource.
+  buildCrate,
   // (chunk) => void. Given, the backend's stdout and stderr are piped through
   // it (the one-process dev runtime prefixes them); absent, they are inherited.
   output,
@@ -96,6 +140,11 @@ export function createBackendRunner({
   const touched = new Set();
   let backoffMs = initialBackoffMs;
   let settleTimer;
+  // Crates with a saved source not built yet; one cargo build at a time (they
+  // share crates/target and its lock).
+  const staleCrates = new Set();
+  let crateTimer;
+  let buildingCrates = false;
   let watcher;
   let resolveStopped;
   const stopped = new Promise((resolve) => {
@@ -134,6 +183,26 @@ export function createBackendRunner({
     });
     touched.clear();
     if (changed.length > 0) void onSourceChanged();
+  }
+
+  function onCrateSource(crate) {
+    staleCrates.add(crate);
+    clearTimeout(crateTimer);
+    crateTimer = setTimeout(buildStaleCrates, settleMs);
+  }
+
+  async function buildStaleCrates() {
+    if (buildingCrates) return;
+    buildingCrates = true;
+    for (const crate of staleCrates) {
+      staleCrates.delete(crate);
+      log(`crates/${crate} changed; building its addon`);
+      const result = await buildCrate(crate);
+      if (!result.ok) {
+        logError(`crates/${crate} does not build; keeping the current addon.\n${result.message}`);
+      }
+    }
+    buildingCrates = false;
   }
 
   function spawnBackend() {
@@ -203,6 +272,7 @@ export function createBackendRunner({
 
   function finish() {
     clearTimeout(settleTimer);
+    clearTimeout(crateTimer);
     watcher.close();
     state = { kind: 'stopped' };
     resolveStopped();
@@ -210,8 +280,11 @@ export function createBackendRunner({
 
   function start() {
     watcher = watch(root, { recursive: true }, (_event, filename) => {
-      const file = filename && path.join(root, filename);
-      if (file && loaded.has(file)) onFileEvent(file);
+      if (!filename) return;
+      const file = path.join(root, filename);
+      if (loaded.has(file)) onFileEvent(file);
+      const crate = crateOfSource(filename);
+      if (crate) onCrateSource(crate);
     });
     spawnBackend();
   }
@@ -248,6 +321,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     env: { NODE_ENV: 'development' },
     watchRoot: repositoryRoot,
     check: esbuildCheck('src/server.ts', serverRoot),
+    buildCrate: pnpmCrateBuild(repositoryRoot),
   });
   process.on('SIGINT', () => runner.stop('SIGINT'));
   process.on('SIGTERM', () => runner.stop('SIGTERM'));

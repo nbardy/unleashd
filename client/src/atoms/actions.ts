@@ -560,7 +560,7 @@ export function handleMessage(data: ServerMessage): void {
       invalidateBuddyResources();
       return;
     case 'channel_changed':
-      invalidateChannelResources(data.listId);
+      invalidateChannelResources(data.channelId);
       return;
     case 'hello':
       handleHello(data);

@@ -185,7 +185,7 @@ keys, and a payload would only tempt a second, per-event code path. Reads
 (`get_*`, `list_*`, `recall`) never announce; a Buddy polling its inbox must
 not make every open panel refetch.
 
-`channel_changed {listId}` is the exception. Three channel writes bypass all
+`channel_changed {channelId}` is the exception. Three channel writes bypass all
 three doors: the responder posts a mention reply straight to the store, posts a
 `reply_failed` notice the same way, and keeps who is replying only in its
 in-memory queue. So `server.ts` broadcasts `channel_changed` from the channel

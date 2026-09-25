@@ -351,6 +351,11 @@ running the code on disk.
   watch on the repository is filtered against that set. The hand-written list it
   replaced omitted `node_modules`, so a vendored Buddies upgrade never reloaded
   the backend (2026-09-23).
+- **Rust crates rebuild on save.** The backend loads each crate's addon
+  (`crates/<c>/*.node`), never its `.rs` files, so a saved `src/**/*.rs`,
+  `build.rs` or `Cargo.toml` runs `pnpm --dir crates/<c> run build` (one cargo
+  build at a time). The rewritten addon then reloads the backend like any loaded
+  file; a failed build keeps the current addon (T14b, 2026-09-26).
 - **New code must build before the old backend is asked to drain.** One esbuild
   bundle of `src/server.ts` (~60ms) catches syntax errors and missing exports;
   on failure the current backend keeps serving.

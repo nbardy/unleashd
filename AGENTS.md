@@ -31,6 +31,8 @@ client/src/atoms/*                 → jotai atoms, derived views, WS actions
 client/src/components/{Sidebar,Chat,ConversationConfigPicker}.tsx → main desktop UI
 client/src/mobile/*                → mobile view tree (second shell, same core)
 client/src/atoms/ui.ts             → device-local UI prefs + NEW-badge seen indexes
+{server,client}/src/swarm/          → QUARANTINED swarm/oompa viewer; outside code imports
+                                     only swarm/index.ts (guard: swarm-quarantine.test.ts)
 ```
 
 ## Hard rules (violations = rejected PR)
@@ -332,8 +334,8 @@ magenta). Run 1 and 3 back-to-back: live data drifts (sidebar badges,
   `workingDirectory`. Oompa runs one worktree per iteration
   (`<repo>/.ws<swarm>-w3-i7`), so the raw key gave every iteration its own group
   header — 1,107 groups for one repo on 2026-09-06, all rendering as the same
-  truncated `~/git/room-runners-aren…`. The fold is `getProjectRoot`, shared
-  with the Swarm dashboard; it deliberately does NOT live in
+  truncated `~/git/room-runners-aren…`. The fold is `getProjectRoot` in
+  `utils/directories.ts` (core, not swarm code); it deliberately does NOT live in
   `normalizeFolderDirectory`, which answers "which directory did the user mean"
   and must not rewrite a worktree the user typed into its parent repo. Guard:
   `client/test/folder-grouping.test.ts`.

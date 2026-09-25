@@ -33,11 +33,10 @@ import { splitStructuredMessageContent } from '../utils/structured-message-segme
 import { splitToolActivity } from '../utils/tool-activity-segments';
 import { execInputPreview } from '../utils/tool-call-preview';
 export type { MessageGroup } from '../utils/chat-message-groups';
+import { InlineSwarmRunWidget, SwarmConvoPrefix } from '../swarm';
 import { AskUserQuestionWidget, parseAskUserQuestion } from './AskUserQuestion';
 import { BuddyConvoHeader } from './BuddyConvoHeader';
 import { FilePreview, getPreviewType, getPreviewableLocalHref } from './FilePreview';
-import { InlineSwarmRunWidget } from './InlineSwarmRunWidget';
-import { SwarmConvoPrefix } from './SwarmConvoPrefix';
 import { InlineBuddyBuilderResult } from './buddies/BuddyBuilderResultCard';
 
 /**

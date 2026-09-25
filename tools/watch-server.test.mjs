@@ -3,7 +3,7 @@ import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSy
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
-import { createBackendRunner, esbuildCheck } from './watch-server.mjs';
+import { crateOfSource, createBackendRunner, esbuildCheck } from './watch-server.mjs';
 
 // A stand-in backend: loads a local module and a node_modules package, records
 // each boot, and honours the reload request the way the real server does
@@ -12,16 +12,36 @@ const BACKEND = `
 const fs = require('node:fs');
 const local = require('./local.cjs');
 const pkg = require('pkg');
-fs.appendFileSync('boots.log', JSON.stringify({ pid: process.pid, local: local.value, pkg: pkg.value }) + '\\n');
+const addon = require('./crates/demo/addon.cjs');
+fs.appendFileSync('boots.log', JSON.stringify({ pid: process.pid, local: local.value, pkg: pkg.value, addon: addon.value }) + '\\n');
 process.on('message', (message) => {
   if (message?.type === 'unleashd:dev-reload') setTimeout(() => process.exit(0), 50);
 });
 setInterval(() => {}, 1000);
 `;
 
+// The crate's "build" stands in for napi-rs: it compiles src/lib.rs (here, copies
+// its number) into the addon the backend loads, and fails on a non-number.
+function buildDemoCrate(root, builds) {
+  return async (crate) => {
+    builds.push(crate);
+    const source = readFileSync(path.join(root, 'crates', crate, 'src', 'lib.rs'), 'utf8').trim();
+    if (!/^\d+$/.test(source)) return { ok: false, message: `bad source: ${source}` };
+    writeFileSync(
+      path.join(root, 'crates', crate, 'addon.cjs'),
+      `module.exports = { value: ${source} };\n`
+    );
+    return { ok: true };
+  };
+}
+
 function fixture(t) {
   const root = realpathSync(mkdtempSync(path.join(os.tmpdir(), 'watch-server-')));
   mkdirSync(path.join(root, 'node_modules', 'pkg'), { recursive: true });
+  mkdirSync(path.join(root, 'crates', 'demo', 'src'), { recursive: true });
+  writeFileSync(path.join(root, 'crates', 'demo', 'src', 'lib.rs'), '1\n');
+  writeFileSync(path.join(root, 'crates', 'demo', 'addon.cjs'), 'module.exports = { value: 1 };\n');
+  const builds = [];
   writeFileSync(path.join(root, 'package.json'), '{}');
   writeFileSync(path.join(root, 'backend.cjs'), BACKEND);
   writeFileSync(path.join(root, 'local.cjs'), 'module.exports = { value: 1 };\n');
@@ -35,6 +55,7 @@ function fixture(t) {
     cwd: root,
     watchRoot: root,
     check: esbuildCheck('backend.cjs', root),
+    buildCrate: buildDemoCrate(root, builds),
     settleMs: 100,
     initialBackoffMs: 100,
     log: () => {},
@@ -50,7 +71,7 @@ function fixture(t) {
       .trim()
       .split('\n')
       .map((line) => JSON.parse(line));
-  return { root, runner, boots };
+  return { root, runner, boots, builds };
 }
 
 async function until(predicate, timeoutMs = 5000) {
@@ -138,4 +159,34 @@ test('a backend killed from outside is restarted', async (t) => {
   process.kill(first.pid, 'SIGKILL');
   const [, second] = await until(() => boots().length === 2 && boots());
   assert.notEqual(second.pid, first.pid);
+});
+
+test('saving a crate source rebuilds its addon, and the new addon reloads the backend', async (t) => {
+  // T14b, 2026-09-26: the backend loads crates/<c>/*.node, never the .rs files,
+  // so before this a Rust edit reached dev only after a hand-run crate build.
+  const { root, runner, boots, builds } = fixture(t);
+  runner.start();
+  await firstBoot(boots);
+  writeFileSync(path.join(root, 'crates', 'demo', 'src', 'lib.rs'), '2\n');
+  const [, second] = await until(() => boots().length === 2 && boots());
+  assert.equal(second.addon, 2);
+  assert.deepEqual(builds, ['demo']);
+});
+
+test('a crate that does not build keeps the backend and its current addon', async (t) => {
+  const { root, runner, boots, builds } = fixture(t);
+  runner.start();
+  await firstBoot(boots);
+  writeFileSync(path.join(root, 'crates', 'demo', 'src', 'lib.rs'), 'syntax error\n');
+  await until(() => builds.length === 1);
+  await new Promise((resolve) => setTimeout(resolve, 400));
+  assert.equal(boots().length, 1);
+});
+
+test('crateOfSource maps build inputs, not build outputs, to their crate', () => {
+  assert.equal(crateOfSource('crates/unleashd-buddies/src/store/post.rs'), 'unleashd-buddies');
+  assert.equal(crateOfSource('crates/unleashd-ingest/Cargo.toml'), 'unleashd-ingest');
+  // cargo writes .rs under target/ (build scripts); matching it would loop builds forever.
+  assert.equal(crateOfSource('crates/target/release/build/x/out/bindings.rs'), null);
+  assert.equal(crateOfSource('crates/unleashd-buddies/buddies-core.node'), null);
 });

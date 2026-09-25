@@ -1,6 +1,5 @@
 import type { ConversationRow, RowKind } from '@unleashd/shared';
-import { folderGroupKey, normalizeFolderDirectory } from '../utils/directories';
-import { getProjectRoot, isWorktreeDirectory } from '../utils/swarmUtils';
+import { folderGroupKey, getProjectRoot, isWorktreeDirectory, normalizeFolderDirectory } from '../utils/directories';
 import { sameItems, sameMap, sameSet } from './structural';
 
 // =============================================================================

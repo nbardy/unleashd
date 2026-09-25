@@ -6,7 +6,7 @@ import {
   isModelIdValidForProvider,
   normalizeModelId,
 } from '@unleashd/shared';
-import type { ConfigProvenance } from './config-store';
+import type { ConfigProvenance } from './config-records';
 
 export interface LegacyConfigEvidence {
   provider: Provider;

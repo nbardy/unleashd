@@ -285,7 +285,7 @@ is the named predicate for Buddy data. It fires from the WS spine on
 (`server/src/buddies/change-feed.ts`), which announces every Buddy-store write
 whether it came from an owner route, an owner MCP tool, a Buddy's MCP tool or
 the scheduler — and on create/delete of a Buddy-context conversation, which the
-client already knows about. `channel_changed {listId}` is the precise one:
+client already knows about. `channel_changed {channelId}` is the precise one:
 `invalidateChannelResources` refreshes only keys under
 `/api/buddies/lists/<listId>/` (posts, threads, who is replying) plus the
 channel list, whose rows count and sort by every post, and any mounted
