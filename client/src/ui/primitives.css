@@ -39,3 +39,8 @@
 .ui-muted {
   color: var(--text-muted);
 }
+
+.ui-control {
+  border-radius: var(--ui-radius);
+  cursor: pointer;
+}

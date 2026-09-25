@@ -43,7 +43,7 @@ export function SwarmConvoPrefix({ prefix, swarmId }: SwarmConvoPrefixProps) {
     <div className="swarm-convo-prefix">
       <button
         type="button"
-        className={`swarm-prefix-token ui-inline-row ${expanded ? 'expanded' : 'collapsed'}`}
+        className={`swarm-prefix-token ui-control ui-inline-row ${expanded ? 'expanded' : 'collapsed'}`}
         onClick={() => setExpanded((v) => !v)}
         aria-expanded={expanded}
       >

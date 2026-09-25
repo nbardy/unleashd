@@ -32,7 +32,7 @@ export function ConfigDropdown() {
     <div className="config-dropdown" ref={dropdownRef}>
       <button
         type="button"
-        className="config-trigger ui-row"
+        className="config-trigger ui-control ui-row"
         onClick={() => setIsOpen(!isOpen)}
         title="Settings"
       >
@@ -52,7 +52,7 @@ export function ConfigDropdown() {
 
       {isOpen && (
         <div className="config-menu">
-          <div className="config-item ui-row status-item">
+          <div className="config-item ui-control ui-row status-item">
             <span className="config-item-icon ui-row ui-muted">
               <span className={`status-dot ${wsStatus}`} style={{ marginLeft: '4px' }} />
             </span>
@@ -62,7 +62,7 @@ export function ConfigDropdown() {
           </div>
           <button
             type="button"
-            className="config-item ui-row"
+            className="config-item ui-control ui-row"
             onClick={() => {
               setShowPalettePicker(true);
               setIsOpen(false);
@@ -90,7 +90,7 @@ export function ConfigDropdown() {
           </button>
           <button
             type="button"
-            className="config-item ui-row"
+            className="config-item ui-control ui-row"
             onClick={() => {
               setShowUsagePanel(true);
               setIsOpen(false);

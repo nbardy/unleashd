@@ -106,7 +106,7 @@ export function PromptPalette({
                     <span className="prompt-usage ui-muted">used {prompt.usageCount}x</span>
                     <button
                       type="button"
-                      className="prompt-delete-btn"
+                      className="prompt-delete-btn ui-control"
                       onClick={(e) => {
                         e.stopPropagation();
                         deletePrompt(prompt.id);

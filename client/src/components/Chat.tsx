@@ -514,7 +514,7 @@ export function Chat({ id }: { id: string }) {
           <div className="header-config-controls ui-inline-row">
             <button
               type="button"
-              className={`chat-config-summary ui-inline-row${headerConfigExpanded ? ' expanded' : ''}`}
+              className={`chat-config-summary ui-control ui-inline-row${headerConfigExpanded ? ' expanded' : ''}`}
               title={`${headerProvider?.displayName ?? conversation.provider} · ${headerModelLabel} · ${headerReasoningLabel}`}
               aria-expanded={headerConfigExpanded}
               aria-haspopup="dialog"
@@ -553,7 +553,7 @@ export function Chat({ id }: { id: string }) {
                   <span>Conversation settings</span>
                   <button
                     type="button"
-                    className="chat-config-modal__close ui-muted"
+                    className="chat-config-modal__close ui-control ui-muted"
                     aria-label="Close harness settings"
                     onClick={() => {
                       setHeaderConfigExpanded(false);
@@ -705,7 +705,7 @@ export function Chat({ id }: { id: string }) {
               {pendingQueue.length} queued
               <button
                 type="button"
-                className="clear-queue-btn"
+                className="clear-queue-btn ui-control"
                 onClick={handleClearQueue}
                 title="Clear queue"
               >
@@ -831,7 +831,7 @@ export function Chat({ id }: { id: string }) {
               <span className="queued-badge">Queued ({pendingQueue.length})</span>
               <button
                 type="button"
-                className="clear-queue-header-btn"
+                className="clear-queue-header-btn ui-control"
                 onClick={handleClearQueue}
                 title="Clear all queued messages"
               >
@@ -845,7 +845,7 @@ export function Chat({ id }: { id: string }) {
                   <span className="queued-message-status">#{index + 1} in queue</span>
                   <button
                     type="button"
-                    className="queued-message-send-now"
+                    className="queued-message-send-now ui-control"
                     onClick={() => handleSendNow(qm.id)}
                     title="Send now — run this next, interrupting the active turn"
                   >
@@ -853,7 +853,7 @@ export function Chat({ id }: { id: string }) {
                   </button>
                   <button
                     type="button"
-                    className="queued-message-remove ui-row"
+                    className="queued-message-remove ui-control ui-row"
                     onClick={() => handleRemoveFromQueue(qm.id)}
                     title="Remove from queue"
                   >
@@ -895,7 +895,7 @@ export function Chat({ id }: { id: string }) {
                 <span className="pending-file-name ui-truncate">{file.originalName}</span>
                 <button
                   type="button"
-                  className="pending-file-remove ui-row"
+                  className="pending-file-remove ui-control ui-row"
                   onClick={() => removePendingFile(file.absolutePath)}
                   title="Remove file"
                 >
@@ -912,11 +912,11 @@ export function Chat({ id }: { id: string }) {
           </div>
         )}
 
-        <div className="input-wrapper">
+        <div className="input-wrapper ui-row">
           <textarea
             ref={textareaRef}
             data-conversation-input="true"
-            className={`message-input ${hasActiveTurn ? 'interrupt-mode' : ''}`}
+            className={`message-input ui-card ${hasActiveTurn ? 'interrupt-mode' : ''}`}
             defaultValue=""
             onInput={handleInput}
             onKeyDown={handleKeyDown}
@@ -935,7 +935,7 @@ export function Chat({ id }: { id: string }) {
           <div className="input-actions">
             <button
               type="button"
-              className="upload-btn ui-row"
+              className="upload-btn ui-control ui-row"
               onClick={openFilePicker}
               disabled={!canInput || isUploading}
               title="Attach files (drag & drop also supported)"
@@ -967,7 +967,7 @@ export function Chat({ id }: { id: string }) {
             <div className="send-action ui-stack">
               <button
                 type="button"
-                className={`send-btn ${hasActiveTurn ? 'interrupt-mode' : ''}`}
+                className={`send-btn ui-control ${hasActiveTurn ? 'interrupt-mode' : ''}`}
                 onClick={hasActiveTurn ? handleInterrupt : handleSend}
                 disabled={!confirmed || !hasContent}
                 title={

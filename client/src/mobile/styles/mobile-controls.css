@@ -16,7 +16,6 @@
   min-height: 44px;
   padding: 0 var(--sp-7);
   border: 1px solid transparent;
-  border-radius: var(--ui-radius);
   background: var(--accent);
   color: var(--text-on-accent);
   font: inherit;
@@ -26,7 +25,6 @@
   text-align: center;
   text-decoration: none;
   white-space: nowrap;
-  cursor: pointer;
   -webkit-tap-highlight-color: transparent;
   transition: transform 100ms ease, opacity 120ms ease;
 }

@@ -11,9 +11,7 @@
   height: 26px;
   padding: 0;
   border: 0;
-  border-radius: var(--ui-radius);
   background: transparent;
-  cursor: pointer;
 }
 
 .resume-thread-widget__trigger:hover,

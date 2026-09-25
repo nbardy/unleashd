@@ -14,11 +14,9 @@
   gap: var(--sp-4);
   padding: var(--sp-3) var(--sp-6);
   border: 1px solid var(--primary-dim);
-  border-radius: var(--ui-radius);
   background: color-mix(in srgb, var(--primary) 8%, var(--bg-card));
   color: var(--text-secondary);
   font-size: var(--fs-3);
-  cursor: pointer;
   transition: background 0.15s, border-color 0.15s;
   width: 100%;
   text-align: left;

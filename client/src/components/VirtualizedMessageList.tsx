@@ -609,7 +609,7 @@ function StandaloneMessage({
         <div className="message-actions">
           <CopyButton
             text={messageTranscriptContent(msg)}
-            className="message-action-btn ui-inline-row ui-muted"
+            className="message-action-btn ui-control ui-inline-row ui-muted"
           />
         </div>
       )}
@@ -956,7 +956,7 @@ function AssistantResponseBlock({
         {response.copyText.trim() && (
           <CopyButton
             text={response.copyText}
-            className="message-action-btn ui-inline-row ui-muted"
+            className="message-action-btn ui-control ui-inline-row ui-muted"
           />
         )}
       </div>

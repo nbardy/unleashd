@@ -22,7 +22,7 @@ export function InlineSwarmRunWidget({ workingDirectory }: InlineSwarmRunWidgetP
     return (
       <button
         type="button"
-        className="inline-swarm-run ui-stack inline-swarm-run--empty"
+        className="inline-swarm-run ui-control ui-stack inline-swarm-run--empty"
         onClick={handleClick}
       >
         <div className="inline-swarm-run-content ui-stack">
@@ -46,7 +46,7 @@ export function InlineSwarmRunWidget({ workingDirectory }: InlineSwarmRunWidgetP
   return (
     <button
       type="button"
-      className={`inline-swarm-run ui-stack ${isRunning ? 'running' : 'completed'}`}
+      className={`inline-swarm-run ui-control ui-stack ${isRunning ? 'running' : 'completed'}`}
       onClick={handleClick}
     >
       <div className="inline-swarm-run-content ui-stack">

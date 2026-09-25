@@ -130,7 +130,7 @@ export function PromptPaletteMobile({
         <input
           ref={inputRef}
           type="text"
-          className="mobile-sheet__input mobile-sheet__input--filter"
+          className="mobile-sheet__input ui-card mobile-sheet__input--filter"
           placeholder="Search saved prompts… (⌘⌫ to delete)"
           value={query}
           onChange={(e) => setQuery(e.target.value)}
@@ -168,7 +168,7 @@ export function PromptPaletteMobile({
                   <span
                     role="button"
                     tabIndex={-1}
-                    className="prompt-palette-mobile__delete ui-inline-row"
+                    className="prompt-palette-mobile__delete ui-control ui-inline-row"
                     onClick={(e) => {
                       e.stopPropagation();
                       deletePrompt(prompt.id);

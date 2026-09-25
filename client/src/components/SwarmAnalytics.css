@@ -348,8 +348,6 @@
   top: 4px;
   bottom: 4px;
   min-width: 4px;
-  border-radius: var(--ui-radius);
-  cursor: pointer;
   transition: opacity 0.2s, transform 0.2s;
   justify-content: center;
   gap: var(--sp-1);

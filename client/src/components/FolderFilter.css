@@ -47,16 +47,11 @@
 .folder-chip {
   padding: var(--sp-2) var(--sp-6);
   background: var(--bg-panel); /* Tier 3 */
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--ui-radius);
   color: var(--text-secondary);
   font-size: var(--fs-3);
   cursor: pointer;
   transition: all 0.15s ease;
   max-width: 200px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .folder-chip:hover {
@@ -98,10 +93,8 @@
   padding: var(--sp-2) var(--sp-5);
   background: transparent;
   border: 1px solid var(--border-default);
-  border-radius: var(--ui-radius);
   color: var(--text-secondary);
   font-size: var(--fs-2);
-  cursor: pointer;
   transition: all 0.15s ease;
   align-self: flex-start;
 }

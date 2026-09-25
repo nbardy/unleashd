@@ -965,10 +965,8 @@
 
 .swarm-debug-btn {
   padding: var(--sp-1) var(--sp-5);
-  border-radius: var(--ui-radius);
   font-size: var(--fs-2);
   font-weight: 500;
-  cursor: pointer;
   border: 1px solid var(--primary);
   background: var(--bg-card);
   color: var(--primary);

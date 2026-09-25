@@ -398,7 +398,7 @@ export function SwarmAnalyticsMobile() {
             </div>
             <button
               type="button"
-              className="mobile-cta ui-inline-row"
+              className="mobile-cta ui-control ui-inline-row"
               onClick={() => setInspected(null)}
             >
               Close

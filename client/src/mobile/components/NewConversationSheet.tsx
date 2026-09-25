@@ -127,7 +127,7 @@ export function NewConversationSheet({
         </label>
         <input
           id="mobile-new-directory"
-          className="mobile-sheet__input"
+          className="mobile-sheet__input ui-card"
           value={directory}
           onChange={(event) => setDirectory(event.target.value)}
           placeholder="/Users/you/git/project"
@@ -141,7 +141,7 @@ export function NewConversationSheet({
           <>
             <div className="mobile-sheet__section-title">Recent</div>
             <input
-              className="mobile-sheet__input mobile-sheet__input--filter"
+              className="mobile-sheet__input ui-card mobile-sheet__input--filter"
               value={filter}
               onChange={(event) => setFilter(event.target.value)}
               placeholder="Filter recent folders…"
@@ -200,7 +200,7 @@ export function NewConversationSheet({
           )}
           <button
             type="button"
-            className="mobile-sheet__confirm"
+            className="mobile-sheet__confirm ui-control"
             onClick={() => void submit()}
             disabled={!canCreate}
           >

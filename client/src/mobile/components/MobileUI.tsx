@@ -93,7 +93,7 @@ export function MobileHeaderAction({
     <button
       {...props}
       type={type}
-      className={classes('mobile-ui-header-action ui-inline-row', className)}
+      className={classes('mobile-ui-header-action ui-control ui-inline-row', className)}
     >
       {children}
     </button>

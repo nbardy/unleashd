@@ -139,9 +139,7 @@
   padding: var(--sp-1) var(--sp-4);
   font-size: var(--fs-2);
   border: 1px solid var(--border-default);
-  border-radius: var(--ui-radius);
   background: transparent;
-  cursor: pointer;
   transition: all 0.15s;
 }
 
@@ -242,9 +240,7 @@
   font-size: var(--fs-3);
   font-weight: 500;
   border: none;
-  border-radius: var(--ui-radius);
   background: transparent;
-  cursor: pointer;
   transition: all 0.15s;
 }
 

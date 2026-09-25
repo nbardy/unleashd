@@ -393,7 +393,7 @@ export function Sidebar() {
               <div className="directory-actions">
                 <button
                   type="button"
-                  className="dir-action-btn dir-confirm-btn ui-row"
+                  className="dir-action-btn ui-control dir-confirm-btn ui-row"
                   onClick={handleConfirm}
                   disabled={
                     wsStatus !== 'connected' || !isDirectoryValid || isCreatingSwarm || !catalog
@@ -413,7 +413,7 @@ export function Sidebar() {
                 </button>
                 <button
                   type="button"
-                  className="dir-action-btn dir-swarm-btn"
+                  className="dir-action-btn ui-control dir-swarm-btn"
                   onClick={() => {
                     void handleCreateNewSwarm();
                   }}
@@ -460,7 +460,7 @@ export function Sidebar() {
               onClick={() => navigate(`/chat/${creation.conversationId}`)}
             >
               <div className="conversation-row ui-row">
-                <span className="folder-badge">
+                <span className="folder-badge ui-truncate">
                   {creation.workingDirectory.split('/').filter(Boolean).pop() ?? '/'}
                 </span>
                 <span className="conversation-title">
@@ -475,7 +475,7 @@ export function Sidebar() {
         <div className="sidebar-section">
           <div className="folder-group folder-group--buddies">
             <div
-              className="folder-group-header ui-row"
+              className="folder-group-header ui-control ui-row"
               style={{ borderLeftColor: 'var(--ai)' }}
               onClick={() => toggleGalleryCollapsed('__buddies__')}
             >
@@ -491,7 +491,7 @@ export function Sidebar() {
               </button>
               <button
                 type="button"
-                className="folder-group-add-btn ui-row folder-group-add-btn--section"
+                className="folder-group-add-btn ui-control ui-row folder-group-add-btn--section"
                 aria-label="Create a new Buddy"
                 title="Create a new Buddy"
                 disabled={isOpeningBuddyBuilder}
@@ -518,7 +518,7 @@ export function Sidebar() {
                   return (
                     <div key={group.key} className="folder-group folder-group--builder">
                       <div
-                        className="folder-group-header ui-row"
+                        className="folder-group-header ui-control ui-row"
                         style={{ borderLeftColor: 'var(--ai)' }}
                         onClick={() => toggleGalleryCollapsed('__builder__')}
                       >
@@ -530,7 +530,7 @@ export function Sidebar() {
                         </span>
                         <button
                           type="button"
-                          className="folder-group-add-btn ui-row folder-group-add-btn--section"
+                          className="folder-group-add-btn ui-control ui-row folder-group-add-btn--section"
                           aria-label="Start a new Buddy Builder conversation"
                           title="Start a new Buddy Builder conversation"
                           disabled={isOpeningBuddyBuilder}
@@ -595,7 +595,7 @@ export function Sidebar() {
                 const isProjectCollapsed = collapsedSet.has(projectKey);
                 return (
                   <div key={project.workspaceId} className="sidebar-buddy-project">
-                    <div className="folder-group-header ui-row sidebar-buddy-project-header sidebar-project-divider">
+                    <div className="folder-group-header ui-control ui-row sidebar-buddy-project-header sidebar-project-divider">
                       <Link
                         className="sidebar-project-link"
                         to={`/buddies/workspaces/${encodeURIComponent(project.workspaceId)}`}
@@ -633,7 +633,7 @@ export function Sidebar() {
                         return (
                           <div key={item.buddyId} className="buddy-subgroup">
                             <div
-                              className={`folder-group-header ui-row folder-group-header--buddy ${isBuddyActive ? 'active' : ''}`}
+                              className={`folder-group-header ui-control ui-row folder-group-header--buddy ${isBuddyActive ? 'active' : ''}`}
                             >
                               <Link
                                 className="sidebar-buddy-row-link"
@@ -643,7 +643,7 @@ export function Sidebar() {
                               />
                               <button
                                 type="button"
-                                className="folder-group-add-btn ui-row"
+                                className="folder-group-add-btn ui-control ui-row"
                                 aria-label={`New conversation with ${item.buddyName}`}
                                 title={`New conversation with ${item.buddyName}`}
                                 onClick={(e) => {
@@ -721,7 +721,7 @@ export function Sidebar() {
           <div className="sidebar-section">
             <div className="folder-group">
               <div
-                className="folder-group-header ui-row"
+                className="folder-group-header ui-control ui-row"
                 onClick={() => toggleGalleryCollapsed('__channels__')}
               >
                 <button
@@ -748,7 +748,7 @@ export function Sidebar() {
                   return (
                     <div
                       key={project.workspaceId}
-                      className={`folder-group-header ui-row sidebar-channels-row ${isActive ? 'active' : ''}`}
+                      className={`folder-group-header ui-control ui-row sidebar-channels-row ${isActive ? 'active' : ''}`}
                     >
                       <Link
                         className="folder-group-name ui-truncate sidebar-project-link"
@@ -788,7 +788,7 @@ export function Sidebar() {
                   return (
                     <div key={group.directory} className="folder-group">
                       <div
-                        className="folder-group-header ui-row sidebar-project-divider"
+                        className="folder-group-header ui-control ui-row sidebar-project-divider"
                         onClick={() => toggleGalleryCollapsed(group.directory)}
                         style={{ borderLeftColor: projectColor }}
                       >
@@ -799,7 +799,7 @@ export function Sidebar() {
                         <span className="sidebar-project-rule" aria-hidden="true" />
                         <button
                           type="button"
-                          className="folder-group-add-btn ui-row"
+                          className="folder-group-add-btn ui-control ui-row"
                           aria-label={`Search in ${dirDisplay}`}
                           title={`Search in ${dirDisplay}`}
                           onClick={(e) => {
@@ -830,7 +830,7 @@ export function Sidebar() {
                         </button>
                         <button
                           type="button"
-                          className="folder-group-add-btn ui-row"
+                          className="folder-group-add-btn ui-control ui-row"
                           title={`New conversation in ${dirDisplay}`}
                           onClick={(e) => {
                             e.stopPropagation();
@@ -1142,7 +1142,11 @@ function ConversationItem({
     >
       <div className="conversation-row ui-row">
         {showFolderBadge && (
-          <span className="folder-badge" style={{ color: projectColor }} title={dirDisplay}>
+          <span
+            className="folder-badge ui-truncate"
+            style={{ color: projectColor }}
+            title={dirDisplay}
+          >
             {isBuddyBuilderConversation(conv)
               ? 'Builder'
               : isBuddyConversation(conv)

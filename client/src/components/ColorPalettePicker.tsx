@@ -432,7 +432,11 @@ export function ColorPalettePicker({ onClose }: Props) {
       <div className="palette-picker ui-stack" onClick={(e) => e.stopPropagation()}>
         <div className="palette-picker-header ui-row">
           <h2>Color Palette</h2>
-          <button type="button" className="close-btn ui-row ui-muted" onClick={handleCancel}>
+          <button
+            type="button"
+            className="close-btn ui-control ui-row ui-muted"
+            onClick={handleCancel}
+          >
             &times;
           </button>
         </div>
@@ -446,7 +450,7 @@ export function ColorPalettePicker({ onClose }: Props) {
                 <div key={key} className="palette-option-row ui-row">
                   <button
                     type="button"
-                    className={`palette-option ui-stack ${selectedPalette === key ? 'selected' : ''}`}
+                    className={`palette-option ui-control ui-stack ${selectedPalette === key ? 'selected' : ''}`}
                     onClick={() => handleSelect(key)}
                   >
                     <div className="palette-swatches">
@@ -463,7 +467,7 @@ export function ColorPalettePicker({ onClose }: Props) {
                   {isCustom && (
                     <button
                       type="button"
-                      className="palette-delete-btn ui-row ui-muted"
+                      className="palette-delete-btn ui-control ui-row ui-muted"
                       title="Delete palette"
                       onClick={(e) => {
                         e.stopPropagation();
@@ -484,7 +488,7 @@ export function ColorPalettePicker({ onClose }: Props) {
 
             <button
               type="button"
-              className={`ai-generate-btn ui-row ui-muted ${aiMode ? 'active' : ''}`}
+              className={`ai-generate-btn ui-control ui-row ui-muted ${aiMode ? 'active' : ''}`}
               onClick={() => setAiMode(!aiMode)}
             >
               <span className="ai-sparkle">&#10022;</span>
@@ -514,7 +518,7 @@ export function ColorPalettePicker({ onClose }: Props) {
                   />
                   <button
                     type="button"
-                    className="ai-submit-btn"
+                    className="ai-submit-btn ui-control"
                     onClick={handleAiGenerate}
                     disabled={isGenerating || !aiDescription.trim()}
                   >

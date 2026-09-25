@@ -220,7 +220,7 @@ export function FolderFilter({
             <button
               key={folder}
               type="button"
-              className={`folder-chip ${isActive ? 'active' : ''} ${isSelected ? 'selected' : ''}`}
+              className={`folder-chip ui-truncate ui-card ${isActive ? 'active' : ''} ${isSelected ? 'selected' : ''}`}
               onClick={() => onToggle(folder)}
               title={folder}
             >
@@ -233,7 +233,7 @@ export function FolderFilter({
         {shouldTruncate && (
           <button
             type="button"
-            className="folder-chip folder-chip-more"
+            className="folder-chip ui-truncate ui-card folder-chip-more"
             onClick={() => setShowAll(true)}
           >
             +{hiddenCount} older folders...
@@ -242,7 +242,7 @@ export function FolderFilter({
         {showAll && !isSearching && hiddenCount > 0 && (
           <button
             type="button"
-            className="folder-chip folder-chip-more"
+            className="folder-chip ui-truncate ui-card folder-chip-more"
             onClick={() => setShowAll(false)}
           >
             show less
@@ -275,7 +275,7 @@ export function FolderFilter({
       )}
 
       {selected.size > 0 && (
-        <button type="button" className="folder-filter-clear" onClick={onClear}>
+        <button type="button" className="folder-filter-clear ui-control" onClick={onClear}>
           Clear
         </button>
       )}

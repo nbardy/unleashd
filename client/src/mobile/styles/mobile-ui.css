@@ -191,7 +191,6 @@
   min-height: 44px;
   padding: 0 var(--sp-7);
   border: 1px solid transparent;
-  border-radius: var(--ui-radius);
   background: var(--accent);
   color: var(--text-on-accent);
   font: inherit;
@@ -199,7 +198,6 @@
   font-weight: 700;
   line-height: 1;
   white-space: nowrap;
-  cursor: pointer;
   -webkit-tap-highlight-color: transparent;
   transition: transform 100ms ease, opacity 120ms ease;
 }
@@ -304,8 +302,6 @@
   min-width: 0;
   /* 16px keeps iOS Safari from zooming the viewport on focus. */
   padding: var(--sp-6);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--ui-radius);
   background: var(--bg-raised-2);
   color: var(--text-primary);
   font-family: var(--font-mono);
@@ -392,13 +388,11 @@
 .mobile-sheet__confirm {
   min-height: 48px;
   border: none;
-  border-radius: var(--ui-radius);
   background: var(--accent);
   color: var(--text-on-accent);
   font: inherit;
   font-size: var(--fs-5);
   font-weight: 700;
-  cursor: pointer;
   -webkit-tap-highlight-color: transparent;
 }
 
@@ -1118,13 +1112,11 @@
   justify-content: center;
   width: 22px;
   height: 22px;
-  border-radius: var(--ui-radius);
   background: color-mix(in srgb, var(--theme-danger) 14%, transparent);
   color: var(--theme-danger);
   font-size: var(--fs-5);
   font-weight: 700;
   line-height: 1;
-  cursor: pointer;
   -webkit-tap-highlight-color: transparent;
 }
 

@@ -117,7 +117,11 @@ export function SwarmDashboard() {
     return (
       <div className="swarm-dashboard ui-stack">
         <div className="swarm-dashboard-header ui-row">
-          <button type="button" className="back-to-gallery-btn" onClick={() => navigate('/')}>
+          <button
+            type="button"
+            className="back-to-gallery-btn ui-control"
+            onClick={() => navigate('/')}
+          >
             &#8592; Gallery
           </button>
           <h2>Swarm Dashboard</h2>
@@ -135,7 +139,11 @@ export function SwarmDashboard() {
   return (
     <div className="swarm-dashboard ui-stack">
       <div className="swarm-dashboard-header ui-row">
-        <button type="button" className="back-to-gallery-btn" onClick={() => navigate('/')}>
+        <button
+          type="button"
+          className="back-to-gallery-btn ui-control"
+          onClick={() => navigate('/')}
+        >
           &#8592; Gallery
         </button>
         <h2>Swarm Dashboard</h2>
@@ -192,7 +200,7 @@ export function SwarmDashboard() {
               )}
               <button
                 type="button"
-                className="swarm-open-btn"
+                className="swarm-open-btn ui-control"
                 onClick={(e) => {
                   e.stopPropagation();
                   navigate(`/workers/detail?project=${encodeURIComponent(project.projectRoot)}`);

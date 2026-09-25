@@ -178,7 +178,7 @@ export function UsagePanel({ onClose }: Props) {
       <div className="usage-panel ui-stack">
         <div className="usage-panel-header ui-row">
           <h2>Usage</h2>
-          <button type="button" className="close-btn ui-row ui-muted" onClick={onClose}>
+          <button type="button" className="close-btn ui-control ui-row ui-muted" onClick={onClose}>
             <svg
               aria-hidden="true"
               width="18"
@@ -205,7 +205,7 @@ export function UsagePanel({ onClose }: Props) {
                   <button
                     key={t}
                     type="button"
-                    className={`usage-tab ui-muted ${tab === t ? 'active' : ''}`}
+                    className={`usage-tab ui-control ui-muted ${tab === t ? 'active' : ''}`}
                     onClick={() => setTab(t === 'all' ? 'all' : (t as Provider))}
                   >
                     {t === 'all' ? 'All' : getProviderMetadata(t).label}
@@ -258,7 +258,7 @@ export function UsagePanel({ onClose }: Props) {
                     <button
                       key={d}
                       type="button"
-                      className={`usage-range-btn ui-muted ${days === d ? 'active' : ''}`}
+                      className={`usage-range-btn ui-control ui-muted ${days === d ? 'active' : ''}`}
                       onClick={() => setDays(d)}
                     >
                       {d}d

@@ -39,7 +39,6 @@
   flex-wrap: nowrap;
   gap: var(--sp-3);
   padding: var(--sp-1) var(--sp-4);
-  border-radius: var(--ui-radius);
   border: 1px solid transparent;
   background: color-mix(in srgb, var(--text-muted) 10%, transparent);
   color: var(--text-emphasis);
@@ -48,7 +47,6 @@
   font-weight: 600;
   line-height: 1.4;
   letter-spacing: 0.3px;
-  cursor: pointer;
   white-space: nowrap;
   flex-shrink: 0;
   transition: border-color 0.15s, background 0.15s;
@@ -462,12 +460,10 @@
 }
 
 .input-wrapper {
-  display: flex;
   gap: var(--sp-6);
   max-width: 100%; /* Fill available space */
   margin: 0;
-  position: relative;
-  align-items: center; /* Center buttons vertically */
+  position: relative; /* Center buttons vertically */
 }
 
 .submission-error {
@@ -510,8 +506,6 @@
      messages is absorbed by the input's own 1px border + 1px visual gap. */
   padding: var(--sp-6) var(--sp-7) var(--sp-6) var(--sp-8);
   background: var(--bg-primary);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--ui-radius);
   color: var(--text-emphasis);
   font-size: var(--fs-5);
   font-family: inherit;
@@ -541,8 +535,6 @@
   background: var(--accent-primary);
   color: var(--text-on-accent);
   border: none;
-  border-radius: var(--ui-radius);
-  cursor: pointer;
   font-size: var(--fs-5);
   transition: background 0.2s;
   white-space: nowrap;
@@ -833,13 +825,11 @@
   gap: var(--sp-2);
   padding: var(--sp-1) var(--sp-3);
   border: none;
-  border-radius: var(--ui-radius);
   background: transparent;
   font: inherit;
   font-size: var(--fs-2);
   line-height: 1;
   letter-spacing: 0.3px;
-  cursor: pointer;
   opacity: 0;
   transition: opacity 0.12s, color 0.12s, background 0.12s;
 }
@@ -1110,9 +1100,7 @@
   border: none;
   color: var(--text-on-accent);
   padding: var(--sp-1) var(--sp-3);
-  border-radius: var(--ui-radius);
   font-size: var(--fs-1);
-  cursor: pointer;
   transition: background 0.2s;
 }
 
@@ -1140,9 +1128,7 @@
   border: 1px solid color-mix(in srgb, var(--danger) 40%, transparent);
   color: var(--accent-error);
   padding: var(--sp-2) var(--sp-5);
-  border-radius: var(--ui-radius);
   font-size: var(--fs-2);
-  cursor: pointer;
   transition: all 0.2s;
 }
 
@@ -1219,8 +1205,6 @@
   border: none;
   background: color-mix(in srgb, var(--danger) 30%, transparent);
   color: var(--accent-error);
-  border-radius: var(--ui-radius);
-  cursor: pointer;
   font-size: var(--fs-5);
   font-weight: bold;
   line-height: 1;
@@ -1240,10 +1224,8 @@
   border: 1px solid color-mix(in srgb, var(--accent-queue) 40%, transparent);
   background: color-mix(in srgb, var(--queue) 20%, transparent);
   color: var(--accent-queue);
-  border-radius: var(--ui-radius);
   font-size: var(--fs-2);
   white-space: nowrap;
-  cursor: pointer;
   transition: all 0.2s;
 }
 
@@ -1277,8 +1259,6 @@
   padding: var(--sp-2);
   background: var(--bg-tertiary);
   border: none;
-  border-radius: var(--ui-radius);
-  cursor: pointer;
   transition: all 0.2s;
   justify-content: center;
   overflow: hidden;
@@ -1371,8 +1351,6 @@
   border: none;
   background: color-mix(in srgb, var(--danger) 30%, transparent);
   color: var(--accent-error);
-  border-radius: var(--ui-radius);
-  cursor: pointer;
   font-size: var(--fs-3);
   font-weight: bold;
   line-height: 1;
@@ -1455,10 +1433,8 @@
 .chat-config-modal__close {
   padding: var(--sp-1) var(--sp-4);
   border: 1px solid transparent;
-  border-radius: var(--ui-radius);
   background: transparent;
   font: inherit;
-  cursor: pointer;
 }
 
 .chat-config-modal__close:hover {

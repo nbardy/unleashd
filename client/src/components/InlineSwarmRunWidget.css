@@ -2,7 +2,6 @@
   width: 100%;
   background: color-mix(in srgb, var(--bg-panel) 40%, transparent);
   border: 1px solid var(--border-default);
-  border-radius: var(--ui-radius);
   padding: var(--sp-6) var(--sp-7);
   margin: 12px 0;
   gap: var(--sp-6);
@@ -10,7 +9,6 @@
   box-shadow: 0 4px 12px color-mix(in srgb, var(--bg-darkest) 10%, transparent);
   position: relative;
   overflow: hidden;
-  cursor: pointer;
   color: inherit;
   text-align: left;
   transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;

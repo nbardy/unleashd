@@ -79,7 +79,11 @@ export function ShellMobile() {
   const channelsUnread = ownerUnreadTotal(useOwnerInboxes().data, null).unreadChannels > 0;
 
   return (
-    <div className={keyboardOpen ? 'mobile-shell mobile-shell--keyboard' : 'mobile-shell'}>
+    <div
+      className={
+        keyboardOpen ? 'mobile-shell ui-stack mobile-shell--keyboard' : 'mobile-shell ui-stack'
+      }
+    >
       <div className={isPaneRoute ? 'mobile-content mobile-content--pane' : 'mobile-content'}>
         <div className="mobile-content__inner">
           <Outlet />

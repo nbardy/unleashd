@@ -337,7 +337,7 @@ export function Gallery({ filter }: GalleryProps = {}) {
           <div className="project-header-row">
             <button
               type="button"
-              className="project-header"
+              className="project-header ui-row"
               onClick={() => toggleGalleryCollapsed(group.directory)}
             >
               <div className="project-header-left ui-row">
@@ -385,7 +385,7 @@ export function Gallery({ filter }: GalleryProps = {}) {
               {showMoreButton && (
                 <button
                   type="button"
-                  className="gallery-show-more-btn"
+                  className="gallery-show-more-btn ui-control"
                   onClick={(e) => {
                     e.stopPropagation();
                     toggleGalleryExpanded(group.directory);
@@ -398,7 +398,7 @@ export function Gallery({ filter }: GalleryProps = {}) {
               {isExpanded && totalCount > CONVERSATIONS_PER_PROJECT && (
                 <button
                   type="button"
-                  className="gallery-show-more-btn"
+                  className="gallery-show-more-btn ui-control"
                   onClick={(e) => {
                     e.stopPropagation();
                     toggleGalleryExpanded(group.directory);
@@ -441,7 +441,11 @@ export function Gallery({ filter }: GalleryProps = {}) {
     return (
       <div className="gallery-view ui-stack">
         <div className="gallery-done-header ui-row">
-          <button type="button" className="back-to-gallery-btn" onClick={() => navigate('/')}>
+          <button
+            type="button"
+            className="back-to-gallery-btn ui-control"
+            onClick={() => navigate('/')}
+          >
             &#8592; Gallery
           </button>
           <h2>Done Conversations</h2>
@@ -457,7 +461,11 @@ export function Gallery({ filter }: GalleryProps = {}) {
     return (
       <div className="gallery-view ui-stack">
         <div className="gallery-done-header ui-row">
-          <button type="button" className="back-to-gallery-btn" onClick={() => navigate('/')}>
+          <button
+            type="button"
+            className="back-to-gallery-btn ui-control"
+            onClick={() => navigate('/')}
+          >
             &#8592; Gallery
           </button>
           <h2>Worker Conversations</h2>
@@ -473,14 +481,22 @@ export function Gallery({ filter }: GalleryProps = {}) {
     <div className="gallery-view ui-stack">
       {isDoneView ? (
         <div className="gallery-done-header ui-row">
-          <button type="button" className="back-to-gallery-btn" onClick={() => navigate('/')}>
+          <button
+            type="button"
+            className="back-to-gallery-btn ui-control"
+            onClick={() => navigate('/')}
+          >
             &#8592; Gallery
           </button>
           <h2>Done Conversations ({doneSessionCount})</h2>
         </div>
       ) : isWorkersView ? (
         <div className="gallery-done-header ui-row">
-          <button type="button" className="back-to-gallery-btn" onClick={() => navigate('/')}>
+          <button
+            type="button"
+            className="back-to-gallery-btn ui-control"
+            onClick={() => navigate('/')}
+          >
             &#8592; Gallery
           </button>
           <h2>Worker Sessions ({workerSessionCount})</h2>
@@ -512,7 +528,7 @@ export function Gallery({ filter }: GalleryProps = {}) {
           <div className="temp-sessions-section">
             <button
               type="button"
-              className="temp-sessions-toggle ui-row"
+              className="temp-sessions-toggle ui-control ui-row"
               onClick={() => setShowTempSessions(!showTempSessions)}
             >
               <span className={`project-chevron ${!showTempSessions ? 'collapsed' : ''}`}>
@@ -545,7 +561,7 @@ export function Gallery({ filter }: GalleryProps = {}) {
             {!isWorkersView && (
               <button
                 type="button"
-                className="worker-sessions-toggle ui-row"
+                className="worker-sessions-toggle ui-control ui-row"
                 onClick={() => setShowWorkerConversations(!showWorkerConversations)}
               >
                 <span className={`project-chevron ${!showWorkerConversations ? 'collapsed' : ''}`}>
@@ -576,7 +592,7 @@ export function Gallery({ filter }: GalleryProps = {}) {
             {!isDoneView && (
               <button
                 type="button"
-                className="done-sessions-toggle ui-row"
+                className="done-sessions-toggle ui-control ui-row"
                 onClick={() => setShowDoneConversations(!showDoneConversations)}
               >
                 <span className={`project-chevron ${!showDoneConversations ? 'collapsed' : ''}`}>

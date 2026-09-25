@@ -19,9 +19,6 @@
   /* Mobile type is smaller, so use the more legible structural tones here. */
   --text-muted: var(--theme-text-body);
   --text-secondary: var(--theme-text-bright);
-
-  display: flex;
-  flex-direction: column;
   width: 100%;
   max-width: 100%;
   min-width: 0;

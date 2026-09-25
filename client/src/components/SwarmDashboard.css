@@ -110,11 +110,9 @@
   padding: var(--sp-4) var(--sp-7);
   background: color-mix(in srgb, var(--primary) 15%, transparent);
   border: 1px solid color-mix(in srgb, var(--primary) 40%, transparent);
-  border-radius: var(--ui-radius);
   color: var(--primary-bright);
   font-size: var(--fs-4);
   font-weight: 500;
-  cursor: pointer;
   transition: all 0.2s;
   white-space: nowrap;
 }

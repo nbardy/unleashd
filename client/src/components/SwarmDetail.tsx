@@ -857,7 +857,7 @@ export function SwarmDetail() {
         <div className="swarm-detail-header ui-row">
           <button
             type="button"
-            className="back-to-gallery-btn"
+            className="back-to-gallery-btn ui-control"
             onClick={() => navigate('/workers')}
           >
             &#8592; Swarm Projects Overview
@@ -872,7 +872,11 @@ export function SwarmDetail() {
     <div className="swarm-detail">
       {/* Header */}
       <div className="swarm-detail-header ui-row">
-        <button type="button" className="back-to-gallery-btn" onClick={() => navigate('/workers')}>
+        <button
+          type="button"
+          className="back-to-gallery-btn ui-control"
+          onClick={() => navigate('/workers')}
+        >
           &#8592; Swarm Projects Overview
         </button>
         <div className="swarm-detail-title-block ui-stack">
@@ -883,7 +887,7 @@ export function SwarmDetail() {
         <div className="swarm-detail-header-stats ui-row">
           <button
             type="button"
-            className="swarm-debug-btn"
+            className="swarm-debug-btn ui-control"
             onClick={handleStartDebugConversation}
             title="Start a debug conversation about this swarm"
           >

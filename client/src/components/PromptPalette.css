@@ -80,8 +80,6 @@
   border: none;
   background: color-mix(in srgb, var(--danger) 25%, transparent);
   color: var(--accent-error);
-  border-radius: var(--ui-radius);
-  cursor: pointer;
   font-size: var(--fs-5);
   font-weight: bold;
   line-height: 1;

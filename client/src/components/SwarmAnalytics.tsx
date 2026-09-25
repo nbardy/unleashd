@@ -206,7 +206,7 @@ function TimelineChart({ runData, onWorkerClick }: TimelineChartProps) {
                   return (
                     <div
                       key={span.id}
-                      className={`timeline-span ui-row status-${span.status}`}
+                      className={`timeline-span ui-control ui-row status-${span.status}`}
                       style={{
                         left: `${startPct}%`,
                         width: `${widthPct}%`,
