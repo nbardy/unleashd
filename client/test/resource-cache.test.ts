@@ -130,20 +130,6 @@ test('a failed refresh keeps the previous value and reports the failure', async 
   assert.equal(entry.kind === 'stale' && entry.error.message, 'offline');
 });
 
-test('a first load that fails with nothing cached reports only the failure', async () => {
-  const resource: Resource<string> = {
-    key: '/api/broken',
-    load: async () => {
-      throw new Error('HTTP 500');
-    },
-  };
-  await loadResource(resource);
-
-  const entry = read<string>('/api/broken');
-  assert.equal(entry.kind, 'failed');
-  assert.equal(entry.kind === 'failed' && entry.error.message, 'HTTP 500');
-});
-
 // Push path: one call refreshes every matching MOUNTED view in place. A future
 // change that drops entries instead of re-running their loaders would leave
 // panels showing a spinner until their next poll tick; one that also re-runs

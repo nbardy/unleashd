@@ -12,8 +12,6 @@
  */
 import assert from 'node:assert/strict';
 import test from 'node:test';
-// biome-ignore lint/style/useImportType: tsx's test transform uses the classic JSX runtime.
-import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { ClientErrorBoundary, ClientErrorFallback } from '../src/observability/ClientErrorBoundary';
 

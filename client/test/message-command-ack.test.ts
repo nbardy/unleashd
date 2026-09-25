@@ -5,37 +5,29 @@ import { handleMessage, queueMessage, setSendFn } from '../src/atoms/actions';
 
 const conversationId = '07e0146f-95c6-43a0-a506-bd48e5e8156b';
 
-test('queued composer text waits for an exact server acknowledgement', async () => {
-  let sent: ClientMessage | null = null;
+/** Queue composer text and return the correlated command the client sent for it. */
+function queueAndCapture(): { settled: Promise<void>; commandId: string } {
+  const sent: ClientMessage[] = [];
   setSendFn((message) => {
-    sent = message;
+    sent.push(message);
   });
+  const settled = queueMessage(conversationId, 'cont');
+  const [command] = sent;
+  if (command?.type !== 'queue_message') throw new Error('queue command was not sent');
+  return { settled, commandId: command.commandId };
+}
 
-  const accepted = queueMessage(conversationId, 'cont');
-  assert.equal(sent?.type, 'queue_message');
-  if (sent?.type !== 'queue_message') throw new Error('queue command was not sent');
-
-  handleMessage({
-    type: 'command_accepted',
-    commandId: sent.commandId,
-    conversationId,
-  });
-  await accepted;
+test('queued composer text waits for an exact server acknowledgement', async () => {
+  const { settled, commandId } = queueAndCapture();
+  handleMessage({ type: 'command_accepted', commandId, conversationId });
+  await settled;
 });
 
 test('draining rejection rejects the exact queued command so the composer can retain text', async () => {
-  let sent: ClientMessage | null = null;
-  setSendFn((message) => {
-    sent = message;
-  });
-
-  const rejected = queueMessage(conversationId, 'cont');
-  assert.equal(sent?.type, 'queue_message');
-  if (sent?.type !== 'queue_message') throw new Error('queue command was not sent');
-
+  const { settled, commandId } = queueAndCapture();
   handleMessage({
     type: 'command_rejected',
-    commandId: sent.commandId,
+    commandId,
     conversationId,
     error: {
       code: 'server_draining',
@@ -43,7 +35,7 @@ test('draining rejection rejects the exact queued command so the composer can re
     },
   });
 
-  await assert.rejects(rejected, /Backend reload is draining active turns/);
+  await assert.rejects(settled, /Backend reload is draining active turns/);
 });
 
 test('legacy uncorrelated server errors release pending composers without losing their draft', async () => {
