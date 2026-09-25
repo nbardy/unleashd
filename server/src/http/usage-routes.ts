@@ -161,7 +161,7 @@ export async function parseClaudeSession(
   return data;
 }
 
-async function parseOpenCodeSessionUsage(
+export async function parseOpenCodeSessionUsage(
   sessionDirPath: string
 ): Promise<(UsageEntry & { lastTimestampMs: number }) | null> {
   const messageFiles = (await fs.promises.readdir(sessionDirPath)).filter((f) =>
@@ -322,7 +322,7 @@ async function codexTokenTotals(filePath: string): Promise<CodexTokenTotals | nu
   return totals;
 }
 
-async function parseCodexTokenTotals(filePath: string): Promise<CodexTokenTotals | null> {
+export async function parseCodexTokenTotals(filePath: string): Promise<CodexTokenTotals | null> {
   try {
     return await codexTokenTotals(filePath);
   } catch {

@@ -4,3 +4,4 @@ packages:
   - "client"
   - "vendor/agent-cli-tool"
   - "crates/unleashd-buddies"
+  - "crates/unleashd-ingest"

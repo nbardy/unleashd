@@ -154,6 +154,8 @@ importers:
 
   crates/unleashd-buddies: {}
 
+  crates/unleashd-ingest: {}
+
   server:
     dependencies:
       '@modelcontextprotocol/sdk':

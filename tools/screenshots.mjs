@@ -1,29 +1,34 @@
 #!/usr/bin/env node
 /**
- * screenshots.mjs — shoot the Channels screens at phone, tablet and desktop
- * sizes into one reviewable collection.
+ * screenshots.mjs — shoot every client screen at phone, tablet and desktop
+ * sizes into one reviewable collection, and diff two collections.
  *
- * Usage (dev server running, `pnpm dev`):
+ * Usage (a server running, `pnpm dev`):
  *   pnpm screenshots                                   # every screen × every size
  *   pnpm screenshots --sizes phone,desktop
- *   pnpm screenshots --only thread,mention-menu,mention-model
+ *   pnpm screenshots --only chat,thread,buddy-memory
  *   pnpm screenshots --workspace project_… --open      # pin a workspace, open the sheet
  *   pnpm screenshots --url http://host:7489 --out /tmp/shots
  *   pnpm screenshots --workspace project_… --channel list_… --thread post_… \
  *     --focus 'Two stale Tasks'   # pin one thread; `focus` scrolls to that text
  *
+ * The regression loop:
+ *   pnpm screenshots                                   # before → output/screenshots/<A>
+ *   … change code …
+ *   pnpm screenshots --baseline output/screenshots/<A> # after: same data, same clock,
+ *                                                      # then compares and exits 1 if over
+ *   pnpm screenshots --compare <A> <B> [--threshold 0.5]   # re-diff any two runs
+ *
  * Each run writes output/screenshots/<timestamp>/ (gitignored):
  *   <screen>@<size>.png   one per screen and size
  *   index.html            contact sheet: a row per screen, a column per size
- *   manifest.json         what was shot, what was skipped and why
+ *   manifest.json         what was shot, what was skipped and why, the data
+ *                         ids and clock used (what --baseline replays)
+ * A compare adds compare.html, compare.json and diff/ to the AFTER run.
  *
- * Runs are kept side by side, so a review → fix → rerun loop can compare the
- * previous sheet with the new one. The committed mobile gallery in
- * docs/screenshots/mobile/ is `pnpm screenshot:mobile`, not this tool.
- *
- * Screens point at real data found through the API: the richest channel across
- * every Buddy workspace (unless --workspace), and its most-replied thread. A screen whose data is absent is skipped and recorded,
- * never faked.
+ * Screens point at real data found through the API. A screen whose data is
+ * absent is skipped and recorded, never faked. The session is read-only (see
+ * openSession): the tool may point at the owner's live server.
  */
 
 import { execFile } from 'node:child_process';
@@ -31,6 +36,7 @@ import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { openSession, resolveAuthToken, sleep } from './lib/headless-chrome.mjs';
+import { compareRuns } from './lib/screenshot-compare.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -50,6 +56,10 @@ function treeFor(size) {
   return size.width <= 768 ? 'mobile' : 'desktop';
 }
 
+// Flags that choose WHAT is shot. --baseline replays them from the before run,
+// so passing them as well would make the two runs disagree.
+const SELECTION_FLAGS = ['--sizes', '--only', '--workspace', '--channel', '--thread', '--focus'];
+
 function parseArgs(argv) {
   const stamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
   const args = {
@@ -62,19 +72,37 @@ function parseArgs(argv) {
     thread: null,
     focus: null,
     open: false,
+    baseline: null,
+    compare: null,
+    // 0 by default: a pure refactor must not move a pixel. Raise it for a
+    // change that is allowed to (the tokenization codemod budgets 0.5).
+    threshold: 0,
   };
+  const seen = new Set();
   for (let i = 0; i < argv.length; i += 1) {
     const flag = argv[i];
+    seen.add(flag);
     if (flag === '--url') args.url = argv[++i].replace(/\/$/, '');
     else if (flag === '--out') args.out = path.resolve(argv[++i]);
     else if (flag === '--sizes') args.sizes = argv[++i].split(',').map((s) => s.trim());
-    else if (flag === '--only') args.only = new Set(argv[++i].split(',').map((s) => s.trim()));
+    else if (flag === '--only') args.only = argv[++i].split(',').map((s) => s.trim());
     else if (flag === '--workspace') args.workspace = argv[++i];
     else if (flag === '--channel') args.channel = argv[++i];
     else if (flag === '--thread') args.thread = argv[++i];
     else if (flag === '--focus') args.focus = argv[++i];
     else if (flag === '--open') args.open = true;
+    else if (flag === '--baseline') args.baseline = path.resolve(argv[++i]);
+    else if (flag === '--compare')
+      args.compare = [path.resolve(argv[++i]), path.resolve(argv[++i])];
+    else if (flag === '--threshold') args.threshold = Number(argv[++i]);
     else throw new Error(`Unknown flag ${flag}`);
+  }
+  if (!Number.isFinite(args.threshold) || args.threshold < 0)
+    throw new Error('--threshold is a percentage of changed pixels, e.g. 0.5');
+  if (args.baseline) {
+    const clash = SELECTION_FLAGS.filter((flag) => seen.has(flag));
+    if (clash.length)
+      throw new Error(`--baseline replays the before run's selection; drop ${clash.join(', ')}`);
   }
   if ((args.channel || args.thread) && !args.workspace)
     throw new Error('--channel/--thread need --workspace (the ids belong to one workspace)');
@@ -159,8 +187,7 @@ function richness(a, b) {
  * `/channels` opens: that is the most recently active one, which is often a
  * quiet channel with no threads, and the sheet came back half empty.
  */
-async function discover(api, pinnedWorkspaceId) {
-  const overview = await api('/api/buddies/overview');
+async function discoverChannel(api, overview, pinnedWorkspaceId) {
   const byId = new Map(
     overview
       .filter((workspace) => workspace.buddies.some((buddy) => buddy.status === 'active'))
@@ -181,66 +208,181 @@ async function discover(api, pinnedWorkspaceId) {
   return best;
 }
 
+// A conversation last touched this recently may still be in use by someone,
+// and a transcript that grows between the before and after run is a false diff.
+const SETTLED_MS = 60 * 60 * 1000;
+
+/**
+ * The longest settled plain chat: not running, not done, idle for an hour.
+ * The conversation list only arrives over the WebSocket (`init`), so this
+ * opens one, reads the first snapshot and closes — it never sends.
+ */
+async function discoverConversation(baseUrl, token) {
+  const wsUrl = `${baseUrl.replace(/^http/, 'ws')}/ws`;
+  const socket = new WebSocket(wsUrl, {
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+  });
+  const conversations = await new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`No init from ${wsUrl} in 30s`)), 30_000);
+    socket.addEventListener('error', () => reject(new Error(`WebSocket ${wsUrl} failed`)));
+    socket.addEventListener('message', (event) => {
+      const message = JSON.parse(event.data);
+      // A server still loading from disk sends an empty init first, then the
+      // list in `conversations_updated`.
+      const list = message.type === 'init' || message.type === 'conversations_updated';
+      if (!list || message.loading || !message.conversations?.length) return;
+      clearTimeout(timer);
+      resolve(message.conversations);
+    });
+  }).finally(() => socket.close());
+  const cutoff = Date.now() - SETTLED_MS;
+  const settled = conversations.filter(
+    (c) =>
+      c.kind?.kind === 'general' &&
+      !c.isRunning &&
+      !c.done &&
+      c.messages.length > 0 &&
+      Date.parse(c.messages.at(-1).timestamp) < cutoff
+  );
+  const longest = settled.sort((a, b) => (b.messageCount ?? 0) - (a.messageCount ?? 0))[0];
+  return longest ? { conversationId: longest.id, messageCount: longest.messageCount } : null;
+}
+
+/** First swarm project with a recorded run; the dashboard lists the same set. */
+async function discoverSwarm(api) {
+  const { projects } = await api('/api/swarm-projects');
+  return projects[0]?.projectRoot ?? null;
+}
+
+function firstBuddy(overview, workspaceId) {
+  const buddy = overview
+    .find((workspace) => workspace.id === workspaceId)
+    ?.buddies.find((candidate) => candidate.status === 'active');
+  return { buddyId: buddy?.id ?? null, buddyName: buddy?.name ?? null };
+}
+
+async function discover(api, args, token) {
+  const overview = await api('/api/buddies/overview');
+  const channel = await discoverChannel(api, overview, args.workspace);
+  const conversation = await discoverConversation(args.url, token);
+  return {
+    ...channel,
+    // A pinned channel/thread replaces the richest one discovery picked.
+    ...(args.channel ? { channelId: args.channel, channelName: args.channel } : {}),
+    ...(args.thread ? { threadRootId: args.thread } : {}),
+    conversationId: conversation?.conversationId ?? null,
+    conversationMessages: conversation?.messageCount ?? null,
+    // The first active Buddy of the discovered workspace (its detail tabs are screens).
+    ...firstBuddy(overview, channel.workspaceId),
+    swarmProject: await discoverSwarm(api),
+  };
+}
+
 // ── Screens ────────────────────────────────────────────────────────────────
 
+/**
+ * Prepare scripts run in the page after navigation and return 'OK' or 'SKIP'
+ * (the precondition is absent, e.g. a trigger button is not rendered). They
+ * open menus and type into inputs; they never submit — and could not: the
+ * session drops every write (see openSession).
+ */
+const HELPERS = `
+  const tick = (ms = 250) => new Promise((resolve) => setTimeout(resolve, ms));
+  // React only sees a value set through the native setter plus an input event.
+  const typeInto = (input, text) => {
+    const proto = input instanceof HTMLTextAreaElement ? HTMLTextAreaElement : HTMLInputElement;
+    Object.getOwnPropertyDescriptor(proto.prototype, 'value').set.call(input, text);
+    input.dispatchEvent(new Event('input', { bubbles: true }));
+  };
+  const clickText = (selector, text) =>
+    [...document.querySelectorAll(selector)].find((el) => el.textContent.includes(text))?.click();
+  const has = (selector) => (document.querySelector(selector) ? 'OK' : 'SKIP');
+`;
+const prep = (body) => `(async () => {${HELPERS}${body}})()`;
+
+// Before every shot: no HTTP request in flight for QUIET_MS (see
+// waitForNetworkIdle). 500ms outlasts the app's fetch-then-fetch chains; the
+// 20s cap flags a page that never goes quiet instead of hanging the run.
+const QUIET_MS = 500;
+const IDLE_TIMEOUT_MS = 20_000;
+
+// Re-pin every pane that is following its bottom (within the app's own 48px
+// follow threshold, channel-data.ts useFollowBottom) just before the shot.
+// The app pins once per render; content that grows after it (lazy markdown,
+// avatars) left the thread 1px short of the bottom in one run and flush in the
+// next, a 7% diff on thread@ipad-portrait (2026-09-25).
+const PIN_FOLLOWED_BOTTOMS = `(() => {
+  for (const el of document.querySelectorAll('*')) {
+    if (el.scrollHeight <= el.clientHeight) continue;
+    const gap = el.scrollHeight - el.scrollTop - el.clientHeight;
+    if (gap > 0 && gap < 48) el.scrollTop = el.scrollHeight;
+  }
+})()`;
+
+const clickThen = (target, expect) =>
+  prep(`
+  const el = document.querySelector(${JSON.stringify(target)});
+  if (!el) return 'SKIP';
+  el.click();
+  await tick();
+  return has(${JSON.stringify(expect)});`);
+
+// Matches no conversation, Buddy or path, so the search's own empty state shows.
+const NO_MATCH = 'zqxj-no-such-text';
+
 // Type "@" into the channel composer (one component on both trees) so the
-// mention picker opens. React only sees a value set through the native setter.
-const OPEN_MENTION_MENU = `(() => {
+// mention picker opens.
+const OPEN_MENTION_MENU = prep(`
   const input = document.querySelector('.channel-composer textarea');
   if (!input) return 'SKIP';
-  const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set;
   input.focus();
-  setter.call(input, '@');
+  typeInto(input, '@');
   input.setSelectionRange(1, 1);
-  input.dispatchEvent(new Event('input', { bubbles: true }));
-  return document.querySelector('.channel-composer-picker') ? 'OK' : 'SKIP';
-})()`;
+  await tick(50);
+  return has('.channel-composer-picker');`);
 
 // Pick the first Buddy from the @ menu with Enter (React handles the native
 // keydown), then click its chip on the bar to open the harness/model picker.
-// A chip that is disabled means the Buddy's harness is one the picker does not know.
-const OPEN_MENTION_MODEL = `(async () => {
-  const tick = () => new Promise((resolve) => setTimeout(resolve, 150));
+// A chip that is disabled means the backend predates member execution.
+const OPEN_MENTION_MODEL = prep(`
   const input = document.querySelector('.channel-composer textarea');
   if (!input) return 'SKIP';
-  const setter = Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value').set;
   input.focus();
-  setter.call(input, '@');
+  typeInto(input, '@');
   input.setSelectionRange(1, 1);
-  input.dispatchEvent(new Event('input', { bubbles: true }));
-  await tick();
+  await tick(150);
   const buddy = [...document.querySelectorAll('.channel-composer-picker button')].findIndex(
     (button) => !button.querySelector('.channel-composer-picker-task')
   );
   if (buddy < 0) return 'SKIP';
   for (let step = 0; step < buddy; step += 1) {
     input.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
-    await tick();
+    await tick(150);
   }
   input.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true }));
-  await tick();
+  await tick(150);
   const chip = document.querySelector('.channel-composer-mention');
   if (!chip || chip.disabled) return 'SKIP';
   chip.click();
-  await tick();
-  return document.querySelector('.channel-composer-model') ? 'OK' : 'SKIP';
-})()`;
+  await tick(150);
+  return has('.channel-composer-model');`);
 
 // Scroll the LAST post body containing `text` to the top of its pane, so a
 // long reply deep in a thread can be shot at a named spot. Last, because the
 // desktop thread pane follows the channel pane in document order.
-const scrollToText = (text) => `(() => {
+const scrollToText = (text) =>
+  prep(`
   const body = [...document.querySelectorAll('.channel-markdown')].findLast((node) =>
     node.textContent.includes(${JSON.stringify(text)})
   );
   if (!body) return 'SKIP';
   body.scrollIntoView({ block: 'start' });
-  return 'OK';
-})()`;
+  return 'OK';`);
 
 // Then focus that post's LAST live Task chip, which opens its hover card —
 // the last one sits lowest, where a card is most likely to be cut off.
-const hoverTaskIn = (text) => `(() => {
+const hoverTaskIn = (text) =>
+  prep(`
   const body = [...document.querySelectorAll('.channel-markdown')].findLast((node) =>
     node.textContent.includes(${JSON.stringify(text)})
   );
@@ -248,52 +390,163 @@ const hoverTaskIn = (text) => `(() => {
   if (!chip) return 'SKIP';
   chip.scrollIntoView({ block: 'center' });
   chip.focus();
-  return 'OK';
-})()`;
+  return 'OK';`);
 
 /**
- * Every screen, as data. `path` needs the ids it names; a screen whose ids
- * were not found is skipped with that reason. `trees` limits a screen to the
- * device trees that render it. (The cross-channel Task filter screen went with
- * the v2 Buddy API, T11: posts are read per channel.)
+ * The Buddy tab list lives once, in the client (buddy-tabs.ts). It is read
+ * from source rather than copied here so a new tab gets a screen for free.
+ */
+function employeeTabs() {
+  const source = fs.readFileSync(
+    path.join(ROOT, 'client/src/components/buddies/buddy-tabs.ts'),
+    'utf8'
+  );
+  const list = /EMPLOYEE_TABS = \[([^\]]*)\]/.exec(source);
+  if (!list) throw new Error('EMPLOYEE_TABS not found in buddy-tabs.ts; update employeeTabs()');
+  return [...list[1].matchAll(/'([a-z-]+)'/g)].map((match) => match[1]);
+}
+
+const enc = encodeURIComponent;
+/** The same path (and prepare) on both trees. */
+const onBoth = (path, prepare = null) => ({
+  desktop: { path, prepare },
+  mobile: { path, prepare },
+});
+
+/**
+ * Every screen, as data: `views` maps a tree to the { path, prepare } that
+ * shows the screen there; a tree with no entry has no such screen. `missing`
+ * is why the screen cannot be shot at all (its data is absent), or null.
  */
 function buildScreens(found, focus) {
-  const base = `/buddies/workspaces/${encodeURIComponent(found.workspaceId)}/channels`;
-  const channel = found.channelId && `channel=${encodeURIComponent(found.channelId)}`;
+  const chat = found.conversationId && `/chat/${enc(found.conversationId)}`;
+  const noChat = chat ? null : 'no settled chat (general, not running, not done, idle ≥1h)';
+  const noBuddy = found.buddyId ? null : 'no Buddy';
+  const buddy = found.buddyId && `/buddies/${enc(found.buddyId)}`;
+  const channels = `/buddies/workspaces/${enc(found.workspaceId)}/channels`;
+  const channel = found.channelId && `channel=${enc(found.channelId)}`;
+  const noChannel = channel ? null : 'no channel with posts in this workspace';
+  const thread = found.threadRootId && `${channels}?${channel}&thread=${enc(found.threadRootId)}`;
+  const noThread = noChannel ?? (thread ? null : 'no thread with replies in this channel');
+  const noFocus = noThread ?? (focus ? null : 'needs --focus <text in a thread post>');
+  const swarm = found.swarmProject && `/workers/detail?project=${enc(found.swarmProject)}`;
+
   return [
-    { name: 'home', path: base },
-    { name: 'channel', needs: channel, path: `${base}?${channel}` },
+    // ── Conversations ──
+    { name: 'gallery', missing: null, views: onBoth('/') },
+    { name: 'done', missing: null, views: onBoth('/done') },
     {
-      name: 'thread',
-      needs: channel && found.threadRootId,
-      path: `${base}?${channel}&thread=${encodeURIComponent(found.threadRootId)}`,
+      name: 'search',
+      missing: null,
+      views: {
+        // Desktop search is a palette over any page; mobile has a search page.
+        desktop: { path: '/', prepare: clickThen('.sidebar-search-field', '.search-palette') },
+        mobile: { path: '/search', prepare: null },
+      },
     },
     {
+      name: 'search-empty',
+      missing: null,
+      views: {
+        desktop: {
+          path: '/',
+          prepare: prep(`
+  document.querySelector('.sidebar-search-field')?.click();
+  await tick();
+  const input = document.querySelector('.search-palette-input');
+  if (!input) return 'SKIP';
+  typeInto(input, ${JSON.stringify(NO_MATCH)});
+  await tick(1200);
+  return has('.search-palette-empty');`),
+        },
+        mobile: {
+          path: '/search',
+          prepare: prep(`
+  const input = document.querySelector('.mobile-search__input');
+  if (!input) return 'SKIP';
+  typeInto(input, ${JSON.stringify(NO_MATCH)});
+  await tick(1200);
+  return 'OK';`),
+        },
+      },
+    },
+    {
+      name: 'new-conversation',
+      missing: null,
+      views: {
+        desktop: { path: '/', prepare: clickThen('.sidebar-new-btn', '.new-conv-modal') },
+        mobile: { path: '/', prepare: clickThen('.mobile-ui-header-action', '.mobile-sheet') },
+      },
+    },
+    {
+      name: 'settings-menu',
+      missing: null,
+      // The mobile tree has no settings menu, palette or usage panel.
+      views: { desktop: { path: '/', prepare: clickThen('.config-trigger', '.config-menu') } },
+    },
+    {
+      name: 'usage',
+      missing: null,
+      views: {
+        desktop: {
+          path: '/',
+          prepare: prep(`
+  document.querySelector('.config-trigger')?.click();
+  await tick();
+  clickText('.config-item', 'Usage');
+  await tick(1500);
+  return has('.usage-panel');`),
+        },
+      },
+    },
+    { name: 'chat', missing: noChat, settleMs: 1500, views: onBoth(chat) },
+    {
+      name: 'chat-picker-open',
+      missing: noChat,
+      settleMs: 1500,
+      views: {
+        desktop: { path: chat, prepare: clickThen('.chat-config-summary', '.chat-config-modal') },
+        mobile: { path: chat, prepare: clickThen('.mobile-chat__model', '.mobile-sheet') },
+      },
+    },
+    // ── Buddies ──
+    { name: 'buddies', missing: null, views: onBoth('/buddies') },
+    ...employeeTabs().map((tab) => ({
+      name: `buddy-${tab}`,
+      missing: noBuddy,
+      views: onBoth(`${buddy}/${tab}`),
+    })),
+    {
+      name: 'workspace-activity',
+      missing: null,
+      views: onBoth(`/buddies/workspaces/${enc(found.workspaceId)}`),
+    },
+    // ── Channels ──
+    { name: 'channels', missing: null, views: onBoth(channels) },
+    { name: 'channel', missing: noChannel, views: onBoth(`${channels}?${channel}`) },
+    { name: 'thread', missing: noThread, views: onBoth(thread) },
+    {
       name: 'mention-menu',
-      needs: channel,
-      path: `${base}?${channel}`,
-      prepare: OPEN_MENTION_MENU,
+      missing: noChannel,
+      views: onBoth(`${channels}?${channel}`, OPEN_MENTION_MENU),
     },
     {
       name: 'mention-model',
-      needs: channel,
-      path: `${base}?${channel}`,
-      prepare: OPEN_MENTION_MODEL,
+      missing: noChannel,
+      views: onBoth(`${channels}?${channel}`, OPEN_MENTION_MODEL),
     },
-    {
-      name: 'focus',
-      needs: channel && found.threadRootId && focus,
-      path: `${base}?${channel}&thread=${encodeURIComponent(found.threadRootId)}`,
-      prepare: focus && scrollToText(focus),
-    },
-    {
-      name: 'task-hover',
-      needs: channel && found.threadRootId && focus,
-      path: `${base}?${channel}&thread=${encodeURIComponent(found.threadRootId)}`,
-      prepare: focus && hoverTaskIn(focus),
-    },
+    { name: 'focus', missing: noFocus, views: onBoth(thread, focus && scrollToText(focus)) },
+    { name: 'task-hover', missing: noFocus, views: onBoth(thread, focus && hoverTaskIn(focus)) },
+    // ── Swarm (quarantined, still shipped) ──
+    { name: 'swarm', missing: null, views: onBoth('/workers') },
+    { name: 'swarm-detail', missing: swarm ? null : 'no swarm project', views: onBoth(swarm) },
+    { name: 'swarm-analytics', missing: null, views: onBoth('/workers/analytics') },
   ];
 }
+
+// Streaming is deliberately not a screen: a live turn changes between the
+// before and after run by definition, so it could only ever fail a compare.
+// The tail-regroup test covers it.
 
 // ── Contact sheet ──────────────────────────────────────────────────────────
 
@@ -326,9 +579,10 @@ function contactSheet(manifest) {
       return `<tr><th scope="row">${escapeHtml(screen)}</th>${cells}</tr>`;
     })
     .join('\n');
+  const found = manifest.found;
   return `<!doctype html>
 <meta charset="utf-8">
-<title>Channels screenshots · ${escapeHtml(manifest.createdAt)}</title>
+<title>Screenshots · ${escapeHtml(manifest.createdAt)}</title>
 <style>
   body { margin: 0; background: #111418; color: #c9ccd1; font: 13px/1.4 system-ui, sans-serif; }
   header { padding: 16px 20px; border-bottom: 1px solid #2a2f36; }
@@ -338,13 +592,13 @@ function contactSheet(manifest) {
   th, td { padding: 12px; border-bottom: 1px solid #2a2f36; vertical-align: top; text-align: left; }
   thead th { position: sticky; top: 0; background: #111418; z-index: 1; }
   thead small { display: block; color: #8a919b; font-weight: 400; }
-  tbody th { width: 110px; }
+  tbody th { width: 140px; }
   img { display: block; max-height: 640px; max-width: 520px; border: 1px solid #2a2f36; border-radius: 6px; }
   td.skip { color: #8a919b; font-style: italic; }
 </style>
 <header>
-  <h1>Channels · ${escapeHtml(manifest.channelName ?? 'no channel')}</h1>
-  <p>${escapeHtml(manifest.createdAt)} · ${escapeHtml(manifest.baseUrl)} · workspace ${escapeHtml(manifest.workspaceName)} · click a shot for full size</p>
+  <h1>Screenshots · ${manifest.shots.length} shot, ${manifest.skipped.length} skipped</h1>
+  <p>${escapeHtml(manifest.createdAt)} · ${escapeHtml(manifest.baseUrl)} · clock ${escapeHtml(new Date(manifest.clockMs).toISOString())} · workspace ${escapeHtml(found.workspaceName)} · #${escapeHtml(found.channelName ?? '—')} · Buddy ${escapeHtml(found.buddyName ?? '—')} · click a shot for full size</p>
 </header>
 <table>
   <thead><tr><th></th>${header}</tr></thead>
@@ -357,54 +611,99 @@ ${rows}
 
 // ── Main ───────────────────────────────────────────────────────────────────
 
-async function main() {
-  const args = parseArgs(process.argv.slice(2));
+function printCompare(report) {
+  for (const pair of report.pairs.filter((p) => p.over)) {
+    process.stdout.write(`  over: ${pair.file} — ${pair.label}\n`);
+  }
+  process.stdout.write(
+    `${report.overCount} of ${report.pairs.length} over ${report.thresholdPct}% · ${path.join(report.after, 'compare.html')}\n`
+  );
+  return report.failed ? 1 : 0;
+}
+
+async function capture(args) {
   const token = resolveAuthToken();
   const api = apiClient(args.url, token);
+  const baseline = args.baseline
+    ? JSON.parse(fs.readFileSync(path.join(args.baseline, 'manifest.json'), 'utf8'))
+    : null;
+  // The baseline's data ids, clock and selection, so the after run shoots the
+  // same things at the same instant; otherwise discover fresh.
+  const found = baseline?.found ?? (await discover(api, args, token));
+  const clockMs = baseline?.clockMs ?? Date.now();
+  const selection = baseline?.selection ?? {
+    sizes: args.sizes,
+    only: args.only,
+    focus: args.focus,
+  };
   fs.mkdirSync(args.out, { recursive: true });
+  process.stdout.write(
+    `workspace ${found.workspaceName} · #${found.channelName} · chat ${found.conversationId} · Buddy ${found.buddyName}\n`
+  );
+  const screens = buildScreens(found, selection.focus).filter(
+    (screen) => !selection.only || selection.only.includes(screen.name)
+  );
 
-  const session = await openSession({ baseUrl: args.url, token });
+  // The app warms the 12 most recent chats' history in idle time, 3 at a time
+  // (atoms/prefetch.ts). Against a real data dir that queue ran past 30s and
+  // kept every screen from ever going network-idle, yet it paints nothing on
+  // the screen under test. The chat screens' own transcript is NOT ignored.
+  const prefetch = new RegExp(
+    `/api/conversations/(?!${found.conversationId ?? '-'}(?:$|[/?]))[^/?]+$`
+  );
+  const session = await openSession({ baseUrl: args.url, token, clockMs });
   const shots = [];
   const skipped = [];
-  let found;
-  let screens;
+  let blockedWrites;
   try {
-    found = await discover(api, args.workspace);
-    // A pinned channel/thread replaces the richest one discovery picked.
-    if (args.channel) found = { ...found, channelId: args.channel, channelName: args.channel };
-    if (args.thread) found = { ...found, threadRootId: args.thread };
-    process.stdout.write(`workspace ${found.workspaceName} · #${found.channelName}\n`);
-    screens = buildScreens(found, args.focus).filter(
-      (screen) => !args.only || args.only.has(screen.name)
-    );
-
-    for (const sizeName of args.sizes) {
+    for (const sizeName of selection.sizes) {
       const size = SIZES[sizeName];
+      const tree = treeFor(size);
       await session.setViewport(size);
       for (const screen of screens) {
         const record = (reason) => skipped.push({ screen: screen.name, size: sizeName, reason });
-        if ('needs' in screen && !screen.needs) {
-          record('no matching data in this workspace');
+        const view = screen.views[tree];
+        if (screen.missing) {
+          record(screen.missing);
           continue;
         }
-        if (screen.trees && !screen.trees.includes(treeFor(size))) {
-          record(`${treeFor(size)} tree has no such screen`);
+        if (!view) {
+          record(`${tree} tree has no such screen`);
           continue;
         }
-        await session.goto(`${args.url}${screen.path}`, 2000);
-        if (screen.prepare) {
-          if ((await session.evaluate(screen.prepare)) === 'SKIP') {
-            record('precondition absent on the page');
-            continue;
+        // One slow or broken page must not end a 150-shot run: record it and
+        // move on. The compare then flags the screen as missing from this run.
+        try {
+          await session.goto(`${args.url}${view.path}`, screen.settleMs ?? 1000);
+          // Requests still open at capture time (empty when the page went quiet).
+          let pending = await session.waitForNetworkIdle(QUIET_MS, IDLE_TIMEOUT_MS, prefetch);
+          if (view.prepare) {
+            if ((await session.evaluate(view.prepare)) === 'SKIP') {
+              record('precondition absent on the page');
+              continue;
+            }
+            // What the prepare opened (usage panel, search) fetches its own data.
+            await sleep(300);
+            pending = [
+              ...pending,
+              ...(await session.waitForNetworkIdle(QUIET_MS, IDLE_TIMEOUT_MS, prefetch)),
+            ];
           }
-          await sleep(600);
+          // Data arrived; give React and lazy markdown/katex one beat to paint it.
+          await sleep(400);
+          await session.evaluate(PIN_FOLLOWED_BOTTOMS);
+          await sleep(100);
+          const file = `${screen.name}@${sizeName}.png`;
+          await session.capture(path.join(args.out, file));
+          shots.push({ screen: screen.name, size: sizeName, file, path: view.path, pending });
+          const open = pending.length ? ` (still loading after 20s: ${pending.join(' ')})` : '';
+          process.stdout.write(`saved ${file}${open}\n`);
+        } catch (error) {
+          record(`page failed: ${error.message}`);
         }
-        const file = `${screen.name}@${sizeName}.png`;
-        await session.capture(path.join(args.out, file));
-        shots.push({ screen: screen.name, size: sizeName, file, path: screen.path });
-        process.stdout.write(`saved ${file}\n`);
       }
     }
+    blockedWrites = await session.blockedWrites();
   } finally {
     await session.close();
   }
@@ -412,11 +711,14 @@ async function main() {
   const manifest = {
     createdAt: new Date().toISOString(),
     baseUrl: args.url,
-    ...found,
-    sizes: args.sizes,
+    clockMs,
+    found,
+    selection,
+    sizes: selection.sizes,
     screens: screens.map((screen) => screen.name),
     shots,
     skipped,
+    blockedWrites,
   };
   fs.writeFileSync(path.join(args.out, 'manifest.json'), `${JSON.stringify(manifest, null, 2)}\n`);
   const sheet = path.join(args.out, 'index.html');
@@ -426,7 +728,22 @@ async function main() {
   for (const skip of skipped) {
     process.stdout.write(`  skipped ${skip.screen}@${skip.size}: ${skip.reason}\n`);
   }
+  process.stdout.write(
+    `blocked writes: ${blockedWrites.length} (${[...new Set(blockedWrites)].join(', ') || 'none'})\n`
+  );
   if (args.open) execFile('open', [sheet]);
+}
+
+async function main() {
+  const args = parseArgs(process.argv.slice(2));
+  if (args.compare) {
+    process.exitCode = printCompare(await compareRuns(...args.compare, args.threshold));
+    return;
+  }
+  await capture(args);
+  if (args.baseline) {
+    process.exitCode = printCompare(await compareRuns(args.baseline, args.out, args.threshold));
+  }
 }
 
 main().catch((error) => {

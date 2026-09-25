@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["unleashd-buddies"]
+members = ["unleashd-buddies", "unleashd-ingest"]
 
 [profile.release]
 lto = true

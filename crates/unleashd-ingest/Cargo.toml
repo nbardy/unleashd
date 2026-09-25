@@ -1,0 +1,35 @@
+[package]
+name = "unleashd-ingest"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[features]
+default = ["node"]
+# The napi bindings. Off for `cargo test` of the pure core, which must link without Node.
+node = ["dep:napi", "dep:napi-derive", "dep:tokio"]
+
+[dependencies]
+rusqlite = { version = "0.32", features = ["bundled"] }
+serde = { version = "1", features = ["derive"] }
+# preserve_order: tool inputs are re-serialized for display and must keep the transcript's key
+# order (JSON.stringify does), or every Codex tool card would reorder its arguments.
+serde_json = { version = "1", features = ["preserve_order"] }
+notify = { version = "8", default-features = false, features = ["macos_fsevent"] }
+memchr = "2"
+regex = "1"
+base64 = "0.22"
+rayon = "1"
+thiserror = "2"
+napi = { version = "3", default-features = false, features = ["napi8", "tokio_rt"], optional = true }
+napi-derive = { version = "3", optional = true }
+tokio = { version = "1", features = ["rt"], optional = true }
+
+[build-dependencies]
+napi-build = "2"
+
+[dev-dependencies]
+tempfile = "3"
