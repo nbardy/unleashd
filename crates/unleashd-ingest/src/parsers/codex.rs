@@ -208,11 +208,23 @@ fn user_content(payload: &Value, before_first_message: bool) -> String {
     content_text(content)
 }
 
+/// A `rate_limits` payload with at least one usage window (`primary` or `secondary`).
+fn has_window(limits: &Value) -> bool {
+    crate::text::truthy(limits.get("primary")) || crate::text::truthy(limits.get("secondary"))
+}
+
 impl CodexFold {
     /// A `token_count` event: the cumulative total (the last one wins; its growth is one usage
     /// turn), this request's context, the window, and the rate limits.
     fn token_count(&mut self, sink: &mut Sink, payload: &Value, at: Option<f64>) {
-        if let Some(limits) = payload.get("rate_limits").filter(|r| crate::text::truthy(Some(r))) {
+        // Pattern: parse-dont-validate (docs/patterns.md#parse-dont-validate) — the boundary keeps
+        // only a payload the Usage panel can draw. Codex writes one `rate_limits` payload per
+        // bucket (`limit_id` `codex`, `codex_bengalfox`, `premium`, ...), interleaved in a
+        // session. Since 2026-09 the newest is usually `premium` with `primary` and `secondary`
+        // both null; keeping "the last payload" stored that and the panel showed no Codex limits
+        // (S9). The panel draws exactly the primary and secondary windows, so a windowless bucket
+        // carries nothing for it and never replaces one that has a window.
+        if let Some(limits) = payload.get("rate_limits").filter(|r| has_window(r)) {
             self.rate_limits = Some(limits.to_string());
         }
         let Some(info) = payload.get("info").filter(|i| crate::text::truthy(Some(i))) else { return };

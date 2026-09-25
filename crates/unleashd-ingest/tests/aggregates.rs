@@ -147,3 +147,39 @@ fn muse_context_counts_only_finished_compactions_and_recovers_the_window() {
     let compaction = context.compaction.unwrap();
     assert_eq!((compaction.count, compaction.trigger.as_deref()), (1, Some("soft_threshold")));
 }
+
+/// S9 (2026-09-26): Codex writes one `rate_limits` payload per bucket. On the dev machine the
+/// newest was `premium` with both windows null, and `usage()` returned it, so the Usage panel
+/// showed no Codex limits. The newest payload that has a window must win, across sessions and
+/// within one.
+#[test]
+fn codex_rate_limits_skip_a_newer_bucket_without_windows() {
+    let dir = tempfile::tempdir().unwrap();
+    let limits = |at: f64, bucket: &str, primary: Value| {
+        codex(
+            at,
+            "event_msg",
+            json!({ "type": "token_count", "info": null,
+            "rate_limits": { "limit_id": bucket, "primary": primary, "secondary": null, "plan_type": "pro" } }),
+        )
+    };
+    let window = json!({ "used_percent": 29.0, "window_minutes": 10080, "resets_at": 1_790_518_542 });
+    let older = jsonl(&[
+        codex(T0, "session_meta", json!({ "id": "c1", "cwd": "/w" })),
+        codex(T0, "event_msg", json!({ "type": "user_message", "message": "go" })),
+        limits(T0 + 1.0, "codex", window),
+        limits(T0 + 2.0, "premium", Value::Null), // same session, newer, windowless
+    ]);
+    let newer = jsonl(&[
+        codex(T0 + 60_000.0, "session_meta", json!({ "id": "c2", "cwd": "/w" })),
+        codex(T0 + 60_000.0, "event_msg", json!({ "type": "user_message", "message": "go" })),
+        limits(T0 + 60_001.0, "premium", Value::Null),
+    ]);
+    write(&dir.path().join("codex/2026/08/29/rollout-2026-08-29T10-40-00-c1.jsonl"), &older);
+    write(&dir.path().join("codex/2026/08/29/rollout-2026-08-29T10-41-00-c2.jsonl"), &newer);
+    let reader = scan(dir.path(), vec![Root { format: Format::Codex, path: dir.path().join("codex").to_string_lossy().into_owned() }]);
+
+    let report = reader.usage(&UsageQuery { since: 0.0, until: None, group_by: UsageGroupBy::Model }).unwrap();
+    let limits: Value = serde_json::from_str(&report.codex_rate_limits.unwrap()).unwrap();
+    assert_eq!((limits["limit_id"].as_str(), limits["primary"]["used_percent"].as_f64()), (Some("codex"), Some(29.0)));
+}

@@ -43,7 +43,7 @@ pub struct Facts {
     pub sub_agents: Vec<SubAgent>,
     /// The latest request's context (the context meter), when the transcript records one.
     pub context: Option<ContextReading>,
-    /// Codex: the last `rate_limits` payload, raw JSON.
+    /// Codex: the last `rate_limits` payload that has a usage window, raw JSON.
     pub rate_limits: Option<String>,
 }
 

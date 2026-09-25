@@ -460,8 +460,8 @@ export interface UsageQuery {
 export interface UsageReport {
   groups: Array<UsageGroup>
   /**
-   * The latest Codex `rate_limits` payload (raw JSON) of the most recently active session that
-   * recorded one; `/api/usage` shows it as the Codex limits.
+   * The latest Codex `rate_limits` payload with a usage window (raw JSON) of the most recently
+   * active session that recorded one (windowless buckets such as `premium` are skipped); `/api/usage` shows it as the Codex limits.
    */
   codexRateLimits?: string
 }

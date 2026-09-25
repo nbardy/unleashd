@@ -268,7 +268,7 @@ pub struct UsageGroup {
 #[derive(Debug, Clone, PartialEq)]
 pub struct UsageReport {
     pub groups: Vec<UsageGroup>,
-    /// The latest Codex `rate_limits` payload (raw JSON) of the most recently active session that
-    /// recorded one; `/api/usage` shows it as the Codex limits.
+    /// The latest Codex `rate_limits` payload with a usage window (raw JSON) of the most recently
+    /// active session that recorded one (windowless buckets such as `premium` are skipped); `/api/usage` shows it as the Codex limits.
     pub codex_rate_limits: Option<String>,
 }
