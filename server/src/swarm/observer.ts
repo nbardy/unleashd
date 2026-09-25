@@ -23,6 +23,7 @@ export interface SwarmObserverTiming {
   readonly throttleMs: number;
 }
 
+// Pattern: wake-on-write (docs/patterns.md#wake-on-write)
 export class SwarmObservers {
   private readonly folders = new Map<string, FolderObserver>();
 

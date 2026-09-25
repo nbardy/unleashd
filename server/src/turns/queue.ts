@@ -30,6 +30,7 @@ export interface QueueEntry {
  *   behind it (`startHead` skips a sending head), so every path that kills or
  *   refuses the head either finishes it or releases it back to 'pending'.
  */
+// Pattern: pure-core (docs/patterns.md#pure-core)
 export class TurnQueue {
   private entries: QueueEntry[] = [];
 

@@ -46,6 +46,7 @@ export type CoordinationDrained = (
   terminalCause?: TurnTerminalCause
 ) => void;
 
+// Pattern: sum-types (docs/patterns.md#sum-types)
 export interface TurnPolicy {
   /** False for a transcript no user input may extend (a Buddy automation run). */
   readonly acceptsUserInput: boolean;

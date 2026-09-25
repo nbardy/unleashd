@@ -265,6 +265,7 @@ function broadcastAgentUpdate(host: SubAgentHost, agent: SubAgent): void {
   });
 }
 
+// Pattern: table-driven (docs/patterns.md#table-driven)
 /** Harness capability table: which sub-agent protocol each harness speaks. */
 const SUB_AGENT_FOLDS: Record<Provider, SubAgentFold> = {
   claude: genericFold('claude'),

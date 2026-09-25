@@ -232,7 +232,10 @@ conversation record to tombstone them against.
 ## 3) Conversation lifecycle and state authority
 
 The `Conversation` class is created by `createConversationRuntime` in
-`server/src/conversations/runtime.ts`. `server/src/server.ts` composes its
+`server/src/conversations/runtime.ts`: record + `TurnQueue` (`turns/queue.ts`) +
+`TurnRunner` (`turns/runner.ts`) + a `TurnPolicy` chosen once by kind
+(`turns/policy.ts`, `buddies/turn-policy.ts`). Timeouts are `turns/watchdog.ts`,
+swarm observation `swarm/observer.ts`. `server/src/server.ts` composes its
 dependencies and registers `server/src/transport/conversation-websocket.ts`.
 Durable config and revision checks belong to `conversations/config-service.ts`
 and `conversations/config-store.ts`.

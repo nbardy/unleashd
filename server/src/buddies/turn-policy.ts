@@ -332,6 +332,7 @@ const CHAT_ADMISSION_POLL_MS = 1000;
  * this process never sees finish (automations, lease expiry), so a tick is
  * still needed rather than wake-on-release alone.
  */
+// Pattern: wake-on-write (docs/patterns.md#wake-on-write)
 const admissionWaiters = new Set<() => void>();
 let admissionTick: ReturnType<typeof setInterval> | null = null;
 

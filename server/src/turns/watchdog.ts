@@ -34,6 +34,7 @@ export interface TurnIdleReading {
   providerIdleSeconds: number;
 }
 
+// Pattern: fix-guards (docs/patterns.md#fix-guards)
 export class TurnWatchdog {
   private startedAt = 0;
   private lastBridgeEventAt = 0;

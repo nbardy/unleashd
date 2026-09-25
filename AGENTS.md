@@ -10,7 +10,8 @@ shared/src/index.ts                → shared exports + WS Zod schemas/types
 shared/src/conversation-config.ts   → canonical selection intent, patches, resolution
 shared/src/provider-catalog.ts      → provider identities + catalog schemas
 server/src/server.ts               → application composition and startup
-server/src/conversations/runtime.ts → Conversation class + active turn state authority
+server/src/conversations/runtime.ts → Conversation: record + queue + runner + kind policy
+server/src/turns/*                 → TurnQueue, TurnRunner (event fold), TurnWatchdog, TurnPolicy
 server/src/conversations/config-{service,store}.ts → durable configuration and revisions
 server/src/transport/conversation-websocket.ts → WS command routing
 server/src/observability/error-journal.ts → durable grouped server/client failures
