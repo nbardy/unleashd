@@ -2,7 +2,7 @@ import type { QueuedMessage } from '@unleashd/shared';
 import { useAtomValue } from 'jotai';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { endConversation, interruptAndSend, queueMessage } from '../../atoms/actions';
-import { queueAtomFamily, streamingAtomFamily } from '../../atoms/conversations';
+import { queueOf, streamFamily, transcriptFamily } from '../../atoms/conversations';
 import { useComposerSubmission } from '../../hooks/useComposerSubmission';
 import { useConversationDraft } from '../../hooks/useConversationDraft';
 import { usePendingAttachments } from '../../hooks/usePendingAttachments';
@@ -35,7 +35,7 @@ export function ComposerMobile({
   isRunning: boolean;
   isStreaming: boolean;
   /** Full queue list — per-item cancel via cancelQueuedMessage. Prefer over queueLength. */
-  queue?: QueuedMessage[];
+  queue?: readonly QueuedMessage[];
   /** @deprecated — use queue. Kept for backward compat during migration. */
   queueLength?: number;
   /** Set to render the composer inert with an explanation (e.g. unconfirmed). */
@@ -50,10 +50,10 @@ export function ComposerMobile({
   // Queue — shared atom family with desktop (no new state). Accepts prop
   // queue list when parent (ConversationView) passes it; falls back to atom
   // read so standalone use still shows queue. Hook before any early return.
-  const queueFromAtom = useAtomValue(queueAtomFamily(conversationId ?? ''));
-  const resolvedQueue: QueuedMessage[] = queue ?? queueFromAtom ?? [];
+  const queueFromAtom = queueOf(useAtomValue(transcriptFamily(conversationId ?? '')));
+  const resolvedQueue: readonly QueuedMessage[] = queue ?? queueFromAtom ?? [];
   // Legacy fallback: queueLength prop → synthesize length for sendLabel
-  const effectiveQueue: QueuedMessage[] =
+  const effectiveQueue: readonly QueuedMessage[] =
     queue !== undefined
       ? queue
       : queueLengthLegacy !== undefined
@@ -185,7 +185,7 @@ export function ComposerMobile({
   // Composer owns its own subscription so typing/turn status remains visible
   // even when the conversation pane is not mounted (e.g. embedded use).
   // Reuses derived view model, not new state.
-  const streamingText = useAtomValue(streamingAtomFamily(conversationId));
+  const streamingText = useAtomValue(streamFamily(conversationId));
   const runtimeTurnActive = isRunning || isStreaming;
   const { attempt: composerTurnAttempt } = useTurnDiagnostics(
     conversationId || undefined,

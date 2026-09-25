@@ -1,6 +1,6 @@
 import type { ConversationConfig } from '@unleashd/shared';
 import { useEffect, useRef } from 'react';
-import { setConversationConfig } from '../../atoms/config-actions';
+import { setConversationConfig } from '../../atoms/commands';
 import { useProviderCatalog } from '../../hooks/useProviderCatalog';
 
 /**

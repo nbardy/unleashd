@@ -1,31 +1,41 @@
 import { useAtomValue } from 'jotai';
-import { useEffect, useState } from 'react';
-import { loadConversationDetails } from '../atoms/actions';
-import {
-  conversationAtomFamily,
-  conversationDetailsLoadedAtomFamily,
-} from '../atoms/conversations';
+import { useEffect } from 'react';
+import { loadConversationDetails, refreshTranscript } from '../atoms/actions';
+import { rowFamily, transcriptFamily } from '../atoms/conversations';
 
 /**
- * Load one conversation's detail and message bodies on demand (protocol v3:
- * lists carry rows only). Returns whether they are loaded and the last load
- * error. The atoms hold the data — per id, so a remount renders what is
- * already there — and the request is deduped in flight (actions.ts).
+ * Keep one open conversation's bodies current (protocol v3: lists carry rows
+ * only). The transcript atom holds the data per id, so a remount renders what
+ * is already there; requests are deduped in flight (actions.ts).
+ *
+ * Absent → load. Loaded but the row's messageCount differs from the messages
+ * held → page in the tail. Only the open view does this: a count moving on a
+ * conversation nobody shows fetches nothing.
  */
 export function useConversationBodies(conversationId: string | null): {
   loaded: boolean;
   error: string | null;
 } {
-  const row = useAtomValue(conversationAtomFamily(conversationId ?? ''));
-  const loaded = useAtomValue(conversationDetailsLoadedAtomFamily(conversationId ?? ''));
-  const [error, setError] = useState<string | null>(null);
-  const present = row !== null;
+  const id = conversationId ?? '';
+  const messageCount = useAtomValue(rowFamily(id))?.messageCount ?? null;
+  const transcript = useAtomValue(transcriptFamily(id));
+  const held = transcript.tag === 'loaded' ? transcript.messages.length : null;
   useEffect(() => {
-    if (!conversationId || !present || loaded) return;
-    setError(null);
-    void loadConversationDetails(conversationId).catch((cause) => {
-      setError(cause instanceof Error ? cause.message : String(cause));
-    });
-  }, [conversationId, present, loaded]);
-  return { loaded, error };
+    if (!conversationId || messageCount === null) return;
+    switch (transcript.tag) {
+      case 'absent':
+        void loadConversationDetails(conversationId);
+        return;
+      case 'loaded':
+        if (held !== messageCount) void refreshTranscript(conversationId);
+        return;
+      case 'loading':
+      case 'failed':
+        return;
+    }
+  }, [conversationId, messageCount, transcript.tag, held]);
+  return {
+    loaded: transcript.tag === 'loaded',
+    error: transcript.tag === 'failed' ? transcript.error : null,
+  };
 }

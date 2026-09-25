@@ -10,19 +10,19 @@ import {
   useState,
 } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
-import { setActiveConversationId } from '../../atoms/actions';
 import {
-  chatMessageGroupsAtomFamily,
-  childConversationsAtomFamily,
-  conversationAtomFamily,
-  conversationDetailAtomFamily,
-  conversationLoadCompleteAtom,
-  conversationMessagesAtomFamily,
-  pendingConfigCommandAtomFamily,
-  pendingCreationAtomFamily,
-  queueAtomFamily,
-  streamingAtomFamily,
-  subAgentsAtomFamily,
+  childRowsFamily,
+  commandFor,
+  connectionAtom,
+  detailOf,
+  groupsFamily,
+  loadCompleteOf,
+  messagesOf,
+  queueOf,
+  rowFamily,
+  streamFamily,
+  subAgentsOf,
+  transcriptFamily,
 } from '../../atoms/conversations';
 import { forkConversation } from '../../atoms/fork-actions';
 import { markMessagesSeen, setSavedActiveConversationId } from '../../atoms/ui';
@@ -65,10 +65,10 @@ import { MobileQueueStrip } from './MobileQueueStrip';
  * `height: 100%` and keep `.mobile-content__inner` a stretched flex column.
  *
  * CREATION STATES: a freshly created conversation exists only in
- * `pendingCreationsAtom` until the server confirms it over WS. Rendering
+ * `commandsAtom` (a `create` command) until the server confirms it over WS. Rendering
  * "not found" for that window is wrong — it is the bug that made every new
  * plain conversation look broken while buddy threads (created synchronously by
- * `POST /api/buddies/builder`, so already in `conversationsAtom` before the
+ * `POST /api/buddies/builder`, so already in `rowsAtom` before the
  * route changes) looked fine. Mirror Chat.tsx: only claim "not found" once the
  * conversation list has finished loading AND there is no pending creation.
  */
@@ -279,20 +279,21 @@ export function ConversationView({
   onBack?: MouseEventHandler<HTMLAnchorElement>;
   headerAside?: ReactNode;
 }) {
-  const conversation = useAtomValue(conversationAtomFamily(conversationId));
-  const detail = useAtomValue(conversationDetailAtomFamily(conversationId));
-  const messages = useAtomValue(conversationMessagesAtomFamily(conversationId));
-  const subAgents = useAtomValue(subAgentsAtomFamily(conversationId));
+  const conversation = useAtomValue(rowFamily(conversationId));
+  const transcript = useAtomValue(transcriptFamily(conversationId));
+  const detail = detailOf(transcript);
+  const messages = messagesOf(transcript);
+  const subAgents = subAgentsOf(transcript);
   const { loaded: detailsLoaded, error: detailError } = useConversationBodies(conversationId);
-  const streamingText = useAtomValue(streamingAtomFamily(conversationId));
-  const messageGroups = useAtomValue(chatMessageGroupsAtomFamily(conversationId));
+  const streamingText = useAtomValue(streamFamily(conversationId));
+  const messageGroups = useAtomValue(groupsFamily(conversationId));
   const totalMessageCount = messages.length;
-  const pendingCreation = useAtomValue(pendingCreationAtomFamily(conversationId));
-  const conversationLoadComplete = useAtomValue(conversationLoadCompleteAtom);
-  const pendingConfigCommand = useAtomValue(pendingConfigCommandAtomFamily(conversationId));
-  const childConversations = useAtomValue(childConversationsAtomFamily(conversationId));
-  // Queue — shared atom family with desktop (no new state). Hook before early return.
-  const queue = useAtomValue(queueAtomFamily(conversationId ?? ''));
+  const { create: pendingCreation, config: pendingConfigCommand } = useAtomValue(
+    commandFor(conversationId)
+  );
+  const conversationLoadComplete = loadCompleteOf(useAtomValue(connectionAtom).server);
+  const childConversations = useAtomValue(childRowsFamily(conversationId));
+  const queue = queueOf(transcript);
   const { catalog } = useProviderCatalog();
 
   const [modelSheetOpen, setModelSheetOpen] = useState(false);
@@ -342,16 +343,9 @@ export function ConversationView({
   const [showPalette, setShowPalette] = useState(false);
   const [paletteSelectedContent, setPaletteSelectedContent] = useState<string | null>(null);
 
-  // Dual-active-id: ephemeral routing atom `activeConversationIdAtom`
-  // (conversations.ts) + persisted `savedActiveConversationIdAtom` (atoms/ui).
-  // Cleanup clears only the ephemeral one (preserve persisted truth).
+  // The route owns the active id; prefs keep the last one for restore-on-load.
   useEffect(() => {
-    if (!conversationId) return;
-    setActiveConversationId(conversationId);
-    setSavedActiveConversationId(conversationId);
-    return () => {
-      setActiveConversationId(null);
-    };
+    if (conversationId) setSavedActiveConversationId(conversationId);
   }, [conversationId]);
 
   // Same derivation as Chat.tsx: unified sub-agents + swarm prefix + resume lineage.
@@ -365,7 +359,7 @@ export function ConversationView({
   const visibleSwarmDebugPrefix = detail?.swarmDebugPrefix ?? null;
 
   const resumedFromConversationId = conversation?.resumedFrom ?? '';
-  const resumedFromConversation = useAtomValue(conversationAtomFamily(resumedFromConversationId));
+  const resumedFromConversation = useAtomValue(rowFamily(resumedFromConversationId));
 
   // Mark seen when last message becomes visible (IntersectionObserver plumbing §4)
   useEffect(() => {
@@ -469,7 +463,10 @@ export function ConversationView({
   // broken; buddy threads dodged it only because their POST creates the
   // conversation server-side before the client ever routes to it.
   if (!conversation && pendingCreation) {
-    const pendingDir = shortenHomePath(pendingCreation.workingDirectory);
+    const { workingDirectory, config } = pendingCreation.args;
+    const creationError =
+      pendingCreation.state.tag === 'rejected' ? pendingCreation.state.message : null;
+    const pendingDir = shortenHomePath(workingDirectory);
     return (
       <div className="mobile-chat">
         <div className="mobile-chat__header ui-stack">
@@ -486,25 +483,20 @@ export function ConversationView({
               </Link>
             ) : null}
             <div className="mobile-chat__heading">
-              <div
-                className="mobile-chat__dir ui-truncate"
-                title={pendingCreation.workingDirectory}
-              >
+              <div className="mobile-chat__dir ui-truncate" title={workingDirectory}>
                 {pendingDir}
               </div>
               <div className="mobile-chat__status ui-muted">
-                {pendingCreation.error
-                  ? 'creation failed'
-                  : `starting ${pendingCreation.config.provider}…`}
+                {creationError ? 'creation failed' : `starting ${config.provider}…`}
               </div>
             </div>
           </div>
         </div>
         <div className="mobile-chat__loading">
-          {pendingCreation.error ? (
+          {creationError ? (
             <div className="mobile-chat__creation-error" role="alert">
               <p>Could not create this conversation.</p>
-              <p className="mobile-chat__creation-error-detail">{pendingCreation.error}</p>
+              <p className="mobile-chat__creation-error-detail">{creationError}</p>
               {backTo ? (
                 <Link to={backTo} replace className="mobile-chat__back-link" onClick={onBack}>
                   ← Back
@@ -512,7 +504,7 @@ export function ConversationView({
               ) : null}
             </div>
           ) : (
-            `Starting ${pendingCreation.config.provider} in ${pendingDir}…`
+            `Starting ${config.provider} in ${pendingDir}…`
           )}
         </div>
         {/* Composer stays mounted but inert: the server has no session to
@@ -522,9 +514,7 @@ export function ConversationView({
           isRunning={false}
           isStreaming={false}
           queue={[]}
-          disabledReason={
-            pendingCreation.error ? 'Creation failed' : 'Waiting for the server to confirm…'
-          }
+          disabledReason={creationError ? 'Creation failed' : 'Waiting for the server to confirm…'}
           onOpenPalette={() => setShowPalette(true)}
           onSavePrompt={savePrompt}
           paletteSelectedContent={paletteSelectedContent}
@@ -588,8 +578,9 @@ export function ConversationView({
   const liveBubbleHostsWorking =
     !!lastGroup && lastGroup.type === 'assistant' && lastGroup.parts.length === 0 && turnActive;
   // queue already derived via queueAtomFamily before early returns — keeps hook order
-  const configSaving = !!pendingConfigCommand && !pendingConfigCommand.error;
-  const configError = pendingConfigCommand?.error ?? null;
+  const configSaving = pendingConfigCommand?.state.tag === 'sent';
+  const configError =
+    pendingConfigCommand?.state.tag === 'rejected' ? pendingConfigCommand.state.message : null;
 
   const hasThreadContext = unifiedSubAgents.length > 0 || !!conversation.resumedFrom;
   const showSwarmPrefix = !!visibleSwarmDebugPrefix;

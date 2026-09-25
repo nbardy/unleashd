@@ -1,9 +1,4 @@
-import {
-  type ChunkMessage,
-  type ServerFrame,
-  type ServerMessage,
-  classifyServerFrame,
-} from '@unleashd/shared';
+import { type ServerFrame, type ServerMessage, classifyServerFrame } from '@unleashd/shared';
 import { useCallback, useEffect, useRef } from 'react';
 import { noteProtocolMismatch, setSocket } from '../atoms/actions';
 import { probeSessionAfterSocketFailure } from '../auth/session';
@@ -15,6 +10,8 @@ import { probeSessionAfterSocketFailure } from '../auth/session';
 // two string fields; every other frame — hello, rows, patches, acks — still
 // gets the full schema once at this boundary. Guard:
 // client/test/stream-frame-validation.test.ts.
+type ChunkMessage = Extract<ServerMessage, { type: 'chunk' }>;
+
 export function parseServerFrame(raw: unknown): ServerFrame {
   const record = raw as Partial<Record<keyof ChunkMessage, unknown>> | null;
   if (record !== null && typeof record === 'object' && record.type === 'chunk') {

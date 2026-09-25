@@ -1,6 +1,6 @@
 import { useAtomValue } from 'jotai';
 import { Link, useParams } from 'react-router-dom';
-import { availableConversationIdSetAtom, conversationAtomFamily } from '../../atoms/conversations';
+import { listField, rowFamily } from '../../atoms/conversations';
 import { useBuddyOverview } from '../../hooks/useBuddyData';
 import { usePolledFetch } from '../../hooks/usePolledFetch';
 import { shortenHomePath } from '../../utils/directories';
@@ -40,9 +40,7 @@ const RUN_STATUS: Record<RunStatus, string> = {
 };
 
 function RunRow({ run, available }: { run: Run; available: boolean }) {
-  const conversation = useAtomValue(
-    conversationAtomFamily(run.conversationId ?? NO_CONVERSATION_ID)
-  );
+  const conversation = useAtomValue(rowFamily(run.conversationId ?? NO_CONVERSATION_ID));
   const title = conversation?.label ?? `Run ${run.id.slice(0, 8)}`;
   const body = (
     <>
@@ -66,7 +64,7 @@ function RunRow({ run, available }: { run: Run; available: boolean }) {
 
 export function BuddyWorkspaceActivity() {
   const { workspaceId = '' } = useParams();
-  const availableConversationIds = useAtomValue(availableConversationIdSetAtom);
+  const availableConversationIds = useAtomValue(listField('idSet'));
   const overview = useBuddyOverview();
   const live = usePolledFetch<Run[]>(liveRunsUrl(workspaceId), 5_000);
   const workspace = overview.data ? findWorkspace(overview.data, workspaceId) : undefined;

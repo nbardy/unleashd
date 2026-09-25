@@ -2,7 +2,6 @@ import type { ConversationRow } from '@unleashd/shared';
 import { useAtomValue } from 'jotai';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { swarmWorkersByProjectAtom } from '../../atoms/conversations';
 import { EmptyState } from '../../mobile/components/EmptyState';
 import { rowWorker } from '../../utils/conversation-row';
 import { getProjectColor } from '../../utils/projectColors';
@@ -15,6 +14,7 @@ import {
 } from '../swarmAnalyticsParsers';
 import { getProjectName } from '../swarmUtils';
 import './mobile-swarm.css';
+import { swarmWorkersByProjectAtom } from '../swarm-workers';
 
 /**
  * SwarmAnalyticsMobile — mobile analytics at /workers/analytics.

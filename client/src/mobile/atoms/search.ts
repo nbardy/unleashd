@@ -1,5 +1,5 @@
 import { atom } from 'jotai';
-import { allConversationIdsAtom, conversationsAtom } from '../../atoms/conversations';
+import { listField, rowFamily } from '../../atoms/conversations';
 import { fuzzyMatch } from '../../utils/fuzzyMatch';
 
 // =============================================================================
@@ -16,13 +16,12 @@ export const mobileSearchStateAtom = atom<MobileSearchState>({ kind: 'idle' });
 // rows, so an idle search page does no work on conversation events.
 export const mobileSearchResultsAtom = atom((get): readonly string[] => {
   const state = get(mobileSearchStateAtom);
-  const ids = get(allConversationIdsAtom);
+  const ids = get(listField('order'));
   if (state.kind === 'idle' || state.query.length === 0) return ids;
 
   const query = state.query;
-  const conversations = get(conversationsAtom);
   return ids.filter((id) => {
-    const conv = conversations.get(id);
+    const conv = get(rowFamily(id));
     if (!conv) return false;
     return (
       fuzzyMatch(query, conv.cwd) !== null ||

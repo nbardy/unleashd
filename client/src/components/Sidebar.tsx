@@ -2,7 +2,7 @@ import type { ConversationConfig, ConversationRow } from '@unleashd/shared';
 import { createDefaultConversationConfig } from '@unleashd/shared';
 import { useAtom, useAtomValue } from 'jotai';
 import { memo, useCallback, useEffect, useMemo, useState } from 'react';
-import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useMatch, useNavigate } from 'react-router-dom';
 import {
   createConversation,
   readConversation,
@@ -11,31 +11,19 @@ import {
 } from '../atoms/actions';
 import {
   type BuddySidebarItemData,
-  buddyBuilderConversationsAtom,
-  buddySidebarChannelsAtom,
-  buddySidebarCountAtom,
-  buddySidebarGroupsAtom,
+  buddySidebarAtom,
   buddySidebarOverviewAtom,
-  sidebarFolderViewAtom,
-  sidebarRunningCountByFolderAtom,
 } from '../atoms/buddy-sidebar';
 import {
-  activeConversationIdAtom,
-  allPendingCreationsAtom,
-  conversationAtomFamily,
-  defaultCwdAtom,
-  latestWorkingDirectoryAtom,
-  recentDirectoriesAtom,
-  wsStatusAtom,
+  commandsAtom,
+  connectionAtom,
+  defaultCwdOf,
+  listField,
+  pendingCreatesOf,
+  rowFamily,
+  unreadFamily,
 } from '../atoms/conversations';
-import {
-  galleryCollapsedProjectsAtom,
-  hasUnseenAfter,
-  lastSeenMessageIndexAtomFamily,
-  lastWorkingDirectoryAtom,
-  setLastWorkingDirectory,
-  toggleGalleryCollapsed,
-} from '../atoms/ui';
+import { prefsAtom, setLastWorkingDirectory, toggleGalleryCollapsed } from '../atoms/ui';
 import { useBuddyOverview } from '../hooks/useBuddyData';
 import { useProviderCatalog } from '../hooks/useProviderCatalog';
 import { isRowRunning } from '../utils/conversation-row';
@@ -105,22 +93,22 @@ function timeAgoColor(minutesElapsed: number): string {
 }
 
 export function Sidebar() {
-  const latestWorkingDirectory = useAtomValue(latestWorkingDirectoryAtom);
-  const { recent: recentGroups, olderIds } = useAtomValue(sidebarFolderViewAtom);
-  const pendingCreations = useAtomValue(allPendingCreationsAtom);
-  const activeConversationId = useAtomValue(activeConversationIdAtom);
-  const defaultCwd = useAtomValue(defaultCwdAtom);
-  const wsStatus = useAtomValue(wsStatusAtom);
+  const latestWorkingDirectory = useAtomValue(listField('latestCwd'));
+  const { recent: recentGroups, olderIds } = useAtomValue(listField('folders'));
+  const pendingCreations = pendingCreatesOf(useAtomValue(commandsAtom));
+  // The route owns the active id (06-target-client §1.4).
+  const activeConversationId = useMatch('/chat/:id')?.params.id ?? null;
+  const defaultCwd = defaultCwdOf(useAtomValue(connectionAtom).server);
+  const wsStatus = useAtomValue(connectionAtom).socket.tag;
 
-  const lastWorkingDirectory = useAtomValue(lastWorkingDirectoryAtom);
-  const galleryCollapsedProjects = useAtomValue(galleryCollapsedProjectsAtom);
+  const { lastWorkingDirectory, galleryCollapsedProjects } = useAtomValue(prefsAtom);
 
-  const builderConversations = useAtomValue(buddyBuilderConversationsAtom);
+  const builderConversations = useAtomValue(listField('builders'));
   const collapsedSet = useMemo(() => new Set(galleryCollapsedProjects), [galleryCollapsedProjects]);
 
   // Deduplicated working directories from all conversations — fed to PathAutocomplete for fuzzy
   // matching. Derived atom (not a local useMemo) so the mobile create sheet reads the same list.
-  const recentDirectories = useAtomValue(recentDirectoriesAtom);
+  const recentDirectories = useAtomValue(listField('recentDirs'));
 
   const [showSearch, setShowSearch] = useState(false);
   const [searchFilterDir, setSearchFilterDir] = useState<string | undefined>(undefined);
@@ -145,11 +133,13 @@ export function Sidebar() {
   useEffect(() => {
     if (buddyOverview) setBuddyOverview(buddyOverview);
   }, [buddyOverview, setBuddyOverview]);
-  const buddySidebarGroups = useAtomValue(buddySidebarGroupsAtom);
-  const buddyCount = useAtomValue(buddySidebarCountAtom);
-  const channelsWorkspaces = useAtomValue(buddySidebarChannelsAtom);
+  const {
+    groups: buddySidebarGroups,
+    buddyCount,
+    channels: channelsWorkspaces,
+  } = useAtomValue(buddySidebarAtom);
   const ownerUnread = useOwnerInboxes().data;
-  const runningCountByFolder = useAtomValue(sidebarRunningCountByFolderAtom);
+  const runningCountByFolder = useAtomValue(listField('runningByFolder'));
   const [expandedBuddies, setExpandedBuddies] = useState<Set<string>>(() => new Set());
   const [expandedDirectories, setExpandedDirectories] = useState<Set<string>>(() => new Set());
   const navigate = useNavigate();
@@ -188,7 +178,9 @@ export function Sidebar() {
         ? readConversation(item.latestConversation.id)
         : null;
       const workingDirectory =
-        latestConversation?.cwd ?? item.pendingCreation?.workingDirectory ?? item.workingDirectory;
+        latestConversation?.cwd ??
+        item.pendingCreation?.args.workingDirectory ??
+        item.workingDirectory;
       // Seed the harness from this buddy's latest thread so a provider/model
       // picked there sticks for the next thread. Falls back to the global
       // new-conversation draft only when the buddy has no prior thread.
@@ -307,7 +299,7 @@ export function Sidebar() {
     },
     [navigate, pathname]
   );
-  const onDone = wsStatus === 'connected' ? handleDone : null;
+  const onDone = wsStatus === 'open' ? handleDone : null;
 
   return (
     <div className="sidebar">
@@ -400,11 +392,9 @@ export function Sidebar() {
                   type="button"
                   className="dir-action-btn ui-control dir-confirm-btn ui-row"
                   onClick={handleConfirm}
-                  disabled={
-                    wsStatus !== 'connected' || !isDirectoryValid || isCreatingSwarm || !catalog
-                  }
+                  disabled={wsStatus !== 'open' || !isDirectoryValid || isCreatingSwarm || !catalog}
                   title={
-                    wsStatus !== 'connected'
+                    wsStatus !== 'open'
                       ? 'Server disconnected'
                       : !isDirectoryValid
                         ? 'Invalid directory'
@@ -422,9 +412,9 @@ export function Sidebar() {
                   onClick={() => {
                     void handleCreateNewSwarm();
                   }}
-                  disabled={wsStatus !== 'connected' || !isDirectoryValid || isCreatingSwarm}
+                  disabled={wsStatus !== 'open' || !isDirectoryValid || isCreatingSwarm}
                   title={
-                    wsStatus !== 'connected'
+                    wsStatus !== 'open'
                       ? 'Server disconnected'
                       : !isDirectoryValid
                         ? 'Invalid directory'
@@ -454,7 +444,7 @@ export function Sidebar() {
 
       <div className="conversations-list">
         {pendingCreations
-          .filter((creation) => creation.createKind.t !== 'buddy')
+          .filter((creation) => creation.args.kind.t !== 'buddy')
           .map((creation) => (
             <button
               type="button"
@@ -466,12 +456,12 @@ export function Sidebar() {
             >
               <div className="conversation-row ui-row">
                 <span className="folder-badge ui-truncate">
-                  {creation.workingDirectory.split('/').filter(Boolean).pop() ?? '/'}
+                  {creation.args.workingDirectory.split('/').filter(Boolean).pop() ?? '/'}
                 </span>
                 <span className="conversation-title">
-                  {creation.error
-                    ? `Failed: ${creation.error}`
-                    : `Starting ${creation.config.provider}…`}
+                  {creation.state.tag === 'rejected'
+                    ? `Failed: ${creation.state.message}`
+                    : `Starting ${creation.args.config.provider}…`}
                 </span>
                 <span className="status-indicator pending" />
               </div>
@@ -684,9 +674,9 @@ export function Sidebar() {
                                 <div className="conversation-item ui-row pending-creation">
                                   <div className="conversation-row ui-row">
                                     <span className="conversation-title">
-                                      {item.pendingCreation.error
-                                        ? `Failed: ${item.pendingCreation.error}`
-                                        : `Starting ${item.pendingCreation.config.provider}…`}
+                                      {item.pendingCreation.state.tag === 'rejected'
+                                        ? `Failed: ${item.pendingCreation.state.message}`
+                                        : `Starting ${item.pendingCreation.args.config.provider}…`}
                                     </span>
                                     <span className="status-indicator pending" />
                                   </div>
@@ -1079,15 +1069,15 @@ const SidebarConversationRow = memo(function SidebarConversationRow({
   /** Null while disconnected: the command would be dropped, so the button is disabled. */
   onDone: ((conv: ConversationRow, e: React.MouseEvent) => void) | null;
 }) {
-  const conv = useAtomValue(conversationAtomFamily(id));
+  const conv = useAtomValue(rowFamily(id));
   useTimeTick();
-  const lastSeen = useAtomValue(lastSeenMessageIndexAtomFamily(id));
+  const hasUnseen = useAtomValue(unreadFamily(id));
   if (!conv) return null;
   return (
     <ConversationItem
       conv={conv}
       isActive={isActive}
-      hasUnseen={hasUnseenAfter(lastSeen, conv.messageCount)}
+      hasUnseen={hasUnseen}
       showFolderBadge={showFolderBadge}
       onSelect={onSelect}
       onDone={onDone}

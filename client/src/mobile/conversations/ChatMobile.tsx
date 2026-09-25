@@ -1,7 +1,7 @@
 import { useAtomValue } from 'jotai';
 import type { MouseEventHandler } from 'react';
 import { useLocation, useNavigate, useParams } from 'react-router-dom';
-import { conversationAtomFamily } from '../../atoms/conversations';
+import { rowFamily } from '../../atoms/conversations';
 import { resolveMobileConversationDestination } from '../../utils/conversation-route-state';
 import { ConversationView } from './ConversationView';
 
@@ -15,7 +15,7 @@ import { ConversationView } from './ConversationView';
 export function ChatMobile() {
   const { id } = useParams<{ id: string }>();
   const conversationId = id ?? '';
-  const conversation = useAtomValue(conversationAtomFamily(conversationId));
+  const conversation = useAtomValue(rowFamily(conversationId));
   const location = useLocation();
   const navigate = useNavigate();
   const destination = resolveMobileConversationDestination(location.state, conversation);

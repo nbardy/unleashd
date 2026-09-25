@@ -3,23 +3,17 @@ import { memo, useCallback, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { setConversationDone } from '../atoms/actions';
 import {
+  connectionAtom,
   type ConversationListEntry,
-  conversationAtomFamily,
-  galleryConversationsAtom,
-  hasConversationsAtom,
-  wsStatusAtom,
+  listField,
+  rowFamily,
 } from '../atoms/conversations';
 import {
-  galleryCollapsedProjectsAtom,
-  galleryExpandedProjectsAtom,
+  prefsAtom,
   promoteWorker,
-  promotedWorkersAtom,
   setShowDoneConversations,
   setShowTempSessions,
   setShowWorkerConversations,
-  showDoneConversationsAtom,
-  showTempSessionsAtom,
-  showWorkerConversationsAtom,
   toggleGalleryCollapsed,
   toggleGalleryExpanded,
 } from '../atoms/ui';
@@ -73,18 +67,20 @@ interface GalleryProps {
 
 export function Gallery({ filter }: GalleryProps = {}) {
   // Top-level conversations, newest-created first (atoms/conversations.ts).
-  const sortedConversations = useAtomValue(galleryConversationsAtom);
-  const hasConversations = useAtomValue(hasConversationsAtom);
+  const sortedConversations = useAtomValue(listField('gallery'));
+  const hasConversations = useAtomValue(listField('order')).length > 0;
   const navigate = useNavigate();
 
   // Persisted Gallery UI state via atoms/ui
-  const galleryExpandedProjects = useAtomValue(galleryExpandedProjectsAtom);
-  const galleryCollapsedProjects = useAtomValue(galleryCollapsedProjectsAtom);
-  const showTempSessions = useAtomValue(showTempSessionsAtom);
-  const showDoneConversations = useAtomValue(showDoneConversationsAtom);
-  const connected = useAtomValue(wsStatusAtom) === 'connected';
-  const promotedWorkers = useAtomValue(promotedWorkersAtom);
-  const showWorkerConversations = useAtomValue(showWorkerConversationsAtom);
+  const {
+    galleryExpandedProjects,
+    galleryCollapsedProjects,
+    showTempSessions,
+    showDoneConversations,
+    promotedWorkers,
+    showWorkerConversations,
+  } = useAtomValue(prefsAtom);
+  const connected = useAtomValue(connectionAtom).socket.tag === 'open';
   const [showDoneBySection, setShowDoneBySection] = useState<Record<string, boolean>>({});
 
   // Derived Sets for O(1) lookup
@@ -637,7 +633,7 @@ const GalleryCard = memo(function GalleryCard({
   connected: boolean;
   onOpen: (id: string) => void;
 }) {
-  const conv = useAtomValue(conversationAtomFamily(id));
+  const conv = useAtomValue(rowFamily(id));
   useTimeTick();
   if (!conv) return null;
   const isDoneConversation = conv.done;

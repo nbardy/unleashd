@@ -164,6 +164,19 @@ export function listField<K extends keyof ListIndex>(key: K): Atom<ListIndex[K]>
   return field as Atom<ListIndex[K]>;
 }
 
+const NO_ROWS: readonly ConversationRow[] = [];
+
+/** A parent's child-session rows, oldest first (the sub-agent panel). */
+export const childRowsFamily = atomFamily((parentId: string) =>
+  labelled(
+    atom((get): readonly ConversationRow[] => {
+      const ids = get(listField('childrenOf')).get(parentId);
+      return ids ? ids.flatMap((id) => get(rowFamily(id)) ?? []) : NO_ROWS;
+    }),
+    `childRows:${parentId}`
+  )
+);
+
 // -----------------------------------------------------------------------------
 // Transcripts: loaded on demand (GET /api/conversations/:id + /messages)
 // -----------------------------------------------------------------------------
@@ -256,7 +269,12 @@ export const groupsFamily = atomFamily((id: string) =>
   labelled(
     atom((get) => {
       const settled = get(settledGroupsFamily(id));
-      return withStreamingTail(settled.groups, settled.messages, get(streamFamily(id)), settled.prefix);
+      return withStreamingTail(
+        settled.groups,
+        settled.messages,
+        get(streamFamily(id)),
+        settled.prefix
+      );
     }),
     `groups:${id}`
   )
@@ -267,9 +285,7 @@ export const groupsFamily = atomFamily((id: string) =>
 // A pending create is not a partial row; it lives here, never in rowsAtom.
 // -----------------------------------------------------------------------------
 
-export type CommandState =
-  | { tag: 'sent' }
-  | { tag: 'rejected'; code: string; message: string };
+export type CommandState = { tag: 'sent' } | { tag: 'rejected'; code: string; message: string };
 
 export interface CreateArgs {
   workingDirectory: string;
@@ -362,6 +378,7 @@ export const unreadFamily = atomFamily((id: string) =>
 /** Free every per-id atom memoized for a removed conversation. */
 export function forgetConversationAtoms(id: string): void {
   rowStore.forget(id);
+  childRowsFamily.remove(id);
   transcriptStore.forget(id);
   streamStore.forget(id);
   settledGroupsFamily.remove(id);

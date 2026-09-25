@@ -1,7 +1,7 @@
 import { useAtomValue } from 'jotai';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
-import { availableConversationIdSetAtom, conversationAtomFamily } from '../../atoms/conversations';
+import { listField, rowFamily } from '../../atoms/conversations';
 import { useBuddyOverview } from '../../hooks/useBuddyData';
 import { rowBuddy } from '../../utils/conversation-row';
 import { Chat } from '../Chat';
@@ -727,7 +727,7 @@ export function ChannelBrowser({
   // An open DM replaces the channel in the main pane; picking a channel closes it.
   const dm = params.get('dm');
   const openDm: OpenDm = (conversationId) => setParams({ dm: conversationId });
-  const dmConversation = useAtomValue(conversationAtomFamily(dm ?? ''));
+  const dmConversation = useAtomValue(rowFamily(dm ?? ''));
   const dmBuddyId = rowBuddy(dmConversation)?.buddyId;
   const railRow = (entry: ChannelUnread) => (
     <RailChannel
@@ -840,7 +840,7 @@ export function ChannelBrowser({
 // The desktop route: the full-screen Slack surface for one workspace.
 export function WorkspaceSlack() {
   const { workspaceId = '' } = useParams();
-  const availableConversationIds = useAtomValue(availableConversationIdSetAtom);
+  const availableConversationIds = useAtomValue(listField('idSet'));
   const directory = useWorkspaceDirectory(workspaceId);
   return (
     <ChannelBrowser

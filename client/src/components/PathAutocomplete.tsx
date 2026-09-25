@@ -21,7 +21,7 @@ interface Props {
   value: string;
   onChange: (value: string) => void;
   /** Deduplicated working directories from open conversations. */
-  recentDirectories?: string[];
+  recentDirectories?: readonly string[];
   placeholder?: string;
   className?: string;
   /** When true, the next keystroke clears the input and starts fresh instead of appending. */

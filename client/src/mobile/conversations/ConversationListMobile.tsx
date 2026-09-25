@@ -1,13 +1,7 @@
 import { useAtomValue } from 'jotai';
 import { memo, useMemo, useState } from 'react';
 import { useLocation } from 'react-router-dom';
-import {
-  allConversationIdsAtom,
-  chatConversationIdsAtom,
-  chatConversationInboxAtom,
-  conversationAtomFamily,
-} from '../../atoms/conversations';
-import { hasUnseenAfter, lastSeenMessageIndexAtomFamily } from '../../atoms/ui';
+import { listField, rowFamily, unreadFamily } from '../../atoms/conversations';
 import { useTimeTick } from '../../hooks/useTimeTick';
 import { mobileConversationRouteState } from '../../utils/conversation-route-state';
 import { isRowRunning } from '../../utils/conversation-row';
@@ -30,15 +24,14 @@ const ConversationListItem = memo(function ConversationListItem({
   id: string;
   routeState: Record<string, unknown>;
 }) {
-  const conv = useAtomValue(conversationAtomFamily(id));
-  const lastSeen = useAtomValue(lastSeenMessageIndexAtomFamily(id));
+  const conv = useAtomValue(rowFamily(id));
+  const unseen = useAtomValue(unreadFamily(id));
   useTimeTick();
 
   if (!conv) return null;
 
   const lastTime = getConversationLastActivity(conv);
   const timeAgo = formatTimeAgo(lastTime);
-  const unseen = hasUnseenAfter(lastSeen, conv.messageCount);
   const preview = conv.label;
   const dirDisplay = shortenHomePath(conv.cwd);
   const folderName = conv.cwd.split('/').filter(Boolean).pop() ?? dirDisplay;
@@ -82,8 +75,9 @@ export function ConversationListMobile({
 }: {
   scope?: 'all' | 'chats';
 }) {
-  const ids = useAtomValue(scope === 'chats' ? chatConversationIdsAtom : allConversationIdsAtom);
-  const chatInbox = useAtomValue(chatConversationInboxAtom);
+  const order = useAtomValue(listField('order'));
+  const chatInbox = useAtomValue(listField('inbox'));
+  const ids = scope === 'chats' ? chatInbox.ids : order;
   const location = useLocation();
   const routeState = useMemo(() => mobileConversationRouteState(location), [location]);
   const [showCreate, setShowCreate] = useState(false);

@@ -2,7 +2,6 @@ import type { ConversationRow } from '@unleashd/shared';
 import { useAtomValue } from 'jotai';
 import { useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { swarmWorkersByProjectAtom } from '../atoms/conversations';
 import { isRowRunning, rowWorker } from '../utils/conversation-row';
 import { getProjectColor } from '../utils/projectColors';
 import { formatTimeAgo } from '../utils/time';
@@ -13,6 +12,7 @@ import { useSwarmRuntimeSnapshots } from './useSwarmRuntimeSnapshots';
 import './SwarmDashboard.css';
 import { useTimeTick } from '../hooks/useTimeTick';
 import { shortenHomePath } from '../utils/directories';
+import { swarmWorkersByProjectAtom } from './swarm-workers';
 
 interface SwarmProject {
   projectRoot: string;

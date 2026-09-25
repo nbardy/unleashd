@@ -12,7 +12,7 @@
 import { useCallback, useMemo } from 'react';
 
 interface UseFolderFilterOptions<T> {
-  items: T[];
+  items: readonly T[];
   getFolder: (item: T) => string;
   /** Currently selected folders — caller owns this state */
   selected: Set<string>;
@@ -30,7 +30,7 @@ interface UseFolderFilterResult<T> {
   /** Clear all selections */
   clear: () => void;
   /** Items filtered by selection */
-  filtered: T[];
+  filtered: readonly T[];
 }
 
 export function useFolderFilter<T>({

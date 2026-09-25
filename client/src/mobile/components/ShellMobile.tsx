@@ -1,6 +1,6 @@
 import { useAtomValue } from 'jotai';
 import { NavLink, Outlet, matchPath, useLocation } from 'react-router-dom';
-import { conversationAtomFamily } from '../../atoms/conversations';
+import { rowFamily } from '../../atoms/conversations';
 import { ownerUnreadTotal, useOwnerInboxes } from '../../components/buddies/channel-data';
 import {
   type MobilePrimarySection,
@@ -56,7 +56,7 @@ export function ShellMobile() {
   const location = useLocation();
   const { pathname } = location;
   const chatId = matchPath('/chat/:id', pathname)?.params.id ?? '';
-  const conversation = useAtomValue(conversationAtomFamily(chatId));
+  const conversation = useAtomValue(rowFamily(chatId));
   // Two layout modes, and they are genuinely different documents:
   //   - list routes scroll as a page (content taller than the shell)
   //   - the conversation route is a fixed-height PANE that scrolls internally,

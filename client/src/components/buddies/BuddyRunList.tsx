@@ -1,6 +1,6 @@
 import { useAtomValue } from 'jotai';
 import { Link } from 'react-router-dom';
-import { availableConversationIdSetAtom } from '../../atoms/conversations';
+import { listField } from '../../atoms/conversations';
 import { formatTimeAgo } from '../../utils/time';
 import { buddyAction } from './api';
 import { conversationPath } from './buddy-tabs';
@@ -42,7 +42,7 @@ export function BuddyRunList({
   refresh: () => Promise<void>;
   empty: string;
 }) {
-  const available = useAtomValue(availableConversationIdSetAtom);
+  const available = useAtomValue(listField('idSet'));
   const action = useBuddyAction(refresh);
   if (runs.length === 0) return <p className="buddy-panel__empty">{empty}</p>;
   return (
