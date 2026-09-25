@@ -7,7 +7,7 @@ import type { Buddy } from './types';
 import { ActionError, useBuddyAction } from './useBuddyAction';
 import './BuddySettings.css';
 
-/** The editable profile, as form strings. '' is "not set" (only offered while unset). */
+/** The editable profile, as form strings. '' is "not set": the server's default. */
 type ProfileFields = {
   name: string;
   role: string;
@@ -30,20 +30,25 @@ const fieldsOf = (buddy: Buddy): ProfileFields => ({
   maxActiveRuns: buddy.maxActiveRuns,
 });
 
+// '' in the form is null on the wire: the route clears the field back to the
+// server's default (crate `Setting::Default`, 5d15db8).
+const orNull = (value: string) => (value === '' ? null : value);
+
 /**
- * PATCH body: only the changed fields. `managerId` '' is "reports to the owner"
- * (null on the wire). Provider, model and effort cannot be cleared once set —
- * the route has no "unset" — so their '' option exists only while they are unset.
+ * PATCH body: only the changed fields. `managerId` '' is "reports to the owner",
+ * and provider/model/effort '' is "Default": each goes out as null. Until T22
+ * the route could not clear a profile field, so Settings offered "Default" only
+ * while a field was still unset and a chosen model could never be taken back.
  */
 export function profileChanges(before: ProfileFields, after: ProfileFields) {
   const changed = <K extends keyof ProfileFields>(key: K) => before[key] !== after[key];
   return {
     ...(changed('name') ? { name: after.name } : {}),
     ...(changed('role') ? { role: after.role } : {}),
-    ...(changed('provider') ? { provider: after.provider } : {}),
-    ...(changed('model') ? { model: after.model } : {}),
-    ...(changed('reasoningEffort') ? { reasoningEffort: after.reasoningEffort } : {}),
-    ...(changed('managerId') ? { managerId: after.managerId === '' ? null : after.managerId } : {}),
+    ...(changed('provider') ? { provider: orNull(after.provider) } : {}),
+    ...(changed('model') ? { model: orNull(after.model) } : {}),
+    ...(changed('reasoningEffort') ? { reasoningEffort: orNull(after.reasoningEffort) } : {}),
+    ...(changed('managerId') ? { managerId: orNull(after.managerId) } : {}),
     ...(changed('backgroundEnabled') ? { backgroundEnabled: after.backgroundEnabled } : {}),
     ...(changed('maxActiveRuns') ? { maxActiveRuns: after.maxActiveRuns } : {}),
   };
@@ -70,8 +75,6 @@ function ProfileForm({
   );
   const selectedModel = providerInfo?.models.find((candidate) => candidate.id === fields.model);
   const changes = profileChanges(initial, fields);
-  const unset = (value: string, label: string) =>
-    value === '' ? <option value="">{label}</option> : null;
 
   return (
     <form
@@ -124,7 +127,7 @@ function ProfileForm({
             set('reasoningEffort', model?.reasoning?.defaultEffort ?? '');
           }}
         >
-          {unset(initial.provider, 'Server default')}
+          <option value="">Server default</option>
           {(providers ?? []).map((candidate) => (
             <option key={candidate.id} value={candidate.id}>
               {candidate.displayName}
@@ -136,7 +139,7 @@ function ProfileForm({
       <label>
         Model
         <select value={fields.model} onChange={(event) => set('model', event.target.value)}>
-          {unset(fields.model, 'Provider default')}
+          <option value="">Provider default</option>
           {providerInfo?.models.map((candidate) => (
             <option key={candidate.id} value={candidate.id}>
               {candidate.displayName}
@@ -150,7 +153,7 @@ function ProfileForm({
           value={fields.reasoningEffort}
           onChange={(event) => set('reasoningEffort', event.target.value)}
         >
-          {unset(fields.reasoningEffort, 'Model default')}
+          <option value="">Model default</option>
           {(selectedModel?.reasoning?.levels ?? []).map((effort) => (
             <option key={effort} value={effort}>
               {effort}
