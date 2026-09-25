@@ -96,6 +96,7 @@ import {
   createReturnConversationPreparer,
 } from './buddies/dispatch-service';
 import { createBuddiesIntegration } from './buddies/integration';
+import { startMcpBundleWatch } from './buddies/mcp-bundle';
 import { BuddyMemoryReviewer } from './buddies/memory-review';
 import { createMemoryReviewRunner } from './buddies/memory-review-runner';
 import { ownerWorkspaceIds } from './buddies/owner-team-configuration';
@@ -750,6 +751,13 @@ void runServerStartup(
       await errorJournal.initialize();
       installConsoleErrorCapture(errorJournal);
       startEventLoopStallMonitor(errorJournal);
+      // A dev backend has no compiled MCP helpers; bundle them once and keep
+      // them fresh so each Buddy turn does not pay tsx startup (mcp-bundle.ts).
+      if (process.env.NODE_ENV === 'development') {
+        void startMcpBundleWatch().catch((error) => {
+          console.error('[buddies-mcp] Could not start the MCP helper bundler:', error);
+        });
+      }
       await buddyControlServer.start();
       startupAuditResults = auditLocalAgents();
       await normalizedSessionCache.initialize();
