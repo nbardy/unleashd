@@ -38,6 +38,16 @@ export declare class Ingest {
   listSessions(options: ListOptions): Promise<SessionPage>
   session(sessionId: string): Promise<SessionRow | null>
   messages(sessionId: string, options: MessagesOptions): Promise<Array<Message>>
+  /**
+   * Provider-counted token usage of the turns in `[since, until)`, grouped by session, UTC day
+   * or model, plus the latest Codex rate limits. Replaces `/api/usage`'s transcript parsers.
+   */
+  usage(query: UsageQuery): Promise<UsageReport>
+  /**
+   * The latest request's context for a native session id (the context meter), or null when no
+   * transcript of that id records one. Replaces session-context.ts.
+   */
+  latestContext(sessionId: string): Promise<ContextReading | null>
   /** Stop watching and release `onChange` (so Node can exit). Idempotent. */
   stop(): Promise<void>
 }
@@ -65,6 +75,32 @@ export interface BuddyContext {
 export type ChangeEvent =
   | { t: 'changes'; rev: number; sessionIds: Array<string>; removed: Array<string> }
   | { t: 'failed'; message: string }
+
+/** A compaction the harness recorded with its own marker record (never inferred from numbers). */
+export interface Compaction {
+  count: number
+  /** Context just before the latest boundary (Claude only). */
+  preTokens?: number
+  postTokens?: number
+  /** The harness's own word for why, verbatim. */
+  trigger?: string
+}
+
+/**
+ * The latest request's provider-counted context for a session: what the context meter shows.
+ * Never a sum (usage is); the two diverge at every compaction.
+ */
+export interface ContextReading {
+  /**
+   * Claude and OpenCode: input + cache read + cache write; Codex and Muse: input (their cached
+   * count is a subset of it).
+   */
+  contextTokens: number
+  /** Codex `model_context_window`, Muse target/soft threshold. Absent: resolve from the model. */
+  contextWindow?: number
+  /** Absent: the harness recorded no compaction for this session. */
+  compaction?: Compaction
+}
 
 export interface ConversationBranch {
   sourceConversationId: string
@@ -384,6 +420,51 @@ export interface Usage {
   output: number
   cacheRead: number
   cacheWrite: number
+}
+
+/**
+ * Token totals of the turns in one group. Pricing stays with the caller, except the cost a
+ * provider recorded itself (OpenCode), summed as `reportedCostUsd` (0 when none did).
+ */
+export interface UsageGroup {
+  key: UsageKey
+  turns: number
+  /** Distinct sources with a turn in the group. */
+  sessions: number
+  input: number
+  output: number
+  cacheRead: number
+  cacheWrite: number
+  reportedCostUsd: number
+  firstAt: number
+  lastAt: number
+}
+
+export type UsageGroupBy = 'session' | 'day' | 'model'
+
+/** What one usage group is. */
+export type UsageKey =
+  | { t: 'session'; sessionId: string; sourcePath: string; provider: Provider; format: Format; model?: string }
+  | { t: 'day'; day: string }
+  | { t: 'model'; provider: Provider; model?: string }
+
+/**
+ * A usage query: turns whose transcript time is in `[since, until)` (epoch ms). `since` is
+ * required: every query is a range on the turn-time index, never a scan of all turns.
+ */
+export interface UsageQuery {
+  since: number
+  until?: number
+  groupBy: UsageGroupBy
+}
+
+export interface UsageReport {
+  groups: Array<UsageGroup>
+  /**
+   * The latest Codex `rate_limits` payload (raw JSON) of the most recently active session that
+   * recorded one; `/api/usage` shows it as the Codex limits.
+   */
+  codexRateLimits?: string
 }
 
 export type WorkerRole = 'work' | 'review' | 'fix'

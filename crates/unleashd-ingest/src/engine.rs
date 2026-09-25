@@ -5,7 +5,7 @@
 use crate::discover::{Touched, classify, discover};
 use crate::model::{Format, Root};
 use crate::paths::ProjectDirResolver;
-use crate::read::{FullReason, Outcome, Stamp, Taken, read_source};
+use crate::read::{Apply, FullReason, Outcome, Stamp, Taken, read_source};
 use crate::store::{Committed, Known, Writer};
 use rayon::prelude::*;
 use std::collections::{BTreeSet, HashMap};
@@ -89,6 +89,17 @@ impl Engine {
         let gone: Vec<String> =
             self.known.keys().filter(|p| Path::new(p).starts_with(&root.path) && !present.contains(*p)).cloned().collect();
         self.process(found, gone, on_commit)
+    }
+
+    /// The event paths that name an append-only JSONL source (every format but the Gemini and
+    /// OpenCode documents), as given: the watcher watches these directly once written.
+    pub fn appendable(&self, paths: &BTreeSet<PathBuf>) -> Vec<PathBuf> {
+        paths
+            .iter()
+            .filter(|p| p.extension().is_some_and(|e| e == "jsonl"))
+            .filter(|p| self.root_of(p).is_some_and(|(root, path)| matches!(classify(&root, &path), Touched::Source(_))))
+            .cloned()
+            .collect()
     }
 
     /// Apply a set of changed paths from the watcher.
@@ -242,10 +253,19 @@ fn flush(
 
 /// A resumed read that added nothing and left the row as stored.
 fn quiet(writer: &Writer, path: &str, outcome: &Outcome) -> bool {
-    if !matches!(outcome.taken, Taken::Resumed) || !outcome.messages.is_empty() {
+    if !matches!(outcome.taken, Taken::Resumed)
+        || outcome.apply != Apply::Append
+        || !outcome.messages.is_empty()
+        || !outcome.turns.is_empty()
+    {
         return false;
     }
     let Some(row) = &outcome.row else { return false };
+    // A Muse `model_completed` or a Codex rate-limit refresh changes only these.
+    match writer.extras_of(path) {
+        Ok((context, limits)) if context == row.facts.context && limits == row.facts.rate_limits => {}
+        _ => return false,
+    }
     match writer.row_of(path) {
         Ok(Some(stored)) => {
             stored.session_id == row.facts.session_id

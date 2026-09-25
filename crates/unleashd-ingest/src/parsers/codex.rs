@@ -1,14 +1,15 @@
 //! Codex: `~/.codex/sessions/YYYY/MM/DD/rollout-<time>-<id>.jsonl`, appended only. Port of
 //! `parseCodexJsonlFile` + `extractMessagesFromCodexEntries` + the turn-interruption notices
-//! (codex-turn-lifecycle.ts) + usage-routes.ts `codexTokenTotals`.
+//! (codex-turn-lifecycle.ts) + usage-routes.ts `codexTokenTotals` (usage turns, rate limits) +
+//! session-context.ts `parseCodexLines` (the context meter).
 //!
 //! Most bytes of a rollout are tool output, reasoning and world state that no message keeps, so
 //! a line's first two `"type"` tags decide whether it is parsed at all (the TS filter). That
 //! filter is what keeps a 934 MB rollout cheap; the tail read is what keeps it cheap on change.
 
-use super::{Ctx, Facts, Fold, Line, Previous, Sink, normalize_dir, parse_time, widen};
-use crate::markers::{Hints, Rebuild};
-use crate::model::{Cwd, Provider, Role, ToolCall, Usage};
+use super::{Ctx, Facts, Fold, Line, Previous, Sink, finite, normalize_dir, parse_time, widen};
+use crate::markers::{Hints, Rebuild, Visible};
+use crate::model::{Compaction, ContextReading, Cwd, Provider, Role, ToolCall, Usage, UsageTurn};
 use crate::text::{format_buddy_receipt, format_tool_use, pretty_json};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
@@ -76,6 +77,9 @@ struct Pending {
     completed_at: Option<f64>,
     content: String,
     tool_call: Option<ToolCall>,
+    /// A response-item message: withdrawn if the file turns out to have event messages.
+    #[serde(default)]
+    from_response: bool,
 }
 
 /// Messages sort by time; a notice sorts after messages of the same time (it was appended after
@@ -94,18 +98,30 @@ pub struct CodexFold {
     span: Option<(f64, f64)>,
     /// Mode: event messages exist, so response-item messages are never shown.
     has_events: bool,
-    /// An event message was read in this pass. Until then response-item messages are parsed
-    /// (and widen the time span) even in event mode, as the single-pass TS parser did.
+    /// An event message was read. Until then response-item messages are parsed (and widen the
+    /// time span) even in event mode, as the single-pass TS parser did.
     events_seen: bool,
     response_messages_shown: bool,
+    #[serde(with = "super::digest_set")]
     seen_calls: HashSet<u64>,
     prev: Previous,
+    /// Until event mode: the seqs of the response-item messages shown, and `prev` / the order
+    /// key as they would be without them (what event mode must continue from).
+    response_seqs: Vec<u32>,
+    other_prev: Previous,
+    other_key: Option<(f64, bool)>,
     turns: HashMap<String, Turn>,
     next_turn_order: u64,
     last_key: Option<(f64, bool)>,
     buffering: bool,
     buffer: Vec<Pending>,
     usage: Option<Usage>,
+    /// The last real request's input (`last_token_usage`; a 0 after a compaction is a reset
+    /// sentinel, not a request), the reported window, and top-level `compacted` records.
+    context_tokens: Option<f64>,
+    context_window: Option<f64>,
+    compactions: u32,
+    rate_limits: Option<String>,
 }
 
 fn parse_epoch(v: Option<&Value>) -> Option<f64> {
@@ -193,6 +209,36 @@ fn user_content(payload: &Value, before_first_message: bool) -> String {
 }
 
 impl CodexFold {
+    /// A `token_count` event: the cumulative total (the last one wins; its growth is one usage
+    /// turn), this request's context, the window, and the rate limits.
+    fn token_count(&mut self, sink: &mut Sink, payload: &Value, at: Option<f64>) {
+        if let Some(limits) = payload.get("rate_limits").filter(|r| crate::text::truthy(Some(r))) {
+            self.rate_limits = Some(limits.to_string());
+        }
+        let Some(info) = payload.get("info").filter(|i| crate::text::truthy(Some(i))) else { return };
+        self.context_window = finite(info.get("model_context_window")).or(self.context_window);
+        if let Some(input) = finite(info.pointer("/last_token_usage/input_tokens")).filter(|i| *i > 0.0) {
+            self.context_tokens = Some(input);
+        }
+        let Some(total) = info.get("total_token_usage").filter(|t| crate::text::truthy(Some(t))) else { return };
+        // Cached input is a subset of input; split out so `input` means uncached, as for Claude.
+        let n = |k: &str| total.get(k).and_then(Value::as_f64).unwrap_or(0.0);
+        let cached = n("cached_input_tokens");
+        let now = Usage { input: n("input_tokens") - cached, output: n("output_tokens"), cache_read: cached, cache_write: 0.0 };
+        let before = self.usage.clone().unwrap_or_default();
+        let grew = Usage {
+            input: now.input - before.input,
+            output: now.output - before.output,
+            cache_read: now.cache_read - before.cache_read,
+            cache_write: 0.0,
+        };
+        // Codex repeats an unchanged total (rate-limit refreshes); that is no request.
+        if grew != Usage::default() {
+            sink.turn(UsageTurn { at, model: self.model.clone(), usage: grew, reported_cost: None });
+        }
+        self.usage = Some(now);
+    }
+
     fn emit(&mut self, sink: &mut Sink, item: Pending, notice: bool) -> Result<(), Rebuild> {
         if self.buffering {
             self.buffer.push(item);
@@ -202,8 +248,34 @@ impl CodexFold {
         if self.last_key.is_some_and(|last| key.partial_cmp(&last) == Some(std::cmp::Ordering::Less)) {
             return Err(Rebuild::Reordered);
         }
+        self.push(sink, item, key)
+    }
+
+    /// Number and show one item in final order.
+    fn push(&mut self, sink: &mut Sink, item: Pending, key: (f64, bool)) -> Result<(), Rebuild> {
         self.last_key = Some(key);
+        if item.from_response {
+            self.response_seqs.push(sink.next_seq);
+        } else {
+            self.other_key = Some(key);
+        }
         sink.push(item.role, item.at, item.completed_at, item.content, item.tool_call)
+    }
+
+    /// The first event message: the TS parser shows event messages and never response-item
+    /// messages once a file has any. Withdraw the response-item messages already shown and go on
+    /// as if they had never been read. Nothing else depends on them: only they read or wrote
+    /// `prev` (event messages come after) and the first-prompt markers (the only user messages),
+    /// and every other item keeps its order. This was a full re-read from byte 0 (`Rebuild::
+    /// EventMode`): 1.7–3.5 s for the 891 MB rollout on one appended line (BENCH-ingest-js-vs-rust).
+    /// Guard: tests/tail.rs `codex_switch_to_event_mode_withdraws_without_a_reread`.
+    fn enter_event_mode(&mut self, sink: &mut Sink) {
+        self.has_events = true;
+        self.buffer.retain(|p| !p.from_response);
+        sink.withdraw(&std::mem::take(&mut self.response_seqs));
+        sink.visible = Visible::with_hints(sink.visible.hints);
+        self.prev = self.other_prev.clone();
+        self.last_key = self.other_key;
     }
 
     /// A message in transcript order (dedupe + reply start time), before any sort.
@@ -211,11 +283,17 @@ impl CodexFold {
         if content.is_empty() || self.prev.is_duplicate(role, &content) {
             return Ok(());
         }
+        let from_response = !self.has_events;
         let pending = match role {
-            Role::Assistant => {
-                Pending { role, at: if self.prev.exists() { self.prev.at } else { at }, completed_at: at, content, tool_call: None }
-            }
-            _ => Pending { role, at, completed_at: None, content, tool_call: None },
+            Role::Assistant => Pending {
+                role,
+                at: if self.prev.exists() { self.prev.at } else { at },
+                completed_at: at,
+                content,
+                tool_call: None,
+                from_response,
+            },
+            _ => Pending { role, at, completed_at: None, content, tool_call: None, from_response },
         };
         self.prev.set(role, &pending.content, pending.at);
         self.emit(sink, pending, false)
@@ -223,7 +301,8 @@ impl CodexFold {
 
     fn other(&mut self, sink: &mut Sink, content: String, at: Option<f64>, tool_call: Option<ToolCall>) -> Result<(), Rebuild> {
         self.prev.set(Role::Assistant, &content, at);
-        self.emit(sink, Pending { role: Role::Assistant, at, completed_at: None, content, tool_call }, false)
+        self.other_prev.set(Role::Assistant, &content, at);
+        self.emit(sink, Pending { role: Role::Assistant, at, completed_at: None, content, tool_call, from_response: false }, false)
     }
 
     fn tool_call(&mut self, sink: &mut Sink, kind: &str, payload: &Value, at: Option<f64>) -> Result<(), Rebuild> {
@@ -306,6 +385,7 @@ impl CodexFold {
                 completed_at: None,
                 content: interruption_message(reason.as_deref()),
                 tool_call: None,
+                from_response: false,
             };
             return self.emit(sink, notice, true);
         }
@@ -314,13 +394,17 @@ impl CodexFold {
 }
 
 impl Fold for CodexFold {
-    fn begin_full(&mut self, hints: Hints) {
+    fn begin_full(&mut self, _hints: Hints) {
         self.buffering = true;
-        self.has_events = hints.codex_events;
     }
 
     fn line(&mut self, text: &str, sink: &mut Sink) -> Result<Line, Rebuild> {
         let (outer, inner) = line_types(text);
+        if outer == Some("compacted") {
+            // Tagged at the top level; its payload (the replacement history) is never needed.
+            self.compactions += 1;
+            return Ok(Line::Used);
+        }
         let is_metadata = matches!(outer, Some("session_meta" | "turn_context"));
         let is_event = outer == Some("event_msg") && inner.is_some_and(|i| RETAINED_EVENTS.contains(&i));
         let is_response_message = !self.events_seen && outer == Some("response_item") && inner == Some("message");
@@ -338,14 +422,8 @@ impl Fold for CodexFold {
         let payload = entry.get("payload").cloned().unwrap_or(Value::Null);
         let payload_type = payload.get("type").and_then(Value::as_str);
         if is_token_count {
-            // The last cumulative total wins; cached input is a subset of input, split out.
-            if let (Some("event_msg"), Some("token_count")) = (entry_type, payload_type)
-                && let Some(total) = payload.get("info").and_then(|i| i.get("total_token_usage")).filter(|t| crate::text::truthy(Some(t)))
-            {
-                let n = |k: &str| total.get(k).and_then(Value::as_f64).unwrap_or(0.0);
-                let cached = n("cached_input_tokens");
-                self.usage =
-                    Some(Usage { input: n("input_tokens") - cached, output: n("output_tokens"), cache_read: cached, cache_write: 0.0 });
+            if let (Some("event_msg"), Some("token_count")) = (entry_type, payload_type) {
+                self.token_count(sink, &payload, parse_time(entry.get("timestamp")));
             }
             return Ok(Line::Used);
         }
@@ -395,10 +473,7 @@ impl Fold for CodexFold {
         if event_message {
             self.events_seen = true;
             if !self.has_events {
-                if self.response_messages_shown {
-                    return Err(Rebuild::EventMode);
-                }
-                self.has_events = true;
+                self.enter_event_mode(sink);
             }
         }
         match (entry_type, payload_type) {
@@ -439,13 +514,15 @@ impl Fold for CodexFold {
         turns.sort_by_key(|t| t.order);
         for turn in turns.into_iter().filter(|t| t.status == TurnStatus::Aborted) {
             let content = interruption_message(turn.reason.as_deref());
-            items.push((Pending { role: Role::System, at: turn.completed_at, completed_at: None, content, tool_call: None }, true));
+            let notice =
+                Pending { role: Role::System, at: turn.completed_at, completed_at: None, content, tool_call: None, from_response: false };
+            items.push((notice, true));
         }
         // Stable sort by time only, as JS `Array.prototype.sort` did on the appended list.
         items.sort_by(|a, b| a.0.at.unwrap_or(f64::INFINITY).total_cmp(&b.0.at.unwrap_or(f64::INFINITY)));
         for (item, notice) in items {
-            self.last_key = Some(sort_key(item.at, notice));
-            sink.push(item.role, item.at, item.completed_at, item.content, item.tool_call)?;
+            let key = sort_key(item.at, notice);
+            self.push(sink, item, key)?;
         }
         Ok(())
     }
@@ -470,6 +547,18 @@ impl Fold for CodexFold {
             parent_session_id: self.parent.clone(),
             usage: self.usage.clone(),
             sub_agents: Vec::new(),
+            context: self.context_tokens.map(|context_tokens| ContextReading {
+                context_tokens,
+                context_window: self.context_window,
+                // Codex records the boundary but no token counts alongside it.
+                compaction: (self.compactions > 0).then_some(Compaction {
+                    count: self.compactions,
+                    pre_tokens: None,
+                    post_tokens: None,
+                    trigger: None,
+                }),
+            }),
+            rate_limits: self.rate_limits.clone(),
         })
     }
 }

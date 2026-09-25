@@ -21,7 +21,7 @@ pub mod muse;
 pub mod opencode;
 
 use crate::markers::{Hints, Rebuild, Visible};
-use crate::model::{Cwd, Message, Provider, Role, SubAgent, ToolCall, Usage};
+use crate::model::{ContextReading, Cwd, Message, Provider, Role, SubAgent, ToolCall, Usage, UsageTurn};
 use crate::paths::ProjectDirResolver;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
@@ -41,6 +41,10 @@ pub struct Facts {
     pub parent_session_id: Option<String>,
     pub usage: Option<Usage>,
     pub sub_agents: Vec<SubAgent>,
+    /// The latest request's context (the context meter), when the transcript records one.
+    pub context: Option<ContextReading>,
+    /// Codex: the last `rate_limits` payload, raw JSON.
+    pub rate_limits: Option<String>,
 }
 
 /// What a parser may know about the file it reads, besides its bytes.
@@ -78,9 +82,39 @@ pub struct Sink {
     pub visible: Visible,
     pub next_seq: u32,
     pub out: Vec<Message>,
+    /// Usage turns, in transcript order; numbered from `first_turn`. Never withdrawn.
+    pub turns: Vec<UsageTurn>,
+    pub first_turn: u32,
+    /// The first seq this read numbers; lower seqs are already stored.
+    first_seq: u32,
+    /// Stored seqs a line of this read withdrew (`withdraw`), in their stored numbering.
+    pub withdrawn: Vec<u32>,
 }
 
 impl Sink {
+    pub fn new(visible: Visible, next_seq: u32, first_turn: u32) -> Sink {
+        Sink { visible, next_seq, out: Vec::new(), turns: Vec::new(), first_turn, first_seq: next_seq, withdrawn: Vec::new() }
+    }
+
+    pub fn turn(&mut self, turn: UsageTurn) {
+        self.turns.push(turn);
+    }
+
+    /// Take back earlier messages (ascending seqs, stored or from this read) as if they had never
+    /// been pushed: later messages close the gaps. Stored ones go to `withdrawn` for the store to
+    /// delete and renumber. At most once per read: `withdrawn` keeps the stored numbering.
+    /// Only Codex's switch to event mode withdraws (codex.rs `enter_event_mode`).
+    pub fn withdraw(&mut self, seqs: &[u32]) {
+        debug_assert!(self.withdrawn.is_empty(), "one withdrawal per read");
+        debug_assert!(seqs.windows(2).all(|w| w[0] < w[1]));
+        self.withdrawn = seqs.iter().copied().filter(|&s| s < self.first_seq).collect();
+        self.out.retain(|m| seqs.binary_search(&m.seq).is_err());
+        for m in &mut self.out {
+            m.seq -= seqs.partition_point(|&s| s < m.seq) as u32;
+        }
+        self.next_seq -= seqs.len() as u32;
+    }
+
     pub fn push(
         &mut self,
         role: Role,
@@ -112,6 +146,12 @@ pub struct DocMessage {
 pub struct Doc {
     pub facts: Facts,
     pub messages: Vec<DocMessage>,
+    pub turns: Vec<UsageTurn>,
+}
+
+/// `typeof v === 'number' && Number.isFinite(v)` (the context meter's `num`).
+pub fn finite(v: Option<&Value>) -> Option<f64> {
+    v?.as_f64().filter(|f| f.is_finite())
 }
 
 /// What a line did. `Malformed` lines are skipped and counted, as the TS parsers warned.
@@ -133,6 +173,33 @@ pub fn digest(text: &str) -> u64 {
         hash = hash.wrapping_mul(0x0100_0000_01b3);
     }
     hash ^ (text.len() as u64).rotate_left(32)
+}
+
+/// Serde for a set of digests: one base64 string of the sorted little-endian values. A checkpoint
+/// is rewritten on every append, and the 934 MB rollout's 8.4k Codex call ids as a JSON number
+/// array were 176 KB of its 188 KB checkpoint: ~2.4 ms of every append (T13a). Base64 is 11 bytes
+/// per id and decodes without number parsing.
+pub mod digest_set {
+    use base64::Engine;
+    use base64::engine::general_purpose::STANDARD_NO_PAD;
+    use serde::{Deserialize, Deserializer, Serializer};
+    use std::collections::HashSet;
+
+    pub fn serialize<S: Serializer>(set: &HashSet<u64>, s: S) -> Result<S::Ok, S::Error> {
+        let mut sorted: Vec<u64> = set.iter().copied().collect();
+        sorted.sort_unstable();
+        let bytes: Vec<u8> = sorted.iter().flat_map(|d| d.to_le_bytes()).collect();
+        s.serialize_str(&STANDARD_NO_PAD.encode(bytes))
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(d: D) -> Result<HashSet<u64>, D::Error> {
+        let text = <std::borrow::Cow<'de, str>>::deserialize(d)?;
+        let bytes = STANDARD_NO_PAD.decode(text.as_bytes()).map_err(serde::de::Error::custom)?;
+        if bytes.len() % 8 != 0 {
+            return Err(serde::de::Error::custom("digest set length is not a multiple of 8"));
+        }
+        Ok(bytes.chunks_exact(8).map(|c| u64::from_le_bytes(c.try_into().expect("8 bytes"))).collect())
+    }
 }
 
 /// Consecutive duplicate suppression plus the "an assistant reply starts when the message before

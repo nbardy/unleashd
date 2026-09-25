@@ -3,8 +3,8 @@
 //! times. Port of `parseOpenCodeSessionDirectory` + usage-routes.ts `parseOpenCodeSessionUsage`.
 //! A session is a directory tree, so it is re-read whole when its composite mtime moves.
 
-use super::{Ctx, Doc, DocMessage, Facts, normalize_dir, parse_time, widen};
-use crate::model::{Cwd, Provider, Role, Usage};
+use super::{Ctx, Doc, DocMessage, Facts, finite, normalize_dir, parse_time, widen};
+use crate::model::{ContextReading, Cwd, Provider, Role, Usage, UsageTurn};
 use crate::text::{format_buddy_receipt, format_tool_use, js_trim};
 use serde_json::Value;
 use std::path::{Path, PathBuf};
@@ -177,6 +177,10 @@ pub fn read(session_dir: &Path, ctx: &Ctx) -> std::io::Result<Option<Doc>> {
     let mut messages: Vec<DocMessage> = Vec::new();
     let mut usage = Usage::default();
     let mut has_usage = false;
+    let mut turns: Vec<UsageTurn> = Vec::new();
+    // The context meter: the newest assistant message by creation time (`readOpenCodeContext`).
+    let mut newest = -1.0;
+    let mut context_tokens: Option<f64> = None;
     for file in json_files(session_dir) {
         let Some(data) = read_json(&file) else { continue };
         let role = match data.get("role").and_then(Value::as_str) {
@@ -215,7 +219,20 @@ pub fn read(session_dir: &Path, ctx: &Ctx) -> std::io::Result<Option<Doc>> {
             usage.output += o;
             usage.cache_read += r;
             usage.cache_write += w;
-            has_usage |= i + o + r + w > 0.0 || n("/cost") > 0.0;
+            let cost = finite(data.get("cost"));
+            if i + o + r + w > 0.0 || cost.is_some_and(|c| c > 0.0) {
+                has_usage = true;
+                let turn_model = model_name(data.get("providerID").and_then(Value::as_str), data.get("modelID").and_then(Value::as_str));
+                let turn_at = finite(data.pointer("/time/created")).or_else(|| finite(data.pointer("/time/completed")));
+                let usage = Usage { input: i, output: o, cache_read: r, cache_write: w };
+                turns.push(UsageTurn { at: turn_at, model: turn_model, usage, reported_cost: cost });
+            }
+            let created = finite(data.pointer("/time/created")).or_else(|| finite(data.pointer("/time/completed"))).unwrap_or(0.0);
+            let parts = ["/tokens/input", "/tokens/cache/read", "/tokens/cache/write"].map(|p| finite(data.pointer(p)));
+            if created >= newest && parts.iter().any(Option::is_some) {
+                newest = created;
+                context_tokens = Some(parts.iter().map(|p| p.unwrap_or(0.0)).sum());
+            }
         }
         let title = data.pointer("/summary/title").and_then(Value::as_str);
         let body = js_trim(&content(role, &parts(root, &message_id), title)).to_string();
@@ -253,7 +270,10 @@ pub fn read(session_dir: &Path, ctx: &Ctx) -> std::io::Result<Option<Doc>> {
             parent_session_id: None,
             usage: has_usage.then_some(usage),
             sub_agents: Vec::new(),
+            context: context_tokens.map(|context_tokens| ContextReading { context_tokens, context_window: None, compaction: None }),
+            rate_limits: None,
         },
         messages,
+        turns,
     }))
 }

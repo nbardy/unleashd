@@ -3,7 +3,7 @@
 //! function. A panic in a call becomes a rejected promise.
 
 use crate::engine::Report;
-use crate::model::{Format, Message, Root, SessionRow};
+use crate::model::{ContextReading, Format, Message, Root, SessionRow, UsageQuery, UsageReport};
 use crate::store::Reader;
 use crate::watch::{self, IngestEvent};
 use napi::bindgen_prelude::*;
@@ -168,6 +168,22 @@ impl Ingest {
     pub async fn messages(&self, session_id: String, options: MessagesOptions) -> Result<Vec<Message>> {
         let reader = self.reader.clone();
         blocking(move || reader.lock().map_err(to_js)?.messages(&session_id, options.after_seq, options.limit).map_err(to_js)).await
+    }
+
+    /// Provider-counted token usage of the turns in `[since, until)`, grouped by session, UTC day
+    /// or model, plus the latest Codex rate limits. Replaces `/api/usage`'s transcript parsers.
+    #[napi]
+    pub async fn usage(&self, query: UsageQuery) -> Result<UsageReport> {
+        let reader = self.reader.clone();
+        blocking(move || reader.lock().map_err(to_js)?.usage(&query).map_err(to_js)).await
+    }
+
+    /// The latest request's context for a native session id (the context meter), or null when no
+    /// transcript of that id records one. Replaces session-context.ts.
+    #[napi]
+    pub async fn latest_context(&self, session_id: String) -> Result<Option<ContextReading>> {
+        let reader = self.reader.clone();
+        blocking(move || reader.lock().map_err(to_js)?.latest_context(&session_id).map_err(to_js)).await
     }
 
     /// Stop watching and release `onChange` (so Node can exit). Idempotent.

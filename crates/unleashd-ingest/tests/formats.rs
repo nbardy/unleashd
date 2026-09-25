@@ -71,7 +71,7 @@ fn codex_history_keeps_tool_calls_in_event_and_response_modes() {
 #[test]
 fn codex_resume_equals_full_read_including_the_event_mode_switch() {
     // With events the first prompt arrives twice: as a response item, then as an event. A resume
-    // that already showed the response item must re-read (Rebuild::EventMode).
+    // that already showed the response item withdraws it (Apply::Withdraw) and keeps reading.
     let dir = tempfile::tempdir().unwrap();
     assert_resume_equals_full(Format::Codex, dir.path(), "events.jsonl", &codex_tool_history(true));
     assert_resume_equals_full(Format::Codex, dir.path(), "responses.jsonl", &codex_tool_history(false));

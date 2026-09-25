@@ -28,6 +28,8 @@ serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["preserve_order"] }
 notify = { version = "8", default-features = false, features = ["macos_fsevent"] }
 memchr = "2"
+# kqueue for the direct per-file watch (filewatch.rs); notify cannot run FSEvents and kqueue together.
+libc = "0.2"
 regex = "1"
 base64 = "0.22"
 rayon = "1"

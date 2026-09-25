@@ -2,9 +2,12 @@
 //!
 //! The ingest thread: open the store, start the FSEvents watcher, scan, then apply events until
 //! stopped. The watcher starts BEFORE the scan so a change made during the scan is not missed
-//! (it is applied after; re-reading an unchanged source is a stat).
+//! (it is applied after; re-reading an unchanged source is a stat). FSEvents (recursive) finds
+//! new and changed files; a file it reports as written is then also watched directly with kqueue
+//! (`filewatch.rs`), so its next append wakes this thread on the write itself.
 
 use crate::engine::{Engine, Report};
+use crate::filewatch::FileWatch;
 use crate::model::Root;
 use crate::store::Committed;
 use notify::{RecursiveMode, Watcher};
@@ -13,11 +16,15 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::{Path, PathBuf};
 use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender, channel};
 use std::thread::JoinHandle;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
-/// Events arriving within this window after the first are applied together: an agent turn
-/// writes several lines in quick succession, and one batch is one revision.
-const SETTLE: Duration = Duration::from_millis(50);
+/// Burst settle: after an event the batch waits `QUIET` for the next one and closes when none
+/// comes (or `MAX_BATCH` after its first event, so a steady stream still commits). An agent turn
+/// writes several lines in quick succession, and one batch is one revision. This was one fixed
+/// 50 ms window, which every append waited out: append → onChange p50 68 ms (T13a, before).
+/// Guard: `tests/watch.rs` `appends_reach_on_change_within_single_digit_ms`.
+pub const QUIET: Duration = Duration::from_millis(2);
+pub const MAX_BATCH: Duration = Duration::from_millis(25);
 
 /// The one slow backstop: FSEvents can coalesce away or drop events (sleep/wake, a full kernel
 /// queue); without it a missed append would stay unseen until the file is written again. A scan
@@ -34,6 +41,8 @@ pub enum IngestEvent {
 
 enum Msg {
     Fs(notify::Result<notify::Event>),
+    /// A write to a file watched directly (kqueue).
+    File(PathBuf),
     Stop,
 }
 
@@ -96,6 +105,16 @@ fn run(
         }
     };
     let missing_roots = engine.missing_roots();
+    let file_tx = watcher_tx.clone();
+    let files = match FileWatch::start(move |path| {
+        let _ = file_tx.send(Msg::File(path));
+    }) {
+        Ok(files) => files,
+        Err(e) => {
+            let _ = ready.send(Err(format!("kqueue: {e}")));
+            return;
+        }
+    };
     let watcher = notify::recommended_watcher(move |event| {
         let _ = watcher_tx.send(Msg::Fs(event));
     });
@@ -127,34 +146,43 @@ fn run(
     loop {
         let first = match rx.recv_timeout(BACKSTOP) {
             Ok(Msg::Stop) | Err(RecvTimeoutError::Disconnected) => break,
-            Ok(Msg::Fs(event)) => event,
-            Err(RecvTimeoutError::Timeout) => Ok(notify::Event::new(notify::EventKind::Other).set_flag(notify::event::Flag::Rescan)),
+            Ok(msg) => msg,
+            Err(RecvTimeoutError::Timeout) => {
+                Msg::Fs(Ok(notify::Event::new(notify::EventKind::Other).set_flag(notify::event::Flag::Rescan)))
+            }
         };
+        let opened = Instant::now();
         let mut paths = BTreeSet::new();
         let mut rescan = false;
         let mut stop = false;
-        let take = |event: notify::Result<notify::Event>, paths: &mut BTreeSet<PathBuf>, rescan: &mut bool| match event {
-            Ok(event) => {
+        let take = |msg: Msg, paths: &mut BTreeSet<PathBuf>, rescan: &mut bool| match msg {
+            Msg::Fs(Ok(event)) => {
                 *rescan |= event.need_rescan();
                 paths.extend(event.paths);
             }
             // A watcher error means events may be lost: re-check everything.
-            Err(_) => *rescan = true,
+            Msg::Fs(Err(_)) => *rescan = true,
+            Msg::File(path) => {
+                paths.insert(path);
+            }
+            Msg::Stop => unreachable!("handled by the receive loop"),
         };
         take(first, &mut paths, &mut rescan);
         loop {
-            match rx.recv_timeout(SETTLE) {
-                Ok(Msg::Fs(event)) => take(event, &mut paths, &mut rescan),
+            let wait = QUIET.min(MAX_BATCH.saturating_sub(opened.elapsed()));
+            match rx.recv_timeout(wait) {
                 Ok(Msg::Stop) | Err(RecvTimeoutError::Disconnected) => {
                     stop = true;
                     break;
                 }
+                Ok(msg) => take(msg, &mut paths, &mut rescan),
                 Err(RecvTimeoutError::Timeout) => break,
             }
         }
         if stop {
             break;
         }
+        let growing = engine.appendable(&paths);
         let result =
             catch_unwind(AssertUnwindSafe(|| if rescan { engine.scan(&mut on_commit) } else { engine.changed(paths, &mut on_commit) }));
         match result {
@@ -162,6 +190,13 @@ fn run(
             Ok(_) => {}
             Err(p) => emit(IngestEvent::Failed(format!("ingest batch panicked: {}", panic_text(p)))),
         }
+        // Watched after the read, so the first append of a file arrives through FSEvents and
+        // every later one through kqueue. A file that vanished in between is left to FSEvents.
+        let now = Instant::now();
+        for path in growing {
+            let _ = files.touch(&path, now);
+        }
     }
     drop(watcher);
+    files.stop();
 }

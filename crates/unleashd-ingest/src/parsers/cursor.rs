@@ -98,6 +98,8 @@ impl Fold for CursorFold {
             parent_session_id: None,
             usage: None,
             sub_agents: Vec::new(),
+            context: None,
+            rate_limits: None,
         })
     }
 }

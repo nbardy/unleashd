@@ -59,7 +59,10 @@ conversation applies the effects.
 ## one-write-path
 **Smell:** one mutation method or one table per variant of the same thing.
 **Pattern:** one append/write path for a concept, with read models derived from it.
-**Here:** crate `posts.rs`, where every DM, channel post, reply and task comment is a `post` in a channel; `records/store.rs` `put`, the one write of a conversation record and its session index.
+**Here:** crate `posts.rs`, where every DM, channel post, reply and task comment is a `post` in a channel; `records/store.rs` `put`, the one write of a conversation record and its session index. Ingest crate
+`store.rs` `Writer::apply`: transcripts are parsed once, and the usage/cost numbers (`usage_turn`) and the context
+meter (`session.context`) are read models of that one ingest, replacing two more transcript parsers
+(`usage-routes.ts`, `session-context.ts`).
 
 ## idempotency-keys
 **Smell:** ad-hoc dedupe, retry flags, "did we already do this?" queries.
@@ -73,7 +76,10 @@ A replay returns the original result.
 backstop tick. Shared clocks run only while someone subscribes.
 **Here:** `client/src/hooks/useTimeTick.ts` (8 intervals → 1); Buddy runner (T11); the shared chat-admission tick
 (`buddies/turn-policy.ts`); `SwarmObservers` in `server/src/swarm/observer.ts` (one async poller per folder, only
-while a turn runs there, replacing one blocking 2 s poller per running conversation).
+while a turn runs there, replacing one blocking 2 s poller per running conversation). Ingest crate `watch.rs` +
+`filewatch.rs`: FSEvents for discovery, a kqueue watch on each file that is being written, and a batch that closes
+2 ms after its last event (was a fixed 50 ms window: append → onChange p50 68 ms → 4–6 ms). The 10-minute rescan is
+the backstop.
 
 ## patches-not-snapshots
 **Smell:** resending whole objects on small changes (5 MB on "mark done").

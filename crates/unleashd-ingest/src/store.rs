@@ -14,13 +14,17 @@
 //! list row per source that holds a session), `message` (the visible history, keyed by source
 //! and seq) and `removed` (tombstones so `listSessions({ since })` can page deletions too).
 
-use crate::model::{Cwd, Format, Identity, Message, Provider, Role, SessionRow, SubAgent, TimeFrom, ToolCall, Usage};
-use crate::read::{Checkpoint, Outcome, RowData, Stamp};
+use crate::model::{
+    ContextReading, Cwd, Format, Identity, Message, Provider, Role, SessionRow, SubAgent, TimeFrom, ToolCall, Usage, UsageGroup,
+    UsageGroupBy, UsageKey, UsageQuery, UsageReport,
+};
+use crate::read::{Apply, Checkpoint, Outcome, RowData, Stamp};
 use rusqlite::{Connection, OptionalExtension, params};
 use std::collections::HashMap;
 use std::path::Path;
 
-pub const SCHEMA_VERSION: i64 = 1;
+/// 2: `usage_turn`, `session.context`, `session.rate_limits` (T13a).
+pub const SCHEMA_VERSION: i64 = 2;
 
 const SCHEMA: &str = "
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value INTEGER NOT NULL) WITHOUT ROWID;
@@ -52,10 +56,13 @@ CREATE TABLE IF NOT EXISTS session (
   resumed_from TEXT,
   usage TEXT,
   sub_agents TEXT NOT NULL,
-  rev INTEGER NOT NULL
+  rev INTEGER NOT NULL,
+  context TEXT,
+  rate_limits TEXT
 );
 CREATE INDEX IF NOT EXISTS session_by_rev ON session(rev);
 CREATE INDEX IF NOT EXISTS session_by_id ON session(session_id, activity_at);
+CREATE INDEX IF NOT EXISTS session_rate_limits ON session(activity_at) WHERE rate_limits IS NOT NULL;
 CREATE TABLE IF NOT EXISTS message (
   source_id INTEGER NOT NULL,
   seq INTEGER NOT NULL,
@@ -67,6 +74,20 @@ CREATE TABLE IF NOT EXISTS message (
   tool_input TEXT,
   PRIMARY KEY (source_id, seq)
 ) WITHOUT ROWID;
+-- One provider-counted request per row (model.rs UsageTurn), numbered per source in file order.
+CREATE TABLE IF NOT EXISTS usage_turn (
+  source_id INTEGER NOT NULL,
+  n INTEGER NOT NULL,
+  at REAL,
+  model TEXT,
+  input REAL NOT NULL,
+  output REAL NOT NULL,
+  cache_read REAL NOT NULL,
+  cache_write REAL NOT NULL,
+  reported_cost REAL,
+  PRIMARY KEY (source_id, n)
+) WITHOUT ROWID;
+CREATE INDEX IF NOT EXISTS usage_turn_by_at ON usage_turn(at);
 CREATE TABLE IF NOT EXISTS removed (
   source_path TEXT PRIMARY KEY,
   session_id TEXT NOT NULL,
@@ -170,6 +191,11 @@ impl Writer {
                  RETURNING id",
             )?;
             let mut clear_messages = tx.prepare_cached("DELETE FROM message WHERE source_id = ?1")?;
+            let mut clear_turns = tx.prepare_cached("DELETE FROM usage_turn WHERE source_id = ?1")?;
+            let mut insert_turn = tx.prepare_cached(
+                "INSERT OR REPLACE INTO usage_turn (source_id, n, at, model, input, output, cache_read, cache_write, reported_cost)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+            )?;
             let mut insert_message = tx.prepare_cached(
                 "INSERT OR REPLACE INTO message (source_id, seq, role, at, completed_at, content, tool_name, tool_input) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
             )?;
@@ -180,16 +206,21 @@ impl Writer {
             let mut upsert_row = tx.prepare_cached(
                 "INSERT OR REPLACE INTO session (source_id, session_id, provider, format, source_path, cwd, observed_model, title, label,
                    created_at, activity_at, time_from, message_count, parent_session_id, identity, listed, swarm_debug_prefix,
-                   resumed_from, usage, sub_agents, rev)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21)",
+                   resumed_from, usage, sub_agents, rev, context, rate_limits)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23)",
             )?;
             for (path, format, outcome) in outcomes {
                 let checkpoint = outcome.checkpoint.as_ref().map(|c| serde_json::to_vec(c).expect("checkpoint serializes"));
                 let stamp = serde_json::to_string(&outcome.stamp).expect("stamp serializes");
                 let id: i64 = upsert_source.query_row(params![path, format.as_str(), stamp, checkpoint], |r| r.get(0))?;
                 committed.sources.push((path.clone(), id));
-                if outcome.replace {
-                    clear_messages.execute([id])?;
+                match &outcome.apply {
+                    Apply::Append => {}
+                    Apply::Replace => {
+                        clear_messages.execute([id])?;
+                        clear_turns.execute([id])?;
+                    }
+                    Apply::Withdraw(seqs) => withdraw(&tx, id, seqs)?,
                 }
                 for m in &outcome.messages {
                     let (tool_name, tool_input) = match &m.tool_call {
@@ -199,6 +230,11 @@ impl Writer {
                     insert_message.execute(params![id, m.seq, m.role.as_str(), m.at, m.completed_at, m.content, tool_name, tool_input])?;
                 }
                 committed.messages_written += outcome.messages.len() as u64;
+                for (i, t) in outcome.turns.iter().enumerate() {
+                    let u = &t.usage;
+                    let n = outcome.first_turn + i as u32;
+                    insert_turn.execute(params![id, n, t.at, t.model, u.input, u.output, u.cache_read, u.cache_write, t.reported_cost])?;
+                }
                 let previous: Option<(String, bool)> = old_row.query_row([id], |r| Ok((r.get(0)?, r.get(1)?))).optional()?;
                 match (&outcome.row, previous) {
                     (None, None) => {}
@@ -234,6 +270,7 @@ impl Writer {
                     committed.removed.push(session_id);
                 }
                 clear_messages.execute([id])?;
+                clear_turns.execute([id])?;
                 delete_row.execute([id])?;
                 delete_source.execute([id])?;
             }
@@ -254,12 +291,42 @@ impl Writer {
         Ok(self.conn.query_row("SELECT value FROM meta WHERE key = 'rev'", [], |r| r.get(0))?)
     }
 
+    /// The stored context and rate limits of a source, for "did this read change anything?".
+    pub fn extras_of(&self, path: &str) -> Result<(Option<ContextReading>, Option<String>)> {
+        let mut stmt = self.conn.prepare_cached(EXTRAS_OF)?;
+        let found: Option<(Option<String>, Option<String>)> = stmt.query_row([path], |r| Ok((r.get(0)?, r.get(1)?))).optional()?;
+        let (context, limits) = found.unwrap_or((None, None));
+        let context = context.map(|c| serde_json::from_str(&c)).transpose().map_err(corrupt("context"))?;
+        Ok((context, limits))
+    }
+
     /// The stored row of a source, for "did this read change what is shown?".
     pub fn row_of(&self, path: &str) -> Result<Option<SessionRow>> {
         let mut stmt = self.conn.prepare_cached(&format!("{ROW_SELECT} WHERE source_id = (SELECT id FROM source WHERE path = ?1)"))?;
         stmt.query_row([path], decode_row).optional()?.transpose()
     }
 }
+
+/// Delete stored messages `seqs` (ascending) of source `id` and renumber the later ones to close
+/// the gaps, as `Sink::withdraw` did to this read's own messages. The rows between the i-th and
+/// the next withdrawn seq move down by i + 1: one primary-key range update per gap, through
+/// negative seqs so no update collides with a key still in use. (A correlated count per row took
+/// 0.9 s for the 891 MB rollout's 2,076 withdrawn messages.)
+fn withdraw(tx: &rusqlite::Transaction<'_>, id: i64, seqs: &[u32]) -> Result<()> {
+    let mut delete = tx.prepare_cached(WITHDRAW_DELETE)?;
+    let mut shift = tx.prepare_cached(WITHDRAW_SHIFT)?;
+    for (i, &seq) in seqs.iter().enumerate() {
+        delete.execute(params![id, seq])?;
+        let next = seqs.get(i + 1).map_or(i64::MAX, |&n| n as i64);
+        shift.execute(params![id, seq, next, i as i64 + 1])?;
+    }
+    tx.prepare_cached(WITHDRAW_SETTLE)?.execute([id])?;
+    Ok(())
+}
+
+const WITHDRAW_DELETE: &str = "DELETE FROM message WHERE source_id = ?1 AND seq = ?2";
+const WITHDRAW_SHIFT: &str = "UPDATE message SET seq = -1 - (seq - ?4) WHERE source_id = ?1 AND seq > ?2 AND seq < ?3";
+const WITHDRAW_SETTLE: &str = "UPDATE message SET seq = -1 - seq WHERE source_id = ?1 AND seq < 0";
 
 fn write_row(
     stmt: &mut rusqlite::CachedStatement<'_>,
@@ -293,9 +360,13 @@ fn write_row(
         f.usage.as_ref().map(|u| serde_json::to_string(u).expect("usage serializes")),
         serde_json::to_string(&f.sub_agents).expect("sub-agents serialize"),
         rev,
+        f.context.as_ref().map(|c| serde_json::to_string(c).expect("context serializes")),
+        f.rate_limits,
     ])?;
     Ok(())
 }
+
+const EXTRAS_OF: &str = "SELECT context, rate_limits FROM session WHERE source_id = (SELECT id FROM source WHERE path = ?1)";
 
 const ROW_SELECT: &str = "SELECT session_id, provider, format, source_path, cwd, observed_model, title, label, created_at, activity_at,
   time_from, message_count, parent_session_id, identity, swarm_debug_prefix, resumed_from, usage, sub_agents, rev FROM session";
@@ -417,6 +488,61 @@ impl Reader {
         .collect()
     }
 
+    /// The latest request's context for a native session id: the most recently active source of
+    /// that id that recorded one (listed or not: a context belongs to whatever file holds it).
+    pub fn latest_context(&self, session_id: &str) -> Result<Option<ContextReading>> {
+        let mut stmt = self.conn.prepare_cached(LATEST_CONTEXT)?;
+        let found: Option<String> = stmt.query_row([session_id], |r| r.get(0)).optional()?;
+        found.map(|c| serde_json::from_str(&c)).transpose().map_err(corrupt("context"))
+    }
+
+    /// Usage turns in `[since, until)` grouped as asked, plus the latest Codex rate limits.
+    /// Pattern: one-write-path (docs/patterns.md#one-write-path) — derived from the turns the
+    /// ingest writes; `/api/usage` and the context meter stop re-parsing transcripts.
+    pub fn usage(&self, query: &UsageQuery) -> Result<UsageReport> {
+        let tx = self.conn.unchecked_transaction()?;
+        let until = query.until.unwrap_or(f64::MAX);
+        let sql = match query.group_by {
+            UsageGroupBy::Session => USAGE_BY_SESSION,
+            UsageGroupBy::Day => USAGE_BY_DAY,
+            UsageGroupBy::Model => USAGE_BY_MODEL,
+        };
+        let groups = {
+            let mut stmt = tx.prepare_cached(sql)?;
+            let rows = stmt.query_map(params![query.since, until], |r| {
+                let key = (
+                    r.get::<_, Option<String>>(0)?,
+                    r.get::<_, Option<String>>(1)?,
+                    r.get::<_, Option<String>>(2)?,
+                    r.get::<_, Option<String>>(3)?,
+                    r.get::<_, Option<String>>(4)?,
+                );
+                let totals = UsageGroup {
+                    key: UsageKey::Day { day: String::new() },
+                    turns: r.get(5)?,
+                    sessions: r.get(6)?,
+                    input: r.get(7)?,
+                    output: r.get(8)?,
+                    cache_read: r.get(9)?,
+                    cache_write: r.get(10)?,
+                    reported_cost_usd: r.get(11)?,
+                    first_at: r.get(12)?,
+                    last_at: r.get(13)?,
+                };
+                Ok((key, totals))
+            })?;
+            rows.map(|row| {
+                let ((a, b, c, d, model), totals) = row?;
+                let key = usage_key(query.group_by, a, b, c, d, model)?;
+                Ok(UsageGroup { key, ..totals })
+            })
+            .collect::<Result<Vec<_>>>()?
+        };
+        let codex_rate_limits: Option<String> = tx.query_row(LATEST_RATE_LIMITS, [], |r| r.get(0)).optional()?;
+        tx.commit()?;
+        Ok(UsageReport { groups, codex_rate_limits })
+    }
+
     /// `EXPLAIN QUERY PLAN` of every read this type runs; used by the query-plan guard.
     pub fn plans(&self) -> Result<Vec<(String, Vec<String>)>> {
         let queries = [
@@ -431,14 +557,87 @@ impl Reader {
             "SELECT session_id, listed FROM session WHERE source_id = 1".to_string(),
             "DELETE FROM message WHERE source_id = 1".to_string(),
             "SELECT value FROM meta WHERE key = 'rev'".to_string(),
+            LATEST_CONTEXT.replace("?1", "'x'"),
+            LATEST_RATE_LIMITS.to_string(),
+            EXTRAS_OF.replace("?1", "'x'"),
+            USAGE_BY_SESSION.replace("?1", "0").replace("?2", "1"),
+            USAGE_BY_DAY.replace("?1", "0").replace("?2", "1"),
+            USAGE_BY_MODEL.replace("?1", "0").replace("?2", "1"),
         ];
-        queries
-            .into_iter()
-            .map(|q| {
-                let mut stmt = self.conn.prepare(&format!("EXPLAIN QUERY PLAN {q}"))?;
-                let details = stmt.query_map([], |r| r.get::<_, String>(3))?.collect::<rusqlite::Result<Vec<_>>>()?;
-                Ok((q, details))
-            })
-            .collect()
+        explain(&self.conn, queries.into_iter())
     }
+}
+
+/// `EXPLAIN QUERY PLAN` of each query: (query, plan lines).
+fn explain(conn: &Connection, queries: impl Iterator<Item = String>) -> Result<Vec<(String, Vec<String>)>> {
+    queries
+        .map(|q| {
+            let mut stmt = conn.prepare(&format!("EXPLAIN QUERY PLAN {q}"))?;
+            let details = stmt.query_map([], |r| r.get::<_, String>(3))?.collect::<rusqlite::Result<Vec<_>>>()?;
+            Ok((q, details))
+        })
+        .collect()
+}
+
+impl Writer {
+    /// `EXPLAIN QUERY PLAN` of the writer's statements that are not a primary-key lookup by
+    /// construction; used by the query-plan guard.
+    pub fn plans(&self) -> Result<Vec<(String, Vec<String>)>> {
+        let queries = [
+            WITHDRAW_SHIFT.replace("?1", "1").replace("?2", "0").replace("?3", "9").replace("?4", "1"),
+            WITHDRAW_SETTLE.replace("?1", "1"),
+        ];
+        explain(&self.conn, queries.into_iter())
+    }
+}
+
+const LATEST_CONTEXT: &str = "SELECT context FROM session WHERE session_id = ?1 AND context IS NOT NULL ORDER BY activity_at DESC LIMIT 1";
+const LATEST_RATE_LIMITS: &str = "SELECT rate_limits FROM session WHERE rate_limits IS NOT NULL ORDER BY activity_at DESC LIMIT 1";
+
+/// The totals every grouping selects, after its five key columns.
+macro_rules! usage_totals {
+    () => {
+        "count(*), count(DISTINCT t.source_id), sum(t.input), sum(t.output), sum(t.cache_read), sum(t.cache_write),
+         coalesce(sum(t.reported_cost), 0), min(t.at), max(t.at)
+         FROM usage_turn t JOIN session s ON s.source_id = t.source_id
+         WHERE t.at >= ?1 AND t.at < ?2"
+    };
+}
+
+const USAGE_BY_SESSION: &str = concat!(
+    "SELECT s.session_id, s.source_path, s.provider, s.format,
+       (SELECT u.model FROM usage_turn u WHERE u.source_id = t.source_id AND u.model IS NOT NULL ORDER BY u.n LIMIT 1), ",
+    usage_totals!(),
+    " GROUP BY t.source_id"
+);
+const USAGE_BY_DAY: &str =
+    concat!("SELECT strftime('%Y-%m-%d', t.at / 1000, 'unixepoch') AS day, NULL, NULL, NULL, NULL, ", usage_totals!(), " GROUP BY day");
+const USAGE_BY_MODEL: &str = concat!("SELECT NULL, NULL, s.provider, NULL, t.model, ", usage_totals!(), " GROUP BY s.provider, t.model");
+
+fn usage_key(
+    by: UsageGroupBy,
+    a: Option<String>,
+    b: Option<String>,
+    provider: Option<String>,
+    format: Option<String>,
+    model: Option<String>,
+) -> Result<UsageKey> {
+    let provider = || {
+        let p = provider.clone().unwrap_or_default();
+        Provider::parse(&p).ok_or_else(|| StoreError::Corrupt(format!("provider {p}")))
+    };
+    Ok(match by {
+        UsageGroupBy::Session => {
+            let f = format.clone().unwrap_or_default();
+            UsageKey::Session {
+                session_id: a.unwrap_or_default(),
+                source_path: b.unwrap_or_default(),
+                provider: provider()?,
+                format: Format::parse(&f).ok_or_else(|| StoreError::Corrupt(format!("format {f}")))?,
+                model,
+            }
+        }
+        UsageGroupBy::Day => UsageKey::Day { day: a.unwrap_or_default() },
+        UsageGroupBy::Model => UsageKey::Model { provider: provider()?, model },
+    })
 }

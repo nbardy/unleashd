@@ -1,18 +1,21 @@
 //! Muse: `~/.local/share/muse/sessions/YYYY/MM/DD/<id>/session.jsonl` (plus the other `.json`
-//! files the TS discovery also reads there). Port of `parseMuseSessionFile`.
+//! files the TS discovery also reads there). Port of `parseMuseSessionFile` + session-context.ts
+//! `parseMuseLines` (the context meter: `muse exec --json` omits token counts, so the durable log
+//! is the only source).
 //!
 //! Messages are sorted by `recorded_at` before duplicates are dropped, so an append whose time is
 //! earlier than the last message's forces a full re-read (`Rebuild::Reordered`).
 
-use super::{Ctx, Facts, Fold, Line, Previous, Sink, normalize_dir, parse_time, widen};
+use super::{Ctx, Facts, Fold, Line, Previous, Sink, finite, normalize_dir, parse_time, widen};
 use crate::markers::{Hints, Rebuild, buddy_context_from_value, durable_kind_from_value};
-use crate::model::{Cwd, Provider, Role};
+use crate::model::{Compaction, ContextReading, Cwd, Provider, Role};
 use crate::text::{format_buddy_receipt, format_tool_use, js_trim};
 use regex::Regex;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::sync::LazyLock;
 
+static SOFT: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"soft=([0-9.]+)").unwrap());
 static UUID: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?i)^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$").unwrap());
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -34,6 +37,28 @@ pub struct MuseFold {
     any_raw: bool,
     buffering: bool,
     buffer: Vec<Raw>,
+    /// The last `model_completed` input (cached tokens are a subset of it), the window recovered
+    /// from the compaction strategy, and compactions that actually succeeded.
+    context_tokens: Option<f64>,
+    context_window: Option<f64>,
+    compactions: u32,
+    compaction_trigger: Option<String>,
+}
+
+/// JS `parseFloat` of a `[0-9.]+` capture: the longest prefix that is a number.
+fn parse_float_prefix(s: &str) -> Option<f64> {
+    let end = s.char_indices().filter(|(_, c)| *c == '.').nth(1).map_or(s.len(), |(i, _)| i);
+    s[..end].parse::<f64>().ok()
+}
+
+/// Muse reports thresholds, not a window: the soft threshold `target_budget_tokens` and, in
+/// `config_fingerprint`, the fraction it is. The window is target / soft (`museWindowFrom`).
+fn window_from(strategy: Option<&Value>) -> Option<f64> {
+    let strategy = strategy?;
+    let target = finite(strategy.get("target_budget_tokens")).filter(|t| *t > 0.0)?;
+    let fingerprint = strategy.get("config_fingerprint").and_then(Value::as_str).unwrap_or("");
+    let soft = parse_float_prefix(SOFT.captures(fingerprint)?.get(1)?.as_str()).filter(|s| *s > 0.0 && *s <= 1.0)?;
+    Some((target / soft + 0.5).floor())
 }
 
 /// `recorded_at` is epoch microseconds.
@@ -49,6 +74,27 @@ fn trimmed(v: Option<&Value>) -> Option<String> {
 }
 
 impl MuseFold {
+    fn context_event(&mut self, event: &Value) {
+        match event.get("kind").and_then(Value::as_str) {
+            Some("model_completed") => {
+                if let Some(input) = finite(event.pointer("/usage/input_tokens")) {
+                    self.context_tokens = Some(input);
+                }
+            }
+            Some("context_compaction_candidate") => {
+                self.context_window = window_from(event.get("strategy")).or(self.context_window);
+                // Only a finished compaction dropped history; `running` and `failed` did not.
+                if event.get("status").and_then(Value::as_str) == Some("succeeded") {
+                    self.compactions += 1;
+                    if let Some(trigger) = event.get("trigger").and_then(Value::as_str) {
+                        self.compaction_trigger = Some(trigger.to_string());
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
     fn raw(&mut self, sink: &mut Sink, raw: Raw) -> Result<(), Rebuild> {
         if self.buffering {
             self.buffer.push(raw);
@@ -148,6 +194,9 @@ impl Fold for MuseFold {
         if payload_type != "runtime.session" {
             return Ok(Line::Used);
         }
+        if let Some(event) = payload.get("event").filter(|e| e.is_object()) {
+            self.context_event(event);
+        }
         if !matches!(payload.get("kind").and_then(Value::as_str), Some("run" | "task" | "agent_tree_initialized")) {
             return Ok(Line::Used);
         }
@@ -225,6 +274,17 @@ impl Fold for MuseFold {
             parent_session_id: None,
             usage: None,
             sub_agents: Vec::new(),
+            context: self.context_tokens.map(|context_tokens| ContextReading {
+                context_tokens,
+                context_window: self.context_window,
+                compaction: (self.compactions > 0).then(|| Compaction {
+                    count: self.compactions,
+                    pre_tokens: None,
+                    post_tokens: None,
+                    trigger: self.compaction_trigger.clone(),
+                }),
+            }),
+            rate_limits: None,
         })
     }
 }

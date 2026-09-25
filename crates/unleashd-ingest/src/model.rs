@@ -107,6 +107,44 @@ pub struct Usage {
     pub cache_write: f64,
 }
 
+/// One provider-counted request, for cost: Claude one message id, Codex the growth of the
+/// cumulative `token_count` total (the turns of a session sum to its last total exactly), OpenCode
+/// one assistant message. `at` is the transcript's time for that record.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct UsageTurn {
+    pub at: Option<f64>,
+    pub model: Option<String>,
+    pub usage: Usage,
+    /// The cost the provider itself recorded (OpenCode); otherwise priced by the caller.
+    pub reported_cost: Option<f64>,
+}
+
+/// The latest request's provider-counted context for a session: what the context meter shows.
+/// Never a sum (usage is); the two diverge at every compaction.
+#[cfg_attr(feature = "node", napi_derive::napi(object))]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ContextReading {
+    /// Claude and OpenCode: input + cache read + cache write; Codex and Muse: input (their cached
+    /// count is a subset of it).
+    pub context_tokens: f64,
+    /// Codex `model_context_window`, Muse target/soft threshold. Absent: resolve from the model.
+    pub context_window: Option<f64>,
+    /// Absent: the harness recorded no compaction for this session.
+    pub compaction: Option<Compaction>,
+}
+
+/// A compaction the harness recorded with its own marker record (never inferred from numbers).
+#[cfg_attr(feature = "node", napi_derive::napi(object))]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Compaction {
+    pub count: u32,
+    /// Context just before the latest boundary (Claude only).
+    pub pre_tokens: Option<f64>,
+    pub post_tokens: Option<f64>,
+    /// The harness's own word for why, verbatim.
+    pub trigger: Option<String>,
+}
+
 #[cfg_attr(feature = "node", napi_derive::napi(object))]
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct SubAgent {
@@ -171,4 +209,66 @@ pub struct SessionRow {
     pub sub_agents: Vec<SubAgent>,
     /// Store revision that last changed this row; `listSessions({ since })` pages on it.
     pub rev: i64,
+}
+
+// How `usage()` groups turns.
+str_enum!(UsageGroupBy { Session = "session", Day = "day", Model = "model" });
+
+/// A usage query: turns whose transcript time is in `[since, until)` (epoch ms). `since` is
+/// required: every query is a range on the turn-time index, never a scan of all turns.
+#[cfg_attr(feature = "node", napi_derive::napi(object))]
+#[derive(Debug, Clone, PartialEq)]
+pub struct UsageQuery {
+    pub since: f64,
+    pub until: Option<f64>,
+    pub group_by: UsageGroupBy,
+}
+
+/// What one usage group is.
+#[cfg_attr(feature = "node", napi_derive::napi(discriminant = "t", discriminant_case = "camelCase"))]
+#[derive(Debug, Clone, PartialEq)]
+pub enum UsageKey {
+    /// One source file. `model` is the first model its turns name (usage-routes.ts took the first).
+    Session {
+        session_id: String,
+        source_path: String,
+        provider: Provider,
+        format: Format,
+        model: Option<String>,
+    },
+    /// A UTC calendar day, `YYYY-MM-DD` (what `toISOString().slice(0, 10)` gave).
+    Day {
+        day: String,
+    },
+    Model {
+        provider: Provider,
+        model: Option<String>,
+    },
+}
+
+/// Token totals of the turns in one group. Pricing stays with the caller, except the cost a
+/// provider recorded itself (OpenCode), summed as `reportedCostUsd` (0 when none did).
+#[cfg_attr(feature = "node", napi_derive::napi(object))]
+#[derive(Debug, Clone, PartialEq)]
+pub struct UsageGroup {
+    pub key: UsageKey,
+    pub turns: u32,
+    /// Distinct sources with a turn in the group.
+    pub sessions: u32,
+    pub input: f64,
+    pub output: f64,
+    pub cache_read: f64,
+    pub cache_write: f64,
+    pub reported_cost_usd: f64,
+    pub first_at: f64,
+    pub last_at: f64,
+}
+
+#[cfg_attr(feature = "node", napi_derive::napi(object))]
+#[derive(Debug, Clone, PartialEq)]
+pub struct UsageReport {
+    pub groups: Vec<UsageGroup>,
+    /// The latest Codex `rate_limits` payload (raw JSON) of the most recently active session that
+    /// recorded one; `/api/usage` shows it as the Codex limits.
+    pub codex_rate_limits: Option<String>,
 }

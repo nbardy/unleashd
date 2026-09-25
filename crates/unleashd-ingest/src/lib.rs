@@ -4,6 +4,7 @@
 
 pub mod discover;
 pub mod engine;
+pub mod filewatch;
 pub mod lines;
 pub mod markers;
 pub mod model;

@@ -5,7 +5,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use unleashd_ingest::model::{Format, Message};
 use unleashd_ingest::paths::ProjectDirResolver;
-use unleashd_ingest::read::{Outcome, RowData, read_source};
+use unleashd_ingest::read::{Apply, Outcome, RowData, read_source};
 
 pub fn jsonl(rows: &[Value]) -> String {
     rows.iter().map(|r| format!("{r}\n")).collect()
@@ -56,15 +56,35 @@ pub fn assert_resume_equals_full(format: Format, dir: &Path, name: &str, text: &
         // Distinct mtime is not needed: the size moves.
         write(&path, text);
         let second = read(format, &path, Some(&first));
-        if second.replace {
-            history = second.messages.clone();
+        apply(&mut history, &second);
+        // Usage turns: appended in file order on a resume, all replaced on a full read.
+        let mut turns = first.turns.clone();
+        if second.apply == Apply::Replace {
+            turns.clear();
         } else {
-            history.extend(second.messages.clone());
+            assert_eq!(second.first_turn as usize, turns.len(), "{name}: turn numbering after byte {k}");
         }
+        turns.extend(second.turns.clone());
+        assert_eq!(turns, read(format, &path, None).turns, "{name}: usage turns after split at byte {k}");
         assert_eq!(contents(&history), contents(&whole), "{name}: split after byte {k}, taken {:?}", second.taken);
         assert_eq!(history, whole, "{name}: split after byte {k}");
         // Compared against a full read of the same final bytes (Cursor rows carry the file mtime).
         let (_, whole_row) = parse(format, &path);
         assert_eq!(second.row, whole_row, "{name}: row after split at byte {k}");
     }
+}
+
+/// What the store does with an outcome, on an in-memory history.
+pub fn apply(history: &mut Vec<Message>, outcome: &Outcome) {
+    match &outcome.apply {
+        Apply::Append => {}
+        Apply::Replace => history.clear(),
+        Apply::Withdraw(seqs) => {
+            history.retain(|m| seqs.binary_search(&m.seq).is_err());
+            for m in history.iter_mut() {
+                m.seq -= seqs.partition_point(|&s| s < m.seq) as u32;
+            }
+        }
+    }
+    history.extend(outcome.messages.clone());
 }
