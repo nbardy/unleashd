@@ -59,3 +59,6 @@ profiles/
 # top-level README, prompts, grades and sha256.json; each subdirectory is a
 # folder of raw run JSON or source snapshots (~20k lines for one date).
 docs/benchmarks/*/*/*/
+
+# Agent worktrees (Claude Code Agent/Workflow isolation); never source.
+.claude/worktrees/
