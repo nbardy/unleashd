@@ -32,6 +32,22 @@ function BootMarker() {
 installAuthGuard();
 installClientErrorReporting();
 
+// Routes are lazy chunks (App.tsx). A tab opened before a rebuild asks for
+// chunk names that no longer exist; reload once to pick up the new
+// index.html. A second failure within a minute surfaces as a normal error.
+const CHUNK_RELOAD_KEY = 'unleashd:chunk-reload-at';
+window.addEventListener('vite:preloadError', (event) => {
+  try {
+    const last = Number(sessionStorage.getItem(CHUNK_RELOAD_KEY) ?? 0);
+    if (Date.now() - last < 60_000) return;
+    sessionStorage.setItem(CHUNK_RELOAD_KEY, String(Date.now()));
+  } catch {
+    return;
+  }
+  event.preventDefault();
+  window.location.reload();
+});
+
 createRoot(document.getElementById('root')!, {
   onUncaughtError: (error, info) => {
     reportClientError({

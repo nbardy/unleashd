@@ -253,6 +253,13 @@ pnpm screenshot:mobile --out /tmp/shots       # the older phone-only gallery (ch
   column`). Genuinely shared primitives (`.empty-state`, `.provider-badge`)
   live once in `client/src/App.css`. Gate G6 in
   `tools/check-client-invariants.sh` fails on any cross-file duplicate.
+  Routes are lazy chunks (App.tsx), and a component's CSS loads with its chunk,
+  AFTER the entry stylesheets (`index.css`, `App.css`, `BuddyDetail.css`,
+  `ui/controls.css`). A component rule of equal specificity therefore beats an
+  entry rule, the reverse of the old single-bundle order. Chat.css lost dead
+  `.ui-choice` duplicates for exactly this reason (2026-09-25). Never import a
+  route module statically from `App.tsx` — one static import pulls the route
+  back into the entry chunk.
 - Callbacks handed to a library are called with the library's arity, not
   yours. `handleFilesUpload` goes straight into react-dropzone's `onDrop`,
   which invokes it as `(acceptedFiles, fileRejections, event)` — a defaulted

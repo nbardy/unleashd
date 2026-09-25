@@ -1657,23 +1657,17 @@
   gap: 6px;
 }
 
+/* Appearance (padding, border, colours, type, the selected state) comes from
+   `.ui-choice.ui-choice` in ui/controls.css. This rule used to repeat those
+   properties at the same specificity and lose only because controls.css
+   loaded last. Chat.css now loads with the lazy Chat chunk, AFTER the entry
+   stylesheets, so the duplicates would have won and restyled the picker. Only
+   layout that controls.css does not set stays here. */
 .chat-config-options .provider-option,
 .chat-config-options .model-option {
   flex: 0 0 auto;
   white-space: nowrap;
-  min-width: 0;
-  justify-content: flex-start;
   position: relative;
-  padding: 2px 8px;
-  border: 1px solid transparent;
-  border-radius: var(--ui-radius);
-  background: color-mix(in srgb, var(--text-muted) 10%, transparent);
-  color: var(--text-secondary);
-  font-family: inherit;
-  font-size: 11px;
-  font-weight: 600;
-  line-height: 1.4;
-  letter-spacing: 0.3px;
   transition: border-color 0.15s, background 0.15s;
 }
 
@@ -1688,13 +1682,6 @@
   overflow: hidden;
   clip-path: inset(50%);
   white-space: nowrap;
-}
-
-.chat-config-options .provider-option.selected,
-.chat-config-options .model-option.selected {
-  border-color: color-mix(in srgb, var(--warning) 40%, transparent);
-  background: color-mix(in srgb, var(--warning) 18%, transparent);
-  color: var(--text-emphasis);
 }
 
 .chat-config-options label:has(input:focus-visible) {

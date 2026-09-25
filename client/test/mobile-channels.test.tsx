@@ -237,7 +237,7 @@ test('mobile channels Home lists channels and Buddies with a visible Wake', asyn
 // Regression guard: the Channels tab once opened the alphabetically first
 // workspace (an empty one) instead of where the team was active.
 test('the Channels tab opens the most recently active workspace first', async () => {
-  const { overviewWorkspaces } = await import('../src/mobile/channels/ChannelsMobile');
+  const { overviewWorkspaces } = await import('../src/mobile/channels/ChannelsIndex');
   const workspace = (id: string, name: string) => ({ id, name, root_path: `/tmp/${id}` });
   const employee = (workspaces: ReturnType<typeof workspace>[]) =>
     ({ workspaces }) as unknown as Parameters<typeof overviewWorkspaces>[0] extends infer O

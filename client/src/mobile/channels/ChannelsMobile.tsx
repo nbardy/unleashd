@@ -1,6 +1,6 @@
 import type { BuddyMailingListPost, BuddyOwnerPostResult, OwnerListUnread } from '@unleashd/shared';
 import { useMemo, useState } from 'react';
-import { Link, Navigate, useLocation, useParams } from 'react-router-dom';
+import { Link, useLocation, useParams } from 'react-router-dom';
 import { BuddySigil } from '../../components/buddies/BuddySigil';
 import { ChannelAuthor, useChatPageDm } from '../../components/buddies/ChannelAuthor';
 import { ChannelComposer } from '../../components/buddies/ChannelComposer';
@@ -39,7 +39,6 @@ import {
   useWorkspaceDirectory,
 } from '../../components/buddies/channel-data';
 import { channelLinkPath } from '../../components/buddies/channel-link';
-import type { BuddyOverview } from '../../components/buddies/types';
 import { useBuddyOverview } from '../../hooks/useBuddyData';
 import { usePolledFetch } from '../../hooks/usePolledFetch';
 import {
@@ -48,6 +47,7 @@ import {
   MobilePage,
   MobileSection,
 } from '../components/MobileUI';
+import { overviewWorkspaces } from './ChannelsIndex';
 import { type MobileChannelScreen, channelsHref, mobileChannelScreen } from './channel-route';
 
 // Channels on a phone, following Slack's mobile app: one screen at a time.
@@ -57,45 +57,6 @@ import { type MobileChannelScreen, channelsHref, mobileChannelScreen } from './c
 // Same URL as desktop (/buddies/workspaces/:id/channels?channel=&thread=), so
 // a link opens the right place on either device. Desktop hover affordances
 // become visible taps here (docs/mobile-ui.md: hover needs a touch counterpart).
-
-type OverviewWorkspace = { id: string; name: string; lastActiveAt: string };
-
-// Most recently active workspace first (by its Buddies' latest runs), then by
-// name: the Channels tab opens where the team is working, not whichever
-// workspace sorts first alphabetically (that was often an empty one).
-export function overviewWorkspaces(overview: BuddyOverview | null): OverviewWorkspace[] {
-  const lastActive = new Map<string, string>();
-  for (const run of overview?.recentRuns ?? []) {
-    const seen = lastActive.get(run.workspaceId);
-    if (seen === undefined || run.lastActiveAt > seen)
-      lastActive.set(run.workspaceId, run.lastActiveAt);
-  }
-  const byId = new Map<string, OverviewWorkspace>();
-  for (const employee of overview?.employees ?? [])
-    for (const workspace of employee.workspaces)
-      byId.set(workspace.id, {
-        id: workspace.id,
-        name: workspace.name,
-        lastActiveAt: lastActive.get(workspace.id) ?? '',
-      });
-  return [...byId.values()].sort(
-    (a, b) => b.lastActiveAt.localeCompare(a.lastActiveAt) || a.name.localeCompare(b.name)
-  );
-}
-
-/** /channels — the tab's entry: open the first workspace's channels. */
-export function ChannelsIndex() {
-  const overview = useBuddyOverview();
-  const [first] = overviewWorkspaces(overview.data);
-  if (first) return <Navigate to={channelsHref(first.id, { kind: 'home' })} replace />;
-  return (
-    <MobilePage title="Channels" subtitle={overview.data ? 'No workspaces' : 'Loading…'}>
-      {overview.data && (
-        <MobileEmptyPanel>Create a Buddy in a workspace to start its channels.</MobileEmptyPanel>
-      )}
-    </MobilePage>
-  );
-}
 
 export function ChannelsMobile() {
   const { workspaceId = '' } = useParams();

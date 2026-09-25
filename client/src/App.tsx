@@ -1,22 +1,22 @@
 import { Provider, useAtomValue } from 'jotai';
-import { type ComponentType, type ReactElement, useCallback, useEffect, useRef } from 'react';
+import {
+  type ComponentType,
+  type LazyExoticComponent,
+  type ReactElement,
+  Suspense,
+  lazy,
+  useCallback,
+  useEffect,
+  useRef,
+} from 'react';
 import { BrowserRouter, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { handleMessage, setSendFn, setWsStatus } from './atoms/actions';
 import { conversationsAtom, savedActiveConversationPresentAtom } from './atoms/conversations';
 import { startConversationPrefetch } from './atoms/prefetch';
 import { jotaiStore } from './atoms/store';
 import { savedActiveConversationIdAtom } from './atoms/ui';
-import { BuddiesDashboard } from './components/BuddiesDashboard';
-import { ChatRoute } from './components/Chat';
 import { useOwnerUnreadTitle } from './components/buddies/channel-data';
-import { Gallery } from './components/Gallery';
-import { RobotLoader } from './components/RobotLoader';
-import { ShellDesktop } from './components/ShellDesktop';
-import { SwarmAnalytics } from './components/SwarmAnalytics';
-import { SwarmDashboard } from './components/SwarmDashboard';
-import { SwarmDetail } from './components/SwarmDetail';
 import { useWebSocket } from './hooks/useWebSocket';
-import { ShellMobile } from './mobile/components/ShellMobile';
 import { type DeviceKind, useDeviceKind } from './mobile/hooks/useDeviceKind';
 import { initSettings } from './stores/settingsStore';
 import './App.css';
@@ -124,24 +124,135 @@ function useRestoreOnLoad(device: DeviceKind) {
 }
 
 // =============================================================================
+// Code splitting. Every shell and route is its own chunk, loaded on first use,
+// so the entry chunk holds only the store, the socket and this table. It used
+// to import every route statically: one 1.12 MB chunk carried both device
+// trees, of which a session ever renders one.
+// =============================================================================
+
+// biome-ignore lint/suspicious/noExplicitAny: React's own bound for lazy() components.
+type AnyComponent = ComponentType<any>;
+
+/** A named export loaded on first render; `preload` fetches it without rendering. */
+function lazyNamed<C extends AnyComponent>(
+  load: () => Promise<C>
+): LazyExoticComponent<C> & { preload: () => Promise<C> } {
+  return Object.assign(
+    lazy(async () => ({ default: await load() })),
+    { preload: load }
+  );
+}
+
+// Desktop tree
+const ShellDesktop = lazyNamed(() =>
+  import('./components/ShellDesktop').then((m) => m.ShellDesktop)
+);
+const Gallery = lazyNamed(() => import('./components/Gallery').then((m) => m.Gallery));
+const ChatRoute = lazyNamed(() => import('./components/Chat').then((m) => m.ChatRoute));
+const BuddiesDashboard = lazyNamed(() =>
+  import('./components/BuddiesDashboard').then((m) => m.BuddiesDashboard)
+);
+const SwarmDashboard = lazyNamed(() =>
+  import('./components/SwarmDashboard').then((m) => m.SwarmDashboard)
+);
+const SwarmDetail = lazyNamed(() => import('./components/SwarmDetail').then((m) => m.SwarmDetail));
+const SwarmAnalytics = lazyNamed(() =>
+  import('./components/SwarmAnalytics').then((m) => m.SwarmAnalytics)
+);
+const WorkspaceSlack = lazyNamed(() =>
+  import('./components/buddies/ChannelBrowser').then((m) => m.WorkspaceSlack)
+);
+
+// Shared by both trees (components/buddies is the one desktop folder mobile may use)
+const BuddyWorkspaceActivity = lazyNamed(() =>
+  import('./components/buddies/BuddyWorkspaceActivity').then((m) => m.BuddyWorkspaceActivity)
+);
+const ChannelsIndex = lazyNamed(() =>
+  import('./mobile/channels/ChannelsIndex').then((m) => m.ChannelsIndex)
+);
+
+// Mobile tree
+const ShellMobile = lazyNamed(() =>
+  import('./mobile/components/ShellMobile').then((m) => m.ShellMobile)
+);
+const ConversationListMobile = lazyNamed(() =>
+  import('./mobile/conversations/ConversationListMobile').then((m) => m.ConversationListMobile)
+);
+const ChatMobile = lazyNamed(() =>
+  import('./mobile/conversations/ChatMobile').then((m) => m.ChatMobile)
+);
+const BuddiesMobile = lazyNamed(() =>
+  import('./mobile/buddies/BuddiesMobile').then((m) => m.BuddiesMobile)
+);
+const BuddyDetailMobile = lazyNamed(() =>
+  import('./mobile/buddies/BuddyDetailMobile').then((m) => m.BuddyDetailMobile)
+);
+const SwarmsMobile = lazyNamed(() =>
+  import('./mobile/swarms/SwarmsMobile').then((m) => m.SwarmsMobile)
+);
+const SwarmDetailMobile = lazyNamed(() =>
+  import('./mobile/swarms/SwarmDetailMobile').then((m) => m.SwarmDetailMobile)
+);
+const SwarmAnalyticsMobile = lazyNamed(() =>
+  import('./mobile/swarms/SwarmAnalyticsMobile').then((m) => m.SwarmAnalyticsMobile)
+);
+const SearchMobile = lazyNamed(() =>
+  import('./mobile/search/SearchMobile').then((m) => m.SearchMobile)
+);
+const ChannelsMobile = lazyNamed(() =>
+  import('./mobile/channels/ChannelsMobile').then((m) => m.ChannelsMobile)
+);
+
+/** Each device's chunks, fetched when the browser is idle after first render,
+ *  so a later navigation does not wait on the network. */
+const DEVICE_CHUNKS: Record<DeviceKind, ReadonlyArray<{ preload: () => Promise<unknown> }>> = {
+  desktop: [
+    Gallery,
+    ChatRoute,
+    BuddiesDashboard,
+    SwarmDashboard,
+    SwarmDetail,
+    SwarmAnalytics,
+    WorkspaceSlack,
+    BuddyWorkspaceActivity,
+    ChannelsIndex,
+  ],
+  mobile: [
+    ConversationListMobile,
+    ChatMobile,
+    BuddiesMobile,
+    BuddyDetailMobile,
+    SwarmsMobile,
+    SwarmDetailMobile,
+    SwarmAnalyticsMobile,
+    SearchMobile,
+    ChannelsMobile,
+    BuddyWorkspaceActivity,
+    ChannelsIndex,
+  ],
+};
+
+function usePreloadDeviceChunks(device: DeviceKind): void {
+  useEffect(() => {
+    const preload = () => {
+      for (const chunk of DEVICE_CHUNKS[device]) void chunk.preload().catch(() => {});
+    };
+    if (typeof window.requestIdleCallback === 'function') {
+      const handle = window.requestIdleCallback(preload, { timeout: 3_000 });
+      return () => window.cancelIdleCallback(handle);
+    }
+    const handle = window.setTimeout(preload, 1_000);
+    return () => window.clearTimeout(handle);
+  }, [device]);
+}
+
+// =============================================================================
 // RouteTable — element FACTORIES, not ComponentType (§3).
 // ComponentType silently drops props: `desktop: Gallery` for "/done" compiles
 // (filter is optional) and renders the wrong view. Factories make
 // "/done" → <Gallery filter="done"/> expressible.
 // =============================================================================
 type RouteDef = { path: string; desktop: () => ReactElement; mobile: () => ReactElement };
-
-import { BuddyWorkspaceActivity } from './components/buddies/BuddyWorkspaceActivity';
-import { WorkspaceSlack } from './components/buddies/ChannelBrowser';
-import { BuddiesMobile } from './mobile/buddies/BuddiesMobile';
-import { BuddyDetailMobile } from './mobile/buddies/BuddyDetailMobile';
-import { ChannelsIndex, ChannelsMobile } from './mobile/channels/ChannelsMobile';
-import { ChatMobile } from './mobile/conversations/ChatMobile';
-import { ConversationListMobile } from './mobile/conversations/ConversationListMobile';
-import { SearchMobile } from './mobile/search/SearchMobile';
-import { SwarmAnalyticsMobile } from './mobile/swarms/SwarmAnalyticsMobile';
-import { SwarmDetailMobile } from './mobile/swarms/SwarmDetailMobile';
-import { SwarmsMobile } from './mobile/swarms/SwarmsMobile';
 
 const ROUTES: RouteDef[] = [
   {
@@ -199,7 +310,16 @@ const OUTSIDE_SHELL: Record<DeviceKind, ReactElement | null> = {
 };
 const INSIDE_SHELL: Record<DeviceKind, ReactElement | null> = {
   desktop: null,
-  mobile: <Route path={CHANNELS_PATH} element={<ChannelsMobile />} />,
+  mobile: (
+    <Route
+      path={CHANNELS_PATH}
+      element={
+        <Suspense fallback={null}>
+          <ChannelsMobile />
+        </Suspense>
+      }
+    />
+  ),
 };
 
 const SHELLS: Record<DeviceKind, ComponentType> = {
@@ -207,21 +327,29 @@ const SHELLS: Record<DeviceKind, ComponentType> = {
   mobile: ShellMobile,
 };
 
+// Nothing to show while a chunk loads (a local server answers in milliseconds,
+// and idle preloading usually has the chunk already). The route-level boundary
+// sits inside the shell, so navigating never blanks the sidebar or tab bar.
 function AppRoutes({ device }: { device: DeviceKind }) {
   const Shell = SHELLS[device]; // δ #1 — shell
   const pick = (r: RouteDef) => (device === 'mobile' ? r.mobile() : r.desktop()); // δ #2 — leaf
   return (
-    <Routes>
-      <Route path="/robot" element={<RobotLoader />} />
-      {OUTSIDE_SHELL[device]}
-      <Route element={<Shell />}>
-        {ROUTES.map((r) => (
-          <Route key={r.path} path={r.path} element={pick(r)} />
-        ))}
-        {INSIDE_SHELL[device]}
-        <Route path="*" element={<Navigate to="/" replace />} />
-      </Route>
-    </Routes>
+    <Suspense fallback={null}>
+      <Routes>
+        {OUTSIDE_SHELL[device]}
+        <Route element={<Shell />}>
+          {ROUTES.map((r) => (
+            <Route
+              key={r.path}
+              path={r.path}
+              element={<Suspense fallback={null}>{pick(r)}</Suspense>}
+            />
+          ))}
+          {INSIDE_SHELL[device]}
+          <Route path="*" element={<Navigate to="/" replace />} />
+        </Route>
+      </Routes>
+    </Suspense>
   );
 }
 
@@ -230,6 +358,7 @@ function AppInner() {
   useWebSocketBridge();
   useRestoreOnLoad(device);
   useOwnerUnreadTitle();
+  usePreloadDeviceChunks(device);
 
   useEffect(() => {
     initSettings().catch(console.error);
