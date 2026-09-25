@@ -20,6 +20,7 @@ import {
 } from '../src/conversations/runtime';
 import { createSessionLoader } from '../src/lifecycle/session-loader';
 import { resolveConfigAgainstProviderCatalog } from '../src/providers/catalog-service';
+import { sameKeyAudience } from './fixtures/buddy-audience';
 
 const conversationId = 'dddddddd-0000-4000-8000-000000000004';
 const sessionIds = [
@@ -154,7 +155,7 @@ test('bound native sessions retain display history across capped startup, pollin
       readCurrentBuddyContext: () => ({
         briefing: 'CURRENT_BRIEFING',
         memoryGeneration: 'updated-memory',
-        audienceKey: 'verified-owner',
+        audience: sameKeyAudience('verified-owner'),
       }),
       executeTurn: ((request) => {
         requests.push(request);

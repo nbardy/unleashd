@@ -111,11 +111,11 @@ test('real creation boundary delivers two-worker aggregate and retries a failed 
       const key = JSON.stringify([context.buddyId, context.knowledgeScope]);
       if (audienceKeys.has(key))
         assert.equal(
-          current.audienceKey,
+          current.audience!.key,
           audienceKeys.get(key),
           'Learning retains same-audience provider continuity'
         );
-      audienceKeys.set(key, current.audienceKey);
+      audienceKeys.set(key, current.audience!.key);
       return current;
     },
     ...chatRunAdmission(

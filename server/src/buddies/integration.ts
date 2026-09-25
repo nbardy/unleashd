@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto';
 import fs from 'node:fs';
-import { MEMORY_DOCUMENT_CAPS } from '@nbardy/buddies';
+import { MEMORY_DOCUMENT_CAPS, knowledgeAudienceContinuity } from '@nbardy/buddies';
 import {
   type BuddyContext,
   BuddyMemorySnapshotSchema,
@@ -9,6 +9,7 @@ import {
 } from '@unleashd/shared';
 import type { Response } from 'express';
 import { buddyExecutionPreferences } from '../conversations/config-mapping';
+import type { BuddyTurnAudience } from '../conversations/runtime';
 import { BuddyClosureService, BuddyReviewSettlementSchema } from './closure';
 import type { BuddiesModule, BuddiesStorePort, BuddyMemory } from './contract';
 import { knowledgeStore } from './knowledge';
@@ -95,6 +96,13 @@ export const BUDDY_REVIEW_RESULT_INSTRUCTIONS = [
   'Put raw JSON between the markers, without a Markdown code fence.',
 ].join('\n');
 
+function buddyTurnAudience(key: string): BuddyTurnAudience {
+  return {
+    key,
+    continuityFrom: (sessionKey) => knowledgeAudienceContinuity(sessionKey, key),
+  };
+}
+
 export interface BuddyConversationPort {
   id: string;
   sessionId: string;
@@ -107,7 +115,7 @@ export interface ResolvedBuddyConversation {
   briefing: string;
   /** Stable snapshot token retained by ConversationRuntime for fork checks. */
   memoryGeneration: string;
-  audienceKey?: string;
+  audience?: BuddyTurnAudience;
   workingDirectory: string;
   provider: Provider;
   model?: ModelId;
@@ -237,7 +245,11 @@ export function createBuddiesIntegration(dependencies: BuddiesIntegrationDepende
         })()
       : normalizeBuddyMemory(detail.memory);
     const roleBrief = sharedAudience ? scoped('soul').content : detail.soul;
-    const audienceKey = audience ? ledger!.knowledgeAudienceRevision(authority) : undefined;
+    // The package owns which sessions this audience may continue: the runtime
+    // resumes one only while this audience contains the one it was built under.
+    const turnAudience = audience
+      ? buddyTurnAudience(ledger!.knowledgeAudienceKey(authority))
+      : undefined;
     if (
       memory.working.length > MEMORY_DOCUMENT_CAPS.working ||
       memory.longTerm.length > MEMORY_DOCUMENT_CAPS.long_term
@@ -392,7 +404,7 @@ export function createBuddiesIntegration(dependencies: BuddiesIntegrationDepende
     return {
       context,
       briefing,
-      audienceKey,
+      audience: turnAudience,
       memoryGeneration: `memory-generation:${memory.generation}:working:${memory.workingRevision}:long-term:${memory.longTermRevision}:identity:${createHash(
         'sha256'
       )

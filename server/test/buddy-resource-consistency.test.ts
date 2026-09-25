@@ -82,7 +82,7 @@ test('owner memory resolution preserves inherited context, discovers reviewer no
     assert.match(after.briefing, /NEW_THREAD_LESSON/);
     assert.equal(read.data.content, 'PRIOR_OWNER_PREFERENCE\nNEW_THREAD_LESSON');
     assert.equal(recall.data.matches.length, 1);
-    assert.equal(before.audienceKey, after.audienceKey);
+    assert.equal(before.audience!.key, after.audience!.key);
   } finally {
     reviewer?.stop();
     raw.close();

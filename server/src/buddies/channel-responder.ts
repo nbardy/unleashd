@@ -5,7 +5,7 @@ import {
   buddyExecutionPreferences,
   configFromProviderPreferences,
 } from '../conversations/config-mapping';
-import type { ConversationRuntime } from '../conversations/runtime';
+import type { ConversationRuntime, SessionRelativePrompt } from '../conversations/runtime';
 import {
   type LiveConversation,
   type StableConversationPorts,
@@ -162,6 +162,7 @@ type ThreadContext = {
 // (its earlier prompts) and its own replies (its answers), so it is shown only
 // what arrived since. Until 2026-09-25 every resumed reply re-sent the root and
 // the last 10 replies, duplicating them in the seat's transcript each turn.
+// Only a RESUMED session may get it: see seatPrompt.
 type ThreadDelta = {
   kind: 'thread_delta';
   omittedReplies: number;
@@ -448,17 +449,50 @@ export function createChannelResponder(ports: ChannelResponderPorts) {
   // memory: after a restart a seat is unknown and gets the full thread once.
   const seenThrough = new Map<string, string>();
 
-  function launchContext(
+  // Whether the seat's provider session resumes is decided by the runtime as
+  // it admits the turn, possibly after a wait for a run slot: a changed Buddy
+  // audience starts a fresh session right there (runtime.ts
+  // admitBuddyAudience). So the delta is only ever the `resumed` wording,
+  // beside the whole thread as `fresh`, and the runtime picks. Asking the
+  // runtime first and building one prompt would leave a window for its
+  // decision to change. 2026-09-25 03:30Z: a delta reached a fresh session,
+  // which read "Replies since then (0)" and no thread at all.
+  function seatPrompt(
     store: BuddiesStorePort,
     input: Reply,
     seatConversationId: string
-  ): LaunchContext {
-    if (input.trigger.threadRootId === null)
-      return channelContext(store, input.list, input.trigger);
+  ): SessionRelativePrompt {
+    if (input.trigger.threadRootId === null) {
+      const prompt = buildPrompt({
+        ...input,
+        context: channelContext(store, input.list, input.trigger),
+        store,
+      });
+      return { resumed: prompt, fresh: prompt };
+    }
+    const fresh = buildPrompt({
+      ...input,
+      context: threadContext(store, input.threadRootId, input.trigger),
+      store,
+    });
     const seen = seenThrough.get(seatConversationId);
-    return seen === undefined
-      ? threadContext(store, input.threadRootId, input.trigger)
-      : threadDelta(store, input.threadRootId, seen, seatConversationId, input.trigger);
+    return {
+      fresh,
+      resumed:
+        seen === undefined
+          ? fresh
+          : buildPrompt({
+              ...input,
+              context: threadDelta(
+                store,
+                input.threadRootId,
+                seen,
+                seatConversationId,
+                input.trigger
+              ),
+              store,
+            }),
+    };
   }
 
   async function currentSeats(threadRootId: string, buddyId: string) {
@@ -568,13 +602,15 @@ export function createChannelResponder(ports: ChannelResponderPorts) {
       conversationId = conversation.id;
       await untilIdle(conversation);
       contextReadAt.set(pairKey(input.threadRootId, input.buddyId), new Date().toISOString());
-      const context = launchContext(store, input, conversation.id);
-      const prompt = buildPrompt({ ...input, context, store });
+      const prompt = seatPrompt(store, input, conversation.id);
       let untrack: () => void = () => undefined;
       const text = await awaitTurn(
         conversation,
         () => {
-          conversation.sendMessage(prompt, { origin: 'owner_input', inputId: input.trigger.id });
+          conversation.sendSessionRelativeMessage(prompt, {
+            origin: 'owner_input',
+            inputId: input.trigger.id,
+          });
           untrack = trackRunSlot(
             pairKey(input.threadRootId, input.buddyId),
             input.list.id,

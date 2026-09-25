@@ -245,6 +245,31 @@ type TurnInput = Readonly<{
   inputId: string;
 }>;
 
+/**
+ * The disclosure audience a Buddy turn runs under. `key` is persisted with the
+ * provider session built under it; `continuityFrom` asks the Buddies package
+ * (knowledgeAudienceContinuity owns the rule) whether a session built under an
+ * earlier key may continue: 'contained' when only read access grew, 'changed'
+ * when access narrowed or the audience differs, 'unverified' when the saved key
+ * cannot be compared (a revision hash saved before 2026-09-25).
+ */
+export type BuddyTurnAudience = Readonly<{
+  key: string;
+  continuityFrom(sessionKey: string): BuddyAudienceContinuity;
+}>;
+export type BuddyAudienceContinuity = 'contained' | 'changed' | 'unverified';
+
+/**
+ * One turn's input worded for the provider session it reaches: `resumed` for a
+ * session that already holds this conversation's earlier turns, `fresh` for a
+ * new one, which must stand alone. A plain message reads the same either way.
+ */
+export type SessionRelativePrompt = Readonly<{ resumed: string; fresh: string }>;
+const sameEitherWay = (content: string): SessionRelativePrompt => ({
+  resumed: content,
+  fresh: content,
+});
+
 export interface ConversationRuntimeDependencies {
   broadcast(data: ConversationBroadcast): void;
   registerSessionAlias(sessionId: string | null | undefined, conversationId: string): void;
@@ -293,7 +318,7 @@ export interface ConversationRuntimeDependencies {
   readCurrentBuddyContext?(context: BuddyContext): {
     briefing: string;
     memoryGeneration: string;
-    audienceKey?: string;
+    audience?: BuddyTurnAudience;
   };
   /** Enqueue memory maintenance only after a successful CLI exit and normalized event drain. */
   reviewCompletedBuddyTurn?(turn: CompletedBuddyTurn): void;
@@ -553,6 +578,11 @@ export interface ConversationRuntime extends EventEmitter, ConversationRuntimeVi
   sendMessage(
     content: string,
     ownerInput?: Readonly<{ origin: 'owner_input'; inputId: string }>
+  ): void;
+  /** Owner input whose wording depends on whether the provider session resumes. */
+  sendSessionRelativeMessage(
+    prompt: SessionRelativePrompt,
+    ownerInput: Readonly<{ origin: 'owner_input'; inputId: string }>
   ): void;
   sendAutomationMessage(content: string): void;
   runCoordinationMessage(
@@ -818,6 +848,10 @@ export function createConversationRuntime(
       string,
       Readonly<{ origin: 'owner_input'; inputId: string }>
     >();
+    // Each queued item's wordings, so a Buddy turn that waits for a run slot is
+    // still worded at admission by the session it reaches. The wire item shows
+    // `fresh`; a missing entry therefore errs toward more context, never less.
+    private _queuedPrompts = new Map<string, SessionRelativePrompt>();
     private _terminalCauseHint: TurnTerminalCause | null = null;
     private _stopCause: 'user_stop' | 'server_restart' | null = null;
     private _lastAttemptActivityAt = 0;
@@ -976,6 +1010,7 @@ export function createConversationRuntime(
 
     private _cancelQueuedAttempt(queueMessageId: string): void {
       this._queuedOwnerInputs.delete(queueMessageId);
+      this._queuedPrompts.delete(queueMessageId);
       const attemptId = this._queuedAttemptIds.get(queueMessageId);
       if (!attemptId) return;
       turnAttempts.terminal({
@@ -1004,7 +1039,7 @@ export function createConversationRuntime(
       clearLocalCompletionSuppression(this.id, this.sessionId);
 
       const forking = !!forkSourceSessionId;
-      const shouldResume = !forking && this._hasStartedSession;
+      const shouldResume = this.resumesProviderSession(forkSourceSessionId);
       const executionMode = forking ? 'fork' : shouldResume ? 'resume' : 'fresh';
       console.log(
         `[${this.id}] Spawning ${this.provider} (mode=${executionMode}, provider-session=${this.sessionId.substring(0, 8)}...${forkSourceSessionId ? `, fork-source-session=${forkSourceSessionId.substring(0, 8)}...` : ''}${this.resumedFromConversationId ? `, parent-conversation=${this.resumedFromConversationId.substring(0, 8)}...` : ''})`
@@ -2149,7 +2184,7 @@ export function createConversationRuntime(
         this.once('buddy-turn-complete', complete);
         this.on('buddy-turn-failed', failed);
         try {
-          this.sendMessageInternal(content, {
+          this.sendMessageInternal(sameEitherWay(content), {
             origin: 'buddy_message',
             inputId: context.coordinationRunId!,
           });
@@ -2168,7 +2203,23 @@ export function createConversationRuntime(
         this.refuseAutomationTranscript();
         return;
       }
-      this.sendMessageInternal(content, ownerInput);
+      this.sendMessageInternal(sameEitherWay(content), ownerInput);
+    }
+
+    // The caller cannot pick the wording itself: whether this turn resumes is
+    // decided at admission (sendAdmittedMessage), which for a Buddy turn can
+    // follow a wait for a run slot, and where a changed Buddy audience rotates
+    // the provider session. Asking first and sending one prompt after leaves a
+    // window for that decision to flip, so the caller hands over both wordings.
+    sendSessionRelativeMessage(
+      prompt: SessionRelativePrompt,
+      ownerInput: Readonly<{ origin: 'owner_input'; inputId: string }>
+    ): void {
+      if (this.buddyContext?.automationRunId) {
+        this.refuseAutomationTranscript();
+        return;
+      }
+      this.sendMessageInternal(prompt, ownerInput);
     }
 
     /**
@@ -2193,7 +2244,7 @@ export function createConversationRuntime(
           `Automation memory writes are unsupported for provider "${this.provider}" or this run lacks an explicit memory-write capability.`
         );
       }
-      this.sendMessageInternal(content, {
+      this.sendMessageInternal(sameEitherWay(content), {
         origin: 'schedule',
         inputId: this.buddyContext.automationRunId,
       });
@@ -2253,12 +2304,47 @@ export function createConversationRuntime(
       };
     }
 
+    // A provider session resumes only while the current audience CONTAINS the
+    // one it was built under. Until 2026-09-25 any change to the audience key
+    // reset it, and the key covers every readable Task: a Buddy that created a
+    // Task from inside a channel-thread seat started the seat's next turn in a
+    // fresh session (live 03:30Z, no --resume). Narrowed or different access,
+    // or a saved key that cannot be compared (none saved, or a hash saved
+    // before descriptors), still starts fresh; display history remains. A
+    // resumed session adopts the grown key, which session.started persists.
+    private admitBuddyAudience(audience: BuddyTurnAudience): void {
+      const continuity: BuddyAudienceContinuity =
+        this._providerAudienceKey === null
+          ? 'unverified'
+          : audience.continuityFrom(this._providerAudienceKey);
+      switch (continuity) {
+        case 'contained':
+          break;
+        case 'changed':
+        case 'unverified':
+          if (this._hasStartedSession) {
+            console.log(
+              `[${this.id}] Buddy context reset: reason=audience_${continuity}, provider-session=${this.sessionId}`
+            );
+            this.resetProcess();
+          }
+          break;
+      }
+      this._providerAudienceKey = audience.key;
+    }
+
+    // The one resume/fresh decision: spawnForMessage passes --resume on it and
+    // sendMessageInternal words a SessionRelativePrompt by it, so they agree.
+    private resumesProviderSession(forkSourceSessionId: string | undefined): boolean {
+      return !forkSourceSessionId && this._hasStartedSession;
+    }
+
     private sendMessageInternal(
-      content: string,
+      prompt: SessionRelativePrompt,
       input: TurnInput = { origin: 'unknown', inputId: crypto.randomUUID() }
     ): void {
       console.log(
-        `[${this.id}] sendMessage called, isRunning=${this.isRunning}, hasProcess=${this.process !== null}, queueDepth=${this.queue.length}, contentLen=${content.length}, preview="${formatLogPreview(content)}"`
+        `[${this.id}] sendMessage called, isRunning=${this.isRunning}, hasProcess=${this.process !== null}, queueDepth=${this.queue.length}, contentLen=${prompt.fresh.length}, preview="${formatLogPreview(prompt.fresh)}"`
       );
 
       if (this.process || this.isRunning) {
@@ -2266,14 +2352,14 @@ export function createConversationRuntime(
         return;
       }
       if (!this.needsForegroundChatRun()) {
-        this.sendAdmittedMessage(content, input);
+        this.sendAdmittedMessage(prompt, input);
         return;
       }
       // Buddy chat turns are admitted through the queue, so a turn waiting for
       // a run slot is visible as pending and later sends line up behind it.
       if (!this._sendingFromQueue) {
-        this.enqueueMessage(
-          content,
+        this.enqueuePrompt(
+          prompt,
           input.origin === 'owner_input'
             ? { origin: 'owner_input', inputId: input.inputId }
             : undefined
@@ -2284,7 +2370,7 @@ export function createConversationRuntime(
       if (!owned) return;
       this._admittedChatRun = owned;
       try {
-        this.sendAdmittedMessage(content, input);
+        this.sendAdmittedMessage(prompt, input);
       } finally {
         // sendAdmittedMessage can return before spawning (merge send blocked,
         // preflight refusal). An unconsumed admitted run must be settled here,
@@ -2354,21 +2440,11 @@ export function createConversationRuntime(
       if (abandon) dependencies.abandonBuddyChatRun?.(ticket.runId);
     }
 
-    private sendAdmittedMessage(content: string, input: TurnInput): void {
+    private sendAdmittedMessage(prompt: SessionRelativePrompt, input: TurnInput): void {
       const turnBuddyContext = this.contextForInput(input);
       if (turnBuddyContext && dependencies.readCurrentBuddyContext) {
         const current = dependencies.readCurrentBuddyContext(turnBuddyContext);
-        if (current.audienceKey && current.audienceKey !== this._providerAudienceKey) {
-          // Resume restored sessions only when their saved audience still matches.
-          // Legacy/unknown state and changed access start fresh; display history remains.
-          if (this._hasStartedSession) {
-            console.log(
-              `[${this.id}] Buddy context reset: reason=${this._providerAudienceKey === null ? 'restored_audience_unverified' : 'audience_changed'}, provider-session=${this.sessionId}`
-            );
-            this.resetProcess();
-          }
-          this._providerAudienceKey = current.audienceKey;
-        }
+        if (current.audience) this.admitBuddyAudience(current.audience);
         this._memorySnapshot = createMemorySnapshot(current.briefing, current.memoryGeneration);
       }
       // Re-brief only when this provider session has not yet seen the current
@@ -2449,6 +2525,13 @@ export function createConversationRuntime(
           forkSourceSessionId = source.sessionId;
         }
       }
+      // Worded here, at admission (a queued Buddy turn may have waited for a
+      // run slot), after the audience check above may have rotated the
+      // provider session, and by the same decision spawnForMessage resumes on:
+      // a fresh session always gets `fresh`.
+      const content = this.resumesProviderSession(forkSourceSessionId)
+        ? prompt.resumed
+        : prompt.fresh;
 
       this._prepareTurnAttempt();
       const executionConfig = this.preflightExecution();
@@ -3100,16 +3183,17 @@ export function createConversationRuntime(
      * Placement (append vs prepend) is the caller's decision.
      */
     private createQueuedMessage(
-      content: string,
+      prompt: SessionRelativePrompt,
       ownerInput?: Readonly<{ origin: 'owner_input'; inputId: string }>
     ): QueuedMessage {
       const msg: QueuedMessage = {
         id: crypto.randomUUID(),
-        content,
+        content: prompt.fresh,
         queuedAt: new Date(),
         status: 'pending',
       };
       const attemptId = crypto.randomUUID();
+      this._queuedPrompts.set(msg.id, prompt);
       if (ownerInput) this._queuedOwnerInputs.set(msg.id, Object.freeze({ ...ownerInput }));
       this._queuedAttemptIds.set(msg.id, attemptId);
       turnAttempts.queued({
@@ -3146,15 +3230,22 @@ export function createConversationRuntime(
       content: string,
       ownerInput?: Readonly<{ origin: 'owner_input'; inputId: string }>
     ): void {
+      this.enqueuePrompt(sameEitherWay(content), ownerInput);
+    }
+
+    private enqueuePrompt(
+      prompt: SessionRelativePrompt,
+      ownerInput?: Readonly<{ origin: 'owner_input'; inputId: string }>
+    ): void {
       if (this.buddyContext?.automationRunId) {
         this.refuseAutomationTranscript();
         return;
       }
       const queueDepthBefore = this.queue.length;
-      const msg = this.createQueuedMessage(content, ownerInput);
+      const msg = this.createQueuedMessage(prompt, ownerInput);
       this.queue.push(msg);
       console.log(
-        `[${this.id}] Queued message id=${msg.id.substring(0, 8)}, queueDepth=${queueDepthBefore}->${this.queue.length}, contentLen=${content.length}, preview="${formatLogPreview(content)}"`
+        `[${this.id}] Queued message id=${msg.id.substring(0, 8)}, queueDepth=${queueDepthBefore}->${this.queue.length}, contentLen=${msg.content.length}, preview="${formatLogPreview(msg.content)}"`
       );
       this.broadcastQueue();
       this.processQueue();
@@ -3181,7 +3272,7 @@ export function createConversationRuntime(
       }
 
       const queueDepthBefore = this.queue.length;
-      const msg = this.createQueuedMessage(content, ownerInput);
+      const msg = this.createQueuedMessage(sameEitherWay(content), ownerInput);
       this.queue.unshift(msg);
       console.log(
         `[${this.id}] interrupt_and_send id=${msg.id.substring(0, 8)}, queueDepth=${queueDepthBefore}->${this.queue.length}, contentLen=${content.length}, preview="${formatLogPreview(content)}"`
@@ -3280,13 +3371,21 @@ export function createConversationRuntime(
         const ownerInput = this._queuedOwnerInputs.get(next.id);
         this._sendingFromQueue = true;
         try {
-          this.sendMessage(next.content, ownerInput);
+          // Automation transcripts never reach here (cleared above), so this is
+          // sendMessage without its refusal, carrying the item's own wording.
+          this.sendMessageInternal(
+            this._queuedPrompts.get(next.id) ?? sameEitherWay(next.content),
+            ownerInput
+          );
         } finally {
           this._sendingFromQueue = false;
         }
         // Keep trusted input provenance while preflight leaves this item pending.
         // It is consumed only after provider admission, never serialized for restore.
-        if (this.process || this.isRunning) this._queuedOwnerInputs.delete(next.id);
+        if (this.process || this.isRunning) {
+          this._queuedOwnerInputs.delete(next.id);
+          this._queuedPrompts.delete(next.id);
+        }
       } catch (error) {
         // Provider admission can still fail synchronously at a future seam.
         // Never strand the queue head in "sending" when no process exists.

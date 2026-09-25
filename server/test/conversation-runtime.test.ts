@@ -26,6 +26,7 @@ import {
   turnAttemptActivityFromEvent,
 } from '../src/conversations/runtime';
 import { resolveConfigAgainstProviderCatalog } from '../src/providers/catalog-service';
+import { sameKeyAudience } from './fixtures/buddy-audience';
 
 function runtimeFixture(
   options: {
@@ -194,7 +195,7 @@ test('retained Buddy display history stays out of fresh provider context across 
   let current = {
     briefing: 'CURRENT_OWNER_BRIEFING',
     memoryGeneration: '1',
-    audienceKey: 'owner-audience',
+    audience: sameKeyAudience('owner-audience'),
   };
   const fixture = runtimeFixture({
     readCurrentBuddyContext: () => current,
@@ -241,7 +242,11 @@ test('retained Buddy display history stays out of fresh provider context across 
   assert.equal(requests[1].resumeSessionId, 'native-1', 'unchanged audience resumes');
   assert.match(requests[1].prompt, /UPDATED_OWNER_MEMORY/);
 
-  current = { briefing: 'NARROWED_BRIEFING', memoryGeneration: '3', audienceKey: 'narrowed' };
+  current = {
+    briefing: 'NARROWED_BRIEFING',
+    memoryGeneration: '3',
+    audience: sameKeyAudience('narrowed'),
+  };
   await turn('Third followup');
   assert.equal(requests[2].resumeSessionId, undefined, 'changed audience starts fresh');
   assert.match(requests[2].prompt, /NARROWED_BRIEFING/);
@@ -263,7 +268,11 @@ test('resumed Buddy turns re-brief only when the memory generation changes', asy
   // (44 in one session) and every later step re-read all of them.
   type Request = Parameters<NonNullable<ConversationRuntimeDependencies['executeTurn']>>[0];
   const requests: Request[] = [];
-  let current = { briefing: 'BRIEFING_GEN_1', memoryGeneration: '1', audienceKey: 'owner' };
+  let current = {
+    briefing: 'BRIEFING_GEN_1',
+    memoryGeneration: '1',
+    audience: sameKeyAudience('owner'),
+  };
   const fixture = runtimeFixture({
     readCurrentBuddyContext: () => current,
     executeTurn: ((request) => {

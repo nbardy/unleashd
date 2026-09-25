@@ -26,7 +26,7 @@ import { registerBuddyRoutes } from '../src/buddies/routes';
 import { configFromProviderPreferences } from '../src/conversations/config-mapping';
 import { ConversationConfigService } from '../src/conversations/config-service';
 import { ConversationConfigStore } from '../src/conversations/config-store';
-import type { ConversationRuntime } from '../src/conversations/runtime';
+import type { ConversationRuntime, SessionRelativePrompt } from '../src/conversations/runtime';
 import { resolveConfigAgainstProviderCatalog } from '../src/providers/catalog-service';
 
 // End-to-end channel conversation: owner posts through the real routes into a
@@ -76,8 +76,14 @@ class FakeTurnRuntime extends EventEmitter {
     return false;
   }
   async waitForTurnDrain() {}
-  sendMessage(content: string, ownerInput: unknown) {
-    this.prompts.push({ content, ownerInput });
+  // Worded like the real runtime: a started session gets `resumed`, a new one
+  // `fresh`. This fake never rotates its session; channel-seat-continuity
+  // drives the real runtime through an audience change.
+  sendSessionRelativeMessage(prompt: SessionRelativePrompt, ownerInput: unknown) {
+    this.prompts.push({
+      content: this.hasStartedSession() ? prompt.resumed : prompt.fresh,
+      ownerInput,
+    });
     this.waitingForSlot = this.slots.full;
   }
   enqueueMessage(content: string, ownerInput: unknown) {

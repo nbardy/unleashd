@@ -59,7 +59,8 @@ test('production composer and resource reads isolate private and project audienc
     assert.match(owner.briefing, /GLOBAL_PRIVATE_CANARY/);
     assert.match(shared.briefing, /APPROVED_HANDOFF/);
     assert.doesNotMatch(shared.briefing, /GLOBAL_PRIVATE_CANARY|OTHER_PROJECT_PRIVATE_TITLE/);
-    assert.notEqual(owner.audienceKey, shared.audienceKey);
+    // A private owner thread and a team project audience never continue each other.
+    assert.equal(shared.audience!.continuityFrom(owner.audience!.key), 'changed');
     const review = new BuddyOperationsService(store, {
       buddyId: b.id,
       workspaceId: w.id,

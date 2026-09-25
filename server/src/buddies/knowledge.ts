@@ -43,7 +43,7 @@ export interface KnowledgeStore {
     authority: KnowledgeAuthority
   ): KnowledgeDocument[];
   listKnowledgeScopes(targetBuddyId: string, authority: KnowledgeAuthority): BuddyKnowledgeScope[];
-  knowledgeAudienceRevision(authority: KnowledgeAuthority): string;
+  knowledgeAudienceKey(authority: KnowledgeAuthority): string;
 }
 export function knowledgeStore(store: BuddiesStorePort): KnowledgeStore {
   if (typeof (store as unknown as KnowledgeStore).readKnowledgeDocument !== 'function')

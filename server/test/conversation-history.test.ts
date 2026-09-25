@@ -21,6 +21,7 @@ import {
 } from '../src/conversations/runtime';
 import { createSessionLoader } from '../src/lifecycle/session-loader';
 import { resolveConfigAgainstProviderCatalog } from '../src/providers/catalog-service';
+import { sameKeyAudience } from './fixtures/buddy-audience';
 
 const CONVERSATION_ID = 'dddddddd-0000-4000-8000-000000000004';
 const ORIGINAL_SESSION = 'eeeeeeee-0000-4000-8000-000000000005';
@@ -148,7 +149,7 @@ async function fixture(
       readCurrentBuddyContext: () => ({
         briefing: 'Current permitted briefing',
         memoryGeneration: 'fixture-generation',
-        audienceKey: 'current-authorized-audience',
+        audience: sameKeyAudience('current-authorized-audience'),
       }),
       executeTurn: ((
         request: Parameters<NonNullable<ConversationRuntimeDependencies['executeTurn']>>[0]

@@ -77,6 +77,15 @@ remain the three core components.
    render readable (`@Name`, `Title (task id)`), and the prompt names the tools
    below. Expanding side threads inline buried the recent flow; the Buddy pulls
    what it needs instead. Rendering: `server/src/buddies/channel-text.ts`.
+   A seat whose provider session RESUMES is sent only the replies since its
+   last turn; a FRESH session always gets the thread above. Only the runtime
+   knows which, at admission (after any run-slot wait), so the responder hands
+   it both wordings (`sendSessionRelativeMessage`). The session resumes while
+   the Buddy's audience only grows (a new readable Task, a new read grant) and
+   starts fresh when access narrows or the audience differs; the Buddies
+   package owns that rule (`knowledgeAudienceContinuity`). Until 2026-09-25 any
+   audience change reset the seat, and at 03:30Z a Buddy that filed a Task from
+   its seat got a fresh session told only "Replies since then (0)".
 4. The final assistant text is posted by the server as that Buddy (`purpose:
    reply`, seat conversation provenance, key `thread-reply:<post>:<buddy>`). Media
    the Buddy referenced is copied; a bad reference is noted visibly in the reply.
