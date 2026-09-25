@@ -1,7 +1,7 @@
 import type { QueuedMessage } from '@unleashd/shared';
 import { useAtomValue } from 'jotai';
 import { cancelQueuedMessage, clearQueue, promoteQueuedMessage } from '../../atoms/actions';
-import { queueAtomFamily } from '../../atoms/conversations';
+import { queueOf, transcriptFamily } from '../../atoms/conversations';
 import { MobileBadge } from '../components/MobileUI';
 
 /**
@@ -11,7 +11,7 @@ import { MobileBadge } from '../components/MobileUI';
  * cancelQueuedMessage, promoteQueuedMessage (Send now) + Clear All
  * (clearQueue). Mobile was number-only (queueLength) and could not cancel
  * one item. This strip reuses the SAME server-authoritative atoms
- * (queueAtomFamily) and actions
+ * (transcriptFamily → queueOf) and actions
  * (cancelQueuedMessage/promoteQueuedMessage/clearQueue) — no new state.
  *
  * Uses MobileBadge/MobileSection primitives (mobile-ui) per G3, and lives in
@@ -25,12 +25,12 @@ export function MobileQueueStrip({
   queue: queueProp,
 }: {
   conversationId: string;
-  /** Optional override — when omitted reads queueAtomFamily(conversationId). */
-  queue?: QueuedMessage[];
+  /** Optional override — when omitted reads the loaded transcript's queue. */
+  queue?: readonly QueuedMessage[];
 }) {
   // Keep hook before early return — even if conversationId is empty, the atom
   // returns EMPTY_QUEUE and avoids conditional hook violation.
-  const queueFromAtom = useAtomValue(queueAtomFamily(conversationId ?? ''));
+  const queueFromAtom = queueOf(useAtomValue(transcriptFamily(conversationId ?? '')));
   const queue = queueProp ?? queueFromAtom;
 
   // Pending items are the cancelable ones; 'sending' is the current turn's

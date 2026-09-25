@@ -1,5 +1,5 @@
 import { type OpenConversation, buildForkDraft } from '../utils/conversation-transcript';
-import { createConversation } from './pending-creations';
+import { createConversation } from './commands';
 import { DRAFT_KEY_PREFIX } from './ui';
 
 /**

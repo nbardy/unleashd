@@ -1,15 +1,14 @@
 import { useAtomValue } from 'jotai';
 import { useMemo } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { buddyConversationIdsAtomFamily } from '../../atoms/buddy-conversation-list';
-import { conversationAtomFamily } from '../../atoms/conversations';
+import { listField, rowFamily } from '../../atoms/conversations';
 import { mobileConversationRouteState } from '../../utils/conversation-route-state';
 import { isRowRunning } from '../../utils/conversation-row';
 import { formatTimeAgo, getConversationLastActivity } from '../../utils/time';
 import { conversationPath } from './buddy-tabs';
 
 function ConversationRow({ id, routeState }: { id: string; routeState: Record<string, unknown> }) {
-  const conversation = useAtomValue(conversationAtomFamily(id));
+  const conversation = useAtomValue(rowFamily(id));
   if (!conversation) return null;
   const activity = getConversationLastActivity(conversation);
   // The server derives the label once (provider title, else first user line).
@@ -37,11 +36,13 @@ function ConversationRow({ id, routeState }: { id: string; routeState: Record<st
   );
 }
 
-/** One Buddy's foreground chats (atoms/buddy-conversation-list.ts), running first. */
+const NO_IDS: readonly string[] = [];
+
+/** One Buddy's foreground chats (list index `buddyThreads`), running first. */
 export function BuddyConversationList({ buddyId }: { buddyId: string }) {
   const location = useLocation();
   const routeState = useMemo(() => mobileConversationRouteState(location), [location]);
-  const ids = useAtomValue(buddyConversationIdsAtomFamily(buddyId));
+  const ids = useAtomValue(listField('buddyThreads')).get(buddyId)?.foreground ?? NO_IDS;
   if (!ids.length)
     return (
       <p className="buddy-thread-list__empty">

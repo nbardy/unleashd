@@ -1,16 +1,13 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import type { ClientMessage } from '@unleashd/shared';
-import { handleMessage, queueMessage, setSendFn } from '../src/atoms/actions';
+import { handleMessage, queueMessage } from '../src/atoms/actions';
+import { openSocket } from './fixtures/client-store';
 
 const conversationId = '07e0146f-95c6-43a0-a506-bd48e5e8156b';
 
 /** Queue composer text and return the correlated command the client sent for it. */
 function queueAndCapture(): { settled: Promise<void>; commandId: string } {
-  const sent: ClientMessage[] = [];
-  setSendFn((message) => {
-    sent.push(message);
-  });
+  const sent = openSocket();
   const settled = queueMessage(conversationId, 'cont');
   const [command] = sent;
   if (command?.type !== 'queue_message') throw new Error('queue command was not sent');
@@ -42,7 +39,7 @@ test('draining rejection rejects the exact queued command so the composer can re
 });
 
 test('uncorrelated server errors release pending composers without losing their draft', async () => {
-  setSendFn(() => undefined);
+  openSocket();
   const rejected = queueMessage(conversationId, 'cont');
 
   handleMessage({

@@ -1,9 +1,6 @@
 import type { ConversationRow, RowKind } from '@unleashd/shared';
-import {
-  folderGroupKey,
-  isWorktreeDirectory,
-  normalizeFolderDirectory,
-} from '../utils/directories';
+import { folderGroupKey, getProjectRoot, isWorktreeDirectory, normalizeFolderDirectory } from '../utils/directories';
+import { sameItems, sameMap, sameSet } from './structural';
 
 // =============================================================================
 // Conversation list index
@@ -219,4 +216,248 @@ export function updateConversationIndex(
     if (next) list.splice(insertionIndex(list, next.activityMs), 0, next);
   }
   return { byId, list };
+}
+
+// =============================================================================
+// The list index: every collection view, built in ONE pass over the list.
+// Pattern: one-store-one-index (docs/patterns.md#one-store-one-index)
+//
+// Until T19 each view was its own derived atom (about 20: ids, id set, recent
+// directories, inbox, gallery, children, three Buddy-sidebar atoms, running
+// counts, workers, per-Buddy lists…), each re-walking the list when it moved.
+// Now one pass builds them all, and a field whose content is unchanged hands
+// back its previous value, so a subscriber of that field (through
+// `listField`) does not re-render. The pass runs only when the LIST moves (a
+// list field changed); message, queue, sub-agent and stream events never
+// reach it (guarded by client/test/conversation-event-isolation.test.tsx).
+// =============================================================================
+
+export interface SidebarFolderGroup {
+  /** `folderGroupKey` of the group's conversations. */
+  directory: string;
+  /** Not-done conversation ids, newest-first. A group whose conversations are
+   *  all done stays (empty) so its position does not jump when one is marked. */
+  activeIds: readonly string[];
+}
+
+export interface SidebarFolderView {
+  /** Folders active in the last week, newest-first. */
+  recent: readonly SidebarFolderGroup[];
+  /** Not-done conversations older than a week, newest-first. */
+  olderIds: readonly string[];
+}
+
+export interface ChatConversationInbox {
+  /** Recent conversation ids, newest-first and capped for rendering. */
+  ids: readonly string[];
+  /** All user chat conversations before the render cap is applied. */
+  total: number;
+}
+
+export interface BuddyThreads {
+  /** Foreground top-level chats, running first, then newest. */
+  foreground: readonly string[];
+  /** Background runs (automations, delegations), running first, then newest. */
+  background: readonly string[];
+}
+
+export interface ListIndex {
+  /** Every conversation id, newest activity first. */
+  readonly order: readonly string[];
+  /** "Does the client still hold this conversation?" (AGENTS.md Link rule). */
+  readonly idSet: ReadonlySet<string>;
+  /** Distinct real project folders (worktrees excluded), newest-first. */
+  readonly recentDirs: readonly string[];
+  readonly latestCwd: string | null;
+  /** Mobile chat inbox: no background runs, workers, children or scratch dirs. */
+  readonly inbox: ChatConversationInbox;
+  /** Desktop gallery: top-level conversations, newest-CREATED first. */
+  readonly gallery: readonly ConversationListEntry[];
+  /** Parent id → child ids, oldest first. */
+  readonly childrenOf: ReadonlyMap<string, readonly string[]>;
+  /** Desktop sidebar folder rows. */
+  readonly folders: SidebarFolderView;
+  /** Running folder rows per `folderGroupKey`. */
+  readonly runningByFolder: ReadonlyMap<string, number>;
+  /** Buddy-kind entries, newest-first (the Buddy sidebar joins these with the roster). */
+  readonly buddyEntries: readonly ConversationListEntry[];
+  /** Builder threads (not hidden workers, not listed children), newest-first. */
+  readonly builders: readonly ConversationListEntry[];
+  /** Per Buddy: its foreground chats and background runs. */
+  readonly buddyThreads: ReadonlyMap<string, BuddyThreads>;
+  /** Latest Buddy activity per workspace. */
+  readonly workspaceActivity: ReadonlyMap<string, number>;
+  /** Swarm worker ids (not promoted) per project root (T10: quarantined swarm). */
+  readonly workersByProject: ReadonlyMap<string, readonly string[]>;
+}
+
+const CHAT_INBOX_LIMIT = 50;
+const RECENT_CUTOFF_MS = 7 * 24 * 60 * 60 * 1000;
+
+function runningFirst(a: ConversationListEntry, b: ConversationListEntry): number {
+  return Number(b.isRunning) - Number(a.isRunning) || b.activityMs - a.activityMs;
+}
+
+function pushTo<K, V>(map: Map<K, V[]>, key: K, value: V): void {
+  const values = map.get(key);
+  if (values) values.push(value);
+  else map.set(key, [value]);
+}
+
+/**
+ * One pass over the newest-first list. `promoted` are worker ids the user
+ * promoted into the main views. `now` dates the sidebar's "recent" cutoff.
+ */
+export function buildListIndex(
+  list: readonly ConversationListEntry[],
+  promoted: ReadonlySet<string>,
+  now: number
+): ListIndex {
+  const order: string[] = [];
+  const idSet = new Set<string>();
+  for (const entry of list) {
+    order.push(entry.id);
+    idSet.add(entry.id);
+  }
+  const listedChild = (entry: ConversationListEntry) =>
+    entry.parentConversationId !== null && idSet.has(entry.parentConversationId);
+  const hiddenWorker = (entry: ConversationListEntry) => entry.isWorker && !promoted.has(entry.id);
+
+  const dirs = new Set<string>();
+  const inboxIds: string[] = [];
+  let inboxTotal = 0;
+  const gallery: ConversationListEntry[] = [];
+  const children = new Map<string, ConversationListEntry[]>();
+  const recent = new Map<string, string[]>();
+  const olderIds: string[] = [];
+  const runningByFolder = new Map<string, number>();
+  const buddyEntries: ConversationListEntry[] = [];
+  const builders: ConversationListEntry[] = [];
+  const foreground = new Map<string, ConversationListEntry[]>();
+  const background = new Map<string, ConversationListEntry[]>();
+  const workspaceActivity = new Map<string, number>();
+  const workers = new Map<string, string[]>();
+  const cutoff = now - RECENT_CUTOFF_MS;
+
+  for (const entry of list) {
+    const directory = directoryFacts(entry.workingDirectory);
+    const child = listedChild(entry);
+    if (!directory.isWorktree) dirs.add(directory.folder);
+    if (!child) gallery.push(entry);
+    if (entry.parentConversationId !== null) pushTo(children, entry.parentConversationId, entry);
+    if (!entry.background && !entry.isWorker && !entry.parentConversationId && !directory.isScratch) {
+      inboxTotal += 1;
+      if (inboxIds.length < CHAT_INBOX_LIMIT) inboxIds.push(entry.id);
+    }
+    if (entry.isWorker && !promoted.has(entry.id)) {
+      pushTo(workers, getProjectRoot(entry.workingDirectory), entry.id);
+    }
+    if (entry.buddyWorkspaceId !== null && !workspaceActivity.has(entry.buddyWorkspaceId)) {
+      workspaceActivity.set(entry.buddyWorkspaceId, entry.activityMs);
+    }
+    if (entry.kind === 'buddy' && entry.buddyId !== null) {
+      buddyEntries.push(entry);
+      if (entry.background) pushTo(background, entry.buddyId, entry);
+      else if (!entry.isWorker && entry.parentConversationId === null)
+        pushTo(foreground, entry.buddyId, entry);
+    }
+    if (hiddenWorker(entry) || child) continue;
+    if (entry.kind === 'builder') builders.push(entry);
+    // Folder rows: not Buddy threads (own section), not Builder (own folder).
+    if (entry.kind === 'buddy' || entry.kind === 'builder') continue;
+    if (entry.isRunning) {
+      runningByFolder.set(directory.groupKey, (runningByFolder.get(directory.groupKey) ?? 0) + 1);
+    }
+    if (entry.activityMs <= cutoff) {
+      if (!entry.done) olderIds.push(entry.id);
+      continue;
+    }
+    let group = recent.get(directory.groupKey);
+    if (!group) {
+      group = [];
+      recent.set(directory.groupKey, group);
+    }
+    if (!entry.done) group.push(entry.id);
+  }
+
+  const childrenOf = new Map<string, readonly string[]>();
+  for (const [parentId, siblings] of children) {
+    childrenOf.set(
+      parentId,
+      siblings.sort((a, b) => a.createdAtMs - b.createdAtMs).map((entry) => entry.id)
+    );
+  }
+  const buddyThreads = new Map<string, BuddyThreads>();
+  const ids = (entries: ConversationListEntry[] | undefined) =>
+    (entries ?? []).sort(runningFirst).map((entry) => entry.id);
+  for (const buddyId of new Set([...foreground.keys(), ...background.keys()])) {
+    buddyThreads.set(buddyId, {
+      foreground: ids(foreground.get(buddyId)),
+      background: ids(background.get(buddyId)),
+    });
+  }
+  return {
+    order,
+    idSet,
+    recentDirs: Array.from(dirs),
+    latestCwd: list[0]?.workingDirectory ?? null,
+    inbox: { ids: inboxIds, total: inboxTotal },
+    gallery: gallery.sort((a, b) => b.createdAtMs - a.createdAtMs),
+    childrenOf,
+    folders: {
+      recent: Array.from(recent, ([directory, activeIds]) => ({ directory, activeIds })),
+      olderIds,
+    },
+    runningByFolder,
+    buddyEntries,
+    builders,
+    buddyThreads,
+    workspaceActivity,
+    workersByProject: workers,
+  };
+}
+
+function sameFolders(a: SidebarFolderView, b: SidebarFolderView): boolean {
+  return (
+    sameItems(a.olderIds, b.olderIds) &&
+    a.recent.length === b.recent.length &&
+    a.recent.every(
+      (group, i) =>
+        group.directory === b.recent[i].directory &&
+        sameItems(group.activeIds, b.recent[i].activeIds)
+    )
+  );
+}
+
+function sameThreads(a: BuddyThreads, b: BuddyThreads): boolean {
+  return sameItems(a.foreground, b.foreground) && sameItems(a.background, b.background);
+}
+
+const FIELD_EQUALS: { [K in keyof ListIndex]: (a: ListIndex[K], b: ListIndex[K]) => boolean } = {
+  order: sameItems,
+  idSet: sameSet,
+  recentDirs: sameItems,
+  latestCwd: Object.is,
+  inbox: (a, b) => a.total === b.total && sameItems(a.ids, b.ids),
+  gallery: sameItems,
+  childrenOf: (a, b) => sameMap(a, b, sameItems),
+  folders: sameFolders,
+  runningByFolder: (a, b) => sameMap(a, b),
+  buddyEntries: sameItems,
+  builders: sameItems,
+  buddyThreads: (a, b) => sameMap(a, b, sameThreads),
+  workspaceActivity: (a, b) => sameMap(a, b),
+  workersByProject: (a, b) => sameMap(a, b, sameItems),
+};
+
+/** Keep each field of `previous` whose content `next` did not change. */
+export function reuseUnchangedFields(previous: ListIndex, next: ListIndex): ListIndex {
+  let same = true;
+  const merged = { ...next } as Record<keyof ListIndex, unknown>;
+  for (const key of Object.keys(FIELD_EQUALS) as Array<keyof ListIndex>) {
+    const equals = FIELD_EQUALS[key] as (a: unknown, b: unknown) => boolean;
+    if (equals(previous[key], next[key])) merged[key] = previous[key];
+    else same = false;
+  }
+  return same ? previous : (merged as unknown as ListIndex);
 }

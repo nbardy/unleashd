@@ -2,8 +2,8 @@ import { type ConversationConfig, createDefaultConversationConfig } from '@unlea
 import { useAtomValue } from 'jotai';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { defaultCwdAtom, recentDirectoriesAtom, wsStatusAtom } from '../../atoms/conversations';
-import { lastWorkingDirectoryAtom } from '../../atoms/ui';
+import { connectionAtom, defaultCwdOf, listField } from '../../atoms/conversations';
+import { prefsAtom } from '../../atoms/ui';
 import { useProviderCatalog } from '../../hooks/useProviderCatalog';
 import { mobileConversationRouteState } from '../../utils/conversation-route-state';
 import { normalizeFolderDirectory, shortenHomePath } from '../../utils/directories';
@@ -43,10 +43,10 @@ export function NewConversationSheet({
   const navigate = useNavigate();
   const location = useLocation();
   const chatRouteState = useMemo(() => mobileConversationRouteState(location), [location]);
-  const recentDirectories = useAtomValue(recentDirectoriesAtom);
-  const lastWorkingDirectory = useAtomValue(lastWorkingDirectoryAtom);
-  const defaultCwd = useAtomValue(defaultCwdAtom);
-  const wsStatus = useAtomValue(wsStatusAtom);
+  const recentDirectories = useAtomValue(listField('recentDirs'));
+  const lastWorkingDirectory = useAtomValue(prefsAtom).lastWorkingDirectory;
+  const defaultCwd = defaultCwdOf(useAtomValue(connectionAtom).server);
+  const wsStatus = useAtomValue(connectionAtom).socket.tag;
   const { catalog } = useProviderCatalog();
 
   const initialDirectory = recentDirectories[0] ?? lastWorkingDirectory ?? defaultCwd ?? '/';
@@ -69,7 +69,7 @@ export function NewConversationSheet({
   }, [recentDirectories, filter]);
 
   const resolvedDirectory = normalizeFolderDirectory(directory);
-  const canCreate = directory.trim().length > 0 && wsStatus === 'connected' && !busy;
+  const canCreate = directory.trim().length > 0 && wsStatus === 'open' && !busy;
   const copy = COPY[kind];
 
   const submit = async () => {
@@ -193,7 +193,7 @@ export function NewConversationSheet({
               {error}
             </div>
           )}
-          {wsStatus !== 'connected' && (
+          {wsStatus !== 'open' && (
             <output className="mobile-sheet__note">
               Disconnected from the server — reconnecting.
             </output>

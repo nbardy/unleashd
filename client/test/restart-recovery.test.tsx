@@ -1,13 +1,13 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import type { ClientMessage } from '@unleashd/shared';
-import { handleMessage, resumeInterruptedMessages, setSendFn } from '../src/atoms/actions';
+import { handleMessage, resumeInterruptedMessages } from '../src/atoms/actions';
 import {
   captureRestartRecoveryQueue,
   clearRestartRecovery,
   loadRestartRecovery,
 } from '../src/atoms/restart-recovery';
 import { shouldOfferRestartRecovery } from '../src/hooks/useRestartRecovery';
+import { openSocket } from './fixtures/client-store';
 
 class MemoryStorage {
   private values = new Map<string, string>();
@@ -58,8 +58,7 @@ test('queue mirror retains the current and pending messages when the server queu
 });
 
 test('resume resubmits the current message before requeueing later messages', async () => {
-  const sent: ClientMessage[] = [];
-  setSendFn((message) => sent.push(message));
+  const sent = openSocket();
 
   const resumed = resumeInterruptedMessages(conversationId, ['current', 'queued']);
   assert.equal(sent.length, 1);

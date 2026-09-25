@@ -1,11 +1,11 @@
 import type { BuddyWorkerThread } from '@unleashd/shared';
 import { useAtomValue } from 'jotai';
 import { Link } from 'react-router-dom';
-import { availableConversationIdSetAtom } from '../../atoms/conversations';
+import { listField } from '../../atoms/conversations';
 import './BuddyWorkerThreadBadge.css';
 
 export function BuddyWorkerThreadBadge({ thread }: { thread: BuddyWorkerThread }) {
-  const available = useAtomValue(availableConversationIdSetAtom);
+  const available = useAtomValue(listField('idSet'));
   const label = `${thread.label} · worker`;
   return available.has(thread.conversationId) ? (
     <Link

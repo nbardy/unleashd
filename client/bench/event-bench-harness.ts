@@ -1,8 +1,14 @@
-import type { Conversation, ServerMessage } from '@unleashd/shared';
+import {
+  type ConversationDetail,
+  type Message,
+  type ServerMessage,
+  encodeRows,
+} from '@unleashd/shared';
 import type { Atom, createStore } from 'jotai';
 import {
+  syntheticConversation,
   syntheticConversations,
-  syntheticMessage,
+  syntheticDetail,
   syntheticTranscript,
 } from '../test/fixtures/synthetic-conversations';
 
@@ -11,6 +17,10 @@ type Store = ReturnType<typeof createStore>;
 export interface BenchTarget {
   store: Store;
   handleMessage: (message: ServerMessage) => void;
+  /** The WS boundary: raw decoded JSON → a dispatchable message (or null). Timed with the event. */
+  parseFrame: (raw: unknown) => ServerMessage | null;
+  /** Seed the open chat's loaded detail and bodies (what opening it fetches). */
+  open: (id: string, detail: ConversationDetail, messages: readonly Message[]) => void;
   /** Every atom the mounted components read; subscribed like useAtomValue does. */
   mount: (idsNewestFirst: readonly string[], openId: string) => Atom<unknown>[];
   /** The open chat's message groups; a replaced group is a re-rendered row. */
@@ -51,23 +61,25 @@ export function runEventBench(target: BenchTarget): void {
   const flush = () => {
     for (const frame of frames.splice(0)) frame(0);
   };
-  const conversations = syntheticConversations(COUNT);
+  // Every event goes through the real boundary: JSON text → parseFrame → handleMessage.
+  const deliver = (message: unknown) => {
+    const parsed = target.parseFrame(JSON.parse(JSON.stringify(message)));
+    if (parsed) target.handleMessage(parsed);
+  };
+  const rows = syntheticConversations(COUNT);
+  deliver({
+    type: 'hello',
+    protocol: { version: 3 },
+    defaultCwd: '/',
+    loading: false,
+    archivedBuddyIds: [],
+    ...encodeRows(rows),
+  });
+  const idsNewestFirst = rows.map((row) => row.id).reverse();
+  const openId = idsNewestFirst[0];
   // The open chat carries a long transcript (150 turns, 600 records), so a
   // stream frame shows whether it regroups the whole thing.
-  const newest = conversations.length - 1;
-  conversations[newest] = {
-    ...conversations[newest],
-    messages: syntheticTranscript(150),
-    messageCount: 600,
-  };
-  target.handleMessage({
-    type: 'init',
-    conversations,
-    defaultCwd: '/',
-    summaries: true,
-  } as unknown as ServerMessage);
-  const idsNewestFirst = conversations.map((conversation) => conversation.id).reverse();
-  const openId = idsNewestFirst[0];
+  target.open(openId, syntheticDetail(openId), syntheticTranscript(150));
   const atoms = target.mount(idsNewestFirst, openId);
   const last = new Map<Atom<unknown>, unknown>();
   for (const atom of atoms) {
@@ -78,63 +90,58 @@ export function runEventBench(target: BenchTarget): void {
     run(target.store.get(atom));
     target.store.sub(atom, () => run(target.store.get(atom)));
   }
-  const others = conversations.filter((conversation) => conversation.id !== openId);
+  const others = rows.filter((row) => row.id !== openId);
   let clock = Date.parse('2026-09-25T00:00:00.000Z');
 
   const kinds: Record<string, (i: number) => void> = {
     'status flip (another conversation)': (i) => {
-      const conversation = others[i % others.length];
       const running = Math.floor(i / others.length) % 2 === 0;
-      target.handleMessage({
-        type: 'status',
-        conversationId: conversation.id,
-        isRunning: running,
-        isStreaming: false,
-      } as ServerMessage);
+      deliver({
+        type: 'patch',
+        id: others[i % others.length].id,
+        patch: { t: 'run', run: running ? 'running' : 'idle' },
+      });
     },
-    'queue_updated (another conversation)': (i) => {
-      target.handleMessage({
-        type: 'queue_updated',
-        conversationId: others[i % others.length].id,
-        queue: [{ id: `q${i}`, content: 'next', status: 'pending', queuedAt: new Date(clock) }],
-      } as unknown as ServerMessage);
+    'queue patch (another conversation)': (i) => {
+      deliver({
+        type: 'patch',
+        id: others[i % others.length].id,
+        patch: {
+          t: 'queue',
+          queue: [{ id: `q${i}`, content: 'next', status: 'pending', queuedAt: new Date(clock) }],
+        },
+      });
     },
-    'poller batch, 1 summary (another conversation)': (i) => {
+    'poller batch, 1 row (another conversation)': (i) => {
       clock += 1_000;
       const index = (i * 7) % others.length;
-      // A fresh summary object each batch, as the wire delivers it.
-      const conversation: Conversation = {
+      // A fresh row each batch, as the wire delivers it.
+      const row = syntheticConversation(0, {
         ...others[index],
-        messages: [syntheticMessage('assistant', `polled ${i}`, new Date(clock))],
+        activityAt: clock,
         messageCount: 3 + i,
-      };
-      target.handleMessage({
-        type: 'conversations_updated',
-        summaries: true,
-        conversations: [conversation],
-      } as ServerMessage);
+      });
+      deliver({ type: 'rows', ...encodeRows([row]) });
     },
-    'message (another conversation)': (i) => {
-      target.handleMessage({
-        type: 'message',
-        conversationId: others[(i * 13) % others.length].id,
-        role: 'user',
-        content: `message ${i}`,
-      } as ServerMessage);
+    'message + activity (another conversation)': (i) => {
+      clock += 1_000;
+      const id = others[(i * 13) % others.length].id;
+      deliver({ type: 'message', conversationId: id, role: 'user', content: `message ${i}` });
+      deliver({
+        type: 'patch',
+        id,
+        patch: { t: 'activity', activityAt: clock, messageCount: 3 + i },
+      });
     },
     'stream frame (open chat)': (i) => {
-      target.handleMessage({
-        type: 'chunk',
-        conversationId: openId,
-        text: ` token${i}`,
-      } as ServerMessage);
+      deliver({ type: 'chunk', conversationId: openId, text: ` token${i}` });
       flush();
     },
   };
 
   const groupsAtom = target.groups(openId);
   target.store.sub(groupsAtom, () => {});
-  const rows: string[] = [];
+  const table: string[] = [];
   for (const [name, run] of Object.entries(kinds)) {
     const timings: number[] = [];
     let changed = 0;
@@ -158,7 +165,7 @@ export function runEventBench(target: BenchTarget): void {
       }
     }
     timings.sort((a, b) => a - b);
-    rows.push(
+    table.push(
       `| ${name} | ${percentile(timings, 0.5).toFixed(3)} | ${percentile(timings, 0.95).toFixed(3)} | ${(changed / RUNS).toFixed(1)} | ${(replacedGroups / RUNS).toFixed(1)} |`
     );
   }
@@ -168,7 +175,7 @@ export function runEventBench(target: BenchTarget): void {
       '',
       '| event | median ms | p95 ms | subscribed atoms changed | open-chat groups replaced |',
       '|---|---:|---:|---:|---:|',
-      ...rows,
+      ...table,
       '',
     ].join('\n')
   );

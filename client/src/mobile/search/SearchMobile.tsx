@@ -1,7 +1,7 @@
 import { useAtom, useAtomValue } from 'jotai';
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
-import { conversationAtomFamily } from '../../atoms/conversations';
+import { rowFamily } from '../../atoms/conversations';
 import { mobileConversationRouteState } from '../../utils/conversation-route-state';
 import { formatTimeAgo, getConversationLastActivity } from '../../utils/time';
 import { mobileSearchResultsAtom, mobileSearchStateAtom } from '../atoms/search';
@@ -43,7 +43,7 @@ function ClientResultRow({
   id: string;
   routeState: Record<string, unknown>;
 }) {
-  const conv = useAtomValue(conversationAtomFamily(id));
+  const conv = useAtomValue(rowFamily(id));
   if (!conv) return null;
   const preview = conv.label;
   const roleBadge = `${conv.messageCount} msg`;

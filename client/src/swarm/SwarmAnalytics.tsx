@@ -3,7 +3,6 @@ import type { SwarmRunLog, SwarmRunSummary } from '@unleashd/shared';
 import { useAtomValue } from 'jotai';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { swarmWorkersByProjectAtom } from '../atoms/conversations';
 import { resource, usePolledFetch } from '../hooks/usePolledFetch';
 import { rowWorker } from '../utils/conversation-row';
 import { getProjectColor } from '../utils/projectColors';
@@ -16,6 +15,7 @@ import {
 } from './swarmAnalyticsParsers';
 import { getProjectName } from './swarmUtils';
 import './SwarmAnalytics.css';
+import { swarmWorkersByProjectAtom } from './swarm-workers';
 
 // Stable empty fallback (AGENTS.md: stable fallbacks are module constants).
 const NO_RUNS_DATA = new Map<string, RunData>();

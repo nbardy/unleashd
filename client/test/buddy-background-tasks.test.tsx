@@ -15,10 +15,7 @@ register(
   import.meta.url
 );
 const { Provider, createStore } = await import('jotai');
-const { buddyBackgroundConversationsAtomFamily } = await import('../src/atoms/buddy-background');
-const { conversationLoadCompleteAtom, conversationsAtom } = await import(
-  '../src/atoms/conversations'
-);
+const { connectionAtom, rowsAtom } = await import('../src/atoms/conversations');
 const { BuddyBackgroundTasks } = await import('../src/components/buddies/BuddyBackgroundTasks');
 
 const T0 = Date.parse('2026-09-13T00:00:00Z');
@@ -50,13 +47,11 @@ test('background destination shows running work first, keeps history and drops d
       }),
     ].map((conversation) => [conversation.id, conversation])
   );
-  store.set(conversationsAtom, conversations);
-  store.set(conversationLoadCompleteAtom, true);
-  const view = buddyBackgroundConversationsAtomFamily('lead');
-  assert.deepEqual(
-    store.get(view).conversations.map((c) => c.id),
-    ['active', 'past']
-  );
+  store.set(rowsAtom, conversations);
+  store.set(connectionAtom, {
+    socket: { tag: 'closed' },
+    server: { tag: 'v3', defaultCwd: '/', loadComplete: true },
+  });
   const render = () =>
     renderToStaticMarkup(
       <Provider store={store}>
@@ -69,10 +64,10 @@ test('background destination shows running work first, keeps history and drops d
   assert.match(render(), /1 running · 2 conversations/);
 
   // Live snapshots change the count; deletion removes its target immediately.
-  store.set(conversationsAtom, new Map(conversations).set('active', make('active')));
+  store.set(rowsAtom, new Map(conversations).set('active', make('active')));
   assert.match(render(), /0 running · 2 conversations/);
   const remaining = new Map(conversations);
   remaining.delete('active');
-  store.set(conversationsAtom, remaining);
+  store.set(rowsAtom, remaining);
   assert.deepEqual(hrefs(render()), ['/chat/past']);
 });

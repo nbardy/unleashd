@@ -9,11 +9,7 @@ import { useAtomValue } from 'jotai';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { createConversation, readConversationMessages } from '../atoms/actions';
-import {
-  chatMessageGroupsAtomFamily,
-  conversationAtomFamily,
-  swarmWorkersForProjectAtomFamily,
-} from '../atoms/conversations';
+import { groupsFamily, rowFamily } from '../atoms/conversations';
 import { markMessagesSeen } from '../atoms/ui';
 import { VirtualizedMessageList } from '../components/VirtualizedMessageList';
 import { useConversationBodies } from '../hooks/useConversationBodies';
@@ -25,6 +21,7 @@ import { useSwarmRuntimeSnapshots } from './useSwarmRuntimeSnapshots';
 import './SwarmDetail.css';
 import { useTimeTick } from '../hooks/useTimeTick';
 import { shortenHomePath } from '../utils/directories';
+import { NO_WORKERS, swarmWorkersByProjectAtom } from './swarm-workers';
 
 // Stable empty fallbacks for usePolledFetch results (AGENTS.md: stable fallbacks
 // are module constants — a fresh [] per render defeats downstream memoisation).
@@ -220,12 +217,12 @@ function WorkerChatPane({
   accentColor: 'cyan' | 'magenta';
   runningState: 'running' | 'idle';
 }) {
-  const conversation = useAtomValue(conversationAtomFamily(conversationId ?? ''));
+  const conversation = useAtomValue(rowFamily(conversationId ?? ''));
   const isStreaming = conversation?.run === 'streaming';
   useConversationBodies(conversationId);
 
   // ALL hooks before any early return (React hook ordering rule)
-  const messageGroups = useAtomValue(chatMessageGroupsAtomFamily(conversationId ?? ''));
+  const messageGroups = useAtomValue(groupsFamily(conversationId ?? ''));
 
   const lastMessageRef = useRef<HTMLDivElement>(null);
   const scrollToBottomRef = useRef<(() => void) | null>(null);
@@ -659,7 +656,8 @@ export function SwarmDetail() {
   const navigate = useNavigate();
 
   // This project's swarm workers; re-renders only when one of them changes.
-  const projectWorkers = useAtomValue(swarmWorkersForProjectAtomFamily(projectRoot ?? ''));
+  const projectWorkers =
+    useAtomValue(swarmWorkersByProjectAtom).get(projectRoot ?? '') ?? NO_WORKERS;
   const runtimeSnapshots = useSwarmRuntimeSnapshots(projectRoot ? [projectRoot] : []);
   const runtimeSnapshot = projectRoot ? (runtimeSnapshots[projectRoot] ?? null) : null;
 

@@ -3,10 +3,7 @@ import { useAtomValue } from 'jotai';
 import { useCallback, useMemo, useState } from 'react';
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { createConversation, readConversationMessages } from '../../atoms/actions';
-import {
-  conversationAtomFamily,
-  swarmWorkersForProjectAtomFamily,
-} from '../../atoms/conversations';
+import { rowFamily } from '../../atoms/conversations';
 import { useTimeTick } from '../../hooks/useTimeTick';
 import { mobileConversationRouteState } from '../../utils/conversation-route-state';
 import { isRowRunning, rowWorker } from '../../utils/conversation-row';
@@ -15,6 +12,7 @@ import { formatTimeAgo } from '../../utils/time';
 import { getWorkerVisibilitySummary } from '../swarmWorkerVisibility';
 import { useSwarmRuntimeSnapshots } from '../useSwarmRuntimeSnapshots';
 import './mobile-swarm.css';
+import { NO_WORKERS, swarmWorkersByProjectAtom } from '../swarm-workers';
 
 // =============================================================================
 // Pure helpers — copied as pure logic from SwarmDetail (no component import).
@@ -138,7 +136,7 @@ function WorkerRow({
   conversationId: string;
   routeState: Record<string, unknown>;
 }) {
-  const conv = useAtomValue(conversationAtomFamily(conversationId));
+  const conv = useAtomValue(rowFamily(conversationId));
   if (!conv) return null;
   const model = shortModelName(null);
   const running = isRowRunning(conv);
@@ -173,7 +171,8 @@ export function SwarmDetailMobile() {
   const location = useLocation();
   const chatRouteState = useMemo(() => mobileConversationRouteState(location), [location]);
 
-  const projectWorkers = useAtomValue(swarmWorkersForProjectAtomFamily(projectRoot ?? ''));
+  const projectWorkers =
+    useAtomValue(swarmWorkersByProjectAtom).get(projectRoot ?? '') ?? NO_WORKERS;
 
   // Runtime snapshot: the same hook and cache key desktop SwarmDetail uses, so
   // the two shells share one polled entry per project (10s, visibility-aware).

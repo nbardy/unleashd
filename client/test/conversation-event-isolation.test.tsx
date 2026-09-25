@@ -6,22 +6,13 @@ import { type Atom, Provider } from 'jotai';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { MemoryRouter } from 'react-router-dom';
 import { handleMessage } from '../src/atoms/actions';
-import { buddySidebarProjectsAtom, sidebarFolderViewAtom } from '../src/atoms/buddy-sidebar';
-import {
-  allConversationIdsAtom,
-  availableConversationIdSetAtom,
-  chatConversationInboxAtom,
-  conversationListAtom,
-  detailPatchAtom,
-  galleryConversationsAtom,
-  recentDirectoriesAtom,
-  transcriptPatchAtom,
-} from '../src/atoms/conversations';
+import { buddySidebarAtom } from '../src/atoms/buddy-sidebar';
+import { listField, listIndexAtom } from '../src/atoms/conversations';
 import { jotaiStore } from '../src/atoms/store';
+import { setLoaded } from './fixtures/client-store';
 import {
   syntheticConversation,
   syntheticConversations,
-  syntheticDetail,
   syntheticId,
   syntheticMessages,
 } from './fixtures/synthetic-conversations';
@@ -93,20 +84,8 @@ function seed(): void {
     ...encodeRows(rows),
   } as unknown as ServerMessage);
   // Both chats are open: detail and bodies loaded (as useConversationBodies would).
-  jotaiStore.set(detailPatchAtom, {
-    set: [
-      [A, syntheticDetail(A)],
-      [B, syntheticDetail(B)],
-    ],
-    remove: [],
-  });
-  jotaiStore.set(transcriptPatchAtom, {
-    set: [
-      [A, { epoch: 0, messages: syntheticMessages(1_000_001) }],
-      [B, { epoch: 0, messages: syntheticMessages(1_000_002) }],
-    ],
-    remove: [],
-  });
+  setLoaded(A, syntheticMessages(1_000_001));
+  setLoaded(B, syntheticMessages(1_000_002));
 }
 
 /** Render Chat for `id` and return every atom it read, with the value read. */
@@ -151,14 +130,14 @@ function labelOf(atom: Atom<unknown>): string {
 }
 
 const COLLECTION_VIEWS = {
-  conversationListAtom,
-  allConversationIdsAtom,
-  availableConversationIdSetAtom,
-  recentDirectoriesAtom,
-  chatConversationInboxAtom,
-  galleryConversationsAtom,
-  sidebarFolderViewAtom,
-  buddySidebarProjectsAtom,
+  listIndexAtom,
+  order: listField('order'),
+  idSet: listField('idSet'),
+  recentDirs: listField('recentDirs'),
+  inbox: listField('inbox'),
+  gallery: listField('gallery'),
+  folders: listField('folders'),
+  buddySidebarAtom,
 } satisfies Record<string, Atom<unknown>>;
 
 function mountCollectionViews(): Record<string, () => number> {
@@ -269,7 +248,7 @@ test('stream, queue and sub-agent events for A leave B and every list view alone
 test('message, status and poller events for A re-sort the list but leave Chat and rows for B alone', () => {
   const collectionRecomputes = assertBUntouched('list');
   // The control: these events do move A in the list, so the views ran.
-  assert.ok(collectionRecomputes.conversationListAtom > 0);
+  assert.ok(collectionRecomputes.listIndexAtom > 0);
 });
 
 test('the same events for B do reach Chat(B) (the guard is not vacuous)', () => {
@@ -279,7 +258,7 @@ test('the same events for B do reach Chat(B) (the guard is not vacuous)', () => 
   handleMessage({ type: 'message', conversationId: B, role: 'user', content: 'for B' });
   const changed = [...chatReads].filter(([atom, before]) => jotaiStore.get(atom) !== before);
   assert.ok(
-    changed.some(([atom]) => labelOf(atom) === `chatMessageGroups:${B}`),
+    changed.some(([atom]) => labelOf(atom) === `groups:${B}`),
     `expected B's message groups to change, changed: ${changed.map(([atom]) => labelOf(atom))}`
   );
 });

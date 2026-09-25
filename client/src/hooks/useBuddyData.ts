@@ -1,5 +1,5 @@
 import { useCallback, useRef } from 'react';
-import { createConversation } from '../atoms/pending-creations';
+import { createConversation } from '../atoms/commands';
 import { findWorkspace } from '../components/buddies/roster';
 import type { BuddyDetail, BuddyOverview } from '../components/buddies/types';
 import { type UsePolledFetchResult, usePolledFetch } from './usePolledFetch';

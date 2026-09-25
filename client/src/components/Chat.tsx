@@ -12,23 +12,23 @@ import {
   interruptAndSend,
   promoteQueuedMessage,
   queueMessage,
-  setActiveConversationId,
 } from '../atoms/actions';
 import type { QueuedMessage } from '../atoms/actions';
-import { setConversationConfig } from '../atoms/config-actions';
+import { setConversationConfig } from '../atoms/commands';
 import {
-  chatMessageGroupsAtomFamily,
-  childConversationsAtomFamily,
-  conversationAtomFamily,
-  conversationDetailAtomFamily,
-  conversationLoadCompleteAtom,
-  conversationMessagesAtomFamily,
-  hasConversationsAtom,
-  pendingConfigCommandAtomFamily,
-  pendingCreationAtomFamily,
-  queueAtomFamily,
-  streamingAtomFamily,
-  subAgentsAtomFamily,
+  childRowsFamily,
+  commandFor,
+  connectionAtom,
+  detailOf,
+  groupsFamily,
+  listField,
+  loadCompleteOf,
+  messagesOf,
+  queueOf,
+  rowFamily,
+  streamFamily,
+  subAgentsOf,
+  transcriptFamily,
 } from '../atoms/conversations';
 import { forkConversation } from '../atoms/fork-actions';
 import { markMessagesSeen, setSavedActiveConversationId } from '../atoms/ui';
@@ -101,23 +101,28 @@ export function Chat({ id }: { id: string }) {
   const navigate = useNavigate();
 
   // Per-ID atoms — only re-render when THIS conversation changes, not others
-  const conversation = useAtomValue(conversationAtomFamily(id ?? ''));
-  const detail = useAtomValue(conversationDetailAtomFamily(id ?? ''));
-  const messages = useAtomValue(conversationMessagesAtomFamily(id ?? ''));
-  const subAgents = useAtomValue(subAgentsAtomFamily(id ?? ''));
+  const conversation = useAtomValue(rowFamily(id ?? ''));
+  const transcript = useAtomValue(transcriptFamily(id ?? ''));
+  const detail = detailOf(transcript);
+  const messages = messagesOf(transcript);
+  const subAgents = subAgentsOf(transcript);
   const { loaded: conversationDetailsLoaded, error: detailLoadError } = useConversationBodies(
     id || null
   );
-  const conversationLoadComplete = useAtomValue(conversationLoadCompleteAtom);
-  const pendingCreation = useAtomValue(pendingCreationAtomFamily(id ?? ''));
-  const pendingConfigCommand = useAtomValue(pendingConfigCommandAtomFamily(id ?? ''));
-  const configIsSaving = !!pendingConfigCommand && !pendingConfigCommand.error;
-  const streamingText = useAtomValue(streamingAtomFamily(id ?? ''));
-  const childSessionConversations = useAtomValue(childConversationsAtomFamily(id ?? ''));
-  const hasConversations = useAtomValue(hasConversationsAtom);
-  const queue: readonly QueuedMessage[] = useAtomValue(queueAtomFamily(id ?? ''));
+  const conversationLoadComplete = loadCompleteOf(useAtomValue(connectionAtom).server);
+  const { create: pendingCreation, config: pendingConfigCommand } = useAtomValue(
+    commandFor(id ?? '')
+  );
+  const configIsSaving = pendingConfigCommand?.state.tag === 'sent';
+  const configError =
+    pendingConfigCommand?.state.tag === 'rejected' ? pendingConfigCommand.state.message : null;
+  const streamingText = useAtomValue(streamFamily(id ?? ''));
+  const childSessionConversations = useAtomValue(childRowsFamily(id ?? ''));
+  // idSet, not order: a re-sort of other conversations must not re-render this chat.
+  const hasConversations = useAtomValue(listField('idSet')).size > 0;
+  const queue: readonly QueuedMessage[] = queueOf(transcript);
   const resumedFromConversationId = conversation?.resumedFrom ?? '';
-  const resumedFromConversation = useAtomValue(conversationAtomFamily(resumedFromConversationId));
+  const resumedFromConversation = useAtomValue(rowFamily(resumedFromConversationId));
 
   const {
     catalog,
@@ -247,13 +252,7 @@ export function Chat({ id }: { id: string }) {
   });
 
   useEffect(() => {
-    if (id) {
-      setActiveConversationId(id);
-      setSavedActiveConversationId(id);
-    }
-    return () => {
-      setActiveConversationId(null);
-    };
+    if (id) setSavedActiveConversationId(id);
   }, [id]);
 
   useEffect(() => {
@@ -299,7 +298,7 @@ export function Chat({ id }: { id: string }) {
 
   const timeAgo = useTimeAgo(lastMessageTime);
 
-  const messageGroups = useAtomValue(chatMessageGroupsAtomFamily(id ?? ''));
+  const messageGroups = useAtomValue(groupsFamily(id ?? ''));
 
   // The server sets a swarm prefix only on chats, so no kind check here.
   const visibleSwarmDebugPrefix = detail?.swarmDebugPrefix ?? null;
@@ -356,10 +355,10 @@ export function Chat({ id }: { id: string }) {
         </div>
         <div className="messages-container">
           <div className="empty-state ui-muted">
-            {pendingCreation?.error
-              ? `Creation failed: ${pendingCreation.error}`
+            {pendingCreation?.state.tag === 'rejected'
+              ? `Creation failed: ${pendingCreation.state.message}`
               : pendingCreation
-                ? `Starting ${pendingCreation.config.provider} in ${pendingCreation.workingDirectory}`
+                ? `Starting ${pendingCreation.args.config.provider} in ${pendingCreation.args.workingDirectory}`
                 : 'Select a conversation from the sidebar or create a new one.'}
           </div>
         </div>
@@ -607,9 +606,9 @@ export function Chat({ id }: { id: string }) {
                 )}
 
                 {configIsSaving && <span className="config-save-state ui-muted">Saving…</span>}
-                {pendingConfigCommand?.error && (
+                {configError && (
                   <span className="config-save-state ui-muted error" role="alert">
-                    {pendingConfigCommand.error}
+                    {configError}
                   </span>
                 )}
               </dialog>

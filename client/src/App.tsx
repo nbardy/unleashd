@@ -10,11 +10,11 @@ import {
   useRef,
 } from 'react';
 import { BrowserRouter, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
-import { handleMessage, setSendFn, setWsStatus } from './atoms/actions';
-import { conversationsAtom, savedActiveConversationPresentAtom } from './atoms/conversations';
+import { handleMessage } from './atoms/actions';
+import { rowFamily } from './atoms/conversations';
 import { startConversationPrefetch } from './atoms/prefetch';
 import { jotaiStore } from './atoms/store';
-import { savedActiveConversationIdAtom } from './atoms/ui';
+import { prefsAtom } from './atoms/ui';
 import { useOwnerUnreadTitle } from './components/buddies/channel-data';
 import { useWebSocket } from './hooks/useWebSocket';
 import { type DeviceKind, useDeviceKind } from './mobile/hooks/useDeviceKind';
@@ -45,15 +45,7 @@ function wsUrlForLocation(loc: Location): string {
  */
 function useWebSocketBridge() {
   const wsUrl = wsUrlForLocation(window.location);
-  const { send, status } = useWebSocket(wsUrl, handleMessage);
-
-  useEffect(() => {
-    setSendFn(send);
-  }, [send]);
-
-  useEffect(() => {
-    setWsStatus(status);
-  }, [status]);
+  useWebSocket(wsUrl, handleMessage);
 
   // Warm recent chat history once the server reports its load complete, so
   // navigating between conversations reads the local store instead of waiting
@@ -83,8 +75,10 @@ function useWebSocketBridge() {
 function useRestoreOnLoad(device: DeviceKind) {
   const navigate = useNavigate();
   const location = useLocation();
-  const savedActivePresent = useAtomValue(savedActiveConversationPresentAtom);
-  const savedActiveId = useAtomValue(savedActiveConversationIdAtom);
+  const savedActiveId = useAtomValue(prefsAtom).activeConversationId;
+  // Tracks the SAVED id, not "any conversation": startup hydrates in batches,
+  // and a saved chat arriving in a later batch must still restore (984d00f).
+  const savedActivePresent = useAtomValue(rowFamily(savedActiveId ?? '')) !== null;
   const didRestore = useRef(false);
 
   const tryRestore = useCallback(() => {
@@ -92,7 +86,7 @@ function useRestoreOnLoad(device: DeviceKind) {
     if (window.location.pathname !== '/') return false;
     if (!savedActiveId) return false;
     if (didRestore.current) return false;
-    if (!jotaiStore.get(conversationsAtom).has(savedActiveId)) return false;
+    if (jotaiStore.get(rowFamily(savedActiveId)) === null) return false;
     didRestore.current = true;
     navigate(`/chat/${savedActiveId}`, { replace: true });
     return true;

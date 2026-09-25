@@ -1,9 +1,5 @@
 import { loadConversationDetails } from './actions';
-import {
-  chatConversationIdsAtom,
-  conversationLoadCompleteAtom,
-  transcriptsAtom,
-} from './conversations';
+import { connectionAtom, listIndexAtom, loadCompleteOf, transcriptFamily } from './conversations';
 import { type Resource, isResourceCached, loadResource } from './resources';
 import { jotaiStore } from './store';
 
@@ -58,11 +54,10 @@ async function drain(jobs: readonly (() => Promise<unknown>)[]): Promise<void> {
  */
 export function prefetchRecentConversationDetails(): void {
   scheduleIdle(() => {
-    const loaded = jotaiStore.get(transcriptsAtom);
     const cold = jotaiStore
-      .get(chatConversationIdsAtom)
-      .slice(0, PREFETCH_CONVERSATION_LIMIT)
-      .filter((id) => !loaded.has(id));
+      .get(listIndexAtom)
+      .inbox.ids.slice(0, PREFETCH_CONVERSATION_LIMIT)
+      .filter((id) => jotaiStore.get(transcriptFamily(id)).tag === 'absent');
     // loadConversationDetails already dedupes in flight and is epoch-guarded
     // against reconnect, so a prefetch that collides with the user opening
     // the same conversation joins that request rather than racing it.
@@ -78,10 +73,11 @@ export function prefetchRecentConversationDetails(): void {
  * on actions for the loader), and means reconnect re-warms for free.
  */
 export function startConversationPrefetch(): () => void {
-  let wasComplete = jotaiStore.get(conversationLoadCompleteAtom);
+  const loadComplete = () => loadCompleteOf(jotaiStore.get(connectionAtom).server);
+  let wasComplete = loadComplete();
   if (wasComplete) prefetchRecentConversationDetails();
-  return jotaiStore.sub(conversationLoadCompleteAtom, () => {
-    const complete = jotaiStore.get(conversationLoadCompleteAtom);
+  return jotaiStore.sub(connectionAtom, () => {
+    const complete = loadComplete();
     const became = complete && !wasComplete;
     wasComplete = complete;
     if (became) prefetchRecentConversationDetails();

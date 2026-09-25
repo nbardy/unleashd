@@ -1,7 +1,6 @@
 import { useAtomValue } from 'jotai';
 import { Navigate } from 'react-router-dom';
-import { conversationListAtom } from '../../atoms/conversations';
-import { sameMap, stableAtom } from '../../atoms/structural';
+import { listField } from '../../atoms/conversations';
 import type { BuddyOverview } from '../../components/buddies/types';
 import { useBuddyOverview } from '../../hooks/useBuddyData';
 import { MobileEmptyPanel, MobilePage } from '../components/MobileUI';
@@ -12,16 +11,8 @@ import { channelsHref } from './channel-route';
 
 type OverviewWorkspace = { id: string; name: string; lastActiveMs: number };
 
-/** Latest Buddy conversation activity per workspace, from the conversation list. */
-export const buddyWorkspaceActivityAtom = stableAtom((get) => {
-  const latest = new Map<string, number>();
-  // Newest-first, so the first entry per workspace is its latest.
-  for (const entry of get(conversationListAtom)) {
-    if (entry.buddyWorkspaceId !== null && !latest.has(entry.buddyWorkspaceId))
-      latest.set(entry.buddyWorkspaceId, entry.activityMs);
-  }
-  return latest;
-}, sameMap);
+/** Latest Buddy conversation activity per workspace (a list index field). */
+export const buddyWorkspaceActivityAtom = listField('workspaceActivity');
 
 // Most recently active workspace first (by its Buddies' latest conversation),
 // then by name: the Channels tab opens where the team is working, not

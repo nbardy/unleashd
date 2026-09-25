@@ -1,6 +1,6 @@
 import { useAtomValue } from 'jotai';
 import { useCallback, useEffect, useRef } from 'react';
-import { conversationLoadCompleteAtom, wsStatusAtom } from '../atoms/conversations';
+import { connectionAtom, loadCompleteOf } from '../atoms/conversations';
 import {
   IDLE_ENTRY,
   type Resource,
@@ -129,8 +129,9 @@ export function usePolledFetch<T>(
   sourceRef.current = active ? source : null;
 
   const cached = useAtomValue(resourceAtomFamily(key)) as ResourceEntry<T>;
-  const wsStatus = useAtomValue(wsStatusAtom);
-  const loadComplete = useAtomValue(conversationLoadCompleteAtom);
+  const connection = useAtomValue(connectionAtom);
+  const wsStatus = connection.socket.tag;
+  const loadComplete = loadCompleteOf(connection.server);
 
   const refresh = useCallback((): Promise<void> => {
     const current = sourceRef.current;
@@ -177,9 +178,9 @@ export function usePolledFetch<T>(
   // Immediate refresh on WS reconnect (post-drain).
   const prevWsRef = useRef(wsStatus);
   useEffect(() => {
-    const wasConnected = prevWsRef.current === 'connected';
+    const wasConnected = prevWsRef.current === 'open';
     prevWsRef.current = wsStatus;
-    if (!wasConnected && wsStatus === 'connected' && loadComplete) void refresh();
+    if (!wasConnected && wsStatus === 'open' && loadComplete) void refresh();
   }, [wsStatus, loadComplete, refresh]);
 
   const entry = key ? cached : (IDLE_ENTRY as ResourceEntry<T>);

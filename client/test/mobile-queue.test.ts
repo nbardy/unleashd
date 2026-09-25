@@ -1,10 +1,13 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import type { ClientMessage, QueuedMessage } from '@unleashd/shared';
-import { endConversation, handleMessage, setSendFn } from '../src/atoms/actions';
-import { conversationsAtom, detailPatchAtom, queueAtomFamily } from '../src/atoms/conversations';
+import type { QueuedMessage } from '@unleashd/shared';
+import { endConversation, handleMessage } from '../src/atoms/actions';
+import { queueOf, transcriptFamily, transcriptStore } from '../src/atoms/conversations';
 import { jotaiStore } from '../src/atoms/store';
+import { openSocket, setRows } from './fixtures/client-store';
 import { syntheticConversation, syntheticDetail } from './fixtures/synthetic-conversations';
+
+const queue = (id: string) => queueOf(jotaiStore.get(transcriptFamily(id)));
 
 const conversationId = '11111111-1111-4111-8111-111111111111';
 
@@ -15,21 +18,28 @@ test('a queue patch reaches the queue view, and a missing queue is one stable va
     queuedAt: new Date(),
     status: 'pending',
   };
-  jotaiStore.set(
-    conversationsAtom,
-    new Map([[conversationId, syntheticConversation(1, { id: conversationId })]])
-  );
-  jotaiStore.set(detailPatchAtom, {
-    set: [[conversationId, syntheticDetail(conversationId, { queue: [q1] })]],
+  setRows([syntheticConversation(1, { id: conversationId })]);
+  jotaiStore.set(transcriptStore.patch, {
+    set: [
+      [
+        conversationId,
+        {
+          tag: 'loaded',
+          epoch: 0,
+          messages: [],
+          detail: syntheticDetail(conversationId, { queue: [q1] }),
+        },
+      ],
+    ],
     remove: [],
   });
-  assert.equal(jotaiStore.get(queueAtomFamily(conversationId)).length, 1);
+  assert.equal(queue(conversationId).length, 1);
   handleMessage({ type: 'patch', id: conversationId, patch: { t: 'queue', queue: [] } });
-  assert.equal(jotaiStore.get(queueAtomFamily(conversationId)).length, 0);
+  assert.equal(queue(conversationId).length, 0);
   // A fresh [] per read would re-render every subscriber on every store change
   // (hard rule: stable fallbacks are module constants).
   const unknown = '00000000-0000-4000-8000-000000000000';
-  assert.equal(jotaiStore.get(queueAtomFamily(unknown)), jotaiStore.get(queueAtomFamily(unknown)));
+  assert.equal(queue(unknown), queue(unknown));
 });
 
 /**
@@ -40,14 +50,8 @@ test('a queue patch reaches the queue view, and a missing queue is one stable va
  * called bare stopConversation and had exactly that bug.
  */
 test('endConversation clears the queue before stopping the turn', () => {
-  const sent: ClientMessage[] = [];
-  setSendFn((msg) => {
-    sent.push(msg);
-  });
-  jotaiStore.set(
-    conversationsAtom,
-    new Map([[conversationId, syntheticConversation(1, { id: conversationId })]])
-  );
+  const sent = openSocket();
+  setRows([syntheticConversation(1, { id: conversationId })]);
   endConversation(conversationId);
   assert.deepEqual(
     sent.map((m) => m.type),

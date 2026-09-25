@@ -1,5 +1,4 @@
 import type {
-  ClientMessage,
   ConversationDetail,
   ConversationRow,
   Message,
@@ -14,39 +13,31 @@ import {
   applyRowPatch,
   decodeRows,
 } from '@unleashd/shared';
-import { type Draft, enableMapSet } from 'immer';
-import { newId } from '../utils/ids';
 import { archivedBuddyIdsAtom, hideArchivedBuddy } from './buddy-visibility';
 import {
-  type Transcript,
-  activeConversationIdAtom,
-  conversationLoadCompleteAtom,
-  conversationPatchAtom,
-  conversationsAtom,
-  defaultCwdAtom,
-  detailPatchAtom,
-  detailsAtom,
-  forgetConversationAtoms,
-  pendingConfigCommandsAtom,
-  pendingCreationsAtom,
-  protocolMismatchAtom,
-  sendFnAtom,
-  streamingContentAtom,
-  streamingPatchAtom,
-  transcriptPatchAtom,
-  transcriptsAtom,
-  wsStatusAtom,
-} from './conversations';
-import { mutate } from './mutate';
+  dropCommandsFor,
+  reconcileCommandsOnHello,
+  rejectSends,
+  sendMessageCommand,
+  sendNow,
+  settleAccepted,
+  settleConfig,
+  settleCreate,
+  settleRejected,
+} from './commands';
 import {
-  loadPendingConversations,
-  markPendingCreationRejected,
-  normalizeWorkingDirectory,
-  persistPendingCreationRetry,
-  preparePendingCreationForReconnect,
-  removePendingConversation,
-  resendPendingCreation,
-} from './pending-creations';
+  type LoadedTranscript,
+  type Socket,
+  type Transcript,
+  connectionAtom,
+  defaultCwdOf,
+  forgetConversationAtoms,
+  loadedOf,
+  rowStore,
+  rowsAtom,
+  streamStore,
+  transcriptStore,
+} from './conversations';
 import { invalidateBuddyResources, invalidateChannelResources } from './resources';
 import {
   captureRestartRecoveryQueue,
@@ -54,32 +45,18 @@ import {
   removeRestartRecoveryAtom,
 } from './restart-recovery';
 import { jotaiStore } from './store';
-import {
-  DRAFT_KEY_PREFIX,
-  PENDING_FILES_KEY_PREFIX,
-  getSavedActiveConversationId,
-  markConversationsSeenBulk,
-  markMessagesSeen,
-  removeSeenIndex,
-} from './ui';
+import { DRAFT_KEY_PREFIX, PENDING_FILES_KEY_PREFIX, removeSeenIndex } from './ui';
 
-// Enable Immer's Map/Set support — must be called once before any produce() on Maps.
-// mutate.ts also calls enableMapSet; this is idempotent and keeps this file standalone.
-enableMapSet();
-
-// Re-export for downstream consumers that previously imported from conversationStore
 export type { QueuedMessage } from '@unleashd/shared';
-export { createConversation } from './pending-creations';
-export type { CreateConversationArgs } from './pending-creations';
-export { mutate } from './mutate';
+export { createConversation } from './commands';
+export type { CreateArgs as CreateConversationArgs } from './commands';
 
 // =============================================================================
-// Chunk Buffer
+// Chunk buffer
 //
-// Text chunks arrive 100-200x per response (1-20 chars each). Without buffering,
-// each chunk would trigger a Jotai notification → React re-render → Markdown reparse.
-// Instead, accumulate in a plain object outside state and flush once per animation
-// frame (~60Hz). This collapses 100-200 updates into ~3-10 per response.
+// Text chunks arrive 100-200x per response (1-20 chars each). They accumulate
+// here, outside state, and flush once per animation frame into the streaming
+// conversation's own atom.
 // =============================================================================
 
 const chunkBuffer: Map<string, string> = new Map();
@@ -88,71 +65,59 @@ const transcriptRequests = new Map<string, Promise<void>>();
 // Bumped on every `hello`: a response started under an older socket epoch is
 // dropped instead of overwriting state the new epoch already delivered.
 let connectionEpoch = 0;
-const pendingMessageCommands = new Map<
-  string,
-  { resolve: () => void; reject: (error: Error) => void }
->();
 
-function rejectPendingMessageCommands(error: Error): void {
-  for (const pending of pendingMessageCommands.values()) pending.reject(error);
-  pendingMessageCommands.clear();
+// =============================================================================
+// Reads (snapshots for event handlers; never a subscription)
+// =============================================================================
+
+export function readConversation(id: string): ConversationRow | null {
+  return jotaiStore.get(rowsAtom).get(id) ?? null;
+}
+
+function readTranscript(id: string): Transcript {
+  return jotaiStore.get(transcriptStore.byKey(id));
+}
+
+function readLoaded(id: string): LoadedTranscript | null {
+  return loadedOf(readTranscript(id));
+}
+
+export function readConversationDetail(id: string): ConversationDetail | null {
+  return readLoaded(id)?.detail ?? null;
+}
+
+export function readConversationMessages(id: string): readonly Message[] {
+  return readLoaded(id)?.messages ?? [];
 }
 
 // =============================================================================
-// Row, detail and transcript writes. Each names the ids it touches, so the
-// per-id atoms and the list index update for those ids only.
+// Writes. Each names the ids it touches, so only those per-id atoms and the
+// list index move.
 // =============================================================================
 
+// Pattern: parse-dont-validate (docs/patterns.md#parse-dont-validate)
+// An archived Buddy's rows never enter the store, so no reader filters them
+// (until T19 every rowFamily read and three list views re-checked the set).
+function admitted(rows: readonly ConversationRow[]): ConversationRow[] {
+  const archived = jotaiStore.get(archivedBuddyIdsAtom);
+  if (archived.size === 0) return rows as ConversationRow[];
+  return rows.filter((row) => !(row.kind.t === 'buddy' && archived.has(row.kind.buddyId)));
+}
+
 function putRows(rows: readonly ConversationRow[]): void {
-  if (rows.length === 0) return;
-  jotaiStore.set(conversationPatchAtom, {
-    set: rows.map((row) => [row.id, row] as const),
-    remove: [],
-  });
+  const admit = admitted(rows);
+  if (admit.length === 0) return;
+  jotaiStore.set(rowStore.patch, { set: admit.map((row) => [row.id, row] as const), remove: [] });
 }
 
 function removeConversations(ids: readonly string[]): void {
   if (ids.length === 0) return;
-  jotaiStore.set(conversationPatchAtom, { set: [], remove: ids });
-  jotaiStore.set(detailPatchAtom, { set: [], remove: ids });
-  jotaiStore.set(transcriptPatchAtom, { set: [], remove: ids });
-}
-
-function readTranscript(id: string): Transcript | null {
-  return jotaiStore.get(transcriptsAtom).get(id) ?? null;
+  jotaiStore.set(rowStore.patch, { set: [], remove: ids });
+  jotaiStore.set(transcriptStore.patch, { set: [], remove: ids });
 }
 
 function putTranscript(id: string, transcript: Transcript): void {
-  jotaiStore.set(transcriptPatchAtom, { set: [[id, transcript]], remove: [] });
-}
-
-/** Snapshot read for event handlers in components (never a subscription). */
-export function readConversation(id: string): ConversationRow | null {
-  return jotaiStore.get(conversationsAtom).get(id) ?? null;
-}
-
-/** Snapshot read of a loaded detail (never a subscription). */
-export function readConversationDetail(id: string): ConversationDetail | null {
-  return jotaiStore.get(detailsAtom).get(id) ?? null;
-}
-
-/** Snapshot read of a loaded transcript's messages (never a subscription). */
-export function readConversationMessages(id: string): readonly Message[] {
-  return readTranscript(id)?.messages ?? [];
-}
-
-// Loaded transcripts that a row says have moved on since they were fetched.
-// They stay on screen (no "Loading…" flash) and page in their tail the next
-// time they become active. Marking them unloaded instead made every reopened
-// external chat show the loading screen (review of c21b131).
-const staleTranscriptIds = new Set<string>();
-
-function refreshIfStale(id: string): void {
-  if (!staleTranscriptIds.has(id)) return;
-  staleTranscriptIds.delete(id);
-  void refreshTranscript(id).catch((error) => {
-    console.warn(`[WS] Could not refresh history for ${id}:`, error);
-  });
+  jotaiStore.set(transcriptStore.patch, { set: [[id, transcript]], remove: [] });
 }
 
 // =============================================================================
@@ -201,100 +166,91 @@ async function readMessagesAfter(
   }
 }
 
+function dedupe(id: string, start: () => Promise<void>): Promise<void> {
+  const existing = transcriptRequests.get(id);
+  if (existing) return existing;
+  const request = start().finally(() => {
+    // An old epoch may settle after reconnect installed a newer request.
+    if (transcriptRequests.get(id) === request) transcriptRequests.delete(id);
+  });
+  transcriptRequests.set(id, request);
+  return request;
+}
+
 /**
  * Open a conversation: its detail and every message body. Deduped in flight
- * and epoch-guarded against reconnect; a transcript that a live event moved
- * past while loading pages in its tail afterwards.
+ * and epoch-guarded against reconnect. The outcome lands in the transcript
+ * atom (`loaded` or `failed`), so a remount shows it without refetching.
  */
 export function loadConversationDetails(conversationId: string): Promise<void> {
-  const existing = transcriptRequests.get(conversationId);
-  if (existing) return existing;
-
-  const requestEpoch = connectionEpoch;
-  const request = (async () => {
-    const [detail, body] = await Promise.all([
-      fetchJson(
-        `/api/conversations/${encodeURIComponent(conversationId)}`,
-        ConversationDetailSchema
-      ),
-      readMessagesAfter(conversationId, -1),
-    ]);
-    if (requestEpoch !== connectionEpoch || !readConversation(conversationId)) return;
-    jotaiStore.set(detailPatchAtom, { set: [[conversationId, detail]], remove: [] });
-    putTranscript(conversationId, body);
-    staleTranscriptIds.delete(conversationId);
-    // Live events that raced the fetch: the row is authoritative on length.
-    if (readConversation(conversationId)?.messageCount !== body.messages.length) {
-      staleTranscriptIds.add(conversationId);
-      queueMicrotask(() => refreshIfStale(conversationId));
-    }
-  })().finally(() => {
-    // An old epoch may settle after reconnect installed a newer request.
-    if (transcriptRequests.get(conversationId) === request) {
-      transcriptRequests.delete(conversationId);
+  return dedupe(conversationId, async () => {
+    const requestEpoch = connectionEpoch;
+    if (!readLoaded(conversationId)) putTranscript(conversationId, { tag: 'loading' });
+    try {
+      const [detail, body] = await Promise.all([
+        fetchJson(
+          `/api/conversations/${encodeURIComponent(conversationId)}`,
+          ConversationDetailSchema
+        ),
+        readMessagesAfter(conversationId, -1),
+      ]);
+      if (requestEpoch !== connectionEpoch || !readConversation(conversationId)) return;
+      putTranscript(conversationId, { tag: 'loaded', ...body, detail });
+    } catch (cause) {
+      if (requestEpoch !== connectionEpoch) return;
+      putTranscript(conversationId, {
+        tag: 'failed',
+        error: cause instanceof Error ? cause.message : String(cause),
+      });
     }
   });
-
-  transcriptRequests.set(conversationId, request);
-  return request;
 }
 
 /**
  * Page in only what changed: the last message we hold (a streamed reply may
  * have grown) and everything after it. A different epoch means the history
- * was replaced, so the whole transcript reloads.
+ * was replaced, so the whole transcript reloads. A failed refresh leaves the
+ * previous history on screen; the next moved count retries.
  */
-function refreshTranscript(conversationId: string): Promise<void> {
-  const current = readTranscript(conversationId);
+export function refreshTranscript(conversationId: string): Promise<void> {
+  const current = readLoaded(conversationId);
   if (!current) return loadConversationDetails(conversationId);
-  const existing = transcriptRequests.get(conversationId);
-  if (existing) return existing;
-  const requestEpoch = connectionEpoch;
-  const keep = Math.max(0, current.messages.length - 1);
-  const request = (async () => {
+  return dedupe(conversationId, async () => {
+    const requestEpoch = connectionEpoch;
+    const keep = Math.max(0, current.messages.length - 1);
     const tail = await readMessagesAfter(conversationId, keep - 1);
     if (requestEpoch !== connectionEpoch) return;
-    if (tail.epoch !== current.epoch) {
+    const latest = readLoaded(conversationId);
+    if (tail.epoch !== current.epoch || !latest) {
+      putTranscript(conversationId, { tag: 'absent' });
       transcriptRequests.delete(conversationId);
-      jotaiStore.set(transcriptPatchAtom, { set: [], remove: [conversationId] });
       await loadConversationDetails(conversationId);
       return;
     }
-    const latest = readTranscript(conversationId) ?? current;
     // Structural sharing: the kept prefix keeps its message objects, so only
     // the tail groups rebuild (T05's tail regroup).
     putTranscript(conversationId, {
+      ...latest,
       epoch: tail.epoch,
       messages: [...latest.messages.slice(0, keep), ...tail.messages],
     });
-  })().finally(() => {
-    if (transcriptRequests.get(conversationId) === request) {
-      transcriptRequests.delete(conversationId);
-    }
+  }).catch((error) => {
+    console.warn(`[WS] Could not refresh history for ${conversationId}:`, error);
   });
-  transcriptRequests.set(conversationId, request);
-  return request;
 }
 
 function flushChunkBuffer(): void {
   chunkFlushScheduled = false;
   if (chunkBuffer.size === 0) return;
-
   const pending = new Map(chunkBuffer);
   chunkBuffer.clear();
-
-  // Write to streamingContentAtom only — never to the rows or transcripts, so
-  // the list views never see chunk updates. Chat merges the streaming text
-  // into its message groups (chatMessageGroupsAtomFamily).
-  const streaming = jotaiStore.get(streamingContentAtom);
+  // Only the streaming conversations' own atoms: the list never sees chunks.
   const updates: Array<readonly [string, string]> = [];
   for (const [id, text] of pending) {
-    const lastMsg = readTranscript(id)?.messages.at(-1);
-    if (lastMsg?.role !== 'assistant') continue;
-    updates.push([id, (streaming.get(id) ?? '') + text]);
+    if (readLoaded(id)?.messages.at(-1)?.role !== 'assistant') continue;
+    updates.push([id, jotaiStore.get(streamStore.byKey(id)) + text]);
   }
-  // Writes only the streaming conversations' own atoms.
-  if (updates.length > 0) jotaiStore.set(streamingPatchAtom, { set: updates, remove: [] });
+  if (updates.length > 0) jotaiStore.set(streamStore.patch, { set: updates, remove: [] });
 }
 
 function scheduleChunkFlush(): void {
@@ -305,23 +261,11 @@ function scheduleChunkFlush(): void {
 }
 
 // =============================================================================
-// Helper: read the current send function
+// Connection
 // =============================================================================
 
-function send(msg: ClientMessage): void {
-  jotaiStore.get(sendFnAtom).send(msg);
-}
-
-// =============================================================================
-// WebSocket Status
-// =============================================================================
-
-export function setWsStatus(status: 'connecting' | 'connected' | 'disconnected'): void {
-  jotaiStore.set(wsStatusAtom, status);
-}
-
-export function setSendFn(fn: (msg: ClientMessage) => void): void {
-  jotaiStore.set(sendFnAtom, { send: fn });
+export function setSocket(socket: Socket): void {
+  jotaiStore.set(connectionAtom, { ...jotaiStore.get(connectionAtom), socket });
 }
 
 /**
@@ -329,30 +273,28 @@ export function setSendFn(fn: (msg: ClientMessage) => void): void {
  * has not reloaded yet. Keep every row; useWebSocket reconnects.
  */
 export function noteProtocolMismatch(serverVersion: number): void {
-  jotaiStore.set(protocolMismatchAtom, { serverVersion });
+  jotaiStore.set(connectionAtom, {
+    ...jotaiStore.get(connectionAtom),
+    server: { tag: 'skew', serverVersion },
+  });
 }
 
 // =============================================================================
-// Public Actions — called by React components
+// Public actions — called by components
 // =============================================================================
-
-export function setActiveConversationId(id: string | null): void {
-  jotaiStore.set(activeConversationIdAtom, id);
-  if (id !== null) refreshIfStale(id);
-}
 
 /**
  * Hide or unhide a conversation. Not optimistic: the server writes the record
  * and broadcasts a `done` patch, which is what moves the row. Callers disable
- * the control while disconnected — send() drops messages then.
+ * the control while disconnected.
  */
 export function setConversationDone(conversationId: string, done: boolean): void {
-  send({ type: 'set_conversation_done', conversationId, done });
+  sendNow({ type: 'set_conversation_done', conversationId, done });
 }
 
 export function stopConversation(conversationId: string): void {
   if (!readConversation(conversationId)) return;
-  send({ type: 'stop_conversation', conversationId });
+  sendNow({ type: 'stop_conversation', conversationId });
 }
 
 /**
@@ -361,30 +303,18 @@ export function stopConversation(conversationId: string): void {
  */
 export function endConversation(conversationId: string): void {
   if (!readConversation(conversationId)) return;
-  send({ type: 'clear_queue', conversationId });
-  send({ type: 'stop_conversation', conversationId });
-}
-
-function sendAcknowledgedMessageCommand(
-  message:
-    | { type: 'queue_message'; conversationId: string; content: string }
-    | { type: 'interrupt_and_send'; conversationId: string; content: string }
-): Promise<void> {
-  const commandId = newId();
-  return new Promise<void>((resolve, reject) => {
-    pendingMessageCommands.set(commandId, { resolve, reject });
-    send({ ...message, commandId });
-  });
+  sendNow({ type: 'clear_queue', conversationId });
+  sendNow({ type: 'stop_conversation', conversationId });
 }
 
 export function interruptAndSend(conversationId: string, content: string): Promise<void> {
   if (!readConversation(conversationId))
     return Promise.reject(new Error(`Conversation ${conversationId} not found`));
-  return sendAcknowledgedMessageCommand({ type: 'interrupt_and_send', conversationId, content });
+  return sendMessageCommand(conversationId, content, 'interrupt');
 }
 
 export function queueMessage(conversationId: string, content: string): Promise<void> {
-  return sendAcknowledgedMessageCommand({ type: 'queue_message', conversationId, content });
+  return sendMessageCommand(conversationId, content, 'queue');
 }
 
 export async function resumeInterruptedMessages(
@@ -395,115 +325,56 @@ export async function resumeInterruptedMessages(
 }
 
 export function cancelQueuedMessage(conversationId: string, messageId: string): void {
-  send({ type: 'cancel_queued_message', conversationId, messageId });
+  sendNow({ type: 'cancel_queued_message', conversationId, messageId });
 }
 
 export function promoteQueuedMessage(conversationId: string, messageId: string): void {
-  send({ type: 'promote_queued_message', conversationId, messageId });
+  sendNow({ type: 'promote_queued_message', conversationId, messageId });
 }
 
 export function clearQueue(conversationId: string): void {
-  send({ type: 'clear_queue', conversationId });
+  sendNow({ type: 'clear_queue', conversationId });
 }
 
 // =============================================================================
-// WebSocket Message Handlers — one clean handler per ServerMessage variant
-// Dispatcher stays thin (CLAUDE.md D1); work lives in handlers (D2).
+// WebSocket message handlers — one clean handler per ServerMessage variant.
+// The dispatcher stays thin (CLAUDE.md D1); work lives in handlers (D2).
 // =============================================================================
 
 function handleHello(data: Extract<ServerMessage, { type: 'hello' }>): void {
-  jotaiStore.set(protocolMismatchAtom, null);
   jotaiStore.set(archivedBuddyIdsAtom, new Set(data.archivedBuddyIds));
-  // A socket epoch ended without acknowledgements. Keep composer text and
-  // let the user retry against the new authoritative server epoch.
-  rejectPendingMessageCommands(new Error('Connection restarted before the message was accepted'));
   connectionEpoch += 1;
   transcriptRequests.clear();
-  const rows = decodeRows(data);
+  const rows = admitted(decodeRows(data));
 
-  // During startup the server intentionally sends an early, possibly empty,
-  // hello and hydrates disk conversations via later `rows` batches. Preserve
-  // the prior epoch until that authoritative load completes; otherwise a
-  // reload makes the sidebar flash empty and can evict the active
-  // conversation while its replacement server is still restoring it.
-  const serverState = data.loading
-    ? new Map(jotaiStore.get(conversationsAtom))
+  // During startup the server sends an early, possibly empty, hello and
+  // hydrates disk conversations via later `rows` batches. Keep the prior
+  // epoch's rows until that load completes; otherwise a reload makes the
+  // sidebar flash empty and can evict the open conversation while its
+  // replacement server is still restoring it.
+  const next = data.loading
+    ? new Map(jotaiStore.get(rowsAtom))
     : new Map<string, ConversationRow>();
-  for (const row of rows) serverState.set(row.id, row);
+  for (const row of rows) next.set(row.id, row);
 
-  // Reconcile client-owned pending creations without weakening the
-  // authoritative row map with schema-incomplete stubs.
-  const pendingState = new Map<string, import('./conversations').PendingConversationCreation>();
-  for (const persistedCreation of loadPendingConversations()) {
-    const pc = preparePendingCreationForReconnect(persistedCreation);
-    if (serverState.has(pc.conversationId)) {
-      removePendingConversation(pc.conversationId, pc.commandId);
-    } else {
-      if (pc !== persistedCreation) persistPendingCreationRetry(pc);
-      pendingState.set(pc.conversationId, {
-        kind: 'create_conversation',
-        commandId: pc.commandId,
-        conversationId: pc.conversationId,
-        workingDirectory: normalizeWorkingDirectory(pc.workingDirectory),
-        config: pc.config,
-        createKind: pc.kind,
-        createdAt: new Date(pc.createdAt),
-        error: pc.error,
-        errorCode: pc.errorCode,
-      });
-      setTimeout(() => resendPendingCreation(pc), 0);
-    }
-  }
-
-  jotaiStore.set(defaultCwdAtom, data.defaultCwd);
-  jotaiStore.set(conversationsAtom, serverState);
-  // Details and bodies belong to the previous epoch; the open conversation
-  // reloads them (ConversationView / Chat gate on the transcript).
-  jotaiStore.set(detailsAtom, new Map());
-  jotaiStore.set(transcriptsAtom, new Map());
-  staleTranscriptIds.clear();
-  jotaiStore.set(conversationLoadCompleteAtom, !data.loading);
-  jotaiStore.set(pendingCreationsAtom, pendingState);
-  // `hello` is an authoritative epoch after connect/reconnect. Config writes
-  // are revision-checked and their result is already reflected in the
-  // details, so an acknowledgement lost with the old socket must not leave
-  // the UI in a permanent "Saving…" state.
-  jotaiStore.set(pendingConfigCommandsAtom, new Map());
-
-  // Drop stale streaming state from before this reconnect
+  jotaiStore.set(connectionAtom, {
+    ...jotaiStore.get(connectionAtom),
+    server: { tag: 'v3', defaultCwd: data.defaultCwd, loadComplete: !data.loading },
+  });
+  jotaiStore.set(rowsAtom, next);
+  // Bodies belong to the previous epoch; the open view reloads them.
+  jotaiStore.set(transcriptStore.all, new Map());
   chunkBuffer.clear();
-  jotaiStore.set(streamingContentAtom, new Map());
+  jotaiStore.set(streamStore.all, new Map());
+  reconcileCommandsOnHello((id) => next.has(id));
 }
 
 function handleRows(data: Extract<ServerMessage, { type: 'rows' }>): void {
   const rows = decodeRows(data);
   putRows(rows);
-  // A row whose count differs from a loaded transcript means that history is
-  // stale. The poller sends only rows (it used to push every growing external
-  // transcript's full history to every client each 5s), so this is how an
-  // open chat sees new external messages: the open conversation pages in its
-  // tail, any other stale one does so when opened.
-  markStale(rows);
-  // Mark all updated conversations as seen to prevent stale NEW badges after
-  // external JSONL edits. Conservative — better to miss a badge than show wrong one.
-  const updates: Record<string, number> = {};
-  for (const row of rows) {
-    if (row.messageCount > 0) updates[row.id] = row.messageCount - 1;
-  }
-  markConversationsSeenBulk(updates);
+  // A moved messageCount on a loaded transcript is picked up by the view that
+  // shows it (useConversationBodies pages in the tail), not here.
   if (rows.some((row) => row.kind.t === 'buddy')) invalidateBuddyResources();
-}
-
-function markStale(rows: readonly ConversationRow[]): void {
-  const active = jotaiStore.get(activeConversationIdAtom);
-  for (const row of rows) {
-    const transcript = readTranscript(row.id);
-    if (!transcript || transcript.messages.length === row.messageCount) continue;
-    staleTranscriptIds.add(row.id);
-    // A failed refresh leaves the previous history on screen; the next row
-    // with a moved count retries.
-    if (row.id === active) refreshIfStale(row.id);
-  }
 }
 
 function handleRemoved(data: Extract<ServerMessage, { type: 'removed' }>): void {
@@ -516,30 +387,25 @@ function forgetConversation(id: string): void {
   const deleted = readConversation(id);
   removeConversations([id]);
   if (deleted?.kind.t === 'buddy') invalidateBuddyResources();
-  if (jotaiStore.get(activeConversationIdAtom) === id) {
-    jotaiStore.set(activeConversationIdAtom, null);
-  }
-  removePendingConversation(id);
-  mutate(pendingCreationsAtom, (draft) => {
-    draft.delete(id);
-  });
+  dropCommandsFor(id);
   localStorage.removeItem(`${DRAFT_KEY_PREFIX}${id}`);
   localStorage.removeItem(`${PENDING_FILES_KEY_PREFIX}${id}`);
   clearRestartRecovery(id);
   removeRestartRecoveryAtom(id);
   removeSeenIndex(id);
-  staleTranscriptIds.delete(id);
-  // §5 #10 — atomFamily memoizes per-ID atoms forever; deleted conversations
-  // leak one atom per family. Remove all families keyed by this id.
   forgetConversationAtoms(id);
 }
 
 function handleReady(data: Extract<ServerMessage, { type: 'ready' }>): void {
-  const authoritativeIds = new Set(data.conversationIds);
+  const authoritative = new Set(data.conversationIds);
   removeConversations(
-    Array.from(jotaiStore.get(conversationsAtom).keys()).filter((id) => !authoritativeIds.has(id))
+    Array.from(jotaiStore.get(rowsAtom).keys()).filter((id) => !authoritative.has(id))
   );
-  jotaiStore.set(conversationLoadCompleteAtom, true);
+  const connection = jotaiStore.get(connectionAtom);
+  jotaiStore.set(connectionAtom, {
+    ...connection,
+    server: { tag: 'v3', defaultCwd: defaultCwdOf(connection.server), loadComplete: true },
+  });
 }
 
 // Pattern: patches-not-snapshots (docs/patterns.md#patches-not-snapshots)
@@ -549,10 +415,10 @@ function handlePatch(data: Extract<ServerMessage, { type: 'patch' }>): void {
     const next = applyRowPatch(row, data.patch);
     if (next !== row) putRows([next]);
   }
-  const detail = readConversationDetail(data.id);
-  if (detail) {
-    const next = applyDetailPatch(detail, data.patch);
-    if (next !== detail) jotaiStore.set(detailPatchAtom, { set: [[data.id, next]], remove: [] });
+  const loaded = readLoaded(data.id);
+  if (loaded) {
+    const detail = applyDetailPatch(loaded.detail, data.patch);
+    if (detail !== loaded.detail) putTranscript(data.id, { ...loaded, detail });
   }
   patchEffects(data.id, data.patch);
 }
@@ -564,14 +430,12 @@ function patchEffects(id: string, patch: RowPatch): void {
       runChanged(id, patch.run);
       return;
     case 'config':
-      configLanded(patch.commandId);
+      if (patch.commandId !== null) settleConfig(patch.commandId);
       return;
     case 'queue':
       captureRestartRecoveryQueue(id, patch.queue);
       return;
     case 'activity':
-      activityMoved(id, patch.messageCount);
-      return;
     case 'done':
     case 'label':
     case 'session':
@@ -583,26 +447,11 @@ function patchEffects(id: string, patch: RowPatch): void {
 
 function runChanged(id: string, run: ConversationRow['run']): void {
   if (run === 'streaming') return;
-  // Flush any pending chunks before clearing streaming state, otherwise a
-  // pending rAF could re-add the entry we're about to delete.
+  // Flush pending chunks first, or a pending rAF re-adds the text we drop.
   flushChunkBuffer();
   // Streaming stopped: the transcript already holds the committed text
   // (chunks and `message_complete` mirror the server's fold).
-  jotaiStore.set(streamingPatchAtom, { set: [], remove: [id] });
-}
-
-function configLanded(commandId: string | null): void {
-  if (commandId === null) return;
-  mutate(pendingConfigCommandsAtom, (draft) => {
-    draft.delete(commandId);
-  });
-}
-
-function activityMoved(id: string, messageCount: number): void {
-  const transcript = readTranscript(id);
-  if (!transcript || transcript.messages.length === messageCount) return;
-  staleTranscriptIds.add(id);
-  if (id === jotaiStore.get(activeConversationIdAtom)) refreshIfStale(id);
+  jotaiStore.set(streamStore.patch, { set: [], remove: [id] });
 }
 
 function handleAck(data: Extract<ServerMessage, { type: 'ack' }>): void {
@@ -611,122 +460,55 @@ function handleAck(data: Extract<ServerMessage, { type: 'ack' }>): void {
       creationAcknowledged(data.commandId, decodeRows(data.result.rows));
       return;
     case 'accepted':
-      messageCommandSettled(data.commandId, null);
+      settleAccepted(data.commandId);
       return;
     case 'rejected':
-      commandRejected(data.commandId, data.result.error);
+      settleRejected(data.commandId, data.result.error);
       return;
   }
 }
 
 function creationAcknowledged(commandId: string, rows: readonly ConversationRow[]): void {
   putRows(rows);
-  for (const row of rows) {
-    removePendingConversation(row.id, commandId);
-    mutate(pendingCreationsAtom, (draft) => {
-      const pending = draft.get(row.id);
-      if (pending?.kind === 'create_conversation' && pending.commandId === commandId) {
-        draft.delete(row.id);
-      }
-    });
-    // A new conversation has an empty transcript: nothing to fetch.
-    if (row.messageCount === 0 && !readTranscript(row.id)) {
-      putTranscript(row.id, { epoch: 0, messages: [] });
-      void loadDetailOnly(row.id);
-    }
-  }
+  settleCreate(commandId);
+  // A new conversation's bodies are empty; its detail (config) is one request.
+  for (const row of rows) void loadConversationDetails(row.id);
   // A Buddy's detail bundle carries its conversation list, so a new Buddy
   // thread makes every cached Buddy view one row out of date.
   if (rows.some((row) => row.kind.t === 'buddy')) invalidateBuddyResources();
 }
 
-async function loadDetailOnly(id: string): Promise<void> {
-  const requestEpoch = connectionEpoch;
-  try {
-    const detail = await fetchJson(
-      `/api/conversations/${encodeURIComponent(id)}`,
-      ConversationDetailSchema
-    );
-    if (requestEpoch !== connectionEpoch || !readConversation(id)) return;
-    jotaiStore.set(detailPatchAtom, { set: [[id, detail]], remove: [] });
-  } catch (error) {
-    console.warn(`[WS] Could not load detail for ${id}:`, error);
-  }
-}
-
-function messageCommandSettled(commandId: string, error: Error | null): boolean {
-  const pending = pendingMessageCommands.get(commandId);
-  if (!pending) return false;
-  pendingMessageCommands.delete(commandId);
-  if (error) pending.reject(error);
-  else pending.resolve();
-  return true;
-}
-
-function commandRejected(commandId: string, error: { code: string; message: string }): void {
-  if (messageCommandSettled(commandId, new Error(error.message))) return;
-  const pendingConfig = jotaiStore.get(pendingConfigCommandsAtom).get(commandId);
-  if (pendingConfig?.kind === 'set_conversation_config') {
-    mutate(pendingConfigCommandsAtom, (draft) => {
-      const pending = draft.get(commandId);
-      if (pending?.kind === 'set_conversation_config') pending.error = error.message;
-    });
-    return;
-  }
-
-  const pendingCreation = Array.from(jotaiStore.get(pendingCreationsAtom).values()).find(
-    (creation) => creation.kind === 'create_conversation' && creation.commandId === commandId
-  );
-  if (pendingCreation) {
-    markPendingCreationRejected(commandId, error.message, error.code);
-    mutate(pendingCreationsAtom, (draft) => {
-      const pending = draft.get(pendingCreation.conversationId);
-      if (pending?.kind === 'create_conversation') {
-        pending.error = error.message;
-        pending.errorCode = error.code;
-      }
-    });
-  }
-}
-
 function handleMessageEvent(data: Extract<ServerMessage, { type: 'message' }>): void {
   // Bodies are kept only for loaded transcripts; the row's activity patch
   // (sent with every message) carries the count for everyone else.
-  const transcript = readTranscript(data.conversationId);
-  if (!transcript) return;
-  const lastMsg = transcript.messages.at(-1);
+  const loaded = readLoaded(data.conversationId);
+  if (!loaded) return;
   // A duplicate assistant record; the live one is already growing.
-  if (data.role === 'assistant' && lastMsg?.role === 'assistant') return;
-  const newMessageIndex = transcript.messages.length;
+  if (data.role === 'assistant' && loaded.messages.at(-1)?.role === 'assistant') return;
   putTranscript(data.conversationId, {
-    epoch: transcript.epoch,
+    ...loaded,
     messages: [
-      ...transcript.messages,
+      ...loaded.messages,
       { role: data.role, content: data.content, timestamp: new Date() },
     ],
   });
-  if (getSavedActiveConversationId() === data.conversationId) {
-    markMessagesSeen(data.conversationId, newMessageIndex);
-  }
 }
 
 function handleChunk(data: Extract<ServerMessage, { type: 'chunk' }>): void {
-  if (data.text.length > 0) {
-    chunkBuffer.set(data.conversationId, (chunkBuffer.get(data.conversationId) ?? '') + data.text);
-    scheduleChunkFlush();
-  }
+  if (data.text.length === 0) return;
+  chunkBuffer.set(data.conversationId, (chunkBuffer.get(data.conversationId) ?? '') + data.text);
+  scheduleChunkFlush();
 }
 
 function handleError(data: Extract<ServerMessage, { type: 'error' }>): void {
   console.error('Server error:', data.message);
   // A generic protocol error must not strand the composer waiting forever or
   // discard the submitted draft.
-  rejectPendingMessageCommands(new Error(data.message));
+  rejectSends(new Error(data.message));
 }
 
 function handleMessageComplete(data: Extract<ServerMessage, { type: 'message_complete' }>): void {
-  // Flush buffered chunks synchronously — message_complete can arrive in the same
-  // event loop tick as the last chunk, before rAF fires.
+  // message_complete can arrive in the same tick as the last chunk, before rAF.
   flushChunkBuffer();
   commitStreamedReply(data.conversationId, data.reason ?? 'success');
   const remaining = readConversationDetail(data.conversationId)?.queue.filter(
@@ -736,20 +518,16 @@ function handleMessageComplete(data: Extract<ServerMessage, { type: 'message_com
   else clearRestartRecovery(data.conversationId);
 }
 
-/**
- * Fold the streamed text into the transcript's last assistant message, as the
- * server did (chunks mirror its fold). v2 learned this from a full snapshot of
- * the conversation after every turn.
- */
+/** Fold the streamed text into the last assistant message, as the server did. */
 function commitStreamedReply(id: string, reason: NonNullable<Message['completionReason']>): void {
-  const transcript = readTranscript(id);
-  const last = transcript?.messages.at(-1);
-  if (!transcript || last?.role !== 'assistant') return;
-  const streamed = jotaiStore.get(streamingContentAtom).get(id) ?? '';
+  const loaded = readLoaded(id);
+  const last = loaded?.messages.at(-1);
+  if (!loaded || last?.role !== 'assistant') return;
+  const streamed = jotaiStore.get(streamStore.byKey(id));
   putTranscript(id, {
-    epoch: transcript.epoch,
+    ...loaded,
     messages: [
-      ...transcript.messages.slice(0, -1),
+      ...loaded.messages.slice(0, -1),
       {
         ...last,
         content: last.content + streamed,
@@ -758,17 +536,25 @@ function commitStreamedReply(id: string, reason: NonNullable<Message['completion
       },
     ],
   });
-  jotaiStore.set(streamingPatchAtom, { set: [], remove: [id] });
+  jotaiStore.set(streamStore.patch, { set: [], remove: [id] });
+}
+
+function handleBuddyArchived(buddyId: string): void {
+  hideArchivedBuddy(buddyId);
+  const ids = Array.from(jotaiStore.get(rowsAtom).values())
+    .filter((row) => row.kind.t === 'buddy' && row.kind.buddyId === buddyId)
+    .map((row) => row.id);
+  removeConversations(ids);
 }
 
 // =============================================================================
-// WebSocket Message Handler — thin dispatcher (D1)
+// Thin dispatcher (D1)
 // =============================================================================
 
 export function handleMessage(data: ServerMessage): void {
   switch (data.type) {
     case 'buddy_archived':
-      hideArchivedBuddy(data.buddyId);
+      handleBuddyArchived(data.buddyId);
       return;
     case 'buddies_changed':
       invalidateBuddyResources();
@@ -808,5 +594,3 @@ export function handleMessage(data: ServerMessage): void {
       return;
   }
 }
-
-export type { Draft };

@@ -10,7 +10,7 @@
  */
 import { useAtomValue } from 'jotai';
 import { useEffect, useState } from 'react';
-import { conversationAtomFamily } from '../../atoms/conversations';
+import { rowFamily } from '../../atoms/conversations';
 import { buddyAction, errorText } from './api';
 
 export type DirectAction =
@@ -61,7 +61,7 @@ export type WakePhase =
   | { kind: 'done'; available: boolean };
 
 export function useWakePhase(conversationId: string): WakePhase {
-  const conversation = useAtomValue(conversationAtomFamily(conversationId));
+  const conversation = useAtomValue(rowFamily(conversationId));
   const busy = conversation !== null && conversation.run !== 'idle';
   const [seen, setSeen] = useState<'waiting' | 'running' | 'done'>('waiting');
   useEffect(() => {

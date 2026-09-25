@@ -1,7 +1,7 @@
-import { useAtomValue } from 'jotai';
+import { atom, useAtomValue } from 'jotai';
+import { atomFamily } from 'jotai-family';
 import { Link, useLocation } from 'react-router-dom';
-import { buddyBackgroundConversationsAtomFamily } from '../../atoms/buddy-background';
-import { conversationLoadCompleteAtom } from '../../atoms/conversations';
+import { connectionAtom, listField, loadCompleteOf, rowFamily } from '../../atoms/conversations';
 import { mobileConversationRouteState } from '../../utils/conversation-route-state';
 import { isRowRunning } from '../../utils/conversation-row';
 import { getConversationLastActivity } from '../../utils/time';
@@ -9,6 +9,15 @@ import { BuddyRunList } from './BuddyRunList';
 import { conversationPath } from './buddy-tabs';
 import type { Run } from './types';
 import './BuddyBackgroundTasks.css';
+
+// One Buddy's background rows (list index `buddyThreads`, running first).
+const backgroundRowsFamily = atomFamily((buddyId: string) =>
+  atom((get) => {
+    const ids = get(listField('buddyThreads')).get(buddyId)?.background ?? [];
+    const conversations = ids.flatMap((id) => get(rowFamily(id)) ?? []);
+    return { conversations, runningCount: conversations.filter(isRowRunning).length };
+  })
+);
 
 /**
  * A Buddy's background work: its background conversations (held by the
@@ -25,10 +34,8 @@ export function BuddyBackgroundTasks({
 }) {
   const location = useLocation();
   const routeState = mobileConversationRouteState(location);
-  const { conversations, runningCount } = useAtomValue(
-    buddyBackgroundConversationsAtomFamily(buddyId)
-  );
-  const loaded = useAtomValue(conversationLoadCompleteAtom);
+  const { conversations, runningCount } = useAtomValue(backgroundRowsFamily(buddyId));
+  const loaded = loadCompleteOf(useAtomValue(connectionAtom).server);
 
   return (
     <section className="buddy-background-tasks" aria-label="Background tasks">
