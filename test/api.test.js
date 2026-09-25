@@ -95,6 +95,14 @@ async function stopServer({ preserveDataDir = false } = {}) {
   }
 }
 
+// Protocol v3 (T09, shared/src/index.ts): the server greets with `hello`, answers
+// every correlated command with one `ack` (created | accepted | rejected), and
+// moves state with `rows` / `patch` / `removed`. Config, queue and session live
+// in GET /api/conversations/:id, not on the wire rows. This file spoke v2
+// (`init`, `conversation_created`, `command_rejected`, ...) until 2026-09-26 and
+// failed 14 of 16 from T09 on; every wait timed out on a message that no longer
+// exists. Waits are predicate-based so a test names WHICH ack/patch it expects.
+
 /**
  * Create WebSocket connection
  */
@@ -102,21 +110,17 @@ function createConnection() {
   return new Promise((resolve, reject) => {
     const ws = new WebSocket(SERVER_URL);
     ws._messageQueue = [];
-    ws._messageWaiters = new Map();
+    ws._messageWaiters = [];
     ws.on('message', (data) => {
+      let message;
       try {
-        const message = JSON.parse(data.toString());
-        const waiters = ws._messageWaiters.get(message.type);
-        const waiter = waiters?.shift();
-        if (waiter) {
-          waiter(message);
-          if (waiters.length === 0) ws._messageWaiters.delete(message.type);
-        } else {
-          ws._messageQueue.push(message);
-        }
+        message = JSON.parse(data.toString());
       } catch (_error) {
-        // Ignore malformed server output in this protocol-level helper.
+        return; // Ignore malformed server output in this protocol-level helper.
       }
+      const index = ws._messageWaiters.findIndex((waiter) => waiter.matches(message));
+      if (index >= 0) ws._messageWaiters.splice(index, 1)[0].resolve(message);
+      else ws._messageQueue.push(message);
     });
     ws.on('open', () => resolve(ws));
     ws.on('error', reject);
@@ -124,30 +128,50 @@ function createConnection() {
   });
 }
 
-/**
- * Wait for specific message type from WebSocket
- */
-function waitForMessage(ws, type, timeout = 8000) {
+/** Wait for the first message (queued or future) that `matches`. */
+function waitFor(ws, label, matches, timeout = 8000) {
   return new Promise((resolve, reject) => {
-    const queuedIndex = ws._messageQueue.findIndex((message) => message.type === type);
+    const queuedIndex = ws._messageQueue.findIndex(matches);
     if (queuedIndex >= 0) {
       resolve(ws._messageQueue.splice(queuedIndex, 1)[0]);
       return;
     }
-    const timer = setTimeout(() => {
-      const waiters = ws._messageWaiters.get(type);
-      const index = waiters?.indexOf(resolveMessage) ?? -1;
-      if (index >= 0) waiters.splice(index, 1);
-      reject(new Error(`Timeout waiting for message type: ${type}`));
-    }, timeout);
-    const resolveMessage = (message) => {
-      clearTimeout(timer);
-      resolve(message);
+    const waiter = {
+      matches,
+      resolve: (message) => {
+        clearTimeout(timer);
+        resolve(message);
+      },
     };
-    const waiters = ws._messageWaiters.get(type) ?? [];
-    waiters.push(resolveMessage);
-    ws._messageWaiters.set(type, waiters);
+    const timer = setTimeout(() => {
+      const index = ws._messageWaiters.indexOf(waiter);
+      if (index >= 0) ws._messageWaiters.splice(index, 1);
+      reject(new Error(`Timeout waiting for ${label}`));
+    }, timeout);
+    ws._messageWaiters.push(waiter);
   });
+}
+
+const waitForMessage = (ws, type) => waitFor(ws, `message type: ${type}`, (m) => m.type === type);
+const waitForAck = (ws, commandId, t) =>
+  waitFor(
+    ws,
+    `ack ${t} for ${commandId}`,
+    (m) => m.type === 'ack' && m.commandId === commandId && m.result.t === t
+  );
+const waitForPatch = (ws, id, t) =>
+  waitFor(ws, `patch ${t} for ${id}`, (m) => m.type === 'patch' && m.id === id && m.patch.t === t);
+const waitForRemoved = (ws, id) =>
+  waitFor(ws, `removed ${id}`, (m) => m.type === 'removed' && m.ids.includes(id));
+const waitForRows = (ws, id) =>
+  waitFor(ws, `rows with ${id}`, (m) => m.type === 'rows' && m.rows.some((row) => row.id === id));
+const rowIds = (hello) => hello.rows.map((row) => row.id);
+
+/** The detail route: config state (revision + resolution), queue, sessionId. */
+async function detail(conversationId) {
+  const response = await fetch(`http://localhost:${PORT}/api/conversations/${conversationId}`);
+  if (!response.ok) throw new Error(`Detail ${conversationId}: HTTP ${response.status}`);
+  return response.json();
 }
 
 /**
@@ -164,6 +188,7 @@ function createConversationCommand(overrides = {}) {
     commandId: crypto.randomUUID(),
     conversationId: crypto.randomUUID(),
     workingDirectory: overrides.workingDirectory ?? process.cwd(),
+    kind: { t: 'chat' },
     config: {
       provider,
       model: overrides.model ? { mode: 'explicit', modelId: overrides.model } : { mode: 'default' },
@@ -175,6 +200,21 @@ function createConversationCommand(overrides = {}) {
             : { mode: 'default' },
     },
   };
+}
+
+/** Send a create and return its `created` ack's row. */
+async function createConversation(ws, overrides) {
+  const command = createConversationCommand(overrides);
+  send(ws, command);
+  const ack = await waitForAck(ws, command.commandId, 'created');
+  const row = ack.result.rows.rows[0];
+  if (row?.id !== command.conversationId) throw new Error('Created ack carried the wrong row');
+  return { command, row, cwd: ack.result.rows.cwds[row.cwd] };
+}
+
+async function deleteConversation(ws, conversationId) {
+  send(ws, { type: 'delete_conversation', conversationId });
+  await waitForRemoved(ws, conversationId);
 }
 
 // Test runner
@@ -196,7 +236,7 @@ async function runTests() {
   }
 
   // Retry wrapper for tests that race against server async init (7000+ file parse).
-  // waitForMessage can timeout if the server hasn't finished loading when the
+  // A wait can time out if the server hasn't finished loading when the
   // test fires. Retrying with backoff is more robust than a single long timeout.
   async function testWithRetry(name, fn, retries = 2) {
     for (let attempt = 1; attempt <= retries; attempt++) {
@@ -225,13 +265,12 @@ async function runTests() {
     console.log('Server started on port', PORT);
     console.log('');
 
-    // Test: Connect and receive init
-    await test('Connect and receive init message', async () => {
+    await test('Connect and receive hello', async () => {
       const ws = await createConnection();
-      const msg = await waitForMessage(ws, 'init');
-      if (!msg.conversations) throw new Error('Missing conversations array');
+      const msg = await waitForMessage(ws, 'hello');
+      if (!Array.isArray(msg.rows)) throw new Error('Missing rows array');
       if (!msg.defaultCwd) throw new Error('Missing defaultCwd');
-      if (msg.protocol?.version !== 2) throw new Error('Missing protocol v2 capability');
+      if (msg.protocol?.version !== 3) throw new Error('Missing protocol v3 capability');
       ws.close();
     });
 
@@ -247,45 +286,26 @@ async function runTests() {
       }
     });
 
-    await test('Protocol v2 create and revisioned config update are authoritative', async () => {
+    await test('Create and revisioned config update are authoritative', async () => {
       const ws = await createConnection();
-      await waitForMessage(ws, 'init');
-      const conversationId = crypto.randomUUID();
-      const createCommandId = crypto.randomUUID();
-      send(ws, {
-        type: 'create_conversation',
-        commandId: createCommandId,
-        conversationId,
+      await waitForMessage(ws, 'hello');
+      const { command } = await createConversation(ws, {
         workingDirectory: '/tmp',
-        config: {
-          provider: 'codex',
-          model: { mode: 'explicit', modelId: 'gpt-5.6-luna' },
-          reasoning: { mode: 'default' },
-        },
+        provider: 'codex',
+        model: 'gpt-5.6-luna',
       });
-      const created = await waitForMessage(ws, 'conversation_created');
-      if (created.commandId !== createCommandId)
-        throw new Error('Create command was not correlated');
-      if (created.conversation.configRevision !== 0) throw new Error('Expected revision 0');
-      if (created.conversation.config.model.modelId !== 'gpt-5.6-luna') {
+      const conversationId = command.conversationId;
+      const created = await detail(conversationId);
+      if (created.config.revision !== 0) throw new Error('Expected revision 0');
+      if (created.config.config.model.modelId !== 'gpt-5.6-luna') {
         throw new Error('Canonical config was not preserved');
       }
 
-      const retryAcknowledgement = waitForMessage(ws, 'conversation_created');
-      send(ws, {
-        type: 'create_conversation',
-        commandId: createCommandId,
-        conversationId,
-        workingDirectory: '/tmp',
-        config: {
-          provider: 'codex',
-          model: { mode: 'explicit', modelId: 'gpt-5.6-luna' },
-          reasoning: { mode: 'default' },
-        },
-      });
-      const retried = await retryAcknowledgement;
-      if (retried.conversation.id !== conversationId || retried.conversation.configRevision !== 0) {
-        throw new Error('Idempotent create retry did not return authoritative state');
+      // Idempotent retry: the same commandId + conversationId acks `created` again.
+      send(ws, command);
+      await waitForAck(ws, command.commandId, 'created');
+      if ((await detail(conversationId)).config.revision !== 0) {
+        throw new Error('Idempotent create retry changed authoritative state');
       }
 
       const updateCommandId = crypto.randomUUID();
@@ -294,15 +314,15 @@ async function runTests() {
         commandId: updateCommandId,
         conversationId,
         expectedRevision: 0,
-        patch: {
-          kind: 'set_model',
-          model: { mode: 'explicit', modelId: 'gpt-5.6-terra' },
-        },
+        patch: { kind: 'set_model', model: { mode: 'explicit', modelId: 'gpt-5.6-terra' } },
       });
-      const updated = await waitForMessage(ws, 'conversation_updated');
-      if (updated.commandId !== updateCommandId)
-        throw new Error('Update command was not correlated');
-      if (updated.conversation.configRevision !== 1) throw new Error('Expected revision 1');
+      // The config patch carrying this commandId is the requester's acknowledgement.
+      const updated = await waitFor(
+        ws,
+        'config patch for the update',
+        (m) => m.type === 'patch' && m.patch.t === 'config' && m.patch.commandId === updateCommandId
+      );
+      if (updated.patch.state.revision !== 1) throw new Error('Expected revision 1');
 
       const staleCommandId = crypto.randomUUID();
       send(ws, {
@@ -312,83 +332,60 @@ async function runTests() {
         expectedRevision: 0,
         patch: { kind: 'set_reasoning', reasoning: { mode: 'disabled' } },
       });
-      const rejected = await waitForMessage(ws, 'command_rejected');
-      if (rejected.commandId !== staleCommandId) throw new Error('Rejection was not correlated');
-      if (rejected.error.code !== 'revision_conflict') {
-        throw new Error(`Expected revision_conflict, got ${rejected.error.code}`);
+      const rollback = await waitForPatch(ws, conversationId, 'config');
+      const rejected = await waitForAck(ws, staleCommandId, 'rejected');
+      if (rejected.result.error.code !== 'revision_conflict') {
+        throw new Error(`Expected revision_conflict, got ${rejected.result.error.code}`);
       }
-      if (rejected.authoritativeConversation?.configRevision !== 1) {
-        throw new Error('Rejection omitted authoritative rollback state');
+      if (rollback.patch.state.revision !== 1) {
+        throw new Error('Rejection was not preceded by the authoritative config patch');
       }
 
-      send(ws, { type: 'delete_conversation', conversationId });
-      await waitForMessage(ws, 'conversation_deleted');
+      await deleteConversation(ws, conversationId);
       ws.close();
     });
 
     // Test: Create conversation (retry — races with server async init)
     await testWithRetry('Create new conversation', async () => {
       const ws = await createConnection();
-      await waitForMessage(ws, 'init');
-
-      send(ws, createConversationCommand());
-      const msg = await waitForMessage(ws, 'conversation_created');
-
-      if (!msg.conversation) throw new Error('Missing conversation');
-      if (!msg.conversation.id) throw new Error('Missing conversation id');
-      if (!msg.conversation.workingDirectory) throw new Error('Missing workingDirectory');
-
+      await waitForMessage(ws, 'hello');
+      const { cwd } = await createConversation(ws);
+      if (!cwd) throw new Error('Missing working directory');
       ws.close();
     });
 
-    // Test: Create conversation with custom directory
     await test('Create conversation with custom directory', async () => {
       const ws = await createConnection();
-      await waitForMessage(ws, 'init');
-
-      send(ws, createConversationCommand({ workingDirectory: '/tmp' }));
-      const msg = await waitForMessage(ws, 'conversation_created');
-
-      if (msg.conversation.workingDirectory !== '/tmp') {
-        throw new Error(`Expected /tmp, got ${msg.conversation.workingDirectory}`);
-      }
-
+      await waitForMessage(ws, 'hello');
+      const { cwd } = await createConversation(ws, { workingDirectory: '/tmp' });
+      if (cwd !== '/tmp') throw new Error(`Expected /tmp, got ${cwd}`);
       ws.close();
     });
 
     await test('Codex model defaults and explicit no-reasoning stay distinct', async () => {
       const ws = await createConnection();
-      await waitForMessage(ws, 'init');
+      await waitForMessage(ws, 'hello');
 
-      send(
-        ws,
-        createConversationCommand({
-          workingDirectory: '/tmp',
-          provider: 'codex',
-          model: 'gpt-5.6-terra',
-        })
-      );
-      const defaulted = await waitForMessage(ws, 'conversation_created');
-      if (defaulted.conversation.reasoningEffort !== 'xhigh') {
-        throw new Error(
-          `Expected Terra default xhigh, got ${defaulted.conversation.reasoningEffort}`
-        );
+      const defaulted = await createConversation(ws, {
+        workingDirectory: '/tmp',
+        provider: 'codex',
+        model: 'gpt-5.6-terra',
+      });
+      const defaultedEffort = (await detail(defaulted.row.id)).config.resolution.value
+        .reasoningEffort;
+      if (defaultedEffort !== 'xhigh') {
+        throw new Error(`Expected Terra default xhigh, got ${defaultedEffort}`);
       }
 
-      send(
-        ws,
-        createConversationCommand({
-          workingDirectory: '/tmp',
-          provider: 'codex',
-          model: 'gpt-5.6-sol',
-          reasoningEffort: null,
-        })
-      );
-      const noReasoning = await waitForMessage(ws, 'conversation_created');
-      if (noReasoning.conversation.reasoningEffort !== undefined) {
-        throw new Error(
-          `Expected explicit no-reasoning to omit the flag, got ${noReasoning.conversation.reasoningEffort}`
-        );
+      const noReasoning = await createConversation(ws, {
+        workingDirectory: '/tmp',
+        provider: 'codex',
+        model: 'gpt-5.6-sol',
+        reasoningEffort: null,
+      });
+      const noEffort = (await detail(noReasoning.row.id)).config.resolution.value.reasoningEffort;
+      if (noEffort !== undefined) {
+        throw new Error(`Expected explicit no-reasoning to omit the flag, got ${noEffort}`);
       }
 
       ws.close();
@@ -396,125 +393,80 @@ async function runTests() {
 
     await test('Conversation lifecycle and provider updates reach every client', async () => {
       const ws1 = await createConnection();
-      await waitForMessage(ws1, 'init');
+      await waitForMessage(ws1, 'hello');
       const ws2 = await createConnection();
-      await waitForMessage(ws2, 'init');
+      await waitForMessage(ws2, 'hello');
 
-      const createOnFirstClient = waitForMessage(ws1, 'conversation_created');
-      const createOnSecondClient = waitForMessage(ws2, 'conversation_updated');
-      send(
-        ws1,
-        createConversationCommand({
-          workingDirectory: '/tmp',
-          provider: 'codex',
-          model: 'gpt-5.6-sol',
-          reasoningEffort: 'minimal',
-        })
-      );
-      const [created, createdOnSecond] = await Promise.all([
-        createOnFirstClient,
-        createOnSecondClient,
-      ]);
-      if (createdOnSecond.conversation.id !== created.conversation.id) {
-        throw new Error('Second client received the wrong created conversation');
-      }
+      const command = createConversationCommand({
+        workingDirectory: '/tmp',
+        provider: 'codex',
+        model: 'gpt-5.6-sol',
+        reasoningEffort: 'minimal',
+      });
+      const id = command.conversationId;
+      const createdOnSecond = waitForRows(ws2, id);
+      send(ws1, command);
+      await Promise.all([waitForAck(ws1, command.commandId, 'created'), createdOnSecond]);
 
-      const updateOnSecondClient = waitForMessage(ws2, 'conversation_updated');
-
+      const updateOnSecondClient = waitForPatch(ws2, id, 'config');
       send(ws1, {
         type: 'set_conversation_config',
         commandId: crypto.randomUUID(),
-        conversationId: created.conversation.id,
+        conversationId: id,
         expectedRevision: 0,
         patch: { kind: 'set_provider', provider: 'claude' },
       });
-      const updated = await updateOnSecondClient;
-      if (updated.conversation.provider !== 'claude') {
-        throw new Error(`Expected claude, got ${updated.conversation.provider}`);
+      const resolved = (await updateOnSecondClient).patch.state.resolution.value;
+      if (resolved.provider !== 'claude')
+        throw new Error(`Expected claude, got ${resolved.provider}`);
+      // The default is the catalog's to choose (it moved opus -> claude-opus-5-5); assert that
+      // the switch resolved to it, not to the codex model the conversation carried.
+      const catalog = await (await fetch(`http://localhost:${PORT}/api/provider-catalog`)).json();
+      const claudeDefault = catalog.providers.find((p) => p.id === 'claude').defaultModelId;
+      if (resolved.modelId !== claudeDefault) {
+        throw new Error(`Expected Claude default ${claudeDefault}, got ${resolved.modelId}`);
       }
-      if (updated.conversation.model !== 'opus') {
-        throw new Error(`Expected Claude default opus, got ${updated.conversation.model}`);
-      }
-      if (updated.conversation.reasoningEffort !== 'high') {
-        throw new Error(
-          `Expected Claude default effort high, got ${updated.conversation.reasoningEffort}`
-        );
+      if (resolved.reasoningEffort !== 'high') {
+        throw new Error(`Expected Claude default effort high, got ${resolved.reasoningEffort}`);
       }
 
-      const deleteOnFirstClient = waitForMessage(ws1, 'conversation_deleted');
-      const deleteOnSecondClient = waitForMessage(ws2, 'conversation_deleted');
-      send(ws1, {
-        type: 'delete_conversation',
-        conversationId: created.conversation.id,
-      });
-      const [deletedOnFirst, deletedOnSecond] = await Promise.all([
-        deleteOnFirstClient,
-        deleteOnSecondClient,
-      ]);
-      if (
-        deletedOnFirst.conversationId !== created.conversation.id ||
-        deletedOnSecond.conversationId !== created.conversation.id
-      ) {
-        throw new Error('Conversation deletion was not broadcast consistently');
-      }
+      const deletedOnSecond = waitForRemoved(ws2, id);
+      await deleteConversation(ws1, id);
+      await deletedOnSecond;
 
       ws1.close();
       ws2.close();
     });
 
-    // Test: Invalid directory returns error
     await test('Invalid directory returns error', async () => {
       const ws = await createConnection();
-      await waitForMessage(ws, 'init');
-
-      send(ws, createConversationCommand({ workingDirectory: '/nonexistent/path/12345' }));
-      const msg = await waitForMessage(ws, 'command_rejected');
-
-      if (!msg.error.message.includes('No matching folder')) {
-        throw new Error(`Expected 'No matching folder' error, got: ${msg.error.message}`);
+      await waitForMessage(ws, 'hello');
+      const command = createConversationCommand({ workingDirectory: '/nonexistent/path/12345' });
+      send(ws, command);
+      const msg = await waitForAck(ws, command.commandId, 'rejected');
+      if (!msg.result.error.message.includes('No matching folder')) {
+        throw new Error(`Expected 'No matching folder' error, got: ${msg.result.error.message}`);
       }
-
       ws.close();
     });
 
-    // Test: Delete conversation
     await test('Delete conversation', async () => {
       const ws = await createConnection();
-      await waitForMessage(ws, 'init');
-
-      // Create first
-      send(ws, createConversationCommand());
-      const created = await waitForMessage(ws, 'conversation_created');
-      const convId = created.conversation.id;
-
-      // Delete
-      send(ws, {
-        type: 'delete_conversation',
-        conversationId: convId,
-      });
-      const deleted = await waitForMessage(ws, 'conversation_deleted');
-
-      if (deleted.conversationId !== convId) {
-        throw new Error('Deleted wrong conversation');
-      }
-
+      await waitForMessage(ws, 'hello');
+      const { row } = await createConversation(ws);
+      await deleteConversation(ws, row.id);
       ws.close();
     });
 
     // Test: Multiple connections receive same state (retry — races with server async init)
     await testWithRetry('Multiple connections sync state', async () => {
       const ws1 = await createConnection();
-      const init1 = await waitForMessage(ws1, 'init');
+      const hello1 = await waitForMessage(ws1, 'hello');
+      const { row } = await createConversation(ws1);
 
-      // Create conversation on ws1
-      send(ws1, createConversationCommand());
-      await waitForMessage(ws1, 'conversation_created');
-
-      // Connect ws2 and check it sees the conversation
       const ws2 = await createConnection();
-      const init2 = await waitForMessage(ws2, 'init');
-
-      if (init2.conversations.length !== init1.conversations.length + 1) {
+      const hello2 = await waitForMessage(ws2, 'hello');
+      if (!rowIds(hello2).includes(row.id) || hello2.rows.length !== hello1.rows.length + 1) {
         throw new Error('Second connection missing new conversation');
       }
 
@@ -572,21 +524,20 @@ async function runTests() {
     // Test: Malformed WS message returns error (not crash)
     await test('Malformed WS message returns error', async () => {
       const ws = await createConnection();
-      await waitForMessage(ws, 'init');
+      await waitForMessage(ws, 'hello');
 
-      // Send a message missing required fields
-      send(ws, { type: 'queue_message' }); // missing commandId, conversationId and content
+      // Missing commandId, conversationId and content: no command to reject, so a protocol error.
+      send(ws, { type: 'queue_message' });
+      await waitForMessage(ws, 'error');
       // Server should not crash — verify by sending a valid message after
-      send(ws, createConversationCommand());
-      const msg = await waitForMessage(ws, 'conversation_created');
-      if (!msg.conversation.id) throw new Error('Server crashed after malformed message');
+      await createConversation(ws);
 
       ws.close();
     });
 
     await test('Malformed correlated command returns a structured rejection', async () => {
       const ws = await createConnection();
-      await waitForMessage(ws, 'init');
+      await waitForMessage(ws, 'hello');
       const commandId = crypto.randomUUID();
 
       send(ws, {
@@ -595,12 +546,9 @@ async function runTests() {
         conversationId: crypto.randomUUID(),
         workingDirectory: '/tmp',
       });
-      const rejected = await waitForMessage(ws, 'command_rejected');
-      if (rejected.commandId !== commandId) {
-        throw new Error(`Expected rejection for ${commandId}, got ${rejected.commandId}`);
-      }
-      if (rejected.error?.code !== 'invalid_message') {
-        throw new Error(`Expected invalid_message, got ${rejected.error?.code}`);
+      const rejected = await waitForAck(ws, commandId, 'rejected');
+      if (rejected.result.error?.code !== 'invalid_message') {
+        throw new Error(`Expected invalid_message, got ${rejected.result.error?.code}`);
       }
 
       ws.close();
@@ -609,39 +557,32 @@ async function runTests() {
     // Test: interrupt_and_send is handled and preserves the interruption message
     await test('interrupt_and_send queues interruption message', async () => {
       const ws = await createConnection();
-      await waitForMessage(ws, 'init');
-
-      send(ws, createConversationCommand({ workingDirectory: '/tmp' }));
-      const created = await waitForMessage(ws, 'conversation_created');
-      const convId = created.conversation.id;
+      await waitForMessage(ws, 'hello');
+      const { row } = await createConversation(ws, { workingDirectory: '/tmp' });
 
       const commandId = crypto.randomUUID();
       send(ws, {
         type: 'interrupt_and_send',
         commandId,
-        conversationId: convId,
+        conversationId: row.id,
         content: 'follow-up after interrupt',
       });
-      const queueUpdated = await waitForMessage(ws, 'queue_updated');
-      const accepted = await waitForMessage(ws, 'command_accepted');
+      const queuePatch = await waitFor(
+        ws,
+        'non-empty queue patch',
+        (m) =>
+          m.type === 'patch' && m.id === row.id && m.patch.t === 'queue' && m.patch.queue.length
+      );
+      await waitForAck(ws, commandId, 'accepted');
 
-      if (accepted.commandId !== commandId || accepted.conversationId !== convId) {
-        throw new Error(`Expected acknowledgement for ${commandId}, got ${accepted.commandId}`);
+      const queue = queuePatch.patch.queue;
+      if (queue.length !== 1)
+        throw new Error(`Expected 1 queued interruption, got ${queue.length}`);
+      if (queue[0].content !== 'follow-up after interrupt') {
+        throw new Error(`Expected raw interruption content, got: ${queue[0].content}`);
       }
-
-      if (queueUpdated.conversationId !== convId) {
-        throw new Error(`Expected queue update for ${convId}, got ${queueUpdated.conversationId}`);
-      }
-      if (queueUpdated.queue.length !== 1) {
-        throw new Error(`Expected 1 queued interruption, got ${queueUpdated.queue.length}`);
-      }
-      if (queueUpdated.queue[0].content !== 'follow-up after interrupt') {
-        throw new Error(`Expected raw interruption content, got: ${queueUpdated.queue[0].content}`);
-      }
-      if (!['pending', 'sending'].includes(queueUpdated.queue[0].status)) {
-        throw new Error(
-          `Expected interruption status "pending" or "sending", got ${queueUpdated.queue[0].status}`
-        );
+      if (!['pending', 'sending'].includes(queue[0].status)) {
+        throw new Error(`Expected status "pending" or "sending", got ${queue[0].status}`);
       }
 
       ws.close();
@@ -650,28 +591,18 @@ async function runTests() {
     // Test: Deleted conversation does not reappear on new connection (retry — races with server async init)
     await testWithRetry('Deleted conversation stays deleted on reconnect', async () => {
       const ws1 = await createConnection();
-      const init1 = await waitForMessage(ws1, 'init');
-      const baseCount = init1.conversations.length;
+      const hello1 = await waitForMessage(ws1, 'hello');
+      const baseCount = hello1.rows.length;
 
-      // Create then delete
-      send(ws1, createConversationCommand());
-      const created = await waitForMessage(ws1, 'conversation_created');
-      const convId = created.conversation.id;
-
-      send(ws1, { type: 'delete_conversation', conversationId: convId });
-      await waitForMessage(ws1, 'conversation_deleted');
+      const { row } = await createConversation(ws1);
+      await deleteConversation(ws1, row.id);
       ws1.close();
 
-      // Reconnect and verify it's gone
       const ws2 = await createConnection();
-      const init2 = await waitForMessage(ws2, 'init');
-
-      const found = init2.conversations.find((c) => c.id === convId);
-      if (found) {
-        throw new Error('Deleted conversation reappeared in init');
-      }
-      if (init2.conversations.length !== baseCount) {
-        throw new Error(`Expected ${baseCount} conversations, got ${init2.conversations.length}`);
+      const hello2 = await waitForMessage(ws2, 'hello');
+      if (rowIds(hello2).includes(row.id)) throw new Error('Deleted conversation reappeared');
+      if (hello2.rows.length !== baseCount) {
+        throw new Error(`Expected ${baseCount} conversations, got ${hello2.rows.length}`);
       }
 
       ws2.close();
@@ -679,44 +610,33 @@ async function runTests() {
 
     await test('Active lifecycle records recover and tombstones survive a server restart', async () => {
       const ws = await createConnection();
-      await waitForMessage(ws, 'init');
-      const activeId = crypto.randomUUID();
-      const deletedId = crypto.randomUUID();
-      const config = {
+      await waitForMessage(ws, 'hello');
+      const overrides = {
+        workingDirectory: '/tmp',
         provider: 'codex',
-        model: { mode: 'explicit', modelId: 'gpt-5.6-luna' },
-        reasoning: { mode: 'disabled' },
+        model: 'gpt-5.6-luna',
+        reasoningEffort: null,
       };
-
-      for (const conversationId of [activeId, deletedId]) {
-        send(ws, {
-          type: 'create_conversation',
-          commandId: crypto.randomUUID(),
-          conversationId,
-          workingDirectory: '/tmp',
-          config,
-        });
-        await waitForMessage(ws, 'conversation_created');
-      }
-      send(ws, { type: 'delete_conversation', conversationId: deletedId });
-      await waitForMessage(ws, 'conversation_deleted');
+      const active = (await createConversation(ws, overrides)).row.id;
+      const deleted = (await createConversation(ws, overrides)).row.id;
+      await deleteConversation(ws, deleted);
       ws.close();
 
       await stopServer({ preserveDataDir: true });
       await startServer({ reuseDataDir: true });
 
       const restarted = await createConnection();
-      const init = await waitForMessage(restarted, 'init');
-      const recovered = init.conversations.find((conversation) => conversation.id === activeId);
-      if (!recovered) throw new Error('Active conversation was not recovered');
-      if (recovered.sessionId !== activeId) {
+      const hello = await waitForMessage(restarted, 'hello');
+      if (!rowIds(hello).includes(active)) throw new Error('Active conversation was not recovered');
+      if (rowIds(hello).includes(deleted)) {
+        throw new Error('Tombstoned conversation resurrected after restart');
+      }
+      const recovered = await detail(active);
+      if (recovered.sessionId !== active) {
         throw new Error(`Pristine conversation incorrectly resumed ${recovered.sessionId}`);
       }
-      if (recovered.model !== 'gpt-5.6-luna') {
-        throw new Error(`Recovered wrong model: ${recovered.model}`);
-      }
-      if (init.conversations.some((conversation) => conversation.id === deletedId)) {
-        throw new Error('Tombstoned conversation resurrected after restart');
+      if (recovered.config.resolution.value.modelId !== 'gpt-5.6-luna') {
+        throw new Error(`Recovered wrong model: ${recovered.config.resolution.value.modelId}`);
       }
       restarted.close();
     });
