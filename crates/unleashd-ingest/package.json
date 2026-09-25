@@ -11,6 +11,6 @@
   "scripts": {
     "build": "pnpm --package=@napi-rs/cli@3.10.5 dlx napi build --release --no-const-enum --dts index.d.ts",
     "build:debug": "pnpm --package=@napi-rs/cli@3.10.5 dlx napi build --no-const-enum --dts index.d.ts",
-    "test": "cargo test --manifest-path ../Cargo.toml -p unleashd-ingest --no-default-features && pnpm run build && node --test test/node.test.mjs"
+    "test": "cargo test --manifest-path ../Cargo.toml -p unleashd-ingest --no-default-features && pnpm run build && node --test test/node.test.mjs test/records.test.mjs"
   }
 }
