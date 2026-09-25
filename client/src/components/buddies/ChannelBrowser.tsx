@@ -31,7 +31,6 @@ import {
   clockTime,
   createChannel,
   feedPhase,
-  joinNames,
   ownerUnreadByList,
   postPurposeLabel,
   postPurposeTag,
@@ -64,7 +63,7 @@ type RowPlace =
   | {
       kind: 'channel';
       openThread(rootId: string): void;
-      responding: ReadonlyMap<string, readonly string[]>;
+      responding: ReadonlyMap<string, string>;
       // Roots with replies the owner had not seen when they arrived.
       unreadThreads: ReadonlySet<string>;
     }
@@ -137,11 +136,11 @@ function PostMeta({ post, context }: { post: BuddyMailingListPost; context: RowC
   );
 }
 
-function Replying({ names }: { names: readonly string[] }) {
+function Replying({ text }: { text: string }) {
   return (
     <span className="channel-browser-replying" aria-live="polite">
       <TypingDots />
-      {joinNames(names)} {names.length === 1 ? 'is' : 'are'} replying…
+      {text}
     </span>
   );
 }
@@ -154,10 +153,8 @@ function ThreadSummary({ post, context }: { post: BuddyMailingListPost; context:
       return null;
     case 'channel': {
       const place = context.place;
-      const replying = (place.responding.get(post.id) ?? []).map(
-        (buddyId) => context.buddyNames[buddyId] ?? buddyId
-      );
-      if (post.replyCount === 0 && replying.length === 0) return null;
+      const replying = place.responding.get(post.id);
+      if (post.replyCount === 0 && replying === undefined) return null;
       return (
         <div className="channel-browser-thread-summary">
           {post.replyCount > 0 && (
@@ -175,7 +172,7 @@ function ThreadSummary({ post, context }: { post: BuddyMailingListPost; context:
               {post.latestReplyAt && <span>Last reply {clockTime(post.latestReplyAt)}</span>}
             </button>
           )}
-          {replying.length > 0 && <Replying names={replying} />}
+          {replying !== undefined && <Replying text={replying} />}
         </div>
       );
     }
@@ -346,14 +343,14 @@ function ThreadPane({
   rootId: string;
   context: RowContext;
   references: readonly ChannelReference[];
-  replying: readonly string[];
+  replying: string | undefined;
   onClose(): void;
 }) {
   const thread = usePolledFetch(channelThreadResource(list.id, rootId), CHANNEL_BACKSTOP_MS);
   const replies = useWithOutbox(list.workspaceId, list.id, rootId, thread.data?.replies ?? null);
   const replyRows = useMemo(() => channelRows(replies ?? []), [replies]);
   const follow = useFollowBottom(
-    replyRows.length + replying.length,
+    replyRows.length + (replying === undefined ? 0 : 1),
     thread.data,
     context.linkedPostId
   );
@@ -404,9 +401,9 @@ function ThreadPane({
         <ol className="channel-browser-messages">
           {replyRows.map((row) => renderRow(row, context))}
         </ol>
-        {replying.length > 0 && (
+        {replying !== undefined && (
           <div className="channel-thread-replying">
-            <Replying names={replying} />
+            <Replying text={replying} />
           </div>
         )}
       </div>
@@ -463,7 +460,7 @@ function ChannelPane({
     taskFilter ? postsResource(taskChannelFeedUrl(workspaceId, taskFilter)) : null,
     CHANNEL_BACKSTOP_MS
   );
-  const respondingByRoot = useChannelResponding(list.id);
+  const respondingByRoot = useChannelResponding(list.id, buddyNames);
   const visit = useOwnerChannelVisit(list.id, ownerUnread);
   // Threads opened since arriving are no longer new, even after closing them.
   const [openedThreads, setOpenedThreads] = useState<ReadonlySet<string>>(() => new Set());
@@ -605,9 +602,7 @@ function ChannelPane({
           rootId={threadId}
           context={threadContext}
           references={references}
-          replying={(respondingByRoot.get(threadId) ?? []).map(
-            (buddyId) => buddyNames[buddyId] ?? buddyId
-          )}
+          replying={respondingByRoot.get(threadId)}
           onClose={() => onThread(null)}
         />
       )}

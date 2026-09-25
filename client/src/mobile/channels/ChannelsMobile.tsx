@@ -23,7 +23,6 @@ import {
   clockTime,
   createChannel,
   feedPhase,
-  joinNames,
   ownerUnreadByList,
   postPurposeLabel,
   postPurposeTag,
@@ -367,7 +366,7 @@ type RowPlace =
   | {
       kind: 'channel';
       threadHref(rootId: string): string;
-      responding: ReadonlyMap<string, readonly string[]>;
+      responding: ReadonlyMap<string, string>;
       // Roots with replies the owner had not seen when they arrived.
       unreadThreads: ReadonlySet<string>;
     }
@@ -396,9 +395,7 @@ function PostFooter({ post, context }: { post: BuddyMailingListPost; context: Ro
       return null;
     case 'channel': {
       const place = context.place;
-      const replying = (place.responding.get(post.id) ?? []).map(
-        (buddyId) => context.directory.buddyNames[buddyId] ?? buddyId
-      );
+      const replying = place.responding.get(post.id);
       const rootId = post.threadRootId ?? post.id;
       return (
         <div className="mobile-channel-post__footer">
@@ -419,9 +416,9 @@ function PostFooter({ post, context }: { post: BuddyMailingListPost; context: Ro
               Reply
             </Link>
           )}
-          {replying.length > 0 && (
+          {replying !== undefined && (
             <span className="mobile-channel-post__replying">
-              <TypingDots /> {joinNames(replying)} {replying.length === 1 ? 'is' : 'are'} replying…
+              <TypingDots /> {replying}
             </span>
           )}
         </div>
@@ -526,7 +523,7 @@ function ChannelScreen({ listId, context }: { listId: string; context: ScreenCon
   const list = lists?.find((candidate) => candidate.id === listId) ?? null;
   const channel = useChannelFeed(listId);
   const feed = channel.feed;
-  const responding = useChannelResponding(listId);
+  const responding = useChannelResponding(listId, directory.buddyNames);
   const posts = useWithOutbox(workspaceId, listId, null, feed.data);
   const rows = useMemo(() => channelRows(posts ?? []), [posts]);
   const follow = useFollowBottom(rows.length, feed.data, null);
@@ -621,13 +618,14 @@ function ThreadScreen({
   const { workspaceId, directory, lists } = context;
   const list = lists?.find((candidate) => candidate.id === listId) ?? null;
   const thread = usePolledFetch(channelThreadResource(listId, rootId), CHANNEL_BACKSTOP_MS);
-  const responding = useChannelResponding(listId);
-  const replying = (responding.get(rootId) ?? []).map(
-    (buddyId) => directory.buddyNames[buddyId] ?? buddyId
-  );
+  const replying = useChannelResponding(listId, directory.buddyNames).get(rootId);
   const replies = useWithOutbox(workspaceId, listId, rootId, thread.data?.replies ?? null);
   const replyRows = useMemo(() => channelRows(replies ?? []), [replies]);
-  const follow = useFollowBottom(replyRows.length + replying.length, thread.data, linkedPostId);
+  const follow = useFollowBottom(
+    replyRows.length + (replying === undefined ? 0 : 1),
+    thread.data,
+    linkedPostId
+  );
   const rowContext: RowContext = {
     workspaceId,
     directory,
@@ -670,9 +668,9 @@ function ThreadScreen({
             <Row key={row.key} row={row} context={rowContext} />
           ))}
         </ol>
-        {replying.length > 0 && (
+        {replying !== undefined && (
           <p className="mobile-channel__replying">
-            <TypingDots /> {joinNames(replying)} {replying.length === 1 ? 'is' : 'are'} replying…
+            <TypingDots /> {replying}
           </p>
         )}
       </div>

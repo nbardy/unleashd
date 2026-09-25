@@ -47,8 +47,21 @@ class FakeTurnRuntime extends EventEmitter {
   config!: ConversationConfig;
   configRevision = 0;
   configResolution!: ConversationConfigState['resolution'];
-  constructor(readonly id: string) {
+  // The runtime's FIFO run line: a turn sent while the Buddy is full waits
+  // for a slot until the test admits it.
+  waitingForSlot = false;
+  constructor(
+    readonly id: string,
+    private readonly slots: { full: boolean }
+  ) {
     super();
+  }
+  waitingForRunSlot() {
+    return this.waitingForSlot;
+  }
+  admit() {
+    this.waitingForSlot = false;
+    this.emit('buddy-turn-started');
   }
   applyConfigState(state: ConversationConfigState) {
     this.config = state.config;
@@ -65,6 +78,7 @@ class FakeTurnRuntime extends EventEmitter {
   async waitForTurnDrain() {}
   sendMessage(content: string, ownerInput: unknown) {
     this.prompts.push({ content, ownerInput });
+    this.waitingForSlot = this.slots.full;
   }
   enqueueMessage(content: string, ownerInput: unknown) {
     this.enqueued.push({ content, ownerInput });
@@ -104,6 +118,7 @@ async function harness() {
   const created: string[] = [];
   const deleted = new Set<string>();
   const channelChanges: string[] = [];
+  const slots = { full: false };
   const configService = new ConversationConfigService({
     store: new ConversationConfigStore({ appDataRoot: join(scratch, 'config') }),
     resolver: { resolve: async (config) => resolveConfigAgainstProviderCatalog(config) },
@@ -112,7 +127,7 @@ async function harness() {
   // Buddy profile default (these test Buddies have none, so Codex).
   const createRuntime = async (input: { conversationId: string; config?: ConversationConfig }) => {
     created.push(input.conversationId);
-    const runtime = new FakeTurnRuntime(input.conversationId);
+    const runtime = new FakeTurnRuntime(input.conversationId, slots);
     runtime.applyConfigState(
       await configService.create({
         conversationId: input.conversationId,
@@ -196,6 +211,7 @@ async function harness() {
     created,
     deleted,
     channelChanges,
+    slots,
     gates,
     api,
     newList: (key: string) =>
@@ -902,4 +918,37 @@ test('the reply gate accepts only a bare <yes>/<no> and stops a rambling run', a
   });
   assert.equal(stopped, true);
   assert.equal(verdict.kind, 'unparseable');
+});
+
+// Owner direction 2026-09-24: a reply over the Buddy's run limit (5, shared
+// with background work) waits for a slot. The channel must say it is queued —
+// before this it read "replying…" for as long as the Buddy stayed full.
+test('a reply waiting for a run slot shows as queued, then replying, then lands', async () => {
+  const h = await harness();
+  try {
+    const list = h.newList('queued');
+    h.slots.full = true;
+    const { post: root } = await h.post(list.id, {
+      key: 'ask',
+      body: `[@Lead](buddy:${h.lead.id}) are you there?`,
+    });
+    const turn = await h.nextTurn(h.seat(root.id, h.lead.id, 0));
+    const states = async () =>
+      (
+        (await h.api(`/api/buddies/lists/${list.id}/responding`)).json as Array<{
+          buddyId: string;
+          state: string;
+        }>
+      ).map((row) => [row.buddyId, row.state]);
+    assert.deepEqual(await states(), [[h.lead.id, 'queued']]);
+
+    turn.runtime.admit();
+    assert.deepEqual(await states(), [[h.lead.id, 'replying']]);
+
+    turn.complete('Here now.');
+    await until(() => h.replies(root.id).length === 1, 'reply post');
+    await until(async () => (await states()).length === 0, 'responding entry cleared');
+  } finally {
+    h.close();
+  }
 });
