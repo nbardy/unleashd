@@ -213,6 +213,13 @@ const buddyMcpSpec = (grant: Parameters<McpEndpoint['spec']>[0]) => {
 };
 const resolveBuddyConversation = (context: Parameters<typeof buddyBriefings.warm>[0]) =>
   buddyBriefings.warm(context);
+// Chats must load without Buddies: when the Buddies DB is missing, hide no conversation (the
+// error is logged each time, so it reaches the error journal) instead of failing `init`.
+const archivedBuddyIdsOrNone = () =>
+  archivedBuddyIds(buddiesCore).catch((error: Error) => {
+    console.error('[buddies] archived-Buddy filter unavailable:', error.message);
+    return new Set<string>();
+  });
 const createBuddyConversationLink = async (conversation: ConversationRuntime) => {
   const context = conversation.buddyContext;
   if (!context) return;
@@ -369,7 +376,7 @@ registerConversationWebSocket(wss, {
   beginCommand: () => beginMutation({ allowDuringStartup: true }),
   configService: conversationConfigService,
   isBuddyArchived: async (buddyId) => (await buddiesCore.getBuddy(buddyId)).status === 'archived',
-  getArchivedBuddyIds: async () => [...(await archivedBuddyIds(buddiesCore))],
+  getArchivedBuddyIds: async () => [...(await archivedBuddyIdsOrNone())],
   getDefaultWorkingDirectory: () => resolveDefaultWorkingDirectory(),
   resolveWorkingDirectory: resolveWorkingDirectoryInput,
   resolveBuddyConversation,
@@ -482,17 +489,7 @@ const buddyChannels = createChannels({
   }),
 });
 buddyEvents.on((event) => {
-  switch (event.kind) {
-    case 'changed':
-      return buddiesChanged();
-    case 'posted':
-      channelChanged(event.channel.id);
-      // Follow-ups run in public channels; a DM request starts its run in the core.
-      if (event.channel.kind.type !== 'public') return;
-      void buddyChannels.considerThreadPost(event.channel, event.post).catch((error) => {
-        console.warn(`[channels] follow-up gating failed for post ${event.post.id}:`, error);
-      });
-  }
+  if (event.kind === 'changed') buddiesChanged();
 });
 
 registerBuddyRoutes(app, {
@@ -525,7 +522,7 @@ registerSearchRoutes(
   app,
   () => conversations.values(),
   async () => {
-    const archived = await archivedBuddyIds(buddiesCore);
+    const archived = await archivedBuddyIdsOrNone();
     return (conversationId) => {
       const kind = conversations.get(conversationId)?.kind;
       return kind?.kind !== 'buddy' || !archived.has(kind.buddyId);

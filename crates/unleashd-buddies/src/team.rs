@@ -4,10 +4,39 @@
 use crate::error::{CoreError, Result};
 use crate::store::{Mutation, Store, get_buddy, idempotent, new_id, now_iso, require};
 use crate::types::*;
-use rusqlite::{Connection, Transaction, params};
+use rusqlite::{Connection, OptionalExtension, Transaction, params};
 use serde_json::json;
 
 impl Store {
+    /// Registers a folder as a workspace. The root path is the natural key: registering the same
+    /// folder again returns the existing workspace.
+    pub fn create_workspace(&mut self, actor: &Actor, input: WorkspaceInput) -> Result<Workspace> {
+        self.write(|tx| {
+            require(tx, actor, Op::Admin, &Subject::Owner)?;
+            if let Some(found) = workspace_at(tx, &input.root_path)? {
+                return Ok(found);
+            }
+            let id = new_id("project");
+            let m = Mutation {
+                actor,
+                workspace_id: &id,
+                buddy_id: None,
+                task_id: None,
+                op: "workspace.create",
+                payload: json!({"name": input.name, "root_path": input.root_path}),
+                key: None,
+            };
+            idempotent(tx, &m, |tx| {
+                tx.execute(
+                    "INSERT INTO workspace (id, name, root_path, created_at) VALUES (?1, ?2, ?3, ?4)",
+                    params![id, input.name, input.root_path, now_iso()],
+                )?;
+                Ok(id.clone())
+            })?;
+            workspace_at(tx, &input.root_path)?.ok_or_else(|| CoreError::not_found("workspace", &id))
+        })
+    }
+
     pub fn create_buddy(&mut self, actor: &Actor, input: BuddyCreate) -> Result<Buddy> {
         self.write(|tx| {
             require(tx, actor, Op::Admin, &Subject::Owner)?;
@@ -95,6 +124,13 @@ impl Store {
             get_buddy(tx, &id)
         })
     }
+}
+
+fn workspace_at(conn: &Connection, root_path: &str) -> Result<Option<Workspace>> {
+    Ok(conn
+        .prepare_cached("SELECT id, name, root_path, created_at FROM workspace WHERE root_path = ?1")?
+        .query_row([root_path], |r| Ok(Workspace { id: r.get(0)?, name: r.get(1)?, root_path: r.get(2)?, created_at: r.get(3)? }))
+        .optional()?)
 }
 
 fn manager_id(manager: &ManagerRef) -> Option<&str> {

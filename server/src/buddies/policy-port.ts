@@ -103,8 +103,11 @@ export const GRANT_TOKEN_ENV = 'UNLEASHD_BUDDY_MCP_TOKEN';
 export function specFromEnv(env: Readonly<Record<string, string>>): Record<string, McpServerSpec> {
   const url = env[GRANT_URL_ENV];
   const token = env[GRANT_TOKEN_ENV];
-  if (!url || !token)
-    throw new Error('A Buddy turn has no MCP grant: issue one before building its MCP servers');
+  // runtime.ts declares `issueBuddyControlCapability` optional: a host that wires no Buddy module
+  // (the runtime's own tests) gets no Buddy server. The production host always issues, and
+  // buddies-v2.test.ts reads the spec from every Buddy turn, so an absent spec there fails it.
+  if (url === undefined && token === undefined) return {};
+  if (!url || !token) throw new Error('A Buddy turn has half an MCP grant (URL or token missing)');
   return {
     [MCP_SERVER_NAME]: {
       kind: 'http',

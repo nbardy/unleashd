@@ -12,6 +12,7 @@ import { OWNER, buddyActor } from './core';
  * Owner (B1, T03: a seat answering another Buddy's post never holds owner authority).
  * The crate's `authorize` decides every call; the role only picks which tools are listed.
  */
+// Pattern: capability-grants (docs/patterns.md#capability-grants)
 export type Role = 'worker' | 'owner' | 'reviewer' | 'builder';
 
 interface GrantBase {

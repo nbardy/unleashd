@@ -653,6 +653,13 @@ pub struct BuddyUpdate {
     pub key: String,
 }
 
+#[cfg_attr(feature = "node", napi_derive::napi(object))]
+#[derive(Debug, Clone)]
+pub struct WorkspaceInput {
+    pub name: String,
+    pub root_path: String,
+}
+
 /// What startup recovery ended: runs a dead process held, and chat turns nobody waits for.
 #[cfg_attr(feature = "node", napi_derive::napi(object))]
 #[derive(Debug, Clone, PartialEq, Eq)]

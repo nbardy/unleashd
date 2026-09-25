@@ -386,15 +386,13 @@ export function createMemoryReviewer(options: {
     const evidence = `EVIDENCE_JSON:\n${JSON.stringify({
       buddy: { name: buddy.name, role: buddy.role, soul: soul?.content ?? '' },
       memory: { working, longTerm },
-      currentWork: tasks
-        .slice(0, 20)
-        .map((t) => ({
-          id: t.id,
-          revision: t.revision,
-          title: t.title,
-          status: t.status,
-          updatedAt: t.updatedAt,
-        })),
+      currentWork: tasks.slice(0, 20).map((t) => ({
+        id: t.id,
+        revision: t.revision,
+        title: t.title,
+        status: t.status,
+        updatedAt: t.updatedAt,
+      })),
       conversationId: turn.conversationId,
       completedAt: turn.completedAt,
       transcript: reviewTranscript(turn.messages),

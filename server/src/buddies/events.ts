@@ -11,6 +11,8 @@ export type BuddyEvent = { kind: 'changed' } | { kind: 'posted'; post: Post; cha
 
 export type BuddyEvents = ReturnType<typeof createBuddyEvents>;
 
+// Pattern: one-write-path (docs/patterns.md#one-write-path) — every Buddy write (tool, route,
+// runner, responder) announces itself here; the WS feed and the runner's wake read from it.
 export function createBuddyEvents() {
   const listeners = new Set<(event: BuddyEvent) => void>();
   return {

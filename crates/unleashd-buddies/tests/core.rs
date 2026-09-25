@@ -424,6 +424,10 @@ fn team_admin_is_owner_only_and_refuses_a_reporting_cycle() {
         reasoning_effort: None,
         key: key.into(),
     };
+    let folder = WorkspaceInput { name: "Docs".into(), root_path: "/tmp/docs".into() };
+    assert!(matches!(s.create_workspace(&buddy("lead"), folder.clone()), Err(CoreError::Denied(_))));
+    let docs = s.create_workspace(&Actor::Owner, folder.clone()).unwrap();
+    assert_eq!(s.create_workspace(&Actor::Owner, folder).unwrap().id, docs.id, "one workspace per folder");
     // A manager is not the owner: team edits stay owner-only (02 §8.3 team_admin).
     assert!(matches!(s.create_buddy(&buddy("lead"), hire("x")), Err(CoreError::Denied(_))));
     let new = s.create_buddy(&Actor::Owner, hire("x")).unwrap();

@@ -92,6 +92,7 @@ export function createRunner(options: {
   let timer: ReturnType<typeof setInterval> | null = null;
   let unsubscribe: () => void = () => undefined;
 
+  // Pattern: wake-on-write (docs/patterns.md#wake-on-write)
   function wake(): void {
     if (paused) return;
     if (draining) {
@@ -250,6 +251,7 @@ export function createRunner(options: {
     };
   }
 
+  // Pattern: sum-types (docs/patterns.md#sum-types)
   function jobFor(run: Run): Promise<Job> {
     const input: RunInput = run.input;
     switch (input.kind) {

@@ -174,6 +174,7 @@ function mentionConfigsByBuddy(
 
 const MEDIA = new Set<string>([...CHANNEL_IMAGE_EXTENSIONS, ...CHANNEL_VIDEO_EXTENSIONS]);
 
+// Pattern: idempotency-keys (docs/patterns.md#idempotency-keys) — every owner write carries `key`.
 export function registerBuddyRoutes(app: Express, deps: BuddyRouteDeps): void {
   const { core, events, runner, channels } = deps;
   const route =
@@ -185,11 +186,9 @@ export function registerBuddyRoutes(app: Express, deps: BuddyRouteDeps): void {
           const typed = coreError(error);
           const code = typed ? httpStatus(typed) : error instanceof z.ZodError ? 400 : 500;
           if (code >= 500) console.error('[buddies] request failed:', error);
-          res
-            .status(code)
-            .json({
-              error: typed?.message ?? (error instanceof Error ? error.message : String(error)),
-            });
+          res.status(code).json({
+            error: typed?.message ?? (error instanceof Error ? error.message : String(error)),
+          });
         }
       );
     };
@@ -214,6 +213,16 @@ export function registerBuddyRoutes(app: Express, deps: BuddyRouteDeps): void {
     })
   );
   app.post(
+    '/api/buddies/workspaces',
+    route(async (req) => {
+      const input = z
+        .object({ name: z.string().trim().min(1), rootPath: z.string().min(1) })
+        .strict()
+        .parse(req.body);
+      return write(core.createWorkspace(OWNER, input));
+    }, 201)
+  );
+  app.post(
     '/api/buddies/builder',
     route(() => deps.createBuilderConversation(), 201)
   );
@@ -223,52 +232,6 @@ export function registerBuddyRoutes(app: Express, deps: BuddyRouteDeps): void {
       const { managerId, ...input } = BuddyCreateSchema.parse(req.body);
       return write(core.createBuddy(OWNER, { ...input, manager: manager(managerId) }));
     }, 201)
-  );
-  app.get(
-    '/api/buddies/:buddyId',
-    route(async (req) => {
-      const buddyId = p(req, 'buddyId');
-      const [buddy, tasks, schedules, runs] = await Promise.all([
-        core.getBuddy(buddyId),
-        core.listTasks({ kind: 'owner', buddyId }),
-        core.listSchedules(buddyId),
-        core.listRuns({ kind: 'buddy', buddyId }, 30),
-      ]);
-      return { buddy, tasks, schedules, runs };
-    })
-  );
-  app.patch(
-    '/api/buddies/:buddyId',
-    route(async (req) => {
-      const { key: changeKey, managerId, ...changes } = BuddyChangesSchema.parse(req.body);
-      const buddy = await write(
-        core.updateBuddy(OWNER, {
-          buddyId: p(req, 'buddyId'),
-          changes: {
-            ...changes,
-            manager: managerId === undefined ? undefined : manager(managerId),
-          },
-          key: changeKey,
-        })
-      );
-      if (buddy.status === 'archived') deps.onBuddyArchived(buddy.id);
-      return buddy;
-    })
-  );
-  app.delete(
-    '/api/buddies/:buddyId',
-    route(async (req) => {
-      const buddyId = p(req, 'buddyId');
-      const buddy = await write(
-        core.updateBuddy(OWNER, {
-          buddyId,
-          changes: { status: 'archived' },
-          key: `archive:${buddyId}`,
-        })
-      );
-      deps.onBuddyArchived(buddyId);
-      return buddy;
-    })
   );
   app.post(
     '/api/buddies/:buddyId/direct',
@@ -544,6 +507,53 @@ export function registerBuddyRoutes(app: Express, deps: BuddyRouteDeps): void {
     route(async (req) => channels.responding(p(req, 'channelId')))
   );
 
+  // ---- one buddy: registered last, so `/api/buddies/tasks` etc. never read as a buddy id ----
+  app.get(
+    '/api/buddies/:buddyId',
+    route(async (req) => {
+      const buddyId = p(req, 'buddyId');
+      const [buddy, tasks, schedules, runs] = await Promise.all([
+        core.getBuddy(buddyId),
+        core.listTasks({ kind: 'owner', buddyId }),
+        core.listSchedules(buddyId),
+        core.listRuns({ kind: 'buddy', buddyId }, 30),
+      ]);
+      return { buddy, tasks, schedules, runs };
+    })
+  );
+  app.patch(
+    '/api/buddies/:buddyId',
+    route(async (req) => {
+      const { key: changeKey, managerId, ...changes } = BuddyChangesSchema.parse(req.body);
+      const buddy = await write(
+        core.updateBuddy(OWNER, {
+          buddyId: p(req, 'buddyId'),
+          changes: {
+            ...changes,
+            manager: managerId === undefined ? undefined : manager(managerId),
+          },
+          key: changeKey,
+        })
+      );
+      if (buddy.status === 'archived') deps.onBuddyArchived(buddy.id);
+      return buddy;
+    })
+  );
+  app.delete(
+    '/api/buddies/:buddyId',
+    route(async (req) => {
+      const buddyId = p(req, 'buddyId');
+      const buddy = await write(
+        core.updateBuddy(OWNER, {
+          buddyId,
+          changes: { status: 'archived' },
+          key: `archive:${buddyId}`,
+        })
+      );
+      deps.onBuddyArchived(buddyId);
+      return buddy;
+    })
+  );
   const upload = multer({
     storage: multer.diskStorage({
       destination: (req, _file, callback) => {
@@ -575,16 +585,14 @@ export function registerBuddyRoutes(app: Express, deps: BuddyRouteDeps): void {
         return void res
           .status(400)
           .json({ error: `No supported media: ${[...MEDIA].join(' ')} up to 50 MB` });
-      res
-        .status(201)
-        .json({
-          files: files.map((f) => ({
-            originalName: f.originalname,
-            absolutePath: f.path,
-            mimeType: f.mimetype,
-            size: f.size,
-          })),
-        });
+      res.status(201).json({
+        files: files.map((f) => ({
+          originalName: f.originalname,
+          absolutePath: f.path,
+          mimeType: f.mimetype,
+          size: f.size,
+        })),
+      });
     }
   );
 }

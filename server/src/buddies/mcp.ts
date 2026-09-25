@@ -140,6 +140,7 @@ async function writeDoc(deps: ToolDeps, grant: BuddyGrant, input: DocWriteInput)
   });
 }
 
+// Pattern: table-driven (docs/patterns.md#table-driven)
 const BUDDY_TOOLS = {
   post: buddyTool({
     description:
@@ -541,6 +542,8 @@ export function toolManifest(role: Role): string {
 }
 
 /** One tool call under a grant: typed errors come back as a tool error, never a crash. */
+// Pattern: idempotency-keys (docs/patterns.md#idempotency-keys) — every writing tool takes a `key`
+// the crate records once per (actor, workspace); a retried call replays the first result.
 export async function callTool(deps: ToolDeps, grant: TurnGrant, name: string, input: unknown) {
   const selected = toolsFor(grant.role)[name];
   if (!selected)

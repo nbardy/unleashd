@@ -527,6 +527,47 @@ export function createChannels(ports: ChannelsPorts) {
     });
   }
 
+  /** Ask every other Buddy who posted in this post's thread whether to follow up. */
+  async function considerThreadPost(channel: Channel, post: Post): Promise<void> {
+    if (!post.rootId) return;
+    const thread = await wholeThread(await core.getPost(OWNER, post.rootId));
+    // Only the newest post is followed up: a burst is gated once, against the latest message.
+    if (thread[thread.length - 1].id !== post.id) return;
+    let chain = 0;
+    for (let i = thread.length - 1; i >= 0 && thread[i].author.kind === 'buddy'; i--) chain++;
+    if (chain >= MAX_BUDDY_CHAIN) return;
+    const skipped = new Set([
+      ...buddyAuthor(post),
+      ...(post.author.kind === 'owner' ? mentionedBuddyIds(post.body) : []),
+    ]);
+    const replying = [...queues.values()]
+      .filter((entry) => entry.threadRootId === post.rootId)
+      .map((entry) => entry.buddyId);
+    const participants = [...new Set([...thread.flatMap(buddyAuthor), ...replying])];
+    for (const buddyId of participants) {
+      if (skipped.has(buddyId) || !(await eligible(buddyId, channel.workspaceId)).ok) continue;
+      gate({
+        channel,
+        trigger: post,
+        root: thread[0],
+        buddyId,
+        others: participants.filter((other) => other !== buddyId),
+      });
+    }
+  }
+
+  // Every post, from any writer (tool, route, runner, this responder), pushes its channel; a post
+  // in a public channel's thread asks the other Buddies there whether to follow up. A DM request
+  // needs no gate: the core already queued the recipient's run.
+  ports.events.on((event) => {
+    if (event.kind !== 'posted') return;
+    ports.channelChanged(event.channel.id);
+    if (event.channel.kind.type !== 'public') return;
+    void considerThreadPost(event.channel, event.post).catch((error) =>
+      logger.warn(`[channels] follow-up gating failed for post ${event.post.id}:`, error)
+    );
+  });
+
   return {
     /** One reply per valid @mention in an OWNER post, in the Buddy's seat for this thread. */
     async respondToOwnerPost(
@@ -552,34 +593,7 @@ export function createChannels(ports: ChannelsPorts) {
       );
     },
 
-    /** Ask every other Buddy who posted in this post's thread whether to follow up. */
-    async considerThreadPost(channel: Channel, post: Post): Promise<void> {
-      if (!post.rootId) return;
-      const thread = await wholeThread(await core.getPost(OWNER, post.rootId));
-      // Only the newest post is followed up: a burst is gated once, against the latest message.
-      if (thread[thread.length - 1].id !== post.id) return;
-      let chain = 0;
-      for (let i = thread.length - 1; i >= 0 && thread[i].author.kind === 'buddy'; i--) chain++;
-      if (chain >= MAX_BUDDY_CHAIN) return;
-      const skipped = new Set([
-        ...buddyAuthor(post),
-        ...(post.author.kind === 'owner' ? mentionedBuddyIds(post.body) : []),
-      ]);
-      const replying = [...queues.values()]
-        .filter((entry) => entry.threadRootId === post.rootId)
-        .map((entry) => entry.buddyId);
-      const participants = [...new Set([...thread.flatMap(buddyAuthor), ...replying])];
-      for (const buddyId of participants) {
-        if (skipped.has(buddyId) || !(await eligible(buddyId, channel.workspaceId)).ok) continue;
-        gate({
-          channel,
-          trigger: post,
-          root: thread[0],
-          buddyId,
-          others: participants.filter((other) => other !== buddyId),
-        });
-      }
-    },
+    considerThreadPost,
 
     /** Buddies composing a reply in this channel, for "X is replying…". */
     responding(channelId: string): ChannelResponse[] {

@@ -27,6 +27,7 @@ export declare class BuddiesCore {
   bindRun(runId: string, leaseToken: string, conversationId: string): Promise<Run>
   cancelRun(actor: Actor, runId: string): Promise<Run>
   recoverRuns(): Promise<Recovery>
+  createWorkspace(actor: Actor, input: WorkspaceInput): Promise<Workspace>
   createBuddy(actor: Actor, input: BuddyCreate): Promise<Buddy>
   updateBuddy(actor: Actor, input: BuddyUpdate): Promise<Buddy>
   getRun(id: string): Promise<Run>
@@ -453,4 +454,9 @@ export interface Workspace {
   name: string
   rootPath: string
   createdAt: string
+}
+
+export interface WorkspaceInput {
+  name: string
+  rootPath: string
 }
