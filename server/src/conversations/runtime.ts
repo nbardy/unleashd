@@ -65,6 +65,14 @@ import type {
 import { noteActivity } from '../observability/event-loop-stall';
 import { resolveConfigAgainstProviderCatalog } from '../providers/catalog-service';
 import {
+  type OwnerInput,
+  type SeatTurnInput,
+  type SessionRelativePrompt,
+  type TurnInput,
+  sameEitherWay,
+} from '../turns/input';
+import { type QueueEntry, TurnQueue } from '../turns/queue';
+import {
   type SubAgentFold,
   type SubAgentHost,
   failRunningSubAgents,
@@ -125,6 +133,8 @@ interface MessageData {
 }
 type ToolUseEvent = Extract<UnifiedAgentEvent, { type: 'tool.use' }>;
 type CompletionReason = Extract<UnifiedAgentEvent, { type: 'turn.complete' }>['reason'];
+
+export type { SeatTurnInput, SessionRelativePrompt } from '../turns/input';
 
 export type ConversationBroadcast = ServerMessage | ChunkData | MessageCompleteData | MessageData;
 
@@ -250,21 +260,6 @@ export interface ConversationRuntimeView {
   toJSON(): ConversationData;
 }
 
-// Who a turn's input came from. Only 'owner_input' carries owner authority
-// (owner controls + the unleashd_owner MCP, see spawnForMessage).
-// 'buddy_post': a channel-thread seat answering a post ANOTHER BUDDY wrote. It
-// keeps the seat's conversation audience (so the seat's provider session
-// continues) but never owner authority: until 2026-09-25 (B1) the responder
-// sent these as 'owner_input', so Buddy-authored thread text drove turns that
-// held configure_team and owner document writes.
-type TurnInput = Readonly<{
-  origin: 'owner_input' | 'buddy_post' | 'buddy_message' | 'schedule' | 'unknown';
-  inputId: string;
-}>;
-
-/** A channel seat turn, attributed by the author of its stored trigger post. */
-export type SeatTurnInput = Readonly<{ origin: 'owner_input' | 'buddy_post'; inputId: string }>;
-
 /**
  * The disclosure audience a Buddy turn runs under. `key` is persisted with the
  * provider session built under it; `continuityFrom` asks the Buddies package
@@ -279,16 +274,10 @@ export type BuddyTurnAudience = Readonly<{
 }>;
 export type BuddyAudienceContinuity = 'contained' | 'changed' | 'unverified';
 
-/**
- * One turn's input worded for the provider session it reaches: `resumed` for a
- * session that already holds this conversation's earlier turns, `fresh` for a
- * new one, which must stand alone. A plain message reads the same either way.
- */
-export type SessionRelativePrompt = Readonly<{ resumed: string; fresh: string }>;
-const sameEitherWay = (content: string): SessionRelativePrompt => ({
-  resumed: content,
-  fresh: content,
-});
+/** Input with no recorded producer: no owner authority, workspace audience. */
+function unknownInput(): TurnInput {
+  return { origin: 'unknown', inputId: crypto.randomUUID() };
+}
 
 export interface ConversationRuntimeDependencies {
   broadcast(data: ConversationBroadcast): void;
@@ -586,15 +575,12 @@ export interface ConversationRuntime extends EventEmitter, ConversationRuntimeVi
   providerUsage: ProviderTurnUsage | null;
   purpose: ConversationPurpose;
   subAgents: SubAgent[];
-  queue: QueuedMessage[];
+  readonly queue: QueuedMessage[];
   readonly provider: ProviderName;
   readonly memoryGeneration: string | null;
   readonly model: ModelId | undefined;
   readonly reasoningEffort: string | undefined;
-  sendMessage(
-    content: string,
-    ownerInput?: Readonly<{ origin: 'owner_input'; inputId: string }>
-  ): void;
+  sendMessage(content: string, ownerInput?: OwnerInput): void;
   /** Seat input whose wording depends on whether the provider session resumes. */
   sendSessionRelativeMessage(prompt: SessionRelativePrompt, input: SeatTurnInput): void;
   sendAutomationMessage(content: string): void;
@@ -613,14 +599,8 @@ export interface ConversationRuntime extends EventEmitter, ConversationRuntimeVi
   expireCoordinationRun(): void;
   stopAutomationTurn(): void;
   resetProcess(): void;
-  enqueueMessage(
-    content: string,
-    ownerInput?: Readonly<{ origin: 'owner_input'; inputId: string }>
-  ): void;
-  interruptAndSend(
-    content: string,
-    ownerInput?: Readonly<{ origin: 'owner_input'; inputId: string }>
-  ): void;
+  enqueueMessage(content: string, ownerInput?: OwnerInput): void;
+  interruptAndSend(content: string, ownerInput?: OwnerInput): void;
   cancelQueuedMessage(messageId: string): void;
   promoteQueuedMessage(messageId: string): void;
   clearQueue(): void;
@@ -816,7 +796,10 @@ export function createConversationRuntime(
     subAgents: SubAgent[];
     // Server-owned message queue — persists across client navigation/refresh.
     // Client mirrors this state via queue_updated broadcasts.
-    queue: QueuedMessage[];
+    private readonly turnQueue = new TurnQueue();
+    get queue(): QueuedMessage[] {
+      return this.turnQueue.items;
+    }
     // Chosen once per turn from the harness capability table (turns/subagents.ts).
     private _subAgentFold: SubAgentFold = subAgentFoldFor('claude');
     // Track if we've started a CLI session (for --resume vs --session-id)
@@ -852,12 +835,6 @@ export function createConversationRuntime(
     private _turnCompletedCleanly = false;
     private _activeAttemptId: string | null = null;
     private _nextAttempt: { attemptId: string; queueMessageId?: string } | null = null;
-    private _queuedAttemptIds = new Map<string, string>();
-    private _queuedInputs = new Map<string, TurnInput>();
-    // Each queued item's wordings, so a Buddy turn that waits for a run slot is
-    // still worded at admission by the session it reaches. The wire item shows
-    // `fresh`; a missing entry therefore errs toward more context, never less.
-    private _queuedPrompts = new Map<string, SessionRelativePrompt>();
     private _terminalCauseHint: TurnTerminalCause | null = null;
     private _stopCause: 'user_stop' | 'server_restart' | null = null;
     private _lastAttemptActivityAt = 0;
@@ -942,7 +919,6 @@ export function createConversationRuntime(
       this._automationClaimToken = automationClaimToken;
       this.providerUsage = opts.existingProviderUsage ?? null;
       this.subAgents = [];
-      this.queue = [];
       // Mark session as started if loading existing (use --resume for next message)
       this._hasStartedSession = existingSessionId !== undefined;
       this._stderrBuffer = '';
@@ -999,35 +975,28 @@ export function createConversationRuntime(
         terminalCause,
         providerSessionId: this.sessionId,
       });
-      for (const [queueMessageId, attemptId] of this._queuedAttemptIds) {
-        if (attemptId === this._activeAttemptId) {
-          this._queuedAttemptIds.delete(queueMessageId);
-        }
-      }
+      this.turnQueue.forgetAttempt(this._activeAttemptId);
       this._activeAttemptId = null;
       this._terminalCauseHint = null;
       this._stopCause = null;
     }
 
-    private _cancelQueuedAttempt(queueMessageId: string): void {
-      this._queuedInputs.delete(queueMessageId);
-      this._queuedPrompts.delete(queueMessageId);
-      const attemptId = this._queuedAttemptIds.get(queueMessageId);
-      if (!attemptId) return;
+    private _cancelQueuedAttempt(entry: QueueEntry): void {
+      if (!entry.attemptId) return;
       turnAttempts.terminal({
-        attemptId,
+        attemptId: entry.attemptId,
         state: 'cancelled',
         terminalCause: 'user_stop',
         providerSessionId: this.sessionId,
       });
-      this._queuedAttemptIds.delete(queueMessageId);
+      entry.attemptId = null;
     }
 
     private spawnForMessage(
       content: string,
       executionConfig: ResolvedExecutionConfig,
-      forkSourceSessionId?: string,
-      turnInput: TurnInput = { origin: 'unknown', inputId: crypto.randomUUID() }
+      forkSourceSessionId: string | undefined,
+      turnInput: TurnInput
     ): void {
       if (this.process || this.isRunning) {
         console.warn(`[${this.id}] Already processing a message, ignoring`);
@@ -1439,10 +1408,7 @@ export function createConversationRuntime(
             this._activeTurnStop = null;
             clearExternalRunningStatus(this.id, this.sessionId);
             markLocalCompletionSuppression(this.id, this.sessionId);
-            if (this.queue.length > 0 && this.queue[0].status === 'sending') {
-              this.queue.shift();
-              this.broadcastQueue();
-            }
+            if (this.turnQueue.finishHead()) this.broadcastQueue();
             const completionFailure =
               eventConsumptionError?.message ??
               automationCompletionError ??
@@ -1581,10 +1547,7 @@ export function createConversationRuntime(
           // Dequeue the "sending" message (completed or crashed) and process next.
           // This is the SINGLE code path for dequeue — not split between
           // message_complete and close. Handles both success and crash.
-          if (this.queue.length > 0 && this.queue[0].status === 'sending') {
-            this.queue.shift();
-            this.broadcastQueue();
-          }
+          if (this.turnQueue.finishHead()) this.broadcastQueue();
           // WS message ordering guarantees clients see status:false before the
           // next spawn's status:true. No delay needed.
           this.processQueue();
@@ -1605,12 +1568,9 @@ export function createConversationRuntime(
           updateBuddyConversationLink(this, 'failed');
           settleBuddyDelegation(this, 'failed', message);
           this.emit('buddy-turn-failed', message);
-          if (this.queue.length > 0) {
-            const removed = this.queue.length;
-            for (const queued of this.queue) {
-              if (queued.status === 'pending') this._cancelQueuedAttempt(queued.id);
-            }
-            this.queue = [];
+          if (this.turnQueue.length > 0) {
+            const removed = this.turnQueue.length;
+            for (const entry of this.turnQueue.clearAll()) this._cancelQueuedAttempt(entry);
             console.warn(
               `[${this.id}] Cleared ${removed} pending message(s) due to process error to prevent retry loops.`
             );
@@ -1757,7 +1717,7 @@ export function createConversationRuntime(
           new Error('Automated Buddy inputs require a background conversation')
         );
       }
-      if (this.process || this.isRunning || this._coordinationExecution || this.queue.length) {
+      if (this.process || this.isRunning || this._coordinationExecution || this.turnQueue.length) {
         return Promise.reject(new Error('Conversation is busy'));
       }
       if (
@@ -1819,15 +1779,12 @@ export function createConversationRuntime(
       });
     }
 
-    sendMessage(
-      content: string,
-      ownerInput?: Readonly<{ origin: 'owner_input'; inputId: string }>
-    ): void {
+    sendMessage(content: string, ownerInput?: OwnerInput): void {
       if (this.buddyContext?.automationRunId) {
         this.refuseAutomationTranscript();
         return;
       }
-      this.sendMessageInternal(sameEitherWay(content), ownerInput);
+      this.sendMessageInternal(sameEitherWay(content), ownerInput ?? unknownInput());
     }
 
     // The caller cannot pick the wording itself: whether this turn resumes is
@@ -1982,12 +1939,9 @@ export function createConversationRuntime(
       return !forkSourceSessionId && this._hasStartedSession;
     }
 
-    private sendMessageInternal(
-      prompt: SessionRelativePrompt,
-      input: TurnInput = { origin: 'unknown', inputId: crypto.randomUUID() }
-    ): void {
+    private sendMessageInternal(prompt: SessionRelativePrompt, input: TurnInput): void {
       console.log(
-        `[${this.id}] sendMessage called, isRunning=${this.isRunning}, hasProcess=${this.process !== null}, queueDepth=${this.queue.length}, contentLen=${prompt.fresh.length}, preview="${formatLogPreview(prompt.fresh)}"`
+        `[${this.id}] sendMessage called, isRunning=${this.isRunning}, hasProcess=${this.process !== null}, queueDepth=${this.turnQueue.length}, contentLen=${prompt.fresh.length}, preview="${formatLogPreview(prompt.fresh)}"`
       );
 
       if (this.process || this.isRunning) {
@@ -2055,20 +2009,15 @@ export function createConversationRuntime(
         case 'admitted':
           this.releaseChatRunTicket();
           return admission.run;
-        case 'waiting': {
-          const head = this.queue[0];
-          if (head?.status === 'sending') {
-            head.status = 'pending';
-            this.broadcastQueue();
-          }
+        case 'waiting':
+          if (this.turnQueue.releaseHead()) this.broadcastQueue();
           return null;
-        }
         case 'gone':
           // Lost its place; rejoin at the back of the line on the next poll.
           this._chatRunTicket.stopWaiting();
           this._chatRunTicket = null;
           setTimeout(() => this.processQueue(), CHAT_ADMISSION_POLL_MS);
-          if (this.queue[0]?.status === 'sending') this.queue[0].status = 'pending';
+          this.turnQueue.releaseHead();
           return null;
       }
     }
@@ -2263,11 +2212,7 @@ export function createConversationRuntime(
             timestamp: new Date(),
             completionReason: 'error',
           });
-          const queued = this.queue[0];
-          if (queued?.status === 'sending') {
-            queued.status = 'pending';
-            this.broadcastQueue();
-          }
+          if (this.turnQueue.releaseHead()) this.broadcastQueue();
           broadcast({
             type: 'conversation_updated',
             reason: 'config',
@@ -2288,11 +2233,7 @@ export function createConversationRuntime(
         timestamp: new Date(),
         completionReason: 'error',
       });
-      const queued = this.queue[0];
-      if (queued?.status === 'sending') {
-        queued.status = 'pending';
-        this.broadcastQueue();
-      }
+      if (this.turnQueue.releaseHead()) this.broadcastQueue();
       broadcast({
         type: 'conversation_updated',
         reason: 'config',
@@ -2345,10 +2286,9 @@ export function createConversationRuntime(
     private stopOwnedTurn(reason: 'user_stop' | 'server_restart'): void {
       if (this._chatRunTicket && !this.process) {
         // Stopping a turn that is still waiting for a run slot drops that turn.
-        const head = this.queue[0];
-        if (head?.status === 'pending') {
-          this._cancelQueuedAttempt(head.id);
-          this.queue.shift();
+        const dropped = this.turnQueue.dropPendingHead();
+        if (dropped) {
+          this._cancelQueuedAttempt(dropped);
           this.broadcastQueue();
         }
         this.releaseChatRunTicket(true);
@@ -2708,43 +2648,32 @@ export function createConversationRuntime(
     }
 
     /**
-     * Admit a message: register its turn attempt and build the queue record.
+     * Admit a message: register its turn attempt and build the queue entry.
      * Placement (append vs prepend) is the caller's decision.
      */
-    private createQueuedMessage(prompt: SessionRelativePrompt, input?: TurnInput): QueuedMessage {
-      const msg: QueuedMessage = {
+    private createQueueEntry(prompt: SessionRelativePrompt, input: TurnInput): QueueEntry {
+      const message: QueuedMessage = {
         id: crypto.randomUUID(),
         content: prompt.fresh,
         queuedAt: new Date(),
         status: 'pending',
       };
       const attemptId = crypto.randomUUID();
-      this._queuedPrompts.set(msg.id, prompt);
-      if (input) this._queuedInputs.set(msg.id, Object.freeze({ ...input }));
-      this._queuedAttemptIds.set(msg.id, attemptId);
       turnAttempts.queued({
         attemptId,
         conversationId: this.id,
-        queueMessageId: msg.id,
+        queueMessageId: message.id,
         providerSessionId: this.sessionId,
       });
-      return msg;
+      return { message, input: Object.freeze({ ...input }), prompt, attemptId };
     }
 
-    /**
-     * Retire the queue head when its provider turn is being killed. The close
-     * handler consumes a 'sending' head on its own, so a stale entry left
-     * behind would strand everything queued after it (processQueue skips
-     * 'sending'). The attempt record itself is finished once by the close
-     * handler — only the queue slot is dropped here.
-     */
     private retireInFlightHead(): void {
-      const head = this.queue[0];
-      if (head && head.status === 'sending') {
+      const retired = this.turnQueue.retireInFlightHead();
+      if (retired) {
         console.log(
-          `[${this.id}] Retiring interrupted in-flight message id=${head.id.substring(0, 8)}`
+          `[${this.id}] Retiring interrupted in-flight message id=${retired.message.id.substring(0, 8)}`
         );
-        this.queue.shift();
       }
     }
 
@@ -2752,23 +2681,20 @@ export function createConversationRuntime(
      * Add a message to the queue. If the conversation is ready and idle,
      * process immediately. Otherwise it sits until the next status/ready change.
      */
-    enqueueMessage(
-      content: string,
-      ownerInput?: Readonly<{ origin: 'owner_input'; inputId: string }>
-    ): void {
-      this.enqueuePrompt(sameEitherWay(content), ownerInput);
+    enqueueMessage(content: string, ownerInput?: OwnerInput): void {
+      this.enqueuePrompt(sameEitherWay(content), ownerInput ?? unknownInput());
     }
 
-    private enqueuePrompt(prompt: SessionRelativePrompt, input?: TurnInput): void {
+    private enqueuePrompt(prompt: SessionRelativePrompt, input: TurnInput): void {
       if (this.buddyContext?.automationRunId) {
         this.refuseAutomationTranscript();
         return;
       }
-      const queueDepthBefore = this.queue.length;
-      const msg = this.createQueuedMessage(prompt, input);
-      this.queue.push(msg);
+      const queueDepthBefore = this.turnQueue.length;
+      const entry = this.createQueueEntry(prompt, input);
+      this.turnQueue.pushBack(entry);
       console.log(
-        `[${this.id}] Queued message id=${msg.id.substring(0, 8)}, queueDepth=${queueDepthBefore}->${this.queue.length}, contentLen=${msg.content.length}, preview="${formatLogPreview(msg.content)}"`
+        `[${this.id}] Queued message id=${entry.message.id.substring(0, 8)}, queueDepth=${queueDepthBefore}->${this.turnQueue.length}, contentLen=${entry.message.content.length}, preview="${formatLogPreview(entry.message.content)}"`
       );
       this.broadcastQueue();
       this.processQueue();
@@ -2780,10 +2706,7 @@ export function createConversationRuntime(
      * queue). The killed turn's in-flight head is retired; everything else
      * stays in order behind the new message.
      */
-    interruptAndSend(
-      content: string,
-      ownerInput?: Readonly<{ origin: 'owner_input'; inputId: string }>
-    ): void {
+    interruptAndSend(content: string, ownerInput?: OwnerInput): void {
       if (this.buddyContext?.automationRunId) {
         this.refuseAutomationTranscript();
         return;
@@ -2794,11 +2717,11 @@ export function createConversationRuntime(
         this.stop();
       }
 
-      const queueDepthBefore = this.queue.length;
-      const msg = this.createQueuedMessage(sameEitherWay(content), ownerInput);
-      this.queue.unshift(msg);
+      const queueDepthBefore = this.turnQueue.length;
+      const entry = this.createQueueEntry(sameEitherWay(content), ownerInput ?? unknownInput());
+      this.turnQueue.pushFront(entry);
       console.log(
-        `[${this.id}] interrupt_and_send id=${msg.id.substring(0, 8)}, queueDepth=${queueDepthBefore}->${this.queue.length}, contentLen=${content.length}, preview="${formatLogPreview(content)}"`
+        `[${this.id}] interrupt_and_send id=${entry.message.id.substring(0, 8)}, queueDepth=${queueDepthBefore}->${this.turnQueue.length}, contentLen=${content.length}, preview="${formatLogPreview(content)}"`
       );
       this.broadcastQueue();
       this.processQueue();
@@ -2814,13 +2737,10 @@ export function createConversationRuntime(
         this.refuseAutomationTranscript();
         return;
       }
-      const index = this.queue.findIndex((m) => m.id === messageId && m.status === 'pending');
-      if (index === -1) return;
-      const [msg] = this.queue.splice(index, 1);
-      this.retireInFlightHead();
-      this.queue.unshift(msg);
+      const promoted = this.turnQueue.promote(messageId);
+      if (!promoted) return;
       console.log(
-        `[${this.id}] Promoted queued message id=${msg.id.substring(0, 8)} to front, queueDepth=${this.queue.length}`
+        `[${this.id}] Promoted queued message id=${promoted.message.id.substring(0, 8)} to front, queueDepth=${this.turnQueue.length}`
       );
       this.broadcastQueue();
       if (this.process) {
@@ -2833,26 +2753,21 @@ export function createConversationRuntime(
      * Cancel a pending queued message by ID. Cannot cancel messages already sending.
      */
     cancelQueuedMessage(messageId: string): void {
-      const idx = this.queue.findIndex((m) => m.id === messageId && m.status === 'pending');
-      if (idx !== -1) {
-        console.log(`[${this.id}] Cancelled queued message: ${messageId.substring(0, 8)}`);
-        this._cancelQueuedAttempt(messageId);
-        this.queue.splice(idx, 1);
-        this.broadcastQueue();
-      }
+      const removed = this.turnQueue.removePending(messageId);
+      if (!removed) return;
+      console.log(`[${this.id}] Cancelled queued message: ${messageId.substring(0, 8)}`);
+      this._cancelQueuedAttempt(removed);
+      this.broadcastQueue();
     }
 
     /**
      * Clear all pending messages from the queue. Messages currently sending are kept.
      */
     clearQueue(): void {
-      const before = this.queue.length;
-      for (const queued of this.queue) {
-        if (queued.status === 'pending') this._cancelQueuedAttempt(queued.id);
-      }
-      this.queue = this.queue.filter((m) => m.status === 'sending');
-      if (this.queue.length === 0) this.releaseChatRunTicket(true);
-      console.log(`[${this.id}] Cleared queue: removed ${before - this.queue.length} messages`);
+      const removed = this.turnQueue.clearPending();
+      for (const entry of removed) this._cancelQueuedAttempt(entry);
+      if (this.turnQueue.length === 0) this.releaseChatRunTicket(true);
+      console.log(`[${this.id}] Cleared queue: removed ${removed.length} messages`);
       this.broadcastQueue();
     }
 
@@ -2868,52 +2783,37 @@ export function createConversationRuntime(
         return;
       }
       if (this.process || this.isRunning) return;
-      if (this.queue.length === 0) return;
+      const next = this.turnQueue.startHead();
+      if (!next) return; // empty, or the head is already in flight
 
-      const next = this.queue[0];
-      if (next.status === 'sending') return; // already in flight
-
-      next.status = 'sending';
-      let attemptId = this._queuedAttemptIds.get(next.id);
-      if (!attemptId) {
-        attemptId = crypto.randomUUID();
-        this._queuedAttemptIds.set(next.id, attemptId);
+      if (!next.attemptId) {
+        next.attemptId = crypto.randomUUID();
         turnAttempts.queued({
-          attemptId,
+          attemptId: next.attemptId,
           conversationId: this.id,
-          queueMessageId: next.id,
+          queueMessageId: next.message.id,
           providerSessionId: this.sessionId,
         });
       }
-      this._nextAttempt = { attemptId, queueMessageId: next.id };
+      this._nextAttempt = { attemptId: next.attemptId, queueMessageId: next.message.id };
       console.log(
-        `[${this.id}] processQueue sending id=${next.id.substring(0, 8)}, queueDepth=${this.queue.length}, contentLen=${next.content.length}, preview="${formatLogPreview(next.content)}"`
+        `[${this.id}] processQueue sending id=${next.message.id.substring(0, 8)}, queueDepth=${this.turnQueue.length}, contentLen=${next.message.content.length}, preview="${formatLogPreview(next.message.content)}"`
       );
       this.broadcastQueue();
       try {
-        const queuedInput = this._queuedInputs.get(next.id);
         this._sendingFromQueue = true;
         try {
           // Automation transcripts never reach here (cleared above), so this is
-          // sendMessage without its refusal, carrying the item's own wording.
-          this.sendMessageInternal(
-            this._queuedPrompts.get(next.id) ?? sameEitherWay(next.content),
-            queuedInput
-          );
+          // sendMessage without its refusal, carrying the item's own wording
+          // and provenance (never serialized for restore).
+          this.sendMessageInternal(next.prompt, next.input);
         } finally {
           this._sendingFromQueue = false;
-        }
-        // Keep trusted input provenance while preflight leaves this item pending.
-        // It is consumed only after provider admission, never serialized for restore.
-        if (this.process || this.isRunning) {
-          this._queuedInputs.delete(next.id);
-          this._queuedPrompts.delete(next.id);
         }
       } catch (error) {
         // Provider admission can still fail synchronously at a future seam.
         // Never strand the queue head in "sending" when no process exists.
-        if (this.queue[0] === next && next.status === 'sending') {
-          next.status = 'pending';
+        if (this.turnQueue.head() === next && this.turnQueue.releaseHead()) {
           this.broadcastQueue();
         }
         throw error;
@@ -2976,7 +2876,7 @@ export function createConversationRuntime(
       return (
         !this._hasStartedSession &&
         this.messages.length === 0 &&
-        this.queue.length === 0 &&
+        this.turnQueue.length === 0 &&
         !this.isRunning &&
         !this.isStreaming
       );
