@@ -8,8 +8,8 @@ import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { BuddiesStore } from '@nbardy/buddies';
 import {
   type BuddyBuilderProject,
-  type BuddyBuilderResult,
   BuddyBuilderProjectSchema,
+  type BuddyBuilderResult,
   BuddyBuilderResultSchema,
   BuddyBuilderResultsSchema,
   parseBuddyBuilderToolResult,
@@ -19,6 +19,7 @@ import { createLegacyBuddyBuilderMcpServer as createBuddyBuilderMcpServer } from
 import type { BuddiesStorePort } from '../src/buddies/contract';
 import { coordinationStore } from '../src/buddies/coordination-store';
 import { BuddyOperationsService, MESSAGE_BUDDY_OPERATIONS } from '../src/buddies/operations';
+import { startChatRun } from './fixtures/chat-run';
 
 const CONVERSATION_ID = 'wave-sim-team-builder-fixture';
 const SEGMENTS = [
@@ -372,7 +373,7 @@ test('Builder saves the eight-person wave_sim team, initial work and relationshi
     // Setup has finished. A separate bounded store-level exercise demonstrates
     // that a lead handoff is eligible under the saved background setting.
     const port = coordinationStore(store as unknown as BuddiesStorePort);
-    const source = port.beginBuddyChatRun({
+    const source = startChatRun(port, {
       buddyId: id('lead'),
       workspaceId: workspace.id,
       conversationId: 'fixture-lead',

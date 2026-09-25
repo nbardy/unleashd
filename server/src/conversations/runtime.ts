@@ -91,19 +91,14 @@ export type MergeChildMeta = {
   reviewUuid: string;
 };
 
-class BuddyChatCapacityUnavailableError extends Error {
-  constructor() {
-    super('Conversation execution slot is unavailable');
-    this.name = 'BuddyChatCapacityUnavailableError';
-  }
-}
+export type OwnedBuddyChatRun = { id: string; claim_token: string; deadline: string };
+export type BuddyChatAdmission =
+  | { kind: 'admitted'; run: OwnedBuddyChatRun }
+  | { kind: 'waiting'; reason: string }
+  // The queued row was cancelled elsewhere (e.g. another host's startup sweep).
+  | { kind: 'gone' };
 
-function isBuddyChatCapacityUnavailable(error: unknown): boolean {
-  return (
-    error instanceof BuddyChatCapacityUnavailableError ||
-    (error instanceof Error && error.message === 'Conversation execution slot is unavailable')
-  );
-}
+const CHAT_ADMISSION_POLL_MS = 1000;
 
 interface ChunkData {
   type: 'chunk';
@@ -302,11 +297,17 @@ export interface ConversationRuntimeDependencies {
   };
   /** Enqueue memory maintenance only after a successful CLI exit and normalized event drain. */
   reviewCompletedBuddyTurn?(turn: CompletedBuddyTurn): void;
-  beginBuddyChatRun?(
-    context: BuddyContext,
+  /**
+   * A Buddy chat/channel turn takes its place in its Buddy's FIFO run line
+   * (per-Buddy limit, owner decision 2026-09-25), then polls until admitted.
+   */
+  enqueueBuddyChatRun?(context: BuddyContext, conversationId: string): { id: string };
+  startBuddyChatRun?(
+    runId: string,
     conversationId: string,
     maxRuntimeMs: number
-  ): { id: string; claim_token: string; deadline: string };
+  ): BuddyChatAdmission;
+  abandonBuddyChatRun?(runId: string): void;
   finishBuddyChatRun?(
     id: string,
     token: string,
@@ -746,6 +747,12 @@ export function createConversationRuntime(
       return this._memorySnapshot?.briefing ?? null;
     }
     private _automationClaimToken: string | null;
+    // Buddy chat turns wait here for a run slot. The head of this.queue stays
+    // pending while _chatRunTicket polls. On admission, the run is held in
+    // _admittedChatRun until spawnForMessage takes ownership of it.
+    private _chatRunTicket: { runId: string; poll: ReturnType<typeof setInterval> } | null = null;
+    private _admittedChatRun: OwnedBuddyChatRun | null = null;
+    private _sendingFromQueue = false;
     private _coordinationExecution: {
       onAdmitted?: (config: ResolvedExecutionConfig) => void;
       context: BuddyContext;
@@ -1046,23 +1053,17 @@ export function createConversationRuntime(
       };
       let turn: ReturnType<typeof executeCommand>;
       try {
-        if (
-          this.buddyContext &&
-          !this.buddyContext.automationRunId &&
-          !this._coordinationExecution &&
-          dependencies.beginBuddyChatRun
-        ) {
+        const admitted = this._admittedChatRun;
+        this._admittedChatRun = null;
+        if (admitted) {
           // Foreground tool authority must cover the provider's explicit runtime
           // budget. Omitting it inherited claimBuddyRun's background default (600s),
           // killing active owner chats on 2026-09-10 even with healthy heartbeats.
           // Preserve this argument when refactoring or replacing the Buddy package.
           // Guards: buddy-coordination.test.ts and conversation-runtime.test.ts;
           // history: docs/incident-2026-09-10-buddy-chat-timeout.md.
-          const owned = dependencies.beginBuddyChatRun(
-            this.contextForInput(turnInput)!,
-            this.id,
-            TURN_MAX_RUNTIME_MS
-          );
+          // Admitted by admitForegroundChatRun with TURN_MAX_RUNTIME_MS.
+          const owned = admitted;
           this._coordinationExecution = {
             context: { ...this.contextForInput(turnInput)!, coordinationRunId: owned.id },
             claimToken: owned.claim_token,
@@ -1188,18 +1189,6 @@ export function createConversationRuntime(
         // The briefing in this prompt never reached the provider transcript.
         this._briefedMemoryGeneration = null;
         this._finishTurnAttempt('failed', 'spawn_failed');
-        if (isBuddyChatCapacityUnavailable(error)) {
-          // Owner turns do not share background capacity. If this still fires,
-          // surface one failed admission and preserve the submitted message;
-          // polling here previously created an unbounded spawn-failed storm.
-          broadcast({
-            type: 'conversation_updated',
-            reason: 'status',
-            conversation: this.toJSON(),
-          });
-          this.emit('buddy-turn-failed', 'Conversation execution slot is unavailable');
-          throw new BuddyChatCapacityUnavailableError();
-        }
         const message = error instanceof Error ? error.message : String(error);
         // An automation subscribes to this event before calling sendMessage(). A
         // provider/configuration failure can happen synchronously, before there
@@ -2274,7 +2263,96 @@ export function createConversationRuntime(
         console.warn(`[${this.id}] Already processing a message, ignoring`);
         return;
       }
+      if (!this.needsForegroundChatRun()) {
+        this.sendAdmittedMessage(content, input);
+        return;
+      }
+      // Buddy chat turns are admitted through the queue, so a turn waiting for
+      // a run slot is visible as pending and later sends line up behind it.
+      if (!this._sendingFromQueue) {
+        this.enqueueMessage(
+          content,
+          input.origin === 'owner_input'
+            ? { origin: 'owner_input', inputId: input.inputId }
+            : undefined
+        );
+        return;
+      }
+      const owned = this.admitForegroundChatRun(input);
+      if (!owned) return;
+      this._admittedChatRun = owned;
+      try {
+        this.sendAdmittedMessage(content, input);
+      } finally {
+        // sendAdmittedMessage can return before spawning (merge send blocked,
+        // preflight refusal). An unconsumed admitted run must be settled here,
+        // or it stays 'running' and holds one of its Buddy's slots forever.
+        if (this._admittedChatRun) {
+          this._admittedChatRun = null;
+          dependencies.finishBuddyChatRun?.(
+            owned.id,
+            owned.claim_token,
+            'cancelled',
+            'Turn did not start'
+          );
+        }
+      }
+    }
 
+    private needsForegroundChatRun(): boolean {
+      return (
+        !!this.buddyContext &&
+        !this.buddyContext.automationRunId &&
+        !this._coordinationExecution &&
+        !!dependencies.enqueueBuddyChatRun
+      );
+    }
+
+    // Admitted: the owned run. Otherwise the queue head goes back to pending and
+    // a poller re-runs processQueue once this Buddy's line reaches it.
+    private admitForegroundChatRun(input: TurnInput): OwnedBuddyChatRun | null {
+      // Per-input context: a fresh owner input drops delegated restrictions for
+      // its turn (contextForInput). The run's allowed operations come from it.
+      this._chatRunTicket ??= {
+        runId: dependencies.enqueueBuddyChatRun!(this.contextForInput(input)!, this.id).id,
+        poll: setInterval(() => this.processQueue(), CHAT_ADMISSION_POLL_MS),
+      };
+      const admission = dependencies.startBuddyChatRun!(
+        this._chatRunTicket.runId,
+        this.id,
+        TURN_MAX_RUNTIME_MS
+      );
+      switch (admission.kind) {
+        case 'admitted':
+          this.releaseChatRunTicket();
+          return admission.run;
+        case 'waiting': {
+          const head = this.queue[0];
+          if (head?.status === 'sending') {
+            head.status = 'pending';
+            this.broadcastQueue();
+          }
+          return null;
+        }
+        case 'gone':
+          // Lost its place; rejoin at the back of the line on the next poll.
+          clearInterval(this._chatRunTicket.poll);
+          this._chatRunTicket = null;
+          setTimeout(() => this.processQueue(), CHAT_ADMISSION_POLL_MS);
+          if (this.queue[0]?.status === 'sending') this.queue[0].status = 'pending';
+          return null;
+      }
+    }
+
+    private releaseChatRunTicket(abandon = false): void {
+      const ticket = this._chatRunTicket;
+      if (!ticket) return;
+      clearInterval(ticket.poll);
+      this._chatRunTicket = null;
+      if (abandon) dependencies.abandonBuddyChatRun?.(ticket.runId);
+    }
+
+    private sendAdmittedMessage(content: string, input: TurnInput): void {
       const turnBuddyContext = this.contextForInput(input);
       if (turnBuddyContext && dependencies.readCurrentBuddyContext) {
         const current = dependencies.readCurrentBuddyContext(turnBuddyContext);
@@ -2645,6 +2723,17 @@ export function createConversationRuntime(
     }
 
     private stopOwnedTurn(reason: 'user_stop' | 'server_restart'): void {
+      if (this._chatRunTicket && !this.process) {
+        // Stopping a turn that is still waiting for a run slot drops that turn.
+        const head = this.queue[0];
+        if (head?.status === 'pending') {
+          this._cancelQueuedAttempt(head.id);
+          this.queue.shift();
+          this.broadcastQueue();
+        }
+        this.releaseChatRunTicket(true);
+        this.emit('buddy-turn-failed', 'Stopped while waiting for a run slot');
+      }
       this._clearTurnWatchdogs();
       if (!this.process) return;
       this._stopCause = reason;
@@ -3146,6 +3235,7 @@ export function createConversationRuntime(
         if (queued.status === 'pending') this._cancelQueuedAttempt(queued.id);
       }
       this.queue = this.queue.filter((m) => m.status === 'sending');
+      if (this.queue.length === 0) this.releaseChatRunTicket(true);
       console.log(`[${this.id}] Cleared queue: removed ${before - this.queue.length} messages`);
       this.broadcastQueue();
     }
@@ -3186,7 +3276,12 @@ export function createConversationRuntime(
       this.broadcastQueue();
       try {
         const ownerInput = this._queuedOwnerInputs.get(next.id);
-        this.sendMessage(next.content, ownerInput);
+        this._sendingFromQueue = true;
+        try {
+          this.sendMessage(next.content, ownerInput);
+        } finally {
+          this._sendingFromQueue = false;
+        }
         // Keep trusted input provenance while preflight leaves this item pending.
         // It is consumed only after provider admission, never serialized for restore.
         if (this.process || this.isRunning) this._queuedOwnerInputs.delete(next.id);
@@ -3196,15 +3291,6 @@ export function createConversationRuntime(
         if (this.queue[0] === next && next.status === 'sending') {
           next.status = 'pending';
           this.broadcastQueue();
-        }
-        if (error instanceof BuddyChatCapacityUnavailableError) {
-          // The user message was already accepted into conversation history.
-          // Remove the transport queue entry and fail once; a server-owned
-          // recovery signal wakes genuinely drained restart claims.
-          if (this.queue[0] === next) this.queue.shift();
-          this._queuedOwnerInputs.delete(next.id);
-          this.broadcastQueue();
-          throw error;
         }
         throw error;
       }

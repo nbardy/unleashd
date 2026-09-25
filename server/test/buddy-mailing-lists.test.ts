@@ -25,6 +25,7 @@ import {
 } from '../src/buddies/operations';
 import { ownerChannelReads } from '../src/buddies/owner-channel-reads';
 import { registerBuddyRoutes } from '../src/buddies/routes';
+import { startChatRun } from './fixtures/chat-run';
 
 type Id = { id: string };
 
@@ -442,9 +443,9 @@ test('real MCP boundary: default owner-thread and delegated policies admit new_l
   const b = raw.createBuddy({ project: w.id, name: 'Reader', role: 'Read' });
   for (const buddy of [a, b])
     store.setCoordinationMembership(buddy.id, w.id, { background_enabled: true });
-  // server.ts beginBuddyChatRun: an owner thread carries no allowed list, so the
+  // chatRunAdmission (server.ts): an owner thread carries no allowed list, so the
   // chat run is issued with every known operation.
-  const ownerRun = store.beginBuddyChatRun({
+  const ownerRun = startChatRun(store, {
     buddyId: a.id,
     workspaceId: w.id,
     conversationId: 'owner-thread',
@@ -453,7 +454,7 @@ test('real MCP boundary: default owner-thread and delegated policies admit new_l
   }) as { id: string; claim_token: string };
   // A chat run issued before the operations existed: the tool registers, the
   // run policy rejects. This is the exact shape of the 16:58Z failure.
-  const staleRun = store.beginBuddyChatRun({
+  const staleRun = startChatRun(store, {
     buddyId: a.id,
     workspaceId: w.id,
     conversationId: 'stale-thread',
@@ -674,7 +675,7 @@ test('instance provenance: two conversations as one buddy stamp distinguishable 
 
     // The run stamp flows from the real MCP boundary: server-stamped from the
     // spawned turn context, never from the tool arguments.
-    const run = store.beginBuddyChatRun({
+    const run = startChatRun(store, {
       buddyId: a.id,
       workspaceId: w.id,
       conversationId: 'prov-conv',

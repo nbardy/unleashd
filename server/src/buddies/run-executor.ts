@@ -16,6 +16,9 @@ import {
 } from './coordination-store';
 import { MESSAGE_BUDDY_OPERATIONS } from './operations';
 
+// Grace after a run's deadline before an unconfirmable run is recovered.
+const UNLOADED_RUN_GRACE_MS = 10 * 60_000;
+
 export interface BuddyRunExecutorPorts {
   store: BuddiesStorePort;
   cancelLegacyRun?(id: string): Promise<unknown>;
@@ -42,6 +45,12 @@ export class BuddyRunExecutor {
     string,
     { conversation?: ConversationRuntime; task: Promise<void> }
   >();
+
+  // Foreground chat turns waiting for a run slot live in their conversation's
+  // memory. Queued rows from before this process started have no waiter and
+  // would hold their Buddy's FIFO line forever, so the first poll cancels them.
+  private readonly startedAt = new Date().toISOString();
+  private sweptStaleChatTurns = false;
 
   constructor(private readonly ports: BuddyRunExecutorPorts) {
     this.store = coordinationStore(ports.store);
@@ -117,6 +126,15 @@ export class BuddyRunExecutor {
   }
 
   poll(): void {
+    if (!this.sweptStaleChatTurns) {
+      this.sweptStaleChatTurns = true;
+      const abandoned = this.store.abandonQueuedBuddyChatRuns({ createdBefore: this.startedAt });
+      if (abandoned.length)
+        console.warn(
+          '[buddies] Cancelled chat turns left waiting by a previous process',
+          abandoned
+        );
+    }
     this.store.retryUndeliveredInputs();
     this.store.reconcileBackgroundWork?.();
     for (const run of this.store.listNonterminalAutomationRuns())
@@ -149,6 +167,15 @@ export class BuddyRunExecutor {
             !c.isRunning &&
             (r.policy.foreground === true || !c.queue.length)
           )
+            recoverable.push(r.id);
+          // A run whose conversation this server never loaded cannot be
+          // confirmed drained. Before 2026-09-25 such runs stayed claimed
+          // forever: 8 past-deadline runs (one 6 days old) filled the
+          // machine-wide background cap and held every Buddy's queued work.
+          // Past its deadline plus a grace period, a run has outlived its
+          // allowance. Recovery marks it 'interrupted' so its side effects
+          // are inspected before any retry.
+          else if (!c && r.deadline && Date.parse(r.deadline) + UNLOADED_RUN_GRACE_MS <= Date.now())
             recoverable.push(r.id);
         }
         if (page.length < 100) break;
@@ -188,6 +215,9 @@ export class BuddyRunExecutor {
       if (page.length < 100) break;
     }
     for (const candidate of candidates) {
+      // Foreground chat turns are claimed by their waiting conversation, in the
+      // same FIFO line (activeRunLimitReason); the executor never claims them.
+      if (candidate.policy.foreground === true) continue;
       if (this.active.has(candidate.id) || this.active.size >= 8) continue;
       const membership = this.store.getCoordinationMembership(
         candidate.buddy_id,

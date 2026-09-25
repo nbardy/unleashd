@@ -37,7 +37,9 @@ function runtimeFixture(
     turnAttempts?: ConversationRuntimeDependencies['turnAttempts'];
     requestAutomationCancellation?: ConversationRuntimeDependencies['requestAutomationCancellation'];
     revokeBuddyControlCapability?: ConversationRuntimeDependencies['revokeBuddyControlCapability'];
-    beginBuddyChatRun?: ConversationRuntimeDependencies['beginBuddyChatRun'];
+    enqueueBuddyChatRun?: ConversationRuntimeDependencies['enqueueBuddyChatRun'];
+    startBuddyChatRun?: ConversationRuntimeDependencies['startBuddyChatRun'];
+    abandonBuddyChatRun?: ConversationRuntimeDependencies['abandonBuddyChatRun'];
     finishBuddyChatRun?: ConversationRuntimeDependencies['finishBuddyChatRun'];
     reviewCompletedBuddyTurn?: ConversationRuntimeDependencies['reviewCompletedBuddyTurn'];
     readCurrentBuddyContext?: ConversationRuntimeDependencies['readCurrentBuddyContext'];
@@ -70,7 +72,9 @@ function runtimeFixture(
     turnAttempts: options.turnAttempts,
     requestAutomationCancellation: options.requestAutomationCancellation,
     revokeBuddyControlCapability: options.revokeBuddyControlCapability,
-    beginBuddyChatRun: options.beginBuddyChatRun,
+    enqueueBuddyChatRun: options.enqueueBuddyChatRun,
+    startBuddyChatRun: options.startBuddyChatRun,
+    abandonBuddyChatRun: options.abandonBuddyChatRun,
     finishBuddyChatRun: options.finishBuddyChatRun,
     reviewCompletedBuddyTurn: options.reviewCompletedBuddyTurn,
     readCurrentBuddyContext: options.readCurrentBuddyContext,
@@ -514,52 +518,77 @@ test('unsupported Buddy provider leaves a queued message retryable', () => {
   );
 });
 
-test('foreground Buddy capacity rejection fails once without hiding the owner message', () => {
-  let admissions = 0;
+// Owner decision 2026-09-25: a Buddy at its run limit delays a chat/channel turn
+// instead of failing it. Before this, the turn threw "Conversation execution
+// slot is unavailable" and the channel posted "Couldn't reply".
+test('a foreground Buddy turn over capacity waits pending, then starts once admitted', async () => {
+  let free = false;
   let providerStarts = 0;
-  const fixture = runtimeFixture({
-    buddyContext: {
-      buddyId: 'busy-buddy',
-      workspaceId: 'workspace-1',
-    },
-    beginBuddyChatRun: () => {
-      admissions += 1;
-      throw new Error('Conversation execution slot is unavailable');
-    },
-    executeTurn: (() => {
-      providerStarts += 1;
-      return {
-        child: { exitCode: 0 },
-        events: (async function* () {
-          yield { type: 'turn.started' as const };
-          yield { type: 'text.delta' as const, text: 'Must not start' };
-          yield { type: 'turn.complete' as const, reason: 'success' as const };
-        })(),
-        completed: Promise.resolve({
-          exitCode: 0,
-          signal: null,
-          reason: 'success' as const,
-          sessionId: 'provider-session',
-        }),
-        stop: () => undefined,
-      };
-    }) as NonNullable<ConversationRuntimeDependencies['executeTurn']>,
-  });
-
-  assert.throws(
-    () =>
-      fixture.conversation.enqueueMessage('Preserve this owner message', {
-        origin: 'owner_input',
-        inputId: 'owner-message',
+  const abandoned: string[] = [];
+  const settlements: unknown[][] = [];
+  const executeTurn = (() => {
+    providerStarts += 1;
+    return {
+      child: { exitCode: 0 },
+      events: (async function* () {
+        yield { type: 'turn.started' as const };
+        yield { type: 'turn.complete' as const, reason: 'success' as const };
+      })(),
+      completed: Promise.resolve({
+        exitCode: 0,
+        signal: null,
+        reason: 'success' as const,
+        sessionId: 'provider-session',
       }),
-    /execution slot is unavailable/
-  );
+      stop: () => undefined,
+    };
+  }) as NonNullable<ConversationRuntimeDependencies['executeTurn']>;
+  const fixture = runtimeFixture({
+    buddyContext: { buddyId: 'busy-buddy', workspaceId: 'workspace-1' },
+    enqueueBuddyChatRun: () => ({ id: 'queued-turn' }),
+    startBuddyChatRun: (runId) =>
+      free
+        ? {
+            kind: 'admitted',
+            run: {
+              id: runId,
+              claim_token: 'claim',
+              deadline: new Date(Date.now() + 60_000).toISOString(),
+            },
+          }
+        : { kind: 'waiting', reason: 'Waiting for a run slot: 5 of 5 active.' },
+    abandonBuddyChatRun: (runId) => abandoned.push(runId),
+    finishBuddyChatRun: (...args) => settlements.push(args),
+    executeTurn,
+  });
+  const { conversation } = fixture;
 
-  assert.equal(admissions, 1);
+  // A direct send (the channel responder's path) lines up in the queue too.
+  conversation.sendMessage('Reply in the thread', { origin: 'owner_input', inputId: 'post-1' });
   assert.equal(providerStarts, 0);
+  assert.equal(conversation.queue.length, 1);
+  assert.equal(conversation.queue[0]?.status, 'pending');
+  assert.equal(conversation.isRunning, false);
+
+  free = true;
+  await new Promise((resolve) => setTimeout(resolve, 1300));
+  assert.equal(providerStarts, 1, 'the poller starts the turn once its Buddy has a slot');
+  assert.deepEqual(abandoned, []);
+});
+
+test('stopping a turn that waits for a run slot drops it and releases its place', () => {
+  const abandoned: string[] = [];
+  const fixture = runtimeFixture({
+    buddyContext: { buddyId: 'busy-buddy', workspaceId: 'workspace-1' },
+    enqueueBuddyChatRun: () => ({ id: 'queued-turn' }),
+    startBuddyChatRun: () => ({ kind: 'waiting', reason: 'full' }),
+    abandonBuddyChatRun: (runId) => abandoned.push(runId),
+  });
+  fixture.conversation.enqueueMessage('Wait for me', { origin: 'owner_input', inputId: 'owner' });
+  assert.equal(fixture.conversation.queue.length, 1);
+  fixture.conversation.stop();
   assert.equal(fixture.conversation.queue.length, 0);
-  assert.equal(fixture.conversation.messages.length, 1);
-  assert.equal(fixture.conversation.messages[0]?.content, 'Preserve this owner message');
+  assert.deepEqual(abandoned, ['queued-turn'], 'a waiting row left behind would pin the FIFO line');
 });
 
 test('historical automation transcripts refuse every user turn-admission path', () => {
@@ -1132,13 +1161,17 @@ test('foreground Buddy deadline uses the conversation budget and reports timeout
   let requestedBudget: number | undefined;
   let release = false;
   const fixture = runtimeFixture({
-    beginBuddyChatRun: (_context, _id, maxRuntimeMs) => {
+    enqueueBuddyChatRun: () => ({ id: 'owned-run' }),
+    startBuddyChatRun: (_runId, _id, maxRuntimeMs) => {
       requestedBudget = maxRuntimeMs;
       // A short owned deadline exercises the same callback without waiting a day.
       return {
-        id: 'owned-run',
-        claim_token: 'private-fixture-token',
-        deadline: new Date(Date.now() + 1000).toISOString(),
+        kind: 'admitted',
+        run: {
+          id: 'owned-run',
+          claim_token: 'private-fixture-token',
+          deadline: new Date(Date.now() + 1000).toISOString(),
+        },
       };
     },
     finishBuddyChatRun: (...args) => settlements.push(args),

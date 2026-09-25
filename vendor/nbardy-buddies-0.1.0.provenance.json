@@ -3,9 +3,9 @@
   "package": "@nbardy/buddies",
   "version": "0.1.0",
   "archive": "vendor/nbardy-buddies-0.1.0.tgz",
-  "sha256": "ca35544b4a5563a9dbcc9bb69e8d9bfbffaaae3e2c62c19d10d434f3760da609",
+  "sha256": "bada18839a3f0a5701c541d0b37315eb64cf8252de12daca2ab49b9a4c5d5598",
   "reproduciblePack": true,
-  "sourceCommit": "49dfe0865543c26a6e4de417e5934355bec989a2",
+  "sourceCommit": "beceb7750ad2b48bb10a95ca8ca7713edbb8faac",
   "sourceDirty": false,
   "sourceStatus": [],
   "manifest": {
@@ -41,6 +41,7 @@
       "src/knowledge.js",
       "src/lists.js",
       "src/mailbox.js",
+      "src/run-capacity.js",
       "src/store.js",
       "src/team-access.js",
       "src/team-configuration.js"
@@ -48,7 +49,7 @@
     "ignoredFiles": [],
     "untrackedFiles": [],
     "runtimeFiles": [],
-    "sha256": "e02e4f6c8d69c1c779cd9154d846ed1de8734e47239ecc4382eb13571de0810c"
+    "sha256": "c846e59614b87ec846f5579a1a1bf35ee977b24b0028589f56882540d8be4d06"
   },
   "releaseReady": true
 }

@@ -82,7 +82,12 @@ export interface CoordinationStore extends BuddiesStorePort {
   projectAncestors(id: string): Array<{ id: string }>;
   canReadCoordinationProject(buddyId: string, projectId: string): boolean;
   canManageCoordinationProject(buddyId: string, projectId: string): boolean;
-  beginBuddyChatRun(input: Record<string, unknown>): PrivateBuddyRun;
+  enqueueBuddyChatRun(input: Record<string, unknown>): PrivateBuddyRun;
+  startBuddyChatRun(
+    id: string,
+    input: { conversationId: string; maxRuntimeSeconds: number }
+  ): PrivateBuddyRun | null;
+  abandonQueuedBuddyChatRuns(input: { ids: string[] } | { createdBefore: string }): string[];
   reparentBuddy(buddyId: string, input: { managerId: string; key: string }): unknown;
   holdBuddyRun(id: string, reason: string): void;
   recoverBuddyRuns(input: { confirmedDrainedIds: string[] }): PrivateBuddyRun[];

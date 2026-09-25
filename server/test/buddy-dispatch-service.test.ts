@@ -9,6 +9,7 @@ import type { BuddiesStorePort } from '../src/buddies/contract';
 import { createBuddyDispatchService } from '../src/buddies/dispatch-service';
 import { BuddyOperationsService, MESSAGE_BUDDY_OPERATIONS } from '../src/buddies/operations';
 import { teamStore } from '../src/buddies/team-access';
+import { startChatRun } from './fixtures/chat-run';
 
 test('a completed research handoff can start fresh recipient work and retains its source project', async () => {
   const root = mkdtempSync(join(tmpdir(), 'buddy-new-work-'));
@@ -30,7 +31,7 @@ test('a completed research handoff can start fresh recipient work and retains it
       { baseRevision: source.revision, status: 'done', evidence: ['proof:reviewed'] },
       { actor: sender.id, key: 'finish' }
     );
-    const active = store.beginBuddyChatRun({
+    const active = startChatRun(store, {
       buddyId: sender.id,
       workspaceId: workspace.id,
       conversationId: 'research',
