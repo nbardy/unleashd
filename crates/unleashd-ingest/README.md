@@ -70,3 +70,42 @@ re-read whole when their stamp moves.
 | Builder receipts embed the Zod-normalized event | embed the recorded event (the client parses both to the same value) |
 
 `tools/ingest-parity.ts` compares both over the real local roots; see T12-ingest-crate.md.
+
+## Conversation records (T23a)
+
+`ConversationRecords` is the durable per-conversation config record (what
+`server/src/conversations/config-store.ts` kept as 16.8k JSON files). It lives in
+`src/records/`: same crate as ingest (one SQLite library per process), its own
+connection, tables and schema key (`meta.records_schema`). Give it its own file:
+ingest rows are a rebuildable cache, records are not.
+
+```ts
+import { ConversationRecords } from '@unleashd/ingest';
+const records = await ConversationRecords.open(dbPath);
+await records.get(id);                                 // ConversationRecord | null
+await records.findBySession('codex', sessionId);        // most recently updated claimant
+await records.listSummaries();                          // RecordSummary[] (startup join)
+await records.create(input, Date.now());                // {t:'created'} | {t:'exists', current}
+await records.setConfig({ conversationId, expectedConfigRevision, config, lastResolvedConfig }, Date.now());
+// {t:'committed'} | {t:'revision_conflict', current} | {t:'tombstoned', current} | {t:'missing'}
+```
+
+`ConversationRecord` has the `PersistedConversationConfigRecord` shape minus `version`
+(always 1). Every mutation is read-modify-write in one `BEGIN IMMEDIATE` transaction and
+goes through `store::put`, which validates the Zod refinements and rebuilds the
+`conversation_session` index rows. Errors reject as `[sqlite|corrupt|invalid|schema] …`;
+conflicts are return values.
+
+One-time import from a COPY of `conversation-config/v1`:
+
+```bash
+cargo build --release --no-default-features --features cli --bin records-tool
+records-tool import <copy>/v1 new.sqlite   # → new.sqlite.import.json
+records-tool verify <copy>/v1 new.sqlite   # per-record canonical-JSON sha256, rejects byte-equal
+records-tool bench new.sqlite 500          # list + CAS latency on a scratch copy
+pnpm exec tsx tools/records-parity.ts --app-data <another copy> --db new.sqlite   # vs config-store.ts
+```
+
+Nothing is dropped: unparseable, future-version, schema-invalid, duplicate, stray and
+quarantined files, and by-session entries the records do not reproduce, are stored with
+their bytes in `conversation_record_reject`.

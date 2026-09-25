@@ -1,56 +1,27 @@
-import { atom } from 'jotai';
-import { linkConversationId } from '../components/buddies/buddies-shaping';
-import type { ConversationLink } from '../components/buddies/types';
-import { getConversationLastActivity } from '../utils/time';
-import { availableConversationIdSetAtom, conversationAtomFamily } from './conversations';
+import { atomFamily } from 'jotai-family';
+import { conversationListAtom } from './conversations';
+import { sameItems, stableAtom } from './structural';
 
 /**
- * Canonical foreground Buddy-thread projection for both shells. Background,
- * automation, provider-child and swarm-worker transcripts remain directly
- * addressable through their dedicated surfaces; they are not ordinary chats.
+ * One Buddy's foreground chats, running first, then newest. Background,
+ * provider-child and swarm-worker transcripts have their own surfaces; they
+ * are not ordinary chats. Rows come from the conversations the client holds,
+ * so every id here is openable — there is no dead link row to filter out.
  */
-export function buddyConversationListAtom(
-  links: ConversationLink[],
-  showReviewConversations: boolean
-) {
-  return atom((get) => {
-    const availableIds = get(availableConversationIdSetAtom);
-    const seen = new Set<string>();
-    const rows = links.flatMap((link) => {
-      if (link.kind === 'automation' || (!showReviewConversations && link.kind === 'review'))
-        return [];
-      const id = linkConversationId(link);
-      if (!id || seen.has(id)) return [];
-      seen.add(id);
-      const conversation = get(conversationAtomFamily(id));
-      if (
-        (conversation?.kind.t === 'buddy' && conversation.kind.visibility === 'background') ||
-        conversation?.kind.t === 'worker' ||
-        conversation?.parent
-      )
-        return [];
-      const available = availableIds.has(id);
-      const timestamp = Math.max(
-        new Date(link.last_active_at ?? 0).getTime() || 0,
-        conversation ? getConversationLastActivity(conversation).getTime() : 0
-      );
-      return [
-        {
-          id,
-          link,
-          available,
-          running:
-            available && (conversation?.run === 'running' || conversation?.run === 'streaming'),
-          timestamp,
-        },
-      ];
-    });
-    rows.sort(
-      (a, b) =>
-        Number(b.available) - Number(a.available) ||
-        Number(b.running) - Number(a.running) ||
-        b.timestamp - a.timestamp
-    );
-    return rows;
-  });
-}
+export const buddyConversationIdsAtomFamily = atomFamily((buddyId: string) =>
+  stableAtom(
+    (get) =>
+      get(conversationListAtom)
+        .filter(
+          (entry) =>
+            entry.kind === 'buddy' &&
+            entry.buddyId === buddyId &&
+            !entry.background &&
+            !entry.isWorker &&
+            entry.parentConversationId === null
+        )
+        .sort((a, b) => Number(b.isRunning) - Number(a.isRunning) || b.activityMs - a.activityMs)
+        .map((entry) => entry.id),
+    sameItems
+  )
+);

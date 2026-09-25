@@ -1,3 +1,5 @@
+import { newId } from '../../utils/ids';
+
 export class BuddyApiError extends Error {
   readonly status: number;
   readonly payload: unknown;
@@ -10,6 +12,7 @@ export class BuddyApiError extends Error {
   }
 }
 
+/** One request to the Buddy owner API; a non-2xx answer throws its `{error}` text. */
 export async function buddyApi<T>(path: string, init?: RequestInit): Promise<T> {
   const response = await fetch(path, init);
   if (!response.headers.get('content-type')?.includes('application/json')) {
@@ -30,11 +33,28 @@ export async function buddyApi<T>(path: string, init?: RequestInit): Promise<T> 
   return payload as T;
 }
 
-export function asArray<T>(payload: unknown, key: string): T[] {
-  if (Array.isArray(payload)) return payload as T[];
-  if (payload && typeof payload === 'object') {
-    const value = (payload as Record<string, unknown>)[key];
-    if (Array.isArray(value)) return value as T[];
-  }
-  return [];
+/**
+ * A JSON write. Every owner write carries an idempotency `key` (the server
+ * parses it strictly); a fresh one is added here unless the caller keyed the
+ * write itself, so no call site can forget it.
+ */
+// Pattern: idempotency-keys (docs/patterns.md#idempotency-keys)
+export function buddyWrite<T>(
+  path: string,
+  method: 'POST' | 'PUT' | 'PATCH',
+  body: Record<string, unknown>
+): Promise<T> {
+  return buddyApi<T>(path, {
+    method,
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ key: newId(), ...body }),
+  });
 }
+
+/** A body-less action (`/direct`, `/wake`, `/builder`, run cancel, archive). */
+export function buddyAction<T>(path: string, method: 'POST' | 'DELETE' = 'POST'): Promise<T> {
+  return buddyApi<T>(path, { method });
+}
+
+export const errorText = (cause: unknown): string =>
+  cause instanceof Error ? cause.message : String(cause);

@@ -9,7 +9,7 @@ import type {
 } from '@unleashd/shared';
 import type { Express } from 'express';
 import { BUDDY_BUILDER_BRIEFING } from '../buddies/builder';
-import { buddyBuilderMcpServers, buddyMcpServers } from '../buddies/mcp-config';
+import { toolManifest } from '../buddies/mcp';
 import { type ContextWindow, resolveContextWindow } from '../conversations/context-window';
 import {
   MESSAGE_PAGE_DEFAULT_LIMIT,
@@ -173,18 +173,17 @@ export function splitBriefing(briefing: string): { briefing: string; memory: str
   return { briefing: briefing.slice(0, index), memory: briefing.slice(index) };
 }
 
+// The tool definitions a turn's provider loads from the one Buddy endpoint (mcp.ts).
 function mcpSpecJson(conversation: ContextSubject): string {
-  try {
-    if (conversation.kind.t === 'builder') {
-      return JSON.stringify(buddyBuilderMcpServers(conversation.id));
-    }
-    if (conversation.kind.t === 'buddy') {
-      return JSON.stringify(buddyMcpServers(conversation.kind.context, conversation.id));
-    }
-  } catch {
-    /* meter must never break the conversation read */
+  switch (conversation.kind.t) {
+    case 'builder':
+      return toolManifest('builder');
+    case 'buddy':
+      return toolManifest('worker');
+    case 'chat':
+    case 'worker':
+      return '';
   }
-  return '';
 }
 
 export function buildContextBreakdown(

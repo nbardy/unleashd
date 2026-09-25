@@ -16,35 +16,32 @@ import type { EmployeeTab } from './types';
 export const EMPLOYEE_TABS = [
   'conversations',
   'work',
-  'team',
   'mailbox',
   'background',
   'memory',
-  'automations',
+  'schedules',
   'settings',
-] as const;
+] as const satisfies readonly EmployeeTab[];
 
 export const EMPLOYEE_TAB_LABELS: Record<EmployeeTab, string> = {
-  team: 'Team',
   settings: 'Settings',
   work: 'Work',
-  mailbox: 'Mailbox',
+  mailbox: 'Messages',
   conversations: 'Conversations',
   background: 'Background tasks',
   memory: 'Memory',
-  automations: 'Automations',
+  schedules: 'Schedules',
 };
 
 /** Mobile tab strip is horizontally cramped — shorter labels, same routes. */
 export const EMPLOYEE_TAB_LABELS_SHORT: Record<EmployeeTab, string> = {
-  team: 'Team',
   settings: 'Settings',
   work: 'Work',
-  mailbox: 'Mailbox',
+  mailbox: 'DMs',
   conversations: 'Chats',
   background: 'Tasks',
   memory: 'Memory',
-  automations: 'Autos',
+  schedules: 'Schedules',
 };
 
 /**

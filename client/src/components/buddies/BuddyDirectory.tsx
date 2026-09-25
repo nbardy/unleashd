@@ -1,12 +1,8 @@
 import { useAtomValue } from 'jotai';
-import { archivedBuddyIdsAtom } from '../../atoms/buddy-visibility';
 import { type ReactNode, useState } from 'react';
+import { archivedBuddyIdsAtom } from '../../atoms/buddy-visibility';
 import type { BuddyOverview } from './types';
-import {
-  buddyCardMetrics,
-  filterDirectoryEmployees,
-  selectDirectoryEmployees,
-} from './ui-contract';
+import { directoryEntries, filterDirectoryEntries } from './ui-contract';
 
 const CARD_VISUALS = ['horizon', 'archive', 'orbit', 'ember', 'tide'] as const;
 
@@ -26,7 +22,9 @@ export function BuddyDirectory({
 }) {
   const archived = useAtomValue(archivedBuddyIdsAtom);
   const [query, setQuery] = useState('');
-  const visibleBuddies = filterDirectoryEmployees(selectDirectoryEmployees(overview), query);
+  const visibleBuddies = filterDirectoryEntries(directoryEntries(overview), query).filter(
+    (entry) => !archived.has(entry.buddy.id)
+  );
 
   return (
     <main className="buddies-directory-content">
@@ -89,10 +87,7 @@ export function BuddyDirectory({
             </span>
           </span>
         </button>
-        {visibleBuddies.map((employeeOverview, index) => {
-          const { buddy, workspaces } = employeeOverview;
-          if (archived.has(buddy.id)) return null;
-          const metrics = buddyCardMetrics(employeeOverview);
+        {visibleBuddies.map(({ buddy, workspace, reports }, index) => {
           const visual = CARD_VISUALS[index % CARD_VISUALS.length];
           return (
             <button
@@ -112,14 +107,12 @@ export function BuddyDirectory({
                   <span className={`buddy-presence buddy-presence--${buddy.status}`}>
                     {buddy.status}
                   </span>
-                  {workspaces.slice(0, 2).map((workspace) => (
-                    <span key={workspace.id} className="buddy-card-workspace">
-                      {workspace.name}
+                  <span className="buddy-card-workspace">{workspace.name}</span>
+                  {reports.length > 0 && (
+                    <span>
+                      {reports.length} {reports.length === 1 ? 'report' : 'reports'}
                     </span>
-                  ))}
-                  {metrics.team > 0 && <span>{metrics.team} reports</span>}
-                  <span>{metrics.open} open</span>
-                  <span>{metrics.blocked} blocked</span>
+                  )}
                 </span>
                 <span className="buddy-card-hover-action">Open Buddy →</span>
               </span>

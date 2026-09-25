@@ -9,7 +9,7 @@
 //! a buddy author, all in one transaction.
 
 use crate::error::{CoreError, Result};
-use crate::runs::Enqueue;
+use crate::runs::{Enqueue, plus_ms};
 use crate::store::{Mutation, Store, collect, corrupt, get_buddy, idempotent, new_id, now_iso, require};
 use crate::tasks::get_task;
 use crate::types::*;
@@ -212,7 +212,7 @@ impl Store {
                         request.task_id,
                         input.body,
                         evidence_json(&input.evidence),
-                        now_iso()
+                        post_time(tx, &request.channel_id)?
                     ],
                 )?;
                 let flipped = tx.execute(
@@ -303,6 +303,25 @@ impl Store {
         Ok(Inbox { requests, waiting_on, channels })
     }
 
+    /// Posts in `workspace_id` whose body contains every word of `query` (literal words, not FTS
+    /// syntax), newest first, from the channels the actor may read: public and task channels, and
+    /// the direct channels it is a member of (the owner reads every one).
+    pub fn search_posts(&self, actor: &Actor, workspace_id: &str, query: &str, limit: i64) -> Result<Vec<Post>> {
+        require(&self.conn, actor, Op::SearchPosts, &Subject::Owner)?;
+        let words: Vec<String> = query.split_whitespace().map(|w| format!("\"{}\"", w.replace('"', "\"\""))).collect();
+        if words.is_empty() {
+            return Err(CoreError::Invalid("an empty search".into()));
+        }
+        let sql = format!(
+            "SELECT {POST_COLS} FROM post_search s JOIN post p ON p.rowid = s.rowid JOIN channel c ON c.id = p.channel_id
+             WHERE post_search MATCH ?1 AND c.workspace_id = ?2
+               AND (?3 = 'owner' OR c.kind != 'direct'
+                    OR EXISTS (SELECT 1 FROM channel_member m WHERE m.channel_id = c.id AND m.member = ?3))
+             ORDER BY p.created_at DESC LIMIT ?4"
+        );
+        collect(self.conn.prepare_cached(&sql)?.query_map(params![words.join(" "), workspace_id, actor.key(), limit], post_row)?)
+    }
+
     /// Moves the actor's cursor forward to `post_id`; an older post never moves it back.
     pub fn mark_read(&mut self, actor: &Actor, channel_id: &str, post_id: &str) -> Result<()> {
         self.write(|tx| {
@@ -359,8 +378,8 @@ fn insert_post(tx: &Transaction, actor: &Actor, channel: &Channel, input: &PostI
     let id = new_id("post");
     tx.prepare_cached(
         "INSERT INTO post (id, channel_id, author_id, root_id, reply_to_id, task_id, purpose, body, evidence, request,
-           return_conversation_id, created_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+           conversation_id, return_conversation_id, created_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
     )?
     .execute(params![
         id,
@@ -373,8 +392,11 @@ fn insert_post(tx: &Transaction, actor: &Actor, channel: &Channel, input: &PostI
         input.body,
         evidence_json(&input.evidence),
         ask.column(),
+        // Provenance: the conversation the post was written from. A thread seat reads it to skip
+        // its own posts. Only a request's answer returns to it.
         input.from_conversation_id,
-        now_iso()
+        ask.column().and(input.from_conversation_id.as_deref()),
+        post_time(tx, &channel.id)?
     ])?;
     for recipient in ask.owed_by().iter().filter_map(Actor::buddy_id) {
         tx.enqueue(EnqueueInput {
@@ -387,6 +409,21 @@ fn insert_post(tx: &Transaction, actor: &Actor, channel: &Channel, input: &PostI
         })?;
     }
     Ok(id)
+}
+
+/// A post's time: now, or 1 ms after the channel's newest post when that is not earlier. Posts
+/// order by (created_at, id) and ids are random, so two posts written in one millisecond read
+/// back in a random order: 29 of 50 three-reply threads came back shuffled (2026-09-25), which
+/// broke "is this the thread's newest post" (follow-up gating), the Buddy-chain bound, read
+/// cursors and keyset paging. Guard: core.rs `posts_read_back_in_write_order_within_a_millisecond`.
+fn post_time(tx: &Connection, channel_id: &str) -> Result<String> {
+    let now = now_iso();
+    let newest: Option<String> =
+        tx.prepare_cached("SELECT max(created_at) FROM post WHERE channel_id = ?1")?.query_row([channel_id], |r| r.get(0))?;
+    match newest {
+        Some(newest) if newest >= now => plus_ms(&newest, 1),
+        Some(_) | None => Ok(now),
+    }
 }
 
 /// A reply joins its parent's thread, which must be in the same channel.

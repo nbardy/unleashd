@@ -11,6 +11,7 @@ import { retireLegacyUiState } from '../src/conversations/legacy-ui-state';
 import { createConversationRuntime } from '../src/conversations/runtime';
 import { resolveConfigAgainstProviderCatalog } from '../src/providers/catalog-service';
 import { registerConversationWebSocket } from '../src/transport/conversation-websocket';
+import { fakeBuddyPort } from './fixtures/buddy-port';
 
 const CONVERSATION_ID = '00000000-0000-4000-8000-0000000000d1';
 const ROTATED_CONVERSATION_ID = '00000000-0000-4000-8000-0000000000d2';
@@ -51,8 +52,7 @@ test('a hide set over the WebSocket survives session rotation and a restart', as
       clearLocalCompletionSuppression: () => undefined,
       markLocalCompletionSuppression: () => undefined,
       persistCurrentSession: async () => undefined,
-      updateBuddyStatus: () => undefined,
-      settleBuddyDelegation: () => undefined,
+      buddies: fakeBuddyPort(),
       getConversation: () => undefined,
       readLatestOompaRuntime: async () => ({ available: false, run: null, reason: 'fixture' }),
       createSessionId: () => 'rotated-session',

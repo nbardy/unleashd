@@ -52,7 +52,7 @@ pub(crate) fn get_run(conn: &Connection, id: &str) -> Result<Run> {
         .ok_or_else(|| CoreError::not_found("run", id))
 }
 
-fn plus_ms(now: &str, ms: i64) -> Result<String> {
+pub(crate) fn plus_ms(now: &str, ms: i64) -> Result<String> {
     let t = DateTime::parse_from_rfc3339(now).map_err(|e| CoreError::Invalid(format!("time {now:?}: {e}")))?;
     Ok((t.with_timezone(&Utc) + Duration::milliseconds(ms)).format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string())
 }
@@ -126,10 +126,13 @@ impl Store {
                 [now],
             )?;
             // Ready, predecessor finished, conversation free, buddy under its limit, task not paused.
+            // Background work (every input but a foreground chat) waits while the owner has the
+            // buddy's background work switched off: it stays queued ("delivered but held").
             let candidate: Option<String> = tx
                 .prepare_cached(
                     "SELECT r.id FROM run r JOIN buddy b ON b.id = r.buddy_id
                      WHERE r.status = 'queued' AND r.ready_at <= ?1 AND b.status = 'active'
+                       AND (r.input_kind = 'chat' OR b.background_enabled = 1)
                        AND (r.after_run_id IS NULL OR EXISTS (SELECT 1 FROM run a WHERE a.id = r.after_run_id
                             AND a.status IN ('complete','failed','cancelled')))
                        AND (r.conversation_id IS NULL OR NOT EXISTS (SELECT 1 FROM run c WHERE c.conversation_id = r.conversation_id
@@ -216,12 +219,47 @@ impl Store {
         get_run(&self.conn, id)
     }
 
+    /// Startup recovery, run once by the one process that owns the runner. Every running run was
+    /// held by a process that is gone, so it ends now instead of blocking its conversation and a
+    /// slot of its buddy until its lease expires (a foreground lease is TURN_MAX_RUNTIME_MS, 24 h).
+    /// A queued chat run belongs to a conversation queue that died with that process.
+    pub fn recover_runs(&mut self) -> Result<Recovery> {
+        self.write(|tx| {
+            let held = collect(
+                tx.prepare_cached(&format!("SELECT {RUN_COLS} FROM run WHERE status IN ('running','cancel_requested')"))?
+                    .query_map([], run_row)?,
+            )?;
+            let now = now_iso();
+            for run in &held {
+                let (status, outcome) = match run.status {
+                    RunStatus::CancelRequested => ("cancelled", Outcome::Cancelled { reason: "the host restarted".into() }),
+                    _ => ("failed", Outcome::Failed { code: "interrupted".into(), error: "the host restarted during this run".into() }),
+                };
+                let (code, error) = outcome.code_and_error();
+                tx.execute(
+                    "UPDATE run SET status = ?2, error_code = ?3, error = ?4, lease_token = NULL, ended_at = ?5 WHERE id = ?1",
+                    params![run.id, status, code, error, now],
+                )?;
+                after_settle(tx, run, &outcome)?;
+            }
+            let abandoned = tx.execute(
+                "UPDATE run SET status = 'cancelled', error_code = 'interrupted', error = 'the host restarted before this chat turn started',
+                   ended_at = ?1 WHERE status = 'queued' AND input_kind = 'chat'",
+                [&now],
+            )?;
+            Ok(Recovery { interrupted: held.len() as i64, abandoned_chats: abandoned as i64 })
+        })
+    }
+
     pub fn list_runs(&self, query: RunQuery, limit: i64) -> Result<Vec<Run>> {
         let (filter, mut args): (&str, Vec<Value>) = match query {
             RunQuery::Buddy { buddy_id } => ("buddy_id = ? ORDER BY created_at DESC", vec![buddy_id.into()]),
             RunQuery::Conversation { conversation_id } => ("conversation_id = ? ORDER BY created_at DESC", vec![conversation_id.into()]),
             RunQuery::Task { task_id } => ("task_id = ? ORDER BY created_at DESC", vec![task_id.into()]),
             RunQuery::Queued => ("status = 'queued' ORDER BY ready_at, created_at", vec![]),
+            RunQuery::Live { workspace_id } => {
+                ("status IN ('running','cancel_requested') AND workspace_id = ? ORDER BY started_at", vec![workspace_id.into()])
+            }
         };
         args.push(limit.into());
         let sql = format!("SELECT {RUN_COLS} FROM run WHERE {filter} LIMIT ?");
@@ -375,5 +413,16 @@ fn close_request(tx: &Transaction, post_id: &str, state: &str, failed_run: Optio
             })
             .map(|_| ()),
         _ => Ok(()),
+    }
+}
+
+impl Outcome {
+    /// The (error_code, error) columns of an outcome that did not complete.
+    fn code_and_error(&self) -> (Option<&str>, Option<&str>) {
+        match self {
+            Outcome::Complete { .. } => (None, None),
+            Outcome::Failed { code, error } => (Some(code), Some(error)),
+            Outcome::Cancelled { reason } => (Some("cancelled"), Some(reason)),
+        }
     }
 }

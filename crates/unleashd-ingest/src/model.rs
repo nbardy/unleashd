@@ -14,7 +14,7 @@ macro_rules! str_enum {
     ($name:ident { $($variant:ident = $s:literal),+ $(,)? }) => {
         // The napi case rule and the literals must agree; the node test reads them back.
         #[cfg_attr(feature = "node", napi_derive::napi(string_enum = "camelCase"))]
-        #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+        #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
         pub enum $name { $(#[serde(rename = $s)] $variant),+ }
 
         impl $name {

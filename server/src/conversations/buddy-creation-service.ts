@@ -6,10 +6,7 @@ import type {
   Provider,
 } from '@unleashd/shared';
 import { buddyKind, normalizeModelId } from '@unleashd/shared';
-import type { BuddyAutomation, BuddyAutomationRun } from '../buddies/contract';
-import type { ResolvedBuddyConversation } from '../buddies/integration';
-import type { BuddyAutomationConversation } from '../buddies/scheduler';
-import { awaitTurn } from './await-turn';
+import type { ResolvedBuddyConversation } from '../buddies/briefing';
 import { configFromProviderPreferences } from './config-mapping';
 import type { ConversationConfigService } from './config-service';
 import { INITIAL_MESSAGE_DISPATCH_LEASE_MS } from './config-store';
@@ -91,10 +88,6 @@ export interface BuddyCreationService {
     conversation: ConversationRuntime,
     options?: InitialMessageDispatchOptions
   ): Promise<void>;
-  createAutomationConversation(
-    automation: BuddyAutomation,
-    run: BuddyAutomationRun
-  ): Promise<BuddyAutomationConversation>;
   createServerBuddyConversation(
     input: CreateServerBuddyConversationInput
   ): Promise<ConversationRuntime>;
@@ -235,7 +228,6 @@ export function createBuddyCreationService(ports: BuddyCreationServicePorts): Bu
     config: ConversationConfig;
     commandId: string;
     initialMessage?: string;
-    automationClaimToken?: string;
     visibility?: BuddyVisibility;
     branch?: ConversationBranch;
   }): Promise<ConversationRuntime> {
@@ -248,53 +240,9 @@ export function createBuddyCreationService(ports: BuddyCreationServicePorts): Bu
       branch: input.branch,
       kind: buddyKind(input.resolved.context, input.visibility),
       buddyBriefing: input.resolved.briefing,
-      automationClaimToken: input.automationClaimToken,
     });
     conversation.publishRow();
     return conversation;
-  }
-
-  async function createAutomationConversation(
-    automation: BuddyAutomation,
-    run: BuddyAutomationRun
-  ): Promise<BuddyAutomationConversation> {
-    if (!automation.workspace_id) {
-      throw new Error('Automation must have one workspace scope before it can run');
-    }
-    const resolved = await ports.resolveBuddyConversation({
-      buddyId: automation.buddy_id,
-      workspaceId: automation.workspace_id,
-      buddyProjectId: automation.buddy_project_id,
-      automationRunId: run.id,
-      allowedBuddyOperations: [...run.policy.allowed_operations],
-    });
-    const config = resolveConfig(resolved);
-    const conversationId = ports.createId();
-    const workingDirectory = ports.resolveWorkingDirectory(resolved.workingDirectory);
-    const conversation = await createAndRegister({
-      conversationId,
-      workingDirectory,
-      resolved,
-      config,
-      commandId: `buddy-automation-${run.id}`,
-      automationClaimToken: run.claim_token ?? undefined,
-    });
-
-    return {
-      conversationId,
-      runTurn: (prompt: string) =>
-        awaitTurn(
-          conversation,
-          () => conversation.sendAutomationMessage(prompt),
-          'Buddy automation turn failed'
-        ),
-      stop: () => conversation.stopAutomationTurn(),
-      async stopAndDrain() {
-        conversation.stopAutomationTurn();
-        await conversation.waitForTurnDrain();
-      },
-      finish: (status) => ports.updateConversationStatus(conversation, status),
-    };
   }
 
   async function createServerBuddyConversation(
@@ -348,7 +296,6 @@ export function createBuddyCreationService(ports: BuddyCreationServicePorts): Bu
     creationFingerprint,
     persistCurrentSession,
     dispatchInitialMessageIfPending,
-    createAutomationConversation,
     createServerBuddyConversation,
     createBuddyBuilderConversation,
   };

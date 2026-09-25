@@ -18,7 +18,6 @@ import type { BuddyContext } from '@unleashd/shared';
 import type { CopyState } from '../hooks/useCopyAction';
 import { COPY_LABEL, useCopyAction } from '../hooks/useCopyAction';
 import { ChatActivity } from '../ui/ChatActivity';
-import { parseBuddyReviewRequest, parseBuddyReviewResult } from '../utils/buddy-review-message';
 import type { AssistantResponse, MessageGroup } from '../utils/chat-message-groups';
 import { messageTranscriptContent } from '../utils/conversation-transcript';
 import { useMarkdownPipeline } from '../utils/lazyMarkdownPlugins';
@@ -36,12 +35,10 @@ import { execInputPreview } from '../utils/tool-call-preview';
 export type { MessageGroup } from '../utils/chat-message-groups';
 import { AskUserQuestionWidget, parseAskUserQuestion } from './AskUserQuestion';
 import { BuddyConvoHeader } from './BuddyConvoHeader';
-import { BuddyReviewRequestCard, BuddyReviewResultCard } from './BuddyReviewMessage';
 import { FilePreview, getPreviewType, getPreviewableLocalHref } from './FilePreview';
 import { InlineSwarmRunWidget } from './InlineSwarmRunWidget';
 import { SwarmConvoPrefix } from './SwarmConvoPrefix';
 import { InlineBuddyBuilderResult } from './buddies/BuddyBuilderResultCard';
-import { InlineBuddyTeamConfiguration } from './buddies/BuddyTeamConfiguration';
 
 /**
  * remark-math recognizes $...$ and $$...$$, while model output commonly uses
@@ -508,16 +505,8 @@ const MemoizedMessageContent = memo(
     );
     const collapseToolActivity = collapseTools && msg.role === 'assistant' && !msg.toolCall;
 
-    const reviewRequest = useMemo(
-      () => (msg.role === 'user' ? parseBuddyReviewRequest(displayContent) : null),
-      [displayContent, msg.role]
-    );
-
     // Split content into text + AskUserQuestion widget segments
-    const segments = useMemo(
-      () => (reviewRequest ? [] : splitStructuredMessageContent(displayContent)),
-      [displayContent, reviewRequest]
-    );
+    const segments = useMemo(() => splitStructuredMessageContent(displayContent), [displayContent]);
     const execPreview = execInputPreview(msg.toolCall);
     const hasWidget = segments.some((s) => s.type !== 'text');
     // Memoize markdown components keyed on workingDirectory so react-markdown
@@ -533,8 +522,6 @@ const MemoizedMessageContent = memo(
           <p>
             🔧 exec <code>{execPreview}</code>
           </p>
-        ) : reviewRequest ? (
-          <BuddyReviewRequestCard request={reviewRequest} />
         ) : hasWidget ? (
           // Mixed content: interleave Markdown and interactive widgets
           segments.map((seg, i) => {
@@ -558,18 +545,7 @@ const MemoizedMessageContent = memo(
             if (seg.type === 'buddy_builder_result') {
               return <InlineBuddyBuilderResult key={i} payload={seg.json} />;
             }
-            if (seg.type === 'buddy_worker_thread') return null;
-            if (seg.type === 'buddy_team_configuration') {
-              return <InlineBuddyTeamConfiguration key={i} payload={seg.json} />;
-            }
-            if (seg.type === 'buddy_review_result') {
-              const result = parseBuddyReviewResult(seg.json);
-              return result ? (
-                <BuddyReviewResultCard key={i} result={result} />
-              ) : (
-                <code key={i}>Buddy review result (parse error)</code>
-              );
-            }
+            if (seg.type === 'buddy_worker_thread' || seg.type === 'retired_marker') return null;
             // AskUserQuestion widget
             try {
               const data = parseAskUserQuestion(seg.json);
@@ -619,14 +595,7 @@ function StandaloneMessage({
   forwardedRef?: React.RefObject<HTMLDivElement | null>;
   workingDirectory: string;
 }) {
-  const reviewRequest = msg.role === 'user' && parseBuddyReviewRequest(msg.content);
-  const roleLabel = reviewRequest
-    ? 'review request'
-    : msg.role === 'user'
-      ? 'You'
-      : msg.role === 'assistant'
-        ? 'Assistant'
-        : msg.role;
+  const roleLabel = msg.role === 'user' ? 'You' : msg.role === 'assistant' ? 'Assistant' : msg.role;
   return (
     <div className={`message ${msg.role}`} ref={forwardedRef}>
       {msg.role !== 'system' && <div className={`message-role ${msg.role}`}>{roleLabel}</div>}

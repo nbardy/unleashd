@@ -25,6 +25,7 @@ import { createSessionLoader } from '../src/lifecycle/session-loader';
 import { resolveConfigAgainstProviderCatalog } from '../src/providers/catalog-service';
 import { sameKeyAudience } from './fixtures/buddy-audience';
 import { discoveredSession } from './fixtures/discovered-session';
+import { fakeBuddyPort } from './fixtures/buddy-port';
 
 const CONVERSATION_ID = 'dddddddd-0000-4000-8000-000000000004';
 const ORIGINAL_SESSION = 'eeeeeeee-0000-4000-8000-000000000005';
@@ -137,8 +138,6 @@ async function fixture(
       clearLocalCompletionSuppression: app.completionSuppression.clear,
       markLocalCompletionSuppression: app.completionSuppression.mark,
       persistCurrentSession,
-      updateBuddyStatus: () => {},
-      settleBuddyDelegation: () => {},
       getConversation: app.registry.get,
       readLatestOompaRuntime: async () => ({
         available: false,
@@ -146,10 +145,11 @@ async function fixture(
         reason: 'isolated fixture',
       }),
       createSessionId: () => CURRENT_SESSION,
-      readCurrentBuddyContext: () => ({
-        briefing: 'Current permitted briefing',
-        memoryGeneration: 'fixture-generation',
-        audience: sameKeyAudience('current-authorized-audience'),
+      buddies: fakeBuddyPort({
+        briefing: () => ({
+          briefing: 'Current permitted briefing',
+          memoryGeneration: 'fixture-generation',
+        }),
       }),
       executeTurn: ((
         request: Parameters<NonNullable<ConversationRuntimeDependencies['executeTurn']>>[0]

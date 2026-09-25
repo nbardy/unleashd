@@ -1,209 +1,90 @@
-import { buddyWorkGroupsAtom } from '../atoms/buddy-work';
-import { BuddyConversationList } from './buddies/BuddyConversationList';
-import { BuddySectionNav } from './buddies/BuddySectionNav';
-import './buddies/BuddyTeamExecution.css';
-import { archivedBuddyIdsAtom } from '../atoms/buddy-visibility';
-import { newId } from '../utils/ids';
-import { BuddySettings } from './buddies/BuddySettings';
-import { BuddyTeamExecution } from './buddies/BuddyTeamExecution';
-import './buddies/BuddyMessages.css';
-import './buddies/BuddyCoordination.css';
-import './buddies/BuddySoulConflict.css';
 import { useAtomValue } from 'jotai';
-import { useCallback, useMemo, useState } from 'react';
-import { Link, Navigate, useNavigate, useParams } from 'react-router-dom';
-import { availableConversationIdSetAtom } from '../atoms/conversations';
+import { useCallback, useState } from 'react';
+import { Navigate, useNavigate, useParams } from 'react-router-dom';
+import { archivedBuddyIdsAtom } from '../atoms/buddy-visibility';
 import { useBuddyOverview, useBuddyPage } from '../hooks/useBuddyData';
-import { BuddyAutomationsTab } from './buddies/BuddyAutomationsTab';
-import { BuddyBackgroundTasks } from './buddies/BuddyBackgroundTasks';
-import { buddyApi as api } from './buddies/api';
-import './buddies/BuddyBackgroundTasks.css';
-import { BuddyCoordination } from './buddies/BuddyCoordination';
+import type { UsePolledFetchResult } from '../hooks/usePolledFetch';
 import { BuddyDirectory } from './buddies/BuddyDirectory';
-import { BuddyExecutionProfile } from './buddies/BuddyExecutionProfile';
-import { BuddyMemoryWorkspace } from './buddies/BuddyMemoryWorkspace';
-import { BuddyMessages } from './buddies/BuddyMessages';
-import { BuddyProjectExecution } from './buddies/BuddyProjectExecution';
-import './buddies/BuddyProjectExecution.css';
-import { projectConversation } from './buddies/buddies-shaping';
+import { BuddySectionNav } from './buddies/BuddySectionNav';
+import { BuddyPageActions, BuddyRelations, BuddyTabContent } from './buddies/BuddyTabContent';
+import { errorText } from './buddies/api';
 import { buddyTabPath, parseEmployeeTab } from './buddies/buddy-tabs';
 import { createBuddyViaBuilder } from './buddies/create-buddy-builder';
-import type { BuddyProject, EmployeeTab } from './buddies/types';
-import { TASK_STATUS, buddyProjectTodoProgress, initials } from './buddies/ui-contract';
+import { initials } from './buddies/ui-contract';
 import './BuddiesDashboard.css';
 
-function compactPath(path: string | null): string {
-  if (!path) return 'No source linked';
-  return path.replace(/^\/Users\/[^/]+\/git\//, '~/git/');
+/** Only a read that never loaded replaces the page; a failed refresh is a notice beside it. */
+function RefreshNotice({ read }: { read: UsePolledFetchResult<unknown> }) {
+  return read.kind === 'stale' ? (
+    <p>
+      <output>Could not refresh: {read.error.message}</output>{' '}
+      <button type="button" onClick={read.refetch}>
+        Retry
+      </button>
+    </p>
+  ) : null;
 }
 
-export function BuddiesDashboard() {
+function Centered({ children }: { children: string }) {
+  return (
+    <div className="buddies-dashboard buddies-dashboard--centered">
+      <div className="buddies-loading">{children}</div>
+    </div>
+  );
+}
+
+function Directory() {
   const navigate = useNavigate();
-  const { buddyId, tab: tabSegment } = useParams();
-  const availableConversationIds = useAtomValue(availableConversationIdSetAtom);
-  // The tab is the URL, not state. `routedTab === null` means the URL is not
-  // canonical yet (`/buddies/:id`, or a junk segment); we render the default
-  // tab's redirect below rather than showing one tab under another tab's URL.
-  const archived = useAtomValue(archivedBuddyIdsAtom);
-  const routedTab = parseEmployeeTab(tabSegment);
-  const activeTab: EmployeeTab = routedTab ?? (buddyId ? 'conversations' : 'work');
-  const [busy, setBusy] = useState<string | null>(null);
+  const overview = useBuddyOverview();
+  const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  // Shared with mobile (hooks/useBuddyData.ts): one cache key per Buddy, so
-  // Back onto a Buddy you just left renders from cache with no spinner.
-  const overviewFetch = useBuddyOverview(0, !buddyId);
-  const overview = overviewFetch.data;
-  const openConversation = useCallback((id: string) => navigate(`/chat/${id}`), [navigate]);
-  const {
-    detail,
-    employee,
-    automationsFetch,
-    automations,
-    setSelectedWorkspaceId,
-    showReviewConversations,
-    setShowReviewConversations,
-    workspace,
-    workspaceProjects,
-    legacyWork,
-    primaryProject,
-    reviewConversationCount,
-    automationConversations,
-    latestWorkspaceConversation,
-    talk,
-    openProjectConversation,
-  } = useBuddyPage(buddyId, activeTab, availableConversationIds, openConversation);
-  // The route's own read: one Buddy's detail, or the directory.
-  const pageFetch = buddyId ? detail : overviewFetch;
-  const workGroupsAtom = useMemo(() => buddyWorkGroupsAtom(workspaceProjects), [workspaceProjects]);
-  const workGroups = useAtomValue(workGroupsAtom);
-
-  const mutate = async (key: string, action: () => Promise<unknown>) => {
-    setBusy(key);
-    setError(null);
-    try {
-      await action();
-      await detail.refetch();
-      // Automations are a separate route-backed projection, not part of employee detail.
-      // Reloading only the employee made successful toggle/run/archive actions look as if
-      // they had failed. Keep the UI derived from durable server state; do not patch cards
-      // optimistically with a second client lifecycle. Design rationale:
-      // agent_notes/2026-08-24_automation-execution-ownership-design.md §6/I1, §14/8.
-      if (activeTab === 'automations') await automationsFetch.refetch();
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
-    } finally {
-      setBusy(null);
-    }
-  };
-
   const openBuddyBuilder = async () => {
-    setBusy('buddy-builder');
+    setCreating(true);
     setError(null);
     try {
       const conversationId = await createBuddyViaBuilder();
       navigate(`/chat/${conversationId}?helper=buddies`);
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
+      setError(errorText(cause));
     } finally {
-      setBusy(null);
+      setCreating(false);
     }
   };
-
-  if (buddyId && archived.has(buddyId)) return <Navigate to="/buddies" replace />;
-
-  // Canonicalise `/buddies/:id` (and any junk tab segment) onto a real tab URL.
-  // `replace` keeps Back pointing at whatever linked here, not at a redirect loop.
-  if (buddyId && routedTab === null) {
-    return <Navigate to={buddyTabPath(buddyId, activeTab)} replace />;
-  }
-
-  // Only a read that never loaded replaces the page. A failed refresh is
-  // `stale`: the page stays, with `refreshNotice` under its heading. Until
-  // 2026-09-25 the directory tested the refresh's error first, so one failed
-  // poll of the overview (the Sidebar polls the same key) blanked it.
-  if (pageFetch.kind === 'failed') {
-    return (
-      <div className="buddies-dashboard buddies-dashboard--centered">
-        <div className="buddies-error">{pageFetch.error.message}</div>
-      </div>
-    );
-  }
-  const refreshNotice = pageFetch.kind === 'stale' && (
-    <p>
-      <output>Could not refresh: {pageFetch.error.message}</output>{' '}
-      <button type="button" onClick={pageFetch.refetch}>
-        Retry
-      </button>
-    </p>
+  if (overview.kind === 'failed') return <Centered>{overview.error.message}</Centered>;
+  if (overview.data === null) return <Centered>Loading Buddies…</Centered>;
+  return (
+    <div className="buddies-dashboard">
+      {error && <div className="buddies-error">{error}</div>}
+      <BuddyDirectory
+        overview={overview.data}
+        onOpen={(id) => navigate(`/buddies/${id}`)}
+        onNew={() => void openBuddyBuilder()}
+        creating={creating}
+        notice={<RefreshNotice read={overview} />}
+      />
+    </div>
   );
-  if (!buddyId && overview) {
-    return (
-      <div className="buddies-dashboard">
-        {error && <div className="buddies-error">{error}</div>}
-        <BuddyDirectory
-          overview={overview}
-          onOpen={(id) => navigate(`/buddies/${id}`)}
-          onNew={() => void openBuddyBuilder()}
-          creating={busy === 'buddy-builder'}
-          notice={refreshNotice}
-        />
-      </div>
-    );
-  }
-  if (!employee) {
-    return (
-      <div className="buddies-dashboard buddies-dashboard--centered">
-        <div className="buddies-loading">Loading employee…</div>
-      </div>
-    );
-  }
+}
 
-  const renderWorkProject = (project: BuddyProject) => {
-    const todoProgress = buddyProjectTodoProgress(project);
-    const existingConversation =
-      projectConversation(employee.conversations, project.id, availableConversationIds) !== null;
-    return (
-      <details className="buddy-work-disclosure" key={project.id}>
-        <summary>
-          <strong>{project.title}</strong>
-          <span>
-            {TASK_STATUS[project.status].label} · {todoProgress.done}/{todoProgress.total} todos
-          </span>
-        </summary>
-        <div className={`buddy-work-card status-${project.status}`}>
-          <div className="buddy-work-card__body">
-            <div className="buddy-work-card__operations">
-              <span>
-                <strong>Next action</strong>
-                {project.next_action ?? 'Not set'}
-              </span>
-              {project.blocked_reason && (
-                <span className="buddy-work-blocker">
-                  <strong>Blocker</strong>
-                  {project.blocked_reason}
-                </span>
-              )}
-              <span className="buddy-work-todos">
-                <strong>Todos</strong>
-                {todoProgress.done}/{todoProgress.total}
-              </span>
-            </div>
-            <BuddyProjectExecution
-              project={project}
-              availableConversationIds={availableConversationIds}
-            />
-          </div>
-          <button
-            type="button"
-            disabled={!workspace}
-            onClick={() => workspace && openProjectConversation(workspace, project.id)}
-          >
-            {existingConversation ? 'Open conversation' : 'Start conversation'}
-          </button>
-        </div>
-      </details>
-    );
-  };
+function BuddyPage({ buddyId }: { buddyId: string }) {
+  const navigate = useNavigate();
+  const { tab: tabSegment } = useParams();
+  const archived = useAtomValue(archivedBuddyIdsAtom);
+  const openConversation = useCallback((id: string) => navigate(`/chat/${id}`), [navigate]);
+  const { detail, overview, workspace, talk } = useBuddyPage(buddyId, openConversation);
+  // The tab is the URL, not state (components/buddies/buddy-tabs.ts).
+  const tab = parseEmployeeTab(tabSegment);
+
+  if (archived.has(buddyId)) return <Navigate to="/buddies" replace />;
+  // Canonicalise `/buddies/:id` (and any junk tab segment) onto a real tab URL;
+  // `replace` keeps Back pointing at whatever linked here.
+  if (tab === null) return <Navigate to={buddyTabPath(buddyId, 'conversations')} replace />;
+  if (detail.kind === 'failed') return <Centered>{detail.error.message}</Centered>;
+  if (overview.kind === 'failed') return <Centered>{overview.error.message}</Centered>;
+  if (detail.data === null || overview.data === null) return <Centered>Loading Buddy…</Centered>;
+  const { buddy } = detail.data;
+  if (workspace === null)
+    return <Centered>{`Workspace ${buddy.workspaceId} is not in the Buddy overview.`}</Centered>;
 
   return (
     <div className="buddies-dashboard">
@@ -219,342 +100,43 @@ export function BuddiesDashboard() {
               ←
             </button>
             <div className="buddy-avatar" aria-hidden="true">
-              {initials(employee.buddy.name)}
+              {initials(buddy.name)}
             </div>
             <div className="buddy-identity-copy">
               <div className="buddy-identity-title">
-                <h1>{employee.buddy.name}</h1>
-                <span>{employee.buddy.status}</span>
+                <h1>{buddy.name}</h1>
+                <span>{buddy.status}</span>
               </div>
               <details className="buddy-detail-about">
                 <summary>About this Buddy</summary>
-                <p>{employee.buddy.role}</p>
-                <div className="buddy-identity-meta">
-                  <span>
-                    Reports to{' '}
-                    {employee.manager ? (
-                      <Link to={`/buddies/${encodeURIComponent(employee.manager.id)}`}>
-                        {employee.manager.name}
-                      </Link>
-                    ) : (
-                      <strong>Owner</strong>
-                    )}
-                  </span>
-                  {employee.directReports.length > 0 ? (
-                    <details className="buddy-report-menu">
-                      <summary>
-                        {employee.directReports.length}{' '}
-                        {employee.directReports.length === 1 ? 'report' : 'reports'}
-                      </summary>
-                      <div>
-                        {employee.directReports.map((report) => (
-                          <Link to={`/buddies/${report.id}`} key={report.id}>
-                            <strong>{report.name}</strong>
-                            <span>{report.status === 'archived' ? 'Archived' : report.role} →</span>
-                          </Link>
-                        ))}
-                      </div>
-                    </details>
-                  ) : (
-                    <span>0 reports</span>
-                  )}
-                  <span
-                    title={
-                      employee.skills.length > 0
-                        ? employee.skills.map((skill) => skill.name).join(', ')
-                        : 'No structured skills'
-                    }
-                  >
-                    {employee.skills.length} {employee.skills.length === 1 ? 'skill' : 'skills'}
-                  </span>
-                </div>
+                <p>{buddy.role}</p>
+                <BuddyRelations buddy={buddy} overview={overview.data} />
               </details>
-              {refreshNotice}
+              <RefreshNotice read={detail} />
             </div>
           </div>
-          <div className="buddy-hero-actions">
-            {workspace && activeTab !== 'conversations' && (
-              <button className="buddy-start-button" type="button" onClick={() => talk(workspace)}>
-                Start conversation
-              </button>
-            )}
-          </div>
+          <BuddyPageActions buddy={buddy} talk={talk} openConversation={openConversation} />
         </div>
-        <BuddySectionNav buddyId={employee.buddy.id} activeTab={activeTab} />
+        <BuddySectionNav buddyId={buddy.id} activeTab={tab} />
       </header>
-
       <main className="buddies-content">
-        {activeTab === 'mailbox' && (
-          <BuddyMessages
-            key={employee.buddy.id}
-            buddyId={employee.buddy.id}
-            workspaceId={workspace?.id}
-            buddyNames={Object.fromEntries(
-              [
-                employee.buddy,
-                ...employee.directReports,
-                ...(employee.manager ? [employee.manager] : []),
-              ].map((member) => [member.id, member.name])
-            )}
-            messages={employee.messages}
-            availableConversationIds={availableConversationIds}
-            onReply={async (messageId, reply) => {
-              await api(`/api/buddies/messages/${encodeURIComponent(messageId)}/reply`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(reply),
-              });
-              await detail.refetch();
-            }}
-          />
-        )}
-        {activeTab === 'work' && employee.directReports.length > 0 && workspace && (
-          <details className="buddy-lead-tools">
-            <summary>Send work or request a review</summary>
-            <form
-              className="buddy-form"
-              onSubmit={(event) => {
-                event.preventDefault();
-                const form = event.currentTarget;
-                const data = new FormData(form);
-                setBusy('send');
-                void api(`/api/buddies/${encodeURIComponent(employee.buddy.id)}/messages`, {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json' },
-                  body: JSON.stringify({
-                    to: data.get('reportId'),
-                    workspaceId: workspace.id,
-                    purpose: data.get('purpose'),
-                    body: data.get('body'),
-                    evidence: String(data.get('evidence') ?? '')
-                      .split('\n')
-                      .map((line) => line.trim())
-                      .filter(Boolean),
-                  }),
-                })
-                  .then(async () => {
-                    form.reset();
-                    await detail.refetch();
-                  })
-                  .catch((cause: unknown) =>
-                    setError(cause instanceof Error ? cause.message : String(cause))
-                  )
-                  .finally(() => setBusy(null));
-              }}
-            >
-              <select name="reportId" aria-label="Direct report">
-                {employee.directReports.map(
-                  (report) =>
-                    report.status === 'active' && (
-                      <option value={report.id} key={report.id}>
-                        {report.name} · {report.role}
-                      </option>
-                    )
-                )}
-              </select>
-              <input
-                name="purpose"
-                required
-                aria-label="Purpose"
-                placeholder="Purpose, such as review or implementation"
-              />
-              <textarea
-                name="body"
-                required
-                aria-label="Request"
-                placeholder="Outcome, context, and expected evidence"
-              />
-              <textarea
-                name="evidence"
-                aria-label="Evidence"
-                placeholder="Supporting references, one per line"
-              />
-              <button type="submit" disabled={busy !== null}>
-                Send message
-              </button>
-            </form>
-          </details>
-        )}
-
-        {activeTab === 'work' && (
-          <section className="buddy-section">
-            <div className="buddy-toolbar">
-              <label>
-                Workspace
-                <select
-                  value={workspace?.id ?? ''}
-                  onChange={(event) => setSelectedWorkspaceId(event.target.value)}
-                >
-                  {employee.workspaces.map((item) => (
-                    <option key={item.id} value={item.id}>
-                      {item.name}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              {workspace && <span>{compactPath(workspace.root_path)}</span>}
-            </div>
-
-            <div className="buddy-current-summary">
-              <div>
-                <span>Current sprint</span>
-                <strong>
-                  {workspaceProjects.find((project) => project.sprint_name)?.sprint_name ??
-                    'No active sprint'}
-                </strong>
-              </div>
-              <div>
-                <span>Primary next action</span>
-                <strong>
-                  {primaryProject?.next_action ?? 'Choose a next action in conversation'}
-                </strong>
-              </div>
-              <div>
-                <span>Last run</span>
-                <strong>
-                  {latestWorkspaceConversation?.last_active_at
-                    ? new Date(latestWorkspaceConversation.last_active_at).toLocaleString()
-                    : 'No run recorded'}
-                </strong>
-              </div>
-            </div>
-
-            <div className="buddy-section-heading">
-              <h2>Current tasks</h2>
-              <span>{workGroups.current.length} open</span>
-            </div>
-            <div className="buddy-work-list">{workGroups.current.map(renderWorkProject)}</div>
-            {workGroups.completed.length > 0 && (
-              <details className="buddy-work-history">
-                <summary>Completed & cancelled · {workGroups.completed.length}</summary>
-                <div className="buddy-work-list">{workGroups.completed.map(renderWorkProject)}</div>
-              </details>
-            )}
-
-            {legacyWork.length > 0 && (
-              <details className="buddy-legacy">
-                <summary>Import provenance ({legacyWork.length})</summary>
-                {legacyWork.map((item) => (
-                  <div key={item.id}>
-                    <strong>{item.title}</strong>
-                    <span>
-                      {TASK_STATUS[item.status].label} · {item.next_action ?? 'No next action'}
-                    </span>
-                  </div>
-                ))}
-              </details>
-            )}
-          </section>
-        )}
-
-        {activeTab === 'conversations' && (
-          <section className="buddy-section">
-            <div className="buddy-section-heading">
-              <div>
-                <h2>Conversations</h2>
-              </div>
-              <div className="buddy-conversation-controls">
-                {reviewConversationCount > 0 && (
-                  <button
-                    type="button"
-                    className={showReviewConversations ? 'active' : ''}
-                    aria-pressed={showReviewConversations}
-                    onClick={() => setShowReviewConversations((current) => !current)}
-                  >
-                    {showReviewConversations ? 'Hide' : 'Include'} reviews (
-                    {reviewConversationCount})
-                  </button>
-                )}
-                {workspace && (
-                  <button type="button" onClick={() => talk(workspace)}>
-                    Start conversation
-                  </button>
-                )}
-              </div>
-            </div>
-            <BuddyConversationList
-              links={employee.conversations}
-              showReviewConversations={showReviewConversations}
-            />
-          </section>
-        )}
-
-        {activeTab === 'background' && (
-          <BuddyBackgroundTasks buddyId={employee.buddy.id} workspaces={employee.workspaces} />
-        )}
-
-        {activeTab === 'memory' && (
-          <BuddyMemoryWorkspace
-            key={`${employee.buddy.id}:${workspace?.id}`}
-            buddy={employee.buddy}
-            workspaceId={workspace?.id ?? ''}
-            variant="desktop"
-          />
-        )}
-
-        {activeTab === 'team' && workspace && (
-          <BuddyTeamExecution
-            key={`${employee.buddy.id}:${workspace.id}`}
-            buddyId={employee.buddy.id}
-            workspaceId={workspace.id}
-            availableConversationIds={availableConversationIds}
-          />
-        )}
-        {activeTab === 'settings' && (
-          <>
-            <BuddyExecutionProfile
-              key={`${employee.buddy.id}:${employee.buddy.provider}:${employee.buddy.model}:${employee.buddy.reasoning_effort}`}
-              buddy={employee.buddy}
-              busy={busy !== null}
-              onSave={(profile) =>
-                mutate('profile', () =>
-                  api('/api/buddies/resources/update_profile', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                      workspaceId: workspace?.id,
-                      targetBuddyId: employee.buddy.id,
-                      baseRevision: employee.buddy.profile_revision,
-                      key: newId(),
-                      reason: 'Owner edited execution settings',
-                      changes: profile,
-                    }),
-                  })
-                )
-              }
-            />
-            <BuddyCoordination
-              key={employee.buddy.id}
-              buddyId={employee.buddy.id}
-              availableConversationIds={availableConversationIds}
-            />
-            <BuddySettings buddyId={employee.buddy.id} name={employee.buddy.name} />
-          </>
-        )}
-
-        {activeTab === 'automations' && (
-          <>
-            {(automationsFetch.kind === 'failed' || automationsFetch.kind === 'stale') && (
-              <div className="buddies-error" role="alert">
-                Automations are unavailable: {automationsFetch.error.message}
-              </div>
-            )}
-            <BuddyAutomationsTab
-              automations={automations}
-              approvals={employee.approvals ?? []}
-              busy={busy !== null}
-              mutate={mutate}
-              availableConversationIds={availableConversationIds}
-              automationConversations={automationConversations}
-            />
-          </>
-        )}
+        <BuddyTabContent
+          tab={tab}
+          page={{
+            detail: detail.data,
+            overview: overview.data,
+            workspace,
+            talk,
+            refresh: detail.refetch,
+          }}
+        />
       </main>
-      {error && (
-        <div className="buddies-toast" role="alert">
-          {error}
-        </div>
-      )}
     </div>
   );
+}
+
+/** `/buddies` is the directory; `/buddies/:buddyId/:tab` one Buddy's page. */
+export function BuddiesDashboard() {
+  const { buddyId } = useParams();
+  return buddyId ? <BuddyPage key={buddyId} buddyId={buddyId} /> : <Directory />;
 }

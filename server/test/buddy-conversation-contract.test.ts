@@ -9,6 +9,7 @@ import { buildFirstTurnCliContent } from '../src/buddies/turn-policy';
 import { type ConversationOptions, createConversationRuntime } from '../src/conversations/runtime';
 import { resolveConfigAgainstProviderCatalog } from '../src/providers/catalog-service';
 import { registerConversationWebSocket } from '../src/transport/conversation-websocket';
+import { fakeBuddyPort } from './fixtures/buddy-port';
 
 const buddyContext: BuddyContext = {
   buddyId: 'buddy-1',
@@ -42,8 +43,7 @@ function runtimeFixture() {
     clearLocalCompletionSuppression: () => undefined,
     markLocalCompletionSuppression: () => undefined,
     persistCurrentSession: async () => undefined,
-    updateBuddyStatus: () => undefined,
-    settleBuddyDelegation: () => undefined,
+    buddies: fakeBuddyPort(),
     getConversation: () => undefined,
     readLatestOompaRuntime: async () => ({
       available: false,

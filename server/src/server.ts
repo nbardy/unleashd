@@ -1,12 +1,6 @@
 import http from 'node:http';
 import path from 'node:path';
 import type { Provider as ProviderName } from '@unleashd/shared';
-import { resolveSessionTranscript } from './adapters/registry';
-import { resolveBuddyAssignmentConfig } from './buddies/assignment-config';
-import { chatRunAdmission } from './buddies/chat-run-admission';
-import { type CoordinationStore, coordinationStore } from './buddies/coordination-store';
-import { BuddyOperationInputSchemas } from './buddies/operations';
-import { BuddyRunExecutor } from './buddies/run-executor';
 
 import { executeCommand } from '@nbardy/agent-cli';
 import compression from 'compression';
@@ -23,6 +17,8 @@ import { authorizeUpgrade } from './auth/gate';
 import { describePolicy, resolveAuthPolicy } from './auth/policy';
 import { setIgnorePatterns } from './config';
 import {
+  BUDDY_BACKGROUND_TURN_MS,
+  BUDDY_RUNNER_BACKSTOP_MS,
   EXTERNAL_GRACE_MS,
   FILE_POLL_INTERVAL_MS,
   HOT_RELOAD_FORCE_EXIT_GRACE_MS,
@@ -30,6 +26,7 @@ import {
   PALETTE_GENERATION_TIMEOUT_MS,
   SHUTDOWN_FLUSH_GRACE_MS,
   SWARM_CONTEXT_COMMAND_TIMEOUT_MS,
+  TURN_MAX_RUNTIME_MS,
 } from './constants/timeouts';
 import {
   type BuddyCreationService,
@@ -77,27 +74,24 @@ import { registerConversationWebSocket } from './transport/conversation-websocke
 import { WS_LIVENESS_INTERVAL_MS, superviseLiveness } from './transport/websocket';
 
 import { auditLocalAgents } from './audit.js';
+import { createBriefings } from './buddies/briefing';
 import { type StableConversationPorts, slotOf } from './buddies/buddy-conversation-slots';
-import { createBuddyDirect } from './buddies/buddy-direct';
-import { BuddyBuilderService, type BuddyBuilderStore } from './buddies/builder';
-import { onBuddiesChanged, registerBuddyMutationFeed } from './buddies/change-feed';
-import { onChannelPost } from './buddies/channel-post-feed';
 import { createCliReplyGate } from './buddies/channel-reply-gate';
-import { createChannelResponder } from './buddies/channel-responder';
-import { registerChannelRoutes } from './buddies/channel-routes';
-import { ownerChannelReads } from './buddies/owner-channel-reads';
-import { BuddyControlServer } from './buddies/control-server';
+import { createChannels } from './buddies/channels';
 import {
-  createBuddyDispatchService,
-  createReturnConversationPreparer,
-} from './buddies/dispatch-service';
-import { createBuddiesIntegration } from './buddies/integration';
-import { startMcpBundleWatch } from './buddies/mcp-bundle';
-import { BuddyMemoryReviewer } from './buddies/memory-review';
-import { createMemoryReviewRunner } from './buddies/memory-review-runner';
-import { ownerWorkspaceIds } from './buddies/owner-team-configuration';
+  OWNER,
+  archivedBuddyIds,
+  buddiesDatabasePath,
+  lateBoundCore,
+  openBuddiesCore,
+} from './buddies/core';
+import { createBuddyEvents } from './buddies/events';
+import { createGrants } from './buddies/grants';
+import { type McpEndpoint, startMcpEndpoint } from './buddies/mcp';
+import { createMemoryReviewer } from './buddies/memory-review';
+import { createBuddyPolicyPort } from './buddies/policy-port';
 import { registerBuddyRoutes } from './buddies/routes';
-import { BuddyScheduler, nextAutomationRunAt } from './buddies/scheduler';
+import { type RunnerHost, createRunner } from './buddies/runner';
 
 let startupAuditResults: ReturnType<typeof auditLocalAgents> = [];
 
@@ -182,22 +176,20 @@ const errorJournal = new ErrorJournal({
   serverBootId: turnAttemptJournal.serverBootId,
 });
 const turnAttemptObserver = createJournalTurnAttemptObserver(turnAttemptJournal);
-let buddyScheduler: BuddyScheduler | null = null;
 let shutdownController: ShutdownController | null = null;
 const beginMutation = (options?: { allowDuringStartup?: boolean }) =>
   shutdownController?.beginMutation(options) ?? null;
 const pauseBuddyScheduler = () => {
-  buddyScheduler?.pause();
+  buddyRunner.pause();
   memoryReviewer.pause();
 };
 const resumeBuddyScheduler = () => {
-  buddyScheduler?.start();
+  buddyRunner.resume();
   memoryReviewer.start();
 };
 const stopBuddyScheduler = () => {
   memoryReviewer.stop();
-  buddyScheduler?.stop();
-  buddyScheduler = null;
+  buddyRunner.stop();
 };
 
 const applicationContext = createConversationApplicationContext<ConversationRuntime>({
@@ -205,17 +197,40 @@ const applicationContext = createConversationApplicationContext<ConversationRunt
   completionSuppressionMs: LOCAL_COMPLETION_SUPPRESS_MS,
 });
 const conversations = applicationContext.registry;
-const {
-  getStore: getBuddiesStore,
-  sendError: sendBuddiesError,
-  resolveConversation: resolveBuddyConversation,
-  readCurrentConversation: readCurrentBuddyContext,
-  updateStatus: updateBuddyConversationLink,
-  settleDelegation: settleBuddyDelegation,
-  createLink: createBuddyConversationLink,
-} = createBuddiesIntegration({
-  getConversation: (id) => conversations.get(id),
-});
+
+// ---- Buddies: the crate (the new-schema DB) and the modules over it -------------------------
+// The DB is never the v33 ~/.buddies/buddies.sqlite; a missing file fails every Buddy call with
+// the import command (core.ts), while ordinary chats keep working.
+const buddiesReady = openBuddiesCore(buddiesDatabasePath());
+buddiesReady.catch((error) => console.error('[buddies] Buddies are unavailable:', error.message));
+const buddiesCore = lateBoundCore(buddiesReady);
+const buddyEvents = createBuddyEvents();
+// A grant lives as long as its run's lease at most; settle and turn end revoke it sooner.
+const buddyGrants = createGrants({ ttlMs: TURN_MAX_RUNTIME_MS });
+const buddyBriefings = createBriefings(buddiesCore);
+let buddyMcp: McpEndpoint | null = null;
+const buddyMcpSpec = (grant: Parameters<McpEndpoint['spec']>[0]) => {
+  if (!buddyMcp) throw new Error('The Buddy MCP endpoint is not started');
+  return buddyMcp.spec(grant);
+};
+const resolveBuddyConversation = (context: Parameters<typeof buddyBriefings.warm>[0]) =>
+  buddyBriefings.warm(context);
+// Chats must load without Buddies: when the Buddies DB is missing, hide no conversation (the
+// error is logged each time, so it reaches the error journal) instead of failing `init`.
+const archivedBuddyIdsOrNone = () =>
+  archivedBuddyIds(buddiesCore).catch((error: Error) => {
+    console.error('[buddies] archived-Buddy filter unavailable:', error.message);
+    return new Set<string>();
+  });
+const createBuddyConversationLink = async (conversation: ConversationRuntime) => {
+  const context = conversation.buddyContext;
+  if (!context) return;
+  await buddiesCore.bindConversation(OWNER, {
+    id: conversation.id,
+    buddyId: context.buddyId,
+    taskId: context.buddyProjectId ?? undefined,
+  });
+};
 
 // One hydration barrier governs both the authoritative initial snapshot and
 // command admission. Disk state must be loaded before either can proceed.
@@ -262,71 +277,66 @@ const buddyCreationService: BuddyCreationService = createBuddyCreationService({
   createConversation: (options) => new Conversation(options),
   registerConversation: applicationContext.registry.set,
   createConversationLink: createBuddyConversationLink,
-  updateConversationStatus: updateBuddyConversationLink,
+  updateConversationStatus: () => undefined,
   broadcast: applicationContext.broadcast,
 });
 
-const buddyDispatchService = createBuddyDispatchService({
-  getStore: getBuddiesStore,
-  resolveAssignmentConfig: (config, conversationId) =>
-    resolveBuddyAssignmentConfig(conversationConfigService, config, conversationId),
-  prepareReturnConversation: createReturnConversationPreparer({
-    getConversation: (id) => conversations.get(id),
-    configService: conversationConfigService,
-    createConversation: buddyCreationService.createServerBuddyConversation,
-  }),
-  launchConfig: (context, sourceId) => {
-    const source = conversations.get(sourceId);
-    return source?.buddyContext?.buddyId === context.buddyId &&
-      source.buddyContext.workspaceId === context.workspaceId
-      ? source.config
-      : undefined;
+// One background Buddy turn = one conversation runtime turn (runCoordinationMessage).
+const buddyRunnerHost: RunnerHost = {
+  placement: (id) => {
+    const conversation = conversations.get(id);
+    if (!conversation) return 'absent';
+    return conversation.placement === 'background' ? 'background' : 'foreground';
   },
-  createConversation: buddyCreationService.createServerBuddyConversation,
-  dispatchInitialMessage: (conversation, options) =>
-    buddyCreationService.dispatchInitialMessageIfPending(
-      conversation as ConversationRuntime,
-      options
-    ),
-  abandonConversation: (conversation) => {
-    const runtime = conversation as ConversationRuntime;
-    runtime.stop();
-    updateBuddyConversationLink(runtime, 'cancelled');
-  },
-});
-const buddyControlServer = new BuddyControlServer({
-  getStore: getBuddiesStore,
-  isConversationActive: (conversationId) => conversations.get(conversationId)?.isRunning === true,
-  dispatchMessage: buddyDispatchService.send,
-});
-
-let coordinationRuntimeStore: CoordinationStore | null = null;
-const memoryReviewer = new BuddyMemoryReviewer({
-  directory: path.join(APP_DATA_DIR, 'memory-reviews'),
-  getStore: getBuddiesStore,
-  run: createMemoryReviewRunner(buddyControlServer),
-  logger: console,
-});
-const Conversation = createConversationRuntime({
-  readCurrentBuddyContext,
-  reviewCompletedBuddyTurn: (turn) => memoryReviewer.enqueue(turn),
-  ...chatRunAdmission(
-    () => {
-      if (!coordinationRuntimeStore) throw new Error('Buddy execution store is not ready');
-      return coordinationRuntimeStore;
-    },
-    () => Object.keys(BuddyOperationInputSchemas)
-  ),
-  finishBuddyChatRun: (id, token, status, detail) => {
-    if (!coordinationRuntimeStore) throw new Error('Buddy execution store is not ready');
-    const run = coordinationRuntimeStore.getBuddyRun(id);
-    coordinationRuntimeStore.finishBuddyRun(id, {
-      claimToken: token,
-      status: run?.status === 'cancel_requested' ? 'cancelled' : status,
-      outcome: status === 'complete' ? detail : undefined,
-      error: status === 'failed' ? detail : undefined,
+  openBackground: async ({ conversationId, context, commandId }) => {
+    await buddyCreationService.createServerBuddyConversation({
+      context,
+      conversationId,
+      commandId,
+      deferInitialMessage: true,
+      placement: 'background',
     });
   },
+  runTurn: async ({ conversationId, context, prompt, leaseToken, deadlineMs }) => {
+    const registered = conversations.get(conversationId);
+    if (!registered) throw new Error(`Run conversation ${conversationId} is not registered`);
+    const conversation = await buddyCreationService.ensureConversationReady(registered);
+    // Automatic expiry is max_runtime_timeout, never stop()/user_stop (AGENTS.md).
+    const timer = setTimeout(() => conversation.expireCoordinationRun(), deadlineMs);
+    try {
+      return await conversation.runCoordinationMessage(prompt, context, leaseToken);
+    } finally {
+      clearTimeout(timer);
+    }
+  },
+  stop: (id) => conversations.get(id)?.stop(),
+};
+const buddyRunner = createRunner({
+  core: buddiesCore,
+  host: buddyRunnerHost,
+  grants: buddyGrants,
+  events: buddyEvents,
+  briefings: buddyBriefings,
+  // Explicit: a foreground chat's deadline is its lease (runner.ts, 2026-09-10 incident).
+  leaseMs: TURN_MAX_RUNTIME_MS,
+  backgroundTurnMs: BUDDY_BACKGROUND_TURN_MS,
+  backstopMs: BUDDY_RUNNER_BACKSTOP_MS,
+});
+const memoryReviewer = createMemoryReviewer({
+  core: buddiesCore,
+  grants: buddyGrants,
+  spec: buddyMcpSpec,
+});
+const buddyPolicyPort = createBuddyPolicyPort({
+  runner: buddyRunner,
+  grants: buddyGrants,
+  briefings: buddyBriefings,
+  reviewer: memoryReviewer,
+  spec: buddyMcpSpec,
+});
+const Conversation = createConversationRuntime({
+  // BuddyTurnPolicy (buddies/turn-policy.ts) reaches the Buddy module only through this port.
+  buddies: buddyPolicyPort,
   broadcast: applicationContext.broadcast,
   registerSessionAlias: applicationContext.sessions.registerAlias,
   unregisterSessionAlias: applicationContext.sessions.unregisterAlias,
@@ -338,42 +348,9 @@ const Conversation = createConversationRuntime({
   persistSessionUsage: async (conversationId, sessionId, usage) => {
     await conversationConfigStore.setCurrentSessionUsage(conversationId, sessionId, usage);
   },
-  updateBuddyStatus: updateBuddyConversationLink,
-  settleBuddyDelegation,
   getConversation: (id) => conversations.get(id),
   readLatestOompaRuntime: readLatestSwarmRuntime,
   createSessionId: uuidv4,
-  issueBuddyControlCapability: (context, conversationId, automationClaimToken) =>
-    buddyControlServer.issue(context, conversationId, automationClaimToken),
-  revokeBuddyControlCapability: (conversationId) => buddyControlServer.revoke(conversationId),
-  issueOwnerControlCapability: (input, conversationId) => {
-    if (!coordinationRuntimeStore) throw new Error('Buddy execution store is not ready');
-    return buddyControlServer.issueOwner(
-      input,
-      conversationId,
-      ownerWorkspaceIds(coordinationRuntimeStore),
-      () => ownerWorkspaceIds(coordinationRuntimeStore!),
-      conversations.get(conversationId)?.kind.t === 'builder'
-    );
-  },
-  recordBuddyTurnOrigin: (conversationId, input, context, contentHash) => {
-    if (!coordinationRuntimeStore) throw new Error('Buddy execution store is not ready');
-    coordinationRuntimeStore.recordAuditEvent({
-      buddy: context.buddyId,
-      workspace: context.workspaceId,
-      operation: 'buddy.turn_input',
-      payload: {
-        conversation_id: conversationId,
-        input_id: input.inputId,
-        origin: input.origin,
-        content_hash: contentHash,
-      },
-    });
-  },
-  requestAutomationCancellation: async (runId) => {
-    if (!buddyScheduler) throw new Error('Buddy automation scheduler is not ready');
-    return buddyScheduler.cancel(runId);
-  },
   turnAttempts: turnAttemptObserver,
 });
 
@@ -395,22 +372,14 @@ registerConversationWebSocket(wss, {
   isInitialLoadComplete: () => shutdownController?.state === 'idle',
   beginCommand: () => beginMutation({ allowDuringStartup: true }),
   configService: conversationConfigService,
-  isBuddyArchived: async (buddyId) =>
-    (await getBuddiesStore()).getBuddy(buddyId)?.status === 'archived',
-  getArchivedBuddyIds: async () =>
-    (await getBuddiesStore())
-      .listBuddies()
-      .filter((buddy) => buddy.status === 'archived')
-      .map((buddy) => buddy.id),
+  isBuddyArchived: async (buddyId) => (await buddiesCore.getBuddy(buddyId)).status === 'archived',
+  getArchivedBuddyIds: async () => [...(await archivedBuddyIdsOrNone())],
   getDefaultWorkingDirectory: () => resolveDefaultWorkingDirectory(),
   resolveWorkingDirectory: resolveWorkingDirectoryInput,
   resolveBuddyConversation,
   createConversation: (options) => new Conversation(options),
   createConversationLink: createBuddyConversationLink,
-  cancelBuddyConversation: (conversation) => {
-    updateBuddyConversationLink(conversation, 'cancelled');
-    void settleBuddyDelegation(conversation, 'cancelled');
-  },
+  cancelBuddyConversation: () => undefined,
   dispatchInitialMessage: buddyCreationService.dispatchInitialMessageIfPending,
   broadcast: applicationContext.broadcast,
   broadcastExcept: applicationContext.broadcastExcept,
@@ -476,62 +445,19 @@ registerErrorDiagnosticsRoutes(app, errorJournal);
 
 persistedServerState.registerRoutes(app);
 
-// Buddy change feed → one debounced WS event per burst of writes. 250ms is
-// long enough to fold a multi-step owner action (route + operations) into a
-// single client refresh and short enough to read as live.
+// Buddy change bus → one debounced `buddies_changed` per burst of writes (250 ms folds a
+// multi-step action into one client refresh). Every write runs in this process now (B2).
 let buddiesChangedTimer: NodeJS.Timeout | null = null;
-onBuddiesChanged(() => {
+const buddiesChanged = () => {
   if (buddiesChangedTimer) return;
   buddiesChangedTimer = setTimeout(() => {
     buddiesChangedTimer = null;
     applicationContext.broadcast({ type: 'buddies_changed' });
   }, 250);
   buddiesChangedTimer.unref();
-});
-registerBuddyMutationFeed(app);
+};
 
-registerBuddyRoutes(app, {
-  onBuddyArchived: async (buddyId) => {
-    applicationContext.broadcast({ type: 'buddy_archived', buddyId });
-    for (const conversation of conversations.values()) {
-      if (conversation.buddyContext?.buddyId === buddyId) {
-        conversation.clearQueue();
-        conversation.stop();
-      }
-    }
-  },
-  getStore: getBuddiesStore,
-  dispatchMessage: buddyDispatchService.send,
-  getScheduler: () => buddyScheduler,
-  createBuilderConversation: ({ commandId, conversationId }) =>
-    buddyCreationService.createBuddyBuilderConversation({
-      commandId,
-      conversationId,
-      // The Builder has no buddy workspace yet — it is the thing that creates
-      // one — so it gets the default workspace, not the server's own cwd.
-      workingDirectory: resolveDefaultWorkingDirectory(),
-    }),
-  getBuilderResult: async (conversationId) =>
-    new BuddyBuilderService(
-      (await getBuddiesStore()) as unknown as BuddyBuilderStore,
-      conversationId
-    ).getResult(),
-  getBuilderResults: async (conversationId) =>
-    new BuddyBuilderService(
-      (await getBuddiesStore()) as unknown as BuddyBuilderStore,
-      conversationId
-    ).getResults(),
-  sendError: sendBuddiesError,
-  getNextAutomationRunAt: nextAutomationRunAt,
-  createId: uuidv4,
-  // A missing record means "never persisted", not "deleted" — only an explicit
-  // tombstone hides a link row.
-  isConversationDeleted: async (conversationId) =>
-    (await conversationConfigService.getRecord(conversationId))?.status === 'deleted',
-});
-
-// A Buddy's stable conversations (DM, thread seats): owner-origin creation, so
-// they get owner-thread knowledge scope and owner-control MCP, like talk().
+// A Buddy's stable conversations (DM, thread seats): owner-origin creation.
 const buddyConversations: StableConversationPorts = {
   slot: async (conversationId) => slotOf(await conversationConfigService.getRecord(conversationId)),
   getConversation: (id) => applicationContext.registry.get(id),
@@ -539,17 +465,18 @@ const buddyConversations: StableConversationPorts = {
   createConversation: (input) => buddyCreationService.createServerBuddyConversation(input),
 };
 
-// One channel's posts or responders changed: clients refresh only that
-// channel's views, which otherwise poll just as a backstop.
-const channelChanged = (listId: string) =>
-  applicationContext.broadcast({ type: 'channel_changed', listId });
-const channelResponder = createChannelResponder({
-  getStore: getBuddiesStore,
+// One channel's posts or responders changed: clients refresh only that channel's views.
+// (The wire field is still `listId`; renaming it is a client+server change for T14.)
+const channelChanged = (channelId: string) =>
+  applicationContext.broadcast({ type: 'channel_changed', listId: channelId });
+const buddyChannels = createChannels({
+  core: buddiesCore,
+  events: buddyEvents,
   channelChanged,
   conversations: buddyConversations,
   uploadsRoot: () => UPLOADS_DIR,
-  // Resolved by the same authority as conversations, so the gate runs exactly
-  // the harness/model the Buddy's reply would.
+  // Resolved by the same authority as conversations, so the gate runs exactly the
+  // harness/model the Buddy's reply would.
   gate: createCliReplyGate({
     resolveExecution: async (config) => {
       const resolution = await conversationConfigService.resolve(config);
@@ -558,31 +485,44 @@ const channelResponder = createChannelResponder({
     },
   }),
 });
-onChannelPost((post) => {
-  channelChanged(post.listId);
-  void channelResponder.considerThreadPost(post).catch((error) => {
-    console.warn(`[channel-responder] follow-up gating failed for post ${post.id}:`, error);
-  });
+buddyEvents.on((event) => {
+  if (event.kind === 'changed') buddiesChanged();
 });
 
-registerChannelRoutes(app, {
-  getStore: getBuddiesStore,
-  uploadsRoot: UPLOADS_DIR,
-  ownerReads: ownerChannelReads(path.join(appDataDirectory(), 'owner-channel-reads.json')),
+registerBuddyRoutes(app, {
+  core: buddiesCore,
+  events: buddyEvents,
+  runner: buddyRunner,
+  channels: buddyChannels,
+  uploadsRoot: () => UPLOADS_DIR,
   channelChanged,
-  sendError: sendBuddiesError,
-  responder: channelResponder,
-  direct: createBuddyDirect({ getStore: getBuddiesStore, conversations: buddyConversations }),
+  onBuddyArchived: (buddyId) => {
+    applicationContext.broadcast({ type: 'buddy_archived', buddyId });
+    for (const conversation of conversations.values()) {
+      if (conversation.kind.kind === 'buddy' && conversation.kind.buddyId === buddyId) {
+        conversation.clearQueue();
+        conversation.stop();
+      }
+    }
+  },
+  createBuilderConversation: async () => {
+    const conversation = await buddyCreationService.createBuddyBuilderConversation({
+      commandId: `buddy-builder-${uuidv4()}`,
+      // The Builder has no buddy workspace yet — it is the thing that creates one.
+      workingDirectory: resolveDefaultWorkingDirectory(),
+    });
+    return { conversationId: conversation.id };
+  },
 });
 
 registerSearchRoutes(
   app,
   () => conversations.values(),
   async () => {
-    const store = await getBuddiesStore();
+    const archived = await archivedBuddyIdsOrNone();
     return (conversationId) => {
       const buddy = conversations.get(conversationId)?.buddyContext;
-      return !buddy || store.getBuddy(buddy.buddyId)?.status !== 'archived';
+      return !buddy || !archived.has(buddy.buddyId);
     };
   }
 );
@@ -627,18 +567,6 @@ const paletteService = createPaletteService({
 paletteService.registerRoutes(app);
 
 registerUsageRoutes(app, Object.keys(providers) as ProviderName[]);
-app.get('/api/buddies/:buddyId/memory-reviews', async (req, res) => {
-  try {
-    const store = await getBuddiesStore();
-    if (!store.getBuddy(req.params.buddyId)) {
-      res.status(404).json({ error: 'Buddy not found' });
-      return;
-    }
-    res.json(memoryReviewer.list(req.params.buddyId));
-  } catch (error) {
-    sendBuddiesError(res, error, 500);
-  }
-});
 registerStaticClient(app, path.join(__dirname, '../../client/dist'));
 
 const captureUnhandledHttpError: ErrorRequestHandler = (error, request, response, next) => {
@@ -663,14 +591,13 @@ shutdownController = registerShutdownHandlers(
   },
   {
     conversations: () => conversations.values(),
-    activeSchedulerRuns: () =>
-      (buddyScheduler?.health().activeRunIds.length ?? 0) + memoryReviewer.activeCount(),
+    activeSchedulerRuns: () => memoryReviewer.activeCount(),
     pauseScheduler: pauseBuddyScheduler,
     resumeScheduler: resumeBuddyScheduler,
     stopScheduler: stopBuddyScheduler,
     flushState: async () => {
       await Promise.all([turnAttemptJournal.flush(), errorJournal.flush()]);
-      await buddyControlServer.close();
+      await buddyMcp?.close();
     },
     broadcastMessage: (conversationId, content) => {
       applicationContext.broadcast({ type: 'message', conversationId, role: 'system', content });
@@ -731,14 +658,13 @@ void runServerStartup(
       await errorJournal.initialize();
       installConsoleErrorCapture(errorJournal);
       startEventLoopStallMonitor(errorJournal);
-      // A dev backend has no compiled MCP helpers; bundle them once and keep
-      // them fresh so each Buddy turn does not pay tsx startup (mcp-bundle.ts).
-      if (process.env.NODE_ENV === 'development') {
-        void startMcpBundleWatch().catch((error) => {
-          console.error('[buddies-mcp] Could not start the MCP helper bundler:', error);
-        });
-      }
-      await buddyControlServer.start();
+      // The one Buddy tool endpoint, on its own loopback listener (never the gated app).
+      buddyMcp = await startMcpEndpoint({
+        core: buddiesCore,
+        events: buddyEvents,
+        grants: buddyGrants,
+        uploadsRoot: () => UPLOADS_DIR,
+      });
       startupAuditResults = auditLocalAgents();
       await normalizedSessionCache.initialize();
       await turnAttemptJournal.initialize();
@@ -752,40 +678,12 @@ void runServerStartup(
     },
     startOptionalScheduler: async () => {
       try {
-        const coordinationPackage = await getBuddiesStore();
-        coordinationRuntimeStore = coordinationStore(coordinationPackage);
-        try {
-          await memoryReviewer.initialize();
-          memoryReviewer.start();
-        } catch (error) {
-          console.warn('[buddies] Memory reviewer unavailable:', error);
-        }
-        buddyScheduler = new BuddyScheduler({
-          store: coordinationPackage,
-          memoryReviewAfterEachTurn: true,
-          pollIntervalMs: 1000,
-          coordination: new BuddyRunExecutor({
-            cancelLegacyRun: (id) => buddyScheduler?.cancel(id) ?? Promise.resolve(),
-            store: coordinationPackage,
-            getConversation: (id) => conversations.get(id),
-            getConversationRecord: (id) => conversationConfigService.getRecord(id),
-            getTranscriptReference: async (id) => {
-              const runtime = conversations.get(id);
-              const record = await conversationConfigService.getRecord(id);
-              const binding =
-                record?.currentSession ??
-                (runtime ? { provider: runtime.provider, sessionId: runtime.sessionId } : null);
-              return binding ? resolveSessionTranscript(binding.provider, binding.sessionId) : null;
-            },
-            createConversation: buddyCreationService.createServerBuddyConversation,
-            ensureConversationReady: buddyCreationService.ensureConversationReady,
-          }),
-          createConversation: buddyCreationService.createAutomationConversation,
-        });
-        buddyScheduler.start();
-        console.log('Buddy scheduler started');
+        await buddiesReady;
+        await buddyRunner.start();
+        memoryReviewer.start();
+        console.log('Buddy runner started');
       } catch (error) {
-        console.warn('[buddies] Scheduler unavailable:', error);
+        console.warn('[buddies] Runner unavailable:', error);
       }
     },
     pauseOptionalScheduler: pauseBuddyScheduler,

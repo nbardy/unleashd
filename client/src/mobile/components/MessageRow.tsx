@@ -4,10 +4,8 @@ import { Fragment, memo, useState } from 'react';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
 import { InlineBuddyBuilderResult } from '../../components/buddies/BuddyBuilderResultCard';
-import { InlineBuddyTeamConfiguration } from '../../components/buddies/BuddyTeamConfiguration';
 import { BuddyWorkerThreadBadge } from '../../components/buddies/BuddyWorkerThreadBadge';
 import { COPY_LABEL, useCopyAction } from '../../hooks/useCopyAction';
-import { parseBuddyReviewRequest, parseBuddyReviewResult } from '../../utils/buddy-review-message';
 import type { AssistantResponse } from '../../utils/chat-message-groups';
 import { messageTranscriptContent } from '../../utils/conversation-transcript';
 import { useMarkdownPipeline } from '../../utils/lazyMarkdownPlugins';
@@ -19,66 +17,6 @@ import {
 } from '../../utils/markdown-pipeline';
 import { splitStructuredMessageContent } from '../../utils/structured-message-segments';
 import { execInputPreview } from '../../utils/tool-call-preview';
-
-function BuddyReviewRequestCard({ content }: { content: string }) {
-  const parsed = parseBuddyReviewRequest(content);
-  if (!parsed) return null;
-  return (
-    <div
-      style={{
-        border: '1px solid var(--border-subtle, #333)',
-        borderRadius: 'var(--ui-radius)',
-        padding: 12,
-        background: 'var(--bg-raised-1, #1a1a1a)',
-        marginBottom: 8,
-      }}
-    >
-      <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 4 }}>
-        Review request · {parsed.reviewId}
-      </div>
-      <div style={{ fontSize: 12, color: 'var(--text-muted, #999)' }}>
-        Subject: {parsed.subjectBuddyId} · Purpose: {parsed.purpose}
-      </div>
-      {parsed.evidence.length > 0 && (
-        <ul style={{ margin: '8px 0 0', paddingLeft: 16, fontSize: 12 }}>
-          {parsed.evidence.map((e, i) => (
-            <li key={i}>
-              <strong>{e.kind}</strong> {e.reference}: {e.observation}
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
-  );
-}
-
-function BuddyReviewResultCard({ json }: { json: string }) {
-  let parsed: ReturnType<typeof parseBuddyReviewResult> = null;
-  try {
-    parsed = parseBuddyReviewResult(json);
-  } catch {
-    return null;
-  }
-  if (!parsed) return null;
-  const verdictColor =
-    parsed.verdict === 'pass' ? '#22c55e' : parsed.verdict === 'fail' ? '#ef4444' : '#eab308';
-  return (
-    <div
-      style={{
-        border: `1px solid ${verdictColor}`,
-        borderRadius: 'var(--ui-radius)',
-        padding: 12,
-        background: 'var(--bg-raised-1, #1a1a1a)',
-        marginBottom: 8,
-      }}
-    >
-      <div style={{ fontSize: 12, fontWeight: 700, color: verdictColor }}>
-        Review {parsed.verdict} {parsed.score !== null ? `· ${parsed.score}` : ''}
-      </div>
-      <div style={{ fontSize: 12, marginTop: 4, whiteSpace: 'pre-wrap' }}>{parsed.summary}</div>
-    </div>
-  );
-}
 
 /**
  * Mobile has no hover, so the desktop reveal-on-hover affordance has no
@@ -191,17 +129,11 @@ const MessageRowContent = memo(function MessageRowContent({
 }) {
   // Shared lazy loader (utils/lazyMarkdownPlugins) — one loading path with desktop.
   const pipeline = useMarkdownPipeline(MOBILE_MARKDOWN);
-  const isUser = message.role === 'user';
   const segments = splitStructuredMessageContent(message.content);
   const execPreview = execInputPreview(message.toolCall);
 
-  // Detect buddy review request in user messages — rebuild JSX, don't import Chat rendering
-  const reviewRequest = isUser ? parseBuddyReviewRequest(message.content) : null;
-
   return (
     <>
-      {reviewRequest && <BuddyReviewRequestCard content={message.content} />}
-
       <div
         style={{
           fontSize: 14,
@@ -219,21 +151,13 @@ const MessageRowContent = memo(function MessageRowContent({
         ) : (
           segments.map((seg, idx) => {
             if (seg.type === 'text') {
-              // Skip duplicate rendering when the whole message was a review request
-              if (reviewRequest && seg.content === message.content) return null;
               if (!seg.content.trim()) return null;
               return <Fragment key={idx}>{markdown(pipeline, seg.content)}</Fragment>;
-            }
-            if (seg.type === 'buddy_review_result') {
-              return <BuddyReviewResultCard key={idx} json={seg.json} />;
             }
             if (seg.type === 'buddy_builder_result') {
               return <InlineBuddyBuilderResult key={idx} payload={seg.json} />;
             }
-            if (seg.type === 'buddy_worker_thread') return null;
-            if (seg.type === 'buddy_team_configuration') {
-              return <InlineBuddyTeamConfiguration key={idx} payload={seg.json} />;
-            }
+            if (seg.type === 'buddy_worker_thread' || seg.type === 'retired_marker') return null;
             if (seg.type === 'ask_user_question') {
               let question: unknown = null;
               try {

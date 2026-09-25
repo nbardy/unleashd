@@ -59,7 +59,7 @@ conversation applies the effects.
 ## one-write-path
 **Smell:** one mutation method or one table per variant of the same thing.
 **Pattern:** one append/write path for a concept, with read models derived from it.
-**Here:** crate `posts.rs`, where every DM, channel post, reply and task comment is a `post` in a channel.
+**Here:** crate `posts.rs`, where every DM, channel post, reply and task comment is a `post` in a channel; `records/store.rs` `put`, the one write of a conversation record and its session index.
 
 ## idempotency-keys
 **Smell:** ad-hoc dedupe, retry flags, "did we already do this?" queries.
@@ -100,7 +100,7 @@ List payloads carry summary rows; bodies load on demand.
 **Smell:** compatibility shims, permanent flags, migration chains (33 schema versions).
 **Pattern:** a one-time export into a clean shape, with zero-loss verification (counts plus content hashes). Then
 delete the old path entirely.
-**Here:** crate `import.rs` + `verify.rs` (both deleted after the live swap).
+**Here:** crate `import.rs` + `verify.rs` (both deleted after the live swap); `crates/unleashd-ingest/src/records/import.rs` (config JSON directory → records table, deleted after T23b).
 
 ## tokens-and-shells
 **Smell:** per-screen CSS values (45 font sizes, 172 paddings) and a copy of every screen per device.
@@ -114,4 +114,6 @@ delete the old path entirely.
 2. a regression test that fails on the bad pattern itself;
 3. runtime visibility. The event-loop stall monitor records any stall of 100 ms or more, with its cause.
 **Here:** `server/src/observability/event-loop-stall.ts`; the "reconcile tick never scans a table" query-plan test;
-the crate's query-plan guard.
+the crate's query-plan guard. For visual regressions the guard is the screenshot compare loop:
+`pnpm screenshots` before, `pnpm screenshots --baseline <run>` after, which exits non-zero when any screen's
+changed pixels exceed `--threshold` (`tools/lib/screenshot-compare.mjs`; masks in `tools/lib/headless-chrome.mjs`).

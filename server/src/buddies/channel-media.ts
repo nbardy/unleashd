@@ -35,10 +35,10 @@ export type ChannelMediaProblem = {
 
 export type CanonicalizedPostBody = { body: string; problems: ChannelMediaProblem[] };
 
-export function channelMediaDirectory(uploadsRoot: string, listId: string): string {
-  // List ids are list_<uuid>; anything else never becomes a path segment.
-  if (!/^list_[0-9a-f-]+$/i.test(listId)) throw new Error('Invalid mailing list id');
-  return path.join(uploadsRoot, 'channels', listId);
+export function channelMediaDirectory(uploadsRoot: string, channelId: string): string {
+  // Channel ids are <kind>_<id> (list_, dm_, tc_); anything else never becomes a path segment.
+  if (!/^[a-z]+_[0-9a-z_-]+$/i.test(channelId)) throw new Error('Invalid channel id');
+  return path.join(uploadsRoot, 'channels', channelId);
 }
 
 // `![alt](target)` or `![alt](<target with spaces>)`, optional "title".
@@ -90,9 +90,9 @@ function copyIntoChannel(
  */
 export function canonicalizePostMedia(
   body: string,
-  input: { uploadsRoot: string; listId: string }
+  input: { uploadsRoot: string; channelId: string }
 ): CanonicalizedPostBody {
-  const directory = channelMediaDirectory(input.uploadsRoot, input.listId);
+  const directory = channelMediaDirectory(input.uploadsRoot, input.channelId);
   const problems: ChannelMediaProblem[] = [];
   const rewritten = body.replace(
     IMAGE_REFERENCE,
@@ -131,7 +131,7 @@ export class ChannelMediaError extends Error {
 /** Strict form for author-controlled posts: any problem rejects the post. */
 export function requireCanonicalPostMedia(
   body: string,
-  input: { uploadsRoot: string; listId: string }
+  input: { uploadsRoot: string; channelId: string }
 ): string {
   const result = canonicalizePostMedia(body, input);
   if (result.problems.length > 0) throw new ChannelMediaError(result.problems);

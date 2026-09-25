@@ -3,14 +3,15 @@
  *
  * DM and Wake for one Buddy, shared by the desktop channel rail, the desktop
  * sidebar and the mobile channels home. No JSX, no CSS (mobile-safe).
- * Server: server/src/buddies/buddy-direct.ts.
+ * Server: server/src/buddies/channels.ts (openDirect / wake). No body: the
+ * chat lives in the Buddy's home workspace.
  *   DM   — POST /api/buddies/:id/direct → the one ongoing owner chat (history kept)
  *   Wake — POST /api/buddies/:id/wake   → catch-up instruction queued in that chat
  */
 import { useAtomValue } from 'jotai';
 import { useEffect, useState } from 'react';
 import { conversationAtomFamily } from '../../atoms/conversations';
-import { buddyApi } from './api';
+import { buddyAction, errorText } from './api';
 
 export type DirectAction =
   | { kind: 'idle' }
@@ -20,17 +21,12 @@ export type DirectAction =
 // Each wake gets a fresh attempt number so its status view remounts clean.
 export type WakeAttempt = { conversationId: string; attempt: number };
 
-export function useBuddyDirectActions(buddyId: string, workspaceId: string) {
+export function useBuddyDirectActions(buddyId: string) {
   const [action, setAction] = useState<DirectAction>({ kind: 'idle' });
   const [woken, setWoken] = useState<WakeAttempt | null>(null);
   const request = (path: 'direct' | 'wake') =>
-    buddyApi<{ conversationId: string }>(`/api/buddies/${encodeURIComponent(buddyId)}/${path}`, {
-      method: 'POST',
-      headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ workspaceId }),
-    });
-  const fail = (cause: unknown) =>
-    setAction({ kind: 'failed', message: cause instanceof Error ? cause.message : String(cause) });
+    buddyAction<{ conversationId: string }>(`/api/buddies/${encodeURIComponent(buddyId)}/${path}`);
+  const fail = (cause: unknown) => setAction({ kind: 'failed', message: errorText(cause) });
   return {
     action,
     woken,

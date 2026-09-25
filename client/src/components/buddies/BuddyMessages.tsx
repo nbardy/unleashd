@@ -1,670 +1,318 @@
-import type { BuddyListAuthor, BuddyMailingListPost, BuddyMessage } from '@unleashd/shared';
-import { useMemo, useState } from 'react';
-import type { ReactNode } from 'react';
-import { Link } from 'react-router-dom';
+import { useEffect, useState } from 'react';
 import { usePolledFetch } from '../../hooks/usePolledFetch';
-import { newId } from '../../utils/ids';
-import { BuddyTeamConfigurationRequest } from './BuddyTeamConfiguration';
-import { ChannelLoader, OlderPostsButton } from './ChannelLoader';
-import { buddyApi } from './api';
-import {
-  type BuddyMailingListSummary,
-  CHANNEL_BACKSTOP_MS,
-  channelPostFeed,
-  feedPhase,
-  listsUrl,
-  renderFeed,
-  taskPostFeed,
-  useChannelFeed,
-} from './channel-data';
+import { actorName } from './BuddyTaskComments';
+import { buddyApi, buddyWrite } from './api';
+import type { Actor, ChannelUnread, Inbox, Post, PostPage } from './types';
+import { ActionError, useBuddyAction } from './useBuddyAction';
 
-const EMPTY_NAMES: Readonly<Record<string, string>> = {};
+export const inboxUrl = (workspaceId: string): string =>
+  `/api/buddies/workspaces/${encodeURIComponent(workspaceId)}/inbox`;
 
-// Older posts land below a newest-first list, so nothing above the reader
-// moves and there is no scroll position to hold (useFollowBottom's `hold`).
-const NOTHING_TO_HOLD = () => {};
+const channelPostsUrl = (channelId: string): string =>
+  `/api/buddies/channels/${encodeURIComponent(channelId)}/posts?limit=50`;
 
-export interface BuddyOwnerReply {
-  outcome: string;
-  body: string;
-  evidence: string[];
+const isMember = (members: readonly Actor[], buddyId: string) =>
+  members.some((member) => member.kind === 'buddy' && member.id === buddyId);
+
+/** The owner↔Buddy DM: the direct channel whose members are exactly the owner and this Buddy. */
+export function ownerDirectChannel(inbox: Inbox, buddyId: string): ChannelUnread | undefined {
+  return inbox.channels.find(
+    ({ channel }) =>
+      channel.kind.type === 'direct' &&
+      channel.kind.members.length === 2 &&
+      channel.kind.members.some((member) => member.kind === 'owner') &&
+      isMember(channel.kind.members, buddyId)
+  );
 }
 
-export function BuddyMessages({
-  buddyId,
-  buddyNames = EMPTY_NAMES,
-  messages,
-  availableConversationIds,
-  onReply,
-  workspaceId,
-}: {
-  buddyId?: string;
-  buddyNames?: Readonly<Record<string, string>>;
-  messages: BuddyMessage[];
-  availableConversationIds: ReadonlySet<string>;
-  onReply(messageId: string, reply: BuddyOwnerReply): Promise<void>;
-  workspaceId?: string;
-}) {
-  const mailbox = usePolledFetch<BuddyMessage[]>(
-    buddyId ? `/api/buddies/messages?buddyId=${encodeURIComponent(buddyId)}` : null,
-    5000
-  );
-  const { data, refetch } = mailbox;
-  const visibleMessages = data ?? messages;
+/** A request's lifecycle as a label; `none` is an ordinary post and shows nothing. */
+const REQUEST_LABEL: { [K in Post['request']['state']]: string | null } = {
+  none: null,
+  awaiting: 'Awaiting an answer',
+  answered: 'Answered',
+  cancelled: 'Cancelled',
+  failed: 'Failed',
+};
+
+function AnswerForm({ request, refresh }: { request: Post; refresh: () => Promise<void> }) {
+  const [body, setBody] = useState('');
+  const action = useBuddyAction(refresh);
   return (
-    <section className="buddy-messages" aria-label="Mailbox">
-      <h2>Mailbox</h2>
-      <p>Messages, replies, and requests for your approval.</p>
-      {(mailbox.kind === 'failed' || mailbox.kind === 'stale') && (
-        <p role="alert">Mailbox could not refresh: {mailbox.error.message}</p>
-      )}
-      {visibleMessages.length === 0 && <p>No messages yet.</p>}
-      {visibleMessages.map((message) => (
-        <BuddyMessageCard
-          key={message.id}
-          message={message}
-          buddyNames={buddyNames}
-          availableConversationIds={availableConversationIds}
-          onChanged={refetch}
-          onReply={async (id, reply) => {
-            await onReply(id, reply);
-            refetch();
-          }}
-        />
-      ))}
-      {workspaceId && (
-        <BuddyListsSection
-          workspaceId={workspaceId}
-          buddyId={buddyId}
-          buddyNames={buddyNames}
-          availableConversationIds={availableConversationIds}
-        />
-      )}
-    </section>
+    <form
+      className="buddy-panel__form"
+      onSubmit={(event) => {
+        event.preventDefault();
+        void action.run('answer', () =>
+          buddyWrite(`/api/buddies/posts/${encodeURIComponent(request.id)}/answer`, 'POST', {
+            body,
+          })
+        );
+      }}
+    >
+      <textarea
+        aria-label="Answer"
+        rows={3}
+        placeholder="Your answer"
+        value={body}
+        onChange={(event) => setBody(event.target.value)}
+      />
+      <button type="submit" disabled={action.busy || !body.trim()}>
+        Send answer
+      </button>
+      <ActionError state={action.state} />
+    </form>
   );
 }
 
-function PostAuthor({
-  author,
-  buddyNames,
-  className,
+function SendForm({ buddyId, refresh }: { buddyId: string; refresh: () => Promise<void> }) {
+  const [body, setBody] = useState('');
+  const [request, setRequest] = useState(false);
+  const action = useBuddyAction(refresh);
+  return (
+    <form
+      className="buddy-panel__form"
+      onSubmit={(event) => {
+        event.preventDefault();
+        void action
+          .run('send', () =>
+            buddyWrite('/api/buddies/direct/posts', 'POST', {
+              members: [buddyId],
+              body,
+              kind: request ? 'request' : 'inform',
+            })
+          )
+          .then((ok) => ok && setBody(''));
+      }}
+    >
+      <textarea
+        aria-label="Message"
+        rows={3}
+        placeholder="Message this Buddy"
+        value={body}
+        onChange={(event) => setBody(event.target.value)}
+      />
+      <label className="buddy-panel__check">
+        <input
+          type="checkbox"
+          checked={request}
+          onChange={(event) => setRequest(event.target.checked)}
+        />
+        Ask for an answer
+      </label>
+      <button type="submit" disabled={action.busy || !body.trim()}>
+        Send
+      </button>
+      <ActionError state={action.state} />
+    </form>
+  );
+}
+
+/**
+ * Post to a workspace channel AS this Buddy (a standup, a handoff, an announcement), as the Messages
+ * tab offered before T11. The server writes it with the Buddy as author; its @mentions start no turn.
+ */
+export function PostAsBuddyForm({
+  buddyId,
+  inbox,
+  refresh,
 }: {
-  author: BuddyListAuthor;
-  buddyNames: Readonly<Record<string, string>>;
-  className?: string;
+  buddyId: string;
+  inbox: Inbox;
+  refresh: () => Promise<void>;
 }) {
-  switch (author.kind) {
-    case 'owner':
-      return <span className={className}>You</span>;
-    case 'buddy':
+  const channels = inbox.channels.flatMap(({ channel }) =>
+    channel.kind.type === 'public' ? [{ id: channel.id, name: channel.kind.name }] : []
+  );
+  const [channelId, setChannelId] = useState('');
+  const [purpose, setPurpose] = useState('standup');
+  const [body, setBody] = useState('');
+  const action = useBuddyAction(refresh);
+  const target = channelId || channels[0]?.id || '';
+  if (channels.length === 0) return null;
+  return (
+    <form
+      className="buddy-panel__form"
+      aria-label="Post as this Buddy"
+      onSubmit={(event) => {
+        event.preventDefault();
+        void action
+          .run('post', () =>
+            buddyWrite(`/api/buddies/channels/${encodeURIComponent(target)}/posts`, 'POST', {
+              asBuddyId: buddyId,
+              purpose: purpose.trim(),
+              body,
+            })
+          )
+          .then((ok) => ok && setBody(''));
+      }}
+    >
+      <label>
+        Channel
+        <select value={target} onChange={(event) => setChannelId(event.target.value)}>
+          {channels.map((channel) => (
+            <option key={channel.id} value={channel.id}>
+              #{channel.name}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label>
+        Kind
+        <input
+          value={purpose}
+          maxLength={200}
+          placeholder="standup, handoff, announcement, decision"
+          onChange={(event) => setPurpose(event.target.value)}
+        />
+      </label>
+      <textarea
+        aria-label="Post"
+        rows={3}
+        placeholder="Post to the channel as this Buddy"
+        value={body}
+        onChange={(event) => setBody(event.target.value)}
+      />
+      <button type="submit" disabled={action.busy || !purpose.trim() || !body.trim()}>
+        Post as Buddy
+      </button>
+      <ActionError state={action.state} />
+    </form>
+  );
+}
+
+/** The DM's top-level posts, oldest first, with the owner's answer forms under open requests. */
+export function BuddyDirectPosts({
+  posts,
+  awaitingOwner,
+  names,
+  refresh,
+}: {
+  posts: readonly Post[];
+  awaitingOwner: ReadonlySet<string>;
+  names: Readonly<Record<string, string>>;
+  refresh: () => Promise<void>;
+}) {
+  if (posts.length === 0) return <p className="buddy-panel__empty">No messages yet.</p>;
+  return (
+    <ol className="buddy-post-list">
+      {[...posts].reverse().map((post) => {
+        const label = REQUEST_LABEL[post.request.state];
+        return (
+          <li key={post.id} data-request={post.request.state}>
+            <div className="buddy-post-list__meta">
+              <strong>{actorName(post.author, names)}</strong>
+              {label && <span className="buddy-dm__request">{label}</span>}
+              <time dateTime={post.createdAt}>{new Date(post.createdAt).toLocaleString()}</time>
+            </div>
+            <p className="buddy-post-list__body">{post.body}</p>
+            {post.evidence.length > 0 && (
+              <ul className="buddy-post-list__evidence">
+                {post.evidence.map((item) => (
+                  <li key={item}>{item}</li>
+                ))}
+              </ul>
+            )}
+            {awaitingOwner.has(post.id) && <AnswerForm request={post} refresh={refresh} />}
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
+
+function DirectChannel({
+  direct,
+  inbox,
+  names,
+  refreshInbox,
+}: {
+  direct: ChannelUnread;
+  inbox: Inbox;
+  names: Readonly<Record<string, string>>;
+  refreshInbox: () => Promise<void>;
+}) {
+  const channelId = direct.channel.id;
+  const page = usePolledFetch<PostPage>(channelPostsUrl(channelId), 30_000);
+  const newest = page.data?.posts[0]?.id;
+  // Seeing the DM reads it through the newest post rendered; a later post stays unread.
+  useEffect(() => {
+    if (newest === undefined || direct.unread === 0) return;
+    void buddyApi(`/api/buddies/channels/${encodeURIComponent(channelId)}/read`, {
+      method: 'POST',
+      headers: { 'content-type': 'application/json' },
+      body: JSON.stringify({ postId: newest }),
+    }).catch((error: unknown) => console.warn('[buddies] could not mark the DM read:', error));
+  }, [channelId, newest, direct.unread]);
+  const awaitingOwner = new Set(
+    inbox.requests.filter((post) => post.channelId === channelId).map((post) => post.id)
+  );
+  const refresh = async () => {
+    await Promise.all([page.refetch(), refreshInbox()]);
+  };
+  switch (page.kind) {
+    case 'idle':
+    case 'loading':
+      return <p className="buddy-panel__empty">Loading messages…</p>;
+    case 'failed':
       return (
-        <Link className={className} to={`/buddies/${encodeURIComponent(author.buddyId)}`}>
-          {buddyNames[author.buddyId] ?? author.buddyId}
-        </Link>
+        <p className="buddy-panel__error" role="alert">
+          {page.error.message}
+        </p>
+      );
+    case 'ready':
+    case 'stale':
+      return (
+        <BuddyDirectPosts
+          posts={page.data.posts}
+          awaitingOwner={awaitingOwner}
+          names={names}
+          refresh={refresh}
+        />
       );
   }
 }
 
-// The Buddy's own view of its workspace channels. Not a duplicate of Channels:
-// it is the one place the owner can post AS this Buddy (standups, handoffs),
-// and on mobile the only Task filter over channel posts. dcd8856 deleted it as
-// a duplicate; restored under the owner's rule that a deletion stays only if
-// it removes no feature (2026-09-25). Its keys sit under the Channels view's
-// push invalidation (`channel_changed` / `buddies_changed`), so its polls are
-// only the backstop.
-function BuddyListsSection({
-  workspaceId,
+/**
+ * The Messages tab: the owner's DM with this Buddy. Requests are posts whose
+ * `request.state` is tracked; the ones awaiting the owner come from the inbox.
+ */
+export function BuddyMessages({
   buddyId,
-  buddyNames,
-  availableConversationIds,
-}: {
-  workspaceId: string;
-  buddyId?: string;
-  buddyNames: Readonly<Record<string, string>>;
-  availableConversationIds: ReadonlySet<string>;
-}) {
-  const lists = usePolledFetch<BuddyMailingListSummary[]>(
-    listsUrl(workspaceId),
-    CHANNEL_BACKSTOP_MS
-  );
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const data = lists.data ?? [];
-  const selected = data.find((list) => list.id === selectedId) ?? data[0] ?? null;
-  return (
-    <section className="buddy-messages-list-section" aria-label="Channels">
-      <h3>Channels</h3>
-      <p>Public workspace streams for standups, handoffs, and announcements.</p>
-      {(lists.kind === 'failed' || lists.kind === 'stale') && (
-        <p role="alert">Channels could not refresh: {lists.error.message}</p>
-      )}
-      {renderFeed(feedPhase(lists), {
-        loading: () => <ChannelLoader label="Loading channels…" />,
-        failed: () => null,
-        empty: () => <p className="empty-state">No channels yet.</p>,
-        posts: () => (
-          <div className="buddy-messages-list-panes">
-            <ul className="buddy-messages-list-chips" aria-label="Channels">
-              {data.map((list) => (
-                <li key={list.id}>
-                  <button
-                    type="button"
-                    aria-pressed={selected?.id === list.id}
-                    onClick={() => setSelectedId(list.id)}
-                  >
-                    {list.name} · {list.postCount}
-                  </button>
-                </li>
-              ))}
-            </ul>
-            <div className="buddy-messages-list-main">
-              {selected && (
-                <BuddyListFeed
-                  key={selected.id}
-                  list={selected}
-                  workspaceId={workspaceId}
-                  channelNameById={new Map(data.map((entry) => [entry.id, entry.name]))}
-                  buddyId={buddyId}
-                  buddyNames={buddyNames}
-                  availableConversationIds={availableConversationIds}
-                  onPosted={lists.refetch}
-                />
-              )}
-            </div>
-          </div>
-        ),
-      })}
-    </section>
-  );
-}
-
-function ChannelPostItem({
-  post,
-  channelName,
-  buddyNames,
-  availableConversationIds,
-}: {
-  post: BuddyMailingListPost;
-  channelName: string | null;
-  buddyNames: Readonly<Record<string, string>>;
-  availableConversationIds: ReadonlySet<string>;
-}) {
-  return (
-    <li className="buddy-messages-list-post">
-      <div className="buddy-messages-list-post-heading">
-        <strong>{post.purpose}</strong>
-        {channelName && <span> · #{channelName}</span>}
-        <span>
-          <PostAuthor author={post.author} buddyNames={buddyNames} />
-          {post.senderConversationId && <> · conv {post.senderConversationId.slice(0, 8)}</>}
-          {' · '}
-          {new Date(post.createdAt).toLocaleString()}
-          {post.senderConversationId && availableConversationIds.has(post.senderConversationId) && (
-            <>
-              {' · '}
-              <Link to={`/chat/${encodeURIComponent(post.senderConversationId)}`}>
-                Open conversation
-              </Link>
-            </>
-          )}
-        </span>
-      </div>
-      <p>{post.body}</p>
-    </li>
-  );
-}
-
-function ChannelFeed({
-  list,
   workspaceId,
-  channelNameById,
-  buddyNames,
-  availableConversationIds,
-  composer,
+  names,
 }: {
-  list: BuddyMailingListSummary;
-  workspaceId: string;
-  channelNameById: ReadonlyMap<string, string>;
-  buddyNames: Readonly<Record<string, string>>;
-  availableConversationIds: ReadonlySet<string>;
-  composer?: (refetch: () => void) => ReactNode;
-}) {
-  const [projectFilter, setProjectFilter] = useState<string | null>(null);
-  // The Channels view's feeds and paging, read newest-first with older pages below.
-  const paged = useChannelFeed(
-    projectFilter ? taskPostFeed(workspaceId, projectFilter) : channelPostFeed(list.id)
-  );
-  const feed = paged.feed;
-  const { data, refetch } = feed;
-  const sortedPosts = useMemo(
-    () =>
-      [...(data ?? [])].sort(
-        (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
-      ),
-    [data]
-  );
-  const projectIds = useMemo(
-    () => [
-      ...new Set(
-        sortedPosts.map((post) => post.projectId).filter((id): id is string => id !== null)
-      ),
-    ],
-    [sortedPosts]
-  );
-  const visiblePosts = projectFilter
-    ? sortedPosts.filter((post) => post.projectId === projectFilter)
-    : sortedPosts;
-  return (
-    <article className="buddy-messages-list-feed">
-      <h4>{list.name}</h4>
-      <p>{list.purpose}</p>
-      {(feed.kind === 'failed' || feed.kind === 'stale') && (
-        <p role="alert">Posts could not refresh: {feed.error.message}</p>
-      )}
-      {projectIds.length > 0 && (
-        <div className="buddy-messages-list-filter">
-          <span>Task</span>
-          <ul className="buddy-messages-list-filter-options">
-            <li key="all">
-              <button
-                type="button"
-                aria-pressed={projectFilter === null}
-                onClick={() => setProjectFilter(null)}
-              >
-                All
-              </button>
-            </li>
-            {projectIds.map((projectId) => (
-              <li key={projectId}>
-                <button
-                  type="button"
-                  aria-pressed={projectFilter === projectId}
-                  onClick={() => setProjectFilter(projectId)}
-                >
-                  {projectId}
-                </button>
-              </li>
-            ))}
-          </ul>
-        </div>
-      )}
-      {renderFeed(feedPhase(feed), {
-        loading: () => <ChannelLoader label={`Loading #${list.name}…`} />,
-        failed: () => null,
-        empty: () => <p className="empty-state">No posts yet.</p>,
-        posts: () => (
-          <>
-            <ul className="buddy-messages-list-posts">
-              {visiblePosts.map((post) => (
-                <ChannelPostItem
-                  key={post.id}
-                  post={post}
-                  channelName={
-                    projectFilter ? (channelNameById.get(post.listId) ?? post.listId) : null
-                  }
-                  buddyNames={buddyNames}
-                  availableConversationIds={availableConversationIds}
-                />
-              ))}
-            </ul>
-            <OlderPostsButton
-              edge={paged.edge}
-              onLoad={() => void paged.loadOlder(NOTHING_TO_HOLD)}
-            />
-          </>
-        ),
-      })}
-      {composer?.(refetch)}
-    </article>
-  );
-}
-
-function ChannelComposer({
-  list,
-  buddyId,
-  onPosted,
-  refetch,
-}: {
-  list: BuddyMailingListSummary;
   buddyId: string;
-  onPosted(): void;
-  refetch(): void;
-}) {
-  const [purpose, setPurpose] = useState('standup');
-  const [body, setBody] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [problem, setProblem] = useState<string | null>(null);
-  return (
-    <>
-      <form
-        className="buddy-messages-list-composer"
-        onSubmit={(event) => {
-          event.preventDefault();
-          setBusy(true);
-          setProblem(null);
-          void buddyApi(`/api/buddies/lists/${encodeURIComponent(list.id)}/posts`, {
-            method: 'POST',
-            headers: { 'content-type': 'application/json' },
-            body: JSON.stringify({
-              author: { kind: 'buddy', buddyId },
-              key: newId(),
-              purpose: purpose.trim(),
-              body: body.trim(),
-            }),
-          })
-            .then(() => {
-              setBody('');
-              refetch();
-              onPosted();
-            })
-            .catch((cause: unknown) => {
-              setProblem(cause instanceof Error ? cause.message : String(cause));
-            })
-            .finally(() => setBusy(false));
-        }}
-      >
-        <label>
-          Kind
-          <input
-            required
-            value={purpose}
-            maxLength={200}
-            onChange={(event) => setPurpose(event.target.value)}
-            disabled={busy}
-            placeholder="standup, handoff, announcement, decision"
-          />
-        </label>
-        <label>
-          Post
-          <textarea
-            required
-            value={body}
-            onChange={(event) => setBody(event.target.value)}
-            disabled={busy}
-          />
-        </label>
-        <button type="submit" disabled={busy || !purpose.trim() || !body.trim()}>
-          {busy ? 'Posting…' : 'Post'}
-        </button>
-      </form>
-      {problem && <p role="alert">{problem}</p>}
-    </>
-  );
-}
-
-function BuddyListFeed({
-  list,
-  workspaceId,
-  channelNameById,
-  buddyId,
-  buddyNames,
-  availableConversationIds,
-  onPosted,
-}: {
-  list: BuddyMailingListSummary;
   workspaceId: string;
-  channelNameById: ReadonlyMap<string, string>;
-  buddyId?: string;
-  buddyNames: Readonly<Record<string, string>>;
-  availableConversationIds: ReadonlySet<string>;
-  onPosted(): void;
+  names: Readonly<Record<string, string>>;
 }) {
+  const inbox = usePolledFetch<Inbox>(inboxUrl(workspaceId), 30_000);
+  const direct = inbox.data ? ownerDirectChannel(inbox.data, buddyId) : undefined;
   return (
-    <ChannelFeed
-      list={list}
-      workspaceId={workspaceId}
-      channelNameById={channelNameById}
-      buddyNames={buddyNames}
-      availableConversationIds={availableConversationIds}
-      composer={
-        buddyId
-          ? (refetch) => (
-              <ChannelComposer
-                list={list}
-                buddyId={buddyId}
-                onPosted={onPosted}
-                refetch={refetch}
-              />
-            )
-          : undefined
-      }
-    />
-  );
-}
-
-function BuddyMessageCard({
-  message,
-  buddyNames,
-  availableConversationIds,
-  onReply,
-  onChanged,
-}: {
-  message: BuddyMessage;
-  buddyNames: Readonly<Record<string, string>>;
-  availableConversationIds: ReadonlySet<string>;
-  onReply(messageId: string, reply: BuddyOwnerReply): Promise<void>;
-  onChanged(): void;
-}) {
-  const [outcome, setOutcome] = useState('answered');
-  const [body, setBody] = useState('');
-  const [evidence, setEvidence] = useState('');
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [incomingEnabled, setIncomingEnabled] = useState(false);
-  const conversationId = message.child_conversation_id ?? message.parent_conversation_id;
-  const canReply =
-    message.expects_reply !== 0 &&
-    message.to_buddy_id === null &&
-    ['pending', 'active'].includes(message.status);
-  return (
-    <article className="buddy-messages__card">
-      <div className="buddy-messages__heading">
-        <strong>{message.purpose}</strong>
-        <span>
-          Request {message.status}
-          {message.execution ? ` · Execution ${message.execution.state}` : ''}
-          {message.to_buddy_id === null ? ' · To you' : ''}
-        </span>
+    <section className="buddy-panel" aria-label="Messages">
+      <div className="buddy-panel__title">
+        <h2>Messages</h2>
       </div>
-      {message.approval && (
-        <div>
-          <strong>Approval: {message.approval.operation}</strong>
-          <pre>{JSON.stringify(message.approval.arguments, null, 2)}</pre>
-          <p>Expires {message.approval.expires_at}. Reply with outcome approved or rejected.</p>
-        </div>
+      <SendForm buddyId={buddyId} refresh={inbox.refetch} />
+      {inbox.kind === 'failed' && (
+        <p className="buddy-panel__error" role="alert">
+          {inbox.error.message}
+        </p>
       )}
-      <p className="buddy-messages__participants">
-        <Link to={`/buddies/${encodeURIComponent(message.from_buddy_id)}`}>
-          {buddyNames[message.from_buddy_id] ?? message.from_buddy_id}
-        </Link>
-        {' → '}
-        {message.to_buddy_id === null ? (
-          'You'
-        ) : (
-          <Link to={`/buddies/${encodeURIComponent(message.to_buddy_id)}`}>
-            {buddyNames[message.to_buddy_id] ?? message.to_buddy_id}
-          </Link>
-        )}
-      </p>
-      <p className="buddy-messages__body">{message.body}</p>
-      {message.execution && (
-        <details className="buddy-messages__receipt">
-          <summary>Delivery and execution details</summary>
-          {message.execution.reason && <p>{message.execution.reason}</p>}
-          {message.execution.remedy && <p>{message.execution.remedy}</p>}
-          {message.execution.code === 'background_disabled' && message.to_buddy_id && (
-            <div>
-              <p>
-                Enable incoming work for this recipient to admit existing queued tasks. Recurring
-                schedules and document permissions stay separately controlled.
-              </p>
-              <button
-                type="button"
-                disabled={busy || incomingEnabled}
-                onClick={() => {
-                  setBusy(true);
-                  setError(null);
-                  void buddyApi(
-                    `/api/buddies/${encodeURIComponent(message.to_buddy_id!)}/memberships/${encodeURIComponent(message.workspace_id)}`,
-                    {
-                      method: 'PATCH',
-                      headers: { 'content-type': 'application/json' },
-                      body: JSON.stringify({ background_enabled: true }),
-                    }
-                  )
-                    .then(() => {
-                      setIncomingEnabled(true);
-                      onChanged();
-                    })
-                    .catch((cause: unknown) => {
-                      setError(cause instanceof Error ? cause.message : String(cause));
-                    })
-                    .finally(() => setBusy(false));
-                }}
-              >
-                {incomingEnabled
-                  ? 'Incoming work enabled; awaiting admission'
-                  : 'Enable incoming work'}
-              </button>
-            </div>
-          )}
-          {message.execution.acknowledgedAt && (
-            <p>Input admitted {new Date(message.execution.acknowledgedAt).toLocaleString()}.</p>
-          )}
-          {message.execution.projectSnapshot && (
-            <p>
-              Current project: {message.execution.projectSnapshot.status} · revision{' '}
-              {message.execution.projectSnapshot.revision} ·{' '}
-              {message.execution.projectSnapshot.evidenceCount} evidence references. This is current
-              project state, separate from this request.
-            </p>
-          )}
-          {message.execution.delivery?.map((delivery) => (
-            <p key={delivery.runId}>
-              {delivery.mailboxOnly
-                ? 'Saved in mailbox. No automated turn was started in your chat.'
-                : `Return delivery: ${delivery.kind} · ${delivery.state} · attempt ${delivery.attempt}`}
-              {delivery.error ? ` · ${delivery.error}` : ''}
-            </p>
-          ))}
-          {message.execution.acceptedAt && (
-            <p>Reply recorded {new Date(message.execution.acceptedAt).toLocaleString()}.</p>
-          )}
-          {message.execution.completionEvidence.length > 0 && (
-            <p>Reply evidence: {message.execution.completionEvidence.join(' · ')}</p>
-          )}
-        </details>
+      {(inbox.kind === 'loading' || inbox.kind === 'idle') && (
+        <p className="buddy-panel__empty">Loading messages…</p>
       )}
-      {message.team_configuration &&
-        (canReply || message.outcome === 'team_configuration_applied') && (
-          <BuddyTeamConfigurationRequest
-            key={`${message.id}:${message.team_configuration.key}`}
-            request={message.team_configuration}
-            messageId={message.id}
-            applied={message.outcome === 'team_configuration_applied'}
-            onApplied={onChanged}
-          />
-        )}
-      {message.evidence.length > 0 && (
-        <details>
-          <summary>Evidence</summary>
-          <ul>
-            {message.evidence.map((item, index) => (
-              <li key={`${index}:${item}`}>{item}</li>
-            ))}
-          </ul>
-        </details>
+      {inbox.data && direct === undefined && <p className="buddy-panel__empty">No messages yet.</p>}
+      {inbox.data && direct && (
+        <DirectChannel
+          direct={direct}
+          inbox={inbox.data}
+          names={names}
+          refreshInbox={inbox.refetch}
+        />
       )}
-      {message.reply_body && (
-        <div className="buddy-messages__reply">
-          <strong>{message.outcome ?? 'Reply'}</strong>
-          <p className="buddy-messages__body">{message.reply_body}</p>
-          {message.reply_evidence.length > 0 && (
-            <ul>
-              {message.reply_evidence.map((item, index) => (
-                <li key={`${index}:${item}`}>{item}</li>
-              ))}
-            </ul>
-          )}
-        </div>
+      {inbox.data && (
+        <PostAsBuddyForm buddyId={buddyId} inbox={inbox.data} refresh={inbox.refetch} />
       )}
-      {message.wait_status === 'timed_out' && (
-        <p>The sender stopped waiting. A reply can still be recorded.</p>
-      )}
-      {conversationId && availableConversationIds.has(conversationId) && (
-        <Link to={`/chat/${encodeURIComponent(conversationId)}`}>Open conversation</Link>
-      )}
-      {canReply && (
-        <details className="buddy-messages__decision">
-          <summary>{message.team_configuration ? 'Decline setup' : 'Reply'}</summary>
-          <form
-            onSubmit={(event) => {
-              event.preventDefault();
-              setBusy(true);
-              setError(null);
-              void onReply(message.id, {
-                outcome: message.team_configuration ? 'rejected' : outcome,
-                body: body.trim(),
-                evidence: message.team_configuration
-                  ? [message.id]
-                  : evidence
-                      .split('\n')
-                      .map((line) => line.trim())
-                      .filter(Boolean),
-              })
-                .catch((cause: unknown) => {
-                  setError(cause instanceof Error ? cause.message : String(cause));
-                })
-                .finally(() => setBusy(false));
-            }}
-          >
-            {!message.team_configuration && (
-              <label>
-                Outcome
-                <input
-                  required
-                  value={outcome}
-                  maxLength={200}
-                  onChange={(event) => setOutcome(event.target.value)}
-                  disabled={busy}
-                  placeholder="For example: approved, rejected, or answered"
-                />
-              </label>
-            )}
-            <label>
-              {message.team_configuration ? 'Reason for declining' : 'Reply'}
-              <textarea
-                required
-                value={body}
-                onChange={(event) => setBody(event.target.value)}
-                disabled={busy}
-              />
-            </label>
-            {!message.team_configuration && (
-              <label>
-                Evidence or decision basis
-                <textarea
-                  required
-                  placeholder="One reference or observation per line"
-                  value={evidence}
-                  onChange={(event) => setEvidence(event.target.value)}
-                  disabled={busy}
-                />
-              </label>
-            )}
-            <button
-              type="submit"
-              disabled={
-                busy ||
-                !body.trim() ||
-                (!message.team_configuration && (!outcome.trim() || !evidence.trim()))
-              }
-            >
-              {busy ? 'Saving…' : message.team_configuration ? 'Decline setup' : 'Send reply'}
-            </button>
-          </form>
-        </details>
-      )}
-      {error && <p role="alert">{error}</p>}
-    </article>
+    </section>
   );
 }

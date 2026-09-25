@@ -5,19 +5,16 @@ import test from 'node:test';
 import type { Provider } from '@unleashd/shared';
 import { type ConversationConfig, createDefaultConversationConfig } from '@unleashd/shared';
 import type { CompletedBuddyTurn } from '../src/buddies/memory-review';
-import {
-  buildFirstTurnCliContent,
-  extractBuddyMemorySnapshot,
-  resolveAutomationMemoryWritePolicy,
-} from '../src/buddies/turn-policy';
-import { TURN_MAX_RUNTIME_MS } from '../src/constants/timeouts';
+import type { BuddyPolicyPort } from '../src/buddies/policy-port';
+import type { ChatAdmission } from '../src/buddies/runner';
+import { buildFirstTurnCliContent, extractBuddyMemorySnapshot } from '../src/buddies/turn-policy';
 import {
   type ConversationRuntimeDependencies,
   createConversationRuntime,
 } from '../src/conversations/runtime';
 import { resolveConfigAgainstProviderCatalog } from '../src/providers/catalog-service';
 import { type TurnTimeoutKind, TurnWatchdog } from '../src/turns/watchdog';
-import { sameKeyAudience } from './fixtures/buddy-audience';
+import { fakeBuddyPort } from './fixtures/buddy-port';
 import { fakeExecuteTurn } from './fixtures/fake-turn';
 
 function runtimeFixture(
@@ -28,14 +25,13 @@ function runtimeFixture(
     persistCurrentSession?: ConversationRuntimeDependencies['persistCurrentSession'];
     executeTurn?: ConversationRuntimeDependencies['executeTurn'];
     turnAttempts?: ConversationRuntimeDependencies['turnAttempts'];
-    requestAutomationCancellation?: ConversationRuntimeDependencies['requestAutomationCancellation'];
-    revokeBuddyControlCapability?: ConversationRuntimeDependencies['revokeBuddyControlCapability'];
-    enqueueBuddyChatRun?: ConversationRuntimeDependencies['enqueueBuddyChatRun'];
-    startBuddyChatRun?: ConversationRuntimeDependencies['startBuddyChatRun'];
-    abandonBuddyChatRun?: ConversationRuntimeDependencies['abandonBuddyChatRun'];
-    finishBuddyChatRun?: ConversationRuntimeDependencies['finishBuddyChatRun'];
-    reviewCompletedBuddyTurn?: ConversationRuntimeDependencies['reviewCompletedBuddyTurn'];
-    readCurrentBuddyContext?: ConversationRuntimeDependencies['readCurrentBuddyContext'];
+    revokeBuddyControlCapability?: (conversationId: string) => void;
+    enqueueBuddyChatRun?: () => { id: string };
+    startBuddyChatRun?: (turnId: string) => ChatAdmission;
+    abandonBuddyChatRun?: (turnId: string) => void;
+    finishBuddyChatRun?: BuddyPolicyPort['settle'];
+    reviewCompletedBuddyTurn?: (turn: CompletedBuddyTurn) => void;
+    readCurrentBuddyContext?: () => { briefing: string; memoryGeneration: string };
     buddyContext?: CompletedBuddyTurn['context'];
   } = {}
 ) {
@@ -52,8 +48,6 @@ function runtimeFixture(
     clearLocalCompletionSuppression: () => undefined,
     markLocalCompletionSuppression: () => undefined,
     persistCurrentSession: options.persistCurrentSession ?? (async () => undefined),
-    updateBuddyStatus: () => undefined,
-    settleBuddyDelegation: () => undefined,
     getConversation: options.getConversation ?? (() => undefined),
     readLatestOompaRuntime: async () => ({
       available: false,
@@ -63,14 +57,15 @@ function runtimeFixture(
     createSessionId: () => 'rotated-session',
     executeTurn: options.executeTurn,
     turnAttempts: options.turnAttempts,
-    requestAutomationCancellation: options.requestAutomationCancellation,
-    revokeBuddyControlCapability: options.revokeBuddyControlCapability,
-    enqueueBuddyChatRun: options.enqueueBuddyChatRun,
-    startBuddyChatRun: options.startBuddyChatRun,
-    abandonBuddyChatRun: options.abandonBuddyChatRun,
-    finishBuddyChatRun: options.finishBuddyChatRun,
-    reviewCompletedBuddyTurn: options.reviewCompletedBuddyTurn,
-    readCurrentBuddyContext: options.readCurrentBuddyContext,
+    buddies: fakeBuddyPort({
+      enqueueChat: options.enqueueBuddyChatRun && (() => options.enqueueBuddyChatRun!().id),
+      admission: options.startBuddyChatRun,
+      abandon: options.abandonBuddyChatRun,
+      settle: options.finishBuddyChatRun,
+      revoke: options.revokeBuddyControlCapability,
+      afterTurn: options.reviewCompletedBuddyTurn,
+      briefing: options.readCurrentBuddyContext,
+    }),
   });
   const configState = {
     config,
@@ -130,80 +125,6 @@ async function eventually(assertion: () => void): Promise<void> {
   assertion();
 }
 
-test('retained Buddy display history stays out of fresh provider context across audience resets', async () => {
-  type Request = Parameters<NonNullable<ConversationRuntimeDependencies['executeTurn']>>[0];
-  const requests: Request[] = [];
-  let current = {
-    briefing: 'CURRENT_OWNER_BRIEFING',
-    memoryGeneration: '1',
-    audience: sameKeyAudience('owner-audience'),
-  };
-  const fixture = runtimeFixture({
-    readCurrentBuddyContext: () => current,
-    executeTurn: fakeExecuteTurn((request) => {
-      requests.push(request);
-      const sessionId = request.resumeSessionId ?? `native-${requests.length}`;
-      return {
-        child: { exitCode: 0 },
-        events: (async function* () {
-          yield { type: 'session.started' as const, sessionId };
-          yield { type: 'turn.started' as const };
-          yield { type: 'text.delta' as const, text: `Response ${requests.length}` };
-          yield { type: 'turn.complete' as const, reason: 'success' as const };
-        })(),
-        completed: Promise.resolve({ exitCode: 0, signal: null, sessionId, reason: 'success' }),
-        stop: () => undefined,
-      };
-    }),
-  });
-  const conversation = new fixture.Conversation({
-    done: false,
-    id: 'restored-buddy',
-    workingDirectory: '/tmp',
-    configState: fixture.configState,
-    kind: buddyKind({ buddyId: 'buddy', workspaceId: 'workspace' }),
-    existingSessionId: 'unverified-restored-session',
-  });
-  const originalDate = new Date('2026-09-09T04:45:02.313Z');
-  conversation.createdAt = originalDate;
-  conversation.messages = [
-    { role: 'user', content: 'PRIOR_PRIVATE_TRANSCRIPT', timestamp: originalDate },
-    { role: 'assistant', content: 'PRIOR_PRIVATE_ANSWER', timestamp: originalDate },
-  ];
-  const turn = async (content: string) => {
-    conversation.sendMessage(content, { origin: 'owner_input', inputId: content });
-    await eventually(() => assert.equal(conversation.hasActiveProcess(), false));
-  };
-
-  await turn('First followup');
-  assert.equal(requests[0].resumeSessionId, undefined, 'restored audience is unverified');
-  assert.match(requests[0].prompt, /CURRENT_OWNER_BRIEFING/);
-
-  current = { ...current, briefing: 'UPDATED_OWNER_MEMORY', memoryGeneration: '2' };
-  await turn('Second followup');
-  assert.equal(requests[1].resumeSessionId, 'native-1', 'unchanged audience resumes');
-  assert.match(requests[1].prompt, /UPDATED_OWNER_MEMORY/);
-
-  current = {
-    briefing: 'NARROWED_BRIEFING',
-    memoryGeneration: '3',
-    audience: sameKeyAudience('narrowed'),
-  };
-  await turn('Third followup');
-  assert.equal(requests[2].resumeSessionId, undefined, 'changed audience starts fresh');
-  assert.match(requests[2].prompt, /NARROWED_BRIEFING/);
-  assert.doesNotMatch(requests[2].prompt, /CURRENT_OWNER_BRIEFING|UPDATED_OWNER_MEMORY/);
-  for (const request of requests) {
-    assert.doesNotMatch(request.prompt, /PRIOR_PRIVATE_TRANSCRIPT|PRIOR_PRIVATE_ANSWER/);
-  }
-  assert.deepEqual(
-    conversation.messages.slice(0, 2).map((message) => message.content),
-    ['PRIOR_PRIVATE_TRANSCRIPT', 'PRIOR_PRIVATE_ANSWER']
-  );
-  assert.equal(conversation.messages.length, 8);
-  assert.equal(conversation.createdAt, originalDate);
-});
-
 test('resumed Buddy turns re-brief only when the memory generation changes', async () => {
   // Regression: from 5c0cec4 (2026-09-20) every Buddy turn re-sent the full
   // ~20k-char briefing, so a provider transcript carried one copy per turn
@@ -213,7 +134,6 @@ test('resumed Buddy turns re-brief only when the memory generation changes', asy
   let current = {
     briefing: 'BRIEFING_GEN_1',
     memoryGeneration: '1',
-    audience: sameKeyAudience('owner'),
   };
   const fixture = runtimeFixture({
     readCurrentBuddyContext: () => current,
@@ -619,34 +539,6 @@ test('historical automation transcripts refuse every user turn-admission path', 
   assert.match(conversation.messages.at(-1)?.content ?? '', /automation transcript is read-only/);
 });
 
-test('public stop delegates automation cancellation without killing provider authority directly', async () => {
-  const cancellationRequests: string[] = [];
-  const fixture = runtimeFixture({
-    requestAutomationCancellation: async (runId) => {
-      cancellationRequests.push(runId);
-    },
-  });
-  const conversation = new fixture.Conversation({
-    done: false,
-    id: 'active-automation',
-    workingDirectory: '/tmp',
-    configState: fixture.configState,
-    automationClaimToken: 'private-claim-token',
-    kind: buddyKind({
-      buddyId: 'buddy-1',
-      workspaceId: 'workspace-1',
-      automationRunId: 'active-run',
-    }),
-  });
-
-  conversation.stop();
-  await eventually(() => assert.deepEqual(cancellationRequests, ['active-run']));
-
-  // Only the scheduler-owned path may enter the provider stop boundary after
-  // durable cancel_requested has revoked tool authority.
-  assert.doesNotThrow(() => conversation.stopAutomationTurn());
-});
-
 test('first message in a user fork inherits the native source session without copying history', () => {
   const conversations = new Map<
     string,
@@ -723,9 +615,11 @@ test('native session fork falls back to a fresh handoff when memory generation c
     ReturnType<ConversationRuntimeDependencies['getConversation']>
   >();
   const capture = captureSpawns();
+  // The Buddy module's current briefing is the child's: memory advanced since the source.
   const fixture = runtimeFixture({
     executeTurn: capture.executeTurn,
     getConversation: (id) => conversations.get(id),
+    readCurrentBuddyContext: () => ({ briefing: 'New memory', memoryGeneration: 'generation-7' }),
   });
   const buddyContext = {
     buddyId: 'buddy-1',
@@ -768,66 +662,6 @@ test('native session fork falls back to a fresh handoff when memory generation c
   assert.doesNotMatch(spawned?.content ?? '', /Old memory/);
 });
 
-test('automation memory-write policy is explicit and provider-scoped', () => {
-  assert.equal(
-    resolveAutomationMemoryWritePolicy({
-      isAutomation: false,
-      provider: 'codex',
-      hasClaimToken: false,
-    }),
-    'not_applicable'
-  );
-  assert.equal(
-    resolveAutomationMemoryWritePolicy({
-      isAutomation: true,
-      provider: 'codex',
-      hasClaimToken: true,
-    }),
-    'denied'
-  );
-  assert.equal(
-    resolveAutomationMemoryWritePolicy({
-      isAutomation: true,
-      provider: 'muse',
-      allowedOperations: ['buddy.update_memory'],
-      hasClaimToken: true,
-    }),
-    'allowed'
-  );
-  assert.equal(
-    resolveAutomationMemoryWritePolicy({
-      isAutomation: true,
-      provider: 'gemini',
-      allowedOperations: ['buddy.update_memory'],
-      hasClaimToken: true,
-    }),
-    'unsupported'
-  );
-  assert.equal(
-    resolveAutomationMemoryWritePolicy({
-      isAutomation: true,
-      provider: 'codex',
-      allowedOperations: ['buddy.update_memory'],
-      hasClaimToken: true,
-    }),
-    'allowed'
-  );
-  assert.equal(
-    resolveAutomationMemoryWritePolicy({
-      isAutomation: true,
-      provider: 'codex',
-      allowedOperations: ['buddy.remember_note'],
-      hasClaimToken: true,
-    }),
-    'allowed'
-  );
-});
-
-// Regression: muse -> muse Chat Fork threw `Harness "muse" does not support
-// fork.` because the same-provider branch handed the source session to the
-// harness without checking fork capability. muse -> claude worked, which is
-// what made it look provider-pair specific. Session inheritance is gated on
-// capability; every other fork stays a soft string handoff.
 test('same-provider fork on a fork-incapable harness falls back to string handoff', () => {
   const conversations = new Map<
     string,
@@ -1024,16 +858,13 @@ test('foreground Buddy deadline uses the conversation budget and reports timeout
   const terminals: Parameters<
     NonNullable<ConversationRuntimeDependencies['turnAttempts']>['terminal']
   >[0][] = [];
-  const settlements: Parameters<
-    NonNullable<ConversationRuntimeDependencies['finishBuddyChatRun']>
-  >[] = [];
-  let requestedBudget: number | undefined;
+  const settlements: Parameters<BuddyPolicyPort['settle']>[] = [];
   let release = false;
   const fixture = runtimeFixture({
     enqueueBuddyChatRun: () => ({ id: 'owned-run' }),
-    startBuddyChatRun: (_runId, _id, maxRuntimeMs) => {
-      requestedBudget = maxRuntimeMs;
-      // A short owned deadline exercises the same callback without waiting a day.
+    // The run's lease is the chat's deadline (the runner leases for TURN_MAX_RUNTIME_MS; guard in
+    // buddies-v2.test.ts). A short lease exercises the same callback without waiting a day.
+    startBuddyChatRun: () => {
       return {
         kind: 'admitted',
         run: {
@@ -1076,7 +907,6 @@ test('foreground Buddy deadline uses the conversation budget and reports timeout
   });
   conversation.sendMessage('Keep working');
   await new Promise<void>((resolve) => setImmediate(resolve));
-  assert.equal(requestedBudget, TURN_MAX_RUNTIME_MS);
   t.mock.timers.tick(1000);
   assert.equal(release, true);
   assert.equal(terminals.at(-1)?.terminalCause, 'max_runtime_timeout');
@@ -1112,9 +942,7 @@ test('background deadline uses timeout classification and waits for provider dra
   const terminals: Parameters<
     NonNullable<ConversationRuntimeDependencies['turnAttempts']>['terminal']
   >[0][] = [];
-  const settlements: Parameters<
-    NonNullable<ConversationRuntimeDependencies['finishBuddyChatRun']>
-  >[] = [];
+  const settlements: Parameters<BuddyPolicyPort['settle']>[] = [];
   let release = false;
   let drainedCause: string | undefined;
   const fixture = runtimeFixture({

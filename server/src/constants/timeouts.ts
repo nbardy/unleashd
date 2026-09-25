@@ -40,12 +40,20 @@ export const TURN_IDLE_TIMEOUT_MS = TURN_PROVIDER_IDLE_TIMEOUT_MS;
 // Foreground Buddy claims must receive this same budget, including env overrides.
 // A separate claim default of 600s killed active chats despite healthy heartbeats
 // on 2026-09-10. Raising idle limits cannot fix an earlier absolute deadline.
-// See docs/incident-2026-09-10-buddy-chat-timeout.md and buddy-coordination.test.ts.
+// See docs/incident-2026-09-10-buddy-chat-timeout.md. Guards: conversation-runtime.test.ts and
+// buddies-v2.test.ts (a chat run is leased for exactly TURN_MAX_RUNTIME_MS).
 export const TURN_MAX_RUNTIME_MS = readPositiveIntEnv('CWV_TURN_MAX_RUNTIME_MS', 24 * 60 * 60_000);
 export const TURN_TIMEOUT_KILL_GRACE_MS = readPositiveIntEnv(
   'CWV_TURN_TIMEOUT_KILL_GRACE_MS',
   5_000
 );
+/** A background Buddy run's turn (a request, a return, a schedule); its run lease still covers it. */
+export const BUDDY_BACKGROUND_TURN_MS = readPositiveIntEnv(
+  'CWV_BUDDY_BACKGROUND_TURN_MS',
+  60 * 60_000
+);
+/** The runner's backstop tick: due schedules, and runs no write woke (lease expiry, a freed slot). */
+export const BUDDY_RUNNER_BACKSTOP_MS = 5_000;
 export const SWARM_POLL_INTERVAL_MS = readPositiveIntEnv('CWV_SWARM_POLL_INTERVAL_MS', 2_000);
 export const SWARM_POLL_THROTTLE_MS = readPositiveIntEnv('CWV_SWARM_POLL_THROTTLE_MS', 1_500);
 export const SWARM_CONTEXT_COMMAND_TIMEOUT_MS = 8_000;

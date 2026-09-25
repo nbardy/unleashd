@@ -334,25 +334,6 @@
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent) 20%, transparent);
 }
 
-.mobile-buddies__sort {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-shrink: 0;
-}
-
-.mobile-buddies__sort-select {
-  min-height: 44px;
-  max-width: 110px;
-  padding: 0 8px;
-  border-radius: var(--ui-radius);
-  border: 1px solid var(--border-subtle);
-  background: var(--bg-page);
-  color: var(--text-secondary);
-  font: inherit;
-  font-size: 16px;
-}
-
 .mobile-buddies__grid {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
@@ -396,10 +377,6 @@
   color: var(--text-secondary);
   font-size: 11px;
   line-height: 1.4;
-}
-
-.mobile-buddy-card__activity[data-blocked] {
-  color: var(--warning-bright);
 }
 
 .mobile-buddy-card__avatar {

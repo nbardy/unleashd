@@ -1,6 +1,6 @@
 //! buddies-import: v33 → lean schema, then zero-loss verification.
 //!
-//!   buddies-import import --from <v33.sqlite> --to <new.sqlite> --report <import.json> [--owner-reads <json>]
+//!   buddies-import import --from <v33.sqlite> --to <new.sqlite> --report <import.json> [--owner-reads <json>] [--keep-direct-unread]
 //!   buddies-import verify --from <v33.sqlite> --to <new.sqlite> --import-report <import.json> --out <verify.json>
 //!
 //! Both read the v33 file read-only. `import` refuses an existing target. `verify` exits 1 on any
@@ -10,7 +10,7 @@
 
 use std::path::PathBuf;
 use std::process::ExitCode;
-use unleashd_buddies::import::{ImportReport, OwnerReads, SoulFile, import};
+use unleashd_buddies::import::{DirectReads, ImportOptions, ImportReport, OwnerReads, SoulFile, import};
 use unleashd_buddies::verify::verify;
 
 fn arg(args: &[String], name: &str) -> Result<PathBuf, String> {
@@ -34,7 +34,9 @@ fn run(args: &[String]) -> Result<bool, String> {
     match args.first().map(String::as_str) {
         Some("import") => {
             let owner_reads = arg(args, "--owner-reads").unwrap_or_else(|_| default_owner_reads());
-            let report: ImportReport = import(&from, &to, &owner_reads).map_err(|e| format!("[{}] {e}", e.code()))?;
+            // Imported DMs are marked read by default; --keep-direct-unread leaves them all unread.
+            let options = ImportOptions { mark_direct_read: !args.iter().any(|a| a == "--keep-direct-unread") };
+            let report: ImportReport = import(&from, &to, &owner_reads, options).map_err(|e| format!("[{}] {e}", e.code()))?;
             write_json(&arg(args, "--report")?, &report)?;
             for (mapping, old, new) in &report.counts {
                 println!("{mapping:<20} {old:>7} → {new:>7}");
@@ -47,7 +49,8 @@ fn run(args: &[String]) -> Result<bool, String> {
             let value: serde_json::Value = serde_json::from_str(&text).map_err(|e| e.to_string())?;
             let baseline: Vec<SoulFile> = serde_json::from_value(value["soul_files"].clone()).map_err(|e| e.to_string())?;
             let owner_reads: OwnerReads = serde_json::from_value(value["owner_reads"].clone()).map_err(|e| e.to_string())?;
-            let report = verify(&from, &to, &baseline, &owner_reads).map_err(|e| format!("[{}] {e}", e.code()))?;
+            let direct_reads: DirectReads = serde_json::from_value(value["direct_reads"].clone()).map_err(|e| e.to_string())?;
+            let report = verify(&from, &to, &baseline, &owner_reads, &direct_reads).map_err(|e| format!("[{}] {e}", e.code()))?;
             write_json(&arg(args, "--out")?, &report)?;
             for c in &report.classes {
                 println!("{:<42} {:>6} rows  {:>4}/{:<4} groups match  {}", c.class, c.rows_new, c.hash_matches, c.groups, ok(c.ok));

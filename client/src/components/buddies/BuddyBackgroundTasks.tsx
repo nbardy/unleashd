@@ -1,40 +1,32 @@
 import { useAtomValue } from 'jotai';
-import { Link, useLocation, useSearchParams } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import { buddyBackgroundConversationsAtomFamily } from '../../atoms/buddy-background';
-import {
-  availableConversationIdSetAtom,
-  conversationLoadCompleteAtom,
-} from '../../atoms/conversations';
+import { conversationLoadCompleteAtom } from '../../atoms/conversations';
 import { mobileConversationRouteState } from '../../utils/conversation-route-state';
-import { isRowRunning, rowBuddy } from '../../utils/conversation-row';
 import { getConversationLastActivity } from '../../utils/time';
+import { BuddyRunList } from './BuddyRunList';
 import { conversationPath } from './buddy-tabs';
-import type { Workspace } from './types';
+import type { Run } from './types';
+import './BuddyBackgroundTasks.css';
 
+/**
+ * A Buddy's background work: its background conversations (held by the
+ * client, so every row is openable) and its recent runs from the detail read.
+ */
 export function BuddyBackgroundTasks({
   buddyId,
-  workspaces,
+  runs,
+  refresh,
 }: {
   buddyId: string;
-  workspaces: Workspace[];
+  runs: readonly Run[];
+  refresh: () => Promise<void>;
 }) {
-  const [searchParams, setSearchParams] = useSearchParams();
   const location = useLocation();
   const routeState = mobileConversationRouteState(location);
-  // An empty `?workspace=` (sidebar link for a buddy with no workspace) is
-  // "All workspaces", not a workspace literally named "". Without this,
-  // the filter matches nothing and the tab reads empty while the badge
-  // counts show work — background threads look hidden everywhere, since the
-  // Conversations tab hides background placement by design.
-  const workspaceParam = searchParams.get('workspace');
-  const workspaceId = workspaceParam ? workspaceParam : null;
   const { conversations, runningCount } = useAtomValue(
-    buddyBackgroundConversationsAtomFamily({ buddyId, workspaceId })
+    buddyBackgroundConversationsAtomFamily(buddyId)
   );
-  const unfiltered = useAtomValue(
-    buddyBackgroundConversationsAtomFamily({ buddyId, workspaceId: null })
-  );
-  const availableIds = useAtomValue(availableConversationIdSetAtom);
   const loaded = useAtomValue(conversationLoadCompleteAtom);
 
   return (
@@ -46,50 +38,15 @@ export function BuddyBackgroundTasks({
             {runningCount} running · {conversations.length} conversations
           </p>
         </div>
-        <label>
-          Workspace
-          <select
-            value={workspaceId ?? ''}
-            onChange={(event) => {
-              const next = new URLSearchParams(searchParams);
-              if (event.target.value) next.set('workspace', event.target.value);
-              else next.delete('workspace');
-              setSearchParams(next);
-            }}
-          >
-            <option value="">All workspaces</option>
-            {workspaces.map((workspace) => (
-              <option key={workspace.id} value={workspace.id}>
-                {workspace.name}
-              </option>
-            ))}
-          </select>
-        </label>
       </div>
       {conversations.length === 0 ? (
         <div className="buddy-background-tasks-empty">
           <p>{loaded ? 'No background conversations yet.' : 'Loading background conversations…'}</p>
-          {loaded && workspaceId && unfiltered.conversations.length > 0 && (
-            <button
-              type="button"
-              onClick={() => {
-                const next = new URLSearchParams(searchParams);
-                next.delete('workspace');
-                setSearchParams(next);
-              }}
-            >
-              Show all workspaces ({unfiltered.conversations.length})
-            </button>
-          )}
         </div>
       ) : (
         <ul className="buddy-background-tasks-list">
           {conversations.map((conversation) => {
-            if (!availableIds.has(conversation.id)) return null;
-            const workspaceId = rowBuddy(conversation)?.workspaceId;
-            const workspace = workspaces.find((item) => item.id === workspaceId);
-            const preview = conversation.label;
-            const running = isRowRunning(conversation);
+            const preview = conversation.messages.at(-1)?.content.trim();
             return (
               <li key={conversation.id}>
                 <Link
@@ -98,11 +55,11 @@ export function BuddyBackgroundTasks({
                   state={routeState}
                 >
                   <div className="buddy-background-tasks-row">
-                    <strong>{workspace?.name ?? 'Background conversation'}</strong>
+                    <strong>Background conversation</strong>
                     <span
-                      className={running ? 'buddy-background-tasks-running' : ''}
+                      className={conversation.isRunning ? 'buddy-background-tasks-running' : ''}
                     >
-                      {running ? 'Running' : 'Not running'}
+                      {conversation.isRunning ? 'Running' : 'Not running'}
                     </span>
                   </div>
                   {preview && <p className="buddy-background-tasks-preview">{preview}</p>}
@@ -119,6 +76,8 @@ export function BuddyBackgroundTasks({
           })}
         </ul>
       )}
+      <h3 className="buddy-panel__heading">Recent runs</h3>
+      <BuddyRunList runs={runs} refresh={refresh} empty="No runs yet." />
     </section>
   );
 }
