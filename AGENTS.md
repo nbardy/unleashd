@@ -178,7 +178,9 @@ pnpm screenshot:mobile --out /tmp/shots       # the older phone-only gallery (ch
   Tab strips are `<Link>`s so Back returns to the previous tab instead of
   leaving the buddy, and a tab survives reload.
 - Any "open this conversation" affordance must be a `<Link to={/chat/:id}>`
-  AND availability-checked against `allConversationIdsAtom`. Deleting a
+  AND availability-checked against `availableConversationIdSetAtom` (the one
+  Set derived from `allConversationIdsAtom`; never a per-component
+  `new Set(ids)` memo). Deleting a
   conversation only terminalises its buddy link row, and an automation run
   keeps its `conversation_id` forever — navigating to a thread the client no
   longer holds hits `Chat.tsx`'s `navigate('/')` bounce, which reads to the

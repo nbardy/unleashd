@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import { mobileConversationRouteState } from '../../utils/conversation-route-state';
 import { asArray, buddyApi } from './api';
+import { linkConversationId } from './buddies-shaping';
 import { conversationPath } from './buddy-tabs';
 import type { AutomationRun, BuddyApprovalRequest, BuddyAutomation, BuddyMutation } from './types';
 import type { ConversationLink } from './types';
@@ -12,7 +13,7 @@ interface BuddyAutomationsTabProps {
   busy: boolean;
   mutate: BuddyMutation;
   /** Conversation ids the client actually holds — a run outlives its thread. */
-  availableConversationIds: Set<string>;
+  availableConversationIds: ReadonlySet<string>;
   automationConversations: ConversationLink[];
 }
 
@@ -117,8 +118,7 @@ export function BuddyAutomationsTab({
       <div className="buddy-automation-conversations">
         <h2>Automation conversations</h2>
         {automationConversations.map((conversation) => {
-          const conversationId =
-            conversation.conversation_id ?? conversation.unleashd_conversation_id;
+          const conversationId = linkConversationId(conversation);
           if (!conversationId) return null;
           const available = availableConversationIds.has(conversationId);
           return (
@@ -149,7 +149,7 @@ interface AutomationCardProps {
   automation: BuddyAutomation;
   busy: boolean;
   onMutate: BuddyMutation;
-  availableConversationIds: Set<string>;
+  availableConversationIds: ReadonlySet<string>;
 }
 
 function AutomationCard({

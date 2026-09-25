@@ -1,7 +1,8 @@
 import { atom } from 'jotai';
+import { linkConversationId } from '../components/buddies/buddies-shaping';
 import type { ConversationLink } from '../components/buddies/types';
 import { getConversationLastActivity } from '../utils/time';
-import { allConversationIdsAtom, conversationAtomFamily } from './conversations';
+import { availableConversationIdSetAtom, conversationAtomFamily } from './conversations';
 
 /**
  * Canonical foreground Buddy-thread projection for both shells. Background,
@@ -13,12 +14,12 @@ export function buddyConversationListAtom(
   showReviewConversations: boolean
 ) {
   return atom((get) => {
-    const availableIds = new Set(get(allConversationIdsAtom));
+    const availableIds = get(availableConversationIdSetAtom);
     const seen = new Set<string>();
     const rows = links.flatMap((link) => {
       if (link.kind === 'automation' || (!showReviewConversations && link.kind === 'review'))
         return [];
-      const id = link.conversation_id ?? link.unleashd_conversation_id;
+      const id = linkConversationId(link);
       if (!id || seen.has(id)) return [];
       seen.add(id);
       const conversation = get(conversationAtomFamily(id));

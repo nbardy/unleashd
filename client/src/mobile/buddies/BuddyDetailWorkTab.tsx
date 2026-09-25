@@ -1,7 +1,9 @@
 import { useAtomValue } from 'jotai';
 import { useMemo } from 'react';
-import { allConversationIdsAtom } from '../../atoms/conversations';
+import { buddyWorkGroupsAtom } from '../../atoms/buddy-work';
+import { availableConversationIdSetAtom } from '../../atoms/conversations';
 import { BuddyProjectExecution } from '../../components/buddies/BuddyProjectExecution';
+import { projectConversation } from '../../components/buddies/buddies-shaping';
 import type {
   BuddyProject,
   ConversationLink,
@@ -9,8 +11,7 @@ import type {
   LegacyWorkItem,
   Workspace,
 } from '../../components/buddies/types';
-import { buddyProjectTodoProgress } from '../../components/buddies/ui-contract';
-import { buddyWorkGroupsAtom } from '../../atoms/buddy-work';
+import { TASK_STATUS, buddyProjectTodoProgress } from '../../components/buddies/ui-contract';
 import { EmptyState } from '../components/EmptyState';
 
 // ---------------------------------------------------------------------------
@@ -40,27 +41,21 @@ export function WorkTab({
   onTalk: (workspace: Workspace, buddyProjectId?: string) => void;
   onOpenProjectConversation: (workspace: Workspace, projectId: string) => void;
 }) {
-  const availableIds = useAtomValue(allConversationIdsAtom);
-  const availableSet = useMemo(() => new Set(availableIds), [availableIds]);
+  const availableSet = useAtomValue(availableConversationIdSetAtom);
 
   const groupsAtom = useMemo(() => buddyWorkGroupsAtom(workspaceProjects), [workspaceProjects]);
   const groups = useAtomValue(groupsAtom);
 
   const renderProject = (project: BuddyProject) => {
     const progress = buddyProjectTodoProgress(project);
-    const hasConversation = employee.conversations.some((conversation) => {
-      const conversationId = conversation.conversation_id ?? conversation.unleashd_conversation_id;
-      return (
-        conversation.buddy_project_id === project.id &&
-        Boolean(conversationId && availableSet.has(conversationId))
-      );
-    });
+    const hasConversation =
+      projectConversation(employee.conversations, project.id, availableSet) !== null;
     return (
       <details key={project.id} className="mobile-buddy-work-item">
         <summary className="mobile-buddy-work-item__summary">
           <strong>{project.title}</strong>
           <span>
-            {project.status.replaceAll('_', ' ')} · {progress.done}/{progress.total} todos
+            {TASK_STATUS[project.status].label} · {progress.done}/{progress.total} todos
           </span>
         </summary>
         <div className="mobile-buddy-work-item__body">

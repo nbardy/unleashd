@@ -7,6 +7,7 @@ import {
   countReviewConversations,
   filterAutomationConversations,
   getLatestWorkspaceConversation,
+  projectConversation,
   selectLegacyWorkForWorkspace,
   selectPrimaryProject,
   selectWorkspace,
@@ -228,23 +229,13 @@ export function useBuddyPage(
 
   const openProjectConversation = useCallback(
     (targetWorkspace: Workspace, projectId: string) => {
-      const existing = [...(employee?.conversations ?? [])]
-        .filter((conversation) => {
-          const conversationId =
-            conversation.conversation_id ?? conversation.unleashd_conversation_id;
-          return (
-            conversation.buddy_project_id === projectId &&
-            Boolean(conversationId && availableConversationIds.has(conversationId))
-          );
-        })
-        .sort(
-          (left, right) =>
-            new Date(right.last_active_at ?? 0).getTime() -
-            new Date(left.last_active_at ?? 0).getTime()
-        )[0];
-      const conversationId = existing?.conversation_id ?? existing?.unleashd_conversation_id;
-      if (conversationId) {
-        openRef.current(conversationId);
+      const existing = projectConversation(
+        employee?.conversations ?? [],
+        projectId,
+        availableConversationIds
+      );
+      if (existing !== null) {
+        openRef.current(existing);
         return;
       }
       talk(targetWorkspace, projectId);

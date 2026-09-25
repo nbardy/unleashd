@@ -66,6 +66,30 @@ export function selectPrimaryProject(workspaceProjects: BuddyProject[]): BuddyPr
 // Conversation link projections
 // ---------------------------------------------------------------------------
 
+/** The conversation a Buddy link row points at (current column, else the legacy one). */
+export function linkConversationId(link: ConversationLink): string | null {
+  return link.conversation_id || link.unleashd_conversation_id || null;
+}
+
+/**
+ * The most recently active conversation for one Task that the client still
+ * holds, or null when there is none to open (the caller starts one instead).
+ */
+export function projectConversation(
+  links: readonly ConversationLink[],
+  projectId: string,
+  available: ReadonlySet<string>
+): string | null {
+  const held = links.flatMap((link) => {
+    const conversationId = linkConversationId(link);
+    return link.buddy_project_id === projectId && conversationId && available.has(conversationId)
+      ? [{ conversationId, at: new Date(link.last_active_at ?? 0).getTime() }]
+      : [];
+  });
+  held.sort((left, right) => right.at - left.at);
+  return held[0]?.conversationId ?? null;
+}
+
 export function countReviewConversations(conversations: ConversationLink[]): number {
   return conversations.filter((conversation) => conversation.kind === 'review').length;
 }

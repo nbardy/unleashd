@@ -1,6 +1,46 @@
 import type { BuddyContext, ConversationKind } from '@unleashd/shared';
 import { isBuddyKind } from '@unleashd/shared';
-import type { BuddyOverview, BuddyOverviewEmployee, BuddyProject } from './types';
+import type { BuddyOverview, BuddyOverviewEmployee, BuddyProject, WorkStatus } from './types';
+
+/** Up to two initials for an avatar: "Pixel Bot", "pixel_bot" and "pixel-bot" all give "PB". */
+export function initials(name: string): string {
+  return name
+    .split(/[\s_-]+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((word) => word[0].toUpperCase())
+    .join('');
+}
+
+export type TaskStatusView = {
+  glyph: string;
+  label: string;
+  tone: 'idle' | 'active' | 'blocked' | 'done';
+};
+
+/** One table for every surface that names a Task status (chips, @ menu, work cards). */
+export const TASK_STATUS: Readonly<Record<WorkStatus, TaskStatusView>> = {
+  backlog: { glyph: '○', label: 'Backlog', tone: 'idle' },
+  ready: { glyph: '○', label: 'Ready', tone: 'idle' },
+  in_progress: { glyph: '◐', label: 'In progress', tone: 'active' },
+  review: { glyph: '◑', label: 'In review', tone: 'active' },
+  blocked: { glyph: '■', label: 'Blocked', tone: 'blocked' },
+  done: { glyph: '✓', label: 'Done', tone: 'done' },
+  cancelled: { glyph: '✕', label: 'Cancelled', tone: 'idle' },
+};
+
+function isWorkStatus(status: string): status is WorkStatus {
+  return Object.hasOwn(TASK_STATUS, status);
+}
+
+/**
+ * A channel Task's status arrives as an open string from the store. A status
+ * this client does not know yet is shown verbatim (never relabelled as a
+ * known one), with a neutral glyph.
+ */
+export function taskStatusView(status: string): TaskStatusView {
+  return isWorkStatus(status) ? TASK_STATUS[status] : { glyph: '•', label: status, tone: 'idle' };
+}
 
 /**
  * Directory cards, most recently active buddy first.

@@ -8,7 +8,7 @@ import { useAtomValue } from 'jotai';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { buddySidebarChannelsAtom } from '../../atoms/buddy-sidebar';
-import { allConversationIdsAtom, conversationAtomFamily } from '../../atoms/conversations';
+import { availableConversationIdSetAtom, conversationAtomFamily } from '../../atoms/conversations';
 import { usePolledFetch } from '../../hooks/usePolledFetch';
 import { Chat } from '../Chat';
 import { BuddyRailRow } from './BuddyRailRow';
@@ -50,16 +50,8 @@ import {
 } from './channel-data';
 import { channelLinkPath, postLink } from './channel-link';
 import { type ChannelReference, type ChannelTask, plainChannelText } from './channel-text';
+import { initials } from './ui-contract';
 import './ChannelBrowser.css';
-
-function initials(name: string): string {
-  return name
-    .split(/[\s_-]+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((word) => word[0].toUpperCase())
-    .join('');
-}
 
 function shortTaskId(projectId: string): string {
   return projectId.replace(/^buddy_project_/, '').slice(0, 8);
@@ -973,8 +965,7 @@ export function ChannelBrowser({
 // The desktop route: the full-screen Slack surface for one workspace.
 export function WorkspaceSlack() {
   const { workspaceId = '' } = useParams();
-  const conversationIds = useAtomValue(allConversationIdsAtom);
-  const availableConversationIds = useMemo(() => new Set(conversationIds), [conversationIds]);
+  const availableConversationIds = useAtomValue(availableConversationIdSetAtom);
   const directory = useWorkspaceDirectory(workspaceId);
   return (
     <ChannelBrowser

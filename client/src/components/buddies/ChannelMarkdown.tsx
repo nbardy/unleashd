@@ -18,6 +18,7 @@ import { BuddyReviewResultCard } from '../BuddyReviewMessage';
 import { InlineBuddyBuilderResult } from './BuddyBuilderResultCard';
 import { InlineBuddyTeamConfiguration } from './BuddyTeamConfiguration';
 import { type ChannelTask, isVideoSource, mediaUrl, parseChannelLink } from './channel-text';
+import { taskStatusView } from './ui-contract';
 import './ChannelContent.css';
 
 // Channel post bodies: markdown (GFM, soft breaks, highlighted code; raw HTML
@@ -40,23 +41,6 @@ function channelUrlTransform(url: string): string {
 
 const CHANNEL_MARKDOWN = defineMarkdownFlavor([remarkGfm, remarkBreaks], channelUrlTransform);
 
-type TaskStatusView = { glyph: string; label: string; tone: string };
-
-const TASK_STATUS: Readonly<Record<string, TaskStatusView>> = {
-  backlog: { glyph: '○', label: 'Backlog', tone: 'idle' },
-  ready: { glyph: '○', label: 'Ready', tone: 'idle' },
-  in_progress: { glyph: '◐', label: 'In progress', tone: 'active' },
-  review: { glyph: '◑', label: 'In review', tone: 'active' },
-  blocked: { glyph: '■', label: 'Blocked', tone: 'blocked' },
-  done: { glyph: '✓', label: 'Done', tone: 'done' },
-  cancelled: { glyph: '✕', label: 'Cancelled', tone: 'idle' },
-};
-
-// Status is an open string from the store; an unlisted one shows verbatim.
-function statusView(status: string): TaskStatusView {
-  return TASK_STATUS[status] ?? { glyph: '•', label: status, tone: 'idle' };
-}
-
 const CARD_WIDTH = 280;
 const CARD_GAP = 6;
 const VIEWPORT_MARGIN = 8;
@@ -64,7 +48,7 @@ const VIEWPORT_MARGIN = 8;
 // Title, status, owner, todo progress and next action: the one Task card
 // layout, shared by the hover card and the block card so they cannot drift.
 function TaskCardBody({ task }: { task: ChannelTask }) {
-  const status = statusView(task.status);
+  const status = taskStatusView(task.status);
   return (
     <>
       <span className="channel-task-card-title">{task.title}</span>
@@ -129,7 +113,7 @@ function TaskChip({
       </span>
     );
   }
-  const status = statusView(task.status);
+  const status = taskStatusView(task.status);
   const open = () => {
     const chip = chipRef.current;
     if (chip) setPlacement(placeCard(chip.getBoundingClientRect()));
@@ -182,7 +166,7 @@ function TaskBlock({ taskId, task }: { taskId: string; task: ChannelTask | undef
   return (
     <Link
       className="channel-task-block"
-      data-tone={statusView(task.status).tone}
+      data-tone={taskStatusView(task.status).tone}
       to={taskHref(task)}
     >
       <TaskCardBody task={task} />

@@ -2,9 +2,12 @@ import { getBuddyContext } from '@unleashd/shared';
 import { useAtomValue } from 'jotai';
 import { Link, useLocation, useSearchParams } from 'react-router-dom';
 import { buddyBackgroundConversationsAtomFamily } from '../../atoms/buddy-background';
-import { allConversationIdsAtom, conversationLoadCompleteAtom } from '../../atoms/conversations';
-import { getConversationLastActivity } from '../../utils/time';
+import {
+  availableConversationIdSetAtom,
+  conversationLoadCompleteAtom,
+} from '../../atoms/conversations';
 import { mobileConversationRouteState } from '../../utils/conversation-route-state';
+import { getConversationLastActivity } from '../../utils/time';
 import { conversationPath } from './buddy-tabs';
 import type { Workspace } from './types';
 
@@ -31,7 +34,7 @@ export function BuddyBackgroundTasks({
   const unfiltered = useAtomValue(
     buddyBackgroundConversationsAtomFamily({ buddyId, workspaceId: null })
   );
-  const availableIds = useAtomValue(allConversationIdsAtom);
+  const availableIds = useAtomValue(availableConversationIdSetAtom);
   const loaded = useAtomValue(conversationLoadCompleteAtom);
 
   return (
@@ -82,7 +85,7 @@ export function BuddyBackgroundTasks({
       ) : (
         <ul className="buddy-background-tasks-list">
           {conversations.map((conversation) => {
-            if (!availableIds.includes(conversation.id)) return null;
+            if (!availableIds.has(conversation.id)) return null;
             const context = getBuddyContext(conversation)!;
             const workspace = workspaces.find((item) => item.id === context.workspaceId);
             const preview = conversation.messages.at(-1)?.content.trim();
