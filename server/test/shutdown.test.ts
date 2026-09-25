@@ -333,6 +333,11 @@ test('hot reload preserves a real detached provider process until an idle bounda
  */
 test('a backend exits when its dev runner goes away', async (t) => {
   const shutdownModule = join(__dirname, '..', 'src', 'lifecycle', 'shutdown.ts');
+  // An agent shell spawned under the dev runner inherits WATCH_REPORT_DEPENDENCIES=1.
+  // With it, Node reports every module load over this child's IPC channel, and the
+  // report sent after disconnect() throws EPIPE, failing the test on a healthy build
+  // (2026-09-25). The child must not act as a watched backend.
+  const { WATCH_REPORT_DEPENDENCIES: _watched, ...env } = process.env;
   const backend = spawn(
     process.execPath,
     [
@@ -349,7 +354,7 @@ test('a backend exits when its dev runner goes away', async (t) => {
        setInterval(() => {}, 1000);
        process.send('ready');`,
     ],
-    { stdio: ['ignore', 'ignore', 'inherit', 'ipc'] }
+    { stdio: ['ignore', 'ignore', 'inherit', 'ipc'], env }
   );
   t.after(() => {
     if (backend.exitCode === null) backend.kill('SIGKILL');
