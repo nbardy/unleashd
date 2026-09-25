@@ -13,10 +13,10 @@ import {
 import {
   type ConfigProvenance,
   ConfigRevisionConflictError,
-  type ConversationConfigStore,
-  type PersistedConversationConfigRecord,
+  type ConversationRecord,
+  type ConversationRecordStore,
   type SessionBinding,
-} from './config-store';
+} from './config-records';
 import {
   type LegacyConfigDiagnostic,
   type LegacyConfigEvidence,
@@ -61,7 +61,7 @@ export interface NewConversationConfigInput {
 
 export interface CreateConversationConfigResult {
   state: ConversationConfigState;
-  record: PersistedConversationConfigRecord;
+  record: ConversationRecord;
   replayed: boolean;
 }
 
@@ -77,7 +77,7 @@ export interface HydrateConversationConfigInput {
 
 export interface HydratedConversationConfig {
   state: ConversationConfigState;
-  record: PersistedConversationConfigRecord;
+  record: ConversationRecord;
   migrated: boolean;
   diagnostics: LegacyConfigDiagnostic[];
 }
@@ -93,9 +93,8 @@ export interface ForkConversationConfigInput {
 }
 
 export interface ConversationConfigServiceOptions {
-  store: ConversationConfigStore;
+  store: ConversationRecordStore;
   resolver: ConversationConfigResolver;
-  now?: () => Date;
 }
 
 /**
@@ -158,14 +157,12 @@ export function applyConversationConfigPatch(
 }
 
 export class ConversationConfigService {
-  private readonly store: ConversationConfigStore;
+  private readonly store: ConversationRecordStore;
   private readonly resolver: ConversationConfigResolver;
-  private readonly now: () => Date;
 
   constructor(options: ConversationConfigServiceOptions) {
     this.store = options.store;
     this.resolver = options.resolver;
-    this.now = options.now ?? (() => new Date());
   }
 
   resolve(config: ConversationConfig): Promise<ConfigResolution> {
@@ -194,7 +191,7 @@ export class ConversationConfigService {
 
     const resolution = await this.resolver.resolve(input.config);
     assertResolved(resolution);
-    let record: PersistedConversationConfigRecord;
+    let record: ConversationRecord;
     try {
       record = await this.store.create({
         conversationId: input.conversationId,
@@ -260,7 +257,7 @@ export class ConversationConfigService {
 
     const migration = migrateLegacyConversationConfig(input.legacy);
     const resolution = await this.resolver.resolve(migration.config);
-    let record: PersistedConversationConfigRecord;
+    let record: ConversationRecord;
     try {
       record = await this.store.create({
         conversationId: input.conversationId,
@@ -327,25 +324,22 @@ export class ConversationConfigService {
     await this.store.setCurrentSession(conversationId, binding);
   }
 
-  setDone(
-    conversationId: string,
-    done: boolean
-  ): Promise<PersistedConversationConfigRecord | undefined> {
+  setDone(conversationId: string, done: boolean): Promise<ConversationRecord | undefined> {
     return this.store.setDone(conversationId, done);
   }
 
-  getRecord(conversationId: string): Promise<PersistedConversationConfigRecord | undefined> {
+  getRecord(conversationId: string): Promise<ConversationRecord | undefined> {
     return this.store.getByConversationId(conversationId);
   }
 
-  listRecoverable(): Promise<PersistedConversationConfigRecord[]> {
+  listRecoverable(): Promise<ConversationRecord[]> {
     return this.store.listActive();
   }
 
   claimInitialMessageDispatch(
     conversationId: string,
     dispatchedAt?: Date
-  ): Promise<PersistedConversationConfigRecord | undefined> {
+  ): Promise<ConversationRecord | undefined> {
     return this.store.claimInitialMessageDispatch(conversationId, dispatchedAt);
   }
 
@@ -353,7 +347,7 @@ export class ConversationConfigService {
     conversationId: string,
     claimToken: string,
     dispatchedAt?: Date
-  ): Promise<PersistedConversationConfigRecord | undefined> {
+  ): Promise<ConversationRecord | undefined> {
     return this.store.completeInitialMessageDispatch(conversationId, claimToken, dispatchedAt);
   }
 
@@ -384,43 +378,31 @@ export class ConversationConfigService {
       return { ok: false, error: resolution.error };
     }
 
-    const existing = await this.store.getByConversationId(command.conversationId);
-    if (!existing) {
-      return failure(
-        'revision_conflict',
-        'Configuration record disappeared before the update was committed'
-      );
-    }
-    if (existing.status === 'deleted') {
-      return failure('revision_conflict', 'Conversation has been deleted');
-    }
-
-    const nextRevision = current.revision + 1;
-    const nextRecord: PersistedConversationConfigRecord = {
-      ...existing,
+    // Compare-and-set in the store's own write transaction: exact across
+    // processes, where config-store.ts's promise locks covered one process.
+    const outcome = await this.store.setConfig({
+      conversationId: command.conversationId,
+      expectedConfigRevision: current.revision,
       config: transition.value,
-      recordRevision: existing.recordRevision + 1,
-      configRevision: nextRevision,
       lastResolvedConfig: resolution.value,
-      provenance: 'user',
-      updatedAt: this.now().toISOString(),
-    };
-    try {
-      await this.store.save(nextRecord, {
-        configRevision: current.revision,
-        recordRevision: existing.recordRevision,
-      });
-    } catch (error) {
-      if (error instanceof ConfigRevisionConflictError) {
+    });
+    switch (outcome.t) {
+      case 'committed':
+        break;
+      case 'revision_conflict':
         return failure(
           'revision_conflict',
-          `Configuration revision conflict: expected ${current.revision}, actual ${
-            error.actualRevision ?? 'missing'
-          }`
+          `Configuration revision conflict: expected ${current.revision}, actual ${outcome.current.configRevision}`
         );
-      }
-      throw error;
+      case 'tombstoned':
+        return failure('revision_conflict', 'Conversation has been deleted');
+      case 'missing':
+        return failure(
+          'revision_conflict',
+          'Configuration record disappeared before the update was committed'
+        );
     }
+    const nextRevision = current.revision + 1;
 
     return {
       ok: true,
@@ -436,9 +418,7 @@ export class ConversationConfigService {
     };
   }
 
-  private async stateFromRecord(
-    record: PersistedConversationConfigRecord
-  ): Promise<ConversationConfigState> {
+  private async stateFromRecord(record: ConversationRecord): Promise<ConversationConfigState> {
     const current = await this.resolver.resolve(record.config);
     if (current.status === 'unavailable' && record.lastResolvedConfig) {
       return {
@@ -456,9 +436,9 @@ export class ConversationConfigService {
 }
 
 async function findFirstSessionRecord(
-  store: ConversationConfigStore,
+  store: ConversationRecordStore,
   bindings: readonly SessionBinding[]
-): Promise<PersistedConversationConfigRecord | undefined> {
+): Promise<ConversationRecord | undefined> {
   for (const binding of bindings) {
     const record = await store.findBySession(binding.provider, binding.sessionId);
     if (record) return record;
@@ -483,14 +463,14 @@ export class ConversationConfigResolutionError extends Error {
 }
 
 export class ConversationTombstonedError extends Error {
-  constructor(readonly record: PersistedConversationConfigRecord) {
+  constructor(readonly record: ConversationRecord) {
     super(`Conversation has been deleted: ${record.conversationId}`);
     this.name = 'ConversationTombstonedError';
   }
 }
 
 function isMatchingCreateReplay(
-  existing: PersistedConversationConfigRecord,
+  existing: ConversationRecord,
   input: NewConversationConfigInput
 ): boolean {
   const commandId = input.creation?.commandId;

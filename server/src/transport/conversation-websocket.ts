@@ -27,7 +27,7 @@ import {
   type ConversationConfigService,
   ConversationTombstonedError,
 } from '../conversations/config-service';
-import { ConfigRevisionConflictError } from '../conversations/config-store';
+import { ConfigRevisionConflictError } from '../conversations/config-records';
 import { createConversationService } from '../conversations/creation-service';
 import type {
   ConversationBroadcast,

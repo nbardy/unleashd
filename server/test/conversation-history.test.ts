@@ -14,7 +14,6 @@ import { WebSocketServer } from 'ws';
 import type { DiscoveredSession, SessionHistorySource } from '../src/adapters/disk-adapter';
 import { createConversationApplicationContext } from '../src/application/context';
 import { ConversationConfigService } from '../src/conversations/config-service';
-import { ConversationConfigStore } from '../src/conversations/config-store';
 import {
   type ConversationBroadcast,
   type ConversationRuntime,
@@ -25,6 +24,7 @@ import { createSessionLoader } from '../src/lifecycle/session-loader';
 import { resolveConfigAgainstProviderCatalog } from '../src/providers/catalog-service';
 import { fakeBuddyPort } from './fixtures/buddy-port';
 import { discoveredSession } from './fixtures/discovered-session';
+import { recordStore } from './fixtures/records';
 
 const CONVERSATION_ID = 'dddddddd-0000-4000-8000-000000000004';
 const ORIGINAL_SESSION = 'eeeeeeee-0000-4000-8000-000000000005';
@@ -74,10 +74,7 @@ async function fixture(
 ) {
   const root = await mkdtemp(path.join(os.tmpdir(), 'unleashd-conversation-history-'));
   t.after(() => rm(root, { recursive: true, force: true }));
-  const initialStore = new ConversationConfigStore({
-    appDataRoot: root,
-    now: () => new Date(options.createdAt ?? ORIGINAL_DATE),
-  });
+  const initialStore = recordStore(root, () => new Date(options.createdAt ?? ORIGINAL_DATE));
   await initialStore.create({
     conversationId: CONVERSATION_ID,
     currentSession: { provider: 'codex', sessionId: ORIGINAL_SESSION },
@@ -106,7 +103,7 @@ async function fixture(
 
   function host(options: { finishTurn?: Promise<void>; startupLimit?: number } = {}) {
     // A new host opens new store/service/registry instances over the same durable files.
-    const configStore = new ConversationConfigStore({ appDataRoot: root });
+    const configStore = recordStore(root);
     const configService = new ConversationConfigService({
       store: configStore,
       resolver: { resolve: async (config) => resolveConfigAgainstProviderCatalog(config) },

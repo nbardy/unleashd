@@ -104,19 +104,25 @@ await records.setConfig({ conversationId, expectedConfigRevision, config, lastRe
 ```
 
 `ConversationRecord` has the `PersistedConversationConfigRecord` shape minus `version`
-(always 1). Every mutation is read-modify-write in one `BEGIN IMMEDIATE` transaction and
+(always 2: T09's stored `kind`). The server (`server/src/conversations/config-records.ts`)
+opens its own file, `<app data>/conversation-records.sqlite`, never the ingest cache file:
+records are authoritative, and deleting the cache must never delete them. Every mutation is read-modify-write in one `BEGIN IMMEDIATE` transaction and
 goes through `store::put`, which validates the Zod refinements and rebuilds the
 `conversation_session` index rows. Errors reject as `[sqlite|corrupt|invalid|schema] …`;
 conflicts are return values.
 
-One-time import from a COPY of `conversation-config/v1`:
+One-time import from a COPY of the data dir. The server refuses to boot, printing this
+sequence, while `conversation-config/` exists without the records file. The importer reads
+record v2 only and stops on a v1 file, so T09's v1 → v2 rewrite runs on the copy first:
 
 ```bash
+mkdir <copy> && cp -R ~/.agent-viewer/conversation-config <copy>/ \
+  && ln -s ~/.agent-viewer/session-cache-v1 <copy>/session-cache-v1   # read only
+pnpm --dir server exec tsx src/conversations/record-migration.ts <copy>
 cargo build --release --no-default-features --features cli --bin records-tool
-records-tool import <copy>/v1 new.sqlite   # → new.sqlite.import.json
-records-tool verify <copy>/v1 new.sqlite   # per-record canonical-JSON sha256, rejects byte-equal
+records-tool import <copy>/conversation-config/v1 new.sqlite   # → new.sqlite.import.json
+records-tool verify <copy>/conversation-config/v1 new.sqlite   # sha256 per record; must print ok=true
 records-tool bench new.sqlite 500          # list + CAS latency on a scratch copy
-pnpm exec tsx tools/records-parity.ts --app-data <another copy> --db new.sqlite   # vs config-store.ts
 ```
 
 Nothing is dropped: unparseable, future-version, schema-invalid, duplicate, stray and

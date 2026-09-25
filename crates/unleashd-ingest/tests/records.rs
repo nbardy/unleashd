@@ -31,6 +31,7 @@ fn binding(session: &str) -> SessionBinding {
 fn new_record(id: &str) -> NewRecord {
     NewRecord {
         conversation_id: id.into(),
+        kind: ConversationKind::Chat,
         session_bindings: vec![],
         current_session: Some(binding(&format!("{id}-s1"))),
         working_directory: Some("/work".into()),
@@ -165,8 +166,9 @@ fn pretty(v: &Value) -> String {
 
 fn record_json(id: &str, sessions: &[&str]) -> Value {
     json!({
-        "version": 1,
+        "version": 2,
         "conversationId": id,
+        "kind": { "t": "chat" },
         "sessionBindings": sessions.iter().map(|s| json!({ "provider": "claude", "sessionId": s })).collect::<Vec<_>>(),
         "status": "active",
         "done": false,
@@ -203,15 +205,21 @@ fn import_keeps_every_file_and_verify_proves_it_by_hash() {
     buddy["workingDirectory"] = json!("/w");
     buddy["lastResolvedConfig"] = json!({ "provider": "claude", "modelId": "opus", "reasoningEffort": "high" });
     buddy["creation"] = json!({
-        "commandId": "cmd", "fingerprint": "fp", "placement": "background",
+        "commandId": "cmd", "fingerprint": "fp",
         "branch": { "sourceConversationId": "src", "throughMessageId": "m1", "audience": { "kind": "project", "projectId": "p" },
-                    "handoff": "h", "launches": { "zz": "later", "aa": "earlier" } },
-        "buddyContext": { "buddyId": "b1", "workspaceId": "w1", "buddyProjectId": null, "automationRunId": "run",
-                          "knowledgeScope": { "kind": "owner_thread", "conversationId": "o" }, "allowedBuddyOperations": ["buddy.post"] }
+                    "handoff": "h", "launches": { "zz": "later", "aa": "earlier" } }
     });
+    buddy["kind"] = json!({ "t": "buddy", "visibility": "background",
+        "context": { "buddyId": "b1", "workspaceId": "w1", "buddyProjectId": null, "automationRunId": "run",
+                     "knowledgeScope": { "kind": "owner_thread", "conversationId": "o" }, "allowedBuddyOperations": ["buddy.post"] } });
     put_record(&root, "buddy-1", &buddy);
     put_index(&root, "claude", "s-old", "buddy-1");
     put_index(&root, "claude", "s-cur", "buddy-1");
+
+    // A worker: nullable ids stay null, not absent.
+    let mut worker = record_json("worker-1", &[]);
+    worker["kind"] = json!({ "t": "worker", "swarmId": "sw", "workerId": null, "role": null });
+    put_record(&root, "worker-1", &worker);
 
     // A legacy file without status / done / recordRevision.
     let mut legacy = record_json("legacy-1", &["s-leg"]);
@@ -221,7 +229,7 @@ fn import_keeps_every_file_and_verify_proves_it_by_hash() {
     put_record(&root, "legacy-1", &legacy);
 
     // Bad files, one of each kind.
-    write(&root.join("by-conversation").join(format!("{}.json", encode_id("torn"))), "{\"version\": 1, \"conversa");
+    write(&root.join("by-conversation").join(format!("{}.json", encode_id("torn"))), "{\"version\": 2, \"conversa");
     let mut unknown_key = record_json("extra-1", &[]);
     unknown_key["surprise"] = json!(true);
     put_record(&root, "extra-1", &unknown_key);
@@ -229,7 +237,7 @@ fn import_keeps_every_file_and_verify_proves_it_by_hash() {
     empty_session["sessionBindings"][0]["sessionId"] = json!("");
     put_record(&root, "empty-1", &empty_session);
     let mut future = record_json("future-1", &[]);
-    future["version"] = json!(2);
+    future["version"] = json!(3);
     put_record(&root, "future-1", &future);
     write(&root.join("by-conversation").join("copy-of-legacy.json"), &pretty(&record_json("legacy-1", &[])));
     write(&root.join("by-conversation").join(".abc.json.123.uuid.tmp"), "{");
@@ -240,7 +248,7 @@ fn import_keeps_every_file_and_verify_proves_it_by_hash() {
 
     let db = dir.path().join("records.sqlite");
     let report = import(&root, &db).unwrap();
-    assert_eq!((report.record_files, report.imported), (8, 2));
+    assert_eq!((report.record_files, report.imported), (9, 3));
     let reasons: Vec<RejectReason> = report.rejected.iter().map(|r| r.reason).collect();
     for expected in [
         RejectReason::CorruptJson,
@@ -266,15 +274,15 @@ fn import_keeps_every_file_and_verify_proves_it_by_hash() {
     assert_eq!((legacy.status, legacy.done, legacy.record_revision), (RecordStatus::Active, false, 0));
     let summaries = records.list_summaries().unwrap();
     let b = summaries.iter().find(|s| s.conversation_id == "buddy-1").unwrap();
-    assert_eq!(b.kind, KindTag::Buddy { buddy_id: "b1".into() });
+    let ConversationKind::Buddy { context: ctx, visibility } = &b.kind else { panic!("buddy-1 kind {:?}", b.kind) };
+    assert_eq!(*visibility, BuddyVisibility::Background);
     assert_eq!(b.sessions.len(), 2);
-    let ctx = records.get("buddy-1").unwrap().unwrap().creation.unwrap().buddy_context.unwrap();
-    assert_eq!((ctx.buddy_project_id, ctx.legacy_work_item_id), (Some(None), None));
+    assert_eq!((ctx.buddy_project_id.clone(), ctx.legacy_work_item_id.clone()), (Some(None), None));
     drop(records);
 
     let checked = verify(&root, &db).unwrap();
     assert!(checked.ok, "{checked:#?}");
-    assert_eq!((checked.records_compared, checked.record_hash_matches), (2, 2));
+    assert_eq!((checked.records_compared, checked.record_hash_matches), (3, 3));
     assert_eq!(checked.rejects_compared, report.rejected.len());
 
     // The verifier is not vacuous: change one stored field and it fails on that record.
@@ -289,6 +297,38 @@ fn import_keeps_every_file_and_verify_proves_it_by_hash() {
 
     // A second import into the same file is refused rather than merged.
     assert!(import(&root, &db).is_err());
+
+    // A v1 file left behind (record-migration.ts not run) stops the import outright: a v1 reject
+    // row would still verify ok=true and silently drop that conversation.
+    let mut v1 = record_json("v1-1", &[]);
+    v1["version"] = json!(1);
+    v1.as_object_mut().unwrap().remove("kind");
+    put_record(&root, "v1-1", &v1);
+    let err = import(&root, &dir.path().join("fresh.sqlite")).unwrap_err().to_string();
+    assert!(err.contains("record-migration"), "{err}");
+}
+
+#[test]
+fn two_connections_open_a_new_file_at_once() {
+    // Regression (T23b): concurrent opens of a fresh file raced on the WAL switch and the schema
+    // row, and one failed (`database is locked` / `UNIQUE constraint failed: meta.key`).
+    for _ in 0..50 {
+        let dir = tempfile::tempdir().unwrap();
+        let db = dir.path().join("r.sqlite");
+        let barrier = Arc::new(Barrier::new(8));
+        let opens: Vec<_> = (0..8)
+            .map(|_| {
+                let (db, barrier) = (db.clone(), barrier.clone());
+                std::thread::spawn(move || {
+                    barrier.wait();
+                    Records::open(&db).map(|_| ())
+                })
+            })
+            .collect();
+        for open in opens {
+            open.join().unwrap().unwrap();
+        }
+    }
 }
 
 #[test]
