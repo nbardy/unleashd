@@ -410,7 +410,7 @@ const EXPECTED = {
       ],
       codex: [
         { label: '5h limit', usedPercent: 12.5, windowMinutes: 300, resetsAt: 1900000000 },
-        { label: 'Weekly limit', usedPercent: 40, windowMinutes: 10080, resetsAt: 1900500000 },
+        { label: '7d limit', usedPercent: 40, windowMinutes: 10080, resetsAt: 1900500000 },
       ],
       opencode: [],
     },

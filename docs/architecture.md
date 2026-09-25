@@ -136,98 +136,55 @@ guarded by a test; every one of them regressed by growing with history size.
 
 ### 2.0) A config record is not a conversation
 
-(Before T13b S2. The loader and its 500-transcript window are gone; the rule that a
-discovered record alone never becomes a runtime holds in `ingest/runtimes.ts` `recover`.)
+The records store holds a record for every session the ingest has seen, tagged
+`provenance: 'external_discovered'`. That record is a **sidecar for a
+transcript, not evidence that a conversation exists.** At boot `recover()` in
+`server/src/ingest/runtimes.ts` builds runtimes only for records the app itself
+created (`user` / `legacy_inferred`) — the ones that may have nothing on disk
+yet, e.g. a thread whose first message has not dispatched. Every other listed
+conversation becomes a runtime on first use (`materialize`), from its record
+and the store's session rows. Recovering every active record once produced
+5,275 empty "New conversation — 1m ago" rows (2026-09-06); a recovered runtime
+also keeps `record.createdAt`.
 
-Startup hydrates only the newest `STARTUP_INITIAL_LOAD_LIMIT` (500) transcripts;
-the mtime baseline still records every source, so `limit` is a real hydration
-cap and the omitted history does not look "new" to the first poll.
-
-The records store holds one durable record per session it has ever seen,
-tagged `provenance: 'external_discovered'`. That record is a **sidecar for a
-transcript on disk, not evidence that a conversation exists.** Only records the
-app itself created (`user` / `legacy_inferred`) may be materialised without a
-transcript — those are the ones that genuinely have nothing on disk yet, e.g. a
-new thread whose first message has not dispatched.
-
-`recoverConversationsWithoutTranscripts()` ignored provenance and recovered all
-6,143 active records. Every un-hydrated session came back as a message-less
-conversation stamped `createdAt = now`: **5,275 of 5,633 conversations in the
-init payload on 2026-09-06**, all titled "New conversation — 1m ago", all
-sorted into the top of the sidebar's recent-folder groups. A recovered
-conversation now also keeps `record.createdAt`, so history with nothing on disk
-cannot claim it was created at boot.
-
-Consequence to keep in mind: a conversation older than the hydration cap is
-absent from the sidebar until polling or a raised cap hydrates it. That is the
-designed meaning of the cap — an empty row for it was never a better answer,
-since `GET /api/conversations/:id` serves the registry and would have returned
-an empty transcript anyway.
-
-Regression guard: `server/test/session-loader-hydration.test.ts`.
+History is read on demand, never hydrated: `list.page` in
+`server/src/ingest/conversation-list.ts` reads the bound sessions' rows through
+`sessionMessages` (`ingest/history.ts`, over the crate's `Ingest.messages`) and
+merges the live-turn overlay (`mergeSessionMessages`).
+That is the body endpoint of the protocol v3 seam
+(`GET /api/conversations/:id/messages?afterSeq=&limit=`), so there is no
+startup window and no hydration cap. Guards: `server/test/ingest-history.test.ts`,
+`server/test/ingest-list.test.ts`.
 
 Stable tool instructions belong in native tool descriptions or the dedicated
 model instruction channel. Keep authored text intact; scope generated workflow
-context to the selected operation. Display cleanup runs independently of durable
-identity: Builder, Buddy and swarm envelopes must not become user messages
-after reload. (The merge feature and its `unleashd:merge-prefix` envelope were
-deleted on 2026-09-25; old merge transcripts now display the injected reviews as
-ordinary first-message text.) Complete reserved envelopes pasted at the start of user text remain ambiguous.
-Tests cover live provider input, imported/cached display and literal user quotes;
-see `product/buddies/AUDIT_PROMPT_PLACEMENT_2026-09-12.md` for rationale and limits.
+context to the selected operation. Builder, Buddy and swarm envelopes must not
+become user messages after reload. (The merge feature and its
+`unleashd:merge-prefix` envelope were deleted on 2026-09-25.) See
+`product/buddies/AUDIT_PROMPT_PLACEMENT_2026-09-12.md` for rationale and limits.
 
-Codex app transcripts can store `AGENTS.md` and environment setup as user-role
-`response_item` messages ahead of the real prompt, and again on resumed turns.
-The adapter filters their `content_item_kinds` provenance tags before extracting
-visible text; do not hide actual user text based on an `AGENTS.md` prefix.
-The same filter removes `plugins.recommendations`. Codex 0.146 predates those
-tags: recognize its complete three-block recommendations/AGENTS/environment
-bundle only at startup, with turn metadata and no provenance tags. Preserve
-explicit user text, standalone pastes, and later untagged messages. Cache v6
-reparses old projections so resumed history no longer becomes a plugin-list title.
-Buddy envelope removal runs independently of durable identity and checks every
-user message, since the briefing need not occupy the first row. Durable kind
-still wins over recovered marker identity. Parser changes must invalidate the
-normalized session cache so unchanged older transcripts are repaired on reload.
-Regression guard: `server/test/codex-buddy-transcript.test.ts`.
-
-Codex tool calls must survive both the event-message and response-message history
-paths. Retain function/freeform calls in transcript order and deduplicate them by
-call identity, not their formatted text. Otherwise polling replaces the live tool
-activity with a prose-only transcript. Preserve commands, JSON arguments and
-freeform scripts in `Message.toolCall.input`; formatting just the tool name loses
-the information the expanded history should show. Render input as literal code
-and omit it from bounded sidebar summaries. Cache v5 reparses earlier projections
-to restore those details. Guards: `server/test/codex-tool-history.test.ts` and the
-disk-to-desktop/mobile render case in `client/test/chat-message-groups.test.tsx`.
+Transcript display rules live in the crate's parsers
+(`crates/unleashd-ingest/src/parsers/*`), e.g. `parsers/codex.rs` drops Codex's
+`AGENTS.md` / environment / `plugins.recommendations` blocks by their
+`content_item_kinds` provenance tags (never by an `AGENTS.md` text prefix), and
+keeps function/freeform tool calls in transcript order, deduplicated by call id,
+with their full input. Guards: `crates/unleashd-ingest/tests/{formats,regressions}.rs`.
 
 ### 2.1) Rehydration: the durable record owns Buddy identity
 
-Two independent stores describe a Buddy conversation, and only one of them is
-rebuilt on restart:
+A conversation's kind is ONE stored value, `record.kind` (chat | buddy |
+builder | worker); a runtime takes it from the record, never from transcript
+text. The Buddies page lists `conversation_links` rows in the Buddies SQLite;
+the sidebar's Buddies group reads the runtime's kind — both now come from
+durable state, so they agree after a restart.
 
-| Surface | Source | Survives restart |
-|---|---|---|
-| Buddies page conversation list | `conversation_links` rows in the Buddies SQLite, written once at creation | yes, unconditionally |
-| Sidebar "Buddies" group | live runtime `kind` (`isBuddyConversation`) | only if rehydration recovers it |
-
-`sessionToConversation` (`disk-adapter.ts`) **never returns a nullish `kind`** —
-it falls back to `{kind:'general'}` when the transcript carries no
-`<!-- unleashd:buddy-context-v2 -->` marker. So in `session-loader.ts` any
-`source.kind ?? durableFallback` chain is a bug: the `general` default
-short-circuits it and the durable fallback becomes dead code. Resolve kind by
-**first specific candidate wins**, never first non-null.
-
-This bit Chat "Fork". A fork inherits its buddy identity server-side from
-`resumedFromConversationId` (`conversation-websocket.ts`) and persists it to
-`creation.buddyContext`, but the marker is only injected on a first turn that
-has a briefing (`runtime.ts`), and forks are created without one — so a fork's
-transcript never carries the marker. Before the fix, every restart rehydrated
-forks as `general`: they vanished from the sidebar's Buddies group and lost
-buddy MCP scoping while their link row stayed live. The visible symptom was
-"N conversations on the Buddies page, N-1 in the sidebar".
-
-Regression guard: `server/test/session-loader-hydration.test.ts`.
+This used to break Chat "Fork": the transcript loader resolved kind from the
+`<!-- unleashd:buddy-context-v2 -->` marker, which a fork's first turn never
+writes, so every restart demoted forks to `general` ("N conversations on the
+Buddies page, N-1 in the sidebar"). The create command in
+`conversation-websocket.ts` now resolves a fork's kind from its source and
+stores it in `record.kind`, which is what survives. Guards: `server/test/wire-v3.test.ts`,
+`server/test/record-migration.test.ts`.
 
 ## 3) Conversation lifecycle and state authority
 

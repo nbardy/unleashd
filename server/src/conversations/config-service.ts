@@ -71,8 +71,7 @@ export interface HydrateConversationConfigInput {
   sessionBindings: readonly SessionBinding[];
   currentSession?: SessionBinding;
   workingDirectory?: string;
-  /** Named `legacy` for its caller in lifecycle/session-loader.ts (lane S2's); it is session evidence. */
-  legacy: SessionConfigEvidence;
+  sessionEvidence: SessionConfigEvidence;
 }
 
 export interface HydratedConversationConfig {
@@ -255,7 +254,7 @@ export class ConversationConfigService {
       };
     }
 
-    const migration = configFromSessionEvidence(input.legacy);
+    const migration = configFromSessionEvidence(input.sessionEvidence);
     const resolution = await this.resolver.resolve(migration.config);
     let record: ConversationRecord;
     try {

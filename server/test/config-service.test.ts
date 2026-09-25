@@ -193,7 +193,7 @@ test('create, update, fork, and hydrate preserve selection intent and revisions'
       conversationId: CONVERSATION_ID,
       discoveredKind: { t: 'chat' },
       sessionBindings: [{ provider: 'codex', sessionId: 'native-session' }],
-      legacy: { provider: 'codex', reportedModel: 'gpt-5.4-high' },
+      sessionEvidence: { provider: 'codex', reportedModel: 'gpt-5.4-high' },
     });
     assert.equal(hydrated.migrated, false);
     assert.deepEqual(hydrated.state.config, updated.value.next.config);
@@ -206,7 +206,7 @@ test('create, update, fork, and hydrate preserve selection intent and revisions'
       conversationId: 'native-session',
       discoveredKind: { t: 'chat' },
       sessionBindings: [{ provider: 'codex', sessionId: 'native-session' }],
-      legacy: { provider: 'codex', reportedModel: 'gpt-5.6-sol' },
+      sessionEvidence: { provider: 'codex', reportedModel: 'gpt-5.6-sol' },
     });
     assert.equal(recoveredByNativeSession.record.conversationId, CONVERSATION_ID);
     assert.deepEqual(recoveredByNativeSession.state.config, updated.value.next.config);
@@ -220,7 +220,7 @@ test('create, update, fork, and hydrate preserve selection intent and revisions'
 
 test('Fable session hydration recovers reported model names and preserves saved selections', async () => {
   await withService(async (service, store) => {
-    const legacy = {
+    const sessionEvidence = {
       provider: 'claude' as const,
       reportedModel: 'claude-fable-5-1',
       source: 'external_session' as const,
@@ -229,7 +229,7 @@ test('Fable session hydration recovers reported model names and preserves saved 
       conversationId: CONVERSATION_ID,
       discoveredKind: { t: 'chat' },
       sessionBindings: [{ provider: 'claude', sessionId: 'imported-fable-session' }],
-      legacy,
+      sessionEvidence,
     });
     assert.equal(imported.migrated, true);
     assert.deepEqual(imported.diagnostics, []);
@@ -250,7 +250,7 @@ test('Fable session hydration recovers reported model names and preserves saved 
       conversationId: FORK_ID,
       discoveredKind: { t: 'chat' },
       sessionBindings: [{ provider: 'claude', sessionId: 'saved-claude-session' }],
-      legacy,
+      sessionEvidence,
     });
     assert.equal(existing.migrated, false);
     assert.deepEqual(existing.state.config, savedConfig);
@@ -315,7 +315,7 @@ test('current session rotation is authoritative and tombstones block hydration',
         conversationId: 'session-2',
         discoveredKind: { t: 'chat' },
         sessionBindings: [{ provider: 'codex', sessionId: 'session-2' }],
-        legacy: { provider: 'codex', reportedModel: 'gpt-5.6-sol' },
+        sessionEvidence: { provider: 'codex', reportedModel: 'gpt-5.6-sol' },
       }),
       ConversationTombstonedError
     );
@@ -444,7 +444,7 @@ test('session hydration never guesses an unknown reported model', async () => {
       conversationId: CONVERSATION_ID,
       discoveredKind: { t: 'chat' },
       sessionBindings: [{ provider: 'codex', sessionId: 'future-codex' }],
-      legacy: { provider: 'codex', reportedModel: 'gpt-example-ultra', source: 'external_session' },
+      sessionEvidence: { provider: 'codex', reportedModel: 'gpt-example-ultra', source: 'external_session' },
     });
     assert.deepEqual(futureSuffix.state.config.model, { mode: 'default' });
     assert.deepEqual(futureSuffix.state.config.reasoning, { mode: 'disabled' });
@@ -455,7 +455,7 @@ test('session hydration never guesses an unknown reported model', async () => {
       conversationId: FORK_ID,
       discoveredKind: { t: 'chat' },
       sessionBindings: [{ provider: 'claude', sessionId: 'future-fable' }],
-      legacy: { provider: 'claude', reportedModel: 'claude-fable-future' },
+      sessionEvidence: { provider: 'claude', reportedModel: 'claude-fable-future' },
     });
     assert.deepEqual(futureFable.state.config.model, { mode: 'default' });
     assert.equal(futureFable.diagnostics[0]?.code, 'unknown_reported_model');

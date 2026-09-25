@@ -97,7 +97,7 @@ export function createRuntimeBuilder(dependencies: RuntimeBuilderDependencies): 
       conversationId: record.conversationId,
       sessionBindings: [],
       discoveredKind: record.kind,
-      legacy: {
+      sessionEvidence: {
         provider: record.config.provider,
         reportedModel: record.lastResolvedConfig?.modelId,
         source: 'external_session',

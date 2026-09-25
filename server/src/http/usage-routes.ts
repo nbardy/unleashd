@@ -151,17 +151,25 @@ function codexLimits(raw: string | undefined): RateLimit[] {
     console.warn('[usage] unrecognized Codex rate_limits payload:', parsed.error.message);
     return [];
   }
-  const window = (label: string, w: z.infer<typeof CodexWindowSchema>): RateLimit => ({
-    label,
-    usedPercent: w.used_percent,
-    windowMinutes: w.window_minutes,
-    resetsAt: w.resets_at ?? null,
-  });
+  // Codex sends whichever windows the plan has: the weekly window can arrive as
+  // `primary` with `secondary` absent, so the slot name says nothing about the
+  // duration — label every window that exists from its minutes.
   const { primary, secondary } = parsed.data;
-  return [
-    ...(primary ? [window(`${primary.window_minutes / 60}h limit`, primary)] : []),
-    ...(secondary ? [window('Weekly limit', secondary)] : []),
-  ];
+  return [primary, secondary]
+    .filter((w): w is z.infer<typeof CodexWindowSchema> => w != null)
+    .map((w) => ({
+      label: `${rateWindowLabel(w.window_minutes)} limit`,
+      usedPercent: w.used_percent,
+      windowMinutes: w.window_minutes,
+      resetsAt: w.resets_at ?? null,
+    }));
+}
+
+/** A rate-limit window's duration as a short label: 300 → "5h", 10080 → "7d", 90 → "90m". */
+export function rateWindowLabel(minutes: number): string {
+  if (minutes % 1440 === 0) return `${minutes / 1440}d`;
+  if (minutes % 60 === 0) return `${minutes / 60}h`;
+  return `${minutes}m`;
 }
 
 export async function usageResponse(
