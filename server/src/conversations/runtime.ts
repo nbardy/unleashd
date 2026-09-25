@@ -65,14 +65,11 @@ import type {
 import { noteActivity } from '../observability/event-loop-stall';
 import { resolveConfigAgainstProviderCatalog } from '../providers/catalog-service';
 import {
-  extractCodexCollabToolInput,
-  getCodexSubagentCurrentAction,
-  getSubagentDescription,
-  isCodexCollabToolName,
-  isSubagentSpawnTool,
-  isTerminalSubagentStatus,
-  normalizeCodexSubagentStatus,
-} from '../subagent-tools';
+  type SubAgentFold,
+  type SubAgentHost,
+  failRunningSubAgents,
+  subAgentFoldFor,
+} from '../turns/subagents';
 
 export type OwnedBuddyChatRun = { id: string; claim_token: string; deadline: string };
 export type BuddyChatAdmission =
@@ -820,8 +817,8 @@ export function createConversationRuntime(
     // Server-owned message queue — persists across client navigation/refresh.
     // Client mirrors this state via queue_updated broadcasts.
     queue: QueuedMessage[];
-    // Track pending tool_use blocks that might be Task tools
-    private _pendingTaskTools: Map<string, { id: string; startedAt: Date }>;
+    // Chosen once per turn from the harness capability table (turns/subagents.ts).
+    private _subAgentFold: SubAgentFold = subAgentFoldFor('claude');
     // Track if we've started a CLI session (for --resume vs --session-id)
     private _hasStartedSession: boolean;
     // Buffer stderr for this process run so silent failures can be surfaced to UI.
@@ -946,7 +943,6 @@ export function createConversationRuntime(
       this.providerUsage = opts.existingProviderUsage ?? null;
       this.subAgents = [];
       this.queue = [];
-      this._pendingTaskTools = new Map();
       // Mark session as started if loading existing (use --resume for next message)
       this._hasStartedSession = existingSessionId !== undefined;
       this._stderrBuffer = '';
@@ -1062,6 +1058,7 @@ export function createConversationRuntime(
       this._lastAttemptActivitySource = null;
       this._lastObservedTurnActivity = null;
       this._primeSwarmBaseline();
+      this._subAgentFold = subAgentFoldFor(executionConfig.provider);
       if (this._activeAttemptId) {
         turnAttempts.starting(this._activeAttemptId);
         turnAttempts.activity(
@@ -1440,7 +1437,6 @@ export function createConversationRuntime(
             dependencies.revokeBuddyControlCapability?.(this.id);
             this.process = null;
             this._activeTurnStop = null;
-            this._pendingTaskTools.clear();
             clearExternalRunningStatus(this.id, this.sessionId);
             markLocalCompletionSuppression(this.id, this.sessionId);
             if (this.queue.length > 0 && this.queue[0].status === 'sending') {
@@ -1573,9 +1569,7 @@ export function createConversationRuntime(
           dependencies.revokeBuddyControlCapability?.(this.id);
           this.process = null;
           this._activeTurnStop = null;
-          // Clear pending task tools — message_complete handles the normal path, but
           // kills/crashes skip it, leaving stale entries that accumulate across runs.
-          this._pendingTaskTools.clear();
           // Suppress external-running detection for trailing disk writes from this
           // just-finished local run. Also clear any stale external flag immediately.
           clearExternalRunningStatus(this.id, this.sessionId);
@@ -1607,7 +1601,6 @@ export function createConversationRuntime(
           dependencies.revokeBuddyControlCapability?.(this.id);
           this.process = null;
           this._activeTurnStop = null;
-          this._pendingTaskTools.clear();
           this.broadcastStatus();
           updateBuddyConversationLink(this, 'failed');
           settleBuddyDelegation(this, 'failed', message);
@@ -1655,168 +1648,18 @@ export function createConversationRuntime(
       }
     }
 
-    private _findSubAgentByRuntimeId(id: string): SubAgent | undefined {
-      return this.subAgents.find((agent) => agent.id === id || agent.providerThreadId === id);
-    }
-
-    private _broadcastSubAgentUpdate(agent: SubAgent): void {
-      broadcast({
-        type: 'subagent_update',
-        conversationId: this.id,
-        subAgentId: agent.id,
-        toolUses: agent.toolUses,
-        tokens: agent.tokens,
-        currentAction: agent.currentAction,
-        status: agent.status,
-        rawStatus: agent.rawStatus,
-        statusSource: agent.statusSource,
-      });
-    }
-
-    private _completeNativeCodexSubAgent(agent: SubAgent, completedAt = new Date()): void {
-      if (agent.status === 'completed' || agent.status === 'error') {
-        agent.completedAt = completedAt;
-        agent.currentAction = agent.status === 'error' ? 'Error' : 'Done';
-        broadcast({
-          type: 'subagent_complete',
-          conversationId: this.id,
-          subAgentId: agent.id,
-          status: agent.status,
-          completedAt,
-        });
-      }
-    }
-
-    private _createOrUpdateCodexNativeSubAgent(
-      childThreadId: string,
-      toolName: string,
-      prompt: string | undefined,
-      rawStatus: string | undefined,
-      statusMessage: string | null | undefined
-    ): { agent: SubAgent; isNew: boolean; wasTerminal: boolean } {
-      const description = getSubagentDescription(this.provider, toolName, {
-        ...(prompt ? { prompt } : {}),
-      });
-      const fallbackStatus = toolName === 'spawn_agent' ? 'pending' : 'running';
-      const normalizedStatus = normalizeCodexSubagentStatus(rawStatus, fallbackStatus);
-      const currentAction = getCodexSubagentCurrentAction(toolName, rawStatus, statusMessage);
-      let agent = this._findSubAgentByRuntimeId(childThreadId);
-      const isNew = !agent;
-      const wasTerminal = !!agent && isTerminalSubagentStatus(agent.status);
-
-      if (!agent) {
-        agent = {
-          id: childThreadId,
-          description,
-          status: normalizedStatus,
-          toolUses: 0,
-          tokens: 0,
-          currentAction,
-          startedAt: new Date(),
-          providerThreadId: childThreadId,
-          rawStatus,
-          statusSource: 'native',
-        };
-        this.subAgents.push(agent);
-      } else {
-        agent.providerThreadId = childThreadId;
-        if (!agent.description || agent.description.startsWith('Running ')) {
-          agent.description = description;
-        }
-        agent.status = normalizedStatus;
-        agent.rawStatus = rawStatus;
-        agent.statusSource = 'native';
-        if (currentAction) {
-          agent.currentAction = currentAction;
-        } else if (normalizedStatus === 'completed' || normalizedStatus === 'error') {
-          agent.currentAction = undefined;
-        }
-        if (normalizedStatus === 'completed' || normalizedStatus === 'error') {
-          agent.completedAt ??= new Date();
-        }
-      }
-
-      return { agent, isNew, wasTerminal };
-    }
-
-    private _handleCodexCollabToolUse(
-      event: ToolUseEvent
-    ): { suppressGenericSubagentHandling: boolean; suppressFormattedOutput: boolean } | null {
-      if (this.provider !== 'codex' || !isCodexCollabToolName(event.name)) {
-        return null;
-      }
-
-      const { phase, receiverThreadIds, prompt, agentStates } = extractCodexCollabToolInput(
-        event.input
-      );
-      if (phase !== 'completed') {
-        return {
-          suppressGenericSubagentHandling: true,
-          suppressFormattedOutput: false,
-        };
-      }
-
-      const childIds = new Set<string>(receiverThreadIds);
-      for (const childId of Object.keys(agentStates)) {
-        childIds.add(childId);
-      }
-
-      for (const childId of childIds) {
-        const agentState = agentStates[childId];
-        const { agent, isNew, wasTerminal } = this._createOrUpdateCodexNativeSubAgent(
-          childId,
-          event.name,
-          prompt,
-          agentState?.status,
-          agentState?.message
-        );
-
-        if (event.name !== 'spawn_agent') {
-          agent.toolUses += 1;
-        }
-
-        if (isNew) {
-          console.log(
-            `[${this.id}] Codex sub-agent started: ${agent.id.substring(0, 8)} - "${agent.description.substring(0, 50)}"`
-          );
-          broadcast({
-            type: 'subagent_start',
-            conversationId: this.id,
-            subAgent: agent,
-          });
-        } else {
-          this._broadcastSubAgentUpdate(agent);
-        }
-
-        if (agentState?.message !== undefined && agentState.message !== null) {
-          this._broadcastSubAgentUpdate(agent);
-        }
-
-        if (isTerminalSubagentStatus(agent.status)) {
-          if (!agent.completedAt) {
-            agent.completedAt = new Date();
-          }
-          if (agent.status === 'error') {
-            agent.currentAction = 'Error';
-          } else if (!agent.currentAction) {
-            agent.currentAction = 'Done';
-          }
-          this._broadcastSubAgentUpdate(agent);
-          if (!wasTerminal) {
-            this._completeNativeCodexSubAgent(agent, agent.completedAt);
-          }
-        }
-      }
-
-      return {
-        suppressGenericSubagentHandling: true,
-        suppressFormattedOutput: true,
-      };
-    }
-
     // Turn events are typed once, by agent-cli (`UnifiedAgentEvent`). The
     // consumer in spawnForMessage calls these folds directly; the former
     // ProviderEvent re-typing layer and its second switch are gone (T08 S1).
+
+    private get subAgentHost(): SubAgentHost {
+      return {
+        conversationId: this.id,
+        agents: this.subAgents,
+        broadcast,
+        newId: createSessionId,
+      };
+    }
 
     private appendText(text: string): void {
       this._ensureAssistantMessage();
@@ -1833,48 +1676,7 @@ export function createConversationRuntime(
 
     private applyToolUse(event: ToolUseEvent): void {
       this._ensureAssistantMessage();
-      const codexCollabHandling = this._handleCodexCollabToolUse(event);
-      if (!codexCollabHandling && isSubagentSpawnTool(this.provider, event.name)) {
-        const description = getSubagentDescription(this.provider, event.name, event.input);
-        const blockId = (event.input as { _blockId?: string })._blockId || createSessionId();
-        const subAgent: SubAgent = {
-          id: blockId,
-          description,
-          status: 'running',
-          toolUses: 0,
-          tokens: 0,
-          currentAction: undefined,
-          startedAt: new Date(),
-        };
-        this.subAgents.push(subAgent);
-        this._pendingTaskTools.set(blockId, { id: blockId, startedAt: new Date() });
-        console.log(
-          `[${this.id}] Sub-agent started: ${blockId.substring(0, 8)} - "${description.substring(0, 50)}"`
-        );
-        broadcast({ type: 'subagent_start', conversationId: this.id, subAgent });
-        return;
-      }
-      if (!codexCollabHandling?.suppressGenericSubagentHandling) {
-        // A non-spawn tool updates the active sub-agent's current action.
-        const activeAgent = this.subAgents.find((a) => a.status === 'running');
-        if (activeAgent) {
-          const filePath =
-            (event.input as { file_path?: string; path?: string }).file_path ||
-            (event.input as { file_path?: string; path?: string }).path;
-          activeAgent.toolUses += 1;
-          activeAgent.currentAction = filePath
-            ? `${event.name}: ${filePath.split('/').pop() || filePath}`
-            : event.name;
-          broadcast({
-            type: 'subagent_update',
-            conversationId: this.id,
-            subAgentId: activeAgent.id,
-            toolUses: activeAgent.toolUses,
-            currentAction: activeAgent.currentAction,
-          });
-        }
-      }
-      if (codexCollabHandling?.suppressFormattedOutput) return;
+      if (this._subAgentFold.toolUse(this.subAgentHost, event) === 'hide') return;
       // Normalize tool line formatting across providers (Claude/Gemini/Codex).
       // Suppress Codex shell completion-only events to avoid duplicate lines.
       if (isCompletionOnlyToolUse(event.name, event.input, event.displayText)) return;
@@ -1908,23 +1710,7 @@ export function createConversationRuntime(
         lastMsg.completedAt = completedAt;
         lastMsg.completionReason = reason;
       }
-      for (const agent of this.subAgents) {
-        if (agent.status !== 'running') continue;
-        if (this.provider === 'codex' && agent.providerThreadId) continue;
-        agent.status = 'completed';
-        agent.completedAt = completedAt;
-        if (!agent.statusSource) agent.statusSource = 'inferred_parent_completion';
-        agent.currentAction = 'Done';
-        console.log(`[${this.id}] Sub-agent completed: ${agent.id.substring(0, 8)}`);
-        broadcast({
-          type: 'subagent_complete',
-          conversationId: this.id,
-          subAgentId: agent.id,
-          status: 'completed',
-          completedAt,
-        });
-      }
-      this._pendingTaskTools.clear();
+      this._subAgentFold.parentCompleted(this.subAgentHost, completedAt);
 
       // Broadcast message_complete BEFORE status(isStreaming=false).
       // Client's message_complete handler calls flushChunkBuffer() — the last
@@ -2793,13 +2579,7 @@ export function createConversationRuntime(
         lastMsg.completedAt = completedAt;
         lastMsg.completionReason = 'error';
       }
-      for (const agent of this.subAgents) {
-        if (agent.status !== 'running') continue;
-        agent.status = 'error';
-        agent.completedAt = completedAt;
-        agent.currentAction = 'Parent turn timed out';
-      }
-      this._pendingTaskTools.clear();
+      failRunningSubAgents(this.subAgents, completedAt);
       // Commit buffered text before status:false makes the client discard its
       // transient streaming buffer, then publish the authoritative transcript.
       this.broadcastChunk({

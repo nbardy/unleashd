@@ -1420,3 +1420,99 @@ test('promote moves a pending message first and interrupts the turn', () => {
   assert.equal(conversation.queue.length, 2);
   opened[0]?.child.emit('close');
 });
+
+type ScriptedEvent = import('@nbardy/agent-cli').UnifiedAgentEvent;
+
+/** Run one real turn whose provider stream is `events`, and wait for it to drain. */
+async function runScriptedTurn(provider: Provider, events: ScriptedEvent[]) {
+  const { conversation, broadcasts } = runtimeFixture({
+    provider,
+    executeTurn: (() => ({
+      child: { exitCode: 0 },
+      events: (async function* () {
+        yield* events;
+      })(),
+      completed: Promise.resolve({
+        exitCode: 0,
+        signal: null,
+        sessionId: 'scripted-session',
+        reason: 'success',
+      }),
+      stop: () => undefined,
+    })) as unknown as NonNullable<ConversationRuntimeDependencies['executeTurn']>,
+  });
+  conversation.sendMessage('scripted');
+  await conversation.waitForTurnDrain();
+  return { conversation, broadcasts };
+}
+
+test('codex collab threads become native sub-agents that parent completion leaves alone', async () => {
+  // Guards T08 S3: codex collab handling moved out of the turn fold into the
+  // harness table (turns/subagents.ts). Shapes mirror agent-cli's codex parser
+  // (collabToolInput). A regression either drops the native rows, infers a
+  // still-pending child as "Done" when the parent turn ends, or double-counts.
+  const collab = (tool: string, phase: 'started' | 'completed', extra: Record<string, unknown>) =>
+    ({
+      type: 'tool.use',
+      name: tool,
+      input: { _phase: phase, sender_thread_id: 'parent', ...extra },
+    }) as const;
+  const { conversation, broadcasts } = await runScriptedTurn('codex', [
+    { type: 'turn.started' },
+    collab('spawn_agent', 'started', { prompt: 'Write file_1.md' }),
+    collab('spawn_agent', 'completed', {
+      prompt: 'Write file_1.md',
+      receiver_thread_ids: ['child-1'],
+      agents_states: { 'child-1': { status: 'pending_init', message: null } },
+    }),
+    collab('wait', 'completed', {
+      receiver_thread_ids: ['child-1'],
+      agents_states: { 'child-1': { status: 'completed', message: 'test-confirmed' } },
+    }),
+    collab('spawn_agent', 'completed', {
+      prompt: 'Second child',
+      receiver_thread_ids: ['child-2'],
+      agents_states: { 'child-2': { status: 'pending_init', message: null } },
+    }),
+    { type: 'text.delta', text: 'SUBAGENTS_OK' },
+    { type: 'turn.complete', reason: 'success' },
+  ]);
+  const byId = new Map(conversation.subAgents.map((agent) => [agent.id, agent]));
+  assert.deepEqual(
+    [...byId.keys()],
+    ['child-1', 'child-2'],
+    'one row per collab child, no generic spawn row'
+  );
+  assert.equal(byId.get('child-1')?.description, '[Codex Agent] Write file_1.md');
+  assert.equal(byId.get('child-1')?.status, 'completed');
+  assert.equal(byId.get('child-1')?.statusSource, 'native');
+  assert.equal(byId.get('child-1')?.toolUses, 1);
+  assert.equal(byId.get('child-1')?.currentAction, 'Done');
+  assert.equal(byId.get('child-2')?.status, 'pending', 'parent completion must not settle it');
+  const completions = broadcasts.filter(
+    (message) => (message as { type?: string }).type === 'subagent_complete'
+  );
+  assert.equal(completions.length, 1);
+  const assistant = conversation.messages.find((message) => message.role === 'assistant');
+  assert.match(assistant?.content ?? '', /SUBAGENTS_OK/);
+});
+
+test('a Task tool starts a generic sub-agent that parent completion settles', async () => {
+  const { conversation } = await runScriptedTurn('claude', [
+    { type: 'turn.started' },
+    {
+      type: 'tool.use',
+      name: 'Task',
+      input: { description: 'Explore', subagent_type: 'scout', _blockId: 'block-1' },
+    },
+    { type: 'tool.use', name: 'Read', input: { file_path: '/repo/src/a.ts' } },
+    { type: 'turn.complete', reason: 'success' },
+  ]);
+  const [agent] = conversation.subAgents;
+  assert.equal(conversation.subAgents.length, 1);
+  assert.equal(agent.id, 'block-1');
+  assert.equal(agent.description, '[scout] Explore');
+  assert.equal(agent.toolUses, 1);
+  assert.equal(agent.status, 'completed');
+  assert.equal(agent.statusSource, 'inferred_parent_completion');
+});
