@@ -4,13 +4,15 @@ import test from 'node:test';
 import type { Provider } from '@unleashd/shared';
 import { type ConversationConfig, createDefaultConversationConfig } from '@unleashd/shared';
 import type { CompletedBuddyTurn } from '../src/buddies/memory-review';
+import {
+  buildFirstTurnCliContent,
+  extractBuddyMemorySnapshot,
+  resolveAutomationMemoryWritePolicy,
+} from '../src/buddies/turn-policy';
 import { TURN_MAX_RUNTIME_MS } from '../src/constants/timeouts';
 import {
   type ConversationRuntimeDependencies,
-  buildFirstTurnCliContent,
   createConversationRuntime,
-  extractBuddyMemorySnapshot,
-  resolveAutomationMemoryWritePolicy,
 } from '../src/conversations/runtime';
 import { resolveConfigAgainstProviderCatalog } from '../src/providers/catalog-service';
 import {

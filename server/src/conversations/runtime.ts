@@ -27,27 +27,22 @@ import type {
   SubAgent,
 } from '@unleashd/shared';
 import {
-  BUDDY_TEAM_CONTRACT_VERSION,
   buddyContextFromKind,
   buddyKindFromContext,
   conversationKindFromLegacy,
-  formatBuddyBuilderToolResult,
-  formatBuddyTeamConfigurationToolResult,
-  formatBuddyWorkerToolResult,
   isBuddyKind,
   matchConversationKind,
   providerSupportsFork,
 } from '@unleashd/shared';
 import { formatToolUse, isCompletionOnlyToolUse } from '../adapters/tool-format';
-import { BUDDY_BUILDER_BRIEFING } from '../buddies/builder';
 import {
-  BUDDY_AUTOMATION_CLAIM_TOKEN_ENV,
-  buddyBuilderMcpServers,
-  buddyMcpServers,
-  buddyOwnerMcpServers,
-} from '../buddies/mcp-config';
-import type { CompletedBuddyTurn } from '../buddies/memory-review';
-import { assertBuddyProviderSupportsMcp } from '../buddies/provider-capability';
+  BuddyBuilderTurnPolicy,
+  type BuddyPolicyHost,
+  BuddyTurnPolicy,
+  type BuddyTurnPolicyDependencies,
+  type MemoryGenerationInput,
+  createMemorySnapshot,
+} from '../buddies/turn-policy';
 import {
   SWARM_POLL_INTERVAL_MS,
   SWARM_POLL_THROTTLE_MS,
@@ -62,7 +57,6 @@ import type {
   TurnAttemptActivity,
   TurnTerminalCause,
 } from '../observability';
-import { noteActivity } from '../observability/event-loop-stall';
 import { resolveConfigAgainstProviderCatalog } from '../providers/catalog-service';
 import { SwarmObservers, watchSwarmRuns } from '../swarm/observer';
 import {
@@ -72,6 +66,12 @@ import {
   type TurnInput,
   sameEitherWay,
 } from '../turns/input';
+import {
+  ChatTurnPolicy,
+  type CoordinationDrained,
+  type MemorySnapshot,
+  type TurnPolicy,
+} from '../turns/policy';
 import { type QueueEntry, TurnQueue } from '../turns/queue';
 import {
   type SubAgentFold,
@@ -85,42 +85,6 @@ import {
   describeTurnTimeout,
   turnAttemptActivityFromEvent,
 } from '../turns/watchdog';
-
-export type OwnedBuddyChatRun = { id: string; claim_token: string; deadline: string };
-export type BuddyChatAdmission =
-  | { kind: 'admitted'; run: OwnedBuddyChatRun }
-  | { kind: 'waiting'; reason: string }
-  // The queued row was cancelled elsewhere (e.g. another host's startup sweep).
-  | { kind: 'gone' };
-
-const CHAT_ADMISSION_POLL_MS = 1000;
-
-/**
- * ONE admission tick shared by every Buddy chat waiting for a run slot. Until
- * 2026-09-25 each waiting conversation owned its own 1 s setInterval, so N
- * queued chats meant N timers at unrelated phases, each hitting sync SQLite
- * (03-app-core.md §5 #2). Waiters retry in the order they began waiting, and
- * the tick exists only while someone waits. Slots are also released by runs
- * this process never sees finish (automations, lease expiry), so a tick is
- * still needed rather than wake-on-release alone.
- */
-const admissionWaiters = new Set<() => void>();
-let admissionTick: ReturnType<typeof setInterval> | null = null;
-
-/** Retry `admit` on the shared tick until the returned function is called. */
-function waitForChatRunSlot(admit: () => void): () => void {
-  admissionWaiters.add(admit);
-  admissionTick ??= setInterval(() => {
-    noteActivity('timer buddy-chat-admission');
-    for (const waiter of [...admissionWaiters]) waiter();
-  }, CHAT_ADMISSION_POLL_MS);
-  return () => {
-    admissionWaiters.delete(admit);
-    if (admissionWaiters.size > 0 || !admissionTick) return;
-    clearInterval(admissionTick);
-    admissionTick = null;
-  };
-}
 
 interface ChunkData {
   type: 'chunk';
@@ -145,115 +109,6 @@ export type { SeatTurnInput, SessionRelativePrompt } from '../turns/input';
 
 export type ConversationBroadcast = ServerMessage | ChunkData | MessageCompleteData | MessageData;
 
-/**
- * The memory context is an application-conversation snapshot.  The generation
- * is deliberately opaque here: the canonical Buddy store owns its meaning,
- * while legacy installations use a deterministic briefing digest until that
- * store exposes a native generation.
- */
-export interface MemorySnapshot {
-  readonly generation: string;
-  readonly briefing: string;
-}
-
-/** Boundary input accepts the numeric generation used by the v2 package; the runtime stores only an opaque string. */
-export type MemoryGenerationInput = string | number;
-
-export type AutomationMemoryWritePolicy = 'not_applicable' | 'denied' | 'allowed' | 'unsupported';
-
-const MEMORY_WRITE_OPERATIONS = new Set([
-  'buddy.remember',
-  'buddy.remember_note',
-  'buddy.update_memory',
-  'buddy.compact_memory',
-]);
-
-function providerSupportsRequiredBuddyMcp(provider: ProviderName): boolean {
-  try {
-    assertBuddyProviderSupportsMcp(provider);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-export function memoryGenerationForBriefing(briefing: string): string {
-  return `briefing-sha256:${crypto.createHash('sha256').update(briefing, 'utf8').digest('hex')}`;
-}
-
-export function createMemorySnapshot(
-  briefing: string | null | undefined,
-  generation?: MemoryGenerationInput | null
-): MemorySnapshot | null {
-  if (briefing === null || briefing === undefined) return null;
-  const normalizedGeneration =
-    generation === null || generation === undefined
-      ? memoryGenerationForBriefing(briefing)
-      : String(generation).trim() || memoryGenerationForBriefing(briefing);
-  return Object.freeze({ briefing, generation: normalizedGeneration });
-}
-
-/**
- * Resolve automation memory-write policy before provider startup.  A missing
- * allowlist is intentionally read-only; durable run policy remains the final
- * operation gate inside the Buddy control plane.  This helper only makes the
- * provider/capability boundary explicit and never creates a worker.
- */
-export function resolveAutomationMemoryWritePolicy(input: {
-  isAutomation: boolean;
-  provider: ProviderName;
-  allowedOperations?: readonly string[];
-  hasClaimToken: boolean;
-}): AutomationMemoryWritePolicy {
-  if (!input.isAutomation) return 'not_applicable';
-  const requestsMemoryWrite = (input.allowedOperations ?? []).some((operation) =>
-    MEMORY_WRITE_OPERATIONS.has(operation)
-  );
-  if (!requestsMemoryWrite) return 'denied';
-  if (!input.hasClaimToken || !providerSupportsRequiredBuddyMcp(input.provider)) {
-    return 'unsupported';
-  }
-  return 'allowed';
-}
-
-const BUDDY_CONTEXT_V2_HEADER_RE =
-  /^<!-- unleashd:buddy-context-v2 ([A-Za-z0-9_-]+) ([0-9]+) -->\n/;
-const BUDDY_CONTEXT_V2_SUFFIX = '\n<!-- /unleashd:buddy-context-v2 -->\n\n';
-const MEMORY_GENERATION_RE = /^<!-- unleashd:buddy-memory-generation ([A-Za-z0-9_-]+) -->\n/;
-
-/**
- * Recover the hidden snapshot embedded in a first provider prompt.  This is a
- * compatibility bridge for restart/hydration: the application conversation
- * keeps the same briefing even if the current Buddy memory has advanced.
- */
-export function extractBuddyMemorySnapshot(content: string): MemorySnapshot | null {
-  const header = content.match(BUDDY_CONTEXT_V2_HEADER_RE);
-  if (!header) return null;
-  const briefingLength = Number.parseInt(header[2], 10);
-  const briefingStart = header[0].length;
-  const suffixStart = briefingStart + briefingLength;
-  if (
-    !Number.isSafeInteger(briefingLength) ||
-    briefingLength < 0 ||
-    !content.startsWith(BUDDY_CONTEXT_V2_SUFFIX, suffixStart)
-  ) {
-    return null;
-  }
-  const encodedBriefing = content.slice(briefingStart, suffixStart);
-  const generationMarker = encodedBriefing.match(MEMORY_GENERATION_RE);
-  if (!generationMarker) {
-    return createMemorySnapshot(encodedBriefing);
-  }
-  let generation: string;
-  try {
-    generation = Buffer.from(generationMarker[1], 'base64url').toString('utf8');
-  } catch {
-    return null;
-  }
-  if (!generation) return null;
-  return createMemorySnapshot(encodedBriefing.slice(generationMarker[0].length), generation);
-}
-
 export interface ConversationRuntimeView {
   id: string;
   sessionId: string;
@@ -267,26 +122,16 @@ export interface ConversationRuntimeView {
   toJSON(): ConversationData;
 }
 
-/**
- * The disclosure audience a Buddy turn runs under. `key` is persisted with the
- * provider session built under it; `continuityFrom` asks the Buddies package
- * (knowledgeAudienceContinuity owns the rule) whether a session built under an
- * earlier key may continue: 'contained' when only read access grew, 'changed'
- * when access narrowed or the audience differs, 'unverified' when the saved key
- * cannot be compared (a revision hash saved before 2026-09-25).
- */
-export type BuddyTurnAudience = Readonly<{
-  key: string;
-  continuityFrom(sessionKey: string): BuddyAudienceContinuity;
-}>;
-export type BuddyAudienceContinuity = 'contained' | 'changed' | 'unverified';
-
 /** Input with no recorded producer: no owner authority, workspace audience. */
 function unknownInput(): TurnInput {
   return { origin: 'unknown', inputId: crypto.randomUUID() };
 }
 
-export interface ConversationRuntimeDependencies {
+/**
+ * The host server's ports. The turn core uses the first group; the Buddy
+ * policies (buddies/turn-policy.ts) use `BuddyTurnPolicyDependencies`.
+ */
+export interface ConversationRuntimeDependencies extends BuddyTurnPolicyDependencies {
   broadcast(data: ConversationBroadcast): void;
   registerSessionAlias(sessionId: string | null | undefined, conversationId: string): void;
   unregisterSessionAlias(
@@ -301,15 +146,6 @@ export interface ConversationRuntimeDependencies {
     sessionId: string,
     buddyAudienceKey?: string
   ): Promise<void>;
-  updateBuddyStatus(
-    conversation: ConversationRuntimeView,
-    status: 'active' | 'complete' | 'failed' | 'cancelled'
-  ): void;
-  settleBuddyDelegation(
-    conversation: ConversationRuntimeView,
-    status: 'complete' | 'failed' | 'cancelled',
-    outcome?: string
-  ): void;
   getConversation(id: string):
     | {
         isRunning: boolean;
@@ -331,47 +167,6 @@ export interface ConversationRuntimeDependencies {
     sessionId: string,
     usage: ProviderTurnUsage
   ): Promise<void>;
-  readCurrentBuddyContext?(context: BuddyContext): {
-    briefing: string;
-    memoryGeneration: string;
-    audience?: BuddyTurnAudience;
-  };
-  /** Enqueue memory maintenance only after a successful CLI exit and normalized event drain. */
-  reviewCompletedBuddyTurn?(turn: CompletedBuddyTurn): void;
-  /**
-   * A Buddy chat/channel turn takes its place in its Buddy's FIFO run line
-   * (per-Buddy limit, owner decision 2026-09-25), then polls until admitted.
-   */
-  enqueueBuddyChatRun?(context: BuddyContext, conversationId: string): { id: string };
-  startBuddyChatRun?(
-    runId: string,
-    conversationId: string,
-    maxRuntimeMs: number
-  ): BuddyChatAdmission;
-  abandonBuddyChatRun?(runId: string): void;
-  finishBuddyChatRun?(
-    id: string,
-    token: string,
-    status: 'complete' | 'failed' | 'cancelled',
-    detail?: string
-  ): void;
-  issueBuddyControlCapability?(
-    context: BuddyContext,
-    conversationId: string,
-    automationClaimToken?: string
-  ): Readonly<Record<string, string>>;
-  revokeBuddyControlCapability?(conversationId: string): void;
-  issueOwnerControlCapability?(
-    input: Readonly<{ origin: 'owner_input'; inputId: string }>,
-    conversationId: string
-  ): Readonly<Record<string, string>>;
-  recordBuddyTurnOrigin?(
-    conversationId: string,
-    input: TurnInput,
-    context: BuddyContext,
-    contentHash: string
-  ): void;
-  requestAutomationCancellation?(runId: string): Promise<unknown>;
   /** Test seam for the real provider boundary; production uses agent-cli directly. */
   executeTurn?: typeof executeCommand;
   turnAttempts?: RuntimeTurnAttemptObserver;
@@ -381,8 +176,6 @@ const VERBOSE = process.env.VERBOSE === '1' || process.argv.includes('--verbose'
 const AGENT_CLI_DEBUG_EVENTS = process.env.AGENT_CLI_DEBUG_EVENTS === '1';
 const LOG_CONTENT_PREVIEW_CHARS = 140;
 const ATTEMPT_ACTIVITY_INTERVAL_MS = 5_000;
-
-export { assertBuddyProviderSupportsMcp } from '../buddies/provider-capability';
 
 function formatLogPreview(content: string, maxChars = LOG_CONTENT_PREVIEW_CHARS): string {
   return content.replace(/\s+/g, ' ').slice(0, maxChars);
@@ -517,56 +310,6 @@ const NOOP_TURN_ATTEMPT_OBSERVER: RuntimeTurnAttemptObserver = {
   terminal: () => undefined,
 };
 
-export function buildFirstTurnCliContent(input: {
-  content: string;
-  messageCount: number;
-  hasStartedSession: boolean;
-  kind?: ConversationKind | null;
-  buddyContext?: BuddyContext | null;
-  buddyBriefing: string | null;
-  buddyMemoryGeneration?: MemoryGenerationInput | null;
-  refreshBuddyContext?: boolean;
-  swarmDebugPrefix: string | null;
-  purpose?: ConversationPurpose;
-}): string {
-  const firstUnstartedTurn = input.messageCount === 0 && !input.hasStartedSession;
-  const effectiveKind: ConversationKind =
-    input.kind ??
-    conversationKindFromLegacy({
-      buddyContext: input.buddyContext ?? null,
-      purpose: input.purpose ?? null,
-      kind: null,
-    });
-  // Thin dispatcher δ — one clean handler per kind (D1, R1). Each handler has one semantic path.
-  // New sessions must not rely on hidden HTML comments; kind is canonical. The comment
-  // format is kept here for CLI backward compat but disk hydration no longer parses it for new writes.
-  return matchConversationKind(effectiveKind, {
-    buddy: (k) => {
-      if ((!firstUnstartedTurn && !input.refreshBuddyContext) || input.buddyBriefing === null)
-        return input.content;
-      const ctx: BuddyContext = buddyContextFromKind(k);
-      const encodedContext = Buffer.from(JSON.stringify(ctx), 'utf8').toString('base64url');
-      const snapshot = createMemorySnapshot(
-        input.buddyBriefing,
-        input.buddyMemoryGeneration
-      ) as MemorySnapshot;
-      const encodedGeneration = Buffer.from(snapshot.generation, 'utf8').toString('base64url');
-      const snapshotBriefing = `<!-- unleashd:buddy-memory-generation ${encodedGeneration} -->\n${snapshot.briefing}`;
-      return `<!-- unleashd:buddy-context-v2 ${encodedContext} ${snapshotBriefing.length} -->\n${snapshotBriefing}\n<!-- /unleashd:buddy-context-v2 -->\n\n${input.content}`;
-    },
-    buddy_builder: () => {
-      if (!firstUnstartedTurn) return input.content;
-      return `<!-- unleashd:buddy-builder-v1 ${BUDDY_BUILDER_BRIEFING.length} -->\n${BUDDY_BUILDER_BRIEFING}\n<!-- /unleashd:buddy-builder-v1 -->\n\n${input.content}`;
-    },
-    general: () => {
-      if (input.swarmDebugPrefix !== null && firstUnstartedTurn) {
-        return `<!-- unleashd:swarm-prefix -->\n${input.swarmDebugPrefix}\n<!-- /unleashd:swarm-prefix -->\n\n${input.content}`;
-      }
-      return input.content;
-    },
-  });
-}
-
 export function createConversationRuntime(
   dependencies: ConversationRuntimeDependencies
 ): ConversationConstructor {
@@ -578,8 +321,6 @@ export function createConversationRuntime(
     clearLocalCompletionSuppression,
     markLocalCompletionSuppression,
     persistCurrentSession: persistCurrentConversationSession,
-    updateBuddyStatus: updateBuddyConversationLink,
-    settleBuddyDelegation,
     getConversation,
     readLatestOompaRuntime,
     createSessionId,
@@ -634,7 +375,22 @@ export function createConversationRuntime(
     // Stays on the object (never cleared) so toJSON() includes it for client rendering.
     swarmDebugPrefix: string | null;
     placement: ConversationPlacement;
-    kind: ConversationKind;
+    // Canonical kind. Setting it re-selects the turn policy: the ONE place a
+    // conversation's kind decides turn behavior (`policyFor`). Polling may
+    // promote a general conversation to a specific kind (session-loader).
+    private _kind: ConversationKind = { kind: 'general' };
+    private _policy: TurnPolicy;
+    get kind(): ConversationKind {
+      return this._kind;
+    }
+    set kind(value: ConversationKind) {
+      this._kind = value;
+      this._policy = this.policyFor(value, {
+        memorySnapshot: null,
+        audienceKey: null,
+        automationClaimToken: this._automationClaimToken,
+      });
+    }
     // Legacy compat: buddyContext/purpose are derived from kind. New code must use `kind` + `matchConversationKind`.
     // Kept as getters so old readers (buddies integration, client) keep working.
     get buddyContext(): BuddyContext | null {
@@ -657,26 +413,12 @@ export function createConversationRuntime(
         this.kind = { kind: 'general' };
       }
     }
-    // Hidden first-turn context. Never serialized to clients; the typed
-    // buddyContext is the durable/UI-facing metadata.
-    private _memorySnapshot: MemorySnapshot | null;
     private get _buddyBriefing(): string | null {
-      return this._memorySnapshot?.briefing ?? null;
+      return this._policy.memorySnapshot()?.briefing ?? null;
     }
-    private _automationClaimToken: string | null;
-    // Buddy chat turns wait here for a run slot. The head of this.queue stays
-    // pending while _chatRunTicket waits on the shared admission tick. On
-    // admission, the run is held in _admittedChatRun until spawnForMessage
-    // takes ownership of it.
-    private _chatRunTicket: { runId: string; stopWaiting: () => void } | null = null;
-    private _admittedChatRun: OwnedBuddyChatRun | null = null;
+    // Server-private automation ownership. Never serialized or placed in BuddyContext.
+    private _automationClaimToken: string | null = null;
     private _sendingFromQueue = false;
-    private _coordinationExecution: {
-      onAdmitted?: (config: ResolvedExecutionConfig) => void;
-      context: BuddyContext;
-      claimToken: string;
-      terminalCause?: TurnTerminalCause;
-    } | null = null;
     // Provider-counted usage for the latest request on the CURRENT session.
     // Written from `usage` events during the turn and flushed to the session
     // binding when the turn ends, so a reload does not have to re-parse the
@@ -770,8 +512,9 @@ export function createConversationRuntime(
       this.configRevision = configState.revision;
       this.configResolution = configState.resolution;
       this.done = opts.done;
+      this._automationClaimToken = automationClaimToken;
       // Canonical kind — derive from legacy when absent (migration on load).
-      this.kind =
+      this._kind =
         kind ??
         conversationKindFromLegacy({
           buddyContext: buddyContext ?? null,
@@ -798,12 +541,11 @@ export function createConversationRuntime(
       // file backfill, so it is sticky: live ai noise must not overwrite it.
       this._titleSource = this.title !== undefined ? 'custom' : null;
       this.swarmDebugPrefix = isBuddyConversation ? null : swarmDebugPrefix;
-      this._memorySnapshot = isBuddyConversation
-        ? createMemorySnapshot(buddyBriefing, buddyMemoryGeneration)
-        : null;
-      this._providerAudienceKey =
-        isBuddyConversation && existingSessionId ? (opts.existingSessionAudienceKey ?? null) : null;
-      this._automationClaimToken = automationClaimToken;
+      this._policy = this.policyFor(this._kind, {
+        memorySnapshot: createMemorySnapshot(buddyBriefing, buddyMemoryGeneration),
+        audienceKey: existingSessionId ? (opts.existingSessionAudienceKey ?? null) : null,
+        automationClaimToken,
+      });
       this.providerUsage = opts.existingProviderUsage ?? null;
       this.subAgents = [];
       // Mark session as started if loading existing (use --resume for next message)
@@ -813,11 +555,60 @@ export function createConversationRuntime(
     }
 
     get memoryGeneration(): string | null {
-      return this._memorySnapshot?.generation ?? null;
+      return this._policy.memorySnapshot()?.generation ?? null;
     }
 
     getMemorySnapshot(): MemorySnapshot | null {
-      return this._memorySnapshot;
+      return this._policy.memorySnapshot();
+    }
+
+    /**
+     * The turn policy for a kind — a thin dispatcher, one policy per kind. A
+     * general chat gets the no-op ChatTurnPolicy; Buddy code lives only in
+     * buddies/turn-policy.ts.
+     */
+    private policyFor(
+      kind: ConversationKind,
+      seed: {
+        memorySnapshot: MemorySnapshot | null;
+        audienceKey: string | null;
+        automationClaimToken: string | null;
+      }
+    ): TurnPolicy {
+      return matchConversationKind<TurnPolicy>(kind, {
+        general: () => new ChatTurnPolicy(() => this.swarmDebugPrefix),
+        buddy: (buddyKind) => new BuddyTurnPolicy(buddyKind, this.policyHost, dependencies, seed),
+        buddy_builder: () => new BuddyBuilderTurnPolicy(this.policyHost, dependencies),
+      });
+    }
+
+    private get policyHost(): BuddyPolicyHost {
+      return {
+        id: this.id,
+        view: this,
+        placement: () => this.placement,
+        provider: () => this.provider,
+        hasProcess: () => this.process !== null,
+        hasStartedSession: () => this._hasStartedSession,
+        resetProcess: () => this.resetProcess(),
+        releaseQueueHead: (announce) => {
+          if (this.turnQueue.releaseHead() && announce) this.broadcastQueue();
+        },
+        dropPendingHead: () => {
+          const dropped = this.turnQueue.dropPendingHead();
+          if (!dropped) return;
+          this._cancelQueuedAttempt(dropped);
+          this.broadcastQueue();
+        },
+        processQueue: () => this.processQueue(),
+        maxRuntimeReached: () => this._handleTurnTimeout('max'),
+        refuseAutomationTranscript: (message) => this.refuseAutomationTranscript(message),
+        send: (prompt, input) => this.sendMessageInternal(prompt, input),
+        on: (event, listener) => this.on(event, listener),
+        once: (event, listener) => this.once(event, listener),
+        off: (event, listener) => this.off(event, listener),
+        emit: (event, ...args) => this.emit(event, ...args),
+      };
     }
 
     /**
@@ -851,8 +642,7 @@ export function createConversationRuntime(
       state: 'succeeded' | 'failed' | 'cancelled' | 'interrupted',
       terminalCause: TurnTerminalCause
     ): void {
-      if (this._coordinationExecution && !this._coordinationExecution.terminalCause)
-        this._coordinationExecution.terminalCause = terminalCause;
+      this._policy.attemptFinished(terminalCause);
       if (!this._activeAttemptId) return;
       turnAttempts.terminal({
         attemptId: this._activeAttemptId,
@@ -946,121 +736,15 @@ export function createConversationRuntime(
       };
       let turn: ReturnType<typeof executeCommand>;
       try {
-        const admitted = this._admittedChatRun;
-        this._admittedChatRun = null;
-        if (admitted) {
-          // Foreground tool authority must cover the provider's explicit runtime
-          // budget. Omitting it inherited claimBuddyRun's background default (600s),
-          // killing active owner chats on 2026-09-10 even with healthy heartbeats.
-          // Preserve this argument when refactoring or replacing the Buddy package.
-          // Guards: buddy-coordination.test.ts and conversation-runtime.test.ts;
-          // history: docs/incident-2026-09-10-buddy-chat-timeout.md.
-          // Admitted by admitForegroundChatRun with TURN_MAX_RUNTIME_MS.
-          const owned = admitted;
-          this._coordinationExecution = {
-            context: { ...this.contextForInput(turnInput)!, coordinationRunId: owned.id },
-            claimToken: owned.claim_token,
-          };
-          const timer = setTimeout(
-            () => {
-              // Automatic expiry is max_runtime_timeout. stop() records user_stop
-              // and hid the 600s regression; retain timeout cleanup and joined drain.
-              this._handleTurnTimeout('max');
-            },
-            Math.max(0, Date.parse(owned.deadline) - Date.now())
-          );
-          const settle = (status: 'complete' | 'failed', detail: string) => {
-            clearTimeout(timer);
-            this.off('buddy-turn-complete', complete);
-            this.off('buddy-turn-failed', failed);
-            this._coordinationExecution = null;
-            try {
-              dependencies.finishBuddyChatRun?.(owned.id, owned.claim_token, status, detail);
-            } catch (error) {
-              console.error('[buddies] Could not settle owner turn', owned.id, error);
-            }
-          };
-          let pendingFailure: string | null = null;
-          const complete = (output: string) =>
-            settle(pendingFailure ? 'failed' : 'complete', pendingFailure ?? output);
-          const failed = (error: string) => {
-            if (this.process) {
-              pendingFailure = error;
-              return;
-            }
-            settle('failed', error);
-          };
-          this.once('buddy-turn-complete', complete);
-          this.on('buddy-turn-failed', failed);
-        }
-        // Owner authority comes from input provenance alone: a 'buddy_post'
-        // seat turn (another Buddy's channel post) never reaches here as owner.
-        const hasOwnerControls =
-          turnInput.origin === 'owner_input' &&
-          !!dependencies.issueOwnerControlCapability &&
-          this.kind.kind !== 'general';
-        let ownerControlEnv: Readonly<Record<string, string>> | undefined;
-        const buddyServers = matchConversationKind(this.kind, {
-          buddy: (kind) => {
-            const context = this._coordinationExecution?.context ?? buddyContextFromKind(kind);
-            return buddyMcpServers(context, this.id, undefined, {
-              UNLEASHD_BUDDY_OWNER_CONTROL_AVAILABLE: hasOwnerControls ? '1' : '0',
-              UNLEASHD_BUDDY_OWNER_CONTROL_CONTRACT: BUDDY_TEAM_CONTRACT_VERSION,
-              ...dependencies.issueBuddyControlCapability?.(
-                context,
-                this.id,
-                this._coordinationExecution?.claimToken ?? this._automationClaimToken ?? undefined
-              ),
-              ...(this._coordinationExecution
-                ? {
-                    UNLEASHD_BUDDY_COORDINATION_RUN_ID:
-                      this._coordinationExecution.context.coordinationRunId!,
-                    [BUDDY_AUTOMATION_CLAIM_TOKEN_ENV]: this._coordinationExecution.claimToken,
-                  }
-                : {}),
-              ...(this._automationClaimToken && !this._coordinationExecution
-                ? {
-                    [BUDDY_AUTOMATION_CLAIM_TOKEN_ENV]: this._automationClaimToken,
-                  }
-                : {}),
-            });
-          },
-          buddy_builder: () => {
-            if (!hasOwnerControls) return undefined;
-            ownerControlEnv = dependencies.issueOwnerControlCapability!(
-              { origin: 'owner_input', inputId: turnInput.inputId },
-              this.id
-            );
-            return buddyBuilderMcpServers(this.id, undefined, ownerControlEnv);
-          },
-          general: () => undefined,
-        });
-        if (buddyServers && hasOwnerControls)
-          Object.assign(
-            buddyServers,
-            buddyOwnerMcpServers(
-              ownerControlEnv ??
-                dependencies.issueOwnerControlCapability!(
-                  { origin: 'owner_input', inputId: turnInput.inputId },
-                  this.id
-                )
-            )
-          );
-        if (buddyServers) assertBuddyProviderSupportsMcp(executionConfig.provider);
-        const buddyRequest = buddyServers ? { mcpServers: buddyServers } : {};
-
-        // Capture exactly the resolved request at the provider boundary, after all awaits.
-        this._coordinationExecution?.onAdmitted?.(executionConfig);
+        const extras = this._policy.startTurn(turnInput, executionConfig);
         turn = executeTurn({
           ...baseRequest,
           harness: executionConfig.provider,
           reasoningEffort: executionConfig.reasoningEffort,
-          ...buddyRequest,
+          ...extras,
         } as ExecuteCommandRequest);
       } catch (error) {
-        dependencies.revokeBuddyControlCapability?.(this.id);
-        // The briefing in this prompt never reached the provider transcript.
-        this._briefedMemoryGeneration = null;
+        this._policy.spawnFailed();
         this._finishTurnAttempt('failed', 'spawn_failed');
         const message = error instanceof Error ? error.message : String(error);
         // An automation subscribes to this event before calling sendMessage(). A
@@ -1072,16 +756,17 @@ export function createConversationRuntime(
         throw error;
       }
 
-      const memoryReviewAttemptId = this._activeAttemptId ?? crypto.randomUUID();
-      const memoryReviewStart = Math.max(0, this.messages.length - 1);
-      const memoryReviewContext = this.contextForInput(turnInput);
+      const reviewAttemptId = this._activeAttemptId ?? crypto.randomUUID();
+      this._policy.spawned(turnInput, {
+        attemptId: reviewAttemptId,
+        messageStart: Math.max(0, this.messages.length - 1),
+      });
       this.process = turn.child;
       this._activeTurnStop = turn.stop;
       this.isRunning = true;
       if (this._activeAttemptId) {
         turnAttempts.running(this._activeAttemptId, this.sessionId);
       }
-      updateBuddyConversationLink(this, 'active');
       this.emit('buddy-turn-started');
       this._hasStartedSession = true; // Mark session as started for next message
       this._startTurnWatchdogs();
@@ -1110,7 +795,7 @@ export function createConversationRuntime(
               await persistCurrentConversationSession(
                 this,
                 event.sessionId,
-                this._providerAudienceKey ?? undefined
+                this._policy.audienceKey()
               );
               if (this._activeAttemptId) {
                 turnAttempts.bindProviderSession(this._activeAttemptId, event.sessionId);
@@ -1154,12 +839,7 @@ export function createConversationRuntime(
             }
             case 'tool.result': {
               if (event.isError) break;
-              const content =
-                formatBuddyWorkerToolResult(event.output) ??
-                formatBuddyTeamConfigurationToolResult(event.output) ??
-                (this.kind.kind === 'buddy_builder'
-                  ? formatBuddyBuilderToolResult(event.output)
-                  : null);
+              const content = this._policy.formatToolResult(event.output);
               if (content) this.appendText(`\n${content}\n`);
               break;
             }
@@ -1287,7 +967,7 @@ export function createConversationRuntime(
           // message_complete already handled state cleanup and broadcast.
           // Just null the process ref, dequeue, and continue.
           if (this._turnCompletedCleanly) {
-            dependencies.revokeBuddyControlCapability?.(this.id);
+            this._policy.revoke();
             this.process = null;
             this._activeTurnStop = null;
             clearExternalRunningStatus(this.id, this.sessionId);
@@ -1314,27 +994,10 @@ export function createConversationRuntime(
               }
               this.emit('buddy-turn-failed', completionFailure);
             } else {
-              // The reviewer owns a separate process with no Buddy execution identity.
-              // Enqueue before completion listeners or processQueue can start another turn.
-              if (
-                memoryReviewContext &&
-                reason === 'success' &&
-                exitCode === 0 &&
-                !this._stopCause
-              ) {
-                try {
-                  dependencies.reviewCompletedBuddyTurn?.({
-                    attemptId: memoryReviewAttemptId,
-                    conversationId: this.id,
-                    context: { ...memoryReviewContext },
-                    completedAt: new Date().toISOString(),
-                    messages: this.messages
-                      .slice(memoryReviewStart)
-                      .map(({ role, content }) => ({ role, content })),
-                  });
-                } catch (error) {
-                  console.error('[buddies] Could not enqueue memory review', this.id, error);
-                }
+              // Enqueue memory review before completion listeners or
+              // processQueue can start another turn.
+              if (reason === 'success' && exitCode === 0 && !this._stopCause) {
+                this._policy.reviewCompleted(this.messages);
               }
               this._finishTurnAttempt('succeeded', 'provider_complete');
               const completedAssistant = [...this.messages]
@@ -1416,17 +1079,18 @@ export function createConversationRuntime(
 
           this.isStreaming = false;
           this.isRunning = false;
-          dependencies.revokeBuddyControlCapability?.(this.id);
           this.process = null;
           this._activeTurnStop = null;
-          // kills/crashes skip it, leaving stale entries that accumulate across runs.
           // Suppress external-running detection for trailing disk writes from this
           // just-finished local run. Also clear any stale external flag immediately.
           clearExternalRunningStatus(this.id, this.sessionId);
           markLocalCompletionSuppression(this.id, this.sessionId);
           this.broadcastStatus();
-          updateBuddyConversationLink(this, reason === 'killed' ? 'cancelled' : 'failed');
-          settleBuddyDelegation(this, reason === 'killed' ? 'cancelled' : 'failed', reason);
+          this._policy.ended(
+            reason === 'killed'
+              ? { t: 'cancelled', detail: reason }
+              : { t: 'failed', detail: reason }
+          );
           this.emit('buddy-turn-failed', reason);
           // Dequeue the "sending" message (completed or crashed) and process next.
           // This is the SINGLE code path for dequeue — not split between
@@ -1445,12 +1109,10 @@ export function createConversationRuntime(
           this.surfaceError(normalizeProviderErrorMessage(message));
           this.isStreaming = false;
           this.isRunning = false;
-          dependencies.revokeBuddyControlCapability?.(this.id);
           this.process = null;
           this._activeTurnStop = null;
           this.broadcastStatus();
-          updateBuddyConversationLink(this, 'failed');
-          settleBuddyDelegation(this, 'failed', message);
+          this._policy.ended({ t: 'failed', detail: message });
           this.emit('buddy-turn-failed', message);
           if (this.turnQueue.length > 0) {
             const removed = this.turnQueue.length;
@@ -1578,7 +1240,7 @@ export function createConversationRuntime(
       // Signal to the close handler that cleanup already happened.
       // Close handler will skip redundant state changes and broadcasts.
       this._turnCompletedCleanly = true;
-      updateBuddyConversationLink(this, 'active');
+      this._policy.streamCompleted();
     }
 
     /** Surface provider errors (usage limits, auth failures, turn errors) as a system message. */
@@ -1592,11 +1254,7 @@ export function createConversationRuntime(
       content: string,
       context: BuddyContext,
       claimToken: string,
-      onDrained?: (
-        status: 'complete' | 'failed',
-        detail: string,
-        terminalCause?: TurnTerminalCause
-      ) => void,
+      onDrained?: CoordinationDrained,
       onAdmitted?: (config: ResolvedExecutionConfig) => void
     ): Promise<string> {
       if (this.placement !== 'background') {
@@ -1604,70 +1262,14 @@ export function createConversationRuntime(
           new Error('Automated Buddy inputs require a background conversation')
         );
       }
-      if (this.process || this.isRunning || this._coordinationExecution || this.turnQueue.length) {
+      if (this.process || this.isRunning || this.turnQueue.length) {
         return Promise.reject(new Error('Conversation is busy'));
       }
-      if (
-        !context.coordinationRunId ||
-        !claimToken ||
-        context.buddyId !== this.buddyContext?.buddyId ||
-        context.workspaceId !== this.buddyContext?.workspaceId
-      ) {
-        return Promise.reject(new Error('Coordination identity or claim is missing'));
-      }
-      this._coordinationExecution = { context, claimToken, onAdmitted };
-      return new Promise<string>((resolve, reject) => {
-        const cleanup = () => {
-          this.off('buddy-turn-complete', complete);
-          this.off('buddy-turn-failed', failed);
-          this._coordinationExecution = null;
-        };
-        let pendingFailure: string | null = null;
-        const complete = (output: string) => {
-          if (pendingFailure) {
-            failed(pendingFailure);
-            return;
-          }
-          try {
-            onDrained?.('complete', output, this._coordinationExecution?.terminalCause);
-            cleanup();
-            resolve(output);
-          } catch (error) {
-            cleanup();
-            reject(error);
-          }
-        };
-        const failed = (reason: string) => {
-          if (this.process) {
-            pendingFailure = reason;
-            return;
-          }
-          try {
-            onDrained?.('failed', reason, this._coordinationExecution?.terminalCause);
-          } catch (error) {
-            cleanup();
-            reject(error);
-            return;
-          }
-          cleanup();
-          reject(new Error(reason));
-        };
-        this.once('buddy-turn-complete', complete);
-        this.on('buddy-turn-failed', failed);
-        try {
-          this.sendMessageInternal(sameEitherWay(content), {
-            origin: 'buddy_message',
-            inputId: context.coordinationRunId!,
-          });
-        } catch (error) {
-          cleanup();
-          reject(error);
-        }
-      });
+      return this._policy.runCoordination(content, context, claimToken, onDrained, onAdmitted);
     }
 
     sendMessage(content: string, ownerInput?: OwnerInput): void {
-      if (this.buddyContext?.automationRunId) {
+      if (!this._policy.acceptsUserInput) {
         this.refuseAutomationTranscript();
         return;
       }
@@ -1680,39 +1282,16 @@ export function createConversationRuntime(
     // the provider session. Asking first and sending one prompt after leaves a
     // window for that decision to flip, so the caller hands over both wordings.
     sendSessionRelativeMessage(prompt: SessionRelativePrompt, input: SeatTurnInput): void {
-      if (this.buddyContext?.automationRunId) {
+      if (!this._policy.acceptsUserInput) {
         this.refuseAutomationTranscript();
         return;
       }
       this.sendMessageInternal(prompt, input);
     }
 
-    /**
-     * Coordinator-only admission for an owned automation occurrence. Public
-     * sendMessage deliberately refuses durable automation transcripts so a
-     * historical thread cannot mint another turn from expired authority. See
-     * invariant I4 in
-     * agent_notes/2026-08-24_automation-execution-ownership-design.md.
-     */
+    /** Coordinator-only admission for an owned automation occurrence (see BuddyTurnPolicy). */
     sendAutomationMessage(content: string): void {
-      if (!this.buddyContext?.automationRunId || !this._automationClaimToken) {
-        throw new Error('Automation turn requires current server-private execution authority');
-      }
-      const memoryPolicy = resolveAutomationMemoryWritePolicy({
-        isAutomation: true,
-        provider: this.provider,
-        allowedOperations: this.buddyContext.allowedBuddyOperations,
-        hasClaimToken: true,
-      });
-      if (memoryPolicy === 'unsupported') {
-        throw new Error(
-          `Automation memory writes are unsupported for provider "${this.provider}" or this run lacks an explicit memory-write capability.`
-        );
-      }
-      this.sendMessageInternal(sameEitherWay(content), {
-        origin: 'schedule',
-        inputId: this.buddyContext.automationRunId,
-      });
+      this._policy.sendAutomation(content);
     }
 
     private refuseAutomationTranscript(message?: string): void {
@@ -1732,94 +1311,6 @@ export function createConversationRuntime(
       });
     }
 
-    private _providerAudienceKey: string | null = null;
-    // Memory generation the current provider session was last briefed with;
-    // null means "unknown" (new, reset, restored, or failed spawn) and forces
-    // one re-brief. Same lifetime as _providerAudienceKey.
-    private _briefedMemoryGeneration: string | null = null;
-    private contextForInput(input: TurnInput): BuddyContext | null {
-      if (this._coordinationExecution) {
-        const context = this._coordinationExecution.context;
-        switch (input.origin) {
-          case 'owner_input':
-          case 'buddy_post':
-            return {
-              ...context,
-              knowledgeScope: { kind: 'owner_thread', conversationId: this.id },
-            };
-          case 'buddy_message':
-          case 'schedule':
-          case 'unknown':
-            return {
-              ...context,
-              knowledgeScope:
-                context.knowledgeScope ??
-                (context.buddyProjectId
-                  ? { kind: 'project', projectId: context.buddyProjectId }
-                  : { kind: 'workspace', workspaceId: context.workspaceId }),
-            };
-        }
-      }
-      if (!this.buddyContext) return null;
-      switch (input.origin) {
-        // A new owner input gets a new foreground claim. Never rewrite a worker claim.
-        case 'owner_input':
-          return {
-            ...this.buddyContext,
-            knowledgeScope: { kind: 'owner_thread', conversationId: this.id },
-            delegatedByBuddyId: null,
-            allowedBuddyOperations: undefined,
-            coordinationRunId: undefined,
-          };
-        // Same audience as the seat's owner turns, so its provider session
-        // continues (a different scope fails the audience fence and resets it),
-        // but no new claim: only the owner may lift the context's restrictions.
-        case 'buddy_post':
-          return {
-            ...this.buddyContext,
-            knowledgeScope: { kind: 'owner_thread', conversationId: this.id },
-          };
-        case 'buddy_message':
-        case 'schedule':
-        case 'unknown':
-          return {
-            ...this.buddyContext,
-            knowledgeScope: this.buddyContext.buddyProjectId
-              ? { kind: 'project', projectId: this.buddyContext.buddyProjectId }
-              : { kind: 'workspace', workspaceId: this.buddyContext.workspaceId },
-          };
-      }
-    }
-
-    // A provider session resumes only while the current audience CONTAINS the
-    // one it was built under. Until 2026-09-25 any change to the audience key
-    // reset it, and the key covers every readable Task: a Buddy that created a
-    // Task from inside a channel-thread seat started the seat's next turn in a
-    // fresh session (live 03:30Z, no --resume). Narrowed or different access,
-    // or a saved key that cannot be compared (none saved, or a hash saved
-    // before descriptors), still starts fresh; display history remains. A
-    // resumed session adopts the grown key, which session.started persists.
-    private admitBuddyAudience(audience: BuddyTurnAudience): void {
-      const continuity: BuddyAudienceContinuity =
-        this._providerAudienceKey === null
-          ? 'unverified'
-          : audience.continuityFrom(this._providerAudienceKey);
-      switch (continuity) {
-        case 'contained':
-          break;
-        case 'changed':
-        case 'unverified':
-          if (this._hasStartedSession) {
-            console.log(
-              `[${this.id}] Buddy context reset: reason=audience_${continuity}, provider-session=${this.sessionId}`
-            );
-            this.resetProcess();
-          }
-          break;
-      }
-      this._providerAudienceKey = audience.key;
-    }
-
     // The one resume/fresh decision: spawnForMessage passes --resume on it and
     // sendMessageInternal words a SessionRelativePrompt by it, so they agree.
     private resumesProviderSession(forkSourceSessionId: string | undefined): boolean {
@@ -1835,105 +1326,27 @@ export function createConversationRuntime(
         console.warn(`[${this.id}] Already processing a message, ignoring`);
         return;
       }
-      if (!this.needsForegroundChatRun()) {
-        this.sendAdmittedMessage(prompt, input);
-        return;
-      }
-      // Buddy chat turns are admitted through the queue, so a turn waiting for
-      // a run slot is visible as pending and later sends line up behind it.
-      if (!this._sendingFromQueue) {
-        // The queue keeps the input's provenance whatever its origin: a
-        // 'buddy_post' seat turn dropped here would come back 'unknown' and
-        // run under the workspace audience, resetting the seat's session.
-        this.enqueuePrompt(prompt, input);
-        return;
-      }
-      const owned = this.admitForegroundChatRun(input);
-      if (!owned) return;
-      this._admittedChatRun = owned;
-      try {
-        this.sendAdmittedMessage(prompt, input);
-      } finally {
-        // sendAdmittedMessage can return before spawning (preflight
-        // refusal, rejected fork). An unconsumed admitted run must be settled here,
-        // or it stays 'running' and holds one of its Buddy's slots forever.
-        if (this._admittedChatRun) {
-          this._admittedChatRun = null;
-          dependencies.finishBuddyChatRun?.(
-            owned.id,
-            owned.claim_token,
-            'cancelled',
-            'Turn did not start'
-          );
-        }
-      }
-    }
-
-    private needsForegroundChatRun(): boolean {
-      return (
-        !!this.buddyContext &&
-        !this.buddyContext.automationRunId &&
-        !this._coordinationExecution &&
-        !!dependencies.enqueueBuddyChatRun
-      );
-    }
-
-    // Admitted: the owned run. Otherwise the queue head goes back to pending and
-    // a poller re-runs processQueue once this Buddy's line reaches it.
-    private admitForegroundChatRun(input: TurnInput): OwnedBuddyChatRun | null {
-      // Per-input context: a fresh owner input drops delegated restrictions for
-      // its turn (contextForInput). The run's allowed operations come from it.
-      this._chatRunTicket ??= {
-        runId: dependencies.enqueueBuddyChatRun!(this.contextForInput(input)!, this.id).id,
-        stopWaiting: waitForChatRunSlot(() => this.processQueue()),
-      };
-      const admission = dependencies.startBuddyChatRun!(
-        this._chatRunTicket.runId,
-        this.id,
-        TURN_MAX_RUNTIME_MS
-      );
-      switch (admission.kind) {
+      switch (this._policy.gate(input, this._sendingFromQueue)) {
+        case 'send':
+          this.sendAdmittedMessage(prompt, input);
+          return;
+        case 'enqueue':
+          this.enqueuePrompt(prompt, input);
+          return;
+        case 'wait':
+          return;
         case 'admitted':
-          this.releaseChatRunTicket();
-          return admission.run;
-        case 'waiting':
-          if (this.turnQueue.releaseHead()) this.broadcastQueue();
-          return null;
-        case 'gone':
-          // Lost its place; rejoin at the back of the line on the next poll.
-          this._chatRunTicket.stopWaiting();
-          this._chatRunTicket = null;
-          setTimeout(() => this.processQueue(), CHAT_ADMISSION_POLL_MS);
-          this.turnQueue.releaseHead();
-          return null;
+          try {
+            this.sendAdmittedMessage(prompt, input);
+          } finally {
+            this._policy.releaseUnspawned();
+          }
+          return;
       }
-    }
-
-    private releaseChatRunTicket(abandon = false): void {
-      const ticket = this._chatRunTicket;
-      if (!ticket) return;
-      ticket.stopWaiting();
-      this._chatRunTicket = null;
-      if (abandon) dependencies.abandonBuddyChatRun?.(ticket.runId);
     }
 
     private sendAdmittedMessage(prompt: SessionRelativePrompt, input: TurnInput): void {
-      const turnBuddyContext = this.contextForInput(input);
-      if (turnBuddyContext && dependencies.readCurrentBuddyContext) {
-        const current = dependencies.readCurrentBuddyContext(turnBuddyContext);
-        if (current.audience) this.admitBuddyAudience(current.audience);
-        this._memorySnapshot = createMemorySnapshot(current.briefing, current.memoryGeneration);
-      }
-      // Re-brief only when this provider session has not yet seen the current
-      // memory generation. From 5c0cec4 (2026-09-20) until 2026-09-24 this was
-      // true on EVERY Buddy turn, so each turn appended another full ~20k-char
-      // briefing to the provider transcript and every later step re-read all
-      // accumulated copies: one basketball-model session carried 44 copies
-      // (~835k chars) and re-priced them across 1,081 requests.
-      const refreshBuddyContext =
-        !!turnBuddyContext &&
-        !!dependencies.readCurrentBuddyContext &&
-        this.memoryGeneration !== this._briefedMemoryGeneration;
+      const refreshBriefing = this._policy.prepare(input);
 
       // --- Chat Fork ---
       //
@@ -1970,12 +1383,13 @@ export function createConversationRuntime(
         // the fork-incapable harness was never checked. Capability, not
         // provider equality, decides the path.
         const sourceMemorySnapshot = source.getMemorySnapshot?.() ?? null;
+        const memorySnapshot = this._policy.memorySnapshot();
         const memoryGenerationMatches =
-          sourceMemorySnapshot === null && this._memorySnapshot === null
+          sourceMemorySnapshot === null && memorySnapshot === null
             ? true
             : sourceMemorySnapshot !== null &&
-              this._memorySnapshot !== null &&
-              sourceMemorySnapshot.generation === this._memorySnapshot.generation;
+              memorySnapshot !== null &&
+              sourceMemorySnapshot.generation === memorySnapshot.generation;
         if (
           source.provider !== this.provider ||
           !providerSupportsFork(this.provider) ||
@@ -2012,24 +1426,18 @@ export function createConversationRuntime(
 
       // UI/history retain clean user text. Buddy turns receive current bounded
       // context; the persisted first-turn snapshot is historical evidence only.
-      let cliContent = buildFirstTurnCliContent({
-        content,
-        messageCount: this.messages.length,
-        hasStartedSession: this._hasStartedSession,
-        kind: this.kind,
-        buddyBriefing: this._buddyBriefing,
-        buddyMemoryGeneration: this.memoryGeneration,
-        refreshBuddyContext,
-        swarmDebugPrefix: this.swarmDebugPrefix,
-      });
       // When provider-session inheritance ran above, skip first-turn briefing /
       // pasted-context prefixes — the CLI already has the source transcript.
-      // Soft Chat Forks (no forkSourceSessionId) keep buildFirstTurnCliContent.
-      if (forkSourceSessionId && !refreshBuddyContext) cliContent = content;
-      // Every path above leaves the provider session holding this generation:
-      // injected now, injected on an earlier turn, or inherited by a native fork
-      // (which requires matching generations).
-      if (turnBuddyContext) this._briefedMemoryGeneration = this.memoryGeneration;
+      // Soft Chat Forks (no forkSourceSessionId) keep the policy's prompt.
+      const cliContent =
+        forkSourceSessionId && !refreshBriefing
+          ? content
+          : this._policy.providerPrompt({
+              content,
+              messageCount: this.messages.length,
+              hasStartedSession: this._hasStartedSession,
+              refreshBriefing,
+            });
 
       // Add user message to history (clean content for UI)
       const userMessage: Message = {
@@ -2047,15 +1455,7 @@ export function createConversationRuntime(
         conversationId: this.id,
       });
 
-      // Buddy audit events require an existing Buddy and workspace. The Builder
-      // discovers those during its turn; owner tool authority uses input provenance.
-      if (turnBuddyContext)
-        dependencies.recordBuddyTurnOrigin?.(
-          this.id,
-          input,
-          turnBuddyContext,
-          crypto.createHash('sha256').update(content).digest('hex')
-        );
+      this._policy.admitted(input, content);
       // Owner workflow guidance lives in the native MCP tool descriptions.
       // Appending it here pollutes every provider input and its saved transcript.
       // Spawn with input provenance supplied by the host producer, never transcript text.
@@ -2087,9 +1487,7 @@ export function createConversationRuntime(
           // failure. Checking it here keeps a queued message retryable and
           // prevents the synchronous throw in spawnForMessage from leaving the
           // queue's head permanently marked as "sending".
-          if (this.kind.kind !== 'general') {
-            assertBuddyProviderSupportsMcp(resolution.value.provider);
-          }
+          this._policy.preflight(resolution.value.provider);
         } catch (error) {
           const errorMessage = error instanceof Error ? error.message : String(error);
           console.error(`[${this.id}] ${errorMessage}`);
@@ -2136,49 +1534,17 @@ export function createConversationRuntime(
     }
 
     stop(reason: 'user_stop' | 'server_restart' = 'user_stop'): void {
-      dependencies.revokeBuddyControlCapability?.(this.id);
-      const automationRunId = this.buddyContext?.automationRunId;
-      if (reason === 'user_stop' && automationRunId) {
-        const requestCancellation = dependencies.requestAutomationCancellation;
-        if (!requestCancellation) {
-          this.refuseAutomationTranscript(
-            'Automation cancellation is temporarily unavailable. The owned run was left running.'
-          );
-          return;
-        }
-        void requestCancellation(automationRunId).catch((error) => {
-          const detail = error instanceof Error ? error.message : String(error);
-          console.error('[buddies] Automation cancellation failed', automationRunId, error);
-          this.refuseAutomationTranscript(`Automation cancellation failed: ${detail}`);
-        });
-        return;
-      }
-      this.stopOwnedTurn(reason);
+      if (this._policy.stop(reason)) this.stopOwnedTurn(reason);
     }
 
-    /**
-     * Coordinator-only process stop. The scheduler first persists
-     * cancel_requested, revoking MCP authority, and only then enters here. Do
-     * not expose this on the public command path; see invariant I4 in
-     * agent_notes/2026-08-24_automation-execution-ownership-design.md.
-     */
+    /** Coordinator-only process stop (see BuddyTurnPolicy.stopAutomation). */
     stopAutomationTurn(): void {
-      dependencies.revokeBuddyControlCapability?.(this.id);
-      if (!this.buddyContext?.automationRunId || !this._automationClaimToken) {
-        throw new Error('Automation stop requires current server-private execution authority');
-      }
+      this._policy.stopAutomation();
       this.stopOwnedTurn('user_stop');
     }
 
     private stopOwnedTurn(reason: 'user_stop' | 'server_restart'): void {
-      if (this._chatRunTicket && !this.process) {
-        // Stopping a turn that is still waiting for a run slot drops that turn.
-        const dropped = this.turnQueue.dropPendingHead();
-        if (dropped) {
-          this._cancelQueuedAttempt(dropped);
-          this.broadcastQueue();
-        }
-        this.releaseChatRunTicket(true);
+      if (this._policy.dropWaitingTurn()) {
         this.emit('buddy-turn-failed', 'Stopped while waiting for a run slot');
       }
       this._clearTurnWatchdogs();
@@ -2199,8 +1565,7 @@ export function createConversationRuntime(
       // while the old process is still alive, and spawnForMessage's isRunning
       // guard would silently drop the queued message.
       stopTurn?.('SIGTERM');
-      updateBuddyConversationLink(this, 'cancelled');
-      settleBuddyDelegation(this, 'cancelled');
+      this._policy.ended({ t: 'cancelled' });
 
       const killTimer = setTimeout(() => {
         if (proc.exitCode === null) {
@@ -2239,8 +1604,7 @@ export function createConversationRuntime(
       // Generate new session ID for fresh context
       const oldSessionId = this.sessionId;
       this.sessionId = createSessionId();
-      this._providerAudienceKey = null;
-      this._briefedMemoryGeneration = null;
+      this._policy.sessionReset();
       // A reset starts an empty provider context. Carrying the old session's
       // token count forward would show a full meter on a fresh thread.
       this.providerUsage = null;
@@ -2296,7 +1660,7 @@ export function createConversationRuntime(
 
     private _handleTurnTimeout(kind: TurnTimeoutKind): void {
       if (!this.process || !this.isRunning) return;
-      dependencies.revokeBuddyControlCapability?.(this.id);
+      this._policy.revoke();
       const idle = this._watchdog.idle();
       const sawMeaningfulOutput = this._sawMeaningfulProviderOutputThisRun;
       const timeout = describeTurnTimeout(kind, { ...idle, sawMeaningfulOutput });
@@ -2335,8 +1699,7 @@ export function createConversationRuntime(
       // Mark turn as cleanly completed so the close handler (triggered by SIGTERM
       // below) takes the fast path and doesn't emit a duplicate system message.
       this._turnCompletedCleanly = true;
-      updateBuddyConversationLink(this, 'failed');
-      settleBuddyDelegation(this, 'failed', timeout.message);
+      this._policy.ended({ t: 'failed', detail: timeout.message });
       this.emit('buddy-turn-failed', timeout.message);
 
       const proc = this.process;
@@ -2415,7 +1778,7 @@ export function createConversationRuntime(
     }
 
     private enqueuePrompt(prompt: SessionRelativePrompt, input: TurnInput): void {
-      if (this.buddyContext?.automationRunId) {
+      if (!this._policy.acceptsUserInput) {
         this.refuseAutomationTranscript();
         return;
       }
@@ -2436,7 +1799,7 @@ export function createConversationRuntime(
      * stays in order behind the new message.
      */
     interruptAndSend(content: string, ownerInput?: OwnerInput): void {
-      if (this.buddyContext?.automationRunId) {
+      if (!this._policy.acceptsUserInput) {
         this.refuseAutomationTranscript();
         return;
       }
@@ -2462,7 +1825,7 @@ export function createConversationRuntime(
      * ids are a no-op, like cancelQueuedMessage.
      */
     promoteQueuedMessage(messageId: string): void {
-      if (this.buddyContext?.automationRunId) {
+      if (!this._policy.acceptsUserInput) {
         this.refuseAutomationTranscript();
         return;
       }
@@ -2495,7 +1858,7 @@ export function createConversationRuntime(
     clearQueue(): void {
       const removed = this.turnQueue.clearPending();
       for (const entry of removed) this._cancelQueuedAttempt(entry);
-      if (this.turnQueue.length === 0) this.releaseChatRunTicket(true);
+      if (this.turnQueue.length === 0) this._policy.queueEmptied();
       console.log(`[${this.id}] Cleared queue: removed ${removed.length} messages`);
       this.broadcastQueue();
     }
@@ -2505,7 +1868,7 @@ export function createConversationRuntime(
      * Called from: close handler (after process exits), enqueueMessage (new message).
      */
     processQueue(): void {
-      if (this.buddyContext?.automationRunId) {
+      if (!this._policy.acceptsUserInput) {
         // Old persisted queue state must not become an authority bypass after
         // restart. User admission is closed on every automation transcript.
         this.clearQueue();
@@ -2554,7 +1917,7 @@ export function createConversationRuntime(
     }
 
     waitingForRunSlot(): boolean {
-      return this._chatRunTicket !== null && this.process === null;
+      return this._policy.waitingForRunSlot();
     }
 
     async waitForTurnDrain(): Promise<void> {

@@ -9,10 +9,10 @@ import {
 } from '@unleashd/shared';
 import type { Response } from 'express';
 import { buddyExecutionPreferences } from '../conversations/config-mapping';
-import type { BuddyTurnAudience } from '../conversations/runtime';
 import { BuddyClosureService, BuddyReviewSettlementSchema } from './closure';
 import type { BuddiesModule, BuddiesStorePort, BuddyMemory } from './contract';
 import { knowledgeStore } from './knowledge';
+import type { BuddyTurnAudience } from './turn-policy';
 
 const BUDDIES_PACKAGE_NAME: string = '@nbardy/buddies';
 const BUDDY_BRIEFING_MAX_CHARACTERS = 40_000;

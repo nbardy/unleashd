@@ -4,7 +4,8 @@ import test from 'node:test';
 import { createDefaultConversationConfig } from '@unleashd/shared';
 import type { BuddyContext } from '@unleashd/shared';
 import { sessionToConversation } from '../src/adapters/disk-adapter';
-import { buildFirstTurnCliContent, createConversationRuntime } from '../src/conversations/runtime';
+import { buildFirstTurnCliContent } from '../src/buddies/turn-policy';
+import { createConversationRuntime } from '../src/conversations/runtime';
 import { resolveConfigAgainstProviderCatalog } from '../src/providers/catalog-service';
 import { registerConversationWebSocket } from '../src/transport/conversation-websocket';
 
