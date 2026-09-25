@@ -26,11 +26,6 @@ import {
 } from '@unleashd/shared';
 import { type ParsedSession, sessionToConversation } from '../server/src/adapters/disk-adapter';
 import { diskAdapters } from '../server/src/adapters/registry';
-import {
-  parseClaudeSession,
-  parseCodexTokenTotals,
-  parseOpenCodeSessionUsage,
-} from '../server/src/http/usage-routes';
 
 type CrateModule = typeof import('../crates/unleashd-ingest/index');
 type Row = import('../crates/unleashd-ingest/index').SessionRow;
@@ -193,38 +188,6 @@ function crateIdentity(row: Row): string {
   }
 }
 
-async function tsUsage(
-  format: string,
-  source: string,
-  session: ParsedSession
-): Promise<{ input: number; output: number; cacheRead: number; cacheWrite: number } | null> {
-  if (format === 'claude') {
-    const u = await parseClaudeSession(source, await fs.promises.stat(source));
-    return {
-      input: u.inputTokens,
-      output: u.outputTokens,
-      cacheRead: u.cacheReadTokens,
-      cacheWrite: u.cacheWriteTokens,
-    };
-  }
-  if (format === 'codex') {
-    const t = await parseCodexTokenTotals(source);
-    return t ? { input: t.input, output: t.output, cacheRead: t.cacheRead, cacheWrite: 0 } : null;
-  }
-  if (format === 'opencode') {
-    const u = await parseOpenCodeSessionUsage(session.filePath);
-    return u
-      ? {
-          input: u.inputTokens,
-          output: u.outputTokens,
-          cacheRead: u.cacheReadTokens,
-          cacheWrite: u.cacheWriteTokens,
-        }
-      : null;
-  }
-  return null;
-}
-
 async function compareSource(
   format: string,
   adapter: (typeof diskAdapters)[number],
@@ -313,21 +276,6 @@ async function compareSource(
         'time:ts-now',
         `no transcript time; ts ${session.createdAt.toISOString()} crate file mtime`
       );
-    }
-    const usage = await tsUsage(format, source, session);
-    const rsUsage = row.usage ?? null;
-    if (
-      JSON.stringify(usage) !==
-      JSON.stringify(
-        rsUsage && {
-          input: rsUsage.input,
-          output: rsUsage.output,
-          cacheRead: rsUsage.cacheRead,
-          cacheWrite: rsUsage.cacheWrite,
-        }
-      )
-    ) {
-      out('usage', `ts ${JSON.stringify(usage)} crate ${JSON.stringify(rsUsage)}`);
     }
   }
   // Reclassify: a source written after the crate scanned it, or one whose bytes hold a raw

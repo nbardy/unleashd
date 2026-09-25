@@ -137,7 +137,8 @@ test('context-breakdown route 404s identically to the conversation route', async
   registerConversationRoutes(
     app,
     () => undefined,
-    runtimeMessageSource(() => undefined)
+    runtimeMessageSource(() => undefined),
+    { ingest: () => ({ t: 'starting' }) }
   );
   const server = app.listen(0, '127.0.0.1');
   await once(server, 'listening');
@@ -165,7 +166,7 @@ test('context-breakdown route returns the meter payload for a known conversation
     runtimeMessageSource(() => undefined),
     {
       getBranch: () => null,
-      lookupUsage: async () => null,
+      ingest: () => ({ t: 'starting' }),
     }
   );
   const server = app.listen(0, '127.0.0.1');

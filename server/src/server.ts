@@ -50,6 +50,7 @@ import { registerSearchRoutes } from './http/search-routes';
 import { registerTurnDiagnosticsRoutes } from './http/turn-diagnostics-routes';
 import { registerUploadRoutes } from './http/upload-routes';
 import { registerUsageRoutes } from './http/usage-routes';
+import { currentIngest } from './ingest/instance';
 import { createSessionLoader } from './lifecycle/session-loader';
 import { type ShutdownController, registerShutdownHandlers } from './lifecycle/shutdown';
 import { runServerStartup } from './lifecycle/startup';
@@ -455,6 +456,7 @@ registerConversationRoutes(
   runtimeMessageSource((id) => conversations.get(id)),
   {
     getBranch: async (id) => (await conversationConfigService.getRecord(id))?.creation?.branch,
+    ingest: currentIngest,
   }
 );
 registerTurnDiagnosticsRoutes(app, turnAttemptJournal);
@@ -583,7 +585,7 @@ const paletteService = createPaletteService({
 });
 paletteService.registerRoutes(app);
 
-registerUsageRoutes(app, Object.keys(providers) as ProviderName[]);
+registerUsageRoutes(app, Object.keys(providers) as ProviderName[], currentIngest);
 registerStaticClient(app, path.join(__dirname, '../../client/dist'));
 
 const captureUnhandledHttpError: ErrorRequestHandler = (error, request, response, next) => {

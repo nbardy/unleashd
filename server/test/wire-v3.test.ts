@@ -161,7 +161,8 @@ test('message bodies page by seq, and a replaced history changes the epoch', asy
   registerConversationRoutes(
     app,
     (id) => (id === conversation.id ? conversation : undefined),
-    runtimeMessageSource((id) => (id === conversation.id ? conversation : undefined))
+    runtimeMessageSource((id) => (id === conversation.id ? conversation : undefined)),
+    { ingest: () => ({ t: 'starting' }) }
   );
   const server = app.listen(0, '127.0.0.1');
   await once(server, 'listening');

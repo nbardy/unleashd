@@ -17,6 +17,7 @@ import {
   type MessageSource,
 } from '../conversations/messages';
 import { type SessionContextReading, lookupSessionContext } from '../conversations/session-context';
+import type { IngestAccessor, IngestSlot } from '../ingest/instance';
 import { type SessionProviderUsage, lookupProviderUsageForSession } from './usage-routes';
 
 /** What the context meter reads about a conversation. */
@@ -134,8 +135,28 @@ export interface ContextBreakdownDeps {
   getBranch?: (
     conversationId: string
   ) => Promise<ConversationBranch | null | undefined> | ConversationBranch | null | undefined;
-  lookupUsage?: (sessionId: string) => Promise<SessionProviderUsage | null>;
-  lookupContext?: (sessionId: string) => Promise<SessionContextReading | null>;
+  /** The ingest store's session usage and latest context (server/src/ingest/instance.ts). */
+  ingest: IngestAccessor;
+}
+
+interface ProviderReadings {
+  usage: SessionProviderUsage | null;
+  context: SessionContextReading | null;
+}
+
+/** While the store is starting the meter shows its estimates only, as for an unknown session. */
+async function providerReadings(slot: IngestSlot, sessionId: string): Promise<ProviderReadings> {
+  switch (slot.t) {
+    case 'starting':
+      return { usage: null, context: null };
+    case 'ready': {
+      const [usage, context] = await Promise.all([
+        lookupProviderUsageForSession(slot.ingest, sessionId),
+        lookupSessionContext(slot.ingest, sessionId),
+      ]);
+      return { usage, context };
+    }
+  }
 }
 
 /**
@@ -394,7 +415,7 @@ export function registerConversationRoutes(
   app: Express,
   getConversation: (id: string) => RoutedConversation | undefined,
   messages: MessageSource,
-  deps: ContextBreakdownDeps = {}
+  deps: ContextBreakdownDeps
 ): void {
   app.get('/api/conversations/:conversationId/context-breakdown', async (request, response) => {
     const conversation = getConversation(request.params.conversationId);
@@ -409,14 +430,16 @@ export function registerConversationRoutes(
     } catch {
       branch = null;
     }
-    let usage: SessionProviderUsage | null = null;
+    // The harness's own session log (via the ingest store): cumulative usage, plus the latest
+    // request's context, window and compaction markers. Retroactive, so a thread that has not
+    // taken a turn since the live event shipped still reads correctly.
+    let readings: ProviderReadings = { usage: null, context: null };
     try {
-      usage = data.sessionId
-        ? await (deps.lookupUsage ?? lookupProviderUsageForSession)(data.sessionId)
-        : null;
-    } catch {
-      usage = null;
+      readings = data.sessionId ? await providerReadings(deps.ingest(), data.sessionId) : readings;
+    } catch (error) {
+      console.warn('[context-breakdown] ingest read failed:', error);
     }
+    const { usage, context: sessionContext } = readings;
     const snapshot = (() => {
       try {
         return conversation.getMemorySnapshot?.()?.briefing ?? null;
@@ -424,17 +447,6 @@ export function registerConversationRoutes(
         return null;
       }
     })();
-    // The harness's own session log: the latest request's context, plus the
-    // window and compaction markers it recorded. Retroactive, so a thread that
-    // has not taken a turn since the live event shipped still reads correctly.
-    let sessionContext: SessionContextReading | null = null;
-    try {
-      sessionContext = data.sessionId
-        ? await (deps.lookupContext ?? lookupSessionContext)(data.sessionId)
-        : null;
-    } catch {
-      sessionContext = null;
-    }
     const resolved =
       data.configResolution.status === 'resolved'
         ? data.configResolution.value
