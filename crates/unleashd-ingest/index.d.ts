@@ -81,7 +81,7 @@ export type BuddyVisibility = 'foreground' | 'background'
 
 /** What `onChange` receives. */
 export type ChangeEvent =
-  | { t: 'changes'; rev: number; sessionIds: Array<string>; removed: Array<string> }
+  | { t: 'changes'; rev: number; sessionIds: Array<string>; rewritten: Array<string>; removed: Array<string> }
   | { t: 'failed'; message: string }
 
 /** A compaction the harness recorded with its own marker record (never inferred from numbers). */
