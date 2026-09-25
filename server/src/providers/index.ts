@@ -14,17 +14,6 @@ import museProvider from './muse';
 import opencodeProvider from './opencode';
 
 /**
- * Unified event types consumed by conversation state handling.
- * These are emitted by `executeCommand` and passed through server logic.
- */
-export type ProviderEvent =
-  | { type: 'message_start' }
-  | { type: 'text_delta'; text: string }
-  | { type: 'message_complete'; reason?: 'success' | 'error' | 'out_of_tokens' | 'killed' }
-  | { type: 'tool_use'; name: string; input: Record<string, unknown>; displayText?: string }
-  | { type: 'error'; message: string };
-
-/**
  * Minimal provider contract used by the server runtime.
  */
 export interface Provider {

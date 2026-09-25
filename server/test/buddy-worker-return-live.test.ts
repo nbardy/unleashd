@@ -92,7 +92,7 @@ test(
       updateBuddyStatus: () => {},
       settleBuddyDelegation: () => {},
       getConversation: (id) => conversations.get(id),
-      readLatestOompaRuntime: () => ({ available: false, run: null, reason: 'fixture' }),
+      readLatestOompaRuntime: async () => ({ available: false, run: null, reason: 'fixture' }),
       createSessionId: randomUUID,
       readCurrentBuddyContext: integration.readCurrentConversation,
       ...chatRunAdmission(

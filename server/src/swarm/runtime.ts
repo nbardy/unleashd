@@ -1,4 +1,4 @@
-import fs from 'node:fs';
+import fs from 'node:fs/promises';
 import path from 'node:path';
 import type {
   OompaCycle,
@@ -33,29 +33,42 @@ export function isProcessAlive(pid: number): boolean {
   }
 }
 
-export function safeReadJson(filePath: string): Record<string, unknown> | null {
+// Every read here is async. The swarm observer calls readLatestSwarmRuntime
+// every 2 s while a turn runs in the folder; until 2026-09-25 each running
+// conversation did it with readdirSync/readFileSync on the event loop (03 §5.2).
+// Guard: `a swarm runtime read never touches synchronous fs` (swarm-runtime.test.ts).
+
+async function pathExists(filePath: string): Promise<boolean> {
   try {
-    if (!fs.existsSync(filePath)) return null;
-    return JSON.parse(fs.readFileSync(filePath, 'utf-8')) as Record<string, unknown>;
+    await fs.access(filePath);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export async function safeReadJson(filePath: string): Promise<Record<string, unknown> | null> {
+  try {
+    return JSON.parse(await fs.readFile(filePath, 'utf-8')) as Record<string, unknown>;
   } catch {
     return null;
   }
 }
 
-export function readLatestRunDirectory(runsDirectory: string): SwarmRunDirectory | null {
+export async function readLatestRunDirectory(
+  runsDirectory: string
+): Promise<SwarmRunDirectory | null> {
   try {
-    const entries = fs
-      .readdirSync(runsDirectory, { withFileTypes: true })
-      .filter((entry) => entry.isDirectory())
-      .map((entry) => {
+    const directories = (await fs.readdir(runsDirectory, { withFileTypes: true })).filter((entry) =>
+      entry.isDirectory()
+    );
+    const entries = await Promise.all(
+      directories.map(async (entry) => {
         const runPath = path.join(runsDirectory, entry.name);
-        return {
-          id: entry.name,
-          path: runPath,
-          mtimeMs: fs.statSync(runPath).mtimeMs,
-        };
+        return { id: entry.name, path: runPath, mtimeMs: (await fs.stat(runPath)).mtimeMs };
       })
-      .sort((left, right) => right.mtimeMs - left.mtimeMs);
+    );
+    entries.sort((left, right) => right.mtimeMs - left.mtimeMs);
     return entries[0] ?? null;
   } catch {
     return null;
@@ -90,50 +103,52 @@ export function normalizeWorkerStatus(rawStatus: unknown): OompaWorkerStatus {
   return 'starting';
 }
 
-export function readCycleFiles(directory: string): OompaCycle[] {
+export async function readCycleFiles(directory: string): Promise<OompaCycle[]> {
   try {
-    return fs
-      .readdirSync(directory)
-      .filter((file) => file.endsWith('.json'))
-      .sort()
-      .flatMap((file) => {
+    const files = (await fs.readdir(directory)).filter((file) => file.endsWith('.json')).sort();
+    const cycles = await Promise.all(
+      files.map(async (file): Promise<OompaCycle[]> => {
         try {
-          return [JSON.parse(fs.readFileSync(path.join(directory, file), 'utf-8')) as OompaCycle];
+          return [JSON.parse(await fs.readFile(path.join(directory, file), 'utf-8')) as OompaCycle];
         } catch {
           return [];
         }
-      });
+      })
+    );
+    return cycles.flat();
   } catch {
     return [];
   }
 }
 
-export function readLatestSwarmRuntime(
+export async function readLatestSwarmRuntime(
   projectRoot: string,
   dependencies: SwarmRuntimeDependencies = DEFAULT_DEPENDENCIES
-): OompaRuntimeSnapshot {
+): Promise<OompaRuntimeSnapshot> {
   const runsDirectory = path.join(projectRoot, 'runs');
-  if (!fs.existsSync(runsDirectory)) {
+  if (!(await pathExists(runsDirectory))) {
     return { available: false, run: null, reason: 'No runs directory found' };
   }
 
-  const latestRun = readLatestRunDirectory(runsDirectory);
+  const latestRun = await readLatestRunDirectory(runsDirectory);
   if (!latestRun) {
     return { available: false, run: null, reason: 'No run directories found' };
   }
 
-  const started = (safeReadJson(path.join(latestRun.path, 'started.json')) ??
-    safeReadJson(path.join(latestRun.path, 'run.json')) ??
+  const started = ((await safeReadJson(path.join(latestRun.path, 'started.json'))) ??
+    (await safeReadJson(path.join(latestRun.path, 'run.json'))) ??
     {}) as Partial<OompaStarted>;
-  const stopped = safeReadJson(path.join(latestRun.path, 'stopped.json')) as OompaStopped | null;
+  const stopped = (await safeReadJson(
+    path.join(latestRun.path, 'stopped.json')
+  )) as OompaStopped | null;
   const cyclesDirectory = path.join(latestRun.path, 'cycles');
   const iterationsDirectory = path.join(latestRun.path, 'iterations');
-  const eventDirectory = fs.existsSync(cyclesDirectory)
+  const eventDirectory = (await pathExists(cyclesDirectory))
     ? cyclesDirectory
-    : fs.existsSync(iterationsDirectory)
+    : (await pathExists(iterationsDirectory))
       ? iterationsDirectory
       : null;
-  const cycles = eventDirectory ? readCycleFiles(eventDirectory) : [];
+  const cycles = eventDirectory ? await readCycleFiles(eventDirectory) : [];
 
   const configuredWorkers = (started.workers ?? [])
     .map((worker) => worker.id)
@@ -154,11 +169,20 @@ export function readLatestSwarmRuntime(
   const isLive =
     !isStopped &&
     ((typeof pid === 'number' && dependencies.isProcessAlive(pid)) ||
-      isLegacyOompaProcessAlive(projectRoot, dependencies));
+      (await isLegacyOompaProcessAlive(projectRoot, dependencies)));
   const startedAt = Date.parse(String(started['started-at'] ?? ''));
   const runAge = dependencies.now() - startedAt;
 
   const workersStateDirectory = path.join(latestRun.path, 'workers');
+  const workerStates = new Map(
+    await Promise.all(
+      Array.from(
+        workerIds,
+        async (id) =>
+          [id, await safeReadJson(path.join(workersStateDirectory, `${id}.json`))] as const
+      )
+    )
+  );
   const workers = Array.from(workerIds)
     .map((id) => {
       const cycle = latestCycleByWorker.get(id);
@@ -166,7 +190,7 @@ export function readLatestSwarmRuntime(
       // cycle start and at worker terminal exit. This is the liveness authority:
       // cycle files are only written at cycle END, so deriving status from the
       // latest cycle rendered a mid-cycle worker as dead/red for the whole cycle.
-      const state = safeReadJson(path.join(workersStateDirectory, `${id}.json`));
+      const state = workerStates.get(id) ?? null;
       let status: OompaWorkerStatus;
       let lastEvent: string;
       if (state && typeof state.status === 'string') {
@@ -216,7 +240,7 @@ export function readLatestSwarmRuntime(
       configPath: started['config-file'] ?? null,
       logFile: null,
       workers,
-      runCount: countRunDirectories(runsDirectory),
+      runCount: await countRunDirectories(runsDirectory),
     },
     reason: null,
   };
@@ -227,26 +251,27 @@ function cycleNumber(cycle: OompaCycle): number {
   return cycle.cycle ?? (typeof legacyIteration === 'number' ? legacyIteration : 0);
 }
 
-function countRunDirectories(runsDirectory: string): number {
+async function countRunDirectories(runsDirectory: string): Promise<number> {
   try {
-    return fs
-      .readdirSync(runsDirectory, { withFileTypes: true })
-      .filter((entry) => entry.isDirectory()).length;
+    return (await fs.readdir(runsDirectory, { withFileTypes: true })).filter((entry) =>
+      entry.isDirectory()
+    ).length;
   } catch {
     return 0;
   }
 }
 
-function isLegacyOompaProcessAlive(
+async function isLegacyOompaProcessAlive(
   projectRoot: string,
   dependencies: SwarmRuntimeDependencies
-): boolean {
+): Promise<boolean> {
   const logsDirectory = path.join(projectRoot, 'oompa', 'logs');
   try {
-    for (const file of fs
-      .readdirSync(logsDirectory)
-      .filter((name) => /^run_.+\.meta$/.test(name))) {
-      const metadata = parseMetadata(fs.readFileSync(path.join(logsDirectory, file), 'utf-8'));
+    const metaFiles = (await fs.readdir(logsDirectory)).filter((name) =>
+      /^run_.+\.meta$/.test(name)
+    );
+    for (const file of metaFiles) {
+      const metadata = parseMetadata(await fs.readFile(path.join(logsDirectory, file), 'utf-8'));
       for (const value of [metadata.script_pid, metadata.bb_pid]) {
         const pid = Number.parseInt(value ?? '', 10);
         if (Number.isFinite(pid) && pid > 0 && dependencies.isProcessAlive(pid)) return true;

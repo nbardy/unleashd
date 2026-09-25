@@ -1,4 +1,4 @@
-import type { BuddyTurnAudience } from '../../src/conversations/runtime';
+import type { BuddyTurnAudience } from '../../src/buddies/turn-policy';
 
 // Fixture: a stub audience that continues only its own key. The containment
 // rule itself (grown read access continues a session) belongs to the Buddies

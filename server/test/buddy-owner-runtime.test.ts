@@ -143,7 +143,7 @@ test('owner MCP configures unconfigured staff, releases original work, and compl
     updateBuddyStatus: () => {},
     settleBuddyDelegation: () => {},
     getConversation: (id) => conversations.get(id),
-    readLatestOompaRuntime: () => ({ available: false, run: null, reason: 'fixture' }),
+    readLatestOompaRuntime: async () => ({ available: false, run: null, reason: 'fixture' }),
     createSessionId: () => `session-${visits.length}`,
     readCurrentBuddyContext: (context) => ({
       briefing: `Current profile for ${context.buddyId}; turn ${visits.length}`,

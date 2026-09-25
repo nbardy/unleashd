@@ -44,7 +44,7 @@ or queued and after a provider session has started.
    shared catalog with `pnpm --filter @unleashd/shared gen:catalog` when it changes.
 3. **Server update path** — use `create_conversation` and revision-checked
    `set_conversation_config` through the config service. Extend runtime execution
-   mapping in [runtime.ts](../server/src/conversations/runtime.ts), rather than
+   mapping in [runner.ts](../server/src/turns/runner.ts) (one request shape), rather than
    adding an independent setter or assigning a provider default in the UI.
 4. **Persistence and hydration** — extend the durable config record and review
    [config-store](../server/src/conversations/config-store.ts) and

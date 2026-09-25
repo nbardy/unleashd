@@ -154,7 +154,7 @@ test('bound native sessions retain display history across capped startup, pollin
       updateBuddyStatus: () => {},
       settleBuddyDelegation: () => {},
       getConversation: context.registry.get,
-      readLatestOompaRuntime: () => ({ available: false, run: null, reason: 'fixture' }),
+      readLatestOompaRuntime: async () => ({ available: false, run: null, reason: 'fixture' }),
       createSessionId: () => 'fresh-session',
       readCurrentBuddyContext: () => ({
         briefing: 'CURRENT_BRIEFING',

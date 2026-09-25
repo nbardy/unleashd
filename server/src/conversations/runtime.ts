@@ -2,11 +2,7 @@ import type { ChildProcess } from 'node:child_process';
 import crypto from 'node:crypto';
 import { EventEmitter } from 'node:events';
 import path from 'node:path';
-import {
-  type ExecuteCommandRequest,
-  type UnifiedAgentEvent,
-  executeCommand,
-} from '@nbardy/agent-cli';
+import { executeCommand } from '@nbardy/agent-cli';
 import type {
   BuddyContext,
   ConfigResolution,
@@ -27,216 +23,52 @@ import type {
   SubAgent,
 } from '@unleashd/shared';
 import {
-  BUDDY_TEAM_CONTRACT_VERSION,
   buddyContextFromKind,
   buddyKindFromContext,
   conversationKindFromLegacy,
-  formatBuddyBuilderToolResult,
-  formatBuddyTeamConfigurationToolResult,
-  formatBuddyWorkerToolResult,
   isBuddyKind,
   matchConversationKind,
   providerSupportsFork,
 } from '@unleashd/shared';
-import { formatToolUse, isCompletionOnlyToolUse } from '../adapters/tool-format';
-import { BUDDY_BUILDER_BRIEFING } from '../buddies/builder';
 import {
-  BUDDY_AUTOMATION_CLAIM_TOKEN_ENV,
-  buddyBuilderMcpServers,
-  buddyMcpServers,
-  buddyOwnerMcpServers,
-} from '../buddies/mcp-config';
-import type { CompletedBuddyTurn } from '../buddies/memory-review';
-import { assertBuddyProviderSupportsMcp } from '../buddies/provider-capability';
-import {
-  SWARM_POLL_INTERVAL_MS,
-  SWARM_POLL_THROTTLE_MS,
-  TURN_BRIDGE_TIMEOUT_MS,
-  TURN_MAX_RUNTIME_MS,
-  TURN_PROVIDER_IDLE_TIMEOUT_MS,
-  TURN_TIMEOUT_KILL_GRACE_MS,
-} from '../constants/timeouts';
-import type {
-  RuntimeTurnAttemptObserver,
-  TurnActivitySource,
-  TurnAttemptActivity,
-  TurnTerminalCause,
-} from '../observability';
-import { noteActivity } from '../observability/event-loop-stall';
-import type { ProviderEvent } from '../providers';
+  BuddyBuilderTurnPolicy,
+  type BuddyPolicyHost,
+  BuddyTurnPolicy,
+  type BuddyTurnPolicyDependencies,
+  type MemoryGenerationInput,
+  createMemorySnapshot,
+} from '../buddies/turn-policy';
+import { SWARM_POLL_INTERVAL_MS, SWARM_POLL_THROTTLE_MS } from '../constants/timeouts';
+import type { RuntimeTurnAttemptObserver } from '../observability';
 import { resolveConfigAgainstProviderCatalog } from '../providers/catalog-service';
+import { SwarmObservers } from '../swarm/observer';
 import {
-  extractCodexCollabToolInput,
-  getCodexSubagentCurrentAction,
-  getSubagentDescription,
-  isCodexCollabToolName,
-  isSubagentSpawnTool,
-  isTerminalSubagentStatus,
-  normalizeCodexSubagentStatus,
-} from '../subagent-tools';
-
-export type OwnedBuddyChatRun = { id: string; claim_token: string; deadline: string };
-export type BuddyChatAdmission =
-  | { kind: 'admitted'; run: OwnedBuddyChatRun }
-  | { kind: 'waiting'; reason: string }
-  // The queued row was cancelled elsewhere (e.g. another host's startup sweep).
-  | { kind: 'gone' };
-
-const CHAT_ADMISSION_POLL_MS = 1000;
+  type OwnerInput,
+  type SeatTurnInput,
+  type SessionRelativePrompt,
+  type TurnInput,
+  sameEitherWay,
+} from '../turns/input';
+import {
+  ChatTurnPolicy,
+  type CoordinationDrained,
+  type MemorySnapshot,
+  type TurnPolicy,
+} from '../turns/policy';
+import { type QueueEntry, TurnQueue } from '../turns/queue';
+import { type TurnBroadcast, TurnRunner } from '../turns/runner';
 
 /**
- * ONE admission tick shared by every Buddy chat waiting for a run slot. Until
- * 2026-09-25 each waiting conversation owned its own 1 s setInterval, so N
- * queued chats meant N timers at unrelated phases, each hitting sync SQLite
- * (03-app-core.md §5 #2). Waiters retry in the order they began waiting, and
- * the tick exists only while someone waits. Slots are also released by runs
- * this process never sees finish (automations, lease expiry), so a tick is
- * still needed rather than wake-on-release alone.
+ * The conversation: its record, its queue, its turn policy and the runner for
+ * its current turn. Turn mechanics live in turns/ (queue, runner, watchdog,
+ * sub-agent folds), kind-specific behavior in the policy chosen once by kind
+ * (turns/policy.ts, buddies/turn-policy.ts), swarm observation in
+ * swarm/observer.ts.
  */
-const admissionWaiters = new Set<() => void>();
-let admissionTick: ReturnType<typeof setInterval> | null = null;
 
-/** Retry `admit` on the shared tick until the returned function is called. */
-function waitForChatRunSlot(admit: () => void): () => void {
-  admissionWaiters.add(admit);
-  admissionTick ??= setInterval(() => {
-    noteActivity('timer buddy-chat-admission');
-    for (const waiter of [...admissionWaiters]) waiter();
-  }, CHAT_ADMISSION_POLL_MS);
-  return () => {
-    admissionWaiters.delete(admit);
-    if (admissionWaiters.size > 0 || !admissionTick) return;
-    clearInterval(admissionTick);
-    admissionTick = null;
-  };
-}
+export type { SeatTurnInput, SessionRelativePrompt } from '../turns/input';
 
-interface ChunkData {
-  type: 'chunk';
-  conversationId: string;
-  text: string;
-}
-interface MessageCompleteData {
-  type: 'message_complete';
-  conversationId: string;
-  reason?: 'success' | 'error' | 'out_of_tokens' | 'killed';
-}
-interface MessageData {
-  type: 'message';
-  conversationId: string;
-  role: 'user' | 'assistant' | 'system';
-  content: string;
-}
-export type ConversationBroadcast = ServerMessage | ChunkData | MessageCompleteData | MessageData;
-
-/**
- * The memory context is an application-conversation snapshot.  The generation
- * is deliberately opaque here: the canonical Buddy store owns its meaning,
- * while legacy installations use a deterministic briefing digest until that
- * store exposes a native generation.
- */
-export interface MemorySnapshot {
-  readonly generation: string;
-  readonly briefing: string;
-}
-
-/** Boundary input accepts the numeric generation used by the v2 package; the runtime stores only an opaque string. */
-export type MemoryGenerationInput = string | number;
-
-export type AutomationMemoryWritePolicy = 'not_applicable' | 'denied' | 'allowed' | 'unsupported';
-
-const MEMORY_WRITE_OPERATIONS = new Set([
-  'buddy.remember',
-  'buddy.remember_note',
-  'buddy.update_memory',
-  'buddy.compact_memory',
-]);
-
-function providerSupportsRequiredBuddyMcp(provider: ProviderName): boolean {
-  try {
-    assertBuddyProviderSupportsMcp(provider);
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-export function memoryGenerationForBriefing(briefing: string): string {
-  return `briefing-sha256:${crypto.createHash('sha256').update(briefing, 'utf8').digest('hex')}`;
-}
-
-export function createMemorySnapshot(
-  briefing: string | null | undefined,
-  generation?: MemoryGenerationInput | null
-): MemorySnapshot | null {
-  if (briefing === null || briefing === undefined) return null;
-  const normalizedGeneration =
-    generation === null || generation === undefined
-      ? memoryGenerationForBriefing(briefing)
-      : String(generation).trim() || memoryGenerationForBriefing(briefing);
-  return Object.freeze({ briefing, generation: normalizedGeneration });
-}
-
-/**
- * Resolve automation memory-write policy before provider startup.  A missing
- * allowlist is intentionally read-only; durable run policy remains the final
- * operation gate inside the Buddy control plane.  This helper only makes the
- * provider/capability boundary explicit and never creates a worker.
- */
-export function resolveAutomationMemoryWritePolicy(input: {
-  isAutomation: boolean;
-  provider: ProviderName;
-  allowedOperations?: readonly string[];
-  hasClaimToken: boolean;
-}): AutomationMemoryWritePolicy {
-  if (!input.isAutomation) return 'not_applicable';
-  const requestsMemoryWrite = (input.allowedOperations ?? []).some((operation) =>
-    MEMORY_WRITE_OPERATIONS.has(operation)
-  );
-  if (!requestsMemoryWrite) return 'denied';
-  if (!input.hasClaimToken || !providerSupportsRequiredBuddyMcp(input.provider)) {
-    return 'unsupported';
-  }
-  return 'allowed';
-}
-
-const BUDDY_CONTEXT_V2_HEADER_RE =
-  /^<!-- unleashd:buddy-context-v2 ([A-Za-z0-9_-]+) ([0-9]+) -->\n/;
-const BUDDY_CONTEXT_V2_SUFFIX = '\n<!-- /unleashd:buddy-context-v2 -->\n\n';
-const MEMORY_GENERATION_RE = /^<!-- unleashd:buddy-memory-generation ([A-Za-z0-9_-]+) -->\n/;
-
-/**
- * Recover the hidden snapshot embedded in a first provider prompt.  This is a
- * compatibility bridge for restart/hydration: the application conversation
- * keeps the same briefing even if the current Buddy memory has advanced.
- */
-export function extractBuddyMemorySnapshot(content: string): MemorySnapshot | null {
-  const header = content.match(BUDDY_CONTEXT_V2_HEADER_RE);
-  if (!header) return null;
-  const briefingLength = Number.parseInt(header[2], 10);
-  const briefingStart = header[0].length;
-  const suffixStart = briefingStart + briefingLength;
-  if (
-    !Number.isSafeInteger(briefingLength) ||
-    briefingLength < 0 ||
-    !content.startsWith(BUDDY_CONTEXT_V2_SUFFIX, suffixStart)
-  ) {
-    return null;
-  }
-  const encodedBriefing = content.slice(briefingStart, suffixStart);
-  const generationMarker = encodedBriefing.match(MEMORY_GENERATION_RE);
-  if (!generationMarker) {
-    return createMemorySnapshot(encodedBriefing);
-  }
-  let generation: string;
-  try {
-    generation = Buffer.from(generationMarker[1], 'base64url').toString('utf8');
-  } catch {
-    return null;
-  }
-  if (!generation) return null;
-  return createMemorySnapshot(encodedBriefing.slice(generationMarker[0].length), generation);
-}
+export type ConversationBroadcast = ServerMessage | TurnBroadcast;
 
 export interface ConversationRuntimeView {
   id: string;
@@ -251,47 +83,16 @@ export interface ConversationRuntimeView {
   toJSON(): ConversationData;
 }
 
-// Who a turn's input came from. Only 'owner_input' carries owner authority
-// (owner controls + the unleashd_owner MCP, see spawnForMessage).
-// 'buddy_post': a channel-thread seat answering a post ANOTHER BUDDY wrote. It
-// keeps the seat's conversation audience (so the seat's provider session
-// continues) but never owner authority: until 2026-09-25 (B1) the responder
-// sent these as 'owner_input', so Buddy-authored thread text drove turns that
-// held configure_team and owner document writes.
-type TurnInput = Readonly<{
-  origin: 'owner_input' | 'buddy_post' | 'buddy_message' | 'schedule' | 'unknown';
-  inputId: string;
-}>;
-
-/** A channel seat turn, attributed by the author of its stored trigger post. */
-export type SeatTurnInput = Readonly<{ origin: 'owner_input' | 'buddy_post'; inputId: string }>;
+/** Input with no recorded producer: no owner authority, workspace audience. */
+function unknownInput(): TurnInput {
+  return { origin: 'unknown', inputId: crypto.randomUUID() };
+}
 
 /**
- * The disclosure audience a Buddy turn runs under. `key` is persisted with the
- * provider session built under it; `continuityFrom` asks the Buddies package
- * (knowledgeAudienceContinuity owns the rule) whether a session built under an
- * earlier key may continue: 'contained' when only read access grew, 'changed'
- * when access narrowed or the audience differs, 'unverified' when the saved key
- * cannot be compared (a revision hash saved before 2026-09-25).
+ * The host server's ports. The turn core uses these; the Buddy policies
+ * (buddies/turn-policy.ts) use `BuddyTurnPolicyDependencies`.
  */
-export type BuddyTurnAudience = Readonly<{
-  key: string;
-  continuityFrom(sessionKey: string): BuddyAudienceContinuity;
-}>;
-export type BuddyAudienceContinuity = 'contained' | 'changed' | 'unverified';
-
-/**
- * One turn's input worded for the provider session it reaches: `resumed` for a
- * session that already holds this conversation's earlier turns, `fresh` for a
- * new one, which must stand alone. A plain message reads the same either way.
- */
-export type SessionRelativePrompt = Readonly<{ resumed: string; fresh: string }>;
-const sameEitherWay = (content: string): SessionRelativePrompt => ({
-  resumed: content,
-  fresh: content,
-});
-
-export interface ConversationRuntimeDependencies {
+export interface ConversationRuntimeDependencies extends BuddyTurnPolicyDependencies {
   broadcast(data: ConversationBroadcast): void;
   registerSessionAlias(sessionId: string | null | undefined, conversationId: string): void;
   unregisterSessionAlias(
@@ -306,15 +107,6 @@ export interface ConversationRuntimeDependencies {
     sessionId: string,
     buddyAudienceKey?: string
   ): Promise<void>;
-  updateBuddyStatus(
-    conversation: ConversationRuntimeView,
-    status: 'active' | 'complete' | 'failed' | 'cancelled'
-  ): void;
-  settleBuddyDelegation(
-    conversation: ConversationRuntimeView,
-    status: 'complete' | 'failed' | 'cancelled',
-    outcome?: string
-  ): void;
   getConversation(id: string):
     | {
         isRunning: boolean;
@@ -324,7 +116,7 @@ export interface ConversationRuntimeDependencies {
         getMemorySnapshot?: () => MemorySnapshot | null;
       }
     | undefined;
-  readLatestOompaRuntime(projectRoot: string): OompaRuntimeSnapshot;
+  readLatestOompaRuntime(projectRoot: string): Promise<OompaRuntimeSnapshot>;
   createSessionId(): string;
   /**
    * Durably record provider-counted usage against a session. Optional because
@@ -336,201 +128,17 @@ export interface ConversationRuntimeDependencies {
     sessionId: string,
     usage: ProviderTurnUsage
   ): Promise<void>;
-  readCurrentBuddyContext?(context: BuddyContext): {
-    briefing: string;
-    memoryGeneration: string;
-    audience?: BuddyTurnAudience;
-  };
-  /** Enqueue memory maintenance only after a successful CLI exit and normalized event drain. */
-  reviewCompletedBuddyTurn?(turn: CompletedBuddyTurn): void;
-  /**
-   * A Buddy chat/channel turn takes its place in its Buddy's FIFO run line
-   * (per-Buddy limit, owner decision 2026-09-25), then polls until admitted.
-   */
-  enqueueBuddyChatRun?(context: BuddyContext, conversationId: string): { id: string };
-  startBuddyChatRun?(
-    runId: string,
-    conversationId: string,
-    maxRuntimeMs: number
-  ): BuddyChatAdmission;
-  abandonBuddyChatRun?(runId: string): void;
-  finishBuddyChatRun?(
-    id: string,
-    token: string,
-    status: 'complete' | 'failed' | 'cancelled',
-    detail?: string
-  ): void;
-  issueBuddyControlCapability?(
-    context: BuddyContext,
-    conversationId: string,
-    automationClaimToken?: string
-  ): Readonly<Record<string, string>>;
-  revokeBuddyControlCapability?(conversationId: string): void;
-  issueOwnerControlCapability?(
-    input: Readonly<{ origin: 'owner_input'; inputId: string }>,
-    conversationId: string
-  ): Readonly<Record<string, string>>;
-  recordBuddyTurnOrigin?(
-    conversationId: string,
-    input: TurnInput,
-    context: BuddyContext,
-    contentHash: string
-  ): void;
-  requestAutomationCancellation?(runId: string): Promise<unknown>;
   /** Test seam for the real provider boundary; production uses agent-cli directly. */
   executeTurn?: typeof executeCommand;
   turnAttempts?: RuntimeTurnAttemptObserver;
 }
 
-const VERBOSE = process.env.VERBOSE === '1' || process.argv.includes('--verbose');
-const AGENT_CLI_DEBUG_EVENTS = process.env.AGENT_CLI_DEBUG_EVENTS === '1';
 const LOG_CONTENT_PREVIEW_CHARS = 140;
-const ATTEMPT_ACTIVITY_INTERVAL_MS = 5_000;
-
-export type TurnTimeoutKind = 'bridge' | 'provider' | 'max';
-
-const AGENT_CLI_HEARTBEAT_SOURCE = 'agent-cli.heartbeat';
-const AGENT_CLI_NATIVE_SESSION_SOURCE = 'agent-cli.native-session';
-
-export function isProviderProgressEvent(event: UnifiedAgentEvent): boolean {
-  if (
-    event.type === 'progress' &&
-    event.source === AGENT_CLI_HEARTBEAT_SOURCE &&
-    event.data?.nativeSessionAdvanced === true
-  ) {
-    return true;
-  }
-  return !(event.type === 'progress' && event.source === AGENT_CLI_HEARTBEAT_SOURCE);
-}
-
-export { assertBuddyProviderSupportsMcp } from '../buddies/provider-capability';
-
-export function turnAttemptActivityFromEvent(event: UnifiedAgentEvent): TurnAttemptActivity {
-  if (event.type === 'progress' && event.source === AGENT_CLI_HEARTBEAT_SOURCE) {
-    const unifiedEventSilentSeconds = nonnegativeFiniteNumber(
-      event.data?.unifiedEventSilentSeconds
-    );
-    const rawStdoutSilentSeconds = nonnegativeFiniteNumber(event.data?.rawStdoutSilentSeconds);
-    const phase =
-      event.data?.phase === 'startup' || event.data?.phase === 'running'
-        ? event.data.phase
-        : undefined;
-    const nativeSessionAdvanced = event.data?.nativeSessionAdvanced === true;
-    const nativeSessionAvailable =
-      typeof event.data?.nativeSessionAvailable === 'boolean'
-        ? event.data.nativeSessionAvailable
-        : undefined;
-    const nativeSessionSilentSeconds = nonnegativeFiniteNumber(
-      event.data?.nativeSessionSilentSeconds
-    );
-    const stdoutStreamEvent =
-      event.data?.stdoutStreamEvent === 'attached' ||
-      event.data?.stdoutStreamEvent === 'resume' ||
-      event.data?.stdoutStreamEvent === 'pause' ||
-      event.data?.stdoutStreamEvent === 'close'
-        ? event.data.stdoutStreamEvent
-        : undefined;
-    const stdoutReadableFlowing =
-      typeof event.data?.stdoutReadableFlowing === 'boolean' ||
-      event.data?.stdoutReadableFlowing === null
-        ? event.data.stdoutReadableFlowing
-        : undefined;
-    const stdoutReadableLengthBytes = nonnegativeFiniteNumber(
-      event.data?.stdoutReadableLengthBytes
-    );
-    const nativeSessionSizeBytes = nonnegativeFiniteNumber(event.data?.nativeSessionSizeBytes);
-    return {
-      source: nativeSessionAdvanced ? 'native_session' : 'agent_cli_heartbeat',
-      providerEventType: event.type,
-      providerEventSource: event.source,
-      heartbeat: {
-        ...(unifiedEventSilentSeconds !== undefined ? { unifiedEventSilentSeconds } : {}),
-        ...(rawStdoutSilentSeconds !== undefined ? { rawStdoutSilentSeconds } : {}),
-        ...(phase ? { phase } : {}),
-        ...(stdoutStreamEvent ? { stdoutStreamEvent } : {}),
-        ...(stdoutReadableFlowing !== undefined ? { stdoutReadableFlowing } : {}),
-        ...(stdoutReadableLengthBytes !== undefined ? { stdoutReadableLengthBytes } : {}),
-        ...(nativeSessionAvailable !== undefined ? { nativeSessionAvailable } : {}),
-        ...(nativeSessionAdvanced ? { nativeSessionAdvanced: true } : {}),
-        ...(nativeSessionSilentSeconds !== undefined ? { nativeSessionSilentSeconds } : {}),
-        ...(nativeSessionSizeBytes !== undefined ? { nativeSessionSizeBytes } : {}),
-      },
-    };
-  }
-  if (event.type === 'progress' && event.source === AGENT_CLI_NATIVE_SESSION_SOURCE) {
-    return {
-      source: 'native_session',
-      providerEventType: event.type,
-      providerEventSource: event.source,
-    };
-  }
-  return {
-    source: 'provider_event',
-    providerEventType: event.type,
-    ...(event.type === 'progress' ? { providerEventSource: event.source } : {}),
-  };
-}
-
-export function describeTurnTimeout(
-  kind: TurnTimeoutKind,
-  input: {
-    elapsedSeconds: number;
-    bridgeIdleSeconds: number;
-    providerIdleSeconds: number;
-    sawMeaningfulOutput: boolean;
-  }
-): {
-  terminalCause: 'bridge_timeout' | 'provider_idle_timeout' | 'max_runtime_timeout';
-  message: string;
-} {
-  const outputDetail = input.sawMeaningfulOutput
-    ? ''
-    : ' (no assistant text or tool output reached Unleashd)';
-  if (kind === 'bridge') {
-    return {
-      terminalCause: 'bridge_timeout',
-      message: `Turn event bridge stalled: no unified event or bridge heartbeat for ${input.bridgeIdleSeconds}s${outputDetail}`,
-    };
-  }
-  if (kind === 'provider') {
-    return {
-      terminalCause: 'provider_idle_timeout',
-      message: `Turn stalled: no provider event or native-session advancement for ${input.providerIdleSeconds}s${outputDetail}`,
-    };
-  }
-  return {
-    terminalCause: 'max_runtime_timeout',
-    message: `Turn reached its maximum runtime after ${input.elapsedSeconds}s${outputDetail}`,
-  };
-}
-
-function nonnegativeFiniteNumber(value: unknown): number | undefined {
-  return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : undefined;
-}
 
 function formatLogPreview(content: string, maxChars = LOG_CONTENT_PREVIEW_CHARS): string {
   return content.replace(/\s+/g, ' ').slice(0, maxChars);
 }
-function stripAnsi(value: string): string {
-  const ansiEscapeSequence = new RegExp(`${String.fromCharCode(27)}\\[[0-9;]*m`, 'g');
-  return value.replace(ansiEscapeSequence, '');
-}
-function stderrSnippet(value: string, maxLength = 400): string {
-  const cleaned = stripAnsi(value).replace(/\r/g, '\n').trim();
-  if (!cleaned) return '';
-  const tail = cleaned.slice(-1200).replace(/\s+/g, ' ').trim();
-  if (!tail) return '';
-  return tail.length > maxLength ? `${tail.slice(0, maxLength - 3)}...` : tail;
-}
-const OUT_OF_TOKENS_PATTERN =
-  /out of tokens|token limit|usage limit|insufficient (?:credits|balance)|exceeded(?: your)?(?: current)? quota|credit balance|rate limit exceeded/i;
-function normalizeProviderErrorMessage(message: string): string {
-  const trimmed = message.trim();
-  if (!trimmed) return 'Unknown provider error';
-  if (!OUT_OF_TOKENS_PATTERN.test(trimmed)) return trimmed;
-  if (/^out of tokens:/i.test(trimmed)) return trimmed;
-  return `Out of tokens: ${trimmed}`;
-}
+
 export interface ConversationOptions {
   id: string;
   workingDirectory?: string | null;
@@ -587,15 +195,12 @@ export interface ConversationRuntime extends EventEmitter, ConversationRuntimeVi
   providerUsage: ProviderTurnUsage | null;
   purpose: ConversationPurpose;
   subAgents: SubAgent[];
-  queue: QueuedMessage[];
+  readonly queue: QueuedMessage[];
   readonly provider: ProviderName;
   readonly memoryGeneration: string | null;
   readonly model: ModelId | undefined;
   readonly reasoningEffort: string | undefined;
-  sendMessage(
-    content: string,
-    ownerInput?: Readonly<{ origin: 'owner_input'; inputId: string }>
-  ): void;
+  sendMessage(content: string, ownerInput?: OwnerInput): void;
   /** Seat input whose wording depends on whether the provider session resumes. */
   sendSessionRelativeMessage(prompt: SessionRelativePrompt, input: SeatTurnInput): void;
   sendAutomationMessage(content: string): void;
@@ -603,25 +208,15 @@ export interface ConversationRuntime extends EventEmitter, ConversationRuntimeVi
     content: string,
     context: BuddyContext,
     claimToken: string,
-    onDrained?: (
-      status: 'complete' | 'failed',
-      detail: string,
-      terminalCause?: TurnTerminalCause
-    ) => void,
+    onDrained?: CoordinationDrained,
     onAdmitted?: (config: ResolvedExecutionConfig) => void
   ): Promise<string>;
   stop(reason?: 'user_stop' | 'server_restart'): void;
   expireCoordinationRun(): void;
   stopAutomationTurn(): void;
   resetProcess(): void;
-  enqueueMessage(
-    content: string,
-    ownerInput?: Readonly<{ origin: 'owner_input'; inputId: string }>
-  ): void;
-  interruptAndSend(
-    content: string,
-    ownerInput?: Readonly<{ origin: 'owner_input'; inputId: string }>
-  ): void;
+  enqueueMessage(content: string, ownerInput?: OwnerInput): void;
+  interruptAndSend(content: string, ownerInput?: OwnerInput): void;
   cancelQueuedMessage(messageId: string): void;
   promoteQueuedMessage(messageId: string): void;
   clearQueue(): void;
@@ -650,56 +245,6 @@ const NOOP_TURN_ATTEMPT_OBSERVER: RuntimeTurnAttemptObserver = {
   terminal: () => undefined,
 };
 
-export function buildFirstTurnCliContent(input: {
-  content: string;
-  messageCount: number;
-  hasStartedSession: boolean;
-  kind?: ConversationKind | null;
-  buddyContext?: BuddyContext | null;
-  buddyBriefing: string | null;
-  buddyMemoryGeneration?: MemoryGenerationInput | null;
-  refreshBuddyContext?: boolean;
-  swarmDebugPrefix: string | null;
-  purpose?: ConversationPurpose;
-}): string {
-  const firstUnstartedTurn = input.messageCount === 0 && !input.hasStartedSession;
-  const effectiveKind: ConversationKind =
-    input.kind ??
-    conversationKindFromLegacy({
-      buddyContext: input.buddyContext ?? null,
-      purpose: input.purpose ?? null,
-      kind: null,
-    });
-  // Thin dispatcher δ — one clean handler per kind (D1, R1). Each handler has one semantic path.
-  // New sessions must not rely on hidden HTML comments; kind is canonical. The comment
-  // format is kept here for CLI backward compat but disk hydration no longer parses it for new writes.
-  return matchConversationKind(effectiveKind, {
-    buddy: (k) => {
-      if ((!firstUnstartedTurn && !input.refreshBuddyContext) || input.buddyBriefing === null)
-        return input.content;
-      const ctx: BuddyContext = buddyContextFromKind(k);
-      const encodedContext = Buffer.from(JSON.stringify(ctx), 'utf8').toString('base64url');
-      const snapshot = createMemorySnapshot(
-        input.buddyBriefing,
-        input.buddyMemoryGeneration
-      ) as MemorySnapshot;
-      const encodedGeneration = Buffer.from(snapshot.generation, 'utf8').toString('base64url');
-      const snapshotBriefing = `<!-- unleashd:buddy-memory-generation ${encodedGeneration} -->\n${snapshot.briefing}`;
-      return `<!-- unleashd:buddy-context-v2 ${encodedContext} ${snapshotBriefing.length} -->\n${snapshotBriefing}\n<!-- /unleashd:buddy-context-v2 -->\n\n${input.content}`;
-    },
-    buddy_builder: () => {
-      if (!firstUnstartedTurn) return input.content;
-      return `<!-- unleashd:buddy-builder-v1 ${BUDDY_BUILDER_BRIEFING.length} -->\n${BUDDY_BUILDER_BRIEFING}\n<!-- /unleashd:buddy-builder-v1 -->\n\n${input.content}`;
-    },
-    general: () => {
-      if (input.swarmDebugPrefix !== null && firstUnstartedTurn) {
-        return `<!-- unleashd:swarm-prefix -->\n${input.swarmDebugPrefix}\n<!-- /unleashd:swarm-prefix -->\n\n${input.content}`;
-      }
-      return input.content;
-    },
-  });
-}
-
 export function createConversationRuntime(
   dependencies: ConversationRuntimeDependencies
 ): ConversationConstructor {
@@ -707,18 +252,27 @@ export function createConversationRuntime(
     broadcast,
     registerSessionAlias,
     unregisterSessionAlias,
-    clearExternalRunningStatus,
-    clearLocalCompletionSuppression,
-    markLocalCompletionSuppression,
-    persistCurrentSession: persistCurrentConversationSession,
-    updateBuddyStatus: updateBuddyConversationLink,
-    settleBuddyDelegation,
+    persistCurrentSession,
     getConversation,
-    readLatestOompaRuntime,
     createSessionId,
-    executeTurn = executeCommand,
-    turnAttempts = NOOP_TURN_ATTEMPT_OBSERVER,
   } = dependencies;
+  const runnerPorts = {
+    broadcast,
+    registerSessionAlias,
+    unregisterSessionAlias,
+    clearExternalRunningStatus: dependencies.clearExternalRunningStatus,
+    clearLocalCompletionSuppression: dependencies.clearLocalCompletionSuppression,
+    markLocalCompletionSuppression: dependencies.markLocalCompletionSuppression,
+    persistSessionUsage: dependencies.persistSessionUsage,
+    createSessionId,
+    executeTurn: dependencies.executeTurn ?? executeCommand,
+    turnAttempts: dependencies.turnAttempts ?? NOOP_TURN_ATTEMPT_OBSERVER,
+    // One async swarm poller per working directory, shared by all turns there.
+    swarmObservers: new SwarmObservers(dependencies.readLatestOompaRuntime, {
+      intervalMs: SWARM_POLL_INTERVAL_MS,
+      throttleMs: SWARM_POLL_THROTTLE_MS,
+    }),
+  };
 
   return class Conversation extends EventEmitter {
     id: string; // UI conversation ID (persists across resets)
@@ -727,7 +281,7 @@ export function createConversationRuntime(
     process: ChildProcess | null;
     isRunning: boolean;
     // Server-authoritative: assistant is actively producing content.
-    // INVARIANT: !isRunning → !isStreaming (enforced in message_complete/close handlers).
+    // INVARIANT: !isRunning → !isStreaming (enforced by the runner's completion paths).
     isStreaming: boolean;
     createdAt: Date;
     workingDirectory: string;
@@ -762,7 +316,41 @@ export function createConversationRuntime(
     // Stays on the object (never cleared) so toJSON() includes it for client rendering.
     swarmDebugPrefix: string | null;
     placement: ConversationPlacement;
-    kind: ConversationKind;
+    // Provider-counted usage for the latest request on the CURRENT session.
+    // Written from `usage` events during the turn and flushed to the session
+    // binding when the turn ends, so a reload does not have to re-parse the
+    // transcript. Cleared on session reset: a new session is a new context.
+    providerUsage: ProviderTurnUsage | null;
+    subAgents: SubAgent[];
+    // Server-owned message queue — persists across client navigation/refresh.
+    // Client mirrors this state via queue_updated broadcasts.
+    readonly turnQueue = new TurnQueue();
+    get queue(): QueuedMessage[] {
+      return this.turnQueue.items;
+    }
+    // Track if we've started a CLI session (for --resume vs --session-id)
+    private _hasStartedSession: boolean;
+    // Server-private automation ownership. Never serialized or placed in BuddyContext.
+    private _automationClaimToken: string | null = null;
+    private _sendingFromQueue = false;
+    private readonly runner: TurnRunner;
+
+    // Canonical kind. Setting it re-selects the turn policy: the ONE place a
+    // conversation's kind decides turn behavior (`policyFor`). Polling may
+    // promote a general conversation to a specific kind (session-loader).
+    private _kind: ConversationKind = { kind: 'general' };
+    private _policy: TurnPolicy;
+    get kind(): ConversationKind {
+      return this._kind;
+    }
+    set kind(value: ConversationKind) {
+      this._kind = value;
+      this._policy = this.policyFor(value, {
+        memorySnapshot: null,
+        audienceKey: null,
+        automationClaimToken: this._automationClaimToken,
+      });
+    }
     // Legacy compat: buddyContext/purpose are derived from kind. New code must use `kind` + `matchConversationKind`.
     // Kept as getters so old readers (buddies integration, client) keep working.
     get buddyContext(): BuddyContext | null {
@@ -770,7 +358,7 @@ export function createConversationRuntime(
     }
     set buddyContext(value: BuddyContext | null) {
       if (value) {
-        this.kind = buddyKindFromContext(value, this._buddyBriefing ?? undefined);
+        this.kind = buddyKindFromContext(value, this._policy.memorySnapshot()?.briefing);
       } else if (isBuddyKind(this.kind)) {
         this.kind = { kind: 'general' };
       }
@@ -785,88 +373,6 @@ export function createConversationRuntime(
         this.kind = { kind: 'general' };
       }
     }
-    // Hidden first-turn context. Never serialized to clients; the typed
-    // buddyContext is the durable/UI-facing metadata.
-    private _memorySnapshot: MemorySnapshot | null;
-    private get _buddyBriefing(): string | null {
-      return this._memorySnapshot?.briefing ?? null;
-    }
-    private _automationClaimToken: string | null;
-    // Buddy chat turns wait here for a run slot. The head of this.queue stays
-    // pending while _chatRunTicket waits on the shared admission tick. On
-    // admission, the run is held in _admittedChatRun until spawnForMessage
-    // takes ownership of it.
-    private _chatRunTicket: { runId: string; stopWaiting: () => void } | null = null;
-    private _admittedChatRun: OwnedBuddyChatRun | null = null;
-    private _sendingFromQueue = false;
-    private _coordinationExecution: {
-      onAdmitted?: (config: ResolvedExecutionConfig) => void;
-      context: BuddyContext;
-      claimToken: string;
-      terminalCause?: TurnTerminalCause;
-    } | null = null;
-    // Provider-counted usage for the latest request on the CURRENT session.
-    // Written from `usage` events during the turn and flushed to the session
-    // binding when the turn ends, so a reload does not have to re-parse the
-    // transcript. Cleared on session reset: a new session is a new context.
-    providerUsage: ProviderTurnUsage | null;
-    // Set when `providerUsage` changed during the active turn and has not yet
-    // been persisted. Avoids a CAS write per streamed usage event.
-    private _providerUsageDirty = false;
-    // Sub-agent tracking
-    subAgents: SubAgent[];
-    // Server-owned message queue — persists across client navigation/refresh.
-    // Client mirrors this state via queue_updated broadcasts.
-    queue: QueuedMessage[];
-    // Track pending tool_use blocks that might be Task tools
-    private _pendingTaskTools: Map<string, { id: string; startedAt: Date }>;
-    // Track if we've started a CLI session (for --resume vs --session-id)
-    private _hasStartedSession: boolean;
-    // Buffer stderr for this process run so silent failures can be surfaced to UI.
-    private _stderrBuffer: string;
-    // Tracks whether assistant text or a tool event reached the unified stream.
-    private _sawMeaningfulProviderOutputThisRun: boolean;
-    // Start time of the current CLI process run (for duration tracking).
-    private _processStartTime = 0;
-    // Bridge activity and provider progress are intentionally independent.
-    // A synthetic wrapper heartbeat proves transport health but not that the
-    // provider is making progress.
-    private _lastBridgeEventAt = 0;
-    private _lastProviderProgressAt = 0;
-    // Per-turn watchdog timers.
-    private _turnBridgeTimer: NodeJS.Timeout | null = null;
-    private _turnProviderIdleTimer: NodeJS.Timeout | null = null;
-    private _turnMaxTimer: NodeJS.Timeout | null = null;
-    // Track last known swarm run ID to detect newly launched swarms.
-    private _lastSwarmRunId: string | null = null;
-    // Whether _lastSwarmRunId was explicitly baselined for the current turn.
-    // Distinguishes "no baseline yet" from "baseline exists and no prior run".
-    private _hasSwarmBaseline = false;
-    // Throttle _pollForNewSwarms() — synchronous fs I/O called from _noteTurnActivity().
-    private _lastSwarmPollAt = 0;
-    // Periodic swarm poller running during active turns (catches launches that happen
-    // after the last text/tool event).
-    private _swarmPollTimer: NodeJS.Timeout | null = null;
-    // When true, message_complete already performed state cleanup (isStreaming/isRunning/broadcast).
-    // The close handler checks this to skip redundant work on normal completion, while still
-    // running full cleanup on crash/kill/error paths where message_complete never fired.
-    private _turnCompletedCleanly = false;
-    private _activeAttemptId: string | null = null;
-    private _nextAttempt: { attemptId: string; queueMessageId?: string } | null = null;
-    private _queuedAttemptIds = new Map<string, string>();
-    private _queuedInputs = new Map<string, TurnInput>();
-    // Each queued item's wordings, so a Buddy turn that waits for a run slot is
-    // still worded at admission by the session it reaches. The wire item shows
-    // `fresh`; a missing entry therefore errs toward more context, never less.
-    private _queuedPrompts = new Map<string, SessionRelativePrompt>();
-    private _terminalCauseHint: TurnTerminalCause | null = null;
-    private _stopCause: 'user_stop' | 'server_restart' | null = null;
-    private _lastAttemptActivityAt = 0;
-    private _lastAttemptActivitySource: TurnActivitySource | null = null;
-    private _lastObservedTurnActivity: TurnAttemptActivity | null = null;
-    private _runToken = 0;
-    private _activeTurnStop: ((signal?: NodeJS.Signals) => void) | null = null;
-    private _activeTurnDrain: Promise<void> | null = null;
 
     constructor(opts: ConversationOptions) {
       super();
@@ -907,8 +413,9 @@ export function createConversationRuntime(
       this.configRevision = configState.revision;
       this.configResolution = configState.resolution;
       this.done = opts.done;
+      this._automationClaimToken = automationClaimToken;
       // Canonical kind — derive from legacy when absent (migration on load).
-      this.kind =
+      this._kind =
         kind ??
         conversationKindFromLegacy({
           buddyContext: buddyContext ?? null,
@@ -935,1179 +442,109 @@ export function createConversationRuntime(
       // file backfill, so it is sticky: live ai noise must not overwrite it.
       this._titleSource = this.title !== undefined ? 'custom' : null;
       this.swarmDebugPrefix = isBuddyConversation ? null : swarmDebugPrefix;
-      this._memorySnapshot = isBuddyConversation
-        ? createMemorySnapshot(buddyBriefing, buddyMemoryGeneration)
-        : null;
-      this._providerAudienceKey =
-        isBuddyConversation && existingSessionId ? (opts.existingSessionAudienceKey ?? null) : null;
-      this._automationClaimToken = automationClaimToken;
+      this._policy = this.policyFor(this._kind, {
+        memorySnapshot: createMemorySnapshot(buddyBriefing, buddyMemoryGeneration),
+        audienceKey: existingSessionId ? (opts.existingSessionAudienceKey ?? null) : null,
+        automationClaimToken,
+      });
       this.providerUsage = opts.existingProviderUsage ?? null;
       this.subAgents = [];
-      this.queue = [];
-      this._pendingTaskTools = new Map();
       // Mark session as started if loading existing (use --resume for next message)
       this._hasStartedSession = existingSessionId !== undefined;
-      this._stderrBuffer = '';
-      this._sawMeaningfulProviderOutputThisRun = false;
-      this._lastSwarmRunId = null;
-      this._hasSwarmBaseline = false;
+      this.runner = new TurnRunner(this, runnerPorts);
     }
 
     get memoryGeneration(): string | null {
-      return this._memorySnapshot?.generation ?? null;
+      return this._policy.memorySnapshot()?.generation ?? null;
     }
 
     getMemorySnapshot(): MemorySnapshot | null {
-      return this._memorySnapshot;
+      return this._policy.memorySnapshot();
     }
 
+    // Pattern: sum-types (docs/patterns.md#sum-types)
     /**
-     * Send a message via executeCommand (conversation mode).
-     *
-     * HYBRID SYNC STRATEGY:
-     * 1. Event stream (live): drives UI text streaming in real time.
-     * 2. Disk poller (persistence): rehydrates sessions/history across restarts.
-     *
-     * First turn omits resumeSessionId; subsequent turns resume with the captured session ID.
+     * The turn policy for a kind — a thin dispatcher, one policy per kind. A
+     * general chat gets the no-op ChatTurnPolicy; Buddy code lives only in
+     * buddies/turn-policy.ts.
      */
-    private _prepareTurnAttempt(queueMessageId?: string): string {
-      const prepared = this._nextAttempt;
-      this._nextAttempt = null;
-      if (prepared) {
-        this._activeAttemptId = prepared.attemptId;
-        return prepared.attemptId;
+    private policyFor(
+      kind: ConversationKind,
+      seed: {
+        memorySnapshot: MemorySnapshot | null;
+        audienceKey: string | null;
+        automationClaimToken: string | null;
       }
-      const attemptId = crypto.randomUUID();
-      turnAttempts.queued({
-        attemptId,
-        conversationId: this.id,
-        ...(queueMessageId ? { queueMessageId } : {}),
-        providerSessionId: this.sessionId,
-      });
-      this._activeAttemptId = attemptId;
-      return attemptId;
-    }
-
-    private _finishTurnAttempt(
-      state: 'succeeded' | 'failed' | 'cancelled' | 'interrupted',
-      terminalCause: TurnTerminalCause
-    ): void {
-      if (this._coordinationExecution && !this._coordinationExecution.terminalCause)
-        this._coordinationExecution.terminalCause = terminalCause;
-      if (!this._activeAttemptId) return;
-      turnAttempts.terminal({
-        attemptId: this._activeAttemptId,
-        state,
-        terminalCause,
-        providerSessionId: this.sessionId,
-      });
-      for (const [queueMessageId, attemptId] of this._queuedAttemptIds) {
-        if (attemptId === this._activeAttemptId) {
-          this._queuedAttemptIds.delete(queueMessageId);
-        }
-      }
-      this._activeAttemptId = null;
-      this._terminalCauseHint = null;
-      this._stopCause = null;
-    }
-
-    private _cancelQueuedAttempt(queueMessageId: string): void {
-      this._queuedInputs.delete(queueMessageId);
-      this._queuedPrompts.delete(queueMessageId);
-      const attemptId = this._queuedAttemptIds.get(queueMessageId);
-      if (!attemptId) return;
-      turnAttempts.terminal({
-        attemptId,
-        state: 'cancelled',
-        terminalCause: 'user_stop',
-        providerSessionId: this.sessionId,
-      });
-      this._queuedAttemptIds.delete(queueMessageId);
-    }
-
-    private spawnForMessage(
-      content: string,
-      executionConfig: ResolvedExecutionConfig,
-      forkSourceSessionId?: string,
-      turnInput: TurnInput = { origin: 'unknown', inputId: crypto.randomUUID() }
-    ): void {
-      if (this.process || this.isRunning) {
-        console.warn(`[${this.id}] Already processing a message, ignoring`);
-        return;
-      }
-      const runToken = ++this._runToken;
-
-      // This session is now being handled locally; clear any stale external flags.
-      clearExternalRunningStatus(this.id, this.sessionId);
-      clearLocalCompletionSuppression(this.id, this.sessionId);
-
-      const forking = !!forkSourceSessionId;
-      const shouldResume = this.resumesProviderSession(forkSourceSessionId);
-      const executionMode = forking ? 'fork' : shouldResume ? 'resume' : 'fresh';
-      console.log(
-        `[${this.id}] Spawning ${this.provider} (mode=${executionMode}, provider-session=${this.sessionId.substring(0, 8)}...${forkSourceSessionId ? `, fork-source-session=${forkSourceSessionId.substring(0, 8)}...` : ''}${this.resumedFromConversationId ? `, parent-conversation=${this.resumedFromConversationId.substring(0, 8)}...` : ''})`
-      );
-      console.log(`[${this.id}] Message: "${content.substring(0, 50)}"`);
-
-      // Reset per-run buffers
-      this._stderrBuffer = '';
-      this._sawMeaningfulProviderOutputThisRun = false;
-      this._turnCompletedCleanly = false;
-      this._terminalCauseHint = null;
-      this._stopCause = null;
-      this._processStartTime = Date.now();
-      this._lastAttemptActivityAt = 0;
-      this._lastAttemptActivitySource = null;
-      this._lastObservedTurnActivity = null;
-      this._primeSwarmBaseline();
-      if (this._activeAttemptId) {
-        turnAttempts.starting(this._activeAttemptId);
-        turnAttempts.activity(
-          this._activeAttemptId,
-          {
-            source: 'runtime',
-            providerEventType: `execution.${executionMode}`,
-            providerEventSource: this.resumedFromConversationId
-              ? `parent-conversation:${this.resumedFromConversationId}`
-              : 'unleashd.runtime',
-          },
-          this.sessionId
-        );
-      }
-
-      // Per-provider narrowing: ExecuteCommandRequest is a discriminated union
-      // keyed on `harness`. Reasoning effort is a pass-through string — the
-      // Configuration validation rejects any level not accepted by the target
-      // provider before we get here. The submodule
-      // harness wraps the string in the correct CLI flag.
-      const baseRequest = {
-        mode: 'conversation' as const,
-        prompt: content,
-        cwd: this.workingDirectory,
-        model: executionConfig.modelId,
-        resumeSessionId: shouldResume ? this.sessionId : undefined,
-        forkSessionId: forking ? forkSourceSessionId : undefined,
-        yolo: true,
-        detached: true,
-        debugRawEvents: AGENT_CLI_DEBUG_EVENTS,
-      };
-      let turn: ReturnType<typeof executeCommand>;
-      try {
-        const admitted = this._admittedChatRun;
-        this._admittedChatRun = null;
-        if (admitted) {
-          // Foreground tool authority must cover the provider's explicit runtime
-          // budget. Omitting it inherited claimBuddyRun's background default (600s),
-          // killing active owner chats on 2026-09-10 even with healthy heartbeats.
-          // Preserve this argument when refactoring or replacing the Buddy package.
-          // Guards: buddy-coordination.test.ts and conversation-runtime.test.ts;
-          // history: docs/incident-2026-09-10-buddy-chat-timeout.md.
-          // Admitted by admitForegroundChatRun with TURN_MAX_RUNTIME_MS.
-          const owned = admitted;
-          this._coordinationExecution = {
-            context: { ...this.contextForInput(turnInput)!, coordinationRunId: owned.id },
-            claimToken: owned.claim_token,
-          };
-          const timer = setTimeout(
-            () => {
-              // Automatic expiry is max_runtime_timeout. stop() records user_stop
-              // and hid the 600s regression; retain timeout cleanup and joined drain.
-              this._handleTurnTimeout('max');
-            },
-            Math.max(0, Date.parse(owned.deadline) - Date.now())
-          );
-          const settle = (status: 'complete' | 'failed', detail: string) => {
-            clearTimeout(timer);
-            this.off('buddy-turn-complete', complete);
-            this.off('buddy-turn-failed', failed);
-            this._coordinationExecution = null;
-            try {
-              dependencies.finishBuddyChatRun?.(owned.id, owned.claim_token, status, detail);
-            } catch (error) {
-              console.error('[buddies] Could not settle owner turn', owned.id, error);
-            }
-          };
-          let pendingFailure: string | null = null;
-          const complete = (output: string) =>
-            settle(pendingFailure ? 'failed' : 'complete', pendingFailure ?? output);
-          const failed = (error: string) => {
-            if (this.process) {
-              pendingFailure = error;
-              return;
-            }
-            settle('failed', error);
-          };
-          this.once('buddy-turn-complete', complete);
-          this.on('buddy-turn-failed', failed);
-        }
-        // Owner authority comes from input provenance alone: a 'buddy_post'
-        // seat turn (another Buddy's channel post) never reaches here as owner.
-        const hasOwnerControls =
-          turnInput.origin === 'owner_input' &&
-          !!dependencies.issueOwnerControlCapability &&
-          this.kind.kind !== 'general';
-        let ownerControlEnv: Readonly<Record<string, string>> | undefined;
-        const buddyServers = matchConversationKind(this.kind, {
-          buddy: (kind) => {
-            const context = this._coordinationExecution?.context ?? buddyContextFromKind(kind);
-            return buddyMcpServers(context, this.id, undefined, {
-              UNLEASHD_BUDDY_OWNER_CONTROL_AVAILABLE: hasOwnerControls ? '1' : '0',
-              UNLEASHD_BUDDY_OWNER_CONTROL_CONTRACT: BUDDY_TEAM_CONTRACT_VERSION,
-              ...dependencies.issueBuddyControlCapability?.(
-                context,
-                this.id,
-                this._coordinationExecution?.claimToken ?? this._automationClaimToken ?? undefined
-              ),
-              ...(this._coordinationExecution
-                ? {
-                    UNLEASHD_BUDDY_COORDINATION_RUN_ID:
-                      this._coordinationExecution.context.coordinationRunId!,
-                    [BUDDY_AUTOMATION_CLAIM_TOKEN_ENV]: this._coordinationExecution.claimToken,
-                  }
-                : {}),
-              ...(this._automationClaimToken && !this._coordinationExecution
-                ? {
-                    [BUDDY_AUTOMATION_CLAIM_TOKEN_ENV]: this._automationClaimToken,
-                  }
-                : {}),
-            });
-          },
-          buddy_builder: () => {
-            if (!hasOwnerControls) return undefined;
-            ownerControlEnv = dependencies.issueOwnerControlCapability!(
-              { origin: 'owner_input', inputId: turnInput.inputId },
-              this.id
-            );
-            return buddyBuilderMcpServers(this.id, undefined, ownerControlEnv);
-          },
-          general: () => undefined,
-        });
-        if (buddyServers && hasOwnerControls)
-          Object.assign(
-            buddyServers,
-            buddyOwnerMcpServers(
-              ownerControlEnv ??
-                dependencies.issueOwnerControlCapability!(
-                  { origin: 'owner_input', inputId: turnInput.inputId },
-                  this.id
-                )
-            )
-          );
-        if (buddyServers) assertBuddyProviderSupportsMcp(executionConfig.provider);
-        const buddyRequest = buddyServers ? { mcpServers: buddyServers } : {};
-
-        // Capture exactly the resolved request at the provider boundary, after all awaits.
-        this._coordinationExecution?.onAdmitted?.(executionConfig);
-        turn = executeTurn(
-          executionConfig.provider === 'claude'
-            ? {
-                harness: 'claude',
-                ...baseRequest,
-                reasoningEffort: executionConfig.reasoningEffort,
-                ...buddyRequest,
-              }
-            : executionConfig.provider === 'codex'
-              ? {
-                  harness: 'codex',
-                  ...baseRequest,
-                  reasoningEffort: executionConfig.reasoningEffort,
-                  ...buddyRequest,
-                }
-              : executionConfig.provider === 'muse'
-                ? {
-                    harness: 'muse',
-                    ...baseRequest,
-                    reasoningEffort: executionConfig.reasoningEffort,
-                    ...buddyRequest,
-                  }
-                : ({
-                    harness: executionConfig.provider,
-                    ...baseRequest,
-                    ...buddyRequest,
-                  } as ExecuteCommandRequest)
-        );
-      } catch (error) {
-        dependencies.revokeBuddyControlCapability?.(this.id);
-        // The briefing in this prompt never reached the provider transcript.
-        this._briefedMemoryGeneration = null;
-        this._finishTurnAttempt('failed', 'spawn_failed');
-        const message = error instanceof Error ? error.message : String(error);
-        // An automation subscribes to this event before calling sendMessage(). A
-        // provider/configuration failure can happen synchronously, before there
-        // is a child process whose completion could reject the run. Keep this
-        // signal at the conversation boundary so every caller sees one terminal
-        // result. See agent_notes/2026-08-24_automation-execution-ownership-design.md.
-        this.emit('buddy-turn-failed', message);
-        throw error;
-      }
-
-      const memoryReviewAttemptId = this._activeAttemptId ?? crypto.randomUUID();
-      const memoryReviewStart = Math.max(0, this.messages.length - 1);
-      const memoryReviewContext = this.contextForInput(turnInput);
-      this.process = turn.child;
-      this._activeTurnStop = turn.stop;
-      this.isRunning = true;
-      if (this._activeAttemptId) {
-        turnAttempts.running(this._activeAttemptId, this.sessionId);
-      }
-      updateBuddyConversationLink(this, 'active');
-      this.emit('buddy-turn-started');
-      this._hasStartedSession = true; // Mark session as started for next message
-      this._startTurnWatchdogs();
-      this.broadcastStatus();
-
-      let automationCompletionError: string | null = null;
-      const consumeEvents = async (): Promise<void> => {
-        for await (const event of turn.events) {
-          if (runToken !== this._runToken) return;
-          // A timeout finalizes the user-visible turn before the child has
-          // necessarily acknowledged SIGTERM. Ignore any buffered/late
-          // provider events so they cannot resurrect or complete it twice.
-          if (this._turnCompletedCleanly) continue;
-          this._noteTurnActivity(event);
-          switch (event.type) {
-            case 'session.started': {
-              if (event.sessionId !== this.sessionId) {
-                console.log(`[${this.id}] Session captured: ${event.sessionId}`);
-              }
-              const oldSessionId = this.sessionId;
-              this.sessionId = event.sessionId;
-              if (oldSessionId !== event.sessionId) {
-                unregisterSessionAlias(oldSessionId, { keepKnown: true });
-              }
-              registerSessionAlias(event.sessionId, this.id);
-              await persistCurrentConversationSession(
-                this,
-                event.sessionId,
-                this._providerAudienceKey ?? undefined
-              );
-              if (this._activeAttemptId) {
-                turnAttempts.bindProviderSession(this._activeAttemptId, event.sessionId);
-              }
-              broadcast({
-                type: 'session_bound',
-                conversationId: this.id,
-                sessionId: this.sessionId,
-              });
-              break;
-            }
-            case 'session.title': {
-              // Provider-generated label (Claude ai-title/custom-title).
-              // Custom (user-set) always wins; auto titles never overwrite a
-              // custom one. Hydrated titles count as custom-sticky: the file
-              // backfill already resolved precedence, so live ai noise must
-              // not clobber it — only a live custom event can.
-              const next = event.title.trim();
-              if (!next) break;
-              if (event.source === 'custom' || this._titleSource !== 'custom') {
-                if (this.title !== next) {
-                  this.title = next;
-                  this._titleSource = event.source;
-                  broadcast({
-                    type: 'conversations_updated',
-                    conversations: [this.toJSON()],
-                  });
-                }
-              }
-              break;
-            }
-            case 'text.delta': {
-              this._sawMeaningfulProviderOutputThisRun = true;
-              this.handleOutput({ type: 'text_delta', text: event.text });
-              break;
-            }
-            case 'tool.use': {
-              this._sawMeaningfulProviderOutputThisRun = true;
-              this.handleOutput({
-                type: 'tool_use',
-                name: event.name,
-                input: event.input,
-                displayText: event.displayText,
-              });
-              break;
-            }
-            case 'tool.result': {
-              if (event.isError) break;
-              const content =
-                formatBuddyWorkerToolResult(event.output) ??
-                formatBuddyTeamConfigurationToolResult(event.output) ??
-                (this.kind.kind === 'buddy_builder'
-                  ? formatBuddyBuilderToolResult(event.output)
-                  : null);
-              if (content) this.handleOutput({ type: 'text_delta', text: `\n${content}\n` });
-              break;
-            }
-            case 'turn.complete': {
-              if (event.reason === 'error' || event.reason === 'out_of_tokens') {
-                automationCompletionError = `Provider completed the turn with reason: ${event.reason}`;
-              } else if (event.reason === 'killed') {
-                automationCompletionError = 'Provider turn was interrupted';
-              }
-              this.handleOutput({ type: 'message_complete', reason: event.reason });
-              break;
-            }
-            case 'out_of_tokens': {
-              this._terminalCauseHint = 'out_of_tokens';
-              this.handleOutput({
-                type: 'error',
-                message: normalizeProviderErrorMessage(event.message),
-              });
-              break;
-            }
-            case 'error': {
-              this._terminalCauseHint = 'provider_error';
-              this.handleOutput({
-                type: 'error',
-                message: normalizeProviderErrorMessage(event.message),
-              });
-              break;
-            }
-            case 'stderr': {
-              this._stderrBuffer = (this._stderrBuffer + event.text).slice(-4096);
-              if (VERBOSE) console.error(`[${this.id}] stderr:`, event.text);
-              break;
-            }
-            case 'progress': {
-              // Always log provider warnings (network retries, etc.) — these are
-              // operational signals, not debug noise. Other progress events
-              // (heartbeats, non-assistant messages) only log with debug flag.
-              if (event.source === 'gemini.warning') {
-                console.warn(
-                  `[${this.id}] provider warning:`,
-                  event.data?.message ?? JSON.stringify(event)
-                );
-              } else if (AGENT_CLI_DEBUG_EVENTS) {
-                console.error(`[${this.id}] progress:`, JSON.stringify(event));
-              }
-              break;
-            }
-            case 'turn.started': {
-              this._ensureAssistantMessage();
-              break;
-            }
-            case 'usage': {
-              // Provider-counted truth for the request that just completed.
-              // agent-cli already canonicalised the per-harness conventions and
-              // excluded claude's turn-aggregate `result` usage and its subagent
-              // measurements, so take this verbatim — re-deriving it here would
-              // reintroduce exactly the double-counting those parsers avoid.
-              //
-              // Last write wins within a turn: a turn can issue several requests
-              // (tool loops), and the latest is the live context size. It can go
-              // DOWN when the provider compacts; that is the signal, not a bug.
-              this.providerUsage = { ...event.usage, observedAt: new Date().toISOString() };
-              this._providerUsageDirty = true;
-              break;
-            }
-            default:
-              break;
-          }
-        }
-      };
-
-      let eventConsumptionError: Error | null = null;
-      const eventConsumption = consumeEvents().catch((err: unknown) => {
-        if (runToken !== this._runToken) return;
-        eventConsumptionError = err instanceof Error ? err : new Error(String(err));
-        const message = eventConsumptionError.message;
-        console.error(`[${this.id}] Event stream error: ${message}`);
-        this._terminalCauseHint = 'provider_error';
-        this.handleOutput({ type: 'error', message: normalizeProviderErrorMessage(message) });
-      });
-
-      const turnDrain = turn.completed
-        .then(async ({ exitCode, signal, sessionId, reason }) => {
-          if (runToken !== this._runToken) return;
-          // `completed` describes child-process termination, not consumption of
-          // the normalized event stream. In particular, session persistence is
-          // asynchronous. Releasing ownership before that consumer drains can
-          // start the next queued turn while text/session/turn.complete events
-          // from this one are still being applied. One joined terminal path is
-          // simpler than trying to make every event handler replay-safe. See
-          // agent_notes/2026-08-24_automation-execution-ownership-design.md.
-          await eventConsumption;
-          if (runToken !== this._runToken) return;
-          this._clearTurnWatchdogs();
-          if (sessionId && sessionId !== this.sessionId) {
-            const oldSessionId = this.sessionId;
-            this.sessionId = sessionId;
-            unregisterSessionAlias(oldSessionId, { keepKnown: true });
-            registerSessionAlias(sessionId, this.id);
-            await persistCurrentConversationSession(this, sessionId);
-            if (this._activeAttemptId) {
-              turnAttempts.bindProviderSession(this._activeAttemptId, sessionId);
-            }
-          }
-
-          // Flush once per turn rather than per usage event: a tool loop emits
-          // one per request, and each write is a CAS round-trip on the config
-          // record. Persisted against the session id settled just above, so a
-          // mid-turn session rotation files the usage under the session that
-          // actually holds that context.
-          if (this._providerUsageDirty && this.providerUsage) {
-            this._providerUsageDirty = false;
-            try {
-              await dependencies.persistSessionUsage?.(this.id, this.sessionId, this.providerUsage);
-            } catch (error) {
-              // The meter is observability. Losing a usage write must never
-              // fail a turn that otherwise succeeded; the session-file parser
-              // still covers this session on the next read.
-              console.warn(
-                `[${this.id}] Failed to persist provider usage:`,
-                error instanceof Error ? error.message : String(error)
-              );
-            }
-          }
-
-          const durationMs = Date.now() - this._processStartTime;
-          console.log(
-            `[${this.id}] Process closed with code ${exitCode} signal=${signal ?? 'none'} (reason=${reason}) after ${durationMs}ms`
-          );
-
-          // message_complete already handled state cleanup and broadcast.
-          // Just null the process ref, dequeue, and continue.
-          if (this._turnCompletedCleanly) {
-            dependencies.revokeBuddyControlCapability?.(this.id);
-            this.process = null;
-            this._activeTurnStop = null;
-            this._pendingTaskTools.clear();
-            clearExternalRunningStatus(this.id, this.sessionId);
-            markLocalCompletionSuppression(this.id, this.sessionId);
-            if (this.queue.length > 0 && this.queue[0].status === 'sending') {
-              this.queue.shift();
-              this.broadcastQueue();
-            }
-            const completionFailure =
-              eventConsumptionError?.message ??
-              automationCompletionError ??
-              (this._terminalCauseHint === 'out_of_tokens'
-                ? 'Provider ran out of tokens'
-                : this._terminalCauseHint === 'provider_error'
-                  ? 'Provider reported an error'
-                  : null);
-            if (completionFailure) {
-              if (this._stopCause) {
-                this._finishTurnAttempt(
-                  this._stopCause === 'server_restart' ? 'interrupted' : 'cancelled',
-                  this._stopCause
-                );
-              } else if (this._terminalCauseHint === 'out_of_tokens') {
-                this._finishTurnAttempt('failed', 'out_of_tokens');
-              } else {
-                this._finishTurnAttempt('failed', 'provider_error');
-              }
-              this.emit('buddy-turn-failed', completionFailure);
-            } else {
-              // The reviewer owns a separate process with no Buddy execution identity.
-              // Enqueue before completion listeners or processQueue can start another turn.
-              if (
-                memoryReviewContext &&
-                reason === 'success' &&
-                exitCode === 0 &&
-                !this._stopCause
-              ) {
-                try {
-                  dependencies.reviewCompletedBuddyTurn?.({
-                    attemptId: memoryReviewAttemptId,
-                    conversationId: this.id,
-                    context: { ...memoryReviewContext },
-                    completedAt: new Date().toISOString(),
-                    messages: this.messages
-                      .slice(memoryReviewStart)
-                      .map(({ role, content }) => ({ role, content })),
-                  });
-                } catch (error) {
-                  console.error('[buddies] Could not enqueue memory review', this.id, error);
-                }
-              }
-              this._finishTurnAttempt('succeeded', 'provider_complete');
-              const completedAssistant = [...this.messages]
-                .reverse()
-                .find((message) => message.role === 'assistant');
-              this.emit('buddy-turn-complete', completedAssistant?.content ?? '');
-            }
-            this.processQueue();
-            return;
-          }
-
-          if (reason === 'killed' && this._stopCause) {
-            this._finishTurnAttempt(
-              this._stopCause === 'server_restart' ? 'interrupted' : 'cancelled',
-              this._stopCause
-            );
-          } else if (reason === 'out_of_tokens' || this._terminalCauseHint === 'out_of_tokens') {
-            this._finishTurnAttempt('failed', 'out_of_tokens');
-          } else if (this._terminalCauseHint === 'provider_error') {
-            this._finishTurnAttempt('failed', 'provider_error');
-          } else if (reason === 'killed') {
-            this._finishTurnAttempt('failed', 'process_killed');
-          } else {
-            this._finishTurnAttempt('failed', 'process_exit');
-          }
-
-          const emitSystemMessage = (content: string): void => {
-            this.messages.push({ role: 'system', content, timestamp: new Date() });
-            broadcast({
-              type: 'message',
-              conversationId: this.id,
-              role: 'system',
-              content,
-            });
-          };
-
-          const details = stderrSnippet(this._stderrBuffer);
-          // Use executeCommand completion reason first; it carries protocol-level failures
-          // that can otherwise look like successful exits.
-          if (reason === 'killed') {
-            const killedMsg = details
-              ? `Process interrupted before completion: ${details}`
-              : 'Process interrupted before completion';
-            console.error(`[${this.id}] ${killedMsg}`);
-            emitSystemMessage(killedMsg);
-          } else if (reason === 'error') {
-            const errorMsg =
-              exitCode !== null && exitCode !== 0
-                ? details
-                  ? `Process exited with code ${exitCode}: ${details}`
-                  : `Process exited with code ${exitCode}`
-                : details
-                  ? `Provider exited before completing the turn: ${details}`
-                  : 'Provider exited before completing the turn';
-            console.error(`[${this.id}] ${errorMsg}`);
-            emitSystemMessage(errorMsg);
-          } else if (exitCode === 0 && !this._sawMeaningfulProviderOutputThisRun) {
-            // Silent zero-exit without any streamed output is treated as provider failure.
-            const content = details
-              ? `Provider reported an error without response output: ${details}`
-              : 'Provider exited without response output';
-            console.error(`[${this.id}] ${content}`);
-            emitSystemMessage(content);
-          } else if (reason !== 'out_of_tokens') {
-            // Successful completion - add a system message with duration
-            const durationSec = (durationMs / 1000).toFixed(1);
-            const successMsg = `Process completed successfully in ${durationSec}s`;
-            emitSystemMessage(successMsg);
-          }
-
-          // INVARIANT: dead process can't stream. Clear both atomically.
-          // This is the safety net for crash/kill/OOM — all paths that skip message_complete.
-
-          const lastMsg = this.messages[this.messages.length - 1];
-          if (lastMsg && lastMsg.role === 'assistant' && !lastMsg.completedAt) {
-            lastMsg.completedAt = new Date();
-            lastMsg.completionReason = reason || (exitCode === 0 ? 'success' : 'error');
-          }
-
-          this.isStreaming = false;
-          this.isRunning = false;
-          dependencies.revokeBuddyControlCapability?.(this.id);
-          this.process = null;
-          this._activeTurnStop = null;
-          // Clear pending task tools — message_complete handles the normal path, but
-          // kills/crashes skip it, leaving stale entries that accumulate across runs.
-          this._pendingTaskTools.clear();
-          // Suppress external-running detection for trailing disk writes from this
-          // just-finished local run. Also clear any stale external flag immediately.
-          clearExternalRunningStatus(this.id, this.sessionId);
-          markLocalCompletionSuppression(this.id, this.sessionId);
-          this.broadcastStatus();
-          updateBuddyConversationLink(this, reason === 'killed' ? 'cancelled' : 'failed');
-          settleBuddyDelegation(this, reason === 'killed' ? 'cancelled' : 'failed', reason);
-          this.emit('buddy-turn-failed', reason);
-          // Dequeue the "sending" message (completed or crashed) and process next.
-          // This is the SINGLE code path for dequeue — not split between
-          // message_complete and close. Handles both success and crash.
-          if (this.queue.length > 0 && this.queue[0].status === 'sending') {
-            this.queue.shift();
-            this.broadcastQueue();
-          }
-          // WS message ordering guarantees clients see status:false before the
-          // next spawn's status:true. No delay needed.
-          this.processQueue();
-        })
-        .catch((err: unknown) => {
-          if (runToken !== this._runToken) return;
-          this._clearTurnWatchdogs();
-          const message = err instanceof Error ? err.message : String(err);
-          console.error(`[${this.id}] Process completion error: ${message}`);
-          this._finishTurnAttempt('failed', 'process_exit');
-          this.handleOutput({ type: 'error', message: normalizeProviderErrorMessage(message) });
-          this.isStreaming = false;
-          this.isRunning = false;
-          dependencies.revokeBuddyControlCapability?.(this.id);
-          this.process = null;
-          this._activeTurnStop = null;
-          this._pendingTaskTools.clear();
-          this.broadcastStatus();
-          updateBuddyConversationLink(this, 'failed');
-          settleBuddyDelegation(this, 'failed', message);
-          this.emit('buddy-turn-failed', message);
-          if (this.queue.length > 0) {
-            const removed = this.queue.length;
-            for (const queued of this.queue) {
-              if (queued.status === 'pending') this._cancelQueuedAttempt(queued.id);
-            }
-            this.queue = [];
-            console.warn(
-              `[${this.id}] Cleared ${removed} pending message(s) due to process error to prevent retry loops.`
-            );
-            this.broadcastQueue();
-          }
-        });
-      this._activeTurnDrain = turnDrain;
-      void turnDrain.finally(() => {
-        if (this._activeTurnDrain === turnDrain) this._activeTurnDrain = null;
+    ): TurnPolicy {
+      return matchConversationKind<TurnPolicy>(kind, {
+        general: () => new ChatTurnPolicy(() => this.swarmDebugPrefix),
+        buddy: (buddyKind) => new BuddyTurnPolicy(buddyKind, this.policyHost(), dependencies, seed),
+        buddy_builder: () => new BuddyBuilderTurnPolicy(this.policyHost(), dependencies),
       });
     }
 
-    private _ensureAssistantMessage(): void {
-      const lastMsg = this.messages[this.messages.length - 1];
-      if (!lastMsg || lastMsg.role !== 'assistant') {
-        console.log(
-          `[${this.id}] Creating NEW assistant message (msg #${this.messages.length + 1})`
-        );
-        const newMsg: Message = {
-          role: 'assistant',
-          content: '',
-          timestamp: new Date(),
-        };
-        this.messages.push(newMsg);
-        this.broadcastMessage({
-          type: 'message',
-          role: 'assistant',
-          content: '',
-          conversationId: this.id,
-        });
-        if (!this.isStreaming) {
-          this.isStreaming = true;
-          this.broadcastStatus();
-        }
-      }
-    }
-
-    private _findSubAgentByRuntimeId(id: string): SubAgent | undefined {
-      return this.subAgents.find((agent) => agent.id === id || agent.providerThreadId === id);
-    }
-
-    private _broadcastSubAgentUpdate(agent: SubAgent): void {
-      broadcast({
-        type: 'subagent_update',
-        conversationId: this.id,
-        subAgentId: agent.id,
-        toolUses: agent.toolUses,
-        tokens: agent.tokens,
-        currentAction: agent.currentAction,
-        status: agent.status,
-        rawStatus: agent.rawStatus,
-        statusSource: agent.statusSource,
-      });
-    }
-
-    private _completeNativeCodexSubAgent(agent: SubAgent, completedAt = new Date()): void {
-      if (agent.status === 'completed' || agent.status === 'error') {
-        agent.completedAt = completedAt;
-        agent.currentAction = agent.status === 'error' ? 'Error' : 'Done';
-        broadcast({
-          type: 'subagent_complete',
-          conversationId: this.id,
-          subAgentId: agent.id,
-          status: agent.status,
-          completedAt,
-        });
-      }
-    }
-
-    private _createOrUpdateCodexNativeSubAgent(
-      childThreadId: string,
-      toolName: string,
-      prompt: string | undefined,
-      rawStatus: string | undefined,
-      statusMessage: string | null | undefined
-    ): { agent: SubAgent; isNew: boolean; wasTerminal: boolean } {
-      const description = getSubagentDescription(this.provider, toolName, {
-        ...(prompt ? { prompt } : {}),
-      });
-      const fallbackStatus = toolName === 'spawn_agent' ? 'pending' : 'running';
-      const normalizedStatus = normalizeCodexSubagentStatus(rawStatus, fallbackStatus);
-      const currentAction = getCodexSubagentCurrentAction(toolName, rawStatus, statusMessage);
-      let agent = this._findSubAgentByRuntimeId(childThreadId);
-      const isNew = !agent;
-      const wasTerminal = !!agent && isTerminalSubagentStatus(agent.status);
-
-      if (!agent) {
-        agent = {
-          id: childThreadId,
-          description,
-          status: normalizedStatus,
-          toolUses: 0,
-          tokens: 0,
-          currentAction,
-          startedAt: new Date(),
-          providerThreadId: childThreadId,
-          rawStatus,
-          statusSource: 'native',
-        };
-        this.subAgents.push(agent);
-      } else {
-        agent.providerThreadId = childThreadId;
-        if (!agent.description || agent.description.startsWith('Running ')) {
-          agent.description = description;
-        }
-        agent.status = normalizedStatus;
-        agent.rawStatus = rawStatus;
-        agent.statusSource = 'native';
-        if (currentAction) {
-          agent.currentAction = currentAction;
-        } else if (normalizedStatus === 'completed' || normalizedStatus === 'error') {
-          agent.currentAction = undefined;
-        }
-        if (normalizedStatus === 'completed' || normalizedStatus === 'error') {
-          agent.completedAt ??= new Date();
-        }
-      }
-
-      return { agent, isNew, wasTerminal };
-    }
-
-    private _handleCodexCollabToolUse(
-      event: Extract<ProviderEvent, { type: 'tool_use' }>
-    ): { suppressGenericSubagentHandling: boolean; suppressFormattedOutput: boolean } | null {
-      if (this.provider !== 'codex' || !isCodexCollabToolName(event.name)) {
-        return null;
-      }
-
-      const { phase, receiverThreadIds, prompt, agentStates } = extractCodexCollabToolInput(
-        event.input
-      );
-      if (phase !== 'completed') {
-        return {
-          suppressGenericSubagentHandling: true,
-          suppressFormattedOutput: false,
-        };
-      }
-
-      const childIds = new Set<string>(receiverThreadIds);
-      for (const childId of Object.keys(agentStates)) {
-        childIds.add(childId);
-      }
-
-      for (const childId of childIds) {
-        const agentState = agentStates[childId];
-        const { agent, isNew, wasTerminal } = this._createOrUpdateCodexNativeSubAgent(
-          childId,
-          event.name,
-          prompt,
-          agentState?.status,
-          agentState?.message
-        );
-
-        if (event.name !== 'spawn_agent') {
-          agent.toolUses += 1;
-        }
-
-        if (isNew) {
-          console.log(
-            `[${this.id}] Codex sub-agent started: ${agent.id.substring(0, 8)} - "${agent.description.substring(0, 50)}"`
-          );
-          broadcast({
-            type: 'subagent_start',
-            conversationId: this.id,
-            subAgent: agent,
-          });
-        } else {
-          this._broadcastSubAgentUpdate(agent);
-        }
-
-        if (agentState?.message !== undefined && agentState.message !== null) {
-          this._broadcastSubAgentUpdate(agent);
-        }
-
-        if (isTerminalSubagentStatus(agent.status)) {
-          if (!agent.completedAt) {
-            agent.completedAt = new Date();
-          }
-          if (agent.status === 'error') {
-            agent.currentAction = 'Error';
-          } else if (!agent.currentAction) {
-            agent.currentAction = 'Done';
-          }
-          this._broadcastSubAgentUpdate(agent);
-          if (!wasTerminal) {
-            this._completeNativeCodexSubAgent(agent, agent.completedAt);
-          }
-        }
-      }
-
+    private policyHost(): BuddyPolicyHost {
       return {
-        suppressGenericSubagentHandling: true,
-        suppressFormattedOutput: true,
+        id: this.id,
+        view: this,
+        placement: () => this.placement,
+        provider: () => this.provider,
+        hasProcess: () => this.process !== null,
+        hasStartedSession: () => this._hasStartedSession,
+        resetProcess: () => this.resetProcess(),
+        releaseQueueHead: (announce) => {
+          if (this.turnQueue.releaseHead() && announce) this.broadcastQueue();
+        },
+        dropPendingHead: () => {
+          const dropped = this.turnQueue.dropPendingHead();
+          if (!dropped) return;
+          this.runner.cancelQueuedAttempt(dropped);
+          this.broadcastQueue();
+        },
+        processQueue: () => this.processQueue(),
+        maxRuntimeReached: () => this.runner.timeout('max'),
+        refuseAutomationTranscript: (message) => this.refuseAutomationTranscript(message),
+        send: (prompt, input) => this.sendMessageInternal(prompt, input),
+        on: (event, listener) => this.on(event, listener),
+        once: (event, listener) => this.once(event, listener),
+        off: (event, listener) => this.off(event, listener),
+        emit: (event, ...args) => this.emit(event, ...args),
       };
     }
 
-    /**
-     * Unified output handler from executeCommand normalized events.
-     */
-    handleOutput(event: ProviderEvent): void {
-      switch (event.type) {
-        case 'message_start':
-          // Only create assistant message if we don't have one pending
-          // The actual message creation happens when we get text content
-          break;
+    // --- TurnRunnerHost: the conversation as its runner sees it ---------------
 
-        case 'text_delta': {
-          this._ensureAssistantMessage();
+    get policy(): TurnPolicy {
+      return this._policy;
+    }
 
-          // Accumulate content server-side too (for debugging)
-          const currentMsg = this.messages[this.messages.length - 1];
-          if (currentMsg.role === 'assistant') {
-            currentMsg.content += event.text;
-          }
-          // Now send the text chunk - client will append to the assistant message
-          if (VERBOSE)
-            console.log(
-              `[${this.id}] chunk (${event.text.length} chars): "${event.text.substring(0, 30).replace(/\n/g, '\\n')}..."`
-            );
-          this.broadcastChunk({
-            type: 'chunk',
-            conversationId: this.id,
-            text: event.text,
-          });
-          break;
-        }
+    markSessionStarted(): void {
+      this._hasStartedSession = true;
+    }
 
-        case 'tool_use': {
-          this._ensureAssistantMessage();
-          const codexCollabHandling = this._handleCodexCollabToolUse(event);
-          // Check if this tool spawns a sub-agent
-          if (!codexCollabHandling && isSubagentSpawnTool(this.provider, event.name)) {
-            const description = getSubagentDescription(this.provider, event.name, event.input);
-            const blockId = (event.input as { _blockId?: string })._blockId || createSessionId();
+    persistSession(sessionId: string, audienceKey: string | undefined): Promise<void> {
+      return persistCurrentSession(this, sessionId, audienceKey);
+    }
 
-            // Create a new sub-agent
-            const subAgent: SubAgent = {
-              id: blockId,
-              description,
-              status: 'running',
-              toolUses: 0,
-              tokens: 0,
-              currentAction: undefined,
-              startedAt: new Date(),
-            };
-
-            this.subAgents.push(subAgent);
-            this._pendingTaskTools.set(blockId, { id: blockId, startedAt: new Date() });
-
-            console.log(
-              `[${this.id}] Sub-agent started: ${blockId.substring(0, 8)} - "${description.substring(0, 50)}"`
-            );
-
-            // Broadcast sub-agent start
-            broadcast({
-              type: 'subagent_start',
-              conversationId: this.id,
-              subAgent,
-            });
-          } else if (!codexCollabHandling?.suppressGenericSubagentHandling) {
-            // For non-Task tools, check if we have an active sub-agent and update its current action
-            if (this.subAgents.length > 0) {
-              const activeAgent = this.subAgents.find((a) => a.status === 'running');
-              if (activeAgent) {
-                // Format the current action based on tool name
-                let actionDisplay = event.name;
-                if (event.input) {
-                  // Extract file path if present
-                  const filePath =
-                    (event.input as { file_path?: string; path?: string }).file_path ||
-                    (event.input as { file_path?: string; path?: string }).path;
-                  if (filePath) {
-                    // Show just the filename for brevity
-                    const fileName = filePath.split('/').pop() || filePath;
-                    actionDisplay = `${event.name}: ${fileName}`;
-                  }
-                }
-
-                activeAgent.toolUses += 1;
-                activeAgent.currentAction = actionDisplay;
-
-                // Broadcast sub-agent update
-                broadcast({
-                  type: 'subagent_update',
-                  conversationId: this.id,
-                  subAgentId: activeAgent.id,
-                  toolUses: activeAgent.toolUses,
-                  currentAction: activeAgent.currentAction,
-                });
-              }
-            }
-
-            // Normalize tool line formatting across providers (Claude/Gemini/Codex).
-            // Suppress Codex shell completion-only events to avoid duplicate lines.
-            if (
-              !codexCollabHandling?.suppressFormattedOutput &&
-              !isCompletionOnlyToolUse(event.name, event.input, event.displayText)
-            ) {
-              const formattedTool = formatToolUse(event.name, event.input, event.displayText);
-              if (formattedTool) {
-                const currentMsg = this.messages[this.messages.length - 1];
-                const needsLeadingNewline =
-                  !formattedTool.startsWith('<!--ask_user_question:') &&
-                  currentMsg?.role === 'assistant' &&
-                  currentMsg.content.length > 0 &&
-                  !currentMsg.content.endsWith('\n');
-                const chunkText = formattedTool.startsWith('<!--ask_user_question:')
-                  ? formattedTool
-                  : `${needsLeadingNewline ? '\n' : ''}${formattedTool}\n`;
-                if (currentMsg?.role === 'assistant') {
-                  // Keep server-side message text aligned with streamed chunks.
-                  currentMsg.content += chunkText;
-                }
-                this.broadcastChunk({
-                  type: 'chunk',
-                  conversationId: this.id,
-                  text: chunkText,
-                });
-              }
-            }
-          } else if (
-            !codexCollabHandling.suppressFormattedOutput &&
-            !isCompletionOnlyToolUse(event.name, event.input, event.displayText)
-          ) {
-            const formattedTool = formatToolUse(event.name, event.input, event.displayText);
-            if (formattedTool) {
-              const currentMsg = this.messages[this.messages.length - 1];
-              const needsLeadingNewline =
-                !formattedTool.startsWith('<!--ask_user_question:') &&
-                currentMsg?.role === 'assistant' &&
-                currentMsg.content.length > 0 &&
-                !currentMsg.content.endsWith('\n');
-              const chunkText = formattedTool.startsWith('<!--ask_user_question:')
-                ? formattedTool
-                : `${needsLeadingNewline ? '\n' : ''}${formattedTool}\n`;
-              if (currentMsg?.role === 'assistant') {
-                currentMsg.content += chunkText;
-              }
-              this.broadcastChunk({
-                type: 'chunk',
-                conversationId: this.id,
-                text: chunkText,
-              });
-            }
-          }
-          break;
-        }
-
-        case 'message_complete': {
-          // Clear watchdog timers immediately — the turn completed normally.
-          // Without this they dangle until process close, risking a spurious timeout.
-          this._clearTurnWatchdogs();
-          // This closes the UI stream, not execution ownership. The attempt is
-          // terminalized only after child exit and event EOF join above. See
-          // invariant I8 and its alternatives in the ownership design note.
-          // Mark all running sub-agents as complete
-          const completedAt = new Date();
-
-          // Update the last assistant message with completion metadata
-          const lastMsg = this.messages[this.messages.length - 1];
-          if (lastMsg && lastMsg.role === 'assistant' && !lastMsg.completedAt) {
-            lastMsg.completedAt = completedAt;
-            lastMsg.completionReason = event.reason;
-          }
-
-          for (const agent of this.subAgents) {
-            if (agent.status === 'running') {
-              if (this.provider === 'codex' && agent.providerThreadId) {
-                continue;
-              }
-              agent.status = 'completed';
-              agent.completedAt = completedAt;
-              if (!agent.statusSource) {
-                agent.statusSource = 'inferred_parent_completion';
-              }
-              agent.currentAction = 'Done';
-
-              console.log(`[${this.id}] Sub-agent completed: ${agent.id.substring(0, 8)}`);
-
-              // Broadcast sub-agent complete
-              broadcast({
-                type: 'subagent_complete',
-                conversationId: this.id,
-                subAgentId: agent.id,
-                status: 'completed',
-                completedAt,
-              });
-            }
-          }
-
-          // Clear pending task tools
-          this._pendingTaskTools.clear();
-
-          // Broadcast message_complete BEFORE status(isStreaming=false).
-          // Client's message_complete handler calls flushChunkBuffer() — the last
-          // buffered text must be flushed before isStreaming=false triggers a re-render
-          // that hides typing dots. Preserves the documented broadcast sequence.
-          this.broadcastChunk({
-            type: 'message_complete',
-            conversationId: this.id,
-            reason: event.reason,
-          });
-
-          // turn.complete means the assistant has finished this turn from the
-          // user's perspective; clear busy state now instead of waiting for
-          // child-process teardown.
-          this.isStreaming = false;
-          this.isRunning = false;
-          clearExternalRunningStatus(this.id, this.sessionId);
-          markLocalCompletionSuppression(this.id, this.sessionId);
-          this.broadcastStatus();
-
-          broadcast({
-            type: 'conversations_updated',
-            conversations: [this.toJSON()],
-          });
-
-          // Signal to the close handler that cleanup already happened.
-          // Close handler will skip redundant state changes and broadcasts.
-          this._turnCompletedCleanly = true;
-          updateBuddyConversationLink(this, 'active');
-          break;
-        }
-
-        case 'error': {
-          // Surface provider errors (usage limits, auth failures, turn errors)
-          // to the client as a system message so the user sees what happened.
-          console.error(`[${this.id}] Provider error: ${event.message}`);
-          const errorMessage: Message = {
-            role: 'system',
-            content: event.message,
-            timestamp: new Date(),
-          };
-          this.messages.push(errorMessage);
-          broadcast({
-            type: 'message',
-            conversationId: this.id,
-            role: 'system',
-            content: event.message,
-          });
-          break;
-        }
-
-        default: {
-          // TypeScript exhaustive check - this should never happen
-          const _exhaustive: never = event;
-          throw new Error(`Unhandled event type: ${JSON.stringify(_exhaustive)}`);
-        }
-      }
+    // Provider-generated label (Claude ai-title/custom-title). Custom (user-set)
+    // always wins; auto titles never overwrite a custom one. Hydrated titles
+    // count as custom-sticky: the file backfill already resolved precedence, so
+    // live ai noise must not clobber it — only a live custom event can.
+    observeTitle(title: string, source: 'ai' | 'custom'): void {
+      const next = title.trim();
+      if (!next) return;
+      if (source !== 'custom' && this._titleSource === 'custom') return;
+      if (this.title === next) return;
+      this.title = next;
+      this._titleSource = source;
+      broadcast({ type: 'conversations_updated', conversations: [this.toJSON()] });
     }
 
     runCoordinationMessage(
       content: string,
       context: BuddyContext,
       claimToken: string,
-      onDrained?: (
-        status: 'complete' | 'failed',
-        detail: string,
-        terminalCause?: TurnTerminalCause
-      ) => void,
+      onDrained?: CoordinationDrained,
       onAdmitted?: (config: ResolvedExecutionConfig) => void
     ): Promise<string> {
       if (this.placement !== 'background') {
@@ -2115,77 +552,18 @@ export function createConversationRuntime(
           new Error('Automated Buddy inputs require a background conversation')
         );
       }
-      if (this.process || this.isRunning || this._coordinationExecution || this.queue.length) {
+      if (this.process || this.isRunning || this.turnQueue.length) {
         return Promise.reject(new Error('Conversation is busy'));
       }
-      if (
-        !context.coordinationRunId ||
-        !claimToken ||
-        context.buddyId !== this.buddyContext?.buddyId ||
-        context.workspaceId !== this.buddyContext?.workspaceId
-      ) {
-        return Promise.reject(new Error('Coordination identity or claim is missing'));
-      }
-      this._coordinationExecution = { context, claimToken, onAdmitted };
-      return new Promise<string>((resolve, reject) => {
-        const cleanup = () => {
-          this.off('buddy-turn-complete', complete);
-          this.off('buddy-turn-failed', failed);
-          this._coordinationExecution = null;
-        };
-        let pendingFailure: string | null = null;
-        const complete = (output: string) => {
-          if (pendingFailure) {
-            failed(pendingFailure);
-            return;
-          }
-          try {
-            onDrained?.('complete', output, this._coordinationExecution?.terminalCause);
-            cleanup();
-            resolve(output);
-          } catch (error) {
-            cleanup();
-            reject(error);
-          }
-        };
-        const failed = (reason: string) => {
-          if (this.process) {
-            pendingFailure = reason;
-            return;
-          }
-          try {
-            onDrained?.('failed', reason, this._coordinationExecution?.terminalCause);
-          } catch (error) {
-            cleanup();
-            reject(error);
-            return;
-          }
-          cleanup();
-          reject(new Error(reason));
-        };
-        this.once('buddy-turn-complete', complete);
-        this.on('buddy-turn-failed', failed);
-        try {
-          this.sendMessageInternal(sameEitherWay(content), {
-            origin: 'buddy_message',
-            inputId: context.coordinationRunId!,
-          });
-        } catch (error) {
-          cleanup();
-          reject(error);
-        }
-      });
+      return this._policy.runCoordination(content, context, claimToken, onDrained, onAdmitted);
     }
 
-    sendMessage(
-      content: string,
-      ownerInput?: Readonly<{ origin: 'owner_input'; inputId: string }>
-    ): void {
-      if (this.buddyContext?.automationRunId) {
+    sendMessage(content: string, ownerInput?: OwnerInput): void {
+      if (!this._policy.acceptsUserInput) {
         this.refuseAutomationTranscript();
         return;
       }
-      this.sendMessageInternal(sameEitherWay(content), ownerInput);
+      this.sendMessageInternal(sameEitherWay(content), ownerInput ?? unknownInput());
     }
 
     // The caller cannot pick the wording itself: whether this turn resumes is
@@ -2194,451 +572,199 @@ export function createConversationRuntime(
     // the provider session. Asking first and sending one prompt after leaves a
     // window for that decision to flip, so the caller hands over both wordings.
     sendSessionRelativeMessage(prompt: SessionRelativePrompt, input: SeatTurnInput): void {
-      if (this.buddyContext?.automationRunId) {
+      if (!this._policy.acceptsUserInput) {
         this.refuseAutomationTranscript();
         return;
       }
       this.sendMessageInternal(prompt, input);
     }
 
-    /**
-     * Coordinator-only admission for an owned automation occurrence. Public
-     * sendMessage deliberately refuses durable automation transcripts so a
-     * historical thread cannot mint another turn from expired authority. See
-     * invariant I4 in
-     * agent_notes/2026-08-24_automation-execution-ownership-design.md.
-     */
+    /** Coordinator-only admission for an owned automation occurrence (see BuddyTurnPolicy). */
     sendAutomationMessage(content: string): void {
-      if (!this.buddyContext?.automationRunId || !this._automationClaimToken) {
-        throw new Error('Automation turn requires current server-private execution authority');
-      }
-      const memoryPolicy = resolveAutomationMemoryWritePolicy({
-        isAutomation: true,
-        provider: this.provider,
-        allowedOperations: this.buddyContext.allowedBuddyOperations,
-        hasClaimToken: true,
-      });
-      if (memoryPolicy === 'unsupported') {
-        throw new Error(
-          `Automation memory writes are unsupported for provider "${this.provider}" or this run lacks an explicit memory-write capability.`
-        );
-      }
-      this.sendMessageInternal(sameEitherWay(content), {
-        origin: 'schedule',
-        inputId: this.buddyContext.automationRunId,
-      });
+      this._policy.sendAutomation(content);
     }
 
     private refuseAutomationTranscript(message?: string): void {
-      const content =
+      this.addSystemMessage(
         message ??
-        'This automation transcript is read-only. Start an ordinary Buddy conversation to continue working.';
+          'This automation transcript is read-only. Start an ordinary Buddy conversation to continue working.'
+      );
+      broadcast({ type: 'conversations_updated', conversations: [this.toJSON()] });
+    }
+
+    private addSystemMessage(content: string): void {
       this.messages.push({ role: 'system', content, timestamp: new Date() });
-      this.broadcastMessage({
-        type: 'message',
-        role: 'system',
-        content,
-        conversationId: this.id,
-      });
-      broadcast({
-        type: 'conversations_updated',
-        conversations: [this.toJSON()],
-      });
+      broadcast({ type: 'message', role: 'system', content, conversationId: this.id });
     }
 
-    private _providerAudienceKey: string | null = null;
-    // Memory generation the current provider session was last briefed with;
-    // null means "unknown" (new, reset, restored, or failed spawn) and forces
-    // one re-brief. Same lifetime as _providerAudienceKey.
-    private _briefedMemoryGeneration: string | null = null;
-    private contextForInput(input: TurnInput): BuddyContext | null {
-      if (this._coordinationExecution) {
-        const context = this._coordinationExecution.context;
-        switch (input.origin) {
-          case 'owner_input':
-          case 'buddy_post':
-            return {
-              ...context,
-              knowledgeScope: { kind: 'owner_thread', conversationId: this.id },
-            };
-          case 'buddy_message':
-          case 'schedule':
-          case 'unknown':
-            return {
-              ...context,
-              knowledgeScope:
-                context.knowledgeScope ??
-                (context.buddyProjectId
-                  ? { kind: 'project', projectId: context.buddyProjectId }
-                  : { kind: 'workspace', workspaceId: context.workspaceId }),
-            };
-        }
-      }
-      if (!this.buddyContext) return null;
-      switch (input.origin) {
-        // A new owner input gets a new foreground claim. Never rewrite a worker claim.
-        case 'owner_input':
-          return {
-            ...this.buddyContext,
-            knowledgeScope: { kind: 'owner_thread', conversationId: this.id },
-            delegatedByBuddyId: null,
-            allowedBuddyOperations: undefined,
-            coordinationRunId: undefined,
-          };
-        // Same audience as the seat's owner turns, so its provider session
-        // continues (a different scope fails the audience fence and resets it),
-        // but no new claim: only the owner may lift the context's restrictions.
-        case 'buddy_post':
-          return {
-            ...this.buddyContext,
-            knowledgeScope: { kind: 'owner_thread', conversationId: this.id },
-          };
-        case 'buddy_message':
-        case 'schedule':
-        case 'unknown':
-          return {
-            ...this.buddyContext,
-            knowledgeScope: this.buddyContext.buddyProjectId
-              ? { kind: 'project', projectId: this.buddyContext.buddyProjectId }
-              : { kind: 'workspace', workspaceId: this.buddyContext.workspaceId },
-          };
-      }
-    }
-
-    // A provider session resumes only while the current audience CONTAINS the
-    // one it was built under. Until 2026-09-25 any change to the audience key
-    // reset it, and the key covers every readable Task: a Buddy that created a
-    // Task from inside a channel-thread seat started the seat's next turn in a
-    // fresh session (live 03:30Z, no --resume). Narrowed or different access,
-    // or a saved key that cannot be compared (none saved, or a hash saved
-    // before descriptors), still starts fresh; display history remains. A
-    // resumed session adopts the grown key, which session.started persists.
-    private admitBuddyAudience(audience: BuddyTurnAudience): void {
-      const continuity: BuddyAudienceContinuity =
-        this._providerAudienceKey === null
-          ? 'unverified'
-          : audience.continuityFrom(this._providerAudienceKey);
-      switch (continuity) {
-        case 'contained':
-          break;
-        case 'changed':
-        case 'unverified':
-          if (this._hasStartedSession) {
-            console.log(
-              `[${this.id}] Buddy context reset: reason=audience_${continuity}, provider-session=${this.sessionId}`
-            );
-            this.resetProcess();
-          }
-          break;
-      }
-      this._providerAudienceKey = audience.key;
-    }
-
-    // The one resume/fresh decision: spawnForMessage passes --resume on it and
-    // sendMessageInternal words a SessionRelativePrompt by it, so they agree.
+    // The one resume/fresh decision: the runner passes --resume on it and
+    // sendAdmittedMessage words a SessionRelativePrompt by it, so they agree.
     private resumesProviderSession(forkSourceSessionId: string | undefined): boolean {
       return !forkSourceSessionId && this._hasStartedSession;
     }
 
-    private sendMessageInternal(
-      prompt: SessionRelativePrompt,
-      input: TurnInput = { origin: 'unknown', inputId: crypto.randomUUID() }
-    ): void {
+    private sendMessageInternal(prompt: SessionRelativePrompt, input: TurnInput): void {
       console.log(
-        `[${this.id}] sendMessage called, isRunning=${this.isRunning}, hasProcess=${this.process !== null}, queueDepth=${this.queue.length}, contentLen=${prompt.fresh.length}, preview="${formatLogPreview(prompt.fresh)}"`
+        `[${this.id}] sendMessage called, isRunning=${this.isRunning}, hasProcess=${this.process !== null}, queueDepth=${this.turnQueue.length}, contentLen=${prompt.fresh.length}, preview="${formatLogPreview(prompt.fresh)}"`
       );
 
       if (this.process || this.isRunning) {
         console.warn(`[${this.id}] Already processing a message, ignoring`);
         return;
       }
-      if (!this.needsForegroundChatRun()) {
-        this.sendAdmittedMessage(prompt, input);
-        return;
-      }
-      // Buddy chat turns are admitted through the queue, so a turn waiting for
-      // a run slot is visible as pending and later sends line up behind it.
-      if (!this._sendingFromQueue) {
-        // The queue keeps the input's provenance whatever its origin: a
-        // 'buddy_post' seat turn dropped here would come back 'unknown' and
-        // run under the workspace audience, resetting the seat's session.
-        this.enqueuePrompt(prompt, input);
-        return;
-      }
-      const owned = this.admitForegroundChatRun(input);
-      if (!owned) return;
-      this._admittedChatRun = owned;
-      try {
-        this.sendAdmittedMessage(prompt, input);
-      } finally {
-        // sendAdmittedMessage can return before spawning (preflight
-        // refusal, rejected fork). An unconsumed admitted run must be settled here,
-        // or it stays 'running' and holds one of its Buddy's slots forever.
-        if (this._admittedChatRun) {
-          this._admittedChatRun = null;
-          dependencies.finishBuddyChatRun?.(
-            owned.id,
-            owned.claim_token,
-            'cancelled',
-            'Turn did not start'
-          );
-        }
-      }
-    }
-
-    private needsForegroundChatRun(): boolean {
-      return (
-        !!this.buddyContext &&
-        !this.buddyContext.automationRunId &&
-        !this._coordinationExecution &&
-        !!dependencies.enqueueBuddyChatRun
-      );
-    }
-
-    // Admitted: the owned run. Otherwise the queue head goes back to pending and
-    // a poller re-runs processQueue once this Buddy's line reaches it.
-    private admitForegroundChatRun(input: TurnInput): OwnedBuddyChatRun | null {
-      // Per-input context: a fresh owner input drops delegated restrictions for
-      // its turn (contextForInput). The run's allowed operations come from it.
-      this._chatRunTicket ??= {
-        runId: dependencies.enqueueBuddyChatRun!(this.contextForInput(input)!, this.id).id,
-        stopWaiting: waitForChatRunSlot(() => this.processQueue()),
-      };
-      const admission = dependencies.startBuddyChatRun!(
-        this._chatRunTicket.runId,
-        this.id,
-        TURN_MAX_RUNTIME_MS
-      );
-      switch (admission.kind) {
+      switch (this._policy.gate(input, this._sendingFromQueue)) {
+        case 'send':
+          this.sendAdmittedMessage(prompt, input);
+          return;
+        case 'enqueue':
+          this.enqueuePrompt(prompt, input);
+          return;
+        case 'wait':
+          return;
         case 'admitted':
-          this.releaseChatRunTicket();
-          return admission.run;
-        case 'waiting': {
-          const head = this.queue[0];
-          if (head?.status === 'sending') {
-            head.status = 'pending';
-            this.broadcastQueue();
+          try {
+            this.sendAdmittedMessage(prompt, input);
+          } finally {
+            this._policy.releaseUnspawned();
           }
-          return null;
-        }
-        case 'gone':
-          // Lost its place; rejoin at the back of the line on the next poll.
-          this._chatRunTicket.stopWaiting();
-          this._chatRunTicket = null;
-          setTimeout(() => this.processQueue(), CHAT_ADMISSION_POLL_MS);
-          if (this.queue[0]?.status === 'sending') this.queue[0].status = 'pending';
-          return null;
+          return;
       }
-    }
-
-    private releaseChatRunTicket(abandon = false): void {
-      const ticket = this._chatRunTicket;
-      if (!ticket) return;
-      ticket.stopWaiting();
-      this._chatRunTicket = null;
-      if (abandon) dependencies.abandonBuddyChatRun?.(ticket.runId);
     }
 
     private sendAdmittedMessage(prompt: SessionRelativePrompt, input: TurnInput): void {
-      const turnBuddyContext = this.contextForInput(input);
-      if (turnBuddyContext && dependencies.readCurrentBuddyContext) {
-        const current = dependencies.readCurrentBuddyContext(turnBuddyContext);
-        if (current.audience) this.admitBuddyAudience(current.audience);
-        this._memorySnapshot = createMemorySnapshot(current.briefing, current.memoryGeneration);
+      const refreshBriefing = this._policy.prepare(input);
+      const fork = this.chatForkSource();
+      if (fork.t === 'rejected') {
+        this.rejectFork(fork.message);
+        return;
       }
-      // Re-brief only when this provider session has not yet seen the current
-      // memory generation. From 5c0cec4 (2026-09-20) until 2026-09-24 this was
-      // true on EVERY Buddy turn, so each turn appended another full ~20k-char
-      // briefing to the provider transcript and every later step re-read all
-      // accumulated copies: one basketball-model session carried 44 copies
-      // (~835k chars) and re-priced them across 1,081 requests.
-      const refreshBuddyContext =
-        !!turnBuddyContext &&
-        !!dependencies.readCurrentBuddyContext &&
-        this.memoryGeneration !== this._briefedMemoryGeneration;
-
-      // --- Chat Fork ---
-      //
-      // Chat "Fork" (soft handoff): resumedFromConversationId is UI lineage.
-      // Context is supposed to live in the draft / first user message
-      // (originally a pasted transcript). Changing provider before send is
-      // intentional and must still work — do not require same-provider CLI
-      // session inheritance for that path.
-      //
-      // The block below opportunistically upgrades a Chat Fork to session
-      // inheritance when the source is the same provider AND that provider is
-      // fork-capable. Anything else stays a soft handoff — it must never
-      // reject the send. Keep this distinction in mind before extending it.
-      let forkSourceSessionId: string | undefined;
-      if (
-        !this._hasStartedSession &&
-        this.messages.length === 0 &&
-        this.resumedFromConversationId
-      ) {
-        const source = getConversation(this.resumedFromConversationId);
-        if (!source) {
-          this.rejectFork(
-            `Cannot fork: source conversation ${this.resumedFromConversationId} is not loaded`
-          );
-          return;
-        }
-        // Session inheritance needs BOTH the same provider AND a harness that
-        // can fork (claude/opencode sessionForkFlags, codex/gemini
-        // emulateFork). muse and cursor have neither.
-        //
-        // Bug (2026-08-20): muse -> muse Chat Fork died with `Harness "muse"
-        // does not support fork.` while muse -> claude and claude -> muse
-        // worked — only the same-provider branch reached prepareSession, so
-        // the fork-incapable harness was never checked. Capability, not
-        // provider equality, decides the path.
-        const sourceMemorySnapshot = source.getMemorySnapshot?.() ?? null;
-        const memoryGenerationMatches =
-          sourceMemorySnapshot === null && this._memorySnapshot === null
-            ? true
-            : sourceMemorySnapshot !== null &&
-              this._memorySnapshot !== null &&
-              sourceMemorySnapshot.generation === this._memorySnapshot.generation;
-        if (
-          source.provider !== this.provider ||
-          !providerSupportsFork(this.provider) ||
-          !memoryGenerationMatches
-        ) {
-          // Soft handoff via string context (draft/first message), not provider
-          // session inheritance. This is intentional — the whole goal of Fork
-          // is to inject prior convo as string context across clients.
-          const memoryDetail = memoryGenerationMatches
-            ? ''
-            : ', memory generation changed so native session inheritance is disabled';
-          console.log(
-            `[${this.id}] Soft fork ${source.provider} -> ${this.provider} (${source.provider === this.provider ? 'harness cannot fork sessions' : 'cross-provider'}${memoryDetail}), using string context handoff (no provider session fork)`
-          );
-        } else {
-          if (!source.hasStartedSession()) {
-            this.rejectFork('Cannot fork: the source conversation has no provider session yet');
-            return;
-          }
-          forkSourceSessionId = source.sessionId;
-        }
-      }
+      const forkSourceSessionId = fork.t === 'session' ? fork.sessionId : undefined;
       // Worded here, at admission (a queued Buddy turn may have waited for a
       // run slot), after the audience check above may have rotated the
-      // provider session, and by the same decision spawnForMessage resumes on:
+      // provider session, and by the same decision the runner resumes on:
       // a fresh session always gets `fresh`.
-      const content = this.resumesProviderSession(forkSourceSessionId)
-        ? prompt.resumed
-        : prompt.fresh;
+      const resume = this.resumesProviderSession(forkSourceSessionId);
+      const content = resume ? prompt.resumed : prompt.fresh;
 
-      this._prepareTurnAttempt();
+      this.runner.beginAttempt();
       const executionConfig = this.preflightExecution();
       if (!executionConfig) return;
 
-      // UI/history retain clean user text. Buddy turns receive current bounded
-      // context; the persisted first-turn snapshot is historical evidence only.
-      let cliContent = buildFirstTurnCliContent({
-        content,
-        messageCount: this.messages.length,
-        hasStartedSession: this._hasStartedSession,
-        kind: this.kind,
-        buddyBriefing: this._buddyBriefing,
-        buddyMemoryGeneration: this.memoryGeneration,
-        refreshBuddyContext,
-        swarmDebugPrefix: this.swarmDebugPrefix,
-      });
-      // When provider-session inheritance ran above, skip first-turn briefing /
-      // pasted-context prefixes — the CLI already has the source transcript.
-      // Soft Chat Forks (no forkSourceSessionId) keep buildFirstTurnCliContent.
-      if (forkSourceSessionId && !refreshBuddyContext) cliContent = content;
-      // Every path above leaves the provider session holding this generation:
-      // injected now, injected on an earlier turn, or inherited by a native fork
-      // (which requires matching generations).
-      if (turnBuddyContext) this._briefedMemoryGeneration = this.memoryGeneration;
+      // UI/history retain clean user text; the provider gets the policy's
+      // prompt. When provider-session inheritance ran, skip first-turn briefing
+      // / pasted-context prefixes — the CLI already has the source transcript.
+      const cliContent =
+        forkSourceSessionId && !refreshBriefing
+          ? content
+          : this._policy.providerPrompt({
+              content,
+              messageCount: this.messages.length,
+              hasStartedSession: this._hasStartedSession,
+              refreshBriefing,
+            });
 
-      // Add user message to history (clean content for UI)
-      const userMessage: Message = {
-        role: 'user',
-        content: content,
-        timestamp: new Date(),
-      };
-      this.messages.push(userMessage);
-
-      // Broadcast user message to clients (clean content)
-      this.broadcastMessage({
-        type: 'message',
-        role: 'user',
-        content: content,
-        conversationId: this.id,
-      });
-
-      // Buddy audit events require an existing Buddy and workspace. The Builder
-      // discovers those during its turn; owner tool authority uses input provenance.
-      if (turnBuddyContext)
-        dependencies.recordBuddyTurnOrigin?.(
-          this.id,
-          input,
-          turnBuddyContext,
-          crypto.createHash('sha256').update(content).digest('hex')
-        );
+      this.messages.push({ role: 'user', content, timestamp: new Date() });
+      broadcast({ type: 'message', role: 'user', content, conversationId: this.id });
+      this._policy.admitted(input, content);
       // Owner workflow guidance lives in the native MCP tool descriptions.
-      // Appending it here pollutes every provider input and its saved transcript.
       // Spawn with input provenance supplied by the host producer, never transcript text.
-      this.spawnForMessage(cliContent, executionConfig, forkSourceSessionId, input);
+      this.runner.start({
+        content: cliContent,
+        config: executionConfig,
+        forkSourceSessionId,
+        resume,
+        input,
+      });
+    }
+
+    /**
+     * Chat "Fork" (soft handoff): resumedFromConversationId is UI lineage.
+     * Context lives in the draft / first user message, so changing provider
+     * before send must still work. The first send opportunistically upgrades
+     * to provider-session inheritance when the source has the same provider,
+     * that harness can fork, and the memory generations match. Anything else
+     * stays a soft handoff and must never reject the send.
+     *
+     * Bug (2026-08-20): muse -> muse Chat Fork died with `Harness "muse" does
+     * not support fork.` because only the same-provider branch reached
+     * prepareSession. Capability, not provider equality, decides the path.
+     * Guard: `same-provider fork on a fork-incapable harness falls back to
+     * string handoff`.
+     */
+    private chatForkSource():
+      | { t: 'none' }
+      | { t: 'session'; sessionId: string }
+      | { t: 'rejected'; message: string } {
+      if (this._hasStartedSession || this.messages.length > 0 || !this.resumedFromConversationId)
+        return { t: 'none' };
+      const source = getConversation(this.resumedFromConversationId);
+      if (!source) {
+        return {
+          t: 'rejected',
+          message: `Cannot fork: source conversation ${this.resumedFromConversationId} is not loaded`,
+        };
+      }
+      const sourceMemorySnapshot = source.getMemorySnapshot?.() ?? null;
+      const memorySnapshot = this._policy.memorySnapshot();
+      const memoryGenerationMatches =
+        sourceMemorySnapshot === null && memorySnapshot === null
+          ? true
+          : sourceMemorySnapshot !== null &&
+            memorySnapshot !== null &&
+            sourceMemorySnapshot.generation === memorySnapshot.generation;
+      if (
+        source.provider !== this.provider ||
+        !providerSupportsFork(this.provider) ||
+        !memoryGenerationMatches
+      ) {
+        const memoryDetail = memoryGenerationMatches
+          ? ''
+          : ', memory generation changed so native session inheritance is disabled';
+        console.log(
+          `[${this.id}] Soft fork ${source.provider} -> ${this.provider} (${source.provider === this.provider ? 'harness cannot fork sessions' : 'cross-provider'}${memoryDetail}), using string context handoff (no provider session fork)`
+        );
+        return { t: 'none' };
+      }
+      if (!source.hasStartedSession()) {
+        return {
+          t: 'rejected',
+          message: 'Cannot fork: the source conversation has no provider session yet',
+        };
+      }
+      return { t: 'session', sessionId: source.sessionId };
     }
 
     private rejectFork(message: string): void {
       console.error(`[${this.id}] ${message}`);
-      this.messages.push({ role: 'system', content: message, timestamp: new Date() });
-      this.broadcastMessage({
-        type: 'message',
-        role: 'system',
-        content: message,
-        conversationId: this.id,
-      });
-      broadcast({
-        type: 'conversations_updated',
-        conversations: [this.toJSON()],
-      });
+      this.addSystemMessage(message);
+      broadcast({ type: 'conversations_updated', conversations: [this.toJSON()] });
     }
 
     private preflightExecution(): ResolvedExecutionConfig | undefined {
       // Resolve immediately before any message or queue mutation.
       // Catalog changes may affect defaults without changing durable intent.
       const resolution = this.refreshConfigResolution();
-      if (resolution.status === 'resolved') {
-        try {
-          // This is a configuration admission rule, not a provider process
-          // failure. Checking it here keeps a queued message retryable and
-          // prevents the synchronous throw in spawnForMessage from leaving the
-          // queue's head permanently marked as "sending".
-          if (this.kind.kind !== 'general') {
-            assertBuddyProviderSupportsMcp(resolution.value.provider);
-          }
-        } catch (error) {
-          const errorMessage = error instanceof Error ? error.message : String(error);
-          console.error(`[${this.id}] ${errorMessage}`);
-          this.messages.push({
-            role: 'system',
-            content: errorMessage,
-            timestamp: new Date(),
-            completionReason: 'error',
-          });
-          const queued = this.queue[0];
-          if (queued?.status === 'sending') {
-            queued.status = 'pending';
-            this.broadcastQueue();
-          }
-          broadcast({
-            type: 'conversation_updated',
-            reason: 'config',
-            conversation: this.toJSON(),
-          });
-          this._finishTurnAttempt('failed', 'spawn_failed');
-          this.emit('buddy-turn-failed', errorMessage);
-          return undefined;
-        }
-        return resolution.value;
+      if (resolution.status !== 'resolved') {
+        this.refusePreflight(`Configuration unavailable: ${resolution.error.message}`);
+        return undefined;
       }
+      try {
+        // A configuration admission rule, not a provider process failure.
+        // Checking it here keeps a queued message retryable and prevents a
+        // synchronous throw at spawn from leaving the queue head "sending".
+        this._policy.preflight(resolution.value.provider);
+      } catch (error) {
+        this.refusePreflight(error instanceof Error ? error.message : String(error));
+        return undefined;
+      }
+      return resolution.value;
+    }
 
-      const errorMessage = `Configuration unavailable: ${resolution.error.message}`;
+    // Preflight has no child process and therefore no later completion event.
+    // Terminalise and notify here, at the single point that owns the error, so
+    // an automation's runTurn promise cannot wait until its outer timeout. See
+    // agent_notes/2026-08-24_automation-execution-ownership-design.md.
+    private refusePreflight(errorMessage: string): void {
       console.error(`[${this.id}] ${errorMessage}`);
       this.messages.push({
         role: 'system',
@@ -2646,136 +772,39 @@ export function createConversationRuntime(
         timestamp: new Date(),
         completionReason: 'error',
       });
-      const queued = this.queue[0];
-      if (queued?.status === 'sending') {
-        queued.status = 'pending';
-        this.broadcastQueue();
-      }
-      broadcast({
-        type: 'conversation_updated',
-        reason: 'config',
-        conversation: this.toJSON(),
-      });
-      // Preflight has no child process and therefore no later completion event.
-      // Terminalise and notify here, at the single point that owns the error,
-      // so an automation's runTurn promise cannot wait until its outer timeout.
-      // See agent_notes/2026-08-24_automation-execution-ownership-design.md.
-      this._finishTurnAttempt('failed', 'spawn_failed');
+      if (this.turnQueue.releaseHead()) this.broadcastQueue();
+      broadcast({ type: 'conversation_updated', reason: 'config', conversation: this.toJSON() });
+      this.runner.finishAttempt('failed', 'spawn_failed');
       this.emit('buddy-turn-failed', errorMessage);
-      return undefined;
     }
 
     stop(reason: 'user_stop' | 'server_restart' = 'user_stop'): void {
-      dependencies.revokeBuddyControlCapability?.(this.id);
-      const automationRunId = this.buddyContext?.automationRunId;
-      if (reason === 'user_stop' && automationRunId) {
-        const requestCancellation = dependencies.requestAutomationCancellation;
-        if (!requestCancellation) {
-          this.refuseAutomationTranscript(
-            'Automation cancellation is temporarily unavailable. The owned run was left running.'
-          );
-          return;
-        }
-        void requestCancellation(automationRunId).catch((error) => {
-          const detail = error instanceof Error ? error.message : String(error);
-          console.error('[buddies] Automation cancellation failed', automationRunId, error);
-          this.refuseAutomationTranscript(`Automation cancellation failed: ${detail}`);
-        });
-        return;
-      }
-      this.stopOwnedTurn(reason);
+      if (this._policy.stop(reason)) this.stopOwnedTurn(reason);
     }
 
-    /**
-     * Coordinator-only process stop. The scheduler first persists
-     * cancel_requested, revoking MCP authority, and only then enters here. Do
-     * not expose this on the public command path; see invariant I4 in
-     * agent_notes/2026-08-24_automation-execution-ownership-design.md.
-     */
+    /** Coordinator-only process stop (see BuddyTurnPolicy.stopAutomation). */
     stopAutomationTurn(): void {
-      dependencies.revokeBuddyControlCapability?.(this.id);
-      if (!this.buddyContext?.automationRunId || !this._automationClaimToken) {
-        throw new Error('Automation stop requires current server-private execution authority');
-      }
+      this._policy.stopAutomation();
       this.stopOwnedTurn('user_stop');
     }
 
     private stopOwnedTurn(reason: 'user_stop' | 'server_restart'): void {
-      if (this._chatRunTicket && !this.process) {
-        // Stopping a turn that is still waiting for a run slot drops that turn.
-        const head = this.queue[0];
-        if (head?.status === 'pending') {
-          this._cancelQueuedAttempt(head.id);
-          this.queue.shift();
-          this.broadcastQueue();
-        }
-        this.releaseChatRunTicket(true);
+      if (this._policy.dropWaitingTurn()) {
         this.emit('buddy-turn-failed', 'Stopped while waiting for a run slot');
       }
-      this._clearTurnWatchdogs();
-      if (!this.process) return;
-      this._stopCause = reason;
-      if (this._activeAttemptId) {
-        turnAttempts.stopping(this._activeAttemptId);
-        if (reason === 'server_restart') {
-          this._finishTurnAttempt('interrupted', 'server_restart');
-        }
-      }
-
-      const proc = this.process;
-      const stopTurn = this._activeTurnStop;
-      // CRITICAL: Don't set isRunning here. The 'close' handler does that.
-      // This ensures atomicity: process exits → state updated → queue dequeued →
-      // processQueue() spawns next. If we set state here, processQueue could fire
-      // while the old process is still alive, and spawnForMessage's isRunning
-      // guard would silently drop the queued message.
-      stopTurn?.('SIGTERM');
-      updateBuddyConversationLink(this, 'cancelled');
-      settleBuddyDelegation(this, 'cancelled');
-
-      const killTimer = setTimeout(() => {
-        if (proc.exitCode === null) {
-          console.warn(`[${this.id}] Process did not exit after SIGTERM, sending SIGKILL`);
-          stopTurn?.('SIGKILL');
-        }
-      }, 3000);
-
-      proc.once('close', () => clearTimeout(killTimer));
+      this.runner.stop(reason);
     }
 
     // Reset process for fresh context (used in loop with clearContext).
     // Generates new CLI session ID while keeping conversation ID for UI continuity.
-    // The per-run token invalidates every late event/completion from the old handle.
     resetProcess(): void {
-      this._clearTurnWatchdogs();
-      if (this.process) {
-        const oldProcess = this.process;
-        const stopTurn = this._activeTurnStop;
-        this._finishTurnAttempt('interrupted', 'process_killed');
-        this._runToken += 1;
-        stopTurn?.('SIGTERM');
-        const killTimer = setTimeout(() => {
-          if (oldProcess.exitCode === null) {
-            console.warn(`[${this.id}] Reset process did not exit after SIGTERM, sending SIGKILL`);
-            stopTurn?.('SIGKILL');
-          }
-        }, TURN_TIMEOUT_KILL_GRACE_MS);
-        oldProcess.once('close', () => clearTimeout(killTimer));
-        this.process = null;
-        this._activeTurnStop = null;
-        this.isStreaming = false;
-        this.isRunning = false;
-        this.broadcastStatus();
-      }
-      // Generate new session ID for fresh context
+      this.runner.reset();
       const oldSessionId = this.sessionId;
       this.sessionId = createSessionId();
-      this._providerAudienceKey = null;
-      this._briefedMemoryGeneration = null;
+      this._policy.sessionReset();
       // A reset starts an empty provider context. Carrying the old session's
       // token count forward would show a full meter on a fresh thread.
       this.providerUsage = null;
-      this._providerUsageDirty = false;
       unregisterSessionAlias(oldSessionId, { keepKnown: true });
       registerSessionAlias(this.sessionId, this.id);
       // This UUID is provisional until the provider confirms it. Persisting it
@@ -2787,328 +816,35 @@ export function createConversationRuntime(
       );
     }
 
-    private _startTurnWatchdogs(): void {
-      this._clearTurnWatchdogs();
-      const now = Date.now();
-      this._lastBridgeEventAt = now;
-      this._lastProviderProgressAt = now;
-      this._refreshBridgeWatchdog();
-      this._refreshProviderIdleWatchdog();
-      this._startSwarmPoller();
-      this._turnMaxTimer = setTimeout(() => {
-        this._handleTurnTimeout('max');
-      }, TURN_MAX_RUNTIME_MS);
-    }
-
-    private _noteTurnActivity(event: UnifiedAgentEvent): void {
-      if (!this.isRunning) return;
-      const now = Date.now();
-      const activity = turnAttemptActivityFromEvent(event);
-      this._lastObservedTurnActivity = activity;
-      if (
-        this._activeAttemptId &&
-        (now - this._lastAttemptActivityAt >= ATTEMPT_ACTIVITY_INTERVAL_MS ||
-          this._lastAttemptActivitySource !== activity.source)
-      ) {
-        this._lastAttemptActivityAt = now;
-        this._lastAttemptActivitySource = activity.source;
-        turnAttempts.activity(this._activeAttemptId, activity, this.sessionId);
-      }
-      // Every normalized event proves the wrapper -> queue -> Unleashd bridge
-      // is alive. Only provider events and typed native-session advancement
-      // prove provider progress; the wrapper's timer heartbeat does not.
-      this._lastBridgeEventAt = now;
-      this._refreshBridgeWatchdog();
-      if (isProviderProgressEvent(event)) {
-        this._lastProviderProgressAt = now;
-        this._refreshProviderIdleWatchdog();
-      }
-      this._pollForNewSwarms();
-    }
-
-    private _refreshBridgeWatchdog(): void {
-      if (this._turnBridgeTimer) {
-        clearTimeout(this._turnBridgeTimer);
-        this._turnBridgeTimer = null;
-      }
-      if (!this.isRunning) return;
-      this._turnBridgeTimer = setTimeout(() => {
-        this._handleTurnTimeout('bridge');
-      }, TURN_BRIDGE_TIMEOUT_MS);
-    }
-
-    private _refreshProviderIdleWatchdog(): void {
-      if (this._turnProviderIdleTimer) {
-        clearTimeout(this._turnProviderIdleTimer);
-        this._turnProviderIdleTimer = null;
-      }
-      if (!this.isRunning) return;
-      this._turnProviderIdleTimer = setTimeout(() => {
-        this._handleTurnTimeout('provider');
-      }, TURN_PROVIDER_IDLE_TIMEOUT_MS);
-    }
-
-    /**
-     * Detects if the assistant launched a new Oompa Loompa Swarm by checking
-     * the local runs directory for a new ID compared to what we saw previously.
-     */
-    private _pollForNewSwarms(options?: { force?: boolean }): void {
-      // Throttle: _noteTurnActivity() fires on every text_delta/tool_use (100+ per response).
-      // Avoid synchronous fs I/O (readdirSync, statSync, readFileSync) on every event.
-      const now = Date.now();
-      if (!options?.force && now - this._lastSwarmPollAt < SWARM_POLL_THROTTLE_MS) return;
-      this._lastSwarmPollAt = now;
-
-      const snapshot = readLatestOompaRuntime(this.workingDirectory);
-      if (!snapshot.available || !snapshot.run) return;
-
-      const run = snapshot.run;
-      const currentRunId = snapshot.run.runId;
-      if (!this._hasSwarmBaseline) {
-        // Safety fallback: baseline if a turn starts without _primeSwarmBaseline.
-        this._lastSwarmRunId = currentRunId;
-        this._hasSwarmBaseline = true;
-        return;
-      }
-
-      const previousRunId = this._lastSwarmRunId;
-      if (previousRunId && previousRunId !== currentRunId) {
-        this._completeSwarmSubAgent(previousRunId);
-      }
-
-      if (currentRunId !== previousRunId) {
-        this._lastSwarmRunId = currentRunId;
-        if (!run.isRunning) return;
-        this._startSwarmSubAgent(run);
-        return;
-      }
-
-      if (!run.isRunning) {
-        this._completeSwarmSubAgent(currentRunId);
-      }
-    }
-
-    private _clearTurnWatchdogs(): void {
-      this._stopSwarmPoller();
-      if (this._turnBridgeTimer) {
-        clearTimeout(this._turnBridgeTimer);
-        this._turnBridgeTimer = null;
-      }
-      if (this._turnProviderIdleTimer) {
-        clearTimeout(this._turnProviderIdleTimer);
-        this._turnProviderIdleTimer = null;
-      }
-      if (this._turnMaxTimer) {
-        clearTimeout(this._turnMaxTimer);
-        this._turnMaxTimer = null;
-      }
-    }
-
     expireCoordinationRun(): void {
-      this._handleTurnTimeout('max');
-    }
-
-    private _handleTurnTimeout(kind: TurnTimeoutKind): void {
-      if (!this.process || !this.isRunning) return;
-      dependencies.revokeBuddyControlCapability?.(this.id);
-      const now = Date.now();
-      const elapsedSec = Math.round((now - this._processStartTime) / 1000);
-      const bridgeIdleSec = Math.round((now - this._lastBridgeEventAt) / 1000);
-      const providerIdleSec = Math.round((now - this._lastProviderProgressAt) / 1000);
-      const sawMeaningfulOutput = this._sawMeaningfulProviderOutputThisRun;
-      const timeout = describeTurnTimeout(kind, {
-        elapsedSeconds: elapsedSec,
-        bridgeIdleSeconds: bridgeIdleSec,
-        providerIdleSeconds: providerIdleSec,
-        sawMeaningfulOutput,
-      });
-      const lastActivity = this._lastObservedTurnActivity;
-
-      console.error(
-        `[${this.id}] ${timeout.message} | timeoutKind=${kind} terminalCause=${timeout.terminalCause} sawMeaningfulOutput=${sawMeaningfulOutput} elapsed=${elapsedSec}s bridgeIdle=${bridgeIdleSec}s providerIdle=${providerIdleSec}s lastActivitySource=${lastActivity?.source ?? 'none'} lastProviderEvent=${lastActivity?.providerEventType ?? 'none'} stderr=${this._stderrBuffer.length > 0 ? 'yes' : 'no'}`
-      );
-      this._clearTurnWatchdogs();
-      this.handleOutput({ type: 'error', message: timeout.message });
-      this._finishTurnAttempt('failed', timeout.terminalCause);
-
-      const completedAt = new Date();
-      const lastMsg = this.messages[this.messages.length - 1];
-      if (lastMsg?.role === 'assistant' && !lastMsg.completedAt) {
-        lastMsg.completedAt = completedAt;
-        lastMsg.completionReason = 'error';
-      }
-      for (const agent of this.subAgents) {
-        if (agent.status !== 'running') continue;
-        agent.status = 'error';
-        agent.completedAt = completedAt;
-        agent.currentAction = 'Parent turn timed out';
-      }
-      this._pendingTaskTools.clear();
-      // Commit buffered text before status:false makes the client discard its
-      // transient streaming buffer, then publish the authoritative transcript.
-      this.broadcastChunk({
-        type: 'message_complete',
-        conversationId: this.id,
-        reason: 'error',
-      });
-      this.isStreaming = false;
-      this.isRunning = false;
-      clearExternalRunningStatus(this.id, this.sessionId);
-      markLocalCompletionSuppression(this.id, this.sessionId);
-      this.broadcastStatus();
-      broadcast({
-        type: 'conversations_updated',
-        conversations: [this.toJSON()],
-      });
-      // Mark turn as cleanly completed so the close handler (triggered by SIGTERM
-      // below) takes the fast path and doesn't emit a duplicate system message.
-      this._turnCompletedCleanly = true;
-      updateBuddyConversationLink(this, 'failed');
-      settleBuddyDelegation(this, 'failed', timeout.message);
-      this.emit('buddy-turn-failed', timeout.message);
-
-      const proc = this.process;
-      const stopTurn = this._activeTurnStop;
-      stopTurn?.('SIGTERM');
-      const killTimer = setTimeout(() => {
-        if (proc.exitCode === null) {
-          console.warn(`[${this.id}] Timeout kill escalation: sending SIGKILL`);
-          stopTurn?.('SIGKILL');
-        }
-      }, TURN_TIMEOUT_KILL_GRACE_MS);
-      proc.once('close', () => clearTimeout(killTimer));
-    }
-
-    private _primeSwarmBaseline(): void {
-      const snapshot = readLatestOompaRuntime(this.workingDirectory);
-      this._lastSwarmRunId = snapshot.available && snapshot.run ? snapshot.run.runId : null;
-      this._hasSwarmBaseline = true;
-      this._lastSwarmPollAt = 0;
-    }
-
-    private _startSwarmPoller(): void {
-      this._stopSwarmPoller();
-      if (!this.isRunning) return;
-      this._swarmPollTimer = setInterval(() => {
-        this._pollForNewSwarms({ force: true });
-      }, SWARM_POLL_INTERVAL_MS);
-      this._swarmPollTimer.unref?.();
-      this._pollForNewSwarms({ force: true });
-    }
-
-    private _stopSwarmPoller(): void {
-      if (!this._swarmPollTimer) return;
-      clearInterval(this._swarmPollTimer);
-      this._swarmPollTimer = null;
-    }
-
-    private _startSwarmSubAgent(run: NonNullable<OompaRuntimeSnapshot['run']>): void {
-      const agentId = `swarm-${run.runId}`;
-      if (this.subAgents.some((a) => a.id === agentId)) return;
-
-      const swarmId = run.swarmId ?? run.runId;
-      console.log(`[${this.id}] Detected new running swarm: ${swarmId}`);
-
-      const newAgent: SubAgent = {
-        id: agentId,
-        description: `Swarm Run: ${swarmId} (${run.totalWorkers} workers)`,
-        status: 'running',
-        toolUses: 0,
-        tokens: 0,
-        currentAction: 'Running swarm...',
-        startedAt: new Date(),
-      };
-
-      this.subAgents.push(newAgent);
-      broadcast({
-        type: 'subagent_start',
-        conversationId: this.id,
-        subAgent: newAgent,
-      });
-    }
-
-    private _completeSwarmSubAgent(runId: string): void {
-      const agentId = `swarm-${runId}`;
-      const swarmAgent = this.subAgents.find((a) => a.id === agentId);
-      if (!swarmAgent || swarmAgent.status !== 'running') return;
-
-      const completedAt = new Date();
-      swarmAgent.status = 'completed';
-      swarmAgent.currentAction = 'Done';
-      swarmAgent.completedAt = completedAt;
-
-      broadcast({
-        type: 'subagent_complete',
-        conversationId: this.id,
-        subAgentId: agentId,
-        status: 'completed',
-        completedAt,
-      });
-    }
-
-    broadcastChunk(data: ChunkData | MessageCompleteData): void {
-      broadcast(data);
-    }
-
-    broadcastMessage(data: MessageData): void {
-      broadcast(data);
-    }
-
-    broadcastStatus(): void {
-      broadcast({
-        type: 'status',
-        conversationId: this.id,
-        isRunning: this.isRunning,
-        isStreaming: this.isStreaming,
-      });
+      this.runner.timeout('max');
     }
 
     broadcastQueue(): void {
-      broadcast({
-        type: 'queue_updated',
-        conversationId: this.id,
-        queue: this.queue,
-      });
+      broadcast({ type: 'queue_updated', conversationId: this.id, queue: this.queue });
     }
 
     /**
-     * Admit a message: register its turn attempt and build the queue record.
+     * Admit a message: register its turn attempt and build the queue entry.
      * Placement (append vs prepend) is the caller's decision.
      */
-    private createQueuedMessage(prompt: SessionRelativePrompt, input?: TurnInput): QueuedMessage {
-      const msg: QueuedMessage = {
+    private createQueueEntry(prompt: SessionRelativePrompt, input: TurnInput): QueueEntry {
+      const message: QueuedMessage = {
         id: crypto.randomUUID(),
         content: prompt.fresh,
         queuedAt: new Date(),
         status: 'pending',
       };
-      const attemptId = crypto.randomUUID();
-      this._queuedPrompts.set(msg.id, prompt);
-      if (input) this._queuedInputs.set(msg.id, Object.freeze({ ...input }));
-      this._queuedAttemptIds.set(msg.id, attemptId);
-      turnAttempts.queued({
-        attemptId,
-        conversationId: this.id,
-        queueMessageId: msg.id,
-        providerSessionId: this.sessionId,
-      });
-      return msg;
+      const attemptId = this.runner.createQueuedAttempt(message.id);
+      return { message, input: Object.freeze({ ...input }), prompt, attemptId };
     }
 
-    /**
-     * Retire the queue head when its provider turn is being killed. The close
-     * handler consumes a 'sending' head on its own, so a stale entry left
-     * behind would strand everything queued after it (processQueue skips
-     * 'sending'). The attempt record itself is finished once by the close
-     * handler — only the queue slot is dropped here.
-     */
     private retireInFlightHead(): void {
-      const head = this.queue[0];
-      if (head && head.status === 'sending') {
+      const retired = this.turnQueue.retireInFlightHead();
+      if (retired) {
         console.log(
-          `[${this.id}] Retiring interrupted in-flight message id=${head.id.substring(0, 8)}`
+          `[${this.id}] Retiring interrupted in-flight message id=${retired.message.id.substring(0, 8)}`
         );
-        this.queue.shift();
       }
     }
 
@@ -3116,23 +852,20 @@ export function createConversationRuntime(
      * Add a message to the queue. If the conversation is ready and idle,
      * process immediately. Otherwise it sits until the next status/ready change.
      */
-    enqueueMessage(
-      content: string,
-      ownerInput?: Readonly<{ origin: 'owner_input'; inputId: string }>
-    ): void {
-      this.enqueuePrompt(sameEitherWay(content), ownerInput);
+    enqueueMessage(content: string, ownerInput?: OwnerInput): void {
+      this.enqueuePrompt(sameEitherWay(content), ownerInput ?? unknownInput());
     }
 
-    private enqueuePrompt(prompt: SessionRelativePrompt, input?: TurnInput): void {
-      if (this.buddyContext?.automationRunId) {
+    private enqueuePrompt(prompt: SessionRelativePrompt, input: TurnInput): void {
+      if (!this._policy.acceptsUserInput) {
         this.refuseAutomationTranscript();
         return;
       }
-      const queueDepthBefore = this.queue.length;
-      const msg = this.createQueuedMessage(prompt, input);
-      this.queue.push(msg);
+      const queueDepthBefore = this.turnQueue.length;
+      const entry = this.createQueueEntry(prompt, input);
+      this.turnQueue.pushBack(entry);
       console.log(
-        `[${this.id}] Queued message id=${msg.id.substring(0, 8)}, queueDepth=${queueDepthBefore}->${this.queue.length}, contentLen=${msg.content.length}, preview="${formatLogPreview(msg.content)}"`
+        `[${this.id}] Queued message id=${entry.message.id.substring(0, 8)}, queueDepth=${queueDepthBefore}->${this.turnQueue.length}, contentLen=${entry.message.content.length}, preview="${formatLogPreview(entry.message.content)}"`
       );
       this.broadcastQueue();
       this.processQueue();
@@ -3144,11 +877,8 @@ export function createConversationRuntime(
      * queue). The killed turn's in-flight head is retired; everything else
      * stays in order behind the new message.
      */
-    interruptAndSend(
-      content: string,
-      ownerInput?: Readonly<{ origin: 'owner_input'; inputId: string }>
-    ): void {
-      if (this.buddyContext?.automationRunId) {
+    interruptAndSend(content: string, ownerInput?: OwnerInput): void {
+      if (!this._policy.acceptsUserInput) {
         this.refuseAutomationTranscript();
         return;
       }
@@ -3158,11 +888,11 @@ export function createConversationRuntime(
         this.stop();
       }
 
-      const queueDepthBefore = this.queue.length;
-      const msg = this.createQueuedMessage(sameEitherWay(content), ownerInput);
-      this.queue.unshift(msg);
+      const queueDepthBefore = this.turnQueue.length;
+      const entry = this.createQueueEntry(sameEitherWay(content), ownerInput ?? unknownInput());
+      this.turnQueue.pushFront(entry);
       console.log(
-        `[${this.id}] interrupt_and_send id=${msg.id.substring(0, 8)}, queueDepth=${queueDepthBefore}->${this.queue.length}, contentLen=${content.length}, preview="${formatLogPreview(content)}"`
+        `[${this.id}] interrupt_and_send id=${entry.message.id.substring(0, 8)}, queueDepth=${queueDepthBefore}->${this.turnQueue.length}, contentLen=${content.length}, preview="${formatLogPreview(content)}"`
       );
       this.broadcastQueue();
       this.processQueue();
@@ -3174,17 +904,14 @@ export function createConversationRuntime(
      * ids are a no-op, like cancelQueuedMessage.
      */
     promoteQueuedMessage(messageId: string): void {
-      if (this.buddyContext?.automationRunId) {
+      if (!this._policy.acceptsUserInput) {
         this.refuseAutomationTranscript();
         return;
       }
-      const index = this.queue.findIndex((m) => m.id === messageId && m.status === 'pending');
-      if (index === -1) return;
-      const [msg] = this.queue.splice(index, 1);
-      this.retireInFlightHead();
-      this.queue.unshift(msg);
+      const promoted = this.turnQueue.promote(messageId);
+      if (!promoted) return;
       console.log(
-        `[${this.id}] Promoted queued message id=${msg.id.substring(0, 8)} to front, queueDepth=${this.queue.length}`
+        `[${this.id}] Promoted queued message id=${promoted.message.id.substring(0, 8)} to front, queueDepth=${this.turnQueue.length}`
       );
       this.broadcastQueue();
       if (this.process) {
@@ -3197,87 +924,58 @@ export function createConversationRuntime(
      * Cancel a pending queued message by ID. Cannot cancel messages already sending.
      */
     cancelQueuedMessage(messageId: string): void {
-      const idx = this.queue.findIndex((m) => m.id === messageId && m.status === 'pending');
-      if (idx !== -1) {
-        console.log(`[${this.id}] Cancelled queued message: ${messageId.substring(0, 8)}`);
-        this._cancelQueuedAttempt(messageId);
-        this.queue.splice(idx, 1);
-        this.broadcastQueue();
-      }
+      const removed = this.turnQueue.removePending(messageId);
+      if (!removed) return;
+      console.log(`[${this.id}] Cancelled queued message: ${messageId.substring(0, 8)}`);
+      this.runner.cancelQueuedAttempt(removed);
+      this.broadcastQueue();
     }
 
     /**
      * Clear all pending messages from the queue. Messages currently sending are kept.
      */
     clearQueue(): void {
-      const before = this.queue.length;
-      for (const queued of this.queue) {
-        if (queued.status === 'pending') this._cancelQueuedAttempt(queued.id);
-      }
-      this.queue = this.queue.filter((m) => m.status === 'sending');
-      if (this.queue.length === 0) this.releaseChatRunTicket(true);
-      console.log(`[${this.id}] Cleared queue: removed ${before - this.queue.length} messages`);
+      const removed = this.turnQueue.clearPending();
+      for (const entry of removed) this.runner.cancelQueuedAttempt(entry);
+      if (this.turnQueue.length === 0) this._policy.queueEmptied();
+      console.log(`[${this.id}] Cleared queue: removed ${removed.length} messages`);
       this.broadcastQueue();
     }
 
     /**
      * Process the next queued message if the conversation is idle.
-     * Called from: close handler (after process exits), enqueueMessage (new message).
+     * Called from: the runner after a turn drains, enqueueMessage (new message).
      */
     processQueue(): void {
-      if (this.buddyContext?.automationRunId) {
+      if (!this._policy.acceptsUserInput) {
         // Old persisted queue state must not become an authority bypass after
         // restart. User admission is closed on every automation transcript.
         this.clearQueue();
         return;
       }
       if (this.process || this.isRunning) return;
-      if (this.queue.length === 0) return;
+      const next = this.turnQueue.startHead();
+      if (!next) return; // empty, or the head is already in flight
 
-      const next = this.queue[0];
-      if (next.status === 'sending') return; // already in flight
-
-      next.status = 'sending';
-      let attemptId = this._queuedAttemptIds.get(next.id);
-      if (!attemptId) {
-        attemptId = crypto.randomUUID();
-        this._queuedAttemptIds.set(next.id, attemptId);
-        turnAttempts.queued({
-          attemptId,
-          conversationId: this.id,
-          queueMessageId: next.id,
-          providerSessionId: this.sessionId,
-        });
-      }
-      this._nextAttempt = { attemptId, queueMessageId: next.id };
+      this.runner.prepareQueuedAttempt(next);
       console.log(
-        `[${this.id}] processQueue sending id=${next.id.substring(0, 8)}, queueDepth=${this.queue.length}, contentLen=${next.content.length}, preview="${formatLogPreview(next.content)}"`
+        `[${this.id}] processQueue sending id=${next.message.id.substring(0, 8)}, queueDepth=${this.turnQueue.length}, contentLen=${next.message.content.length}, preview="${formatLogPreview(next.message.content)}"`
       );
       this.broadcastQueue();
       try {
-        const queuedInput = this._queuedInputs.get(next.id);
         this._sendingFromQueue = true;
         try {
           // Automation transcripts never reach here (cleared above), so this is
-          // sendMessage without its refusal, carrying the item's own wording.
-          this.sendMessageInternal(
-            this._queuedPrompts.get(next.id) ?? sameEitherWay(next.content),
-            queuedInput
-          );
+          // sendMessage without its refusal, carrying the item's own wording
+          // and provenance (never serialized for restore).
+          this.sendMessageInternal(next.prompt, next.input);
         } finally {
           this._sendingFromQueue = false;
-        }
-        // Keep trusted input provenance while preflight leaves this item pending.
-        // It is consumed only after provider admission, never serialized for restore.
-        if (this.process || this.isRunning) {
-          this._queuedInputs.delete(next.id);
-          this._queuedPrompts.delete(next.id);
         }
       } catch (error) {
         // Provider admission can still fail synchronously at a future seam.
         // Never strand the queue head in "sending" when no process exists.
-        if (this.queue[0] === next && next.status === 'sending') {
-          next.status = 'pending';
+        if (this.turnQueue.head() === next && this.turnQueue.releaseHead()) {
           this.broadcastQueue();
         }
         throw error;
@@ -3289,11 +987,11 @@ export function createConversationRuntime(
     }
 
     waitingForRunSlot(): boolean {
-      return this._chatRunTicket !== null && this.process === null;
+      return this._policy.waitingForRunSlot();
     }
 
     async waitForTurnDrain(): Promise<void> {
-      await this._activeTurnDrain;
+      await this.runner.drain();
     }
 
     hasStartedSession(): boolean {
@@ -3325,11 +1023,10 @@ export function createConversationRuntime(
     }
 
     refreshConfigResolution(): ConfigResolution {
-      const lastResolved =
-        this.configResolution.status === 'resolved'
-          ? this.configResolution.value
-          : this.configResolution.lastResolved;
-      this.configResolution = resolveConfigAgainstProviderCatalog(this.config, lastResolved);
+      this.configResolution = resolveConfigAgainstProviderCatalog(
+        this.config,
+        this.effectiveConfig
+      );
       return this.configResolution;
     }
 
@@ -3340,7 +1037,7 @@ export function createConversationRuntime(
       return (
         !this._hasStartedSession &&
         this.messages.length === 0 &&
-        this.queue.length === 0 &&
+        this.turnQueue.length === 0 &&
         !this.isRunning &&
         !this.isStreaming
       );
@@ -3376,15 +1073,9 @@ export function createConversationRuntime(
         modelName: this.modelName,
         title: this.title,
         swarmDebugPrefix: this.swarmDebugPrefix,
-        // `buddyContext` is deliberately NOT serialized. On this object it is a
-        // getter over `kind` (buddyContextFromKind), so the wire copy repeated
-        // the same fields for every Buddy thread — 550 KB of a 2.4 MB `init`
-        // with 937 of 1,123 conversations being Buddy threads (2026-09-25).
-        // Every reader goes through shared `getBuddyContext()`, which derives
-        // from `kind` whenever kind is 'buddy' and ignores the wire field, and
-        // `kind` is required by ConversationSchema. The schema keeps
-        // `buddyContext` nullish, so an older client and a not-yet-reloaded
-        // older server (which still sends it) both keep parsing.
+        // `buddyContext` is deliberately NOT serialized: it is a getter over
+        // `kind`, and repeating it cost 550 KB of a 2.4 MB `init` (2026-09-25).
+        // Readers use shared `getBuddyContext()`, which derives from `kind`.
         kind: this.kind,
         purpose: this.purpose,
         placement: this.placement,

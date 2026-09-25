@@ -53,21 +53,19 @@ Server providers are metadata-only. Runtime command construction, process execut
 
 ### Runtime event contract
 
-```typescript
-type ProviderEvent =
-  | { type: 'message_start' }                           // New message beginning (or no-op structural event)
-  | { type: 'text_delta'; text: string }                // Streaming text chunk
-  | { type: 'message_complete' }                        // Message finished, process will exit
-  | { type: 'tool_use'; name: string; input: Record<string, unknown>; displayText?: string }
-  | { type: 'error'; message: string }
-```
+Turn events are typed ONCE, by agent-cli: `UnifiedAgentEvent`
+(`vendor/agent-cli-tool/src/runtime-types.ts`). The server folds them directly in
+`server/src/turns/runner.ts` (`EventFold`, one handler per event type). The old
+server-side `ProviderEvent` re-typing layer was deleted in T08 (2026-09-25).
 
 ### Contract
 
-1. `executeCommand` MUST emit only normalized events consumed by `handleOutput`.
+1. `executeCommand` MUST emit only `UnifiedAgentEvent`s.
 2. Provider-specific schema drift is handled inside `agent-cli-tool` parsers.
-3. `message_start` can be structural/no-op.
-4. `message_complete` signals dequeue and completion broadcast.
+3. `turn.complete` closes the UI stream; execution ownership ends only when the
+   child exits AND the event stream drains (one joined terminal path).
+4. Harness differences the server still sees (Codex collab sub-agents) live in the
+   capability table `server/src/turns/subagents.ts`, never in the fold.
 
 ## Model Selection
 
@@ -94,25 +92,22 @@ OpenCode model IDs use a path-style format (`provider/model`, optionally with ad
 
 ## How the Server Consumes Providers
 
-### Conversation Flow (server/src/server.ts)
+### Conversation Flow
 
 ```
-1. Conversation created with provider name and optional model
-   - Server validates provider/model compatibility at creation and on `set_model`
-2. constructor() calls getProvider(name) for provider metadata (`listModels`)
-3. User sends message → queue_message (WS) → enqueueMessage() → processQueue() → sendMessage()
-4. sendMessage() calls spawnForMessage(content):
-   a. executeCommand({ harness, mode: 'conversation', prompt, cwd, model, resumeSessionId, yolo: true })
-   b. consume async events and map to server `ProviderEvent`
-   c. update `sessionId` when canonical session events arrive
-5. handleOutput(event):
-   b. Switch on event.type:
-      - message_start: no-op (or create assistant message if needed)
-      - text_delta: append to current assistant message, broadcast chunk
-      - tool_use: track sub-agents if name === 'Task', broadcast tool info
-      - message_complete: broadcast completion, dequeue, persist
-      - error: throw
-6. completion: set isRunning = false, broadcast status
+1. Conversation created (conversations/runtime.ts) with its config and kind;
+   the kind picks its TurnPolicy once (chat / Buddy / Buddy Builder).
+2. User sends message → queue_message (WS) → enqueueMessage() → TurnQueue →
+   processQueue() → sendMessageInternal() → policy.gate() → sendAdmittedMessage().
+3. sendAdmittedMessage(): policy.prepare(), Chat Fork resolution, preflight,
+   policy.providerPrompt(), then TurnRunner.start() (turns/runner.ts):
+   a. executeCommand({ harness, mode: 'conversation', prompt, cwd, model,
+      reasoningEffort, resumeSessionId, ...policy.startTurn() })
+   b. fold each UnifiedAgentEvent (text, tools, sub-agents, session, usage)
+   c. TurnWatchdog (bridge / provider-idle / max runtime) and the folder's
+      SwarmObserver run while the turn runs
+4. Drain: child exit + event EOF join, then the attempt record, the policy's
+   end-of-turn hooks, the queue head, and processQueue() for the next turn.
 ```
 
 ## Session Management

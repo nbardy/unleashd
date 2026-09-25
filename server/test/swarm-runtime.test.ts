@@ -33,7 +33,7 @@ test('runtime derives live worker state through injected process liveness', asyn
     })
   );
 
-  const snapshot = readLatestSwarmRuntime(projectRoot, {
+  const snapshot = await readLatestSwarmRuntime(projectRoot, {
     isProcessAlive: (pid) => pid === 123,
     now: () => Date.parse('2026-01-01T00:02:00.000Z'),
   });
@@ -74,7 +74,7 @@ test('stopped event is authoritative over a still-live pid', async (context) => 
     })
   );
 
-  const snapshot = readLatestSwarmRuntime(projectRoot, {
+  const snapshot = await readLatestSwarmRuntime(projectRoot, {
     isProcessAlive: () => true,
     now: () => Date.parse('2026-01-01T00:04:00.000Z'),
   });
@@ -125,7 +125,7 @@ test('a finished error cycle does not mark a live mid-cycle worker dead', async 
     JSON.stringify({ 'worker-id': 'worker-b', status: 'stopped', reason: 'error', cycle: 1 })
   );
 
-  const snapshot = readLatestSwarmRuntime(projectRoot, {
+  const snapshot = await readLatestSwarmRuntime(projectRoot, {
     isProcessAlive: (pid) => pid === 123,
     now: () => Date.parse('2026-01-01T00:10:00.000Z'),
   });
@@ -160,7 +160,7 @@ test('legacy run without worker state files: live run renders finished-cycle wor
     JSON.stringify({ 'worker-id': 'worker-a', cycle: 1, outcome: 'error' })
   );
 
-  const live = readLatestSwarmRuntime(projectRoot, {
+  const live = await readLatestSwarmRuntime(projectRoot, {
     isProcessAlive: (pid) => pid === 123,
     now: () => Date.parse('2026-01-01T00:10:00.000Z'),
   });
@@ -170,7 +170,7 @@ test('legacy run without worker state files: live run renders finished-cycle wor
   );
 
   // Once the swarm process is gone, the terminal outcome is honest again.
-  const dead = readLatestSwarmRuntime(projectRoot, {
+  const dead = await readLatestSwarmRuntime(projectRoot, {
     isProcessAlive: () => false,
     now: () => Date.parse('2026-01-01T00:10:00.000Z'),
   });
