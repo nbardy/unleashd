@@ -60,8 +60,14 @@ remain the three core components.
    carry no identity, so two prompts in flight would swap answers. The DM and seats
    share `buddy-conversation-slots.ts` (derived ids, generation scan from the
    config record: absent / deleted / live+config, reopen-or-create,
-   membership). Input is `owner_input` origin: owner thread knowledge scope,
-   owner-control MCP, like a `talk()` chat.
+   membership). The turn's origin follows the author of the STORED trigger
+   post: an owner post is `owner_input` (owner thread knowledge scope,
+   owner-control MCP, like a `talk()` chat); another Buddy's post is
+   `buddy_post` (same seat audience, so the session continues, and the same
+   Buddy tools, but no owner controls and no `unleashd_owner` MCP). Until
+   2026-09-25 (B1) every seat turn was `owner_input`, so a follow-up gated on a
+   Buddy's post held `configure_team` and owner document writes. Guard:
+   `server/test/channel-seat-continuity.test.ts`.
 
    History: seats existed until 46b4c0c (2026-09-24), which switched to a new
    conversation per mention, blaming conv 0f1dfb23's `out_of_tokens` on a
