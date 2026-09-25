@@ -42,6 +42,8 @@ mid-startup, and the history loading twice.
 | e1752df | Startup cost rules in docs/architecture.md; tripwire tests; drop boot chmod, unused loader options |
 | f4a8984 | One-process dev runtime (tools/dev-runtime.mjs): compilers, Vite, backend runner in the supervisor; 18 → ~5 processes; backend/Vite start after first compile |
 | f530d3a | Prune session-cache records for deleted sources (after complete discovery only); recovery dispatches only pending first messages |
+| e9821bf | A discovery readdir/stat error marks the provider failed instead of reading as empty; a failed poll keeps its baseline (was: full re-parse of that provider next poll) |
+| 21f48fe | (subagent) Browser opens once per launch: tests/agent-started servers never open; Vite restarts do not reopen |
 
 Measured on an APFS clone of the real data dir (recipe in memory
 `unleashd-profile-startup-on-cloned-data`): barrier 67-102s → 14-20s at
