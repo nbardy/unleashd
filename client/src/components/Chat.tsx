@@ -41,6 +41,7 @@ import { useRestartRecovery } from '../hooks/useRestartRecovery';
 import { useSavedPrompts } from '../hooks/useSavedPrompts';
 import { useTurnDiagnostics } from '../hooks/useTurnDiagnostics';
 import { RestartRecoveryPrompt } from '../restart/RestartRecoveryPrompt';
+import { SwarmConvoPrefix } from '../swarm';
 import { copyText } from '../utils/clipboard';
 import { buildThreadTranscript } from '../utils/conversation-transcript';
 import { buildUnifiedSubAgents } from '../utils/subAgents';
@@ -51,7 +52,6 @@ import { ConversationConfigPicker } from './ConversationConfigPicker';
 import { PromptPalette } from './PromptPalette';
 import { ResumeThreadWidget } from './ResumeThreadWidget';
 import { SubAgentPanel } from './SubAgentPanel';
-import { SwarmConvoPrefix } from '../swarm';
 import { TurnStatus } from './TurnStatus';
 import { VirtualizedMessageList } from './VirtualizedMessageList';
 import {

@@ -15,13 +15,13 @@ import {
   swarmWorkersForProjectAtomFamily,
 } from '../atoms/conversations';
 import { markMessagesSeen } from '../atoms/ui';
+import { VirtualizedMessageList } from '../components/VirtualizedMessageList';
 import { useConversationBodies } from '../hooks/useConversationBodies';
 import { usePolledFetch } from '../hooks/usePolledFetch';
-import { useSwarmRuntimeSnapshots } from './useSwarmRuntimeSnapshots';
 import { isRowRunning, rowWorker } from '../utils/conversation-row';
-import { getWorkerVisibilitySummary } from './swarmWorkerVisibility';
 import { formatTimeAgo } from '../utils/time';
-import { VirtualizedMessageList } from '../components/VirtualizedMessageList';
+import { getWorkerVisibilitySummary } from './swarmWorkerVisibility';
+import { useSwarmRuntimeSnapshots } from './useSwarmRuntimeSnapshots';
 import './SwarmDetail.css';
 import { useTimeTick } from '../hooks/useTimeTick';
 import { shortenHomePath } from '../utils/directories';

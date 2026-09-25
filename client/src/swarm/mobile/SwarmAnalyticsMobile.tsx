@@ -3,8 +3,10 @@ import { useAtomValue } from 'jotai';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { swarmWorkersByProjectAtom } from '../../atoms/conversations';
+import { EmptyState } from '../../mobile/components/EmptyState';
 import { rowWorker } from '../../utils/conversation-row';
 import { getProjectColor } from '../../utils/projectColors';
+import { formatDuration, formatTimeAgo } from '../../utils/time';
 import {
   type IterationSpan,
   type RunData,
@@ -12,8 +14,6 @@ import {
   computeSwarmStats,
 } from '../swarmAnalyticsParsers';
 import { getProjectName } from '../swarmUtils';
-import { formatDuration, formatTimeAgo } from '../../utils/time';
-import { EmptyState } from '../../mobile/components/EmptyState';
 import './mobile-swarm.css';
 
 /**

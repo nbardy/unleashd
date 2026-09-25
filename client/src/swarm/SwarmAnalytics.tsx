@@ -7,6 +7,7 @@ import { swarmWorkersByProjectAtom } from '../atoms/conversations';
 import { resource, usePolledFetch } from '../hooks/usePolledFetch';
 import { rowWorker } from '../utils/conversation-row';
 import { getProjectColor } from '../utils/projectColors';
+import { formatDuration, formatTimeAgo } from '../utils/time';
 import {
   type IterationSpan,
   type RunData,
@@ -14,7 +15,6 @@ import {
   computeSwarmStats,
 } from './swarmAnalyticsParsers';
 import { getProjectName } from './swarmUtils';
-import { formatDuration, formatTimeAgo } from '../utils/time';
 import './SwarmAnalytics.css';
 
 // Stable empty fallback (AGENTS.md: stable fallbacks are module constants).

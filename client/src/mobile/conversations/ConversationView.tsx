@@ -31,11 +31,11 @@ import { useCopyAction } from '../../hooks/useCopyAction';
 import { useProviderCatalog } from '../../hooks/useProviderCatalog';
 import { useSavedPrompts } from '../../hooks/useSavedPrompts';
 import { useTurnDiagnostics } from '../../hooks/useTurnDiagnostics';
+import { MobileSwarmPrefix } from '../../swarm';
 import { mobileConversationRouteState } from '../../utils/conversation-route-state';
 import { type OpenConversation, buildThreadTranscript } from '../../utils/conversation-transcript';
 import { shortenHomePath } from '../../utils/directories';
 import { buildUnifiedSubAgents } from '../../utils/subAgents';
-import { MobileSwarmPrefix } from '../../swarm';
 import {
   shouldPresentTurnAttempt,
   shouldShowTypingIndicator,

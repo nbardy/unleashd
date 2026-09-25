@@ -7,13 +7,13 @@ import {
   conversationAtomFamily,
   swarmWorkersForProjectAtomFamily,
 } from '../../atoms/conversations';
-import { useSwarmRuntimeSnapshots } from '../useSwarmRuntimeSnapshots';
 import { useTimeTick } from '../../hooks/useTimeTick';
 import { mobileConversationRouteState } from '../../utils/conversation-route-state';
 import { isRowRunning, rowWorker } from '../../utils/conversation-row';
 import { shortenHomePath } from '../../utils/directories';
-import { getWorkerVisibilitySummary } from '../swarmWorkerVisibility';
 import { formatTimeAgo } from '../../utils/time';
+import { getWorkerVisibilitySummary } from '../swarmWorkerVisibility';
+import { useSwarmRuntimeSnapshots } from '../useSwarmRuntimeSnapshots';
 import './mobile-swarm.css';
 
 // =============================================================================
