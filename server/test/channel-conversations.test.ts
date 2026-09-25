@@ -893,6 +893,8 @@ test('the reply gate accepts only a bare <yes>/<no> and stops a rambling run', a
   assert.deepEqual(parseGateVerdict(' <yes>\n'), { kind: 'respond' });
   assert.deepEqual(parseGateVerdict('<no>'), { kind: 'pass' });
   assert.equal(parseGateVerdict('<yes> because I own it').kind, 'unparseable');
+  assert.deepEqual(parseGateVerdict(''), { kind: 'failed', reason: 'no answer' });
+  assert.deepEqual(parseGateVerdict('  \n'), { kind: 'failed', reason: 'no answer' });
 
   let stopped = false;
   const gate = createCliReplyGate({
@@ -924,6 +926,38 @@ test('the reply gate accepts only a bare <yes>/<no> and stops a rambling run', a
   });
   assert.equal(stopped, true);
   assert.equal(verdict.kind, 'unparseable');
+});
+
+// 2026-09-25: Claude reports a session-limit 429 as a successful result with
+// no text deltas. The gate used to log that as an empty unparseable answer
+// and leave the owner's follow-up unanswered.
+test('a reply gate that ends out of tokens fails with the provider message', async () => {
+  const gate = createCliReplyGate({
+    resolveExecution: async () => ({ provider: 'claude', modelId: 'claude-opus-5-5' }),
+    execute: (() => {
+      async function* events() {
+        yield {
+          type: 'out_of_tokens',
+          message: "Out of tokens: You've hit your session limit · resets 2am (Asia/Makassar)",
+        };
+        yield { type: 'turn.complete', reason: 'out_of_tokens' };
+      }
+      return () => ({
+        events: events(),
+        completed: Promise.resolve({ reason: 'out_of_tokens', sessionId: 'gate-session' }),
+        stop: () => undefined,
+      });
+    })() as never,
+  });
+  const verdict = await gate({
+    config: configFromProviderPreferences({ provider: 'claude' }),
+    prompt: 'p',
+  });
+  assert.equal(verdict.kind, 'failed');
+  if (verdict.kind === 'failed') {
+    assert.match(verdict.reason, /session limit/);
+    assert.match(verdict.reason, /out_of_tokens/);
+  }
 });
 
 // Owner direction 2026-09-24: a reply over the Buddy's run limit (5, shared
