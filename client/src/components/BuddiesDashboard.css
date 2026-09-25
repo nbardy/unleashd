@@ -13,7 +13,7 @@
 
 .buddies-loading,
 .buddies-error {
-  padding: 24px;
+  padding: var(--sp-9);
   color: var(--text-secondary);
 }
 
@@ -31,7 +31,7 @@
   display: flex;
   align-items: end;
   justify-content: space-between;
-  gap: 24px;
+  gap: var(--sp-9);
   margin-bottom: 22px;
 }
 
@@ -52,11 +52,11 @@
 .buddies-directory-header p {
   margin: 0;
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: var(--fs-3);
 }
 
 .buddies-directory-count {
-  padding-bottom: 4px;
+  padding-bottom: var(--sp-2);
   color: var(--text-muted);
   font: 500 10px / 1 var(--font-mono);
   letter-spacing: 0.06em;
@@ -72,7 +72,7 @@
 .buddies-directory-search {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: var(--sp-4);
   min-width: min(280px, 34vw);
   padding: 9px 11px;
   border: 1px solid var(--border-subtle);
@@ -115,7 +115,7 @@
 .buddies-directory-empty {
   display: block;
   margin: 0 0 16px;
-  padding: 24px;
+  padding: var(--sp-9);
   border: 1px dashed var(--border-subtle);
   color: var(--text-secondary);
   background: var(--bg-card);
@@ -125,7 +125,7 @@
 .buddy-card-grid {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 16px;
+  gap: var(--sp-7);
 }
 
 .buddy-directory-card {
@@ -280,9 +280,9 @@
   position: relative;
   z-index: 2;
   display: block;
-  padding: 0 20px 20px;
+  padding: 0 var(--sp-8) var(--sp-8);
   color: var(--text-bright);
-  font-size: clamp(18px, 1.6vw, 23px);
+  font-size: clamp(var(--fs-7), 1.6vw, 23px);
   font-weight: 700;
   letter-spacing: -0.025em;
   line-height: 1.1;
@@ -296,14 +296,14 @@
   bottom: 14px;
   left: 14px;
   display: grid;
-  gap: 12px;
+  gap: var(--sp-6);
   padding: 15px;
   border: 1px solid color-mix(in srgb, var(--text-bright) 18%, transparent);
   border-radius: var(--ui-radius);
   color: var(--text-primary);
   background: color-mix(in srgb, var(--bg-popup) 88%, transparent);
   box-shadow: 0 14px 34px color-mix(in srgb, var(--pole-bg-deep) 28%, transparent);
-  font-size: 11px;
+  font-size: var(--fs-2);
   line-height: 1.45;
   opacity: 0;
   transform: translateY(12px);
@@ -326,7 +326,7 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 6px 8px;
+  gap: var(--sp-3) var(--sp-4);
   color: var(--text-muted);
   font: 500 9px / 1.2 var(--font-mono);
 }
@@ -344,7 +344,7 @@
 
 .buddy-card-hover-action {
   color: var(--ai-bright);
-  font-size: 10px;
+  font-size: var(--fs-1);
   font-weight: 700;
 }
 
@@ -394,7 +394,7 @@
 }
 
 .buddy-presence {
-  padding: 3px 8px;
+  padding: 3px var(--sp-4);
   border-radius: var(--ui-radius);
   color: var(--text-secondary);
   background: var(--bg-panel);
@@ -415,20 +415,20 @@
   }
 
   .buddies-directory-content {
-    padding: 24px 18px 40px;
+    padding: var(--sp-9) 18px var(--sp-11);
   }
 
   .buddies-directory-header {
     align-items: start;
     flex-direction: column;
-    gap: 10px;
+    gap: var(--sp-5);
   }
 
   .buddies-directory-tools {
     width: 100%;
     align-items: stretch;
     flex-direction: column-reverse;
-    gap: 10px;
+    gap: var(--sp-5);
   }
 
   .buddies-directory-search {
@@ -441,7 +441,7 @@
 }
 
 .buddies-hero {
-  padding: 18px 32px 0;
+  padding: 18px var(--sp-10) 0;
   background: color-mix(in oklch, var(--bg-card) 86%, transparent);
 }
 
@@ -503,7 +503,7 @@
 }
 
 .buddy-identity-title > span {
-  padding: 2px 5px;
+  padding: var(--sp-1) 5px;
   color: var(--ai-bright);
   background: var(--ai-glow);
   font-size: 8px;
@@ -526,7 +526,7 @@
 .buddy-identity p {
   margin: 2px 0 0;
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: var(--fs-3);
 }
 
 .buddies-content {
@@ -546,7 +546,7 @@
   }
 
   .buddies-directory-content {
-    padding: 16px;
+    padding: var(--sp-7);
   }
 
   .buddy-directory-card {

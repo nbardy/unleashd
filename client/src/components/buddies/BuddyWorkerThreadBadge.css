@@ -1,11 +1,11 @@
 .buddy-worker-thread-badge {
   display: inline-flex;
   align-items: center;
-  padding: 3px 8px;
+  padding: 3px var(--sp-4);
   margin-inline-start: 6px;
   border: 1px solid var(--border-subtle);
   border-radius: var(--ui-radius);
-  font-size: 12px;
+  font-size: var(--fs-3);
   line-height: 1.5;
   color: var(--text-secondary);
   text-decoration: none;

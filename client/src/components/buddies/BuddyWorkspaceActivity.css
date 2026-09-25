@@ -1,7 +1,7 @@
 .buddy-workspace-page {
   width: min(1040px, calc(100% - 48px));
   margin: 0 auto;
-  padding: 32px 0 56px;
+  padding: var(--sp-10) 0 56px;
 }
 
 .buddy-workspace-header {
@@ -22,7 +22,7 @@
   display: flex;
   align-items: flex-end;
   justify-content: space-between;
-  gap: 24px;
+  gap: var(--sp-9);
   margin-top: 20px;
   padding-bottom: 18px;
   border-bottom: 1px solid var(--border-subtle);
@@ -39,7 +39,7 @@
 .buddy-workspace-heading-row h1 {
   margin: 0;
   color: var(--text-emphasis);
-  font-size: 24px;
+  font-size: var(--fs-8);
   line-height: 1.2;
 }
 
@@ -72,7 +72,7 @@
 
 .buddy-workspace-members {
   display: grid;
-  gap: 10px;
+  gap: var(--sp-5);
 }
 
 .buddy-workspace-member {
@@ -87,7 +87,7 @@
   align-items: center;
   gap: 11px;
   min-height: 58px;
-  padding: 10px 14px;
+  padding: var(--sp-5) 14px;
 }
 
 .buddy-workspace-avatar {
@@ -112,7 +112,7 @@
 
 .buddy-workspace-identity a {
   color: var(--text-primary);
-  font-size: 13px;
+  font-size: var(--fs-4);
   font-weight: 600;
   text-decoration: none;
   overflow: hidden;
@@ -182,7 +182,7 @@ a.buddy-workspace-job:hover {
   text-overflow: ellipsis;
   white-space: nowrap;
   color: var(--text-primary);
-  font-size: 12px;
+  font-size: var(--fs-3);
 }
 
 .buddy-workspace-job-meta {
@@ -196,7 +196,7 @@ a.buddy-workspace-job:hover {
   margin: 0;
   padding: 13px 14px;
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: var(--fs-3);
 }
 
 .buddy-workspace-state {
@@ -220,7 +220,7 @@ a.buddy-workspace-job:hover {
 @media (max-width: 768px) {
   .buddy-workspace-page {
     width: auto;
-    padding: 20px 14px 40px;
+    padding: var(--sp-8) 14px var(--sp-11);
   }
 
   .buddy-workspace-heading-row {
@@ -240,7 +240,7 @@ a.buddy-workspace-job:hover {
 
 .buddy-workspace-channels-open {
   display: inline-block;
-  padding: 7px 12px;
+  padding: 7px var(--sp-6);
   border: 1px solid var(--border-subtle);
   border-radius: var(--ui-radius);
   color: var(--text-primary);

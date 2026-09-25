@@ -6,10 +6,10 @@
 
 .buddy-soul-conflict__region {
   display: grid;
-  gap: 12px;
+  gap: var(--sp-6);
   min-width: 0;
   margin: 0;
-  padding: 12px;
+  padding: var(--sp-6);
   border: 1px solid var(--border-color);
   border-radius: var(--ui-radius);
 }
@@ -17,13 +17,13 @@
 .buddy-soul-conflict__versions {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(min(100%, 240px), 1fr));
-  gap: 12px;
+  gap: var(--sp-6);
 }
 
 .buddy-soul-conflict__versions > div,
 .buddy-soul-conflict label {
   display: grid;
-  gap: 8px;
+  gap: var(--sp-4);
   min-width: 0;
 }
 
@@ -46,5 +46,5 @@
 .buddy-soul-conflict__actions {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: var(--sp-4);
 }
