@@ -300,10 +300,10 @@ function DayRow({ label }: { label: string }) {
 }
 
 // Slack's "New messages" line, above the first post the owner had not read
-// when they opened the channel (T22).
+// when they opened the channel (T22). The day divider's rule, in red.
 function NewMessagesRow() {
   return (
-    <li className="channel-browser-new-messages" aria-label="New messages">
+    <li className="channel-browser-day channel-browser-new-messages" aria-label="New messages">
       <span>New messages</span>
     </li>
   );

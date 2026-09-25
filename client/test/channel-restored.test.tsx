@@ -99,3 +99,32 @@ test('channel rows show reply counts and the last reply time', async () => {
   assert.match(rowOf(html, 'single'), /<strong>1 reply<\/strong>/);
   assert.doesNotMatch(rowOf(html, 'quiet'), /channel-browser-thread-summary/);
 });
+
+// Feature 2: the inbox's read cursor (`lastReadOrd`) places "New messages"
+// above the oldest post someone else wrote after it, and bolds the threads
+// whose newest reply by someone else landed after it. The owner's own posts
+// and replies never count as new.
+test('the New messages line and bold threads follow the read cursor', async () => {
+  const read = post('read', 1);
+  const mark = post('mark', 2);
+  const mine = post('mine', 3, { author: { kind: 'owner' } });
+  const fresh = post('fresh', 4);
+  const newest = post('newest', 5);
+  const html = await renderChannel({
+    ws: 'ws-unread',
+    entry: { unread: 2, lastReadOrd: mark.ord },
+    posts: [newest, fresh, mine, mark, read],
+    threads: [
+      stat(read, 2, post('from-lead', 10, { rootId: 'read' })),
+      stat(mark, 1, post('from-me', 11, { rootId: 'mark', author: { kind: 'owner' } })),
+      stat(mine, 1, post('seen', 1, { rootId: 'mine' })),
+    ],
+  });
+  assert.equal(html.match(/aria-label="New messages"/g)?.length, 1);
+  const line = html.indexOf('aria-label="New messages"');
+  assert.ok(html.indexOf('data-post-id="mine"') < line, 'the owner post after the mark is not new');
+  assert.ok(line < html.indexOf('data-post-id="fresh"'), 'the line sits above the first new post');
+  assert.match(rowOf(html, 'read'), /data-unread="true"/);
+  assert.doesNotMatch(rowOf(html, 'mark'), /data-unread/);
+  assert.doesNotMatch(rowOf(html, 'mine'), /data-unread/);
+});

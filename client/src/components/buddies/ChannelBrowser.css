@@ -6,7 +6,6 @@
   --channel-header-height: 60px;
   display: grid;
   grid-template-columns: var(--channel-rail-width) minmax(0, 1fr);
-  height: 100vh;
   height: 100dvh;
   background: var(--bg-base);
   color: var(--text-primary);
@@ -97,14 +96,6 @@
   box-shadow: 0 12px 32px rgb(0 0 0 / 28%);
 }
 
-.channel-browser-switcher-menu ul {
-  display: grid;
-  gap: 1px;
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
 .channel-browser-switcher-menu a {
   display: flex;
   align-items: center;
@@ -168,6 +159,7 @@
   font-size: 13px;
 }
 
+.channel-browser-switcher-menu ul,
 .channel-browser-channels,
 .channel-browser-buddies {
   display: grid;
@@ -272,13 +264,6 @@
 }
 
 /* A DM open inside the channels view: the ordinary chat view fills the pane. */
-.channel-browser-dm {
-  display: flex;
-  flex: 1;
-  min-width: 0;
-  min-height: 0;
-}
-
 .channel-browser-pane {
   display: flex;
   flex: 1;
@@ -295,11 +280,6 @@
   min-height: var(--channel-header-height);
   padding: 10px 24px;
   border-bottom: 1px solid var(--border-subtle);
-}
-
-.channel-browser-pane-title {
-  flex: 1;
-  min-width: 0;
 }
 
 .channel-browser-pane-title h2 {
@@ -397,6 +377,16 @@
   color: var(--text-secondary);
   font-size: 12px;
   font-weight: 600;
+}
+
+.channel-browser-new-messages {
+  position: relative;
+}
+
+.channel-browser-new-messages::before,
+.channel-browser-new-messages span {
+  border-color: var(--danger-bright);
+  color: var(--danger-bright);
 }
 
 .channel-browser-message {
@@ -520,6 +510,7 @@ a.channel-browser-instance:hover {
   align-items: center;
 }
 
+.channel-browser-pane-title,
 .channel-browser-buddy-link {
   flex: 1;
   min-width: 0;
@@ -697,6 +688,7 @@ a.channel-browser-buddy-done {
 
 /* ── Channel + thread panes ───────────────────────────────────────────── */
 
+.channel-browser-dm,
 .channel-browser-panes {
   display: flex;
   flex: 1;
@@ -748,7 +740,8 @@ a.channel-browser-buddy-done {
 }
 
 .channel-browser-message-action:hover,
-.channel-browser-header-action:hover {
+.channel-browser-header-action:hover,
+.channel-thread-header button:hover {
   background: color-mix(in srgb, var(--text-emphasis) 7%, transparent);
   color: var(--text-bright);
 }
@@ -815,6 +808,18 @@ a.channel-browser-buddy-done {
   background: var(--bg-base);
 }
 
+.channel-browser-thread-summary button[data-unread] strong {
+  font-weight: 800;
+}
+
+.channel-browser-thread-unread {
+  align-self: center;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--theme-user);
+}
+
 .channel-browser-replying {
   display: inline-flex;
   align-items: center;
@@ -865,11 +870,6 @@ a.channel-browser-buddy-done {
   background: transparent;
   color: var(--text-muted);
   cursor: pointer;
-}
-
-.channel-thread-header button:hover {
-  background: color-mix(in srgb, var(--text-emphasis) 7%, transparent);
-  color: var(--text-bright);
 }
 
 .channel-thread .channel-browser-message {
