@@ -5,6 +5,7 @@
 //! A `Request` lives in a direct channel. The other members owe the answer, and each buddy among
 //! them gets a `Post` run. The answer is an ordinary post (`reply_to_id` = the request, in its
 //! thread). `answer` inserts it, flips the request to answered and queues the `Reply` run back to
+//! Pattern: one-write-path (docs/patterns.md#one-write-path)
 //! a buddy author, all in one transaction.
 
 use crate::error::{CoreError, Result};

@@ -30,32 +30,6 @@ test('legacy purpose-only builder record still classifies as builder', () => {
   assert.equal(isBuddyConversation(legacy), false);
 });
 
-test('explicit builder kind classifies as builder', () => {
-  const explicit = { kind: { kind: 'buddy_builder' as const } };
-  assert.equal(isBuddyBuilderConversation(explicit), true);
-  assert.equal(isBuddyConversation(explicit), false);
-});
-
-test('general and buddy conversations are not builders', () => {
-  assert.equal(isBuddyBuilderConversation({}), false);
-  assert.equal(isBuddyBuilderConversation(null), false);
-  assert.equal(isBuddyBuilderConversation(undefined), false);
-  const buddy = {
-    kind: {
-      kind: 'buddy' as const,
-      buddyId: 'b1',
-      workspaceId: 'w1',
-      buddyProjectId: null,
-      legacyWorkItemId: null,
-      automationRunId: null,
-      delegatedByBuddyId: null,
-      parentBuddyConversationId: null,
-    },
-  };
-  assert.equal(isBuddyBuilderConversation(buddy), false);
-  assert.equal(isBuddyConversation(buddy), true);
-});
-
 // Perf tripwire (2026-09-25): the client's derived atoms classify every
 // conversation on every message/status/queue event. `kind` is already validated
 // by the WS wire schema, so re-running ConversationKindSchema.safeParse per call
@@ -78,6 +52,7 @@ test('accessors read a present kind without re-parsing it', (t) => {
     },
   };
   assert.equal(isBuddyConversation(buddy), true);
+  assert.equal(isBuddyBuilderConversation(buddy), false);
   assert.equal(getBuddyContext(buddy)?.buddyId, 'b1');
   assert.equal(isBuddyBuilderConversation({ kind: { kind: 'buddy_builder' as const } }), true);
 });

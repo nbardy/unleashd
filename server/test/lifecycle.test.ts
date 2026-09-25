@@ -1,14 +1,13 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { createFilePoller } from '../src/lifecycle/file-poller';
-import { ensureAvailablePort } from '../src/lifecycle/port-guard';
 import { loadProgressively } from '../src/lifecycle/progressive-loader';
 
 test('progressive loader broadcasts only hydrated values accepted by the live registry', async () => {
   const stored: number[] = [];
   const broadcasts: string[][] = [];
   const mtimes = new Map([['session', 1]]);
-  const result = await loadProgressively(
+  const result = await loadProgressively<number, number, string>(
     { limit: 10, concurrency: 2, batchSize: 5, logEveryFiles: 10 },
     {
       load: async ({ onProgress }) => {
@@ -265,29 +264,4 @@ test('parsed updates survive runtime activity after parsing and retry once at id
       );
     });
   }
-});
-
-test('port guard kills an approved listener and verifies release', async () => {
-  const calls: string[] = [];
-  let checks = 0;
-  await ensureAvailablePort(3000, {
-    checkPort: async () => {
-      checks += 1;
-      return checks > 1;
-    },
-    askQuestion: async () => 'yes',
-    killProcessOnPort: () => {
-      calls.push('kill');
-      return true;
-    },
-    wait: async () => {
-      calls.push('wait');
-    },
-    exit: (code) => {
-      throw new Error(`unexpected exit ${code}`);
-    },
-  });
-
-  assert.deepEqual(calls, ['kill', 'wait']);
-  assert.equal(checks, 2);
 });

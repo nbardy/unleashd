@@ -7,8 +7,10 @@ type Status = 'connecting' | 'connected' | 'disconnected';
 export function useWebSocket(url: string, onMessage: (data: ServerMessage) => void) {
   const wsRef = useRef<WebSocket | null>(null);
   const [status, setStatus] = useState<Status>('connecting');
-  const reconnectTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const initialConnectTimeout = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // window.setTimeout returns a number; ReturnType<typeof setTimeout> resolves to
+  // NodeJS.Timeout once @types/node is in scope (client/tsconfig.test.json).
+  const reconnectTimeout = useRef<number | null>(null);
+  const initialConnectTimeout = useRef<number | null>(null);
   const isMounted = useRef(true);
   const isIntentionalClose = useRef(false);
   // STABILITY FIX: Use ref for callback to avoid reconnecting when callback changes.

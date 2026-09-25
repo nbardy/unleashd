@@ -2,8 +2,6 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { BuddyMailingListPost } from '@unleashd/shared';
 import { Provider } from 'jotai';
-// biome-ignore lint/correctness/noUnusedImports: tsx's test transform uses the classic JSX runtime.
-import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { outboxDrop, outboxSending, outboxSent } from '../src/atoms/channel-outbox';
 import { jotaiStore } from '../src/atoms/store';

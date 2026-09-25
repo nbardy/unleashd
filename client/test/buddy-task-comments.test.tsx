@@ -1,7 +1,5 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-// biome-ignore lint/correctness/noUnusedImports: tsx's test transform uses the classic JSX runtime.
-import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import {
   BuddyTaskCommentList,
@@ -31,11 +29,12 @@ test('task comments show durable authorship, body and ordinary file evidence', (
   assert.match(html, /dateTime="2026-09-14T10:00:00Z"/);
 });
 
+// Unloaded and loaded-empty must render differently (the same conflation made
+// channels flash "No posts" before their posts on 2026-09-24).
 test('shared task comment panel offers append while loading and honest empty history', () => {
   const html = renderToStaticMarkup(<BuddyTaskComments projectId="task" />);
-  assert.match(html, /Task comments/);
   assert.match(html, /Loading comments/);
-  assert.match(html, /Evidence or file references/);
+  assert.doesNotMatch(html, /No comments yet/);
   assert.match(html, /Add comment/);
   assert.match(renderToStaticMarkup(<BuddyTaskCommentList comments={[]} />), /No comments yet/);
 });

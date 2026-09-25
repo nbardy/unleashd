@@ -71,6 +71,9 @@ export function taskPlan(task) {
           buildShared,
           pnpm('--filter', '@unleashd/server', 'typecheck'),
           pnpm('--filter', '@unleashd/client', 'exec', 'tsc', '-b'),
+          // Tests are typechecked here, not in `tsc -b` (which `vite build` also
+          // runs): a test-only type error must fail typecheck, never the build.
+          pnpm('--filter', '@unleashd/client', 'exec', 'tsc', '-p', 'tsconfig.test.json'),
           pnpm('--dir', 'vendor/agent-cli-tool', 'typecheck'),
         ],
         services: [],

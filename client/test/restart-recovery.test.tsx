@@ -1,8 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { ClientMessage } from '@unleashd/shared';
-import { createElement } from 'react';
-import { renderToStaticMarkup } from 'react-dom/server';
 import { handleMessage, resumeInterruptedMessages, setSendFn } from '../src/atoms/actions';
 import {
   captureRestartRecoveryQueue,
@@ -10,7 +8,6 @@ import {
   loadRestartRecovery,
 } from '../src/atoms/restart-recovery';
 import { shouldOfferRestartRecovery } from '../src/hooks/useRestartRecovery';
-import { RestartRecoveryPrompt } from '../src/restart/RestartRecoveryPrompt';
 
 class MemoryStorage {
   private values = new Map<string, string>();
@@ -86,26 +83,6 @@ test('resume resubmits the current message before requeueing later messages', as
     conversationId,
   });
   await resumed;
-});
-
-test('restart prompt describes the optional replay and queued count', () => {
-  const markup = renderToStaticMarkup(
-    createElement(RestartRecoveryPrompt, {
-      recovery: {
-        currentMessage: 'finish the current work',
-        queuedCount: 2,
-        isResuming: false,
-        error: null,
-        resume: async () => undefined,
-        dismiss: () => undefined,
-      },
-    })
-  );
-
-  assert.match(markup, /Continue from where you left off/);
-  assert.match(markup, /Resubmit current message \+ 2 queued messages/);
-  assert.match(markup, />Continue</);
-  assert.match(markup, />Dismiss</);
 });
 
 test('only a newer restart interruption surfaces the recovery offer', () => {

@@ -11,8 +11,8 @@
  * The two timestamp shapes below are both real: scanning 2,124 rollouts under
  * ~/.codex/sessions turned up an older `-024Z-` variant that a regex written
  * against the current shape alone silently fails to strip. That is the bug a
- * future narrowing of this pattern would reintroduce, and the reason this test
- * asserts on the rendered 8-char slice rather than just the id.
+ * future narrowing of this pattern would reintroduce. Asserting the full id
+ * also pins the 8-char slice UsagePanel renders.
  */
 
 import assert from 'node:assert/strict';
@@ -42,12 +42,4 @@ test('a bare <sessionId>.jsonl passes through unchanged', () => {
     codexSessionIdFromFilename('81d506e9-bf6a-4985-bdc0-f1793f3f6d09.jsonl'),
     '81d506e9-bf6a-4985-bdc0-f1793f3f6d09'
   );
-});
-
-test('the id UsagePanel renders identifies the session, not the word "rollout"', () => {
-  const rendered = codexSessionIdFromFilename(
-    'rollout-2026-09-16T11-22-44-01a0a83c-fc26-7ae0-acf0-25f77473fe75.jsonl'
-  ).slice(0, 8);
-  assert.equal(rendered, '01a0a83c');
-  assert.notEqual(rendered, 'rollout-');
 });

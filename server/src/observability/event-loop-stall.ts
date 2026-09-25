@@ -3,6 +3,7 @@ import type { ErrorJournal } from './error-journal';
 
 /**
  * Event-loop stall monitor: every pause of the only JS thread longer than
+ * Pattern: fix-guards (docs/patterns.md#fix-guards)
  * STALL_THRESHOLD_MS becomes an error-journal occurrence.
  *
  * Why: on 2026-09-25 an authed trivial 404 measured p50 2.5ms but p90 1.16s and
