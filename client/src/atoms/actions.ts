@@ -65,6 +65,11 @@ const transcriptRequests = new Map<string, Promise<void>>();
 // Bumped on every `hello`: a response started under an older socket epoch is
 // dropped instead of overwriting state the new epoch already delivered.
 let connectionEpoch = 0;
+// Bumped per id on every `rewritten` patch. A first load already in flight
+// (transcript `loading`) was read from the history the server just replaced;
+// without this it landed as `loaded` and, when the replaced history had the
+// same count, the open view never refetched it (final review 2026-09-26).
+const historyGeneration = new Map<string, number>();
 
 // =============================================================================
 // Reads (snapshots for event handlers; never a subscription)
@@ -166,6 +171,14 @@ async function readMessagesAfter(
   }
 }
 
+/** The whole history, tagged with the `rewritten` generation it was read under. */
+async function readCurrentHistory(
+  id: string
+): Promise<{ generation: number; epoch: number; messages: Message[] }> {
+  const generation = historyGeneration.get(id) ?? 0;
+  return { generation, ...(await readMessagesAfter(id, -1)) };
+}
+
 function dedupe(id: string, start: () => Promise<void>): Promise<void> {
   const existing = transcriptRequests.get(id);
   if (existing) return existing;
@@ -187,15 +200,24 @@ export function loadConversationDetails(conversationId: string): Promise<void> {
     const requestEpoch = connectionEpoch;
     if (!readLoaded(conversationId)) putTranscript(conversationId, { tag: 'loading' });
     try {
-      const [detail, body] = await Promise.all([
+      const [detail, first] = await Promise.all([
         fetchJson(
           `/api/conversations/${encodeURIComponent(conversationId)}`,
           ConversationDetailSchema
         ),
-        readMessagesAfter(conversationId, -1),
+        readCurrentHistory(conversationId),
       ]);
+      let body = first;
+      while (body.generation !== (historyGeneration.get(conversationId) ?? 0)) {
+        body = await readCurrentHistory(conversationId);
+      }
       if (requestEpoch !== connectionEpoch || !readConversation(conversationId)) return;
-      putTranscript(conversationId, { tag: 'loaded', ...body, detail });
+      putTranscript(conversationId, {
+        tag: 'loaded',
+        epoch: body.epoch,
+        messages: body.messages,
+        detail,
+      });
     } catch (cause) {
       if (requestEpoch !== connectionEpoch) return;
       putTranscript(conversationId, {
@@ -463,6 +485,7 @@ function runChanged(id: string, run: ConversationRow['run']): void {
  * reloads it (useConversationBodies). The WS spine itself never fetches bodies.
  */
 function historyReplaced(id: string): void {
+  historyGeneration.set(id, (historyGeneration.get(id) ?? 0) + 1);
   if (!readLoaded(id)) return;
   putTranscript(id, { tag: 'absent' });
 }
