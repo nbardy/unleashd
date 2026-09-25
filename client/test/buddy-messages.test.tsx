@@ -3,6 +3,7 @@ import test from 'node:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 import {
   BuddyDirectPosts,
+  BuddyWaitingOn,
   PostAsBuddyForm,
   ownerDirectChannel,
 } from '../src/components/buddies/BuddyMessages';
@@ -82,6 +83,7 @@ test('DM posts read oldest first and only requests awaiting the owner offer an a
           request: { state: 'answered', answerId: 'a1' },
         }),
       ]}
+      threads={[]}
       awaitingOwner={new Set(['Can you approve the deploy?'])}
       names={{ ada: 'Ada' }}
       refresh={async () => {}}
@@ -124,4 +126,43 @@ test('the Messages tab can post to a public channel as the Buddy', () => {
   assert.match(html, /Post as Buddy/);
   assert.match(html, /#general/);
   assert.doesNotMatch(html, /dm-ada/);
+});
+
+// T11 dropped the DM thread view and the owner's "waiting on" list; the owner asked for both back.
+test('a DM post shows its thread as a reply count, and the owner sees what it waits on', () => {
+  const html = renderToStaticMarkup(
+    <BuddyDirectPosts
+      posts={[post('Status?', { author: { kind: 'owner' } }), post('Deploy done', {})]}
+      threads={[
+        {
+          rootId: 'Status?',
+          replies: 3,
+          lastReplyAt: '2026-09-20T05:00:00Z',
+          lastReplyOrd: 'z',
+          lastReplyAuthor: { kind: 'buddy', id: 'ada' },
+        },
+      ]}
+      awaitingOwner={new Set()}
+      names={{ ada: 'Ada' }}
+      refresh={async () => {}}
+    />
+  );
+  // Oldest first: the "Deploy done" row renders before the "Status?" row.
+  const [deployRow, statusRow] = html.split('Status?</p>');
+  assert.match(statusRow, /3 replies · last reply/);
+  assert.doesNotMatch(deployRow, /replies/);
+  assert.match(deployRow, /<summary>Reply<\/summary>/, 'a post without replies can start one');
+
+  const waiting = renderToStaticMarkup(
+    <BuddyWaitingOn
+      buddyName="Ada"
+      waitingOn={[
+        post('Second ask', { ord: '2', request: { state: 'awaiting' } }),
+        post('First ask', { ord: '1', request: { state: 'awaiting' } }),
+      ]}
+    />
+  );
+  assert.match(waiting, /Waiting on Ada/);
+  assert.ok(waiting.indexOf('First ask') < waiting.indexOf('Second ask'), 'oldest first');
+  assert.equal(renderToStaticMarkup(<BuddyWaitingOn buddyName="Ada" waitingOn={[]} />), '');
 });

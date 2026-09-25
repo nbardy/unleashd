@@ -2,7 +2,15 @@ import { useEffect, useState } from 'react';
 import { usePolledFetch } from '../../hooks/usePolledFetch';
 import { actorName } from './BuddyTaskComments';
 import { buddyApi, buddyWrite } from './api';
-import type { Actor, ChannelUnread, Inbox, Post, PostPage } from './types';
+import type {
+  Actor,
+  ChannelPage,
+  ChannelUnread,
+  Inbox,
+  Post,
+  ThreadPage,
+  ThreadStat,
+} from './types';
 import { ActionError, useBuddyAction } from './useBuddyAction';
 
 export const inboxUrl = (workspaceId: string): string =>
@@ -180,14 +188,153 @@ export function PostAsBuddyForm({
   );
 }
 
+const threadUrl = (rootId: string): string =>
+  `/api/buddies/posts/${encodeURIComponent(rootId)}/thread?limit=50`;
+
+/** One post's body, evidence and request label: the DM row and each thread reply. */
+function PostBody({ post, names }: { post: Post; names: Readonly<Record<string, string>> }) {
+  const label = REQUEST_LABEL[post.request.state];
+  return (
+    <>
+      <div className="buddy-post-list__meta">
+        <strong>{actorName(post.author, names)}</strong>
+        {label && <span className="buddy-dm__request">{label}</span>}
+        <time dateTime={post.createdAt}>{new Date(post.createdAt).toLocaleString()}</time>
+      </div>
+      <p className="buddy-post-list__body">{post.body}</p>
+      {post.evidence.length > 0 && (
+        <ul className="buddy-post-list__evidence">
+          {post.evidence.map((item) => (
+            <li key={item}>{item}</li>
+          ))}
+        </ul>
+      )}
+    </>
+  );
+}
+
+/** A DM thread's replies (oldest first) and the owner's reply form; read only while open. */
+function ThreadReplies({
+  root,
+  names,
+}: {
+  root: Post;
+  names: Readonly<Record<string, string>>;
+}) {
+  const page = usePolledFetch<ThreadPage>(threadUrl(root.id), 0);
+  const [body, setBody] = useState('');
+  const action = useBuddyAction(page.refetch);
+  return (
+    <>
+      {page.kind === 'failed' && (
+        <p className="buddy-panel__error" role="alert">
+          {page.error.message}
+        </p>
+      )}
+      {page.data && (
+        <ol className="buddy-post-list">
+          {[...page.data.posts].reverse().map((reply) => (
+            <li key={reply.id}>
+              <PostBody post={reply} names={names} />
+            </li>
+          ))}
+        </ol>
+      )}
+      <form
+        className="buddy-panel__form"
+        onSubmit={(event) => {
+          event.preventDefault();
+          void action
+            .run('reply', () =>
+              buddyWrite(
+                `/api/buddies/channels/${encodeURIComponent(root.channelId)}/posts`,
+                'POST',
+                { body, replyToId: root.id }
+              )
+            )
+            .then((ok) => ok && setBody(''));
+        }}
+      >
+        <textarea
+          aria-label="Reply"
+          rows={2}
+          placeholder="Reply in thread"
+          value={body}
+          onChange={(event) => setBody(event.target.value)}
+        />
+        <button type="submit" disabled={action.busy || !body.trim()}>
+          Reply
+        </button>
+        <ActionError state={action.state} />
+      </form>
+    </>
+  );
+}
+
+/** A post's thread, collapsed to its reply count and last reply until opened. */
+function DmThread({
+  root,
+  stat,
+  names,
+}: {
+  root: Post;
+  stat: ThreadStat | undefined;
+  names: Readonly<Record<string, string>>;
+}) {
+  const [open, setOpen] = useState(false);
+  return (
+    <details onToggle={(event) => setOpen(event.currentTarget.open)}>
+      <summary>
+        {stat === undefined
+          ? 'Reply'
+          : `${stat.replies} ${stat.replies === 1 ? 'reply' : 'replies'} · last reply ${new Date(stat.lastReplyAt).toLocaleString()}`}
+      </summary>
+      {open && <ThreadReplies root={root} names={names} />}
+    </details>
+  );
+}
+
+/**
+ * The owner's own requests to this Buddy that still await its answer (the inbox's `waitingOn`,
+ * narrowed to the DM), oldest first.
+ */
+export function BuddyWaitingOn({
+  waitingOn,
+  buddyName,
+}: {
+  waitingOn: readonly Post[];
+  buddyName: string;
+}) {
+  if (waitingOn.length === 0) return null;
+  return (
+    <>
+      <h3 className="buddy-panel__heading">Waiting on {buddyName}</h3>
+      <ol className="buddy-post-list" aria-label={`Waiting on ${buddyName}`}>
+        {[...waitingOn]
+          .sort((a, b) => a.ord.localeCompare(b.ord))
+          .map((post) => (
+            <li key={post.id}>
+              <div className="buddy-post-list__meta">
+                <time dateTime={post.createdAt}>{new Date(post.createdAt).toLocaleString()}</time>
+              </div>
+              <p className="buddy-post-list__body">{post.body}</p>
+            </li>
+          ))}
+      </ol>
+    </>
+  );
+}
+
 /** The DM's top-level posts, oldest first, with the owner's answer forms under open requests. */
 export function BuddyDirectPosts({
   posts,
+  threads,
   awaitingOwner,
   names,
   refresh,
 }: {
   posts: readonly Post[];
+  threads: readonly ThreadStat[];
   awaitingOwner: ReadonlySet<string>;
   names: Readonly<Record<string, string>>;
   refresh: () => Promise<void>;
@@ -195,44 +342,36 @@ export function BuddyDirectPosts({
   if (posts.length === 0) return <p className="buddy-panel__empty">No messages yet.</p>;
   return (
     <ol className="buddy-post-list">
-      {[...posts].reverse().map((post) => {
-        const label = REQUEST_LABEL[post.request.state];
-        return (
-          <li key={post.id} data-request={post.request.state}>
-            <div className="buddy-post-list__meta">
-              <strong>{actorName(post.author, names)}</strong>
-              {label && <span className="buddy-dm__request">{label}</span>}
-              <time dateTime={post.createdAt}>{new Date(post.createdAt).toLocaleString()}</time>
-            </div>
-            <p className="buddy-post-list__body">{post.body}</p>
-            {post.evidence.length > 0 && (
-              <ul className="buddy-post-list__evidence">
-                {post.evidence.map((item) => (
-                  <li key={item}>{item}</li>
-                ))}
-              </ul>
-            )}
-            {awaitingOwner.has(post.id) && <AnswerForm request={post} refresh={refresh} />}
-          </li>
-        );
-      })}
+      {[...posts].reverse().map((post) => (
+        <li key={post.id} data-request={post.request.state}>
+          <PostBody post={post} names={names} />
+          {awaitingOwner.has(post.id) && <AnswerForm request={post} refresh={refresh} />}
+          <DmThread
+            root={post}
+            stat={threads.find((stat) => stat.rootId === post.id)}
+            names={names}
+          />
+        </li>
+      ))}
     </ol>
   );
 }
 
 function DirectChannel({
   direct,
+  buddyName,
   inbox,
   names,
   refreshInbox,
 }: {
   direct: ChannelUnread;
+  buddyName: string;
   inbox: Inbox;
   names: Readonly<Record<string, string>>;
   refreshInbox: () => Promise<void>;
 }) {
   const channelId = direct.channel.id;
-  const page = usePolledFetch<PostPage>(channelPostsUrl(channelId), 30_000);
+  const page = usePolledFetch<ChannelPage>(channelPostsUrl(channelId), 30_000);
   const newest = page.data?.posts[0]?.id;
   // Seeing the DM reads it through the newest post rendered; a later post stays unread.
   useEffect(() => {
@@ -262,12 +401,19 @@ function DirectChannel({
     case 'ready':
     case 'stale':
       return (
-        <BuddyDirectPosts
-          posts={page.data.posts}
-          awaitingOwner={awaitingOwner}
-          names={names}
-          refresh={refresh}
-        />
+        <>
+          <BuddyWaitingOn
+            waitingOn={inbox.waitingOn.filter((post) => post.channelId === channelId)}
+            buddyName={buddyName}
+          />
+          <BuddyDirectPosts
+            posts={page.data.posts}
+            threads={page.data.threads}
+            awaitingOwner={awaitingOwner}
+            names={names}
+            refresh={refresh}
+          />
+        </>
       );
   }
 }
@@ -305,6 +451,7 @@ export function BuddyMessages({
       {inbox.data && direct && (
         <DirectChannel
           direct={direct}
+          buddyName={actorName({ kind: 'buddy', id: buddyId }, names)}
           inbox={inbox.data}
           names={names}
           refreshInbox={inbox.refetch}
