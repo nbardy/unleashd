@@ -272,15 +272,13 @@ body {
 
 .client-error-fallback {
   box-sizing: border-box;
-  display: flex;
   min-height: 100vh;
   max-width: 560px;
   margin: 0 auto;
-  padding: 48px 24px;
-  flex-direction: column;
+  padding: var(--sp-11) var(--sp-9);
   align-items: flex-start;
   justify-content: center;
-  gap: 12px;
+  gap: var(--sp-6);
 }
 
 .client-error-fallback h1,
@@ -309,7 +307,7 @@ body {
 
 .client-error-fallback-actions {
   display: flex;
-  gap: 8px;
+  gap: var(--sp-4);
 }
 
 .client-error-fallback-details {
@@ -321,12 +319,12 @@ body {
 .client-error-fallback-details summary {
   cursor: pointer;
   font-size: 0.85rem;
-  padding: 4px 0;
+  padding: var(--sp-2) 0;
 }
 
 .client-error-fallback-details pre {
   margin: 4px 0 0;
-  padding: 12px;
+  padding: var(--sp-6);
   max-height: 45vh;
   overflow: auto;
   border: 1px solid var(--border-subtle);

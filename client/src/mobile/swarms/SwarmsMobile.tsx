@@ -134,7 +134,7 @@ export function SwarmsMobile() {
           {projectCards.map((p) => (
             <MobileCardButton
               key={p.projectRoot}
-              className={`mobile-swarm-card ${p.runningCount > 0 ? 'mobile-swarm-card--running' : ''}`}
+              className={`mobile-swarm-card ui-stack ${p.runningCount > 0 ? 'mobile-swarm-card--running' : ''}`}
               onClick={() =>
                 navigate(`/workers/detail?project=${encodeURIComponent(p.projectRoot)}`)
               }
@@ -146,16 +146,16 @@ export function SwarmsMobile() {
                 </MobileBadge>
               </div>
               <MobilePath title={p.projectRoot}>{shortenHomePath(p.projectRoot)}</MobilePath>
-              <div className="mobile-swarm-card__stats">
+              <div className="mobile-swarm-card__stats ui-muted">
                 <span>
                   {p.workerCount} worker{p.workerCount !== 1 ? 's' : ''}
                 </span>
                 {p.runningCount > 0 && (
                   <span className="stat-running"> · {p.runningCount} running</span>
                 )}
-                {p.idleCount > 0 && <span className="stat-idle"> · {p.idleCount} idle</span>}
+                {p.idleCount > 0 && <span className="ui-muted"> · {p.idleCount} idle</span>}
                 {p.latestActivity && (
-                  <span className="stat-time"> · {formatTimeAgo(p.latestActivity)}</span>
+                  <span className="ui-muted"> · {formatTimeAgo(p.latestActivity)}</span>
                 )}
               </div>
             </MobileCardButton>

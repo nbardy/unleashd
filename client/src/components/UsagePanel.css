@@ -5,11 +5,9 @@
   right: 0;
   bottom: 0;
   background: color-mix(in srgb, black 60%, transparent);
-  display: flex;
-  align-items: center;
   justify-content: center;
   z-index: 2000;
-  padding: 20px;
+  padding: var(--sp-8);
 }
 
 .usage-panel {
@@ -20,52 +18,41 @@
   max-width: 520px;
   max-height: 80vh;
   overflow: hidden;
-  display: flex;
-  flex-direction: column;
   box-shadow: 0 20px 50px color-mix(in srgb, black 40%, transparent);
 }
 
 .usage-panel-header {
-  display: flex;
-  align-items: center;
   justify-content: space-between;
-  padding: 16px 20px;
+  padding: var(--sp-7) var(--sp-8);
   border-bottom: 1px solid var(--border-default);
 }
 
 .usage-panel-header h2 {
   margin: 0;
-  font-size: 18px;
+  font-size: var(--fs-7);
   font-weight: 600;
   color: var(--text-primary);
 }
 
 .usage-panel-body {
-  padding: 20px;
+  padding: var(--sp-8);
   overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
+  gap: var(--sp-7);
 }
 
 .usage-rate-group {
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
+  gap: var(--sp-5);
 }
 
 .usage-rate-provider {
-  font-size: 11px;
+  font-size: var(--fs-2);
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  color: var(--text-muted);
 }
 
 .usage-rate-gauge {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
+  gap: var(--sp-2);
 }
 
 .usage-rate-label-row {
@@ -75,13 +62,13 @@
 }
 
 .usage-rate-label {
-  font-size: 13px;
+  font-size: var(--fs-4);
   font-weight: 600;
   color: var(--text-primary);
 }
 
 .usage-rate-percent {
-  font-size: 13px;
+  font-size: var(--fs-4);
   font-weight: 500;
   color: var(--text-secondary);
   font-variant-numeric: tabular-nums;
@@ -101,8 +88,7 @@
 }
 
 .usage-rate-reset {
-  font-size: 11px;
-  color: var(--text-muted);
+  font-size: var(--fs-2);
 }
 
 /* =============================================================================
@@ -111,30 +97,27 @@
 
 .usage-stats-row {
   display: flex;
-  gap: 8px;
+  gap: var(--sp-4);
 }
 
 .usage-token-stat {
   flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  padding: 8px 10px;
+  gap: var(--sp-1);
+  padding: var(--sp-4) var(--sp-5);
   background: var(--bg-content);
   border-radius: var(--ui-radius);
   border: 1px solid var(--border-default);
 }
 
 .usage-token-value {
-  font-size: 15px;
+  font-size: var(--fs-5);
   font-weight: 600;
   color: var(--text-primary);
   font-variant-numeric: tabular-nums;
 }
 
 .usage-token-label {
-  font-size: 10px;
-  color: var(--text-muted);
+  font-size: var(--fs-1);
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
@@ -144,24 +127,19 @@
    ============================================================================= */
 
 .usage-range-row {
-  display: flex;
-  align-items: center;
   justify-content: space-between;
 }
 
 .usage-range-buttons {
   display: flex;
-  gap: 4px;
+  gap: var(--sp-2);
 }
 
 .usage-range-btn {
-  padding: 3px 8px;
-  font-size: 11px;
+  padding: var(--sp-1) var(--sp-4);
+  font-size: var(--fs-2);
   border: 1px solid var(--border-default);
-  border-radius: var(--ui-radius);
   background: transparent;
-  color: var(--text-muted);
-  cursor: pointer;
   transition: all 0.15s;
 }
 
@@ -181,16 +159,12 @@
    ============================================================================= */
 
 .usage-daily-list {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
+  gap: var(--sp-1);
 }
 
 .usage-daily-row {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 5px 12px;
+  gap: var(--sp-5);
+  padding: var(--sp-2) var(--sp-6);
   border-radius: var(--ui-radius);
 }
 
@@ -199,16 +173,14 @@
 }
 
 .usage-daily-date {
-  font-size: 12px;
-  color: var(--text-muted);
+  font-size: var(--fs-3);
   width: 40px;
   flex-shrink: 0;
   font-variant-numeric: tabular-nums;
 }
 
 .usage-daily-sessions {
-  font-size: 11px;
-  color: var(--text-muted);
+  font-size: var(--fs-2);
   width: 24px;
   text-align: right;
   flex-shrink: 0;
@@ -219,16 +191,15 @@
    ============================================================================= */
 
 .usage-breakdown-header {
-  font-size: 12px;
+  font-size: var(--fs-3);
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.05em;
-  color: var(--text-muted);
   margin: 0;
 }
 
 .usage-conv-cost {
-  font-size: 13px;
+  font-size: var(--fs-4);
   font-weight: 500;
   color: var(--text-primary);
   font-variant-numeric: tabular-nums;
@@ -256,8 +227,8 @@
 
 .usage-tab-row {
   display: flex;
-  gap: 4px;
-  padding: 2px;
+  gap: var(--sp-2);
+  padding: var(--sp-1);
   background: var(--bg-content);
   border-radius: var(--ui-radius);
   border: 1px solid var(--border-default);
@@ -265,14 +236,11 @@
 
 .usage-tab {
   flex: 1;
-  padding: 5px 8px;
-  font-size: 12px;
+  padding: var(--sp-2) var(--sp-4);
+  font-size: var(--fs-3);
   font-weight: 500;
   border: none;
-  border-radius: var(--ui-radius);
   background: transparent;
-  color: var(--text-muted);
-  cursor: pointer;
   transition: all 0.15s;
 }
 
@@ -291,23 +259,20 @@
    ============================================================================= */
 
 .usage-session-list {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
+  gap: var(--sp-1);
 }
 
 .usage-session-provider {
-  font-size: 10px;
+  font-size: var(--fs-1);
   font-weight: 700;
   width: 16px;
   text-align: center;
   flex-shrink: 0;
-  color: var(--text-muted);
   text-transform: uppercase;
 }
 
 .usage-session-id {
-  font-size: 11px;
+  font-size: var(--fs-2);
   font-family: var(--font-mono);
   color: var(--text-secondary);
   width: 60px;
@@ -316,7 +281,6 @@
 
 .usage-empty {
   text-align: center;
-  padding: 24px;
-  color: var(--text-muted);
-  font-size: 13px;
+  padding: var(--sp-9);
+  font-size: var(--fs-4);
 }

@@ -311,6 +311,14 @@ magenta). Run 1 and 3 back-to-back: live data drifts (sidebar badges,
   `.ui-choice` duplicates for exactly this reason (2026-09-25). Never import a
   route module statically from `App.tsx` — one static import pulls the route
   back into the entry chunk.
+  Sizes come from `ui/tokens.css` (`--fs-*`, `--sp-*`; gate G7 rejects a
+  literal px font-size/padding/gap anywhere else, and any breakpoint but
+  768px/340px). Repeated groups are classes in `ui/primitives.css`
+  (`ui-row`, `ui-stack`, `ui-truncate`, …), loaded before every view sheet,
+  so a view rule of equal specificity always overrides a primitive. When
+  moving a declaration from a view rule into a primitive, check sibling
+  classes on the same element: one that used to lose to the view rule by
+  load order now beats the primitive. G8 caps total CSS lines (ratchet).
 - Callbacks handed to a library are called with the library's arity, not
   yours. `handleFilesUpload` goes straight into react-dropzone's `onDrop`,
   which invokes it as `(acceptedFiles, fileRejections, event)` — a defaulted

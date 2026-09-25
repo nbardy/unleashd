@@ -10,7 +10,7 @@ export function ShellDesktop() {
   return (
     <div className="app">
       <Sidebar />
-      <div className="main-content">
+      <div className="main-content ui-stack">
         <div className="top-bar">
           <ConfigDropdown />
         </div>

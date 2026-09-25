@@ -367,14 +367,14 @@ export function Chat({ id }: { id: string }) {
 
   if (!conversation) {
     return (
-      <div className="chat-view">
-        <div className="chat-header">
-          <div className="chat-title">
+      <div className="chat-view ui-stack">
+        <div className="chat-header ui-row">
+          <div className="chat-title ui-row">
             {pendingCreation ? 'Creating conversation…' : 'Select a conversation'}
           </div>
         </div>
         <div className="messages-container">
-          <div className="empty-state">
+          <div className="empty-state ui-muted">
             {pendingCreation?.error
               ? `Creation failed: ${pendingCreation.error}`
               : pendingCreation
@@ -390,14 +390,16 @@ export function Chat({ id }: { id: string }) {
 
   if (!conversationDetailsLoaded) {
     return (
-      <div className="chat-view">
-        <div className="chat-header">
-          <div className="chat-title">
-            <span className="chat-dir">{dirDisplay}</span>
+      <div className="chat-view ui-stack">
+        <div className="chat-header ui-row">
+          <div className="chat-title ui-row">
+            <span className="chat-dir ui-truncate ui-muted">{dirDisplay}</span>
           </div>
         </div>
         <div className="messages-container">
-          <div className="empty-state">{detailLoadError ?? 'Loading conversation history…'}</div>
+          <div className="empty-state ui-muted">
+            {detailLoadError ?? 'Loading conversation history…'}
+          </div>
         </div>
       </div>
     );
@@ -497,22 +499,22 @@ export function Chat({ id }: { id: string }) {
   };
 
   return (
-    <div className={`chat-view${isDragActive ? ' drag-active' : ''}`} {...getRootProps()}>
+    <div className={`chat-view ui-stack${isDragActive ? ' drag-active' : ''}`} {...getRootProps()}>
       <input {...getInputProps()} />
       {isDragActive && (
-        <div className="dropzone-overlay">
-          <div className="dropzone-overlay-content">
+        <div className="dropzone-overlay ui-row">
+          <div className="dropzone-overlay-content ui-stack">
             <span className="dropzone-overlay-icon">&#x1F4CE;</span>
             <span className="dropzone-overlay-text">Drop files here</span>
           </div>
         </div>
       )}
-      <div className="chat-header">
-        <div className="chat-title">
-          <div className="header-config-controls">
+      <div className="chat-header ui-row">
+        <div className="chat-title ui-row">
+          <div className="header-config-controls ui-inline-row">
             <button
               type="button"
-              className={`chat-config-summary${headerConfigExpanded ? ' expanded' : ''}`}
+              className={`chat-config-summary ui-control ui-inline-row${headerConfigExpanded ? ' expanded' : ''}`}
               title={`${headerProvider?.displayName ?? conversation.provider} · ${headerModelLabel} · ${headerReasoningLabel}`}
               aria-expanded={headerConfigExpanded}
               aria-haspopup="dialog"
@@ -523,7 +525,9 @@ export function Chat({ id }: { id: string }) {
             >
               <span className="chat-config-summary-model">{headerModelShortLabel}</span>
               {headerEffortShortLabel && (
-                <span className="chat-config-summary-effort">{headerEffortShortLabel}</span>
+                <span className="chat-config-summary-effort ui-muted">
+                  {headerEffortShortLabel}
+                </span>
               )}
               <span className="model-picker-caret">&#x25BE;</span>
             </button>
@@ -541,15 +545,15 @@ export function Chat({ id }: { id: string }) {
               lean row; the summary button above only opens/closes this. */}
               <dialog
                 open
-                className="chat-config-modal"
+                className="chat-config-modal ui-stack"
                 aria-label="Conversation harness settings"
                 ref={configPickerRef}
               >
-                <div className="chat-config-modal__header">
+                <div className="chat-config-modal__header ui-row ui-muted">
                   <span>Conversation settings</span>
                   <button
                     type="button"
-                    className="chat-config-modal__close"
+                    className="chat-config-modal__close ui-control ui-muted"
                     aria-label="Close harness settings"
                     onClick={() => {
                       setHeaderConfigExpanded(false);
@@ -559,7 +563,7 @@ export function Chat({ id }: { id: string }) {
                   </button>
                 </div>
                 {!catalog && (
-                  <div className="chat-config-note" role="status">
+                  <div className="chat-config-note ui-muted" role="status">
                     {catalogIsLoading || !catalogError ? (
                       'Loading harness options…'
                     ) : (
@@ -573,12 +577,12 @@ export function Chat({ id }: { id: string }) {
                   </div>
                 )}
                 {catalog && !conversationConfig && (
-                  <p className="chat-config-note" role="status">
+                  <p className="chat-config-note ui-muted" role="status">
                     Conversation settings are unavailable. Reload the conversation to try again.
                   </p>
                 )}
                 {catalog && conversationConfig && (
-                  <div className="chat-config-options">
+                  <div className="chat-config-options ui-stack">
                     <ConversationConfigPicker
                       value={conversationConfig}
                       catalog={catalog}
@@ -612,16 +616,16 @@ export function Chat({ id }: { id: string }) {
                       }}
                     />
                     {!canChangeHarness && (
-                      <p className="chat-config-note">
+                      <p className="chat-config-note ui-muted">
                         Harness is fixed once a conversation starts.
                       </p>
                     )}
                   </div>
                 )}
 
-                {configIsSaving && <span className="config-save-state">Saving…</span>}
+                {configIsSaving && <span className="config-save-state ui-muted">Saving…</span>}
                 {pendingConfigCommand?.error && (
-                  <span className="config-save-state error" role="alert">
+                  <span className="config-save-state ui-muted error" role="alert">
                     {pendingConfigCommand.error}
                   </span>
                 )}
@@ -629,7 +633,7 @@ export function Chat({ id }: { id: string }) {
             </div>
           )}
           <Link
-            className="chat-dir"
+            className="chat-dir ui-truncate ui-muted"
             to={`/?folders=${encodeURIComponent(conversation.workingDirectory)}`}
           >
             {dirDisplay}
@@ -638,7 +642,7 @@ export function Chat({ id }: { id: string }) {
               threads alike. It used to live inside BuddyConvoHeader for buddy
               conversations, so the same number sat in two different places. */}
           <ContextBreakdownMeter conversationId={conversation.id} />
-          {timeAgo && <span className="chat-time-ago">{timeAgo}</span>}
+          {timeAgo && <span className="chat-time-ago ui-muted">{timeAgo}</span>}
           {conversation.resumedFromConversationId && (
             <ResumeThreadWidget
               sourceConversationId={conversation.resumedFromConversationId}
@@ -649,7 +653,7 @@ export function Chat({ id }: { id: string }) {
             <span className="buddy-helper-kicker buddy-helper-kicker--header">Buddy Builder</span>
           )}
         </div>
-        <div className="header-status">
+        <div className="header-status ui-row">
           <button
             type="button"
             className="fork-thread-btn"
@@ -695,13 +699,13 @@ export function Chat({ id }: { id: string }) {
               </svg>
             )}
           </button>
-          {!confirmed && <div className="ready-badge waiting">Starting...</div>}
+          {!confirmed && <div className="ready-badge ui-inline-row waiting">Starting...</div>}
           {pendingQueue.length > 0 && (
-            <div className="queue-badge" title="Messages waiting to send">
+            <div className="queue-badge ui-inline-row" title="Messages waiting to send">
               {pendingQueue.length} queued
               <button
                 type="button"
-                className="clear-queue-btn"
+                className="clear-queue-btn ui-control"
                 onClick={handleClearQueue}
                 title="Clear queue"
               >
@@ -763,7 +767,7 @@ export function Chat({ id }: { id: string }) {
               </div>
             </div>
           ) : (
-            <div className="empty-state">
+            <div className="empty-state ui-muted">
               {
                 confirmed
                   ? isBuddyBuilderConversation(conversation)
@@ -775,7 +779,7 @@ export function Chat({ id }: { id: string }) {
           )}
         </div>
       ) : (
-        <div className="messages-container-wrapper">
+        <div className="messages-container-wrapper ui-stack">
           <VirtualizedMessageList
             key={id}
             messageGroups={messageGroups}
@@ -802,7 +806,7 @@ export function Chat({ id }: { id: string }) {
           {showScrollToBottom && (
             <button
               type="button"
-              className="scroll-to-bottom-btn"
+              className="scroll-to-bottom-btn ui-row"
               onClick={() => scrollToBottomRef.current?.()}
               aria-label="Scroll to bottom"
             >
@@ -815,33 +819,33 @@ export function Chat({ id }: { id: string }) {
       <div className="input-container">
         {restartRecovery ? <RestartRecoveryPrompt recovery={restartRecovery} /> : null}
         {currentMessage && (
-          <div className="current-message-indicator">
+          <div className="current-message-indicator ui-row">
             <span className="current-message-label">Current message</span>
-            <span className="current-message-content">{currentMessage.content}</span>
+            <span className="current-message-content ui-truncate">{currentMessage.content}</span>
           </div>
         )}
 
         {pendingQueue.length > 0 && (
           <div className="queued-messages">
-            <div className="queued-messages-header">
+            <div className="queued-messages-header ui-row">
               <span className="queued-badge">Queued ({pendingQueue.length})</span>
               <button
                 type="button"
-                className="clear-queue-header-btn"
+                className="clear-queue-header-btn ui-control"
                 onClick={handleClearQueue}
                 title="Clear all queued messages"
               >
                 Clear All
               </button>
             </div>
-            <ul className="queued-messages-list">
+            <ul className="queued-messages-list ui-stack">
               {pendingQueue.map((qm, index) => (
                 <li key={qm.id} className="queued-message-item pending">
                   <span className="queued-message-content">{qm.content}</span>
                   <span className="queued-message-status">#{index + 1} in queue</span>
                   <button
                     type="button"
-                    className="queued-message-send-now"
+                    className="queued-message-send-now ui-control"
                     onClick={() => handleSendNow(qm.id)}
                     title="Send now — run this next, interrupting the active turn"
                   >
@@ -849,7 +853,7 @@ export function Chat({ id }: { id: string }) {
                   </button>
                   <button
                     type="button"
-                    className="queued-message-remove"
+                    className="queued-message-remove ui-control ui-row"
                     onClick={() => handleRemoveFromQueue(qm.id)}
                     title="Remove from queue"
                   >
@@ -862,7 +866,7 @@ export function Chat({ id }: { id: string }) {
         )}
 
         {uploadError && (
-          <div className="chat-upload-error" role="alert">
+          <div className="chat-upload-error ui-row" role="alert">
             <span className="chat-upload-error__text">{uploadError}</span>
             <button
               type="button"
@@ -878,7 +882,7 @@ export function Chat({ id }: { id: string }) {
         {pendingFiles.length > 0 && (
           <div className="pending-files">
             {pendingFiles.map((file) => (
-              <div key={file.absolutePath} className="pending-file-item">
+              <div key={file.absolutePath} className="pending-file-item ui-row ui-card">
                 {file.previewUrl ? (
                   <img
                     className="pending-file-thumb"
@@ -888,10 +892,10 @@ export function Chat({ id }: { id: string }) {
                 ) : (
                   <span className="pending-file-icon">&#x1F4C4;</span>
                 )}
-                <span className="pending-file-name">{file.originalName}</span>
+                <span className="pending-file-name ui-truncate">{file.originalName}</span>
                 <button
                   type="button"
-                  className="pending-file-remove"
+                  className="pending-file-remove ui-control ui-row"
                   onClick={() => removePendingFile(file.absolutePath)}
                   title="Remove file"
                 >
@@ -908,11 +912,11 @@ export function Chat({ id }: { id: string }) {
           </div>
         )}
 
-        <div className="input-wrapper">
+        <div className="input-wrapper ui-row">
           <textarea
             ref={textareaRef}
             data-conversation-input="true"
-            className={`message-input ${hasActiveTurn ? 'interrupt-mode' : ''}`}
+            className={`message-input ui-card ${hasActiveTurn ? 'interrupt-mode' : ''}`}
             defaultValue=""
             onInput={handleInput}
             onKeyDown={handleKeyDown}
@@ -931,12 +935,12 @@ export function Chat({ id }: { id: string }) {
           <div className="input-actions">
             <button
               type="button"
-              className="upload-btn"
+              className="upload-btn ui-control ui-row"
               onClick={openFilePicker}
               disabled={!canInput || isUploading}
               title="Attach files (drag & drop also supported)"
             >
-              <span className="upload-icon">&#x1F4CE;</span>
+              <span className="upload-icon ui-row">&#x1F4CE;</span>
             </button>
             <button
               type="button"
@@ -960,10 +964,10 @@ export function Chat({ id }: { id: string }) {
                 <polyline points="7 3 7 8 15 8" />
               </svg>
             </button>
-            <div className="send-action">
+            <div className="send-action ui-stack">
               <button
                 type="button"
-                className={`send-btn ${hasActiveTurn ? 'interrupt-mode' : ''}`}
+                className={`send-btn ui-control ${hasActiveTurn ? 'interrupt-mode' : ''}`}
                 onClick={hasActiveTurn ? handleInterrupt : handleSend}
                 disabled={!confirmed || !hasContent}
                 title={
@@ -975,7 +979,7 @@ export function Chat({ id }: { id: string }) {
                 {hasActiveTurn ? 'Interrupt' : 'Send'}
               </button>
               {isStreaming && hasContent && (
-                <div className="send-queue-hint" aria-live="polite">
+                <div className="send-queue-hint ui-muted" aria-live="polite">
                   Tab to queue
                 </div>
               )}

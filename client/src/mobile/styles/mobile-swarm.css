@@ -7,39 +7,31 @@
    ============================================================================= */
 
 .mobile-swarm-detail {
-  display: flex;
-  flex-direction: column;
-  gap: 12px;
-  padding: 16px 16px calc(20px + env(safe-area-inset-bottom));
+  gap: var(--sp-6);
+  padding: var(--sp-7) var(--sp-7) calc(var(--sp-8) + env(safe-area-inset-bottom));
 }
 
 .mobile-back-btn {
   align-self: flex-start;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
+  gap: var(--sp-3);
   min-height: 40px;
-  padding: 0 12px 0 8px;
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--ui-radius);
+  padding: 0 var(--sp-6) 0 var(--sp-4);
   background: var(--bg-raised-2);
   color: var(--text-primary);
   font: inherit;
-  font-size: 13px;
+  font-size: var(--fs-4);
   cursor: pointer;
 }
 
 .mobile-swarm-detail__header {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
+  gap: var(--sp-3);
   min-width: 0;
 }
 
 .mobile-swarm-detail__title {
   margin: 0;
   color: var(--text-primary);
-  font-size: 22px;
+  font-size: var(--fs-8);
   font-weight: 700;
   line-height: 1.2;
   letter-spacing: -0.02em;
@@ -49,28 +41,27 @@
 .mobile-swarm-detail__meta {
   display: flex;
   flex-wrap: wrap;
-  gap: 6px 12px;
-  color: var(--text-muted);
-  font-size: 12px;
+  gap: var(--sp-3) var(--sp-6);
+  font-size: var(--fs-3);
 }
 
 .mobile-swarm-detail__actions,
 .mobile-swarm-detail__signals {
   display: flex;
   flex-wrap: wrap;
-  gap: 8px;
+  gap: var(--sp-4);
 }
 
 .mobile-swarm-detail__debug-btn,
 .mobile-signal-btn {
   min-height: 40px;
-  padding: 0 14px;
+  padding: 0 var(--sp-6);
   border: 1px solid var(--border-subtle);
   border-radius: var(--ui-radius);
   background: var(--bg-raised-2);
   color: var(--text-primary);
   font: inherit;
-  font-size: 13px;
+  font-size: var(--fs-4);
   font-weight: 600;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
@@ -98,38 +89,35 @@
 }
 
 .mobile-swarm-detail__confirm {
-  display: flex;
   flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 12px;
+  gap: var(--sp-4);
+  padding: var(--sp-5) var(--sp-6);
   border: 1px solid color-mix(in srgb, var(--theme-danger) 40%, var(--border-subtle));
   border-radius: var(--ui-radius);
   color: var(--text-primary);
-  font-size: 13px;
+  font-size: var(--fs-4);
 }
 
 .mobile-swarm-detail__error {
-  padding: 10px 12px;
+  padding: var(--sp-5) var(--sp-6);
   border: 1px solid color-mix(in srgb, var(--theme-danger) 45%, var(--border-subtle));
   border-radius: var(--ui-radius);
   color: var(--theme-danger);
-  font-size: 13px;
+  font-size: var(--fs-4);
 }
 
 .mobile-swarm-detail__empty {
-  padding: 26px 16px;
+  padding: var(--sp-9) var(--sp-7);
   border: 1px dashed var(--border-subtle);
   border-radius: var(--ui-radius);
-  color: var(--text-muted);
-  font-size: 13px;
+  font-size: var(--fs-4);
   text-align: center;
 }
 
 .mobile-swarm-detail__list {
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  gap: 10px;
+  gap: var(--sp-5);
   margin: 0;
   padding: 0;
   list-style: none;
@@ -139,12 +127,10 @@
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
-  gap: 4px 10px;
+  gap: var(--sp-2) var(--sp-5);
   width: 100%;
   min-width: 0;
-  padding: 12px 14px;
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--ui-radius);
+  padding: var(--sp-6) var(--sp-6);
   background: var(--bg-raised-1);
   color: inherit;
   font: inherit;
@@ -155,44 +141,37 @@
 
 .mobile-worker-row__id {
   color: var(--text-primary);
-  font-size: 14px;
+  font-size: var(--fs-5);
   font-weight: 600;
 }
 
 .mobile-worker-row__model,
 .mobile-worker-row__msgs {
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: var(--fs-3);
 }
 
 .mobile-exec-group {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  padding: 14px;
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--ui-radius);
+  gap: var(--sp-4);
+  padding: var(--sp-6);
   background: var(--bg-raised-1);
 }
 
 .mobile-exec-group__snippet {
   color: var(--text-secondary);
-  font-size: 13px;
+  font-size: var(--fs-4);
   line-height: 1.5;
   overflow-wrap: anywhere;
 }
 
 .mobile-exec-group__reviews {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding-left: 10px;
+  gap: var(--sp-3);
+  padding-left: var(--sp-5);
   border-left: 2px solid var(--border-subtle);
 }
 
 .mobile-exec-group__reviews-title {
-  color: var(--text-muted);
-  font-size: 11px;
+  font-size: var(--fs-2);
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -200,22 +179,17 @@
 
 /* ---- Analytics ---- */
 .mobile-analytics {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  padding: 16px 16px calc(20px + env(safe-area-inset-bottom));
+  gap: var(--sp-6);
+  padding: var(--sp-7) var(--sp-7) calc(var(--sp-8) + env(safe-area-inset-bottom));
 }
 
 .mobile-analytics__controls {
-  display: flex;
   flex-wrap: wrap;
-  gap: 8px;
-  align-items: center;
+  gap: var(--sp-4);
 }
 
 .mobile-analytics__disclaimer {
-  color: var(--text-muted);
-  font-size: 11px;
+  font-size: var(--fs-2);
   line-height: 1.45;
 }
 
@@ -223,22 +197,17 @@
 .mobile-stats-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-  gap: 10px;
+  gap: var(--sp-5);
 }
 
 .mobile-stat-card {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 12px 14px;
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--ui-radius);
+  gap: var(--sp-3);
+  padding: var(--sp-6) var(--sp-6);
   background: var(--bg-raised-1);
 }
 
 .mobile-stat-card__label {
-  color: var(--text-muted);
-  font-size: 11px;
+  font-size: var(--fs-2);
   font-weight: 700;
   letter-spacing: 0.05em;
   text-transform: uppercase;
@@ -246,7 +215,7 @@
 
 .mobile-stat-card__value {
   color: var(--text-primary);
-  font-size: 20px;
+  font-size: var(--fs-7);
   font-weight: 700;
   line-height: 1.1;
 }
@@ -268,34 +237,31 @@
 .mobile-timeline {
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: var(--sp-4);
   min-width: 0;
 }
 
 .mobile-timeline__row {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
+  gap: var(--sp-2);
   min-width: 0;
 }
 
 .mobile-timeline__worker {
   color: var(--text-primary);
-  font-size: 12px;
+  font-size: var(--fs-3);
   font-weight: 600;
 }
 
 .mobile-timeline__spans {
   display: flex;
-  gap: 2px;
+  gap: var(--sp-1);
   height: 14px;
   overflow-x: auto;
   -webkit-overflow-scrolling: touch;
 }
 
 .mobile-timeline__span-label {
-  color: var(--text-muted);
-  font-size: 11px;
+  font-size: var(--fs-2);
 }
 
 /* ---- Bottom sheet (analytics span inspector) ---- */
@@ -310,23 +276,19 @@
 
 .mobile-bottom-sheet__content {
   box-sizing: border-box;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
+  gap: var(--sp-5);
   width: 100%;
   max-height: 80vh;
-  padding: 12px 16px calc(20px + env(safe-area-inset-bottom));
+  padding: var(--sp-6) var(--sp-7) calc(var(--sp-8) + env(safe-area-inset-bottom));
   border-radius: var(--ui-radius);
   background: var(--bg-raised-1);
 }
 
 .mobile-bottom-sheet__header {
-  display: flex;
-  align-items: center;
   justify-content: space-between;
-  gap: 12px;
+  gap: var(--sp-6);
   color: var(--text-primary);
-  font-size: 15px;
+  font-size: var(--fs-5);
   font-weight: 700;
 }
 
@@ -343,26 +305,13 @@
   min-width: 0;
 }
 
-.stat-idle {
-  color: var(--text-muted);
-}
-
-.stat-time {
-  color: var(--text-muted);
-}
-
 /* These six reach the DOM through conditional/template classNames, which the
    css-classes guard originally skipped — so they were undefined for longer than
    the rest. The guard now scans string literals, not just static attributes. */
 .mobile-swarm-detail__badge {
-  display: inline-flex;
-  align-items: center;
   min-height: 20px;
-  padding: 3px 8px;
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--ui-radius);
-  color: var(--text-muted);
-  font-size: 10px;
+  padding: var(--sp-1) var(--sp-4);
+  font-size: var(--fs-1);
   font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
@@ -379,18 +328,13 @@
 .mobile-worker-row__role,
 .mobile-worker-row__state {
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: var(--fs-3);
 }
 
 .mobile-exec-group__verdict {
-  display: inline-flex;
-  align-items: center;
   min-height: 20px;
-  padding: 2px 8px;
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--ui-radius);
-  color: var(--text-muted);
-  font-size: 10px;
+  padding: var(--sp-1) var(--sp-4);
+  font-size: var(--fs-1);
   font-weight: 700;
   text-transform: uppercase;
 }

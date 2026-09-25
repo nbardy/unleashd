@@ -1,14 +1,12 @@
 .turn-status {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
+  gap: var(--sp-3);
   min-width: 0;
-  padding: 3px 8px;
+  padding: var(--sp-1) var(--sp-4);
   border: 1px solid color-mix(in oklab, currentColor 35%, transparent);
   border-radius: var(--ui-radius);
   background: color-mix(in oklab, currentColor 8%, transparent);
   color: var(--theme-base0);
-  font-size: 11px;
+  font-size: var(--fs-2);
   line-height: 1.3;
 }
 
@@ -33,12 +31,9 @@
 }
 
 .turn-status__reason {
-  overflow: hidden;
   min-width: 0;
   max-width: 36ch;
   color: var(--theme-base0);
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .turn-status--neutral {

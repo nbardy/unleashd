@@ -18,32 +18,26 @@
   height: var(--app-toolbar-height, 56px);
   flex-shrink: 0;
   justify-content: center;
-  padding: 8px 10px;
+  padding: var(--sp-4) var(--sp-5);
   border-bottom: 1px solid var(--border-emphasis);
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
+  gap: var(--sp-4);
   background: transparent;
 }
 
 .sidebar-actions {
   display: grid;
   grid-template-columns: 1fr auto;
-  gap: 6px;
-  padding: 0 2px;
+  gap: var(--sp-3);
+  padding: 0 var(--sp-1);
   align-items: center;
 }
 
 /* Universal search field — input-like pill, searches all (chats/swarms/buddies) */
 .sidebar-search-field {
-  display: flex;
-  align-items: center;
-  gap: 6px;
+  gap: var(--sp-3);
   min-width: 0;
   height: 26px;
-  padding: 0 8px;
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--ui-radius);
+  padding: 0 var(--sp-4);
   background: transparent;
   color: var(--text-secondary);
   font: 500 11px / 1 var(--font-mono);
@@ -79,31 +73,21 @@
 .sidebar-search-field-label {
   flex: 1;
   text-align: left;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .sidebar-search-field-shortcut {
   flex-shrink: 0;
   font: 500 9px / 1 var(--font-mono);
-  color: var(--text-muted);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--ui-radius);
-  padding: 1px 4px;
+  padding: var(--sp-1) var(--sp-2);
   background: color-mix(in srgb, var(--bg-base) 60%, transparent);
 }
 
 /* Universal new — creates a conversation (buddy/swarm are just conversations) */
 .sidebar-new-btn {
-  display: inline-flex;
-  align-items: center;
   justify-content: center;
-  gap: 4px;
+  gap: var(--sp-2);
   height: 26px;
-  padding: 0 10px;
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--ui-radius);
+  padding: 0 var(--sp-5);
   background: transparent;
   color: var(--text-secondary);
   font: 600 11px / 1 var(--font-mono);
@@ -120,7 +104,7 @@
 }
 
 .sidebar-new-btn-plus {
-  font-size: 13px;
+  font-size: var(--fs-4);
   font-weight: 700;
   line-height: 1;
 }
@@ -130,8 +114,6 @@
   position: fixed;
   inset: 0;
   z-index: 1000;
-  display: flex;
-  align-items: center;
   justify-content: center;
   background: color-mix(in srgb, var(--bg-darkest) 60%, transparent);
   backdrop-filter: blur(4px);
@@ -145,22 +127,20 @@
   background: var(--bg-secondary);
   border: 1px solid var(--border-strong);
   border-radius: var(--ui-radius);
-  padding: 28px 32px;
+  padding: var(--sp-9) var(--sp-10);
   box-shadow: 0 16px 48px color-mix(in srgb, var(--bg-darkest) 40%, transparent);
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
+  gap: var(--sp-4);
 }
 
 .new-conv-title {
-  font-size: 18px;
+  font-size: var(--fs-7);
   font-weight: 600;
   color: var(--text-emphasis);
   margin-bottom: 8px;
 }
 
 .new-conv-label {
-  font-size: 12px;
+  font-size: var(--fs-3);
   font-weight: 500;
   color: var(--text-secondary);
   text-transform: uppercase;
@@ -170,12 +150,12 @@
 
 .new-conv-modal .directory-input {
   width: 100%;
-  padding: 10px 14px;
+  padding: var(--sp-5) var(--sp-6);
   background: var(--bg-primary);
   border: 1px solid var(--border-subtle);
   border-radius: var(--ui-radius);
   color: var(--text-emphasis);
-  font-size: 13px;
+  font-size: var(--fs-4);
   font-family: var(--font-mono);
   box-sizing: border-box;
 }
@@ -187,23 +167,19 @@
 
 .new-conv-modal .provider-selector {
   display: flex;
-  gap: 6px;
+  gap: var(--sp-3);
   margin-bottom: 4px;
 }
 
 .provider-option {
   flex: 1 1 0;
   min-width: 0;
-  display: flex;
-  align-items: center;
   justify-content: center;
-  gap: 6px;
-  padding: 10px 8px;
+  gap: var(--sp-3);
+  padding: var(--sp-5) var(--sp-4);
   background: var(--bg-tertiary);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--ui-radius);
   color: var(--text-secondary);
-  font-size: 13px;
+  font-size: var(--fs-4);
   cursor: pointer;
   transition: all 0.2s;
 }
@@ -225,7 +201,7 @@
 
 .new-conv-modal .model-selector {
   display: flex;
-  gap: 8px;
+  gap: var(--sp-4);
   margin-bottom: 4px;
   flex-wrap: wrap;
 }
@@ -233,16 +209,12 @@
 .model-option {
   flex: 1;
   min-width: 100px;
-  display: flex;
-  align-items: center;
   justify-content: center;
-  gap: 6px;
-  padding: 8px 12px;
+  gap: var(--sp-3);
+  padding: var(--sp-4) var(--sp-6);
   background: var(--bg-tertiary);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--ui-radius);
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: var(--fs-3);
   cursor: pointer;
   transition: all 0.2s;
 }
@@ -265,14 +237,14 @@
 .custom-model-option {
   flex: 1 1 100%;
   display: grid;
-  gap: 6px;
+  gap: var(--sp-3);
   color: var(--text-secondary);
-  font-size: 11px;
+  font-size: var(--fs-2);
 }
 
 .custom-model-option input {
   min-width: 0;
-  padding: 8px 10px;
+  padding: var(--sp-4) var(--sp-5);
   border: 1px solid var(--border-color);
   border-radius: var(--ui-radius);
   background: var(--bg-secondary);
@@ -292,17 +264,15 @@
 
 .new-conv-modal .directory-actions {
   display: flex;
-  gap: 10px;
+  gap: var(--sp-5);
   margin-top: 12px;
 }
 
 .dir-action-btn {
   flex: 1;
-  padding: 10px 16px;
+  padding: var(--sp-5) var(--sp-7);
   border: none;
-  border-radius: var(--ui-radius);
-  cursor: pointer;
-  font-size: 13px;
+  font-size: var(--fs-4);
   font-weight: 500;
   transition: background 0.2s;
 }
@@ -310,17 +280,15 @@
 .dir-confirm-btn {
   background: var(--accent-success);
   color: var(--text-on-accent);
-  display: flex;
-  align-items: center;
   justify-content: center;
-  gap: 8px;
+  gap: var(--sp-4);
 }
 
 .btn-shortcut {
-  font-size: 10px;
+  font-size: var(--fs-1);
   font-family: system-ui, sans-serif;
   opacity: 0.7;
-  padding: 1px 4px;
+  padding: var(--sp-1) var(--sp-2);
   border: 1px solid color-mix(in srgb, var(--text-emphasis) 30%, transparent);
   border-radius: var(--ui-radius);
   background: color-mix(in srgb, var(--text-emphasis) 10%, transparent);
@@ -357,7 +325,7 @@
 .conversations-list {
   flex: 1;
   overflow-y: overlay; /* Float over content, no reserved gutter */
-  padding: 4px 6px 12px;
+  padding: var(--sp-2) var(--sp-3) var(--sp-6);
 
   /* Floating scrollbar: hidden until hover/scroll, no track background */
   scrollbar-width: thin;
@@ -395,9 +363,7 @@
 .conversation-item {
   --sidebar-row-hover: color-mix(in srgb, var(--text-emphasis) 5%, transparent);
   --sidebar-row-fill: transparent;
-  display: flex;
-  align-items: center;
-  padding: 7px 12px;
+  padding: var(--sp-3) var(--sp-6);
   margin: 1px 0;
   border-radius: 0;
   background: transparent;
@@ -459,9 +425,7 @@
    Deliberately NO hover padding here: .done-btn is a right-aligned overlay and
    reserving space for it on hover shifts the whole row left, which reads as jitter. */
 .conversation-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
+  gap: var(--sp-3);
   flex: 1;
   min-width: 0;
   overflow: hidden;
@@ -471,15 +435,12 @@
    No background pill — just the colored font is the project identity marker.
    Color set via inline style from getProjectColor(). */
 .folder-badge {
-  font-size: 10px;
+  font-size: var(--fs-1);
   font-family: var(--font-mono);
   font-weight: 600;
   padding: 0;
   background: none !important;
   border-radius: 0;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
   line-height: 1;
   /* Capped share of the row, and never shrinks below it — the title (flex-basis 0)
      absorbs the squeeze instead, so the badge stays readable in a narrow sidebar. */
@@ -543,7 +504,7 @@
 .conversation-title {
   flex: 1 1 0;
   min-width: 0;
-  font-size: 12px;
+  font-size: var(--fs-3);
   line-height: 1.4;
   color: var(--text-primary);
   overflow: hidden;
@@ -553,9 +514,8 @@
 
 .show-more-btn {
   width: 100%;
-  padding: 6px 12px;
+  padding: var(--sp-3) var(--sp-6);
   background: transparent;
-  color: var(--text-muted);
   border: none;
   border-top: none;
   font: 600 10px / 1 var(--font-mono);
@@ -605,7 +565,7 @@
 }
 
 .sidebar-project-link {
-  gap: 6px;
+  gap: var(--sp-3);
   max-width: 58%;
   text-decoration: none;
 }
@@ -622,7 +582,7 @@
 
 .sidebar-project-toggle {
   flex: 1;
-  gap: 6px;
+  gap: var(--sp-3);
   padding: 0;
   border: 0;
   background: transparent;
@@ -632,8 +592,7 @@
 .sidebar-project-chevron {
   width: 8px;
   flex: 0 0 8px;
-  color: var(--text-muted);
-  font-size: 12px;
+  font-size: var(--fs-3);
   text-align: center;
 }
 
@@ -704,7 +663,7 @@
   z-index: 2;
   display: none;
   flex: none;
-  gap: 2px;
+  gap: var(--sp-1);
   margin-left: 4px;
 }
 
@@ -743,26 +702,20 @@
 .sidebar-buddy-wake {
   position: relative;
   z-index: 2;
-  display: inline-flex;
   flex: none;
-  align-items: center;
   margin-left: 6px;
-  color: var(--text-muted);
 }
 
 a.sidebar-buddy-wake-done {
   color: var(--success-bright);
-  font-size: 11px;
+  font-size: var(--fs-2);
   text-decoration: none;
 }
 
 .sidebar-buddy-running {
-  display: inline-flex;
-  align-items: center;
   flex: 0 0 auto;
   margin-left: auto;
-  gap: 4px;
-  color: var(--text-muted);
+  gap: var(--sp-2);
   font: 500 10px / 1 var(--font-mono);
   font-variant-numeric: tabular-nums;
 }
@@ -770,7 +723,7 @@ a.sidebar-buddy-wake-done {
 .sidebar-buddy-running a {
   display: inline-flex;
   align-items: center;
-  gap: 3px;
+  gap: var(--sp-1);
   min-height: 24px;
   color: inherit;
   text-decoration: none;
@@ -797,19 +750,18 @@ a.sidebar-buddy-wake-done {
 
 /* Conversation items under a buddy — about 1/2 the padding/margin per thread */
 .buddy-subgroup .conversation-item {
-  padding: 7px 12px 7px 30px;
+  padding: var(--sp-3) var(--sp-6) var(--sp-3) var(--sp-10);
   margin-left: 0;
 }
 
 .buddy-subgroup .show-more-btn,
 .buddy-subgroup .folder-group-all-done {
   margin-left: 0;
-  padding-left: 30px;
+  padding-left: var(--sp-10);
 }
 
 .conversation-row-sep {
-  color: var(--text-muted);
-  font-size: 11px;
+  font-size: var(--fs-2);
   flex-shrink: 0;
 }
 
@@ -819,8 +771,7 @@ a.sidebar-buddy-wake-done {
 }
 
 .conversation-time-ago {
-  font-size: 10px;
-  color: var(--text-muted);
+  font-size: var(--fs-1);
   white-space: nowrap;
 }
 
@@ -832,12 +783,10 @@ a.sidebar-buddy-wake-done {
   right: 0;
   top: 50%;
   transform: translateY(-50%);
-  padding: 4px 8px;
+  padding: var(--sp-2) var(--sp-4);
   background: var(--bg-tertiary);
   color: var(--text-primary);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--ui-radius);
-  font-size: 11px;
+  font-size: var(--fs-2);
   cursor: pointer;
   opacity: 0;
   transition: background 0.2s;
@@ -863,12 +812,11 @@ a.sidebar-buddy-wake-done {
 }
 
 .sidebar-section-header {
-  font-size: 10px;
+  font-size: var(--fs-1);
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.06em;
-  color: var(--text-muted);
-  padding: 8px 6px 4px 6px;
+  padding: var(--sp-4) var(--sp-3) var(--sp-2) var(--sp-3);
 }
 
 /* Folder group header — click to collapse/expand */
@@ -877,18 +825,14 @@ a.sidebar-buddy-wake-done {
 }
 
 .folder-group-header {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 4px 12px;
+  gap: var(--sp-3);
+  padding: var(--sp-2) var(--sp-6);
   min-height: 28px;
   box-sizing: border-box;
   font: 500 11px / 20px var(--font-mono);
   margin: 0;
   background: transparent;
-  border-radius: var(--ui-radius);
   border: none;
-  cursor: pointer;
   transition: background 0.15s;
   user-select: none;
 }
@@ -918,7 +862,7 @@ a.sidebar-buddy-wake-done {
   flex: none;
   min-width: 16px;
   margin-left: auto;
-  padding: 2px 5px;
+  padding: var(--sp-1) var(--sp-2);
   border-radius: 999px;
   background: var(--danger);
   color: #fff;
@@ -952,14 +896,10 @@ a.sidebar-buddy-wake-done {
   min-width: 0;
   font: 500 11px / 20px var(--font-mono);
   color: var(--text-primary);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .folder-group-count {
-  font-size: 10px;
-  color: var(--text-muted);
+  font-size: var(--fs-1);
   background: transparent;
   padding: 0;
   border-radius: 0;
@@ -973,9 +913,7 @@ a.sidebar-buddy-wake-done {
    while the folder is collapsed. Individual conversation rows retain their own
    status dots when expanded. */
 .folder-group-running {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
+  gap: var(--sp-2);
   flex: 0 0 auto;
   color: var(--success-bright);
   font: 600 9px / 1 var(--font-mono);
@@ -990,25 +928,20 @@ a.sidebar-buddy-wake-done {
 
 .folder-group-all-done {
   font-style: italic;
-  color: var(--text-muted);
   font-size: var(--font-xs);
-  padding: 6px 12px 6px 28px;
+  padding: var(--sp-3) var(--sp-6) var(--sp-3) var(--sp-9);
 }
 
 .folder-group-add-btn {
   opacity: 0;
   width: 20px;
   height: 20px;
-  border-radius: var(--ui-radius);
   border: none;
   background: var(--bg-base);
   color: var(--text-secondary);
-  font-size: 14px;
+  font-size: var(--fs-5);
   font-weight: 600;
   line-height: 1;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
   justify-content: center;
   padding: 0;
   transition: opacity 0.15s, background 0.15s, color 0.15s;
@@ -1037,11 +970,11 @@ a.sidebar-buddy-wake-done {
 }
 
 .sidebar-buddy-error {
-  padding: 6px 12px 7px 28px;
+  padding: var(--sp-3) var(--sp-6) var(--sp-3) var(--sp-9);
   border-left: 3px solid var(--danger);
   color: var(--danger-bright);
   background: color-mix(in srgb, var(--danger) 8%, var(--bg-base));
-  font-size: 10px;
+  font-size: var(--fs-1);
   line-height: 1.35;
 }
 

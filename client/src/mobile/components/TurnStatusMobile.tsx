@@ -26,7 +26,9 @@ export function TurnStatusMobile({
       {view.lastActivity ? (
         <span className="mobile-turn-status__activity">{view.lastActivity}</span>
       ) : null}
-      {view.reason ? <span className="mobile-turn-status__reason">{view.reason}</span> : null}
+      {view.reason ? (
+        <span className="mobile-turn-status__reason ui-truncate">{view.reason}</span>
+      ) : null}
     </output>
   );
 }

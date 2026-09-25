@@ -43,11 +43,11 @@ export function SwarmConvoPrefix({ prefix, swarmId }: SwarmConvoPrefixProps) {
     <div className="swarm-convo-prefix">
       <button
         type="button"
-        className={`swarm-prefix-token ${expanded ? 'expanded' : 'collapsed'}`}
+        className={`swarm-prefix-token ui-control ui-inline-row ${expanded ? 'expanded' : 'collapsed'}`}
         onClick={() => setExpanded((v) => !v)}
         aria-expanded={expanded}
       >
-        <span className="swarm-prefix-indicator">{expanded ? '\u25BC' : '\u25B6'}</span>
+        <span className="swarm-prefix-indicator ui-muted">{expanded ? '\u25BC' : '\u25B6'}</span>
         <span className="swarm-prefix-label">{title}</span>
         <span className="swarm-prefix-id">{label}</span>
         {statChips.length > 0 && (
@@ -59,39 +59,39 @@ export function SwarmConvoPrefix({ prefix, swarmId }: SwarmConvoPrefixProps) {
             ))}
           </span>
         )}
-        {stats.started && <span className="swarm-prefix-time">{stats.started}</span>}
+        {stats.started && <span className="swarm-prefix-time ui-muted">{stats.started}</span>}
       </button>
       {expanded && (
-        <div className="swarm-prefix-content">
+        <div className="swarm-prefix-content ui-stack">
           {/* Structured summary card */}
-          <div className="swarm-prefix-summary">
+          <div className="swarm-prefix-summary ui-stack">
             {stats.project && (
               <div className="swarm-prefix-row">
-                <span className="swarm-prefix-key">Project</span>
+                <span className="swarm-prefix-key ui-muted">Project</span>
                 <code className="swarm-prefix-val">{stats.project}</code>
               </div>
             )}
             {stats.generatedAt && (
               <div className="swarm-prefix-row">
-                <span className="swarm-prefix-key">Generated At</span>
+                <span className="swarm-prefix-key ui-muted">Generated At</span>
                 <span className="swarm-prefix-val">{stats.generatedAt}</span>
               </div>
             )}
             {stats.primaryConfig && (
               <div className="swarm-prefix-row">
-                <span className="swarm-prefix-key">Primary Config</span>
+                <span className="swarm-prefix-key ui-muted">Primary Config</span>
                 <code className="swarm-prefix-val">{stats.primaryConfig}</code>
               </div>
             )}
             {stats.oompaConfigSummary && (
               <div className="swarm-prefix-row">
-                <span className="swarm-prefix-key">Summary</span>
+                <span className="swarm-prefix-key ui-muted">Summary</span>
                 <span className="swarm-prefix-val">{stats.oompaConfigSummary}</span>
               </div>
             )}
             {availableConfigs.length > 0 && (
               <div className="swarm-prefix-row" style={{ alignItems: 'flex-start' }}>
-                <span className="swarm-prefix-key" style={{ marginTop: '2px' }}>
+                <span className="swarm-prefix-key ui-muted" style={{ marginTop: '2px' }}>
                   Available Configs
                 </span>
                 <div
@@ -112,13 +112,13 @@ export function SwarmConvoPrefix({ prefix, swarmId }: SwarmConvoPrefixProps) {
             )}
             {stats.started && (
               <div className="swarm-prefix-row">
-                <span className="swarm-prefix-key">Started</span>
+                <span className="swarm-prefix-key ui-muted">Started</span>
                 <span className="swarm-prefix-val">{stats.started}</span>
               </div>
             )}
             {stats.runsDir && (
               <div className="swarm-prefix-row">
-                <span className="swarm-prefix-key">Run Artifacts</span>
+                <span className="swarm-prefix-key ui-muted">Run Artifacts</span>
                 <code className="swarm-prefix-val">{stats.runsDir}</code>
               </div>
             )}
@@ -127,27 +127,27 @@ export function SwarmConvoPrefix({ prefix, swarmId }: SwarmConvoPrefixProps) {
           {/* Stats grid */}
           {stats.iterations && (
             <div className="swarm-prefix-stat-grid">
-              <div className="swarm-prefix-stat">
+              <div className="swarm-prefix-stat ui-stack">
                 <span className="swarm-prefix-stat-value">{stats.completed ?? '—'}</span>
-                <span className="swarm-prefix-stat-label">Completed</span>
+                <span className="swarm-prefix-stat-label ui-muted">Completed</span>
               </div>
-              <div className="swarm-prefix-stat">
+              <div className="swarm-prefix-stat ui-stack">
                 <span className="swarm-prefix-stat-value">{stats.iterations}</span>
-                <span className="swarm-prefix-stat-label">Total Cycles</span>
+                <span className="swarm-prefix-stat-label ui-muted">Total Cycles</span>
               </div>
-              <div className="swarm-prefix-stat">
+              <div className="swarm-prefix-stat ui-stack">
                 <span className="swarm-prefix-stat-value stat-success">{stats.merges ?? '0'}</span>
-                <span className="swarm-prefix-stat-label">Merges</span>
+                <span className="swarm-prefix-stat-label ui-muted">Merges</span>
               </div>
-              <div className="swarm-prefix-stat">
+              <div className="swarm-prefix-stat ui-stack">
                 <span className="swarm-prefix-stat-value stat-warning">
                   {stats.rejections ?? '0'}
                 </span>
-                <span className="swarm-prefix-stat-label">Rejections</span>
+                <span className="swarm-prefix-stat-label ui-muted">Rejections</span>
               </div>
-              <div className="swarm-prefix-stat">
+              <div className="swarm-prefix-stat ui-stack">
                 <span className="swarm-prefix-stat-value stat-error">{stats.errors ?? '0'}</span>
-                <span className="swarm-prefix-stat-label">Errors</span>
+                <span className="swarm-prefix-stat-label ui-muted">Errors</span>
               </div>
             </div>
           )}

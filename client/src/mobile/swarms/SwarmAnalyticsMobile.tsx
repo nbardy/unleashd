@@ -174,16 +174,20 @@ export function SwarmAnalyticsMobile() {
   }
 
   return (
-    <div className="mobile-hub mobile-analytics">
+    <div className="mobile-hub mobile-analytics ui-stack">
       <header className="mobile-hub__header">
-        <button type="button" className="mobile-link" onClick={() => navigate('/workers')}>
+        <button
+          type="button"
+          className="mobile-link ui-inline-row"
+          onClick={() => navigate('/workers')}
+        >
           ← Swarms
         </button>
         <h1 className="mobile-hub__title">Swarm Analytics</h1>
       </header>
 
-      <div className="mobile-analytics__controls">
-        <label className="mobile-field">
+      <div className="mobile-analytics__controls ui-row">
+        <label className="mobile-field ui-stack ui-muted">
           <span>Project</span>
           <select
             value={selectedProject ?? ''}
@@ -201,7 +205,7 @@ export function SwarmAnalyticsMobile() {
         </label>
 
         {runsData.size > 0 && (
-          <label className="mobile-field">
+          <label className="mobile-field ui-stack ui-muted">
             <span>Swarm run</span>
             <select
               value={selectedSwarmId ?? ''}
@@ -218,7 +222,7 @@ export function SwarmAnalyticsMobile() {
       </div>
 
       {loading && (
-        <div role="status" aria-live="polite" className="mobile-muted">
+        <div role="status" aria-live="polite" className="mobile-muted ui-muted">
           Loading analytics…
         </div>
       )}
@@ -232,11 +236,11 @@ export function SwarmAnalyticsMobile() {
       {stats && (
         <section className="mobile-analytics__stats" aria-label="Swarm stats">
           <div className="mobile-stats-grid">
-            <div className="mobile-stat-card">
+            <div className="mobile-stat-card ui-stack ui-card">
               <span className="mobile-stat-card__value">
                 {stats.completedIterations}/{stats.totalIterations}
               </span>
-              <span className="mobile-stat-card__label">Cycles done</span>
+              <span className="mobile-stat-card__label ui-muted">Cycles done</span>
               <div className="mobile-stat-card__bar">
                 <div
                   className="mobile-stat-card__fill"
@@ -246,22 +250,22 @@ export function SwarmAnalyticsMobile() {
                 />
               </div>
             </div>
-            <div className="mobile-stat-card">
+            <div className="mobile-stat-card ui-stack ui-card">
               <span className="mobile-stat-card__value">{stats.totalMerges}</span>
-              <span className="mobile-stat-card__label">Total merges</span>
+              <span className="mobile-stat-card__label ui-muted">Total merges</span>
             </div>
-            <div className="mobile-stat-card">
+            <div className="mobile-stat-card ui-stack ui-card">
               <span className="mobile-stat-card__value">{stats.totalRejections}</span>
-              <span className="mobile-stat-card__label">Rejections</span>
+              <span className="mobile-stat-card__label ui-muted">Rejections</span>
             </div>
-            <div className="mobile-stat-card">
+            <div className="mobile-stat-card ui-stack ui-card">
               <span className="mobile-stat-card__value">{stats.totalReviewRounds}</span>
-              <span className="mobile-stat-card__label">Review rounds</span>
+              <span className="mobile-stat-card__label ui-muted">Review rounds</span>
             </div>
-            <div className="mobile-stat-card">
+            <div className="mobile-stat-card ui-stack ui-card">
               <span className="mobile-stat-card__value">{stats.totalWorkers}</span>
-              <span className="mobile-stat-card__label">Workers</span>
-              <span className="mobile-muted">
+              <span className="mobile-stat-card__label ui-muted">Workers</span>
+              <span className="mobile-muted ui-muted">
                 {[
                   stats.runningWorkers > 0 ? `${stats.runningWorkers} running` : null,
                   stats.completedWorkers > 0 ? `${stats.completedWorkers} done` : null,
@@ -271,13 +275,13 @@ export function SwarmAnalyticsMobile() {
                   .join(' · ') || '—'}
               </span>
             </div>
-            <div className="mobile-stat-card">
+            <div className="mobile-stat-card ui-stack ui-card">
               <span className="mobile-stat-card__value">{stats.totalErrors}</span>
-              <span className="mobile-stat-card__label">Errors</span>
+              <span className="mobile-stat-card__label ui-muted">Errors</span>
             </div>
           </div>
           {stats.finishedAt && (
-            <p className="mobile-muted">
+            <p className="mobile-muted ui-muted">
               Finished {formatTimeAgo(new Date(stats.finishedAt))} ·{' '}
               {formatDuration(timeline?.timeRange.duration ?? 0)}
             </p>
@@ -290,10 +294,10 @@ export function SwarmAnalyticsMobile() {
           <h2 className="mobile-buddy-section__heading">Timelines</h2>
           <div className="mobile-timeline">
             {timeline.timelines.map((worker) => (
-              <div key={worker.workerId} className="mobile-timeline__row">
+              <div key={worker.workerId} className="mobile-timeline__row ui-stack">
                 <div className="mobile-timeline__worker">
                   <strong>{shortWorkerId(worker.workerId)}</strong>
-                  <span className="mobile-muted">
+                  <span className="mobile-muted ui-muted">
                     {worker.model} · {worker.harness}
                   </span>
                 </div>
@@ -307,9 +311,13 @@ export function SwarmAnalyticsMobile() {
                       onClick={() => setInspected({ span, workerId: worker.workerId })}
                       aria-label={`Cycle ${span.iteration} ${span.status}${span.verdict ? ` verdict ${span.verdict}` : ''} — tap to inspect`}
                     >
-                      <span className="mobile-timeline__span-label">#{span.iteration}</span>
+                      <span className="mobile-timeline__span-label ui-muted">
+                        #{span.iteration}
+                      </span>
                       {span.verdict && (
-                        <span className={`mobile-badge mobile-badge--${span.verdict}`}>
+                        <span
+                          className={`mobile-badge ui-inline-row ui-card ui-muted mobile-badge--${span.verdict}`}
+                        >
                           {span.verdict}
                         </span>
                       )}
@@ -321,7 +329,7 @@ export function SwarmAnalyticsMobile() {
           </div>
 
           {timeline.isEstimated && (
-            <p className="mobile-analytics__disclaimer" role="note">
+            <p className="mobile-analytics__disclaimer ui-muted" role="note">
               Timing estimated — per-iteration timestamps not available
             </p>
           )}
@@ -341,16 +349,16 @@ export function SwarmAnalyticsMobile() {
           onClick={() => setInspected(null)}
         >
           <div
-            className="mobile-bottom-sheet__content"
+            className="mobile-bottom-sheet__content ui-stack"
             onClick={(event) => event.stopPropagation()}
           >
-            <div className="mobile-bottom-sheet__header">
+            <div className="mobile-bottom-sheet__header ui-row">
               <strong>
                 {shortWorkerId(inspected.workerId)} · Cycle {inspected.span.iteration}
               </strong>
               <button
                 type="button"
-                className="mobile-link"
+                className="mobile-link ui-inline-row"
                 onClick={() => setInspected(null)}
                 aria-label="Close"
               >
@@ -359,33 +367,40 @@ export function SwarmAnalyticsMobile() {
             </div>
             <div className="mobile-bottom-sheet__body">
               <p>
-                <span className="mobile-muted">Status:</span> {inspected.span.status}
+                <span className="mobile-muted ui-muted">Status:</span> {inspected.span.status}
               </p>
               {inspected.span.verdict && (
                 <p>
-                  <span className="mobile-muted">Verdict:</span> {inspected.span.verdict}
+                  <span className="mobile-muted ui-muted">Verdict:</span> {inspected.span.verdict}
                 </p>
               )}
               <p>
-                <span className="mobile-muted">Review rounds:</span> {inspected.span.reviewRounds}
+                <span className="mobile-muted ui-muted">Review rounds:</span>{' '}
+                {inspected.span.reviewRounds}
               </p>
               <p>
-                <span className="mobile-muted">Files changed:</span> {inspected.span.diffFiles}
+                <span className="mobile-muted ui-muted">Files changed:</span>{' '}
+                {inspected.span.diffFiles}
               </p>
               <p>
-                <span className="mobile-muted">Merges:</span> {Math.round(inspected.span.merges)}
+                <span className="mobile-muted ui-muted">Merges:</span>{' '}
+                {Math.round(inspected.span.merges)}
               </p>
               {inspected.span.startTime && inspected.span.endTime && (
-                <p className="mobile-muted">
+                <p className="mobile-muted ui-muted">
                   {new Date(inspected.span.startTime).toLocaleString()} →{' '}
                   {new Date(inspected.span.endTime).toLocaleString()}
                 </p>
               )}
               {inspected.span.output && (
-                <pre className="mobile-pre">{inspected.span.output.slice(0, 800)}</pre>
+                <pre className="mobile-pre ui-card">{inspected.span.output.slice(0, 800)}</pre>
               )}
             </div>
-            <button type="button" className="mobile-cta" onClick={() => setInspected(null)}>
+            <button
+              type="button"
+              className="mobile-cta ui-control ui-inline-row"
+              onClick={() => setInspected(null)}
+            >
               Close
             </button>
           </div>

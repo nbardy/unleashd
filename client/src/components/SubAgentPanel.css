@@ -11,7 +11,7 @@
   border-radius: var(--ui-radius);
   margin: 0;
   font-family: var(--font-mono);
-  font-size: 13px;
+  font-size: var(--fs-4);
   overflow: hidden;
 }
 
@@ -19,10 +19,8 @@
 .subagent-header {
   width: 100%;
   border: 0;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 9px 12px;
+  gap: var(--sp-4);
+  padding: var(--sp-4) var(--sp-6);
   cursor: pointer;
   user-select: none;
   background: transparent;
@@ -82,13 +80,11 @@
 
 /* Shortcut hint */
 .subagent-shortcut {
-  color: var(--text-muted);
-  font-size: 10px;
+  font-size: var(--fs-1);
   opacity: 0.68;
 }
 
 .subagent-chevron {
-  color: var(--text-muted);
   flex-shrink: 0;
   transition: transform 0.18s ease;
 }
@@ -114,7 +110,7 @@
 
 /* Tree view container */
 .subagent-tree {
-  padding: 7px 12px 10px;
+  padding: var(--sp-3) var(--sp-6) var(--sp-5);
   max-height: 300px;
   overflow-y: auto;
 }
@@ -124,27 +120,24 @@
   display: flex;
   flex-wrap: wrap;
   align-items: flex-start;
-  padding: 4px 0;
+  padding: var(--sp-2) 0;
   line-height: 1.4;
 }
 
 /* Tree connectors (Unicode box-drawing characters) */
 .tree-connector {
-  color: var(--text-muted);
   flex-shrink: 0;
   width: 20px;
   font-family: var(--font-mono);
 }
 
 .tree-connector-sub {
-  color: var(--text-muted);
   flex-shrink: 0;
   width: 20px;
   font-family: var(--font-mono);
 }
 
 .action-connector {
-  color: var(--text-muted);
   flex-shrink: 0;
   margin-right: 4px;
   font-family: var(--font-mono);
@@ -154,12 +147,10 @@
 .subagent-status {
   width: 16px;
   height: 16px;
-  display: inline-flex;
-  align-items: center;
   justify-content: center;
   flex-shrink: 0;
   margin-right: 8px;
-  font-size: 12px;
+  font-size: var(--fs-3);
 }
 
 .subagent-status.running,
@@ -198,30 +189,21 @@
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
-  gap: 4px;
+  gap: var(--sp-2);
 }
 
 /* Description text */
 .subagent-description {
   color: var(--text-emphasis);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
   max-width: 100%;
 }
 
 /* Stats (tool uses, tokens) */
 .subagent-stats {
-  display: flex;
-  align-items: center;
-  gap: 4px;
+  gap: var(--sp-2);
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: var(--fs-3);
   flex-shrink: 0;
-}
-
-.stat-divider {
-  color: var(--text-muted);
 }
 
 .stat {
@@ -230,19 +212,14 @@
 
 /* Current action line (nested under the agent) */
 .subagent-current-action {
-  display: flex;
-  align-items: center;
   width: 100%;
   margin-top: 2px;
-  padding-left: 20px; /* Align with tree structure */
+  padding-left: var(--sp-8); /* Align with tree structure */
 }
 
 .current-action {
   color: var(--text-secondary);
-  font-size: 12px;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  font-size: var(--fs-3);
 }
 
 .current-action.active {
@@ -280,7 +257,7 @@
   opacity: 1;
 }
 
-@media (max-width: 700px) {
+@media (max-width: 768px) {
   .subagent-shortcut {
     display: none;
   }

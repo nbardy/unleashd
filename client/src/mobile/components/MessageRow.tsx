@@ -32,7 +32,7 @@ function MessageCopyButton({ content }: { content: string }) {
   return (
     <button
       type="button"
-      className={`mobile-message__copy copy-btn--${state}`}
+      className={`mobile-message__copy ui-card ui-muted copy-btn--${state}`}
       onClick={copy}
       aria-label={label}
     >
@@ -233,7 +233,7 @@ export const AssistantResponseRow = memo(function AssistantResponseRow({
 }) {
   const showWorking = isLive === true && response.parts.length === 0;
   return (
-    <article className="mobile-assistant-response" aria-label="Assistant response">
+    <article className="mobile-assistant-response ui-stack" aria-label="Assistant response">
       <div className="mobile-assistant-response__role">Assistant</div>
       {showWorking && (
         <div className="mobile-chat__thinking" aria-live="polite">
@@ -282,7 +282,7 @@ function MobileToolActivity({
     <div className="mobile-response-activity">
       <button
         type="button"
-        className="mobile-response-activity__toggle"
+        className="mobile-response-activity__toggle ui-inline-row ui-muted"
         aria-expanded={expanded}
         onClick={() => setExpanded((value) => !value)}
       >

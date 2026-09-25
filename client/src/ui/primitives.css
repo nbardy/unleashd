@@ -1,0 +1,46 @@
+/* Layer 2 of 5 (tokens → primitives → markdown → views → shells).
+ * Pattern: tokens-and-shells (docs/patterns.md#tokens-and-shells)
+ *
+ * The declaration groups every view re-declared (display:flex + align-items:center
+ * alone was pasted into 123 rules). A view adds the class next to its own and keeps
+ * only what is unique to it: <div className="sidebar-header ui-row">.
+ *
+ * main.tsx imports this BEFORE any component stylesheet, and route CSS arrives
+ * later still with its lazy chunk, so a view rule of equal specificity always
+ * beats a primitive. Overriding `display` or `color` in the view is therefore
+ * safe; relying on a primitive to beat a view rule is not.
+ */
+.ui-stack {
+  display: flex;
+  flex-direction: column;
+}
+
+.ui-row {
+  display: flex;
+  align-items: center;
+}
+
+.ui-inline-row {
+  display: inline-flex;
+  align-items: center;
+}
+
+.ui-truncate {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.ui-card {
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--ui-radius);
+}
+
+.ui-muted {
+  color: var(--text-muted);
+}
+
+.ui-control {
+  border-radius: var(--ui-radius);
+  cursor: pointer;
+}

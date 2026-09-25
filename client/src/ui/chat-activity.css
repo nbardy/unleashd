@@ -4,7 +4,7 @@
   display: inline-flex;
   vertical-align: middle;
   align-items: center;
-  gap: 6px;
+  gap: var(--sp-3);
   min-height: 24px;
   padding: 0;
   margin: 0;
@@ -12,7 +12,7 @@
   background: transparent;
   color: var(--text-emphasis);
   font: inherit;
-  font-size: 12px;
+  font-size: var(--fs-3);
   line-height: 20px;
   cursor: pointer;
   text-align: left;

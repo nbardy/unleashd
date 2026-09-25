@@ -1,0 +1,46 @@
+/* Layer 1 of 5 (tokens → primitives → markdown → views → shells), docs/patterns.md#tokens-and-shells.
+ * Pattern: tokens-and-shells (docs/patterns.md#tokens-and-shells)
+ *
+ * The ONLY file allowed to spell a px font-size, padding or gap. Every other
+ * stylesheet uses these steps; gate G7 in tools/check-client-invariants.sh
+ * fails on a new literal. Before T21a there were 45 font sizes, 172 paddings
+ * and 39 gaps, most within 1-2px of each other.
+ *
+ * Breakpoints cannot be custom properties (var() is invalid inside @media),
+ * so G7 enforces the value set instead. Two widths, nothing else:
+ *   768px  the device switch (mobile/hooks/useDeviceKind.ts). The tree is picked
+ *          once per load, so a desktop window narrowed below it keeps the desktop
+ *          tree; its narrow-window tweaks use this same width.
+ *   340px  compact phones (iPad Slide Over is 320px): the mobile search row
+ *          drops its secondary columns.
+ */
+:root {
+  /* Type scale: 9 steps. */
+  --fs-1: 10px; /* micro labels, badges */
+  --fs-2: 11px; /* meta, secondary rows */
+  --fs-3: 12px; /* desktop body-small, controls */
+  --fs-4: 13px; /* desktop body */
+  --fs-5: 14px; /* emphasis, mobile secondary */
+  --fs-6: 16px; /* mobile body, section titles */
+  --fs-7: 18px; /* panel titles */
+  --fs-8: 24px; /* page titles, large glyphs */
+  --fs-9: 32px; /* display: mobile page titles, empty-state glyphs */
+
+  /* Spacing scale: padding, gap. 2px half-steps up to 12 (70% of all paddings
+   * sit there, and 10px alone is 65 rows: dropping it would move every list),
+   * then wider jumps. */
+  --sp-1: 2px;
+  --sp-2: 4px;
+  --sp-3: 6px;
+  --sp-4: 8px;
+  --sp-5: 10px;
+  --sp-6: 12px;
+  --sp-7: 16px;
+  --sp-8: 20px;
+  --sp-9: 24px;
+  --sp-10: 32px;
+  --sp-11: 40px; /* empty states, page padding */
+
+  /* Command palettes (search, prompts) hang this far below the viewport top. */
+  --overlay-top: 80px;
+}

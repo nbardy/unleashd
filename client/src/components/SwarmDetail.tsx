@@ -226,8 +226,8 @@ function WorkerChatPane({
 
   if (!conversationId || !conversation) {
     return (
-      <div className="worker-chat-pane empty">
-        <div className="empty-state">No {label ? label.toLowerCase() : 'worker'} log</div>
+      <div className="worker-chat-pane ui-stack empty">
+        <div className="empty-state ui-muted">No {label ? label.toLowerCase() : 'worker'} log</div>
       </div>
     );
   }
@@ -236,22 +236,22 @@ function WorkerChatPane({
   const model = shortModelName(conversation.modelName);
 
   return (
-    <div className="worker-chat-pane">
-      <div className={`worker-pane-header pane-${accentColor}`}>
+    <div className="worker-chat-pane ui-stack">
+      <div className={`worker-pane-header ui-row pane-${accentColor}`}>
         {label && <span className={`pane-label ${accentColor}`}>{label}</span>}
-        <span className="worker-pane-id">{conversationId.substring(0, 8)}</span>
+        <span className="worker-pane-id ui-muted">{conversationId.substring(0, 8)}</span>
         {role !== 'work' && <span className={`role-badge role-${role}`}>{ROLE_LABELS[role]}</span>}
         {model && (
           <span className={`worker-pane-provider provider-${conversation.provider || 'claude'}`}>
             {model}
           </span>
         )}
-        <div className={`state-badge state-${runningState}`}>
+        <div className={`state-badge ui-inline-row state-${runningState}`}>
           <div className="state-indicator" />
           <span className="state-label">{runningState === 'running' ? 'Running' : 'Idle'}</span>
         </div>
       </div>
-      <div className="worker-pane-messages">
+      <div className="worker-pane-messages ui-stack">
         <VirtualizedMessageList
           messageGroups={messageGroups}
           isRunning={isStreaming}
@@ -283,13 +283,13 @@ function GitLogPanel({ projectRoot }: { projectRoot: string }) {
   const commits = log.data ?? NO_COMMITS;
 
   return (
-    <div className={`swarm-bottom-panel ${isCollapsed ? 'collapsed' : ''}`}>
+    <div className={`swarm-bottom-panel ui-stack ${isCollapsed ? 'collapsed' : ''}`}>
       <button
         type="button"
-        className="swarm-panel-header swarm-panel-toggle"
+        className="swarm-panel-header ui-row swarm-panel-toggle"
         onClick={() => setIsCollapsed((c) => !c)}
       >
-        <span className="panel-toggle-icon">{isCollapsed ? '▶' : '▼'}</span>
+        <span className="panel-toggle-icon ui-muted">{isCollapsed ? '▶' : '▼'}</span>
         Recent Commits
       </button>
       {!isCollapsed && (
@@ -299,9 +299,9 @@ function GitLogPanel({ projectRoot }: { projectRoot: string }) {
           {commits.map((c) => (
             <div key={c.hash} className="git-log-entry">
               <code className="git-hash">{c.hash.substring(0, 7)}</code>
-              <span className="git-message">{c.message}</span>
-              <span className="git-author">{c.author}</span>
-              <span className="git-date">{formatTimeAgo(new Date(c.date))}</span>
+              <span className="git-message ui-truncate">{c.message}</span>
+              <span className="git-author ui-muted">{c.author}</span>
+              <span className="git-date ui-muted">{formatTimeAgo(new Date(c.date))}</span>
             </div>
           ))}
         </div>
@@ -351,13 +351,13 @@ function OompaConfigPanel({ projectRoot }: { projectRoot: string }) {
   );
 
   return (
-    <div className={`swarm-bottom-panel ${isCollapsed ? 'collapsed' : ''}`}>
+    <div className={`swarm-bottom-panel ui-stack ${isCollapsed ? 'collapsed' : ''}`}>
       <button
         type="button"
-        className="swarm-panel-header swarm-panel-toggle"
+        className="swarm-panel-header ui-row swarm-panel-toggle"
         onClick={() => setIsCollapsed((c) => !c)}
       >
-        <span className="panel-toggle-icon">{isCollapsed ? '▶' : '▼'}</span>
+        <span className="panel-toggle-icon ui-muted">{isCollapsed ? '▶' : '▼'}</span>
         Swarm Config
       </button>
       {!isCollapsed && (
@@ -368,14 +368,14 @@ function OompaConfigPanel({ projectRoot }: { projectRoot: string }) {
           )}
           {configFetch.kind === 'loading' && <div className="panel-loading">Loading config...</div>}
           {config && (
-            <div className="config-summary">
+            <div className="config-summary ui-stack">
               {config.workers.map((w, i) => {
                 const prompts = Array.isArray(w.prompt) ? w.prompt : w.prompt ? [w.prompt] : [];
                 return (
                   <div key={i}>
-                    <div className="config-worker-row">
+                    <div className="config-worker-row ui-row">
                       <span className="config-model-badge">{w.model}</span>
-                      <span className="config-count">
+                      <span className="config-count ui-muted">
                         x{w.count ?? 1} &middot; {w.iterations ?? '?'} cycles
                         {w.can_plan === false && ' (executor)'}
                       </span>
@@ -394,9 +394,9 @@ function OompaConfigPanel({ projectRoot }: { projectRoot: string }) {
                 );
               })}
               {config.reviewer && (
-                <div className="config-worker-row">
+                <div className="config-worker-row ui-row">
                   <span className="config-model-badge">{config.reviewer.model}</span>
-                  <span className="config-count">reviewer</span>
+                  <span className="config-count ui-muted">reviewer</span>
                 </div>
               )}
             </div>
@@ -463,31 +463,33 @@ function SwarmRunsPanel({
         ? 0
         : (newFiles.data?.count ?? null);
 
-  if (loading) return <div className="empty-state">Loading run history...</div>;
-  if (runs.length === 0) return <div className="empty-state">No runs recorded yet</div>;
+  if (loading) return <div className="empty-state ui-muted">Loading run history...</div>;
+  if (runs.length === 0) return <div className="empty-state ui-muted">No runs recorded yet</div>;
 
   const selectedRun = runs.find((r) => r.swarmId === selectedRunId);
   const summary = selectedRun?.summary;
   const runLog = selectedRun?.run;
 
   return (
-    <div className="swarm-runs-panel">
+    <div className="swarm-runs-panel ui-stack">
       {/* Run selector */}
       <div className="runs-selector">
         {runs.map((r) => (
           <button
             type="button"
             key={r.swarmId}
-            className={`run-selector-btn ${r.swarmId === selectedRunId ? 'active' : ''}`}
+            className={`run-selector-btn ui-row ui-card ${r.swarmId === selectedRunId ? 'active' : ''}`}
             onClick={() => setSelectedRunId(r.swarmId)}
           >
             <span className="run-id">{r.swarmId}</span>
             {r.run && (
-              <span className="run-time">{new Date(r.run['started-at']).toLocaleDateString()}</span>
+              <span className="run-time ui-muted">
+                {new Date(r.run['started-at']).toLocaleDateString()}
+              </span>
             )}
             {r.summary && (
               <span
-                className={`run-status-badge ${r.summary['total-completed'] > 0 ? 'has-completions' : ''}`}
+                className={`run-status-badge ui-muted ${r.summary['total-completed'] > 0 ? 'has-completions' : ''}`}
               >
                 {r.summary['total-completed']}/{r.summary['total-iterations']}
               </span>
@@ -498,7 +500,7 @@ function SwarmRunsPanel({
 
       {/* Selected run details */}
       {summary && (
-        <div className="run-summary">
+        <div className="run-summary ui-card">
           <div className="run-summary-header">
             <h4>Summary</h4>
             {runLog && (
@@ -517,33 +519,33 @@ function SwarmRunsPanel({
               const runningCount = summary.workers.filter((w) => w.status === 'running').length;
               const completed = summary['total-completed'];
               return (
-                <div className="run-stat run-stat-tasks">
-                  <span className="run-stat-label">Tasks</span>
+                <div className="run-stat ui-stack run-stat-tasks">
+                  <span className="run-stat-label ui-muted">Tasks</span>
                   <div className="run-stat-tasks-breakdown">
-                    <div className="task-row">
+                    <div className="task-row ui-stack">
                       <span className="task-count task-pending">{runningCount}</span>
-                      <span className="task-sublabel">Pending</span>
+                      <span className="task-sublabel ui-muted">Pending</span>
                     </div>
-                    <div className="task-row">
+                    <div className="task-row ui-stack">
                       <span className="task-count task-new">
                         {newFilesCount !== null ? newFilesCount : '…'}
                       </span>
-                      <span className="task-sublabel">New</span>
+                      <span className="task-sublabel ui-muted">New</span>
                     </div>
-                    <div className="task-row">
+                    <div className="task-row ui-stack">
                       <span className="task-count task-completed">{completed}</span>
-                      <span className="task-sublabel">Completed</span>
+                      <span className="task-sublabel ui-muted">Completed</span>
                     </div>
                   </div>
                 </div>
               );
             })()}
-            <div className="run-stat run-stat-cycles">
-              <span className="run-stat-label">Cycles</span>
+            <div className="run-stat ui-stack run-stat-cycles">
+              <span className="run-stat-label ui-muted">Cycles</span>
               <div className="run-stat-cycles-progress">
                 <span className="cycles-done">{summary['total-completed']}</span>
-                <span className="cycles-sep">/</span>
-                <span className="cycles-total">{summary['total-iterations']}</span>
+                <span className="cycles-sep ui-muted">/</span>
+                <span className="cycles-total ui-muted">{summary['total-iterations']}</span>
               </div>
               <div className="run-stat-cycles-breakdown">
                 <span className="cycles-merges">
@@ -596,30 +598,34 @@ function SwarmRunsPanel({
 
       {/* Review logs */}
       {reviews.length > 0 && (
-        <div className="run-reviews">
+        <div className="run-reviews ui-card">
           <h4>Review Log ({reviews.length} reviews)</h4>
-          <div className="run-reviews-list">
+          <div className="run-reviews-list ui-stack">
             {reviews.map((r, i) => {
               const key = `${r['worker-id']}-i${r.iteration}-r${r.round}`;
               const isExpanded = expandedReview === key;
               return (
-                <div key={i} className="run-review-entry">
+                <div key={i} className="run-review-entry ui-card">
                   <div
-                    className="run-review-header"
+                    className="run-review-header ui-row"
                     onClick={() => setExpandedReview(isExpanded ? null : key)}
                   >
                     <span className="run-review-worker">{r['worker-id']}</span>
-                    <span className="run-review-iter">
+                    <span className="run-review-iter ui-muted">
                       c{r.iteration} r{r.round}
                     </span>
                     <span className={`verdict-badge verdict-${r.verdict}`}>
                       {r.verdict.toUpperCase().replace('-', ' ')}
                     </span>
-                    <span className="run-review-files">{r['diff-files']?.length ?? 0} files</span>
-                    <span className="run-review-time">
+                    <span className="run-review-files ui-muted">
+                      {r['diff-files']?.length ?? 0} files
+                    </span>
+                    <span className="run-review-time ui-muted">
                       {new Date(r.timestamp).toLocaleTimeString()}
                     </span>
-                    <span className="expand-indicator">{isExpanded ? '\u25BC' : '\u25B6'}</span>
+                    <span className="expand-indicator ui-muted">
+                      {isExpanded ? '\u25BC' : '\u25B6'}
+                    </span>
                   </div>
                   {isExpanded && (
                     <div className="run-review-output">
@@ -848,10 +854,10 @@ export function SwarmDetail() {
   if (!projectRoot) {
     return (
       <div className="swarm-detail">
-        <div className="swarm-detail-header">
+        <div className="swarm-detail-header ui-row">
           <button
             type="button"
-            className="back-to-gallery-btn"
+            className="back-to-gallery-btn ui-control"
             onClick={() => navigate('/workers')}
           >
             &#8592; Swarm Projects Overview
@@ -865,27 +871,31 @@ export function SwarmDetail() {
   return (
     <div className="swarm-detail">
       {/* Header */}
-      <div className="swarm-detail-header">
-        <button type="button" className="back-to-gallery-btn" onClick={() => navigate('/workers')}>
+      <div className="swarm-detail-header ui-row">
+        <button
+          type="button"
+          className="back-to-gallery-btn ui-control"
+          onClick={() => navigate('/workers')}
+        >
           &#8592; Swarm Projects Overview
         </button>
-        <div className="swarm-detail-title-block">
+        <div className="swarm-detail-title-block ui-stack">
           <h2 style={{ fontFamily: 'var(--font-mono)', fontSize: '14px', fontWeight: 500 }}>
             {displayPath}
           </h2>
         </div>
-        <div className="swarm-detail-header-stats">
+        <div className="swarm-detail-header-stats ui-row">
           <button
             type="button"
-            className="swarm-debug-btn"
+            className="swarm-debug-btn ui-control"
             onClick={handleStartDebugConversation}
             title="Start a debug conversation about this swarm"
           >
             Debug Conversation
           </button>
-          <div className="swarm-run-controls">
+          <div className="swarm-run-controls ui-row">
             <div
-              className={`state-badge swarm-header-badge state-${displayRunning > 0 ? 'running' : 'idle'}`}
+              className={`state-badge ui-inline-row swarm-header-badge state-${displayRunning > 0 ? 'running' : 'idle'}`}
             >
               <div className="state-indicator" />
               <span className="state-label">
@@ -1010,11 +1020,11 @@ export function SwarmDetail() {
               </span>
             )}
           </div>
-          <div className="swarm-info-btn-wrap">
-            <button type="button" className="swarm-info-btn" aria-label="Project stats">
+          <div className="swarm-info-btn-wrap ui-inline-row">
+            <button type="button" className="swarm-info-btn ui-muted" aria-label="Project stats">
               ⓘ
             </button>
-            <div className="swarm-info-tooltip">
+            <div className="swarm-info-tooltip ui-card">
               <span>
                 {runtimeTotalWorkers} workers · {allWorkers.length} sessions ({workCount} exec,{' '}
                 {reviewCount} review, {fixCount} fix)
@@ -1029,14 +1039,14 @@ export function SwarmDetail() {
       <div className="swarm-tabs">
         <button
           type="button"
-          className={`swarm-tab ${activeTab === 'workers' ? 'active' : ''}`}
+          className={`swarm-tab ui-muted ${activeTab === 'workers' ? 'active' : ''}`}
           onClick={() => setActiveTab('workers')}
         >
           Workers ({allWorkers.length})
         </button>
         <button
           type="button"
-          className={`swarm-tab ${activeTab === 'runs' ? 'active' : ''}`}
+          className={`swarm-tab ui-muted ${activeTab === 'runs' ? 'active' : ''}`}
           onClick={() => setActiveTab('runs')}
         >
           Run Overview
@@ -1047,7 +1057,7 @@ export function SwarmDetail() {
       {activeTab === 'workers' && (
         <div className="swarm-detail-body">
           {/* Worker Roster sidebar — exec workers with reviews nested below */}
-          <div className="swarm-roster">
+          <div className="swarm-roster ui-stack">
             <div className="swarm-roster-list">
               {execGroups.map((group, groupIdx) => {
                 const w = group.exec;
@@ -1066,11 +1076,13 @@ export function SwarmDetail() {
                     className={`roster-exec-group ${isSelected ? 'selected' : ''}`}
                     onClick={() => setSelectedGroupIdx(groupIdx)}
                   >
-                    <div className={`roster-worker ${isSelected ? 'selected' : ''}`}>
+                    <div className={`roster-worker ui-row ${isSelected ? 'selected' : ''}`}>
                       <span className={`roster-status-dot ${statusClass}`} />
-                      <span className="roster-worker-id">{w.workerId ?? w.id.substring(0, 8)}</span>
-                      {model && <span className="roster-model">{model}</span>}
-                      <span className="roster-worker-msgs">{w.messages.length}m</span>
+                      <span className="roster-worker-id ui-truncate">
+                        {w.workerId ?? w.id.substring(0, 8)}
+                      </span>
+                      {model && <span className="roster-model ui-muted">{model}</span>}
+                      <span className="roster-worker-msgs ui-muted">{w.messages.length}m</span>
                       {group.reviews.length > 0 && (
                         <span className="roster-review-count">{group.reviews.length}r</span>
                       )}
@@ -1085,7 +1097,7 @@ export function SwarmDetail() {
                 );
               })}
             </div>
-            <div className="roster-stats">
+            <div className="roster-stats ui-stack ui-muted">
               <div className="roster-stat-row">
                 <span>Running</span>
                 <span className="roster-stat-value">{displayRunning}</span>

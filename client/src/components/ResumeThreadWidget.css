@@ -6,17 +6,12 @@
 }
 
 .resume-thread-widget__trigger {
-  display: inline-flex;
-  align-items: center;
   justify-content: center;
   width: 26px;
   height: 26px;
   padding: 0;
   border: 0;
-  border-radius: var(--ui-radius);
   background: transparent;
-  color: var(--text-muted);
-  cursor: pointer;
 }
 
 .resume-thread-widget__trigger:hover,
@@ -37,16 +32,16 @@
   z-index: 100;
   display: none;
   flex-direction: column;
-  gap: 5px;
+  gap: var(--sp-2);
   width: max-content;
   max-width: min(300px, 80vw);
-  padding: 10px 12px;
+  padding: var(--sp-5) var(--sp-6);
   border: 1px solid var(--border-default);
   border-radius: var(--ui-radius);
   background: var(--bg-card);
   box-shadow: 0 4px 12px rgb(0 0 0 / 18%);
   color: var(--text-secondary);
-  font-size: 11px;
+  font-size: var(--fs-2);
   font-weight: 400;
   line-height: 1.5;
   overflow-wrap: anywhere;

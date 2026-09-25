@@ -12,18 +12,14 @@
 
 .path-input-wrapper {
   position: relative;
-  display: flex;
-  align-items: center;
 }
 
 .path-input {
   width: 100%;
-  padding: 8px 12px;
+  padding: var(--sp-4) var(--sp-6);
   background: var(--bg-primary);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--ui-radius);
   color: var(--text-emphasis);
-  font-size: 12px;
+  font-size: var(--fs-3);
   font-family: var(--font-mono);
   box-sizing: border-box;
   transition: border-color 0.2s;
@@ -70,8 +66,6 @@
 .path-suggestions {
   margin-top: 4px;
   background: var(--bg-secondary);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--ui-radius);
   max-height: 200px;
   overflow-y: auto;
   z-index: 100;
@@ -81,8 +75,8 @@
 .path-suggestion-item {
   display: flex;
   align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
+  gap: var(--sp-4);
+  padding: var(--sp-4) var(--sp-6);
   cursor: pointer;
   transition: background 0.15s;
   border-bottom: 1px solid var(--border-subtle);
@@ -99,8 +93,6 @@
 
 /* Folder icon */
 .path-folder-icon {
-  display: flex;
-  align-items: center;
   justify-content: center;
   color: var(--warning);
   flex-shrink: 0;
@@ -108,8 +100,6 @@
 
 /* Recent/history icon (clock) */
 .path-recent-icon {
-  display: flex;
-  align-items: center;
   justify-content: center;
   color: var(--accent-primary);
   flex-shrink: 0;
@@ -133,26 +123,20 @@
 .path-suggestion-name {
   font-weight: 500;
   color: var(--text-emphasis);
-  font-size: 12px;
+  font-size: var(--fs-3);
   white-space: nowrap;
 }
 
 /* Full path (dimmed, truncated) */
 .path-suggestion-path {
-  font-size: 11px;
-  color: var(--text-muted);
+  font-size: var(--fs-2);
   font-family: var(--font-mono);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
   margin-left: auto;
   max-width: 60%;
 }
 
 /* Create folder icon (folder + plus) */
 .path-create-icon {
-  display: flex;
-  align-items: center;
   justify-content: center;
   color: var(--success);
   flex-shrink: 0;
@@ -164,10 +148,9 @@
 
 /* No results message */
 .path-no-results {
-  padding: 12px;
+  padding: var(--sp-6);
   text-align: center;
-  color: var(--text-muted);
-  font-size: 12px;
+  font-size: var(--fs-3);
 }
 
 /* Scrollbar styling for suggestions dropdown */

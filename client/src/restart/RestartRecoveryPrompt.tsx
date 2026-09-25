@@ -5,7 +5,7 @@ export function RestartRecoveryPrompt({ recovery }: { recovery: RestartRecoveryC
     <div className="restart-recovery" aria-live="polite">
       <div className="restart-recovery__copy">
         <strong>Continue from where you left off?</strong>
-        <span className="restart-recovery__message">{recovery.currentMessage}</span>
+        <span className="restart-recovery__message ui-truncate">{recovery.currentMessage}</span>
         <span className="restart-recovery__count">
           Resubmit current message
           {recovery.queuedCount > 0

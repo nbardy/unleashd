@@ -49,16 +49,16 @@ const ConversationListItem = memo(function ConversationListItem({
     <MobileCardLink
       to={`/chat/${encodeURIComponent(conv.id)}`}
       state={routeState}
-      className="mobile-conversation-item"
+      className="mobile-conversation-item ui-stack"
     >
-      <div className="mobile-conversation-item__top">
-        <span className="mobile-conversation-item__title" title={dirDisplay}>
+      <div className="mobile-conversation-item__top ui-row">
+        <span className="mobile-conversation-item__title ui-truncate" title={dirDisplay}>
           {folderName}
         </span>
-        <span className="mobile-conversation-item__meta">
+        <span className="mobile-conversation-item__meta ui-row">
           {conv.done ? <MobileBadge>Done</MobileBadge> : null}
           {unseen ? <MobileBadge tone="accent">New</MobileBadge> : null}
-          <span className="mobile-conversation-item__time">{timeAgo}</span>
+          <span className="mobile-conversation-item__time ui-muted">{timeAgo}</span>
           {conv.isRunning ? (
             <span
               className="mobile-conversation-item__status mobile-conversation-item__status--running"
@@ -72,7 +72,7 @@ const ConversationListItem = memo(function ConversationListItem({
           ) : null}
         </span>
       </div>
-      <div className="mobile-conversation-item__preview" title={preview}>
+      <div className="mobile-conversation-item__preview ui-truncate" title={preview}>
         {preview}
       </div>
       <MobilePath>{dirDisplay}</MobilePath>

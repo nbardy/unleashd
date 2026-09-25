@@ -100,13 +100,13 @@ export function PromptPalette({
                 }}
                 onMouseEnter={() => setSelectedIndex(i)}
               >
-                <div className="prompt-item-header">
+                <div className="prompt-item-header ui-row">
                   <span className="prompt-name">{prompt.name}</span>
-                  <div className="prompt-item-actions">
-                    <span className="prompt-usage">used {prompt.usageCount}x</span>
+                  <div className="prompt-item-actions ui-row">
+                    <span className="prompt-usage ui-muted">used {prompt.usageCount}x</span>
                     <button
                       type="button"
-                      className="prompt-delete-btn"
+                      className="prompt-delete-btn ui-control"
                       onClick={(e) => {
                         e.stopPropagation();
                         deletePrompt(prompt.id);
@@ -117,7 +117,7 @@ export function PromptPalette({
                     </button>
                   </div>
                 </div>
-                <div className="prompt-preview">
+                <div className="prompt-preview ui-truncate">
                   {prompt.content.length > 100
                     ? `${prompt.content.substring(0, 100)}...`
                     : prompt.content}
@@ -125,7 +125,7 @@ export function PromptPalette({
               </div>
             ))
           ) : (
-            <div className="prompt-palette-empty">
+            <div className="prompt-palette-empty ui-muted">
               {prompts.length === 0
                 ? 'No saved prompts yet. Click the star to save one!'
                 : 'No prompts match your search'}

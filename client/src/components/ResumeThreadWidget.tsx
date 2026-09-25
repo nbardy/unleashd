@@ -50,7 +50,7 @@ export function ResumeThreadWidget({
     <span className="resume-thread-widget">
       {sourceAvailable ? (
         <Link
-          className="resume-thread-widget__trigger"
+          className="resume-thread-widget__trigger ui-control ui-inline-row ui-muted"
           to={`/chat/${sourceConversationId}`}
           aria-label={`Forked from ${displayId}. Open source thread`}
           aria-describedby={tooltipId}
@@ -60,7 +60,7 @@ export function ResumeThreadWidget({
       ) : (
         <button
           type="button"
-          className="resume-thread-widget__trigger"
+          className="resume-thread-widget__trigger ui-control ui-inline-row ui-muted"
           aria-label={`Forked from ${displayId}. Source thread unavailable`}
           aria-describedby={tooltipId}
         >

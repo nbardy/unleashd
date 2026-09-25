@@ -425,11 +425,11 @@ export function PathAutocomplete({
 
   return (
     <div className={`path-autocomplete ${className}`} ref={containerRef}>
-      <div className="path-input-wrapper">
+      <div className="path-input-wrapper ui-row">
         <input
           ref={inputRef}
           type="text"
-          className={`path-input ${!isValidPath && value.trim() ? 'path-input-invalid' : ''}`}
+          className={`path-input ui-card ${!isValidPath && value.trim() ? 'path-input-invalid' : ''}`}
           value={value}
           onChange={handleInputChange}
           onFocus={handleInputFocus}
@@ -441,7 +441,7 @@ export function PathAutocomplete({
         {isLoading && <span className="path-loading-indicator" />}
       </div>
       {showSuggestions && (totalCount > 0 || shouldShowNoMatchMessage) && (
-        <div className="path-suggestions">
+        <div className="path-suggestions ui-card">
           {/* Recent directory fuzzy matches */}
           {fuzzyMatches.map((match, index) => {
             const parts = highlightMatches(match.path, match.matches);
@@ -452,7 +452,7 @@ export function PathAutocomplete({
                 onClick={() => handleSelectPath(match.path)}
                 onMouseEnter={() => setSelectedIndex(index)}
               >
-                <span className="path-recent-icon">
+                <span className="path-recent-icon ui-row">
                   <svg
                     aria-hidden="true"
                     width="14"
@@ -470,7 +470,7 @@ export function PathAutocomplete({
                   </svg>
                 </span>
                 <span className="path-suggestion-name">{match.name}</span>
-                <span className="path-suggestion-path">
+                <span className="path-suggestion-path ui-truncate ui-muted">
                   {parts.map((part) =>
                     typeof part === 'string' ? part : <mark key={part.key}>{part.highlighted}</mark>
                   )}
@@ -494,7 +494,7 @@ export function PathAutocomplete({
                 onClick={() => handleSelectPath(suggestion.path)}
                 onMouseEnter={() => setSelectedIndex(combinedIndex)}
               >
-                <span className="path-folder-icon">
+                <span className="path-folder-icon ui-row">
                   <svg
                     aria-hidden="true"
                     width="14"
@@ -510,12 +510,14 @@ export function PathAutocomplete({
                   </svg>
                 </span>
                 <span className="path-suggestion-name">{suggestion.name}</span>
-                <span className="path-suggestion-path">{suggestion.path}</span>
+                <span className="path-suggestion-path ui-truncate ui-muted">{suggestion.path}</span>
               </div>
             );
           })}
 
-          {shouldShowNoMatchMessage && <div className="path-no-results">No matching folder</div>}
+          {shouldShowNoMatchMessage && (
+            <div className="path-no-results ui-muted">No matching folder</div>
+          )}
 
           {shouldShowCreateOption ? (
             <div
@@ -524,7 +526,7 @@ export function PathAutocomplete({
               }`}
               onClick={handleCreateFolder}
             >
-              <span className="path-create-icon">
+              <span className="path-create-icon ui-row">
                 <svg
                   aria-hidden="true"
                   width="14"
@@ -542,7 +544,7 @@ export function PathAutocomplete({
                 </svg>
               </span>
               <span className="path-suggestion-name">Create folder</span>
-              <span className="path-suggestion-path">{value.trim()}</span>
+              <span className="path-suggestion-path ui-truncate ui-muted">{value.trim()}</span>
             </div>
           ) : null}
         </div>

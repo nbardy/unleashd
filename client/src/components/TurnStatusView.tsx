@@ -21,7 +21,9 @@ const DIAGNOSTIC_TONES: ReadonlySet<TurnDiagnosticsViewModel['tone']> = new Set(
 ]);
 
 export function TurnStatusView({ view, className = '', density = 'full' }: TurnStatusViewProps) {
-  const classes = ['turn-status', `turn-status--${view.tone}`, className].filter(Boolean).join(' ');
+  const classes = ['turn-status ui-inline-row', `turn-status--${view.tone}`, className]
+    .filter(Boolean)
+    .join(' ');
   const showDetail = density === 'full' || DIAGNOSTIC_TONES.has(view.tone);
   return createElement(
     'output',
@@ -35,7 +37,7 @@ export function TurnStatusView({ view, className = '', density = 'full' }: TurnS
       ? createElement('span', { className: 'turn-status__activity' }, view.lastActivity)
       : null,
     showDetail && view.reason
-      ? createElement('span', { className: 'turn-status__reason' }, view.reason)
+      ? createElement('span', { className: 'turn-status__reason ui-truncate' }, view.reason)
       : null
   );
 }

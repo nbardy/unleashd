@@ -115,15 +115,19 @@ export function SwarmDashboard() {
 
   if (swarmProjects.length === 0) {
     return (
-      <div className="swarm-dashboard">
-        <div className="swarm-dashboard-header">
-          <button type="button" className="back-to-gallery-btn" onClick={() => navigate('/')}>
+      <div className="swarm-dashboard ui-stack">
+        <div className="swarm-dashboard-header ui-row">
+          <button
+            type="button"
+            className="back-to-gallery-btn ui-control"
+            onClick={() => navigate('/')}
+          >
             &#8592; Gallery
           </button>
           <h2>Swarm Dashboard</h2>
         </div>
-        <div className="swarm-dashboard-content">
-          <div className="empty-state">
+        <div className="swarm-dashboard-content ui-stack">
+          <div className="empty-state ui-muted">
             No worker conversations. Workers are detected by the [oompa] prefix in the first
             message.
           </div>
@@ -133,14 +137,18 @@ export function SwarmDashboard() {
   }
 
   return (
-    <div className="swarm-dashboard">
-      <div className="swarm-dashboard-header">
-        <button type="button" className="back-to-gallery-btn" onClick={() => navigate('/')}>
+    <div className="swarm-dashboard ui-stack">
+      <div className="swarm-dashboard-header ui-row">
+        <button
+          type="button"
+          className="back-to-gallery-btn ui-control"
+          onClick={() => navigate('/')}
+        >
           &#8592; Gallery
         </button>
         <h2>Swarm Dashboard</h2>
       </div>
-      <div className="swarm-dashboard-content">
+      <div className="swarm-dashboard-content ui-stack">
         {swarmProjects.map((project) => (
           <div
             key={project.projectRoot}
@@ -150,23 +158,25 @@ export function SwarmDashboard() {
               navigate(`/workers/detail?project=${encodeURIComponent(project.projectRoot)}`)
             }
           >
-            <div className="swarm-project-info">
+            <div className="swarm-project-info ui-stack">
               <div className="swarm-project-name">{project.projectName}</div>
-              <div className="swarm-project-path">{shortenHomePath(project.projectRoot)}</div>
-              <div className="swarm-project-stats">
-                <span className="swarm-stat">
+              <div className="swarm-project-path ui-truncate ui-muted">
+                {shortenHomePath(project.projectRoot)}
+              </div>
+              <div className="swarm-project-stats ui-row">
+                <span className="swarm-stat ui-inline-row">
                   <span className="swarm-stat-value">{project.sessions.length}</span>
                   session{project.sessions.length !== 1 ? 's' : ''}
                 </span>
                 <span className="swarm-stat-divider" />
                 {project.runningCount > 0 && (
-                  <span className="swarm-stat">
+                  <span className="swarm-stat ui-inline-row">
                     <span className="swarm-stat-value running">{project.runningCount}</span>
                     running
                   </span>
                 )}
                 {project.idleCount > 0 && (
-                  <span className="swarm-stat">
+                  <span className="swarm-stat ui-inline-row">
                     <span className="swarm-stat-value idle">{project.idleCount}</span>
                     idle
                   </span>
@@ -174,7 +184,7 @@ export function SwarmDashboard() {
                 {project.runCount > 1 && (
                   <>
                     <span className="swarm-stat-divider" />
-                    <span className="swarm-stat">
+                    <span className="swarm-stat ui-inline-row">
                       <span className="swarm-stat-value">{project.runCount}</span>
                       swarm run{project.runCount !== 1 ? 's' : ''}
                     </span>
@@ -182,13 +192,15 @@ export function SwarmDashboard() {
                 )}
               </div>
             </div>
-            <div className="swarm-project-right">
+            <div className="swarm-project-right ui-stack">
               {project.latestActivity && (
-                <span className="swarm-time-ago">{formatTimeAgo(project.latestActivity)}</span>
+                <span className="swarm-time-ago ui-muted">
+                  {formatTimeAgo(project.latestActivity)}
+                </span>
               )}
               <button
                 type="button"
-                className="swarm-open-btn"
+                className="swarm-open-btn ui-control"
                 onClick={(e) => {
                   e.stopPropagation();
                   navigate(`/workers/detail?project=${encodeURIComponent(project.projectRoot)}`);

@@ -8,9 +8,7 @@
 
 .file-preview {
   position: relative;
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
+  gap: var(--sp-2);
 }
 
 .file-preview-icon {
@@ -33,14 +31,12 @@
 .file-preview-popup {
   position: fixed;
   transform: translateX(-50%);
-  display: flex;
-  flex-direction: column;
   align-items: center;
-  gap: 8px;
+  gap: var(--sp-4);
   background: var(--bg-panel);
   border: 1px solid var(--border-emphasis);
   border-radius: var(--ui-radius);
-  padding: 8px;
+  padding: var(--sp-4);
   box-shadow: 0 8px 24px color-mix(in srgb, var(--bg-darkest) 50%, transparent);
   z-index: 2100;
   pointer-events: none;
@@ -66,7 +62,7 @@
   width: min(60vw, 720px);
   max-height: 50vh;
   overflow: auto;
-  padding: 12px 14px;
+  padding: var(--sp-6) var(--sp-6);
   border-radius: var(--ui-radius);
   background: var(--bg-base);
   color: var(--text-primary);
@@ -83,7 +79,7 @@
 
 .file-preview-markdown pre {
   overflow: auto;
-  padding: 10px;
+  padding: var(--sp-5);
   border-radius: var(--ui-radius);
   background: var(--bg-darkest);
 }
@@ -93,23 +89,17 @@
 }
 
 .file-preview-markdown-status {
-  color: var(--text-muted);
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: var(--fs-3);
 }
 
 .file-preview-path {
-  font-size: 11px;
-  color: var(--text-muted);
+  font-size: var(--fs-2);
   font-family: var(--font-mono);
   max-width: 60vw;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 /* Non-path lines (e.g. "...") within a mixed path block */
 .path-block-text-line {
-  color: var(--text-muted);
   font-family: inherit;
 }

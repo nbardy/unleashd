@@ -143,7 +143,7 @@ function TimelineChart({ runData, onWorkerClick }: TimelineChartProps) {
   }, []);
 
   if (timelines.length === 0) {
-    return <div className="timeline-empty">No cycle data available</div>;
+    return <div className="timeline-empty ui-muted">No cycle data available</div>;
   }
 
   return (
@@ -155,12 +155,12 @@ function TimelineChart({ runData, onWorkerClick }: TimelineChartProps) {
           {timelines.map((timeline) => (
             <div
               key={timeline.workerId}
-              className="timeline-worker-label"
+              className="timeline-worker-label ui-stack"
               style={{ height: rowHeight }}
               onClick={() => onWorkerClick?.(timeline.workerId)}
             >
               <span className="worker-name">{shortWorkerId(timeline.workerId)}</span>
-              <span className="worker-meta">{timeline.model}</span>
+              <span className="worker-meta ui-muted">{timeline.model}</span>
             </div>
           ))}
         </div>
@@ -174,8 +174,8 @@ function TimelineChart({ runData, onWorkerClick }: TimelineChartProps) {
               const timeOffset = (timeRange.duration * i) / 5;
               const timeLabel = formatDuration(timeOffset);
               return (
-                <div key={i} className="timeline-tick" style={{ left: `${pct}%` }}>
-                  <span className="tick-label">{timeLabel}</span>
+                <div key={i} className="timeline-tick ui-row" style={{ left: `${pct}%` }}>
+                  <span className="tick-label ui-muted">{timeLabel}</span>
                 </div>
               );
             })}
@@ -206,7 +206,7 @@ function TimelineChart({ runData, onWorkerClick }: TimelineChartProps) {
                   return (
                     <div
                       key={span.id}
-                      className={`timeline-span status-${span.status}`}
+                      className={`timeline-span ui-control ui-row status-${span.status}`}
                       style={{
                         left: `${startPct}%`,
                         width: `${widthPct}%`,
@@ -219,7 +219,7 @@ function TimelineChart({ runData, onWorkerClick }: TimelineChartProps) {
                     >
                       {span.verdict && (
                         <span
-                          className="span-verdict"
+                          className="span-verdict ui-row"
                           style={{ backgroundColor: getVerdictColor(span.verdict) }}
                         >
                           {getVerdictIcon(span.verdict)}
@@ -246,19 +246,19 @@ function TimelineChart({ runData, onWorkerClick }: TimelineChartProps) {
             top: tooltip.y,
           }}
         >
-          <div className="tooltip-header">
+          <div className="tooltip-header ui-row">
             <span className="tooltip-worker">{shortWorkerId(tooltip.workerId)}</span>
             <span className="tooltip-iteration">Cycle {tooltip.span.iteration}</span>
           </div>
-          <div className="tooltip-body">
-            <div className="tooltip-row">
+          <div className="tooltip-body ui-stack">
+            <div className="tooltip-row ui-row">
               <span className="tooltip-label">Status:</span>
               <span className={`tooltip-status status-${tooltip.span.status}`}>
                 {tooltip.span.status}
               </span>
             </div>
             {tooltip.span.verdict && (
-              <div className="tooltip-row">
+              <div className="tooltip-row ui-row">
                 <span className="tooltip-label">Verdict:</span>
                 <span className={`tooltip-verdict verdict-${tooltip.span.verdict}`}>
                   {tooltip.span.verdict}
@@ -266,19 +266,19 @@ function TimelineChart({ runData, onWorkerClick }: TimelineChartProps) {
               </div>
             )}
             {tooltip.span.diffFiles > 0 && (
-              <div className="tooltip-row">
+              <div className="tooltip-row ui-row">
                 <span className="tooltip-label">Files changed:</span>
                 <span className="tooltip-value">{tooltip.span.diffFiles}</span>
               </div>
             )}
             {tooltip.span.reviewRounds > 0 && (
-              <div className="tooltip-row">
+              <div className="tooltip-row ui-row">
                 <span className="tooltip-label">Review rounds:</span>
                 <span className="tooltip-value">{tooltip.span.reviewRounds}</span>
               </div>
             )}
             {tooltip.span.merges > 0 && (
-              <div className="tooltip-row">
+              <div className="tooltip-row ui-row">
                 <span className="tooltip-label">Merges:</span>
                 <span className="tooltip-value merged">+{Math.round(tooltip.span.merges)}</span>
               </div>
@@ -325,7 +325,7 @@ function StatsPanel({ runData }: StatsPanelProps) {
   return (
     <div className="stats-panel">
       <div className="stats-grid">
-        <div className="stat-card">
+        <div className="stat-card ui-stack ui-card">
           <span className="stat-value">
             {stats.completedIterations}/{stats.totalIterations}
           </span>
@@ -338,25 +338,25 @@ function StatsPanel({ runData }: StatsPanelProps) {
           </div>
         </div>
 
-        <div className="stat-card merges">
+        <div className="stat-card ui-stack ui-card merges">
           <span className="stat-value merged">{stats.totalMerges}</span>
           <span className="stat-label">Total Merges</span>
         </div>
 
-        <div className="stat-card rejections">
+        <div className="stat-card ui-stack ui-card rejections">
           <span className="stat-value rejected">{stats.totalRejections}</span>
           <span className="stat-label">Rejections</span>
         </div>
 
-        <div className="stat-card reviews">
+        <div className="stat-card ui-stack ui-card reviews">
           <span className="stat-value">{stats.totalReviewRounds}</span>
           <span className="stat-label">Review Rounds</span>
         </div>
 
-        <div className="stat-card workers">
+        <div className="stat-card ui-stack ui-card workers">
           <span className="stat-value">{stats.totalWorkers}</span>
           <span className="stat-label">Workers</span>
-          <div className="worker-breakdown">
+          <div className="worker-breakdown ui-stack">
             {stats.runningWorkers > 0 && (
               <span className="worker-count running">{stats.runningWorkers} running</span>
             )}
@@ -369,7 +369,7 @@ function StatsPanel({ runData }: StatsPanelProps) {
           </div>
         </div>
 
-        <div className="stat-card errors">
+        <div className="stat-card ui-stack ui-card errors">
           <span className="stat-value">{stats.totalErrors}</span>
           <span className="stat-label">Errors</span>
         </div>
@@ -495,18 +495,18 @@ export function SwarmAnalytics() {
   const selectedRun = selectedSwarmId ? runsData.get(selectedSwarmId) : null;
 
   return (
-    <div className="swarm-analytics">
+    <div className="swarm-analytics ui-stack">
       {/* Header */}
-      <div className="swarm-analytics-header">
-        <div className="header-left">
-          <button type="button" className="back-btn" onClick={() => navigate('/workers')}>
+      <div className="swarm-analytics-header ui-row">
+        <div className="header-left ui-row">
+          <button type="button" className="back-btn ui-card" onClick={() => navigate('/workers')}>
             ← Swarm Dashboard
           </button>
           <h2>Swarm Analytics</h2>
         </div>
 
         {/* Project selector */}
-        <div className="project-selector">
+        <div className="project-selector ui-row">
           <label htmlFor="project-select">Project:</label>
           <select
             id="project-select"
@@ -541,7 +541,7 @@ export function SwarmAnalytics() {
           <>
             {/* Run selector */}
             {runsData.size > 0 && (
-              <div className="run-selector-bar">
+              <div className="run-selector-bar ui-row ui-card">
                 <span className="selector-label">Swarm Run:</span>
                 <div className="run-tabs">
                   {Array.from(runsData.values())
@@ -554,7 +554,7 @@ export function SwarmAnalytics() {
                       <button
                         type="button"
                         key={run.swarmId}
-                        className={`run-tab ${selectedSwarmId === run.swarmId ? 'active' : ''}`}
+                        className={`run-tab ui-row ui-card ${selectedSwarmId === run.swarmId ? 'active' : ''}`}
                         onClick={() => setSelectedSwarmId(run.swarmId)}
                       >
                         <span className="swarm-analytics-run-id">{run.swarmId}</span>
@@ -579,7 +579,7 @@ export function SwarmAnalytics() {
 
             {/* Timeline chart */}
             {selectedRun ? (
-              <div className="timeline-section">
+              <div className="timeline-section ui-card">
                 <h3>Worker Cycle Timeline</h3>
                 <TimelineChart runData={selectedRun} />
               </div>
@@ -591,36 +591,36 @@ export function SwarmAnalytics() {
             ) : null}
 
             {/* Legend */}
-            <div className="timeline-legend">
+            <div className="timeline-legend ui-card">
               <h4>Legend</h4>
               <div className="legend-items">
-                <div className="legend-item">
+                <div className="legend-item ui-row">
                   <span className="legend-color" style={{ backgroundColor: 'var(--ai)' }} />
                   <span>Running</span>
                 </div>
-                <div className="legend-item">
+                <div className="legend-item ui-row">
                   <span className="legend-color" style={{ backgroundColor: 'var(--success)' }} />
                   <span>Completed</span>
                 </div>
-                <div className="legend-item">
+                <div className="legend-item ui-row">
                   <span className="legend-color" style={{ backgroundColor: 'var(--danger)' }} />
                   <span>Error</span>
                 </div>
-                <div className="legend-item">
+                <div className="legend-item ui-row">
                   <span className="legend-color" style={{ backgroundColor: 'var(--warning)' }} />
                   <span>Pending</span>
                 </div>
                 <div className="legend-divider" />
-                <div className="legend-item">
-                  <span className="legend-badge approved">✓</span>
+                <div className="legend-item ui-row">
+                  <span className="legend-badge ui-row approved">✓</span>
                   <span>Approved</span>
                 </div>
-                <div className="legend-item">
-                  <span className="legend-badge rejected">✗</span>
+                <div className="legend-item ui-row">
+                  <span className="legend-badge ui-row rejected">✗</span>
                   <span>Rejected</span>
                 </div>
-                <div className="legend-item">
-                  <span className="legend-badge needs-changes">~</span>
+                <div className="legend-item ui-row">
+                  <span className="legend-badge ui-row needs-changes">~</span>
                   <span>Needs Changes</span>
                 </div>
               </div>

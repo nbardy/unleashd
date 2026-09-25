@@ -73,15 +73,15 @@ function QuestionCard({ question }: { question: Question }) {
   };
 
   return (
-    <div className="ask-question-card">
+    <div className="ask-question-card ui-card">
       {question.header && <span className="ask-question-header">{question.header}</span>}
       <p className="ask-question-text">{question.question}</p>
-      <div className="ask-question-options">
+      <div className="ask-question-options ui-stack">
         {question.options.map((opt, oi) => (
           <button
             type="button"
             key={oi}
-            className={`ask-question-option ${selected.has(oi) ? 'selected' : ''}`}
+            className={`ask-question-option ui-stack ui-card ${selected.has(oi) ? 'selected' : ''}`}
             onClick={() => toggle(oi)}
           >
             <span className="option-label">{opt.label}</span>

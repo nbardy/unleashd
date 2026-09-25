@@ -325,7 +325,7 @@ export function Gallery({ filter }: GalleryProps = {}) {
         <div
           key={`${projection}:${group.directory}`}
           className={[
-            'project-section',
+            'project-section ui-stack',
             sectionClassName,
             projection !== 'done' && doneConversationsForSection.length > 0
               ? 'has-done-toggle'
@@ -337,14 +337,14 @@ export function Gallery({ filter }: GalleryProps = {}) {
           <div className="project-header-row">
             <button
               type="button"
-              className="project-header"
+              className="project-header ui-row"
               onClick={() => toggleGalleryCollapsed(group.directory)}
             >
-              <div className="project-header-left">
+              <div className="project-header-left ui-row">
                 <span className={`project-chevron ${isCollapsed ? 'collapsed' : ''}`}>&#9660;</span>
-                <span className="project-path">{pathLabel}</span>
+                <span className="project-path ui-truncate">{pathLabel}</span>
               </div>
-              <span className="project-count">
+              <span className="project-count ui-card ui-muted">
                 {totalCount} {countLabel}
                 {totalCount !== 1 ? 's' : ''}
               </span>
@@ -385,7 +385,7 @@ export function Gallery({ filter }: GalleryProps = {}) {
               {showMoreButton && (
                 <button
                   type="button"
-                  className="gallery-show-more-btn"
+                  className="gallery-show-more-btn ui-control"
                   onClick={(e) => {
                     e.stopPropagation();
                     toggleGalleryExpanded(group.directory);
@@ -398,7 +398,7 @@ export function Gallery({ filter }: GalleryProps = {}) {
               {isExpanded && totalCount > CONVERSATIONS_PER_PROJECT && (
                 <button
                   type="button"
-                  className="gallery-show-more-btn"
+                  className="gallery-show-more-btn ui-control"
                   onClick={(e) => {
                     e.stopPropagation();
                     toggleGalleryExpanded(group.directory);
@@ -429,8 +429,8 @@ export function Gallery({ filter }: GalleryProps = {}) {
 
   if (!hasConversations) {
     return (
-      <div className="gallery-view">
-        <div className="empty-state">
+      <div className="gallery-view ui-stack">
+        <div className="empty-state ui-muted">
           No conversations yet. Click "+ New Conversation" to start.
         </div>
       </div>
@@ -439,14 +439,18 @@ export function Gallery({ filter }: GalleryProps = {}) {
 
   if (isDoneView && doneSessionCount === 0) {
     return (
-      <div className="gallery-view">
-        <div className="gallery-done-header">
-          <button type="button" className="back-to-gallery-btn" onClick={() => navigate('/')}>
+      <div className="gallery-view ui-stack">
+        <div className="gallery-done-header ui-row">
+          <button
+            type="button"
+            className="back-to-gallery-btn ui-control"
+            onClick={() => navigate('/')}
+          >
             &#8592; Gallery
           </button>
           <h2>Done Conversations</h2>
         </div>
-        <div className="empty-state">
+        <div className="empty-state ui-muted">
           No done conversations. Mark conversations as done from the sidebar.
         </div>
       </div>
@@ -455,14 +459,18 @@ export function Gallery({ filter }: GalleryProps = {}) {
 
   if (isWorkersView && workerSessionCount === 0) {
     return (
-      <div className="gallery-view">
-        <div className="gallery-done-header">
-          <button type="button" className="back-to-gallery-btn" onClick={() => navigate('/')}>
+      <div className="gallery-view ui-stack">
+        <div className="gallery-done-header ui-row">
+          <button
+            type="button"
+            className="back-to-gallery-btn ui-control"
+            onClick={() => navigate('/')}
+          >
             &#8592; Gallery
           </button>
           <h2>Worker Conversations</h2>
         </div>
-        <div className="empty-state">
+        <div className="empty-state ui-muted">
           No worker conversations. Workers are detected by the [oompa] prefix in the first message.
         </div>
       </div>
@@ -470,17 +478,25 @@ export function Gallery({ filter }: GalleryProps = {}) {
   }
 
   return (
-    <div className="gallery-view">
+    <div className="gallery-view ui-stack">
       {isDoneView ? (
-        <div className="gallery-done-header">
-          <button type="button" className="back-to-gallery-btn" onClick={() => navigate('/')}>
+        <div className="gallery-done-header ui-row">
+          <button
+            type="button"
+            className="back-to-gallery-btn ui-control"
+            onClick={() => navigate('/')}
+          >
             &#8592; Gallery
           </button>
           <h2>Done Conversations ({doneSessionCount})</h2>
         </div>
       ) : isWorkersView ? (
-        <div className="gallery-done-header">
-          <button type="button" className="back-to-gallery-btn" onClick={() => navigate('/')}>
+        <div className="gallery-done-header ui-row">
+          <button
+            type="button"
+            className="back-to-gallery-btn ui-control"
+            onClick={() => navigate('/')}
+          >
             &#8592; Gallery
           </button>
           <h2>Worker Sessions ({workerSessionCount})</h2>
@@ -496,7 +512,7 @@ export function Gallery({ filter }: GalleryProps = {}) {
           onSelectConversation={openConversation}
         />
       )}
-      <div className="gallery-content">
+      <div className="gallery-content ui-stack">
         {/* Regular project groups — hidden in done/workers view */}
         {!isDoneView &&
           !isWorkersView &&
@@ -512,7 +528,7 @@ export function Gallery({ filter }: GalleryProps = {}) {
           <div className="temp-sessions-section">
             <button
               type="button"
-              className="temp-sessions-toggle"
+              className="temp-sessions-toggle ui-control ui-row"
               onClick={() => setShowTempSessions(!showTempSessions)}
             >
               <span className={`project-chevron ${!showTempSessions ? 'collapsed' : ''}`}>
@@ -520,7 +536,9 @@ export function Gallery({ filter }: GalleryProps = {}) {
               </span>
               {showTempSessions ? 'Hide' : 'Show'} {tempSessionCount} temporary session
               {tempSessionCount !== 1 ? 's' : ''}
-              <span className="temp-sessions-hint">(sessions from /tmp, /var/folders, etc.)</span>
+              <span className="temp-sessions-hint ui-muted">
+                (sessions from /tmp, /var/folders, etc.)
+              </span>
             </button>
 
             {showTempSessions &&
@@ -543,7 +561,7 @@ export function Gallery({ filter }: GalleryProps = {}) {
             {!isWorkersView && (
               <button
                 type="button"
-                className="worker-sessions-toggle"
+                className="worker-sessions-toggle ui-control ui-row"
                 onClick={() => setShowWorkerConversations(!showWorkerConversations)}
               >
                 <span className={`project-chevron ${!showWorkerConversations ? 'collapsed' : ''}`}>
@@ -551,7 +569,7 @@ export function Gallery({ filter }: GalleryProps = {}) {
                 </span>
                 {showWorkerConversations ? 'Hide' : 'Show'} {workerSessionCount} worker session
                 {workerSessionCount !== 1 ? 's' : ''}
-                <span className="worker-sessions-hint">(oompa-spawned)</span>
+                <span className="worker-sessions-hint ui-muted">(oompa-spawned)</span>
               </button>
             )}
 
@@ -574,7 +592,7 @@ export function Gallery({ filter }: GalleryProps = {}) {
             {!isDoneView && (
               <button
                 type="button"
-                className="done-sessions-toggle"
+                className="done-sessions-toggle ui-control ui-row"
                 onClick={() => setShowDoneConversations(!showDoneConversations)}
               >
                 <span className={`project-chevron ${!showDoneConversations ? 'collapsed' : ''}`}>
@@ -646,8 +664,8 @@ const GalleryCard = memo(function GalleryCard({
       onClick={() => onOpen(conv.id)}
       style={{ borderTopColor: accentColor }}
     >
-      <div className="gallery-card-header">
-        <div className="gallery-card-id">
+      <div className="gallery-card-header ui-row">
+        <div className="gallery-card-id ui-row">
           {conv.id.substring(0, 8)}
           {showWorkerBadge ? (
             <span className="provider-badge provider-worker">worker</span>
@@ -657,11 +675,11 @@ const GalleryCard = memo(function GalleryCard({
             </span>
           )}
         </div>
-        <div className="gallery-card-status">
+        <div className="gallery-card-status ui-row">
           {isDoneConversation ? (
             <button
               type="button"
-              className="undo-done-btn"
+              className="undo-done-btn ui-card"
               disabled={!connected}
               title={connected ? undefined : 'Reconnecting to the server'}
               onClick={(e) => {
@@ -678,7 +696,7 @@ const GalleryCard = memo(function GalleryCard({
           ) : showWorkerBadge ? (
             <button
               type="button"
-              className="promote-worker-btn"
+              className="promote-worker-btn ui-card"
               onClick={(e) => {
                 e.stopPropagation();
                 promoteWorker(conv.id);
@@ -687,7 +705,7 @@ const GalleryCard = memo(function GalleryCard({
               Promote
             </button>
           ) : null}
-          <div className={`state-badge state-${state}`}>
+          <div className={`state-badge ui-inline-row state-${state}`}>
             <div className="state-indicator" />
             <span className="state-label">{getStateLabel()}</span>
           </div>
@@ -696,7 +714,7 @@ const GalleryCard = memo(function GalleryCard({
       <div>{conv.messageCount ?? conv.messages.length} messages</div>
       <div className="gallery-messages">
         {conv.messages.length === 0 ? (
-          <div className="empty-state">No messages yet</div>
+          <div className="empty-state ui-muted">No messages yet</div>
         ) : (
           conv.messages.slice(-3).map((msg: Message, i: number) => (
             <div key={i} className={`gallery-message ${msg.role}`}>

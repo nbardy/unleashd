@@ -96,7 +96,7 @@ export function SubAgentPanel({ subAgents, workingDirectory }: SubAgentPanelProp
       {/* Header - always visible */}
       <button
         type="button"
-        className="subagent-header"
+        className="subagent-header ui-row"
         onClick={toggleExpanded}
         aria-expanded={isExpanded}
       >
@@ -110,9 +110,9 @@ export function SubAgentPanel({ subAgents, workingDirectory }: SubAgentPanelProp
             <>Sub-agents completed</>
           )}
         </span>
-        <span className="subagent-shortcut">Ctrl+O</span>
+        <span className="subagent-shortcut ui-muted">Ctrl+O</span>
         <svg
-          className={`subagent-chevron${isExpanded ? ' expanded' : ''}`}
+          className={`subagent-chevron ui-muted${isExpanded ? ' expanded' : ''}`}
           aria-hidden="true"
           width="14"
           height="14"
@@ -137,10 +137,12 @@ export function SubAgentPanel({ subAgents, workingDirectory }: SubAgentPanelProp
             return (
               <div key={agent.id} className="subagent-item">
                 {/* Tree connector */}
-                <span className="tree-connector">{isLast ? '\u2514\u2500' : '\u251C\u2500'}</span>
+                <span className="tree-connector ui-muted">
+                  {isLast ? '\u2514\u2500' : '\u251C\u2500'}
+                </span>
 
                 {/* Status indicator */}
-                <span className={`subagent-status ${agent.status}`}>
+                <span className={`subagent-status ui-inline-row ${agent.status}`}>
                   {isRunning ? (
                     <span className="status-spinner" />
                   ) : agent.status === 'completed' ? (
@@ -152,7 +154,7 @@ export function SubAgentPanel({ subAgents, workingDirectory }: SubAgentPanelProp
 
                 {/* Agent info */}
                 <div className="subagent-info">
-                  <span className="subagent-description">
+                  <span className="subagent-description ui-truncate">
                     {agent.id.startsWith('swarm-') ? (
                       <Link
                         to={`/workers/detail?project=${encodeURIComponent(workingDirectory)}`}
@@ -164,10 +166,10 @@ export function SubAgentPanel({ subAgents, workingDirectory }: SubAgentPanelProp
                       truncateDescription(agent.description)
                     )}
                   </span>
-                  <span className="subagent-stats">
+                  <span className="subagent-stats ui-row">
                     {agent.toolUses > 0 && (
                       <>
-                        <span className="stat-divider">{'\u00B7'}</span>
+                        <span className="ui-muted">{'\u00B7'}</span>
                         <span className="stat">
                           {agent.toolUses} tool use{agent.toolUses !== 1 ? 's' : ''}
                         </span>
@@ -175,7 +177,7 @@ export function SubAgentPanel({ subAgents, workingDirectory }: SubAgentPanelProp
                     )}
                     {agent.tokens > 0 && (
                       <>
-                        <span className="stat-divider">{'\u00B7'}</span>
+                        <span className="ui-muted">{'\u00B7'}</span>
                         <span className="stat">{formatTokens(agent.tokens)} tokens</span>
                       </>
                     )}
@@ -184,10 +186,12 @@ export function SubAgentPanel({ subAgents, workingDirectory }: SubAgentPanelProp
 
                 {/* Current action (shown on second line for running agents) */}
                 {agent.currentAction && (
-                  <div className="subagent-current-action">
-                    <span className="tree-connector-sub">{isLast ? '   ' : '\u2502  '}</span>
-                    <span className="action-connector">{'\u2514'}</span>
-                    <span className={`current-action ${isRunning ? 'active' : 'done'}`}>
+                  <div className="subagent-current-action ui-row">
+                    <span className="tree-connector-sub ui-muted">
+                      {isLast ? '   ' : '\u2502  '}
+                    </span>
+                    <span className="action-connector ui-muted">{'\u2514'}</span>
+                    <span className={`current-action ui-truncate ${isRunning ? 'active' : 'done'}`}>
                       {agent.currentAction}
                     </span>
                   </div>

@@ -113,7 +113,7 @@ export function ConversationConfigPicker({
           <div className="provider-selector" role="radiogroup" aria-labelledby={providerGroup}>
             {providers.map((option) => (
               <label
-                className={`ui-choice provider-option ${value.provider === option.id ? 'selected' : ''}`}
+                className={`ui-choice provider-option ui-row ui-card ${value.provider === option.id ? 'selected' : ''}`}
                 key={option.id}
               >
                 <input
@@ -136,7 +136,9 @@ export function ConversationConfigPicker({
       </div>
       <div className="model-selector" role="radiogroup" aria-labelledby={modelGroup}>
         {!inlineDefaults && (
-          <label className={`ui-choice model-option ${modelKey === 'default' ? 'selected' : ''}`}>
+          <label
+            className={`ui-choice model-option ui-row ui-card ${modelKey === 'default' ? 'selected' : ''}`}
+          >
             <input
               type="radio"
               name={modelGroup}
@@ -148,7 +150,7 @@ export function ConversationConfigPicker({
           </label>
         )}
         {unavailableExplicitModel && (
-          <label className="ui-choice model-option selected unavailable">
+          <label className="ui-choice model-option ui-row ui-card selected unavailable">
             <input type="radio" name={modelGroup} checked disabled />
             {unavailableExplicitModel} (unavailable)
           </label>
@@ -161,7 +163,7 @@ export function ConversationConfigPicker({
           return (
             <label
               key={model.id}
-              className={`ui-choice model-option ${selected ? 'selected' : ''}`}
+              className={`ui-choice model-option ui-row ui-card ${selected ? 'selected' : ''}`}
             >
               <input
                 type="radio"
@@ -181,7 +183,7 @@ export function ConversationConfigPicker({
               />
               {model.displayName}
               {inlineDefaults && isDefault && (
-                <span className="chat-config-default-hint">default</span>
+                <span className="chat-config-default-hint ui-muted">default</span>
               )}
             </label>
           );
@@ -228,7 +230,7 @@ export function ConversationConfigPicker({
                 return (
                   <label
                     key={option.key}
-                    className={`ui-choice model-option ${selected ? 'selected' : ''}`}
+                    className={`ui-choice model-option ui-row ui-card ${selected ? 'selected' : ''}`}
                   >
                     <input
                       type="radio"
@@ -246,7 +248,7 @@ export function ConversationConfigPicker({
                     />
                     {option.label}
                     {inlineDefaults && isDefault && (
-                      <span className="chat-config-default-hint">default</span>
+                      <span className="chat-config-default-hint ui-muted">default</span>
                     )}
                   </label>
                 );

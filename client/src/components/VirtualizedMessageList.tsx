@@ -393,7 +393,7 @@ function makeMarkdownComponents(workingDirectory: string): Components {
                       workingDirectory={workingDirectory}
                     />
                   ) : (
-                    <span className="path-block-text-line">{entry.text}</span>
+                    <span className="path-block-text-line ui-muted">{entry.text}</span>
                   )}
                   {i < content.entries.length - 1 && <br />}
                 </span>
@@ -607,7 +607,10 @@ function StandaloneMessage({
       />
       {messageTranscriptContent(msg).trim() && (
         <div className="message-actions">
-          <CopyButton text={messageTranscriptContent(msg)} className="message-action-btn" />
+          <CopyButton
+            text={messageTranscriptContent(msg)}
+            className="message-action-btn ui-control ui-inline-row ui-muted"
+          />
         </div>
       )}
     </div>
@@ -951,7 +954,10 @@ function AssistantResponseBlock({
       </div>
       <div className="message-actions" ref={forwardedRef}>
         {response.copyText.trim() && (
-          <CopyButton text={response.copyText} className="message-action-btn" />
+          <CopyButton
+            text={response.copyText}
+            className="message-action-btn ui-control ui-inline-row ui-muted"
+          />
         )}
       </div>
     </article>

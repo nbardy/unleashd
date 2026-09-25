@@ -79,7 +79,11 @@ export function ShellMobile() {
   const channelsUnread = ownerUnreadTotal(useOwnerInboxes().data, null).unreadChannels > 0;
 
   return (
-    <div className={keyboardOpen ? 'mobile-shell mobile-shell--keyboard' : 'mobile-shell'}>
+    <div
+      className={
+        keyboardOpen ? 'mobile-shell ui-stack mobile-shell--keyboard' : 'mobile-shell ui-stack'
+      }
+    >
       <div className={isPaneRoute ? 'mobile-content mobile-content--pane' : 'mobile-content'}>
         <div className="mobile-content__inner">
           <Outlet />
@@ -88,7 +92,7 @@ export function ShellMobile() {
       {/* Tab bar yields to the keyboard — competing for the same ~50px is what
           made the composer feel cramped and clipped on focus. */}
       <nav
-        className="mobile-tab-bar"
+        className="mobile-tab-bar ui-row"
         aria-label="Primary"
         hidden={keyboardOpen || isImmersiveChannel}
       >
@@ -100,7 +104,9 @@ export function ShellMobile() {
             aria-label={tab.ariaLabel}
             aria-current={activeSection === tab.section ? 'page' : undefined}
             className={
-              activeSection === tab.section ? 'mobile-tab mobile-tab--active' : 'mobile-tab'
+              activeSection === tab.section
+                ? 'mobile-tab ui-stack ui-muted mobile-tab--active'
+                : 'mobile-tab ui-stack ui-muted'
             }
           >
             <span
