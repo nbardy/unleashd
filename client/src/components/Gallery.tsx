@@ -439,7 +439,7 @@ export function Gallery({ filter }: GalleryProps = {}) {
           <button
             type="button"
             className="back-to-gallery-btn ui-control"
-            onClick={() => navigate('/')}
+            onClick={() => navigate('/chats')}
           >
             &#8592; Gallery
           </button>
@@ -459,7 +459,7 @@ export function Gallery({ filter }: GalleryProps = {}) {
           <button
             type="button"
             className="back-to-gallery-btn ui-control"
-            onClick={() => navigate('/')}
+            onClick={() => navigate('/chats')}
           >
             &#8592; Gallery
           </button>
@@ -479,7 +479,7 @@ export function Gallery({ filter }: GalleryProps = {}) {
           <button
             type="button"
             className="back-to-gallery-btn ui-control"
-            onClick={() => navigate('/')}
+            onClick={() => navigate('/chats')}
           >
             &#8592; Gallery
           </button>
@@ -490,7 +490,7 @@ export function Gallery({ filter }: GalleryProps = {}) {
           <button
             type="button"
             className="back-to-gallery-btn ui-control"
-            onClick={() => navigate('/')}
+            onClick={() => navigate('/chats')}
           >
             &#8592; Gallery
           </button>

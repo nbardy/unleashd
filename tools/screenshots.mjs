@@ -424,14 +424,15 @@ function buildScreens(found, focus) {
 
   return [
     // ── Conversations ──
-    { name: 'gallery', missing: null, views: onBoth('/') },
+    { name: 'workspace-home', missing: null, views: onBoth('/') },
+    { name: 'gallery', missing: null, views: onBoth('/chats') },
     { name: 'done', missing: null, views: onBoth('/done') },
     {
       name: 'search',
       missing: null,
       views: {
         // Desktop search is a palette over any page; mobile has a search page.
-        desktop: { path: '/', prepare: clickThen('.sidebar-search-field', '.search-palette') },
+        desktop: { path: '/chats', prepare: clickThen('.sidebar-search-field', '.search-palette') },
         mobile: { path: '/search', prepare: null },
       },
     },
@@ -440,7 +441,7 @@ function buildScreens(found, focus) {
       missing: null,
       views: {
         desktop: {
-          path: '/',
+          path: '/chats',
           prepare: prep(`
   document.querySelector('.sidebar-search-field')?.click();
   await tick();
@@ -465,22 +466,22 @@ function buildScreens(found, focus) {
       name: 'new-conversation',
       missing: null,
       views: {
-        desktop: { path: '/', prepare: clickThen('.sidebar-new-btn', '.new-conv-modal') },
-        mobile: { path: '/', prepare: clickThen('.mobile-ui-header-action', '.mobile-sheet') },
+        desktop: { path: '/chats', prepare: clickThen('.sidebar-new-btn', '.new-conv-modal') },
+        mobile: { path: '/chats', prepare: clickThen('.mobile-ui-header-action', '.mobile-sheet') },
       },
     },
     {
       name: 'settings-menu',
       missing: null,
       // The mobile tree has no settings menu, palette or usage panel.
-      views: { desktop: { path: '/', prepare: clickThen('.config-trigger', '.config-menu') } },
+      views: { desktop: { path: '/chats', prepare: clickThen('.config-trigger', '.config-menu') } },
     },
     {
       name: 'usage',
       missing: null,
       views: {
         desktop: {
-          path: '/',
+          path: '/chats',
           prepare: prep(`
   document.querySelector('.config-trigger')?.click();
   await tick();

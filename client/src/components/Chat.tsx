@@ -258,7 +258,7 @@ export function Chat({ id }: { id: string }) {
   useEffect(() => {
     if (id && !conversation && !pendingCreation && hasConversations) {
       if (!conversationLoadComplete) return;
-      navigate('/');
+      navigate('/chats');
     }
   }, [id, conversation, pendingCreation, hasConversations, conversationLoadComplete, navigate]);
 

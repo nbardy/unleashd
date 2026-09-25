@@ -294,7 +294,7 @@ export function Sidebar() {
       e.stopPropagation();
       setConversationDone(conv.id, true);
       if (pathname.includes(conv.id)) {
-        navigate('/');
+        navigate('/chats');
       }
     },
     [navigate, pathname]

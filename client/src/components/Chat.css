@@ -1132,7 +1132,9 @@
   transition: all 0.2s;
 }
 
-.clear-queue-header-btn:hover {
+.clear-queue-header-btn:hover,
+.queued-message-remove:hover,
+.pending-file-remove:hover {
   background: var(--accent-error);
   color: var(--text-on-accent);
 }
@@ -1210,11 +1212,6 @@
   line-height: 1;
   justify-content: center;
   transition: all 0.2s;
-}
-
-.queued-message-remove:hover {
-  background: var(--accent-error);
-  color: var(--text-on-accent);
 }
 
 /* Send-now per queued message — accent action, quieter than the remove */
@@ -1356,11 +1353,6 @@
   line-height: 1;
   justify-content: center;
   transition: all 0.2s;
-}
-
-.pending-file-remove:hover {
-  background: var(--accent-error);
-  color: var(--text-on-accent);
 }
 
 /* Upload failure banner — sits directly above the pending-files tray.

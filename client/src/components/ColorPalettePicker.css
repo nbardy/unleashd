@@ -50,7 +50,8 @@
   transition: all 0.15s;
 }
 
-.close-btn:hover {
+.close-btn:hover,
+.cancel-btn:hover {
   background: var(--bg-content);
   color: var(--text-primary);
 }
@@ -407,7 +408,8 @@
   min-height: 42px;
 }
 
-.ai-submit-btn:hover:not(:disabled) {
+.ai-submit-btn:hover:not(:disabled),
+.save-btn:hover {
   opacity: 0.9;
 }
 
@@ -470,19 +472,10 @@
   border: 1px solid var(--border-default);
 }
 
-.cancel-btn:hover {
-  background: var(--bg-content);
-  color: var(--text-primary);
-}
-
 .save-btn {
   background: var(--accent-primary);
   border: none;
   color: var(--text-on-accent);
-}
-
-.save-btn:hover {
-  opacity: 0.9;
 }
 
 /* ─── Responsive ─── */

@@ -77,7 +77,9 @@
   color: var(--ai);
 }
 
-.swarm-stat-chip.chip-success {
+.swarm-stat-chip.chip-success,
+.swarm-prefix-status.status-completed,
+.swarm-prefix-status.status-done {
   background: color-mix(in srgb, var(--success) 15%, transparent);
   color: var(--success-bright);
 }
@@ -218,12 +220,6 @@ code.swarm-prefix-val {
   border-radius: var(--ui-radius);
   font-size: var(--fs-1);
   font-weight: 600;
-}
-
-.swarm-prefix-status.status-completed,
-.swarm-prefix-status.status-done {
-  background: color-mix(in srgb, var(--success) 15%, transparent);
-  color: var(--success-bright);
 }
 
 .swarm-prefix-status.status-running {

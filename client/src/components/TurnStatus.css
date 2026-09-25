@@ -40,7 +40,8 @@
   color: var(--theme-base01);
 }
 
-.turn-status--active {
+.turn-status--active,
+.turn-status--warning {
   color: var(--theme-yellow);
 }
 
@@ -50,10 +51,6 @@
 
 .turn-status--success {
   color: var(--theme-green);
-}
-
-.turn-status--warning {
-  color: var(--theme-yellow);
 }
 
 .turn-status--danger {

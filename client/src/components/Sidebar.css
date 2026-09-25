@@ -160,7 +160,8 @@
   box-sizing: border-box;
 }
 
-.new-conv-modal .directory-input:focus {
+.new-conv-modal .directory-input:focus,
+.custom-model-option input:focus {
   outline: none;
   border-color: var(--accent-primary);
 }
@@ -184,7 +185,8 @@
   transition: all 0.2s;
 }
 
-.provider-option:hover {
+.provider-option:hover,
+.model-option:hover {
   background: var(--border-color);
   color: var(--text-primary);
 }
@@ -195,7 +197,8 @@
   color: var(--text-emphasis);
 }
 
-.provider-option input[type="radio"] {
+.provider-option input[type="radio"],
+.model-option input[type="radio"] {
   display: none;
 }
 
@@ -219,19 +222,10 @@
   transition: all 0.2s;
 }
 
-.model-option:hover {
-  background: var(--border-color);
-  color: var(--text-primary);
-}
-
 .model-option.selected {
   background: var(--bg-tertiary);
   border-color: var(--accent-primary);
   color: var(--text-emphasis);
-}
-
-.model-option input[type="radio"] {
-  display: none;
 }
 
 .custom-model-option {
@@ -250,11 +244,6 @@
   background: var(--bg-secondary);
   color: var(--text-primary);
   font: inherit;
-}
-
-.custom-model-option input:focus {
-  outline: none;
-  border-color: var(--accent-primary);
 }
 
 .custom-model-option input:disabled {
@@ -412,7 +401,8 @@
   font-weight: 600;
 }
 
-.pending-creation {
+.pending-creation,
+.sidebar-buddy-project-header {
   width: 100%;
   color: inherit;
   font: inherit;
@@ -546,13 +536,6 @@
 
 .sidebar-buddy-project + .sidebar-buddy-project {
   margin-top: 8px;
-}
-
-.sidebar-buddy-project-header {
-  width: 100%;
-  color: inherit;
-  font: inherit;
-  text-align: left;
 }
 
 .sidebar-project-link,
@@ -793,7 +776,9 @@ a.sidebar-buddy-wake-done {
 }
 
 .conversation-item:hover .done-btn,
-.conversation-item:focus-within .done-btn {
+.conversation-item:focus-within .done-btn,
+.folder-group-header:hover .folder-group-add-btn,
+.folder-group-header:focus-within .folder-group-add-btn {
   opacity: 1;
 }
 
@@ -945,11 +930,6 @@ a.sidebar-buddy-wake-done {
   justify-content: center;
   padding: 0;
   transition: opacity 0.15s, background 0.15s, color 0.15s;
-}
-
-.folder-group-header:hover .folder-group-add-btn,
-.folder-group-header:focus-within .folder-group-add-btn {
-  opacity: 1;
 }
 
 .folder-group-add-btn:hover {

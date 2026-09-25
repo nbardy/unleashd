@@ -1,4 +1,6 @@
 import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import type {
   BuddyChanges,
   ChannelRef,
@@ -21,7 +23,15 @@ import {
   requireCanonicalPostMedia,
 } from './channel-media';
 import { type Channels, mentionedBuddyIds } from './channels';
-import { type BuddiesCore, OWNER, buddyActor, coreError, httpStatus, settingOf } from './core';
+import {
+  type BuddiesCore,
+  CoreError,
+  OWNER,
+  buddyActor,
+  coreError,
+  httpStatus,
+  settingOf,
+} from './core';
 import type { BuddyEvents } from './events';
 import type { Runner } from './runner';
 
@@ -144,8 +154,30 @@ const ScheduleSchema = z
   })
   .strict();
 const WorkspaceSchema = z
-  .object({ name: z.string().trim().min(1), rootPath: z.string().min(1) })
+  .object({
+    name: z.string().trim().min(1).max(120).optional(),
+    rootPath: z.string().trim().min(1),
+  })
   .strict();
+
+/**
+ * κ for "New workspace" on the home screen (port of 6d04860): the folder is resolved to its real
+ * path, because the crate's reuse key is the stored root_path string — `~/x`, `/x/` and a symlink
+ * to `/x` must all find the one workspace. A missing name is the folder's name.
+ */
+function workspaceInput(raw: unknown): { name: string; rootPath: string } {
+  const input = WorkspaceSchema.parse(raw);
+  const typed = input.rootPath;
+  const expanded =
+    typed === '~' || typed.startsWith('~/') ? path.join(os.homedir(), typed.slice(1)) : typed;
+  if (!path.isAbsolute(expanded)) throw new CoreError('invalid', `not an absolute path: ${typed}`);
+  if (!fs.existsSync(expanded) || !fs.statSync(expanded).isDirectory())
+    throw new CoreError('invalid', `not a directory: ${typed}`);
+  const rootPath = fs.realpathSync(expanded);
+  if (rootPath === path.parse(rootPath).root)
+    throw new CoreError('invalid', 'the filesystem root cannot be a workspace');
+  return { name: input.name ?? path.basename(rootPath), rootPath };
+}
 const ChannelSchema = z
   .object({
     name: z.string().trim().min(1).max(80),
@@ -299,7 +331,7 @@ export function registerBuddyRoutes(app: Express, deps: BuddyRouteDeps): void {
     [
       'post',
       '/api/buddies/workspaces',
-      (req) => write(core.createWorkspace(OWNER, WorkspaceSchema.parse(req.body))),
+      async (req) => write(core.createWorkspace(OWNER, workspaceInput(req.body))),
       201,
     ],
     ['post', '/api/buddies/builder', () => deps.createBuilderConversation(), 201],

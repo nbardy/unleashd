@@ -103,7 +103,7 @@ export function fallbackMobileConversationDestination(
     case 'worker':
       return { path: '/workers', section: 'swarms' };
     case 'chat':
-      return { path: '/', section: 'chats' };
+      return { path: '/chats', section: 'chats' };
   }
 }
 

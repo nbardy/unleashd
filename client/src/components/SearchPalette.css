@@ -105,7 +105,8 @@
   background: var(--ai-glow);
 }
 
-.search-result-item--chat .search-result-kind {
+.search-result-item--chat .search-result-kind,
+.search-result-role--assistant {
   color: var(--primary-bright);
   background: color-mix(in srgb, var(--primary) 20%, transparent);
 }
@@ -140,11 +141,6 @@
 .search-result-role--user {
   background: color-mix(in srgb, var(--user) 20%, transparent);
   color: var(--user-bright);
-}
-
-.search-result-role--assistant {
-  background: color-mix(in srgb, var(--primary) 20%, transparent);
-  color: var(--primary-bright);
 }
 
 .search-result-time {

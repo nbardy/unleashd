@@ -86,7 +86,8 @@
   line-height: 1;
 }
 
-.swarm-info-btn:hover {
+.swarm-info-btn:hover,
+.task-new {
   color: var(--text-secondary);
 }
 
@@ -150,7 +151,9 @@
   color: var(--text-secondary);
 }
 
-.roster-worker:hover {
+.roster-worker:hover,
+.swarm-panel-toggle:hover,
+.git-log-entry:hover {
   background: var(--bg-hover);
 }
 
@@ -187,7 +190,8 @@
   font-size: var(--fs-3);
 }
 
-.roster-worker-msgs {
+.roster-worker-msgs,
+.expand-indicator {
   font-size: var(--fs-1);
 }
 
@@ -222,13 +226,15 @@
   min-width: 0;
 }
 
-.worker-chat-pane {
+.worker-chat-pane,
+.swarm-bottom-panel {
   flex: 1;
   min-width: 0;
   overflow: hidden;
 }
 
-.worker-chat-pane + .worker-chat-pane {
+.worker-chat-pane + .worker-chat-pane,
+.swarm-bottom-panel + .swarm-bottom-panel {
   border-left: 1px solid var(--border-subtle);
 }
 
@@ -331,16 +337,6 @@
   height: auto;
 }
 
-.swarm-bottom-panel {
-  flex: 1;
-  overflow: hidden;
-  min-width: 0;
-}
-
-.swarm-bottom-panel + .swarm-bottom-panel {
-  border-left: 1px solid var(--border-subtle);
-}
-
 .swarm-panel-header {
   padding: var(--sp-5) var(--sp-7);
   font-size: var(--fs-3);
@@ -362,10 +358,6 @@
   border-radius: 0;
 }
 
-.swarm-panel-toggle:hover {
-  background: var(--bg-hover);
-}
-
 .panel-toggle-icon {
   font-size: var(--fs-1);
   flex-shrink: 0;
@@ -377,7 +369,8 @@
   width: 50%;
 }
 
-.swarm-bottom-panel.collapsed .swarm-panel-header {
+.swarm-bottom-panel.collapsed .swarm-panel-header,
+.roster-exec-group:last-child {
   border-bottom: none;
 }
 
@@ -396,10 +389,6 @@
   padding: var(--sp-2) var(--sp-7);
   font-size: var(--fs-3);
   transition: background 0.1s;
-}
-
-.git-log-entry:hover {
-  background: var(--bg-hover);
 }
 
 .git-hash {
@@ -446,7 +435,9 @@
   color: var(--primary-bright);
 }
 
-.config-count {
+.config-count,
+.run-time,
+.run-review-time {
   font-size: var(--fs-2);
 }
 
@@ -526,10 +517,6 @@
 /* Exec group container — visual grouping of exec + its reviews */
 .roster-exec-group {
   border-bottom: 1px solid var(--border-subtle);
-}
-
-.roster-exec-group:last-child {
-  border-bottom: none;
 }
 
 /* (Nested review rows removed — reviews shown in right pane on click) */
@@ -702,10 +689,6 @@
   font-family: var(--font-mono);
   font-weight: 600;
 }
-.run-time {
-  font-size: var(--fs-2);
-}
-
 .run-status-badge {
   padding: var(--sp-1) var(--sp-3);
   border-radius: var(--ui-radius);
@@ -751,11 +734,13 @@
   border-radius: var(--ui-radius);
 }
 
-.run-stat {
+.run-stat,
+.task-row {
   align-items: center;
   gap: var(--sp-1);
 }
-.run-stat-label {
+.run-stat-label,
+.task-sublabel {
   font-size: var(--fs-1);
   text-transform: uppercase;
   letter-spacing: 0.5px;
@@ -769,24 +754,12 @@
   gap: var(--sp-6);
   margin-top: 4px;
 }
-.task-row {
-  align-items: center;
-  gap: var(--sp-1);
-}
 .task-count {
   font-size: var(--fs-7);
   font-weight: 700;
 }
-.task-sublabel {
-  font-size: var(--fs-1);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-}
 .task-pending {
   color: var(--warning);
-}
-.task-new {
-  color: var(--text-secondary);
 }
 .task-completed {
   color: var(--success);
@@ -936,13 +909,6 @@
 .run-review-files {
   margin-left: auto;
 }
-.run-review-time {
-  font-size: var(--fs-2);
-}
-.expand-indicator {
-  font-size: var(--fs-1);
-}
-
 .run-review-output {
   padding: var(--sp-6);
   background: var(--bg-base);

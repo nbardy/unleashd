@@ -174,7 +174,9 @@
   background: var(--bg-raised-1);
 }
 
-.mobile-tab:focus-visible {
+.mobile-tab:focus-visible,
+.mobile-empty__cta:focus-visible,
+.mobile-buddy-card:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
@@ -241,11 +243,6 @@
   transform: scale(0.98);
 }
 
-.mobile-empty__cta:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
-
 /* ---- BuddiesMobile directory ---- */
 .mobile-buddies {
   padding-bottom: calc(var(--sp-7) + env(safe-area-inset-bottom));
@@ -271,7 +268,8 @@
   border-radius: var(--ui-radius);
 }
 
-.mobile-buddies__group {
+.mobile-buddies__group,
+.mobile-buddies__grid > li {
   min-width: 0;
 }
 
@@ -332,10 +330,6 @@
   list-style: none;
 }
 
-.mobile-buddies__grid > li {
-  min-width: 0;
-}
-
 .mobile-buddy-card {
   display: flex;
   align-items: center;
@@ -350,11 +344,6 @@
 
 .mobile-buddy-card:active {
   background: var(--bg-raised-1);
-}
-
-.mobile-buddy-card:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
 }
 
 .mobile-buddy-card__chevron {

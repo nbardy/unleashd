@@ -237,7 +237,7 @@ magenta). Run 1 and 3 back-to-back: live data drifts (sidebar badges,
   `new Set(ids)` memo). Deleting a
   conversation only terminalises its buddy link row, and an automation run
   keeps its `conversation_id` forever — navigating to a thread the client no
-  longer holds hits `Chat.tsx`'s `navigate('/')` bounce, which reads to the
+  longer holds hits `Chat.tsx`'s `navigate('/chats')` bounce, which reads to the
   user as "Open took me to the conversation list." Guarded by
   `client/test/buddy-conversation-links.test.tsx`. A button is still correct
   where the click CREATES the thread (`talk()`, the Buddy Builder, delegate /
