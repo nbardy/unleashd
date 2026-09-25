@@ -240,7 +240,10 @@ a.mobile-channels-wake-done {
   align-items: center;
   gap: 4px;
   min-height: 52px;
-  padding: env(safe-area-inset-top) 12px 0 4px;
+  /* No safe-area-inset-top here: .mobile-shell already pads it. Adding it
+     again left a status-bar-sized gap above every channel/thread header
+     (#bugfixes 2026-09-25). */
+  padding: 0 12px 0 4px;
   border-bottom: 1px solid var(--border-subtle);
 }
 
@@ -483,26 +486,34 @@ a.mobile-channels-wake-done {
 }
 
 /* The composer: pinned under the transcript; no tab bar below, so it owns
-   the home-indicator inset itself. */
+   the home-indicator inset itself. Tight at rest: the transcript gets the
+   height. ChannelComposerMobile wraps it in FullscreenComposer, which owns
+   the editing layout (below). */
 .mobile-channel .channel-composer {
   flex: none;
-  margin: 6px 8px calc(8px + env(safe-area-inset-bottom));
+  margin: 4px 6px calc(6px + env(safe-area-inset-bottom));
   border-radius: var(--ui-radius);
 }
 
 .mobile-channel .channel-composer-highlight,
 .mobile-channel .channel-composer textarea {
+  min-height: 38px;
+  padding: 9px 12px 2px;
   font-size: 16px; /* 16px stops iOS zooming into the field; the mirror must match */
 }
 
+.mobile-channel .channel-composer-bar {
+  padding: 2px 6px 6px;
+}
+
 .mobile-channel .channel-composer-attach {
-  width: 36px;
-  height: 36px;
+  width: 32px;
+  height: 32px;
 }
 
 .mobile-channel .channel-composer-send {
-  min-height: 36px;
-  padding: 0 18px;
+  min-height: 32px;
+  padding: 0 16px;
   border-radius: var(--ui-radius);
 }
 
@@ -513,6 +524,113 @@ a.mobile-channels-wake-done {
 
 .mobile-channel .channel-composer-picker button {
   min-height: 44px;
+}
+
+/* Editing: the frame is the visual viewport (FullscreenComposer). A slim
+   head with Done, then the field fills everything above the bar, which sits
+   on the keyboard. The @ menu drops into the flow just above the bar, where
+   the thumb is, instead of floating above the (now full-height) field. */
+.mobile-channel-compose__head {
+  display: none;
+}
+
+.mobile-channel .fullscreen-composer--expanded .mobile-channel-compose {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.mobile-channel .fullscreen-composer--expanded .mobile-channel-compose__head {
+  display: flex;
+  flex: none;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  min-height: 44px;
+  padding: 0 4px 0 14px;
+  border-bottom: 1px solid var(--border-subtle);
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.mobile-channel-compose__head span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.mobile-channel-compose__head button {
+  min-height: 44px;
+  padding: 0 10px;
+  border: 0;
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  font-weight: 600;
+}
+
+.mobile-channel .fullscreen-composer--expanded .channel-composer {
+  display: flex;
+  flex: 1 1 0;
+  flex-direction: column;
+  min-height: 0;
+  margin: 0;
+  border: 0;
+  border-radius: 0;
+}
+
+.mobile-channel .fullscreen-composer--expanded .channel-composer-field {
+  flex: 1 1 0;
+  order: 0;
+  min-height: 0;
+}
+
+/* !important beats the grow-with-text inline height ChannelComposer sets. */
+.mobile-channel .fullscreen-composer--expanded .channel-composer textarea {
+  height: 100% !important;
+  max-height: none;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.mobile-channel .fullscreen-composer--expanded .channel-composer-picker {
+  position: static;
+  flex: none;
+  order: 1;
+  max-height: 40%;
+  margin: 0 6px 4px;
+  box-shadow: none;
+}
+
+.mobile-channel .fullscreen-composer--expanded .channel-composer-bar {
+  flex: none;
+  order: 2;
+}
+
+/* The harness/model picker is a bottom sheet on touch. Opening it dismisses
+   the keyboard (ChannelComposer); as a popover above the composer the
+   keyboard pushed it off the top of the screen (#bugfixes 2026-09-25). */
+.mobile-channel .channel-composer-model-backdrop {
+  background: rgb(0 0 0 / 45%);
+}
+
+.mobile-channel .channel-composer-model {
+  position: fixed;
+  top: auto;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  max-height: 85dvh;
+  padding: 14px 14px calc(14px + env(safe-area-inset-bottom));
+  border-width: 1px 0 0;
+  border-radius: 12px 12px 0 0;
+  overscroll-behavior: contain;
+}
+
+.mobile-channel .channel-composer-model-actions button {
+  min-height: 44px;
+  padding: 0 16px;
 }
 
 .mobile-channel-header__link {
