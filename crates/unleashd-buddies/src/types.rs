@@ -549,6 +549,15 @@ pub struct ThreadStat {
     pub last_reply_author: Actor,
 }
 
+/// One Buddy's unfinished top-level tasks: `open` counts every one (blocked included).
+#[cfg_attr(feature = "node", napi_derive::napi(object))]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TaskCount {
+    pub buddy_id: String,
+    pub open: i64,
+    pub blocked: i64,
+}
+
 #[cfg_attr(feature = "node", napi_derive::napi(object))]
 #[derive(Debug, Clone)]
 pub struct ChannelUnread {

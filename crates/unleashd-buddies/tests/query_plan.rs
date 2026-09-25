@@ -125,6 +125,7 @@ fn workload(s: &mut unleashd_buddies::Store) {
     ] {
         s.list_tasks(q).unwrap();
     }
+    s.task_counts(WS).unwrap();
     s.get_task(&parent.id).unwrap();
     s.task_posts(&ic, &parent.id, None, 5).unwrap();
     s.task_posts(&owner, &parent.id, Some(Cursor { ord: "ffffffff-ffff-7fff-bfff-ffffffffffff".into() }), 5).unwrap();

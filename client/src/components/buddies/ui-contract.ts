@@ -33,12 +33,16 @@ export const taskStatusView = (status: TaskStatus): TaskStatusView => TASK_STATU
 export const isTaskOpen = (status: TaskStatus): boolean =>
   status !== 'done' && status !== 'cancelled';
 
-/** One directory card: an active Buddy, its home workspace and its active reports. */
+/** One directory card: an active Buddy, its home workspace, its active reports and task counts. */
 export interface DirectoryEntry {
   buddy: Buddy;
   workspace: WorkspaceRoster;
   reports: Buddy[];
+  tasks: { open: number; blocked: number };
 }
+
+/** The overview lists only Buddies that have unfinished tasks: absent means none. */
+const NO_TASKS = { open: 0, blocked: 0 };
 
 /** Every active Buddy in the overview, by name. */
 export function directoryEntries(overview: BuddyOverview): DirectoryEntry[] {
@@ -48,6 +52,7 @@ export function directoryEntries(overview: BuddyOverview): DirectoryEntry[] {
         buddy,
         workspace,
         reports: directReportsOf(overview, buddy.id),
+        tasks: workspace.taskCounts.find((count) => count.buddyId === buddy.id) ?? NO_TASKS,
       }))
     )
     .sort((a, b) => a.buddy.name.localeCompare(b.buddy.name));

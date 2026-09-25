@@ -175,6 +175,12 @@ CREATE INDEX IF NOT EXISTS post_reply_to ON post(reply_to_id) WHERE reply_to_id 
 CREATE INDEX IF NOT EXISTS post_answer ON post(answer_id) WHERE answer_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS post_task ON post(task_id, ord) WHERE task_id IS NOT NULL;";
 
+/// The directory cards' live-task counts (T22): only unfinished top-level tasks, so the count reads
+/// just those rows (`task_workspace` would walk every task the workspace ever had). Added after T11.
+const TASK_LIVE_INDEX: &str = "
+CREATE INDEX IF NOT EXISTS task_live ON task(workspace_id, owner_id, status)
+  WHERE parent_id IS NULL AND status IN ('open','in_progress','blocked','review');";
+
 /// A file imported before ordered ids has no `post.ord`: it cannot be ordered correctly, so it is
 /// refused with the fix (re-import), never opened half-working. No live file predates it (T15).
 fn require_ordered_ids(conn: &Connection, path: &str) -> Result<()> {
@@ -187,6 +193,7 @@ fn require_ordered_ids(conn: &Connection, path: &str) -> Result<()> {
 
 fn ensure_post_search(conn: &Connection) -> Result<()> {
     conn.execute_batch(POST_REFERENCE_INDEXES)?;
+    conn.execute_batch(TASK_LIVE_INDEX)?;
     let present: bool = conn.query_row("SELECT EXISTS(SELECT 1 FROM sqlite_schema WHERE name = 'post_search')", [], |r| r.get(0))?;
     match present {
         true => Ok(()),

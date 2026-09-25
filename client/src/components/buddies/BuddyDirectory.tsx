@@ -87,7 +87,7 @@ export function BuddyDirectory({
             </span>
           </span>
         </button>
-        {visibleBuddies.map(({ buddy, workspace, reports }, index) => {
+        {visibleBuddies.map(({ buddy, workspace, reports, tasks }, index) => {
           const visual = CARD_VISUALS[index % CARD_VISUALS.length];
           return (
             <button
@@ -113,6 +113,8 @@ export function BuddyDirectory({
                       {reports.length} {reports.length === 1 ? 'report' : 'reports'}
                     </span>
                   )}
+                  <span>{tasks.open} open</span>
+                  <span>{tasks.blocked} blocked</span>
                 </span>
                 <span className="buddy-card-hover-action">Open Buddy →</span>
               </span>

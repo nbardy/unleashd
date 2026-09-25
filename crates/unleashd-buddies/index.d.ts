@@ -25,6 +25,7 @@ export declare class BuddiesCore {
   upsertTask(actor: Actor, write: TaskWrite): Promise<Task>
   getTask(id: string): Promise<Task>
   listTasks(query: TaskQuery): Promise<Array<Task>>
+  taskCounts(workspaceId: string): Promise<Array<TaskCount>>
   enqueueRun(actor: Actor, input: EnqueueInput): Promise<Run>
   claimRun(leaseMs: number): Promise<Claim | null>
   settleRun(runId: string, leaseToken: string, outcome: Outcome): Promise<Run>
@@ -453,6 +454,13 @@ export interface TaskChanges {
   paused?: boolean
   position?: number
   ownerId?: string
+}
+
+/** One Buddy's unfinished top-level tasks: `open` counts every one (blocked included). */
+export interface TaskCount {
+  buddyId: string
+  open: number
+  blocked: number
 }
 
 export type TaskQuery =

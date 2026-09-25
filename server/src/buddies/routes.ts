@@ -291,6 +291,8 @@ export function registerBuddyRoutes(app: Express, deps: BuddyRouteDeps): void {
           (await core.listWorkspaces()).map(async (w) => ({
             ...w,
             buddies: await core.listBuddies(w.id),
+            // Directory cards' "N open · M blocked" (T22): one partial-index read per workspace.
+            taskCounts: await core.taskCounts(w.id),
           }))
         ),
     ],
