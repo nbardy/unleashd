@@ -1,5 +1,6 @@
 import { type Conversation, type Message, getBuddyContext } from '@unleashd/shared';
 import { effectiveSwarmDebugPrefix } from '../components/buddies/ui-contract';
+import { shortenHomePath } from './directories';
 
 /**
  * Plain-text transcript of a conversation, and the draft seeded into a fork.
@@ -45,7 +46,7 @@ export function buildThreadTranscript(conversation: Conversation): string {
     conversation.configResolution?.status === 'resolved'
       ? conversation.configResolution.value.modelId
       : (conversation.reportedModel ?? conversation.modelName ?? conversation.model ?? 'default');
-  const folderDisplay = conversation.workingDirectory.replace(/^\/Users\/[^/]+/, '~');
+  const folderDisplay = shortenHomePath(conversation.workingDirectory);
   const header = [
     `Conversation: ${conversation.id}`,
     // Fallback matches shared DEFAULT_PROVIDER ('claude').

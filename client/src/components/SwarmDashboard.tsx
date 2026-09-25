@@ -1,22 +1,23 @@
 import type { Conversation } from '@unleashd/shared';
 import { useAtomValue } from 'jotai';
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { workersByProjectAtom } from '../atoms/conversations';
-import { promotedWorkersAtom } from '../atoms/ui';
+import { swarmWorkersByProjectAtom } from '../atoms/conversations';
 import { useSwarmProjects } from '../hooks/useSwarmProjects';
 import { useSwarmRuntimeSnapshots } from '../hooks/useSwarmRuntimeSnapshots';
 import { getProjectColor } from '../utils/projectColors';
-import { getProjectName, getProjectRoot } from '../utils/swarmUtils';
+import { getProjectName } from '../utils/swarmUtils';
 import { getWorkerVisibilitySummary } from '../utils/swarmWorkerVisibility';
 import { formatTimeAgo, getLastMessageTime } from '../utils/time';
 import './SwarmDashboard.css';
+import { useTimeTick } from '../hooks/useTimeTick';
+import { shortenHomePath } from '../utils/directories';
 
 interface SwarmProject {
   projectRoot: string;
   projectName: string;
   /** Historical JSONL session files (one per worker iteration) */
-  sessions: Conversation[];
+  sessions: readonly Conversation[];
   /** Configured worker slots (from runtime or distinct workerIds) */
   workerCount: number;
   runningCount: number;
@@ -28,29 +29,9 @@ interface SwarmProject {
 }
 
 export function SwarmDashboard() {
-  // Subscribe to workersByProjectAtom — only re-renders when worker conversations
-  // change, not on every structural event across all conversations.
-  const rawWorkersByProject = useAtomValue(workersByProjectAtom);
+  // Swarm workers by project root; re-renders only when a worker changes.
+  const workerConversationsByProject = useAtomValue(swarmWorkersByProjectAtom);
   const navigate = useNavigate();
-  const promotedWorkers = useAtomValue(promotedWorkersAtom);
-  const promotedSet = useMemo(() => new Set(promotedWorkers), [promotedWorkers]);
-
-  // Re-group by project root (workersByProject keys on raw workingDirectory;
-  // we need getProjectRoot to strip worktree suffixes) and exclude promoted workers.
-  const workerConversationsByProject = useMemo(() => {
-    const groups = new Map<string, Conversation[]>();
-
-    for (const workers of rawWorkersByProject.values()) {
-      for (const conv of workers) {
-        if (promotedSet.has(conv.id)) continue;
-        const root = getProjectRoot(conv.workingDirectory);
-        if (!groups.has(root)) groups.set(root, []);
-        groups.get(root)!.push(conv);
-      }
-    }
-
-    return groups;
-  }, [rawWorkersByProject, promotedSet]);
   const runtimeProjectRoots = useMemo(
     () => Array.from(workerConversationsByProject.keys()).sort(),
     [workerConversationsByProject]
@@ -61,12 +42,7 @@ export function SwarmDashboard() {
   // This surfaces swarms regardless of worker harness (gemini, codex, etc.).
   const runsDiscoveredProjects = useSwarmProjects();
 
-  // Tick every 30s to keep time-ago displays current
-  const [, setTick] = useState(0);
-  useEffect(() => {
-    const id = setInterval(() => setTick((t) => t + 1), 30_000);
-    return () => clearInterval(id);
-  }, []);
+  useTimeTick();
 
   // Merge conversation-based projects with runs-discovered projects.
   // Conversation data enriches runs-discovered projects; runs-discovered
@@ -176,9 +152,7 @@ export function SwarmDashboard() {
           >
             <div className="swarm-project-info">
               <div className="swarm-project-name">{project.projectName}</div>
-              <div className="swarm-project-path">
-                {project.projectRoot.replace(/^\/Users\/[^/]+/, '~')}
-              </div>
+              <div className="swarm-project-path">{shortenHomePath(project.projectRoot)}</div>
               <div className="swarm-project-stats">
                 <span className="swarm-stat">
                   <span className="swarm-stat-value">{project.sessions.length}</span>

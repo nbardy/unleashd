@@ -7,13 +7,14 @@ import { usePolledFetch } from '../../hooks/usePolledFetch';
 import { formatTimeAgo } from '../../utils/time';
 import { BuddyInactiveAccess } from './BuddyInactiveAccess';
 import './BuddyWorkspaceActivity.css';
+import { shortenHomePath } from '../../utils/directories';
 import { workspaceActivityResource } from './channel-data';
 import { initials } from './ui-contract';
 
 const NO_CONVERSATION_ID = '__workspace_job_without_conversation__';
 
 function compactPath(path: string | null): string {
-  return path?.replace(/^\/Users\/[^/]+/, '~') ?? 'No folder path';
+  return path === null ? 'No folder path' : shortenHomePath(path);
 }
 
 function conversationTitle(messages: Array<{ role?: string; content?: string }>): string | null {

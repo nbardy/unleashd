@@ -134,8 +134,6 @@ export const showWorkerConversationsAtom = atom((get) => get(prefsAtom).showWork
 export const sidebarViewModeAtom = atom((get) => get(prefsAtom).sidebarViewMode);
 export const promotedWorkersAtom = atom((get) => get(prefsAtom).promotedWorkers);
 export const lastWorkingDirectoryAtom = atom((get) => get(prefsAtom).lastWorkingDirectory);
-export const lastSeenMessageIndexAtom = atom((get) => get(seenAtom));
-
 /** One conversation's seen index, so a row re-renders only when ITS index moves. */
 export const lastSeenMessageIndexAtomFamily = atomFamily((conversationId: string) =>
   atom((get): number | undefined => get(seenAtom)[conversationId])
@@ -228,15 +226,8 @@ export function removeSeenIndex(conversationId: string): void {
 // Pure helpers
 // ---------------------------------------------------------------------------
 
-export function hasUnseenMessages(
-  lastSeenMessageIndex: Record<string, number>,
-  conversationId: string,
-  totalMessages: number
-): boolean {
-  return hasUnseenAfter(lastSeenMessageIndex[conversationId], totalMessages);
-}
-
-/** Same rule for one conversation's index (`lastSeenMessageIndexAtomFamily`). */
+/** NEW badge: messages past the last one this device saw. No index means
+ *  never opened here, which is not "unseen". */
 export function hasUnseenAfter(lastSeen: number | undefined, totalMessages: number): boolean {
   if (totalMessages === 0 || lastSeen === undefined) return false;
   return lastSeen < totalMessages - 1;

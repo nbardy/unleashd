@@ -4,6 +4,7 @@ import { useId } from 'react';
 import { Link } from 'react-router-dom';
 import { availableConversationIdSetAtom } from '../atoms/conversations';
 import './ResumeThreadWidget.css';
+import { shortenHomePath } from '../utils/directories';
 
 /**
  * UI badge for Chat "Fork" soft-handoff lineage (`resumedFromConversationId`).
@@ -25,7 +26,7 @@ export function ResumeThreadWidget({
   const tooltipId = useId();
   const sourceAvailable = useAtomValue(availableConversationIdSetAtom).has(sourceConversationId);
   const displayId = sourceConversationId.substring(0, 8);
-  const folder = sourceConversation?.workingDirectory?.replace(/^\/Users\/[^/]+/, '~');
+  const folder = sourceConversation && shortenHomePath(sourceConversation.workingDirectory);
   const icon = (
     <svg
       aria-hidden="true"

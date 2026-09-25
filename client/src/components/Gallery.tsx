@@ -1,6 +1,6 @@
 import type { Message } from '@unleashd/shared';
 import { useAtomValue } from 'jotai';
-import { memo, useCallback, useEffect, useMemo, useState } from 'react';
+import { memo, useCallback, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { setConversationDone } from '../atoms/actions';
 import {
@@ -31,6 +31,8 @@ import { isWorktreeDirectory } from '../utils/swarmUtils';
 import { formatTimeAgo, getLastMessageTime } from '../utils/time';
 import { FolderFilter } from './FolderFilter';
 import './Gallery.css';
+import { useTimeTick } from '../hooks/useTimeTick';
+import { shortenHomePath } from '../utils/directories';
 
 /**
  * Detect if a working directory is a temporary/ephemeral path.
@@ -76,13 +78,6 @@ export function Gallery({ filter }: GalleryProps = {}) {
   const hasConversations = useAtomValue(hasConversationsAtom);
   const navigate = useNavigate();
 
-  // Tick every 30s to keep time-ago displays current
-  const [tick, setTick] = useState(0);
-  useEffect(() => {
-    const id = setInterval(() => setTick((t) => t + 1), 30_000);
-    return () => clearInterval(id);
-  }, []);
-
   // Persisted Gallery UI state via atoms/ui
   const galleryExpandedProjects = useAtomValue(galleryExpandedProjectsAtom);
   const galleryCollapsedProjects = useAtomValue(galleryCollapsedProjectsAtom);
@@ -109,7 +104,7 @@ export function Gallery({ filter }: GalleryProps = {}) {
 
   // Format folder for display (shorten home directory)
   const formatFolder = useCallback((folder: string) => {
-    return folder.replace(/^\/Users\/[^/]+/, '~');
+    return shortenHomePath(folder);
   }, []);
 
   // Folder selection state lives in URL query params (?folders=...)
@@ -383,7 +378,6 @@ export function Gallery({ filter }: GalleryProps = {}) {
                     isWorkersView={isWorkersView}
                     connected={connected}
                     onOpen={openConversation}
-                    tick={tick}
                   />
                 ))}
               </div>
@@ -430,7 +424,6 @@ export function Gallery({ filter }: GalleryProps = {}) {
       isWorkersView,
       connected,
       openConversation,
-      tick,
     ]
   );
 
@@ -610,7 +603,7 @@ export function Gallery({ filter }: GalleryProps = {}) {
 /**
  * One gallery card. Subscribes to its own conversation (for messages, provider
  * and state) and is memoized, so an event for another conversation re-renders
- * nothing here. `tick` only forces the 30 s time-ago refresh.
+ * nothing here. It subscribes to the shared 30 s tick for its time-ago label.
  */
 const GalleryCard = memo(function GalleryCard({
   id,
@@ -626,9 +619,9 @@ const GalleryCard = memo(function GalleryCard({
   isWorkersView: boolean;
   connected: boolean;
   onOpen: (id: string) => void;
-  tick: number;
 }) {
   const conv = useAtomValue(conversationAtomFamily(id));
+  useTimeTick();
   if (!conv) return null;
   const isDoneConversation = conv.done;
   const state = conv.isRunning ? 'running' : 'idle';

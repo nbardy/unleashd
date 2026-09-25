@@ -3,8 +3,7 @@ import type { SwarmRunLog, SwarmRunSummary } from '@unleashd/shared';
 import { useAtomValue } from 'jotai';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { workersByProjectAtom } from '../atoms/conversations';
-import { promotedWorkersAtom } from '../atoms/ui';
+import { swarmWorkersByProjectAtom } from '../atoms/conversations';
 import { resource, usePolledFetch } from '../hooks/usePolledFetch';
 import { getProjectColor } from '../utils/projectColors';
 import {
@@ -13,7 +12,7 @@ import {
   buildTimelineData,
   computeSwarmStats,
 } from '../utils/swarmAnalyticsParsers';
-import { getProjectName, getProjectRoot } from '../utils/swarmUtils';
+import { getProjectName } from '../utils/swarmUtils';
 import { formatDuration, formatTimeAgo } from '../utils/time';
 import './SwarmAnalytics.css';
 
@@ -35,7 +34,7 @@ export type {
 interface SwarmProject {
   projectRoot: string;
   projectName: string;
-  workers: Conversation[];
+  workers: readonly Conversation[];
   swarmIds: Set<string>;
   accentColor: string;
 }
@@ -385,11 +384,8 @@ function StatsPanel({ runData }: StatsPanelProps) {
 
 export function SwarmAnalytics() {
   const navigate = useNavigate();
-  // Subscribe to workersByProjectAtom — only re-renders when worker conversations
-  // change, not on every structural event across all conversations.
-  const rawWorkersByProject = useAtomValue(workersByProjectAtom);
-  const promotedWorkers = useAtomValue(promotedWorkersAtom);
-  const promotedSet = useMemo(() => new Set(promotedWorkers), [promotedWorkers]);
+  // Swarm workers by project root; re-renders only when a worker changes.
+  const workersByProject = useAtomValue(swarmWorkersByProjectAtom);
 
   // Project selection
   const [selectedProject, setSelectedProject] = useState<string | null>(null);
@@ -455,18 +451,7 @@ export function SwarmAnalytics() {
 
   // Group workers by project root (strip worktree suffixes), exclude promoted.
   const projects = useMemo((): SwarmProject[] => {
-    const groups = new Map<string, Conversation[]>();
-
-    for (const workers of rawWorkersByProject.values()) {
-      for (const conv of workers) {
-        if (promotedSet.has(conv.id)) continue;
-        const root = getProjectRoot(conv.workingDirectory);
-        if (!groups.has(root)) groups.set(root, []);
-        groups.get(root)!.push(conv);
-      }
-    }
-
-    return Array.from(groups.entries())
+    return Array.from(workersByProject.entries())
       .map(([projectRoot, workers]) => {
         const swarmIds = new Set<string>();
         for (const w of workers) {
@@ -482,7 +467,7 @@ export function SwarmAnalytics() {
         };
       })
       .sort((a, b) => b.workers.length - a.workers.length);
-  }, [rawWorkersByProject, promotedSet]);
+  }, [workersByProject]);
 
   // Reset auto-selection flag when project changes
   // biome-ignore lint/correctness/useExhaustiveDependencies: the project transition itself resets this mutable guard.

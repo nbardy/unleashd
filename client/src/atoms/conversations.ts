@@ -16,6 +16,7 @@ import {
   regroupChatMessages,
   withStreamingTail,
 } from '../utils/chat-message-groups';
+import { getProjectRoot } from '../utils/swarmUtils';
 import { archivedBuddyIdsAtom } from './buddy-visibility';
 import {
   type ConversationIndex,
@@ -32,7 +33,7 @@ import {
   sameSet,
   stableAtom,
 } from './structural';
-import { savedActiveConversationIdAtom } from './ui';
+import { promotedWorkersAtom, savedActiveConversationIdAtom } from './ui';
 
 export type { ConversationListEntry } from './conversation-index';
 
@@ -423,18 +424,31 @@ const workerIdsAtom = stableAtom(
   sameItems
 );
 
-// Workers grouped by raw working directory.
-export const workersByProjectAtom = atom((get) => {
+const EMPTY_WORKERS: readonly Conversation[] = [];
+
+// Swarm workers grouped by PROJECT root (oompa's worktree suffix stripped),
+// promoted workers excluded (they live in the main views). Every swarm view,
+// desktop and mobile, reads this one grouping; six of them used to re-derive
+// it in a component memo from a map keyed by raw working directory.
+export const swarmWorkersByProjectAtom = atom((get) => {
+  const promoted = new Set(get(promotedWorkersAtom));
   const groups = new Map<string, Conversation[]>();
   for (const id of get(workerIdsAtom)) {
+    if (promoted.has(id)) continue;
     const conv = get(conversationRecordAtomFamily(id));
     if (!conv) continue;
-    const group = groups.get(conv.workingDirectory);
+    const root = getProjectRoot(conv.workingDirectory);
+    const group = groups.get(root);
     if (group) group.push(conv);
-    else groups.set(conv.workingDirectory, [conv]);
+    else groups.set(root, [conv]);
   }
-  return groups;
+  return groups as ReadonlyMap<string, readonly Conversation[]>;
 });
+
+/** One project's swarm workers (see `swarmWorkersByProjectAtom`). */
+export const swarmWorkersForProjectAtomFamily = atomFamily((projectRoot: string) =>
+  atom((get) => get(swarmWorkersByProjectAtom).get(projectRoot) ?? EMPTY_WORKERS)
+);
 
 /** Free every per-id atom memoized for a deleted conversation. */
 export function forgetConversationAtoms(id: string): void {

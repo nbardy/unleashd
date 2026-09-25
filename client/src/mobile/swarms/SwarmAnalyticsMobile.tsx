@@ -2,8 +2,7 @@ import type { Conversation } from '@unleashd/shared';
 import { useAtomValue } from 'jotai';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { workersByProjectAtom } from '../../atoms/conversations';
-import { promotedWorkersAtom } from '../../atoms/ui';
+import { swarmWorkersByProjectAtom } from '../../atoms/conversations';
 import { getProjectColor } from '../../utils/projectColors';
 import {
   type IterationSpan,
@@ -11,7 +10,7 @@ import {
   buildTimelineData,
   computeSwarmStats,
 } from '../../utils/swarmAnalyticsParsers';
-import { getProjectName, getProjectRoot } from '../../utils/swarmUtils';
+import { getProjectName } from '../../utils/swarmUtils';
 import { formatDuration, formatTimeAgo } from '../../utils/time';
 import { EmptyState } from '../components/EmptyState';
 
@@ -30,7 +29,7 @@ import { EmptyState } from '../components/EmptyState';
 interface SwarmProject {
   projectRoot: string;
   projectName: string;
-  workers: Conversation[];
+  workers: readonly Conversation[];
   swarmIds: Set<string>;
   accentColor: string;
 }
@@ -42,21 +41,10 @@ function shortWorkerId(id: string): string {
 
 export function SwarmAnalyticsMobile() {
   const navigate = useNavigate();
-  const rawWorkersByProject = useAtomValue(workersByProjectAtom);
-  const promotedWorkers = useAtomValue(promotedWorkersAtom);
-  const promotedSet = useMemo(() => new Set(promotedWorkers), [promotedWorkers]);
+  const workersByProject = useAtomValue(swarmWorkersByProjectAtom);
 
   const projects = useMemo((): SwarmProject[] => {
-    const groups = new Map<string, Conversation[]>();
-    for (const workers of rawWorkersByProject.values()) {
-      for (const conv of workers) {
-        if (promotedSet.has(conv.id)) continue;
-        const root = getProjectRoot(conv.workingDirectory);
-        if (!groups.has(root)) groups.set(root, []);
-        groups.get(root)!.push(conv);
-      }
-    }
-    return Array.from(groups.entries())
+    return Array.from(workersByProject.entries())
       .map(([projectRoot, workers]) => {
         const swarmIds = new Set<string>();
         for (const worker of workers) if (worker.swarmId) swarmIds.add(worker.swarmId);
@@ -69,7 +57,7 @@ export function SwarmAnalyticsMobile() {
         };
       })
       .sort((a, b) => b.workers.length - a.workers.length);
-  }, [promotedSet, rawWorkersByProject]);
+  }, [workersByProject]);
 
   const [selectedProject, setSelectedProject] = useState<string | null>(null);
   const [selectedSwarmId, setSelectedSwarmId] = useState<string | null>(null);

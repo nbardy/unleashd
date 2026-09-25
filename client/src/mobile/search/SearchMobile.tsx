@@ -13,6 +13,7 @@ import {
   MobileSurface,
 } from '../components/MobileUI';
 import '../styles/search-mobile.css';
+import { shortenHomePath } from '../../utils/directories';
 
 const IDLE_RESULT_LIMIT = 20;
 const SEARCH_RESULT_LIMIT = 30;
@@ -48,7 +49,7 @@ function ClientResultRow({
   const preview = lastMsg ? lastMsg.content.substring(0, 180) : 'No messages yet';
   const roleBadge = lastMsg ? lastMsg.role : '—';
   const timeAgo = formatTimeAgo(getConversationLastActivity(conv));
-  const shortDir = conv.workingDirectory.replace(/^\/Users\/[^/]+/, '~') || conv.id.slice(0, 8);
+  const shortDir = shortenHomePath(conv.workingDirectory) || conv.id.slice(0, 8);
   return (
     <MobileCardLink
       className="mobile-search-row"
@@ -75,8 +76,7 @@ function ServerGroupCard({
   routeState: Record<string, unknown>;
 }) {
   const timeAgo = formatTimeAgo(new Date(group.latestTs));
-  const shortDir =
-    group.workingDirectory.replace(/^\/Users\/[^/]+/, '~') || group.conversationId.slice(0, 8);
+  const shortDir = shortenHomePath(group.workingDirectory) || group.conversationId.slice(0, 8);
   return (
     <MobileSurface className="mobile-search-group">
       <Link

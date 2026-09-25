@@ -59,6 +59,8 @@ import {
   turnDiagnosticsFromAttempt,
 } from './turn-diagnostics';
 import './Chat.css';
+import { useTimeTick } from '../hooks/useTimeTick';
+import { shortenHomePath } from '../utils/directories';
 
 // Stable reference for empty queue — avoids new [] on every render triggering re-renders
 const EMPTY_QUEUE: QueuedMessage[] = [];
@@ -80,14 +82,7 @@ function readBuddyContext(value: unknown): BuddyContext | undefined {
  * Ticks every 30s to stay reasonably current without excessive renders.
  */
 function useTimeAgo(date: Date | undefined): string | null {
-  const [, setTick] = useState(0);
-
-  useEffect(() => {
-    if (!date) return;
-    const id = setInterval(() => setTick((t) => t + 1), 30_000);
-    return () => clearInterval(id);
-  }, [date]);
-
+  useTimeTick();
   if (!date) return null;
   return formatTimeAgo(date);
 }
@@ -391,7 +386,7 @@ export function Chat({ id }: { id: string }) {
     );
   }
 
-  const dirDisplay = conversation.workingDirectory.replace(/^\/Users\/[^/]+/, '~');
+  const dirDisplay = shortenHomePath(conversation.workingDirectory);
 
   if (!conversationDetailsLoaded) {
     return (

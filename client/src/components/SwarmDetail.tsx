@@ -12,16 +12,17 @@ import { createConversation } from '../atoms/actions';
 import {
   chatMessageGroupsAtomFamily,
   conversationAtomFamily,
-  workersByProjectAtom,
+  swarmWorkersForProjectAtomFamily,
 } from '../atoms/conversations';
-import { markMessagesSeen, promotedWorkersAtom } from '../atoms/ui';
+import { markMessagesSeen } from '../atoms/ui';
 import { usePolledFetch } from '../hooks/usePolledFetch';
 import { useSwarmRuntimeSnapshots } from '../hooks/useSwarmRuntimeSnapshots';
-import { getProjectRoot } from '../utils/swarmUtils';
 import { getWorkerVisibilitySummary } from '../utils/swarmWorkerVisibility';
 import { formatTimeAgo, getLastMessageTime } from '../utils/time';
 import { VirtualizedMessageList } from './VirtualizedMessageList';
 import './SwarmDetail.css';
+import { useTimeTick } from '../hooks/useTimeTick';
+import { shortenHomePath } from '../utils/directories';
 
 // Stable empty fallbacks for usePolledFetch results (AGENTS.md: stable fallbacks
 // are module constants — a fresh [] per render defeats downstream memoisation).
@@ -644,11 +645,8 @@ export function SwarmDetail() {
   const projectRoot = searchParams.get('project') ?? '';
   const navigate = useNavigate();
 
-  // Subscribe to workersByProjectAtom — only re-renders when worker conversations
-  // change, not on every structural event across all conversations.
-  const rawWorkersByProject = useAtomValue(workersByProjectAtom);
-  const promotedWorkers = useAtomValue(promotedWorkersAtom);
-  const promotedSet = useMemo(() => new Set(promotedWorkers), [promotedWorkers]);
+  // This project's swarm workers; re-renders only when one of them changes.
+  const projectWorkers = useAtomValue(swarmWorkersForProjectAtomFamily(projectRoot ?? ''));
   const runtimeSnapshots = useSwarmRuntimeSnapshots(projectRoot ? [projectRoot] : []);
   const runtimeSnapshot = projectRoot ? (runtimeSnapshots[projectRoot] ?? null) : null;
 
@@ -671,12 +669,7 @@ export function SwarmDetail() {
     [runtimeWorkerStates]
   );
 
-  // Tick every 30s for time-ago
-  const [, setTick] = useState(0);
-  useEffect(() => {
-    const id = setInterval(() => setTick((t) => t + 1), 30_000);
-    return () => clearInterval(id);
-  }, []);
+  useTimeTick();
 
   // Tab state
   const [activeTab, setActiveTab] = useState<SwarmTab>('runs');
@@ -732,22 +725,17 @@ export function SwarmDetail() {
 
   // Filter workers belonging to this project, build exec groups with paired reviews/fixes.
   // Reviews/fixes are matched to exec workers by time proximity within the same swarmId.
-  // Uses workersByProjectAtom (pre-filtered to isWorker) so we skip non-worker conversations.
   const { execGroups, allWorkers, workCount, reviewCount, fixCount } = useMemo(() => {
     const execs: Conversation[] = [];
     const reviewsAndFixes: Conversation[] = [];
 
-    for (const workers of rawWorkersByProject.values()) {
-      for (const conv of workers) {
-        if (promotedSet.has(conv.id)) continue;
-        if (getProjectRoot(conv.workingDirectory) !== projectRoot) continue;
-        if (effectiveRunId && conv.swarmId !== effectiveRunId) continue;
+    for (const conv of projectWorkers) {
+      if (effectiveRunId && conv.swarmId !== effectiveRunId) continue;
 
-        if (conv.workerRole === 'review' || conv.workerRole === 'fix') {
-          reviewsAndFixes.push(conv);
-        } else {
-          execs.push(conv);
-        }
+      if (conv.workerRole === 'review' || conv.workerRole === 'fix') {
+        reviewsAndFixes.push(conv);
+      } else {
+        execs.push(conv);
       }
     }
 
@@ -801,7 +789,7 @@ export function SwarmDetail() {
       reviewCount: reviewsAndFixes.filter((r) => r.workerRole === 'review').length,
       fixCount: reviewsAndFixes.filter((r) => r.workerRole === 'fix').length,
     };
-  }, [rawWorkersByProject, promotedSet, projectRoot, effectiveRunId, isWorkerRunningLive]);
+  }, [projectWorkers, effectiveRunId, isWorkerRunningLive]);
 
   // Selected exec group — click a worker to show task log (left) + review (right)
   const [selectedGroupIdx, setSelectedGroupIdx] = useState<number>(0);
@@ -855,7 +843,7 @@ export function SwarmDetail() {
     return earliest;
   }, [allWorkers]);
 
-  const displayPath = projectRoot.replace(/^\/Users\/[^/]+/, '~');
+  const displayPath = shortenHomePath(projectRoot);
 
   if (!projectRoot) {
     return (

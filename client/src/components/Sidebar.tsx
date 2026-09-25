@@ -37,7 +37,7 @@ import {
 } from '../atoms/ui';
 import { useBuddyOverview } from '../hooks/useBuddyData';
 import { useProviderCatalog } from '../hooks/useProviderCatalog';
-import { normalizeFolderDirectory } from '../utils/directories';
+import { normalizeFolderDirectory, shortenHomePath } from '../utils/directories';
 import { getProjectColor } from '../utils/projectColors';
 import { formatTimeAgo, getConversationLastActivity, getMinutesElapsed } from '../utils/time';
 import { ConversationConfigPicker } from './ConversationConfigPicker';
@@ -50,6 +50,7 @@ import { ownerUnreadTotal, useOwnerUnread } from './buddies/channel-data';
 import { createBuddyViaBuilder } from './buddies/create-buddy-builder';
 import { getConversationTitle } from './conversation-title';
 import './Sidebar.css';
+import { useTimeTick } from '../hooks/useTimeTick';
 
 function SidebarFolderIcon() {
   return (
@@ -112,13 +113,6 @@ export function Sidebar() {
 
   const lastWorkingDirectory = useAtomValue(lastWorkingDirectoryAtom);
   const galleryCollapsedProjects = useAtomValue(galleryCollapsedProjectsAtom);
-
-  // Tick every 30s to keep time-ago displays current
-  const [tick, setTick] = useState(0);
-  useEffect(() => {
-    const id = setInterval(() => setTick((t) => t + 1), 30_000);
-    return () => clearInterval(id);
-  }, []);
 
   const builderConversations = useAtomValue(buddyBuilderConversationsAtom);
   const collapsedSet = useMemo(() => new Set(galleryCollapsedProjects), [galleryCollapsedProjects]);
@@ -569,7 +563,6 @@ export function Sidebar() {
                                   showFolderBadge={false}
                                   onSelect={handleSelectConversation}
                                   onDone={onDone}
-                                  tick={tick}
                                 />
                               ))}
                               {builderActive.length > 3 && (
@@ -679,7 +672,6 @@ export function Sidebar() {
                                     showFolderBadge={false}
                                     onSelect={handleSelectConversation}
                                     onDone={onDone}
-                                    tick={tick}
                                   />
                                 ))
                               ) : item.pendingCreation ? (
@@ -782,7 +774,7 @@ export function Sidebar() {
               <div className="sidebar-section">
                 {recentGroups.map((group) => {
                   const isCollapsed = collapsedSet.has(group.directory);
-                  const dirDisplay = group.directory.replace(/^\/Users\/[^/]+/, '~');
+                  const dirDisplay = shortenHomePath(group.directory);
                   const projectColor = getProjectColor(group.directory);
                   const runningCount = runningCountByFolder.get(group.directory) ?? 0;
                   // Done rows are already out; the group keeps its position.
@@ -863,7 +855,6 @@ export function Sidebar() {
                                   showFolderBadge={false}
                                   onSelect={handleSelectConversation}
                                   onDone={onDone}
-                                  tick={tick}
                                 />
                               ))}
                               {activeConvs.length > 3 && (
@@ -913,7 +904,6 @@ export function Sidebar() {
                       showFolderBadge
                       onSelect={handleSelectConversation}
                       onDone={onDone}
-                      tick={tick}
                     />
                   ))}
                   {olderActive.length > 3 && (
@@ -1069,7 +1059,7 @@ function conversationMessageCount(conversation: Conversation): number {
 /**
  * One sidebar row. Subscribes to its own conversation and seen index, and is
  * memoized, so an event for another conversation re-renders nothing here.
- * `tick` only forces the 30 s time-ago refresh.
+ * It subscribes to the shared 30 s tick for its time-ago label.
  */
 const SidebarConversationRow = memo(function SidebarConversationRow({
   id,
@@ -1084,9 +1074,9 @@ const SidebarConversationRow = memo(function SidebarConversationRow({
   onSelect: (conv: Conversation) => void;
   /** Null while disconnected: the command would be dropped, so the button is disabled. */
   onDone: ((conv: Conversation, e: React.MouseEvent) => void) | null;
-  tick: number;
 }) {
   const conv = useAtomValue(conversationAtomFamily(id));
+  useTimeTick();
   const lastSeen = useAtomValue(lastSeenMessageIndexAtomFamily(id));
   if (!conv) return null;
   return (
@@ -1123,7 +1113,7 @@ function ConversationItem({
 }) {
   const workingDirectory = normalizeFolderDirectory(conv.workingDirectory);
   const projectColor = getProjectColor(workingDirectory);
-  const dirDisplay = workingDirectory.replace(/^\/Users\/[^/]+/, '~');
+  const dirDisplay = shortenHomePath(workingDirectory);
   const folderName = workingDirectory.split('/').filter(Boolean).pop() ?? dirDisplay;
   const title = getConversationTitle(conv);
 

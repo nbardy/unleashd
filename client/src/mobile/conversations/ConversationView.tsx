@@ -32,6 +32,7 @@ import { useSavedPrompts } from '../../hooks/useSavedPrompts';
 import { useTurnDiagnostics } from '../../hooks/useTurnDiagnostics';
 import { mobileConversationRouteState } from '../../utils/conversation-route-state';
 import { buildThreadTranscript } from '../../utils/conversation-transcript';
+import { shortenHomePath } from '../../utils/directories';
 import { buildUnifiedSubAgents } from '../../utils/subAgents';
 import { parseStatsFromPrefix } from '../../utils/swarmConvoParsers';
 import {
@@ -241,7 +242,7 @@ function MobileResumeWidget({
   const location = useLocation();
   const displayId = sourceConversation?.id?.substring(0, 8) ?? sourceConversationId.substring(0, 8);
   const provider = sourceConversation?.provider ?? 'claude';
-  const folder = sourceConversation?.workingDirectory?.replace(/^\/Users\/[^/]+/, '~');
+  const folder = sourceConversation && shortenHomePath(sourceConversation.workingDirectory);
   return (
     <MobileSection title="Resumed from">
       <Link
@@ -681,7 +682,7 @@ export function ConversationView({
   // broken; buddy threads dodged it only because their POST creates the
   // conversation server-side before the client ever routes to it.
   if (!conversation && pendingCreation) {
-    const pendingDir = pendingCreation.workingDirectory.replace(/^\/Users\/[^/]+/, '~');
+    const pendingDir = shortenHomePath(pendingCreation.workingDirectory);
     return (
       <div className="mobile-chat">
         <div className="mobile-chat__header">
@@ -785,7 +786,7 @@ export function ConversationView({
     );
   }
 
-  const dirDisplay = conversation.workingDirectory.replace(/^\/Users\/[^/]+/, '~');
+  const dirDisplay = shortenHomePath(conversation.workingDirectory);
   const isRunning = conversation.isRunning ?? false;
   const isStreaming = conversation.isStreaming ?? false;
   const turnActive = isRunning || isStreaming;

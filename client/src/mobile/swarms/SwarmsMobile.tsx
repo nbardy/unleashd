@@ -1,11 +1,12 @@
 import type { OompaRuntimeSnapshot } from '@unleashd/shared';
 import { useAtomValue } from 'jotai';
-import { useEffect, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { workersByProjectAtom } from '../../atoms/conversations';
-import { promotedWorkersAtom } from '../../atoms/ui';
+import { swarmWorkersByProjectAtom } from '../../atoms/conversations';
 import { usePolledFetch } from '../../hooks/usePolledFetch';
-import { getProjectName, getProjectRoot } from '../../utils/swarmUtils';
+import { useTimeTick } from '../../hooks/useTimeTick';
+import { shortenHomePath } from '../../utils/directories';
+import { getProjectName } from '../../utils/swarmUtils';
 import { getWorkerVisibilitySummary } from '../../utils/swarmWorkerVisibility';
 import { formatTimeAgo, getLastMessageTime } from '../../utils/time';
 import {
@@ -34,10 +35,8 @@ interface ProjectCard {
 }
 
 export function SwarmsMobile() {
-  const rawWorkersByProject = useAtomValue(workersByProjectAtom);
+  const workerConversationsByProject = useAtomValue(swarmWorkersByProjectAtom);
   const navigate = useNavigate();
-  const promotedWorkers = useAtomValue(promotedWorkersAtom);
-  const promotedSet = useMemo(() => new Set(promotedWorkers), [promotedWorkers]);
   const [showCreate, setShowCreate] = useState(false);
 
   // Discovery via /api/swarm-projects (poll 15s, visibility-aware, reconnect-refetch)
@@ -48,27 +47,7 @@ export function SwarmsMobile() {
   );
   const runsDiscoveredProjects = discovered?.projects ?? [];
 
-  // Tick every 30s to keep time-ago current
-  const [, setTick] = useState(0);
-  useEffect(() => {
-    const id = window.setInterval(() => setTick((t) => t + 1), 30_000);
-    return () => window.clearInterval(id);
-  }, []);
-
-  // Re-group workersByProject by project root (strip worktree suffix) and exclude promoted
-  const workerConversationsByProject = useMemo(() => {
-    const groups = new Map<string, import('@unleashd/shared').Conversation[]>();
-    for (const workers of rawWorkersByProject.values()) {
-      for (const conv of workers) {
-        if (promotedSet.has(conv.id)) continue;
-        const root = getProjectRoot(conv.workingDirectory);
-        const arr = groups.get(root);
-        if (!arr) groups.set(root, [conv]);
-        else arr.push(conv);
-      }
-    }
-    return groups;
-  }, [rawWorkersByProject, promotedSet]);
+  useTimeTick();
 
   // Build cards merging conversation-based + runs-discovered projects
   const projectCards = useMemo((): ProjectCard[] => {
@@ -166,9 +145,7 @@ export function SwarmsMobile() {
                   {p.runningCount > 0 ? `${p.runningCount} running` : 'idle'}
                 </MobileBadge>
               </div>
-              <MobilePath title={p.projectRoot}>
-                {p.projectRoot.replace(/^\/Users\/[^/]+/, '~')}
-              </MobilePath>
+              <MobilePath title={p.projectRoot}>{shortenHomePath(p.projectRoot)}</MobilePath>
               <div className="mobile-swarm-card__stats">
                 <span>
                   {p.workerCount} worker{p.workerCount !== 1 ? 's' : ''}

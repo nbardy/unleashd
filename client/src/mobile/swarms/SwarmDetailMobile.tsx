@@ -1,13 +1,16 @@
 import type { Conversation, OompaRuntimeWorker, SwarmRunSummary } from '@unleashd/shared';
 import { useAtomValue } from 'jotai';
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { createConversation } from '../../atoms/actions';
-import { conversationAtomFamily, workersByProjectAtom } from '../../atoms/conversations';
-import { promotedWorkersAtom } from '../../atoms/ui';
+import {
+  conversationAtomFamily,
+  swarmWorkersForProjectAtomFamily,
+} from '../../atoms/conversations';
 import { useSwarmRuntimeSnapshots } from '../../hooks/useSwarmRuntimeSnapshots';
+import { useTimeTick } from '../../hooks/useTimeTick';
 import { mobileConversationRouteState } from '../../utils/conversation-route-state';
-import { getProjectRoot } from '../../utils/swarmUtils';
+import { shortenHomePath } from '../../utils/directories';
 import { getWorkerVisibilitySummary } from '../../utils/swarmWorkerVisibility';
 import { formatTimeAgo, getLastMessageTime } from '../../utils/time';
 
@@ -160,9 +163,7 @@ export function SwarmDetailMobile() {
   const location = useLocation();
   const chatRouteState = useMemo(() => mobileConversationRouteState(location), [location]);
 
-  const rawWorkersByProject = useAtomValue(workersByProjectAtom);
-  const promotedWorkers = useAtomValue(promotedWorkersAtom);
-  const promotedSet = useMemo(() => new Set(promotedWorkers), [promotedWorkers]);
+  const projectWorkers = useAtomValue(swarmWorkersForProjectAtomFamily(projectRoot ?? ''));
 
   // Runtime snapshot: the same hook and cache key desktop SwarmDetail uses, so
   // the two shells share one polled entry per project (10s, visibility-aware).
@@ -186,12 +187,7 @@ export function SwarmDetailMobile() {
     [runtimeWorkerStates]
   );
 
-  // 30s time-ago tick (PLANNING §7 #8)
-  const [, setTick] = useState(0);
-  useEffect(() => {
-    const id = window.setInterval(() => setTick((t) => t + 1), 30_000);
-    return () => window.clearInterval(id);
-  }, []);
+  useTimeTick();
 
   const [confirmAction, setConfirmAction] = useState<'stop' | 'kill' | null>(null);
   const [signalError, setSignalError] = useState<string | null>(null);
@@ -237,13 +233,9 @@ export function SwarmDetailMobile() {
   const { execGroups, allWorkers } = useMemo(() => {
     const execs: Conversation[] = [];
     const reviewsAndFixes: Conversation[] = [];
-    for (const workers of rawWorkersByProject.values()) {
-      for (const conv of workers) {
-        if (promotedSet.has(conv.id)) continue;
-        if (getProjectRoot(conv.workingDirectory) !== projectRoot) continue;
-        if (conv.workerRole === 'review' || conv.workerRole === 'fix') reviewsAndFixes.push(conv);
-        else execs.push(conv);
-      }
+    for (const conv of projectWorkers) {
+      if (conv.workerRole === 'review' || conv.workerRole === 'fix') reviewsAndFixes.push(conv);
+      else execs.push(conv);
     }
     const sortByActivity = (a: Conversation, b: Conversation) => {
       const aRun = isWorkerRunningLive(a);
@@ -274,7 +266,7 @@ export function SwarmDetailMobile() {
     }
     for (const g of groups) g.reviews.sort(sortByActivity);
     return { execGroups: groups, allWorkers: [...execs, ...reviewsAndFixes] };
-  }, [rawWorkersByProject, promotedSet, projectRoot, isWorkerRunningLive]);
+  }, [projectWorkers, isWorkerRunningLive]);
 
   const workerVisibility = useMemo(
     () => getWorkerVisibilitySummary(allWorkers, runtimeSnapshot, isWorkerRunningLive),
@@ -292,7 +284,7 @@ export function SwarmDetailMobile() {
     );
   }
 
-  const displayPath = projectRoot.replace(/^\/Users\/[^/]+/, '~');
+  const displayPath = shortenHomePath(projectRoot);
 
   return (
     <div className="mobile-swarm-detail">

@@ -351,6 +351,18 @@ Facts about a conversation belong on the conversation, not here: done/hidden is
 `set_conversation_done`. See [mobile view tree](mobile-view-tree.md) for the
 fields and why the synced blob was retired.
 
+## Shared view helpers
+
+- Relative times ("3m ago"): call `useTimeTick()` (`hooks/useTimeTick.ts`) in the
+  component that renders the label. It is one 30 s clock for the whole app.
+  A tick in a parent does not reach memoized rows, which is how the mobile chat
+  list's times went stale.
+- Display paths: `shortenHomePath()` from `utils/directories.ts`, never an
+  inline `/^\/Users\/[^/]+/` regex. It is for display only.
+- Swarm workers: `swarmWorkersByProjectAtom` / `swarmWorkersForProjectAtomFamily`
+  (grouped by project root, promoted workers excluded). Do not regroup
+  `isWorker` conversations in a component.
+
 ## Hook ordering and stable values
 
 All hooks must run before any early return. Guard unavailable data inside a hook

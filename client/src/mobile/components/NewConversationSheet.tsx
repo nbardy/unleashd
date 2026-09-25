@@ -5,8 +5,8 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { defaultCwdAtom, recentDirectoriesAtom, wsStatusAtom } from '../../atoms/conversations';
 import { lastWorkingDirectoryAtom } from '../../atoms/ui';
 import { useProviderCatalog } from '../../hooks/useProviderCatalog';
-import { normalizeFolderDirectory } from '../../utils/directories';
 import { mobileConversationRouteState } from '../../utils/conversation-route-state';
+import { normalizeFolderDirectory, shortenHomePath } from '../../utils/directories';
 import { type MobileCreateKind, createFromRequest } from '../atoms/create';
 
 /**
@@ -30,7 +30,7 @@ const COPY: Record<MobileCreateKind, { title: string; confirm: string; pending: 
 };
 
 function displayPath(dir: string): string {
-  return dir.replace(/^\/Users\/[^/]+/, '~');
+  return shortenHomePath(dir);
 }
 
 export function NewConversationSheet({

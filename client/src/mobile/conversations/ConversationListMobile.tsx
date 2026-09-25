@@ -1,5 +1,5 @@
 import { useAtomValue } from 'jotai';
-import { memo, useEffect, useMemo, useState } from 'react';
+import { memo, useMemo, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import {
   allConversationIdsAtom,
@@ -7,9 +7,11 @@ import {
   chatConversationInboxAtom,
   conversationAtomFamily,
 } from '../../atoms/conversations';
-import { hasUnseenMessages, lastSeenMessageIndexAtom } from '../../atoms/ui';
-import { formatTimeAgo, getConversationLastActivity } from '../../utils/time';
+import { hasUnseenAfter, lastSeenMessageIndexAtomFamily } from '../../atoms/ui';
+import { useTimeTick } from '../../hooks/useTimeTick';
 import { mobileConversationRouteState } from '../../utils/conversation-route-state';
+import { shortenHomePath } from '../../utils/directories';
+import { formatTimeAgo, getConversationLastActivity } from '../../utils/time';
 import {
   MobileBadge,
   MobileCardLink,
@@ -20,14 +22,6 @@ import {
 } from '../components/MobileUI';
 import { NewConversationSheet } from '../components/NewConversationSheet';
 
-function useTimeTick(ms = 30_000) {
-  const [, setTick] = useState(0);
-  useEffect(() => {
-    const id = setInterval(() => setTick((t) => t + 1), ms);
-    return () => clearInterval(id);
-  }, [ms]);
-}
-
 const ConversationListItem = memo(function ConversationListItem({
   id,
   routeState,
@@ -36,19 +30,20 @@ const ConversationListItem = memo(function ConversationListItem({
   routeState: Record<string, unknown>;
 }) {
   const conv = useAtomValue(conversationAtomFamily(id));
-  const lastSeenMessageIndex = useAtomValue(lastSeenMessageIndexAtom);
+  const lastSeen = useAtomValue(lastSeenMessageIndexAtomFamily(id));
+  useTimeTick();
 
   if (!conv) return null;
 
   const lastTime = getConversationLastActivity(conv);
   const timeAgo = formatTimeAgo(lastTime);
   const totalMessages = conv.messageCount ?? conv.messages.length;
-  const unseen = hasUnseenMessages(lastSeenMessageIndex, id, totalMessages);
+  const unseen = hasUnseenAfter(lastSeen, totalMessages);
   const preview =
     conv.messages.length > 0
       ? conv.messages[conv.messages.length - 1].content.substring(0, 120)
       : 'New conversation';
-  const dirDisplay = conv.workingDirectory.replace(/^\/Users\/[^/]+/, '~');
+  const dirDisplay = shortenHomePath(conv.workingDirectory);
   const folderName = conv.workingDirectory.split('/').filter(Boolean).pop() ?? dirDisplay;
   return (
     <MobileCardLink
@@ -95,7 +90,6 @@ export function ConversationListMobile({
   const location = useLocation();
   const routeState = useMemo(() => mobileConversationRouteState(location), [location]);
   const [showCreate, setShowCreate] = useState(false);
-  useTimeTick();
 
   const list =
     ids.length === 0 ? (
