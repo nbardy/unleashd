@@ -212,23 +212,41 @@ pub(crate) fn put(tx: &Transaction<'_>, record: &ConversationRecord, defaults: &
 }
 
 pub(crate) fn open_connection(path: &Path) -> Result<Connection> {
-    let conn = Connection::open(path)?;
+    let mut conn = Connection::open(path)?;
     conn.busy_timeout(std::time::Duration::from_secs(10))?;
-    conn.pragma_update(None, "journal_mode", "WAL")?;
+    // Switching a NEW file to WAL needs its exclusive lock, and SQLite answers a concurrent
+    // switch with SQLITE_BUSY without calling the busy handler (3 of 30 concurrent opens from
+    // Node, T23b). Retry within the same 10 s budget.
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+    loop {
+        match conn.pragma_update(None, "journal_mode", "WAL") {
+            Ok(()) => break,
+            Err(rusqlite::Error::SqliteFailure(e, _))
+                if e.code == rusqlite::ErrorCode::DatabaseBusy && std::time::Instant::now() < deadline =>
+            {
+                std::thread::sleep(std::time::Duration::from_millis(5))
+            }
+            Err(e) => return Err(e.into()),
+        }
+    }
     // Records are authoritative (nothing re-derives them, unlike ingest's rows): a committed CAS
     // must survive power loss, so every commit syncs the WAL. Measured cost: see T23a report.
     conn.pragma_update(None, "synchronous", "FULL")?;
     conn.pragma_update(None, "foreign_keys", "ON")?;
-    conn.execute_batch(SCHEMA)?;
-    let version: Option<i64> = conn.query_row("SELECT value FROM meta WHERE key = 'records_schema'", [], |r| r.get(0)).optional()?;
+    // Pattern: fix-guards (docs/patterns.md#fix-guards). Two connections opening a NEW file at
+    // once (two server processes, two test stores) both saw no `records_schema` row and the
+    // second INSERT failed (`UNIQUE constraint failed: meta.key`, 2 of 30 concurrent opens,
+    // T23b). One IMMEDIATE transaction serializes the schema step on the write lock.
+    // Guard: `two_connections_open_a_new_file_at_once` in tests/records.rs.
+    let tx = conn.transaction_with_behavior(TransactionBehavior::Immediate)?;
+    tx.execute_batch(SCHEMA)?;
+    tx.execute("INSERT OR IGNORE INTO meta (key, value) VALUES ('records_schema', ?1)", [RECORDS_SCHEMA_VERSION])?;
+    let version: i64 = tx.query_row("SELECT value FROM meta WHERE key = 'records_schema'", [], |r| r.get(0))?;
+    tx.commit()?;
     match version {
-        None => {
-            conn.execute("INSERT INTO meta (key, value) VALUES ('records_schema', ?1)", [RECORDS_SCHEMA_VERSION])?;
-        }
-        Some(RECORDS_SCHEMA_VERSION) => {}
-        Some(other) => return Err(RecordsError::Schema(path.display().to_string(), other)),
+        RECORDS_SCHEMA_VERSION => Ok(conn),
+        other => Err(RecordsError::Schema(path.display().to_string(), other)),
     }
-    Ok(conn)
 }
 
 impl Records {

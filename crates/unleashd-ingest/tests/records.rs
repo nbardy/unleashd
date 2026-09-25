@@ -309,6 +309,29 @@ fn import_keeps_every_file_and_verify_proves_it_by_hash() {
 }
 
 #[test]
+fn two_connections_open_a_new_file_at_once() {
+    // Regression (T23b): concurrent opens of a fresh file raced on the WAL switch and the schema
+    // row, and one failed (`database is locked` / `UNIQUE constraint failed: meta.key`).
+    for _ in 0..50 {
+        let dir = tempfile::tempdir().unwrap();
+        let db = dir.path().join("r.sqlite");
+        let barrier = Arc::new(Barrier::new(8));
+        let opens: Vec<_> = (0..8)
+            .map(|_| {
+                let (db, barrier) = (db.clone(), barrier.clone());
+                std::thread::spawn(move || {
+                    barrier.wait();
+                    Records::open(&db).map(|_| ())
+                })
+            })
+            .collect();
+        for open in opens {
+            open.join().unwrap().unwrap();
+        }
+    }
+}
+
+#[test]
 fn no_record_read_or_write_scans_a_table() {
     // Pattern: fix-guards (docs/patterns.md#fix-guards). config-store.ts read all ~7,800 files
     // (42 MB, ~3.2 s) on a lookup miss; a by-session lookup that scans would bring that back.
