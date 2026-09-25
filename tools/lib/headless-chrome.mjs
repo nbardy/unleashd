@@ -144,13 +144,87 @@ async function launchChrome(chromePath) {
 }
 
 /**
- * One headless tab against the running app, already authenticated: the
- * `?token=` navigation sets the gate's cookie for every later page load.
+ * Stable pixels, installed before any page script runs:
  *
- * Returns { goto, evaluate, setViewport, capture, close }. `await close()` must
- * run (use try/finally) or a Chrome process outlives the script.
+ * - A frozen clock. Every "3m ago" and "Resets in 2h" is computed from
+ *   Date.now(), so two runs minutes apart rendered different text. Pinning
+ *   Date to one instant (the baseline run's, via --baseline) makes relative
+ *   times identical without touching a single component. Timers still run —
+ *   setTimeout/rAF/performance.now are untouched — only wall time stands still.
+ * - Motion jumps to its end. Spinners, pulses, fades and blinking carets are
+ *   caught mid-frame at whatever moment the capture lands. Zero-length
+ *   animations (not `animation: none`) still fire animationend, so components
+ *   that wait for it keep working; a transparent caret removes the blink.
+ * - `[data-volatile]` is hidden: the escape hatch for a region that is live
+ *   by nature and cannot be stabilised by the clock.
+ * - No writes leave the page. fetch/XHR/sendBeacon with a method other than
+ *   GET/HEAD/OPTIONS reject as a network error would, and WebSocket.send is a
+ *   no-op (every client→server WS message is a command: create, send, stop,
+ *   done, delete, queue, config). Before this, opening a channel POSTed
+ *   `owner-read` to whatever server the tool pointed at — the owner's live one.
+ *   Blocked writes are recorded in `window.__screenshotBlocked`.
+ *   Guarded in the page, not with CDP Fetch interception: pausing every request
+ *   through CDP stalled the app's idle-time chunk preloads so the network never
+ *   went quiet (measured 2026-09-25: 22 requests still open after 90s).
  */
-export async function openSession({ baseUrl, token }) {
+// Pattern: fix-guards (docs/patterns.md#fix-guards)
+function stabilisingScript(clockMs) {
+  return `(() => {
+  const T0 = ${Number(clockMs)};
+  const RealDate = Date;
+  globalThis.Date = new Proxy(RealDate, {
+    construct: (target, args, newTarget) =>
+      Reflect.construct(target, args.length ? args : [T0], newTarget),
+    apply: () => new RealDate(T0).toString(),
+    get: (target, key, receiver) => (key === 'now' ? () => T0 : Reflect.get(target, key, receiver)),
+  });
+  const blocked = (window.__screenshotBlocked = []);
+  const READS = new Set(['GET', 'HEAD', 'OPTIONS']);
+  const realFetch = window.fetch;
+  window.fetch = (input, init) => {
+    const request = new Request(input, init);
+    if (READS.has(request.method)) return realFetch(request);
+    blocked.push(request.method + ' ' + new URL(request.url).pathname);
+    return Promise.reject(new TypeError('Failed to fetch (blocked: read-only screenshot session)'));
+  };
+  const realOpen = XMLHttpRequest.prototype.open;
+  const realSend = XMLHttpRequest.prototype.send;
+  XMLHttpRequest.prototype.open = function (method, url, ...rest) {
+    this.__screenshotWrite = READS.has(String(method).toUpperCase())
+      ? null
+      : String(method).toUpperCase() + ' ' + new URL(url, location.href).pathname;
+    return realOpen.call(this, method, url, ...rest);
+  };
+  XMLHttpRequest.prototype.send = function (body) {
+    if (!this.__screenshotWrite) return realSend.call(this, body);
+    blocked.push(this.__screenshotWrite);
+    this.abort();
+  };
+  navigator.sendBeacon = (url) => {
+    blocked.push('BEACON ' + new URL(url, location.href).pathname);
+    return false;
+  };
+  WebSocket.prototype.send = function () {
+    blocked.push('WS send');
+  };
+  const css = \`*, *::before, *::after {
+    animation-duration: 0s !important; animation-delay: 0s !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0s !important; transition-delay: 0s !important;
+    caret-color: transparent !important;
+  }
+  [data-volatile] { visibility: hidden !important; }\`;
+  document.addEventListener('DOMContentLoaded', () => {
+    const style = document.createElement('style');
+    style.dataset.screenshotStabiliser = '';
+    style.textContent = css;
+    document.documentElement.appendChild(style);
+  }, { once: true });
+})();`;
+}
+
+/** One blank headless tab: the base both the app session and the comparer use. */
+async function openTab() {
   const { child, userDataDir, port } = await launchChrome(findChrome());
   let cdp;
   const exited = new Promise((resolve) => child.once('exit', resolve));
@@ -176,13 +250,6 @@ export async function openSession({ baseUrl, token }) {
     await cdp.send('Page.enable', {}, sessionId);
     await cdp.send('Runtime.enable', {}, sessionId);
 
-    const goto = async (url, settleMs) => {
-      const loaded = cdp.once('Page.loadEventFired', sessionId, 30_000);
-      await cdp.send('Page.navigate', { url }, sessionId);
-      await loaded;
-      await sleep(settleMs);
-    };
-
     const evaluate = async (expression) => {
       const result = await cdp.send(
         'Runtime.evaluate',
@@ -193,6 +260,91 @@ export async function openSession({ baseUrl, token }) {
         throw new Error(result.exceptionDetails.exception?.description ?? 'evaluate failed');
       }
       return result.result?.value;
+    };
+    return { cdp, sessionId, evaluate, close };
+  } catch (error) {
+    await close();
+    throw error;
+  }
+}
+
+/**
+ * A blank tab for in-browser computation (the PNG comparer decodes images with
+ * createImageBitmap here). Returns { evaluate, close }; `await close()` in a
+ * finally.
+ */
+export async function openBlankTab() {
+  const { evaluate, close } = await openTab();
+  return { evaluate, close };
+}
+
+/**
+ * One headless tab against the running app, already authenticated: the
+ * `?token=` navigation sets the gate's cookie for every later page load.
+ *
+ * READ-ONLY: the page cannot send a write (see stabilisingScript).
+ * `blockedWrites()` lists what was refused so a run can report it.
+ *
+ * `clockMs` is the instant the page's Date is frozen at (see stabilisingScript).
+ *
+ * Returns { goto, evaluate, setViewport, waitForNetworkIdle, capture,
+ * blockedWrites, close }.
+ * `await close()` must run (use try/finally) or a Chrome process outlives the
+ * script.
+ */
+export async function openSession({ baseUrl, token, clockMs }) {
+  const { cdp, sessionId, evaluate, close } = await openTab();
+  try {
+    // In-flight HTTP requests, for waitForNetworkIdle. WebSocket and
+    // EventSource streams never finish, so they are not counted.
+    const inFlight = new Map();
+    let lastNetworkChange = Date.now();
+    cdp.listeners.add((msg) => {
+      if (msg.sessionId !== sessionId) return;
+      if (msg.method === 'Network.requestWillBeSent') {
+        if (msg.params.type === 'WebSocket' || msg.params.type === 'EventSource') return;
+        inFlight.set(msg.params.requestId, msg.params.request.url);
+      } else if (
+        msg.method === 'Network.loadingFinished' ||
+        msg.method === 'Network.loadingFailed'
+      ) {
+        inFlight.delete(msg.params.requestId);
+      } else {
+        return;
+      }
+      lastNetworkChange = Date.now();
+    });
+    await cdp.send('Network.enable', {}, sessionId);
+    await cdp.send(
+      'Page.addScriptToEvaluateOnNewDocument',
+      { source: stabilisingScript(clockMs) },
+      sessionId
+    );
+
+    // Blocked writes are recorded in the page, so a navigation would drop them:
+    // bank them before leaving each page.
+    const blocked = [];
+    const pageBlocked = async () => (await evaluate('window.__screenshotBlocked ?? []')) ?? [];
+    const goto = async (url, settleMs) => {
+      blocked.push(...(await pageBlocked()));
+      // Every page starts from empty device-local state. The app keeps UI prefs
+      // in localStorage — including the last active chat, which desktop `/`
+      // restores — so without this a screen's pixels depended on which screens
+      // ran before it, and `--only x` shot a different `x` than a full run.
+      // Cookies are kept: they carry the auth session.
+      await cdp.send(
+        'Storage.clearDataForOrigin',
+        {
+          origin: new URL(url).origin,
+          storageTypes: 'local_storage,session_storage,indexeddb,cache_storage',
+        },
+        sessionId
+      );
+      const loaded = cdp.once('Page.loadEventFired', sessionId, 30_000);
+      const { errorText } = await cdp.send('Page.navigate', { url }, sessionId);
+      if (errorText) throw new Error(`navigate ${url}: ${errorText}`);
+      await loaded;
+      await sleep(settleMs);
     };
 
     /** viewport: { width, height, deviceScaleFactor, mobile } — touch follows `mobile`. */
@@ -208,10 +360,33 @@ export async function openSession({ baseUrl, token }) {
       );
     };
 
+    /**
+     * Resolve [] once no HTTP request has been in flight for `quietMs`, or
+     * the open URLs after `timeoutMs`. A fixed settle raced the app's second-wave
+     * loads (the usage panel, a swarm counter, a transcript that loads after
+     * its summary): one run caught the "Loading…" placeholder and the next did
+     * not, which a compare reports as a regression. Polled fetches refire on an
+     * interval, so a short quiet window is reachable between them.
+     * `ignore` matches URLs of background work that paints nothing on the
+     * screen under test (the caller knows which).
+     */
+    const waitForNetworkIdle = async (quietMs, timeoutMs, ignore) => {
+      const deadline = Date.now() + timeoutMs;
+      const pending = () => [...inFlight.values()].filter((url) => !ignore.test(url));
+      while (Date.now() < deadline) {
+        if (pending().length === 0 && Date.now() - lastNetworkChange >= quietMs) return [];
+        await sleep(50);
+      }
+      // Still-open requests on timeout, so a run can say what never finished.
+      return pending();
+    };
+
     const capture = async (file) => {
       const { data } = await cdp.send('Page.captureScreenshot', { format: 'png' }, sessionId);
       fs.writeFileSync(file, Buffer.from(data, 'base64'));
     };
+
+    const blockedWrites = async () => [...blocked, ...(await pageBlocked())];
 
     await goto(token ? `${baseUrl}/?token=${encodeURIComponent(token)}` : `${baseUrl}/`, 500);
     const gated = await evaluate(`document.title.toLowerCase().includes('sign in') ||
@@ -224,7 +399,7 @@ export async function openSession({ baseUrl, token }) {
       );
     }
 
-    return { goto, evaluate, setViewport, capture, close };
+    return { goto, evaluate, setViewport, waitForNetworkIdle, capture, blockedWrites, close };
   } catch (error) {
     await close();
     throw error;

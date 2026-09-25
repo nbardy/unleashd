@@ -138,7 +138,11 @@ async function main() {
   const args = parseArgs(process.argv.slice(2));
   fs.mkdirSync(args.out, { recursive: true });
 
-  const session = await openSession({ baseUrl: args.url, token: resolveAuthToken() });
+  const session = await openSession({
+    baseUrl: args.url,
+    token: resolveAuthToken(),
+    clockMs: Date.now(),
+  });
   const { goto, evaluate } = session;
   const saved = [];
   const skipped = [];

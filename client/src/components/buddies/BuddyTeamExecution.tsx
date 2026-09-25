@@ -138,8 +138,10 @@ export function BuddyTeamExecutionList({
   return (
     <>
       <p>
-        Updated {new Date(data.observedAt).toLocaleString()}. Execution status is separate from
-        project completion.
+        {/* observedAt is the SERVER's clock at read time, so the screenshot tool's
+            frozen page clock cannot pin it; data-volatile hides it from shots. */}
+        Updated <span data-volatile>{new Date(data.observedAt).toLocaleString()}</span>. Execution
+        status is separate from project completion.
       </p>
       {!data.items.length && <p>No coordination executions in this workspace.</p>}
       {data.items.map((run) => (
