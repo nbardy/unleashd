@@ -28,6 +28,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { readJsonlLines } from '../adapters/jsonl-lines';
 import { findClaudeSessionFile, findCodexSessionFile } from '../http/usage-routes';
 
 /**
@@ -66,34 +67,47 @@ export interface SessionContextReading {
  * usageFileCache in usage-routes.ts, and for the same reason.
  *
  * Without it every context-breakdown request re-read and re-parsed the whole
- * transcript SYNCHRONOUSLY on the event loop: measured at 72-93ms on a real
- * 28MB claude session, blocking every other request for that long. The meter
- * fetches on mount rather than on a timer, so this was not a hot loop, but a
- * chat open should not stall the server for ~80ms. Session logs are
- * append-only, so mtime is a sound key.
+ * transcript on the event loop: measured at 72-93ms on a real 28MB claude
+ * session. Session logs are append-only, so mtime is a sound key.
+ *
+ * A cache miss (every first chat open, and every open after a turn) still
+ * readFileSync'd the whole transcript until 2026-09-25, blocking every other
+ * request for as long as the parse took. Reads are now async and streamed in
+ * 1 MiB chunks, so the loop is released between chunks.
  */
 const readingCache = new Map<string, { mtimeMs: number; reading: SessionContextReading | null }>();
 
-/** Parse `filePath` unless its mtime is unchanged since the last parse. */
-function cachedRead(
+type Lines = AsyncIterable<string>;
+type ParseLines = (lines: Lines) => Promise<SessionContextReading | null>;
+
+/**
+ * Parse `filePath` unless its mtime is unchanged since the last parse. Only
+ * lines containing one of `keys` reach the parser: every record a parser acts
+ * on names its key literally, so this skips JSON.parse of tool output and
+ * prose (most of a transcript) without changing any reading.
+ */
+async function cachedRead(
   filePath: string,
-  parse: (lines: string[]) => SessionContextReading | null
-): SessionContextReading | null {
+  keys: readonly string[],
+  parse: ParseLines
+): Promise<SessionContextReading | null> {
   let mtimeMs: number;
   try {
-    mtimeMs = fs.statSync(filePath).mtimeMs;
+    mtimeMs = (await fs.promises.stat(filePath)).mtimeMs;
   } catch {
     return null;
   }
   const hit = readingCache.get(filePath);
   if (hit && hit.mtimeMs === mtimeMs) return hit.reading;
-  const reading = parse(readLines(filePath));
+  const reading = await parse(readLines(filePath, keys));
   readingCache.set(filePath, { mtimeMs, reading });
   return reading;
 }
 
-function readLines(filePath: string): string[] {
-  return fs.readFileSync(filePath, 'utf-8').split('\n');
+async function* readLines(filePath: string, keys: readonly string[]): Lines {
+  for await (const { text } of readJsonlLines(filePath, 0)) {
+    if (keys.some((key) => text.includes(key))) yield text;
+  }
 }
 
 function parseLine(line: string): Record<string, unknown> | null {
@@ -124,20 +138,20 @@ function num(value: unknown): number | null {
  * Compaction rides a first-class record: `{type:'system',
  * subtype:'compact_boundary', compactMetadata:{...}}`.
  */
-function readClaudeContext(sessionId: string): SessionContextReading | null {
-  const found = findClaudeSessionFile(sessionId);
+async function readClaudeContext(sessionId: string): Promise<SessionContextReading | null> {
+  const found = await findClaudeSessionFile(sessionId);
   if (!found) return null;
-  return cachedRead(found.path, parseClaudeLines);
+  return cachedRead(found.path, ['"usage"', 'compact_boundary'], parseClaudeLines);
 }
 
-function parseClaudeLines(lines: string[]): SessionContextReading | null {
+async function parseClaudeLines(lines: Lines): Promise<SessionContextReading | null> {
   let contextTokens: number | null = null;
   let count = 0;
   let preTokens: number | null = null;
   let postTokens: number | null = null;
   let trigger: string | null = null;
 
-  for (const line of lines) {
+  for await (const line of lines) {
     const entry = parseLine(line);
     if (!entry) continue;
 
@@ -186,18 +200,18 @@ function parseClaudeLines(lines: string[]): SessionContextReading | null {
  * input_tokens 0 — a reset sentinel, not a request. Taking it would drop the
  * meter to empty for one tick before it refills, so zero readings are skipped.
  */
-function readCodexContext(sessionId: string): SessionContextReading | null {
-  const filePath = findCodexSessionFile(sessionId);
+async function readCodexContext(sessionId: string): Promise<SessionContextReading | null> {
+  const filePath = await findCodexSessionFile(sessionId);
   if (!filePath) return null;
-  return cachedRead(filePath, parseCodexLines);
+  return cachedRead(filePath, ['token_count', 'compacted'], parseCodexLines);
 }
 
-function parseCodexLines(lines: string[]): SessionContextReading | null {
+async function parseCodexLines(lines: Lines): Promise<SessionContextReading | null> {
   let contextTokens: number | null = null;
   let contextWindow: number | null = null;
   let count = 0;
 
-  for (const line of lines) {
+  for await (const line of lines) {
     const entry = parseLine(line);
     if (!entry) continue;
     const payload = entry.payload as Record<string, unknown> | undefined;
@@ -233,7 +247,7 @@ function parseCodexLines(lines: string[]): SessionContextReading | null {
  * One JSON file per message; the newest assistant message is the latest
  * request.
  */
-function readOpenCodeContext(sessionId: string): SessionContextReading | null {
+async function readOpenCodeContext(sessionId: string): Promise<SessionContextReading | null> {
   const dir = path.join(
     os.homedir(),
     '.local',
@@ -245,7 +259,7 @@ function readOpenCodeContext(sessionId: string): SessionContextReading | null {
   );
   let files: string[];
   try {
-    files = fs.readdirSync(dir).filter((f) => f.endsWith('.json'));
+    files = (await fs.promises.readdir(dir)).filter((f) => f.endsWith('.json'));
   } catch {
     return null;
   }
@@ -256,7 +270,7 @@ function readOpenCodeContext(sessionId: string): SessionContextReading | null {
 
   for (const file of files) {
     try {
-      const parsed = JSON.parse(fs.readFileSync(path.join(dir, file), 'utf-8'));
+      const parsed = JSON.parse(await fs.promises.readFile(path.join(dir, file), 'utf-8'));
       if (parsed?.role !== 'assistant') continue;
       const created = num(parsed?.time?.created) ?? num(parsed?.time?.completed) ?? 0;
       if (created < newestMs) continue;
@@ -290,20 +304,20 @@ function readOpenCodeContext(sessionId: string): SessionContextReading | null {
  * `config_fingerprint` carries the fraction it represents, so the window is
  * recoverable as target / soft.
  */
-function findMuseSessionFile(sessionId: string): string | null {
+async function findMuseSessionFile(sessionId: string): Promise<string | null> {
   const root = path.join(os.homedir(), '.local', 'share', 'muse', 'sessions');
   try {
-    for (const year of fs.readdirSync(root, { withFileTypes: true })) {
+    for (const year of await fs.promises.readdir(root, { withFileTypes: true })) {
       if (!year.isDirectory()) continue;
       const yearPath = path.join(root, year.name);
-      for (const month of fs.readdirSync(yearPath, { withFileTypes: true })) {
+      for (const month of await fs.promises.readdir(yearPath, { withFileTypes: true })) {
         if (!month.isDirectory()) continue;
         const monthPath = path.join(yearPath, month.name);
-        for (const day of fs.readdirSync(monthPath, { withFileTypes: true })) {
+        for (const day of await fs.promises.readdir(monthPath, { withFileTypes: true })) {
           if (!day.isDirectory()) continue;
           const candidate = path.join(monthPath, day.name, sessionId, 'session.jsonl');
           try {
-            if (fs.statSync(candidate).isFile()) return candidate;
+            if ((await fs.promises.stat(candidate)).isFile()) return candidate;
           } catch {
             /* not in this day dir */
           }
@@ -327,19 +341,19 @@ function museWindowFrom(strategy: Record<string, unknown> | undefined): number |
   return Math.round(target / soft);
 }
 
-function readMuseContext(sessionId: string): SessionContextReading | null {
-  const filePath = findMuseSessionFile(sessionId);
+async function readMuseContext(sessionId: string): Promise<SessionContextReading | null> {
+  const filePath = await findMuseSessionFile(sessionId);
   if (!filePath) return null;
-  return cachedRead(filePath, parseMuseLines);
+  return cachedRead(filePath, ['runtime.session'], parseMuseLines);
 }
 
-function parseMuseLines(lines: string[]): SessionContextReading | null {
+async function parseMuseLines(lines: Lines): Promise<SessionContextReading | null> {
   let contextTokens: number | null = null;
   let contextWindow: number | null = null;
   let count = 0;
   let trigger: string | null = null;
 
-  for (const line of lines) {
+  for await (const line of lines) {
     const entry = parseLine(line);
     if (!entry || entry.payload_type !== 'runtime.session') continue;
     const event = (entry.payload as Record<string, unknown> | undefined)?.event as
@@ -380,7 +394,7 @@ function parseMuseLines(lines: string[]): SessionContextReading | null {
  * it, so each reader is asked in turn and the first that finds its own file
  * answers. Each reader owns exactly one harness's conventions.
  */
-const READERS: ReadonlyArray<(sessionId: string) => SessionContextReading | null> = [
+const READERS: ReadonlyArray<(sessionId: string) => Promise<SessionContextReading | null>> = [
   readClaudeContext,
   readCodexContext,
   readOpenCodeContext,
@@ -391,11 +405,13 @@ const READERS: ReadonlyArray<(sessionId: string) => SessionContextReading | null
  * Latest provider-counted context for a session, or null when no harness log
  * matches. Never throws: the meter must never break the conversation read.
  */
-export function lookupSessionContext(sessionId: string): SessionContextReading | null {
+export async function lookupSessionContext(
+  sessionId: string
+): Promise<SessionContextReading | null> {
   if (!sessionId) return null;
   for (const read of READERS) {
     try {
-      const reading = read(sessionId);
+      const reading = await read(sessionId);
       if (reading) return reading;
     } catch {
       /* try the next harness */

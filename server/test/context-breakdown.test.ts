@@ -189,7 +189,7 @@ test('context-breakdown route returns the meter payload for a known conversation
     (id) => (id === 'convo-1' ? { toJSON: () => convo, getMemorySnapshot: () => null } : undefined),
     {
       getBranch: () => null,
-      lookupUsage: () => null,
+      lookupUsage: async () => null,
     }
   );
   const server = app.listen(0, '127.0.0.1');
