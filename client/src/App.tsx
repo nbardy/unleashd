@@ -1,20 +1,16 @@
-import { Provider, useAtomValue } from 'jotai';
+import { Provider } from 'jotai';
 import {
   type ComponentType,
   type LazyExoticComponent,
   type ReactElement,
   Suspense,
   lazy,
-  useCallback,
   useEffect,
-  useRef,
 } from 'react';
-import { BrowserRouter, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
+import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { handleMessage } from './atoms/actions';
-import { rowFamily } from './atoms/conversations';
 import { startConversationPrefetch } from './atoms/prefetch';
 import { jotaiStore } from './atoms/store';
-import { prefsAtom } from './atoms/ui';
 import { useOwnerUnreadTitle } from './components/buddies/channel-data';
 import { useWebSocket } from './hooks/useWebSocket';
 import { type DeviceKind, useDeviceKind } from './mobile/hooks/useDeviceKind';
@@ -54,69 +50,9 @@ function useWebSocketBridge() {
   useEffect(() => startConversationPrefetch(), []);
 }
 
-/**
- * DeviceKind-aware restore on load (§5 #1).
- * Desktop: restores "/" → /chat/:id from the saved active conversation id.
- * Mobile: keeps the Chats inbox at "/" — never auto-opens an old conversation.
- * Must be hoisted above AppRoutes so the nav fires once before the shell mounts.
- *
- * Portable: URL ownership lives here; chat-input persistence + focus lives in
- * useConversationDraft (shared by Chat.tsx desktop and ComposerMobile). This
- * merges the old uiStore-based restore with the new jotai/book via React —
- * desktop reuses the same localStorage `draft:{id}` + HMR flush/focus path as
- * mobile, so typing survives hot reload on both shells without duplicating code.
- *
- * HMR-safe: Vite Fast Refresh patches modules without reloading the page but
- * may remount AppInner — didRestore prevents a second push. URL is owned by
- * BrowserRouter (window.history) so HMR does not reset it; we only guard the
- * case where a soft HMR/full reload lands back on "/" while a conversation
- * was active. Focus is NOT handled here — useConversationDraft owns it.
- */
-function useRestoreOnLoad(device: DeviceKind) {
-  const navigate = useNavigate();
-  const location = useLocation();
-  const savedActiveId = useAtomValue(prefsAtom).activeConversationId;
-  // Tracks the SAVED id, not "any conversation": startup hydrates in batches,
-  // and a saved chat arriving in a later batch must still restore (984d00f).
-  const savedActivePresent = useAtomValue(rowFamily(savedActiveId ?? '')) !== null;
-  const didRestore = useRef(false);
-
-  const tryRestore = useCallback(() => {
-    if (device === 'mobile') return false;
-    if (window.location.pathname !== '/') return false;
-    if (!savedActiveId) return false;
-    if (didRestore.current) return false;
-    if (jotaiStore.get(rowFamily(savedActiveId)) === null) return false;
-    didRestore.current = true;
-    navigate(`/chat/${savedActiveId}`, { replace: true });
-    return true;
-  }, [device, navigate, savedActiveId]);
-
-  // Initial: "/" → /chat/:id once conversations have hydrated.
-  useEffect(() => {
-    if (!savedActivePresent) return;
-    if (location.pathname !== '/') return;
-    tryRestore();
-  }, [savedActivePresent, location.pathname, tryRestore]);
-
-  // HMR/visibility: re-assert URL if a soft reload landed back on "/".
-  // Focus is owned by useConversationDraft — no input handling here.
-  useEffect(() => {
-    if (device === 'mobile') return;
-    const onVisible = () => {
-      if (document.visibilityState === 'visible') tryRestore();
-    };
-    type ViteHMR = { addEventListener?: (e: string, cb: () => void) => void };
-    (import.meta as unknown as { hot?: ViteHMR }).hot?.addEventListener?.(
-      'vite:beforeUpdate',
-      () => {
-        setTimeout(tryRestore, 60);
-      }
-    );
-    document.addEventListener('visibilitychange', onVisible);
-    return () => document.removeEventListener('visibilitychange', onVisible);
-  }, [device, tryRestore]);
-}
+// `/` is the workspace home (port of 6d04860). It used to restore the last
+// conversation on desktop, which bounced this screen into a chat on every load;
+// the conversation list lives at /chats.
 
 // =============================================================================
 // Code splitting. Every shell and route is its own chunk, loaded on first use,
@@ -161,6 +97,9 @@ const BuddyWorkspaceActivity = lazyNamed(() =>
 const ChannelsIndex = lazyNamed(() =>
   import('./mobile/channels/ChannelsIndex').then((m) => m.ChannelsIndex)
 );
+const WorkspaceHome = lazyNamed(() =>
+  import('./components/buddies/WorkspaceHome').then((m) => m.WorkspaceHome)
+);
 
 // Mobile tree
 const ShellMobile = lazyNamed(() =>
@@ -201,6 +140,7 @@ const DEVICE_CHUNKS: Record<DeviceKind, ReadonlyArray<{ preload: () => Promise<u
     WorkspaceSlack,
     BuddyWorkspaceActivity,
     ChannelsIndex,
+    WorkspaceHome,
   ],
   mobile: [
     ConversationListMobile,
@@ -214,6 +154,7 @@ const DEVICE_CHUNKS: Record<DeviceKind, ReadonlyArray<{ preload: () => Promise<u
     ChannelsMobile,
     BuddyWorkspaceActivity,
     ChannelsIndex,
+    WorkspaceHome,
   ],
 };
 
@@ -241,7 +182,7 @@ type RouteDef = { path: string; desktop: () => ReactElement; mobile: () => React
 
 const ROUTES: RouteDef[] = [
   {
-    path: '/',
+    path: '/chats',
     desktop: () => <Gallery />,
     mobile: () => <ConversationListMobile scope="chats" />,
   },
@@ -288,22 +229,39 @@ const ROUTES: RouteDef[] = [
 // nested beside the first; owner feedback 2026-09-23).
 // Mobile: inside the shell, Slack-style — Home keeps the tab bar, a channel or
 // thread is an immersive pane (ShellMobile hides the tab bar there).
+// The workspace home at `/` follows the same split: desktop full-screen with
+// no conversations sidebar (owner, 2026-09-25), mobile inside the tab bar.
 const CHANNELS_PATH = '/buddies/workspaces/:workspaceId/channels';
 const OUTSIDE_SHELL: Record<DeviceKind, ReactElement | null> = {
-  desktop: <Route path={CHANNELS_PATH} element={<WorkspaceSlack />} />,
+  desktop: (
+    <>
+      <Route path={CHANNELS_PATH} element={<WorkspaceSlack />} />
+      <Route path="/" element={<WorkspaceHome />} />
+    </>
+  ),
   mobile: null,
 };
 const INSIDE_SHELL: Record<DeviceKind, ReactElement | null> = {
   desktop: null,
   mobile: (
-    <Route
-      path={CHANNELS_PATH}
-      element={
-        <Suspense fallback={null}>
-          <ChannelsMobile />
-        </Suspense>
-      }
-    />
+    <>
+      <Route
+        path="/"
+        element={
+          <Suspense fallback={null}>
+            <WorkspaceHome />
+          </Suspense>
+        }
+      />
+      <Route
+        path={CHANNELS_PATH}
+        element={
+          <Suspense fallback={null}>
+            <ChannelsMobile />
+          </Suspense>
+        }
+      />
+    </>
   ),
 };
 
@@ -341,7 +299,6 @@ function AppRoutes({ device }: { device: DeviceKind }) {
 function AppInner() {
   const device = useDeviceKind();
   useWebSocketBridge();
-  useRestoreOnLoad(device);
   useOwnerUnreadTitle();
   usePreloadDeviceChunks(device);
 

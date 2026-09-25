@@ -130,7 +130,8 @@
   transition: all 0.2s;
 }
 
-.run-tab:hover {
+.run-tab:hover,
+.timeline-worker-label:hover {
   background: var(--bg-hover);
 }
 
@@ -182,7 +183,8 @@
   margin-bottom: 6px;
 }
 
-.stat-value.merged {
+.stat-value.merged,
+.tooltip-value.merged {
   color: var(--success);
 }
 
@@ -278,11 +280,8 @@
   transition: background 0.2s;
 }
 
-.timeline-worker-label:hover {
-  background: var(--bg-hover);
-}
-
-.timeline-worker-label:last-child {
+.timeline-worker-label:last-child,
+.timeline-worker-row:last-child {
   border-bottom: none;
 }
 
@@ -303,7 +302,8 @@
   position: relative;
 }
 
-.timeline-axis {
+.timeline-axis,
+.timeline-worker-row {
   position: relative;
   border-bottom: 1px solid var(--border-subtle);
 }
@@ -322,15 +322,6 @@
 
 .timeline-spans {
   position: relative;
-}
-
-.timeline-worker-row {
-  position: relative;
-  border-bottom: 1px solid var(--border-subtle);
-}
-
-.timeline-worker-row:last-child {
-  border-bottom: none;
 }
 
 .timeline-grid-line {
@@ -448,10 +439,6 @@
   font-weight: 500;
 }
 
-.tooltip-value.merged {
-  color: var(--success);
-}
-
 .tooltip-status,
 .tooltip-verdict {
   padding: var(--sp-1) var(--sp-4);
@@ -466,7 +453,8 @@
   color: var(--bg-page);
 }
 
-.tooltip-status.status-completed {
+.tooltip-status.status-completed,
+.tooltip-verdict.verdict-approved {
   background: var(--success);
   color: var(--bg-page);
 }
@@ -478,11 +466,6 @@
 
 .tooltip-status.status-pending {
   background: var(--warning);
-  color: var(--bg-page);
-}
-
-.tooltip-verdict.verdict-approved {
-  background: var(--success);
   color: var(--bg-page);
 }
 

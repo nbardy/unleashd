@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -985,6 +986,38 @@ test('owner routes restore what the T11 client migration dropped: reply stats, t
     assert.deepEqual(overview.find((ws) => ws.id === w.ws)?.taskCounts, [
       { buddyId: w.lead.id, open: 1, blocked: 1 },
     ]);
+  } finally {
+    server.close();
+    await w.close();
+  }
+});
+
+// Port of 6d04860 (workspace home "New workspace"): the crate reuses a workspace only on an
+// IDENTICAL root_path string, so a trailing slash or a symlink used to register the same folder
+// twice. A file, a missing folder or `/` must be a 400, never a workspace.
+test('New workspace from a folder: the name defaults to the folder, any spelling of it reuses one workspace', async () => {
+  const w = await world();
+  const { server, http } = await ownerHttp(w);
+  try {
+    const folder = join(w.scratch, 'Atlas');
+    mkdirSync(folder);
+    symlinkSync(folder, join(w.scratch, 'atlas-link'));
+    writeFileSync(join(w.scratch, 'notes.txt'), 'x');
+    const created = await http('POST', '/api/buddies/workspaces', { rootPath: `${folder}/` });
+    assert.equal(created.status, 201, JSON.stringify(created.body));
+    const workspace = created.body as unknown as { id: string; name: string };
+    assert.equal(workspace.name, 'Atlas');
+    const again = await http('POST', '/api/buddies/workspaces', {
+      rootPath: join(w.scratch, 'atlas-link'),
+      name: 'Other name',
+    });
+    assert.equal((again.body as unknown as { id: string }).id, workspace.id);
+    for (const rootPath of [join(w.scratch, 'notes.txt'), join(w.scratch, 'missing'), '/', 'rel'])
+      assert.equal(
+        (await http('POST', '/api/buddies/workspaces', { rootPath })).status,
+        400,
+        rootPath
+      );
   } finally {
     server.close();
     await w.close();

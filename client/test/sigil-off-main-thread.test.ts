@@ -32,7 +32,7 @@ Object.assign(globalThis, {
 const { sigilResource } = await import('../src/components/buddies/BuddySigil');
 
 test('a sigil load renders in the worker, not on the calling thread', async () => {
-  const url = await sigilResource('Ada').load(new AbortController().signal);
+  const url = await sigilResource('Ada', 'sigil').load(new AbortController().signal);
   assert.match(url, /^blob:/);
   assert.deepEqual(
     posted.map((request) => request.name),
@@ -41,6 +41,18 @@ test('a sigil load renders in the worker, not on the calling thread', async () =
 });
 
 test('a failed worker render rejects that sigil only', async () => {
-  await assert.rejects(sigilResource('Broken').load(new AbortController().signal), /WebGL2/);
-  assert.match(await sigilResource('Grace').load(new AbortController().signal), /^blob:/);
+  await assert.rejects(
+    sigilResource('Broken', 'sigil').load(new AbortController().signal),
+    /WebGL2/
+  );
+  assert.match(await sigilResource('Grace', 'sigil').load(new AbortController().signal), /^blob:/);
+});
+
+// Port of c5e0ded: workspace emblems share the worker. The source drew them on
+// the main thread (one WebGL program per kind on the page's context); here an
+// emblem is one more request kind, so the home screen's tiles never block it.
+test('a workspace emblem renders in the worker too', async () => {
+  const url = await sigilResource('unleashd', 'emblem').load(new AbortController().signal);
+  assert.match(url, /^blob:/);
+  assert.deepEqual(posted.at(-1), { id: posted.at(-1)?.id, kind: 'emblem', name: 'unleashd' });
 });

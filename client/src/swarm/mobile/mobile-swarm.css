@@ -146,7 +146,9 @@
 }
 
 .mobile-worker-row__model,
-.mobile-worker-row__msgs {
+.mobile-worker-row__msgs,
+.mobile-worker-row__role,
+.mobile-worker-row__state {
   color: var(--text-muted);
   font-size: var(--fs-3);
 }
@@ -323,12 +325,6 @@
   height: 8px;
   border-radius: 50%;
   background: var(--text-muted);
-}
-
-.mobile-worker-row__role,
-.mobile-worker-row__state {
-  color: var(--text-muted);
-  font-size: var(--fs-3);
 }
 
 .mobile-exec-group__verdict {

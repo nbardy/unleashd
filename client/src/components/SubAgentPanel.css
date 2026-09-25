@@ -154,10 +154,7 @@
 }
 
 .subagent-status.running,
-.subagent-status.pending {
-  color: var(--success);
-}
-
+.subagent-status.pending,
 .subagent-status.completed {
   color: var(--success);
 }
