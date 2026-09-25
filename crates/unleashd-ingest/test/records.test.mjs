@@ -22,7 +22,12 @@ test('records round-trip through the addon and set_config is compare-and-set', a
   const records = await ConversationRecords.open(db);
   const creation = {
     commandId: 'cmd-1',
-    buddyContext: { buddyId: 'b1', workspaceId: 'w1', buddyProjectId: null, allowedBuddyOperations: ['buddy.post'] },
+    buddyContext: {
+      buddyId: 'b1',
+      workspaceId: 'w1',
+      buddyProjectId: null,
+      allowedBuddyOperations: ['buddy.post'],
+    },
   };
   const created = await records.create(
     {
@@ -83,7 +88,8 @@ test('records round-trip through the addon and set_config is compare-and-set', a
   ]);
   const winner = outcomes.find((o) => o.t === 'committed').record;
   assert.equal(winner.configRevision, 1);
-  for (const o of outcomes.filter((o) => o.t === 'revision_conflict')) assert.deepEqual(o.current, winner);
+  for (const o of outcomes.filter((o) => o.t === 'revision_conflict'))
+    assert.deepEqual(o.current, winner);
 
   assert.equal((await records.setDone('c1', true, T0 + 2)).done, true);
   assert.equal(await records.markDeleted('c1', T0 + 3), true);
@@ -94,7 +100,15 @@ test('records round-trip through the addon and set_config is compare-and-set', a
 
   // A record the Zod schema would refuse is refused with a typed code, not stored.
   await assert.rejects(
-    records.create({ conversationId: 'c2', sessionBindings: [{ provider: 'codex', sessionId: '' }], config: config('m'), provenance: 'user' }, T0),
+    records.create(
+      {
+        conversationId: 'c2',
+        sessionBindings: [{ provider: 'codex', sessionId: '' }],
+        config: config('m'),
+        provenance: 'user',
+      },
+      T0
+    ),
     /^Error: \[invalid\]/
   );
   assert.equal(await records.get('c2'), null);
