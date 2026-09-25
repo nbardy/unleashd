@@ -9,13 +9,17 @@ import {
   type ConversationRuntimeDependencies,
   buildFirstTurnCliContent,
   createConversationRuntime,
-  describeTurnTimeout,
   extractBuddyMemorySnapshot,
-  isProviderProgressEvent,
   resolveAutomationMemoryWritePolicy,
-  turnAttemptActivityFromEvent,
 } from '../src/conversations/runtime';
 import { resolveConfigAgainstProviderCatalog } from '../src/providers/catalog-service';
+import {
+  type TurnTimeoutKind,
+  TurnWatchdog,
+  describeTurnTimeout,
+  isProviderProgressEvent,
+  turnAttemptActivityFromEvent,
+} from '../src/turns/watchdog';
 import { sameKeyAudience } from './fixtures/buddy-audience';
 
 function runtimeFixture(
@@ -897,82 +901,49 @@ test('conversation runtime binds server capabilities without importing server or
 
 test('timer-only heartbeats cannot mask provider idleness, while native advancement can', (t) => {
   t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: 0 });
-  const { broadcasts, conversation } = runtimeFixture();
-  const runtime = conversation as unknown as {
-    process: { exitCode: number | null; once(): void } | null;
-    isRunning: boolean;
-    isStreaming: boolean;
-    _activeTurnStop: ((signal?: NodeJS.Signals) => void) | null;
-    _startTurnWatchdogs(): void;
-    _noteTurnActivity(event: {
-      type: 'progress';
-      source: string;
-      data?: Record<string, unknown>;
-    }): void;
-    _clearTurnWatchdogs(): void;
-  };
-  runtime.process = { exitCode: null, once: () => undefined };
-  runtime.isRunning = true;
-  runtime.isStreaming = true;
-  runtime._activeTurnStop = () => undefined;
-  runtime._startTurnWatchdogs();
+  const fired: TurnTimeoutKind[] = [];
+  const watchdog = new TurnWatchdog(
+    { bridgeMs: 2 * 60_000, providerIdleMs: 60 * 60_000, maxRuntimeMs: 24 * 60 * 60_000 },
+    (kind) => fired.push(kind)
+  );
+  watchdog.start();
 
   // Keep the bridge healthy for 59 minutes. One native advancement near the
   // original provider deadline must extend only the provider-progress clock.
   for (let minute = 1; minute <= 59; minute += 1) {
     t.mock.timers.tick(60_000);
-    runtime._noteTurnActivity({
+    watchdog.note({
       type: 'progress',
       source: 'agent-cli.heartbeat',
-      data: {
-        nativeSessionAdvanced: minute === 59,
-        nativeSessionAvailable: true,
-      },
+      data: { nativeSessionAdvanced: minute === 59, nativeSessionAvailable: true },
     });
   }
   // Continue bridge-only heartbeats until the refreshed one-hour provider
   // deadline. The bridge never stalls, but provider idleness must terminate.
   for (let minute = 1; minute <= 59; minute += 1) {
     t.mock.timers.tick(60_000);
-    runtime._noteTurnActivity({ type: 'progress', source: 'agent-cli.heartbeat' });
-    assert.equal(runtime.isRunning, true, 'native advancement should extend provider deadline');
+    watchdog.note({ type: 'progress', source: 'agent-cli.heartbeat' });
+    assert.deepEqual(fired, [], 'native advancement should extend provider deadline');
   }
   t.mock.timers.tick(60_000);
-
-  assert.equal(runtime.isRunning, false);
-  assert.ok(
-    broadcasts.some(
-      (message) =>
-        typeof message === 'object' &&
-        message !== null &&
-        'content' in message &&
-        typeof message.content === 'string' &&
-        message.content.includes('no provider event or native-session advancement')
-    )
-  );
-  runtime._clearTurnWatchdogs();
+  assert.deepEqual(fired, ['provider']);
+  assert.equal(watchdog.idle().providerIdleSeconds, 3_600);
+  watchdog.clear();
 });
 
-test('bridge watchdog terminates when neither unified events nor heartbeats arrive', (t) => {
+test('bridge watchdog terminates a turn when neither unified events nor heartbeats arrive', (t) => {
   t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: 0 });
-  const { broadcasts, conversation } = runtimeFixture();
-  const runtime = conversation as unknown as {
-    process: { exitCode: number | null; once(): void } | null;
-    isRunning: boolean;
-    isStreaming: boolean;
-    _activeTurnStop: ((signal?: NodeJS.Signals) => void) | null;
-    _startTurnWatchdogs(): void;
-    _clearTurnWatchdogs(): void;
-  };
-  runtime.process = { exitCode: null, once: () => undefined };
-  runtime.isRunning = true;
-  runtime.isStreaming = true;
-  runtime._activeTurnStop = () => undefined;
-  runtime._startTurnWatchdogs();
+  const stub = openTurnStub();
+  const { broadcasts, conversation } = runtimeFixture({
+    executeTurn: (() => stub.turn) as NonNullable<ConversationRuntimeDependencies['executeTurn']>,
+  });
+  conversation.sendMessage('never answered');
+  assert.equal(conversation.isRunning, true);
 
   t.mock.timers.tick(2 * 60_000);
 
-  assert.equal(runtime.isRunning, false);
+  assert.equal(conversation.isRunning, false);
+  assert.equal(stub.stops(), 1, 'the stalled provider is terminated');
   assert.ok(
     broadcasts.some(
       (message) =>
@@ -983,7 +954,7 @@ test('bridge watchdog terminates when neither unified events nor heartbeats arri
         message.content.includes('Turn event bridge stalled')
     )
   );
-  runtime._clearTurnWatchdogs();
+  stub.child.emit('close');
 });
 
 test('turn activity distinguishes bridge heartbeats from provider events', () => {

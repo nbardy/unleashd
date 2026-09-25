@@ -78,6 +78,12 @@ import {
   failRunningSubAgents,
   subAgentFoldFor,
 } from '../turns/subagents';
+import {
+  type TurnTimeoutKind,
+  TurnWatchdog,
+  describeTurnTimeout,
+  turnAttemptActivityFromEvent,
+} from '../turns/watchdog';
 
 export type OwnedBuddyChatRun = { id: string; claim_token: string; deadline: string };
 export type BuddyChatAdmission =
@@ -375,126 +381,7 @@ const AGENT_CLI_DEBUG_EVENTS = process.env.AGENT_CLI_DEBUG_EVENTS === '1';
 const LOG_CONTENT_PREVIEW_CHARS = 140;
 const ATTEMPT_ACTIVITY_INTERVAL_MS = 5_000;
 
-export type TurnTimeoutKind = 'bridge' | 'provider' | 'max';
-
-const AGENT_CLI_HEARTBEAT_SOURCE = 'agent-cli.heartbeat';
-const AGENT_CLI_NATIVE_SESSION_SOURCE = 'agent-cli.native-session';
-
-export function isProviderProgressEvent(event: UnifiedAgentEvent): boolean {
-  if (
-    event.type === 'progress' &&
-    event.source === AGENT_CLI_HEARTBEAT_SOURCE &&
-    event.data?.nativeSessionAdvanced === true
-  ) {
-    return true;
-  }
-  return !(event.type === 'progress' && event.source === AGENT_CLI_HEARTBEAT_SOURCE);
-}
-
 export { assertBuddyProviderSupportsMcp } from '../buddies/provider-capability';
-
-export function turnAttemptActivityFromEvent(event: UnifiedAgentEvent): TurnAttemptActivity {
-  if (event.type === 'progress' && event.source === AGENT_CLI_HEARTBEAT_SOURCE) {
-    const unifiedEventSilentSeconds = nonnegativeFiniteNumber(
-      event.data?.unifiedEventSilentSeconds
-    );
-    const rawStdoutSilentSeconds = nonnegativeFiniteNumber(event.data?.rawStdoutSilentSeconds);
-    const phase =
-      event.data?.phase === 'startup' || event.data?.phase === 'running'
-        ? event.data.phase
-        : undefined;
-    const nativeSessionAdvanced = event.data?.nativeSessionAdvanced === true;
-    const nativeSessionAvailable =
-      typeof event.data?.nativeSessionAvailable === 'boolean'
-        ? event.data.nativeSessionAvailable
-        : undefined;
-    const nativeSessionSilentSeconds = nonnegativeFiniteNumber(
-      event.data?.nativeSessionSilentSeconds
-    );
-    const stdoutStreamEvent =
-      event.data?.stdoutStreamEvent === 'attached' ||
-      event.data?.stdoutStreamEvent === 'resume' ||
-      event.data?.stdoutStreamEvent === 'pause' ||
-      event.data?.stdoutStreamEvent === 'close'
-        ? event.data.stdoutStreamEvent
-        : undefined;
-    const stdoutReadableFlowing =
-      typeof event.data?.stdoutReadableFlowing === 'boolean' ||
-      event.data?.stdoutReadableFlowing === null
-        ? event.data.stdoutReadableFlowing
-        : undefined;
-    const stdoutReadableLengthBytes = nonnegativeFiniteNumber(
-      event.data?.stdoutReadableLengthBytes
-    );
-    const nativeSessionSizeBytes = nonnegativeFiniteNumber(event.data?.nativeSessionSizeBytes);
-    return {
-      source: nativeSessionAdvanced ? 'native_session' : 'agent_cli_heartbeat',
-      providerEventType: event.type,
-      providerEventSource: event.source,
-      heartbeat: {
-        ...(unifiedEventSilentSeconds !== undefined ? { unifiedEventSilentSeconds } : {}),
-        ...(rawStdoutSilentSeconds !== undefined ? { rawStdoutSilentSeconds } : {}),
-        ...(phase ? { phase } : {}),
-        ...(stdoutStreamEvent ? { stdoutStreamEvent } : {}),
-        ...(stdoutReadableFlowing !== undefined ? { stdoutReadableFlowing } : {}),
-        ...(stdoutReadableLengthBytes !== undefined ? { stdoutReadableLengthBytes } : {}),
-        ...(nativeSessionAvailable !== undefined ? { nativeSessionAvailable } : {}),
-        ...(nativeSessionAdvanced ? { nativeSessionAdvanced: true } : {}),
-        ...(nativeSessionSilentSeconds !== undefined ? { nativeSessionSilentSeconds } : {}),
-        ...(nativeSessionSizeBytes !== undefined ? { nativeSessionSizeBytes } : {}),
-      },
-    };
-  }
-  if (event.type === 'progress' && event.source === AGENT_CLI_NATIVE_SESSION_SOURCE) {
-    return {
-      source: 'native_session',
-      providerEventType: event.type,
-      providerEventSource: event.source,
-    };
-  }
-  return {
-    source: 'provider_event',
-    providerEventType: event.type,
-    ...(event.type === 'progress' ? { providerEventSource: event.source } : {}),
-  };
-}
-
-export function describeTurnTimeout(
-  kind: TurnTimeoutKind,
-  input: {
-    elapsedSeconds: number;
-    bridgeIdleSeconds: number;
-    providerIdleSeconds: number;
-    sawMeaningfulOutput: boolean;
-  }
-): {
-  terminalCause: 'bridge_timeout' | 'provider_idle_timeout' | 'max_runtime_timeout';
-  message: string;
-} {
-  const outputDetail = input.sawMeaningfulOutput
-    ? ''
-    : ' (no assistant text or tool output reached Unleashd)';
-  if (kind === 'bridge') {
-    return {
-      terminalCause: 'bridge_timeout',
-      message: `Turn event bridge stalled: no unified event or bridge heartbeat for ${input.bridgeIdleSeconds}s${outputDetail}`,
-    };
-  }
-  if (kind === 'provider') {
-    return {
-      terminalCause: 'provider_idle_timeout',
-      message: `Turn stalled: no provider event or native-session advancement for ${input.providerIdleSeconds}s${outputDetail}`,
-    };
-  }
-  return {
-    terminalCause: 'max_runtime_timeout',
-    message: `Turn reached its maximum runtime after ${input.elapsedSeconds}s${outputDetail}`,
-  };
-}
-
-function nonnegativeFiniteNumber(value: unknown): number | undefined {
-  return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : undefined;
-}
 
 function formatLogPreview(content: string, maxChars = LOG_CONTENT_PREVIEW_CHARS): string {
   return content.replace(/\s+/g, ' ').slice(0, maxChars);
@@ -810,15 +697,17 @@ export function createConversationRuntime(
     private _sawMeaningfulProviderOutputThisRun: boolean;
     // Start time of the current CLI process run (for duration tracking).
     private _processStartTime = 0;
-    // Bridge activity and provider progress are intentionally independent.
-    // A synthetic wrapper heartbeat proves transport health but not that the
-    // provider is making progress.
-    private _lastBridgeEventAt = 0;
-    private _lastProviderProgressAt = 0;
-    // Per-turn watchdog timers.
-    private _turnBridgeTimer: NodeJS.Timeout | null = null;
-    private _turnProviderIdleTimer: NodeJS.Timeout | null = null;
-    private _turnMaxTimer: NodeJS.Timeout | null = null;
+    // Bridge / provider-idle / max-runtime clocks. The max budget is passed
+    // explicitly: foreground Buddy turns must never inherit a shorter claim
+    // default (incident 2026-09-10, see turns/watchdog.ts).
+    private readonly _watchdog = new TurnWatchdog(
+      {
+        bridgeMs: TURN_BRIDGE_TIMEOUT_MS,
+        providerIdleMs: TURN_PROVIDER_IDLE_TIMEOUT_MS,
+        maxRuntimeMs: TURN_MAX_RUNTIME_MS,
+      },
+      (kind) => this._handleTurnTimeout(kind)
+    );
     // Track last known swarm run ID to detect newly launched swarms.
     private _lastSwarmRunId: string | null = null;
     // Whether _lastSwarmRunId was explicitly baselined for the current turn.
@@ -2370,16 +2259,8 @@ export function createConversationRuntime(
     }
 
     private _startTurnWatchdogs(): void {
-      this._clearTurnWatchdogs();
-      const now = Date.now();
-      this._lastBridgeEventAt = now;
-      this._lastProviderProgressAt = now;
-      this._refreshBridgeWatchdog();
-      this._refreshProviderIdleWatchdog();
+      this._watchdog.start();
       this._startSwarmPoller();
-      this._turnMaxTimer = setTimeout(() => {
-        this._handleTurnTimeout('max');
-      }, TURN_MAX_RUNTIME_MS);
     }
 
     private _noteTurnActivity(event: UnifiedAgentEvent): void {
@@ -2396,38 +2277,8 @@ export function createConversationRuntime(
         this._lastAttemptActivitySource = activity.source;
         turnAttempts.activity(this._activeAttemptId, activity, this.sessionId);
       }
-      // Every normalized event proves the wrapper -> queue -> Unleashd bridge
-      // is alive. Only provider events and typed native-session advancement
-      // prove provider progress; the wrapper's timer heartbeat does not.
-      this._lastBridgeEventAt = now;
-      this._refreshBridgeWatchdog();
-      if (isProviderProgressEvent(event)) {
-        this._lastProviderProgressAt = now;
-        this._refreshProviderIdleWatchdog();
-      }
+      this._watchdog.note(event);
       this._pollForNewSwarms();
-    }
-
-    private _refreshBridgeWatchdog(): void {
-      if (this._turnBridgeTimer) {
-        clearTimeout(this._turnBridgeTimer);
-        this._turnBridgeTimer = null;
-      }
-      if (!this.isRunning) return;
-      this._turnBridgeTimer = setTimeout(() => {
-        this._handleTurnTimeout('bridge');
-      }, TURN_BRIDGE_TIMEOUT_MS);
-    }
-
-    private _refreshProviderIdleWatchdog(): void {
-      if (this._turnProviderIdleTimer) {
-        clearTimeout(this._turnProviderIdleTimer);
-        this._turnProviderIdleTimer = null;
-      }
-      if (!this.isRunning) return;
-      this._turnProviderIdleTimer = setTimeout(() => {
-        this._handleTurnTimeout('provider');
-      }, TURN_PROVIDER_IDLE_TIMEOUT_MS);
     }
 
     /**
@@ -2472,18 +2323,7 @@ export function createConversationRuntime(
 
     private _clearTurnWatchdogs(): void {
       this._stopSwarmPoller();
-      if (this._turnBridgeTimer) {
-        clearTimeout(this._turnBridgeTimer);
-        this._turnBridgeTimer = null;
-      }
-      if (this._turnProviderIdleTimer) {
-        clearTimeout(this._turnProviderIdleTimer);
-        this._turnProviderIdleTimer = null;
-      }
-      if (this._turnMaxTimer) {
-        clearTimeout(this._turnMaxTimer);
-        this._turnMaxTimer = null;
-      }
+      this._watchdog.clear();
     }
 
     expireCoordinationRun(): void {
@@ -2493,21 +2333,13 @@ export function createConversationRuntime(
     private _handleTurnTimeout(kind: TurnTimeoutKind): void {
       if (!this.process || !this.isRunning) return;
       dependencies.revokeBuddyControlCapability?.(this.id);
-      const now = Date.now();
-      const elapsedSec = Math.round((now - this._processStartTime) / 1000);
-      const bridgeIdleSec = Math.round((now - this._lastBridgeEventAt) / 1000);
-      const providerIdleSec = Math.round((now - this._lastProviderProgressAt) / 1000);
+      const idle = this._watchdog.idle();
       const sawMeaningfulOutput = this._sawMeaningfulProviderOutputThisRun;
-      const timeout = describeTurnTimeout(kind, {
-        elapsedSeconds: elapsedSec,
-        bridgeIdleSeconds: bridgeIdleSec,
-        providerIdleSeconds: providerIdleSec,
-        sawMeaningfulOutput,
-      });
+      const timeout = describeTurnTimeout(kind, { ...idle, sawMeaningfulOutput });
       const lastActivity = this._lastObservedTurnActivity;
 
       console.error(
-        `[${this.id}] ${timeout.message} | timeoutKind=${kind} terminalCause=${timeout.terminalCause} sawMeaningfulOutput=${sawMeaningfulOutput} elapsed=${elapsedSec}s bridgeIdle=${bridgeIdleSec}s providerIdle=${providerIdleSec}s lastActivitySource=${lastActivity?.source ?? 'none'} lastProviderEvent=${lastActivity?.providerEventType ?? 'none'} stderr=${this._stderrBuffer.length > 0 ? 'yes' : 'no'}`
+        `[${this.id}] ${timeout.message} | timeoutKind=${kind} terminalCause=${timeout.terminalCause} sawMeaningfulOutput=${sawMeaningfulOutput} elapsed=${idle.elapsedSeconds}s bridgeIdle=${idle.bridgeIdleSeconds}s providerIdle=${idle.providerIdleSeconds}s lastActivitySource=${lastActivity?.source ?? 'none'} lastProviderEvent=${lastActivity?.providerEventType ?? 'none'} stderr=${this._stderrBuffer.length > 0 ? 'yes' : 'no'}`
       );
       this._clearTurnWatchdogs();
       this.surfaceError(timeout.message);
