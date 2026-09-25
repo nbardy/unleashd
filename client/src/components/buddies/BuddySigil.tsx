@@ -1,18 +1,19 @@
 import { type CSSProperties, useMemo } from 'react';
 import { resource, usePolledFetch } from '../../hooks/usePolledFetch';
 import { SIGIL_VERSION, backgroundCss, nameGenome } from './sigil/genome';
-import { renderSigil } from './sigil/render';
+import { renderSigilUrl } from './sigil/client';
 
 // One render per name per session: the resource cache dedupes concurrent
 // mounts, and this memo keeps a WS-reconnect revalidation from re-rendering.
 const rendered = new Map<string, Promise<string>>();
 
-function sigilResource(name: string) {
+export function sigilResource(name: string) {
   const key = `sigil:v${SIGIL_VERSION}:${name}`;
   return resource(key, () => {
     const existing = rendered.get(key);
     if (existing) return existing;
-    const pending = renderSigil(nameGenome(name));
+    // Never inline: a render blocks the main thread (sigil/client.ts).
+    const pending = renderSigilUrl(name);
     rendered.set(key, pending);
     return pending;
   });
