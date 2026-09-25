@@ -99,7 +99,7 @@
   align-items: center;
   flex: none;
   min-height: 20px;
-  padding: 3px var(--sp-4);
+  padding: var(--sp-1) var(--sp-4);
   border: 1px solid var(--border-subtle);
   border-radius: var(--ui-radius);
   background: var(--bg-raised-2);

@@ -9,7 +9,7 @@
   width: 100%;
   min-width: 0;
   height: 44px;
-  padding: 0 42px 0 14px;
+  padding: 0 var(--sp-11) 0 var(--sp-6);
   border-radius: var(--ui-radius);
   font-size: var(--fs-6);
   -webkit-appearance: none;
@@ -35,7 +35,7 @@
   background: transparent;
   color: var(--text-muted);
   font: inherit;
-  font-size: 22px;
+  font-size: var(--fs-8);
   line-height: 1;
 }
 
@@ -54,7 +54,7 @@
 }
 
 .mobile-search-row {
-  padding: 11px var(--sp-6);
+  padding: var(--sp-5) var(--sp-6);
 }
 
 .mobile-search-row:active,
@@ -76,7 +76,7 @@
   align-items: center;
   width: 100%;
   min-width: 0;
-  gap: 7px;
+  gap: var(--sp-3);
 }
 
 .mobile-search-row__dir,
@@ -144,7 +144,7 @@
   align-items: start;
   min-width: 0;
   gap: var(--sp-4);
-  padding: 9px var(--sp-6);
+  padding: var(--sp-4) var(--sp-6);
   border: 0;
   border-bottom: 1px solid var(--border-subtle);
   background: transparent;

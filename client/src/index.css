@@ -276,7 +276,7 @@ body {
   min-height: 100vh;
   max-width: 560px;
   margin: 0 auto;
-  padding: 48px var(--sp-9);
+  padding: var(--sp-11) var(--sp-9);
   flex-direction: column;
   align-items: flex-start;
   justify-content: center;

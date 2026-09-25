@@ -37,7 +37,7 @@
   z-index: 100;
   display: none;
   flex-direction: column;
-  gap: 5px;
+  gap: var(--sp-2);
   width: max-content;
   max-width: min(300px, 80vw);
   padding: var(--sp-5) var(--sp-6);

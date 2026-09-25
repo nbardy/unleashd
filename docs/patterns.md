@@ -105,7 +105,10 @@ delete the old path entirely.
 ## tokens-and-shells
 **Smell:** per-screen CSS values (45 font sizes, 172 paddings) and a copy of every screen per device.
 **Pattern:** design tokens, then a few primitives, then views, then two thin device shells over the same views.
-**Here:** client plan T20/T21.
+**Here:** `client/src/ui/tokens.css` (layer 1: `--fs-1…9` type, `--sp-1…11` spacing; the only file
+allowed a px font-size/padding/gap) and `client/src/ui/primitives.css` (layer 2: `.ui-stack`, `.ui-row`,
+`.ui-inline-row`, `.ui-truncate`, `.ui-card`, `.ui-muted`), T21a. Gates G7 (no literal px, breakpoints only
+768px/340px) and G8 (total CSS lines never grow) in `tools/check-client-invariants.sh`. Views and shells: T20/T21.
 
 ## fix-guards
 **Smell:** a fixed slowdown or bug quietly comes back.

@@ -3,7 +3,7 @@
   align-items: center;
   gap: var(--sp-3);
   min-width: 0;
-  padding: 3px var(--sp-4);
+  padding: var(--sp-1) var(--sp-4);
   border: 1px solid color-mix(in oklab, currentColor 35%, transparent);
   border-radius: var(--ui-radius);
   background: color-mix(in oklab, currentColor 8%, transparent);

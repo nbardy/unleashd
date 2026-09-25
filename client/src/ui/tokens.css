@@ -26,7 +26,9 @@
   --fs-8: 24px; /* page titles, large glyphs */
   --fs-9: 32px; /* display: mobile page titles, empty-state glyphs */
 
-  /* Spacing scale: padding, gap. 2px half-steps up to 12, then 4px-grid jumps. */
+  /* Spacing scale: padding, gap. 2px half-steps up to 12 (70% of all paddings
+   * sit there, and 10px alone is 65 rows: dropping it would move every list),
+   * then wider jumps. */
   --sp-1: 2px;
   --sp-2: 4px;
   --sp-3: 6px;
@@ -37,4 +39,8 @@
   --sp-8: 20px;
   --sp-9: 24px;
   --sp-10: 32px;
+  --sp-11: 40px; /* empty states, page padding */
+
+  /* Command palettes (search, prompts) hang this far below the viewport top. */
+  --overlay-top: 80px;
 }

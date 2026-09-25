@@ -126,7 +126,7 @@
 }
 
 .usage-token-value {
-  font-size: 15px;
+  font-size: var(--fs-5);
   font-weight: 600;
   color: var(--text-primary);
   font-variant-numeric: tabular-nums;
@@ -155,7 +155,7 @@
 }
 
 .usage-range-btn {
-  padding: 3px var(--sp-4);
+  padding: var(--sp-1) var(--sp-4);
   font-size: var(--fs-2);
   border: 1px solid var(--border-default);
   border-radius: var(--ui-radius);
@@ -190,7 +190,7 @@
   display: flex;
   align-items: center;
   gap: var(--sp-5);
-  padding: 5px var(--sp-6);
+  padding: var(--sp-2) var(--sp-6);
   border-radius: var(--ui-radius);
 }
 
@@ -265,7 +265,7 @@
 
 .usage-tab {
   flex: 1;
-  padding: 5px var(--sp-4);
+  padding: var(--sp-2) var(--sp-4);
   font-size: var(--fs-3);
   font-weight: 500;
   border: none;

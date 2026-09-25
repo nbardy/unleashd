@@ -209,7 +209,7 @@
   display: inline-flex;
   align-items: center;
   gap: var(--sp-3);
-  padding: 3px var(--sp-5);
+  padding: var(--sp-1) var(--sp-5);
   border-radius: var(--ui-radius);
   font-size: var(--fs-2);
   font-weight: 500;
@@ -408,7 +408,7 @@
 
 /* Restore button on done cards */
 .undo-done-btn {
-  padding: 3px var(--sp-5);
+  padding: var(--sp-1) var(--sp-5);
   background: transparent;
   border: 1px solid var(--border-subtle);
   border-radius: var(--ui-radius);
@@ -435,7 +435,7 @@
 }
 
 .back-to-gallery-btn {
-  padding: var(--sp-3) 14px;
+  padding: var(--sp-3) var(--sp-6);
   background: var(--bg-tertiary);
   border: 1px solid var(--border-color);
   border-radius: var(--ui-radius);
@@ -537,7 +537,7 @@
 
 /* Promote button on worker cards */
 .promote-worker-btn {
-  padding: 3px var(--sp-5);
+  padding: var(--sp-1) var(--sp-5);
   background: transparent;
   border: 1px solid var(--border-subtle);
   border-radius: var(--ui-radius);
@@ -566,6 +566,6 @@
   }
 
   .project-done-toggle {
-    padding: 0 14px;
+    padding: 0 var(--sp-6);
   }
 }

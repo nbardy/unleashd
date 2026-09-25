@@ -141,9 +141,77 @@ else
 fi
 echo
 
+echo "==> Gate G7: no literal px font-size / padding / gap, and only the two breakpoints"
+# Pattern: tokens-and-shells (docs/patterns.md#tokens-and-shells)
+# T21a collapsed 45 font sizes and 172 paddings onto the scale in
+# client/src/ui/tokens.css; this keeps a new `padding: 7px` from starting the
+# drift again. Breakpoints cannot be var(), so their VALUES are checked: 768px
+# (device switch) and 340px (compact phone), see tokens.css.
+# KNOWN_LITERAL is a ratchet for files T21a did not own (Buddy UI, T11/T22):
+# a file may not exceed its count; when you lower one, lower its entry.
+if ! node <<'NODE'
+const fs = require('fs');
+const path = require('path');
+const SRC = 'client/src';
+const TOKENS = 'ui/tokens.css';
+const BREAKPOINTS = new Set(['768px', '340px']);
+const KNOWN_LITERAL = {
+  // filled in below by T21a; see the comment above
+};
+const walk = (d) => fs.readdirSync(d, { withFileTypes: true }).flatMap((e) => {
+  const p = path.join(d, e.name);
+  return e.isDirectory() ? walk(p) : [p];
+});
+const DECL = /(?:^|[{;\s])(font-size|padding(?:-[a-z-]+)?|gap|row-gap|column-gap)\s*:([^;{}]*)/g;
+const PX = /(?:^|[\s(,])-?(\d*\.?\d+)px\b/g;
+const bad = [];
+const lower = [];
+for (const file of walk(SRC).filter((f) => f.endsWith('.css'))) {
+  const rel = path.relative(SRC, file);
+  if (rel === TOKENS) continue;
+  const text = fs.readFileSync(file, 'utf8').replace(/\/\*[\s\S]*?\*\//g, (c) => c.replace(/[^\n]/g, ' '));
+  const hits = [];
+  for (const m of text.matchAll(DECL)) {
+    const line = text.slice(0, m.index).split('\n').length;
+    for (const px of m[2].matchAll(PX)) if (Number(px[1]) !== 0) hits.push(`${rel}:${line} ${m[1]}: ${m[2].trim()}`);
+  }
+  for (const m of text.matchAll(/@media[^{]*/g)) {
+    for (const w of m[0].matchAll(/(?:min|max)-width:\s*([\d.]+px)/g)) {
+      if (!BREAKPOINTS.has(w[1])) hits.push(`${rel}:${text.slice(0, m.index).split('\n').length} @media ${w[1]}`);
+    }
+  }
+  const allowed = KNOWN_LITERAL[rel] ?? 0;
+  if (hits.length > allowed) bad.push(`${rel}: ${hits.length} literal(s), allowed ${allowed}\n    ${hits.slice(0, 8).join('\n    ')}`);
+  else if (hits.length < allowed) lower.push(`${rel}: ${hits.length} < ${allowed}, lower KNOWN_LITERAL`);
+}
+for (const l of lower) console.log('  note: ' + l);
+if (bad.length) { bad.forEach((b) => console.error('  ' + b)); process.exit(1); }
+NODE
+then
+  echo "G7 FAIL: use a --fs-* / --sp-* token from client/src/ui/tokens.css (or 768px/340px in @media)."
+  FAIL=1
+else
+  echo "G7 PASS"
+fi
+echo
+
+echo "==> Gate G8: total client CSS lines must not grow"
+# Ratchet: the lean rewrite takes CSS from 18.4k lines to a ~3.75k budget
+# (lean-scope 06 §3). When a change cuts CSS, lower CSS_LINE_CEILING to the new
+# total in the same commit so the cut cannot silently grow back.
+CSS_LINE_CEILING=0 # set below by T21a
+CSS_LINES="$(find client/src -name '*.css' -print0 | xargs -0 cat | wc -l | tr -d ' ')"
+if [ "$CSS_LINES" -gt "$CSS_LINE_CEILING" ]; then
+  echo "G8 FAIL: client CSS is $CSS_LINES lines, ceiling $CSS_LINE_CEILING. Reuse a primitive (ui/primitives.css) or cut elsewhere."
+  FAIL=1
+else
+  echo "G8 PASS ($CSS_LINES / $CSS_LINE_CEILING lines)"
+fi
+echo
+
 if [ "$FAIL" -ne 0 ]; then
   echo "check-client-invariants: FAILED — fix the gates above."
   exit 1
 fi
 
-echo "check-client-invariants: all 6 gates PASS"
+echo "check-client-invariants: all 8 gates PASS"

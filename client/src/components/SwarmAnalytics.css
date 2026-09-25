@@ -83,7 +83,7 @@
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  padding: 60px var(--sp-8);
+  padding: var(--sp-11) var(--sp-8);
   color: var(--text-muted);
   text-align: center;
 }
@@ -197,7 +197,7 @@
 }
 
 .stat-value {
-  font-size: 28px;
+  font-size: var(--fs-8);
   font-weight: 700;
   color: var(--text-primary);
   line-height: 1;
@@ -417,17 +417,17 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 8px;
+  font-size: var(--fs-1);
   font-weight: bold;
   color: var(--text-on-accent);
   flex-shrink: 0;
 }
 
 .span-rounds {
-  font-size: 9px;
+  font-size: var(--fs-1);
   color: var(--text-on-accent);
   background: color-mix(in srgb, var(--bg-darkest) 40%, transparent);
-  padding: 1px 3px;
+  padding: var(--sp-1) var(--sp-1);
   border-radius: var(--ui-radius);
   flex-shrink: 0;
 }
@@ -599,7 +599,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 9px;
+  font-size: var(--fs-1);
   font-weight: bold;
   color: var(--text-on-accent);
 }
@@ -656,7 +656,7 @@
 
 /* Timeline empty state */
 .timeline-empty {
-  padding: 40px;
+  padding: var(--sp-11);
   text-align: center;
   color: var(--text-muted);
   font-size: var(--fs-5);

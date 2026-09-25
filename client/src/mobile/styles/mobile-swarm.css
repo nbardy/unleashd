@@ -39,7 +39,7 @@
 .mobile-swarm-detail__title {
   margin: 0;
   color: var(--text-primary);
-  font-size: 22px;
+  font-size: var(--fs-8);
   font-weight: 700;
   line-height: 1.2;
   letter-spacing: -0.02em;
@@ -64,7 +64,7 @@
 .mobile-swarm-detail__debug-btn,
 .mobile-signal-btn {
   min-height: 40px;
-  padding: 0 14px;
+  padding: 0 var(--sp-6);
   border: 1px solid var(--border-subtle);
   border-radius: var(--ui-radius);
   background: var(--bg-raised-2);
@@ -118,7 +118,7 @@
 }
 
 .mobile-swarm-detail__empty {
-  padding: 26px var(--sp-7);
+  padding: var(--sp-9) var(--sp-7);
   border: 1px dashed var(--border-subtle);
   border-radius: var(--ui-radius);
   color: var(--text-muted);
@@ -142,7 +142,7 @@
   gap: var(--sp-2) var(--sp-5);
   width: 100%;
   min-width: 0;
-  padding: var(--sp-6) 14px;
+  padding: var(--sp-6) var(--sp-6);
   border: 1px solid var(--border-subtle);
   border-radius: var(--ui-radius);
   background: var(--bg-raised-1);
@@ -169,7 +169,7 @@
   display: flex;
   flex-direction: column;
   gap: var(--sp-4);
-  padding: 14px;
+  padding: var(--sp-6);
   border: 1px solid var(--border-subtle);
   border-radius: var(--ui-radius);
   background: var(--bg-raised-1);
@@ -202,7 +202,7 @@
 .mobile-analytics {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: var(--sp-6);
   padding: var(--sp-7) var(--sp-7) calc(var(--sp-8) + env(safe-area-inset-bottom));
 }
 
@@ -230,7 +230,7 @@
   display: flex;
   flex-direction: column;
   gap: var(--sp-3);
-  padding: var(--sp-6) 14px;
+  padding: var(--sp-6) var(--sp-6);
   border: 1px solid var(--border-subtle);
   border-radius: var(--ui-radius);
   background: var(--bg-raised-1);
@@ -246,7 +246,7 @@
 
 .mobile-stat-card__value {
   color: var(--text-primary);
-  font-size: 20px;
+  font-size: var(--fs-7);
   font-weight: 700;
   line-height: 1.1;
 }
@@ -326,7 +326,7 @@
   justify-content: space-between;
   gap: var(--sp-6);
   color: var(--text-primary);
-  font-size: 15px;
+  font-size: var(--fs-5);
   font-weight: 700;
 }
 
@@ -358,7 +358,7 @@
   display: inline-flex;
   align-items: center;
   min-height: 20px;
-  padding: 3px var(--sp-4);
+  padding: var(--sp-1) var(--sp-4);
   border: 1px solid var(--border-subtle);
   border-radius: var(--ui-radius);
   color: var(--text-muted);

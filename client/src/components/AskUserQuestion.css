@@ -16,7 +16,7 @@
   background: var(--bg-content);
   border: 1px solid var(--border-subtle);
   border-radius: var(--ui-radius);
-  padding: 14px var(--sp-7);
+  padding: var(--sp-6) var(--sp-7);
 }
 
 .ask-question-header {
@@ -50,7 +50,7 @@
   flex-direction: column;
   align-items: flex-start;
   gap: var(--sp-1);
-  padding: var(--sp-5) 14px;
+  padding: var(--sp-5) var(--sp-6);
   background: var(--bg-secondary);
   border: 1px solid var(--border-subtle);
   border-radius: var(--ui-radius);

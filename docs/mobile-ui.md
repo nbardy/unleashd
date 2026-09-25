@@ -6,6 +6,10 @@ mobile tree instead of importing desktop TSX or desktop feature CSS.
 
 ## Layers
 
+0. `ui/tokens.css` — the type (`--fs-*`) and spacing (`--sp-*`) scales. No other
+   stylesheet may spell a px font-size, padding or gap (gate G7).
+   `ui/primitives.css` — `.ui-stack`, `.ui-row`, `.ui-inline-row`, `.ui-truncate`,
+   `.ui-card`, `.ui-muted`: add the class instead of re-declaring the group.
 1. `index.css` — palette, semantic tokens and `--ui-radius` shared by every device.
    `ui/controls.css` owns the shared `.ui-choice` appearance used by both model pickers.
 2. `mobile/styles/mobile.css` — shell, safe areas, tab bar, and legacy detail views.

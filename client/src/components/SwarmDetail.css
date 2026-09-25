@@ -71,7 +71,7 @@
 }
 
 .swarm-header-badge.state-running {
-  padding: 5px var(--sp-6);
+  padding: var(--sp-2) var(--sp-6);
   font-size: var(--fs-4);
 }
 
@@ -160,7 +160,7 @@
   align-items: center;
   flex-wrap: wrap;
   gap: var(--sp-4);
-  padding: var(--sp-4) 14px;
+  padding: var(--sp-4) var(--sp-6);
   cursor: pointer;
   transition: background 0.15s;
   font-size: var(--fs-4);
@@ -175,7 +175,7 @@
   background: color-mix(in srgb, var(--ai) 12%, transparent);
   color: var(--ai-bright);
   border-left: 3px solid var(--ai);
-  padding-left: 11px;
+  padding-left: var(--sp-5);
 }
 
 .roster-exec-group.selected {
@@ -216,7 +216,7 @@
 
 /* Roster summary stats */
 .roster-stats {
-  padding: var(--sp-6) 14px;
+  padding: var(--sp-6) var(--sp-6);
   border-top: 1px solid var(--border-subtle);
   display: flex;
   flex-direction: column;
@@ -402,7 +402,7 @@
 }
 
 .panel-toggle-icon {
-  font-size: 9px;
+  font-size: var(--fs-1);
   color: var(--text-muted);
   flex-shrink: 0;
 }
@@ -539,9 +539,9 @@
 
 .role-badge {
   display: inline-block;
-  padding: 1px var(--sp-3);
+  padding: var(--sp-1) var(--sp-3);
   border-radius: var(--ui-radius);
-  font-size: 9px;
+  font-size: var(--fs-1);
   font-weight: 700;
   text-transform: uppercase;
   letter-spacing: 0.5px;
@@ -564,7 +564,7 @@
 
 /* Model name in roster */
 .roster-model {
-  font-size: 9px;
+  font-size: var(--fs-1);
   color: var(--text-muted);
   font-family: var(--font-mono);
   flex-shrink: 0;
@@ -583,8 +583,8 @@
 
 /* Review count badge on exec row */
 .roster-review-count {
-  font-size: 9px;
-  padding: 1px var(--sp-2);
+  font-size: var(--fs-1);
+  padding: var(--sp-1) var(--sp-2);
   border-radius: var(--ui-radius);
   background: color-mix(in srgb, var(--meta) 15%, transparent);
   color: var(--meta);
@@ -762,7 +762,7 @@
 }
 
 .run-status-badge {
-  padding: 1px var(--sp-3);
+  padding: var(--sp-1) var(--sp-3);
   border-radius: var(--ui-radius);
   font-size: var(--fs-1);
   font-weight: 600;
@@ -816,7 +816,7 @@
   gap: var(--sp-1);
 }
 .run-stat-value {
-  font-size: 20px;
+  font-size: var(--fs-7);
   font-weight: 700;
   color: var(--text-primary);
 }
@@ -846,7 +846,7 @@
   font-weight: 700;
 }
 .task-sublabel {
-  font-size: 9px;
+  font-size: var(--fs-1);
   text-transform: uppercase;
   letter-spacing: 0.5px;
   color: var(--text-muted);
@@ -871,7 +871,7 @@
   margin-top: 2px;
 }
 .cycles-done {
-  font-size: 20px;
+  font-size: var(--fs-7);
   font-weight: 700;
   color: var(--text-primary);
 }
@@ -1047,7 +1047,7 @@
    ============================================================================= */
 
 .swarm-debug-btn {
-  padding: 3px var(--sp-5);
+  padding: var(--sp-1) var(--sp-5);
   border-radius: var(--ui-radius);
   font-size: var(--fs-2);
   font-weight: 500;

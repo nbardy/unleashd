@@ -8,7 +8,7 @@
   display: flex;
   align-items: flex-start;
   justify-content: center;
-  padding-top: 100px;
+  padding-top: var(--overlay-top);
   z-index: 1000;
 }
 
@@ -115,7 +115,7 @@
 }
 
 .prompt-palette-empty {
-  padding: 40px var(--sp-8);
+  padding: var(--sp-11) var(--sp-8);
   text-align: center;
   color: var(--text-muted);
 }

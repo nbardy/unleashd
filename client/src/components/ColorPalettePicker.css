@@ -224,7 +224,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: var(--sp-5) 14px;
+  padding: var(--sp-5) var(--sp-6);
   border-bottom: 1px solid;
   font-size: var(--fs-4);
   font-weight: 500;
@@ -258,7 +258,7 @@
 }
 
 .preview-content {
-  padding: var(--sp-5) 14px;
+  padding: var(--sp-5) var(--sp-6);
   border-radius: var(--ui-radius);
   font-size: var(--fs-4);
   line-height: 1.5;
@@ -323,7 +323,7 @@
 
 .strip-swatches {
   display: flex;
-  gap: 3px;
+  gap: var(--sp-1);
   flex: 1;
 }
 
@@ -353,7 +353,7 @@
   flex: 1;
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: var(--sp-1);
   align-items: center;
 }
 
@@ -364,7 +364,7 @@
 }
 
 .ramp-label {
-  font-size: 9px;
+  font-size: var(--fs-1);
   color: var(--text-muted);
   text-align: center;
   line-height: 1.2;
@@ -422,7 +422,7 @@
 
 .ai-chat-input {
   flex: 1;
-  padding: var(--sp-5) 14px;
+  padding: var(--sp-5) var(--sp-6);
   background: var(--bg-content);
   border: 1px solid var(--border-default);
   border-radius: var(--ui-radius);
@@ -549,7 +549,7 @@
 
 /* ─── Responsive ─── */
 
-@media (max-width: 700px) {
+@media (max-width: 768px) {
   .palette-picker-content {
     flex-direction: column;
   }

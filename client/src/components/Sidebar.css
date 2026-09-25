@@ -90,7 +90,7 @@
   color: var(--text-muted);
   border: 1px solid var(--border-subtle);
   border-radius: var(--ui-radius);
-  padding: 1px var(--sp-2);
+  padding: var(--sp-1) var(--sp-2);
   background: color-mix(in srgb, var(--bg-base) 60%, transparent);
 }
 
@@ -145,7 +145,7 @@
   background: var(--bg-secondary);
   border: 1px solid var(--border-strong);
   border-radius: var(--ui-radius);
-  padding: 28px var(--sp-10);
+  padding: var(--sp-9) var(--sp-10);
   box-shadow: 0 16px 48px color-mix(in srgb, var(--bg-darkest) 40%, transparent);
   display: flex;
   flex-direction: column;
@@ -170,7 +170,7 @@
 
 .new-conv-modal .directory-input {
   width: 100%;
-  padding: var(--sp-5) 14px;
+  padding: var(--sp-5) var(--sp-6);
   background: var(--bg-primary);
   border: 1px solid var(--border-subtle);
   border-radius: var(--ui-radius);
@@ -320,7 +320,7 @@
   font-size: var(--fs-1);
   font-family: system-ui, sans-serif;
   opacity: 0.7;
-  padding: 1px var(--sp-2);
+  padding: var(--sp-1) var(--sp-2);
   border: 1px solid color-mix(in srgb, var(--text-emphasis) 30%, transparent);
   border-radius: var(--ui-radius);
   background: color-mix(in srgb, var(--text-emphasis) 10%, transparent);
@@ -397,7 +397,7 @@
   --sidebar-row-fill: transparent;
   display: flex;
   align-items: center;
-  padding: 7px var(--sp-6);
+  padding: var(--sp-3) var(--sp-6);
   margin: 1px 0;
   border-radius: 0;
   background: transparent;
@@ -770,7 +770,7 @@ a.sidebar-buddy-wake-done {
 .sidebar-buddy-running a {
   display: inline-flex;
   align-items: center;
-  gap: 3px;
+  gap: var(--sp-1);
   min-height: 24px;
   color: inherit;
   text-decoration: none;
@@ -797,14 +797,14 @@ a.sidebar-buddy-wake-done {
 
 /* Conversation items under a buddy — about 1/2 the padding/margin per thread */
 .buddy-subgroup .conversation-item {
-  padding: 7px var(--sp-6) 7px 30px;
+  padding: var(--sp-3) var(--sp-6) var(--sp-3) var(--sp-10);
   margin-left: 0;
 }
 
 .buddy-subgroup .show-more-btn,
 .buddy-subgroup .folder-group-all-done {
   margin-left: 0;
-  padding-left: 30px;
+  padding-left: var(--sp-10);
 }
 
 .conversation-row-sep {
@@ -918,7 +918,7 @@ a.sidebar-buddy-wake-done {
   flex: none;
   min-width: 16px;
   margin-left: auto;
-  padding: var(--sp-1) 5px;
+  padding: var(--sp-1) var(--sp-2);
   border-radius: 999px;
   background: var(--danger);
   color: #fff;
@@ -975,7 +975,7 @@ a.sidebar-buddy-wake-done {
 .folder-group-running {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
+  gap: var(--sp-2);
   flex: 0 0 auto;
   color: var(--success-bright);
   font: 600 9px / 1 var(--font-mono);
@@ -992,7 +992,7 @@ a.sidebar-buddy-wake-done {
   font-style: italic;
   color: var(--text-muted);
   font-size: var(--font-xs);
-  padding: var(--sp-3) var(--sp-6) var(--sp-3) 28px;
+  padding: var(--sp-3) var(--sp-6) var(--sp-3) var(--sp-9);
 }
 
 .folder-group-add-btn {
@@ -1037,7 +1037,7 @@ a.sidebar-buddy-wake-done {
 }
 
 .sidebar-buddy-error {
-  padding: var(--sp-3) var(--sp-6) 7px 28px;
+  padding: var(--sp-3) var(--sp-6) var(--sp-3) var(--sp-9);
   border-left: 3px solid var(--danger);
   color: var(--danger-bright);
   background: color-mix(in srgb, var(--danger) 8%, var(--bg-base));
