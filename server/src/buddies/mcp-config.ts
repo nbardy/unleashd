@@ -93,6 +93,7 @@ export function buddyMcpServers(
 ): Readonly<Record<string, McpServerSpec>> {
   return {
     [BUDDY_MCP_SERVER_NAME]: {
+      kind: 'stdio',
       command: launch.command,
       args: buildBuddyServerArgs(context, conversationId, launch),
       // This is the Unleashd server directory, not the Buddy workspace:
@@ -121,6 +122,7 @@ export function buddyBuilderMcpServers(
 ): Readonly<Record<string, McpServerSpec>> {
   return {
     [BUDDY_MCP_SERVER_NAME]: {
+      kind: 'stdio',
       command: launch.command,
       args: [...launch.args, '--builder', '--conversation', conversationId],
       ...(launch.cwd ? { cwd: launch.cwd } : {}),
@@ -136,6 +138,7 @@ export function buddyOwnerMcpServers(
 ): Readonly<Record<string, McpServerSpec>> {
   return {
     unleashd_owner: {
+      kind: 'stdio',
       command: launch.command,
       args: [...launch.args],
       ...(launch.cwd ? { cwd: launch.cwd } : {}),

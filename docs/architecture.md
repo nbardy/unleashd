@@ -66,6 +66,19 @@ The submodule implementation lives in `src/build.ts`, `src/process-runner.ts`,
    `manual_tests/` (for studying harness drift — not every live-debug script
    becomes an automated test).
 
+8. **MCP servers are a sum type: `{kind:'stdio'}` or `{kind:'http', url,
+   headers}`.** Each harness has one encoder per kind (`src/mcp-encoding.ts`
+   dispatches). HTTP header values (the per-turn bearer) travel in the CLI's
+   environment wherever the CLI can expand them (claude `${VAR}`, codex
+   `env_http_headers`, cursor `${env:VAR}`); muse cannot, so its token sits in
+   a 0600 settings dir that `runCommand` deletes when the process exits.
+   Claude (HTTP, verified 2026-09-25) and cursor (stdio, verified 2026-09-24)
+   drop a failed server SILENTLY and the turn succeeds, so the runner probes
+   every required HTTP server on every harness (`initialize` + `tools/list`,
+   `src/mcp-startup.ts`) and fails the turn on a dead URL or rejected token.
+   Muse reads `mcpServers`, not the legacy `mcp_servers`: with both keys
+   present it drops every MCP server.
+
 ## 2) Registry-first persistence
 
 Persisted sessions are loaded through the adapter registry

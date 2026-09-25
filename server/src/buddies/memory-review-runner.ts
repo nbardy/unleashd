@@ -332,6 +332,7 @@ async function runAttempt(
         instructionsPath: input.instructionsPath,
         directory: input.directory,
         memoryServer: {
+          kind: 'stdio',
           ...launch,
           env: { ...launch.env, ...capability.env },
           required: true,
