@@ -8,7 +8,7 @@ use serde_json::json;
 use std::path::Path;
 use unleashd_ingest::engine::Engine;
 use unleashd_ingest::model::{Format, Root};
-use unleashd_ingest::store::{Committed, Reader};
+use unleashd_ingest::store::{Committed, Reader, Writer};
 
 fn user(text: &str) -> String {
     format!("{}\n", json!({ "type": "user", "timestamp": "2026-09-22T00:00:00.000Z", "cwd": "/w", "message": { "content": text } }))
@@ -68,13 +68,47 @@ fn scan_append_delete_and_warm_restart() {
 }
 
 #[test]
+fn a_codex_event_mode_switch_is_applied_in_the_store_as_a_fresh_read_would_be() {
+    // The store half of Apply::Withdraw: delete the withdrawn seqs and renumber the rest.
+    let dir = tempfile::tempdir().unwrap();
+    let row = |kind: &str, payload: serde_json::Value| {
+        format!("{}\n", json!({ "timestamp": "2026-09-10T07:00:00.000Z", "type": kind, "payload": payload }))
+    };
+    let file = dir.path().join("codex/2026/09/10/rollout-x.jsonl");
+    let mut text = row("session_meta", json!({ "id": "s1", "cwd": "/w" }));
+    for i in 0..3 {
+        text += &row(
+            "response_item",
+            json!({ "type": "message", "role": "user", "content": [{ "type": "input_text", "text": format!("ask {i}") }] }),
+        );
+        text += &row("response_item", json!({ "type": "function_call", "name": "shell", "call_id": format!("c{i}"), "arguments": "{}" }));
+    }
+    write(&file, &text);
+    let codex = |base: &Path| vec![Root { format: Format::Codex, path: base.join("codex").to_string_lossy().into_owned() }];
+    let db = dir.path().join("a.sqlite");
+    let mut engine = Engine::open(codex(dir.path()), &db).unwrap();
+    engine.scan(&mut |_| {});
+    append(&file, &row("event_msg", json!({ "type": "user_message", "message": "prompt" })));
+    let report = engine.changed([file.clone()].into(), &mut |_| {});
+    assert_eq!((report.resumed, report.full), (1, 0));
+    let fresh = dir.path().join("b.sqlite");
+    Engine::open(codex(dir.path()), &fresh).unwrap().scan(&mut |_| {});
+    let incremental = Reader::open(&db).unwrap().messages("s1", -1, 100).unwrap();
+    let full = Reader::open(&fresh).unwrap().messages("s1", -1, 100).unwrap();
+    assert_eq!(incremental, full);
+    assert_eq!(full.iter().map(|m| m.seq).collect::<Vec<_>>(), [0, 1, 2, 3]);
+    assert_eq!(Reader::open(&db).unwrap().session("s1").unwrap().unwrap().message_count, 4);
+}
+
+#[test]
 fn every_store_read_uses_an_index() {
     let dir = tempfile::tempdir().unwrap();
     write(&dir.path().join("claude/-w/a.jsonl"), &user("a1"));
     let db = dir.path().join("ingest.sqlite");
     Engine::open(roots(dir.path()), &db).unwrap().scan(&mut |_| {});
     let reader = Reader::open(&db).unwrap();
-    for (query, plan) in reader.plans().unwrap() {
+    let writes = Writer::open(&db).unwrap().plans().unwrap();
+    for (query, plan) in reader.plans().unwrap().into_iter().chain(writes) {
         for line in plan {
             // `SCAN t USING INDEX` / `USING COVERING INDEX` walks an index; a bare `SCAN t` reads
             // the whole table.

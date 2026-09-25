@@ -78,9 +78,32 @@ pub struct Sink {
     pub visible: Visible,
     pub next_seq: u32,
     pub out: Vec<Message>,
+    /// The first seq this read numbers; lower seqs are already stored.
+    first_seq: u32,
+    /// Stored seqs a line of this read withdrew (`withdraw`), in their stored numbering.
+    pub withdrawn: Vec<u32>,
 }
 
 impl Sink {
+    pub fn new(visible: Visible, next_seq: u32) -> Sink {
+        Sink { visible, next_seq, out: Vec::new(), first_seq: next_seq, withdrawn: Vec::new() }
+    }
+
+    /// Take back earlier messages (ascending seqs, stored or from this read) as if they had never
+    /// been pushed: later messages close the gaps. Stored ones go to `withdrawn` for the store to
+    /// delete and renumber. At most once per read: `withdrawn` keeps the stored numbering.
+    /// Only Codex's switch to event mode withdraws (codex.rs `enter_event_mode`).
+    pub fn withdraw(&mut self, seqs: &[u32]) {
+        debug_assert!(self.withdrawn.is_empty(), "one withdrawal per read");
+        debug_assert!(seqs.windows(2).all(|w| w[0] < w[1]));
+        self.withdrawn = seqs.iter().copied().filter(|&s| s < self.first_seq).collect();
+        self.out.retain(|m| seqs.binary_search(&m.seq).is_err());
+        for m in &mut self.out {
+            m.seq -= seqs.partition_point(|&s| s < m.seq) as u32;
+        }
+        self.next_seq -= seqs.len() as u32;
+    }
+
     pub fn push(
         &mut self,
         role: Role,

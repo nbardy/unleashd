@@ -15,7 +15,7 @@
 //! and seq) and `removed` (tombstones so `listSessions({ since })` can page deletions too).
 
 use crate::model::{Cwd, Format, Identity, Message, Provider, Role, SessionRow, SubAgent, TimeFrom, ToolCall, Usage};
-use crate::read::{Checkpoint, Outcome, RowData, Stamp};
+use crate::read::{Apply, Checkpoint, Outcome, RowData, Stamp};
 use rusqlite::{Connection, OptionalExtension, params};
 use std::collections::HashMap;
 use std::path::Path;
@@ -188,8 +188,12 @@ impl Writer {
                 let stamp = serde_json::to_string(&outcome.stamp).expect("stamp serializes");
                 let id: i64 = upsert_source.query_row(params![path, format.as_str(), stamp, checkpoint], |r| r.get(0))?;
                 committed.sources.push((path.clone(), id));
-                if outcome.replace {
-                    clear_messages.execute([id])?;
+                match &outcome.apply {
+                    Apply::Append => {}
+                    Apply::Replace => {
+                        clear_messages.execute([id])?;
+                    }
+                    Apply::Withdraw(seqs) => withdraw(&tx, id, seqs)?,
                 }
                 for m in &outcome.messages {
                     let (tool_name, tool_input) = match &m.tool_call {
@@ -260,6 +264,27 @@ impl Writer {
         stmt.query_row([path], decode_row).optional()?.transpose()
     }
 }
+
+/// Delete stored messages `seqs` (ascending) of source `id` and renumber the later ones to close
+/// the gaps, as `Sink::withdraw` did to this read's own messages. The rows between the i-th and
+/// the next withdrawn seq move down by i + 1: one primary-key range update per gap, through
+/// negative seqs so no update collides with a key still in use. (A correlated count per row took
+/// 0.9 s for the 891 MB rollout's 2,076 withdrawn messages.)
+fn withdraw(tx: &rusqlite::Transaction<'_>, id: i64, seqs: &[u32]) -> Result<()> {
+    let mut delete = tx.prepare_cached(WITHDRAW_DELETE)?;
+    let mut shift = tx.prepare_cached(WITHDRAW_SHIFT)?;
+    for (i, &seq) in seqs.iter().enumerate() {
+        delete.execute(params![id, seq])?;
+        let next = seqs.get(i + 1).map_or(i64::MAX, |&n| n as i64);
+        shift.execute(params![id, seq, next, i as i64 + 1])?;
+    }
+    tx.prepare_cached(WITHDRAW_SETTLE)?.execute([id])?;
+    Ok(())
+}
+
+const WITHDRAW_DELETE: &str = "DELETE FROM message WHERE source_id = ?1 AND seq = ?2";
+const WITHDRAW_SHIFT: &str = "UPDATE message SET seq = -1 - (seq - ?4) WHERE source_id = ?1 AND seq > ?2 AND seq < ?3";
+const WITHDRAW_SETTLE: &str = "UPDATE message SET seq = -1 - seq WHERE source_id = ?1 AND seq < 0";
 
 fn write_row(
     stmt: &mut rusqlite::CachedStatement<'_>,
@@ -432,13 +457,29 @@ impl Reader {
             "DELETE FROM message WHERE source_id = 1".to_string(),
             "SELECT value FROM meta WHERE key = 'rev'".to_string(),
         ];
-        queries
-            .into_iter()
-            .map(|q| {
-                let mut stmt = self.conn.prepare(&format!("EXPLAIN QUERY PLAN {q}"))?;
-                let details = stmt.query_map([], |r| r.get::<_, String>(3))?.collect::<rusqlite::Result<Vec<_>>>()?;
-                Ok((q, details))
-            })
-            .collect()
+        explain(&self.conn, queries.into_iter())
+    }
+}
+
+/// `EXPLAIN QUERY PLAN` of each query: (query, plan lines).
+fn explain(conn: &Connection, queries: impl Iterator<Item = String>) -> Result<Vec<(String, Vec<String>)>> {
+    queries
+        .map(|q| {
+            let mut stmt = conn.prepare(&format!("EXPLAIN QUERY PLAN {q}"))?;
+            let details = stmt.query_map([], |r| r.get::<_, String>(3))?.collect::<rusqlite::Result<Vec<_>>>()?;
+            Ok((q, details))
+        })
+        .collect()
+}
+
+impl Writer {
+    /// `EXPLAIN QUERY PLAN` of the writer's statements that are not a primary-key lookup by
+    /// construction; used by the query-plan guard.
+    pub fn plans(&self) -> Result<Vec<(String, Vec<String>)>> {
+        let queries = [
+            WITHDRAW_SHIFT.replace("?1", "1").replace("?2", "0").replace("?3", "9").replace("?4", "1"),
+            WITHDRAW_SETTLE.replace("?1", "1"),
+        ];
+        explain(&self.conn, queries.into_iter())
     }
 }

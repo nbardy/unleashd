@@ -215,8 +215,6 @@ const LABEL_SOURCE_UNITS: usize = 2048;
 pub struct Hints {
     /// A Buddy/Builder identity appears only after the first prompt; its worker tags stay.
     pub owned_later: bool,
-    /// Codex: the file has event messages, so response-item messages are never shown.
-    pub codex_events: bool,
 }
 
 /// Raised when a line proves an earlier emitted message wrong; the source is re-read from 0.
@@ -224,8 +222,6 @@ pub struct Hints {
 pub enum Rebuild {
     /// A later line changes earlier output in a way an append cannot express.
     Reordered,
-    /// Codex: event messages appeared after response messages were already shown.
-    EventMode,
     /// A Buddy identity was found after the first prompt's worker tag was removed.
     OwnedLater,
 }
@@ -373,7 +369,7 @@ mod tests {
         v.user_message("[oompa] go").unwrap();
         let later = v2(r#"{"buddyId":"b","workspaceId":"w"}"#, "x", "next");
         assert_eq!(v.user_message(&later), Err(Rebuild::OwnedLater));
-        let mut again = Visible::with_hints(Hints { owned_later: true, ..Default::default() });
+        let mut again = Visible::with_hints(Hints { owned_later: true });
         assert_eq!(again.user_message("[oompa] go").unwrap(), "[oompa] go");
         assert_eq!(again.user_message(&later).unwrap(), "next");
         assert!(matches!(again.identity(), Identity::Buddy { .. }));

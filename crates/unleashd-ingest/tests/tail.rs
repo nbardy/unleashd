@@ -5,9 +5,8 @@ mod common;
 
 use common::*;
 use serde_json::json;
-use unleashd_ingest::markers::Rebuild;
 use unleashd_ingest::model::Format;
-use unleashd_ingest::read::{FullReason, Taken};
+use unleashd_ingest::read::{Apply, FullReason, Taken};
 
 fn user(text: &str) -> String {
     format!("{}\n", json!({ "type": "user", "timestamp": "2026-09-22T00:00:00.000Z", "cwd": "/w", "message": { "content": text } }))
@@ -55,7 +54,7 @@ fn truncation_rereads_and_replaces_history() {
     write(&path, &user("new"));
     let second = read(Format::Claude, &path, Some(&first));
     assert_eq!(second.taken, Taken::Full(FullReason::Shrank));
-    assert!(second.replace);
+    assert_eq!(second.apply, Apply::Replace);
     assert_eq!(contents(&second.messages), ["new"]);
 }
 
@@ -85,8 +84,11 @@ fn an_in_place_rewrite_past_the_old_length_is_caught_by_the_fingerprint() {
     assert_eq!(contents(&second.messages), ["bbbb", "cccc"]);
 }
 
+/// Regression guard: an event message after shown response-item messages re-read the file from
+/// byte 0 (`Rebuild::EventMode`, 1.7–3.5 s on the 891 MB rollout for one appended line). It must
+/// resume: read only the appended bytes and withdraw what event mode never shows.
 #[test]
-fn codex_event_messages_after_shown_responses_force_a_reread() {
+fn codex_switch_to_event_mode_withdraws_without_a_reread() {
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("rollout.jsonl");
     let row = |kind: &str, payload: serde_json::Value| {
@@ -96,16 +98,29 @@ fn codex_event_messages_after_shown_responses_force_a_reread() {
         &path,
         &row("response_item", json!({ "type": "message", "role": "user", "content": [{ "type": "input_text", "text": "<bundle>" }] })),
     );
+    append(&path, &row("response_item", json!({ "type": "function_call", "name": "shell", "call_id": "c1", "arguments": "{}" })));
+    append(
+        &path,
+        &row("response_item", json!({ "type": "message", "role": "assistant", "content": [{ "type": "output_text", "text": "reply" }] })),
+    );
     let first = read(Format::Codex, &path, None);
-    assert_eq!(contents(&first.messages), ["<bundle>"]);
+    assert_eq!(first.messages.len(), 3);
+    let mut history = first.messages.clone();
+    let size_before = std::fs::metadata(&path).unwrap().len();
     append(&path, &row("event_msg", json!({ "type": "user_message", "message": "the real prompt" })));
     let second = read(Format::Codex, &path, Some(&first));
-    assert_eq!(second.taken, Taken::Full(FullReason::Rebuild(Rebuild::EventMode)));
-    assert_eq!(contents(&second.messages), ["the real prompt"], "response-item copies are not shown once events exist");
-    // The hint persists: later appends resume in event mode.
+    assert_eq!(second.taken, Taken::Resumed, "a mode switch must not re-read the file");
+    assert_eq!(second.bytes_read, std::fs::metadata(&path).unwrap().len() - size_before);
+    assert_eq!(second.apply, Apply::Withdraw(vec![0, 2]), "both response-item messages are withdrawn");
+    apply(&mut history, &second);
+    let (whole, whole_row) = parse(Format::Codex, &path);
+    assert_eq!(history, whole, "withdraw + append equals a full read");
+    assert_eq!(second.row, whole_row);
+    assert_eq!(whole.iter().map(|m| (m.seq, m.content.as_str())).next_back(), Some((1, "the real prompt")));
+    // Later appends resume in event mode.
     append(&path, &row("event_msg", json!({ "type": "agent_message", "message": "ok" })));
     let third = read(Format::Codex, &path, Some(&second));
-    assert_eq!(third.taken, Taken::Resumed);
+    assert_eq!((third.taken, third.apply), (Taken::Resumed, Apply::Append));
     assert_eq!(contents(&third.messages), ["ok"]);
 }
 

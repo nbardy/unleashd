@@ -5,7 +5,7 @@
 use crate::discover::{Touched, classify, discover};
 use crate::model::{Format, Root};
 use crate::paths::ProjectDirResolver;
-use crate::read::{FullReason, Outcome, Stamp, Taken, read_source};
+use crate::read::{Apply, FullReason, Outcome, Stamp, Taken, read_source};
 use crate::store::{Committed, Known, Writer};
 use rayon::prelude::*;
 use std::collections::{BTreeSet, HashMap};
@@ -253,7 +253,7 @@ fn flush(
 
 /// A resumed read that added nothing and left the row as stored.
 fn quiet(writer: &Writer, path: &str, outcome: &Outcome) -> bool {
-    if !matches!(outcome.taken, Taken::Resumed) || !outcome.messages.is_empty() {
+    if !matches!(outcome.taken, Taken::Resumed) || outcome.apply != Apply::Append || !outcome.messages.is_empty() {
         return false;
     }
     let Some(row) = &outcome.row else { return false };

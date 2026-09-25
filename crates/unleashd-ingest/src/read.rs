@@ -119,14 +119,26 @@ impl RowData {
     }
 }
 
+/// How a read's `messages` change the stored history.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Apply {
+    /// A resume: append after the stored messages.
+    Append,
+    /// A full read: `messages` is the whole history.
+    Replace,
+    /// A resume that took back stored messages (these seqs, in stored numbering): delete them,
+    /// renumber the rest to close the gaps, then append. A Codex file switching to event mode.
+    Withdraw(Vec<u32>),
+}
+
 #[derive(Debug)]
 pub struct Outcome {
     pub taken: Taken,
     pub stamp: Stamp,
     pub checkpoint: Option<Checkpoint>,
-    /// Messages to append (resume) or the whole history (full read).
+    /// Messages to apply to the stored history as `apply` says.
     pub messages: Vec<Message>,
-    pub replace: bool,
+    pub apply: Apply,
     /// `None`: the source holds no session (yet).
     pub row: Option<RowData>,
     pub malformed_lines: u64,
@@ -170,7 +182,7 @@ fn run<F: Fold>(
     full: bool,
     hints: Hints,
 ) -> io::Result<Result<Pass<F>, Rebuild>> {
-    let mut sink = Sink { visible, next_seq, out: Vec::new() };
+    let mut sink = Sink::new(visible, next_seq);
     if full {
         fold.begin_full(hints);
     }
@@ -240,6 +252,11 @@ fn finish<F: Fold + Into<FoldState>>(
 ) -> io::Result<Outcome> {
     let facts = pass.fold.facts(ctx);
     let next_seq = pass.sink.next_seq;
+    let apply = match (taken, pass.sink.withdrawn.is_empty()) {
+        (Taken::Resumed, true) => Apply::Append,
+        (Taken::Resumed, false) => Apply::Withdraw(pass.sink.withdrawn),
+        (_, _) => Apply::Replace,
+    };
     let row = facts.map(|f| row(f, &pass.sink.visible, next_seq, stamp.mtime_ms));
     let checkpoint = Checkpoint {
         offset: pass.offset,
@@ -254,7 +271,7 @@ fn finish<F: Fold + Into<FoldState>>(
         stamp,
         checkpoint: Some(checkpoint),
         messages: pass.sink.out,
-        replace: !matches!(taken, Taken::Resumed),
+        apply,
         row,
         malformed_lines: pass.malformed,
         bytes_read: pass.offset - start,
@@ -263,18 +280,17 @@ fn finish<F: Fold + Into<FoldState>>(
 
 /// Read a JSONL source from byte 0, retrying with what a failed pass learned.
 fn full<F: Fold + Into<FoldState>>(path: &Path, ctx: &Ctx, stamp: Stamp, mut hints: Hints, reason: FullReason) -> io::Result<Outcome> {
-    // Each retry sets one more hint, and there are two; a third failure is a parser bug.
-    for _ in 0..3 {
+    // A retry sets the one hint there is; a second failure is a parser bug.
+    for _ in 0..2 {
         match run(path, 0, F::default(), Visible::with_hints(hints), 0, true, hints)? {
             Ok(pass) => return finish(pass, path, ctx, stamp, hints, Taken::Full(reason), 0),
             Err(Rebuild::OwnedLater) => hints.owned_later = true,
-            Err(Rebuild::EventMode) => hints.codex_events = true,
             Err(Rebuild::Reordered) => {
                 return Err(io::Error::other(format!("{}: a full read reported an ordering rebuild", path.display())));
             }
         }
     }
-    Err(io::Error::other(format!("{}: parser did not settle after 3 full reads", path.display())))
+    Err(io::Error::other(format!("{}: parser did not settle after 2 full reads", path.display())))
 }
 
 fn plan(path: &Path, stamp: &Stamp, prior: &Option<(Stamp, Checkpoint)>) -> io::Result<Result<(), FullReason>> {
@@ -310,7 +326,6 @@ fn read_jsonl<F: Fold + Into<FoldState>>(
                     let mut hints = hints;
                     match rebuild {
                         Rebuild::OwnedLater => hints.owned_later = true,
-                        Rebuild::EventMode => hints.codex_events = true,
                         Rebuild::Reordered => {}
                     }
                     return full::<F>(path, ctx, stamp, hints, FullReason::Rebuild(rebuild));
@@ -322,7 +337,7 @@ fn read_jsonl<F: Fold + Into<FoldState>>(
 }
 
 fn read_doc(stamp: Stamp, doc: Option<Doc>) -> Outcome {
-    let mut sink = Sink::default();
+    let mut sink = Sink::new(Visible::default(), 0);
     let row = doc.and_then(|doc| {
         for m in doc.messages {
             // A document has no later line to prove the first prompt misread; nothing to retry.
@@ -337,7 +352,7 @@ fn read_doc(stamp: Stamp, doc: Option<Doc>) -> Outcome {
         stamp,
         checkpoint: None,
         messages: sink.out,
-        replace: true,
+        apply: Apply::Replace,
         row,
         malformed_lines: 0,
         bytes_read: stamp.size,
@@ -360,7 +375,7 @@ pub fn read_source(
             stamp,
             checkpoint: prior_checkpoint,
             messages: Vec::new(),
-            replace: false,
+            apply: Apply::Append,
             row: None,
             malformed_lines: 0,
             bytes_read: 0,

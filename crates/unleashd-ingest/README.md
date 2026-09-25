@@ -43,7 +43,8 @@ the 64 bytes before it, and the fold. On a change:
 | stamp (dev, inode, size, mtime) unchanged | nothing |
 | same inode, grew, fingerprint matches | resume at the offset |
 | new inode / shrank / fingerprint differs | from byte 0 (`replaced` / `shrank` / `rewritten`) |
-| a new line proves earlier output wrong | from byte 0 (`rebuild:Reordered`, `rebuild:EventMode`, `rebuild:OwnedLater`) |
+| a new line proves earlier output wrong | from byte 0 (`rebuild:Reordered`, `rebuild:OwnedLater`) |
+| Codex: the first event message after shown response-item messages | resume; those messages are withdrawn (`Apply::Withdraw`) |
 | unterminated last line that does not parse | left for the next read |
 
 Every resume produces exactly what a full read of the same bytes produces (`tests/formats.rs`

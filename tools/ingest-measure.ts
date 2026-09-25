@@ -4,7 +4,7 @@
  *
  *   pnpm exec tsx tools/ingest-measure.ts crate-cold  --db <scratch>/m.sqlite
  *   pnpm exec tsx tools/ingest-measure.ts crate-warm  --db <scratch>/m.sqlite
- *   pnpm exec tsx tools/ingest-measure.ts crate-tail  --scratch <dir> --format codex --source <file> [--appends 10]
+ *   pnpm exec tsx tools/ingest-measure.ts crate-tail  --scratch <dir> --format codex --source <file> [--appends 10] [--line codex-event]
  *   pnpm exec tsx tools/ingest-measure.ts ts-cold
  *   pnpm exec tsx tools/ingest-measure.ts ts-startup  --cache <a COPY of ~/.agent-viewer/session-cache-v1> [--limit 500]
  *   pnpm exec tsx tools/ingest-measure.ts ts-reparse  --format codex --source <file>
@@ -57,6 +57,10 @@ const TAIL_LINES: Record<string, (n: number) => string> = {
   // would (correctly) switch it to event mode and force one full re-read.
   codex: (n) =>
     `${JSON.stringify({ timestamp: new Date().toISOString(), type: 'response_item', payload: { type: 'message', role: 'assistant', content: [{ type: 'output_text', text: `measure ${n}` }] } })}\n`,
+  // `--line codex-event`: event messages switch the legacy rollout to event mode, which the crate
+  // applies by withdrawing the response-item messages (it re-read the whole file before T13a).
+  'codex-event': (n) =>
+    `${JSON.stringify({ timestamp: new Date().toISOString(), type: 'event_msg', payload: { type: n % 2 ? 'agent_message' : 'user_message', message: `measure ${n}` } })}\n`,
   claude: (n) =>
     `${JSON.stringify({ type: 'assistant', timestamp: new Date().toISOString(), message: { id: `m${n}`, content: [{ type: 'text', text: `measure ${n}` }] } })}\n`,
 };
@@ -126,7 +130,7 @@ async function main(): Promise<void> {
         waiter = resolve;
       });
       const start = performance.now();
-      fs.appendFileSync(file, TAIL_LINES[format](n));
+      fs.appendFileSync(file, TAIL_LINES[arg('line') ?? format](n));
       await seen;
       latencies.push(performance.now() - start);
       await new Promise((r) => setTimeout(r, 100));
