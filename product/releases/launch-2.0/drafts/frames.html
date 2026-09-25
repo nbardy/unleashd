@@ -1,0 +1,46 @@
+<!doctype html>
+<!-- Low-fi draft frames for the Unleashd 2.0 launch, beat 9. Wordmarks stand in for
+     vendor logos until we pull official marks from each brand kit. Render:
+     frame=harness|subs, 1920x1080, headless Chrome --screenshot. -->
+<html><head><meta charset="utf-8"><style>
+  :root{--bg:#002b36;--surface:#073642;--muted:#586e75;--body:#839496;--bright:#eee8d5;
+        --primary:#6c71c4;--user:#268bd2;--ai:#2aa198}
+  *{box-sizing:border-box;margin:0}
+  body{width:1920px;height:1080px;background:var(--bg);color:var(--bright);
+       font-family:-apple-system,"SF Pro Display",Inter,sans-serif;overflow:hidden}
+  .frame{display:none;width:100%;height:100%;flex-direction:column;align-items:center;justify-content:center;gap:72px}
+  body[data-frame=harness] #harness, body[data-frame=subs] #subs{display:flex}
+  h1{font-size:112px;font-weight:800;letter-spacing:-2px}
+  .sub{font-size:44px;color:var(--body);font-weight:500}
+  .stack{position:relative;width:1180px;height:300px}
+  .tile{position:absolute;top:0;width:340px;height:300px;border-radius:40px;background:var(--surface);
+        border:3px solid var(--c);box-shadow:0 30px 60px rgba(0,0,0,.45);display:flex;flex-direction:column;
+        align-items:center;justify-content:center;gap:18px;font-size:52px;font-weight:700;color:var(--bright)}
+  .tile small{font-size:26px;font-weight:500;color:var(--muted);letter-spacing:2px;text-transform:uppercase}
+  .dot{width:90px;height:90px;border-radius:50%;background:var(--c);opacity:.9}
+  .t1{left:0;transform:rotate(-7deg);--c:#cb4b16}
+  .t2{left:280px;transform:rotate(-2deg) translateY(-16px);--c:#859900;z-index:2}
+  .t3{left:560px;transform:rotate(3deg) translateY(-8px);--c:#b58900;z-index:3}
+  .t4{left:840px;transform:rotate(8deg);--c:#d33682;z-index:4}
+  .plans{display:flex;gap:28px}
+  .plan{padding:22px 36px;border-radius:999px;background:var(--surface);font-size:40px;font-weight:600;color:var(--bright);border:2px solid var(--muted)}
+  .free{color:var(--ai)}
+</style></head>
+<body data-frame="harness">
+  <section class="frame" id="harness">
+    <h1>Multi harness</h1>
+    <div class="stack">
+      <div class="tile t1"><div class="dot"></div>Claude<small>Claude Code</small></div>
+      <div class="tile t2"><div class="dot"></div>Codex<small>OpenAI</small></div>
+      <div class="tile t3"><div class="dot"></div>Cursor<small>+ Grok</small></div>
+      <div class="tile t4"><div class="dot"></div>Muse<small>Muse Spark</small></div>
+    </div>
+    <p class="sub">One app. Every agent you already use.</p>
+  </section>
+  <section class="frame" id="subs">
+    <h1>Bring your own subscriptions</h1>
+    <div class="plans"><span class="plan">Claude</span><span class="plan">ChatGPT</span><span class="plan">Cursor</span></div>
+    <p class="sub">Unleashd is <span class="free">free</span>. Your existing plans do the work.</p>
+  </section>
+<script>document.body.dataset.frame=new URLSearchParams(location.search).get('frame')||'harness'</script>
+</body></html>

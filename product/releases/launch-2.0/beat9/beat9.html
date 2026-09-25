@@ -1,0 +1,148 @@
+<!doctype html>
+<!--
+  Unleashd 2.0 launch, beat 9: "Multi harness" then "Bring your own subscriptions".
+  Deterministic motion: window.render(t) poses every element for time t (seconds), so
+  render.mjs can step it frame by frame. Open in a browser with ?t=2.5 to see one pose,
+  or ?play to watch it loop. Edit timings in the data-in attributes (seconds).
+  Logos come from ../logos (sources and usage rules in ../logos/SOURCES.md). Cards are cream, so
+  they use each kit's light-background (dark) variant; grok.svg is currentColor and renders black in <img>.
+-->
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  @font-face { font-family: 'Bricolage'; src: url('../fonts/BricolageGrotesque.ttf'); font-weight: 200 800; font-stretch: 75% 100%; }
+  :root { --bg:#002b36; --surface:#073642; --cream:#fdf6e3; --ink:#002b36; --muted:#93a1a1;
+          --yellow:#b58900; --orange:#cb4b16; --red:#dc322f; --magenta:#d33682; --violet:#6c71c4;
+          --blue:#268bd2; --cyan:#2aa198; --green:#859900; }
+  * { box-sizing:border-box; margin:0; }
+  html, body { width:1920px; height:1080px; overflow:hidden; background:var(--bg); }
+  body { font-family:'Bricolage', sans-serif; color:var(--cream); font-variation-settings:'opsz' 96; }
+  .scene { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:64px; }
+  .row { display:flex; gap:28px; align-items:center; justify-content:center; }
+
+  /* Block: a colour slab wipes in, the word rises out of it, then the slab punches. */
+  .blk { position:relative; display:inline-block; overflow:hidden; padding:6px 34px 14px; border-radius:18px;
+         font-weight:800; font-stretch:78%; letter-spacing:-1px; line-height:1; will-change:transform; }
+  .blk .fill { position:absolute; inset:0; background:var(--c); transform-origin:left center; border-radius:18px; }
+  .blk .txt { position:relative; display:inline-block; color:var(--tc, var(--ink)); }
+  .xl { font-size:150px; }
+  .xxl { font-size:176px; }
+  .md { font-size:54px; font-weight:700; font-stretch:90%; padding:12px 28px 16px; border-radius:14px; }
+
+  /* Harness cards: cream so every mark (mono or colour) reads on the dark plate. */
+  .stack { position:relative; width:1260px; height:340px; }
+  .card { position:absolute; top:0; width:330px; height:330px; border-radius:44px; background:var(--cream);
+          border:8px solid var(--c); box-shadow:0 34px 70px rgba(0,0,0,.5); display:flex; flex-direction:column;
+          align-items:center; justify-content:center; gap:22px; color:var(--ink); }
+  .card img { width:150px; height:150px; object-fit:contain; }
+  .card .pair { display:flex; gap:26px; }
+  .card .pair img { width:112px; height:112px; }
+  /* Muse Spark has no public mark (Meta shows it as plain type), so the card sets the name as its mark. */
+  .card .type-mark { font-size:78px; font-weight:800; font-stretch:78%; line-height:.92; text-align:center; letter-spacing:-1px; }
+  .card b { font-size:44px; font-weight:800; font-stretch:85%; letter-spacing:-.5px; }
+
+  .pill { display:inline-flex; align-items:center; gap:18px; padding:20px 40px 22px 26px; border-radius:999px;
+          background:var(--cream); color:var(--ink); font-size:52px; font-weight:800; font-stretch:88%;
+          box-shadow:0 18px 40px rgba(0,0,0,.4); }
+  .pill img { width:60px; height:60px; object-fit:contain; }
+  /* The OpenAI kit SVG carries its prescribed clear space inside the viewBox; size the box up, never crop it. */
+  .card img.oai { width:230px; height:230px; margin:-40px 0; }
+  .pill img.oai { width:96px; height:96px; margin:-18px -12px; }
+</style>
+</head>
+<body>
+
+<!-- Scene A: Multi harness (0 – 3.4s) -->
+<section class="scene" data-scene="0 3.4">
+  <div class="row">
+    <span class="blk xxl" data-kind="block" data-in="0.10" data-rot="-3" style="--c:var(--yellow)"><span class="fill"></span><span class="txt">MULTI</span></span>
+    <span class="blk xxl" data-kind="block" data-in="0.34" data-rot="2" style="--c:var(--magenta);--tc:var(--cream)"><span class="fill"></span><span class="txt">HARNESS</span></span>
+  </div>
+  <div class="stack">
+    <div class="card" data-kind="card" data-in="0.90" data-rot="-8" style="left:0;--c:var(--orange)"><img src="../logos/claude.svg" alt=""><b>Claude</b></div>
+    <div class="card" data-kind="card" data-in="1.08" data-rot="-3" data-lift="-18" style="left:310px;--c:var(--green)"><img class="oai" src="../logos/openai-black.svg" alt=""><b>Codex</b></div>
+    <div class="card" data-kind="card" data-in="1.26" data-rot="3" data-lift="-10" style="left:620px;--c:var(--blue)"><span class="pair"><img src="../logos/cursor-light-bg.svg" alt=""><img src="../logos/grok.svg" alt=""></span><b>Cursor · Grok</b></div>
+    <div class="card" data-kind="card" data-in="1.44" data-rot="8" style="left:930px;--c:var(--violet)"><span class="type-mark">Muse<br>Spark</span></div>
+  </div>
+  <div class="row">
+    <span class="blk md" data-kind="block" data-in="2.05" data-rot="0" style="--c:var(--surface);--tc:var(--cream)"><span class="fill"></span><span class="txt">One app.</span></span>
+    <span class="blk md" data-kind="block" data-in="2.25" data-rot="0" style="--c:var(--cyan)"><span class="fill"></span><span class="txt">Every agent you already use.</span></span>
+  </div>
+</section>
+
+<!-- Scene B: Bring your own subscriptions (3.4 – 7.0s); data-in is relative to scene start -->
+<section class="scene" data-scene="3.4 7.0" style="gap:40px">
+  <div class="row">
+    <span class="blk xl" data-kind="block" data-in="0.10" data-rot="-2" style="--c:var(--orange);--tc:var(--cream)"><span class="fill"></span><span class="txt">BRING</span></span>
+    <span class="blk xl" data-kind="block" data-in="0.30" data-rot="2" style="--c:var(--blue);--tc:var(--cream)"><span class="fill"></span><span class="txt">YOUR OWN</span></span>
+  </div>
+  <div class="row">
+    <span class="blk xxl" data-kind="block" data-in="0.55" data-rot="-1.5" style="--c:var(--yellow)"><span class="fill"></span><span class="txt">SUBSCRIPTIONS</span></span>
+  </div>
+  <div class="row" style="gap:32px;margin-top:24px">
+    <span class="pill" data-kind="pill" data-in="1.10"><img src="../logos/claude.svg" alt="">Claude</span>
+    <span class="pill" data-kind="pill" data-in="1.24"><img class="oai" src="../logos/openai-black.svg" alt="">ChatGPT</span>
+    <span class="pill" data-kind="pill" data-in="1.38"><img src="../logos/cursor-light-bg.svg" alt="">Cursor</span>
+  </div>
+  <div class="row" style="gap:18px;margin-top:16px">
+    <span class="blk md" data-kind="block" data-in="1.85" data-rot="0" style="--c:var(--surface);--tc:var(--cream)"><span class="fill"></span><span class="txt">Unleashd is</span></span>
+    <span class="blk md" data-kind="block" data-in="2.05" data-rot="-4" style="--c:var(--cyan)"><span class="fill"></span><span class="txt">FREE!</span></span>
+    <span class="blk md" data-kind="block" data-in="2.30" data-rot="0" style="--c:var(--surface);--tc:var(--cream)"><span class="fill"></span><span class="txt">Your existing plans do the work.</span></span>
+  </div>
+</section>
+
+<script>
+const DURATION = 7.0;
+const clamp01 = (x) => Math.min(1, Math.max(0, x));
+const easeOutExpo = (x) => (x >= 1 ? 1 : 1 - Math.pow(2, -10 * x));
+const easeOutBack = (x, k = 1.9) => 1 + (k + 1) * Math.pow(x - 1, 3) + k * Math.pow(x - 1, 2);
+const lerp = (a, b, p) => a + (b - a) * p;
+
+// One pose function per element kind; u is seconds since the element's data-in.
+const POSE = {
+  block(el, u, rot) {
+    const wipe = easeOutExpo(clamp01(u / 0.22));
+    const rise = easeOutBack(clamp01((u - 0.06) / 0.3));
+    const punch = easeOutBack(clamp01((u - 0.16) / 0.3), 3);
+    el.style.visibility = u < 0 ? 'hidden' : 'visible';
+    el.style.transform = `rotate(${rot}deg) scale(${lerp(1.18, 1, punch)})`;
+    el.querySelector('.fill').style.transform = `scaleX(${wipe})`;
+    el.querySelector('.txt').style.transform = `translateY(${lerp(110, 0, rise)}%)`;
+  },
+  card(el, u, rot) {
+    const drop = easeOutBack(clamp01(u / 0.45), 1.5);
+    const lift = Number(el.dataset.lift ?? 0);
+    el.style.visibility = u < 0 ? 'hidden' : 'visible';
+    el.style.transform = `translateY(${lerp(-900, lift, drop)}px) rotate(${lerp(rot * 3, rot, drop)}deg)`;
+  },
+  pill(el, u) {
+    const pop = easeOutBack(clamp01(u / 0.35), 2.4);
+    el.style.visibility = u < 0 ? 'hidden' : 'visible';
+    el.style.transform = `scale(${pop})`;
+  },
+};
+
+window.render = (t) => {
+  for (const scene of document.querySelectorAll('[data-scene]')) {
+    const [start, end] = scene.dataset.scene.split(' ').map(Number);
+    // display, not visibility: a child's explicit visibility:visible overrides a hidden parent.
+    scene.style.display = t >= start && t < end ? 'flex' : 'none';
+    for (const el of scene.querySelectorAll('[data-kind]')) {
+      POSE[el.dataset.kind](el, t - start - Number(el.dataset.in), Number(el.dataset.rot ?? 0));
+    }
+  }
+};
+window.DURATION = DURATION;
+
+const params = new URLSearchParams(location.search);
+if (params.has('play')) {
+  const t0 = performance.now();
+  const tick = (now) => { render(((now - t0) / 1000) % DURATION); requestAnimationFrame(tick); };
+  requestAnimationFrame(tick);
+} else {
+  render(Number(params.get('t') ?? 3.3));
+}
+</script>
+</body>
+</html>

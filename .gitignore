@@ -50,6 +50,13 @@ product/**
 !product/
 !product/**/
 !product/**/*.md
+# Launch-video design sources (HTML, render script, logos, font, stills, short
+# renders) are durable assets, re-exported when the UI changes. Raw screen
+# footage (footage/, tens of MB of .mov) stays ignored.
+!product/releases/launch-2.0/beat9/**
+!product/releases/launch-2.0/drafts/**
+!product/releases/launch-2.0/fonts/**
+!product/releases/launch-2.0/logos/**
 output
 
 # Buddy memory profiles — generated runtime state (same class as .buddies/).
