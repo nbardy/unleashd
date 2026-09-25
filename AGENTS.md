@@ -131,8 +131,12 @@ requirements to rebuild omitted machinery.
 Prove a visible change with pictures, not source reading. A server must be
 running (`pnpm dev`); both tools log in with the server's own token
 (`UNLEASHD_AUTH_TOKEN` → `UNLEASHD_AUTH_TOKEN_FILE` → `~/.agent-viewer/auth-token`).
-The session is READ-ONLY (non-GET requests fail at the network layer, WS sends
-are dropped), so pointing it at the owner's live dev server is safe.
+The session is READ-ONLY (the page refuses non-GET fetch/XHR/beacon and drops
+WS sends; the manifest lists what it refused), so pointing it at the owner's
+live dev server is safe. For a static baseline, prefer a throwaway server on a
+spare port against a COPY of `~/.agent-viewer` + `~/.buddies` (`BUDDIES_HOME`
+at the copy) with no agent CLIs on its PATH: the Buddy scheduler still runs
+there and would otherwise launch real agents.
 
 ```bash
 pnpm screenshots                              # every client screen × every size
@@ -165,7 +169,9 @@ magenta). Run 1 and 3 back-to-back: live data drifts (sidebar badges,
   under `--baseline`), so every "3m ago" renders identically; animations and
   transitions jump to their end state; carets are transparent; device-local
   storage is cleared before every page (desktop `/` otherwise restores the
-  last chat). A region that is live by nature gets `data-volatile` in the
+  last chat); each shot waits until no HTTP request has been open for 500ms
+  (the idle-time chat-history prefetch excepted), and the manifest records
+  anything still loading after 20s. A region that is live by nature gets `data-volatile` in the
   client, which the tool hides. Compare decodes PNGs in the same headless
   Chrome — zero dependencies; the diff math is `tools/lib/pixel-diff.mjs`
   (tested by `pnpm test:tools`).

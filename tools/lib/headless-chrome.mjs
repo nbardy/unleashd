@@ -121,6 +121,12 @@ async function launchChrome(chromePath) {
       '--no-default-browser-check',
       '--disable-extensions',
       '--hide-scrollbars',
+      // Software raster and WebGL: on the GPU path the Buddy sigil shader
+      // rendered a few hundred different speckle pixels per card between two
+      // runs, and status-dot edges antialiased differently (2026-09-25).
+      '--disable-gpu',
+      '--use-angle=swiftshader',
+      '--enable-unsafe-swiftshader',
       // The dev server is plain http on a LAN-ish origin; no need for the
       // sandbox in a throwaway profile, and it avoids CI permission issues.
       '--no-sandbox',
@@ -158,8 +164,10 @@ async function launchChrome(chromePath) {
  *   caught mid-frame at whatever moment the capture lands. Zero-length
  *   animations (not `animation: none`) still fire animationend, so components
  *   that wait for it keep working; a transparent caret removes the blink.
- * - `[data-volatile]` is hidden: the escape hatch for a region that is live
- *   by nature and cannot be stabilised by the clock.
+ * - `[data-volatile]` is removed from layout: the escape hatch for a region
+ *   that is live by nature and cannot be stabilised by the clock. display:none,
+ *   not visibility:hidden — a hidden timestamp still changed width and
+ *   reflowed the sentence after it (buddy-team, 2026-09-25).
  * - No writes leave the page. fetch/XHR/sendBeacon with a method other than
  *   GET/HEAD/OPTIONS reject as a network error would, and WebSocket.send is a
  *   no-op (every client→server WS message is a command: create, send, stop,
@@ -216,7 +224,7 @@ function stabilisingScript(clockMs) {
     transition-duration: 0s !important; transition-delay: 0s !important;
     caret-color: transparent !important;
   }
-  [data-volatile] { visibility: hidden !important; }\`;
+  [data-volatile] { display: none !important; }\`;
   document.addEventListener('DOMContentLoaded', () => {
     const style = document.createElement('style');
     style.dataset.screenshotStabiliser = '';
