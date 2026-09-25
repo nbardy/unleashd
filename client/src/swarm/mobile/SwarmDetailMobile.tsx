@@ -7,13 +7,14 @@ import {
   conversationAtomFamily,
   swarmWorkersForProjectAtomFamily,
 } from '../../atoms/conversations';
-import { useSwarmRuntimeSnapshots } from '../../hooks/useSwarmRuntimeSnapshots';
+import { useSwarmRuntimeSnapshots } from '../useSwarmRuntimeSnapshots';
 import { useTimeTick } from '../../hooks/useTimeTick';
 import { mobileConversationRouteState } from '../../utils/conversation-route-state';
 import { isRowRunning, rowWorker } from '../../utils/conversation-row';
 import { shortenHomePath } from '../../utils/directories';
-import { getWorkerVisibilitySummary } from '../../utils/swarmWorkerVisibility';
+import { getWorkerVisibilitySummary } from '../swarmWorkerVisibility';
 import { formatTimeAgo } from '../../utils/time';
+import './mobile-swarm.css';
 
 // =============================================================================
 // Pure helpers — copied as pure logic from SwarmDetail (no component import).

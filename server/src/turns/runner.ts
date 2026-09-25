@@ -22,7 +22,7 @@ import type {
   TurnAttemptActivity,
   TurnTerminalCause,
 } from '../observability';
-import { type SwarmObservers, watchSwarmRuns } from '../swarm/observer';
+import { type SwarmObservers, watchSwarmRuns } from '../swarm';
 import type { TurnInput } from './input';
 import type { TurnPolicy } from './policy';
 import type { QueueEntry, TurnQueue } from './queue';

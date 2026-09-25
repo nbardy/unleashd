@@ -17,11 +17,11 @@ import {
 import { markMessagesSeen } from '../atoms/ui';
 import { useConversationBodies } from '../hooks/useConversationBodies';
 import { usePolledFetch } from '../hooks/usePolledFetch';
-import { useSwarmRuntimeSnapshots } from '../hooks/useSwarmRuntimeSnapshots';
+import { useSwarmRuntimeSnapshots } from './useSwarmRuntimeSnapshots';
 import { isRowRunning, rowWorker } from '../utils/conversation-row';
-import { getWorkerVisibilitySummary } from '../utils/swarmWorkerVisibility';
+import { getWorkerVisibilitySummary } from './swarmWorkerVisibility';
 import { formatTimeAgo } from '../utils/time';
-import { VirtualizedMessageList } from './VirtualizedMessageList';
+import { VirtualizedMessageList } from '../components/VirtualizedMessageList';
 import './SwarmDetail.css';
 import { useTimeTick } from '../hooks/useTimeTick';
 import { shortenHomePath } from '../utils/directories';

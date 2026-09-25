@@ -1,5 +1,6 @@
 /* =============================================================================
-   mobile-swarm.css — swarm detail + analytics.
+   mobile-swarm.css — swarm detail + analytics. Imported by the swarm pages
+   themselves, so it loads with the swarm chunk and deletes with swarm/.
 
    Same story as mobile-buddy.css: these classes were live in the TSX with no
    rule behind them. Kill signals in particular rendered as identical bare
@@ -345,4 +346,44 @@
   height: 100%;
   border-radius: var(--ui-radius);
   background: var(--accent);
+}
+
+/* ---- SwarmsMobile directory ---- */
+.mobile-swarm-card {
+  gap: var(--sp-3);
+}
+
+.mobile-swarm-card--running {
+  border-color: color-mix(in srgb, var(--theme-success) 35%, var(--border-subtle));
+}
+
+.mobile-swarm-card__top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--sp-5);
+  min-width: 0;
+}
+
+.mobile-swarm-card__name {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--text-primary);
+  font-size: var(--fs-5);
+  font-weight: 650;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+}
+
+.mobile-swarm-card__stats .stat-running {
+  color: var(--theme-success);
+}
+
+.mobile-swarm-card__stats {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-1) 0;
+  min-width: 0;
+  font-size: var(--fs-2);
+  line-height: 1.4;
 }

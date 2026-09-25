@@ -1,5 +1,5 @@
 import type { ConversationRow, OompaRuntimeSnapshot } from '@unleashd/shared';
-import { isRowRunning } from './conversation-row';
+import { isRowRunning } from '../utils/conversation-row';
 
 function workerId(worker: ConversationRow): string {
   return (worker.kind.t === 'worker' ? worker.kind.workerId : null) || worker.id;

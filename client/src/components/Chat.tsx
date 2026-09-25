@@ -51,7 +51,7 @@ import { ConversationConfigPicker } from './ConversationConfigPicker';
 import { PromptPalette } from './PromptPalette';
 import { ResumeThreadWidget } from './ResumeThreadWidget';
 import { SubAgentPanel } from './SubAgentPanel';
-import { SwarmConvoPrefix } from './SwarmConvoPrefix';
+import { SwarmConvoPrefix } from '../swarm';
 import { TurnStatus } from './TurnStatus';
 import { VirtualizedMessageList } from './VirtualizedMessageList';
 import {

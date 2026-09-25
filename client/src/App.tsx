@@ -19,6 +19,7 @@ import { useOwnerUnreadTitle } from './components/buddies/channel-data';
 import { useWebSocket } from './hooks/useWebSocket';
 import { type DeviceKind, useDeviceKind } from './mobile/hooks/useDeviceKind';
 import { initSettings } from './stores/settingsStore';
+import { SWARM_PAGE_LOADERS } from './swarm';
 import './App.css';
 import './components/buddies/BuddyDetail.css';
 
@@ -152,13 +153,9 @@ const ChatRoute = lazyNamed(() => import('./components/Chat').then((m) => m.Chat
 const BuddiesDashboard = lazyNamed(() =>
   import('./components/BuddiesDashboard').then((m) => m.BuddiesDashboard)
 );
-const SwarmDashboard = lazyNamed(() =>
-  import('./components/SwarmDashboard').then((m) => m.SwarmDashboard)
-);
-const SwarmDetail = lazyNamed(() => import('./components/SwarmDetail').then((m) => m.SwarmDetail));
-const SwarmAnalytics = lazyNamed(() =>
-  import('./components/SwarmAnalytics').then((m) => m.SwarmAnalytics)
-);
+const SwarmDashboard = lazyNamed(SWARM_PAGE_LOADERS.dashboard);
+const SwarmDetail = lazyNamed(SWARM_PAGE_LOADERS.detail);
+const SwarmAnalytics = lazyNamed(SWARM_PAGE_LOADERS.analytics);
 const WorkspaceSlack = lazyNamed(() =>
   import('./components/buddies/ChannelBrowser').then((m) => m.WorkspaceSlack)
 );
@@ -187,15 +184,9 @@ const BuddiesMobile = lazyNamed(() =>
 const BuddyDetailMobile = lazyNamed(() =>
   import('./mobile/buddies/BuddyDetailMobile').then((m) => m.BuddyDetailMobile)
 );
-const SwarmsMobile = lazyNamed(() =>
-  import('./mobile/swarms/SwarmsMobile').then((m) => m.SwarmsMobile)
-);
-const SwarmDetailMobile = lazyNamed(() =>
-  import('./mobile/swarms/SwarmDetailMobile').then((m) => m.SwarmDetailMobile)
-);
-const SwarmAnalyticsMobile = lazyNamed(() =>
-  import('./mobile/swarms/SwarmAnalyticsMobile').then((m) => m.SwarmAnalyticsMobile)
-);
+const SwarmsMobile = lazyNamed(SWARM_PAGE_LOADERS.dashboardMobile);
+const SwarmDetailMobile = lazyNamed(SWARM_PAGE_LOADERS.detailMobile);
+const SwarmAnalyticsMobile = lazyNamed(SWARM_PAGE_LOADERS.analyticsMobile);
 const SearchMobile = lazyNamed(() =>
   import('./mobile/search/SearchMobile').then((m) => m.SearchMobile)
 );

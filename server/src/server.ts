@@ -67,10 +67,7 @@ import { createPaletteService } from './palettes/palette-service';
 import { buildPalettePrompt } from './palettes/prompt';
 import { getProvider, providers } from './providers';
 import { resolveConfigAgainstProviderCatalog } from './providers/catalog-service';
-import { captureOompaCommand, executeGit } from './swarm/commands';
-import { registerSwarmReadModelRoutes } from './swarm/read-model-routes';
-import { registerSwarmRuntimeRoutes } from './swarm/routes';
-import { isProcessAlive, readLatestSwarmRuntime } from './swarm/runtime';
+import { readLatestSwarmRuntime, registerSwarmRoutes } from './swarm';
 import { registerConversationWebSocket } from './transport/conversation-websocket';
 import { WS_LIVENESS_INTERVAL_MS, superviseLiveness } from './transport/websocket';
 
@@ -552,20 +549,12 @@ registerFilesystemRoutes(app, {
   isUnderKnownProject,
 });
 
-registerSwarmRuntimeRoutes(app, {
+registerSwarmRoutes(app, {
   isUnderKnownProject,
   listProjectRoots: () =>
     Array.from(conversations.values(), (conversation) => conversation.workingDirectory),
-});
-
-registerSwarmReadModelRoutes(app, {
-  isUnderKnownProject,
   resolveWorkingDirectory: resolveWorkingDirectoryInput,
-  captureOompaCommand: (command, workingDirectory) =>
-    captureOompaCommand(command, workingDirectory, SWARM_CONTEXT_COMMAND_TIMEOUT_MS),
-  executeGit,
-  isProcessAlive,
-  now: Date.now,
+  commandTimeoutMs: SWARM_CONTEXT_COMMAND_TIMEOUT_MS,
 });
 
 const paletteService = createPaletteService({

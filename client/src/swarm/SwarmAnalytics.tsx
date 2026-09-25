@@ -12,8 +12,8 @@ import {
   type RunData,
   buildTimelineData,
   computeSwarmStats,
-} from '../utils/swarmAnalyticsParsers';
-import { getProjectName } from '../utils/swarmUtils';
+} from './swarmAnalyticsParsers';
+import { getProjectName } from './swarmUtils';
 import { formatDuration, formatTimeAgo } from '../utils/time';
 import './SwarmAnalytics.css';
 
@@ -21,13 +21,13 @@ import './SwarmAnalytics.css';
 const NO_RUNS_DATA = new Map<string, RunData>();
 
 // Re-export analytics parsers for mobile (utils is canonical)
-export { buildTimelineData, computeSwarmStats } from '../utils/swarmAnalyticsParsers';
+export { buildTimelineData, computeSwarmStats } from './swarmAnalyticsParsers';
 export type {
   IterationSpan,
   RunData,
   SwarmStats,
   WorkerTimeline,
-} from '../utils/swarmAnalyticsParsers';
+} from './swarmAnalyticsParsers';
 // =============================================================================
 // Types (component-local)
 // =============================================================================

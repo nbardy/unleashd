@@ -7,8 +7,8 @@ import { usePolledFetch } from '../../hooks/usePolledFetch';
 import { useTimeTick } from '../../hooks/useTimeTick';
 import { isRowRunning } from '../../utils/conversation-row';
 import { shortenHomePath } from '../../utils/directories';
-import { getProjectName } from '../../utils/swarmUtils';
-import { getWorkerVisibilitySummary } from '../../utils/swarmWorkerVisibility';
+import { getProjectName } from '../swarmUtils';
+import { getWorkerVisibilitySummary } from '../swarmWorkerVisibility';
 import { formatTimeAgo } from '../../utils/time';
 import {
   MobileBadge,
@@ -17,8 +17,9 @@ import {
   MobileHeaderAction,
   MobilePage,
   MobilePath,
-} from '../components/MobileUI';
-import { NewConversationSheet } from '../components/NewConversationSheet';
+} from '../../mobile/components/MobileUI';
+import { NewConversationSheet } from '../../mobile/components/NewConversationSheet';
+import './mobile-swarm.css';
 
 interface SwarmProjectEntry {
   projectRoot: string;

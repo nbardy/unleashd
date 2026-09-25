@@ -10,10 +10,11 @@ import {
   type RunData,
   buildTimelineData,
   computeSwarmStats,
-} from '../../utils/swarmAnalyticsParsers';
-import { getProjectName } from '../../utils/swarmUtils';
+} from '../swarmAnalyticsParsers';
+import { getProjectName } from '../swarmUtils';
 import { formatDuration, formatTimeAgo } from '../../utils/time';
-import { EmptyState } from '../components/EmptyState';
+import { EmptyState } from '../../mobile/components/EmptyState';
+import './mobile-swarm.css';
 
 /**
  * SwarmAnalyticsMobile — mobile analytics at /workers/analytics.
