@@ -139,8 +139,9 @@ from the imported posts (on the copy: 188 cursors; 271 read cursors in total, al
 ## Deploy (the live swap, T15: owner-gated)
 
 The server opens `UNLEASHD_BUDDIES_DB` (default `~/.buddies/buddies-v3.sqlite`). It never opens the
-v33 `~/.buddies/buddies.sqlite`, and it never falls back to it: while the new file is missing, every
-Buddy call fails with the import command, and ordinary chats keep working.
+v33 `~/.buddies/buddies.sqlite`, and it never falls back to it: while the new file is missing and
+the v33 one exists, every Buddy call fails with the import command, and ordinary chats keep working.
+A first-time install (neither file) starts with an empty new-schema database.
 
 1. **Stop the server** (no turn may write v33 during the copy), then take a consistent copy:
    `sqlite3 ~/.buddies/buddies.sqlite "VACUUM INTO '/path/backup-v33.sqlite'"`.
