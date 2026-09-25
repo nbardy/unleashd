@@ -57,6 +57,7 @@ product/**
 !product/releases/launch-2.0/drafts/**
 !product/releases/launch-2.0/fonts/**
 !product/releases/launch-2.0/logos/**
+!product/releases/launch-2.0/brand/**
 # Remotion edit project; its own .gitignore keeps node_modules/ and out/ renders out.
 !product/releases/launch-2.0/edit/**
 output
