@@ -1,16 +1,14 @@
 import { atom } from 'jotai';
 import type { Buddy, WorkspaceRoster } from '../components/buddies/types';
 import { archivedBuddyIdsAtom } from './buddy-visibility';
-import { directoryFacts } from './conversation-index';
 import {
   type ConversationListEntry,
-  type PendingConversationCreation,
-  allPendingCreationsAtom,
-  availableConversationIdSetAtom,
-  conversationListAtom,
+  type CreateCommand,
+  commandsAtom,
+  listField,
+  pendingCreatesOf,
 } from './conversations';
-import { sameItems, sameMap, stableAtom } from './structural';
-import { promotedWorkersAtom } from './ui';
+import { atomWithPrevious, sameItems } from './structural';
 
 /**
  * The slice of `BuddyOverview` the sidebar reads, declared as Picks over the
@@ -35,7 +33,7 @@ export interface BuddySidebarItemData {
   backgroundRunningCount: number;
   backgroundConversationCount: number;
   latestConversation: ConversationListEntry | null;
-  pendingCreation: PendingConversationCreation | null;
+  pendingCreation: CreateCommand | null;
   workspaceId: string;
   workingDirectory: string;
   workspaceName: string;
@@ -89,11 +87,13 @@ function sameBuddyProjects(a: BuddySidebarProject[], b: BuddySidebarProject[]): 
   );
 }
 
-export const buddySidebarProjectsAtom = stableAtom((get): BuddySidebarProject[] => {
-  const overview = get(buddySidebarOverviewAtom);
-  const archived = get(archivedBuddyIdsAtom);
-  const all = get(conversationListAtom);
-  const ids = get(availableConversationIdSetAtom);
+function buildProjects(
+  overview: BuddySidebarOverview | null,
+  archived: ReadonlySet<string>,
+  all: readonly ConversationListEntry[],
+  ids: ReadonlySet<string>,
+  pendingCreates: readonly CreateCommand[]
+): BuddySidebarProject[] {
   const projects = new Map<string, BuddySidebarProject>();
   const entries = new Map<string, BuddySidebarItemData>();
   const entryKey = (buddyId: string, workspaceId: string) => JSON.stringify([workspaceId, buddyId]);
@@ -167,13 +167,13 @@ export const buddySidebarProjectsAtom = stableAtom((get): BuddySidebarProject[] 
     item.latestConversation ??= conversation;
     if (!conversation.done) item.conversations.push(conversation);
   }
-  for (const pending of get(allPendingCreationsAtom)) {
-    if (pending.createKind.t !== 'buddy') continue;
-    const context = pending.createKind.context;
+  for (const pending of pendingCreates) {
+    if (pending.args.kind.t !== 'buddy') continue;
+    const context = pending.args.kind.context;
     const item = entries.get(entryKey(context.buddyId, context.workspaceId));
     if (!item) continue;
     item.pendingCreation ??= pending;
-    touch(item, pending.createdAt.getTime());
+    touch(item, pending.createdAt);
   }
   for (const project of projects.values()) {
     project.items.sort(
@@ -188,157 +188,11 @@ export const buddySidebarProjectsAtom = stableAtom((get): BuddySidebarProject[] 
       a.name.localeCompare(b.name) ||
       a.workspaceId.localeCompare(b.workspaceId)
   );
-}, sameBuddyProjects);
-
-// Workspaces with a channel browser: one top-level Channels row each.
-// Derived here (not a component useMemo) so every sidebar reads one list.
-export const buddySidebarChannelsAtom = stableAtom(
-  (get) =>
-    get(buddySidebarProjectsAtom).map((project) => ({
-      workspaceId: project.workspaceId,
-      name: project.name,
-    })),
-  (a, b) =>
-    a.length === b.length &&
-    a.every((row, i) => row.workspaceId === b[i].workspaceId && row.name === b[i].name)
-);
-
-/**
- * Folder rows of the desktop sidebar: everything except hidden workers, Buddy
- * threads (their own section), Builder threads (their own folder) and children
- * whose parent is listed (they nest under it).
- */
-function isFolderRow(
-  entry: ConversationListEntry,
-  promoted: ReadonlySet<string>,
-  listed: ReadonlySet<string>
-): boolean {
-  return (
-    !(entry.isWorker && !promoted.has(entry.id)) &&
-    entry.kind !== 'buddy' &&
-    entry.kind !== 'builder' &&
-    !(entry.parentConversationId && listed.has(entry.parentConversationId))
-  );
 }
-
-const promotedSetAtom = atom((get) => new Set(get(promotedWorkersAtom)));
-
-// Live non-Buddy conversations grouped exactly like the desktop sidebar.
-// Keep this as a derived collection view so components do not rebuild a
-// running-process index during render. Buddy runs are counted by
-// buddySidebarProjectsAtom because those folders group on workspace identity.
-export const sidebarRunningCountByFolderAtom = stableAtom(
-  (get) => {
-    const listed = get(availableConversationIdSetAtom);
-    const promoted = get(promotedSetAtom);
-    const counts = new Map<string, number>();
-    for (const entry of get(conversationListAtom)) {
-      if (!entry.isRunning || !isFolderRow(entry, promoted, listed)) continue;
-      const key = directoryFacts(entry.workingDirectory).groupKey;
-      counts.set(key, (counts.get(key) ?? 0) + 1);
-    }
-    return counts;
-  },
-  (a, b) => sameMap(a, b)
-);
-
-const RECENT_CUTOFF_MS = 7 * 24 * 60 * 60 * 1000;
-
-export interface SidebarFolderGroup {
-  /** `folderGroupKey` of the group's conversations. */
-  directory: string;
-  /** Not-done conversation ids, newest-first. A group whose conversations are
-   *  all done stays (empty) so its position does not jump when one is marked. */
-  activeIds: readonly string[];
-}
-
-export interface SidebarFolderView {
-  /** Folders active in the last week, newest-first. */
-  recent: readonly SidebarFolderGroup[];
-  /** Not-done conversations older than a week, newest-first. */
-  olderIds: readonly string[];
-}
-
-function sameFolderView(a: SidebarFolderView, b: SidebarFolderView): boolean {
-  return (
-    sameItems(a.olderIds, b.olderIds) &&
-    a.recent.length === b.recent.length &&
-    a.recent.every(
-      (group, i) =>
-        group.directory === b.recent[i].directory &&
-        sameItems(group.activeIds, b.recent[i].activeIds)
-    )
-  );
-}
-
-// Was four `useMemo` passes inside Sidebar.tsx, re-run on every conversation
-// event with a date parse per row. The list is newest-first, so the first
-// entry seen for a folder dates the folder and groups come out in order.
-export const sidebarFolderViewAtom = stableAtom((get): SidebarFolderView => {
-  const listed = get(availableConversationIdSetAtom);
-  const promoted = get(promotedSetAtom);
-  const cutoff = Date.now() - RECENT_CUTOFF_MS;
-  const recent = new Map<string, string[]>();
-  const olderIds: string[] = [];
-  for (const entry of get(conversationListAtom)) {
-    if (!isFolderRow(entry, promoted, listed)) continue;
-    if (entry.activityMs <= cutoff) {
-      if (!entry.done) olderIds.push(entry.id);
-      continue;
-    }
-    const key = directoryFacts(entry.workingDirectory).groupKey;
-    let group = recent.get(key);
-    if (!group) {
-      group = [];
-      recent.set(key, group);
-    }
-    if (!entry.done) group.push(entry.id);
-  }
-  return {
-    recent: Array.from(recent, ([directory, activeIds]) => ({ directory, activeIds })),
-    olderIds,
-  };
-}, sameFolderView);
-
-export const buddySidebarCountAtom = atom(
-  (get) => new Set(get(buddySidebarProjectsAtom).flatMap((p) => p.items.map((i) => i.buddyId))).size
-);
-
-// Builder threads share project recency ordering, including completed threads so
-// marking a thread done does not unexpectedly move its group.
-export const buddyBuilderConversationsAtom = stableAtom((get) => {
-  const listed = get(availableConversationIdSetAtom);
-  const promoted = get(promotedSetAtom);
-  return get(conversationListAtom).filter(
-    (entry) =>
-      entry.kind === 'builder' &&
-      !(entry.isWorker && !promoted.has(entry.id)) &&
-      !(entry.parentConversationId && listed.has(entry.parentConversationId))
-  );
-}, sameItems);
 
 export type BuddySidebarGroup =
   | { kind: 'project'; key: string; lastActiveMs: number; project: BuddySidebarProject }
   | { kind: 'builder'; key: string; lastActiveMs: number };
-
-export const buddySidebarGroupsAtom = stableAtom((get): BuddySidebarGroup[] => {
-  const projects = get(buddySidebarProjectsAtom);
-  const builders = get(buddyBuilderConversationsAtom);
-  const groups: BuddySidebarGroup[] = projects.map((project) => ({
-    kind: 'project',
-    key: `buddy-project:${project.workspaceId}`,
-    lastActiveMs: project.lastActiveMs,
-    project,
-  }));
-  if (builders.length) {
-    groups.push({
-      kind: 'builder',
-      key: '__builder__',
-      lastActiveMs: builders[0].activityMs,
-    });
-  }
-  return groups.sort((a, b) => b.lastActiveMs - a.lastActiveMs);
-}, sameBuddyGroups);
 
 function sameBuddyGroups(a: BuddySidebarGroup[], b: BuddySidebarGroup[]): boolean {
   return (
@@ -352,3 +206,67 @@ function sameBuddyGroups(a: BuddySidebarGroup[], b: BuddySidebarGroup[]): boolea
     })
   );
 }
+
+function buildGroups(
+  projects: BuddySidebarProject[],
+  builders: readonly ConversationListEntry[]
+): BuddySidebarGroup[] {
+  const groups: BuddySidebarGroup[] = projects.map((project) => ({
+    kind: 'project',
+    key: `buddy-project:${project.workspaceId}`,
+    lastActiveMs: project.lastActiveMs,
+    project,
+  }));
+  if (builders.length) {
+    groups.push({ kind: 'builder', key: '__builder__', lastActiveMs: builders[0].activityMs });
+  }
+  return groups.sort((a, b) => b.lastActiveMs - a.lastActiveMs);
+}
+
+export interface BuddySidebar {
+  projects: BuddySidebarProject[];
+  /** Buddy projects and the Builder folder, by recency. */
+  groups: BuddySidebarGroup[];
+  /** Distinct Buddies listed. */
+  buddyCount: number;
+  /** Workspaces with a channel browser: one top-level Channels row each. */
+  channels: ReadonlyArray<{ workspaceId: string; name: string }>;
+}
+
+/**
+ * The Buddy sidebar: the roster (overview) joined with the list index's Buddy
+ * entries and in-flight Buddy creates. One derived atom replaces the five it
+ * had until T19 (projects, groups, count, channels, builders). It hands back
+ * its previous value when nothing a Buddy row shows changed, so the Sidebar
+ * does not re-render on unrelated list moves.
+ */
+export const buddySidebarAtom = atomWithPrevious((get, previous: BuddySidebar | undefined) => {
+  const projects = buildProjects(
+    get(buddySidebarOverviewAtom),
+    get(archivedBuddyIdsAtom),
+    get(listField('buddyEntries')),
+    get(listField('idSet')),
+    pendingCreatesOf(get(commandsAtom))
+  );
+  if (previous && sameBuddyProjects(previous.projects, projects)) {
+    const groups = buildGroups(previous.projects, get(listField('builders')));
+    return sameBuddyGroups(previous.groups, groups) ? previous : { ...previous, groups };
+  }
+  const channels = projects.map((project) => ({
+    workspaceId: project.workspaceId,
+    name: project.name,
+  }));
+  return {
+    projects,
+    groups: buildGroups(projects, get(listField('builders'))),
+    buddyCount: new Set(projects.flatMap((p) => p.items.map((i) => i.buddyId))).size,
+    channels:
+      previous &&
+      previous.channels.length === channels.length &&
+      previous.channels.every(
+        (row, i) => row.workspaceId === channels[i].workspaceId && row.name === channels[i].name
+      )
+        ? previous.channels
+        : channels,
+  };
+});

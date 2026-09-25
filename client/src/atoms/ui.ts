@@ -1,6 +1,4 @@
 import { type DeviceUiPrefs, DeviceUiPrefsSchema, SeenMessageIndexSchema } from '@unleashd/shared';
-import { atom } from 'jotai';
-import { atomFamily } from 'jotai-family';
 import { atomWithStorage } from 'jotai/utils';
 import type { SyncStorage } from 'jotai/vanilla/utils/atomWithStorage';
 import { jotaiStore } from './store';
@@ -8,7 +6,8 @@ import { jotaiStore } from './store';
 // =============================================================================
 // Device UI state — browser localStorage only, never synced to the server.
 //
-//   prefs ('unleashd-ui-local') — view state: active conversation, gallery
+//   prefs ('unleashd-ui-local') — view state: last conversation (restore only;
+//     the route owns the active id), gallery
 //     expansion, list toggles, view mode, last directory, promoted workers.
 //   seen ('unleashd-seen-message-index') — NEW badge: last viewed message
 //     index per conversation. Its own key because
@@ -21,9 +20,8 @@ import { jotaiStore } from './store';
 // sessionId, and the blob's debounced snapshot POST lost writes on refresh
 // and reconnect — hidden conversations kept reappearing (2026-09-23).
 //
-// Subscribe via the per-field derived atoms below (jotai skips notification
-// when the derived value is Object.is-equal). Mutate ONLY via the exported
-// action functions — jotaiStore.set lives inside atoms/ (gate G1).
+// Mutate ONLY via the exported action functions — jotaiStore.set lives inside
+// atoms/ (gate G1).
 // =============================================================================
 
 export const LOCAL_STORAGE_KEY = 'unleashd-ui-local';
@@ -46,15 +44,12 @@ const PREFS_DEFAULTS: DeviceUiPrefs = {
 //
 // draft:{conversationId}   — Written from uncontrolled textarea via refs in
 //                            Chat.tsx. Must bypass React render cycle.
-// pendingConversations     — Read/written inside actions.ts during
-//                            WebSocket init (non-React context).
 // pendingFiles:{conversationId} — Serialized array of files awaiting send
 //                            (images only, previewUrl omitted — object URL).
 // restartRecovery:{conversationId} — Last server queue mirror retained across
 //                            restart so interrupted work can be optionally replayed.
 // ---------------------------------------------------------------------------
 export const DRAFT_KEY_PREFIX = 'draft:';
-export const PENDING_CONVERSATIONS_KEY = 'pendingConversations';
 export const PENDING_FILES_KEY_PREFIX = 'pendingFiles:';
 
 // ---------------------------------------------------------------------------
@@ -110,34 +105,19 @@ const seenStorage = validatedStorage<Record<string, number>>((raw) => {
 
 // getOnInit — read synchronously at first get so App.tsx restore-on-load sees
 // the persisted activeConversationId on its initial render.
-const prefsAtom = atomWithStorage<DeviceUiPrefs>(LOCAL_STORAGE_KEY, PREFS_DEFAULTS, prefsStorage, {
-  getOnInit: true,
-});
-
-const seenAtom = atomWithStorage<Record<string, number>>(SEEN_STORAGE_KEY, {}, seenStorage, {
-  getOnInit: true,
-});
-
-// ---------------------------------------------------------------------------
-// Per-field read atoms — subscribe to these, never the slice atoms.
-// ---------------------------------------------------------------------------
-
-/** Persisted last-active conversation (device-local). Distinct from the
- *  ephemeral routing atom `activeConversationIdAtom` in conversations.ts —
- *  the "dual-active-id" design (this one survives reload). */
-export const savedActiveConversationIdAtom = atom((get) => get(prefsAtom).activeConversationId);
-export const galleryExpandedProjectsAtom = atom((get) => get(prefsAtom).galleryExpandedProjects);
-export const galleryCollapsedProjectsAtom = atom((get) => get(prefsAtom).galleryCollapsedProjects);
-export const showTempSessionsAtom = atom((get) => get(prefsAtom).showTempSessions);
-export const showDoneConversationsAtom = atom((get) => get(prefsAtom).showDoneConversations);
-export const showWorkerConversationsAtom = atom((get) => get(prefsAtom).showWorkerConversations);
-export const sidebarViewModeAtom = atom((get) => get(prefsAtom).sidebarViewMode);
-export const promotedWorkersAtom = atom((get) => get(prefsAtom).promotedWorkers);
-export const lastWorkingDirectoryAtom = atom((get) => get(prefsAtom).lastWorkingDirectory);
-/** One conversation's seen index, so a row re-renders only when ITS index moves. */
-export const lastSeenMessageIndexAtomFamily = atomFamily((conversationId: string) =>
-  atom((get): number | undefined => get(seenAtom)[conversationId])
+// Read with `useAtomValue(prefsAtom).field`: prefs change only on a user
+// action, so one atom replaces the nine per-field ones it had until T19.
+export const prefsAtom = atomWithStorage<DeviceUiPrefs>(
+  LOCAL_STORAGE_KEY,
+  PREFS_DEFAULTS,
+  prefsStorage,
+  { getOnInit: true }
 );
+
+/** Last seen message index per conversation; rows read it through `unreadFamily`. */
+export const seenAtom = atomWithStorage<Record<string, number>>(SEEN_STORAGE_KEY, {}, seenStorage, {
+  getOnInit: true,
+});
 
 // ---------------------------------------------------------------------------
 // Actions — the only mutation surface.
@@ -183,10 +163,6 @@ export function setShowWorkerConversations(show: boolean): void {
   setPrefs({ showWorkerConversations: show });
 }
 
-export function setSidebarViewMode(mode: 'grouped' | 'list'): void {
-  setPrefs({ sidebarViewMode: mode });
-}
-
 export function promoteWorker(conversationId: string): void {
   const promoted = jotaiStore.get(prefsAtom).promotedWorkers;
   if (!promoted.includes(conversationId)) {
@@ -194,28 +170,16 @@ export function promoteWorker(conversationId: string): void {
   }
 }
 
-/** Merge seen indexes; skips the localStorage write when nothing changes, which
- *  is the common case for the bulk path below (it runs on every poll). */
-function setSeen(updates: Record<string, number>): void {
-  const current = jotaiStore.get(seenAtom);
-  const changed = Object.entries(updates).filter(([id, index]) => current[id] !== index);
-  if (changed.length === 0) return;
-  jotaiStore.set(seenAtom, { ...current, ...Object.fromEntries(changed) });
-}
-
+// No bulk "mark seen" on row updates: it ran on every poller batch and hid
+// NEW for exactly the external updates the badge exists to show (03 §6.2 #9).
 export function markMessagesSeen(conversationId: string, messageIndex: number): void {
-  setSeen({ [conversationId]: messageIndex });
-}
-
-/** Bulk-seen after external JSONL edits — conservative: better to miss a badge
- *  than show a wrong one. */
-export function markConversationsSeenBulk(updates: Record<string, number>): void {
-  setSeen(updates);
+  const current = jotaiStore.get(seenAtom);
+  if (current[conversationId] === messageIndex) return;
+  jotaiStore.set(seenAtom, { ...current, [conversationId]: messageIndex });
 }
 
 /** Drop the seen-index entry for a deleted conversation. */
 export function removeSeenIndex(conversationId: string): void {
-  lastSeenMessageIndexAtomFamily.remove(conversationId);
   const current = jotaiStore.get(seenAtom);
   if (!(conversationId in current)) return;
   const { [conversationId]: _removed, ...rest } = current;
@@ -233,7 +197,3 @@ export function hasUnseenAfter(lastSeen: number | undefined, totalMessages: numb
   return lastSeen < totalMessages - 1;
 }
 
-/** Non-React read of the persisted active id (actions.ts, WS handlers). */
-export function getSavedActiveConversationId(): string | null {
-  return jotaiStore.get(prefsAtom).activeConversationId;
-}
