@@ -1,0 +1,22 @@
+[package]
+name = "unleashd-buddies-import"
+version = "0.1.0"
+edition = "2024"
+publish = false
+# One-time v33 → lean importer + verifier (the `buddies-import` CLI). Its own crate so editing it
+# never changes the addon crate's inputs: tools/ensure-addons.mjs hashes each addon crate's
+# sources, and the importer used to live in unleashd-buddies/src (S12, 2026-09-26).
+
+[[bin]]
+name = "buddies-import"
+path = "src/main.rs"
+
+[dependencies]
+# The pure core: no napi layer, so this links without Node.
+unleashd-buddies = { path = "../unleashd-buddies", default-features = false }
+rusqlite = { version = "0.32", features = ["bundled", "functions", "trace"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[dev-dependencies]
+tempfile = "3"

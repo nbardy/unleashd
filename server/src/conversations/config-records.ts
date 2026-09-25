@@ -97,7 +97,7 @@ function unimportedMessage(location: Extract<RecordsLocation, { t: 'unimported' 
   const root = location.appDataRoot;
   const copy = path.join(root, 'records-import');
   const tool =
-    'cargo run --release --manifest-path crates/Cargo.toml -p unleashd-ingest --no-default-features --features cli --bin records-tool --';
+    'cargo run --release --manifest-path crates/Cargo.toml -p unleashd-records-tool --';
   return [
     `Conversation records ${location.file} do not exist, but ${root}/conversation-config does.`,
     'Import them once, with the backend stopped (from the repo root):',

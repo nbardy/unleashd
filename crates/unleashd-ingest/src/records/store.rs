@@ -165,7 +165,8 @@ fn load(tx: &Connection, id: &str) -> Result<Option<ConversationRecord>> {
 
 /// The one write. Validates against the Zod refinements, upserts the row, and rebuilds the
 /// record's session index rows. `defaults` is non-empty only for an imported legacy file.
-pub(crate) fn put(tx: &Transaction<'_>, record: &ConversationRecord, defaults: &[Defaulted]) -> Result<()> {
+/// `pub` only for the one-time importer, which is its own crate (unleashd-records-tool, S12).
+pub fn put(tx: &Transaction<'_>, record: &ConversationRecord, defaults: &[Defaulted]) -> Result<()> {
     let issues = validate::record(record);
     if !issues.is_empty() {
         return Err(RecordsError::Invalid(record.conversation_id.clone(), issues));
@@ -254,7 +255,8 @@ impl Records {
         Ok(Records { conn: open_connection(path)? })
     }
 
-    pub(crate) fn connection(&mut self) -> &mut Connection {
+    /// The raw connection, for the one-time importer crate (unleashd-records-tool, S12) only.
+    pub fn connection(&mut self) -> &mut Connection {
         &mut self.conn
     }
 

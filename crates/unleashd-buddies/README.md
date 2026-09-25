@@ -16,8 +16,9 @@ pnpm run build          # release: buddies-core.node + index.d.ts (generated fro
 pnpm run build:debug    # debug build, faster to compile
 pnpm test               # cargo tests, then the release build, then the Node boundary test
 
-# importer / verifier CLI (built without the napi layer)
-cargo build --release --manifest-path ../Cargo.toml --no-default-features --features cli --bin buddies-import
+# importer / verifier CLI: its own crate (../unleashd-buddies-import), so editing it never
+# rebuilds this addon (S12). It depends on this crate without the napi layer.
+cargo build --release --manifest-path ../Cargo.toml -p unleashd-buddies-import
 ```
 
 `buddies-core.node` and `crates/target/` are build output and are not committed.
@@ -25,9 +26,7 @@ cargo build --release --manifest-path ../Cargo.toml --no-default-features --feat
 
 Cargo features:
 - `node` (the default) adds the napi bindings.
-- `cli` is needed for the `buddies-import` binary. Build it with `--no-default-features`, because
-  it must not link napi.
-- `cargo test` needs `--no-default-features` for the same reason.
+- `cargo test` needs `--no-default-features`: the pure core must link without Node.
 
 Node cannot unload an addon. A change to the Rust code therefore means a rebuild followed by a
 backend restart, the same loop as any server change.
@@ -180,7 +179,7 @@ node --test crates/unleashd-buddies/test/node.test.mjs               # after pnp
   - the request → answer → return loop, read cursors on a direct channel, and the failure notice;
   - epoch cancellation;
   - schedules and event pruning.
-- `tests/import.rs`:
+- `../unleashd-buddies-import/tests/import.rs`:
   - a v33 fixture (the real v33 schema, `tests/fixtures/v33-schema.sql`) is imported and
     verified;
   - it has inline replies, a same-channel thread, a cross-channel root, a note to self and an

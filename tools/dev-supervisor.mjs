@@ -50,17 +50,17 @@ function pnpm(...args) {
 export function taskPlan(task) {
   const buildShared = pnpm('--filter', '@unleashd/shared', 'build');
   const buildCli = pnpm('--dir', 'vendor/agent-cli-tool', 'build');
-  // The Buddies core addon (napi-rs; needs cargo). Dev builds it once by hand:
-  // `pnpm --dir crates/unleashd-buddies build` (crates/unleashd-buddies/README.md);
-  // after that the backend runner rebuilds a crate when one of its sources is saved.
-  const buildBuddiesCore = pnpm('--dir', 'crates/unleashd-buddies', 'build');
+  // Both napi addons, from the shared build cache when any worktree has built
+  // these exact sources (tools/ensure-addons.mjs; cargo runs only on a miss).
+  // After that the backend runner re-ensures a crate when one of its sources is saved.
+  const ensureAddons = { command: process.execPath, args: ['tools/ensure-addons.mjs'] };
   switch (task) {
     case 'build':
       return {
         steps: [
           buildShared,
           buildCli,
-          buildBuddiesCore,
+          ensureAddons,
           pnpm('--filter', '@unleashd/server', 'build'),
           pnpm('--filter', '@unleashd/client', 'build'),
         ],
@@ -80,13 +80,13 @@ export function taskPlan(task) {
         services: [],
       };
     case 'dev-server':
-      return { steps: [buildShared, buildCli], services: ['backend'] };
+      return { steps: [buildShared, buildCli, ensureAddons], services: ['backend'] };
     case 'dev-client':
       return { steps: [buildShared], services: ['vite'] };
-    // No build steps: the compilers' first pass is the build, and nothing else
-    // starts until it has finished.
+    // Only the addons: the compilers' first pass is the TS build, and nothing
+    // else starts until it has finished.
     case 'dev':
-      return { steps: [], services: ['compilers', 'backend', 'vite'] };
+      return { steps: [ensureAddons], services: ['compilers', 'backend', 'vite'] };
     default:
       throw new Error(
         `Unknown task "${task}"; expected dev, dev-server, dev-client, build or typecheck`

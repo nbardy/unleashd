@@ -119,7 +119,7 @@ record v2 only and stops on a v1 file, so T09's v1 → v2 rewrite runs on the co
 mkdir <copy> && cp -R ~/.agent-viewer/conversation-config <copy>/ \
   && ln -s ~/.agent-viewer/session-cache-v1 <copy>/session-cache-v1   # read only
 pnpm --dir server exec tsx src/conversations/record-migration.ts <copy>
-cargo build --release --no-default-features --features cli --bin records-tool
+cargo build --release --manifest-path crates/Cargo.toml -p unleashd-records-tool   # its own crate (S12)
 records-tool import <copy>/conversation-config/v1 new.sqlite   # → new.sqlite.import.json
 records-tool verify <copy>/conversation-config/v1 new.sqlite   # sha256 per record; must print ok=true
 records-tool bench new.sqlite 500          # list + CAS latency on a scratch copy

@@ -970,6 +970,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "unleashd-buddies-import"
+version = "0.1.0"
+dependencies = [
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "unleashd-buddies",
+]
+
+[[package]]
 name = "unleashd-ingest"
 version = "0.1.0"
 dependencies = [
@@ -986,10 +997,23 @@ dependencies = [
  "rusqlite",
  "serde",
  "serde_json",
- "sha2",
  "tempfile",
  "thiserror",
  "tokio",
+]
+
+[[package]]
+name = "unleashd-records-tool"
+version = "0.1.0"
+dependencies = [
+ "base64",
+ "rayon",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
+ "unleashd-ingest",
 ]
 
 [[package]]

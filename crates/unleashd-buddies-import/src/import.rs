@@ -9,16 +9,16 @@
 //! to the direct channel of {sender, recipient}, its inline reply becomes its own answer post, and
 //! owner-channel-reads.json (read-only, optional) becomes the owner's `post_read` cursors.
 
-use crate::error::{CoreError, Result};
-use crate::runs::next_run;
-use crate::schema;
-use crate::store::{now_iso, sha256_hex};
 use rusqlite::functions::FunctionFlags;
 use rusqlite::{Connection, OpenFlags, params};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::BTreeMap;
 use std::path::Path;
+use unleashd_buddies::error::{CoreError, Result};
+use unleashd_buddies::runs::next_run;
+use unleashd_buddies::schema;
+use unleashd_buddies::store::{now_iso, sha256_hex};
 
 pub const SOURCE_VERSION: i64 = 33;
 
@@ -83,8 +83,8 @@ pub const CURSOR_ORD: &str = "coalesce((SELECT p.ord FROM post p WHERE p.id = {p
 /// `ord_ceiling(time)`: the greatest ordered id of that millisecond (ids.rs).
 pub fn register_ord_ceiling(conn: &Connection) -> Result<()> {
     conn.create_scalar_function("ord_ceiling", 1, FunctionFlags::SQLITE_UTF8 | FunctionFlags::SQLITE_DETERMINISTIC, |ctx| {
-        let ms = crate::ids::millis(&ctx.get::<String>(0)?).map_err(|e| rusqlite::Error::UserFunctionError(Box::new(e)))?;
-        Ok(crate::ids::ceiling(ms).to_string())
+        let ms = unleashd_buddies::ids::millis(&ctx.get::<String>(0)?).map_err(|e| rusqlite::Error::UserFunctionError(Box::new(e)))?;
+        Ok(unleashd_buddies::ids::ceiling(ms).to_string())
     })?;
     Ok(())
 }
@@ -95,12 +95,12 @@ pub fn register_ord_ceiling(conn: &Connection) -> Result<()> {
 /// post written later sorts after it. v33 kept no cross-table sequence (an inline reply is only
 /// `replied_at`), so the source time is the only order the history has; ties keep import order.
 fn assign_post_ords(conn: &Connection) -> Result<()> {
-    let posts: Vec<(i64, String)> = crate::store::collect(
+    let posts: Vec<(i64, String)> = unleashd_buddies::store::collect(
         conn.prepare("SELECT rowid, created_at FROM post ORDER BY created_at, rowid")?.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?,
     )?;
     let mut update = conn.prepare("UPDATE post SET ord = ?2 WHERE rowid = ?1")?;
     for (rowid, at) in posts {
-        update.execute(params![rowid, crate::ids::next_at(crate::ids::millis(&at)?).to_string()])?;
+        update.execute(params![rowid, unleashd_buddies::ids::next_at(unleashd_buddies::ids::millis(&at)?).to_string()])?;
     }
     Ok(())
 }
@@ -231,7 +231,7 @@ pub const V33_SOUL_PATHS: &str =
 /// `sql` yields (buddy id, slug, soul_path, workspace root).
 pub fn soul_files(conn: &Connection, sql: &str) -> Result<Vec<SoulFile>> {
     let rows: Vec<(String, String, Option<String>, String)> =
-        crate::store::collect(conn.prepare(sql)?.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))?)?;
+        unleashd_buddies::store::collect(conn.prepare(sql)?.query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)))?)?;
     Ok(rows.into_iter().map(|(buddy_id, slug, soul_path, root)| SoulFile { buddy_id, slug, state: soul_state(soul_path, &root) }).collect())
 }
 
@@ -591,7 +591,7 @@ fn import_schedules(conn: &Connection, now: &str) -> Result<Vec<Value>> {
 }
 
 fn json_rows(conn: &Connection, sql: &str) -> Result<Vec<Value>> {
-    let texts: Vec<String> = crate::store::collect(conn.prepare(sql)?.query_map([], |r| r.get(0))?)?;
+    let texts: Vec<String> = unleashd_buddies::store::collect(conn.prepare(sql)?.query_map([], |r| r.get(0))?)?;
     texts.iter().map(|t| serde_json::from_str(t).map_err(Into::into)).collect()
 }
 
@@ -601,7 +601,7 @@ pub fn import(source: &Path, target: &Path, owner_reads: &Path, options: ImportO
     }
     let src = open_source(source)?;
     let soul_baseline = soul_files(&src, V33_SOUL_PATHS)?;
-    let lists: Vec<String> = crate::store::collect(src.prepare("SELECT id FROM buddy_lists")?.query_map([], |r| r.get(0))?)?;
+    let lists: Vec<String> = unleashd_buddies::store::collect(src.prepare("SELECT id FROM buddy_lists")?.query_map([], |r| r.get(0))?)?;
     drop(src);
     let owner_reads = load_owner_reads(owner_reads)?;
 
@@ -702,7 +702,7 @@ pub fn import(source: &Path, target: &Path, owner_reads: &Path, options: ImportO
         })?;
     conn.execute_batch("COMMIT")?;
     conn.execute_batch("DROP VIEW msg; DETACH DATABASE old; PRAGMA foreign_keys = ON")?;
-    let foreign_key_violations = crate::store::collect(conn.prepare("PRAGMA foreign_key_check")?.query_map([], |r| {
+    let foreign_key_violations = unleashd_buddies::store::collect(conn.prepare("PRAGMA foreign_key_check")?.query_map([], |r| {
         Ok(serde_json::json!({"table": r.get::<_, String>(0)?, "rowid": r.get::<_, Option<i64>>(1)?, "parent": r.get::<_, String>(2)?}))
     })?)?;
     Ok(ImportReport {

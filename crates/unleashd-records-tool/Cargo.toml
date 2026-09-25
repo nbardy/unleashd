@@ -1,0 +1,25 @@
+[package]
+name = "unleashd-records-tool"
+version = "0.1.0"
+edition = "2024"
+publish = false
+# One-time conversation-config JSON → records import, its verifier and the latency bench (the
+# `records-tool` CLI). Its own crate so editing it never changes the ingest addon's inputs
+# (tools/ensure-addons.mjs; S12, 2026-09-26).
+
+[[bin]]
+name = "records-tool"
+path = "src/main.rs"
+
+[dependencies]
+# The pure core: no napi layer, so this links without Node.
+unleashd-ingest = { path = "../unleashd-ingest", default-features = false }
+rusqlite = { version = "0.32", features = ["bundled"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = { version = "1", features = ["preserve_order"] }
+base64 = "0.22"
+rayon = "1"
+sha2 = "0.10"
+
+[dev-dependencies]
+tempfile = "3"

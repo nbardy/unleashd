@@ -7,8 +7,8 @@
 
 use std::path::{Path, PathBuf};
 use std::time::Instant;
-use unleashd_ingest::records::import::{import, verify};
 use unleashd_ingest::records::{Records, SetConfig, SetConfigOutcome};
+use unleashd_records_tool::{import, verify};
 
 fn write_report<T: serde::Serialize>(db: &Path, suffix: &str, report: &T) -> PathBuf {
     let path = PathBuf::from(format!("{}.{suffix}.json", db.display()));

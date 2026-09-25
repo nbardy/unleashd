@@ -21,10 +21,11 @@
 // backend kept serving the v32 post shape for hours.
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { readFileSync, realpathSync, watch } from 'node:fs';
+import { existsSync, readFileSync, realpathSync, watch } from 'node:fs';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { ensureAddonBuild } from './ensure-addons.mjs';
 
 export const RELOAD_MESSAGE = 'unleashd:dev-reload';
 const SETTLE_MS = 300;
@@ -76,41 +77,15 @@ export function esbuildCheck(entry, cwd) {
 // to rebuild its crate: the rewritten addon then reloads the backend through the
 // digest path below, and a build that changes nothing restarts nothing. Until
 // T14b (2026-09-26) every crate edit needed a hand-run `pnpm --dir crates/<c> build`.
+// The rebuild goes through tools/ensure-addons.mjs (S12): a save that returns a
+// crate to sources any worktree has built is a cache copy, not a cargo run. Only
+// addon crates (a napi package.json) are built; the import CLIs are plain Cargo
+// crates, and a save in one of them must never rebuild a shipped addon.
 const CRATE_SOURCE = /^crates\/([^/]+)\/(?:src\/.+\.rs|build\.rs|Cargo\.toml)$/;
 
 /** The crate a repository-relative path is a build input of, or null. */
 export function crateOfSource(relativePath) {
   return CRATE_SOURCE.exec(relativePath.split(path.sep).join('/'))?.[1] ?? null;
-}
-
-/** Builds one crate with its package script (napi-rs; writes the addon on success only). */
-export function pnpmCrateBuild(repositoryRoot) {
-  // Through the invoking pnpm when there is one: under nvm, pnpm may not be on PATH.
-  const pnpmScript = process.env.npm_execpath;
-  const [command, prefix] = pnpmScript?.includes('pnpm')
-    ? [process.execPath, [pnpmScript]]
-    : ['pnpm', []];
-  return (crate) =>
-    new Promise((resolve) => {
-      const dir = path.join(repositoryRoot, 'crates', crate);
-      const child = spawn(command, [...prefix, '--dir', dir, 'run', 'build'], {
-        stdio: ['ignore', 'pipe', 'pipe'],
-      });
-      let output = '';
-      const collect = (chunk) => {
-        output = (output + chunk).slice(-8000);
-      };
-      child.stdout.setEncoding('utf8').on('data', collect);
-      child.stderr.setEncoding('utf8').on('data', collect);
-      child.once('error', (error) => resolve({ ok: false, message: String(error) }));
-      child.once('exit', (code, signal) =>
-        resolve(
-          code === 0
-            ? { ok: true }
-            : { ok: false, message: `${describeExit(code, signal)}\n${output}` }
-        )
-      );
-    });
 }
 
 export function createBackendRunner({
@@ -284,7 +259,9 @@ export function createBackendRunner({
       const file = path.join(root, filename);
       if (loaded.has(file)) onFileEvent(file);
       const crate = crateOfSource(filename);
-      if (crate) onCrateSource(crate);
+      if (crate && existsSync(path.join(root, 'crates', crate, 'package.json'))) {
+        onCrateSource(crate);
+      }
     });
     spawnBackend();
   }
@@ -321,7 +298,7 @@ if (process.argv[1] === fileURLToPath(import.meta.url)) {
     env: { NODE_ENV: 'development' },
     watchRoot: repositoryRoot,
     check: esbuildCheck('src/server.ts', serverRoot),
-    buildCrate: pnpmCrateBuild(repositoryRoot),
+    buildCrate: ensureAddonBuild(repositoryRoot),
   });
   process.on('SIGINT', () => runner.stop('SIGINT'));
   process.on('SIGTERM', () => runner.stop('SIGTERM'));

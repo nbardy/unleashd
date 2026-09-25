@@ -7,17 +7,10 @@ publish = false
 [lib]
 crate-type = ["cdylib", "rlib"]
 
-[[bin]]
-name = "buddies-import"
-path = "src/bin/buddies-import.rs"
-# Build with --no-default-features --features cli: the binary must not link the napi layer.
-required-features = ["cli"]
-
 [features]
 default = ["node"]
 # The napi bindings. Off for `cargo test` of the pure core, which must link without Node.
 node = ["dep:napi", "dep:napi-derive", "dep:tokio"]
-cli = []
 
 [dependencies]
 rusqlite = { version = "0.32", features = ["bundled", "functions", "trace"] }

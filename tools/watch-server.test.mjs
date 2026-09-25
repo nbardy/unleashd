@@ -41,6 +41,9 @@ function fixture(t) {
   mkdirSync(path.join(root, 'crates', 'demo', 'src'), { recursive: true });
   writeFileSync(path.join(root, 'crates', 'demo', 'src', 'lib.rs'), '1\n');
   writeFileSync(path.join(root, 'crates', 'demo', 'addon.cjs'), 'module.exports = { value: 1 };\n');
+  // An addon crate is one with a napi package.json; `tool` is a plain Cargo crate (an import CLI).
+  writeFileSync(path.join(root, 'crates', 'demo', 'package.json'), '{}');
+  mkdirSync(path.join(root, 'crates', 'tool', 'src'), { recursive: true });
   const builds = [];
   writeFileSync(path.join(root, 'package.json'), '{}');
   writeFileSync(path.join(root, 'backend.cjs'), BACKEND);
@@ -170,6 +173,19 @@ test('saving a crate source rebuilds its addon, and the new addon reloads the ba
   writeFileSync(path.join(root, 'crates', 'demo', 'src', 'lib.rs'), '2\n');
   const [, second] = await until(() => boots().length === 2 && boots());
   assert.equal(second.addon, 2);
+  assert.deepEqual(builds, ['demo']);
+});
+
+test('saving a source of a non-addon crate builds nothing', async (t) => {
+  // S12, 2026-09-26: the import CLIs became their own crates so an importer edit
+  // never rebuilds a shipped addon; the watcher must not rebuild them either.
+  const { root, runner, boots, builds } = fixture(t);
+  runner.start();
+  await firstBoot(boots);
+  writeFileSync(path.join(root, 'crates', 'tool', 'src', 'main.rs'), '1\n');
+  writeFileSync(path.join(root, 'crates', 'demo', 'src', 'lib.rs'), '2\n');
+  await until(() => builds.length === 1);
+  await new Promise((resolve) => setTimeout(resolve, 300));
   assert.deepEqual(builds, ['demo']);
 });
 

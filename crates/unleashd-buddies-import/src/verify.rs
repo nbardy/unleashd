@@ -16,16 +16,16 @@
 //! - read cursors: `post_read` equals buddy_list_reads plus the owner's cursors from
 //!   owner-channel-reads.json, re-read now and required to be unchanged since the import.
 
-use crate::error::Result;
 use crate::import::{
     CURSOR_ORD, DIRECT_READ_CURSORS, DM_KEY, DirectReads, OwnerReads, SoulFile, SoulFileState, load_owner_reads, open_source, soul_files,
     uri,
 };
-use crate::store::{collect, sha256_hex};
 use rusqlite::{Connection, OpenFlags};
 use serde::Serialize;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
+use unleashd_buddies::error::Result;
+use unleashd_buddies::store::{collect, sha256_hex};
 
 /// Imported messages, as the direct-channel posts that answer nothing. `recipient` is the other
 /// member of the channel, or the author in a channel of one.
