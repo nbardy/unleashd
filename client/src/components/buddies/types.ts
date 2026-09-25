@@ -13,10 +13,11 @@ import type {
   Cursor,
   Post,
   PostPage,
-  ThreadStat,
   Run,
   Schedule,
   Task,
+  TaskCount,
+  ThreadStat,
   Workspace,
 } from '@unleashd/buddies-core';
 
@@ -31,6 +32,7 @@ export type {
   Doc,
   DocKind,
   DocRevision,
+  DocScope,
   Inbox,
   Post,
   PostPage,
@@ -40,6 +42,7 @@ export type {
   RunStatus,
   Schedule,
   Task,
+  TaskCount,
   TaskStatus,
   ThreadStat,
   Workspace,
@@ -55,8 +58,11 @@ export type EmployeeTab =
   | 'schedules'
   | 'settings';
 
-/** GET /api/buddies/overview: one entry per workspace, archived Buddies included. */
-export type WorkspaceRoster = Workspace & { buddies: Buddy[] };
+/**
+ * GET /api/buddies/overview: one entry per workspace, archived Buddies included. `taskCounts`
+ * names only Buddies with unfinished top-level tasks (the crate's `taskCounts`).
+ */
+export type WorkspaceRoster = Workspace & { buddies: Buddy[]; taskCounts: TaskCount[] };
 export type BuddyOverview = WorkspaceRoster[];
 
 /** GET /api/buddies/:buddyId */

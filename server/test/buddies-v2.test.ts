@@ -868,7 +868,7 @@ test('owner routes: a DM request is answered over HTTP, typed errors keep their 
   }
 });
 
-test('owner routes restore what the T11 client migration dropped: reply stats, the read cursor, reply permalinks, the Task filter and clearing a profile field', async () => {
+test('owner routes restore what the T11 client migration dropped: reply stats, the read cursor, reply permalinks, the Task filter, clearing a profile field and directory task counts', async () => {
   const w = await world();
   const { server, http } = await ownerHttp(w);
   const json = async <T>(method: string, path: string, body?: unknown) => {
@@ -941,6 +941,27 @@ test('owner routes restore what the T11 client migration dropped: reply stats, t
     });
     assert.equal(cleared.model, undefined);
     assert.equal(cleared.provider, 'codex');
+    // 8. Directory cards: the overview counts each Buddy's unfinished top-level tasks.
+    await w.core.upsertTask(OWNER, {
+      kind: 'update',
+      taskId: task.id,
+      baseRevision: task.revision,
+      changes: { status: 'blocked', blockedReason: 'waiting on design' },
+      key: 'launch-blocked',
+    });
+    await w.core.upsertTask(OWNER, {
+      kind: 'create',
+      ownerId: w.lead.id,
+      parentId: task.id,
+      title: 'A todo is not a task on the card',
+      doneCriteria: 'd',
+      key: 'launch-todo',
+    });
+    type Roster = { id: string; taskCounts: { buddyId: string; open: number; blocked: number }[] };
+    const overview = await json<Roster[]>('GET', '/api/buddies/overview');
+    assert.deepEqual(overview.find((ws) => ws.id === w.ws)?.taskCounts, [
+      { buddyId: w.lead.id, open: 1, blocked: 1 },
+    ]);
   } finally {
     server.close();
     await w.close();

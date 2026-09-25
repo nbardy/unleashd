@@ -25,6 +25,7 @@ export function rosterFixture(
     rootPath: '/tmp/unleashd',
     createdAt: '2026-09-01T00:00:00.000Z',
     buddies,
+    taskCounts: [],
     ...overrides,
   };
 }

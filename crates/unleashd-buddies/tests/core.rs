@@ -673,3 +673,43 @@ fn a_profile_setting_can_be_cleared_back_to_the_default() {
     let replay = change(BuddyChanges { model: set("m2"), ..Default::default() }, "clear");
     assert!(s.update_buddy(&Actor::Owner, replay).is_err(), "a reused key with another change is refused, not replayed");
 }
+
+/// T22: directory cards show "N open · M blocked". Finished tasks and todos (child tasks) must not
+/// count, and blocked is a subset of open.
+#[test]
+fn task_counts_are_unfinished_top_level_tasks_per_buddy() {
+    let mut f = fixture();
+    let s = &mut f.store;
+    let mut make = |owner: &str, parent: Option<String>, status: TaskStatus, key: &str| {
+        let task = s
+            .upsert_task(
+                &Actor::Owner,
+                TaskWrite::Create {
+                    owner_id: owner.into(),
+                    parent_id: parent,
+                    title: "t".into(),
+                    done_criteria: "d".into(),
+                    key: key.into(),
+                },
+            )
+            .unwrap();
+        let blocked_reason = (status == TaskStatus::Blocked).then(|| "waiting".to_string());
+        let changes = TaskChanges { status: Some(status), blocked_reason, ..Default::default() };
+        let update = TaskWrite::Update { task_id: task.id.clone(), base_revision: 1, key: format!("{key}-s"), changes };
+        s.upsert_task(&Actor::Owner, update).unwrap().id
+    };
+    let parent = make("ic", None, TaskStatus::InProgress, "a");
+    make("ic", None, TaskStatus::Blocked, "b");
+    make("ic", None, TaskStatus::Review, "c");
+    make("ic", None, TaskStatus::Done, "d");
+    make("ic", None, TaskStatus::Cancelled, "e");
+    make("ic", Some(parent), TaskStatus::Blocked, "f");
+    make("peer", None, TaskStatus::Open, "g");
+    let mut counts = s.task_counts(WS).unwrap();
+    counts.sort_by(|a, b| a.buddy_id.cmp(&b.buddy_id));
+    assert_eq!(
+        counts,
+        vec![TaskCount { buddy_id: "ic".into(), open: 3, blocked: 1 }, TaskCount { buddy_id: "peer".into(), open: 1, blocked: 0 },]
+    );
+    assert!(s.task_counts("ws_other").unwrap().is_empty());
+}

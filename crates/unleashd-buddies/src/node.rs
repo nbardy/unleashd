@@ -147,6 +147,11 @@ impl BuddiesCore {
     }
 
     #[napi]
+    pub async fn task_counts(&self, workspace_id: String) -> napi::Result<Vec<TaskCount>> {
+        call(&self.store, move |s| s.task_counts(&workspace_id)).await
+    }
+
+    #[napi]
     pub async fn enqueue_run(&self, actor: Actor, input: EnqueueInput) -> napi::Result<Run> {
         call(&self.store, move |s| s.enqueue_run(&actor, input)).await
     }

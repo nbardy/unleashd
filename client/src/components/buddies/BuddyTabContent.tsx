@@ -40,7 +40,14 @@ const TABS: { [K in EmployeeTab]: (page: BuddyPageModel) => ReactElement } = {
       <BuddyConversationList buddyId={page.detail.buddy.id} />
     </section>
   ),
-  work: (page) => <BuddyWork tasks={page.detail.tasks} names={buddyNamesOf(page.overview)} />,
+  work: (page) => (
+    <BuddyWork
+      buddyId={page.detail.buddy.id}
+      tasks={page.detail.tasks}
+      names={buddyNamesOf(page.overview)}
+      refresh={page.refresh}
+    />
+  ),
   mailbox: (page) => (
     <BuddyMessages
       buddyId={page.detail.buddy.id}
@@ -55,7 +62,9 @@ const TABS: { [K in EmployeeTab]: (page: BuddyPageModel) => ReactElement } = {
       refresh={page.refresh}
     />
   ),
-  memory: (page) => <BuddyMemory buddyId={page.detail.buddy.id} />,
+  memory: (page) => (
+    <BuddyMemory buddyId={page.detail.buddy.id} workspaceId={page.detail.buddy.workspaceId} />
+  ),
   schedules: (page) => (
     <BuddySchedules
       buddyId={page.detail.buddy.id}

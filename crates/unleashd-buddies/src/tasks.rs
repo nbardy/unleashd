@@ -65,6 +65,20 @@ impl Store {
         let sql = format!("SELECT {TASK_COLS} FROM task WHERE {filter}");
         collect(self.conn.prepare_cached(&sql)?.query_map([arg], task_row)?)
     }
+
+    /// Each Buddy's unfinished top-level tasks in a workspace, and how many of them are blocked:
+    /// the directory card's "3 open · 1 blocked". A Buddy with none is absent. The filter repeats
+    /// `task_live`'s WHERE term for term, which is what lets SQLite use that partial index.
+    pub fn task_counts(&self, workspace_id: &str) -> Result<Vec<TaskCount>> {
+        let sql = "SELECT owner_id, count(*), sum(status = 'blocked') FROM task
+             WHERE workspace_id = ?1 AND parent_id IS NULL AND status IN ('open','in_progress','blocked','review')
+             GROUP BY owner_id";
+        collect(
+            self.conn
+                .prepare_cached(sql)?
+                .query_map([workspace_id], |r| Ok(TaskCount { buddy_id: r.get(0)?, open: r.get(1)?, blocked: r.get(2)? }))?,
+        )
+    }
 }
 
 fn create(
