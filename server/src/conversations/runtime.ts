@@ -584,6 +584,8 @@ export interface ConversationRuntime extends EventEmitter, ConversationRuntimeVi
   clearQueue(): void;
   processQueue(): void;
   hasActiveProcess(): boolean;
+  /** A Buddy chat turn is lined up behind its Buddy's run limit, not yet started. */
+  waitingForRunSlot(): boolean;
   waitForTurnDrain(): Promise<void>;
   hasStartedSession(): boolean;
   applyConfigState(state: ConversationConfigState): void;
@@ -3298,6 +3300,10 @@ export function createConversationRuntime(
 
     hasActiveProcess(): boolean {
       return this.process !== null;
+    }
+
+    waitingForRunSlot(): boolean {
+      return this._chatRunTicket !== null && this.process === null;
     }
 
     async waitForTurnDrain(): Promise<void> {

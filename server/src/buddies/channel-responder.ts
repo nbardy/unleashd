@@ -89,6 +89,10 @@ export type ChannelResponse = {
   threadRootId: string;
   buddyId: string;
   startedAt: string;
+  // 'queued': the reply turn waits for a free slot under its Buddy's run limit
+  // (default 5, shared with background work). Without it a waiting reply read
+  // as "replying…" for as long as the Buddy stayed full.
+  state: 'replying' | 'queued';
 };
 
 export interface ChannelResponderPorts {
@@ -404,7 +408,7 @@ export function createChannelResponder(ports: ChannelResponderPorts) {
   // One queue per (thread, Buddy): its replies run one at a time, in order,
   // each opening the seat, waiting for it to idle, then taking the turn. An
   // entry lives while replies are queued; it is what "X is replying…" reads.
-  const queues = new Map<string, ChannelResponse & { tail: Promise<void> }>();
+  const queues = new Map<string, Omit<ChannelResponse, 'state'> & { tail: Promise<void> }>();
   // Pairs with a gate question out, so a burst of posts asks each Buddy once.
   const gating = new Set<string>();
   const pairKey = (threadRootId: string, buddyId: string) => `${threadRootId}:${buddyId}`;
@@ -415,6 +419,28 @@ export function createChannelResponder(ports: ChannelResponderPorts) {
   // asked about, and the Buddy's own reply (its author is never asked) did not
   // raise it again, so the owner's message went unanswered.
   const deferred = new Map<string, FollowUp>();
+  // Pairs whose reply turn is lined up behind the Buddy's run limit.
+  const queuedForSlot = new Set<string>();
+
+  // Mark the pair queued until its turn actually starts (or ends without one).
+  function trackRunSlot(
+    key: string,
+    listId: string,
+    conversation: ConversationRuntime
+  ): () => void {
+    const started = () => {
+      if (queuedForSlot.delete(key)) ports.channelChanged(listId);
+    };
+    if (conversation.waitingForRunSlot()) {
+      queuedForSlot.add(key);
+      ports.channelChanged(listId);
+    }
+    conversation.once('buddy-turn-started', started);
+    return () => {
+      conversation.off('buddy-turn-started', started);
+      started();
+    };
+  }
   // Pair -> when its latest reply turn read the thread. A deferred post created
   // before then was already in that turn's context and needs no second look.
   const contextReadAt = new Map<string, string>();
@@ -544,12 +570,19 @@ export function createChannelResponder(ports: ChannelResponderPorts) {
       contextReadAt.set(pairKey(input.threadRootId, input.buddyId), new Date().toISOString());
       const context = launchContext(store, input, conversation.id);
       const prompt = buildPrompt({ ...input, context, store });
+      let untrack: () => void = () => undefined;
       const text = await awaitTurn(
         conversation,
-        () =>
-          conversation.sendMessage(prompt, { origin: 'owner_input', inputId: input.trigger.id }),
+        () => {
+          conversation.sendMessage(prompt, { origin: 'owner_input', inputId: input.trigger.id });
+          untrack = trackRunSlot(
+            pairKey(input.threadRootId, input.buddyId),
+            input.list.id,
+            conversation
+          );
+        },
         'Buddy turn failed'
-      );
+      ).finally(() => untrack());
       seenThrough.set(conversation.id, input.trigger.id);
       outcome = { kind: 'answered', text };
     } catch (error) {
@@ -762,9 +795,12 @@ export function createChannelResponder(ports: ChannelResponderPorts) {
 
     /** Buddies currently composing a reply in this list, for "X is replying…". */
     responding(listId: string): ChannelResponse[] {
-      return [...queues.values()]
-        .filter((entry) => entry.listId === listId)
-        .map(({ tail: _tail, ...response }) => response);
+      return [...queues.entries()]
+        .filter(([, entry]) => entry.listId === listId)
+        .map(([key, { tail: _tail, ...response }]) => ({
+          ...response,
+          state: queuedForSlot.has(key) ? 'queued' : 'replying',
+        }));
     },
   };
 }

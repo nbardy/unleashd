@@ -500,3 +500,84 @@ for (const placement of ['default', 'background'] as const) {
 
 test('chat-launched work wakes its separate background return thread', () =>
   backgroundWorkReturns('default', true));
+
+// Owner direction 2026-09-24 (#bugfixes): one pool of 5 per Buddy, shared by
+// Slack/channel replies and background work. Before 4ae9385 channel replies
+// were uncapped across threads and background work had its own limit of 2.
+test('six channel threads share one pool of five with background work, in arrival order', () => {
+  const root = mkdtempSync(join(tmpdir(), 'buddy-shared-pool-'));
+  const raw = new BuddiesStore(join(root, 'buddies.sqlite'));
+  const store = coordinationStore(raw as unknown as BuddiesStorePort);
+  const admission = chatRunAdmission(
+    () => store,
+    () => []
+  );
+  const context = (buddyId: string, workspaceId: string): BuddyContext => ({
+    buddyId,
+    workspaceId,
+    buddyProjectId: null,
+    legacyWorkItemId: null,
+    automationRunId: null,
+    delegatedByBuddyId: null,
+    parentBuddyConversationId: null,
+  });
+  try {
+    const workspace = raw.createWorkspace({ name: 'Pool', rootPath: '/tmp/buddy-pool' });
+    const buddy = raw.createBuddy({ project: workspace.id, name: 'Lead', role: 'Deliver' });
+    // No explicit limit: the default is the owner's 5.
+    store.setCoordinationMembership(buddy.id, workspace.id, { background_enabled: true });
+    const ctx = context(buddy.id, workspace.id);
+    const threads = Array.from({ length: 6 }, (_, i) => `channel-thread-${i}`);
+    const tickets = threads.map((id) => admission.enqueueBuddyChatRun(ctx, id).id);
+    const start = (i: number) => admission.startBuddyChatRun(tickets[i]!, threads[i]!, 60_000);
+
+    const first = threads.slice(0, 5).map((_, i) => start(i));
+    assert.deepEqual(
+      first.map((a) => a.kind),
+      ['admitted', 'admitted', 'admitted', 'admitted', 'admitted']
+    );
+    assert.equal(start(5).kind, 'waiting', 'the sixth reply waits instead of failing');
+
+    // Background work queued now stands behind the waiting reply.
+    const background = store.enqueueBuddyRun({
+      inputKey: 'schedule:pool',
+      inputKind: 'schedule',
+      inputId: 'pool',
+      buddyId: buddy.id,
+      workspaceId: workspace.id,
+      conversationId: 'background-thread',
+      policy: { allowed_operations: [] },
+    });
+    const claimBackground = () => {
+      try {
+        return store.claimBuddyRun(background.id, {
+          claimToken: 'bg',
+          conversationId: 'background-thread',
+          maxRuntimeSeconds: 600,
+        });
+      } catch {
+        return null;
+      }
+    };
+    assert.equal(claimBackground(), null, 'channel replies hold the slots background work needs');
+
+    const finish = (admitted: (typeof first)[number]) => {
+      assert.equal(admitted.kind, 'admitted');
+      if (admitted.kind !== 'admitted') return;
+      store.finishBuddyRun(admitted.run.id, {
+        claimToken: admitted.run.claim_token,
+        status: 'complete',
+      });
+    };
+    finish(first[0]!);
+    assert.equal(claimBackground(), null, 'the freed slot belongs to the earlier-waiting reply');
+    const sixth = start(5);
+    assert.equal(sixth.kind, 'admitted', 'the waiting reply starts once a slot frees');
+
+    finish(first[1]!);
+    assert.ok(claimBackground(), 'background work takes the next freed slot');
+  } finally {
+    raw.close();
+    rmSync(root, { recursive: true, force: true });
+  }
+});

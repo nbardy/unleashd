@@ -120,7 +120,14 @@ export type ChannelMember = {
   execution: BuddyMemberExecution;
 };
 
-export type ChannelResponse = { threadRootId: string; buddyId: string };
+// 'queued': the reply waits for a free slot under the Buddy's run limit
+// (server channel-responder.ts). Optional on the wire: a backend that has not
+// reloaded yet sends rows without it, and those are all replying.
+export type ChannelResponse = {
+  threadRootId: string;
+  buddyId: string;
+  state?: 'replying' | 'queued';
+};
 
 // =============================================================================
 // Transcript rows: D = Day ⊕ Lead ⊕ Continuation.
@@ -361,15 +368,40 @@ export function useWorkspaceDirectory(workspaceId: string): WorkspaceDirectory {
   }, [activity.data, tasks]);
 }
 
-/** Buddies composing a reply, by thread root. */
-export function useChannelResponding(listId: string): ReadonlyMap<string, readonly string[]> {
+/**
+ * "Ada is replying…", "Ada is queued at the run limit…", or both, per thread root.
+ * A root nobody is answering has no entry.
+ */
+export function respondingText(
+  rows: readonly ChannelResponse[],
+  buddyNames: Readonly<Record<string, string>>
+): ReadonlyMap<string, string> {
+  const byRoot = new Map<string, { replying: string[]; queued: string[] }>();
+  for (const row of rows) {
+    const entry = byRoot.get(row.threadRootId) ?? { replying: [], queued: [] };
+    entry[row.state ?? 'replying'].push(buddyNames[row.buddyId] ?? row.buddyId);
+    byRoot.set(row.threadRootId, entry);
+  }
+  const phrase = (names: string[], verb: string) =>
+    names.length === 0 ? [] : [`${joinNames(names)} ${names.length === 1 ? 'is' : 'are'} ${verb}`];
+  return new Map(
+    [...byRoot].map(([root, { replying, queued }]) => [
+      root,
+      [...phrase(replying, 'replying…'), ...phrase(queued, 'queued at the run limit…')].join(' · '),
+    ])
+  );
+}
+
+/** Who is composing a reply, as display text by thread root. */
+export function useChannelResponding(
+  listId: string,
+  buddyNames: Readonly<Record<string, string>>
+): ReadonlyMap<string, string> {
   const responding = usePolledFetch<ChannelResponse[]>(respondingUrl(listId), CHANNEL_BACKSTOP_MS);
-  return useMemo(() => {
-    const map = new Map<string, string[]>();
-    for (const row of responding.data ?? [])
-      map.set(row.threadRootId, [...(map.get(row.threadRootId) ?? []), row.buddyId]);
-    return map;
-  }, [responding.data]);
+  return useMemo(
+    () => respondingText(responding.data ?? [], buddyNames),
+    [responding.data, buddyNames]
+  );
 }
 
 // Pin to the newest message on open, and keep following new posts only while
