@@ -113,6 +113,7 @@ fn import_then_verify_then_catch_tampering() {
 
     let ok = verify(&old, &new, &report.soul_files, &report.owner_reads, &report.direct_reads).unwrap();
     assert!(ok.ok, "{}", serde_json::to_string_pretty(&ok).unwrap());
+    assert!(ok.ordering.ok && ok.ordering.mismatches.is_empty());
     assert_eq!(ok.soul.split.get("match"), Some(&1));
     assert_eq!(ok.soul.split.get("no_path_empty"), Some(&2));
 
@@ -172,6 +173,8 @@ fn import_then_verify_then_catch_tampering() {
     conn.execute("UPDATE post SET body = 'built!' WHERE id = 'reply_m1'", []).unwrap();
     conn.execute("UPDATE post SET root_id = NULL WHERE id = 'm3'", []).unwrap();
     conn.execute("UPDATE doc_revision SET content = 'use postgres' WHERE doc_id = 'k2'", []).unwrap();
+    // An ordered id that is not a UUIDv7 (it would sort after every real post).
+    conn.execute("UPDATE post SET ord = 'x' || ord WHERE id = 'm1'", []).unwrap();
     conn.execute("DELETE FROM post_read WHERE reader = 'b1' AND json_extract(legacy, '$.source') = 'import:direct-read'", []).unwrap();
     drop(conn);
     std::fs::write(dir.path().join("lead/SOUL.md"), "rewritten").unwrap();
@@ -185,6 +188,7 @@ fn import_then_verify_then_catch_tampering() {
     assert!(!bad.read_cursors.ok, "owner-channel-reads.json changed since the import");
     assert!(bad.read_cursors.mismatches.iter().any(|m| m.contains("b1/")), "a lost direct cursor: {:?}", bad.read_cursors.mismatches);
     assert!(!bad.revision_chains.ok && !bad.soul.ok);
+    assert!(!bad.ordering.ok, "an ordered id that is not a UUIDv7 is caught");
     assert_eq!(bad.soul.files_changed, ["lead"]);
 }
 

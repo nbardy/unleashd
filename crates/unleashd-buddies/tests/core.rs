@@ -530,6 +530,8 @@ fn post_search_finds_words_only_in_channels_the_reader_may_read() {
 
 #[test]
 fn posts_read_back_in_write_order_within_a_millisecond() {
+    // Posts order by their ordered id (UUIDv7 from one monotonic generator), never by timestamp
+    // ties. With random ids, 29 of 50 such threads came back shuffled (2026-09-25).
     let mut f = fixture();
     let s = &mut f.store;
     let general = s
@@ -540,11 +542,13 @@ fn posts_read_back_in_write_order_within_a_millisecond() {
         .unwrap();
     let to = || ChannelRef::Id { id: general.id.clone() };
     let say = |body: &str, reply: Option<String>| PostInput { kind: PostKind::Inform, reply_to_id: reply, ..request(body, body) };
+    let mut same_millisecond = 0;
     for round in 0..20 {
         let root = s.post(&Actor::Owner, to(), say(&format!("root {round}"), None)).unwrap();
         // Written back to back: most land in the same millisecond.
-        let written: Vec<String> =
-            (0..4).map(|i| s.post(&buddy("ic"), to(), say(&format!("r{round}-{i}"), Some(root.id.clone()))).unwrap().id).collect();
+        let written: Vec<Post> =
+            (0..4).map(|i| s.post(&buddy("ic"), to(), say(&format!("r{round}-{i}"), Some(root.id.clone()))).unwrap()).collect();
+        same_millisecond += written.windows(2).filter(|w| w[0].created_at == w[1].created_at).count();
         let mut read: Vec<String> = s
             .list_posts(&Actor::Owner, PostQuery::Thread { root_id: root.id.clone() }, None, 10)
             .unwrap()
@@ -553,6 +557,21 @@ fn posts_read_back_in_write_order_within_a_millisecond() {
             .map(|p| p.id)
             .collect();
         read.reverse();
-        assert_eq!(read, written, "round {round}: a thread reads back in the order it was written");
+        assert_eq!(read, written.iter().map(|p| p.id.clone()).collect::<Vec<_>>(), "round {round}: a thread reads in write order");
     }
+    // Non-vacuous, and no timestamp adjustment: posts really did share a millisecond.
+    assert!(same_millisecond > 0, "the workload never wrote two posts in one millisecond");
+}
+
+#[test]
+fn ordered_ids_are_strictly_increasing_even_within_one_millisecond() {
+    use unleashd_buddies::ids;
+    // 5,000 ids at one frozen millisecond overflow the 12-bit counter (4,096) at least once.
+    let ms = 1_800_000_000_000;
+    let issued: Vec<String> = (0..5_000).map(|_| ids::next_at(ms).to_string()).collect();
+    assert!(issued.windows(2).all(|w| w[0] < w[1]), "strictly increasing as strings (the order SQLite compares)");
+    assert!(issued[0] <= ids::ceiling(ms).to_string(), "the ceiling closes its millisecond");
+    // A clock that steps back never issues a smaller id.
+    let after_step_back = ids::next_at(ms - 60_000).to_string();
+    assert!(after_step_back > *issued.last().unwrap());
 }

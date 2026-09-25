@@ -305,7 +305,7 @@ const BUDDY_TOOLS = {
         z.object({ threadId: z.string().min(1) }),
         z.object({ search: z.string().min(1).max(200).describe('Words that must all appear') }),
       ]),
-      before: z.object({ createdAt: z.string(), id: z.string() }).optional(),
+      before: z.object({ ord: z.string() }).optional().describe('next from the previous page'),
       limit: z.number().int().min(1).max(100).default(30),
     }),
     async handler(deps, grant, input) {

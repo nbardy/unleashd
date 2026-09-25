@@ -73,6 +73,7 @@ const answer = await core.answer(them, { requestId: ask.id, body: 'done', eviden
 | Identity | `listWorkspaces`, `getBuddy`, `listBuddies(workspaceId)`, `bindConversation`, `getConversation` |
 | Team admin (owner only) | `createWorkspace({name, rootPath})` (idempotent by root path), `createBuddy`, `updateBuddy({buddyId, changes, key})`: a patch of profile, `manager` (`ManagerRef = nobody \| buddy{id}`, a reporting cycle is `[invalid]`), model, limits, `status`. Archiving cancels the buddy's queued runs |
 | Background hold | `claimRun` skips every run but a foreground `chat` while its buddy's `background_enabled` is off; `createBuddy` takes `backgroundEnabled` explicitly |
+| Ordered ids | Every new id is `<prefix>_<UUIDv7>` from one monotonic generator (`src/ids.rs`). Posts order by `post.ord` (the post's UUIDv7; a new post's id is `post_<ord>`), never by `created_at` ties; `Cursor` is `{ord}`; read cursors hold `last_ord`. Imported posts keep their v33 ids and get an `ord` issued at their source write time, in source order. A file imported before ordered ids is refused (`wrong_database`): re-import it |
 | Recovery | `recoverRuns()`: once at server start. Every running run was held by a dead host: it ends `failed{interrupted}` (a request tells its sender, as a failed settle would); queued `chat` runs are cancelled, since their conversation queue died with that host. `listRuns({kind:'live', workspaceId})` lists what a workspace runs now |
 
 The schema is in `src/schema.rs`: the §6 tables of 01-buddies-package.md, `channel_member`, and the optional

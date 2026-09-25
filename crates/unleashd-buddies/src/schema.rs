@@ -10,9 +10,15 @@
 //!   one channel per set: `member_key` is the sorted member keys joined by ',', and
 //!   `channel_member` indexes it by member) or `task` (one per task). A reply is its own post
 //!   (`reply_to_id`, same thread); a request carries `request` and, once answered, `answer_id`;
-//! - `post_read` covers every channel kind. `reader` is `'owner'` or a buddy id and the cursor is a
-//!   keyset position (`last_post_at`, `last_post_id`); owner cursors replace owner-channel-reads.json,
-//!   whose baseline imports as (baselineAt, '') = "read through that instant";
+//! - `post.ord` is the post's ordered id: a time-ordered UUIDv7 from the crate's one monotonic
+//!   generator (ids.rs). Threads, pages and read cursors order by it, never by `created_at` ties.
+//!   A new post's id is `post_<ord>`; an imported post keeps its v33 id (runs, conversation links
+//!   and client permalinks name it) and gets an `ord` issued at its source write time, in source
+//!   order, so all history reads in true write order and every later post sorts after it;
+//! - `post_read` covers every channel kind. `reader` is `'owner'` or a buddy id; the cursor is
+//!   `last_ord` (with `last_post_id`/`last_post_at` for the record). Owner cursors replace
+//!   owner-channel-reads.json, whose baseline imports as the ceiling id of baselineAt ("read
+//!   through that instant", post id '');
 //! - `schedule.name`, `schedule.created_at`;
 //! - the optional 12th table `conversation` (§6): 976 conversation↔buddy bindings, 213 of them
 //!   with no run, would otherwise be lost.
@@ -76,15 +82,17 @@ CREATE TABLE post (
   request TEXT CHECK(request IN ('awaiting','answered','cancelled','failed')),
   answer_id TEXT REFERENCES post(id),
   conversation_id TEXT, return_conversation_id TEXT, created_at TEXT NOT NULL, legacy TEXT,
+  ord TEXT NOT NULL UNIQUE,
   CHECK((request IS 'answered') = (answer_id IS NOT NULL))) STRICT;
-CREATE INDEX post_channel ON post(channel_id, created_at, id);
-CREATE INDEX post_root ON post(root_id, created_at, id) WHERE root_id IS NOT NULL;
+CREATE INDEX post_channel ON post(channel_id, ord);
+CREATE INDEX post_root ON post(root_id, ord) WHERE root_id IS NOT NULL;
 CREATE INDEX post_awaiting ON post(channel_id, created_at) WHERE request = 'awaiting';
 CREATE INDEX post_awaiting_author ON post(author_id, created_at) WHERE request = 'awaiting';
 
 CREATE TABLE post_read (
   reader TEXT NOT NULL, channel_id TEXT NOT NULL REFERENCES channel(id),
-  last_post_id TEXT NOT NULL, last_post_at TEXT NOT NULL, updated_at TEXT NOT NULL, legacy TEXT,
+  last_post_id TEXT NOT NULL, last_post_at TEXT NOT NULL, last_ord TEXT NOT NULL,
+  updated_at TEXT NOT NULL, legacy TEXT,
   PRIMARY KEY(reader, channel_id)) STRICT;
 
 CREATE TABLE doc (
@@ -121,7 +129,7 @@ CREATE TABLE run (
 CREATE UNIQUE INDEX run_live_input ON run(input_key) WHERE status IN ('queued','running','cancel_requested');
 CREATE UNIQUE INDEX run_conversation_slot ON run(conversation_id)
   WHERE conversation_id IS NOT NULL AND status IN ('running','cancel_requested');
-CREATE INDEX run_queue ON run(ready_at, created_at) WHERE status = 'queued';
+CREATE INDEX run_queue ON run(ready_at, id) WHERE status = 'queued';
 CREATE INDEX run_lease ON run(lease_expires_at) WHERE status IN ('running','cancel_requested');
 CREATE INDEX run_buddy ON run(buddy_id, status, created_at);
 CREATE INDEX run_conversation ON run(conversation_id, created_at) WHERE conversation_id IS NOT NULL;
@@ -165,6 +173,16 @@ const POST_REFERENCE_INDEXES: &str = "
 CREATE INDEX IF NOT EXISTS post_reply_to ON post(reply_to_id) WHERE reply_to_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS post_answer ON post(answer_id) WHERE answer_id IS NOT NULL;";
 
+/// A file imported before ordered ids has no `post.ord`: it cannot be ordered correctly, so it is
+/// refused with the fix (re-import), never opened half-working. No live file predates it (T15).
+fn require_ordered_ids(conn: &Connection, path: &str) -> Result<()> {
+    let has_ord: bool = conn.query_row("SELECT EXISTS(SELECT 1 FROM pragma_table_info('post') WHERE name = 'ord')", [], |r| r.get(0))?;
+    match has_ord {
+        true => Ok(()),
+        false => Err(CoreError::WrongDatabase(format!("{path}: imported before ordered ids (no post.ord); re-import it"))),
+    }
+}
+
 fn ensure_post_search(conn: &Connection) -> Result<()> {
     conn.execute_batch(POST_REFERENCE_INDEXES)?;
     let present: bool = conn.query_row("SELECT EXISTS(SELECT 1 FROM sqlite_schema WHERE name = 'post_search')", [], |r| r.get(0))?;
@@ -187,6 +205,7 @@ pub fn open(path: &str) -> Result<Connection> {
     let tables: i64 = conn.query_row("SELECT count(*) FROM sqlite_schema WHERE type = 'table'", [], |r| r.get(0))?;
     match (app_id == APPLICATION_ID, tables) {
         (true, _) => {
+            require_ordered_ids(&conn, path)?;
             ensure_post_search(&conn)?;
             Ok(conn)
         }

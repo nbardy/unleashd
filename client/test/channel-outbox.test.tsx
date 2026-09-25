@@ -4,7 +4,7 @@ import { Provider } from 'jotai';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { outboxDrop, outboxSending, outboxSent } from '../src/atoms/channel-outbox';
 import { jotaiStore } from '../src/atoms/store';
-import { useWithOutbox } from '../src/components/buddies/channel-data';
+import { channelRows, useWithOutbox } from '../src/components/buddies/channel-data';
 import type { Post } from '../src/components/buddies/types';
 import { postFixture } from './fixtures/channel-posts';
 
@@ -61,4 +61,17 @@ test('an owner post shows from Send until the server feed carries it, exactly on
 
   outboxDrop(new Set(['k1']));
   assert.equal(render(null, []), '');
+});
+
+// Posts written in one millisecond share createdAt; sorting by it read them back shuffled
+// (2026-09-25). The transcript orders by the server's time-ordered id instead.
+test('a channel transcript orders same-millisecond posts by their ordered id', () => {
+  const at = '2026-09-25T10:00:00.000Z';
+  const newestFirst = ['0199-c', '0199-b', '0199-a'].map((ord) =>
+    postFixture({ id: `post_${ord}`, createdAt: at, ord })
+  );
+  const order = channelRows(newestFirst).flatMap((row) =>
+    row.kind === 'day' ? [] : [row.post.ord]
+  );
+  assert.deepEqual(order, ['0199-a', '0199-b', '0199-c']);
 });

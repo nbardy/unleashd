@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
-import type { Actor, Buddy, Channel, Post } from '@unleashd/buddies-core';
+import type { Actor, Buddy, Channel, Cursor, Post } from '@unleashd/buddies-core';
 import type { ConversationConfig } from '@unleashd/shared';
 import { awaitTurn } from '../conversations/await-turn';
 import {
@@ -159,7 +159,7 @@ export function createChannels(ports: ChannelsPorts) {
   /** Every post in a thread, root first (keyset pages, newest first, reversed). */
   async function wholeThread(root: Post): Promise<Post[]> {
     const replies: Post[] = [];
-    let before: { createdAt: string; id: string } | undefined;
+    let before: Cursor | undefined;
     for (;;) {
       const page = await core.listPosts(
         OWNER,

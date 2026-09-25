@@ -55,7 +55,12 @@ fn run(args: &[String]) -> Result<bool, String> {
             for c in &report.classes {
                 println!("{:<42} {:>6} rows  {:>4}/{:<4} groups match  {}", c.class, c.rows_new, c.hash_matches, c.groups, ok(c.ok));
             }
-            for (name, c) in [("answers", &report.answers), ("links", &report.links), ("read_cursors", &report.read_cursors)] {
+            for (name, c) in [
+                ("answers", &report.answers),
+                ("links", &report.links),
+                ("read_cursors", &report.read_cursors),
+                ("ordering", &report.ordering),
+            ] {
                 println!("{name:<42} {:>6} rows  {:>4} identical  {}", c.rows_new, c.identical, ok(c.ok));
             }
             let chains = &report.revision_chains;

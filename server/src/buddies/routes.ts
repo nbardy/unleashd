@@ -156,9 +156,9 @@ const AnswerSchema = z
   .object({ body: z.string().trim().min(1).max(32_000), evidence, key })
   .strict();
 const ReadSchema = z.object({ postId: z.string().min(1) }).strict();
+// Keyset pages on the post's ordered id (`Post.ord`, a UUIDv7), never on timestamps.
 const CursorSchema = z.object({
   before: z.string().optional(),
-  beforeId: z.string().optional(),
   limit: z.coerce.number().int().min(1).max(200).default(50),
 });
 
@@ -219,8 +219,7 @@ export function registerBuddyRoutes(app: Express, deps: BuddyRouteDeps): void {
     typeof req.query[name] === 'string' ? (req.query[name] as string) : undefined;
   const page = (req: Request) => {
     const cursor = CursorSchema.parse(req.query);
-    const before =
-      cursor.before && cursor.beforeId ? { createdAt: cursor.before, id: cursor.beforeId } : null;
+    const before = cursor.before === undefined ? null : { ord: cursor.before };
     return { before, limit: cursor.limit };
   };
   const posted = async <T extends Post>(post: Promise<T>) => {

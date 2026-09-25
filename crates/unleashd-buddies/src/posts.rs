@@ -9,7 +9,7 @@
 //! a buddy author, all in one transaction.
 
 use crate::error::{CoreError, Result};
-use crate::runs::{Enqueue, plus_ms};
+use crate::runs::Enqueue;
 use crate::store::{Mutation, Store, collect, corrupt, get_buddy, idempotent, new_id, now_iso, require};
 use crate::tasks::get_task;
 use crate::types::*;
@@ -18,7 +18,7 @@ use rusqlite::{Connection, OptionalExtension, Row, Transaction, params, params_f
 use serde_json::json;
 
 const POST_COLS: &str = "p.id, p.channel_id, p.author_id, p.root_id, p.reply_to_id, p.task_id, p.purpose, p.body, p.evidence, \
-    p.request, p.answer_id, p.conversation_id, p.return_conversation_id, p.created_at";
+    p.request, p.answer_id, p.conversation_id, p.return_conversation_id, p.created_at, p.ord";
 
 fn post_row(r: &Row) -> rusqlite::Result<Post> {
     let request = match (r.get::<_, Option<String>>(9)?.as_deref(), r.get::<_, Option<String>>(10)?) {
@@ -43,6 +43,7 @@ fn post_row(r: &Row) -> rusqlite::Result<Post> {
         conversation_id: r.get(11)?,
         return_conversation_id: r.get(12)?,
         created_at: r.get(13)?,
+        ord: r.get(14)?,
     })
 }
 
@@ -199,10 +200,11 @@ impl Store {
             let id = idempotent(tx, &m, |tx| {
                 // Insert, then flip only an awaiting request. A request that is no longer awaiting fails
                 // the flip, and the error rolls the answer back with the transaction: one answer each.
-                let id = new_id("post");
+                let ord = crate::ids::next().to_string();
+                let id = format!("post_{ord}");
                 tx.execute(
-                    "INSERT INTO post (id, channel_id, author_id, root_id, reply_to_id, task_id, body, evidence, created_at)
-                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+                    "INSERT INTO post (id, channel_id, author_id, root_id, reply_to_id, task_id, body, evidence, created_at, ord)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
                     params![
                         id,
                         request.channel_id,
@@ -212,7 +214,8 @@ impl Store {
                         request.task_id,
                         input.body,
                         evidence_json(&input.evidence),
-                        post_time(tx, &request.channel_id)?
+                        now_iso(),
+                        ord
                     ],
                 )?;
                 let flipped = tx.execute(
@@ -244,7 +247,7 @@ impl Store {
         })
     }
 
-    /// Newest first, keyset-paged on (created_at, id).
+    /// Newest first, keyset-paged on the ordered id (never on `created_at`, which ties).
     pub fn list_posts(&self, actor: &Actor, query: PostQuery, before: Option<Cursor>, limit: i64) -> Result<PostPage> {
         let (channel_id, filter, mut args): (String, &str, Vec<Value>) = match query {
             PostQuery::Channel { channel_id } => (channel_id.clone(), "p.channel_id = ? AND p.root_id IS NULL", vec![channel_id.into()]),
@@ -253,17 +256,17 @@ impl Store {
         require(&self.conn, actor, Op::ReadChannel, &Subject::Channel { id: channel_id })?;
         let keyset = match before {
             None => "",
-            Some(Cursor { created_at, id }) => {
-                args.extend([created_at.into(), id.into()]);
-                " AND (p.created_at, p.id) < (?, ?)"
+            Some(Cursor { ord }) => {
+                args.push(ord.into());
+                " AND p.ord < ?"
             }
         };
         args.push((limit + 1).into());
-        let sql = format!("SELECT {POST_COLS} FROM post p WHERE {filter}{keyset} ORDER BY p.created_at DESC, p.id DESC LIMIT ?");
+        let sql = format!("SELECT {POST_COLS} FROM post p WHERE {filter}{keyset} ORDER BY p.ord DESC LIMIT ?");
         let mut posts = collect(self.conn.prepare_cached(&sql)?.query_map(params_from_iter(args), post_row)?)?;
         let next = (posts.len() as i64 > limit).then(|| {
             posts.truncate(limit as usize);
-            posts.last().map(|p| Cursor { created_at: p.created_at.clone(), id: p.id.clone() })
+            posts.last().map(|p| Cursor { ord: p.ord.clone() })
         });
         Ok(PostPage { posts, next: next.flatten() })
     }
@@ -277,14 +280,14 @@ impl Store {
                 .prepare_cached(&format!(
                     "SELECT {POST_COLS} FROM channel_member m JOIN channel c ON c.id = m.channel_id
                        JOIN post p ON p.channel_id = m.channel_id AND p.request = 'awaiting'
-                     WHERE m.member = ?1 AND (p.author_id IS NOT ?2 OR c.member_key = ?1) ORDER BY p.created_at"
+                     WHERE m.member = ?1 AND (p.author_id IS NOT ?2 OR c.member_key = ?1) ORDER BY p.ord"
                 ))?
                 .query_map(params![me, my_buddy], post_row)?,
         )?;
         let waiting_on = collect(
             self.conn
                 .prepare_cached(&format!(
-                    "SELECT {POST_COLS} FROM post p WHERE p.author_id IS ?1 AND p.request = 'awaiting' ORDER BY p.created_at"
+                    "SELECT {POST_COLS} FROM post p WHERE p.author_id IS ?1 AND p.request = 'awaiting' ORDER BY p.ord"
                 ))?
                 .query_map([my_buddy], post_row)?,
         )?;
@@ -292,7 +295,7 @@ impl Store {
             self.conn
                 .prepare_cached(&format!(
                     "SELECT {CHANNEL_COLS}, (SELECT count(*) FROM post p WHERE p.channel_id = c.id AND p.author_id IS NOT ?3
-                        AND (p.created_at, p.id) > (coalesce(r.last_post_at, ''), coalesce(r.last_post_id, '')))
+                        AND p.ord > coalesce(r.last_ord, ''))
                      FROM channel c LEFT JOIN post_read r ON r.reader = ?1 AND r.channel_id = c.id
                      WHERE c.workspace_id = ?2 AND (c.kind = 'public' OR r.reader IS NOT NULL
                        OR EXISTS (SELECT 1 FROM channel_member m WHERE m.member = ?1 AND m.channel_id = c.id))
@@ -317,7 +320,7 @@ impl Store {
              WHERE post_search MATCH ?1 AND c.workspace_id = ?2
                AND (?3 = 'owner' OR c.kind != 'direct'
                     OR EXISTS (SELECT 1 FROM channel_member m WHERE m.channel_id = c.id AND m.member = ?3))
-             ORDER BY p.created_at DESC LIMIT ?4"
+             ORDER BY p.ord DESC LIMIT ?4"
         );
         collect(self.conn.prepare_cached(&sql)?.query_map(params![words.join(" "), workspace_id, actor.key(), limit], post_row)?)
     }
@@ -331,11 +334,12 @@ impl Store {
                 return Err(CoreError::Invalid(format!("post {post_id} is not in channel {channel_id}")));
             }
             tx.execute(
-                "INSERT INTO post_read (reader, channel_id, last_post_id, last_post_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5)
+                "INSERT INTO post_read (reader, channel_id, last_post_id, last_post_at, last_ord, updated_at)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6)
                  ON CONFLICT(reader, channel_id) DO UPDATE SET last_post_id = excluded.last_post_id,
-                   last_post_at = excluded.last_post_at, updated_at = excluded.updated_at
-                 WHERE (excluded.last_post_at, excluded.last_post_id) > (post_read.last_post_at, post_read.last_post_id)",
-                params![actor.key(), channel_id, post.id, post.created_at, now_iso()],
+                   last_post_at = excluded.last_post_at, last_ord = excluded.last_ord, updated_at = excluded.updated_at
+                 WHERE excluded.last_ord > post_read.last_ord",
+                params![actor.key(), channel_id, post.id, post.created_at, post.ord, now_iso()],
             )?;
             Ok(())
         })
@@ -375,11 +379,12 @@ impl Store {
 fn insert_post(tx: &Transaction, actor: &Actor, channel: &Channel, input: &PostInput) -> Result<String> {
     let ask = ask(input.kind, channel, actor)?;
     let root_id = input.reply_to_id.as_deref().map(|parent| thread_root(tx, parent, &channel.id)).transpose()?;
-    let id = new_id("post");
+    let ord = crate::ids::next().to_string();
+    let id = format!("post_{ord}");
     tx.prepare_cached(
         "INSERT INTO post (id, channel_id, author_id, root_id, reply_to_id, task_id, purpose, body, evidence, request,
-           conversation_id, return_conversation_id, created_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
+           conversation_id, return_conversation_id, created_at, ord)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
     )?
     .execute(params![
         id,
@@ -396,7 +401,8 @@ fn insert_post(tx: &Transaction, actor: &Actor, channel: &Channel, input: &PostI
         // its own posts. Only a request's answer returns to it.
         input.from_conversation_id,
         ask.column().and(input.from_conversation_id.as_deref()),
-        post_time(tx, &channel.id)?
+        now_iso(),
+        ord
     ])?;
     for recipient in ask.owed_by().iter().filter_map(Actor::buddy_id) {
         tx.enqueue(EnqueueInput {
@@ -409,21 +415,6 @@ fn insert_post(tx: &Transaction, actor: &Actor, channel: &Channel, input: &PostI
         })?;
     }
     Ok(id)
-}
-
-/// A post's time: now, or 1 ms after the channel's newest post when that is not earlier. Posts
-/// order by (created_at, id) and ids are random, so two posts written in one millisecond read
-/// back in a random order: 29 of 50 three-reply threads came back shuffled (2026-09-25), which
-/// broke "is this the thread's newest post" (follow-up gating), the Buddy-chain bound, read
-/// cursors and keyset paging. Guard: core.rs `posts_read_back_in_write_order_within_a_millisecond`.
-fn post_time(tx: &Connection, channel_id: &str) -> Result<String> {
-    let now = now_iso();
-    let newest: Option<String> =
-        tx.prepare_cached("SELECT max(created_at) FROM post WHERE channel_id = ?1")?.query_row([channel_id], |r| r.get(0))?;
-    match newest {
-        Some(newest) if newest >= now => plus_ms(&newest, 1),
-        Some(_) | None => Ok(now),
-    }
 }
 
 /// A reply joins its parent's thread, which must be in the same channel.

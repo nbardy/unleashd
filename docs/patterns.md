@@ -81,6 +81,15 @@ while a turn runs there, replacing one blocking 2 s poller per running conversat
 List payloads carry summary rows; bodies load on demand.
 **Here:** T09 (wire contract); T05's tail-only stream regroup.
 
+## ordered-ids
+**Smell:** ordering rows by a timestamp, with a random id as the tie-break: rows written in the same millisecond read
+back shuffled.
+**Pattern:** ids are time-ordered UUIDv7 (RFC 9562) from ONE monotonic generator per process (a counter within the
+millisecond), and reads order by the id, never by timestamp ties. Timestamps stay the true write time. Rows that must
+keep an older id carry the ordered id in a separate column assigned in their original write order.
+**Here:** `crates/unleashd-buddies/src/ids.rs`; `post.ord` (threads, pages, read cursors), run ids (claim FIFO).
+29 of 50 back-to-back threads came back shuffled before (2026-09-25).
+
 ## one-type-source
 **Smell:** the same type hand-copied in several layers, drifting apart.
 **Pattern:** one definition plus codegen or inference (napi-generated `index.d.ts`, Zod-inferred TS types).
