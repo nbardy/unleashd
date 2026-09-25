@@ -27,10 +27,22 @@ ingest.initialScan;                                  // counts, timing, full-rea
 const page = await ingest.listSessions({ since: 0 }); // { rev, rows, removed }; pass rev next time
 const row = await ingest.session(sessionId);          // SessionRow | null
 const msgs = await ingest.messages(sessionId, { afterSeq: -1, limit: 200 });
+const report = await ingest.usage({ since, until, groupBy: 'session' }); // | 'day' | 'model'
+// { groups: [{ key, turns, sessions, input, output, cacheRead, cacheWrite, reportedCostUsd, firstAt, lastAt }],
+//   codexRateLimits }  — replaces /api/usage's transcript parsers (usage-routes.ts)
+const context = await ingest.latestContext(sessionId); // { contextTokens, contextWindow?, compaction? } | null
+                                                       // — replaces session-context.ts
 await ingest.stop();                                  // releases onChange so Node can exit
 ```
 
-`start` resolves after the initial scan is committed. Every call runs on tokio's blocking pool;
+`start` resolves after the initial scan is committed. Changes arrive through FSEvents (recursive, finds new
+files) and, for a file once written, through a direct kqueue watch (at most 64 files, 5 min idle); a batch
+closes 2 ms after its last event. Append → `onChange`: 4–6 ms for a watched file, ~10–20 ms for the first
+write to a file (FSEvents).
+
+Usage turns are one row per provider-counted request (Claude message id, growth of the Codex cumulative total,
+OpenCode assistant message), keyed by their transcript time; `usage()` sums the turns in `[since, until)`.
+`/api/usage` dated a whole session by its file mtime (Claude) or rollout directory (Codex) instead. Every call runs on tokio's blocking pool;
 the watcher runs on its own thread and reaches JS through a threadsafe function.
 
 ## How a source is read
