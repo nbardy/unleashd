@@ -82,6 +82,18 @@ client/src/atoms/ui.ts             → device-local UI prefs + NEW-badge seen in
   History: `docs/incident-2026-09-10-buddy-chat-timeout.md` (distinct from the
   August bridge-heartbeat fix).
 
+- Structural patterns live in `docs/patterns.md` (one store + one index,
+  sum types, capability grants, one write path, idempotency keys,
+  wake-on-write, patches not snapshots, one type source, fix-guards, …).
+  New code uses them, and each implementation carries a one-line tag at its
+  definition: `// Pattern: <name> (docs/patterns.md#<name>)`. Before
+  changing tagged code, read the pattern. Breaking one means updating the doc
+  and the tag in the same commit, with the reason. Every fix leaves
+  fix-guards: a 1–3 line reason comment (what broke, the measured cost, the
+  guard's name), a regression test that fails on the bad pattern itself, and
+  the event-loop stall monitor stays wired. Find implementations with
+  `rg -n "Pattern: <name>"`.
+
 ## Read before touching
 
 For any Buddy model, tool or execution change, start with
@@ -92,6 +104,7 @@ requirements to rebuild omitted machinery.
 
 | Area | Doc |
 |---|---|
+| Code patterns: the structural patterns, tagging rule, where each is implemented | `docs/patterns.md` |
 | Buddies: core model, motivating cases, rationale and scope | `product/buddies/CORE_DESIGN.md` |
 | Client state: subscriptions, mutations, perf, hook ordering | `docs/client-state.md` |
 | Mobile view tree, grep gates, DeviceKind, UI-state partition | `docs/mobile-view-tree.md` |

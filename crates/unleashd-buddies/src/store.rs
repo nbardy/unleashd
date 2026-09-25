@@ -142,6 +142,7 @@ impl Store {
 // ---- authorize -------------------------------------------------------------------------------
 
 /// `owner | self | manager-of (transitive) | channel member`. The only authorization point.
+// Pattern: capability-grants (docs/patterns.md#capability-grants) — the only authorization rule.
 pub fn authorize(conn: &Connection, actor: &Actor, op: Op, subject: &Subject) -> Result<Decision> {
     match actor {
         Actor::Owner => Ok(Decision::Allowed),
@@ -195,6 +196,7 @@ pub(crate) fn require(conn: &Connection, actor: &Actor, op: Op, subject: &Subjec
 }
 
 // ---- events and idempotency ------------------------------------------------------------------
+// Pattern: idempotency-keys (docs/patterns.md#idempotency-keys)
 
 enum Prior {
     Fresh,

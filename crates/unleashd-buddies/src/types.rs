@@ -85,6 +85,7 @@ pub enum Decision {
     Denied { reason: String },
 }
 
+// Pattern: sum-types (docs/patterns.md#sum-types) — kinds are enums; handlers match exhaustively.
 /// What a channel is. Columns: `kind` plus (name, purpose) | member_key | task_id.
 #[cfg_attr(feature = "node", napi_derive::napi(discriminant = "type", discriminant_case = "lowercase"))]
 #[derive(Debug, Clone, PartialEq, Eq)]

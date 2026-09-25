@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from 'react';
 
+// Pattern: wake-on-write (docs/patterns.md#wake-on-write)
 // One 30 s clock for every "3m ago" label. Eight components each ran their
 // own setInterval and re-rendered their whole tree to refresh the labels;
 // memoized rows then never refreshed at all, because the parent's tick did not

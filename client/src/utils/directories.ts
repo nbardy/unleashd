@@ -15,6 +15,7 @@ const HOME_PREFIX = /^\/Users\/[^/]+/;
 /**
  * `/Users/<name>/…` → `~/…`, for DISPLAY only; never feed the result back as
  * a path. Was the same regex inline in 13 files.
+ * Pattern: one-definition (docs/patterns.md#one-definition)
  */
 export function shortenHomePath(path: string): string {
   return path.replace(HOME_PREFIX, '~');
