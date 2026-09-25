@@ -12,6 +12,127 @@ export const taskDetailUrl = (taskId: string): string =>
 
 const STATUSES = Object.keys(TASK_STATUS) as TaskStatus[];
 
+/**
+ * Display order for siblings (top-level tasks, or one task's todos): `position`, then creation.
+ * The crate creates every top-level task at position 0, so creation order breaks those ties until
+ * the owner first reorders.
+ */
+export const byPosition = (tasks: readonly Task[]): Task[] =>
+  [...tasks].sort((a, b) => a.position - b.position || a.createdAt.localeCompare(b.createdAt));
+
+/**
+ * The writes that move `ordered[from]` one place up (-1) or down (+1): every sibling's position
+ * becomes its index in the new order, and only the siblings whose position changes are written.
+ * The first move renumbers a list of tied zeros; later moves write two tasks.
+ */
+export function moveTask(
+  ordered: readonly Task[],
+  from: number,
+  delta: -1 | 1
+): { task: Task; position: number }[] {
+  const to = from + delta;
+  const next = [...ordered];
+  [next[from], next[to]] = [next[to], next[from]];
+  return next.flatMap((task, position) => (task.position === position ? [] : [{ task, position }]));
+}
+
+const patchTask = (task: Task, changes: Partial<Pick<Task, 'paused' | 'position'>>) =>
+  buddyWrite(taskDetailUrl(task.id), 'PATCH', { baseRevision: task.revision, changes });
+
+/** Move up, move down and pause/resume for one task or todo among its ordered siblings. */
+function TaskControls({
+  ordered,
+  index,
+  refresh,
+}: {
+  ordered: readonly Task[];
+  index: number;
+  refresh: () => Promise<void>;
+}) {
+  const task = ordered[index];
+  const action = useBuddyAction(refresh);
+  const move = (delta: -1 | 1) =>
+    void action.run('move', () =>
+      Promise.all(moveTask(ordered, index, delta).map((w) => patchTask(w.task, w)))
+    );
+  // Rendered inside a card's <summary>: a click on a control must not also toggle the card.
+  return (
+    <span className="buddy-panel__actions" onClick={(event) => event.preventDefault()}>
+      <button type="button" disabled={action.busy || index === 0} onClick={() => move(-1)}>
+        Move up
+      </button>
+      <button
+        type="button"
+        disabled={action.busy || index === ordered.length - 1}
+        onClick={() => move(1)}
+      >
+        Move down
+      </button>
+      <button
+        type="button"
+        disabled={action.busy}
+        onClick={() => void action.run('pause', () => patchTask(task, { paused: !task.paused }))}
+      >
+        {task.paused ? 'Resume' : 'Pause'}
+      </button>
+      <ActionError state={action.state} />
+    </span>
+  );
+}
+
+/** A new task for this Buddy, or a todo under `parentId`. */
+function NewTaskForm({
+  ownerId,
+  parentId,
+  label,
+  refresh,
+}: {
+  ownerId: string;
+  parentId?: string;
+  label: 'task' | 'todo';
+  refresh: () => Promise<void>;
+}) {
+  const [title, setTitle] = useState('');
+  const [doneCriteria, setDoneCriteria] = useState('');
+  const action = useBuddyAction(refresh);
+  return (
+    <form
+      className="buddy-panel__form"
+      aria-label={`New ${label}`}
+      onSubmit={(event) => {
+        event.preventDefault();
+        void action
+          .run('create', () =>
+            buddyWrite('/api/buddies/tasks', 'POST', {
+              ownerId,
+              ...(parentId === undefined ? {} : { parentId }),
+              title: title.trim(),
+              doneCriteria: doneCriteria.trim(),
+            })
+          )
+          .then((ok) => {
+            if (!ok) return;
+            setTitle('');
+            setDoneCriteria('');
+          });
+      }}
+    >
+      <label>
+        New {label}
+        <input value={title} onChange={(event) => setTitle(event.target.value)} />
+      </label>
+      <label>
+        Done when
+        <input value={doneCriteria} onChange={(event) => setDoneCriteria(event.target.value)} />
+      </label>
+      <button type="submit" disabled={action.busy || !title.trim() || !doneCriteria.trim()}>
+        Add {label}
+      </button>
+      <ActionError state={action.state} />
+    </form>
+  );
+}
+
 /** Status, next action and blocker, sent as a patch of the changed fields only. */
 function TaskEditForm({ task, refresh }: { task: Task; refresh: () => Promise<void> }) {
   const [status, setStatus] = useState<TaskStatus>(task.status);
@@ -69,6 +190,7 @@ function TaskDetailBody({
   refresh: () => Promise<void>;
 }) {
   const { task } = detail;
+  const todos = byPosition(detail.children);
   return (
     <>
       <p className="buddy-panel__criteria">
@@ -83,18 +205,17 @@ function TaskDetailBody({
       )}
       {/* Keyed by revision: a saved or concurrent edit resets the draft to the stored task. */}
       <TaskEditForm key={task.revision} task={task} refresh={refresh} />
-      {detail.children.length > 0 && (
-        <>
-          <h4 className="buddy-panel__heading">Todos</h4>
-          <ul className="buddy-task-list__todos">
-            {detail.children.map((child) => (
-              <li key={child.id} data-tone={TASK_STATUS[child.status].tone}>
-                <span aria-hidden="true">{TASK_STATUS[child.status].glyph}</span> {child.title}
-              </li>
-            ))}
-          </ul>
-        </>
-      )}
+      <h4 className="buddy-panel__heading">Todos</h4>
+      <ul className="buddy-task-list__todos">
+        {todos.map((child, index) => (
+          <li key={child.id} data-tone={TASK_STATUS[child.status].tone}>
+            <span aria-hidden="true">{TASK_STATUS[child.status].glyph}</span> {child.title}
+            {child.paused ? ' · Paused' : ''}
+            <TaskControls ordered={todos} index={index} refresh={refresh} />
+          </li>
+        ))}
+      </ul>
+      <NewTaskForm ownerId={task.ownerId} parentId={task.id} label="todo" refresh={refresh} />
       <h4 className="buddy-panel__heading">Runs</h4>
       <BuddyRunList runs={detail.runs} refresh={refresh} empty="No runs for this task yet." />
       <h4 className="buddy-panel__heading">Comments</h4>
@@ -129,8 +250,19 @@ export function BuddyTaskPanel({
   }
 }
 
-function TaskCard({ task, names }: { task: Task; names: Readonly<Record<string, string>> }) {
+function TaskCard({
+  ordered,
+  index,
+  names,
+  refresh,
+}: {
+  ordered: readonly Task[];
+  index: number;
+  names: Readonly<Record<string, string>>;
+  refresh: () => Promise<void>;
+}) {
   const [open, setOpen] = useState(false);
+  const task = ordered[index];
   const status = TASK_STATUS[task.status];
   return (
     <details
@@ -143,6 +275,7 @@ function TaskCard({ task, names }: { task: Task; names: Readonly<Record<string, 
           {status.label}
           {task.paused ? ' · Paused' : ''} · {task.nextAction ?? 'No next action'}
         </span>
+        <TaskControls ordered={ordered} index={index} refresh={refresh} />
       </summary>
       {open && <BuddyTaskPanel taskId={task.id} names={names} />}
     </details>
@@ -151,13 +284,17 @@ function TaskCard({ task, names }: { task: Task; names: Readonly<Record<string, 
 
 /** A Buddy's tasks: top-level ones (todos are child tasks, shown inside their task). */
 export function BuddyWork({
+  buddyId,
   tasks,
   names,
+  refresh,
 }: {
+  buddyId: string;
   tasks: readonly Task[];
   names: Readonly<Record<string, string>>;
+  refresh: () => Promise<void>;
 }) {
-  const topLevel = tasks.filter((task) => task.parentId === undefined);
+  const topLevel = byPosition(tasks.filter((task) => task.parentId === undefined));
   const current = topLevel.filter((task) => isTaskOpen(task.status));
   const finished = topLevel.filter((task) => !isTaskOpen(task.status));
   return (
@@ -167,14 +304,21 @@ export function BuddyWork({
         <span>{current.length} open</span>
       </div>
       {current.length === 0 && <p className="buddy-panel__empty">No open tasks.</p>}
-      {current.map((task) => (
-        <TaskCard key={task.id} task={task} names={names} />
+      {current.map((task, index) => (
+        <TaskCard key={task.id} ordered={current} index={index} names={names} refresh={refresh} />
       ))}
+      <NewTaskForm ownerId={buddyId} label="task" refresh={refresh} />
       {finished.length > 0 && (
         <details className="buddy-work-history">
           <summary>Completed & cancelled · {finished.length}</summary>
-          {finished.map((task) => (
-            <TaskCard key={task.id} task={task} names={names} />
+          {finished.map((task, index) => (
+            <TaskCard
+              key={task.id}
+              ordered={finished}
+              index={index}
+              names={names}
+              refresh={refresh}
+            />
           ))}
         </details>
       )}
