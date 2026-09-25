@@ -135,12 +135,14 @@ test('startup drops cache records of deleted sources, but never after a failed d
   let codexFails = false;
   const claude: DiskAdapter = {
     provider: 'claude',
+    growth: { kind: 'rewritten' },
     sessionFileKeys: (filePath) => [path.basename(filePath, '.jsonl')],
     discoverFiles: async () => sources,
     parseFile: async (filePath) => parsedSession(filePath),
   };
   const codex: DiskAdapter = {
     provider: 'codex',
+    growth: { kind: 'rewritten' },
     sessionFileKeys: () => [],
     discoverFiles: async () => {
       if (codexFails) throw new Error('transient');
@@ -229,6 +231,7 @@ test('a poll whose discovery failed keeps the previous baseline', async () => {
   const previous = new Map([['/sessions/a.jsonl', 1_000]]);
   const failing: DiskAdapter = {
     provider: 'claude',
+    growth: { kind: 'rewritten' },
     sessionFileKeys: () => [],
     discoverFiles: async () => {
       throw new Error('EMFILE');
