@@ -16,7 +16,7 @@ which boundaries need coverage and how client component tests run.
 | Server behavior | `pnpm test:server` |
 | Dev supervisor or watcher | `pnpm test:dev-supervisor` |
 | Provider harness | `pnpm test:cli` |
-| Published package or public API | `pnpm build`, then `pnpm test:package` and `pnpm test:api` |
+| Published package or public API | `pnpm build`, then `pnpm test:api` (the package smoke test was removed with the vendored Buddies package; a napi-addon packaging smoke is a follow-up) |
 
 `pnpm test` runs the full suite defined in [package.json](../package.json).
 `pnpm typecheck` and `pnpm build` take no lock and are safe while `pnpm dev`
