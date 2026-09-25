@@ -7,7 +7,13 @@ import test from 'node:test';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js';
 import type { McpServerSpec } from '@nbardy/agent-cli';
-import { BuddiesCore, type Post } from '@unleashd/buddies-core';
+import {
+  type Buddy,
+  BuddiesCore,
+  type Inbox,
+  type Post,
+  type ThreadStat,
+} from '@unleashd/buddies-core';
 import express from 'express';
 import { BUDDY_TOOL_GUIDE, createBriefings } from '../src/buddies/briefing';
 import { type StableConversationPorts, slotOf } from '../src/buddies/buddy-conversation-slots';
@@ -696,8 +702,8 @@ test('follow-ups stop after three Buddy posts in a row, and a failed gate on an 
   }
 });
 
-test('owner routes: a DM request is answered over HTTP, typed errors keep their status, and literal paths are never read as a buddy id', async () => {
-  const w = await world();
+/** The owner routes over real HTTP on a world's crate. */
+async function ownerHttp(w: Awaited<ReturnType<typeof world>>) {
   const app = express();
   app.use(express.json());
   registerBuddyRoutes(app, {
@@ -724,6 +730,12 @@ test('owner routes: a DM request is answered over HTTP, typed errors keep their 
       body: (await response.json()) as { error: string; requests: Post[] },
     };
   };
+  return { server, http };
+}
+
+test('owner routes: a DM request is answered over HTTP, typed errors keep their status, and literal paths are never read as a buddy id', async () => {
+  const w = await world();
+  const { server, http } = await ownerHttp(w);
   try {
     // /api/buddies/tasks and /runs are registered before /api/buddies/:buddyId (it would swallow them).
     assert.equal((await http('GET', `/api/buddies/tasks?buddyId=${w.lead.id}`)).status, 200);
@@ -816,6 +828,85 @@ test('owner routes: a DM request is answered over HTTP, typed errors keep their 
       key: 'builder-task-2',
     });
     assert.equal(ownerless.isError, true);
+  } finally {
+    server.close();
+    await w.close();
+  }
+});
+
+test('owner routes restore what the T11 client migration dropped: reply stats, the read cursor, reply permalinks, the Task filter and clearing a profile field', async () => {
+  const w = await world();
+  const { server, http } = await ownerHttp(w);
+  const json = async <T>(method: string, path: string, body?: unknown) => {
+    const answer = await http(method, path, body);
+    assert.ok(
+      answer.status < 300,
+      `${method} ${path}: ${answer.status} ${JSON.stringify(answer.body)}`
+    );
+    return answer.body as unknown as T;
+  };
+  try {
+    const task = await w.core.upsertTask(OWNER, {
+      kind: 'create',
+      ownerId: w.lead.id,
+      title: 'Launch',
+      doneCriteria: 'Shipped',
+      key: 'launch',
+    });
+    const say = (body: string, replyToId?: string, taskId?: string) =>
+      w.core.post(
+        buddyActor(w.lead.id),
+        { kind: 'id', id: w.general.id },
+        { kind: 'inform', body, replyToId, taskId, evidence: [], key: body }
+      );
+    const root = await say('Launch plan', undefined, task.id);
+    const replies = [];
+    for (let i = 0; i < 4; i += 1) replies.push(await say(`step ${i}`, root.id));
+    // 1. A channel page carries each root's reply count and newest reply.
+    type Page = { posts: Post[]; next?: { ord: string }; threads: ThreadStat[] };
+    const page = await json<Page>('GET', `/api/buddies/channels/${w.general.id}/posts?limit=50`);
+    assert.deepEqual(
+      page.threads.map((t) => [t.rootId, t.replies, t.lastReplyOrd]),
+      [[root.id, 4, replies[3].ord]]
+    );
+    // 2. The inbox names the owner's read cursor, which "New messages" is drawn against.
+    await json('POST', `/api/buddies/channels/${w.general.id}/read`, { postId: replies[1].id });
+    const inbox = await json<Inbox>('GET', `/api/buddies/workspaces/${w.ws}/inbox`);
+    const general = inbox.channels.find((entry) => entry.channel.id === w.general.id);
+    assert.equal(general?.lastReadOrd, replies[1].ord);
+    // 3. A reply permalink's page starts at the reply, however many replies are newer.
+    const linked = await json<Page & { root: Post }>(
+      'GET',
+      `/api/buddies/posts/${root.id}/thread?from=${replies[0].id}&limit=2`
+    );
+    assert.deepEqual(
+      linked.posts.map((post) => post.id),
+      [replies[1].id, replies[0].id]
+    );
+    assert.equal(
+      (await http('GET', `/api/buddies/posts/${root.id}/thread?from=${root.id}`)).status,
+      400,
+      'a root is not one of its own replies'
+    );
+    // 4. The Task filter reads one Task's posts across channels.
+    const about = await json<Page>('GET', `/api/buddies/tasks/${task.id}/posts?limit=50`);
+    assert.deepEqual(
+      about.posts.map((post) => post.id),
+      [root.id]
+    );
+    // 9. Settings can put a profile field back to the default; absent fields stay.
+    const set = await json<Buddy>('PATCH', `/api/buddies/${w.lead.id}`, {
+      provider: 'codex',
+      model: 'gpt-x',
+      key: 'profile-set',
+    });
+    assert.equal(set.model, 'gpt-x');
+    const cleared = await json<Buddy>('PATCH', `/api/buddies/${w.lead.id}`, {
+      model: null,
+      key: 'profile-clear',
+    });
+    assert.equal(cleared.model, undefined);
+    assert.equal(cleared.provider, 'codex');
   } finally {
     server.close();
     await w.close();

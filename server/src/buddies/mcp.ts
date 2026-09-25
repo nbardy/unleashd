@@ -6,7 +6,7 @@ import type { McpServerSpec } from '@nbardy/agent-cli';
 import type { Actor, ChannelRef, DocRef, DocScope } from '@unleashd/buddies-core';
 import { z } from 'zod';
 import { requireCanonicalPostMedia } from './channel-media';
-import { type BuddiesCore, OWNER, buddyActor, coreError } from './core';
+import { type BuddiesCore, OWNER, buddyActor, coreError, settingOf } from './core';
 import type { BuddyEvents } from './events';
 import type { BuddyGrant, Grants, Role, TurnGrant } from './grants';
 
@@ -484,9 +484,9 @@ const TEAM_TOOLS = {
           name: z.string().optional(),
           role: z.string().optional(),
           managerId: z.string().nullable().optional().describe('null: reports to nobody'),
-          provider: z.string().optional(),
-          model: z.string().optional(),
-          reasoningEffort: z.string().optional(),
+          provider: z.string().nullable().optional().describe('null: back to the default'),
+          model: z.string().nullable().optional().describe('null: back to the default'),
+          reasoningEffort: z.string().nullable().optional().describe('null: back to the default'),
           backgroundEnabled: z.boolean().optional(),
           maxActiveRuns: z.number().int().positive().optional(),
           status: z.enum(['active', 'archived']).optional(),
@@ -517,11 +517,22 @@ const TEAM_TOOLS = {
           return buddy;
         }
         case 'update': {
-          const { kind: _kind, buddyId, managerId, ...changes } = change;
+          const {
+            kind: _kind,
+            buddyId,
+            managerId,
+            provider,
+            model,
+            reasoningEffort,
+            ...changes
+          } = change;
           return deps.core.updateBuddy(grant.principal, {
             buddyId,
             changes: {
               ...changes,
+              provider: settingOf(provider),
+              model: settingOf(model),
+              reasoningEffort: settingOf(reasoningEffort),
               manager: managerId === undefined ? undefined : manager(managerId),
             },
             key: input.key,

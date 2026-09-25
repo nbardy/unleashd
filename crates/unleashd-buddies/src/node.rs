@@ -72,6 +72,21 @@ impl BuddiesCore {
     }
 
     #[napi]
+    pub async fn list_posts_from(&self, actor: Actor, query: PostQuery, post_id: String, limit: i64) -> napi::Result<PostPage> {
+        call(&self.store, move |s| s.list_posts_from(&actor, query, &post_id, limit)).await
+    }
+
+    #[napi]
+    pub async fn thread_stats(&self, actor: Actor, channel_id: String, root_ids: Vec<String>) -> napi::Result<Vec<ThreadStat>> {
+        call(&self.store, move |s| s.thread_stats(&actor, &channel_id, &root_ids)).await
+    }
+
+    #[napi]
+    pub async fn task_posts(&self, actor: Actor, task_id: String, before: Option<Cursor>, limit: i64) -> napi::Result<PostPage> {
+        call(&self.store, move |s| s.task_posts(&actor, &task_id, before, limit)).await
+    }
+
+    #[napi]
     pub async fn search_posts(&self, actor: Actor, workspace_id: String, query: String, limit: i64) -> napi::Result<Vec<Post>> {
         call(&self.store, move |s| s.search_posts(&actor, &workspace_id, &query, limit)).await
     }

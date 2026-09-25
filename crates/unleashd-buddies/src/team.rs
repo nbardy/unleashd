@@ -92,7 +92,8 @@ impl Store {
                 task_id: None,
                 op: "buddy.update",
                 payload: json!({"name": c.name, "role": c.role, "manager": c.manager.as_ref().map(manager_id),
-                    "provider": c.provider, "model": c.model, "effort": c.reasoning_effort, "background": c.background_enabled,
+                    "provider": setting_json(&c.provider), "model": setting_json(&c.model),
+                    "effort": setting_json(&c.reasoning_effort), "background": c.background_enabled,
                     "max_active_runs": c.max_active_runs, "status": c.status.map(BuddyStatus::as_str)}),
                 key: Some(&input.key),
             };
@@ -103,7 +104,8 @@ impl Store {
                 tx.execute(
                     "UPDATE buddy SET name = coalesce(?2, name), role = coalesce(?3, role),
                        manager_id = CASE ?4 WHEN 1 THEN ?5 ELSE manager_id END,
-                       provider = coalesce(?6, provider), model = coalesce(?7, model), reasoning_effort = coalesce(?8, reasoning_effort),
+                       provider = CASE ?12 WHEN 1 THEN ?6 ELSE provider END, model = CASE ?13 WHEN 1 THEN ?7 ELSE model END,
+                       reasoning_effort = CASE ?14 WHEN 1 THEN ?8 ELSE reasoning_effort END,
                        background_enabled = coalesce(?9, background_enabled), max_active_runs = coalesce(?10, max_active_runs),
                        status = coalesce(?11, status)
                      WHERE id = ?1",
@@ -113,12 +115,15 @@ impl Store {
                         c.role,
                         c.manager.is_some(),
                         c.manager.as_ref().and_then(manager_id),
-                        c.provider,
-                        c.model,
-                        c.reasoning_effort,
+                        c.provider.as_ref().and_then(Setting::column),
+                        c.model.as_ref().and_then(Setting::column),
+                        c.reasoning_effort.as_ref().and_then(Setting::column),
                         c.background_enabled,
                         c.max_active_runs,
-                        c.status
+                        c.status,
+                        c.provider.is_some(),
+                        c.model.is_some(),
+                        c.reasoning_effort.is_some()
                     ],
                 )?;
                 archive_side_effects(tx, &buddy.id, c.status)?;
@@ -134,6 +139,16 @@ fn workspace_at(conn: &Connection, root_path: &str) -> Result<Option<Workspace>>
         .prepare_cached("SELECT id, name, root_path, created_at FROM workspace WHERE root_path = ?1")?
         .query_row([root_path], |r| Ok(Workspace { id: r.get(0)?, name: r.get(1)?, root_path: r.get(2)?, created_at: r.get(3)? }))
         .optional()?)
+}
+
+/// The event payload of a profile change: unchanged (null), cleared, or the new value. Distinct
+/// payloads keep an idempotency key from matching a different change.
+fn setting_json(setting: &Option<Setting>) -> serde_json::Value {
+    match setting {
+        None => serde_json::Value::Null,
+        Some(Setting::Default) => json!({"default": true}),
+        Some(Setting::Set { value }) => json!(value),
+    }
 }
 
 fn manager_id(manager: &ManagerRef) -> Option<&str> {

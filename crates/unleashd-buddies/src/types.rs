@@ -537,12 +537,26 @@ pub struct PostPage {
     pub next: Option<Cursor>,
 }
 
+/// A thread root's replies at a glance: the channel row's "3 replies · last reply 2m ago".
+#[cfg_attr(feature = "node", napi_derive::napi(object))]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ThreadStat {
+    pub root_id: String,
+    pub replies: i64,
+    pub last_reply_at: String,
+    /// The newest reply's ordered id: after the reader's cursor, the thread has something new.
+    pub last_reply_ord: String,
+    pub last_reply_author: Actor,
+}
+
 #[cfg_attr(feature = "node", napi_derive::napi(object))]
 #[derive(Debug, Clone)]
 pub struct ChannelUnread {
     pub channel: Channel,
     /// Posts by others after the reader's cursor (all of them when it has none).
     pub unread: i64,
+    /// The reader's cursor: the ordered id it has read through. Absent: it never read the channel.
+    pub last_read_ord: Option<String>,
 }
 
 #[cfg_attr(feature = "node", napi_derive::napi(object))]
@@ -634,6 +648,25 @@ pub struct BuddyCreate {
     pub key: String,
 }
 
+/// A profile field's new value: a named choice, or back to the server's default (column NULL).
+/// A plain `Option<String>` patch could not say "clear" — absent already means "unchanged".
+#[cfg_attr(feature = "node", napi_derive::napi(discriminant = "kind", discriminant_case = "lowercase"))]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum Setting {
+    Set { value: String },
+    Default,
+}
+
+impl Setting {
+    /// The column value: `Default` stores NULL.
+    pub fn column(&self) -> Option<&str> {
+        match self {
+            Setting::Set { value } => Some(value),
+            Setting::Default => None,
+        }
+    }
+}
+
 /// A patch: every absent field is unchanged.
 #[cfg_attr(feature = "node", napi_derive::napi(object))]
 #[derive(Debug, Clone, Default)]
@@ -641,9 +674,9 @@ pub struct BuddyChanges {
     pub name: Option<String>,
     pub role: Option<String>,
     pub manager: Option<ManagerRef>,
-    pub provider: Option<String>,
-    pub model: Option<String>,
-    pub reasoning_effort: Option<String>,
+    pub provider: Option<Setting>,
+    pub model: Option<Setting>,
+    pub reasoning_effort: Option<Setting>,
     pub background_enabled: Option<bool>,
     pub max_active_runs: Option<i64>,
     pub status: Option<BuddyStatus>,

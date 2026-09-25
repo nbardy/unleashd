@@ -5,6 +5,7 @@ import type {
   DocKind,
   DocScope,
   Post,
+  PostQuery,
   RunQuery,
   TaskQuery,
 } from '@unleashd/buddies-core';
@@ -20,7 +21,7 @@ import {
   requireCanonicalPostMedia,
 } from './channel-media';
 import { type Channels, mentionedBuddyIds } from './channels';
-import { type BuddiesCore, OWNER, buddyActor, coreError, httpStatus } from './core';
+import { type BuddiesCore, OWNER, buddyActor, coreError, httpStatus, settingOf } from './core';
 import type { BuddyEvents } from './events';
 import type { Runner } from './runner';
 
@@ -51,9 +52,10 @@ const BuddyChangesSchema = z
     name: z.string().min(1).optional(),
     role: z.string().min(1).optional(),
     managerId: z.string().min(1).nullable().optional(),
-    provider: z.string().min(1).optional(),
-    model: z.string().min(1).optional(),
-    reasoningEffort: z.string().min(1).optional(),
+    // null clears the field back to the server default (Settings' "Default" choice).
+    provider: z.string().min(1).nullable().optional(),
+    model: z.string().min(1).nullable().optional(),
+    reasoningEffort: z.string().min(1).nullable().optional(),
     backgroundEnabled: z.boolean().optional(),
     maxActiveRuns: z.number().int().positive().optional(),
     status: z.enum(['active', 'archived']).optional(),
@@ -157,8 +159,10 @@ const AnswerSchema = z
   .strict();
 const ReadSchema = z.object({ postId: z.string().min(1) }).strict();
 // Keyset pages on the post's ordered id (`Post.ord`, a UUIDv7), never on timestamps.
+// `from` (a post id) is a permalink's page instead: that post and everything newer (T22).
 const CursorSchema = z.object({
   before: z.string().optional(),
+  from: z.string().min(1).optional(),
   limit: z.coerce.number().int().min(1).max(200).default(50),
 });
 
@@ -217,10 +221,19 @@ export function registerBuddyRoutes(app: Express, deps: BuddyRouteDeps): void {
   const p = (req: Request, name: string) => String(req.params[name]);
   const q = (req: Request, name: string) =>
     typeof req.query[name] === 'string' ? (req.query[name] as string) : undefined;
-  const page = (req: Request) => {
+  // One feed page: keyset `before` an ordered id, or `from` a linked post (never both).
+  const feedPage = (req: Request, query: PostQuery) => {
     const cursor = CursorSchema.parse(req.query);
-    const before = cursor.before === undefined ? null : { ord: cursor.before };
-    return { before, limit: cursor.limit };
+    if (cursor.from !== undefined && cursor.before !== undefined)
+      throw new Error('a page is `before` a cursor or `from` a post, not both');
+    return cursor.from === undefined
+      ? core.listPosts(
+          OWNER,
+          query,
+          cursor.before === undefined ? null : { ord: cursor.before },
+          cursor.limit
+        )
+      : core.listPostsFrom(OWNER, query, cursor.from, cursor.limit);
   };
   const posted = async <T extends Post>(post: Promise<T>) => {
     const written = await write(post);
@@ -356,6 +369,16 @@ export function registerBuddyRoutes(app: Express, deps: BuddyRouteDeps): void {
         return { task, channel, children, comments: comments.posts, runs };
       },
     ],
+    // The channel browser's Task filter: one Task's posts across every channel (T22).
+    [
+      'get',
+      '/api/buddies/tasks/:taskId/posts',
+      (req) => {
+        const cursor = CursorSchema.parse(req.query);
+        const before = cursor.before === undefined ? null : { ord: cursor.before };
+        return core.taskPosts(OWNER, p(req, 'taskId'), before, cursor.limit);
+      },
+    ],
     [
       'post',
       '/api/buddies/tasks',
@@ -448,14 +471,13 @@ export function registerBuddyRoutes(app: Express, deps: BuddyRouteDeps): void {
     [
       'get',
       '/api/buddies/channels/:channelId/posts',
-      (req) => {
-        const { before, limit } = page(req);
-        return core.listPosts(
-          OWNER,
-          { kind: 'channel', channelId: p(req, 'channelId') },
-          before,
-          limit
-        );
+      // Each root carries its reply count and newest reply (T22: channel rows lost "3 replies ·
+      // last reply 2m ago" in the T11 migration). One indexed query per page.
+      async (req) => {
+        const channelId = p(req, 'channelId');
+        const page = await feedPage(req, { kind: 'channel', channelId });
+        const roots = page.posts.map((post) => post.id);
+        return { ...page, threads: await core.threadStats(OWNER, channelId, roots) };
       },
     ],
     [
@@ -463,11 +485,7 @@ export function registerBuddyRoutes(app: Express, deps: BuddyRouteDeps): void {
       '/api/buddies/posts/:postId/thread',
       async (req) => {
         const root = await core.getPost(OWNER, p(req, 'postId'));
-        const { before, limit } = page(req);
-        return {
-          root,
-          ...(await core.listPosts(OWNER, { kind: 'thread', rootId: root.id }, before, limit)),
-        };
+        return { root, ...(await feedPage(req, { kind: 'thread', rootId: root.id })) };
       },
     ],
     [
@@ -531,9 +549,25 @@ export function registerBuddyRoutes(app: Express, deps: BuddyRouteDeps): void {
       'patch',
       '/api/buddies/:buddyId',
       (req) => {
-        const { key: changeKey, managerId, ...changes } = BuddyChangesSchema.parse(req.body);
+        const {
+          key: changeKey,
+          managerId,
+          provider,
+          model,
+          reasoningEffort,
+          ...changes
+        } = BuddyChangesSchema.parse(req.body);
         const managerChange = managerId === undefined ? undefined : manager(managerId);
-        return archive(p(req, 'buddyId'), { ...changes, manager: managerChange }, changeKey);
+        const profile = {
+          provider: settingOf(provider),
+          model: settingOf(model),
+          reasoningEffort: settingOf(reasoningEffort),
+        };
+        return archive(
+          p(req, 'buddyId'),
+          { ...changes, ...profile, manager: managerChange },
+          changeKey
+        );
       },
     ],
     [

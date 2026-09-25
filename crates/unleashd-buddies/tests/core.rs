@@ -575,3 +575,101 @@ fn ordered_ids_are_strictly_increasing_even_within_one_millisecond() {
     let after_step_back = ids::next_at(ms - 60_000).to_string();
     assert!(after_step_back > *issued.last().unwrap());
 }
+
+#[test]
+fn channel_rows_carry_reply_stats_the_read_cursor_and_permalink_pages() {
+    // T22: the client migration dropped reply counts, "New messages" and reply permalinks because
+    // the crate had no per-root stats, exposed no read cursor and could page only from the newest.
+    let mut f = fixture();
+    let s = &mut f.store;
+    let general = s
+        .create_channel(
+            &Actor::Owner,
+            ChannelInput { workspace_id: WS.into(), name: "general".into(), purpose: "p".into(), key: "g".into() },
+        )
+        .unwrap();
+    let to = || ChannelRef::Id { id: general.id.clone() };
+    let say = |body: &str, reply: Option<String>| PostInput { kind: PostKind::Inform, reply_to_id: reply, ..request(body, body) };
+    let root = s.post(&Actor::Owner, to(), say("root", None)).unwrap();
+    let quiet = s.post(&Actor::Owner, to(), say("quiet", None)).unwrap();
+    let replies: Vec<Post> = (0..5).map(|i| s.post(&buddy("ic"), to(), say(&format!("r{i}"), Some(root.id.clone()))).unwrap()).collect();
+
+    let stats = s.thread_stats(&Actor::Owner, &general.id, &[root.id.clone(), quiet.id.clone()]).unwrap();
+    assert_eq!(stats.len(), 1, "a root without replies has no stat");
+    assert_eq!((stats[0].replies, &stats[0].last_reply_ord), (5, &replies[4].ord));
+    assert_eq!(stats[0].last_reply_author, buddy("ic"));
+    let other = s
+        .create_channel(&Actor::Owner, ChannelInput { workspace_id: WS.into(), name: "o".into(), purpose: "p".into(), key: "o".into() })
+        .unwrap();
+    assert!(s.thread_stats(&Actor::Owner, &other.id, std::slice::from_ref(&root.id)).unwrap().is_empty(), "stats stay in their channel");
+
+    let cursor = |s: &Store| {
+        let inbox = s.inbox(&Actor::Owner, WS).unwrap();
+        inbox.channels.into_iter().find(|c| c.channel.id == general.id).unwrap().last_read_ord
+    };
+    assert_eq!(cursor(s), None, "never read");
+    s.mark_read(&Actor::Owner, &general.id, &replies[1].id).unwrap();
+    assert_eq!(cursor(s), Some(replies[1].ord.clone()));
+
+    let thread = || PostQuery::Thread { root_id: root.id.clone() };
+    let ids = |page: &PostPage| page.posts.iter().map(|p| p.id.clone()).collect::<Vec<_>>();
+    let from = s.list_posts_from(&Actor::Owner, thread(), &replies[2].id, 50).unwrap();
+    assert_eq!(ids(&from), [&replies[4], &replies[3], &replies[2]].map(|p| p.id.clone()), "the linked reply and every newer one");
+    let older = s.list_posts(&Actor::Owner, thread(), from.next.clone(), 50).unwrap();
+    assert_eq!(ids(&older), [&replies[1], &replies[0]].map(|p| p.id.clone()), "`next` pages on below the linked reply");
+    assert!(s.list_posts_from(&Actor::Owner, thread(), &replies[0].id, 50).unwrap().next.is_none(), "nothing older");
+    let capped = s.list_posts_from(&Actor::Owner, thread(), &replies[0].id, 2).unwrap();
+    assert_eq!(ids(&capped), [&replies[1], &replies[0]].map(|p| p.id.clone()), "a cap keeps the linked reply");
+    assert!(matches!(s.list_posts_from(&Actor::Owner, thread(), &quiet.id, 5), Err(CoreError::Invalid(_))));
+}
+
+#[test]
+fn task_posts_gather_one_tasks_posts_across_the_channels_a_reader_may_read() {
+    let mut f = fixture();
+    let s = &mut f.store;
+    let create = |title: &str| TaskWrite::Create {
+        owner_id: "ic".into(),
+        parent_id: None,
+        title: title.into(),
+        done_criteria: "d".into(),
+        key: title.into(),
+    };
+    let task = s.upsert_task(&Actor::Owner, create("ship")).unwrap();
+    let other = s.upsert_task(&Actor::Owner, create("other")).unwrap();
+    let general = s
+        .create_channel(
+            &Actor::Owner,
+            ChannelInput { workspace_id: WS.into(), name: "general".into(), purpose: "p".into(), key: "g".into() },
+        )
+        .unwrap();
+    let about = |t: &Task, body: &str| PostInput { kind: PostKind::Inform, task_id: Some(t.id.clone()), ..request(body, body) };
+    s.post(&buddy("lead"), ChannelRef::Id { id: general.id.clone() }, about(&task, "public")).unwrap();
+    s.post(&buddy("mid"), dm("mid", "ic"), about(&task, "private")).unwrap();
+    s.post(&buddy("lead"), ChannelRef::Id { id: general.id.clone() }, about(&other, "elsewhere")).unwrap();
+    let bodies = |who: &Actor, before: Option<Cursor>, limit: i64| {
+        let page = s.task_posts(who, &task.id, before, limit).unwrap();
+        (page.posts.into_iter().map(|p| p.body).collect::<Vec<_>>(), page.next)
+    };
+    assert_eq!(bodies(&Actor::Owner, None, 10).0, ["private", "public"], "the owner reads every channel");
+    assert_eq!(bodies(&buddy("peer"), None, 10).0, ["public"], "a DM stays with its members");
+    let (first, next) = bodies(&Actor::Owner, None, 1);
+    assert_eq!(first, ["private"]);
+    assert_eq!(bodies(&Actor::Owner, next, 1).0, ["public"], "keyset paging on the ordered id");
+}
+
+#[test]
+fn a_profile_setting_can_be_cleared_back_to_the_default() {
+    // T22: `provider: Option<String>` could only set; Settings had no way back to the default.
+    let mut f = fixture();
+    let s = &mut f.store;
+    let change = |changes: BuddyChanges, key: &str| BuddyUpdate { buddy_id: "ic".into(), changes, key: key.into() };
+    let set = |v: &str| Some(Setting::Set { value: v.into() });
+    let ic = s
+        .update_buddy(&Actor::Owner, change(BuddyChanges { provider: set("codex"), model: set("m1"), ..Default::default() }, "set"))
+        .unwrap();
+    assert_eq!((ic.provider.as_deref(), ic.model.as_deref()), (Some("codex"), Some("m1")));
+    let ic = s.update_buddy(&Actor::Owner, change(BuddyChanges { model: Some(Setting::Default), ..Default::default() }, "clear")).unwrap();
+    assert_eq!((ic.provider.as_deref(), ic.model), (Some("codex"), None), "cleared; the absent provider is unchanged");
+    let replay = change(BuddyChanges { model: set("m2"), ..Default::default() }, "clear");
+    assert!(s.update_buddy(&Actor::Owner, replay).is_err(), "a reused key with another change is refused, not replayed");
+}

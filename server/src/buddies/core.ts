@@ -1,13 +1,20 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { type Actor, BuddiesCore, type DocScope } from '@unleashd/buddies-core';
+import { type Actor, BuddiesCore, type DocScope, type Setting } from '@unleashd/buddies-core';
 import type { BuddyContext } from '@unleashd/shared';
 
 export type { BuddiesCore } from '@unleashd/buddies-core';
 
 export const OWNER: Actor = { kind: 'owner' };
 export const buddyActor = (id: string): Actor => ({ kind: 'buddy', id });
+
+/**
+ * κ for a profile field on the wire: absent = unchanged, `null` = back to the default, a string =
+ * that value. The crate's `Setting` names the clear, which `Option<String>` could not (T22).
+ */
+export const settingOf = (value: string | null | undefined): Setting | undefined =>
+  value === undefined ? undefined : value === null ? { kind: 'default' } : { kind: 'set', value };
 
 /** The crate's error codes; a rejection's message is `[code] detail` (crate README). */
 export type CoreErrorCode =

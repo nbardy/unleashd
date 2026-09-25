@@ -10,6 +10,9 @@ export declare class BuddiesCore {
   getPost(actor: Actor, id: string): Promise<Post>
   openChannel(actor: Actor, channel: ChannelRef): Promise<Channel>
   listPosts(actor: Actor, query: PostQuery, before: Cursor | undefined | null, limit: number): Promise<PostPage>
+  listPostsFrom(actor: Actor, query: PostQuery, postId: string, limit: number): Promise<PostPage>
+  threadStats(actor: Actor, channelId: string, rootIds: Array<string>): Promise<Array<ThreadStat>>
+  taskPosts(actor: Actor, taskId: string, before: Cursor | undefined | null, limit: number): Promise<PostPage>
   searchPosts(actor: Actor, workspaceId: string, query: string, limit: number): Promise<Array<Post>>
   inbox(actor: Actor, workspaceId: string): Promise<Inbox>
   markRead(actor: Actor, channelId: string, postId: string): Promise<void>
@@ -83,9 +86,9 @@ export interface BuddyChanges {
   name?: string
   role?: string
   manager?: ManagerRef
-  provider?: string
-  model?: string
-  reasoningEffort?: string
+  provider?: Setting
+  model?: Setting
+  reasoningEffort?: Setting
   backgroundEnabled?: boolean
   maxActiveRuns?: number
   status?: BuddyStatus
@@ -144,6 +147,8 @@ export interface ChannelUnread {
   channel: Channel
   /** Posts by others after the reader's cursor (all of them when it has none). */
   unread: number
+  /** The reader's cursor: the ordered id it has read through. Absent: it never read the channel. */
+  lastReadOrd?: string
 }
 
 export interface Claim {
@@ -405,6 +410,14 @@ export interface ScheduleInput {
   key: string
 }
 
+/**
+ * A profile field's new value: a named choice, or back to the server's default (column NULL).
+ * A plain `Option<String>` patch could not say "clear" — absent already means "unchanged".
+ */
+export type Setting =
+  | { kind: 'set'; value: string }
+  | { kind: 'default' }
+
 /** Whose resource an operation touches (the `target` of `authorize`). */
 export type Subject =
   | { kind: 'owner' }
@@ -453,6 +466,16 @@ export type TaskStatus = 'open' | 'in_progress' | 'blocked' | 'review' | 'done' 
 export type TaskWrite =
   | { kind: 'create'; ownerId: string; parentId?: string; title: string; doneCriteria: string; key: string }
   | { kind: 'update'; taskId: string; baseRevision: number; changes: TaskChanges; key: string }
+
+/** A thread root's replies at a glance: the channel row's "3 replies · last reply 2m ago". */
+export interface ThreadStat {
+  rootId: string
+  replies: number
+  lastReplyAt: string
+  /** The newest reply's ordered id: after the reader's cursor, the thread has something new. */
+  lastReplyOrd: string
+  lastReplyAuthor: Actor
+}
 
 export interface Workspace {
   id: string

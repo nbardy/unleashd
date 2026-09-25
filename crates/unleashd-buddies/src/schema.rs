@@ -166,12 +166,14 @@ END;
 INSERT INTO post_search(post_search) VALUES ('rebuild');
 "#;
 
+/// `post_task` serves the Task filter (T22); without it the filter walked every post in ord order.
 /// Indexes for the self-references of `post`. With the search triggers in place SQLite plans the
 /// foreign-key parent checks of every post insert, and without these they are full scans of
 /// `post` (the query-plan guard caught it). Added after T06b, so created on open when missing.
 const POST_REFERENCE_INDEXES: &str = "
 CREATE INDEX IF NOT EXISTS post_reply_to ON post(reply_to_id) WHERE reply_to_id IS NOT NULL;
-CREATE INDEX IF NOT EXISTS post_answer ON post(answer_id) WHERE answer_id IS NOT NULL;";
+CREATE INDEX IF NOT EXISTS post_answer ON post(answer_id) WHERE answer_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS post_task ON post(task_id, ord) WHERE task_id IS NOT NULL;";
 
 /// A file imported before ordered ids has no `post.ord`: it cannot be ordered correctly, so it is
 /// refused with the fix (re-import), never opened half-working. No live file predates it (T15).

@@ -1,7 +1,8 @@
 //! Query-plan guard. Regression class: the 2026-09-25 tick incident (00-reconcile-fix.md), where a
 //! 1 s timer ran full-table scans and took 0.6–20 s per tick. Every statement a workload of every
 //! public function executes is traced, then `EXPLAIN QUERY PLAN`ned; a plain `SCAN <table>` fails.
-//! An index scan (`SCAN t USING INDEX`) is fine; so is a CTE scan and the one list-everything read.
+//! A walk of a whole index (`SCAN t USING INDEX`) is a scan too, except the partial run-queue walks;
+//! a CTE scan and the one list-everything read are fine.
 
 mod common;
 
@@ -19,6 +20,10 @@ fn record(sql: &str) {
 
 /// Reads whose job is to return every row of a small table.
 const WHOLE_TABLE_BY_DESIGN: &[&str] = &["SCAN workspace"];
+/// Whole walks of a PARTIAL index whose every row is a candidate: the run queue and live leases.
+/// Any other `SCAN t USING INDEX` walks the whole table in index order (T22: the Task filter's
+/// `post.task_id` lookup walked `post` by ord before `post_task` existed, and passed).
+const INDEX_WALKS_BY_DESIGN: &[&str] = &["SCAN run USING INDEX run_queue", "SCAN run USING INDEX run_lease"];
 /// Plan lines that scan no table: the manager-walk CTE and its constant seed row.
 const NOT_TABLES: &[&str] = &["SCAN up", "SCAN CONSTANT ROW"];
 
@@ -33,7 +38,7 @@ fn workload(s: &mut unleashd_buddies::Store) {
         .unwrap();
     let public = ChannelRef::Id { id: channel.id.clone() };
     let top = s.post(&owner, public.clone(), input(PostKind::Inform, "hi", "p1")).unwrap();
-    s.post(&ic, public, PostInput { reply_to_id: Some(top.id.clone()), ..input(PostKind::Inform, "reply", "p2") }).unwrap();
+    let top_reply = s.post(&ic, public, PostInput { reply_to_id: Some(top.id.clone()), ..input(PostKind::Inform, "reply", "p2") }).unwrap();
     let dm = ChannelRef::Direct { members: vec![mid.clone(), ic.clone()] };
     let ask =
         s.post(&mid, dm.clone(), PostInput { from_conversation_id: Some("c-mid".into()), ..input(PostKind::Request, "do", "p3") }).unwrap();
@@ -48,6 +53,9 @@ fn workload(s: &mut unleashd_buddies::Store) {
         s.list_posts(&ic, q, cursor.clone(), 5).unwrap();
     }
     s.get_post(&ic, &ask.id).unwrap();
+    s.list_posts_from(&ic, PostQuery::Thread { root_id: top.id.clone() }, &top_reply.id, 5).unwrap();
+    s.list_posts_from(&ic, PostQuery::Channel { channel_id: channel.id.clone() }, &top.id, 5).unwrap();
+    assert_eq!(s.thread_stats(&ic, &channel.id, &[top.id.clone(), ask.id.clone()]).unwrap().len(), 1);
     s.inbox(&ic, WS).unwrap();
     assert_eq!(s.search_posts(&ic, WS, "reply", 5).unwrap().len(), 1);
     s.search_posts(&owner, WS, "on it", 5).unwrap();
@@ -118,6 +126,8 @@ fn workload(s: &mut unleashd_buddies::Store) {
         s.list_tasks(q).unwrap();
     }
     s.get_task(&parent.id).unwrap();
+    s.task_posts(&ic, &parent.id, None, 5).unwrap();
+    s.task_posts(&owner, &parent.id, Some(Cursor { ord: "ffffffff-ffff-7fff-bfff-ffffffffffff".into() }), 5).unwrap();
     s.post(&ic, ChannelRef::Task { task_id: parent.id.clone() }, input(PostKind::Inform, "comment", "p5")).unwrap();
 
     let run = s
@@ -168,6 +178,7 @@ fn workload(s: &mut unleashd_buddies::Store) {
             buddy_id: hired.id,
             changes: BuddyChanges {
                 manager: Some(ManagerRef::Buddy { id: "mid".into() }),
+                model: Some(Setting::Default),
                 status: Some(BuddyStatus::Archived),
                 ..BuddyChanges::default()
             },
@@ -256,12 +267,15 @@ fn every_statement_uses_an_index() {
         let plan: Vec<String> = stmt.query_map([], |r| r.get::<_, String>(3)).unwrap().map(Result::unwrap).collect();
         plan.into_iter()
             // An FTS5 MATCH plans as "SCAN <fts> VIRTUAL TABLE INDEX n:M..": an index lookup.
-            .filter(|line| line.starts_with("SCAN ") && !line.contains("USING") && !line.contains("VIRTUAL TABLE INDEX 0:M"))
-            .filter(|line| !WHOLE_TABLE_BY_DESIGN.contains(&line.as_str()) && !NOT_TABLES.contains(&line.as_str()))
+            .filter(|line| line.starts_with("SCAN ") && !line.contains("VIRTUAL TABLE INDEX 0:M"))
+            .filter(|line| {
+                ![WHOLE_TABLE_BY_DESIGN, NOT_TABLES, INDEX_WALKS_BY_DESIGN].iter().any(|allowed| allowed.contains(&line.as_str()))
+            })
             .collect()
     };
     // The detector itself must see a scan, or a changed SQLite plan format would pass everything.
     assert_eq!(table_scans("SELECT * FROM post WHERE body = 'x'"), ["SCAN post"]);
+    assert_eq!(table_scans("SELECT id FROM post WHERE body = 'x' ORDER BY ord"), ["SCAN post USING INDEX sqlite_autoindex_post_2"]);
     let scans: Vec<String> =
         statements.iter().flat_map(|sql| table_scans(sql).into_iter().map(move |line| format!("{line}\n    in: {sql}"))).collect();
     assert!(scans.is_empty(), "full table scans:\n{}", scans.join("\n"));
