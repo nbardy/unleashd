@@ -1,5 +1,4 @@
 import {
-  type BuddyListAuthor,
   type BuddyMailingListPost,
   type BuddyOwnerPostResult,
   type OwnerListUnread,
@@ -22,12 +21,11 @@ import { CopyLinkButton } from './CopyLinkButton';
 import {
   type BuddyMailingListSummary,
   CHANNEL_BACKSTOP_MS,
-  CONVERSATIONAL_PURPOSES,
   type ChannelMember,
   type ChannelRow,
   arrivalMarks,
+  authorName,
   channelPostFeed,
-  channelReferences,
   channelRows,
   channelUnreadAttr,
   clockTime,
@@ -35,6 +33,8 @@ import {
   feedPhase,
   listsUrl,
   ownerUnreadByList,
+  postPurposeLabel,
+  postPurposeTag,
   renderFeed,
   taskPostFeed,
   threadPostFeed,
@@ -46,6 +46,7 @@ import {
   useWarmChannelPosts,
   useWithOutbox,
   useWorkspaceDirectory,
+  workspaceDirectory,
 } from './channel-data';
 import { channelLinkPath, postLink } from './channel-link';
 import { type ChannelReference, type ChannelTask, plainChannelText } from './channel-text';
@@ -115,14 +116,19 @@ function InstanceTag({
   );
 }
 
+function PostPurpose({ post }: { post: BuddyMailingListPost }) {
+  const label = postPurposeLabel(post);
+  return label === null ? null : (
+    <span className="channel-browser-purpose" data-purpose={postPurposeTag(post)}>
+      {label}
+    </span>
+  );
+}
+
 function PostMeta({ post, context }: { post: BuddyMailingListPost; context: RowContext }) {
   return (
     <>
-      {!CONVERSATIONAL_PURPOSES.has(post.purpose) && (
-        <span className="channel-browser-purpose" data-purpose={post.purpose}>
-          {post.purpose.replaceAll('_', ' ')}
-        </span>
-      )}
+      <PostPurpose post={post} />
       {context.showChannel && (
         <span className="channel-browser-channel-tag">
           #{context.channelNameById.get(post.listId) ?? post.listId}
@@ -136,15 +142,6 @@ function PostMeta({ post, context }: { post: BuddyMailingListPost; context: RowC
       )}
     </>
   );
-}
-
-function authorName(author: BuddyListAuthor, buddyNames: Readonly<Record<string, string>>) {
-  switch (author.kind) {
-    case 'owner':
-      return 'You';
-    case 'buddy':
-      return buddyNames[author.buddyId] ?? author.buddyId;
-  }
 }
 
 function Replying({ text }: { text: string }) {
@@ -836,16 +833,10 @@ export function ChannelBrowser({
     () => new Map((data ?? []).map((list) => [list.id, list.name])),
     [data]
   );
-  const buddyNames = useMemo(
-    () => Object.fromEntries(members.map((member) => [member.id, member.name])),
-    [members]
+  const { buddyNames, activeMembers, taskById, references } = useMemo(
+    () => workspaceDirectory(workspaceName, members, tasks),
+    [workspaceName, members, tasks]
   );
-  const activeMembers = useMemo(
-    () => members.filter((member) => member.status === 'active'),
-    [members]
-  );
-  const taskById = useMemo(() => new Map(tasks.map((task) => [task.id, task])), [tasks]);
-  const references = useMemo(() => channelReferences(members, tasks), [members, tasks]);
   const selected = data?.find((list) => list.id === params.get('channel')) ?? data?.[0] ?? null;
   const select = (next: { channel: string; task: string | null; thread: string | null }) =>
     setParams({

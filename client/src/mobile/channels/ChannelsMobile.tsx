@@ -16,6 +16,7 @@ import {
   type ChannelRow,
   type WorkspaceDirectory,
   arrivalMarks,
+  authorName,
   channelPostFeed,
   channelRows,
   channelUnreadAttr,
@@ -430,15 +431,6 @@ function PostFooter({ post, context }: { post: BuddyMailingListPost; context: Ro
   }
 }
 
-function authorName(post: BuddyMailingListPost, directory: WorkspaceDirectory): string {
-  switch (post.author.kind) {
-    case 'owner':
-      return 'You';
-    case 'buddy':
-      return directory.buddyNames[post.author.buddyId] ?? post.author.buddyId;
-  }
-}
-
 function Row({ row, context }: { row: ChannelRow; context: RowContext }) {
   const openDm = useChatPageDm();
   switch (row.kind) {
@@ -458,7 +450,7 @@ function Row({ row, context }: { row: ChannelRow; context: RowContext }) {
         >
           <BuddySigil
             className="mobile-channel-post__avatar"
-            name={authorName(row.post, context.directory)}
+            name={authorName(row.post.author, context.directory.buddyNames)}
           />
           <div className="mobile-channel-post__content">
             <div className="mobile-channel-post__heading">

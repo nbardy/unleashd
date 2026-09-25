@@ -33,16 +33,9 @@ import { type ChannelReference, type ChannelTask, workspaceTasksUrl } from './ch
 
 export function workspaceActivityResource(workspaceId: string) {
   const path = `/api/buddies/workspaces/${encodeURIComponent(workspaceId)}/activity`;
-  return resource(path, async (signal: AbortSignal) => {
-    const response = await fetch(path, { signal });
-    if (!response.ok) {
-      const payload = (await response.json().catch(() => ({}))) as { error?: string };
-      throw new Error(
-        payload.error ?? `Unable to load workspace activity (HTTP ${response.status})`
-      );
-    }
-    return BuddyWorkspaceActivitySchema.parse(await response.json());
-  });
+  return resource(path, async (signal: AbortSignal) =>
+    BuddyWorkspaceActivitySchema.parse(await buddyApi(path, { signal }))
+  );
 }
 
 export interface BuddyMailingListSummary {
@@ -62,6 +55,19 @@ export function authorKey(author: BuddyListAuthor): string {
       return 'owner';
     case 'buddy':
       return author.buddyId;
+  }
+}
+
+/** The name a post's author shows as: the owner is "You", a Buddy its name. */
+export function authorName(
+  author: BuddyListAuthor,
+  buddyNames: Readonly<Record<string, string>>
+): string {
+  switch (author.kind) {
+    case 'owner':
+      return 'You';
+    case 'buddy':
+      return buddyNames[author.buddyId] ?? author.buddyId;
   }
 }
 
@@ -456,7 +462,7 @@ export function joinNames(names: readonly string[]): string {
 
 // Conversational purposes read as plain chat; every other purpose (standup,
 // handoff, decision, reply_failed…) is a label worth showing.
-export const CONVERSATIONAL_PURPOSES: ReadonlySet<string> = new Set(['message', 'reply']);
+const CONVERSATIONAL_PURPOSES: ReadonlySet<string> = new Set(['message', 'reply']);
 
 // A post's purpose as UI: the raw tag (styling hook, e.g. reply_failed) and the
 // label to show, which is null for plain conversation. Kept here so the mobile
@@ -481,7 +487,7 @@ const TASK_STATUS_LABELS: Readonly<Record<string, string>> = {
 
 // The universal @ menu: active Buddies and every non-cancelled Task; the fuzzy
 // ranker orders them together by match quality.
-export function channelReferences(
+function channelReferences(
   members: readonly ChannelMember[],
   tasks: readonly ChannelTask[]
 ): ChannelReference[] {
@@ -523,30 +529,44 @@ export type WorkspaceDirectory = {
 
 const NO_TASKS: readonly ChannelTask[] = [];
 
+/** Every lookup the channel views derive from a workspace's members and Tasks. */
+export function workspaceDirectory(
+  workspaceName: string,
+  members: readonly ChannelMember[],
+  tasks: readonly ChannelTask[]
+): WorkspaceDirectory {
+  return {
+    workspaceName,
+    members,
+    activeMembers: members.filter((member) => member.status === 'active'),
+    tasks,
+    buddyNames: Object.fromEntries(members.map((member) => [member.id, member.name])),
+    taskById: new Map(tasks.map((task) => [task.id, task])),
+    references: channelReferences(members, tasks),
+  };
+}
+
 /** Members, Tasks and the @ index for one workspace, polled and cached. */
 export function useWorkspaceDirectory(workspaceId: string): WorkspaceDirectory {
   const loadActivity = useMemo(() => workspaceActivityResource(workspaceId), [workspaceId]);
   const activity = usePolledFetch<BuddyWorkspaceActivity>(loadActivity, 10_000);
   const tasksFeed = usePolledFetch<ChannelTask[]>(workspaceTasksUrl(workspaceId), 15_000);
   const tasks = tasksFeed.data ?? NO_TASKS;
-  return useMemo(() => {
-    const members = (activity.data?.members ?? []).map((member) => ({
-      id: member.id,
-      name: member.name,
-      role: member.role,
-      status: member.status,
-      execution: member.execution,
-    }));
-    return {
-      workspaceName: activity.data?.workspace.name ?? 'Channels',
-      members,
-      activeMembers: members.filter((member) => member.status === 'active'),
-      tasks,
-      buddyNames: Object.fromEntries(members.map((member) => [member.id, member.name])),
-      taskById: new Map(tasks.map((task) => [task.id, task])),
-      references: channelReferences(members, tasks),
-    };
-  }, [activity.data, tasks]);
+  return useMemo(
+    () =>
+      workspaceDirectory(
+        activity.data?.workspace.name ?? 'Channels',
+        (activity.data?.members ?? []).map((member) => ({
+          id: member.id,
+          name: member.name,
+          role: member.role,
+          status: member.status,
+          execution: member.execution,
+        })),
+        tasks
+      ),
+    [activity.data, tasks]
+  );
 }
 
 /**
