@@ -28,7 +28,8 @@ Updates cost what changed, not n.
 **Smell:** nullable field bags, and "what kind / which provider is this?" checks inside core logic.
 **Pattern:** the kinds are a sum type, fixed once at the boundary. One thin exhaustive dispatcher picks a handler,
 and each handler has one clean path with no structural branching (see ~/.claude/CLAUDE.md "One Clean Path").
-**Here:** crate `types.rs` (`ChannelKind`, `RequestState`, `RunInput`); `McpServerSpec {kind:'stdio'|'http'}` in
+**Here:** `ConversationKindSchema` (chat | buddy | builder | worker, `shared/src/conversation-config.ts`) and its
+list projection `RowKind`; crate `types.rs` (`ChannelKind`, `RequestState`, `RunInput`); `McpServerSpec {kind:'stdio'|'http'}` in
 agent-cli; the conversation's `TurnPolicy`, chosen once by kind (`policyFor` in `conversations/runtime.ts`:
 `ChatTurnPolicy` / `BuddyTurnPolicy` / `BuddyBuilderTurnPolicy`).
 
@@ -79,7 +80,9 @@ while a turn runs there, replacing one blocking 2 s poller per running conversat
 **Smell:** resending whole objects on small changes (5 MB on "mark done").
 **Pattern:** send field patches, and apply them with structural sharing so unchanged parts keep their identity.
 List payloads carry summary rows; bodies load on demand.
-**Here:** T09 (wire contract); T05's tail-only stream regroup.
+**Here:** `RowPatchSchema` / `applyRowPatch` / `applyDetailPatch` in `shared/src/conversation.ts`;
+`handlePatch` in `client/src/atoms/actions.ts`; the tail-only transcript refresh (`refreshTranscript`);
+T05's tail-only stream regroup. Guard: `server/test/wire-v3.test.ts`.
 
 ## one-type-source
 **Smell:** the same type hand-copied in several layers, drifting apart.
@@ -100,7 +103,9 @@ List payloads carry summary rows; bodies load on demand.
 **Smell:** compatibility shims, permanent flags, migration chains (33 schema versions).
 **Pattern:** a one-time export into a clean shape, with zero-loss verification (counts plus content hashes). Then
 delete the old path entirely.
-**Here:** crate `import.rs` + `verify.rs` (both deleted after the live swap); `crates/unleashd-ingest/src/records/import.rs` (config JSON directory → records table, deleted after T23b).
+**Here:** crate `import.rs` + `verify.rs` (both deleted after the live swap); `crates/unleashd-ingest/src/records/import.rs` (config JSON directory → records table, deleted after T23b);
+`server/src/conversations/record-migration.ts` (config records v1 → v2 with one stored `kind`; delete once the
+live dir is migrated).
 
 ## tokens-and-shells
 **Smell:** per-screen CSS values (45 font sizes, 172 paddings) and a copy of every screen per device.

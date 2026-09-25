@@ -32,9 +32,7 @@ export function getWorkerVisibilitySummary(
     };
   }
 
-  const runningWorkers = new Set(
-    workers.filter(isRunning).map(workerId)
-  ).size;
+  const runningWorkers = new Set(workers.filter(isRunning).map(workerId)).size;
   return {
     sessionCount,
     hasWorkers: sessionCount > 0,

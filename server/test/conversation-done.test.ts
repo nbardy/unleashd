@@ -120,7 +120,10 @@ test('a hide set over the WebSocket survives session rotation and a restart', as
     assert.equal(afterRestart?.done, true, 'hide must survive rotation and a store reopen');
 
     const restored = await setDone(false);
-    assert.equal(restored?.type === 'patch' && restored.patch.t === 'done' && restored.patch.done, false);
+    assert.equal(
+      restored?.type === 'patch' && restored.patch.t === 'done' && restored.patch.done,
+      false
+    );
     assert.equal((await configLayer(root).store.getByConversationId(CONVERSATION_ID))?.done, false);
   } finally {
     await rm(root, { recursive: true, force: true });

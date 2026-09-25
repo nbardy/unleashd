@@ -24,6 +24,24 @@ import {
 } from '../src/lifecycle/session-loader';
 import { discoveredSession } from './fixtures/discovered-session';
 
+/** A list row as the loader broadcasts it (content irrelevant here). */
+function fakeRow(id: string) {
+  return {
+    id,
+    kind: { t: 'chat' as const },
+    parent: null,
+    resumedFrom: null,
+    provider: 'claude' as const,
+    cwd: '/tmp',
+    label: 'fixture',
+    createdAt: 0,
+    activityAt: 0,
+    messageCount: 0,
+    run: 'idle' as const,
+    done: false,
+  };
+}
+
 const BUDDY: BuddyContext = {
   buddyId: 'buddy_d3f11f11',
   workspaceId: 'project_26fce156',
@@ -94,7 +112,7 @@ async function hydrateOne(input: {
       unregisterAlias: () => {},
       aliasFor: () => undefined,
     },
-    externalActivity: { clear: () => {} },
+    externalActivity: { clear: () => {}, has: () => false },
     completionSuppression: { clear: () => {} },
     configStore: {
       findBySession: async () => record,
@@ -126,7 +144,7 @@ async function hydrateOne(input: {
         messages: [],
         createdAt: new Date(),
         subAgents: [],
-        toRow: () => ({ id: conversationOptions.id, run: 'idle' }),
+        toRow: () => fakeRow(conversationOptions.id),
       } as unknown as ConversationRuntime;
     },
     createId: () => 'unused-id',
@@ -245,7 +263,7 @@ async function recoverAll(input: {
       },
     },
     sessions: { registerAlias: () => {}, unregisterAlias: () => {}, aliasFor: () => undefined },
-    externalActivity: { clear: () => {} },
+    externalActivity: { clear: () => {}, has: () => false },
     completionSuppression: { clear: () => {} },
     configStore: { findBySession: async () => undefined } as unknown as ConversationConfigStore,
     configService: {
@@ -294,7 +312,7 @@ async function recoverAll(input: {
         messages: [],
         createdAt: new Date(),
         subAgents: [],
-        toRow: () => ({ id: conversationOptions.id, run: 'idle' }),
+        toRow: () => fakeRow(conversationOptions.id),
       } as unknown as ConversationRuntime;
     },
     createId: () => 'unused-id',

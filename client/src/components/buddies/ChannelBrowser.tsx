@@ -1,9 +1,9 @@
-import { getBuddyContext } from '@unleashd/shared';
 import { useAtomValue } from 'jotai';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { availableConversationIdSetAtom, conversationAtomFamily } from '../../atoms/conversations';
 import { useBuddyOverview } from '../../hooks/useBuddyData';
+import { rowBuddy } from '../../utils/conversation-row';
 import { Chat } from '../Chat';
 import { BuddyRailRow } from './BuddyRailRow';
 import { BuddySigil } from './BuddySigil';
@@ -728,7 +728,7 @@ export function ChannelBrowser({
   const dm = params.get('dm');
   const openDm: OpenDm = (conversationId) => setParams({ dm: conversationId });
   const dmConversation = useAtomValue(conversationAtomFamily(dm ?? ''));
-  const dmBuddyId = getBuddyContext(dmConversation)?.buddyId;
+  const dmBuddyId = rowBuddy(dmConversation)?.buddyId;
   const railRow = (entry: ChannelUnread) => (
     <RailChannel
       key={entry.channel.id}

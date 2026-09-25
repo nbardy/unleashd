@@ -215,7 +215,9 @@ async function world() {
       placement: (id) => {
         const conversation = conversations.get(id);
         if (!conversation) return 'absent';
-        return conversation.placement === 'background' ? 'background' : 'foreground';
+        return conversation.kind.t === 'buddy' && conversation.kind.visibility === 'background'
+          ? 'background'
+          : 'foreground';
       },
       openBackground: async ({ conversationId, context, commandId }) => {
         await creation.createServerBuddyConversation({
@@ -223,7 +225,7 @@ async function world() {
           conversationId,
           commandId,
           deferInitialMessage: true,
-          placement: 'background',
+          visibility: 'background',
         });
       },
       runTurn: async ({ conversationId, context, prompt, leaseToken }) =>

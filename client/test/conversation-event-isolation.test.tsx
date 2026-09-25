@@ -190,11 +190,11 @@ function eventsForA(kind: 'content' | 'list'): Array<() => void> {
           patch: {
             t: 'subagent',
             subAgent: {
-            id: 'agent-1',
-            description: 'look around',
-            status: 'running',
-            toolUses: 0,
-            tokens: 0,
+              id: 'agent-1',
+              description: 'look around',
+              status: 'running',
+              toolUses: 0,
+              tokens: 0,
               startedAt: new Date(now),
             },
           },

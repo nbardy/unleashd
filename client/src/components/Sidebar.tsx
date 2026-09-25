@@ -1,6 +1,5 @@
 import type { ConversationConfig, ConversationRow } from '@unleashd/shared';
 import { createDefaultConversationConfig } from '@unleashd/shared';
-import { isRowRunning } from '../utils/conversation-row';
 import { useAtom, useAtomValue } from 'jotai';
 import { memo, useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
@@ -39,6 +38,7 @@ import {
 } from '../atoms/ui';
 import { useBuddyOverview } from '../hooks/useBuddyData';
 import { useProviderCatalog } from '../hooks/useProviderCatalog';
+import { isRowRunning } from '../utils/conversation-row';
 import { normalizeFolderDirectory, shortenHomePath } from '../utils/directories';
 import { getProjectColor } from '../utils/projectColors';
 import { formatTimeAgo, getConversationLastActivity, getMinutesElapsed } from '../utils/time';
@@ -188,9 +188,7 @@ export function Sidebar() {
         ? readConversation(item.latestConversation.id)
         : null;
       const workingDirectory =
-        latestConversation?.cwd ??
-        item.pendingCreation?.workingDirectory ??
-        item.workingDirectory;
+        latestConversation?.cwd ?? item.pendingCreation?.workingDirectory ?? item.workingDirectory;
       // Seed the harness from this buddy's latest thread so a provider/model
       // picked there sticks for the next thread. Falls back to the global
       // new-conversation draft only when the buddy has no prior thread.
@@ -205,7 +203,7 @@ export function Sidebar() {
         config: seedConfig,
         kind: {
           t: 'buddy',
-          context: { buddyId: item.buddyId, workspaceId: workspaceId ?? '', buddyProjectId: null },
+          context: { buddyId: item.buddyId, workspaceId: item.workspaceId, buddyProjectId: null },
         },
       });
       navigate(`/chat/${id}`);
@@ -1049,7 +1047,6 @@ function FolderRunningStatus({ count }: { count: number }) {
   );
 }
 
-
 /**
  * One sidebar row. Subscribes to its own conversation and seen index, and is
  * memoized, so an event for another conversation re-renders nothing here.
@@ -1131,7 +1128,11 @@ function ConversationItem({
       <div className="conversation-row">
         {showFolderBadge && (
           <span className="folder-badge" style={{ color: projectColor }} title={dirDisplay}>
-            {conv.kind.t === 'builder' ? 'Builder' : conv.kind.t === 'buddy' ? 'Buddies' : folderName}
+            {conv.kind.t === 'builder'
+              ? 'Builder'
+              : conv.kind.t === 'buddy'
+                ? 'Buddies'
+                : folderName}
           </span>
         )}
         <span className="conversation-title" title={title}>

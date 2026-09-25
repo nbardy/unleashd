@@ -1,7 +1,7 @@
-import { buddyKind } from '@unleashd/shared';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import test from 'node:test';
+import { buddyKind } from '@unleashd/shared';
 import { createDefaultConversationConfig } from '@unleashd/shared';
 import type { BuddyContext } from '@unleashd/shared';
 import { sessionToConversation } from '../src/adapters/disk-adapter';
@@ -15,21 +15,6 @@ const buddyContext: BuddyContext = {
   buddyId: 'buddy-1',
   workspaceId: 'workspace-1',
   buddyProjectId: null,
-};
-
-// Canonical BuddyContext absence invariant (shared/src/conversation-kind.ts):
-// every `.nullish()` field round-trips as an explicit `null`, while the
-// `.optional()` allowedBuddyOperations is omitted when absent. Anything that
-// stores a BuddyContext goes through kind ⇄ context, so reads come back in this
-// shape regardless of which subset of fields was supplied at construction.
-const canonicalBuddyContext: BuddyContext = {
-  buddyId: 'buddy-1',
-  workspaceId: 'workspace-1',
-  buddyProjectId: null,
-  legacyWorkItemId: null,
-  automationRunId: null,
-  delegatedByBuddyId: null,
-  parentBuddyConversationId: null,
 };
 
 function runtimeFixture() {
@@ -80,7 +65,7 @@ test('empty Buddy conversation construction is inert and drops a swarm debug pre
   assert.equal(conversation.process, null);
   assert.deepEqual(conversation.messages, []);
   assert.deepEqual(fixture.broadcasts, []);
-  assert.deepEqual(conversation.buddyContext, canonicalBuddyContext);
+  assert.deepEqual(conversation.buddyContext, buddyContext);
   assert.equal(conversation.swarmDebugPrefix, null);
 });
 
@@ -134,8 +119,9 @@ test('empty Buddy WebSocket creation resolves and registers without sending a pr
           conversationId: string;
           config: typeof fixture.config;
           workingDirectory: string;
+          kind: unknown;
         }) => ({
-          record: { workingDirectory: input.workingDirectory },
+          record: { workingDirectory: input.workingDirectory, kind: input.kind },
           state: {
             config: input.config,
             revision: 0,
@@ -172,21 +158,16 @@ test('empty Buddy WebSocket creation resolves and registers without sending a pr
 
   const socket = new FakeSocket();
   webSocketServer.emit('connection', socket);
-  assert.deepEqual(
-    JSON.parse(socket.sent[0]) as { type?: string; summaries?: boolean; loading?: boolean },
-    {
-      type: 'init',
-      archivedBuddyIds: [],
-      summaries: true,
-      loading: true,
-      conversations: [],
-      defaultCwd: '/tmp',
-      protocol: {
-        version: 2,
-        capabilities: ['conversation_config', 'conversation_updated', 'structured_command_errors'],
-      },
-    }
-  );
+  assert.deepEqual(JSON.parse(socket.sent[0]), {
+    type: 'hello',
+    protocol: { version: 3 },
+    defaultCwd: '/tmp',
+    loading: true,
+    archivedBuddyIds: [],
+    cwds: [],
+    buddies: [],
+    rows: [],
+  });
   socket.emit(
     'message',
     Buffer.from(
@@ -196,7 +177,7 @@ test('empty Buddy WebSocket creation resolves and registers without sending a pr
         conversationId: '00000000-0000-4000-8000-000000000123',
         workingDirectory: '/tmp',
         config: fixture.config,
-        buddyContext,
+        kind: { t: 'buddy', context: buddyContext },
       })
     )
   );
@@ -209,7 +190,7 @@ test('empty Buddy WebSocket creation resolves and registers without sending a pr
         conversationId: '00000000-0000-4000-8000-000000000123',
         workingDirectory: '/tmp',
         config: fixture.config,
-        buddyContext,
+        kind: { t: 'buddy', context: buddyContext },
       })
     )
   );
@@ -250,15 +231,12 @@ test('existing hydrated Buddy messages repair the durable link before admission'
     sessionId: 'provider-session',
     provider: 'codex',
     buddyContext,
-    kind: { kind: 'buddy', buddyId: buddyContext.buddyId },
+    kind: buddyKind(buddyContext),
     sendMessage: () => calls.push('send'),
     enqueueMessage: () => calls.push('queue'),
     interruptAndSend: () => calls.push('interrupt'),
     promoteQueuedMessage: (messageId: string) => calls.push(`promote:${messageId}`),
-    toJSON: () => ({
-      id: '00000000-0000-4000-8000-000000000456',
-      kind: { kind: 'buddy', buddyId: buddyContext.buddyId },
-    }),
+    configState: () => ({ config: {}, revision: 0, resolution: { status: 'resolved' } }),
   };
   class FakeSocket extends EventEmitter {
     readyState = 1;
@@ -316,7 +294,6 @@ test('existing hydrated Buddy messages repair the durable link before admission'
   webSocketServer.emit('connection', socket);
 
   for (const [type, commandId, messageId] of [
-    ['send_message', undefined, undefined],
     ['queue_message', 'queue-command', undefined],
     ['interrupt_and_send', 'interrupt-command', undefined],
     ['promote_queued_message', undefined, 'queued-1'],
@@ -335,7 +312,7 @@ test('existing hydrated Buddy messages repair the durable link before admission'
     await new Promise((resolve) => setImmediate(resolve));
   }
 
-  assert.deepEqual(calls, ['link', 'send', 'queue', 'interrupt', 'promote:queued-1']);
+  assert.deepEqual(calls, ['link', 'queue', 'interrupt', 'promote:queued-1']);
 });
 
 test('replaying create_conversation reports the real failure, not a config mismatch', async () => {
@@ -422,20 +399,23 @@ test('replaying create_conversation reports the real failure, not a config misma
         conversationId,
         workingDirectory: '/tmp',
         config: fixture.config,
-        buddyContext,
+        kind: { t: 'buddy', context: buddyContext },
       })
     )
   );
   await new Promise((resolve) => setImmediate(resolve));
 
-  const sent = socket.sent.map(
-    (payload) => JSON.parse(payload) as { type: string; error?: { message: string } }
-  );
-  const rejected = sent.find((message) => message.type === 'command_rejected');
-  assert.ok(rejected, 'a replay failure must surface as command_rejected');
-  assert.equal(rejected.error?.message, rejectionText);
+  const acks = socket.sent
+    .map(
+      (payload) =>
+        JSON.parse(payload) as { type: string; result?: { t: string; error?: { message: string } } }
+    )
+    .filter((message) => message.type === 'ack');
+  const rejected = acks.find((message) => message.result?.t === 'rejected');
+  assert.ok(rejected, 'a replay failure must surface as a rejected ack');
+  assert.equal(rejected.result?.error?.message, rejectionText);
   assert.ok(
-    sent.some((message) => message.type === 'conversation_created'),
+    acks.some((message) => message.result?.t === 'created'),
     'the replay still acknowledges the existing conversation before dispatch runs'
   );
 });

@@ -1,9 +1,9 @@
 import type { ConversationRow } from '@unleashd/shared';
 import { useAtomValue } from 'jotai';
-import { rowWorker } from '../../utils/conversation-row';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { swarmWorkersByProjectAtom } from '../../atoms/conversations';
+import { rowWorker } from '../../utils/conversation-row';
 import { getProjectColor } from '../../utils/projectColors';
 import {
   type IterationSpan,

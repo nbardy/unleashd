@@ -25,10 +25,11 @@ function conversation(overrides: Record<string, unknown> = {}): RoutedConversati
     providerUsage: null,
     swarmDebugPrefix: null,
     resumedFromConversationId: null,
+    // No resolved model: the window comes from the provider-reported model.
     configResolution: {
-      status: 'resolved',
+      status: 'unavailable',
       catalogRevision: 'test',
-      value: { provider: 'claude', modelId: 'haiku' },
+      error: { code: 'model_unavailable', message: 'fixture' },
     },
     toDetail: () => {
       throw new Error('not used by the meter');
@@ -133,7 +134,11 @@ test('buildContextBreakdown derives handoff from branch and resume lineage', () 
 
 test('context-breakdown route 404s identically to the conversation route', async () => {
   const app = express();
-  registerConversationRoutes(app, () => undefined, runtimeMessageSource(() => undefined));
+  registerConversationRoutes(
+    app,
+    () => undefined,
+    runtimeMessageSource(() => undefined)
+  );
   const server = app.listen(0, '127.0.0.1');
   await once(server, 'listening');
   try {

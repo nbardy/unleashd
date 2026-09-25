@@ -1,5 +1,3 @@
-import type { BuddyContext, ConversationKind } from '@unleashd/shared';
-import { isBuddyKind } from '@unleashd/shared';
 import { directReportsOf, isActive } from './roster';
 import type { Buddy, BuddyOverview, TaskStatus, WorkspaceRoster } from './types';
 
@@ -73,14 +71,4 @@ export function filterDirectoryEntries(entries: DirectoryEntry[], query: string)
       .toLowerCase()
       .includes(normalized)
   );
-}
-
-export function effectiveSwarmDebugPrefix(
-  buddyContext: BuddyContext | null | undefined,
-  swarmDebugPrefix: string | null | undefined,
-  kind?: ConversationKind | null
-): string | null {
-  // Kind is canonical when present; legacy buddyContext fallback keeps old payloads working.
-  if (kind && isBuddyKind(kind)) return null;
-  return buddyContext ? null : (swarmDebugPrefix ?? null);
 }

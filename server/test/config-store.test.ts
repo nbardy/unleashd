@@ -88,10 +88,11 @@ test('config store rekeys opaque legacy application IDs without losing session i
   });
 });
 
-test('legacy v1 records parse as active without inventing a current session', () => {
+test('records without lifecycle fields parse as active without inventing a current session', () => {
   const parsed = PersistedConversationConfigRecordSchema.parse({
-    version: 1,
+    version: 2,
     conversationId: CONVERSATION_ID,
+    kind: { t: 'chat' },
     sessionBindings: [{ provider: 'codex', sessionId: 'legacy-session' }],
     config: CONFIG,
     configRevision: 0,
@@ -355,8 +356,18 @@ test('list inside a bulk scope serves its one scan and never a record this store
   // already read them all (2026-09-25); reusing that scan must not hide writes
   // made after it.
   await withStore(async (store) => {
-    await store.create({ kind: { t: 'chat' }, conversationId: CONVERSATION_ID, config: CONFIG, provenance: 'user' });
-    await store.create({ kind: { t: 'chat' }, conversationId: 'purged', config: CONFIG, provenance: 'user' });
+    await store.create({
+      kind: { t: 'chat' },
+      conversationId: CONVERSATION_ID,
+      config: CONFIG,
+      provenance: 'user',
+    });
+    await store.create({
+      kind: { t: 'chat' },
+      conversationId: 'purged',
+      config: CONFIG,
+      provenance: 'user',
+    });
     const scanner = store as unknown as { scanRecords: () => ReturnType<typeof store.list> };
     const scan = scanner.scanRecords.bind(store);
     let scans = 0;

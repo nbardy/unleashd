@@ -6,7 +6,8 @@ that area.
 ## Code tree map
 
 ```
-shared/src/index.ts                → shared exports + WS Zod schemas/types
+shared/src/index.ts                → shared exports + WS Zod schemas/types (protocol v3)
+shared/src/conversation.ts         → list row / detail / message page / RowPatch (the wire model)
 shared/src/conversation-config.ts   → canonical selection intent, patches, resolution
 shared/src/provider-catalog.ts      → provider identities + catalog schemas
 server/src/server.ts               → application composition and startup
@@ -35,8 +36,10 @@ client/src/atoms/ui.ts             → device-local UI prefs + NEW-badge seen in
 ## Hard rules (violations = rejected PR)
 
 - Never `useAtomValue(conversationsAtom)` in components — use
-  `conversationAtomFamily` / derived atoms. Streaming text goes to
-  `streamingContent`/streaming atoms, never `conversations.messages` mid-stream.
+  `conversationAtomFamily` (the row) / derived atoms. Bodies live in
+  `transcriptAtomFamily` and details in `conversationDetailAtomFamily`, loaded
+  on open (`useConversationBodies`). Streaming text goes to
+  `streamingContent`/streaming atoms, never the transcript mid-stream.
 - All hooks before any early `return`. New list views go in derived atoms, not
   component `useMemo`. Stable fallbacks are module constants.
 - Read-only server data goes through `usePolledFetch(source, intervalMs)`,
@@ -335,20 +338,30 @@ magenta). Run 1 and 3 back-to-back: live data drifts (sidebar badges,
   filesystem and returns null rather than guessing. It only fires as a fallback:
   a modern Claude transcript carries an explicit `cwd`, which always wins.
 - A new field on a server→client schema needs `.default(...)` on the wire.
-  The client validates every WS message (`safeParseServerMessage`), Vite
+  The client validates every WS message (`classifyServerFrame`), Vite
   serves new client code immediately, and the dev watcher defers backend
   reloads until running turns finish, so a required field rejects every
-  `init` and update from the not-yet-reloaded backend and the list goes empty.
+  `hello` and update from the not-yet-reloaded backend and the list goes empty.
   `Conversation.done` shipped required on 2026-09-24 and did exactly that
   (fixed in e54fe26). The parsed type stays required, so servers still set it.
+  A protocol VERSION change is different: the client reads a v2 `init` as a
+  typed skew (keeps its rows, shows "backend reloading", reconnects) — guard
+  `client/test/protocol-skew.test.ts`.
+- Protocol v3 (T09): `hello`/`rows` carry list rows only (`ConversationRow`,
+  ~200 B each); detail (config, queue, sub-agents, latest turn) is
+  `GET /api/conversations/:id`; bodies page from
+  `GET /api/conversations/:id/messages?afterSeq=&limit=` (one server function,
+  `conversations/messages.ts`, which T13 re-points at the ingest crate).
+  Changes go out as typed `patch` messages — never re-send a conversation. A
+  conversation's kind is ONE stored value (`record.kind`: chat | buddy | builder
+  | worker); never derive identity from transcript text. Guards:
+  `server/test/wire-v3.test.ts`, `server/test/record-migration.test.ts`.
 - The wire is compressed: WS permessage-deflate (the 2.4 MB `init` goes out
   as ~180 KB) and `compression` middleware after the auth gate for HTTP.
   A new streaming route (SSE, chunked `res.write`) must `res.flush()` after
   each write or compression buffers it. Hashed `client/dist/assets/*` are
   `immutable`; everything else served statically is `no-cache`. Guarded by
   `server/test/auth.test.ts` and `server/test/static-client-cache.test.ts`.
-  `Conversation.toJSON()` omits `buddyContext` (it duplicated `kind`); read
-  it with `getBuddyContext()`, never the raw field.
 - Sidebar rows are ONE line. `.done-btn` is an absolute overlay on the row's
   right edge, so anything else anchored right (`.thread-stop-btn`) sits under
   it and stops receiving clicks. Two-line rows hid this; single-line rows do

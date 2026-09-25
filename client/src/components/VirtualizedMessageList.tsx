@@ -1,5 +1,6 @@
 import { useVirtualizer } from '@tanstack/react-virtual';
 import type { Message } from '@unleashd/shared';
+import type { BuddyContext } from '@unleashd/shared';
 import type { ComponentPropsWithoutRef, ReactNode } from 'react';
 import {
   Fragment,
@@ -14,7 +15,6 @@ import {
 import type { Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
-import type { BuddyContext } from '@unleashd/shared';
 import type { CopyState } from '../hooks/useCopyAction';
 import { COPY_LABEL, useCopyAction } from '../hooks/useCopyAction';
 import { ChatActivity } from '../ui/ChatActivity';

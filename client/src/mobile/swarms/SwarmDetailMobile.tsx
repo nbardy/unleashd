@@ -1,6 +1,5 @@
 import type { ConversationRow, OompaRuntimeWorker, SwarmRunSummary } from '@unleashd/shared';
 import { useAtomValue } from 'jotai';
-import { isRowRunning, rowWorker } from '../../utils/conversation-row';
 import { useCallback, useMemo, useState } from 'react';
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
 import { createConversation, readConversationMessages } from '../../atoms/actions';
@@ -11,6 +10,7 @@ import {
 import { useSwarmRuntimeSnapshots } from '../../hooks/useSwarmRuntimeSnapshots';
 import { useTimeTick } from '../../hooks/useTimeTick';
 import { mobileConversationRouteState } from '../../utils/conversation-route-state';
+import { isRowRunning, rowWorker } from '../../utils/conversation-row';
 import { shortenHomePath } from '../../utils/directories';
 import { getWorkerVisibilitySummary } from '../../utils/swarmWorkerVisibility';
 import { formatTimeAgo } from '../../utils/time';
@@ -31,7 +31,9 @@ function shortModelName(modelName: string | null | undefined): string | null {
   return modelName.length > 20 ? modelName.substring(0, 20) : modelName;
 }
 
-function extractVerdict(conv: ConversationRow): 'approved' | 'needs-changes' | 'rejected' | 'pending' {
+function extractVerdict(
+  conv: ConversationRow
+): 'approved' | 'needs-changes' | 'rejected' | 'pending' {
   // Bodies are loaded only for a review that was opened (protocol v3); an
   // unopened review reads as pending.
   for (const msg of readConversationMessages(conv.id)) {
@@ -146,11 +148,15 @@ function WorkerRow({
       state={routeState}
     >
       <span className={`mobile-worker-row__dot ${running ? 'running' : 'idle'}`} aria-hidden />
-      <span className="mobile-worker-row__id">{rowWorker(conv)?.workerId ?? conv.id.slice(0, 8)}</span>
+      <span className="mobile-worker-row__id">
+        {rowWorker(conv)?.workerId ?? conv.id.slice(0, 8)}
+      </span>
       {model && <span className="mobile-worker-row__model">{model}</span>}
       <span className="mobile-worker-row__msgs">{conv.messageCount}m</span>
       {rowWorker(conv)?.role !== 'work' && rowWorker(conv)?.role && (
-        <span className={`mobile-worker-row__role role-${rowWorker(conv)?.role}`}>{rowWorker(conv)?.role}</span>
+        <span className={`mobile-worker-row__role role-${rowWorker(conv)?.role}`}>
+          {rowWorker(conv)?.role}
+        </span>
       )}
       <span className={`mobile-worker-row__state ${running ? 'state-running' : 'state-idle'}`}>
         {running ? 'Running' : 'Idle'}
@@ -238,7 +244,8 @@ export function SwarmDetailMobile() {
     const execs: ConversationRow[] = [];
     const reviewsAndFixes: ConversationRow[] = [];
     for (const conv of projectWorkers) {
-      if (rowWorker(conv)?.role === 'review' || rowWorker(conv)?.role === 'fix') reviewsAndFixes.push(conv);
+      if (rowWorker(conv)?.role === 'review' || rowWorker(conv)?.role === 'fix')
+        reviewsAndFixes.push(conv);
       else execs.push(conv);
     }
     const sortByActivity = (a: ConversationRow, b: ConversationRow) => {
@@ -258,8 +265,7 @@ export function SwarmDetailMobile() {
       let bestDelta = Number.POSITIVE_INFINITY;
       for (const g of groups) {
         if ((rowWorker(g.exec)?.swarmId ?? null) !== (rowWorker(rf)?.swarmId ?? null)) continue;
-        const execTime =
-          g.exec.activityAt;
+        const execTime = g.exec.activityAt;
         const delta = Math.abs(rfCreated - execTime);
         if (delta < bestDelta) {
           bestDelta = delta;

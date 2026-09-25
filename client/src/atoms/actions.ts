@@ -163,7 +163,9 @@ const MESSAGE_PAGE_LIMIT = 500;
 
 async function fetchJson<T>(
   url: string,
-  schema: { safeParse(value: unknown): { success: true; data: T } | { success: false; error: Error } }
+  schema: {
+    safeParse(value: unknown): { success: true; data: T } | { success: false; error: Error };
+  }
 ): Promise<T> {
   const response = await fetch(url);
   if (!response.ok) throw new Error(`Request ${url} failed with HTTP ${response.status}`);
@@ -559,14 +561,17 @@ function handlePatch(data: Extract<ServerMessage, { type: 'patch' }>): void {
 function patchEffects(id: string, patch: RowPatch): void {
   switch (patch.t) {
     case 'run':
-      return runChanged(id, patch.run);
+      runChanged(id, patch.run);
+      return;
     case 'config':
-      return configLanded(patch.commandId);
+      configLanded(patch.commandId);
+      return;
     case 'queue':
       captureRestartRecoveryQueue(id, patch.queue);
       return;
     case 'activity':
-      return activityMoved(id, patch.messageCount);
+      activityMoved(id, patch.messageCount);
+      return;
     case 'done':
     case 'label':
     case 'session':
@@ -603,12 +608,14 @@ function activityMoved(id: string, messageCount: number): void {
 function handleAck(data: Extract<ServerMessage, { type: 'ack' }>): void {
   switch (data.result.t) {
     case 'created':
-      return creationAcknowledged(data.commandId, decodeRows(data.result.rows));
+      creationAcknowledged(data.commandId, decodeRows(data.result.rows));
+      return;
     case 'accepted':
       messageCommandSettled(data.commandId, null);
       return;
     case 'rejected':
-      return commandRejected(data.commandId, data.result.error);
+      commandRejected(data.commandId, data.result.error);
+      return;
   }
 }
 
@@ -761,31 +768,44 @@ function commitStreamedReply(id: string, reason: NonNullable<Message['completion
 export function handleMessage(data: ServerMessage): void {
   switch (data.type) {
     case 'buddy_archived':
-      return hideArchivedBuddy(data.buddyId);
+      hideArchivedBuddy(data.buddyId);
+      return;
     case 'buddies_changed':
-      return invalidateBuddyResources();
+      invalidateBuddyResources();
+      return;
     case 'channel_changed':
-      return invalidateChannelResources(data.listId);
+      invalidateChannelResources(data.listId);
+      return;
     case 'hello':
-      return handleHello(data);
+      handleHello(data);
+      return;
     case 'rows':
-      return handleRows(data);
+      handleRows(data);
+      return;
     case 'removed':
-      return handleRemoved(data);
+      handleRemoved(data);
+      return;
     case 'ready':
-      return handleReady(data);
+      handleReady(data);
+      return;
     case 'patch':
-      return handlePatch(data);
+      handlePatch(data);
+      return;
     case 'ack':
-      return handleAck(data);
+      handleAck(data);
+      return;
     case 'message':
-      return handleMessageEvent(data);
+      handleMessageEvent(data);
+      return;
     case 'chunk':
-      return handleChunk(data);
+      handleChunk(data);
+      return;
     case 'error':
-      return handleError(data);
+      handleError(data);
+      return;
     case 'message_complete':
-      return handleMessageComplete(data);
+      handleMessageComplete(data);
+      return;
   }
 }
 

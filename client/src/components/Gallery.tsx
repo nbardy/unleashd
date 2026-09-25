@@ -25,9 +25,9 @@ import {
 } from '../atoms/ui';
 import { useFolderFilter } from '../hooks/useFolderFilter';
 import { useUrlFolderSelection } from '../hooks/useUrlFolderSelection';
+import { isRowRunning } from '../utils/conversation-row';
 import { getProjectColor } from '../utils/projectColors';
 import { isWorktreeDirectory } from '../utils/swarmUtils';
-import { isRowRunning } from '../utils/conversation-row';
 import { formatTimeAgo, getConversationLastActivity } from '../utils/time';
 import { FolderFilter } from './FolderFilter';
 import './Gallery.css';

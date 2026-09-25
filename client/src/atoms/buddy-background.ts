@@ -1,7 +1,7 @@
 import type { ConversationRow } from '@unleashd/shared';
-import { isRowRunning } from '../utils/conversation-row';
 import { atom } from 'jotai';
 import { atomFamily } from 'jotai-family';
+import { isRowRunning } from '../utils/conversation-row';
 import { conversationAtomFamily, conversationListAtom } from './conversations';
 import { sameItems, stableAtom } from './structural';
 

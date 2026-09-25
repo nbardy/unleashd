@@ -6,7 +6,6 @@ import type {
   SwarmRunSummary,
 } from '@unleashd/shared';
 import { useAtomValue } from 'jotai';
-import { isRowRunning, rowWorker } from '../utils/conversation-row';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useNavigate, useSearchParams } from 'react-router-dom';
 import { createConversation, readConversationMessages } from '../atoms/actions';
@@ -19,6 +18,7 @@ import { markMessagesSeen } from '../atoms/ui';
 import { useConversationBodies } from '../hooks/useConversationBodies';
 import { usePolledFetch } from '../hooks/usePolledFetch';
 import { useSwarmRuntimeSnapshots } from '../hooks/useSwarmRuntimeSnapshots';
+import { isRowRunning, rowWorker } from '../utils/conversation-row';
 import { getWorkerVisibilitySummary } from '../utils/swarmWorkerVisibility';
 import { formatTimeAgo } from '../utils/time';
 import { VirtualizedMessageList } from './VirtualizedMessageList';
@@ -98,7 +98,9 @@ const ROLE_LABELS: Record<string, string> = {
 };
 
 /** Extract verdict from a review conversation's assistant messages */
-function extractVerdict(conv: ConversationRow): 'approved' | 'needs-changes' | 'rejected' | 'pending' {
+function extractVerdict(
+  conv: ConversationRow
+): 'approved' | 'needs-changes' | 'rejected' | 'pending' {
   // Bodies are loaded only for a review that was opened (protocol v3); an
   // unopened review reads as pending.
   for (const msg of readConversationMessages(conv.id)) {
@@ -767,8 +769,7 @@ export function SwarmDetail() {
       for (const g of groups) {
         // Must share swarmId (or both null)
         if ((rowWorker(g.exec)?.swarmId ?? null) !== (rowWorker(rf)?.swarmId ?? null)) continue;
-        const execTime =
-          g.exec.activityAt;
+        const execTime = g.exec.activityAt;
         const delta = Math.abs(rfCreated - execTime);
         if (delta < bestDelta) {
           bestDelta = delta;
@@ -1074,7 +1075,9 @@ export function SwarmDetail() {
                   >
                     <div className={`roster-worker ${isSelected ? 'selected' : ''}`}>
                       <span className={`roster-status-dot ${statusClass}`} />
-                      <span className="roster-worker-id">{rowWorker(w)?.workerId ?? w.id.substring(0, 8)}</span>
+                      <span className="roster-worker-id">
+                        {rowWorker(w)?.workerId ?? w.id.substring(0, 8)}
+                      </span>
                       {model && <span className="roster-model">{model}</span>}
                       <span className="roster-worker-msgs">{w.messageCount}m</span>
                       {group.reviews.length > 0 && (

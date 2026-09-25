@@ -2,7 +2,11 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { type Message, type ServerMessage, encodeRows } from '@unleashd/shared';
 import { handleMessage, setActiveConversationId } from '../src/atoms/actions';
-import { conversationsAtom, transcriptPatchAtom, transcriptsAtom } from '../src/atoms/conversations';
+import {
+  conversationsAtom,
+  transcriptPatchAtom,
+  transcriptsAtom,
+} from '../src/atoms/conversations';
 import { jotaiStore } from '../src/atoms/store';
 import { syntheticConversation } from './fixtures/synthetic-conversations';
 

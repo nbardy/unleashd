@@ -286,7 +286,9 @@ const buddyRunnerHost: RunnerHost = {
   placement: (id) => {
     const conversation = conversations.get(id);
     if (!conversation) return 'absent';
-    return conversation.placement === 'background' ? 'background' : 'foreground';
+    return conversation.kind.t === 'buddy' && conversation.kind.visibility === 'background'
+      ? 'background'
+      : 'foreground';
   },
   openBackground: async ({ conversationId, context, commandId }) => {
     await buddyCreationService.createServerBuddyConversation({
@@ -294,7 +296,7 @@ const buddyRunnerHost: RunnerHost = {
       conversationId,
       commandId,
       deferInitialMessage: true,
-      placement: 'background',
+      visibility: 'background',
     });
   },
   runTurn: async ({ conversationId, context, prompt, leaseToken, deadlineMs }) => {
@@ -437,9 +439,14 @@ app.use((request, response, next) => {
 const UPLOADS_DIR = uploadsDirectory();
 registerUploadRoutes(app, UPLOADS_DIR);
 registerCoreRoutes(app, () => startupAuditResults);
-registerConversationRoutes(app, (id) => conversations.get(id), runtimeMessageSource((id) => conversations.get(id)), {
-  getBranch: async (id) => (await conversationConfigService.getRecord(id))?.creation?.branch,
-});
+registerConversationRoutes(
+  app,
+  (id) => conversations.get(id),
+  runtimeMessageSource((id) => conversations.get(id)),
+  {
+    getBranch: async (id) => (await conversationConfigService.getRecord(id))?.creation?.branch,
+  }
+);
 registerTurnDiagnosticsRoutes(app, turnAttemptJournal);
 registerErrorDiagnosticsRoutes(app, errorJournal);
 
@@ -499,7 +506,7 @@ registerBuddyRoutes(app, {
   onBuddyArchived: (buddyId) => {
     applicationContext.broadcast({ type: 'buddy_archived', buddyId });
     for (const conversation of conversations.values()) {
-      if (conversation.kind.kind === 'buddy' && conversation.kind.buddyId === buddyId) {
+      if (conversation.buddyContext?.buddyId === buddyId) {
         conversation.clearQueue();
         conversation.stop();
       }

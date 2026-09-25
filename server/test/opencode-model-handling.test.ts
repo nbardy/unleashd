@@ -30,6 +30,7 @@ test('wire commands carry opaque, provider-bespoke model ids and reject only emp
         model: { mode: 'explicit', modelId: 'opencode/big-pickle' },
         reasoning: { mode: 'default' },
       },
+      kind: { t: 'chat' },
     }).success,
     true
   );

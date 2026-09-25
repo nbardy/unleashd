@@ -16,7 +16,10 @@ test('the label strips hidden envelopes and the oompa tag from the first user li
     ]),
     'Fix labels'
   );
-  assert.equal(conversationLabel(undefined, [userMessage('[oompa:s1:w0] do the thing')]), 'do the thing');
+  assert.equal(
+    conversationLabel(undefined, [userMessage('[oompa:s1:w0] do the thing')]),
+    'do the thing'
+  );
   assert.equal(
     conversationLabel(undefined, [userMessage('<!-- a -->\n<!-- b -->')]),
     'New conversation'

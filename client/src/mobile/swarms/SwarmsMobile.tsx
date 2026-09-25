@@ -1,11 +1,11 @@
 import type { OompaRuntimeSnapshot } from '@unleashd/shared';
 import { useAtomValue } from 'jotai';
-import { isRowRunning } from '../../utils/conversation-row';
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { swarmWorkersByProjectAtom } from '../../atoms/conversations';
 import { usePolledFetch } from '../../hooks/usePolledFetch';
 import { useTimeTick } from '../../hooks/useTimeTick';
+import { isRowRunning } from '../../utils/conversation-row';
 import { shortenHomePath } from '../../utils/directories';
 import { getProjectName } from '../../utils/swarmUtils';
 import { getWorkerVisibilitySummary } from '../../utils/swarmWorkerVisibility';

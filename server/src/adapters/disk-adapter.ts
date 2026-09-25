@@ -158,7 +158,9 @@ export type SessionHistorySource = DiscoveredSession & {
 };
 
 export interface SessionHistoryOptions {
-  resolveSessionBindings?(source: DiscoveredSession): Promise<readonly ConversationSessionBinding[]>;
+  resolveSessionBindings?(
+    source: DiscoveredSession
+  ): Promise<readonly ConversationSessionBinding[]>;
 }
 
 export interface PollResult {

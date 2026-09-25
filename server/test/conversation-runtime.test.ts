@@ -1,7 +1,7 @@
-import { buddyKind } from '@unleashd/shared';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import test from 'node:test';
+import { buddyKind } from '@unleashd/shared';
 import type { Provider } from '@unleashd/shared';
 import { type ConversationConfig, createDefaultConversationConfig } from '@unleashd/shared';
 import type { CompletedBuddyTurn } from '../src/buddies/memory-review';
@@ -1065,11 +1065,13 @@ test('interrupt keeps the pending queue and sends the new message first', () => 
   );
   const lastQueue = [...broadcasts]
     .reverse()
-    .find((m) => (m as { type?: string }).type === 'queue_updated') as
-    | { queue: Array<{ content: string }> }
-    | undefined;
+    .find(
+      (m) =>
+        (m as { type?: string }).type === 'patch' &&
+        (m as { patch: { t: string } }).patch.t === 'queue'
+    ) as { patch: { queue: Array<{ content: string }> } } | undefined;
   assert.deepEqual(
-    lastQueue?.queue.map((m) => m.content),
+    lastQueue?.patch.queue.map((m) => m.content),
     ['Urgent', 'Second']
   );
   // Clear the SIGTERM kill timer the interrupt armed; the killed turn's
@@ -1190,10 +1192,20 @@ test('codex collab threads become native sub-agents that parent completion leave
   assert.equal(byId.get('child-1')?.toolUses, 1);
   assert.equal(byId.get('child-1')?.currentAction, 'Done');
   assert.equal(byId.get('child-2')?.status, 'pending', 'parent completion must not settle it');
-  const completions = broadcasts.filter(
-    (message) => (message as { type?: string }).type === 'subagent_complete'
+  const completed = new Set(
+    broadcasts.flatMap((message) => {
+      const patch = message as {
+        type?: string;
+        patch?: { t: string; subAgent?: { id: string; status: string } };
+      };
+      return patch.type === 'patch' &&
+        patch.patch?.t === 'subagent' &&
+        patch.patch.subAgent?.status === 'completed'
+        ? [patch.patch.subAgent.id]
+        : [];
+    })
   );
-  assert.equal(completions.length, 1);
+  assert.deepEqual([...completed], ['child-1']);
   const assistant = conversation.messages.find((message) => message.role === 'assistant');
   assert.match(assistant?.content ?? '', /SUBAGENTS_OK/);
 });

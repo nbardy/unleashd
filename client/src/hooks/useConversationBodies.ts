@@ -1,7 +1,10 @@
 import { useAtomValue } from 'jotai';
 import { useEffect, useState } from 'react';
 import { loadConversationDetails } from '../atoms/actions';
-import { conversationAtomFamily, conversationDetailsLoadedAtomFamily } from '../atoms/conversations';
+import {
+  conversationAtomFamily,
+  conversationDetailsLoadedAtomFamily,
+} from '../atoms/conversations';
 
 /**
  * Load one conversation's detail and message bodies on demand (protocol v3:

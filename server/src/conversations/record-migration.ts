@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { cp, readFile, readdir, rename, writeFile } from 'node:fs/promises';
+import { cp, mkdir, readFile, readdir, rename, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import {
   type BuddyContext,
@@ -134,15 +134,16 @@ export async function migrateConversationRecords(options: {
       try {
         const { kind, source } = recordKind(record, markers);
         const migrated = toV2(record, kind);
-        const parsed = PersistedConversationConfigRecordSchema.parse(migrated);
+        // Validate, but write the record as it was plus `kind`: schema defaults
+        // (status, done, recordRevision) stay implicit, as in v1.
+        PersistedConversationConfigRecordSchema.parse(migrated);
         const target = path.join(conversationDirectory, file);
         const temporary = path.join(conversationDirectory, `.${file}.${process.pid}.migrate.tmp`);
-        await writeFile(temporary, `${JSON.stringify(parsed, null, 2)}\n`, 'utf8');
+        await writeFile(temporary, `${JSON.stringify(migrated, null, 2)}\n`, 'utf8');
         await rename(temporary, target);
         // Verify what landed on disk, not what we meant to write.
-        const reread = PersistedConversationConfigRecordSchema.parse(
-          JSON.parse(await readFile(target, 'utf8'))
-        );
+        const reread = JSON.parse(await readFile(target, 'utf8')) as Record<string, unknown>;
+        PersistedConversationConfigRecordSchema.parse(reread);
         if (preservedHash(reread) !== preservedHash(record)) {
           throw new Error('non-identity fields changed during migration');
         }
@@ -155,12 +156,18 @@ export async function migrateConversationRecords(options: {
           report.markerDerived.push({ conversationId: record.conversationId, kind: kind.t });
         }
       } catch (error) {
-        report.failures.push({ file, error: error instanceof Error ? error.message : String(error) });
+        report.failures.push({
+          file,
+          error: error instanceof Error ? error.message : String(error),
+        });
       }
     }
   }
 
   const reportPath = path.join(root, RECORD_MIGRATION_REPORT);
+  // A fresh data directory has no store yet; boot must still record that
+  // there was nothing to migrate (auth.test's real-server boot hit ENOENT here).
+  await mkdir(root, { recursive: true });
   await writeFile(reportPath, `${JSON.stringify(report, null, 2)}\n`, 'utf8');
   if (report.failures.length > 0) {
     // No marker: the next boot retries, and the store refuses (never
@@ -194,7 +201,11 @@ function recordKind(
     return {
       kind: buddyKind(
         context,
-        placement === 'background' ? 'background' : placement === 'default' ? 'foreground' : undefined
+        placement === 'background'
+          ? 'background'
+          : placement === 'default'
+            ? 'foreground'
+            : undefined
       ),
       source: 'creation.buddyContext',
     };
@@ -224,13 +235,14 @@ function toV2(record: V1Record, kind: ConversationKind): Record<string, unknown>
 
 /** Hash of everything but identity: must be equal before and after. */
 function preservedHash(record: Record<string, unknown>): string {
-  const creation = { ...((record.creation as Record<string, unknown> | undefined) ?? {}) };
-  delete creation.buddyContext;
-  delete creation.purpose;
-  delete creation.placement;
-  const rest: Record<string, unknown> = { ...record, creation };
-  delete rest.version;
-  delete rest.kind;
+  const {
+    buddyContext: _buddyContext,
+    purpose: _purpose,
+    placement: _placement,
+    ...creation
+  } = (record.creation as Record<string, unknown> | undefined) ?? {};
+  const { version: _version, kind: _kind, ...fields } = record;
+  const rest: Record<string, unknown> = { ...fields, creation };
   return createHash('sha256').update(stableJson(rest)).digest('hex');
 }
 
@@ -247,7 +259,8 @@ function stableJson(value: unknown): string {
 
 // --- transcript markers (read ONLY here, once) ------------------------------
 
-const BUDDY_CONTEXT_V2_HEADER_RE = /^<!-- unleashd:buddy-context-v2 ([A-Za-z0-9_-]+) ([0-9]+) -->\n/;
+const BUDDY_CONTEXT_V2_HEADER_RE =
+  /^<!-- unleashd:buddy-context-v2 ([A-Za-z0-9_-]+) ([0-9]+) -->\n/;
 const BUDDY_CONTEXT_V1_RE = /^<!-- unleashd:buddy-context (.+) -->\n/;
 const BUDDY_BUILDER_V1_HEADER_RE = /^<!-- unleashd:buddy-builder-v1 ([0-9]+) -->\n/;
 const OOMPA_TAG_RE = /^\[oompa(?::([^:\]]+))?(?::([^\]]+))?\]/i;

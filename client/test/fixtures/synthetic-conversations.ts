@@ -73,7 +73,10 @@ export function syntheticMessages(index: number): Message[] {
 }
 
 /** A loaded detail for a synthetic chat. */
-export function syntheticDetail(id: string, overrides: Partial<ConversationDetail> = {}): ConversationDetail {
+export function syntheticDetail(
+  id: string,
+  overrides: Partial<ConversationDetail> = {}
+): ConversationDetail {
   return {
     id,
     sessionId: id,

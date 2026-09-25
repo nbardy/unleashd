@@ -23,9 +23,8 @@ import {
 } from '../src/conversations/runtime';
 import { createSessionLoader } from '../src/lifecycle/session-loader';
 import { resolveConfigAgainstProviderCatalog } from '../src/providers/catalog-service';
-import { sameKeyAudience } from './fixtures/buddy-audience';
-import { discoveredSession } from './fixtures/discovered-session';
 import { fakeBuddyPort } from './fixtures/buddy-port';
+import { discoveredSession } from './fixtures/discovered-session';
 
 const CONVERSATION_ID = 'dddddddd-0000-4000-8000-000000000004';
 const ORIGINAL_SESSION = 'eeeeeeee-0000-4000-8000-000000000005';

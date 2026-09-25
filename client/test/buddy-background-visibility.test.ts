@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import type { Conversation } from '@unleashd/shared';
 import { createStore } from 'jotai';
 import { buddySidebarOverviewAtom, buddySidebarProjectsAtom } from '../src/atoms/buddy-sidebar';
 import {
@@ -9,6 +8,7 @@ import {
   conversationAtomFamily,
   conversationsAtom,
 } from '../src/atoms/conversations';
+import { syntheticConversation } from './fixtures/synthetic-conversations';
 
 test('background placement hides rows but preserves direct transcript access and visible owner chats', () => {
   const store = createStore();
@@ -21,14 +21,16 @@ test('background placement hides rows but preserves direct transcript access and
     },
   ]);
   const make = (id: string, placement: 'default' | 'background') =>
-    ({
+    syntheticConversation(1, {
       id,
-      placement,
-      kind: { kind: 'buddy' as const, buddyId: 'lead', workspaceId: 'work' },
-      createdAt: new Date(),
-      messages: [] as Conversation['messages'],
-      workingDirectory: '/project',
-    }) as Conversation;
+      kind: {
+        t: 'buddy',
+        buddyId: 'lead',
+        workspaceId: 'work',
+        visibility: placement === 'background' ? 'background' : 'foreground',
+      },
+      cwd: '/project',
+    });
   const owner = make('owner-thread', 'default');
   const worker = make('background-thread', 'background');
   store.set(
@@ -51,7 +53,7 @@ test('background placement hides rows but preserves direct transcript access and
   store.set(
     conversationsAtom,
     new Map([
-      [owner.id, { ...owner, isRunning: true }],
+      [owner.id, { ...owner, run: 'running' }],
       [worker.id, worker],
     ])
   );

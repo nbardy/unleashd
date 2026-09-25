@@ -371,15 +371,10 @@ export function createSessionLoader(dependencies: SessionLoaderDependencies): Se
       // their pending initial message.
       const recoveredBuddy =
         record.kind.t === 'buddy' && !currentSession
-          ? await dependencies
-              .resolveBuddyConversation(record.kind.context)
-              .catch((error) => {
-                logger.warn(
-                  `[buddies] Could not rebuild ${record.conversationId} briefing:`,
-                  error
-                );
-                return null;
-              })
+          ? await dependencies.resolveBuddyConversation(record.kind.context).catch((error) => {
+              logger.warn(`[buddies] Could not rebuild ${record.conversationId} briefing:`, error);
+              return null;
+            })
           : null;
       const recovered = dependencies.createConversation({
         id: record.conversationId,

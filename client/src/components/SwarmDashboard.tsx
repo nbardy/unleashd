@@ -1,11 +1,11 @@
 import type { ConversationRow } from '@unleashd/shared';
 import { useAtomValue } from 'jotai';
-import { isRowRunning, rowWorker } from '../utils/conversation-row';
 import { useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { swarmWorkersByProjectAtom } from '../atoms/conversations';
 import { useSwarmProjects } from '../hooks/useSwarmProjects';
 import { useSwarmRuntimeSnapshots } from '../hooks/useSwarmRuntimeSnapshots';
+import { isRowRunning, rowWorker } from '../utils/conversation-row';
 import { getProjectColor } from '../utils/projectColors';
 import { getProjectName } from '../utils/swarmUtils';
 import { getWorkerVisibilitySummary } from '../utils/swarmWorkerVisibility';
@@ -55,13 +55,13 @@ export function SwarmDashboard() {
     for (const [projectRoot, sessions] of workerConversationsByProject.entries()) {
       const runtime = runtimeSnapshots[projectRoot];
       const runtimeRun = runtime?.available ? runtime.run : null;
-      const visibility = getWorkerVisibilitySummary(
-        sessions,
-        runtime,
-        (worker) => isRowRunning(worker)
+      const visibility = getWorkerVisibilitySummary(sessions, runtime, (worker) =>
+        isRowRunning(worker)
       );
 
-      const distinctSwarmIds = new Set(sessions.map((s) => (rowWorker(s)?.swarmId ?? null)).filter(Boolean));
+      const distinctSwarmIds = new Set(
+        sessions.map((s) => rowWorker(s)?.swarmId ?? null).filter(Boolean)
+      );
       const runCount = runtimeRun?.runCount ?? distinctSwarmIds.size;
 
       let latestActivity: Date | undefined;

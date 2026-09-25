@@ -80,9 +80,9 @@ test(
         get: (id: string) => (id === CONVERSATION_ID ? conversation : undefined),
         set: () => undefined,
         delete: () => false,
-        // `init` lists nothing: the stub has no messages to summarize, and a
+        // `hello` lists nothing: the stub has no messages to summarize, and a
         // summarize failure would be swallowed by the silenced logger and leave
-        // the test waiting for an `init` that never comes.
+        // the test waiting for a `hello` that never comes.
         values: () => [][Symbol.iterator](),
         keys: () => [CONVERSATION_ID][Symbol.iterator](),
       },
@@ -107,13 +107,10 @@ test(
     const { server, port } = await listen(wss);
     const client = new WebSocket(`ws://127.0.0.1:${port}`);
     try {
-      await nextMessageOfType(client, 'init');
+      await nextMessageOfType(client, 'hello');
 
       controller.handleReload();
-      const reply = Promise.race([
-        nextMessageOfType(client, 'command_accepted'),
-        nextMessageOfType(client, 'command_rejected'),
-      ]);
+      const reply = nextMessageOfType(client, 'ack');
       client.send(
         JSON.stringify({
           type: 'queue_message',
@@ -129,7 +126,7 @@ test(
       finishStartup();
 
       const outcome = await reply;
-      assert.equal(outcome.type, 'command_accepted', JSON.stringify(outcome));
+      assert.deepEqual(outcome.result, { t: 'accepted' }, JSON.stringify(outcome));
       for (let attempt = 0; attempt < 50 && !order.includes('exit'); attempt++) {
         await new Promise((resolve) => setImmediate(resolve));
       }
@@ -189,50 +186,61 @@ test(
 // made the overdue tick run before the already-arrived pong was read, so the
 // server terminated a healthy client. The backend has measured 9.8s stalls.
 // The client lives in another process so its pong really arrives mid-stall.
-test('liveness does not terminate a responsive peer when the server loop stalls', { timeout: 15_000 }, async () => {
-  const wss = new WebSocketServer({ noServer: true });
-  const serverSides: WebSocket[] = [];
-  wss.on('connection', (socket) => {
-    serverSides.push(socket);
-    superviseLiveness(socket, 100);
-  });
-  const { server, port } = await listen(wss);
-  const client = spawn(
-    process.execPath,
-    ['-e', `const W = require('ws'); new W('ws://127.0.0.1:${port}'); setInterval(() => {}, 1000);`],
-    { cwd: path.join(__dirname, '..'), stdio: 'ignore' }
-  );
-  try {
-    while (serverSides.length < 1) await new Promise((resolve) => setTimeout(resolve, 10));
-    // Stall right after a ping goes out: the pong then lands mid-stall and is
-    // still unread when the overdue tick runs.
-    const side = serverSides[0];
-    const ping = side.ping.bind(side);
-    let pinged = () => {};
-    side.ping = (...args: Parameters<WebSocket['ping']>) => {
-      ping(...args);
-      pinged();
-    };
-    for (let stall = 0; stall < 4; stall++) {
-      const closed = once(side, 'close');
-      await Promise.race([
-        new Promise<void>((resolve) => {
-          pinged = resolve;
-        }),
-        closed,
-      ]);
-      if (side.readyState !== WebSocket.OPEN) break;
-      // Stall in the check phase: libuv's next iteration then runs the (now
-      // overdue) timers before the poll phase reads the pong.
-      await new Promise((resolve) => setImmediate(resolve));
-      const until = Date.now() + 350;
-      while (Date.now() < until) {}
+test(
+  'liveness does not terminate a responsive peer when the server loop stalls',
+  { timeout: 15_000 },
+  async () => {
+    const wss = new WebSocketServer({ noServer: true });
+    const serverSides: WebSocket[] = [];
+    wss.on('connection', (socket) => {
+      serverSides.push(socket);
+      superviseLiveness(socket, 100);
+    });
+    const { server, port } = await listen(wss);
+    const client = spawn(
+      process.execPath,
+      [
+        '-e',
+        `const W = require('ws'); new W('ws://127.0.0.1:${port}'); setInterval(() => {}, 1000);`,
+      ],
+      { cwd: path.join(__dirname, '..'), stdio: 'ignore' }
+    );
+    try {
+      while (serverSides.length < 1) await new Promise((resolve) => setTimeout(resolve, 10));
+      // Stall right after a ping goes out: the pong then lands mid-stall and is
+      // still unread when the overdue tick runs.
+      const side = serverSides[0];
+      const ping = side.ping.bind(side);
+      let pinged = () => {};
+      side.ping = (...args: Parameters<WebSocket['ping']>) => {
+        ping(...args);
+        pinged();
+      };
+      for (let stall = 0; stall < 4; stall++) {
+        const closed = once(side, 'close');
+        await Promise.race([
+          new Promise<void>((resolve) => {
+            pinged = resolve;
+          }),
+          closed,
+        ]);
+        if (side.readyState !== WebSocket.OPEN) break;
+        // Stall in the check phase: libuv's next iteration then runs the (now
+        // overdue) timers before the poll phase reads the pong.
+        await new Promise((resolve) => setImmediate(resolve));
+        const until = Date.now() + 350;
+        while (Date.now() < until) {}
+      }
+      await new Promise((resolve) => setTimeout(resolve, 250));
+      assert.equal(
+        serverSides[0].readyState,
+        WebSocket.OPEN,
+        'a peer that pongs must survive our own stall'
+      );
+    } finally {
+      client.kill();
+      wss.close();
+      server.close();
     }
-    await new Promise((resolve) => setTimeout(resolve, 250));
-    assert.equal(serverSides[0].readyState, WebSocket.OPEN, 'a peer that pongs must survive our own stall');
-  } finally {
-    client.kill();
-    wss.close();
-    server.close();
   }
-});
+);

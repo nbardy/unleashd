@@ -1,5 +1,4 @@
 import { useAtomValue } from 'jotai';
-import { isRowRunning } from '../../utils/conversation-row';
 import { memo, useMemo, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import {
@@ -11,6 +10,7 @@ import {
 import { hasUnseenAfter, lastSeenMessageIndexAtomFamily } from '../../atoms/ui';
 import { useTimeTick } from '../../hooks/useTimeTick';
 import { mobileConversationRouteState } from '../../utils/conversation-route-state';
+import { isRowRunning } from '../../utils/conversation-row';
 import { shortenHomePath } from '../../utils/directories';
 import { formatTimeAgo, getConversationLastActivity } from '../../utils/time';
 import {

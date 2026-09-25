@@ -3,6 +3,7 @@ import { Link, useLocation } from 'react-router-dom';
 import { buddyBackgroundConversationsAtomFamily } from '../../atoms/buddy-background';
 import { conversationLoadCompleteAtom } from '../../atoms/conversations';
 import { mobileConversationRouteState } from '../../utils/conversation-route-state';
+import { isRowRunning } from '../../utils/conversation-row';
 import { getConversationLastActivity } from '../../utils/time';
 import { BuddyRunList } from './BuddyRunList';
 import { conversationPath } from './buddy-tabs';
@@ -46,7 +47,8 @@ export function BuddyBackgroundTasks({
       ) : (
         <ul className="buddy-background-tasks-list">
           {conversations.map((conversation) => {
-            const preview = conversation.messages.at(-1)?.content.trim();
+            const preview = conversation.label;
+            const running = isRowRunning(conversation);
             return (
               <li key={conversation.id}>
                 <Link
@@ -56,10 +58,8 @@ export function BuddyBackgroundTasks({
                 >
                   <div className="buddy-background-tasks-row">
                     <strong>Background conversation</strong>
-                    <span
-                      className={conversation.isRunning ? 'buddy-background-tasks-running' : ''}
-                    >
-                      {conversation.isRunning ? 'Running' : 'Not running'}
+                    <span className={running ? 'buddy-background-tasks-running' : ''}>
+                      {running ? 'Running' : 'Not running'}
                     </span>
                   </div>
                   {preview && <p className="buddy-background-tasks-preview">{preview}</p>}

@@ -791,6 +791,32 @@ export function safeParseServerMessage(data: unknown) {
   return ServerMessageSchema.safeParse(data);
 }
 
+/**
+ * What one server frame means to this client (protocol v3). A v2 backend —
+ * still running while Vite already serves this client during a dev reload —
+ * greets with `init`; that is a typed version skew, never a parse failure that
+ * the caller might answer by clearing state. Guard: client/test/protocol-skew.test.ts.
+ */
+export type ServerFrame =
+  | { t: 'message'; message: ServerMessage }
+  | { t: 'skew'; serverVersion: number }
+  | { t: 'invalid'; issues: string };
+
+export function classifyServerFrame(raw: unknown): ServerFrame {
+  const record = typeof raw === 'object' && raw !== null ? (raw as Record<string, unknown>) : {};
+  if (record.type === 'init') {
+    const protocol = record.protocol as { version?: unknown } | undefined;
+    return {
+      t: 'skew',
+      serverVersion: typeof protocol?.version === 'number' ? protocol.version : 2,
+    };
+  }
+  const parsed = ServerMessageSchema.safeParse(raw);
+  return parsed.success
+    ? { t: 'message', message: parsed.data }
+    : { t: 'invalid', issues: parsed.error.issues.map((issue) => issue.message).join('; ') };
+}
+
 // =============================================================================
 // Type Guards (for backwards compatibility)
 // =============================================================================

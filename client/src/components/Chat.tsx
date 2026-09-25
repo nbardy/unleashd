@@ -318,7 +318,8 @@ export function Chat({ id }: { id: string }) {
   // mobile conversation header produces byte-identical output. The swarm-debug
   // prefix strip that messageGroups does for display happens in there too.
   const threadCopyText = useMemo(
-    () => (conversation && detail ? buildThreadTranscript({ row: conversation, detail, messages }) : ''),
+    () =>
+      conversation && detail ? buildThreadTranscript({ row: conversation, detail, messages }) : '',
     [conversation, detail, messages]
   );
 
@@ -610,10 +611,7 @@ export function Chat({ id }: { id: string }) {
               </dialog>
             </div>
           )}
-          <Link
-            className="chat-dir"
-            to={`/?folders=${encodeURIComponent(conversation.cwd)}`}
-          >
+          <Link className="chat-dir" to={`/?folders=${encodeURIComponent(conversation.cwd)}`}>
             {dirDisplay}
           </Link>
           {/* One home for context usage: beside the folder, for buddy and plain
@@ -705,10 +703,7 @@ export function Chat({ id }: { id: string }) {
 
       {unifiedSubAgents.length > 0 && (
         <div className="thread-context">
-          <SubAgentPanel
-            subAgents={unifiedSubAgents}
-            workingDirectory={conversation.cwd}
-          />
+          <SubAgentPanel subAgents={unifiedSubAgents} workingDirectory={conversation.cwd} />
         </div>
       )}
 
