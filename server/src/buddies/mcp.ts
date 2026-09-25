@@ -140,6 +140,103 @@ async function writeDoc(deps: ToolDeps, grant: BuddyGrant, input: DocWriteInput)
   });
 }
 
+const taskWriteSchema = () =>
+  z.object({
+    write: z.discriminatedUnion('kind', [
+      z.object({
+        kind: z.literal('create'),
+        ownerId: z.string().optional().describe('Default: you'),
+        parentId: z.string().optional(),
+        title: z.string().min(1).max(300),
+        doneCriteria: z.string().min(1).max(4000),
+      }),
+      z.object({
+        kind: z.literal('update'),
+        taskId: z.string().min(1),
+        baseRevision: z.number().int().positive(),
+        changes: z.object({
+          title: z.string().optional(),
+          doneCriteria: z.string().optional(),
+          status: z
+            .enum(['open', 'in_progress', 'blocked', 'review', 'done', 'cancelled'])
+            .optional(),
+          nextAction: z.string().optional(),
+          blockedReason: z.string().optional(),
+          evidence: z.array(z.string()).optional(),
+          paused: z.boolean().optional(),
+          position: z.number().int().optional(),
+          ownerId: z.string().optional(),
+        }),
+      }),
+      z.object({
+        kind: z.literal('comment'),
+        taskId: z.string().min(1),
+        body: z.string().min(1).max(32_000),
+        evidence,
+      }),
+    ]),
+    key,
+  });
+
+/** Task writes, shared by Buddy turns and the Builder (which has no Buddy to default to). */
+async function writeTask(
+  deps: ToolDeps,
+  grant: TurnGrant,
+  input: z.infer<ReturnType<typeof taskWriteSchema>>,
+  defaultOwner: string | null
+) {
+  // A Builder create names its owner (schema); a Buddy's defaults to the Buddy itself.
+  const ownerOf = (id: string | undefined) => {
+    const owner = id ?? defaultOwner;
+    if (owner === null) throw new Error('a task needs an ownerId');
+    return owner;
+  };
+  const write = input.write;
+  switch (write.kind) {
+    case 'create':
+      return deps.core.upsertTask(grant.principal, {
+        kind: 'create',
+        ownerId: ownerOf(write.ownerId),
+        parentId: write.parentId,
+        title: write.title,
+        doneCriteria: write.doneCriteria,
+        key: input.key,
+      });
+    case 'update':
+      return deps.core.upsertTask(grant.principal, { ...write, key: input.key });
+    case 'comment': {
+      const post = await deps.core.post(
+        grant.author,
+        { kind: 'task', taskId: write.taskId },
+        {
+          kind: 'inform',
+          body: write.body,
+          evidence: write.evidence,
+          taskId: write.taskId,
+          fromConversationId: grant.conversationId,
+          key: input.key,
+        }
+      );
+      const channel = await deps.core.openChannel(grant.author, {
+        kind: 'id',
+        id: post.channelId,
+      });
+      deps.events.emit({ kind: 'posted', post, channel });
+      return post;
+    }
+  }
+}
+
+async function taskDetail(deps: ToolDeps, grant: TurnGrant, taskId: string) {
+  const task = await deps.core.getTask(taskId);
+  const channel = await deps.core.openChannel(grant.author, { kind: 'task', taskId: task.id });
+  const [children, comments] = await Promise.all([
+    deps.core.listTasks({ kind: 'children', parentId: task.id }),
+    deps.core.listPosts(grant.author, { kind: 'channel', channelId: channel.id }, null, 20),
+  ]);
+  return { task, children, comments: comments.posts };
+}
+
 // Pattern: table-driven (docs/patterns.md#table-driven)
 const BUDDY_TOOLS = {
   post: buddyTool({
@@ -200,17 +297,25 @@ const BUDDY_TOOLS = {
   }),
   channel_read: buddyTool({
     description:
-      'Read a channel (top-level posts, newest first) or one thread. Page older with `before` from the previous page. Reading a channel from its newest post marks it read.',
+      'Read a channel (top-level posts, newest first) or one thread, or search every channel you can read here for posts containing all the given words. Page older with `before` from the previous page. Reading a channel from its newest post marks it read.',
     writes: false,
     schema: z.object({
       read: z.union([
         z.object({ channelId: z.string().min(1) }),
         z.object({ threadId: z.string().min(1) }),
+        z.object({ search: z.string().min(1).max(200).describe('Words that must all appear') }),
       ]),
       before: z.object({ createdAt: z.string(), id: z.string() }).optional(),
       limit: z.number().int().min(1).max(100).default(30),
     }),
     async handler(deps, grant, input) {
+      if ('search' in input.read)
+        return deps.core.searchPosts(
+          grant.author,
+          grant.workspaceId,
+          input.read.search,
+          input.limit
+        );
       const query =
         'channelId' in input.read
           ? ({ kind: 'channel', channelId: input.read.channelId } as const)
@@ -244,23 +349,8 @@ const BUDDY_TOOLS = {
           return deps.core.listTasks({ kind: 'owner', buddyId: input.view.buddyId });
         case 'workspace':
           return deps.core.listTasks({ kind: 'workspace', workspaceId: grant.workspaceId });
-        case 'task': {
-          const task = await deps.core.getTask(input.view.taskId);
-          const [children, comments] = await Promise.all([
-            deps.core.listTasks({ kind: 'children', parentId: task.id }),
-            deps.core
-              .openChannel(grant.author, { kind: 'task', taskId: task.id })
-              .then((channel) =>
-                deps.core.listPosts(
-                  grant.author,
-                  { kind: 'channel', channelId: channel.id },
-                  null,
-                  20
-                )
-              ),
-          ]);
-          return { task, children, comments: comments.posts };
-        }
+        case 'task':
+          return taskDetail(deps, grant, input.view.taskId);
       }
     },
   }),
@@ -268,78 +358,8 @@ const BUDDY_TOOLS = {
     description:
       'Create a task (a subtask with parentId), update one (compare-and-swap on baseRevision; pausing, cancelling or reassigning cancels its queued runs), or comment on one.',
     writes: true,
-    schema: z.object({
-      write: z.discriminatedUnion('kind', [
-        z.object({
-          kind: z.literal('create'),
-          ownerId: z.string().optional().describe('Default: you'),
-          parentId: z.string().optional(),
-          title: z.string().min(1).max(300),
-          doneCriteria: z.string().min(1).max(4000),
-        }),
-        z.object({
-          kind: z.literal('update'),
-          taskId: z.string().min(1),
-          baseRevision: z.number().int().positive(),
-          changes: z.object({
-            title: z.string().optional(),
-            doneCriteria: z.string().optional(),
-            status: z
-              .enum(['open', 'in_progress', 'blocked', 'review', 'done', 'cancelled'])
-              .optional(),
-            nextAction: z.string().optional(),
-            blockedReason: z.string().optional(),
-            evidence: z.array(z.string()).optional(),
-            paused: z.boolean().optional(),
-            position: z.number().int().optional(),
-            ownerId: z.string().optional(),
-          }),
-        }),
-        z.object({
-          kind: z.literal('comment'),
-          taskId: z.string().min(1),
-          body: z.string().min(1).max(32_000),
-          evidence,
-        }),
-      ]),
-      key,
-    }),
-    async handler(deps, grant, input) {
-      const write = input.write;
-      switch (write.kind) {
-        case 'create':
-          return deps.core.upsertTask(grant.principal, {
-            kind: 'create',
-            ownerId: write.ownerId ?? grant.buddyId,
-            parentId: write.parentId,
-            title: write.title,
-            doneCriteria: write.doneCriteria,
-            key: input.key,
-          });
-        case 'update':
-          return deps.core.upsertTask(grant.principal, { ...write, key: input.key });
-        case 'comment': {
-          const post = await deps.core.post(
-            grant.author,
-            { kind: 'task', taskId: write.taskId },
-            {
-              kind: 'inform',
-              body: write.body,
-              evidence: write.evidence,
-              taskId: write.taskId,
-              fromConversationId: grant.conversationId,
-              key: input.key,
-            }
-          );
-          const channel = await deps.core.openChannel(grant.author, {
-            kind: 'id',
-            id: post.channelId,
-          });
-          deps.events.emit({ kind: 'posted', post, channel });
-          return post;
-        }
-      }
-    },
+    schema: taskWriteSchema(),
+    handler: (deps, grant, input) => writeTask(deps, grant, input, grant.buddyId),
   }),
   doc_read: buddyTool({
     description:
@@ -512,6 +532,39 @@ const TEAM_TOOLS = {
   }),
 };
 
+// The Builder saves work for the staff it hires (as the owner's old Builder tools did). It has no
+// Buddy of its own, so every view and every new task names its Buddy.
+const BUILDER_TOOLS = {
+  tasks: teamTool({
+    description: "Read a buddy's tasks, a workspace's, or one task with its subtasks and comments.",
+    writes: false,
+    schema: z.object({
+      view: z.discriminatedUnion('kind', [
+        z.object({ kind: z.literal('owner'), buddyId: z.string().min(1) }),
+        z.object({ kind: z.literal('workspace'), workspaceId: z.string().min(1) }),
+        z.object({ kind: z.literal('task'), taskId: z.string().min(1) }),
+      ]),
+    }),
+    async handler(deps, grant, input) {
+      switch (input.view.kind) {
+        case 'owner':
+          return deps.core.listTasks({ kind: 'owner', buddyId: input.view.buddyId });
+        case 'workspace':
+          return deps.core.listTasks({ kind: 'workspace', workspaceId: input.view.workspaceId });
+        case 'task':
+          return taskDetail(deps, grant, input.view.taskId);
+      }
+    },
+  }),
+  task_write: teamTool({
+    description:
+      'Create a task for a buddy (ownerId required), update one (compare-and-swap on baseRevision), or comment on one.',
+    writes: true,
+    schema: taskWriteSchema(),
+    handler: (deps, grant, input) => writeTask(deps, grant, input, null),
+  }),
+};
+
 const REVIEWER_TOOLS = {
   doc_read: {
     ...BUDDY_TOOLS.doc_read,
@@ -533,7 +586,7 @@ export function toolsFor(role: Role): Record<string, Tool<TurnGrant>> {
     case 'reviewer':
       return REVIEWER_TOOLS as Record<string, Tool<TurnGrant>>;
     case 'builder':
-      return TEAM_TOOLS as Record<string, Tool<TurnGrant>>;
+      return { ...TEAM_TOOLS, ...BUILDER_TOOLS } as Record<string, Tool<TurnGrant>>;
   }
 }
 

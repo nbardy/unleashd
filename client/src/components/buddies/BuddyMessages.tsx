@@ -107,6 +107,79 @@ function SendForm({ buddyId, refresh }: { buddyId: string; refresh: () => Promis
   );
 }
 
+/**
+ * Post to a workspace channel AS this Buddy (a standup, a handoff, an announcement), as the Messages
+ * tab offered before T11. The server writes it with the Buddy as author; its @mentions start no turn.
+ */
+export function PostAsBuddyForm({
+  buddyId,
+  inbox,
+  refresh,
+}: {
+  buddyId: string;
+  inbox: Inbox;
+  refresh: () => Promise<void>;
+}) {
+  const channels = inbox.channels.flatMap(({ channel }) =>
+    channel.kind.type === 'public' ? [{ id: channel.id, name: channel.kind.name }] : []
+  );
+  const [channelId, setChannelId] = useState('');
+  const [purpose, setPurpose] = useState('standup');
+  const [body, setBody] = useState('');
+  const action = useBuddyAction(refresh);
+  const target = channelId || channels[0]?.id || '';
+  if (channels.length === 0) return null;
+  return (
+    <form
+      className="buddy-panel__form"
+      aria-label="Post as this Buddy"
+      onSubmit={(event) => {
+        event.preventDefault();
+        void action
+          .run('post', () =>
+            buddyWrite(`/api/buddies/channels/${encodeURIComponent(target)}/posts`, 'POST', {
+              asBuddyId: buddyId,
+              purpose: purpose.trim(),
+              body,
+            })
+          )
+          .then((ok) => ok && setBody(''));
+      }}
+    >
+      <label>
+        Channel
+        <select value={target} onChange={(event) => setChannelId(event.target.value)}>
+          {channels.map((channel) => (
+            <option key={channel.id} value={channel.id}>
+              #{channel.name}
+            </option>
+          ))}
+        </select>
+      </label>
+      <label>
+        Kind
+        <input
+          value={purpose}
+          maxLength={200}
+          placeholder="standup, handoff, announcement, decision"
+          onChange={(event) => setPurpose(event.target.value)}
+        />
+      </label>
+      <textarea
+        aria-label="Post"
+        rows={3}
+        placeholder="Post to the channel as this Buddy"
+        value={body}
+        onChange={(event) => setBody(event.target.value)}
+      />
+      <button type="submit" disabled={action.busy || !purpose.trim() || !body.trim()}>
+        Post as Buddy
+      </button>
+      <ActionError state={action.state} />
+    </form>
+  );
+}
+
 /** The DM's top-level posts, oldest first, with the owner's answer forms under open requests. */
 export function BuddyDirectPosts({
   posts,
@@ -236,6 +309,9 @@ export function BuddyMessages({
           names={names}
           refreshInbox={inbox.refetch}
         />
+      )}
+      {inbox.data && (
+        <PostAsBuddyForm buddyId={buddyId} inbox={inbox.data} refresh={inbox.refetch} />
       )}
     </section>
   );

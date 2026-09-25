@@ -766,6 +766,54 @@ test('owner routes: a DM request is answered over HTTP, typed errors keep their 
     });
     assert.equal(stale.status, 409);
     assert.match(stale.body.error, /^\[revision_conflict\]/);
+
+    // The owner posts a standup AS a Buddy (the pre-T11 Messages tab did); a Buddy's @mention in
+    // it starts no turn. Search finds it, over HTTP and through the channel_read tool.
+    const asBuddy = await http('POST', `/api/buddies/channels/${w.general.id}/posts`, {
+      asBuddyId: w.designer.id,
+      purpose: 'standup',
+      body: `Shipped the quarterly logo [@Lead](buddy:${w.lead.id})`,
+      key: 'standup-as-designer',
+    });
+    assert.equal(asBuddy.status, 201, JSON.stringify(asBuddy.body));
+    const written = asBuddy.body as unknown as { post: Post; mentions: unknown[] };
+    assert.deepEqual(written.post.author, buddyActor(w.designer.id));
+    assert.deepEqual(written.mentions, [], "a Buddy's mention dispatches nothing");
+    const found = await http('GET', `/api/buddies/workspaces/${w.ws}/search?q=quarterly%20LOGO`);
+    assert.deepEqual(
+      (found.body as unknown as Post[]).map((post) => post.id),
+      [written.post.id]
+    );
+    const grant = w.grants.issueBuddy({
+      role: 'worker',
+      buddyId: w.lead.id,
+      workspaceId: w.ws,
+      conversationId: 'c',
+      scope: { kind: 'buddy' },
+      runId: null,
+    });
+    const searched = await call(w.endpoint.spec(grant), 'channel_read', {
+      read: { search: 'quarterly' },
+    });
+    assert.deepEqual(
+      searched.value.map((post: Post) => post.id),
+      [written.post.id]
+    );
+
+    // The Builder saves a new hire's first task (it has no Buddy of its own: ownerId is required).
+    const builder = w.endpoint.spec(w.grants.issueBuilder('builder-chat'));
+    assert.ok((await toolNames(builder)).includes('task_write'));
+    const task = await call(builder, 'task_write', {
+      write: { kind: 'create', ownerId: w.designer.id, title: 'Logo v2', doneCriteria: 'Shipped' },
+      key: 'builder-task',
+    });
+    assert.equal(task.isError, false, task.text);
+    assert.equal(task.value.ownerId, w.designer.id);
+    const ownerless = await call(builder, 'task_write', {
+      write: { kind: 'create', title: 'Nobody', doneCriteria: 'x' },
+      key: 'builder-task-2',
+    });
+    assert.equal(ownerless.isError, true);
   } finally {
     server.close();
     await w.close();

@@ -504,3 +504,26 @@ fn background_work_waits_while_the_buddy_has_it_switched_off() {
     let released = s.claim_run(60_000).unwrap().unwrap();
     assert!(matches!(released.run.input, RunInput::Post { .. }), "released when switched back on");
 }
+
+#[test]
+fn post_search_finds_words_only_in_channels_the_reader_may_read() {
+    let mut f = fixture();
+    let s = &mut f.store;
+    let general = s
+        .create_channel(
+            &Actor::Owner,
+            ChannelInput { workspace_id: WS.into(), name: "general".into(), purpose: "p".into(), key: "g".into() },
+        )
+        .unwrap();
+    let say = |body: &str, key: &str| PostInput { kind: PostKind::Inform, ..request(body, key) };
+    s.post(&buddy("lead"), ChannelRef::Id { id: general.id.clone() }, say("Deploy the ranking model on Friday", "p1")).unwrap();
+    s.post(&buddy("mid"), dm("mid", "ic"), say("secret ranking numbers", "p2")).unwrap();
+    // Every word must match, in any order, case-insensitively; FTS syntax in the query is literal.
+    let hits = |who: &Actor, q: &str| s.search_posts(who, WS, q, 10).unwrap().into_iter().map(|p| p.body).collect::<Vec<_>>();
+    assert_eq!(hits(&buddy("peer"), "friday RANKING"), ["Deploy the ranking model on Friday"]);
+    assert_eq!(hits(&buddy("peer"), "ranking"), ["Deploy the ranking model on Friday"], "a DM is private to its members");
+    assert_eq!(hits(&buddy("ic"), "ranking").len(), 2, "a member finds its DM");
+    assert_eq!(hits(&Actor::Owner, "ranking").len(), 2, "the owner reads every DM");
+    assert!(hits(&Actor::Owner, "rank* OR NEAR(").is_empty(), "operators are words, not syntax");
+    assert!(matches!(s.search_posts(&buddy("gone"), WS, "ranking", 10), Err(CoreError::Denied(_))), "archived buddies cannot search");
+}

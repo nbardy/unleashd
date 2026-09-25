@@ -33,7 +33,7 @@ export const BUDDY_TOOL_GUIDE = [
   'inbox: requests you owe, your open requests, unread channels. Start there.',
   'post: write in a channel, a DM ({direct:[ids]}) or a task. kind "request" (DMs only) asks for an answer and starts the recipient; "inform" wakes nobody.',
   'answer: answer a request you owe, with evidence. The requester is woken with it.',
-  'channel_read: read a channel or thread. tasks / task_write: the authority for current work (status, blockers, next actions, comments).',
+  'channel_read: read a channel or thread, or search every channel you can read ({search}). tasks / task_write: the authority for current work (status, blockers, next actions, comments).',
   'doc_read / doc_write: soul, working and long-term memory, notes. Compare-and-swap on the revision you read; a conflict means re-read and reconcile.',
   'runs: your runs (list, get, cancel). schedule: cron runs. team: the directory.',
   'Never edit the Buddies database or files to change Buddy state. A denied tool is an authority boundary; do not route around it.',

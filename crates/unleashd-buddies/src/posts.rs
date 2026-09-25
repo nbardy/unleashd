@@ -303,6 +303,25 @@ impl Store {
         Ok(Inbox { requests, waiting_on, channels })
     }
 
+    /// Posts in `workspace_id` whose body contains every word of `query` (literal words, not FTS
+    /// syntax), newest first, from the channels the actor may read: public and task channels, and
+    /// the direct channels it is a member of (the owner reads every one).
+    pub fn search_posts(&self, actor: &Actor, workspace_id: &str, query: &str, limit: i64) -> Result<Vec<Post>> {
+        require(&self.conn, actor, Op::SearchPosts, &Subject::Owner)?;
+        let words: Vec<String> = query.split_whitespace().map(|w| format!("\"{}\"", w.replace('"', "\"\""))).collect();
+        if words.is_empty() {
+            return Err(CoreError::Invalid("an empty search".into()));
+        }
+        let sql = format!(
+            "SELECT {POST_COLS} FROM post_search s JOIN post p ON p.rowid = s.rowid JOIN channel c ON c.id = p.channel_id
+             WHERE post_search MATCH ?1 AND c.workspace_id = ?2
+               AND (?3 = 'owner' OR c.kind != 'direct'
+                    OR EXISTS (SELECT 1 FROM channel_member m WHERE m.channel_id = c.id AND m.member = ?3))
+             ORDER BY p.created_at DESC LIMIT ?4"
+        );
+        collect(self.conn.prepare_cached(&sql)?.query_map(params![words.join(" "), workspace_id, actor.key(), limit], post_row)?)
+    }
+
     /// Moves the actor's cursor forward to `post_id`; an older post never moves it back.
     pub fn mark_read(&mut self, actor: &Actor, channel_id: &str, post_id: &str) -> Result<()> {
         self.write(|tx| {

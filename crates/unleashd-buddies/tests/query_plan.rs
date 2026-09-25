@@ -49,6 +49,8 @@ fn workload(s: &mut unleashd_buddies::Store) {
     }
     s.get_post(&ic, &ask.id).unwrap();
     s.inbox(&ic, WS).unwrap();
+    assert_eq!(s.search_posts(&ic, WS, "reply", 5).unwrap().len(), 1);
+    s.search_posts(&owner, WS, "on it", 5).unwrap();
     s.inbox(&owner, WS).unwrap();
     s.mark_read(&ic, &channel.id, &top.id).unwrap();
     s.mark_read(&ic, &ask.channel_id, &ask.id).unwrap();
@@ -237,7 +239,14 @@ fn every_statement_uses_an_index() {
         .unwrap()
         .iter()
         .map(|s| s.trim().to_string())
-        .filter(|s| !(s.starts_with("BEGIN") || s.starts_with("COMMIT") || s.starts_with("ROLLBACK") || s.starts_with("PRAGMA")))
+        // "-- TRIGGER x" lines trace trigger bodies, which are planned with their statement.
+        .filter(|s| {
+            !(s.starts_with("BEGIN")
+                || s.starts_with("COMMIT")
+                || s.starts_with("ROLLBACK")
+                || s.starts_with("PRAGMA")
+                || s.starts_with("--"))
+        })
         .collect();
     assert!(statements.len() > 40, "the workload should exercise many statements, saw {}", statements.len());
 
@@ -246,7 +255,8 @@ fn every_statement_uses_an_index() {
         let mut stmt = conn.prepare(&format!("EXPLAIN QUERY PLAN {sql}")).unwrap();
         let plan: Vec<String> = stmt.query_map([], |r| r.get::<_, String>(3)).unwrap().map(Result::unwrap).collect();
         plan.into_iter()
-            .filter(|line| line.starts_with("SCAN ") && !line.contains("USING"))
+            // An FTS5 MATCH plans as "SCAN <fts> VIRTUAL TABLE INDEX n:M..": an index lookup.
+            .filter(|line| line.starts_with("SCAN ") && !line.contains("USING") && !line.contains("VIRTUAL TABLE INDEX 0:M"))
             .filter(|line| !WHOLE_TABLE_BY_DESIGN.contains(&line.as_str()) && !NOT_TABLES.contains(&line.as_str()))
             .collect()
     };

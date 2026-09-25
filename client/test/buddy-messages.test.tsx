@@ -1,7 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { BuddyDirectPosts, ownerDirectChannel } from '../src/components/buddies/BuddyMessages';
+import {
+  BuddyDirectPosts,
+  PostAsBuddyForm,
+  ownerDirectChannel,
+} from '../src/components/buddies/BuddyMessages';
 import type { Channel, Inbox, Post } from '../src/components/buddies/types';
 
 const direct = (id: string, members: Channel['kind']): Channel => ({
@@ -94,4 +98,29 @@ test('DM posts read oldest first and only requests awaiting the owner offer an a
   assert.equal(html.match(/Send answer/g)?.length, 1);
   assert.match(html, /You/);
   assert.match(html, /Ada/);
+});
+
+// T11 removed "post to a channel as this Buddy" from the Messages tab and the owner asked for it
+// back (no visible feature goes without approval). It offers the workspace's public channels only.
+test('the Messages tab can post to a public channel as the Buddy', () => {
+  const inbox: Inbox = {
+    requests: [],
+    waitingOn: [],
+    channels: [
+      { channel: direct('general', { type: 'public', name: 'general', purpose: 'p' }), unread: 0 },
+      {
+        channel: direct('dm-ada', {
+          type: 'direct',
+          members: [{ kind: 'owner' }, { kind: 'buddy', id: 'ada' }],
+        }),
+        unread: 0,
+      },
+    ],
+  };
+  const html = renderToStaticMarkup(
+    <PostAsBuddyForm buddyId="ada" inbox={inbox} refresh={async () => undefined} />
+  );
+  assert.match(html, /Post as Buddy/);
+  assert.match(html, /#general/);
+  assert.doesNotMatch(html, /dm-ada/);
 });

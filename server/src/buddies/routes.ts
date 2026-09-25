@@ -113,6 +113,9 @@ const PostBodySchema = z
     purpose: z.string().trim().min(1).max(200).optional(),
     evidence,
     mentionConfigs: z.array(OwnerPostMentionConfigSchema).max(32).default([]),
+    // The owner writes as one of its Buddies (a standup, a handoff), as the Messages tab did before
+    // T11. The crate authorizes the Buddy as the author; its @mentions start no turn.
+    asBuddyId: z.string().min(1).optional(),
     key,
   })
   .strict();
@@ -227,19 +230,20 @@ export function registerBuddyRoutes(app: Express, deps: BuddyRouteDeps): void {
     return { written, channel };
   };
   const ownerPost = async (raw: unknown, ref: ChannelRef) => {
-    const input = PostBodySchema.parse(raw);
+    const { asBuddyId, ...input } = PostBodySchema.parse(raw);
     const chosen = mentionConfigsByBuddy(input.body, input.mentionConfigs);
+    const author = asBuddyId === undefined ? OWNER : buddyActor(asBuddyId);
     const target = await core.openChannel(OWNER, ref);
     const body = requireCanonicalPostMedia(input.body, {
       uploadsRoot: deps.uploadsRoot(),
       channelId: target.id,
     });
     const { written: post, channel } = await posted(
-      core.post(OWNER, { kind: 'id', id: target.id }, { ...input, body })
+      core.post(author, { kind: 'id', id: target.id }, { ...input, body })
     );
     // Only the owner's own @mentions start turns, and only in a public channel's thread seats.
     const mentions =
-      channel.kind.type === 'public'
+      channel.kind.type === 'public' && post.author.kind === 'owner'
         ? await channels.respondToOwnerPost(channel, post, chosen)
         : [];
     return { post, mentions };
@@ -413,6 +417,17 @@ export function registerBuddyRoutes(app: Express, deps: BuddyRouteDeps): void {
       'get',
       '/api/buddies/workspaces/:workspaceId/inbox',
       (req) => core.inbox(OWNER, p(req, 'workspaceId')),
+    ],
+    [
+      'get',
+      '/api/buddies/workspaces/:workspaceId/search',
+      (req) =>
+        core.searchPosts(
+          OWNER,
+          p(req, 'workspaceId'),
+          z.string().trim().min(1).parse(q(req, 'q')),
+          50
+        ),
     ],
     [
       'post',

@@ -10,6 +10,7 @@ export declare class BuddiesCore {
   getPost(actor: Actor, id: string): Promise<Post>
   openChannel(actor: Actor, channel: ChannelRef): Promise<Channel>
   listPosts(actor: Actor, query: PostQuery, before: Cursor | undefined | null, limit: number): Promise<PostPage>
+  searchPosts(actor: Actor, workspaceId: string, query: string, limit: number): Promise<Array<Post>>
   inbox(actor: Actor, workspaceId: string): Promise<Inbox>
   markRead(actor: Actor, channelId: string, postId: string): Promise<void>
   createChannel(actor: Actor, input: ChannelInput): Promise<Channel>
@@ -267,7 +268,7 @@ export type ManagerRef =
   | { kind: 'nobody' }
   | { kind: 'buddy'; id: string }
 
-export type Op = 'read_doc' | 'write_doc' | 'post' | 'read_channel' | 'create_channel' | 'write_task' | 'enqueue_run' | 'cancel_run' | 'write_schedule' | 'admin'
+export type Op = 'read_doc' | 'write_doc' | 'post' | 'read_channel' | 'search_posts' | 'create_channel' | 'write_task' | 'enqueue_run' | 'cancel_run' | 'write_schedule' | 'admin'
 
 /** How a run ended, reported by the runner. */
 export type Outcome =

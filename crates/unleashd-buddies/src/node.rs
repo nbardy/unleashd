@@ -72,6 +72,11 @@ impl BuddiesCore {
     }
 
     #[napi]
+    pub async fn search_posts(&self, actor: Actor, workspace_id: String, query: String, limit: i64) -> napi::Result<Vec<Post>> {
+        call(&self.store, move |s| s.search_posts(&actor, &workspace_id, &query, limit)).await
+    }
+
+    #[napi]
     pub async fn inbox(&self, actor: Actor, workspace_id: String) -> napi::Result<Inbox> {
         call(&self.store, move |s| s.inbox(&actor, &workspace_id)).await
     }
