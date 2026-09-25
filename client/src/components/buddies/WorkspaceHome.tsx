@@ -237,10 +237,12 @@ function CreateWorkspace({
 
   const folder = directory.trim();
   const folderName = folder.replace(/\/+$/, '').split('/').pop() ?? '';
+  // PathAutocomplete reports an empty input as valid, so a folder is required on top.
+  const ready = valid && folder.length > 0;
 
   const handleCreate = async (event: FormEvent) => {
     event.preventDefault();
-    if (!valid || busy) return;
+    if (!ready || busy) return;
     setBusy(true);
     setError(null);
     try {
@@ -307,7 +309,7 @@ function CreateWorkspace({
         <button
           type="submit"
           className="workspace-home-button workspace-home-button--primary"
-          disabled={!valid || busy}
+          disabled={!ready || busy}
         >
           {busy ? 'Creating…' : 'Create workspace'}
         </button>
