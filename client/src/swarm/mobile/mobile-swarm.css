@@ -1,6 +1,5 @@
 /* =============================================================================
-   mobile-swarm.css — swarm detail + analytics. Imported by the swarm pages
-   themselves, so it loads with the swarm chunk and deletes with swarm/.
+   mobile-swarm.css — swarm pages; loaded by them, so it deletes with swarm/.
 
    Same story as mobile-buddy.css: these classes were live in the TSX with no
    rule behind them. Kill signals in particular rendered as identical bare
