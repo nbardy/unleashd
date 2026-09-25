@@ -284,7 +284,7 @@ magenta). Run 1 and 3 back-to-back: live data drifts (sidebar badges,
   DB: `UNLEASHD_BUDDIES_DB`, default `~/.buddies/buddies-v3.sqlite`. It is never the
   v33 `~/.buddies/buddies.sqlite`; a missing file fails every Buddy call with the
   import command (`server/src/buddies/core.ts`), never an empty DB. `pnpm addons`
-  (also run by `pnpm setup`, `pnpm dev`, `pnpm build`, `test:server`) makes both
+  (also run by `pnpm run bootstrap`, `pnpm dev`, `pnpm build`, `test:server`) makes both
   addons match their sources from the shared build cache, running cargo only on
   a miss; `pnpm --dir crates/<c> run build` forces a build. Restart the backend
   after a Rust change. Deploy sequence: crate README "Deploy".
@@ -292,7 +292,8 @@ magenta). Run 1 and 3 back-to-back: live data drifts (sidebar badges,
   crate's own inputs only (docs/patterns.md#build-cache), so the one-time import
   CLIs live in their own crates (`unleashd-buddies-import`, `unleashd-records-tool`);
   build them with `cargo build --release -p <crate>` and never move tool code
-  back into an addon crate.
+  back into an addon crate. Worktree setup is `pnpm run bootstrap`, never
+  `pnpm setup`: that is a pnpm BUILTIN which edits `~/.zshrc` (it did, 2026-09-26).
 - The Buddy MCP endpoint (`server/src/buddies/mcp.ts`) listens on its OWN loopback
   port. Never mount it on the gated Express app: a turn's bearer is not the owner
   secret, and the owner secret must never reach a turn. Each turn's grant is

@@ -137,7 +137,7 @@ edit to a one-time tool rebuilds the shipped addon it happens to live in.
 every checkout, and publish into the cache by an atomic rename under a per-key lock. A hit copies files and never
 starts the compiler. Code that is not shipped lives in its own build unit, so editing it changes no shipped key.
 **Here:** `tools/ensure-addons.mjs` (key: the crate's `src/**`, `build.rs`, `Cargo.toml`, `package.json`, its
-reachable `Cargo.lock` entries, `rustc -vV`; cache `$UNLEASHD_ADDON_CACHE`); called by `pnpm setup`, the dev /
+reachable `Cargo.lock` entries, `rustc -vV`; cache `$UNLEASHD_ADDON_CACHE`); called by `pnpm run bootstrap`, the dev /
 build tasks, `test:server` and the dev watcher on a saved `.rs`. The import CLIs are `crates/unleashd-buddies-import`
 and `crates/unleashd-records-tool`. Guards: `tools/ensure-addons.test.mjs` (a TS or tool-crate edit keeps the key;
 a hit never spawns), `tools/watch-server.test.mjs` (a tool-crate save builds nothing). S12, 2026-09-26.
