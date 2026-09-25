@@ -73,10 +73,15 @@
         const slowTimer = window.setTimeout(() => {
           show('Unleashd is loading slowly', 'Keep this page open while the app finishes loading.');
         }, 8_000);
+        // Slow is not failed: this fires when the app has not rendered yet, which
+        // right after a dev restart on a loaded machine is Vite transforming the
+        // client cold (>45s at load ~340 on 2026-09-25). It used to say "did not
+        // start" while the app was about to appear; ready() still clears it.
+        // Real failures (script load errors, rejections) use fail() below.
         const timeout = window.setTimeout(() => {
           show(
-            'Unleashd did not start',
-            'Startup timed out. Reload once, then copy this message if it happens again.'
+            'Unleashd is still loading',
+            'The server is busy (often right after a restart). This page will open by itself; reload only if nothing changes for a few minutes.'
           );
         }, 45_000);
 

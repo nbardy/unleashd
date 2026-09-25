@@ -13,6 +13,7 @@
 // pass. A watcher that starts beside the backend rewrites dist/ while the
 // backend loads it, which is what restarted a backend mid-startup on
 // 2026-09-25 (see tools/watch-server.mjs).
+import { existsSync, mkdirSync, rmSync } from 'node:fs';
 import { createRequire } from 'node:module';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -33,8 +34,15 @@ export function linePrefixer(prefix, write) {
  * One `tsc --watch` equivalent through the TypeScript API of the package that
  * owns `configPath`. Resolves `ready` after the first full pass, whatever its
  * error count: type errors are reported, not fatal, exactly as `tsc --watch`.
+ *
+ * Incremental: build state persists in `stateDirectory`, so a start with
+ * unchanged sources re-checks instead of re-emitting everything. The first pass
+ * gates the backend and Vite, and a full rebuild of all three projects took
+ * 1m46s on a loaded machine (2026-09-25). Build state trusts its outputs
+ * exist, and other sessions clean-rebuild dist/ (`pnpm build`/`typecheck` rm it
+ * first), so a missing `sentinel` output discards the state: one full rebuild.
  */
-export function startCompiler({ name, configPath, log }) {
+export function startCompiler({ name, configPath, sentinel, stateDirectory, log }) {
   const ts = createRequire(configPath)('typescript');
   const host = ts.sys;
   const format = {
@@ -48,9 +56,12 @@ export function startCompiler({ name, configPath, log }) {
   });
   const report = (diagnostic) =>
     log(`[${name}] ${ts.formatDiagnostic(diagnostic, format).trimEnd()}`);
+  mkdirSync(stateDirectory, { recursive: true });
+  const tsBuildInfoFile = path.join(stateDirectory, `${name}.tsbuildinfo`);
+  if (!existsSync(sentinel)) rmSync(tsBuildInfoFile, { force: true });
   const watchHost = ts.createWatchCompilerHost(
     configPath,
-    {},
+    { incremental: true, tsBuildInfoFile },
     host,
     ts.createEmitAndSemanticDiagnosticsBuilderProgram,
     report,

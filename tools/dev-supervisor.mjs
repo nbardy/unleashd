@@ -87,14 +87,25 @@ export function taskPlan(task) {
 }
 
 // The compilers `pnpm dev` runs: the same configs as the packages' watch scripts.
+// `sentinel` is an output whose absence means dist/ was cleaned (dev-runtime.mjs).
 const COMPILERS = [
-  { name: 'shared-esm', configPath: path.join(repositoryRoot, 'shared', 'tsconfig.json') },
-  { name: 'shared-cjs', configPath: path.join(repositoryRoot, 'shared', 'tsconfig.cjs.json') },
+  {
+    name: 'shared-esm',
+    configPath: path.join(repositoryRoot, 'shared', 'tsconfig.json'),
+    sentinel: path.join(repositoryRoot, 'shared', 'dist', 'index.js'),
+  },
+  {
+    name: 'shared-cjs',
+    configPath: path.join(repositoryRoot, 'shared', 'tsconfig.cjs.json'),
+    sentinel: path.join(repositoryRoot, 'shared', 'dist', 'cjs', 'index.js'),
+  },
   {
     name: 'cli',
     configPath: path.join(repositoryRoot, 'vendor', 'agent-cli-tool', 'tsconfig.build.json'),
+    sentinel: path.join(repositoryRoot, 'vendor', 'agent-cli-tool', 'dist', 'index.js'),
   },
 ];
+const COMPILER_STATE = path.join(repositoryRoot, 'node_modules', '.cache', 'unleashd-dev');
 
 // --- the dev runtime lock -----------------------------------------------------
 
@@ -289,7 +300,9 @@ async function runServices(services) {
           path.join(repositoryRoot, 'vendor/agent-cli-tool/scripts/write-dist-package.mjs')
         ).href
       );
-      running.compilers = COMPILERS.map((compiler) => startCompiler({ ...compiler, log }));
+      running.compilers = COMPILERS.map((compiler) =>
+        startCompiler({ ...compiler, stateDirectory: COMPILER_STATE, log })
+      );
       await Promise.all(running.compilers.map((compiler) => compiler.ready));
     }
     if (stopping) return 130;
