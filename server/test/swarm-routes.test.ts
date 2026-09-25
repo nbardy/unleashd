@@ -72,21 +72,21 @@ test('swarm routes never touch synchronous fs', async (context) => {
     });
   }
 
-  const json = async (url: string, init?: RequestInit) => {
+  const json = async <T = unknown>(url: string, init?: RequestInit): Promise<T> => {
     const response = await fetch(`${base}${url}`, init);
     assert.equal(response.status, 200, url);
-    return response.json();
+    return (await response.json()) as T;
   };
   assert.deepEqual(await json(`/api/oompa-config?dir=${dir}`), { workers: [{}] });
   assert.deepEqual(await json(`/api/swarm-reviews?dir=${dir}&swarmId=run-1`), {
     reviews: [{ verdict: 'approved' }],
   });
-  const { projects } = await json('/api/swarm-projects');
+  const { projects } = await json<{ projects: unknown[] }>('/api/swarm-projects');
   assert.equal(projects.length, 1);
-  const { prefix } = await json(`/api/oompa-swarm-context?dir=${dir}`);
+  const { prefix } = await json<{ prefix: string }>(`/api/oompa-swarm-context?dir=${dir}`);
   assert.match(prefix, /workers=1/);
   assert.match(prefix, /# guide/);
-  const signal = await json('/api/swarm-signal', {
+  const signal = await json<{ ok: boolean }>('/api/swarm-signal', {
     method: 'POST',
     headers: { 'content-type': 'application/json' },
     body: JSON.stringify({ dir: projectRoot, signal: 'stop', swarmId: 'run-1' }),
