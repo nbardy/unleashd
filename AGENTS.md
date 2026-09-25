@@ -128,41 +128,66 @@ requirements to rebuild omitted machinery.
 
 ## Screenshot review (UI changes)
 
-Prove a visible change with pictures, not source reading. Dev server must be
+Prove a visible change with pictures, not source reading. A server must be
 running (`pnpm dev`); both tools log in with the server's own token
 (`UNLEASHD_AUTH_TOKEN` → `UNLEASHD_AUTH_TOKEN_FILE` → `~/.agent-viewer/auth-token`).
+The session is READ-ONLY (the page refuses non-GET fetch/XHR/beacon and drops
+WS sends; the manifest lists what it refused), so pointing it at the owner's
+live dev server is safe. For a static baseline, prefer a throwaway server on a
+spare port against a COPY of `~/.agent-viewer` + `~/.buddies` (`BUDDIES_HOME`
+at the copy) with no agent CLIs on its PATH: the Buddy scheduler still runs
+there and would otherwise launch real agents.
 
 ```bash
-pnpm screenshots                              # Channels: every screen × every size
+pnpm screenshots                              # every client screen × every size
 pnpm screenshots --sizes phone,desktop        # phone | ipad-portrait | ipad-landscape | desktop
-pnpm screenshots --only thread,mention-menu   # home | channel | thread | mention-menu | mention-model | task-filter | focus | task-hover (last two need --focus)
+pnpm screenshots --only chat,thread,buddy-memory   # names: rows of the sheet / buildScreens()
 pnpm screenshots --workspace project_… --open # pin a workspace; open the sheet when done
 pnpm screenshots --workspace project_… --channel list_… --thread post_… --focus 'text'
                                               # pin one thread; `focus` scrolls to the post containing text
 pnpm screenshot:mobile --out /tmp/shots       # the older phone-only gallery (chats, buddies, swarms…)
 ```
 
+**No-regression loop** (every CSS/view consolidation step):
+
+```bash
+pnpm screenshots                                    # 1. before  → output/screenshots/<A>
+# 2. make the change
+pnpm screenshots --baseline output/screenshots/<A>  # 3. after: replays A's data ids, clock,
+                                                    #    sizes and --only, then compares; exit 1 if over
+pnpm screenshots --compare <A> <B> --threshold 0.5  # 4. re-diff any two runs (default threshold 0%)
+```
+
+Open `<B>/compare.html` (before | after | diff per row; changed pixels in
+magenta). Run 1 and 3 back-to-back: live data drifts (sidebar badges,
+"N running", new posts), and that drift is a real diff the masks cannot hide.
+
 - Each run writes `output/screenshots/<timestamp>/` (gitignored):
-  `<screen>@<size>.png`, `manifest.json` (shots + skips with reasons) and
-  `index.html` — a contact sheet, a row per screen and a column per size.
-  Runs are never overwritten, so the loop is: run → review the sheet → fix →
-  rerun → compare the two folders. Look at the PNGs before calling a UI
-  change done.
-- Screens use REAL data found through the API: by default the richest channel
-  across every Buddy workspace (has a replied thread, then Task-linked posts,
-  then most posts). It is deliberately not the workspace `/channels` opens —
-  that is the most recently active one, often threadless, and the first run
-  came back half empty. A screen whose data is absent is skipped and recorded,
-  never faked.
+  `<screen>@<size>.png`, `manifest.json` (shots, skips with reasons, data ids,
+  clock, blocked writes) and `index.html` — a row per screen, a column per size.
+- Stable pixels: the page's `Date` is frozen at the run's clock (the baseline's
+  under `--baseline`), so every "3m ago" renders identically; animations and
+  transitions jump to their end state; carets are transparent; device-local
+  storage is cleared before every page (desktop `/` otherwise restores the
+  last chat); each shot waits until no HTTP request has been open for 500ms
+  (the idle-time chat-history prefetch excepted), and the manifest records
+  anything still loading after 20s. A region that is live by nature gets `data-volatile` in the
+  client, which the tool hides. Compare decodes PNGs in the same headless
+  Chrome — zero dependencies; the diff math is `tools/lib/pixel-diff.mjs`
+  (tested by `pnpm test:tools`).
+- Screens use REAL data found through the API: the richest channel across
+  every Buddy workspace, the longest settled chat (general, not running, idle
+  ≥1h), the first Buddy, the first swarm project. A screen whose data is
+  absent is skipped and recorded, never faked. Streaming is not a screen (a live
+  turn always differs); the tail-regroup test covers it.
 - iPad portrait (768px) renders the MOBILE tree; the switch is
-  `matchMedia('(max-width: 768px)')`. `task-filter` has no mobile UI, so it is
-  skipped there by design.
-- Add a screen by appending to `buildScreens()` in `tools/screenshots.mjs`:
-  `path`, optional `needs` (ids it requires → skip reason when absent),
-  `trees` (`['desktop']` / `['mobile']`) and `prepare` (page JS run before the
-  shot; return `'SKIP'` when its precondition is missing). Set React-controlled
-  inputs through the native value setter + an `input` event, as
-  `OPEN_MENTION_MENU` does, or React never sees the value.
+  `matchMedia('(max-width: 768px)')`. A screen with no view on a tree
+  (`task-filter`, `settings-menu`, `usage` on mobile) is skipped there by design.
+- Add a screen in `buildScreens()` in `tools/screenshots.mjs`: `views` maps a
+  tree to `{ path, prepare }` (prepare = page JS run before the shot; return
+  `'SKIP'` when its precondition is missing), `missing` is the skip reason when
+  its data is absent. Set React-controlled inputs with the `typeInto` helper
+  (native value setter + `input` event), or React never sees the value.
 - No puppeteer/playwright: both tools drive Chrome over CDP through
   `tools/lib/headless-chrome.mjs` (zero dependencies). Always `await
   session.close()` in a `finally`; it waits for Chrome to exit before deleting

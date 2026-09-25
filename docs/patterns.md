@@ -114,4 +114,6 @@ delete the old path entirely.
 2. a regression test that fails on the bad pattern itself;
 3. runtime visibility. The event-loop stall monitor records any stall of 100 ms or more, with its cause.
 **Here:** `server/src/observability/event-loop-stall.ts`; the "reconcile tick never scans a table" query-plan test;
-the crate's query-plan guard.
+the crate's query-plan guard. For visual regressions the guard is the screenshot compare loop:
+`pnpm screenshots` before, `pnpm screenshots --baseline <run>` after, which exits non-zero when any screen's
+changed pixels exceed `--threshold` (`tools/lib/screenshot-compare.mjs`; masks in `tools/lib/headless-chrome.mjs`).
