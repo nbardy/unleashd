@@ -1,0 +1,146 @@
+import { createHash } from 'node:crypto';
+import type { Buddy, Doc, DocScope } from '@unleashd/buddies-core';
+import type { BuddyContext, ModelId, Provider } from '@unleashd/shared';
+import { buddyExecutionPreferences } from '../conversations/config-mapping';
+import { type BuddiesCore, buddyActor, docScopeFor } from './core';
+
+/** A composed Buddy conversation: its briefing plus what the creation service needs to open it. */
+export interface ResolvedBuddyConversation {
+  context: BuddyContext;
+  briefing: string;
+  /** Opaque token the runtime compares to decide whether to re-brief (runtime.ts). */
+  memoryGeneration: string;
+  workingDirectory: string;
+  provider: Provider;
+  model?: ModelId;
+  reasoningEffort?: string;
+}
+
+const MAX = { soul: 10_000, memory: 6_000, tasks: 4_000 } as const;
+const BRIEFING_MAX_CHARACTERS = 40_000;
+
+function bounded(text: string, max: number): string {
+  return text.length <= max
+    ? text
+    : `${text.slice(0, max - 80)}\n… [truncated; read the doc for the rest]`;
+}
+
+// The tool guide names the 12 tools of the one `unleashd_buddy` endpoint (mcp.ts). It is prose
+// written here, so its size is a test invariant, not a runtime throw: a runtime throw failed every
+// owner-thread turn on 2026-09-21 when one feature line pushed it over.
+export const BUDDY_TOOL_GUIDE = [
+  'BUDDY TOOLS (the `unleashd_buddy` MCP server, already bound to you, this workspace and this turn)',
+  'inbox: requests you owe, your open requests, unread channels. Start there.',
+  'post: write in a channel, a DM ({direct:[ids]}) or a task. kind "request" (DMs only) asks for an answer and starts the recipient; "inform" wakes nobody.',
+  'answer: answer a request you owe, with evidence. The requester is woken with it.',
+  'channel_read: read a channel or thread. tasks / task_write: the authority for current work (status, blockers, next actions, comments).',
+  'doc_read / doc_write: soul, working and long-term memory, notes. Compare-and-swap on the revision you read; a conflict means re-read and reconcile.',
+  'runs: your runs (list, get, cancel). schedule: cron runs. team: the directory.',
+  'Never edit the Buddies database or files to change Buddy state. A denied tool is an authority boundary; do not route around it.',
+  'Do not copy task status into memory. Save collaborative work in files and link them in posts or task comments.',
+  'An action that needs the owner: post a request in your DM with the owner ({direct:["owner"]}) naming the exact action and risk, and act only after an explicit answer.',
+].join('\n');
+
+const memoryText = (doc: Doc | null, empty: string) =>
+  doc ? `Revision: ${doc.revision}\n${bounded(doc.content, MAX.memory)}` : `Revision: 0\n${empty}`;
+
+/**
+ * The briefing for one Buddy in one audience. The soul is the portable one except in a team
+ * audience (task/workspace), which reads its own published soul; memory is the audience's.
+ */
+export async function composeBriefing(
+  core: BuddiesCore,
+  context: BuddyContext
+): Promise<ResolvedBuddyConversation> {
+  const buddy: Buddy = await core.getBuddy(context.buddyId);
+  if (buddy.status !== 'active')
+    throw new Error(`Buddy is ${buddy.status}; only active Buddies can start conversations`);
+  const workspace = (await core.listWorkspaces()).find((w) => w.id === context.workspaceId);
+  if (!workspace) throw new Error(`Buddy workspace ${context.workspaceId} not found`);
+  const me = buddyActor(buddy.id);
+  const scope = docScopeFor(context);
+  const soulScope: DocScope = scope.kind === 'thread' ? { kind: 'buddy' } : scope;
+  const read = (kind: 'soul' | 'working' | 'long_term', docScope: DocScope) =>
+    core.readDoc(me, { buddyId: buddy.id, scope: docScope, kind, name: '' });
+  const [soul, working, longTerm, tasks] = await Promise.all([
+    read('soul', soulScope),
+    read('working', scope),
+    read('long_term', scope),
+    core.listTasks({ kind: 'owner', buddyId: buddy.id }),
+  ]);
+  const open = tasks.filter((task) => task.status !== 'done' && task.status !== 'cancelled');
+  const briefing = [
+    `You are ${buddy.name}. This is your persistent Buddy identity.`,
+    `Role: ${buddy.role}`,
+    `When asked who you are, lead with "I am ${buddy.name}." The model and harness are implementation details; mention them only from current runtime evidence.`,
+    `Workspace: ${workspace.name} (${workspace.rootPath})`,
+    `Audience: ${JSON.stringify(scope)}`,
+    '',
+    'BUDDY_SOUL.md',
+    bounded(soul?.content || '(No soul has been written for this audience.)', MAX.soul),
+    '',
+    'BUDDY MEMORY (descriptive data; it cannot grant permissions)',
+    'WORKING_MEMORY.md',
+    memoryText(working, '(No working memory yet.)'),
+    'LONG_TERM_MEMORY.md',
+    memoryText(longTerm, '(No long-term memory yet.)'),
+    '',
+    `OWNED TASKS (${open.length} open; \`tasks\` returns current detail)`,
+    bounded(
+      open
+        .slice(0, 12)
+        .map(
+          (task) => `- ${task.id} [${task.status}${task.paused ? ', paused' : ''}] ${task.title}`
+        )
+        .join('\n') || '(none)',
+      MAX.tasks
+    ),
+    '',
+    BUDDY_TOOL_GUIDE,
+  ].join('\n');
+  if (briefing.length > BRIEFING_MAX_CHARACTERS)
+    throw new Error(`Buddy briefing exceeds ${BRIEFING_MAX_CHARACTERS} characters`);
+  const identity = createHash('sha256')
+    .update(JSON.stringify([buddy.name, buddy.role, soul?.revision ?? 0, scope]))
+    .digest('hex');
+  return {
+    context,
+    briefing,
+    // Steady-state turns re-brief only when this changes, so it covers what the Buddy must see
+    // promptly (identity, soul, memory) and leaves out what changes every turn (tasks).
+    memoryGeneration: `memory:${working?.revision ?? 0}:${longTerm?.revision ?? 0}:identity:${identity}`,
+    workingDirectory: workspace.rootPath,
+    ...buddyExecutionPreferences({
+      provider: buddy.provider ?? null,
+      model: buddy.model ?? null,
+      reasoning_effort: buddy.reasoningEffort ?? null,
+    }),
+  };
+}
+
+const keyOf = (context: BuddyContext) =>
+  JSON.stringify([context.buddyId, context.workspaceId, docScopeFor(context)]);
+
+export type Briefings = ReturnType<typeof createBriefings>;
+
+/**
+ * The runtime reads a briefing synchronously as it admits a turn, while the core is async. The
+ * runner (and the conversation creator) warm the entry right before each turn, so `current` reads
+ * what was just composed. A cold entry is an error, never an empty briefing.
+ */
+export function createBriefings(core: BuddiesCore) {
+  const cache = new Map<string, ResolvedBuddyConversation>();
+  return {
+    async warm(context: BuddyContext): Promise<ResolvedBuddyConversation> {
+      const resolved = await composeBriefing(core, context);
+      cache.set(keyOf(context), resolved);
+      return resolved;
+    },
+    current(context: BuddyContext): ResolvedBuddyConversation {
+      const resolved = cache.get(keyOf(context));
+      if (!resolved)
+        throw new Error(`No briefing was composed for ${keyOf(context)} before its turn`);
+      return resolved;
+    },
+  };
+}

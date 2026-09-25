@@ -46,6 +46,13 @@ export const TURN_TIMEOUT_KILL_GRACE_MS = readPositiveIntEnv(
   'CWV_TURN_TIMEOUT_KILL_GRACE_MS',
   5_000
 );
+/** A background Buddy run's turn (a request, a return, a schedule); its run lease still covers it. */
+export const BUDDY_BACKGROUND_TURN_MS = readPositiveIntEnv(
+  'CWV_BUDDY_BACKGROUND_TURN_MS',
+  60 * 60_000
+);
+/** The runner's backstop tick: due schedules, and runs no write woke (lease expiry, a freed slot). */
+export const BUDDY_RUNNER_BACKSTOP_MS = 5_000;
 export const SWARM_POLL_INTERVAL_MS = readPositiveIntEnv('CWV_SWARM_POLL_INTERVAL_MS', 2_000);
 export const SWARM_POLL_THROTTLE_MS = readPositiveIntEnv('CWV_SWARM_POLL_THROTTLE_MS', 1_500);
 export const SWARM_CONTEXT_COMMAND_TIMEOUT_MS = 8_000;

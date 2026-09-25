@@ -14,9 +14,9 @@ importers:
       '@nbardy/agent-cli':
         specifier: workspace:0.1.1
         version: link:vendor/agent-cli-tool
-      '@nbardy/buddies':
-        specifier: file:vendor/nbardy-buddies-0.1.0.tgz
-        version: file:vendor/nbardy-buddies-0.1.0.tgz
+      '@unleashd/buddies-core':
+        specifier: workspace:0.1.0
+        version: link:crates/unleashd-buddies
       '@unleashd/shared':
         specifier: workspace:1.0.0
         version: link:shared
@@ -159,9 +159,9 @@ importers:
       '@nbardy/agent-cli':
         specifier: workspace:*
         version: link:../vendor/agent-cli-tool
-      '@nbardy/buddies':
-        specifier: file:../vendor/nbardy-buddies-0.1.0.tgz
-        version: file:vendor/nbardy-buddies-0.1.0.tgz
+      '@unleashd/buddies-core':
+        specifier: workspace:*
+        version: link:../crates/unleashd-buddies
       '@unleashd/shared':
         specifier: workspace:*
         version: link:../shared
@@ -565,12 +565,6 @@ packages:
     peerDependenciesMeta:
       '@cfworker/json-schema':
         optional: true
-
-  '@nbardy/buddies@file:vendor/nbardy-buddies-0.1.0.tgz':
-    resolution: {integrity: sha512-YtyYOLyHVCQaRlgKfsG9kBZWG0w6lRfGoZiw4JcMCYbkWewTfmEBC0QFWqaOhNTQ1pMGH8/1FhV3oU6vC8uD8A==, tarball: file:vendor/nbardy-buddies-0.1.0.tgz}
-    version: 0.1.0
-    engines: {node: '>=22.5'}
-    hasBin: true
 
   '@rolldown/pluginutils@1.0.0-beta.53':
     resolution: {integrity: sha512-vENRlFU4YbrwVqNDZ7fLvy+JR1CRkyr01jhSiDpE1u6py3OMzQfztQU2jxykW3ALNxO4kSlqIDeYyD0Y9RcQeQ==}
@@ -2400,8 +2394,6 @@ snapshots:
       zod-to-json-schema: 3.25.2(zod@3.25.76)
     transitivePeerDependencies:
       - supports-color
-
-  '@nbardy/buddies@file:vendor/nbardy-buddies-0.1.0.tgz': {}
 
   '@rolldown/pluginutils@1.0.0-beta.53': {}
 
