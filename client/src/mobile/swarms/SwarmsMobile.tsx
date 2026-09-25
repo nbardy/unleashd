@@ -1,5 +1,6 @@
 import type { OompaRuntimeSnapshot } from '@unleashd/shared';
 import { useAtomValue } from 'jotai';
+import { isRowRunning } from '../../utils/conversation-row';
 import { useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { swarmWorkersByProjectAtom } from '../../atoms/conversations';
@@ -8,7 +9,7 @@ import { useTimeTick } from '../../hooks/useTimeTick';
 import { shortenHomePath } from '../../utils/directories';
 import { getProjectName } from '../../utils/swarmUtils';
 import { getWorkerVisibilitySummary } from '../../utils/swarmWorkerVisibility';
-import { formatTimeAgo, getLastMessageTime } from '../../utils/time';
+import { formatTimeAgo } from '../../utils/time';
 import {
   MobileBadge,
   MobileCardButton,
@@ -54,10 +55,10 @@ export function SwarmsMobile() {
     const map = new Map<string, ProjectCard>();
 
     for (const [projectRoot, sessions] of workerConversationsByProject.entries()) {
-      const visibility = getWorkerVisibilitySummary(sessions, null, (w) => w.isRunning);
+      const visibility = getWorkerVisibilitySummary(sessions, null, (w) => isRowRunning(w));
       let latestActivity: Date | undefined;
       for (const w of sessions) {
-        const lastTime = getLastMessageTime(w.messages);
+        const lastTime = new Date(w.activityAt);
         if (lastTime && (!latestActivity || lastTime > latestActivity)) latestActivity = lastTime;
       }
       map.set(projectRoot, {

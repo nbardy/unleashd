@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { Link } from 'react-router-dom';
-import type { BuddyContext } from '../atoms/pending-creations';
+import type { BuddyContext } from '@unleashd/shared';
 import { useBuddyDetailData } from '../hooks/useBuddyData';
 import './BuddyConvoHeader.css';
 

@@ -105,7 +105,7 @@ function TalkToConfiguredBuddy({
             ? { mode: 'explicit', effort: detail.buddy.reasoning_effort }
             : { mode: 'default' },
         },
-        buddyContext: buildBuddyContextForTalk({ buddyId, workspaceId }),
+        kind: { t: 'buddy', context: buildBuddyContextForTalk({ buddyId, workspaceId }) },
       });
       navigate(`/chat/${id}`);
     } catch (cause) {

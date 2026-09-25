@@ -30,6 +30,7 @@ async function createChat(request: MobileCreateRequest): Promise<string> {
   return createConversation({
     workingDirectory: request.workingDirectory,
     config: request.config,
+    kind: { t: 'chat' },
   });
 }
 
@@ -53,6 +54,7 @@ async function createSwarm(request: MobileCreateRequest): Promise<string> {
     workingDirectory: request.workingDirectory,
     config: request.config,
     swarmDebugPrefix: payload.prefix,
+    kind: { t: 'chat' },
   });
 }
 

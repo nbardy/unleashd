@@ -1,4 +1,3 @@
-import { getBuddyContext } from '@unleashd/shared';
 import { useAtomValue } from 'jotai';
 import { Link, useLocation, useSearchParams } from 'react-router-dom';
 import { buddyBackgroundConversationsAtomFamily } from '../../atoms/buddy-background';
@@ -7,6 +6,7 @@ import {
   conversationLoadCompleteAtom,
 } from '../../atoms/conversations';
 import { mobileConversationRouteState } from '../../utils/conversation-route-state';
+import { isRowRunning, rowBuddy } from '../../utils/conversation-row';
 import { getConversationLastActivity } from '../../utils/time';
 import { conversationPath } from './buddy-tabs';
 import type { Workspace } from './types';
@@ -86,9 +86,10 @@ export function BuddyBackgroundTasks({
         <ul className="buddy-background-tasks-list">
           {conversations.map((conversation) => {
             if (!availableIds.has(conversation.id)) return null;
-            const context = getBuddyContext(conversation)!;
-            const workspace = workspaces.find((item) => item.id === context.workspaceId);
-            const preview = conversation.messages.at(-1)?.content.trim();
+            const workspaceId = rowBuddy(conversation)?.workspaceId;
+            const workspace = workspaces.find((item) => item.id === workspaceId);
+            const preview = conversation.label;
+            const running = isRowRunning(conversation);
             return (
               <li key={conversation.id}>
                 <Link
@@ -99,9 +100,9 @@ export function BuddyBackgroundTasks({
                   <div className="buddy-background-tasks-row">
                     <strong>{workspace?.name ?? 'Background conversation'}</strong>
                     <span
-                      className={conversation.isRunning ? 'buddy-background-tasks-running' : ''}
+                      className={running ? 'buddy-background-tasks-running' : ''}
                     >
-                      {conversation.isRunning ? 'Running' : 'Not running'}
+                      {running ? 'Running' : 'Not running'}
                     </span>
                   </div>
                   {preview && <p className="buddy-background-tasks-preview">{preview}</p>}

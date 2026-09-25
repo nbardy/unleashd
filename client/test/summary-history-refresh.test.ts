@@ -1,15 +1,18 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import type { Conversation, Message } from '@unleashd/shared';
+import { type Message, type ServerMessage, encodeRows } from '@unleashd/shared';
 import { handleMessage, setActiveConversationId } from '../src/atoms/actions';
-import { conversationDetailsLoadedAtom, conversationsAtom } from '../src/atoms/conversations';
+import { conversationsAtom, transcriptPatchAtom, transcriptsAtom } from '../src/atoms/conversations';
 import { jotaiStore } from '../src/atoms/store';
+import { syntheticConversation } from './fixtures/synthetic-conversations';
 
 /**
- * The disk poller broadcasts summaries only (2026-09-25: full histories of
- * growing external transcripts were pushed to every client every 5s). A
- * summary keeps the client's loaded history, so without this refresh an open
- * chat never showed new messages written by an external CLI session.
+ * The disk poller broadcasts rows only (2026-09-25: full histories of growing
+ * external transcripts were pushed to every client every 5s). A row keeps the
+ * client's loaded transcript, so without this refresh an open chat never
+ * showed new messages written by an external CLI session. Since T09 the
+ * refresh pages in only the tail (the last held message and after), never the
+ * whole history again.
  */
 
 const openId = '21111111-1111-4111-8111-111111111111';
@@ -19,23 +22,11 @@ function message(content: string): Message {
   return { role: 'assistant', content, timestamp: new Date('2026-09-25T00:00:00.000Z') };
 }
 
-function conversation(id: string, messages: Message[], messageCount: number): Conversation {
-  return {
-    id,
-    messages,
-    messageCount,
-    isRunning: false,
-    isStreaming: false,
-    createdAt: new Date('2026-09-25T00:00:00.000Z'),
-    workingDirectory: '/tmp/project',
-    provider: 'claude',
-    queue: [],
-    subAgents: [],
-    swarmDebugPrefix: null,
-  } as unknown as Conversation;
+function tailUrl(id: string): string {
+  return `/api/conversations/${encodeURIComponent(id)}/messages?afterSeq=0&limit=500`;
 }
 
-test('a summary with a moved message count refreshes the open chat now and the rest when opened', () => {
+test('a row with a moved message count pages in the open chat tail now and the rest when opened', () => {
   const fetched: string[] = [];
   const realFetch = globalThis.fetch;
   globalThis.fetch = ((url: string) => {
@@ -47,38 +38,39 @@ test('a summary with a moved message count refreshes the open chat now and the r
     jotaiStore.set(
       conversationsAtom,
       new Map([
-        [openId, conversation(openId, loaded, 2)],
-        [closedId, conversation(closedId, loaded, 2)],
+        [openId, syntheticConversation(1, { id: openId, messageCount: 2 })],
+        [closedId, syntheticConversation(2, { id: closedId, messageCount: 2 })],
       ])
     );
-    jotaiStore.set(conversationDetailsLoadedAtom, new Set([openId, closedId]));
+    jotaiStore.set(transcriptPatchAtom, {
+      set: [
+        [openId, { epoch: 0, messages: loaded }],
+        [closedId, { epoch: 0, messages: loaded }],
+      ],
+      remove: [],
+    });
     setActiveConversationId(openId);
 
     handleMessage({
-      type: 'conversations_updated',
-      summaries: true,
-      conversations: [
-        conversation(openId, [message('three')], 3),
-        conversation(closedId, [message('three')], 3),
-      ],
-    });
+      type: 'rows',
+      ...encodeRows([
+        syntheticConversation(1, { id: openId, messageCount: 3 }),
+        syntheticConversation(2, { id: closedId, messageCount: 3 }),
+      ]),
+    } as unknown as ServerMessage);
 
-    assert.deepEqual(fetched, [`/api/conversations/${openId}`]);
-    const details = jotaiStore.get(conversationDetailsLoadedAtom);
-    assert.equal(details.has(openId), true, 'the open chat keeps rendering while it refreshes');
-    // Regression (review of c21b131): unloading it made every reopened
-    // external chat flash "Loading conversation history…".
-    assert.equal(details.has(closedId), true, 'a closed chat keeps its history on screen');
+    assert.deepEqual(fetched, [tailUrl(openId)], 'only the tail, only for the open chat');
+    const transcripts = jotaiStore.get(transcriptsAtom);
+    // Regression (review of c21b131): unloading made every reopened external
+    // chat flash "Loading conversation history…".
     assert.deepEqual(
-      jotaiStore
-        .get(conversationsAtom)
-        .get(openId)
-        ?.messages.map((entry) => entry.content),
+      transcripts.get(openId)?.messages.map((entry) => entry.content),
       ['one', 'two'],
-      'the preview row never replaces loaded history'
+      'the open chat keeps rendering while it refreshes'
     );
+    assert.ok(transcripts.get(closedId), 'a closed chat keeps its history on screen');
     setActiveConversationId(closedId);
-    assert.deepEqual(fetched, [`/api/conversations/${openId}`, `/api/conversations/${closedId}`]);
+    assert.deepEqual(fetched, [tailUrl(openId), tailUrl(closedId)]);
     setActiveConversationId(openId);
     assert.equal(fetched.length, 2, 'a refreshed chat is not refetched on every activation');
   } finally {

@@ -24,14 +24,10 @@ function ConversationRow({
   routeState: Record<string, unknown>;
 }) {
   const conversation = useAtomValue(conversationAtomFamily(id));
-  const source =
-    conversation?.messages.find((message) => message.role === 'user') ?? conversation?.messages[0];
+  // The server derives the label once (provider title, else first user line).
+  const label = conversation?.label;
   const title =
-    source?.content
-      .replace(/<!--[\s\S]*?-->/g, '')
-      .split('\n')
-      .map((line) => line.trim())
-      .find(Boolean) ||
+    (label && label !== 'New conversation' ? label : null) ||
     (link.kind === 'review'
       ? 'Buddy review'
       : timestamp > 0

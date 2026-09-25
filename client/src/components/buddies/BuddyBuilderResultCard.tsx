@@ -30,10 +30,9 @@ export function BuddyBuilderResultCard({ event }: { event: BuddyBuilderEvent }) 
           ? { mode: 'explicit', effort: buddy.reasoning_effort }
           : { mode: 'default' },
       },
-      buddyContext: {
-        buddyId: buddy.id,
-        workspaceId: result.homeWorkspace.id,
-        buddyProjectId: null,
+      kind: {
+        t: 'buddy',
+        context: { buddyId: buddy.id, workspaceId: result.homeWorkspace.id, buddyProjectId: null },
       },
     });
     navigate(`/chat/${id}`);

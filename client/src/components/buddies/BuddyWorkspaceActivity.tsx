@@ -17,13 +17,6 @@ function compactPath(path: string | null): string {
   return path === null ? 'No folder path' : shortenHomePath(path);
 }
 
-function conversationTitle(messages: Array<{ role?: string; content?: string }>): string | null {
-  const source = messages.find((message) => message.role === 'user') ?? messages[0];
-  const firstLine = source?.content?.split('\n')[0]?.trim();
-  if (!firstLine) return null;
-  return firstLine.length > 90 ? `${firstLine.slice(0, 87)}…` : firstLine;
-}
-
 function JobRow({
   job,
   available,
@@ -34,7 +27,7 @@ function JobRow({
   const conversation = useAtomValue(
     conversationAtomFamily(job.conversationId ?? NO_CONVERSATION_ID)
   );
-  const title = conversationTitle(conversation?.messages ?? []) ?? job.label;
+  const title = conversation?.label ?? job.label;
   const status =
     job.status === 'claimed'
       ? 'Starting'

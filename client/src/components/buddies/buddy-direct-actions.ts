@@ -66,7 +66,7 @@ export type WakePhase =
 
 export function useWakePhase(conversationId: string): WakePhase {
   const conversation = useAtomValue(conversationAtomFamily(conversationId));
-  const busy = conversation !== null && (conversation.isRunning || conversation.queue.length > 0);
+  const busy = conversation !== null && conversation.run !== 'idle';
   const [seen, setSeen] = useState<'waiting' | 'running' | 'done'>('waiting');
   useEffect(() => {
     if (busy) setSeen('running');

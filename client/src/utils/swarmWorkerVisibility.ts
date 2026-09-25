@@ -1,5 +1,9 @@
-import type { Conversation } from '@unleashd/shared';
-import type { OompaRuntimeSnapshot } from '@unleashd/shared';
+import type { ConversationRow, OompaRuntimeSnapshot } from '@unleashd/shared';
+import { isRowRunning } from './conversation-row';
+
+function workerId(worker: ConversationRow): string {
+  return (worker.kind.t === 'worker' ? worker.kind.workerId : null) || worker.id;
+}
 
 export interface WorkerVisibilitySummary {
   sessionCount: number;
@@ -9,12 +13,12 @@ export interface WorkerVisibilitySummary {
 }
 
 export function getWorkerVisibilitySummary(
-  workers: readonly Conversation[],
+  workers: readonly ConversationRow[],
   runtimeSnapshot: OompaRuntimeSnapshot | null | undefined,
-  isRunning: (worker: Conversation) => boolean = (worker) => worker.isRunning
+  isRunning: (worker: ConversationRow) => boolean = isRowRunning
 ): WorkerVisibilitySummary {
   const sessionCount = workers.length;
-  const workerIds = workers.map((worker) => worker.workerId || worker.id);
+  const workerIds = workers.map(workerId);
   const distinctWorkerIds = new Set(workerIds);
 
   if (runtimeSnapshot?.available && runtimeSnapshot.run) {
@@ -29,7 +33,7 @@ export function getWorkerVisibilitySummary(
   }
 
   const runningWorkers = new Set(
-    workers.filter(isRunning).map((worker) => worker.workerId || worker.id)
+    workers.filter(isRunning).map(workerId)
   ).size;
   return {
     sessionCount,

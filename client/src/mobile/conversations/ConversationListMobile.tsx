@@ -1,4 +1,5 @@
 import { useAtomValue } from 'jotai';
+import { isRowRunning } from '../../utils/conversation-row';
 import { memo, useMemo, useState } from 'react';
 import { useLocation } from 'react-router-dom';
 import {
@@ -37,14 +38,10 @@ const ConversationListItem = memo(function ConversationListItem({
 
   const lastTime = getConversationLastActivity(conv);
   const timeAgo = formatTimeAgo(lastTime);
-  const totalMessages = conv.messageCount ?? conv.messages.length;
-  const unseen = hasUnseenAfter(lastSeen, totalMessages);
-  const preview =
-    conv.messages.length > 0
-      ? conv.messages[conv.messages.length - 1].content.substring(0, 120)
-      : 'New conversation';
-  const dirDisplay = shortenHomePath(conv.workingDirectory);
-  const folderName = conv.workingDirectory.split('/').filter(Boolean).pop() ?? dirDisplay;
+  const unseen = hasUnseenAfter(lastSeen, conv.messageCount);
+  const preview = conv.label;
+  const dirDisplay = shortenHomePath(conv.cwd);
+  const folderName = conv.cwd.split('/').filter(Boolean).pop() ?? dirDisplay;
   return (
     <MobileCardLink
       to={`/chat/${encodeURIComponent(conv.id)}`}
@@ -59,12 +56,12 @@ const ConversationListItem = memo(function ConversationListItem({
           {conv.done ? <MobileBadge>Done</MobileBadge> : null}
           {unseen ? <MobileBadge tone="accent">New</MobileBadge> : null}
           <span className="mobile-conversation-item__time">{timeAgo}</span>
-          {conv.isRunning ? (
+          {isRowRunning(conv) ? (
             <span
               className="mobile-conversation-item__status mobile-conversation-item__status--running"
               aria-label="running"
             />
-          ) : conv.queue?.length ? (
+          ) : conv.run === 'queued' ? (
             <span
               className="mobile-conversation-item__status mobile-conversation-item__status--queued"
               aria-label="queued"

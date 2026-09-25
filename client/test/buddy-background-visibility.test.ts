@@ -1,6 +1,5 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import type { Conversation } from '@unleashd/shared';
 import { createStore } from 'jotai';
 import { buddySidebarOverviewAtom, buddySidebarProjectsAtom } from '../src/atoms/buddy-sidebar';
 import {
@@ -9,8 +8,9 @@ import {
   conversationAtomFamily,
   conversationsAtom,
 } from '../src/atoms/conversations';
+import { syntheticConversation } from './fixtures/synthetic-conversations';
 
-test('background placement hides rows but preserves direct transcript access and visible owner chats', () => {
+test('background visibility hides rows but preserves direct transcript access and visible owner chats', () => {
   const store = createStore();
   store.set(buddySidebarOverviewAtom, {
     employees: [
@@ -18,16 +18,13 @@ test('background placement hides rows but preserves direct transcript access and
     ],
     recentRuns: [],
   });
-  const make = (id: string, placement: 'default' | 'background') =>
-    ({
+  const make = (id: string, visibility: 'foreground' | 'background') =>
+    syntheticConversation(1, {
       id,
-      placement,
-      kind: { kind: 'buddy' as const, buddyId: 'lead', workspaceId: 'work' },
-      createdAt: new Date(),
-      messages: [] as Conversation['messages'],
-      workingDirectory: '/project',
-    }) as Conversation;
-  const owner = make('owner-thread', 'default');
+      kind: { t: 'buddy', buddyId: 'lead', workspaceId: 'work', visibility },
+      cwd: '/project',
+    });
+  const owner = make('owner-thread', 'foreground');
   const worker = make('background-thread', 'background');
   store.set(
     conversationsAtom,
@@ -45,11 +42,11 @@ test('background placement hides rows but preserves direct transcript access and
       .flatMap((p) => p.items.flatMap((i) => i.conversations.map((c) => c.id))),
     [owner.id]
   );
-  // A schedule returning in the owner's chat updates execution, not placement.
+  // A schedule returning in the owner's chat updates execution, not visibility.
   store.set(
     conversationsAtom,
     new Map([
-      [owner.id, { ...owner, isRunning: true }],
+      [owner.id, { ...owner, run: 'running' }],
       [worker.id, worker],
     ])
   );

@@ -220,7 +220,7 @@ export function useBuddyPage(
             ? { mode: 'explicit', effort: employee.buddy.reasoning_effort }
             : { mode: 'default' },
         },
-        buddyContext: context,
+        kind: { t: 'buddy', context },
       });
       openRef.current(id);
     },

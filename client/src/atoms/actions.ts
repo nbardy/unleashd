@@ -605,7 +605,8 @@ function handleAck(data: Extract<ServerMessage, { type: 'ack' }>): void {
     case 'created':
       return creationAcknowledged(data.commandId, decodeRows(data.result.rows));
     case 'accepted':
-      return messageCommandSettled(data.commandId, null);
+      messageCommandSettled(data.commandId, null);
+      return;
     case 'rejected':
       return commandRejected(data.commandId, data.result.error);
   }

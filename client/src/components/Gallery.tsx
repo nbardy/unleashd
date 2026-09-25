@@ -1,4 +1,3 @@
-import type { Message } from '@unleashd/shared';
 import { useAtomValue } from 'jotai';
 import { memo, useCallback, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
@@ -28,7 +27,8 @@ import { useFolderFilter } from '../hooks/useFolderFilter';
 import { useUrlFolderSelection } from '../hooks/useUrlFolderSelection';
 import { getProjectColor } from '../utils/projectColors';
 import { isWorktreeDirectory } from '../utils/swarmUtils';
-import { formatTimeAgo, getLastMessageTime } from '../utils/time';
+import { isRowRunning } from '../utils/conversation-row';
+import { formatTimeAgo, getConversationLastActivity } from '../utils/time';
 import { FolderFilter } from './FolderFilter';
 import './Gallery.css';
 import { useTimeTick } from '../hooks/useTimeTick';
@@ -624,8 +624,8 @@ const GalleryCard = memo(function GalleryCard({
   useTimeTick();
   if (!conv) return null;
   const isDoneConversation = conv.done;
-  const state = conv.isRunning ? 'running' : 'idle';
-  const accentColor = getProjectColor(conv.workingDirectory);
+  const state = isRowRunning(conv) ? 'running' : 'idle';
+  const accentColor = getProjectColor(conv.cwd);
   const cardClassName = [
     'gallery-card',
     isDoneConversation && !isDoneView ? 'done-card' : '',
@@ -636,8 +636,7 @@ const GalleryCard = memo(function GalleryCard({
 
   const getStateLabel = () => {
     if (state === 'running') return 'Running';
-    const lastTime = getLastMessageTime(conv.messages);
-    return lastTime ? `Idle · ${formatTimeAgo(lastTime)}` : 'Idle';
+    return `Idle · ${formatTimeAgo(getConversationLastActivity(conv))}`;
   };
 
   return (
@@ -693,17 +692,13 @@ const GalleryCard = memo(function GalleryCard({
           </div>
         </div>
       </div>
-      <div>{conv.messageCount ?? conv.messages.length} messages</div>
+      <div>{conv.messageCount} messages</div>
+      {/* Cards show the row label: lists carry no message bodies (protocol v3). */}
       <div className="gallery-messages">
-        {conv.messages.length === 0 ? (
+        {conv.messageCount === 0 ? (
           <div className="empty-state">No messages yet</div>
         ) : (
-          conv.messages.slice(-3).map((msg: Message, i: number) => (
-            <div key={i} className={`gallery-message ${msg.role}`}>
-              <strong>{msg.role}:</strong> {msg.content.substring(0, 100)}
-              {msg.content.length > 100 ? '...' : ''}
-            </div>
-          ))
+          <div className="gallery-message user">{conv.label}</div>
         )}
       </div>
     </div>

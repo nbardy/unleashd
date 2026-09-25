@@ -65,11 +65,7 @@ test('resume resubmits the current message before requeueing later messages', as
   assert.equal(sent.length, 1);
   const first = sent[0];
   if (first.type !== 'queue_message') throw new Error('expected first queue command');
-  handleMessage({
-    type: 'command_accepted',
-    commandId: first.commandId,
-    conversationId,
-  });
+  handleMessage({ type: 'ack', commandId: first.commandId, result: { t: 'accepted' } });
   await Promise.resolve();
 
   assert.equal(sent.length, 2);
@@ -77,11 +73,7 @@ test('resume resubmits the current message before requeueing later messages', as
   if (second.type !== 'queue_message') throw new Error('expected second queue command');
   assert.equal(first.content, 'current');
   assert.equal(second.content, 'queued');
-  handleMessage({
-    type: 'command_accepted',
-    commandId: second.commandId,
-    conversationId,
-  });
+  handleMessage({ type: 'ack', commandId: second.commandId, result: { t: 'accepted' } });
   await resumed;
 });
 

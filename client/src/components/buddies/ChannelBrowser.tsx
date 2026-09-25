@@ -2,13 +2,13 @@ import {
   type BuddyMailingListPost,
   type BuddyOwnerPostResult,
   type OwnerListUnread,
-  getBuddyContext,
 } from '@unleashd/shared';
 import { useAtomValue } from 'jotai';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
 import { buddySidebarChannelsAtom } from '../../atoms/buddy-sidebar';
 import { availableConversationIdSetAtom, conversationAtomFamily } from '../../atoms/conversations';
+import { rowBuddy } from '../../utils/conversation-row';
 import { usePolledFetch } from '../../hooks/usePolledFetch';
 import { Chat } from '../Chat';
 import { BuddyRailRow } from './BuddyRailRow';
@@ -840,7 +840,7 @@ export function ChannelBrowser({
   const dm = params.get('dm');
   const openDm: OpenDm = (conversationId) => setParams({ dm: conversationId });
   const dmConversation = useAtomValue(conversationAtomFamily(dm ?? ''));
-  const dmBuddyId = getBuddyContext(dmConversation)?.buddyId;
+  const dmBuddyId = rowBuddy(dmConversation)?.buddyId;
   return (
     <div className="channel-browser" aria-label="Channels">
       <nav className="channel-browser-rail">

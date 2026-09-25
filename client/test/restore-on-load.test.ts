@@ -1,12 +1,11 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import type { Conversation } from '@unleashd/shared';
 import { conversationsAtom, savedActiveConversationPresentAtom } from '../src/atoms/conversations';
 import { jotaiStore } from '../src/atoms/store';
 import { setSavedActiveConversationId } from '../src/atoms/ui';
+import { syntheticConversation } from './fixtures/synthetic-conversations';
 
-const conversation = (id: string) =>
-  ({ id, kind: { kind: 'user' }, createdAt: new Date(), messages: [] }) as unknown as Conversation;
+const conversation = (id: string) => syntheticConversation(1, { id });
 
 // Regression (review of 984d00f): App's restore-on-load re-runs only when this
 // atom changes. Startup hydrates in batches; a "has any conversation" flag

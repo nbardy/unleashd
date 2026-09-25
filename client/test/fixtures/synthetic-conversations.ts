@@ -1,6 +1,7 @@
 import {
-  type Conversation,
-  ConversationSchema,
+  type ConversationDetail,
+  type ConversationRow,
+  ConversationRowSchema,
   type Message,
   createDefaultConversationConfig,
 } from '@unleashd/shared';
@@ -25,44 +26,72 @@ export function syntheticMessage(role: Message['role'], content: string, timesta
 
 export function syntheticConversation(
   index: number,
-  overrides: Partial<Conversation> = {}
-): Conversation {
+  overrides: Partial<ConversationRow> = {}
+): ConversationRow {
   const folder = `/Users/dev/git/project-${index % FOLDERS}`;
   const worker = index % 5 === 4;
   const buddy = index % 10 === 3;
   const child = index % 33 === 7 && index > 0;
-  const activity = new Date(EPOCH + index * 60_000);
-  return ConversationSchema.parse({
+  const activity = EPOCH + index * 60_000;
+  return ConversationRowSchema.parse({
     id: syntheticId(index),
-    messages: [
-      syntheticMessage('user', `Question ${index}`, new Date(activity.getTime() - 30_000)),
-      syntheticMessage('assistant', `Answer ${index}`, activity),
-    ],
-    messageCount: 2,
-    isRunning: false,
-    done: index % 17 === 0,
-    createdAt: new Date(EPOCH + index * 1_000),
-    workingDirectory: worker ? `${folder}/.ws${index % 3}-w1-i${index % 7}` : folder,
-    config: createDefaultConversationConfig('claude'),
-    configRevision: 0,
-    configResolution: {
-      status: 'resolved',
-      catalogRevision: 'synthetic',
-      value: { provider: 'claude', modelId: 'claude-default' },
-    },
-    isWorker: worker,
-    swarmId: worker ? `swarm-${index % 3}` : null,
-    parentConversationId: child ? syntheticId(index - 7) : null,
     kind: buddy
-      ? { kind: 'buddy', buddyId: `buddy-${index % 4}`, workspaceId: 'workspace-1' }
-      : { kind: 'general' },
-    placement: buddy && index % 20 === 13 ? 'background' : undefined,
+      ? {
+          t: 'buddy',
+          buddyId: `buddy-${index % 4}`,
+          workspaceId: 'workspace-1',
+          visibility: index % 20 === 13 ? 'background' : 'foreground',
+        }
+      : worker
+        ? { t: 'worker', swarmId: `swarm-${index % 3}`, workerId: null, role: 'work' }
+        : { t: 'chat' },
+    parent: child ? syntheticId(index - 7) : null,
+    resumedFrom: null,
+    provider: 'claude',
+    cwd: worker ? `${folder}/.ws${index % 3}-w1-i${index % 7}` : folder,
+    label: `Question ${index}`,
+    createdAt: EPOCH + index * 1_000,
+    activityAt: activity,
+    messageCount: 2,
+    run: 'idle',
+    done: index % 17 === 0,
     ...overrides,
   });
 }
 
-export function syntheticConversations(count: number): Conversation[] {
+export function syntheticConversations(count: number): ConversationRow[] {
   return Array.from({ length: count }, (_, index) => syntheticConversation(index));
+}
+
+/** The two messages a synthetic row counts (Question / Answer). */
+export function syntheticMessages(index: number): Message[] {
+  const activity = new Date(EPOCH + index * 60_000);
+  return [
+    syntheticMessage('user', `Question ${index}`, new Date(activity.getTime() - 30_000)),
+    syntheticMessage('assistant', `Answer ${index}`, activity),
+  ];
+}
+
+/** A loaded detail for a synthetic chat. */
+export function syntheticDetail(id: string, overrides: Partial<ConversationDetail> = {}): ConversationDetail {
+  return {
+    id,
+    sessionId: id,
+    config: {
+      config: createDefaultConversationConfig('claude'),
+      revision: 0,
+      resolution: {
+        status: 'resolved',
+        catalogRevision: 'synthetic',
+        value: { provider: 'claude', modelId: 'claude-default' },
+      },
+    },
+    queue: [],
+    subAgents: [],
+    latestTurn: { observedModel: null, usage: null },
+    swarmDebugPrefix: null,
+    ...overrides,
+  };
 }
 
 /** A long transcript: per turn a question, prose, a tool call and an answer. */

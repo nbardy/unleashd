@@ -14,7 +14,7 @@ import {
 import type { Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
-import type { BuddyContext } from '../atoms/pending-creations';
+import type { BuddyContext } from '@unleashd/shared';
 import type { CopyState } from '../hooks/useCopyAction';
 import { COPY_LABEL, useCopyAction } from '../hooks/useCopyAction';
 import { ChatActivity } from '../ui/ChatActivity';
@@ -42,7 +42,6 @@ import { InlineSwarmRunWidget } from './InlineSwarmRunWidget';
 import { SwarmConvoPrefix } from './SwarmConvoPrefix';
 import { InlineBuddyBuilderResult } from './buddies/BuddyBuilderResultCard';
 import { InlineBuddyTeamConfiguration } from './buddies/BuddyTeamConfiguration';
-import { effectiveSwarmDebugPrefix } from './buddies/ui-contract';
 
 /**
  * remark-math recognizes $...$ and $$...$$, while model output commonly uses
@@ -709,7 +708,8 @@ export function VirtualizedMessageList({
   // Track conversation ID to detect switches
   const prevConversationIdRef = useRef<string | null>(null);
 
-  const visibleSwarmDebugPrefix = effectiveSwarmDebugPrefix(buddyContext, swarmDebugPrefix);
+  // The server sets a swarm prefix only on chat kinds; a Buddy thread has none.
+  const visibleSwarmDebugPrefix = swarmDebugPrefix ?? null;
   const contextItemCount = (buddyContext ? 1 : 0) + (visibleSwarmDebugPrefix ? 1 : 0);
   const totalItems = messageGroups.length + contextItemCount;
   // Read once, when the virtualizer first needs a scroll offset. A memo here

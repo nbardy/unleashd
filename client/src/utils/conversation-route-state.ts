@@ -1,4 +1,4 @@
-import { type Conversation, getBuddyContext, isBuddyBuilderConversation } from '@unleashd/shared';
+import type { ConversationRow } from '@unleashd/shared';
 
 export type MobilePrimarySection = 'chats' | 'channels' | 'swarms' | 'buddies' | 'search';
 
@@ -94,26 +94,26 @@ export interface MobileConversationDestination {
 }
 
 export function fallbackMobileConversationDestination(
-  conversation: Conversation | null | undefined
+  conversation: ConversationRow | null | undefined
 ): MobileConversationDestination {
-  if (isBuddyBuilderConversation(conversation)) {
-    return { path: '/buddies', section: 'buddies' };
+  const kind = conversation?.kind ?? { t: 'chat' as const };
+  switch (kind.t) {
+    case 'builder':
+      return { path: '/buddies', section: 'buddies' };
+    case 'buddy': {
+      const tab = kind.visibility === 'background' ? 'background' : 'conversations';
+      return { path: `/buddies/${encodeURIComponent(kind.buddyId)}/${tab}`, section: 'buddies' };
+    }
+    case 'worker':
+      return { path: '/workers', section: 'swarms' };
+    case 'chat':
+      return { path: '/', section: 'chats' };
   }
-  const context = getBuddyContext(conversation);
-  if (context) {
-    const tab = conversation?.placement === 'background' ? 'background' : 'conversations';
-    return {
-      path: `/buddies/${encodeURIComponent(context.buddyId)}/${tab}`,
-      section: 'buddies',
-    };
-  }
-  if (conversation?.isWorker) return { path: '/workers', section: 'swarms' };
-  return { path: '/', section: 'chats' };
 }
 
 export function resolveMobileConversationDestination(
   state: unknown,
-  conversation: Conversation | null | undefined
+  conversation: ConversationRow | null | undefined
 ): MobileConversationDestination {
   const origin = readMobileConversationOrigin(state);
   if (!origin) return fallbackMobileConversationDestination(conversation);
