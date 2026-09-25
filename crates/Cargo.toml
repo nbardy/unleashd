@@ -1,0 +1,7 @@
+[workspace]
+resolver = "2"
+members = ["unleashd-buddies"]
+
+[profile.release]
+lto = true
+strip = "symbols"

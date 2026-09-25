@@ -1,0 +1,16 @@
+{
+  "name": "@unleashd/buddies-core",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Lean Buddies core: the SQLite store, authorize and the Buddy functions, as an in-process napi-rs addon",
+  "main": "index.js",
+  "types": "index.d.ts",
+  "napi": {
+    "binaryName": "buddies-core"
+  },
+  "scripts": {
+    "build": "pnpm --package=@napi-rs/cli@3.10.5 dlx napi build --release --no-const-enum --dts index.d.ts",
+    "build:debug": "pnpm --package=@napi-rs/cli@3.10.5 dlx napi build --no-const-enum --dts index.d.ts",
+    "test": "cargo test --manifest-path ../Cargo.toml -p unleashd-buddies --no-default-features && pnpm run build && node --test test/node.test.mjs"
+  }
+}
