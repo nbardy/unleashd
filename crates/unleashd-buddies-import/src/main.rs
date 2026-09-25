@@ -10,8 +10,8 @@
 
 use std::path::PathBuf;
 use std::process::ExitCode;
-use unleashd_buddies::import::{DirectReads, ImportOptions, ImportReport, OwnerReads, SoulFile, import};
-use unleashd_buddies::verify::verify;
+use unleashd_buddies_import::import::{DirectReads, ImportOptions, ImportReport, OwnerReads, SoulFile, import};
+use unleashd_buddies_import::verify::verify;
 
 fn arg(args: &[String], name: &str) -> Result<PathBuf, String> {
     args.windows(2).find(|w| w[0] == name).map(|w| PathBuf::from(&w[1])).ok_or(format!("missing {name}"))

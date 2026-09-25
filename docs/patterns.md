@@ -126,9 +126,9 @@ carry none of its code or CSS. Deleting the feature = delete the folder + the ca
 **Smell:** compatibility shims, permanent flags, migration chains (33 schema versions).
 **Pattern:** a one-time export into a clean shape, with zero-loss verification (counts plus content hashes). Then
 delete the old path entirely.
-**Here:** crate `import.rs` + `verify.rs` (both deleted after the live swap); `crates/unleashd-ingest/src/records/import.rs` (config JSON directory → records table, deleted after T23b);
+**Here:** `crates/unleashd-buddies-import` (import + verify; deleted after the live swap); `crates/unleashd-records-tool` (config JSON directory → records table, deleted after T23b);
 `server/src/conversations/record-migration.ts` (config records v1 → v2 with one stored `kind`; since T23b a CLI
-step of the records import, run on the copy; delete with `import.rs` after the live swap).
+step of the records import, run on the copy; delete with `unleashd-records-tool` after the live swap).
 
 ## tokens-and-shells
 **Smell:** per-screen CSS values (45 font sizes, 172 paddings) and a copy of every screen per device.

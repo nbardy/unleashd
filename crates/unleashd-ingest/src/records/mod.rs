@@ -15,7 +15,6 @@
 // change nothing napi generates and save ~400 bytes on a value that lives for one call.
 #![allow(clippy::large_enum_variant)]
 
-pub mod import;
 #[cfg(feature = "node")]
 pub mod node;
 pub mod store;

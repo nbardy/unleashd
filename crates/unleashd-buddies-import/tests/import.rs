@@ -4,9 +4,9 @@
 use rusqlite::Connection;
 use rusqlite::functions::FunctionFlags;
 use std::path::Path;
-use unleashd_buddies::import::{DirectReads, ImportOptions, OwnerReads, SoulFileState, import};
 use unleashd_buddies::store::sha256_hex;
-use unleashd_buddies::verify::verify;
+use unleashd_buddies_import::import::{DirectReads, ImportOptions, OwnerReads, SoulFileState, import};
+use unleashd_buddies_import::verify::verify;
 
 const SEED: &str = r#"
 INSERT INTO projects VALUES ('p1','main','Main','{ROOT}','2026-07-01T00:00:00.000Z','2026-07-01T00:00:00.000Z'),

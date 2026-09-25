@@ -41,7 +41,7 @@ import {
  *
  * where <copy> holds `conversation-config/` (copied) and `session-cache-v1/`
  * (read only; a symlink to the live one is fine). Delete this module with
- * crates/unleashd-ingest/src/records/import.rs after the live swap.
+ * crates/unleashd-records-tool after the live swap.
  */
 
 export const RECORD_MIGRATION_MARKER = '.migrated-to-v2';

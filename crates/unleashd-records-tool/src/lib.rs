@@ -20,9 +20,6 @@
 //! any v1 file remains (an error, not a reject row: a v1 reject would pass verify and drop the
 //! record). Run record-migration.ts on the same copy first.
 
-use super::store::{Records, RecordsError, Result, put};
-use super::types::*;
-use crate::model::Provider;
 use base64::Engine as _;
 use base64::engine::general_purpose::URL_SAFE_NO_PAD;
 use rayon::prelude::*;
@@ -33,6 +30,9 @@ use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::{Path, PathBuf};
 use std::time::Instant;
+use unleashd_ingest::model::Provider;
+use unleashd_ingest::records::store::{Records, RecordsError, Result, put};
+use unleashd_ingest::records::types::*;
 
 /// Why a file was not imported as a record.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -188,7 +188,7 @@ fn parse_record(bytes: &[u8]) -> Parsed {
         Ok(r) => r,
         Err(e) => return Parsed::Reject(RejectReason::InvalidRecord, e.to_string()),
     };
-    let issues = super::validate::record(&record);
+    let issues = unleashd_ingest::records::validate::record(&record);
     match issues.is_empty() {
         true => Parsed::Record { record: Box::new(record), defaults },
         false => Parsed::Reject(RejectReason::InvalidRecord, issues.join("; ")),

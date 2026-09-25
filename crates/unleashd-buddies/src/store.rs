@@ -310,7 +310,7 @@ fn get_conversation(conn: &Connection, id: &str) -> Result<Option<Conversation>>
         .optional()?)
 }
 
-pub(crate) fn collect<T>(rows: impl Iterator<Item = rusqlite::Result<T>>) -> Result<Vec<T>> {
+pub fn collect<T>(rows: impl Iterator<Item = rusqlite::Result<T>>) -> Result<Vec<T>> {
     rows.collect::<rusqlite::Result<Vec<T>>>().map_err(Into::into)
 }
 
