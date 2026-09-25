@@ -5,7 +5,7 @@ import {
   type OwnerPostMentionConfig,
   type ProviderCatalog,
 } from '@unleashd/shared';
-import { useLayoutEffect, useMemo, useRef, useState } from 'react';
+import { type ReactNode, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { outboxDrop, outboxSending, outboxSent } from '../../atoms/channel-outbox';
 import { useConversationDraft } from '../../hooks/useConversationDraft';
 import { useProviderCatalog } from '../../hooks/useProviderCatalog';
@@ -19,6 +19,7 @@ import {
   activeReferenceQuery,
   channelDraftId,
   completesPickedReference,
+  composerReferenceMarks,
   decodeChannelDraft,
   encodeChannelDraft,
   encodeReferences,
@@ -81,6 +82,7 @@ export function ChannelComposer({
   const [choosingFor, setChoosingFor] = useState<string | null>(null);
   const { catalog } = useProviderCatalog();
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+  const highlightRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   // The POST settles after later renders; its failure path reads the text now.
   const textRef = useRef(text);
@@ -111,6 +113,7 @@ export function ChannelComposer({
   );
   const selected = matches[Math.min(highlight, matches.length - 1)];
   const mentions = useMemo(() => mentionedBuddies(text, picked), [text, picked]);
+  const referenceMarks = useMemo(() => composerReferenceMarks(text, picked), [text, picked]);
   const choosing = mentions.find((buddy) => buddy.id === choosingFor);
   // The model picker and the @ menu share the space above the composer.
   const showPicker = open && matches.length > 0 && !choosing;
@@ -122,6 +125,8 @@ export function ChannelComposer({
     if (!node) return;
     node.style.height = 'auto';
     node.style.height = `${Math.min(node.scrollHeight, MAX_TEXTAREA_HEIGHT)}px`;
+    const mirror = highlightRef.current;
+    if (mirror) mirror.scrollTop = node.scrollTop;
   }, [text]);
 
   const edit = (next: string, nextCaret: number, nextPicked: ChannelReference[] = picked) => {
@@ -286,56 +291,68 @@ export function ChannelComposer({
           ))}
         </ul>
       )}
-      <textarea
-        ref={textareaRef}
-        rows={1}
-        value={text}
-        placeholder={placeholder}
-        aria-label={placeholder}
-        onChange={(event) => {
-          setText(event.target.value);
-          draft.setDraft(encodeChannelDraft({ text: event.target.value, picked }));
-          setCaret(event.target.selectionStart);
-          setHighlight(0);
-          setDismissedAt(null);
-        }}
-        onSelect={(event) => setCaret(event.currentTarget.selectionStart)}
-        onPaste={(event) => {
-          const files = [...event.clipboardData.files];
-          if (files.length === 0) return;
-          event.preventDefault();
-          upload(files);
-        }}
-        onKeyDown={(event) => {
-          if (showPicker) {
-            if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
-              event.preventDefault();
-              const step = event.key === 'ArrowDown' ? 1 : -1;
-              setHighlight((index) => (index + step + matches.length) % matches.length);
-              return;
-            }
-            if ((event.key === 'Enter' || event.key === 'Tab') && selected) {
-              event.preventDefault();
-              pick(selected);
-              return;
-            }
-            if (event.key === 'Escape' && trigger) {
-              event.preventDefault();
-              setDismissedAt(trigger.start);
-              return;
-            }
-          }
-          if (
-            submit === 'enter' &&
-            event.key === 'Enter' &&
-            !event.shiftKey &&
-            !event.nativeEvent.isComposing
-          ) {
+      <div className="channel-composer-field">
+        {text.length > 0 && (
+          <div ref={highlightRef} className="channel-composer-highlight" aria-hidden="true">
+            <ComposerHighlight text={text} marks={referenceMarks} />
+          </div>
+        )}
+        <textarea
+          ref={textareaRef}
+          className={text.length > 0 ? 'channel-composer-mirrored' : undefined}
+          rows={1}
+          value={text}
+          placeholder={placeholder}
+          aria-label={placeholder}
+          onScroll={(event) => {
+            const mirror = highlightRef.current;
+            if (mirror) mirror.scrollTop = event.currentTarget.scrollTop;
+          }}
+          onChange={(event) => {
+            setText(event.target.value);
+            draft.setDraft(encodeChannelDraft({ text: event.target.value, picked }));
+            setCaret(event.target.selectionStart);
+            setHighlight(0);
+            setDismissedAt(null);
+          }}
+          onSelect={(event) => setCaret(event.currentTarget.selectionStart)}
+          onPaste={(event) => {
+            const files = [...event.clipboardData.files];
+            if (files.length === 0) return;
             event.preventDefault();
-            send();
-          }
-        }}
-      />
+            upload(files);
+          }}
+          onKeyDown={(event) => {
+            if (showPicker) {
+              if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+                event.preventDefault();
+                const step = event.key === 'ArrowDown' ? 1 : -1;
+                setHighlight((index) => (index + step + matches.length) % matches.length);
+                return;
+              }
+              if ((event.key === 'Enter' || event.key === 'Tab') && selected) {
+                event.preventDefault();
+                pick(selected);
+                return;
+              }
+              if (event.key === 'Escape' && trigger) {
+                event.preventDefault();
+                setDismissedAt(trigger.start);
+                return;
+              }
+            }
+            if (
+              submit === 'enter' &&
+              event.key === 'Enter' &&
+              !event.shiftKey &&
+              !event.nativeEvent.isComposing
+            ) {
+              event.preventDefault();
+              send();
+            }
+          }}
+        />
+      </div>
       <div className="channel-composer-bar">
         <button
           type="button"
@@ -393,6 +410,29 @@ export function ChannelComposer({
       </div>
     </div>
   );
+}
+
+function ComposerHighlight({
+  text,
+  marks,
+}: {
+  text: string;
+  marks: ReturnType<typeof composerReferenceMarks>;
+}): ReactNode {
+  const parts: ReactNode[] = [];
+  let cursor = 0;
+  for (const [index, mark] of marks.entries()) {
+    if (mark.start > cursor) parts.push(text.slice(cursor, mark.start));
+    parts.push(
+      <mark key={index} data-kind={mark.kind}>
+        {text.slice(mark.start, mark.end)}
+      </mark>
+    );
+    cursor = mark.end;
+  }
+  if (cursor < text.length) parts.push(text.slice(cursor));
+  if (text.endsWith('\n')) parts.push(<br key="trail" />);
+  return parts;
 }
 
 // What a mentioned Buddy's reply will run on, as the chip and picker see it.

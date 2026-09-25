@@ -157,26 +157,68 @@ function escapeRegExp(text: string): string {
 }
 
 /**
+ * The same match `encodeReferences` turns into a token: longer labels first,
+ * and a label must end at a boundary. The composer highlight uses these
+ * ranges so `@Lead` is marked in the input exactly when send will mention Lead.
+ */
+function pickedReferencePattern(references: readonly ChannelReference[]): {
+  pattern: RegExp;
+  byLabel: Map<string, ChannelReference>;
+} | null {
+  const unique = new Map(
+    references.map((reference) => [`${reference.kind}:${reference.id}`, reference])
+  );
+  const ordered = [...unique.values()].sort((a, b) => b.label.length - a.label.length);
+  if (ordered.length === 0) return null;
+  return {
+    pattern: new RegExp(
+      `(^|\\s)@(${ordered.map((reference) => escapeRegExp(reference.label)).join('|')})(?=$|[\\s.,:;!?)])`,
+      'g'
+    ),
+    byLabel: new Map(ordered.map((reference) => [reference.label, reference])),
+  };
+}
+
+/**
  * Replace every `@Label` the user picked with its token. Longer labels go
  * first and a label must end at a word boundary, so picking both "Lead" and
  * "Lead Designer" never turns "@Lead Designer" into "[@Lead](…) Designer".
  * References whose label was deleted from the text simply do not appear.
  */
 export function encodeReferences(text: string, references: readonly ChannelReference[]): string {
-  const unique = new Map(
-    references.map((reference) => [`${reference.kind}:${reference.id}`, reference])
-  );
-  const ordered = [...unique.values()].sort((a, b) => b.label.length - a.label.length);
-  if (ordered.length === 0) return text;
-  const pattern = new RegExp(
-    `(^|\\s)@(${ordered.map((reference) => escapeRegExp(reference.label)).join('|')})(?=$|[\\s.,:;!?)])`,
-    'g'
-  );
-  const byLabel = new Map(ordered.map((reference) => [reference.label, reference]));
+  const matched = pickedReferencePattern(references);
+  if (!matched) return text;
+  const { pattern, byLabel } = matched;
   return text.replace(pattern, (_whole, lead: string, label: string) => {
     const reference = byLabel.get(label);
     return reference ? `${lead}${referenceToken(reference)}` : _whole;
   });
+}
+
+export type ComposerReferenceMark = {
+  start: number;
+  end: number;
+  kind: ChannelReference['kind'];
+};
+
+/** `@Label` spans in the composer that send will turn into mention or Task tokens. */
+export function composerReferenceMarks(
+  text: string,
+  references: readonly ChannelReference[]
+): ComposerReferenceMark[] {
+  const matched = pickedReferencePattern(references);
+  if (!matched) return [];
+  const { pattern, byLabel } = matched;
+  const marks: ComposerReferenceMark[] = [];
+  for (const match of text.matchAll(pattern)) {
+    const lead = match[1] ?? '';
+    const label = match[2];
+    const reference = label ? byLabel.get(label) : undefined;
+    if (!reference || match.index === undefined || !label) continue;
+    const start = match.index + lead.length;
+    marks.push({ start, end: start + 1 + label.length, kind: reference.kind });
+  }
+  return marks;
 }
 
 export type BuddyReference = Extract<ChannelReference, { kind: 'buddy' }>;

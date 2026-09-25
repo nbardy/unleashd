@@ -447,8 +447,9 @@ a.mobile-channels-wake-done {
   border-radius: var(--ui-radius);
 }
 
+.mobile-channel .channel-composer-highlight,
 .mobile-channel .channel-composer textarea {
-  font-size: 16px; /* 16px stops iOS zooming into the field */
+  font-size: 16px; /* 16px stops iOS zooming into the field; the mirror must match */
 }
 
 .mobile-channel .channel-composer-attach {
