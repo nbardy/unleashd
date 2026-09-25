@@ -7,8 +7,6 @@
 }
 
 .buddy-convo-header__summary {
-  display: flex;
-  align-items: center;
   width: 100%;
   gap: var(--sp-4);
   padding: var(--sp-5) var(--sp-6);
@@ -30,9 +28,7 @@
 }
 
 .buddy-convo-header__identity {
-  display: inline-flex;
   gap: var(--sp-3);
-  align-items: center;
   white-space: nowrap;
 }
 
@@ -40,16 +36,8 @@
   color: var(--text-emphasis);
 }
 
-.buddy-convo-header__project {
-  overflow: hidden;
-  color: var(--text-muted);
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
 .buddy-convo-header__chevron {
   margin-left: auto;
-  color: var(--text-muted);
 }
 
 .buddy-convo-header__details {
@@ -58,7 +46,6 @@
   gap: var(--sp-7);
   padding: var(--sp-4) var(--sp-6);
   border-top: 1px solid var(--border-subtle);
-  color: var(--text-muted);
   font-size: var(--fs-2);
 }
 

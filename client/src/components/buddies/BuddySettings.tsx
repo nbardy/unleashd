@@ -243,7 +243,7 @@ export function BuddySettings({
 }) {
   return (
     <section className="buddy-panel" aria-label="Settings">
-      <div className="buddy-panel__title">
+      <div className="buddy-panel__title ui-row">
         <h2>Settings</h2>
       </div>
       {/* Keyed by every stored field: a save (or another device's) resets the draft. */}

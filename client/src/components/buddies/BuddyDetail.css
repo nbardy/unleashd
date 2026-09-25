@@ -36,8 +36,6 @@
   z-index: 10;
   width: 190px;
   padding: var(--sp-3);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--ui-radius);
   background: var(--bg-raised-1);
   box-shadow: 0 8px 24px #0003;
 }
@@ -64,8 +62,6 @@
 }
 .buddy-thread-list__row {
   position: relative;
-  display: flex;
-  flex-direction: column;
   gap: var(--sp-3);
   padding: var(--sp-7) var(--sp-9) var(--sp-7) 0;
   text-decoration: none;
@@ -106,12 +102,10 @@
   position: absolute;
   right: 2px;
   top: 18px;
-  color: var(--text-muted);
   font-size: var(--fs-5);
 }
 .buddy-thread-list__empty {
   padding: var(--sp-9) 0;
-  color: var(--text-muted);
   font-size: var(--fs-5);
 }
 .buddy-detail-nav a:focus-visible,
@@ -180,8 +174,6 @@
   min-width: 0;
 }
 .buddy-panel__title {
-  display: flex;
-  align-items: center;
   justify-content: space-between;
   gap: var(--sp-6);
 }

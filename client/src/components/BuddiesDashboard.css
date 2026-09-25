@@ -57,27 +57,19 @@
 
 .buddies-directory-count {
   padding-bottom: var(--sp-2);
-  color: var(--text-muted);
   font: 500 10px / 1 var(--font-mono);
   letter-spacing: 0.06em;
   text-transform: uppercase;
 }
 
 .buddies-directory-tools {
-  display: flex;
-  align-items: center;
   gap: var(--sp-6);
 }
 
 .buddies-directory-search {
-  display: flex;
-  align-items: center;
   gap: var(--sp-4);
   min-width: min(280px, 34vw);
   padding: var(--sp-4) var(--sp-5);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--ui-radius);
-  color: var(--text-muted);
   background: var(--bg-panel);
 }
 
@@ -129,17 +121,13 @@
 }
 
 .buddy-directory-card {
-  display: flex;
   position: relative;
   align-items: stretch;
-  flex-direction: column;
   justify-content: flex-end;
   min-height: 330px;
   gap: 0;
   padding: 0;
   overflow: hidden;
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--ui-radius);
   background: var(--bg-card);
   color: inherit;
   font: inherit;
@@ -323,11 +311,8 @@
 }
 
 .buddy-card-hover-meta {
-  display: flex;
   flex-wrap: wrap;
-  align-items: center;
   gap: var(--sp-3) var(--sp-4);
-  color: var(--text-muted);
   font: 500 9px / 1.2 var(--font-mono);
 }
 
@@ -337,9 +322,6 @@
 
 .buddy-card-workspace {
   max-width: 130px;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .buddy-card-hover-action {
@@ -415,16 +397,12 @@
 }
 
 .buddies-hero-main {
-  display: flex;
-  align-items: center;
   justify-content: space-between;
   gap: var(--sp-9);
   padding-bottom: var(--sp-7);
 }
 
 .buddy-identity {
-  display: flex;
-  align-items: center;
   gap: var(--sp-6);
   min-width: 0;
 }
@@ -436,10 +414,8 @@
   height: 30px;
   margin-right: -6px;
   border: 1px solid var(--border-default);
-  border-radius: var(--ui-radius);
   color: var(--text-secondary);
   background: var(--bg-card);
-  cursor: pointer;
 }
 
 .buddy-back-button:hover {
@@ -466,8 +442,6 @@
 }
 
 .buddy-identity-title {
-  display: flex;
-  align-items: center;
   gap: var(--sp-4);
 }
 

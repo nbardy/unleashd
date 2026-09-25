@@ -18,7 +18,11 @@ function ConversationRow({ id, routeState }: { id: string; routeState: Record<st
       : `Conversation · ${activity.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })}`;
   return (
     <li>
-      <Link className="buddy-thread-list__row" to={conversationPath(id)} state={routeState}>
+      <Link
+        className="buddy-thread-list__row ui-stack"
+        to={conversationPath(id)}
+        state={routeState}
+      >
         <span className="buddy-thread-list__title">{title}</span>
         <span className="buddy-thread-list__meta">
           {isRowRunning(conversation) && (
@@ -28,7 +32,7 @@ function ConversationRow({ id, routeState }: { id: string; routeState: Record<st
             {formatTimeAgo(activity)}
           </time>
         </span>
-        <span className="buddy-thread-list__arrow" aria-hidden="true">
+        <span className="buddy-thread-list__arrow ui-muted" aria-hidden="true">
           ↗
         </span>
       </Link>
@@ -45,7 +49,7 @@ export function BuddyConversationList({ buddyId }: { buddyId: string }) {
   const ids = useAtomValue(listField('buddyThreads')).get(buddyId)?.foreground ?? NO_IDS;
   if (!ids.length)
     return (
-      <p className="buddy-thread-list__empty">
+      <p className="buddy-thread-list__empty ui-muted">
         No conversations yet. Start a chat with this Buddy.
       </p>
     );

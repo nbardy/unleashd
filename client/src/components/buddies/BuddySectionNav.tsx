@@ -32,7 +32,7 @@ export function BuddySectionNav({
           {SECONDARY.includes(activeTab) ? labels[activeTab] : 'More'}{' '}
           <span aria-hidden="true">⌄</span>
         </summary>
-        <div className="buddy-detail-nav__menu">{SECONDARY.map(link)}</div>
+        <div className="buddy-detail-nav__menu ui-card">{SECONDARY.map(link)}</div>
       </details>
     </nav>
   );

@@ -35,8 +35,8 @@ export function BuddyDirectory({
           <p>Meet the specialist teammates shaping work across your projects.</p>
           {notice}
         </div>
-        <div className="buddies-directory-tools">
-          <label className="buddies-directory-search">
+        <div className="buddies-directory-tools ui-row">
+          <label className="buddies-directory-search ui-row ui-card ui-muted">
             <span className="sr-only">Search buddies</span>
             <svg aria-hidden="true" width="15" height="15" viewBox="0 0 16 16" fill="none">
               <circle cx="7" cy="7" r="5.5" stroke="currentColor" strokeWidth="1.5" />
@@ -59,7 +59,7 @@ export function BuddyDirectory({
               spellCheck={false}
             />
           </label>
-          <span className="buddies-directory-count">
+          <span className="buddies-directory-count ui-muted">
             {visibleBuddies.length} {visibleBuddies.length === 1 ? 'Buddy' : 'Buddies'}
           </span>
         </div>
@@ -70,7 +70,7 @@ export function BuddyDirectory({
       <div className="buddy-card-grid">
         <button
           type="button"
-          className="buddy-directory-card buddy-directory-card--new"
+          className="buddy-directory-card ui-stack ui-card buddy-directory-card--new"
           onClick={onNew}
           disabled={creating}
         >
@@ -93,7 +93,7 @@ export function BuddyDirectory({
             <button
               type="button"
               key={buddy.id}
-              className={`buddy-directory-card buddy-directory-card--${visual}`}
+              className={`buddy-directory-card ui-stack ui-card buddy-directory-card--${visual}`}
               onClick={() => onOpen(buddy.id)}
             >
               <span className="buddy-card-visual" aria-hidden="true">
@@ -103,11 +103,11 @@ export function BuddyDirectory({
               <span className="buddy-card-title">{buddy.name}</span>
               <span className="buddy-card-hover-copy">
                 <span>{buddy.role}</span>
-                <span className="buddy-card-hover-meta">
+                <span className="buddy-card-hover-meta ui-row ui-muted">
                   <span className={`buddy-presence buddy-presence--${buddy.status}`}>
                     {buddy.status}
                   </span>
-                  <span className="buddy-card-workspace">{workspace.name}</span>
+                  <span className="buddy-card-workspace ui-truncate">{workspace.name}</span>
                   {reports.length > 0 && (
                     <span>
                       {reports.length} {reports.length === 1 ? 'report' : 'reports'}

@@ -9,7 +9,6 @@
 }
 
 .buddy-workspace-back {
-  color: var(--text-muted);
   font: 500 11px / 1 var(--font-mono);
   text-decoration: none;
 }
@@ -30,7 +29,6 @@
 
 .buddy-workspace-eyebrow {
   margin: 0 0 5px;
-  color: var(--text-muted);
   font: 600 10px / 1 var(--font-mono);
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -45,15 +43,11 @@
 
 .buddy-workspace-path {
   margin: 7px 0 0;
-  color: var(--text-muted);
   font: 500 11px / 1.4 var(--font-mono);
 }
 
 .buddy-workspace-active-summary {
-  display: inline-flex;
-  align-items: center;
   gap: var(--sp-3);
-  color: var(--text-muted);
   font: 600 11px / 1 var(--font-mono);
   white-space: nowrap;
 }
@@ -76,23 +70,17 @@
 }
 
 .buddy-workspace-member {
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--ui-radius);
   background: color-mix(in srgb, var(--bg-panel) 55%, transparent);
   overflow: hidden;
 }
 
 .buddy-workspace-member-header {
-  display: flex;
-  align-items: center;
   gap: var(--sp-5);
   min-height: 58px;
   padding: var(--sp-5) var(--sp-6);
 }
 
 .buddy-workspace-avatar {
-  display: inline-flex;
-  align-items: center;
   justify-content: center;
   width: 30px;
   height: 30px;
@@ -178,15 +166,11 @@ a.buddy-workspace-job:hover {
 
 .buddy-workspace-job-title {
   min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
   color: var(--text-primary);
   font-size: var(--fs-3);
 }
 
 .buddy-workspace-job-meta {
-  color: var(--text-muted);
   font: 500 10px / 1 var(--font-mono);
   white-space: nowrap;
 }
@@ -197,11 +181,6 @@ a.buddy-workspace-job:hover {
   padding: var(--sp-6) var(--sp-6);
   color: var(--text-muted);
   font-size: var(--fs-3);
-}
-
-.buddy-workspace-state {
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--ui-radius);
 }
 
 .buddy-workspace-state--error {
@@ -241,8 +220,6 @@ a.buddy-workspace-job:hover {
 .buddy-workspace-channels-open {
   display: inline-block;
   padding: var(--sp-3) var(--sp-6);
-  border: 1px solid var(--border-subtle);
-  border-radius: var(--ui-radius);
   color: var(--text-primary);
   font: 600 11px / 1 var(--font-mono);
   text-decoration: none;

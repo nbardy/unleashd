@@ -1,6 +1,4 @@
 .buddy-created-card {
-  display: flex;
-  align-items: center;
   gap: var(--sp-4);
   width: fit-content;
   max-width: 100%;
@@ -68,8 +66,6 @@
 }
 
 .buddy-created-card__details-header {
-  display: flex;
-  align-items: center;
   justify-content: space-between;
   gap: var(--sp-7);
   color: var(--text-primary);

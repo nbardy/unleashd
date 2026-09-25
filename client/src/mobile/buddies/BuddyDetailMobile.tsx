@@ -76,7 +76,11 @@ export function BuddyDetailMobile() {
   return (
     <div className="mobile-hub mobile-buddy-detail">
       <header className="mobile-buddy-detail__hero">
-        <Link to="/buddies" className="mobile-buddy-detail__back" aria-label="Back to Buddies">
+        <Link
+          to="/buddies"
+          className="mobile-buddy-detail__back ui-inline-row"
+          aria-label="Back to Buddies"
+        >
           ← Buddies
         </Link>
         <div className="mobile-buddy-detail__identity">
@@ -87,7 +91,7 @@ export function BuddyDetailMobile() {
             <h1 className="mobile-buddy-detail__name">{buddy.name}</h1>
             <details className="mobile-buddy-detail__description">
               <summary>About this buddy</summary>
-              <p className="mobile-buddy-detail__role">{buddy.role}</p>
+              <p className="mobile-buddy-detail__role ui-muted">{buddy.role}</p>
               <BuddyRelations buddy={buddy} overview={overview.data} />
             </details>
           </div>

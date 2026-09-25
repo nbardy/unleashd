@@ -435,7 +435,7 @@ export function BuddyMessages({
   const direct = inbox.data ? ownerDirectChannel(inbox.data, buddyId) : undefined;
   return (
     <section className="buddy-panel" aria-label="Messages">
-      <div className="buddy-panel__title">
+      <div className="buddy-panel__title ui-row">
         <h2>Messages</h2>
       </div>
       <SendForm buddyId={buddyId} refresh={inbox.refetch} />

@@ -31,7 +31,7 @@ export interface BuddyPageModel {
 const TABS: { [K in EmployeeTab]: (page: BuddyPageModel) => ReactElement } = {
   conversations: (page) => (
     <section className="buddy-panel" aria-label="Conversations">
-      <div className="buddy-panel__title">
+      <div className="buddy-panel__title ui-row">
         <h2>Conversations</h2>
         <button type="button" onClick={page.talk}>
           Start conversation

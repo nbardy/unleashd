@@ -299,7 +299,7 @@ export function BuddyWork({
   const finished = topLevel.filter((task) => !isTaskOpen(task.status));
   return (
     <section className="buddy-panel" aria-label="Work">
-      <div className="buddy-panel__title">
+      <div className="buddy-panel__title ui-row">
         <h2>Current tasks</h2>
         <span>{current.length} open</span>
       </div>

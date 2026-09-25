@@ -13,8 +13,6 @@
 }
 
 .mobile-buddy-detail__back {
-  display: inline-flex;
-  align-items: center;
   gap: var(--sp-3);
   min-height: 40px;
   align-self: flex-start;
@@ -54,7 +52,6 @@
 .mobile-buddy-detail__role {
   display: block;
   margin-top: 2px;
-  color: var(--text-muted);
   font-size: var(--fs-4);
   line-height: 1.45;
 }
