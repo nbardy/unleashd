@@ -7,8 +7,6 @@ import {
   formatBuddyBuilderToolResult,
 } from '@unleashd/shared';
 import { Provider, createStore } from 'jotai';
-// biome-ignore lint/correctness/noUnusedImports: tsx's test transform uses the classic JSX runtime.
-import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { MemoryRouter } from 'react-router-dom';
 import { archivedBuddyIdsAtom } from '../src/atoms/buddy-visibility';

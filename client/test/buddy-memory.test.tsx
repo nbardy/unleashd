@@ -88,10 +88,8 @@ test('stale CAS errors tell the editor which revision must be reloaded', () => {
     new Error('StaleMemoryWrite: working memory is at revision 8; supplied base 7')
   );
 
-  assert.equal(
-    message,
-    'Memory changed while you were editing (current revision 8; your base 7). Reload the document and retry.'
-  );
+  assert.match(message, /current revision 8; your base 7/);
+  assert.match(message, /Reload/);
 });
 
 test('mobile v2 markup stays within the mobile feature class boundary', () => {

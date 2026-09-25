@@ -21,8 +21,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import type { Conversation } from '@unleashd/shared';
 import { Provider, createStore } from 'jotai';
-// biome-ignore lint/style/useImportType: tsx's test transform uses the classic JSX runtime.
-import React from 'react';
+import type { ReactElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { MemoryRouter } from 'react-router-dom';
 import { conversationsAtom } from '../src/atoms/conversations';
@@ -64,24 +63,12 @@ const AUTOMATION: BuddyAutomation = {
     max_cost_usd: 1,
     allowed_operations: [],
   },
+  // No `runs`: both shells fetch run history separately (mobile behind History),
+  // so an inline runs array would be fixture data no component reads.
   enabled: true,
-  runs: [
-    {
-      id: 'run-live',
-      status: 'complete',
-      scheduled_for: '2026-08-21T00:00:00.000Z',
-      conversation_id: LIVE,
-    },
-    {
-      id: 'run-dead',
-      status: 'complete',
-      scheduled_for: '2026-08-21T00:00:00.000Z',
-      conversation_id: DEAD,
-    },
-  ],
 };
 
-const render = (element: React.ReactElement): string =>
+const render = (element: ReactElement): string =>
   renderToStaticMarkup(<MemoryRouter>{element}</MemoryRouter>);
 
 /** Hrefs of anchors pointing at a chat route, in document order. */
@@ -185,7 +172,7 @@ test('Buddy conversations show real previews, sort running first, and react to c
   const renderList = () =>
     render(
       <Provider store={store}>
-        <BuddyConversationList links={links} availableIds={new Set([LIVE, 'recent'])} />
+        <BuddyConversationList links={links} />
       </Provider>
     );
   const html = renderList();
