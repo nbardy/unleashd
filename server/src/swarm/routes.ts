@@ -22,7 +22,7 @@ export function registerSwarmRuntimeRoutes(
   app: Application,
   dependencies: SwarmRouteDependencies
 ): void {
-  const readRuntime = (projectRoot: string): OompaRuntimeSnapshot =>
+  const readRuntime = (projectRoot: string): Promise<OompaRuntimeSnapshot> =>
     readLatestSwarmRuntime(projectRoot, dependencies.runtimeDependencies);
 
   app.get('/api/oompa-config', (request, response) => {
@@ -42,13 +42,21 @@ export function registerSwarmRuntimeRoutes(
     }
   });
 
-  app.get('/api/swarm-runtime', (request, response) => {
+  app.get('/api/swarm-runtime', (request, response, next) => {
     const projectRoot = authorizeProjectDirectory(request, response, dependencies);
     if (!projectRoot) return;
-    response.json(readRuntime(projectRoot));
+    readRuntime(projectRoot)
+      .then((runtime) => response.json(runtime))
+      .catch(next);
   });
 
-  app.get('/api/swarm-projects', (_request, response) => {
+  app.get('/api/swarm-projects', (_request, response, next) => {
+    listSwarmProjects()
+      .then((projects) => response.json({ projects }))
+      .catch(next);
+  });
+
+  const listSwarmProjects = async () => {
     const projects: Array<{
       projectRoot: string;
       projectName: string;
@@ -58,19 +66,20 @@ export function registerSwarmRuntimeRoutes(
       Array.from(dependencies.listProjectRoots(), (root) => path.resolve(root))
     );
     for (const projectRoot of uniqueRoots) {
-      const latestRun = readLatestRunDirectory(path.join(projectRoot, 'runs'));
+      const latestRun = await readLatestRunDirectory(path.join(projectRoot, 'runs'));
       if (!latestRun || !fs.existsSync(path.join(latestRun.path, 'started.json'))) continue;
       projects.push({
         projectRoot,
         projectName: path.basename(projectRoot) || projectRoot,
-        runtime: readRuntime(projectRoot),
+        runtime: await readRuntime(projectRoot),
       });
     }
-    response.json({ projects });
-  });
+    return projects;
+  };
 
-  app.post('/api/swarm-signal', (request, response) => {
-    handleSwarmSignal(request, response, dependencies);
+  // Express 4 does not catch async handler rejections; hand them to `next`.
+  app.post('/api/swarm-signal', (request, response, next) => {
+    handleSwarmSignal(request, response, dependencies).catch(next);
   });
 
   app.get('/api/swarm-reviews', (request, response) => {
@@ -113,11 +122,11 @@ export function registerSwarmRuntimeRoutes(
   });
 }
 
-function handleSwarmSignal(
+async function handleSwarmSignal(
   request: Request,
   response: Response,
   dependencies: SwarmRouteDependencies
-): void {
+): Promise<void> {
   const body =
     request.body !== null && typeof request.body === 'object'
       ? (request.body as Record<string, unknown>)
@@ -146,7 +155,7 @@ function handleSwarmSignal(
   const runDirectory =
     typeof swarmId === 'string'
       ? resolveRunDirectory(projectRoot, swarmId)
-      : readLatestRunDirectory(runsDirectory)?.path;
+      : (await readLatestRunDirectory(runsDirectory))?.path;
   if (!runDirectory) {
     response.status(typeof swarmId === 'string' ? 400 : 404).json({
       ok: false,
@@ -161,7 +170,7 @@ function handleSwarmSignal(
     return;
   }
 
-  const started = safeReadJson(path.join(runDirectory, 'started.json')) ?? {};
+  const started = (await safeReadJson(path.join(runDirectory, 'started.json'))) ?? {};
   const pid = started?.pid;
   if (typeof pid !== 'number' || !Number.isFinite(pid) || pid <= 0) {
     response.json({ ok: false, message: 'No valid PID found in started.json' });
