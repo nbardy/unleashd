@@ -1,9 +1,21 @@
-import type { BuddyMessage } from '@unleashd/shared';
-import { useState } from 'react';
+import type { BuddyListAuthor, BuddyMailingListPost, BuddyMessage } from '@unleashd/shared';
+import { useMemo, useState } from 'react';
+import type { ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { usePolledFetch } from '../../hooks/usePolledFetch';
+import { newId } from '../../utils/ids';
 import { BuddyTeamConfigurationRequest } from './BuddyTeamConfiguration';
+import { ChannelLoader } from './ChannelLoader';
 import { buddyApi } from './api';
+import {
+  type BuddyMailingListSummary,
+  CHANNEL_BACKSTOP_MS,
+  feedPhase,
+  listsUrl,
+  postsResource,
+  renderFeed,
+  taskChannelFeedUrl,
+} from './channel-data';
 
 const EMPTY_NAMES: Readonly<Record<string, string>> = {};
 
@@ -19,12 +31,14 @@ export function BuddyMessages({
   messages,
   availableConversationIds,
   onReply,
+  workspaceId,
 }: {
   buddyId?: string;
   buddyNames?: Readonly<Record<string, string>>;
   messages: BuddyMessage[];
   availableConversationIds: ReadonlySet<string>;
   onReply(messageId: string, reply: BuddyOwnerReply): Promise<void>;
+  workspaceId?: string;
 }) {
   const { data, error, refetch } = usePolledFetch<BuddyMessage[]>(
     buddyId ? `/api/buddies/messages?buddyId=${encodeURIComponent(buddyId)}` : null,
@@ -50,7 +64,355 @@ export function BuddyMessages({
           }}
         />
       ))}
+      {workspaceId && (
+        <BuddyListsSection
+          workspaceId={workspaceId}
+          buddyId={buddyId}
+          buddyNames={buddyNames}
+          availableConversationIds={availableConversationIds}
+        />
+      )}
     </section>
+  );
+}
+
+function PostAuthor({
+  author,
+  buddyNames,
+  className,
+}: {
+  author: BuddyListAuthor;
+  buddyNames: Readonly<Record<string, string>>;
+  className?: string;
+}) {
+  switch (author.kind) {
+    case 'owner':
+      return <span className={className}>You</span>;
+    case 'buddy':
+      return (
+        <Link className={className} to={`/buddies/${encodeURIComponent(author.buddyId)}`}>
+          {buddyNames[author.buddyId] ?? author.buddyId}
+        </Link>
+      );
+  }
+}
+
+// The Buddy's own view of its workspace channels. Not a duplicate of Channels:
+// it is the one place the owner can post AS this Buddy (standups, handoffs),
+// and on mobile the only Task filter over channel posts. dcd8856 deleted it as
+// a duplicate; restored under the owner's rule that a deletion stays only if
+// it removes no feature (2026-09-25). Its keys sit under the Channels view's
+// push invalidation (`channel_changed` / `buddies_changed`), so its polls are
+// only the backstop.
+function BuddyListsSection({
+  workspaceId,
+  buddyId,
+  buddyNames,
+  availableConversationIds,
+}: {
+  workspaceId: string;
+  buddyId?: string;
+  buddyNames: Readonly<Record<string, string>>;
+  availableConversationIds: ReadonlySet<string>;
+}) {
+  const lists = usePolledFetch<BuddyMailingListSummary[]>(
+    listsUrl(workspaceId),
+    CHANNEL_BACKSTOP_MS
+  );
+  const [selectedId, setSelectedId] = useState<string | null>(null);
+  const data = lists.data ?? [];
+  const selected = data.find((list) => list.id === selectedId) ?? data[0] ?? null;
+  return (
+    <section className="buddy-messages-list-section" aria-label="Channels">
+      <h3>Channels</h3>
+      <p>Public workspace streams for standups, handoffs, and announcements.</p>
+      {lists.error && <p role="alert">Channels could not refresh: {lists.error.message}</p>}
+      {renderFeed(feedPhase(lists), {
+        loading: () => <ChannelLoader label="Loading channels…" />,
+        failed: () => null,
+        empty: () => <p className="empty-state">No channels yet.</p>,
+        posts: () => (
+          <div className="buddy-messages-list-panes">
+            <ul className="buddy-messages-list-chips" aria-label="Channels">
+              {data.map((list) => (
+                <li key={list.id}>
+                  <button
+                    type="button"
+                    aria-pressed={selected?.id === list.id}
+                    onClick={() => setSelectedId(list.id)}
+                  >
+                    {list.name} · {list.postCount}
+                  </button>
+                </li>
+              ))}
+            </ul>
+            <div className="buddy-messages-list-main">
+              {selected && (
+                <BuddyListFeed
+                  key={selected.id}
+                  list={selected}
+                  workspaceId={workspaceId}
+                  channelNameById={new Map(data.map((entry) => [entry.id, entry.name]))}
+                  buddyId={buddyId}
+                  buddyNames={buddyNames}
+                  availableConversationIds={availableConversationIds}
+                  onPosted={lists.refetch}
+                />
+              )}
+            </div>
+          </div>
+        ),
+      })}
+    </section>
+  );
+}
+
+function ChannelPostItem({
+  post,
+  channelName,
+  buddyNames,
+  availableConversationIds,
+}: {
+  post: BuddyMailingListPost;
+  channelName: string | null;
+  buddyNames: Readonly<Record<string, string>>;
+  availableConversationIds: ReadonlySet<string>;
+}) {
+  return (
+    <li className="buddy-messages-list-post">
+      <div className="buddy-messages-list-post-heading">
+        <strong>{post.purpose}</strong>
+        {channelName && <span> · #{channelName}</span>}
+        <span>
+          <PostAuthor author={post.author} buddyNames={buddyNames} />
+          {post.senderConversationId && <> · conv {post.senderConversationId.slice(0, 8)}</>}
+          {' · '}
+          {new Date(post.createdAt).toLocaleString()}
+          {post.senderConversationId && availableConversationIds.has(post.senderConversationId) && (
+            <>
+              {' · '}
+              <Link to={`/chat/${encodeURIComponent(post.senderConversationId)}`}>
+                Open conversation
+              </Link>
+            </>
+          )}
+        </span>
+      </div>
+      <p>{post.body}</p>
+    </li>
+  );
+}
+
+function ChannelFeed({
+  list,
+  workspaceId,
+  channelNameById,
+  buddyNames,
+  availableConversationIds,
+  composer,
+}: {
+  list: BuddyMailingListSummary;
+  workspaceId: string;
+  channelNameById: ReadonlyMap<string, string>;
+  buddyNames: Readonly<Record<string, string>>;
+  availableConversationIds: ReadonlySet<string>;
+  composer?: (refetch: () => void) => ReactNode;
+}) {
+  const [projectFilter, setProjectFilter] = useState<string | null>(null);
+  const feed = usePolledFetch(
+    postsResource(
+      projectFilter
+        ? taskChannelFeedUrl(workspaceId, projectFilter)
+        : `/api/buddies/lists/${encodeURIComponent(list.id)}/posts?limit=20`
+    ),
+    CHANNEL_BACKSTOP_MS
+  );
+  const { data, error, refetch } = feed;
+  const sortedPosts = useMemo(
+    () =>
+      [...(data ?? [])].sort(
+        (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+      ),
+    [data]
+  );
+  const projectIds = useMemo(
+    () => [
+      ...new Set(
+        sortedPosts.map((post) => post.projectId).filter((id): id is string => id !== null)
+      ),
+    ],
+    [sortedPosts]
+  );
+  const visiblePosts = projectFilter
+    ? sortedPosts.filter((post) => post.projectId === projectFilter)
+    : sortedPosts;
+  return (
+    <article className="buddy-messages-list-feed">
+      <h4>{list.name}</h4>
+      <p>{list.purpose}</p>
+      {error && <p role="alert">Posts could not refresh: {error.message}</p>}
+      {projectIds.length > 0 && (
+        <div className="buddy-messages-list-filter">
+          <span>Task</span>
+          <ul className="buddy-messages-list-filter-options">
+            <li key="all">
+              <button
+                type="button"
+                aria-pressed={projectFilter === null}
+                onClick={() => setProjectFilter(null)}
+              >
+                All
+              </button>
+            </li>
+            {projectIds.map((projectId) => (
+              <li key={projectId}>
+                <button
+                  type="button"
+                  aria-pressed={projectFilter === projectId}
+                  onClick={() => setProjectFilter(projectId)}
+                >
+                  {projectId}
+                </button>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      {renderFeed(feedPhase(feed), {
+        loading: () => <ChannelLoader label={`Loading #${list.name}…`} />,
+        failed: () => null,
+        empty: () => <p className="empty-state">No posts yet.</p>,
+        posts: () => (
+          <ul className="buddy-messages-list-posts">
+            {visiblePosts.map((post) => (
+              <ChannelPostItem
+                key={post.id}
+                post={post}
+                channelName={
+                  projectFilter ? (channelNameById.get(post.listId) ?? post.listId) : null
+                }
+                buddyNames={buddyNames}
+                availableConversationIds={availableConversationIds}
+              />
+            ))}
+          </ul>
+        ),
+      })}
+      {composer?.(refetch)}
+    </article>
+  );
+}
+
+function ChannelComposer({
+  list,
+  buddyId,
+  onPosted,
+  refetch,
+}: {
+  list: BuddyMailingListSummary;
+  buddyId: string;
+  onPosted(): void;
+  refetch(): void;
+}) {
+  const [purpose, setPurpose] = useState('standup');
+  const [body, setBody] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [problem, setProblem] = useState<string | null>(null);
+  return (
+    <>
+      <form
+        className="buddy-messages-list-composer"
+        onSubmit={(event) => {
+          event.preventDefault();
+          setBusy(true);
+          setProblem(null);
+          void buddyApi(`/api/buddies/lists/${encodeURIComponent(list.id)}/posts`, {
+            method: 'POST',
+            headers: { 'content-type': 'application/json' },
+            body: JSON.stringify({
+              author: { kind: 'buddy', buddyId },
+              key: newId(),
+              purpose: purpose.trim(),
+              body: body.trim(),
+            }),
+          })
+            .then(() => {
+              setBody('');
+              refetch();
+              onPosted();
+            })
+            .catch((cause: unknown) => {
+              setProblem(cause instanceof Error ? cause.message : String(cause));
+            })
+            .finally(() => setBusy(false));
+        }}
+      >
+        <label>
+          Kind
+          <input
+            required
+            value={purpose}
+            maxLength={200}
+            onChange={(event) => setPurpose(event.target.value)}
+            disabled={busy}
+            placeholder="standup, handoff, announcement, decision"
+          />
+        </label>
+        <label>
+          Post
+          <textarea
+            required
+            value={body}
+            onChange={(event) => setBody(event.target.value)}
+            disabled={busy}
+          />
+        </label>
+        <button type="submit" disabled={busy || !purpose.trim() || !body.trim()}>
+          {busy ? 'Posting…' : 'Post'}
+        </button>
+      </form>
+      {problem && <p role="alert">{problem}</p>}
+    </>
+  );
+}
+
+function BuddyListFeed({
+  list,
+  workspaceId,
+  channelNameById,
+  buddyId,
+  buddyNames,
+  availableConversationIds,
+  onPosted,
+}: {
+  list: BuddyMailingListSummary;
+  workspaceId: string;
+  channelNameById: ReadonlyMap<string, string>;
+  buddyId?: string;
+  buddyNames: Readonly<Record<string, string>>;
+  availableConversationIds: ReadonlySet<string>;
+  onPosted(): void;
+}) {
+  return (
+    <ChannelFeed
+      list={list}
+      workspaceId={workspaceId}
+      channelNameById={channelNameById}
+      buddyNames={buddyNames}
+      availableConversationIds={availableConversationIds}
+      composer={
+        buddyId
+          ? (refetch) => (
+              <ChannelComposer
+                list={list}
+                buddyId={buddyId}
+                onPosted={onPosted}
+                refetch={refetch}
+              />
+            )
+          : undefined
+      }
+    />
   );
 }
 

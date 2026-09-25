@@ -9,6 +9,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { BuddiesStore } from '@nbardy/buddies';
+import { OwnerChannelUnreadSchema } from '@unleashd/shared';
 import express from 'express';
 import { createBuddyDirect } from '../src/buddies/buddy-direct';
 import { createChannelResponder } from '../src/buddies/channel-responder';
@@ -22,6 +23,7 @@ import {
   BuddyOperationsService,
   MESSAGE_BUDDY_OPERATIONS,
 } from '../src/buddies/operations';
+import { ownerChannelReads } from '../src/buddies/owner-channel-reads';
 import { registerBuddyRoutes } from '../src/buddies/routes';
 import { startChatRun } from './fixtures/chat-run';
 
@@ -97,7 +99,10 @@ async function linkedClient(
   };
 }
 
-function routeTestApp(store: BuddiesStorePort) {
+function routeTestApp(
+  store: BuddiesStorePort,
+  ownerReads = ownerChannelReads(join(mkdtempSync(join(tmpdir(), 'owner-reads-')), 'reads.json'))
+) {
   const app = express();
   app.use(express.json());
   registerBuddyRoutes(app, {
@@ -118,6 +123,8 @@ function routeTestApp(store: BuddiesStorePort) {
   registerChannelRoutes(app, {
     getStore: async () => store,
     uploadsRoot: mkdtempSync(join(tmpdir(), 'lists-uploads-')),
+    ownerReads,
+    channelChanged: () => undefined,
     sendError(response, error, fallbackStatus) {
       response
         .status(fallbackStatus)
@@ -867,6 +874,217 @@ test('task channel feed: project posts across lists, newest-first, owner reads u
       );
     }
   } finally {
+    raw.close();
+  }
+});
+
+// Until 2026-09-25 the owner's channel view read the newest 50 posts and
+// nothing else, so a channel's 51st-oldest post was unreachable in the UI.
+// The view now pages this route by keyset; offsets would repeat a post
+// whenever one lands between two page reads.
+test('owner channel paging: every root reachable once by keyset, even with a post landing mid-read; from= holds the window', async () => {
+  const { raw, store, w, a } = fixture();
+  try {
+    const author = { kind: 'buddy' as const, buddyId: a.id };
+    const { list } = store.createList({
+      workspace: w.id,
+      author,
+      key: 'busy',
+      name: 'Busy',
+      purpose: 'Paging',
+    });
+    const root = (key: string) =>
+      store.createPost({ list: list.id, author, key, purpose: 'standup', body: key }).post;
+    // 250 roots: more than the package's 200-row read ceiling, so a `from`
+    // read of the whole channel has to chunk.
+    const roots = Array.from({ length: 250 }, (_, index) => root(`root-${index}`));
+    const reply = store.createPost({
+      list: list.id,
+      author,
+      key: 'reply',
+      purpose: 'reply',
+      body: 'reply',
+      threadRoot: roots[10].id,
+    }).post;
+
+    const app = routeTestApp(store);
+    const server = app.listen(0, '127.0.0.1');
+    try {
+      await new Promise<void>((resolve, reject) => {
+        server.once('listening', resolve);
+        server.once('error', reject);
+      });
+      const { port } = server.address() as AddressInfo;
+      type Wire = { id: string; createdAt: string; threadRootId: string | null };
+      const read = async (query: string) => {
+        const response = await fetch(
+          `http://127.0.0.1:${port}/api/buddies/lists/${list.id}/posts${query}`
+        );
+        return { status: response.status, posts: (await response.json()) as Wire[] };
+      };
+      const page = async (query: string) => {
+        const result = await read(query);
+        assert.equal(result.status, 200, JSON.stringify(result.posts));
+        return result.posts;
+      };
+
+      const walked: Wire[] = [];
+      let current = await page('?limit=50');
+      walked.push(...current);
+      const late = root('late');
+      while (current.length === 50) {
+        current = await page(`?before=${walked[walked.length - 1].id}&limit=50`);
+        walked.push(...current);
+      }
+      const ids = walked.map((post) => post.id);
+      assert.equal(new Set(ids).size, ids.length, 'a post repeated across pages');
+      assert.deepEqual(new Set(ids), new Set(roots.map((post) => post.id)));
+      for (let index = 1; index < walked.length; index++) {
+        const [newer, older] = [walked[index - 1], walked[index]];
+        assert.ok(
+          newer.createdAt > older.createdAt ||
+            (newer.createdAt === older.createdAt && newer.id > older.id),
+          'pages must read newest-first'
+        );
+      }
+
+      // The oldest root as floor: the whole channel, the late post included.
+      const whole = await page(`?from=${ids[ids.length - 1]}`);
+      assert.deepEqual(
+        whole.map((post) => post.id),
+        [late.id, ...ids]
+      );
+      const middle = await page(`?from=${ids[100]}`);
+      assert.deepEqual(
+        middle.map((post) => post.id),
+        [late.id, ...ids.slice(0, 101)]
+      );
+
+      assert.equal((await read(`?from=${reply.id}`)).status, 400);
+      assert.equal((await read(`?before=${reply.id}`)).status, 400);
+      assert.equal((await read(`?from=${ids[5]}&before=${ids[6]}`)).status, 400);
+    } finally {
+      await new Promise<void>((resolve, reject) =>
+        server.close((error) => (error ? reject(error) : resolve()))
+      );
+    }
+  } finally {
+    raw.close();
+  }
+});
+
+// Owner decision 2026-09-25: the owner's read state is separate from the
+// Buddies'. Owner reads must never move a Buddy's package read mark (that
+// would silently hide posts from its get_list/get_inbox), and a Buddy reading
+// must never clear the owner's unread. Also pins what the rail counts: the
+// owner's own posts never count, and the badge is replies in the owner's threads.
+test('owner channel unread is separate from Buddy read marks, forward-only and durable', async () => {
+  const { raw, store, w, a, b } = fixture();
+  const readsFile = join(mkdtempSync(join(tmpdir(), 'owner-reads-')), 'reads.json');
+  const app = routeTestApp(store, ownerChannelReads(readsFile));
+  const server = app.listen(0, '127.0.0.1');
+  try {
+    await new Promise<void>((resolve, reject) => {
+      server.once('listening', resolve);
+      server.once('error', reject);
+    });
+    const { port } = server.address() as AddressInfo;
+    const call = async (path: string, body?: unknown) => {
+      const response = await fetch(`http://127.0.0.1:${port}${path}`, {
+        method: body === undefined ? 'GET' : 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: body === undefined ? undefined : JSON.stringify(body),
+      });
+      return { status: response.status, json: (await response.json()) as unknown };
+    };
+    const { list } = store.createList({
+      workspace: w.id,
+      author: { kind: 'buddy', buddyId: a.id },
+      key: 'general',
+      name: 'general',
+      purpose: 'Talk',
+    });
+    const listUnread = async () => {
+      const { json } = await call('/api/buddies/channels/unread');
+      const unread = OwnerChannelUnreadSchema.parse(json);
+      const lists = unread.workspaces.find((workspace) => workspace.workspaceId === w.id)!.lists;
+      return lists.find((entry) => entry.listId === list.id)!;
+    };
+    // A channel that predates owner read state starts read: the baseline.
+    const before = store.createPost({
+      list: list.id,
+      author: { kind: 'buddy', buddyId: a.id },
+      key: 'old',
+      purpose: 'message',
+      body: 'before owner reads existed',
+    }).post;
+    assert.equal((await listUnread()).unread, 0);
+    await new Promise((resolve) => setTimeout(resolve, 5));
+
+    let key = 0;
+    const post = (
+      author: { kind: 'owner' } | { kind: 'buddy'; buddyId: string },
+      threadRoot: string | null = null
+    ) =>
+      store.createPost({
+        list: list.id,
+        author,
+        key: `k${key++}`,
+        purpose: 'message',
+        body: 'hello',
+        threadRoot,
+      }).post;
+    const buddyRoot = post({ kind: 'buddy', buddyId: a.id });
+    const ownerRoot = post({ kind: 'owner' });
+    post({ kind: 'buddy', buddyId: b.id }, ownerRoot.id);
+    post({ kind: 'buddy', buddyId: a.id }, buddyRoot.id);
+
+    const fresh = await listUnread();
+    assert.equal(fresh.unread, 1, "the owner's own root is never unread");
+    assert.equal(fresh.repliesToYou, 1, "only the reply in the owner's thread is waiting on them");
+    assert.deepEqual(new Set(fresh.unreadThreads), new Set([buddyRoot.id, ownerRoot.id]));
+
+    const buddyMarkBefore = store.listUnread({ buddy: b.id, workspace: w.id });
+    const marked = await call(`/api/buddies/lists/${list.id}/owner-read`, {
+      postId: fresh.newestPostId,
+    });
+    assert.equal(marked.status, 200, JSON.stringify(marked.json));
+    const caughtUp = await listUnread();
+    assert.deepEqual([caughtUp.unread, caughtUp.repliesToYou, caughtUp.unreadThreads], [0, 0, []]);
+    assert.deepEqual(
+      store.listUnread({ buddy: b.id, workspace: w.id }),
+      buddyMarkBefore,
+      "the owner catching up moved a Buddy's read mark"
+    );
+
+    // A Buddy reading does not clear the owner's unread.
+    const late = post({ kind: 'buddy', buddyId: a.id });
+    store.markListRead({ buddy: b.id, list: list.id, post: late.id });
+    assert.equal((await listUnread()).unread, 1);
+
+    // Forward only: a stale tab echoing an older post un-reads nothing.
+    await call(`/api/buddies/lists/${list.id}/owner-read`, { postId: late.id });
+    await call(`/api/buddies/lists/${list.id}/owner-read`, { postId: before.id });
+    assert.deepEqual((await listUnread()).readThrough, {
+      kind: 'post',
+      postId: late.id,
+      createdAt: late.createdAt,
+    });
+    assert.equal(
+      (await call(`/api/buddies/lists/${list.id}/owner-read`, { postId: 'post_missing' })).status,
+      404
+    );
+
+    // Durable: a restarted server reads the same marks from disk.
+    const reloaded = ownerChannelReads(readsFile).unread(store);
+    const entry = reloaded.workspaces
+      .find((workspace) => workspace.workspaceId === w.id)!
+      .lists.find((candidate) => candidate.listId === list.id)!;
+    assert.equal(entry.unread, 0);
+  } finally {
+    await new Promise<void>((resolve, reject) =>
+      server.close((error) => (error ? reject(error) : resolve()))
+    );
     raw.close();
   }
 });

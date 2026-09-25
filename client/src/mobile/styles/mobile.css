@@ -157,6 +157,22 @@
   line-height: 1;
 }
 
+.mobile-tab__icon {
+  position: relative;
+}
+
+/* Something new in a channel: Slack's dot on the Channels tab. */
+.mobile-tab__icon[data-unread]::after {
+  content: "";
+  position: absolute;
+  top: -2px;
+  right: -7px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--danger);
+}
+
 .mobile-tab__label {
   line-height: 1;
 }

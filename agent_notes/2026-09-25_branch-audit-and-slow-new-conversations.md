@@ -131,3 +131,59 @@ The error journal holds none of this: slow or stuck creation never reaches it.
   the 9c8d6c9 fix are still there, and one holds Buddy memory output. There are
   also 11 `$TMPDIR/unleashd-cursor-mcp/<digest>` plugin dirs holding control
   tokens in 0600 files.
+
+## Update: speed fixes landed (same day)
+
+Each fix was built in an isolated worktree, reviewed adversarially by a
+separate agent, cherry-picked, and re-verified on the commit in a clean
+worktree. At 57b3e93: typecheck OK, server 475/475 (6 live-skipped), client
+162/162, invariant gates 6/6.
+
+| Commit | Fix | Measured |
+|---|---|---|
+| 776db89 | config index miss no longer scans every record after startup | ~3s scan ×up to 4 per new session → 0 |
+| c22ff4a | swarm routes run `oompa` / `git` async and in parallel | up to 16s frozen backend → 0 blocked |
+| c54221e | `channel_changed` refreshes the Task-filtered feed; LRU bump on unchanged refresh | 30s → push |
+| f87f80c + c1c9be3 | commands parked on the startup barrier count as active work (a reload no longer rejects the first message); WS liveness pings, hardened so our own stall or a draining send never kills a live peer | — |
+| c21b131 + 57b3e93 | poller resumes growing Claude transcripts from their byte offset and broadcasts summaries; closed chats keep their history and refetch when opened | 120MB file: 1.1–1.3s/poll → 11–20ms; max loop stall 233ms → 12ms |
+| a79bbca | permessage-deflate + HTTP compression (after the auth gate), immutable hashed assets, `buddyContext` dropped from the wire | init 2.40MB → 178KB on the wire |
+| b319102 + 893d45c | kind read once (no zod parse per access), activity sort key computed once, App no longer re-renders per event; restore-on-load keyed on the saved chat's arrival | derived atoms 295ms → 30ms per event (loaded host) |
+
+Review-caught bugs fixed before landing: restore-on-load never firing when the
+saved chat hydrated in a later batch; liveness terminating healthy clients
+during a stall (the first regression test passed WITHOUT the fix, because the
+client shared the server's event loop; it now runs in a child process and
+stalls in the check phase right after a ping); reopened external chats
+flashing "Loading…".
+
+Resolved conflict: d382234 (another session) restored the Mailbox channel
+reader that dcd8856 deleted. That is correct: it is the only place the owner
+posts AS a Buddy. It uses the push design (30s backstop), not 5s polling.
+
+### Still open (measured, not yet fixed)
+
+- **Mobile chat test gap.** The mobile chat render fix landed as 6ef0ad3 +
+  2d4ba51: one frozen markdown processor per flavor and a pinned 30-group
+  mobile window. The streaming reply renders uncached; the cache is capped at
+  600 entries and 1M source chars.
+  - Its streaming test calls `renderMarkdownLive` directly, so it would not
+    catch a caller switching back to the cached renderer.
+  - Replace it with an integration test: grow `streamingContentAtom`, then
+    render `VirtualizedGroup` / `AssistantResponseRow` with
+    `isLive`/`isLiveTurn` true, and assert the cache stats did not change.
+  - The mobile window has no test.
+- **Poller discovery.** Every 5s it walks about 7.7k files and 4.4k dirs:
+  - The Muse walk visits about 1,079 `subagent/` dirs and polls 291
+    `.msp-view-v1` cache files as sessions (`collectMuseSessionFiles`,
+    `adapters/jsonl.ts:1984`).
+  - The per-file stats are sequential (`loader.ts:540`).
+- **Startup.** `mergeSessionMessages` key building costs 1.1s at startup
+  (`session-history.ts:36`).
+- **Other providers.** Codex, Cursor and Muse transcripts still get a full
+  re-parse per change; only Claude resumes from a byte offset.
+- **`/api/usage`.** It scans every transcript with sync fs on a request path.
+- **Sidebar / Gallery.** They subscribe to the full conversation array
+  (AGENTS.md wants id lists + per-id atoms); their grouping lives in component
+  `useMemo`s.
+- **Tests.** The flaky `buddy-coordination` "real creation boundary" test
+  fails intermittently under load.

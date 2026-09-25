@@ -551,8 +551,10 @@ export const ConversationSchema = z.object({
   // and mirror to legacy fields for old clients/parsers; reads derive kind
   // from legacy via `getConversationKind()` when kind is absent.
   kind: ConversationKindSchema,
-  // Persistent employee ownership (deprecated in favor of kind.buddy). Kept for
-  // compat; new writes mirror kind → buddyContext. Read via `getBuddyContext()` or `isBuddyConversation()`.
+  // Persistent employee ownership (deprecated in favor of kind.buddy). The
+  // server no longer sends it (it duplicated `kind` on every Buddy thread); it
+  // stays nullish so servers that still send it parse. Always read via
+  // `getBuddyContext()` / `isBuddyConversation()`, which derive from `kind`.
   buddyContext: BuddyContextSchema.nullish(),
   // Application-owned purpose (deprecated in favor of kind). `general` is implicit.
   placement: ConversationPlacementSchema.optional(),

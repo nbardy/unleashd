@@ -3390,8 +3390,16 @@ export function createConversationRuntime(
         modelName: this.modelName,
         title: this.title,
         swarmDebugPrefix: this.swarmDebugPrefix,
+        // `buddyContext` is deliberately NOT serialized. On this object it is a
+        // getter over `kind` (buddyContextFromKind), so the wire copy repeated
+        // the same fields for every Buddy thread — 550 KB of a 2.4 MB `init`
+        // with 937 of 1,123 conversations being Buddy threads (2026-09-25).
+        // Every reader goes through shared `getBuddyContext()`, which derives
+        // from `kind` whenever kind is 'buddy' and ignores the wire field, and
+        // `kind` is required by ConversationSchema. The schema keeps
+        // `buddyContext` nullish, so an older client and a not-yet-reloaded
+        // older server (which still sends it) both keep parsing.
         kind: this.kind,
-        buddyContext: this.buddyContext,
         purpose: this.purpose,
         placement: this.placement,
         mergeParentMeta: this.mergeParentMeta,

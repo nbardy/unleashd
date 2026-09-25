@@ -1,5 +1,4 @@
 import { getBuddyContext, getConversationKind, isBuddyKind } from '@unleashd/shared';
-import { archivedBuddyIdsAtom } from './buddy-visibility';
 import type {
   BuddyContext,
   ClientMessage,
@@ -10,10 +9,12 @@ import type {
 } from '@unleashd/shared';
 import { atom } from 'jotai';
 import { atomFamily } from 'jotai-family';
-import { groupChatMessages, type MessageGroup } from '../utils/chat-message-groups';
+import { type MessageGroup, groupChatMessages } from '../utils/chat-message-groups';
 import { normalizeFolderDirectory } from '../utils/directories';
 import { isWorktreeDirectory } from '../utils/swarmUtils';
-import { getConversationLastActivity } from '../utils/time';
+import { sortByActivityDesc } from '../utils/time';
+import { archivedBuddyIdsAtom } from './buddy-visibility';
+import { savedActiveConversationIdAtom } from './ui';
 
 // =============================================================================
 // Primary State Atoms
@@ -182,16 +183,24 @@ export const queueAtomFamily = atomFamily((id: string) =>
 export const allConversationsAtom = atom((get) => {
   const map = get(conversationsAtom);
   const archived = get(archivedBuddyIdsAtom);
-  return Array.from(map.values())
-    .filter((conversation) => {
+  return sortByActivityDesc(
+    Array.from(map.values()).filter((conversation) => {
       const buddyId = getBuddyContext(conversation)?.buddyId;
       return !buddyId || !archived.has(buddyId);
     })
-    .sort((a, b) => {
-      const aTime = getConversationLastActivity(a).getTime();
-      const bTime = getConversationLastActivity(b).getTime();
-      return bTime - aTime;
-    });
+  );
+});
+
+// True once the conversation restore-on-load wants to reopen has hydrated. A
+// boolean, so App re-renders once rather than on every conversation event (it
+// used to subscribe to allConversationsAtom just to read `.length`, which
+// re-rendered AppInner and the whole route tree per message/status event).
+// It must track the SAVED id, not "any conversation": startup hydrates in
+// batches, and a "has any" flag flips on the first batch and never again, so a
+// saved chat arriving in a later batch was never restored (review of 984d00f).
+export const savedActiveConversationPresentAtom = atom((get) => {
+  const savedId = get(savedActiveConversationIdAtom);
+  return savedId !== null && get(conversationsAtom).has(savedId);
 });
 
 // Stable sorted ID list — only changes on add/delete/reorder.

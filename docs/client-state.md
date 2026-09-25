@@ -36,6 +36,21 @@ export const runningConversationIdsAtom = atom((get) =>
 );
 ```
 
+Collection atoms recompute on every message, status and queue event, over every
+conversation (1,100+ in real use), so their per-item work must be cheap:
+
+- Sort by recency with `sortByActivityDesc` / `conversationActivityMs` from
+  `utils/time.ts`, never `getConversationLastActivity` inside a comparator. That
+  parsed two dates per comparison (~22k per sort, measured 2026-09-25); the
+  helper computes one key per conversation snapshot and caches it in a WeakMap.
+- The kind accessors (`getConversationKind`, `isBuddyConversation`,
+  `getBuddyContext`) read `conversation.kind` directly; the wire schema already
+  validated it. Do not re-add a zod parse on that read path
+  (`client/test/buddy-builder-kind.test.ts` trips if you do).
+- A component that only needs "are there any conversations" subscribes to
+  `hasConversationsAtom`, not `allConversationsAtom` — the array is a new
+  reference on every event and re-renders the subscriber each time.
+
 ## Mutations and state ownership
 
 These are separate atoms, not fields of one combined state object:
@@ -139,6 +154,16 @@ and re-parsed their markdown every few seconds with nothing new. Keep derived
 values keyed on `data` identity (`useMemo(..., [feed.data])`, `memo` on heavy
 leaves such as `ChannelMarkdown`) so the sharing reaches the DOM.
 
+A channel feed pages back by keyset (`useChannelFeed` in
+components/buddies/channel-data.ts). It reads the newest page until the reader
+nears the top, then reads `from=<oldest loaded post>` down to the newest, so
+the window grows at the bottom and never slides. Re-reading the newest page
+after paging back would push the oldest post out above the reader on every new
+post and leave a gap between the pages. The switch to the new key is seeded
+(`seedResource`) with the posts already held plus the fetched page, so it
+renders without the loader and revalidates behind it. Until 2026-09-25 the view
+read the newest 50 posts and nothing older was reachable.
+
 Every Buddy read model is declared once in
 [hooks/useBuddyData.ts](../client/src/hooks/useBuddyData.ts) and consumed by
 both shells. `BuddiesDashboard` (desktop) and `BuddyDetailMobile` used to each
@@ -204,6 +229,35 @@ Desktop chat, worker chat panes and mobile consume this same projection. Live
 embedded tool lines and hydrated separate tool records normalize to the same
 part types. The projection never rewrites persisted records or commits stream
 buffers into the conversation snapshot.
+
+## Rendering markdown and long threads
+
+Chat (desktop and mobile) and channel text render through
+[utils/markdown-pipeline.ts](../client/src/utils/markdown-pipeline.ts), never
+react-markdown's `<Markdown>` component. `<Markdown>` builds and freezes a new
+unified processor on every render, re-running every plugin attacher; opening a
+1,099-message conversation on mobile blocked the main thread 1,321ms (4x CPU,
+2026-09-25), ~391ms of it `freeze()`. Declare a `defineMarkdownFlavor(...)` as a
+module constant, take the pipeline from `useMarkdownPipeline(flavor)` and call
+`renderMarkdownCached(pipeline, text, components)` for settled text. Finished
+hast trees sit in an LRU keyed by pipeline and text, bounded by entry count AND
+total source characters, so remounted rows skip parse and highlighting. The
+message a streaming turn is still growing MUST use `renderMarkdownLive` instead:
+each animation-frame flush is a new string, and caching those retained a tree
+per prefix (334MB heap for one 18KB reply, 2026-09-25) and evicted every settled
+tree. The response row that knows the turn is live picks the renderer for its
+last part. The pipeline turns raw HTML into text and applies the URL policy
+before a tree is cached. Cached trees are shared, so never mutate a `node`
+passed to a component override — outside production builds they are
+deep-frozen, so a mutation throws. `client/test/markdown-pipeline.test.tsx`
+keeps the output byte-identical to `<Markdown>` and guards both cache bounds.
+
+Desktop virtualizes the message list. Mobile keeps a flat scroller for iOS
+momentum and mounts groups from a pinned first index: the newest 30 when the
+conversation opens, 30 more per "Show earlier" (keeping the reader's distance
+from the bottom). New groups append below without unmounting the top one — a
+count-from-the-end window did, which shifted content above the reader on Safari
+(no scroll anchoring).
 
 ## Persisted UI state
 

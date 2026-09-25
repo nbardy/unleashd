@@ -507,6 +507,7 @@ export interface BuddiesStorePort {
   }): { list: BuddyMailingList };
   getList(id: string): BuddyMailingList | null;
   listLists(input: { workspace: string }): BuddyMailingListSummary[];
+  listWorkspaces(): BuddyWorkspace[];
   createPost(input: {
     list: string;
     author: BuddyListAuthor;

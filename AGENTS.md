@@ -274,6 +274,14 @@ pnpm screenshot:mobile --out /tmp/shots       # the older phone-only gallery (ch
   `init` and update from the not-yet-reloaded backend and the list goes empty.
   `Conversation.done` shipped required on 2026-09-24 and did exactly that
   (fixed in e54fe26). The parsed type stays required, so servers still set it.
+- The wire is compressed: WS permessage-deflate (the 2.4 MB `init` goes out
+  as ~180 KB) and `compression` middleware after the auth gate for HTTP.
+  A new streaming route (SSE, chunked `res.write`) must `res.flush()` after
+  each write or compression buffers it. Hashed `client/dist/assets/*` are
+  `immutable`; everything else served statically is `no-cache`. Guarded by
+  `server/test/auth.test.ts` and `server/test/static-client-cache.test.ts`.
+  `Conversation.toJSON()` omits `buddyContext` (it duplicated `kind`); read
+  it with `getBuddyContext()`, never the raw field.
 - Sidebar rows are ONE line. `.done-btn` is an absolute overlay on the row's
   right edge, so anything else anchored right (`.thread-stop-btn`) sits under
   it and stops receiving clicks. Two-line rows hid this; single-line rows do

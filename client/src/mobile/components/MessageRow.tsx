@@ -1,20 +1,24 @@
-import { BuddyWorkerThreadBadge } from '../../components/buddies/BuddyWorkerThreadBadge';
 import type { BuddyWorkerThread } from '@unleashd/shared';
 import type { Message } from '@unleashd/shared';
-import { memo, useState } from 'react';
-import type { AssistantResponse } from '../../utils/chat-message-groups';
-import Markdown from 'react-markdown';
+import { Fragment, memo, useState } from 'react';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
-import type { PluggableList } from 'unified';
 import { InlineBuddyBuilderResult } from '../../components/buddies/BuddyBuilderResultCard';
 import { InlineBuddyTeamConfiguration } from '../../components/buddies/BuddyTeamConfiguration';
+import { BuddyWorkerThreadBadge } from '../../components/buddies/BuddyWorkerThreadBadge';
 import { COPY_LABEL, useCopyAction } from '../../hooks/useCopyAction';
 import { parseBuddyReviewRequest, parseBuddyReviewResult } from '../../utils/buddy-review-message';
+import type { AssistantResponse } from '../../utils/chat-message-groups';
 import { messageTranscriptContent } from '../../utils/conversation-transcript';
-import { execInputPreview } from '../../utils/tool-call-preview';
-import { useLazyMarkdownPlugins } from '../../utils/lazyMarkdownPlugins';
+import { useMarkdownPipeline } from '../../utils/lazyMarkdownPlugins';
+import {
+  type MarkdownRenderer,
+  defineMarkdownFlavor,
+  renderMarkdownCached,
+  renderMarkdownLive,
+} from '../../utils/markdown-pipeline';
 import { splitStructuredMessageContent } from '../../utils/structured-message-segments';
+import { execInputPreview } from '../../utils/tool-call-preview';
 
 function BuddyReviewRequestCard({ content }: { content: string }) {
   const parsed = parseBuddyReviewRequest(content);
@@ -99,13 +103,8 @@ function MessageCopyButton({ content }: { content: string }) {
   );
 }
 
-function MarkdownBlock({ content, plugins }: { content: string; plugins: PluggableList }) {
-  return (
-    <Markdown remarkPlugins={[remarkGfm, remarkMath]} rehypePlugins={plugins}>
-      {content}
-    </Markdown>
-  );
-}
+// No remark-breaks here: `.mobile-markdown` is `white-space: pre-wrap`.
+const MOBILE_MARKDOWN = defineMarkdownFlavor([remarkGfm, remarkMath]);
 
 export const MessageRow = memo(function MessageRow({
   message,
@@ -145,7 +144,7 @@ export const MessageRow = memo(function MessageRow({
         {isUser ? 'You' : 'Assistant'}
       </div>
 
-      <MessageRowContent message={message} />
+      <MessageRowContent message={message} markdown={renderMarkdownCached} />
 
       <div className="mobile-message__footer">
         {message.timestamp && (
@@ -183,9 +182,15 @@ export const MessageRow = memo(function MessageRow({
   );
 });
 
-const MessageRowContent = memo(function MessageRowContent({ message }: { message: Message }) {
+const MessageRowContent = memo(function MessageRowContent({
+  message,
+  markdown,
+}: {
+  message: Message;
+  markdown: MarkdownRenderer;
+}) {
   // Shared lazy loader (utils/lazyMarkdownPlugins) — one loading path with desktop.
-  const plugins = useLazyMarkdownPlugins();
+  const pipeline = useMarkdownPipeline(MOBILE_MARKDOWN);
   const isUser = message.role === 'user';
   const segments = splitStructuredMessageContent(message.content);
   const execPreview = execInputPreview(message.toolCall);
@@ -217,7 +222,7 @@ const MessageRowContent = memo(function MessageRowContent({ message }: { message
               // Skip duplicate rendering when the whole message was a review request
               if (reviewRequest && seg.content === message.content) return null;
               if (!seg.content.trim()) return null;
-              return <MarkdownBlock key={idx} content={seg.content} plugins={plugins} />;
+              return <Fragment key={idx}>{markdown(pipeline, seg.content)}</Fragment>;
             }
             if (seg.type === 'buddy_review_result') {
               return <BuddyReviewResultCard key={idx} json={seg.json} />;
@@ -311,18 +316,24 @@ export const AssistantResponseRow = memo(function AssistantResponseRow({
           Thinking…
         </div>
       )}
-      {response.parts.map((part) =>
-        part.type === 'tool_calls' ? (
+      {response.parts.map((part, partIndex) => {
+        // Streaming text only ever grows the response's last part.
+        const markdown =
+          isLive === true && partIndex === response.parts.length - 1
+            ? renderMarkdownLive
+            : renderMarkdownCached;
+        return part.type === 'tool_calls' ? (
           <MobileToolActivity
             key={part.key}
             count={part.count}
             messages={part.messages}
             workerThreads={part.workerThreads}
+            markdown={markdown}
           />
         ) : (
-          <MessageRowContent key={part.key} message={part.message} />
-        )
-      )}
+          <MessageRowContent key={part.key} message={part.message} markdown={markdown} />
+        );
+      })}
       <div className="mobile-message__footer" ref={isLast ? lastMessageRef : undefined}>
         <span>{new Date(response.messages[0].timestamp).toLocaleTimeString()}</span>
         {response.copyText.trim() && <MessageCopyButton content={response.copyText} />}
@@ -335,7 +346,13 @@ function MobileToolActivity({
   count,
   messages,
   workerThreads,
-}: { count: number; messages: Message[]; workerThreads?: BuddyWorkerThread[] }) {
+  markdown,
+}: {
+  count: number;
+  messages: Message[];
+  workerThreads?: BuddyWorkerThread[];
+  markdown: MarkdownRenderer;
+}) {
   const [expanded, setExpanded] = useState(false);
   return (
     <div className="mobile-response-activity">
@@ -352,7 +369,9 @@ function MobileToolActivity({
         <BuddyWorkerThreadBadge key={thread.conversationId} thread={thread} />
       ))}
       {expanded &&
-        messages.map((message, index) => <MessageRowContent key={index} message={message} />)}
+        messages.map((message, index) => (
+          <MessageRowContent key={index} message={message} markdown={markdown} />
+        ))}
     </div>
   );
 }

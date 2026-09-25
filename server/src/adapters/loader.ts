@@ -22,15 +22,18 @@ import type {
   DiskAdapter,
   LoadProgressCallback,
   LoadResult,
+  ParsedSession,
   PollResult,
   SessionHistoryOptions,
   SessionHistorySource,
+  SourceGrowth,
 } from './disk-adapter';
 import { sessionLookupKeys, sessionToConversation } from './disk-adapter';
 import { extractCodexSessionIdFromFilename, extractMuseSessionIdFromFilePath } from './jsonl';
 import { diskAdapters } from './registry';
 import { OPENCODE_PART_DIR, getOpenCodeSessionMtime } from './registry';
 import type { NormalizedSessionCache } from './session-cache';
+import type { TranscriptTails } from './transcript-tails';
 
 // =============================================================================
 // DiscoveredFile — adapter-tagged file entry from Phase 1
@@ -84,6 +87,7 @@ async function discoverAll(adapters: DiskAdapter[]): Promise<Discovery> {
         failed.push(adapter.provider);
         return;
       }
+      let statFailed = false;
 
       const statResults = await Promise.all(
         paths.map(async (filePath) => {
@@ -100,12 +104,18 @@ async function discoverAll(adapters: DiskAdapter[]): Promise<Discovery> {
               sizeBytes: adapter.provider === 'opencode' ? 1 : stat.size,
               adapter,
             };
-          } catch {
-            // File may have been deleted between discoverFiles() and stat()
+          } catch (error: unknown) {
+            // Deleted between discoverFiles() and stat(): simply gone. Any other
+            // error leaves the source unknown, so the discovery is incomplete.
+            if ((error as NodeJS.ErrnoException).code !== 'ENOENT') statFailed = true;
             return null;
           }
         })
       );
+      if (statFailed) {
+        console.warn(`[discover] ${adapter.provider}: some sources could not be stat'ed`);
+        failed.push(adapter.provider);
+      }
 
       for (const result of statResults) {
         if (result) files.push(result);
@@ -517,6 +527,55 @@ export async function loadAllConversations(
 // Individual stat calls are cheap (microseconds).
 // =============================================================================
 
+export type PollOptions = SessionHistoryOptions & {
+  cache?: NormalizedSessionCache;
+  adapters?: readonly DiskAdapter[];
+  /** Resume points that make re-reading a still-growing transcript cost only its new bytes. */
+  tails: TranscriptTails;
+};
+
+/** Re-read one changed source; δ over how its adapter's format grows. */
+async function readChangedSession(
+  file: DiscoveredFile,
+  options: PollOptions
+): Promise<ParsedSession | null> {
+  const growth = file.adapter.growth;
+  switch (growth.kind) {
+    case 'rewritten':
+      return (await readParsedSession(file, options.cache)).session;
+    case 'appended':
+      return readAppendedSession(file, growth, options);
+  }
+}
+
+async function readAppendedSession(
+  file: DiscoveredFile,
+  growth: Extract<SourceGrowth, { kind: 'appended' }>,
+  options: PollOptions
+): Promise<ParsedSession | null> {
+  const session = await options.tails.read(file.filePath, growth);
+  // Still written so the next startup reuses this parse. Not read first: the
+  // source just changed, so a record for its new mtime cannot exist yet.
+  await options.cache
+    ?.write(
+      {
+        provider: file.adapter.provider,
+        filePath: file.filePath,
+        mtimeMs: file.mtimeMs,
+        sizeBytes: file.sizeBytes,
+      },
+      session
+    )
+    .catch((error: unknown) => {
+      console.warn(
+        `[session-cache] Could not cache ${path.basename(file.filePath)}: ${
+          error instanceof Error ? error.message : error
+        }`
+      );
+    });
+  return session;
+}
+
 /**
  * Poll for changes to persisted session sources since the last check.
  *
@@ -529,10 +588,7 @@ export async function loadAllConversations(
 export async function pollForChanges(
   prevMtimes: Map<string, number>,
   activeIds: Set<string>,
-  options: SessionHistoryOptions & {
-    cache?: NormalizedSessionCache;
-    adapters?: readonly DiskAdapter[];
-  } = {}
+  options: PollOptions
 ): Promise<PollResult> {
   const updated = new Map<string, DiscoveredConversation>();
   const deferredDirtyPaths = new Set<string>();
@@ -540,6 +596,7 @@ export async function pollForChanges(
   // Any path absent from this poll's discovery is deleted on disk and falls out naturally,
   // preventing the map from accumulating dead paths forever.
   const mtimes = new Map<string, number>();
+  let discoveryFailed = false;
   const adapters = options.adapters ?? diskAdapters;
   const readHistory = createHistoryReader(options, () =>
     discoverAll([...adapters]).then((discovery) => discovery.files)
@@ -553,6 +610,7 @@ export async function pollForChanges(
       console.warn(
         `[poll] ${adapter.provider}: discoverFiles() failed: ${err instanceof Error ? err.message : err}`
       );
+      discoveryFailed = true;
       continue;
     }
 
@@ -635,15 +693,9 @@ export async function pollForChanges(
           }
         }
 
-        // Re-parse the changed session
-        const { session } = await readParsedSession(
-          {
-            filePath,
-            mtimeMs: currentMtime,
-            sizeBytes: currentSizeBytes,
-            adapter,
-          },
-          options.cache
+        const session = await readChangedSession(
+          { filePath, mtimeMs: currentMtime, sizeBytes: currentSizeBytes, adapter },
+          options
         );
         if (!session) continue;
         if (shouldIgnoreWorkingDirectory(session.workingDirectory)) continue;
@@ -666,6 +718,16 @@ export async function pollForChanges(
           `[Poll] Failed to parse ${adapter.provider} session: ${path.basename(filePath)} (${error instanceof Error ? error.message : error})`
         );
       }
+    }
+  }
+
+  // A failed discovery observed nothing about its sources. Dropping them from
+  // the baseline made the next successful poll treat that provider's entire
+  // history as new and re-parse all of it. Keep every unseen prior entry this
+  // round; a later complete poll drops the ones that are really gone.
+  if (discoveryFailed) {
+    for (const [filePath, mtimeMs] of prevMtimes) {
+      if (!mtimes.has(filePath)) mtimes.set(filePath, mtimeMs);
     }
   }
 

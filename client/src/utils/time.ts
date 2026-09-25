@@ -45,6 +45,36 @@ export function getConversationLastActivity(conversation: {
   return getLastMessageTime(conversation.messages) ?? new Date(conversation.createdAt);
 }
 
+type ActivitySource = Parameters<typeof getConversationLastActivity>[0];
+const activityMsCache = new WeakMap<ActivitySource, number>();
+
+/**
+ * `getConversationLastActivity(c).getTime()`, computed once per conversation
+ * SNAPSHOT. Sound because conversation objects in the store are immutable immer
+ * snapshots: any change (new message, status, queue) yields a new object, so a
+ * stale entry is unreachable and the WeakMap lets it go.
+ *
+ * Why it exists: recency sorts called `getConversationLastActivity` inside the
+ * comparator, i.e. two `new Date(iso)` parses per comparison — ~22k parses and
+ * ~50ms per sort of 1,100 conversations, re-run on every message/status/queue
+ * event (measured 2026-09-25). Sort with `sortByActivityDesc` instead.
+ */
+export function conversationActivityMs(conversation: ActivitySource): number {
+  const cached = activityMsCache.get(conversation);
+  if (cached !== undefined) return cached;
+  const ms = getConversationLastActivity(conversation).getTime();
+  activityMsCache.set(conversation, ms);
+  return ms;
+}
+
+/** Newest-first by last activity; one key lookup per item (decorate-sort-undecorate). */
+export function sortByActivityDesc<T extends ActivitySource>(items: readonly T[]): T[] {
+  return items
+    .map((item) => ({ item, ms: conversationActivityMs(item) }))
+    .sort((a, b) => b.ms - a.ms)
+    .map(({ item }) => item);
+}
+
 /**
  * Format a duration in milliseconds as a human-readable string.
  * Examples: "30s", "5m", "2h 30m", "1d 4h"

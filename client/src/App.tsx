@@ -2,12 +2,13 @@ import { Provider, useAtomValue } from 'jotai';
 import { type ComponentType, type ReactElement, useCallback, useEffect, useRef } from 'react';
 import { BrowserRouter, Navigate, Route, Routes, useLocation, useNavigate } from 'react-router-dom';
 import { handleMessage, setSendFn, setWsStatus } from './atoms/actions';
-import { allConversationsAtom, conversationsAtom } from './atoms/conversations';
+import { conversationsAtom, savedActiveConversationPresentAtom } from './atoms/conversations';
 import { startConversationPrefetch } from './atoms/prefetch';
 import { jotaiStore } from './atoms/store';
 import { savedActiveConversationIdAtom } from './atoms/ui';
 import { BuddiesDashboard } from './components/BuddiesDashboard';
 import { ChatRoute } from './components/Chat';
+import { useOwnerUnreadTitle } from './components/buddies/channel-data';
 import { Gallery } from './components/Gallery';
 import { RobotLoader } from './components/RobotLoader';
 import { ShellDesktop } from './components/ShellDesktop';
@@ -81,7 +82,7 @@ function useWebSocketBridge() {
 function useRestoreOnLoad(device: DeviceKind) {
   const navigate = useNavigate();
   const location = useLocation();
-  const allConversations = useAtomValue(allConversationsAtom);
+  const savedActivePresent = useAtomValue(savedActiveConversationPresentAtom);
   const savedActiveId = useAtomValue(savedActiveConversationIdAtom);
   const didRestore = useRef(false);
 
@@ -98,10 +99,10 @@ function useRestoreOnLoad(device: DeviceKind) {
 
   // Initial: "/" → /chat/:id once conversations have hydrated.
   useEffect(() => {
-    if (allConversations.length === 0) return;
+    if (!savedActivePresent) return;
     if (location.pathname !== '/') return;
     tryRestore();
-  }, [allConversations.length, location.pathname, tryRestore]);
+  }, [savedActivePresent, location.pathname, tryRestore]);
 
   // HMR/visibility: re-assert URL if a soft reload landed back on "/".
   // Focus is owned by useConversationDraft — no input handling here.
@@ -228,6 +229,7 @@ function AppInner() {
   const device = useDeviceKind();
   useWebSocketBridge();
   useRestoreOnLoad(device);
+  useOwnerUnreadTitle();
 
   useEffect(() => {
     initSettings().catch(console.error);

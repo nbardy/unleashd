@@ -266,6 +266,42 @@ describe('shared-secret auth (real server)', () => {
     assert.equal(await connectWebSocket({ cookie: 'unleashd_auth=wrong' }), 'rejected');
     assert.equal(await connectWebSocket({ cookie: `unleashd_auth=${TOKEN}` }), 'open');
   });
+
+  // Wire compression lives on the same gated wiring, so it is probed here
+  // against the same real process. Without it a real `init` is 2.4 MB and
+  // /api/conversations/:id up to 1.4 MB uncompressed over a phone's LAN link.
+  test('large API responses are gzip-encoded once past the gate', async () => {
+    const response = await fetch(`${BASE}/api/provider-catalog`, {
+      headers: { authorization: `Bearer ${TOKEN}`, 'accept-encoding': 'gzip' },
+    });
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get('content-encoding'), 'gzip');
+    // fetch inflates transparently; the body must still be the JSON catalog,
+    // and large enough that the 1 KB threshold was not what decided this.
+    const body = await response.text();
+    assert.ok(body.length > 4096, `catalog body only ${body.length} bytes`);
+    JSON.parse(body);
+  });
+
+  test('the WebSocket negotiates permessage-deflate and init arrives intact', async () => {
+    const socket = new WebSocket(`ws://127.0.0.1:${PORT}/ws`, {
+      headers: { cookie: `unleashd_auth=${TOKEN}` },
+    });
+    try {
+      const first = await new Promise<string>((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error('no init within 10s')), 10_000);
+        socket.once('message', (data) => {
+          clearTimeout(timer);
+          resolve(data.toString());
+        });
+        socket.once('error', reject);
+      });
+      assert.match(socket.extensions, /permessage-deflate/);
+      assert.equal(JSON.parse(first).type, 'init');
+    } finally {
+      socket.close();
+    }
+  });
 });
 
 describe('auth policy resolution', () => {

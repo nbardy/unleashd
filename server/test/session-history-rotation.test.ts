@@ -8,6 +8,7 @@ import { WebSocketServer } from 'ws';
 import { loadAllConversations, pollForChanges } from '../src/adapters/loader';
 import { getDiskAdapter } from '../src/adapters/registry';
 import { NormalizedSessionCache } from '../src/adapters/session-cache';
+import { TranscriptTails } from '../src/adapters/transcript-tails';
 import { createConversationApplicationContext } from '../src/application/context';
 import { ConversationConfigService } from '../src/conversations/config-service';
 import { ConversationConfigStore } from '../src/conversations/config-store';
@@ -115,6 +116,7 @@ test('bound native sessions retain display history across capped startup, pollin
     },
   };
   const cache = new NormalizedSessionCache(path.join(root, 'cache'));
+  const tails = new TranscriptTails();
   const webSocketServer = new WebSocketServer({ noServer: true });
   t.after(() => webSocketServer.close());
 
@@ -190,6 +192,7 @@ test('bound native sessions retain display history across capped startup, pollin
           ...options,
           adapters: [adapter],
           cache,
+          tails,
         });
         return result;
       },
@@ -202,7 +205,8 @@ test('bound native sessions retain display history across capped startup, pollin
       persistCurrentSession,
       broadcast: (message) => {
         broadcasts.push(message);
-        if (message.type === 'conversations_updated' && !message.summaries) onPoll?.();
+        // onPoll is armed only after startup, so any update here is the poller's.
+        if (message.type === 'conversations_updated') onPoll?.();
       },
       logger: {
         log: () => {},
@@ -286,14 +290,10 @@ test('bound native sessions retain display history across capped startup, pollin
     'persisted live rows replace, rather than duplicate, streamed rows'
   );
   assert.equal(runtime.createdAt.toISOString(), originalDate);
-  const update = first.broadcasts.findLast(
-    (entry) => entry.type === 'conversations_updated' && !entry.summaries
-  );
+  const update = first.broadcasts.findLast((entry) => entry.type === 'conversations_updated');
   assert.ok(update && update.type === 'conversations_updated');
-  assert.deepEqual(
-    update.conversations[0].messages.map((message) => message.content),
-    expected
-  );
+  assert.equal(update.summaries, true);
+  assert.equal(update.conversations[0].messageCount, expected.length);
 
   // A late write to a historical session refreshes its history, not current metadata.
   const late: Message = {

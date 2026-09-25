@@ -173,6 +173,15 @@ export function conversationKindFromLegacy(input: {
 }
 
 // Effective kind for any Conversation-shaped object (compat: derives when field absent).
+//
+// A present `kind` is returned as-is, NOT re-parsed. Every `Conversation` crosses
+// a boundary that already validated it — the WS wire schema (`ConversationSchema.kind`
+// is required) on the client, `conversationKindFromLegacy` in the server loaders —
+// so the typed field IS canonical. Re-running `ConversationKindSchema.safeParse`
+// here cost ~20ms per pass over 1,100 conversations, and the client's derived
+// atoms (allConversationsAtom, buddy sidebar) ran that pass on every message /
+// status / queue event (measured 2026-09-25). Only a legacy record without `kind`
+// takes the derivation path, which still validates its `buddyContext`.
 export function getConversationKind(
   value:
     | {
@@ -184,10 +193,10 @@ export function getConversationKind(
     | undefined
 ): ConversationKind {
   if (!value) return { kind: 'general' };
+  if (value.kind) return value.kind;
   return conversationKindFromLegacy({
     buddyContext: value.buddyContext ?? null,
     purpose: value.purpose ?? null,
-    kind: value.kind ?? null,
   });
 }
 

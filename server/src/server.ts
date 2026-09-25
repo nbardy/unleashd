@@ -14,11 +14,13 @@ import { BuddyOperationInputSchemas } from './buddies/operations';
 import { BuddyRunExecutor } from './buddies/run-executor';
 
 import { executeCommand } from '@nbardy/agent-cli';
+import compression from 'compression';
 import express, { type ErrorRequestHandler } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import { WebSocketServer } from 'ws';
 import { loadAllConversations, pollForChanges } from './adapters/loader';
 import { NormalizedSessionCache } from './adapters/session-cache';
+import { TranscriptTails } from './adapters/transcript-tails';
 import { appDataDirectory, uploadsDirectory } from './app-data';
 import { createConversationApplicationContext } from './application/context';
 import { registerAuthRoutes } from './auth/express';
@@ -74,6 +76,7 @@ import { registerSwarmReadModelRoutes } from './swarm/read-model-routes';
 import { registerSwarmRuntimeRoutes } from './swarm/routes';
 import { isProcessAlive, readLatestSwarmRuntime } from './swarm/runtime';
 import { registerConversationWebSocket } from './transport/conversation-websocket';
+import { WS_LIVENESS_INTERVAL_MS, superviseLiveness } from './transport/websocket';
 
 import { auditLocalAgents } from './audit.js';
 import { type StableConversationPorts, slotOf } from './buddies/buddy-conversation-slots';
@@ -84,6 +87,7 @@ import { onChannelPost } from './buddies/channel-post-feed';
 import { createCliReplyGate } from './buddies/channel-reply-gate';
 import { createChannelResponder } from './buddies/channel-responder';
 import { registerChannelRoutes } from './buddies/channel-routes';
+import { ownerChannelReads } from './buddies/owner-channel-reads';
 import { BuddyControlServer } from './buddies/control-server';
 import {
   createBuddyDispatchService,
@@ -121,7 +125,23 @@ console.log(`[auth] ${describePolicy(AUTH_POLICY)}`);
 // `new WebSocketServer({ server })` accepts every upgrade before any of our
 // code runs, so the socket — which carries the full command surface — would
 // stay open to anyone who can reach the port.
-const wss = new WebSocketServer({ noServer: true });
+//
+// permessage-deflate: the `init` snapshot is ~2.4 MB of JSON for a real
+// history (~190 KB deflated), which over a LAN/phone link was the dominant
+// cost of opening the app. Browsers offer the extension on every WebSocket
+// handshake, so enabling it here is the whole change; `handleUpgrade` does the
+// negotiation, so noServer + the gated upgrade handler below are unaffected.
+// Frames under `threshold` (streaming deltas, acks) are sent uncompressed.
+// Context takeover stays ON: consecutive streaming deltas share most of their
+// bytes, and the per-connection cost (~200 KB of zlib state at memLevel 7) is
+// trivial for the handful of tabs this server ever has open.
+const wss = new WebSocketServer({
+  noServer: true,
+  perMessageDeflate: {
+    threshold: 1024,
+    zlibDeflateOptions: { memLevel: 7 },
+  },
+});
 server.on('upgrade', (request, socket, head) => {
   const gateRequest = {
     method: request.method ?? 'GET',
@@ -137,6 +157,7 @@ server.on('upgrade', (request, socket, head) => {
     wss.emit('connection', client, request);
   });
 });
+wss.on('connection', (client) => superviseLiveness(client, WS_LIVENESS_INTERVAL_MS));
 const conversationConfigStore = new ConversationConfigStore({
   appDataRoot: APP_DATA_DIR,
   logger: {
@@ -146,6 +167,7 @@ const conversationConfigStore = new ConversationConfigStore({
 const normalizedSessionCache = new NormalizedSessionCache(
   path.join(APP_DATA_DIR, 'session-cache-v1')
 );
+const transcriptTails = new TranscriptTails();
 const conversationConfigService = new ConversationConfigService({
   store: conversationConfigStore,
   resolver: {
@@ -204,8 +226,9 @@ const {
 // below. A reload IPC arriving mid-startup makes completeStartup() return false,
 // and before 2026-08-20 that path left this promise pending forever, so every
 // non-create WS command awaited it with no reply and no error, and the client's
-// load spinner never cleared. Waiters that resume into a non-idle state are
-// refused by beginMutation with a typed rejection, which the client can retry.
+// load spinner never cleared. Waiters hold a command slot while they wait (so a
+// reload queued during startup waits for them); one that resumes into a
+// non-idle state is refused with a typed rejection, which the client can retry.
 let resolveInitialLoad!: () => void;
 const initialLoadComplete = new Promise<void>((resolve) => {
   resolveInitialLoad = resolve;
@@ -368,13 +391,13 @@ registerConversationWebSocket(wss, {
   // for mutations on existing history. WS `init` streams immediately with
   // `loading:true` + summaries; Phase 2 batches arrive via
   // `conversations_updated` and `conversation_load_complete` flips `idle`.
-  // Only `create_conversation` is allowed during `starting` (5d79890) — it
-  // mints a fresh UUID/config record that cannot collide with disk hydration.
-  // All other commands await `initialLoadComplete` in the WS handler so they
-  // never race the authoritative restore.
+  // Every command is admitted (counted as active work) during `starting`.
+  // Only `create_conversation` RUNS during `starting` (5d79890) — it mints a
+  // fresh UUID/config record that cannot collide with disk hydration. All
+  // other commands hold their slot and await `initialLoadComplete` in the WS
+  // handler so they never race the authoritative restore.
   isInitialLoadComplete: () => shutdownController?.state === 'idle',
-  beginCommand: (command) =>
-    beginMutation({ allowDuringStartup: command.type === 'create_conversation' }),
+  beginCommand: () => beginMutation({ allowDuringStartup: true }),
   configService: conversationConfigService,
   isBuddyArchived: async (buddyId) =>
     (await getBuddiesStore()).getBuddy(buddyId)?.status === 'archived',
@@ -404,6 +427,13 @@ registerConversationWebSocket(wss, {
 // Auth first: every route below (API, uploads, and the static app shell) is
 // unreachable without the shared secret.
 registerAuthRoutes(app, AUTH_POLICY);
+
+// gzip/deflate every compressible response over 1 KB (JSON API, the app
+// shell's JS/CSS). Mounted AFTER the gate so an unauthenticated caller costs
+// no compression work. /api/conversations/:id reaches 1.36 MB for a long
+// thread. There are no streaming (SSE / chunked res.write) routes; if one is
+// added it must call `res.flush()` after each write or compression buffers it.
+app.use(compression({ threshold: 1024 }));
 
 // JSON body parser for API routes.
 // Default limit is 100kb which is far too small — queue-message, merge, and
@@ -540,6 +570,8 @@ onChannelPost((post) => {
 registerChannelRoutes(app, {
   getStore: getBuddiesStore,
   uploadsRoot: UPLOADS_DIR,
+  ownerReads: ownerChannelReads(path.join(appDataDirectory(), 'owner-channel-reads.json')),
+  channelChanged,
   sendError: sendBuddiesError,
   responder: channelResponder,
   direct: createBuddyDirect({ getStore: getBuddiesStore, conversations: buddyConversations }),
@@ -685,7 +717,11 @@ const sessionLoader = createSessionLoader({
   loadConversations: (options) =>
     loadAllConversations({ ...options, cache: normalizedSessionCache }),
   pollConversations: (mtimes, activeIds, options) =>
-    pollForChanges(mtimes, activeIds, { ...options, cache: normalizedSessionCache }),
+    pollForChanges(mtimes, activeIds, {
+      ...options,
+      cache: normalizedSessionCache,
+      tails: transcriptTails,
+    }),
   createConversation: (options) => new Conversation(options),
   createId: uuidv4,
   resolveBuddyConversation,
@@ -701,6 +737,9 @@ void runServerStartup(
     host: LISTEN_HOST,
     development: process.env.NODE_ENV === 'development',
     developmentClientPort: DEV_CLIENT_PORT,
+    // A TTY means a person ran `pnpm start`; tests and agent-launched servers
+    // pipe stdout and must never open a browser window (see StartupOptions).
+    browser: process.stdout.isTTY ? 'open' : 'none',
   },
   {
     server,

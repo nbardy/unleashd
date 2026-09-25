@@ -62,6 +62,14 @@ through `GET /api/conversations/:id`. Check `conversationDetailsLoadedAtomFamily
 when the UI needs a complete transcript; preserve hydrated messages when merging
 summary updates.
 
+The disk poller sends ONLY summaries. Until 2026-09-25 it pushed the full
+`ConversationData` (~400-500KB) of every still-growing external transcript to
+every client every 5s. So a summary whose `messageCount` differs from a loaded
+history is how a client learns that history is stale: the open conversation
+refetches in place, any other loaded one is unmarked and refetches when opened
+(`refreshStaleDetails` in `client/src/atoms/actions.ts`). Guard:
+`client/test/summary-history-refresh.test.ts`.
+
 `init.loading` means historical loading is still in progress. The client keeps
 prior state while batches arrive and marks completion on `conversation_load_complete`.
 Only WebSocket `create_conversation` bypasses the startup barrier and is admitted

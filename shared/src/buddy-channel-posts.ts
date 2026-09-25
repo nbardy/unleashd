@@ -94,3 +94,52 @@ export const ChannelComposerDraftSchema = z.object({
 
 export type ChannelReference = z.infer<typeof ChannelReferenceSchema>;
 export type ChannelComposerDraft = z.infer<typeof ChannelComposerDraftSchema>;
+
+// The owner's channel read state (server/src/buddies/owner-channel-reads.ts):
+// kept apart from the Buddies' own read marks. A channel the owner has never
+// opened reads from the baseline, the moment owner read state began.
+export const OwnerReadThroughSchema = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('post'), postId: z.string(), createdAt: z.string() }),
+  z.object({ kind: z.literal('baseline'), at: z.string() }),
+]);
+
+export const OwnerListUnreadSchema = z.object({
+  listId: z.string(),
+  readThrough: OwnerReadThroughSchema,
+  // What "mark read" echoes back; null only for a channel with no posts.
+  newestPostId: z.string().nullable(),
+  // Top-level posts by others since readThrough: the channel shows bold.
+  unread: z.number(),
+  // Replies by others in threads the owner started or replied in: the badge.
+  repliesToYou: z.number(),
+  // Thread roots with a reply by others since readThrough.
+  unreadThreads: z.array(z.string()),
+});
+
+export const OwnerChannelUnreadSchema = z.object({
+  workspaces: z.array(z.object({ workspaceId: z.string(), lists: z.array(OwnerListUnreadSchema) })),
+  // The scan stopped early: every count is a lower bound.
+  capped: z.boolean(),
+});
+
+export type OwnerReadThrough = z.infer<typeof OwnerReadThroughSchema>;
+export type OwnerListUnread = z.infer<typeof OwnerListUnreadSchema>;
+export type OwnerChannelUnread = z.infer<typeof OwnerChannelUnreadSchema>;
+
+// Posts order by (createdAt, id), the Buddies package's keyset order. The
+// server counts unread with this and the client draws "New messages" with it,
+// so the two can never disagree about which post is the first unread one.
+export function isAfterReadThrough(
+  post: { id: string; createdAt: string },
+  readThrough: OwnerReadThrough
+): boolean {
+  switch (readThrough.kind) {
+    case 'post':
+      return (
+        post.createdAt > readThrough.createdAt ||
+        (post.createdAt === readThrough.createdAt && post.id > readThrough.postId)
+      );
+    case 'baseline':
+      return post.createdAt > readThrough.at;
+  }
+}

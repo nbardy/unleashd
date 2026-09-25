@@ -237,6 +237,22 @@ export function loadResource<T>(resource: Resource<T>): Promise<void> {
 }
 
 /**
+ * Hold `value` under `resource.key` as though it had just loaded. For a value
+ * assembled from reads already made: a channel that paged back seeds its new
+ * window key with the posts it holds plus the page it fetched
+ * (components/buddies/channel-data.ts `useChannelFeed`), so switching to that
+ * key renders at once instead of flashing the loader. Mounting it still
+ * revalidates.
+ */
+export function seedResource<T>(resource: Resource<T>, value: T): void {
+  loaders.set(resource.key, resource as Resource<unknown>);
+  writeEntry(
+    resource.key,
+    settledEntry(jotaiStore.get(resourceCacheAtom).get(resource.key), value)
+  );
+}
+
+/**
  * Re-run the loader for every MOUNTED key the predicate selects.
  *
  * This is the hook for "the database changed" pushes: a server event maps to
@@ -283,6 +299,10 @@ export const invalidateBuddyResources = (): void =>
  * carries only `listId`, so every mounted Task feed refreshes. Only mounted
  * keys refetch — in practice the one feed on screen. Before 2026-09-25 a
  * mention reply under a Task filter waited out the backstop too.
+ *
+ * The owner's unread state (`OWNER_UNREAD_PATH`) spans every channel, so any
+ * channel's push refreshes it; the server also pushes `channel_changed` when
+ * the owner marks a channel read, which is what clears it on other devices.
  */
 export const invalidateChannelResources = (listId: string): void => {
   const prefix = `/api/buddies/lists/${encodeURIComponent(listId)}/`;
@@ -290,7 +310,8 @@ export const invalidateChannelResources = (listId: string): void => {
     (key) =>
       key.startsWith(prefix) ||
       key.startsWith('/api/buddies/lists?') ||
-      key.startsWith('/api/buddies/posts?')
+      key.startsWith('/api/buddies/posts?') ||
+      key === '/api/buddies/channels/unread'
   );
 };
 

@@ -1,3 +1,5 @@
+import { type RefObject, useEffect, useRef } from 'react';
+import type { OlderEdge } from './channel-data';
 import './ChannelLoader.css';
 
 // Shown while a channel or thread has never loaded. Before this the pane
@@ -35,4 +37,61 @@ export function ChannelLoader({ label }: { label: string }) {
       <span className="channel-loader-label">{label}</span>
     </output>
   );
+}
+
+// Older posts start loading this far above the top of the view, so a reader
+// scrolling up meets posts rather than the flame.
+const PRELOAD_MARGIN = '1200px 0px 0px 0px';
+
+/**
+ * The top of a channel feed, one view per OlderEdge: reaching it loads the
+ * page before the oldest post shown (channel-data.ts useChannelFeed).
+ */
+export function ChannelHistory({
+  edge,
+  scrollRef,
+  onReach,
+}: {
+  edge: OlderEdge;
+  scrollRef: RefObject<HTMLDivElement | null>;
+  onReach(): void;
+}) {
+  const sentinelRef = useRef<HTMLDivElement>(null);
+  const reachRef = useRef(onReach);
+  reachRef.current = onReach;
+  // Observed afresh on every edge change: observe() reports the current
+  // intersection at once, so when a loaded page is too short to move the top
+  // out of range the next one loads without waiting for another scroll.
+  useEffect(() => {
+    const sentinel = sentinelRef.current;
+    if (edge.kind !== 'more' || !sentinel) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries.some((entry) => entry.isIntersecting)) reachRef.current();
+      },
+      { root: scrollRef.current, rootMargin: PRELOAD_MARGIN }
+    );
+    observer.observe(sentinel);
+    return () => observer.disconnect();
+  }, [edge.kind, scrollRef]);
+  switch (edge.kind) {
+    case 'more':
+    case 'loading':
+      return (
+        <div ref={sentinelRef} className="channel-history">
+          <ChannelLoader label="Loading older posts…" />
+        </div>
+      );
+    case 'failed':
+      return (
+        <div className="channel-history channel-history-failed" role="alert">
+          <span>Older posts could not load: {edge.error.message}</span>
+          <button type="button" onClick={onReach}>
+            Retry
+          </button>
+        </div>
+      );
+    case 'complete':
+      return null;
+  }
 }

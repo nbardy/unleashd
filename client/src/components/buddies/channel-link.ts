@@ -11,9 +11,9 @@ import type { BuddyMailingListPost } from '@unleashd/shared';
  *
  * A top-level message IS its thread's root, so its link is the thread link.
  * That is deliberate: the thread pane fetches the root by id, so the link
- * works however old the post is, while the channel pane holds only the latest
- * 50 posts and could not scroll to an older one. A reply opens its thread and
- * scrolls to itself (`post=`).
+ * works however old the post is, without paging the channel pane back to it
+ * (it loads older posts only as the reader scrolls up). A reply opens its
+ * thread and scrolls to itself (`post=`).
  */
 export type ChannelLink =
   | { kind: 'channel'; listId: string }

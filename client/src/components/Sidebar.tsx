@@ -47,6 +47,7 @@ import { SearchPalette } from './SearchPalette';
 import { DmIcon, WakeIcon, WakeIndicator } from './buddies/WakeIndicator';
 import { useBuddyDirectActions } from './buddies/buddy-direct-actions';
 import { buddyTabPath } from './buddies/buddy-tabs';
+import { ownerUnreadTotal, useOwnerUnread } from './buddies/channel-data';
 import { createBuddyViaBuilder } from './buddies/create-buddy-builder';
 import { getConversationTitle } from './conversation-title';
 import './Sidebar.css';
@@ -230,6 +231,7 @@ export function Sidebar() {
   const buddySidebarGroups = useAtomValue(buddySidebarGroupsAtom);
   const buddyCount = useAtomValue(buddySidebarCountAtom);
   const channelsWorkspaces = useAtomValue(buddySidebarChannelsAtom);
+  const ownerUnread = useOwnerUnread().data;
   const runningCountByFolder = useAtomValue(sidebarRunningCountByFolderAtom);
   const [expandedBuddies, setExpandedBuddies] = useState<Set<string>>(() => new Set());
   const [expandedDirectories, setExpandedDirectories] = useState<Set<string>>(() => new Set());
@@ -836,6 +838,7 @@ export function Sidebar() {
                 channelsWorkspaces.map((project) => {
                   const path = `/buddies/workspaces/${encodeURIComponent(project.workspaceId)}/channels`;
                   const isActive = location.pathname === path;
+                  const unread = ownerUnreadTotal(ownerUnread, project.workspaceId);
                   return (
                     <div
                       key={project.workspaceId}
@@ -845,10 +848,19 @@ export function Sidebar() {
                         className="folder-group-name sidebar-project-link"
                         to={path}
                         aria-current={isActive ? 'page' : undefined}
+                        data-unread={unread.unreadChannels > 0 || undefined}
                         title={`${project.name} channels`}
                       >
                         <span className="folder-group-name"># {project.name}</span>
                       </Link>
+                      {unread.repliesToYou > 0 && (
+                        <span
+                          className="sidebar-channels-badge"
+                          aria-label={`${unread.repliesToYou} new replies to you`}
+                        >
+                          {unread.repliesToYou}
+                        </span>
+                      )}
                     </div>
                   );
                 })}

@@ -74,6 +74,44 @@
   }
 }
 
+/* The same flame, compact, at the top of a feed while older posts load. */
+.channel-history .channel-loader {
+  flex-direction: row;
+  min-height: 0;
+  height: auto;
+  padding: 18px 0 10px;
+}
+
+.channel-history .channel-loader-flame {
+  width: 16px;
+  height: 22px;
+}
+
+.channel-history-failed {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 18px 12px 10px;
+  color: var(--text-secondary);
+  font-size: 13px;
+}
+
+.channel-history-failed button {
+  padding: 3px 10px;
+  border: 1px solid var(--border-default);
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-primary);
+  font: inherit;
+  cursor: pointer;
+}
+
+.channel-history-failed button:hover {
+  color: var(--text-bright);
+  border-color: var(--border-emphasis);
+}
+
 @media (prefers-reduced-motion: reduce) {
   .channel-loader-sway,
   .channel-loader-outer,

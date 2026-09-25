@@ -19,6 +19,11 @@
   border-color: var(--theme-user);
 }
 
+.channel-composer-field {
+  position: relative;
+}
+
+.channel-composer-highlight,
 .channel-composer textarea {
   display: block;
   width: 100%;
@@ -30,7 +35,48 @@
   font: inherit;
   font-size: 14.5px;
   line-height: 1.5;
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  word-wrap: break-word;
+}
+
+.channel-composer textarea {
+  position: relative;
   resize: none;
+}
+
+/* Picked @names are painted on the mirror. The textarea keeps the caret and
+   the real text; its glyphs stay invisible so the highlight shows through
+   without shifting the caret (no extra padding or weight on the mark). */
+.channel-composer-highlight {
+  position: absolute;
+  inset: 0;
+  width: auto;
+  overflow: hidden;
+  pointer-events: none;
+  min-height: 0;
+}
+
+.channel-composer-highlight mark {
+  border-radius: 3px;
+  /* Stronger than the sent pill: the composer cannot use bold without
+     shifting the caret, and 18% disappears on the dark field. */
+  background: color-mix(in srgb, var(--theme-user) 42%, transparent);
+  color: var(--text-bright);
+}
+
+.channel-composer-highlight mark[data-kind="task"] {
+  background: color-mix(in srgb, var(--text-muted) 22%, transparent);
+}
+
+.channel-composer textarea.channel-composer-mirrored {
+  color: transparent;
+  caret-color: var(--text-primary);
+}
+
+.channel-composer textarea.channel-composer-mirrored::selection {
+  color: transparent;
+  background: color-mix(in srgb, var(--theme-user) 35%, transparent);
 }
 
 .channel-composer textarea:focus {

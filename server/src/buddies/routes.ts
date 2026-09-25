@@ -35,6 +35,7 @@ import {
   buddyExecutionPreferences,
   configFromProviderPreferences,
 } from '../conversations/config-mapping';
+import { type ChannelRead, readChannel } from './channel-pages';
 import { ListAuthorSchema } from './channel-routes';
 import type { BuddiesStorePort, BuddyAutomation, BuddyAutomationRun } from './contract';
 import { coordinationStore } from './coordination-store';
@@ -108,6 +109,28 @@ export interface BuddyRouteDependencies {
    * See docs/architecture.md 2.1.
    */
   isConversationDeleted(conversationId: string): Promise<boolean>;
+}
+
+const ChannelReadQuerySchema = z
+  .object({
+    limit: z.coerce.number().int().min(1).max(50).optional(),
+    before: z.string().min(1).optional(),
+    from: z.string().min(1).optional(),
+  })
+  .strict();
+
+// κ for the owner's channel read. A floor that is not a top-level post here
+// is a 400, not an empty window.
+function channelRead(buddies: BuddiesStorePort, listId: string, query: unknown): ChannelRead {
+  const input = ChannelReadQuerySchema.parse(query);
+  if (input.from === undefined)
+    return { kind: 'older', anchor: input.before ?? null, limit: input.limit ?? 20 };
+  if (input.before !== undefined || input.limit !== undefined)
+    throw new Error('`from` reads everything from one post on; it takes no `before` or `limit`');
+  const floor = buddies.getPost(input.from);
+  if (!floor || floor.listId !== listId || floor.threadRootId !== null)
+    throw new Error('`from` must name a top-level post in this list');
+  return { kind: 'from', floor };
 }
 
 function memoryPayload(req: Request): Record<string, unknown> {
@@ -816,6 +839,10 @@ export function registerBuddyRoutes(app: Express, dependencies: BuddyRouteDepend
     res.status(201).json(buddies.createList({ workspace: workspaceId, ...rest }));
   });
 
+  // Top-level posts, newest-first: the newest page, `before=<post>` for the
+  // page older than it, or `from=<post>` for that post and everything newer
+  // (channel-pages.ts ChannelRead). Keyset, never offsets: an offset read of
+  // the next page repeats a post whenever one lands between the two reads.
   route.get('/api/buddies/lists/:listId/posts', 400, async (req, res) => {
     const buddies = await getStore();
     const list = buddies.getList(req.params.listId);
@@ -823,14 +850,8 @@ export function registerBuddyRoutes(app: Express, dependencies: BuddyRouteDepend
       res.status(404).json({ error: 'Mailing list not found' });
       return;
     }
-    const input = z
-      .object({
-        limit: z.coerce.number().int().min(1).max(50).optional(),
-        offset: z.coerce.number().int().min(0).optional(),
-      })
-      .strict()
-      .parse(req.query);
-    res.json(buddies.listPosts({ list: list.id, ...input }).map(withPostProvenanceFields));
+    const read = channelRead(buddies, list.id, req.query);
+    res.json(readChannel(buddies, list.id, read).map(withPostProvenanceFields));
   });
 
   route.get('/api/buddies/lists/:listId/threads/:postId', 400, async (req, res) => {

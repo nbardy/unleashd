@@ -100,3 +100,139 @@
 .buddy-messages__decision[open] summary::after {
   content: "−";
 }
+.buddy-messages-list-section {
+  display: grid;
+  gap: 12px;
+  margin-top: 8px;
+}
+.buddy-messages-list-section h3,
+.buddy-messages-list-section p {
+  margin: 0;
+}
+.buddy-messages-list-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.buddy-messages-list-chips button {
+  min-height: 44px;
+  padding: 10px 14px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--ui-radius);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font: inherit;
+}
+.buddy-messages-list-chips button[aria-pressed="true"] {
+  border-color: var(--accent-primary);
+}
+.buddy-messages-list-panes {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: minmax(160px, 220px) minmax(0, 1fr);
+  align-items: start;
+}
+.buddy-messages-list-panes .buddy-messages-list-chips {
+  flex-direction: column;
+  align-items: stretch;
+}
+.buddy-messages-list-panes .buddy-messages-list-chips button {
+  width: 100%;
+  text-align: left;
+}
+.buddy-messages-list-main {
+  display: grid;
+  gap: 12px;
+  min-width: 0;
+}
+.buddy-messages-list-filter {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.buddy-messages-list-filter > span {
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+.buddy-messages-list-filter-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.buddy-messages-list-filter-options button {
+  min-height: 32px;
+  padding: 4px 10px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--ui-radius);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font: inherit;
+  font-size: 12px;
+}
+.buddy-messages-list-filter-options button[aria-pressed="true"] {
+  border-color: var(--accent-primary);
+}
+@media (max-width: 640px) {
+  .buddy-messages-list-panes {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.buddy-messages-list-feed {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--ui-radius);
+  background: var(--bg-raised-1);
+  overflow-wrap: anywhere;
+}
+.buddy-messages-list-feed h4,
+.buddy-messages-list-feed p {
+  margin: 0;
+}
+.buddy-messages-list-posts {
+  display: grid;
+  gap: 12px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.buddy-messages-list-post {
+  display: grid;
+  gap: 8px;
+  padding-left: 12px;
+  border-left: 2px solid var(--accent-primary);
+}
+.buddy-messages-list-post-heading {
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.buddy-messages-list-post-heading span {
+  color: var(--text-secondary);
+  font-size: 12px;
+}
+.buddy-messages-list-composer,
+.buddy-messages-list-composer label {
+  display: grid;
+  gap: 8px;
+}
+.buddy-messages-list-composer textarea,
+.buddy-messages-list-composer input,
+.buddy-messages-list-composer button {
+  min-height: 44px;
+  padding: 10px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--ui-radius);
+  background: var(--bg-primary);
+  color: var(--text-primary);
+  font: inherit;
+}

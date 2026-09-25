@@ -909,6 +909,23 @@ a.sidebar-buddy-wake-done {
   color: var(--text-emphasis);
 }
 
+.sidebar-channels-row .sidebar-project-link[data-unread] .folder-group-name {
+  color: var(--text-bright);
+  font-weight: 700;
+}
+
+.sidebar-channels-badge {
+  flex: none;
+  min-width: 16px;
+  margin-left: auto;
+  padding: 2px 5px;
+  border-radius: 999px;
+  background: var(--danger);
+  color: #fff;
+  font: 700 10px / 1 var(--font-mono);
+  text-align: center;
+}
+
 .sidebar-folder-icon,
 .sidebar-buddy-icon {
   display: block;

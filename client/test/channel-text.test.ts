@@ -4,6 +4,7 @@ import {
   type ChannelReference,
   activeReferenceQuery,
   completesPickedReference,
+  composerReferenceMarks,
   decodeChannelDraft,
   encodeChannelDraft,
   encodeReferences,
@@ -119,6 +120,25 @@ test('a picked reference closes the @ query it completed', () => {
   assert.equal(completesPickedReference('Lead Designer can you', [leadDesigner], all), true);
   // Still typing toward a longer name keeps the menu open.
   assert.equal(completesPickedReference('Lead Des', [lead], all), false);
+});
+
+test('a picked @name is marked in the composer exactly where send will tokenise it', () => {
+  const text = '@Lead Designer and @Lead, see @Fix login (v2). @Leadership';
+  const picked = [lead, leadDesigner, task];
+  assert.deepEqual(composerReferenceMarks(text, picked), [
+    { start: 0, end: '@Lead Designer'.length, kind: 'buddy' },
+    {
+      start: text.indexOf('@Lead,'),
+      end: text.indexOf('@Lead,') + '@Lead'.length,
+      kind: 'buddy',
+    },
+    {
+      start: text.indexOf('@Fix login (v2)'),
+      end: text.indexOf('@Fix login (v2)') + '@Fix login (v2)'.length,
+      kind: 'task',
+    },
+  ]);
+  assert.deepEqual(composerReferenceMarks('@Leadership', [lead]), []);
 });
 
 // A draft must bring its picks back with the text (2026-09-24 draft fix):

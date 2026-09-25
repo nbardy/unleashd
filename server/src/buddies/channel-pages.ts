@@ -5,6 +5,8 @@ import type { BuddiesStorePort, BuddyMailingListPost } from './contract';
 // as the next `before` (older) / `after` (newer) anchor, null when there is
 // nothing further that way. Anchors are keyset positions in the package, so a
 // post landing between two reads can neither repeat nor skip a post.
+//
+// The owner's channel view pages the same keyset (`readChannel` below).
 
 export type PageScope = { list: string } | { thread: string };
 
@@ -91,5 +93,50 @@ export function readPage(
         newer: after.more ? last(posts) : null,
       };
     }
+  }
+}
+
+// The owner's channel read (GET /api/buddies/lists/:listId/posts), newest-first:
+//   D = Older(anchor, limit) ⊕ From(floor)
+// Older with a null anchor is the newest page; with a post, the page before
+// it. From is the window a reader holds once they have paged back: the floor
+// and every newer post. Re-reading the newest page instead would slide the
+// window, pushing the oldest post out above the reader on every new post,
+// and leave a gap between it and the history they loaded.
+export type ChannelRead =
+  | { kind: 'older'; anchor: string | null; limit: number }
+  | { kind: 'from'; floor: BuddyMailingListPost };
+
+// The package's per-read ceiling (MAX_THREAD_REPLIES_PER_READ).
+const READ_CHUNK = 200;
+
+export function readChannel(
+  store: BuddiesStorePort,
+  list: string,
+  read: ChannelRead
+): BuddyMailingListPost[] {
+  switch (read.kind) {
+    case 'older':
+      return store
+        .pagePosts({ list, direction: 'older', anchor: read.anchor, limit: read.limit })
+        .reverse();
+    case 'from':
+      return readFrom(store, list, read.floor).reverse();
+  }
+}
+
+// Unbounded on purpose: it is exactly what the reader already scrolled back
+// through, in chunks of the package ceiling.
+function readFrom(
+  store: BuddiesStorePort,
+  list: string,
+  floor: BuddyMailingListPost
+): BuddyMailingListPost[] {
+  const posts = [floor];
+  for (let anchor = floor.id; ; ) {
+    const rows = store.pagePosts({ list, direction: 'newer', anchor, limit: READ_CHUNK });
+    posts.push(...rows);
+    if (rows.length < READ_CHUNK) return posts;
+    anchor = rows[rows.length - 1].id;
   }
 }

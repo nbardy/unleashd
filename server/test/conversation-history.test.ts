@@ -289,15 +289,22 @@ test('privacy rotation retains display history and durable birth date through po
     })),
     CURRENT_DATE
   );
+  const broadcastsBeforePoll = live.broadcasts.length;
   await live.poll([current]);
   assert.deepEqual(contents(conversation), [...ORIGINAL_CONTENT, ...CURRENT_CONTENT]);
   assert.equal(conversation.createdAt.toISOString(), ORIGINAL_DATE);
+  // The poller broadcasts summaries; clients refetch history when messageCount moves.
   const update = live.broadcasts
-    .filter((event) => event.type === 'conversations_updated' && !event.summaries)
+    .slice(broadcastsBeforePoll)
+    .filter((event) => event.type === 'conversations_updated')
     .at(-1);
   assert.equal(update?.type, 'conversations_updated');
   if (update?.type === 'conversations_updated') {
-    assert.deepEqual(contents(update.conversations[0]), [...ORIGINAL_CONTENT, ...CURRENT_CONTENT]);
+    assert.equal(update.summaries, true);
+    assert.equal(
+      update.conversations[0].messageCount,
+      ORIGINAL_CONTENT.length + CURRENT_CONTENT.length
+    );
     assert.equal(new Date(update.conversations[0].createdAt).toISOString(), ORIGINAL_DATE);
   }
 

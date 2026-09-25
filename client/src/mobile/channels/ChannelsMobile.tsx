@@ -1,10 +1,10 @@
-import type { BuddyMailingListPost, BuddyOwnerPostResult } from '@unleashd/shared';
+import type { BuddyMailingListPost, BuddyOwnerPostResult, OwnerListUnread } from '@unleashd/shared';
 import { useMemo, useState } from 'react';
 import { Link, Navigate, useLocation, useParams } from 'react-router-dom';
 import { BuddySigil } from '../../components/buddies/BuddySigil';
 import { ChannelAuthor, useChatPageDm } from '../../components/buddies/ChannelAuthor';
 import { ChannelComposer } from '../../components/buddies/ChannelComposer';
-import { ChannelLoader } from '../../components/buddies/ChannelLoader';
+import { ChannelHistory, ChannelLoader } from '../../components/buddies/ChannelLoader';
 import { ChannelMarkdown, TypingDots } from '../../components/buddies/ChannelMarkdown';
 import { CopyLinkButton } from '../../components/buddies/CopyLinkButton';
 import { WakeIcon, WakeIndicator } from '../../components/buddies/WakeIndicator';
@@ -15,18 +15,23 @@ import {
   type ChannelMember,
   type ChannelRow,
   type WorkspaceDirectory,
-  channelPostsResource,
+  arrivalMarks,
   channelRows,
   channelThreadResource,
+  channelUnreadAttr,
   clockTime,
   createChannel,
   feedPhase,
   listsUrl,
+  ownerUnreadByList,
   postPurposeLabel,
   postPurposeTag,
   renderFeed,
+  useChannelFeed,
   useChannelResponding,
   useFollowBottom,
+  useOwnerChannelVisit,
+  useOwnerUnread,
   useWarmChannelPosts,
   useWithOutbox,
   useWorkspaceDirectory,
@@ -100,11 +105,17 @@ export function ChannelsMobile() {
     CHANNEL_BACKSTOP_MS
   );
   useWarmChannelPosts(lists.data);
+  const ownerUnread = useOwnerUnread();
+  const unreadByList = useMemo(
+    () => ownerUnreadByList(ownerUnread.data, workspaceId),
+    [ownerUnread.data, workspaceId]
+  );
   return renderScreen(screen, {
     workspaceId,
     directory,
     lists: lists.data ?? null,
     refetchLists: lists.refetch,
+    unreadByList,
   });
 }
 
@@ -113,6 +124,7 @@ type ScreenContext = {
   directory: WorkspaceDirectory;
   lists: readonly BuddyMailingListSummary[] | null;
   refetchLists(): Promise<void>;
+  unreadByList: ReadonlyMap<string, OwnerListUnread>;
 };
 
 function renderScreen(screen: MobileChannelScreen, context: ScreenContext) {
@@ -184,13 +196,14 @@ function ChannelsHome({ context }: { context: ScreenContext }) {
             <li key={list.id}>
               <Link
                 className="mobile-channels-row"
+                data-unread={channelUnreadAttr(context.unreadByList.get(list.id))}
                 to={channelsHref(workspaceId, { kind: 'channel', listId: list.id })}
               >
                 <span className="mobile-channels-row__hash" aria-hidden="true">
                   #
                 </span>
                 <span className="mobile-channels-row__name">{list.name}</span>
-                <span className="mobile-channels-row__meta">{list.postCount}</span>
+                <RepliesBadge unread={context.unreadByList.get(list.id)} />
               </Link>
             </li>
           ))}
@@ -228,6 +241,16 @@ function ChannelsHome({ context }: { context: ScreenContext }) {
         </ul>
       </MobileSection>
     </MobilePage>
+  );
+}
+
+// The red count is only what waits on the owner: replies in their threads.
+function RepliesBadge({ unread }: { unread: OwnerListUnread | undefined }) {
+  const count = unread?.repliesToYou ?? 0;
+  return count === 0 ? null : (
+    <span className="mobile-channels-row__badge" aria-label={`${count} new replies to you`}>
+      {count}
+    </span>
   );
 }
 
@@ -346,6 +369,8 @@ type RowPlace =
       kind: 'channel';
       threadHref(rootId: string): string;
       responding: ReadonlyMap<string, string>;
+      // Roots with replies the owner had not seen when they arrived.
+      unreadThreads: ReadonlySet<string>;
     }
   | { kind: 'thread' };
 
@@ -377,7 +402,14 @@ function PostFooter({ post, context }: { post: BuddyMailingListPost; context: Ro
       return (
         <div className="mobile-channel-post__footer">
           {post.replyCount > 0 ? (
-            <Link className="mobile-channel-post__replies" to={place.threadHref(rootId)}>
+            <Link
+              className="mobile-channel-post__replies"
+              data-unread={place.unreadThreads.has(rootId) || undefined}
+              to={place.threadHref(rootId)}
+            >
+              {place.unreadThreads.has(rootId) && (
+                <span className="mobile-channel-post__unread-dot" aria-label="New replies" />
+              )}
               {post.replyCount} {post.replyCount === 1 ? 'reply' : 'replies'}
               {post.latestReplyAt && <span> · {clockTime(post.latestReplyAt)}</span>}
             </Link>
@@ -500,11 +532,14 @@ function ScreenHeader({
 function ChannelScreen({ listId, context }: { listId: string; context: ScreenContext }) {
   const { workspaceId, directory, lists } = context;
   const list = lists?.find((candidate) => candidate.id === listId) ?? null;
-  const feed = usePolledFetch(channelPostsResource(listId), CHANNEL_BACKSTOP_MS);
+  const channel = useChannelFeed(listId);
+  const feed = channel.feed;
   const responding = useChannelResponding(listId, directory.buddyNames);
   const posts = useWithOutbox(workspaceId, listId, null, feed.data);
   const rows = useMemo(() => channelRows(posts ?? []), [posts]);
   const follow = useFollowBottom(rows.length, feed.data, null);
+  const visit = useOwnerChannelVisit(listId, context.unreadByList.get(listId));
+  const arrival = arrivalMarks(visit, feed.data ?? []);
   const rowContext: RowContext = {
     workspaceId,
     directory,
@@ -513,6 +548,7 @@ function ChannelScreen({ listId, context }: { listId: string; context: ScreenCon
       threadHref: (rootId) =>
         channelsHref(workspaceId, { kind: 'thread', listId, rootId, linkedPostId: null }),
       responding,
+      unreadThreads: new Set(arrival.unreadThreads),
     },
     linkedPostId: null,
   };
@@ -542,11 +578,23 @@ function ChannelScreen({ listId, context }: { listId: string; context: ScreenCon
             <MobileEmptyPanel>No posts yet. @mention a Buddy to ask it something.</MobileEmptyPanel>
           ),
           posts: () => (
-            <ol className="mobile-channel__posts">
-              {rows.map((row) => (
-                <Row key={row.key} row={row} context={rowContext} />
-              ))}
-            </ol>
+            <>
+              <ChannelHistory
+                edge={channel.edge}
+                scrollRef={follow.scrollRef}
+                onReach={() => void channel.loadOlder(follow.hold)}
+              />
+              <ol className="mobile-channel__posts">
+                {rows.map((row) => [
+                  row.kind !== 'day' && row.post.id === arrival.firstUnread && (
+                    <li key="new-messages" className="mobile-channel-new-messages">
+                      <span>New messages</span>
+                    </li>
+                  ),
+                  <Row key={row.key} row={row} context={rowContext} />,
+                ])}
+              </ol>
+            </>
           ),
         })}
       </div>

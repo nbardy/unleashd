@@ -90,6 +90,32 @@ export interface DiskAdapter {
    * cost ~8s of every startup (2026-09-25).
    */
   sessionFileKeys(filePath: string): readonly string[];
+  /** How the poller re-reads one of this adapter's sources after it changes. */
+  growth: SourceGrowth;
+}
+
+/**
+ * How a changed source is re-read.
+ *
+ * `rewritten`: every change is parsed from scratch (parseFile). Formats whose
+ * derived state needs the whole file (Codex's turn lifecycle and final sort),
+ * whole-document JSON (Gemini), or directories (OpenCode) stay here.
+ *
+ * `appended`: the provider only ever appends complete records, so a read can
+ * be resumed from its byte offset. The poller's TranscriptTails decides per
+ * change whether the file really only grew; see transcript-tails.ts.
+ */
+export type SourceGrowth =
+  | { kind: 'rewritten' }
+  | { kind: 'appended'; read(filePath: string): Promise<AppendableRead> };
+
+/** A parsed source plus the point to resume from when more bytes are appended. */
+export interface AppendableRead {
+  session: ParsedSession | null;
+  /** Byte offset just past the last record folded in. */
+  offset: number;
+  /** Fold the bytes appended since `offset`. Consumes this read. */
+  extend(): Promise<AppendableRead>;
 }
 
 /** Keys a native id is looked up under; see DiskAdapter.sessionFileKeys. */

@@ -99,8 +99,25 @@ function rejectPendingMessageCommands(error: Error): void {
 
 function markConversationDetailsLoaded(ids: Iterable<string>): void {
   const next = new Set(jotaiStore.get(conversationDetailsLoadedAtom));
-  for (const id of ids) next.add(id);
+  for (const id of ids) {
+    next.add(id);
+    staleDetailIds.delete(id);
+  }
   jotaiStore.set(conversationDetailsLoadedAtom, next);
+}
+
+// Loaded histories that a summary says have moved on since they were fetched.
+// They stay loaded (on screen, no "Loading…" flash) and refetch in place the
+// next time they become active. Marking them unloaded instead made every
+// reopened external chat show the loading screen (review of c21b131).
+const staleDetailIds = new Set<string>();
+
+function refreshIfStale(id: string): void {
+  if (!staleDetailIds.has(id)) return;
+  staleDetailIds.delete(id);
+  void loadConversationDetails(id).catch((error) => {
+    console.warn(`[WS] Could not refresh history for ${id}:`, error);
+  });
 }
 
 /**
@@ -218,6 +235,7 @@ export function setSendFn(fn: (msg: ClientMessage) => void): void {
 
 export function setActiveConversationId(id: string | null): void {
   jotaiStore.set(activeConversationIdAtom, id);
+  if (id !== null) refreshIfStale(id);
 }
 
 /**
@@ -601,6 +619,22 @@ function handleConversationsUpdated(
 ): void {
   console.log(`[WS] conversations_updated: ${data.conversations.length} changed`);
   const loadedDetails = jotaiStore.get(conversationDetailsLoadedAtom);
+  // A summary keeps the loaded history, so one reporting a different message
+  // count means that history is stale. The disk poller sends only summaries
+  // (it used to push every growing external transcript's full history to
+  // every client each 5s), so this is how an open chat sees new external
+  // messages: the open conversation refetches in place, without a loading
+  // flash; any other stale one is unmarked and refetches when opened.
+  const staleDetails = data.summaries
+    ? data.conversations.filter((conv) => {
+        const existing = jotaiStore.get(conversationsAtom).get(conv.id);
+        return (
+          existing !== undefined &&
+          loadedDetails.has(conv.id) &&
+          conv.messageCount !== existing.messages.length
+        );
+      })
+    : [];
   mutate(conversationsAtom, (draft) => {
     for (const conv of data.conversations) {
       // Preserve client-only swarmDebugPrefix — the disk poller doesn't
@@ -620,6 +654,7 @@ function handleConversationsUpdated(
   if (!data.summaries) {
     markConversationDetailsLoaded(data.conversations.map((conversation) => conversation.id));
   }
+  refreshStaleDetails(staleDetails.map((conversation) => conversation.id));
   // Mark all updated conversations as seen to prevent stale NEW badges after
   // external JSONL edits. Conservative — better to miss a badge than show wrong one.
   const updates: Record<string, number> = {};
@@ -628,6 +663,16 @@ function handleConversationsUpdated(
     if (messageCount > 0) updates[conv.id] = messageCount - 1;
   }
   markConversationsSeenBulk(updates);
+}
+
+function refreshStaleDetails(ids: readonly string[]): void {
+  const active = jotaiStore.get(activeConversationIdAtom);
+  for (const id of ids) {
+    staleDetailIds.add(id);
+    // A failed refresh leaves the previous history on screen; the next
+    // summary with a moved count retries.
+    if (id === active) refreshIfStale(id);
+  }
 }
 
 function handleConversationLoadComplete(

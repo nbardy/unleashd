@@ -14,11 +14,17 @@ import {
   type BuddyMemberExecution,
   type BuddyWorkspaceActivity,
   BuddyWorkspaceActivitySchema,
+  type OwnerChannelUnread,
+  OwnerChannelUnreadSchema,
+  type OwnerListUnread,
+  type OwnerReadThrough,
+  isAfterReadThrough,
 } from '@unleashd/shared';
 import { useAtomValue } from 'jotai';
-import { type UIEvent, useEffect, useMemo, useRef } from 'react';
+import { type UIEvent, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { type OutboxEntry, channelOutboxAtom, outboxDrop } from '../../atoms/channel-outbox';
 import { warmResources } from '../../atoms/prefetch';
+import { seedResource } from '../../atoms/resources';
 import { resource, usePolledFetch } from '../../hooks/usePolledFetch';
 import { newId } from '../../utils/ids';
 import { buddyApi } from './api';
@@ -83,8 +89,111 @@ export function listsUrl(workspaceId: string): string {
   return `/api/buddies/lists?workspaceId=${encodeURIComponent(workspaceId)}`;
 }
 
+/** Top-level posts per page read; the newest page is what every channel warms. */
+export const CHANNEL_PAGE = 50;
+
+function channelPostsPath(listId: string): string {
+  return `/api/buddies/lists/${encodeURIComponent(listId)}/posts`;
+}
+
 export function channelPostsResource(listId: string) {
-  return postsResource(`/api/buddies/lists/${encodeURIComponent(listId)}/posts?limit=50`);
+  return postsResource(`${channelPostsPath(listId)}?limit=${CHANNEL_PAGE}`);
+}
+
+// What a channel feed reads: D = Latest ⊕ From(floor).
+// Latest is the newest page. Once the reader pages back, the feed reads from
+// its oldest loaded post (the floor) to the newest instead. Re-reading the
+// newest page would slide the window: every new post would push the oldest
+// one out above the reader, and open a gap between it and the history they
+// loaded. `complete`: the floor is the channel's first post.
+export type ChannelRange = { kind: 'latest' } | { kind: 'from'; floor: string; complete: boolean };
+
+const LATEST_RANGE: ChannelRange = { kind: 'latest' };
+
+function channelRangeResource(listId: string, range: ChannelRange) {
+  switch (range.kind) {
+    case 'latest':
+      return channelPostsResource(listId);
+    case 'from':
+      return postsResource(`${channelPostsPath(listId)}?from=${encodeURIComponent(range.floor)}`);
+  }
+}
+
+// The top of a channel feed: D = More ⊕ Loading ⊕ Failed ⊕ Complete.
+export type OlderEdge =
+  | { kind: 'more' }
+  | { kind: 'loading' }
+  | { kind: 'failed'; error: Error }
+  | { kind: 'complete' };
+
+type OlderRequest = { kind: 'idle' } | { kind: 'loading' } | { kind: 'failed'; error: Error };
+
+const IDLE_REQUEST: OlderRequest = { kind: 'idle' };
+const LOADING_REQUEST: OlderRequest = { kind: 'loading' };
+const NO_POSTS: readonly BuddyMailingListPost[] = [];
+
+function olderEdge(
+  range: ChannelRange,
+  request: OlderRequest,
+  posts: readonly BuddyMailingListPost[]
+): OlderEdge {
+  switch (request.kind) {
+    case 'idle':
+      return settledEdge(range, posts);
+    case 'loading':
+    case 'failed':
+      return request;
+  }
+}
+
+// A newest page shorter than a full page is the whole channel.
+function settledEdge(range: ChannelRange, posts: readonly BuddyMailingListPost[]): OlderEdge {
+  switch (range.kind) {
+    case 'latest':
+      return { kind: posts.length < CHANNEL_PAGE ? 'complete' : 'more' };
+    case 'from':
+      return { kind: range.complete ? 'complete' : 'more' };
+  }
+}
+
+/**
+ * One channel's top-level posts, newest-first, with history on demand.
+ * `loadOlder` reads the page before the oldest post held and moves the feed
+ * to a From range covering it, seeded with what it already holds so the
+ * switch renders at once. `beforePrepend` runs just before the older rows
+ * render above the reader (useFollowBottom's `hold`).
+ */
+export function useChannelFeed(listId: string) {
+  const [range, setRange] = useState(LATEST_RANGE);
+  const [request, setRequest] = useState(IDLE_REQUEST);
+  const feed = usePolledFetch(channelRangeResource(listId, range), CHANNEL_BACKSTOP_MS);
+  const posts = feed.data ?? NO_POSTS;
+  const edge = olderEdge(range, request, posts);
+  const loadOlder = async (beforePrepend: () => void) => {
+    const oldest = posts[posts.length - 1];
+    if (edge.kind === 'loading' || edge.kind === 'complete' || !oldest) return;
+    setRequest(LOADING_REQUEST);
+    try {
+      const page = BuddyMailingListPostsSchema.parse(
+        await buddyApi(
+          `${channelPostsPath(listId)}?before=${encodeURIComponent(oldest.id)}&limit=${CHANNEL_PAGE}`
+        )
+      );
+      const next: ChannelRange = {
+        kind: 'from',
+        floor: (page[page.length - 1] ?? oldest).id,
+        complete: page.length < CHANNEL_PAGE,
+      };
+      if (page.length > 0) beforePrepend();
+      seedResource(channelRangeResource(listId, next), [...posts, ...page]);
+      setRange(next);
+      setRequest(IDLE_REQUEST);
+    } catch (cause) {
+      const error = cause instanceof Error ? cause : new Error(String(cause));
+      setRequest({ kind: 'failed', error });
+    }
+  };
+  return { feed, edge, loadOlder };
 }
 
 /**
@@ -435,6 +544,19 @@ export function useFollowBottom(rowCount: number, version: unknown, linkedPostId
     }
     if (followRef.current) node.scrollTop = node.scrollHeight;
   }, [rowCount, version, linkedPostId]);
+  // Older posts render ABOVE the reader (useChannelFeed's loadOlder). Keep
+  // their distance from the bottom across that render, or the page they were
+  // reading jumps down by everything that loaded. A layout effect, so the
+  // restored position is the first one painted.
+  const heldRef = useRef<number | null>(null);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: rowCount is the prepend trigger
+  useLayoutEffect(() => {
+    const node = scrollRef.current;
+    const held = heldRef.current;
+    if (!node || held === null) return;
+    heldRef.current = null;
+    node.scrollTop = node.scrollHeight - held;
+  }, [rowCount]);
   const onScroll = (event: UIEvent<HTMLDivElement>) => {
     const node = event.currentTarget;
     followRef.current = node.scrollHeight - node.scrollTop - node.clientHeight < 48;
@@ -442,7 +564,11 @@ export function useFollowBottom(rowCount: number, version: unknown, linkedPostId
   const pin = () => {
     followRef.current = true;
   };
-  return { scrollRef, onScroll, pin };
+  const hold = () => {
+    const node = scrollRef.current;
+    if (node) heldRef.current = node.scrollHeight - node.scrollTop;
+  };
+  return { scrollRef, onScroll, pin, hold };
 }
 
 /** Create a channel as the owner; resolves to the new list id. */
@@ -457,4 +583,162 @@ export async function createChannel(
     body: JSON.stringify({ workspaceId, author: { kind: 'owner' }, key: newId(), name, purpose }),
   });
   return result.list.id;
+}
+
+// ── Owner unread (server/src/buddies/owner-channel-reads.ts) ──────────────
+// The owner's own read marks, separate from every Buddy's. One resource for
+// every workspace: the rail, the sidebar, the mobile tab and the tab title all
+// read it, and `channel_changed` refreshes it (atoms/resources.ts).
+
+export const OWNER_UNREAD_PATH = '/api/buddies/channels/unread';
+
+export function useOwnerUnread() {
+  return usePolledFetch(
+    resource(OWNER_UNREAD_PATH, async (signal: AbortSignal) =>
+      OwnerChannelUnreadSchema.parse(await buddyApi(OWNER_UNREAD_PATH, { signal }))
+    ),
+    CHANNEL_BACKSTOP_MS
+  );
+}
+
+const NO_LIST_UNREAD: ReadonlyMap<string, OwnerListUnread> = new Map();
+
+export function ownerUnreadByList(
+  unread: OwnerChannelUnread | null,
+  workspaceId: string
+): ReadonlyMap<string, OwnerListUnread> {
+  const workspace = unread?.workspaces.find((entry) => entry.workspaceId === workspaceId);
+  return workspace ? new Map(workspace.lists.map((list) => [list.listId, list])) : NO_LIST_UNREAD;
+}
+
+// What a nav item shows: the badge counts replies waiting on the owner, the
+// dot says some channel has anything new. `workspaceId` null sums them all.
+export type OwnerUnreadTotal = { repliesToYou: number; unreadChannels: number };
+
+export function ownerUnreadTotal(
+  unread: OwnerChannelUnread | null,
+  workspaceId: string | null
+): OwnerUnreadTotal {
+  const total = { repliesToYou: 0, unreadChannels: 0 };
+  for (const workspace of unread?.workspaces ?? []) {
+    if (workspaceId !== null && workspace.workspaceId !== workspaceId) continue;
+    for (const list of workspace.lists) {
+      total.repliesToYou += list.repliesToYou;
+      if (hasOwnerUnread(list)) total.unreadChannels += 1;
+    }
+  }
+  return total;
+}
+
+export function hasOwnerUnread(list: OwnerListUnread): boolean {
+  return list.unread > 0 || list.repliesToYou > 0 || list.unreadThreads.length > 0;
+}
+
+/** Where "New messages" goes: the oldest top-level post by someone else after the mark. */
+export function firstUnreadPostId(
+  newestFirst: readonly BuddyMailingListPost[],
+  readThrough: OwnerReadThrough
+): string | null {
+  let first: string | null = null;
+  for (const post of newestFirst) {
+    if (post.author.kind === 'owner' || post.threadRootId !== null) continue;
+    if (isAfterReadThrough(post, readThrough)) first = post.id;
+  }
+  return first;
+}
+
+// Slack's rail: a channel with anything new reads bold; a quiet one dims.
+// Unknown until the owner's unread state loads, so it renders as neither.
+export function channelUnreadAttr(unread: OwnerListUnread | undefined): 'new' | 'read' | undefined {
+  if (unread === undefined) return undefined;
+  return hasOwnerUnread(unread) ? 'new' : 'read';
+}
+
+async function markOwnerRead(listId: string, postId: string): Promise<void> {
+  await buddyApi(`/api/buddies/lists/${encodeURIComponent(listId)}/owner-read`, {
+    method: 'POST',
+    headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({ postId }),
+  });
+}
+
+// Starts false and reads `document` only in the effect: components render
+// through react-dom/server in client tests, where there is no document.
+function useDocumentVisible(): boolean {
+  const [visible, setVisible] = useState(false);
+  useEffect(() => {
+    const update = () => setVisible(document.visibilityState === 'visible');
+    update();
+    document.addEventListener('visibilitychange', update);
+    return () => document.removeEventListener('visibilitychange', update);
+  }, []);
+  return visible;
+}
+
+/**
+ * The owner is looking at a channel. Returns what was unread when they
+ * arrived — the snapshot the "New messages" line and bold thread links draw
+ * from, held until they leave, the way Slack does — and marks the channel
+ * read through its newest post whenever it is on screen with something newer
+ * than the mark. The mark echoes the server's `newestPostId`, so a post that
+ * lands after this render stays unread until the next refresh shows it.
+ * D = Arriving (unread state not loaded yet) ⊕ Arrived(snapshot).
+ */
+export type OwnerChannelVisit =
+  | { kind: 'arriving' }
+  | { kind: 'arrived'; snapshot: OwnerListUnread };
+
+export function useOwnerChannelVisit(
+  listId: string,
+  current: OwnerListUnread | undefined
+): OwnerChannelVisit {
+  const [visit, setVisit] = useState<OwnerChannelVisit>(() =>
+    current ? { kind: 'arrived', snapshot: current } : { kind: 'arriving' }
+  );
+  useEffect(() => {
+    if (current && visit.kind === 'arriving') setVisit({ kind: 'arrived', snapshot: current });
+  }, [current, visit.kind]);
+  const visible = useDocumentVisible();
+  const newest = current?.newestPostId ?? null;
+  const readThrough = current?.readThrough;
+  const alreadyRead = readThrough?.kind === 'post' && readThrough.postId === newest;
+  useEffect(() => {
+    if (!visible || newest === null || alreadyRead) return;
+    void markOwnerRead(listId, newest).catch((error: unknown) =>
+      console.warn(`[channels] could not mark #${listId} read:`, error)
+    );
+  }, [listId, newest, alreadyRead, visible]);
+  return visit;
+}
+
+/**
+ * The browser tab title carries the owner's unread state: `(3) Unleashd` for
+ * replies waiting on them, `• Unleashd` when channels only have new posts.
+ * Mounted once, in AppInner, so it holds on every route.
+ */
+export function useOwnerUnreadTitle(): void {
+  const unread = useOwnerUnread();
+  const total = ownerUnreadTotal(unread.data, null);
+  const baseTitle = useRef(document.title);
+  useEffect(() => {
+    const prefix =
+      total.repliesToYou > 0 ? `(${total.repliesToYou}) ` : total.unreadChannels > 0 ? '• ' : '';
+    document.title = `${prefix}${baseTitle.current}`;
+  }, [total.repliesToYou, total.unreadChannels]);
+}
+
+// What the owner's arrival leaves on screen: D = Arriving ⊕ Arrived.
+export function arrivalMarks(
+  visit: OwnerChannelVisit,
+  posts: readonly BuddyMailingListPost[]
+): { firstUnread: string | null; unreadThreads: readonly string[] } {
+  switch (visit.kind) {
+    case 'arriving':
+      return { firstUnread: null, unreadThreads: [] };
+    case 'arrived':
+      return {
+        firstUnread: firstUnreadPostId(posts, visit.snapshot.readThrough),
+        unreadThreads: visit.snapshot.unreadThreads,
+      };
+  }
 }

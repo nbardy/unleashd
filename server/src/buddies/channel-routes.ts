@@ -16,6 +16,7 @@ import type { ChannelResponder } from './channel-responder';
 import { mentionedBuddyIds } from './channel-text';
 import type { BuddiesStorePort } from './contract';
 import { withPostProvenanceFields } from './operations';
+import type { OwnerChannelReads } from './owner-channel-reads';
 
 // Owner-facing channel routes: posting (with media canonicalization and
 // @mention dispatch), who is replying, the workspace Task index for chips and
@@ -27,6 +28,8 @@ export interface ChannelRouteDependencies {
   responder: ChannelResponder;
   direct: BuddyDirect;
   uploadsRoot: string;
+  ownerReads: OwnerChannelReads;
+  channelChanged(listId: string): void;
   sendError(response: Response, error: unknown, fallbackStatus: number): void;
 }
 
@@ -118,7 +121,8 @@ function extensionOf(name: string): string {
 }
 
 export function registerChannelRoutes(app: Express, dependencies: ChannelRouteDependencies): void {
-  const { getStore, responder, direct, uploadsRoot, sendError } = dependencies;
+  const { getStore, responder, direct, uploadsRoot, ownerReads, channelChanged, sendError } =
+    dependencies;
   const handle =
     (fallback: number, handler: (req: Request, res: Response) => Promise<void>) =>
     (req: Request, res: Response) =>
@@ -176,6 +180,34 @@ export function registerChannelRoutes(app: Express, dependencies: ChannelRouteDe
     handle(400, async (req, res) => {
       const { workspaceId } = DirectSchema.parse(req.body);
       res.status(202).json(await direct.wake(req.params.buddyId, workspaceId));
+    })
+  );
+
+  // The owner's unread state across every workspace (owner-channel-reads.ts).
+  // Two segments on purpose: GET /api/buddies/:buddyId would swallow one.
+  app.get(
+    '/api/buddies/channels/unread',
+    handle(400, async (_req, res) => {
+      res.json(ownerReads.unread(await getStore()));
+    })
+  );
+
+  // The owner viewed a channel: read through `postId`, the newest post the
+  // client's unread state named. Echoing it, rather than resolving "newest"
+  // here, keeps a post that landed after the render unread. The broadcast
+  // clears the channel on the owner's other devices.
+  const OwnerReadSchema = z.object({ postId: z.string().min(1) }).strict();
+  app.post(
+    '/api/buddies/lists/:listId/owner-read',
+    handle(400, async (req, res) => {
+      const { postId } = OwnerReadSchema.parse(req.body);
+      const post = (await getStore()).getPost(postId);
+      if (!post || post.listId !== req.params.listId) {
+        res.status(404).json({ error: 'Post not found in this list' });
+        return;
+      }
+      res.json(ownerReads.markRead(post.listId, post));
+      channelChanged(post.listId);
     })
   );
 

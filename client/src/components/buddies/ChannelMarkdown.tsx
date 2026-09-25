@@ -1,11 +1,12 @@
-import { type ReactNode, memo, useMemo, useRef, useState } from 'react';
+import { Fragment, type ReactNode, memo, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
-import Markdown, { type Components, type ExtraProps, defaultUrlTransform } from 'react-markdown';
+import { type Components, type ExtraProps, defaultUrlTransform } from 'react-markdown';
 import { Link } from 'react-router-dom';
 import remarkGfm from 'remark-gfm';
 import { ChatActivity } from '../../ui/ChatActivity';
 import { parseBuddyReviewResult } from '../../utils/buddy-review-message';
-import { useLazyMarkdownPlugins } from '../../utils/lazyMarkdownPlugins';
+import { useMarkdownPipeline } from '../../utils/lazyMarkdownPlugins';
+import { defineMarkdownFlavor, renderMarkdownCached } from '../../utils/markdown-pipeline';
 import { remarkBreaks } from '../../utils/remark-breaks';
 import {
   type StructuredMessageSegment,
@@ -36,6 +37,8 @@ import './ChannelContent.css';
 function channelUrlTransform(url: string): string {
   return /^(buddy|task):/.test(url) ? url : defaultUrlTransform(url);
 }
+
+const CHANNEL_MARKDOWN = defineMarkdownFlavor([remarkGfm, remarkBreaks], channelUrlTransform);
 
 type TaskStatusView = { glyph: string; label: string; tone: string };
 
@@ -244,7 +247,7 @@ function channelComponents(
   };
 }
 
-// Memoized: react-markdown re-parses on every render, and a row re-renders
+// Memoized: a markdown render still walks the hast into React, and a row re-renders
 // whenever who is replying changes. The cache keeps an unchanged post's body,
 // names and Tasks identical (atoms/resources.ts settledEntry), so only a post
 // that actually changed is parsed again.
@@ -259,17 +262,9 @@ export const ChannelMarkdown = memo(function ChannelMarkdown({
 }) {
   const components = useMemo(() => channelComponents(buddyNames, tasks), [buddyNames, tasks]);
   const segments = useMemo(() => splitToolActivity(body), [body]);
-  const rehypePlugins = useLazyMarkdownPlugins();
+  const pipeline = useMarkdownPipeline(CHANNEL_MARKDOWN);
   const markdown = (text: string, key?: number) => (
-    <Markdown
-      key={key}
-      remarkPlugins={[remarkGfm, remarkBreaks]}
-      rehypePlugins={rehypePlugins}
-      urlTransform={channelUrlTransform}
-      components={components}
-    >
-      {text}
-    </Markdown>
+    <Fragment key={key}>{renderMarkdownCached(pipeline, text, components)}</Fragment>
   );
   return (
     <div className="channel-markdown">

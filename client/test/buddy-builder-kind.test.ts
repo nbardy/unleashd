@@ -15,6 +15,8 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {
+  ConversationKindSchema,
+  getBuddyContext,
   getConversationKind,
   isBuddyBuilderConversation,
   isBuddyConversation,
@@ -52,4 +54,30 @@ test('general and buddy conversations are not builders', () => {
   };
   assert.equal(isBuddyBuilderConversation(buddy), false);
   assert.equal(isBuddyConversation(buddy), true);
+});
+
+// Perf tripwire (2026-09-25): the client's derived atoms classify every
+// conversation on every message/status/queue event. `kind` is already validated
+// by the WS wire schema, so re-running ConversationKindSchema.safeParse per call
+// cost ~15ms per pass over 1,100 conversations. If a refactor re-validates a
+// present `kind` in the accessors, this fails.
+test('accessors read a present kind without re-parsing it', (t) => {
+  t.mock.method(ConversationKindSchema, 'safeParse', () => {
+    throw new Error('present kind must not be re-parsed on the read path');
+  });
+  const buddy = {
+    kind: {
+      kind: 'buddy' as const,
+      buddyId: 'b1',
+      workspaceId: 'w1',
+      buddyProjectId: null,
+      legacyWorkItemId: null,
+      automationRunId: null,
+      delegatedByBuddyId: null,
+      parentBuddyConversationId: null,
+    },
+  };
+  assert.equal(isBuddyConversation(buddy), true);
+  assert.equal(getBuddyContext(buddy)?.buddyId, 'b1');
+  assert.equal(isBuddyBuilderConversation({ kind: { kind: 'buddy_builder' as const } }), true);
 });

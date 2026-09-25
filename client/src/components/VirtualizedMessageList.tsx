@@ -2,6 +2,7 @@ import { useVirtualizer } from '@tanstack/react-virtual';
 import type { Message } from '@unleashd/shared';
 import type { ComponentPropsWithoutRef, ReactNode } from 'react';
 import {
+  Fragment,
   isValidElement,
   memo,
   useCallback,
@@ -10,7 +11,6 @@ import {
   useMemo,
   useRef,
 } from 'react';
-import Markdown from 'react-markdown';
 import type { Components } from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import remarkMath from 'remark-math';
@@ -21,7 +21,14 @@ import { ChatActivity } from '../ui/ChatActivity';
 import { parseBuddyReviewRequest, parseBuddyReviewResult } from '../utils/buddy-review-message';
 import type { AssistantResponse, MessageGroup } from '../utils/chat-message-groups';
 import { messageTranscriptContent } from '../utils/conversation-transcript';
-import { useLazyMarkdownPlugins } from '../utils/lazyMarkdownPlugins';
+import { useMarkdownPipeline } from '../utils/lazyMarkdownPlugins';
+import {
+  type MarkdownPipeline,
+  type MarkdownRenderer,
+  defineMarkdownFlavor,
+  renderMarkdownCached,
+  renderMarkdownLive,
+} from '../utils/markdown-pipeline';
 import { remarkBreaks } from '../utils/remark-breaks';
 import { splitStructuredMessageContent } from '../utils/structured-message-segments';
 import { splitToolActivity } from '../utils/tool-activity-segments';
@@ -437,20 +444,27 @@ function makeMarkdownComponents(workingDirectory: string): Components {
   };
 }
 
+const CHAT_MARKDOWN = defineMarkdownFlavor([remarkGfm, remarkMath, remarkBreaks]);
+
 function MessageMarkdown({
   content,
   collapseTools,
-  ...props
-}: Omit<ComponentPropsWithoutRef<typeof Markdown>, 'children'> & {
+  pipeline,
+  components,
+  markdown,
+}: {
   content: string;
   collapseTools: boolean;
+  pipeline: MarkdownPipeline;
+  components: Components;
+  markdown: MarkdownRenderer;
 }) {
   const segments = useMemo(
     () => (collapseTools ? splitToolActivity(content) : []),
     [content, collapseTools]
   );
   if (!segments.some((segment) => segment.type === 'tool_calls')) {
-    return <Markdown {...props}>{content}</Markdown>;
+    return markdown(pipeline, content, components);
   }
   return segments.map((segment, index) =>
     segment.type === 'tool_calls' ? (
@@ -458,12 +472,10 @@ function MessageMarkdown({
         key={index}
         label={`${segment.count} tool ${segment.count === 1 ? 'call' : 'calls'}`}
       >
-        <Markdown {...props}>{segment.content}</Markdown>
+        {markdown(pipeline, segment.content, components)}
       </ChatActivity>
     ) : (
-      <Markdown key={index} {...props}>
-        {segment.content}
-      </Markdown>
+      <Fragment key={index}>{markdown(pipeline, segment.content, components)}</Fragment>
     )
   );
 }
@@ -476,6 +488,8 @@ interface MessageContentProps {
   msg: Message;
   collapseTools?: boolean;
   workingDirectory: string;
+  /** `renderMarkdownLive` only for the message a streaming turn is growing. */
+  markdown: MarkdownRenderer;
 }
 
 const MemoizedMessageContent = memo(
@@ -483,10 +497,11 @@ const MemoizedMessageContent = memo(
     msg,
     collapseTools = true,
     workingDirectory,
+    markdown,
   }: MessageContentProps) {
     // katex + highlight.js arrive asynchronously; markdown renders immediately
     // with the remark plugins and re-renders once the chunk lands.
-    const rehypePlugins = useLazyMarkdownPlugins();
+    const pipeline = useMarkdownPipeline(CHAT_MARKDOWN);
 
     const displayContent = useMemo(
       () => normalizeLatexDelimiters(msg.content || '...'),
@@ -532,9 +547,9 @@ const MemoizedMessageContent = memo(
                   key={i}
                   content={trimmed}
                   collapseTools={collapseToolActivity}
-                  remarkPlugins={[remarkGfm, remarkMath, remarkBreaks]}
-                  rehypePlugins={rehypePlugins}
+                  pipeline={pipeline}
                   components={mdComponents}
+                  markdown={markdown}
                 />
               );
             }
@@ -570,9 +585,9 @@ const MemoizedMessageContent = memo(
           <MessageMarkdown
             content={displayContent}
             collapseTools={collapseToolActivity}
-            remarkPlugins={[remarkGfm, remarkMath, remarkBreaks]}
-            rehypePlugins={rehypePlugins}
+            pipeline={pipeline}
             components={mdComponents}
+            markdown={markdown}
           />
         )}
         {msg.toolCall?.input !== undefined && (
@@ -590,7 +605,8 @@ const MemoizedMessageContent = memo(
       prev.msg.toolCall?.name === next.msg.toolCall?.name &&
       prev.msg.toolCall?.input === next.msg.toolCall?.input &&
       prev.collapseTools === next.collapseTools &&
-      prev.workingDirectory === next.workingDirectory
+      prev.workingDirectory === next.workingDirectory &&
+      prev.markdown === next.markdown
     );
   }
 );
@@ -615,7 +631,11 @@ function StandaloneMessage({
   return (
     <div className={`message ${msg.role}`} ref={forwardedRef}>
       {msg.role !== 'system' && <div className={`message-role ${msg.role}`}>{roleLabel}</div>}
-      <MemoizedMessageContent msg={msg} workingDirectory={workingDirectory} />
+      <MemoizedMessageContent
+        msg={msg}
+        workingDirectory={workingDirectory}
+        markdown={renderMarkdownCached}
+      />
       {messageTranscriptContent(msg).trim() && (
         <div className="message-actions">
           <CopyButton text={messageTranscriptContent(msg)} className="message-action-btn" />
@@ -920,8 +940,13 @@ function AssistantResponseBlock({
             <span className="typing-dot" aria-hidden="true" />
           </div>
         )}
-        {response.parts.map((part) =>
-          part.type === 'tool_calls' ? (
+        {response.parts.map((part, partIndex) => {
+          // Streaming text only ever grows the response's last part.
+          const markdown =
+            isLive === true && partIndex === response.parts.length - 1
+              ? renderMarkdownLive
+              : renderMarkdownCached;
+          return part.type === 'tool_calls' ? (
             <ChatActivity
               key={part.key}
               label={
@@ -937,6 +962,7 @@ function AssistantResponseBlock({
                   msg={msg}
                   collapseTools={false}
                   workingDirectory={workingDirectory}
+                  markdown={markdown}
                 />
               ))}
             </ChatActivity>
@@ -945,9 +971,10 @@ function AssistantResponseBlock({
               key={part.key}
               msg={part.message}
               workingDirectory={workingDirectory}
+              markdown={markdown}
             />
-          )
-        )}
+          );
+        })}
       </div>
       <div className="message-actions" ref={forwardedRef}>
         {response.copyText.trim() && (
