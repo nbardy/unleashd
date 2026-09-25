@@ -67,7 +67,7 @@ test('native assignment preview, durable admission, real conversation creation a
     updateBuddyStatus: () => {},
     settleBuddyDelegation: () => {},
     getConversation: (id) => conversations.get(id),
-    readLatestOompaRuntime: () => ({ available: false, run: null, reason: 'fixture' }),
+    readLatestOompaRuntime: async () => ({ available: false, run: null, reason: 'fixture' }),
     createSessionId: randomUUID,
     readCurrentBuddyContext: integration.readCurrentConversation,
     issueBuddyControlCapability: (context) => {

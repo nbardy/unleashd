@@ -103,7 +103,7 @@ test('real creation boundary delivers two-worker aggregate and retries a failed 
     updateBuddyStatus: () => {},
     settleBuddyDelegation: () => {},
     getConversation: (id) => conversations.get(id),
-    readLatestOompaRuntime: () => ({ available: false, run: null, reason: 'fixture' }),
+    readLatestOompaRuntime: async () => ({ available: false, run: null, reason: 'fixture' }),
     createSessionId: () => `session-${visits.length}`,
     reviewCompletedBuddyTurn: (turn) => memoryReviewer.enqueue(turn),
     readCurrentBuddyContext: (context) => {

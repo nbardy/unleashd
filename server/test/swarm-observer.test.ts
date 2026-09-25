@@ -93,7 +93,7 @@ test('a swarm launched during a turn becomes a sub-agent row that completes when
   });
   context.after(stop);
   await delay(60);
-  assert.deepEqual(agents, [], 'a run that predates the turn is its baseline, not a launch');
+  assert.equal(agents.length, 0, 'a run that predates the turn is its baseline, not a launch');
 
   // Newer mtime than run-before, so it is the latest run.
   await delay(20);

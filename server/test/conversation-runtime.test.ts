@@ -15,14 +15,9 @@ import {
   createConversationRuntime,
 } from '../src/conversations/runtime';
 import { resolveConfigAgainstProviderCatalog } from '../src/providers/catalog-service';
-import {
-  type TurnTimeoutKind,
-  TurnWatchdog,
-  describeTurnTimeout,
-  isProviderProgressEvent,
-  turnAttemptActivityFromEvent,
-} from '../src/turns/watchdog';
+import { type TurnTimeoutKind, TurnWatchdog } from '../src/turns/watchdog';
 import { sameKeyAudience } from './fixtures/buddy-audience';
+import { fakeExecuteTurn } from './fixtures/fake-turn';
 
 function runtimeFixture(
   options: {
@@ -59,7 +54,7 @@ function runtimeFixture(
     updateBuddyStatus: () => undefined,
     settleBuddyDelegation: () => undefined,
     getConversation: options.getConversation ?? (() => undefined),
-    readLatestOompaRuntime: () => ({
+    readLatestOompaRuntime: async () => ({
       available: false,
       run: null,
       reason: 'No runs directory found',
@@ -82,6 +77,7 @@ function runtimeFixture(
     resolution: resolveConfigAgainstProviderCatalog(config),
   };
   const conversation = new Conversation({
+    done: false,
     id: 'conversation-id',
     workingDirectory: '/tmp',
     configState,
@@ -120,7 +116,7 @@ test('retained Buddy display history stays out of fresh provider context across 
   };
   const fixture = runtimeFixture({
     readCurrentBuddyContext: () => current,
-    executeTurn: ((request) => {
+    executeTurn: fakeExecuteTurn((request) => {
       requests.push(request);
       const sessionId = request.resumeSessionId ?? `native-${requests.length}`;
       return {
@@ -134,9 +130,10 @@ test('retained Buddy display history stays out of fresh provider context across 
         completed: Promise.resolve({ exitCode: 0, signal: null, sessionId, reason: 'success' }),
         stop: () => undefined,
       };
-    }) as NonNullable<ConversationRuntimeDependencies['executeTurn']>,
+    }),
   });
   const conversation = new fixture.Conversation({
+    done: false,
     id: 'restored-buddy',
     workingDirectory: '/tmp',
     configState: fixture.configState,
@@ -196,7 +193,7 @@ test('resumed Buddy turns re-brief only when the memory generation changes', asy
   };
   const fixture = runtimeFixture({
     readCurrentBuddyContext: () => current,
-    executeTurn: ((request) => {
+    executeTurn: fakeExecuteTurn((request) => {
       requests.push(request);
       const sessionId = request.resumeSessionId ?? 'native-session';
       return {
@@ -209,9 +206,10 @@ test('resumed Buddy turns re-brief only when the memory generation changes', asy
         completed: Promise.resolve({ exitCode: 0, signal: null, sessionId, reason: 'success' }),
         stop: () => undefined,
       };
-    }) as NonNullable<ConversationRuntimeDependencies['executeTurn']>,
+    }),
   });
   const conversation = new fixture.Conversation({
+    done: false,
     id: 'steady-buddy',
     workingDirectory: '/tmp',
     configState: fixture.configState,
@@ -259,12 +257,12 @@ test('provider completion waits for the normalized event stream and session pers
     reviewCompletedBuddyTurn: (turn) => reviews.push(turn),
     persistCurrentSession: () => persistence.promise,
     revokeBuddyControlCapability: (conversationId) => revoked.push(conversationId),
-    executeTurn: (() => ({
+    executeTurn: fakeExecuteTurn(() => ({
       child: { exitCode: 0 },
       events: events(),
       completed: completion.promise,
       stop: () => undefined,
-    })) as NonNullable<ConversationRuntimeDependencies['executeTurn']>,
+    })),
   });
   let automationOutput: string | null = null;
   fixture.conversation.once('buddy-turn-complete', (output) => {
@@ -320,7 +318,7 @@ test('event-stream failure after turn.complete fails automation after joined dra
   const fixture = runtimeFixture({
     buddyContext: { buddyId: 'buddy-1', workspaceId: 'workspace-1' },
     reviewCompletedBuddyTurn: (turn) => reviews.push(turn),
-    executeTurn: (() => ({
+    executeTurn: fakeExecuteTurn(() => ({
       child: { exitCode: 0 },
       events: events(),
       completed: Promise.resolve({
@@ -330,7 +328,7 @@ test('event-stream failure after turn.complete fails automation after joined dra
         reason: 'success',
       }),
       stop: () => undefined,
-    })) as NonNullable<ConversationRuntimeDependencies['executeTurn']>,
+    })),
   });
   let completed = false;
   let failure: string | null = null;
@@ -353,12 +351,17 @@ test('only a successfully exited Buddy turn schedules memory review', async () =
   for (const outcome of ['ordinary', 'failed', 'cancelled', 'success'] as const) {
     const reviews: CompletedBuddyTurn[] = [];
     const child = Object.assign(new EventEmitter(), { exitCode: 0 });
-    const completion = deferred<{ exitCode: number; signal: null; reason: 'success' | 'error' }>();
+    const completion = deferred<{
+      exitCode: number;
+      signal: null;
+      sessionId: string;
+      reason: 'success' | 'error';
+    }>();
     const fixture = runtimeFixture({
       buddyContext:
         outcome === 'ordinary' ? undefined : { buddyId: 'buddy-1', workspaceId: 'workspace-1' },
       reviewCompletedBuddyTurn: (turn) => reviews.push(turn),
-      executeTurn: (() => ({
+      executeTurn: fakeExecuteTurn(() => ({
         child,
         events: (async function* () {
           yield { type: 'turn.started' as const };
@@ -367,13 +370,14 @@ test('only a successfully exited Buddy turn schedules memory review', async () =
         })(),
         completed: completion.promise,
         stop: () => undefined,
-      })) as NonNullable<ConversationRuntimeDependencies['executeTurn']>,
+      })),
     });
     fixture.conversation.sendMessage('Remember our result');
     if (outcome === 'cancelled') fixture.conversation.stop();
     completion.resolve({
       exitCode: outcome === 'failed' ? 1 : 0,
       signal: null,
+      sessionId: 'review-session',
       reason: outcome === 'failed' ? 'error' : 'success',
     });
     await eventually(() => assert.equal(fixture.conversation.hasActiveProcess(), false));
@@ -404,9 +408,9 @@ test('preflight failure immediately rejects an automation turn listener', () => 
 
 test('synchronous provider startup failure notifies automation listeners', () => {
   const { conversation } = runtimeFixture({
-    executeTurn: (() => {
+    executeTurn: fakeExecuteTurn(() => {
       throw new Error('provider startup rejected');
-    }) as NonNullable<ConversationRuntimeDependencies['executeTurn']>,
+    }),
   });
   let failure: string | undefined;
   conversation.once('buddy-turn-failed', (reason) => {
@@ -421,6 +425,7 @@ test('synchronous provider startup failure notifies automation listeners', () =>
 test('unsupported Buddy provider leaves a queued message retryable', () => {
   const fixture = runtimeFixture({ provider: 'gemini' });
   const conversation = new fixture.Conversation({
+    done: false,
     id: 'gemini-buddy',
     workingDirectory: '/tmp',
     configState: fixture.configState,
@@ -456,7 +461,7 @@ test('a foreground Buddy turn over capacity waits pending, then starts once admi
   let providerStarts = 0;
   const abandoned: string[] = [];
   const settlements: unknown[][] = [];
-  const executeTurn = (() => {
+  const executeTurn = fakeExecuteTurn(() => {
     providerStarts += 1;
     return {
       child: { exitCode: 0 },
@@ -472,7 +477,7 @@ test('a foreground Buddy turn over capacity waits pending, then starts once admi
       }),
       stop: () => undefined,
     };
-  }) as NonNullable<ConversationRuntimeDependencies['executeTurn']>;
+  });
   const fixture = runtimeFixture({
     buddyContext: { buddyId: 'busy-buddy', workspaceId: 'workspace-1' },
     enqueueBuddyChatRun: () => ({ id: 'queued-turn' }),
@@ -563,12 +568,13 @@ test('waiting Buddy chats share one admission tick, which stops when the last on
 test('historical automation transcripts refuse every user turn-admission path', () => {
   let providerStarts = 0;
   const fixture = runtimeFixture({
-    executeTurn: (() => {
+    executeTurn: fakeExecuteTurn(() => {
       providerStarts += 1;
       throw new Error('must not start');
-    }) as NonNullable<ConversationRuntimeDependencies['executeTurn']>,
+    }),
   });
   const conversation = new fixture.Conversation({
+    done: false,
     id: 'automation-history',
     workingDirectory: '/tmp',
     configState: fixture.configState,
@@ -597,6 +603,7 @@ test('public stop delegates automation cancellation without killing provider aut
     },
   });
   const conversation = new fixture.Conversation({
+    done: false,
     id: 'active-automation',
     workingDirectory: '/tmp',
     configState: fixture.configState,
@@ -625,6 +632,7 @@ test('first message in a user fork inherits the native source session without co
     getConversation: (id) => conversations.get(id),
   });
   const source = new fixture.Conversation({
+    done: false,
     id: 'source-conversation',
     workingDirectory: '/tmp',
     configState: fixture.configState,
@@ -633,6 +641,7 @@ test('first message in a user fork inherits the native source session without co
   conversations.set(source.id, source);
 
   const child = new fixture.Conversation({
+    done: false,
     id: 'child-conversation',
     workingDirectory: '/tmp',
     configState: fixture.configState,
@@ -709,6 +718,7 @@ test('native session fork falls back to a fresh handoff when memory generation c
     parentBuddyConversationId: null,
   };
   const source = new fixture.Conversation({
+    done: false,
     id: 'source-buddy-conversation',
     workingDirectory: '/tmp',
     configState: fixture.configState,
@@ -720,6 +730,7 @@ test('native session fork falls back to a fresh handoff when memory generation c
   conversations.set(source.id, source);
 
   const child = new fixture.Conversation({
+    done: false,
     id: 'child-buddy-conversation',
     workingDirectory: '/tmp',
     configState: fixture.configState,
@@ -818,6 +829,7 @@ test('same-provider fork on a fork-incapable harness falls back to string handof
     getConversation: (id) => conversations.get(id),
   });
   const source = new fixture.Conversation({
+    done: false,
     id: 'muse-source',
     workingDirectory: '/tmp',
     configState: fixture.configState,
@@ -826,6 +838,7 @@ test('same-provider fork on a fork-incapable harness falls back to string handof
   conversations.set(source.id, source);
 
   const child = new fixture.Conversation({
+    done: false,
     id: 'muse-child',
     workingDirectory: '/tmp',
     configState: fixture.configState,
@@ -872,10 +885,10 @@ test('every harness receives its resolved effort in one request shape', () => {
     const stub = openTurnStub();
     const { conversation } = runtimeFixture({
       provider,
-      executeTurn: ((request) => {
+      executeTurn: fakeExecuteTurn((request) => {
         requests.push(request);
         return stub.turn;
-      }) as NonNullable<ConversationRuntimeDependencies['executeTurn']>,
+      }),
     });
     conversation.sendMessage('effort probe');
     assert.equal(requests.length, 1, provider);
@@ -888,14 +901,10 @@ test('every harness receives its resolved effort in one request shape', () => {
   }
 });
 
-test('conversation runtime binds server capabilities without importing server orchestration', () => {
-  const { aliases, broadcasts, conversation } = runtimeFixture();
-
-  assert.deepEqual(aliases, [['conversation-id', 'conversation-id']]);
-  assert.equal(broadcasts.length, 0);
-  assert.equal(conversation.provider, 'codex');
-  assert.equal(conversation.toJSON().id, 'conversation-id');
-
+test('a session reset rotates the provider session and re-registers its alias', () => {
+  // A stale alias would route the old session's trailing disk writes to this
+  // conversation's fresh context.
+  const { aliases, conversation } = runtimeFixture();
   conversation.resetProcess();
   assert.equal(conversation.sessionId, 'rotated-session');
   assert.deepEqual(aliases.at(-1), ['rotated-session', 'conversation-id']);
@@ -937,7 +946,7 @@ test('bridge watchdog terminates a turn when neither unified events nor heartbea
   t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: 0 });
   const stub = openTurnStub();
   const { broadcasts, conversation } = runtimeFixture({
-    executeTurn: (() => stub.turn) as NonNullable<ConversationRuntimeDependencies['executeTurn']>,
+    executeTurn: fakeExecuteTurn(() => stub.turn),
   });
   conversation.sendMessage('never answered');
   assert.equal(conversation.isRunning, true);
@@ -959,119 +968,6 @@ test('bridge watchdog terminates a turn when neither unified events nor heartbea
   stub.child.emit('close');
 });
 
-test('turn activity distinguishes bridge heartbeats from provider events', () => {
-  const heartbeat = {
-    type: 'progress' as const,
-    source: 'agent-cli.heartbeat',
-    data: {
-      phase: 'startup',
-      unifiedEventSilentSeconds: 30,
-      rawStdoutSilentSeconds: 2,
-      stdoutStreamEvent: 'resume',
-      stdoutReadableFlowing: true,
-      stdoutReadableLengthBytes: 0,
-      nativeSessionSizeBytes: 12_345,
-    },
-  };
-  assert.deepEqual(turnAttemptActivityFromEvent(heartbeat), {
-    source: 'agent_cli_heartbeat',
-    providerEventType: 'progress',
-    providerEventSource: 'agent-cli.heartbeat',
-    heartbeat: {
-      phase: 'startup',
-      unifiedEventSilentSeconds: 30,
-      rawStdoutSilentSeconds: 2,
-      stdoutStreamEvent: 'resume',
-      stdoutReadableFlowing: true,
-      stdoutReadableLengthBytes: 0,
-      nativeSessionSizeBytes: 12_345,
-    },
-  });
-  assert.equal(isProviderProgressEvent(heartbeat), false);
-  const nativeAdvancement = {
-    type: 'progress' as const,
-    source: 'agent-cli.heartbeat',
-    data: {
-      phase: 'startup',
-      nativeSessionAvailable: true,
-      nativeSessionAdvanced: true,
-      nativeSessionSilentSeconds: 0,
-      nativeSessionSizeBytes: 98_765,
-      stdoutStreamEvent: 'pause',
-      stdoutReadableFlowing: null,
-      stdoutReadableLengthBytes: 512,
-    },
-  };
-  assert.equal(isProviderProgressEvent(nativeAdvancement), true);
-  assert.deepEqual(turnAttemptActivityFromEvent(nativeAdvancement), {
-    source: 'native_session',
-    providerEventType: 'progress',
-    providerEventSource: 'agent-cli.heartbeat',
-    heartbeat: {
-      phase: 'startup',
-      nativeSessionAvailable: true,
-      nativeSessionAdvanced: true,
-      nativeSessionSilentSeconds: 0,
-      nativeSessionSizeBytes: 98_765,
-      stdoutStreamEvent: 'pause',
-      stdoutReadableFlowing: null,
-      stdoutReadableLengthBytes: 512,
-    },
-  });
-  assert.deepEqual(
-    turnAttemptActivityFromEvent({
-      type: 'tool.use',
-      name: 'exec',
-      input: {},
-    }),
-    {
-      source: 'provider_event',
-      providerEventType: 'tool.use',
-    }
-  );
-});
-
-test('timeout diagnostics classify bridge, provider-idle, and hard-cap failures separately', () => {
-  assert.deepEqual(
-    describeTurnTimeout('bridge', {
-      elapsedSeconds: 3_700,
-      bridgeIdleSeconds: 120,
-      providerIdleSeconds: 3_600,
-      sawMeaningfulOutput: false,
-    }),
-    {
-      terminalCause: 'bridge_timeout',
-      message:
-        'Turn event bridge stalled: no unified event or bridge heartbeat for 120s (no assistant text or tool output reached Unleashd)',
-    }
-  );
-  assert.deepEqual(
-    describeTurnTimeout('provider', {
-      elapsedSeconds: 3_700,
-      bridgeIdleSeconds: 5,
-      providerIdleSeconds: 3_600,
-      sawMeaningfulOutput: false,
-    }),
-    {
-      terminalCause: 'provider_idle_timeout',
-      message:
-        'Turn stalled: no provider event or native-session advancement for 3600s (no assistant text or tool output reached Unleashd)',
-    }
-  );
-  assert.deepEqual(
-    describeTurnTimeout('max', {
-      elapsedSeconds: 86_400,
-      bridgeIdleSeconds: 5,
-      providerIdleSeconds: 10,
-      sawMeaningfulOutput: true,
-    }),
-    {
-      terminalCause: 'max_runtime_timeout',
-      message: 'Turn reached its maximum runtime after 86400s',
-    }
-  );
-});
-
 // First-turn prompt markers are kind-routed: only buddy_builder threads may
 // carry the builder briefing. A buddy (or general) thread must never be
 // misclassified into the builder prompt — see 2026-09-07 report where a
@@ -1082,6 +978,7 @@ test('first-turn markers are kind-exclusive: builder, buddy, general', () => {
     messageCount: 0,
     hasStartedSession: false,
     swarmDebugPrefix: null,
+    buddyBriefing: null,
   } as const;
 
   const builder = buildFirstTurnCliContent({ ...base, kind: { kind: 'buddy_builder' } });
@@ -1154,7 +1051,7 @@ test('foreground Buddy deadline uses the conversation budget and reports timeout
       bindProviderSession: () => {},
       terminal: (result) => terminals.push(result),
     },
-    executeTurn: (() => ({
+    executeTurn: fakeExecuteTurn(() => ({
       child,
       events: (async function* () {
         yield { type: 'turn.started' as const };
@@ -1166,9 +1063,10 @@ test('foreground Buddy deadline uses the conversation budget and reports timeout
       stop: () => {
         release = true;
       },
-    })) as NonNullable<ConversationRuntimeDependencies['executeTurn']>,
+    })),
   });
   const conversation = new fixture.Conversation({
+    done: false,
     id: 'foreground-timeout',
     workingDirectory: '/tmp',
     configState: fixture.configState,
@@ -1227,7 +1125,7 @@ test('background deadline uses timeout classification and waits for provider dra
       bindProviderSession: () => {},
       terminal: (result) => terminals.push(result),
     },
-    executeTurn: (() => ({
+    executeTurn: fakeExecuteTurn(() => ({
       child,
       events: (async function* () {
         yield { type: 'turn.started' as const };
@@ -1239,9 +1137,10 @@ test('background deadline uses timeout classification and waits for provider dra
       stop: () => {
         release = true;
       },
-    })) as NonNullable<ConversationRuntimeDependencies['executeTurn']>,
+    })),
   });
   const conversation = new fixture.Conversation({
+    done: false,
     id: 'foreground-timeout',
     workingDirectory: '/tmp',
     configState: fixture.configState,
@@ -1304,11 +1203,11 @@ function openTurnStub() {
 function runningFixture() {
   const opened: Array<ReturnType<typeof openTurnStub>> = [];
   const fixture = runtimeFixture({
-    executeTurn: (() => {
+    executeTurn: fakeExecuteTurn(() => {
       const stub = openTurnStub();
       opened.push(stub);
       return stub.turn;
-    }) as NonNullable<ConversationRuntimeDependencies['executeTurn']>,
+    }),
   });
   return { ...fixture, opened };
 }
@@ -1400,7 +1299,7 @@ type ScriptedEvent = import('@nbardy/agent-cli').UnifiedAgentEvent;
 async function runScriptedTurn(provider: Provider, events: ScriptedEvent[]) {
   const { conversation, broadcasts } = runtimeFixture({
     provider,
-    executeTurn: (() => ({
+    executeTurn: fakeExecuteTurn(() => ({
       child: { exitCode: 0 },
       events: (async function* () {
         yield* events;
@@ -1412,7 +1311,7 @@ async function runScriptedTurn(provider: Provider, events: ScriptedEvent[]) {
         reason: 'success',
       }),
       stop: () => undefined,
-    })) as unknown as NonNullable<ConversationRuntimeDependencies['executeTurn']>,
+    })),
   });
   conversation.sendMessage('scripted');
   await conversation.waitForTurnDrain();

@@ -79,7 +79,7 @@ async function runtimeFixture(
     updateBuddyStatus: () => {},
     settleBuddyDelegation: () => {},
     getConversation: () => undefined,
-    readLatestOompaRuntime: () => ({ available: false, run: null, reason: 'fixture' }),
+    readLatestOompaRuntime: async () => ({ available: false, run: null, reason: 'fixture' }),
     createSessionId: () => 'session',
     readCurrentBuddyContext: () => ({
       briefing: 'Current bounded Buddy briefing',

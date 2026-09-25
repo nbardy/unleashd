@@ -62,7 +62,7 @@ async function fixture() {
     updateBuddyStatus: () => {},
     settleBuddyDelegation: () => {},
     getConversation: (id) => conversations.get(id),
-    readLatestOompaRuntime: () => ({ available: false, run: null, reason: 'fixture' }),
+    readLatestOompaRuntime: async () => ({ available: false, run: null, reason: 'fixture' }),
     createSessionId: () => `session-${providerStarts}`,
     executeTurn: (() => {
       providerStarts++;
