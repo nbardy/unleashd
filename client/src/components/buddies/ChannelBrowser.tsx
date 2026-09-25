@@ -15,7 +15,7 @@ import { BuddyRailRow } from './BuddyRailRow';
 import { BuddySigil } from './BuddySigil';
 import { ChannelAuthor, type OpenDm } from './ChannelAuthor';
 import { ChannelComposer } from './ChannelComposer';
-import { ChannelLoader } from './ChannelLoader';
+import { ChannelHistory, ChannelLoader } from './ChannelLoader';
 import { ChannelMarkdown, TypingDots } from './ChannelMarkdown';
 import { CopyLinkButton } from './CopyLinkButton';
 import {
@@ -24,7 +24,6 @@ import {
   CONVERSATIONAL_PURPOSES,
   type ChannelMember,
   type ChannelRow,
-  channelPostsResource,
   channelReferences,
   channelRows,
   channelThreadResource,
@@ -36,6 +35,7 @@ import {
   postsResource,
   renderFeed,
   taskChannelFeedUrl,
+  useChannelFeed,
   useChannelResponding,
   useFollowBottom,
   useWarmChannelPosts,
@@ -433,7 +433,8 @@ function ChannelPane({
   onThread: (rootId: string | null) => void;
   openDm: OpenDm;
 }) {
-  const channelFeed = usePolledFetch(channelPostsResource(list.id), CHANNEL_BACKSTOP_MS);
+  const channel = useChannelFeed(list.id);
+  const channelFeed = channel.feed;
   const taskFeed = usePolledFetch(
     taskFilter ? postsResource(taskChannelFeedUrl(workspaceId, taskFilter)) : null,
     CHANNEL_BACKSTOP_MS
@@ -531,9 +532,19 @@ function ChannelPane({
               </div>
             ),
             posts: () => (
-              <ol className="channel-browser-messages">
-                {rows.map((row) => renderRow(row, channelContext))}
-              </ol>
+              <>
+                {/* The Task feed is one cross-channel page; only a channel pages back. */}
+                {!taskFilter && (
+                  <ChannelHistory
+                    edge={channel.edge}
+                    scrollRef={follow.scrollRef}
+                    onReach={() => void channel.loadOlder(follow.hold)}
+                  />
+                )}
+                <ol className="channel-browser-messages">
+                  {rows.map((row) => renderRow(row, channelContext))}
+                </ol>
+              </>
             ),
           })}
         </div>

@@ -16,9 +16,10 @@ import {
   BuddyWorkspaceActivitySchema,
 } from '@unleashd/shared';
 import { useAtomValue } from 'jotai';
-import { type UIEvent, useEffect, useMemo, useRef } from 'react';
+import { type UIEvent, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import { type OutboxEntry, channelOutboxAtom, outboxDrop } from '../../atoms/channel-outbox';
 import { warmResources } from '../../atoms/prefetch';
+import { seedResource } from '../../atoms/resources';
 import { resource, usePolledFetch } from '../../hooks/usePolledFetch';
 import { newId } from '../../utils/ids';
 import { buddyApi } from './api';
@@ -83,8 +84,111 @@ export function listsUrl(workspaceId: string): string {
   return `/api/buddies/lists?workspaceId=${encodeURIComponent(workspaceId)}`;
 }
 
+/** Top-level posts per page read; the newest page is what every channel warms. */
+export const CHANNEL_PAGE = 50;
+
+function channelPostsPath(listId: string): string {
+  return `/api/buddies/lists/${encodeURIComponent(listId)}/posts`;
+}
+
 export function channelPostsResource(listId: string) {
-  return postsResource(`/api/buddies/lists/${encodeURIComponent(listId)}/posts?limit=50`);
+  return postsResource(`${channelPostsPath(listId)}?limit=${CHANNEL_PAGE}`);
+}
+
+// What a channel feed reads: D = Latest ⊕ From(floor).
+// Latest is the newest page. Once the reader pages back, the feed reads from
+// its oldest loaded post (the floor) to the newest instead. Re-reading the
+// newest page would slide the window: every new post would push the oldest
+// one out above the reader, and open a gap between it and the history they
+// loaded. `complete`: the floor is the channel's first post.
+export type ChannelRange = { kind: 'latest' } | { kind: 'from'; floor: string; complete: boolean };
+
+const LATEST_RANGE: ChannelRange = { kind: 'latest' };
+
+function channelRangeResource(listId: string, range: ChannelRange) {
+  switch (range.kind) {
+    case 'latest':
+      return channelPostsResource(listId);
+    case 'from':
+      return postsResource(`${channelPostsPath(listId)}?from=${encodeURIComponent(range.floor)}`);
+  }
+}
+
+// The top of a channel feed: D = More ⊕ Loading ⊕ Failed ⊕ Complete.
+export type OlderEdge =
+  | { kind: 'more' }
+  | { kind: 'loading' }
+  | { kind: 'failed'; error: Error }
+  | { kind: 'complete' };
+
+type OlderRequest = { kind: 'idle' } | { kind: 'loading' } | { kind: 'failed'; error: Error };
+
+const IDLE_REQUEST: OlderRequest = { kind: 'idle' };
+const LOADING_REQUEST: OlderRequest = { kind: 'loading' };
+const NO_POSTS: readonly BuddyMailingListPost[] = [];
+
+function olderEdge(
+  range: ChannelRange,
+  request: OlderRequest,
+  posts: readonly BuddyMailingListPost[]
+): OlderEdge {
+  switch (request.kind) {
+    case 'idle':
+      return settledEdge(range, posts);
+    case 'loading':
+    case 'failed':
+      return request;
+  }
+}
+
+// A newest page shorter than a full page is the whole channel.
+function settledEdge(range: ChannelRange, posts: readonly BuddyMailingListPost[]): OlderEdge {
+  switch (range.kind) {
+    case 'latest':
+      return { kind: posts.length < CHANNEL_PAGE ? 'complete' : 'more' };
+    case 'from':
+      return { kind: range.complete ? 'complete' : 'more' };
+  }
+}
+
+/**
+ * One channel's top-level posts, newest-first, with history on demand.
+ * `loadOlder` reads the page before the oldest post held and moves the feed
+ * to a From range covering it, seeded with what it already holds so the
+ * switch renders at once. `beforePrepend` runs just before the older rows
+ * render above the reader (useFollowBottom's `hold`).
+ */
+export function useChannelFeed(listId: string) {
+  const [range, setRange] = useState(LATEST_RANGE);
+  const [request, setRequest] = useState(IDLE_REQUEST);
+  const feed = usePolledFetch(channelRangeResource(listId, range), CHANNEL_BACKSTOP_MS);
+  const posts = feed.data ?? NO_POSTS;
+  const edge = olderEdge(range, request, posts);
+  const loadOlder = async (beforePrepend: () => void) => {
+    const oldest = posts[posts.length - 1];
+    if (edge.kind === 'loading' || edge.kind === 'complete' || !oldest) return;
+    setRequest(LOADING_REQUEST);
+    try {
+      const page = BuddyMailingListPostsSchema.parse(
+        await buddyApi(
+          `${channelPostsPath(listId)}?before=${encodeURIComponent(oldest.id)}&limit=${CHANNEL_PAGE}`
+        )
+      );
+      const next: ChannelRange = {
+        kind: 'from',
+        floor: (page[page.length - 1] ?? oldest).id,
+        complete: page.length < CHANNEL_PAGE,
+      };
+      if (page.length > 0) beforePrepend();
+      seedResource(channelRangeResource(listId, next), [...posts, ...page]);
+      setRange(next);
+      setRequest(IDLE_REQUEST);
+    } catch (cause) {
+      const error = cause instanceof Error ? cause : new Error(String(cause));
+      setRequest({ kind: 'failed', error });
+    }
+  };
+  return { feed, edge, loadOlder };
 }
 
 /**
@@ -403,6 +507,19 @@ export function useFollowBottom(rowCount: number, version: unknown, linkedPostId
     }
     if (followRef.current) node.scrollTop = node.scrollHeight;
   }, [rowCount, version, linkedPostId]);
+  // Older posts render ABOVE the reader (useChannelFeed's loadOlder). Keep
+  // their distance from the bottom across that render, or the page they were
+  // reading jumps down by everything that loaded. A layout effect, so the
+  // restored position is the first one painted.
+  const heldRef = useRef<number | null>(null);
+  // biome-ignore lint/correctness/useExhaustiveDependencies: rowCount is the prepend trigger
+  useLayoutEffect(() => {
+    const node = scrollRef.current;
+    const held = heldRef.current;
+    if (!node || held === null) return;
+    heldRef.current = null;
+    node.scrollTop = node.scrollHeight - held;
+  }, [rowCount]);
   const onScroll = (event: UIEvent<HTMLDivElement>) => {
     const node = event.currentTarget;
     followRef.current = node.scrollHeight - node.scrollTop - node.clientHeight < 48;
@@ -410,7 +527,11 @@ export function useFollowBottom(rowCount: number, version: unknown, linkedPostId
   const pin = () => {
     followRef.current = true;
   };
-  return { scrollRef, onScroll, pin };
+  const hold = () => {
+    const node = scrollRef.current;
+    if (node) heldRef.current = node.scrollHeight - node.scrollTop;
+  };
+  return { scrollRef, onScroll, pin, hold };
 }
 
 /** Create a channel as the owner; resolves to the new list id. */

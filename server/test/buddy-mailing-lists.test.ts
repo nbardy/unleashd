@@ -869,3 +869,98 @@ test('task channel feed: project posts across lists, newest-first, owner reads u
     raw.close();
   }
 });
+
+// Until 2026-09-25 the owner's channel view read the newest 50 posts and
+// nothing else, so a channel's 51st-oldest post was unreachable in the UI.
+// The view now pages this route by keyset; offsets would repeat a post
+// whenever one lands between two page reads.
+test('owner channel paging: every root reachable once by keyset, even with a post landing mid-read; from= holds the window', async () => {
+  const { raw, store, w, a } = fixture();
+  try {
+    const author = { kind: 'buddy' as const, buddyId: a.id };
+    const { list } = store.createList({
+      workspace: w.id,
+      author,
+      key: 'busy',
+      name: 'Busy',
+      purpose: 'Paging',
+    });
+    const root = (key: string) =>
+      store.createPost({ list: list.id, author, key, purpose: 'standup', body: key }).post;
+    // 250 roots: more than the package's 200-row read ceiling, so a `from`
+    // read of the whole channel has to chunk.
+    const roots = Array.from({ length: 250 }, (_, index) => root(`root-${index}`));
+    const reply = store.createPost({
+      list: list.id,
+      author,
+      key: 'reply',
+      purpose: 'reply',
+      body: 'reply',
+      threadRoot: roots[10].id,
+    }).post;
+
+    const app = routeTestApp(store);
+    const server = app.listen(0, '127.0.0.1');
+    try {
+      await new Promise<void>((resolve, reject) => {
+        server.once('listening', resolve);
+        server.once('error', reject);
+      });
+      const { port } = server.address() as AddressInfo;
+      type Wire = { id: string; createdAt: string; threadRootId: string | null };
+      const read = async (query: string) => {
+        const response = await fetch(
+          `http://127.0.0.1:${port}/api/buddies/lists/${list.id}/posts${query}`
+        );
+        return { status: response.status, posts: (await response.json()) as Wire[] };
+      };
+      const page = async (query: string) => {
+        const result = await read(query);
+        assert.equal(result.status, 200, JSON.stringify(result.posts));
+        return result.posts;
+      };
+
+      const walked: Wire[] = [];
+      let current = await page('?limit=50');
+      walked.push(...current);
+      const late = root('late');
+      while (current.length === 50) {
+        current = await page(`?before=${walked[walked.length - 1].id}&limit=50`);
+        walked.push(...current);
+      }
+      const ids = walked.map((post) => post.id);
+      assert.equal(new Set(ids).size, ids.length, 'a post repeated across pages');
+      assert.deepEqual(new Set(ids), new Set(roots.map((post) => post.id)));
+      for (let index = 1; index < walked.length; index++) {
+        const [newer, older] = [walked[index - 1], walked[index]];
+        assert.ok(
+          newer.createdAt > older.createdAt ||
+            (newer.createdAt === older.createdAt && newer.id > older.id),
+          'pages must read newest-first'
+        );
+      }
+
+      // The oldest root as floor: the whole channel, the late post included.
+      const whole = await page(`?from=${ids[ids.length - 1]}`);
+      assert.deepEqual(
+        whole.map((post) => post.id),
+        [late.id, ...ids]
+      );
+      const middle = await page(`?from=${ids[100]}`);
+      assert.deepEqual(
+        middle.map((post) => post.id),
+        [late.id, ...ids.slice(0, 101)]
+      );
+
+      assert.equal((await read(`?from=${reply.id}`)).status, 400);
+      assert.equal((await read(`?before=${reply.id}`)).status, 400);
+      assert.equal((await read(`?from=${ids[5]}&before=${ids[6]}`)).status, 400);
+    } finally {
+      await new Promise<void>((resolve, reject) =>
+        server.close((error) => (error ? reject(error) : resolve()))
+      );
+    }
+  } finally {
+    raw.close();
+  }
+});

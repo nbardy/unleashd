@@ -4,7 +4,7 @@ import { Link, Navigate, useLocation, useParams } from 'react-router-dom';
 import { BuddySigil } from '../../components/buddies/BuddySigil';
 import { ChannelAuthor, useChatPageDm } from '../../components/buddies/ChannelAuthor';
 import { ChannelComposer } from '../../components/buddies/ChannelComposer';
-import { ChannelLoader } from '../../components/buddies/ChannelLoader';
+import { ChannelHistory, ChannelLoader } from '../../components/buddies/ChannelLoader';
 import { ChannelMarkdown, TypingDots } from '../../components/buddies/ChannelMarkdown';
 import { CopyLinkButton } from '../../components/buddies/CopyLinkButton';
 import { WakeIcon, WakeIndicator } from '../../components/buddies/WakeIndicator';
@@ -15,7 +15,6 @@ import {
   type ChannelMember,
   type ChannelRow,
   type WorkspaceDirectory,
-  channelPostsResource,
   channelRows,
   channelThreadResource,
   clockTime,
@@ -26,6 +25,7 @@ import {
   postPurposeLabel,
   postPurposeTag,
   renderFeed,
+  useChannelFeed,
   useChannelResponding,
   useFollowBottom,
   useWarmChannelPosts,
@@ -503,7 +503,8 @@ function ScreenHeader({
 function ChannelScreen({ listId, context }: { listId: string; context: ScreenContext }) {
   const { workspaceId, directory, lists } = context;
   const list = lists?.find((candidate) => candidate.id === listId) ?? null;
-  const feed = usePolledFetch(channelPostsResource(listId), CHANNEL_BACKSTOP_MS);
+  const channel = useChannelFeed(listId);
+  const feed = channel.feed;
   const responding = useChannelResponding(listId);
   const posts = useWithOutbox(workspaceId, listId, null, feed.data);
   const rows = useMemo(() => channelRows(posts ?? []), [posts]);
@@ -545,11 +546,18 @@ function ChannelScreen({ listId, context }: { listId: string; context: ScreenCon
             <MobileEmptyPanel>No posts yet. @mention a Buddy to ask it something.</MobileEmptyPanel>
           ),
           posts: () => (
-            <ol className="mobile-channel__posts">
-              {rows.map((row) => (
-                <Row key={row.key} row={row} context={rowContext} />
-              ))}
-            </ol>
+            <>
+              <ChannelHistory
+                edge={channel.edge}
+                scrollRef={follow.scrollRef}
+                onReach={() => void channel.loadOlder(follow.hold)}
+              />
+              <ol className="mobile-channel__posts">
+                {rows.map((row) => (
+                  <Row key={row.key} row={row} context={rowContext} />
+                ))}
+              </ol>
+            </>
           ),
         })}
       </div>

@@ -154,6 +154,16 @@ and re-parsed their markdown every few seconds with nothing new. Keep derived
 values keyed on `data` identity (`useMemo(..., [feed.data])`, `memo` on heavy
 leaves such as `ChannelMarkdown`) so the sharing reaches the DOM.
 
+A channel feed pages back by keyset (`useChannelFeed` in
+components/buddies/channel-data.ts). It reads the newest page until the reader
+nears the top, then reads `from=<oldest loaded post>` down to the newest, so
+the window grows at the bottom and never slides. Re-reading the newest page
+after paging back would push the oldest post out above the reader on every new
+post and leave a gap between the pages. The switch to the new key is seeded
+(`seedResource`) with the posts already held plus the fetched page, so it
+renders without the loader and revalidates behind it. Until 2026-09-25 the view
+read the newest 50 posts and nothing older was reachable.
+
 Every Buddy read model is declared once in
 [hooks/useBuddyData.ts](../client/src/hooks/useBuddyData.ts) and consumed by
 both shells. `BuddiesDashboard` (desktop) and `BuddyDetailMobile` used to each
