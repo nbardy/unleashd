@@ -2,13 +2,16 @@ import type { Channel, ChannelUnread, Inbox, Post } from '../../src/components/b
 
 /** A crate `Post` with every required field; override what the test is about. */
 export function postFixture(overrides: Partial<Post> & Pick<Post, 'id'>): Post {
+  const createdAt = overrides.createdAt ?? '2026-09-24T00:00:00.000Z';
   return {
     channelId: 'ch_a',
     author: { kind: 'owner' },
     body: `Body of ${overrides.id}.`,
     evidence: [],
     request: { state: 'none' },
-    createdAt: '2026-09-24T00:00:00.000Z',
+    createdAt,
+    // Stands in for the server's time-ordered id: fixtures order by their time, then id.
+    ord: `${createdAt}#${overrides.id}`,
     ...overrides,
   };
 }

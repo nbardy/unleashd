@@ -18,7 +18,8 @@
 
 use crate::error::Result;
 use crate::import::{
-    DIRECT_READ_CURSORS, DM_KEY, DirectReads, OwnerReads, SoulFile, SoulFileState, load_owner_reads, open_source, soul_files, uri,
+    CURSOR_ORD, DIRECT_READ_CURSORS, DM_KEY, DirectReads, OwnerReads, SoulFile, SoulFileState, load_owner_reads, open_source, soul_files,
+    uri,
 };
 use crate::store::{collect, sha256_hex};
 use rusqlite::{Connection, OpenFlags};
@@ -199,6 +200,9 @@ pub struct VerifyReport {
     pub answers: RowCheck,
     pub links: RowCheck,
     pub read_cursors: RowCheck,
+    /// Ordered ids: every post's `ord` is a UUIDv7, a channel's posts in `ord` order never go back
+    /// in time, and every read cursor's `last_ord` is its post's (or its instant's ceiling).
+    pub ordering: RowCheck,
     pub revision_chains: ChainCheck,
     pub soul: SoulCheck,
 }
@@ -389,6 +393,32 @@ fn check_links(new: &Connection) -> Result<RowCheck> {
     })
 }
 
+fn check_ordering(new: &Connection) -> Result<RowCheck> {
+    crate::import::register_ord_ceiling(new)?;
+    let mut broken =
+        rows(new, "SELECT id, 'ord is not a UUIDv7' FROM post WHERE ord NOT GLOB '????????-????-7???-[89ab]???-????????????'")?;
+    broken.extend(rows(
+        new,
+        "SELECT id, 'reads before an older post of its channel' FROM (SELECT id, created_at,
+           lag(created_at) OVER (PARTITION BY channel_id ORDER BY ord) AS previous FROM post) WHERE previous > created_at",
+    )?);
+    broken.extend(rows(
+        new,
+        &format!(
+            "SELECT reader || '/' || channel_id, 'cursor ord disagrees with its post' FROM post_read WHERE last_ord != {}",
+            CURSOR_ORD.replace("{post}", "last_post_id").replace("{at}", "last_post_at")
+        ),
+    )?);
+    let checked: usize = new.query_row("SELECT (SELECT count(*) FROM post) + (SELECT count(*) FROM post_read)", [], |r| r.get(0))?;
+    Ok(RowCheck {
+        ok: broken.is_empty(),
+        rows_old: checked,
+        rows_new: checked,
+        identical: checked - broken.len(),
+        mismatches: broken.into_iter().map(|(id, why)| format!("{id}: {why}")).collect(),
+    })
+}
+
 /// buddy_list_reads plus the owner's cursors from owner-channel-reads.json, which must read the
 /// same now as at import (it is live server state).
 fn check_reads(old: &Connection, new: &Connection, imported: &OwnerReads, direct: &DirectReads) -> Result<RowCheck> {
@@ -428,8 +458,9 @@ pub fn verify(
     let answers = check_answers(&old, &new)?;
     let links = check_links(&new)?;
     let read_cursors = check_reads(&old, &new, owner_reads, direct_reads)?;
+    let ordering = check_ordering(&new)?;
     let revision_chains = check_chains(&old, &new)?;
     let soul = check_soul(&new, soul_baseline)?;
-    let ok = classes.iter().all(|c| c.ok) && answers.ok && links.ok && read_cursors.ok && revision_chains.ok && soul.ok;
-    Ok(VerifyReport { ok, classes, answers, links, read_cursors, revision_chains, soul })
+    let ok = classes.iter().all(|c| c.ok) && answers.ok && links.ok && read_cursors.ok && ordering.ok && revision_chains.ok && soul.ok;
+    Ok(VerifyReport { ok, classes, answers, links, read_cursors, ordering, revision_chains, soul })
 }

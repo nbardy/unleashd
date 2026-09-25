@@ -17,8 +17,9 @@ pub fn now_iso() -> String {
     chrono::Utc::now().format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string()
 }
 
+/// A new row id: the prefix and a time-ordered UUIDv7 (ids.rs), so ids sort in write order.
 pub fn new_id(prefix: &str) -> String {
-    format!("{prefix}_{}", uuid::Uuid::new_v4())
+    format!("{prefix}_{}", crate::ids::next())
 }
 
 pub fn sha256_hex(bytes: &[u8]) -> String {

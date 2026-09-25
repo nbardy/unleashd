@@ -24,6 +24,7 @@ const post = (id: string, overrides: Partial<Post>): Post => ({
   evidence: [],
   request: { state: 'none' },
   createdAt: '2026-09-20T00:00:00Z',
+  ord: id,
   ...overrides,
 });
 

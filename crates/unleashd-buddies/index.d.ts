@@ -165,10 +165,10 @@ export interface ConversationInput {
   taskId?: string
 }
 
-/** Keyset position: posts strictly older than (created_at, id). */
+/** Keyset position: posts strictly older than this ordered id. */
 export interface Cursor {
-  createdAt: string
-  id: string
+  /** The ordered id of the last post of the previous page. */
+  ord: string
 }
 
 export type Decision =
@@ -290,6 +290,8 @@ export interface Post {
   conversationId?: string
   returnConversationId?: string
   createdAt: string
+  /** The post's ordered id (UUIDv7): threads, pages and read cursors order by it. */
+  ord: string
 }
 
 export interface PostInput {

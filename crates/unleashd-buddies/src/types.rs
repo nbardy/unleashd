@@ -298,6 +298,8 @@ pub struct Post {
     pub conversation_id: Option<String>,
     pub return_conversation_id: Option<String>,
     pub created_at: String,
+    /// The post's ordered id (UUIDv7): threads, pages and read cursors order by it.
+    pub ord: String,
 }
 
 #[cfg_attr(feature = "node", napi_derive::napi(object))]
@@ -511,12 +513,12 @@ pub enum RunQuery {
     },
 }
 
-/// Keyset position: posts strictly older than (created_at, id).
+/// Keyset position: posts strictly older than this ordered id.
 #[cfg_attr(feature = "node", napi_derive::napi(object))]
 #[derive(Debug, Clone)]
 pub struct Cursor {
-    pub created_at: String,
-    pub id: String,
+    /// The ordered id of the last post of the previous page.
+    pub ord: String,
 }
 
 #[cfg_attr(feature = "node", napi_derive::napi(discriminant = "kind", discriminant_case = "snake_case"))]

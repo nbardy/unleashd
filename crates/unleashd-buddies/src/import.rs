@@ -14,7 +14,7 @@ use crate::runs::next_run;
 use crate::schema;
 use crate::store::{now_iso, sha256_hex};
 use rusqlite::functions::FunctionFlags;
-use rusqlite::{Connection, OpenFlags};
+use rusqlite::{Connection, OpenFlags, params};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::collections::BTreeMap;
@@ -68,12 +68,42 @@ pub enum DirectReads {
 
 /// The cursors `mark_direct_read` writes: for every direct channel, the owner and each member,
 /// at the channel's newest post. The verifier recomputes the same set from the imported posts.
-pub const DIRECT_READ_CURSORS: &str = "SELECT r.reader, c.id AS channel_id, last.id AS post_id, last.created_at AS post_at
+pub const DIRECT_READ_CURSORS: &str = "SELECT r.reader, c.id AS channel_id, last.id AS post_id, last.created_at AS post_at,
+      last.ord AS post_ord
     FROM channel c
     JOIN (SELECT channel_id, member AS reader FROM channel_member UNION SELECT id, 'owner' FROM channel WHERE kind = 'direct') r
       ON r.channel_id = c.id
-    JOIN post last ON last.id = (SELECT p.id FROM post p WHERE p.channel_id = c.id ORDER BY p.created_at DESC, p.id DESC LIMIT 1)
+    JOIN post last ON last.id = (SELECT p.id FROM post p WHERE p.channel_id = c.id ORDER BY p.ord DESC LIMIT 1)
     WHERE c.kind = 'direct'";
+
+/// A read cursor's ordered id: the post's own when it exists, else the ceiling id of its time
+/// ("read through that instant": an owner baseline has post id '').
+pub const CURSOR_ORD: &str = "coalesce((SELECT p.ord FROM post p WHERE p.id = {post}), ord_ceiling({at}))";
+
+/// `ord_ceiling(time)`: the greatest ordered id of that millisecond (ids.rs).
+pub fn register_ord_ceiling(conn: &Connection) -> Result<()> {
+    conn.create_scalar_function("ord_ceiling", 1, FunctionFlags::SQLITE_UTF8 | FunctionFlags::SQLITE_DETERMINISTIC, |ctx| {
+        let ms = crate::ids::millis(&ctx.get::<String>(0)?).map_err(|e| rusqlite::Error::UserFunctionError(Box::new(e)))?;
+        Ok(crate::ids::ceiling(ms).to_string())
+    })?;
+    Ok(())
+}
+
+/// Imported posts keep their v33 ids: runs, conversation links and client permalinks name them.
+/// Each gets an ordered id issued at its SOURCE write time by the one generator, walking the
+/// posts in (source time, import order), so the whole history reads in its true order and every
+/// post written later sorts after it. v33 kept no cross-table sequence (an inline reply is only
+/// `replied_at`), so the source time is the only order the history has; ties keep import order.
+fn assign_post_ords(conn: &Connection) -> Result<()> {
+    let posts: Vec<(i64, String)> = crate::store::collect(
+        conn.prepare("SELECT rowid, created_at FROM post ORDER BY created_at, rowid")?.query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?,
+    )?;
+    let mut update = conn.prepare("UPDATE post SET ord = ?2 WHERE rowid = ?1")?;
+    for (rowid, at) in posts {
+        update.execute(params![rowid, crate::ids::next_at(crate::ids::millis(&at)?).to_string()])?;
+    }
+    Ok(())
+}
 
 pub const DIRECT_READ_SOURCE: &str = "import:direct-read";
 
@@ -337,7 +367,7 @@ fn mapping_sql() -> Vec<String> {
         // root, often in another channel, so it stays in legacy and `root_id` is the channel thread
         // (msg_thread). An inline reply becomes its own post, answering the request.
         "INSERT INTO post (id, channel_id, author_id, root_id, reply_to_id, task_id, purpose, body, evidence, request, answer_id,
-           conversation_id, return_conversation_id, created_at, legacy)
+           conversation_id, return_conversation_id, created_at, legacy, ord)
          SELECT m.id, c.id, m.from_buddy_id, t.root_id, m.in_reply_to_id, m.buddy_project_id, m.purpose, m.body, m.evidence,
            CASE WHEN m.status = 'replied' THEN 'answered' WHEN m.expects_reply = 0 THEN NULL
                 WHEN m.status IN ('pending','active') THEN 'awaiting' ELSE m.status END,
@@ -350,22 +380,23 @@ fn mapping_sql() -> Vec<String> {
              'source_project_id', m.source_project_id, 'source_workspace_id', m.source_workspace_id, 'caused_by_run_id', m.caused_by_run_id,
              'not_before', m.not_before, 'after_run_id', m.after_run_id, 'continue_from_message_id', m.continue_from_message_id,
              'superseded_by_message_id', m.superseded_by_message_id, 'root_stopped_at', m.root_stopped_at, 'command_key', m.command_key,
-             'payload_hash', m.payload_hash, 'return_policy', json(m.return_policy), 'visibility', m.visibility)
+             'payload_hash', m.payload_hash, 'return_policy', json(m.return_policy), 'visibility', m.visibility),
+           'pending:' || m.id
          FROM msg m JOIN channel c ON c.member_key = m.member_key JOIN msg_thread t ON t.id = m.id".into(),
-        "INSERT INTO post (id, channel_id, author_id, root_id, reply_to_id, task_id, body, evidence, created_at, legacy)
+        "INSERT INTO post (id, channel_id, author_id, root_id, reply_to_id, task_id, body, evidence, created_at, legacy, ord)
          SELECT 'reply_' || m.id, c.id, m.to_buddy_id, coalesce(t.root_id, m.id), m.id, m.buddy_project_id, m.reply_body,
-           m.reply_evidence, m.replied_at, json_object('source', 'buddy_messages.reply')
+           m.reply_evidence, m.replied_at, json_object('source', 'buddy_messages.reply'), 'pending:reply_' || m.id
          FROM msg m JOIN channel c ON c.member_key = m.member_key JOIN msg_thread t ON t.id = m.id WHERE m.status = 'replied'".into(),
-        "INSERT INTO post (id, channel_id, author_id, root_id, task_id, purpose, body, evidence, return_conversation_id, created_at, legacy)
+        "INSERT INTO post (id, channel_id, author_id, root_id, task_id, purpose, body, evidence, return_conversation_id, created_at, legacy,
+           ord)
          SELECT id, list_id, from_buddy_id, thread_root_id, buddy_project_id, purpose, body, evidence, sender_conversation_id, created_at,
-           json_object('source', 'buddy_list_posts', 'sender_conversation_id', sender_conversation_id, 'sender_run_id', sender_run_id)
+           json_object('source', 'buddy_list_posts', 'sender_conversation_id', sender_conversation_id, 'sender_run_id', sender_run_id),
+           'pending:' || id
          FROM old.buddy_list_posts".into(),
-        "INSERT INTO post (id, channel_id, author_id, task_id, body, evidence, created_at, legacy)
+        "INSERT INTO post (id, channel_id, author_id, task_id, body, evidence, created_at, legacy, ord)
          SELECT id, 'tc_' || project_id, nullif(author, 'owner'), project_id, body, evidence, created_at,
-           json_object('source', 'buddy_task_comments')
+           json_object('source', 'buddy_task_comments'), 'pending:' || id
          FROM old.buddy_task_comments".into(),
-        "INSERT INTO post_read SELECT buddy_id, list_id, last_post_id, last_post_created_at, updated_at,
-           json_object('source', 'buddy_list_reads') FROM old.buddy_list_reads".into(),
         "INSERT INTO doc (id, buddy_id, workspace_id, scope_kind, scope_id, kind, name, revision, content, updated_at, legacy)
          SELECT 'mem_' || h.buddy_id || '_' || h.document_kind, h.buddy_id, b.project_id, 'buddy', h.buddy_id, h.document_kind, '',
            r.revision, r.body, h.updated_at,
@@ -607,9 +638,23 @@ pub fn import(source: &Path, target: &Path, owner_reads: &Path, options: ImportO
     for sql in mapping_sql() {
         conn.execute(&sql, [])?;
     }
+    assign_post_ords(&conn)?;
+    register_ord_ceiling(&conn)?;
     conn.execute(
-        "INSERT INTO post_read SELECT 'owner', list_id, post_id, created_at, ?1, json_object('source', 'owner-channel-reads.json')
-         FROM owner_read",
+        &format!(
+            "INSERT INTO post_read (reader, channel_id, last_post_id, last_post_at, last_ord, updated_at, legacy)
+             SELECT buddy_id, list_id, last_post_id, last_post_created_at, {}, updated_at, json_object('source', 'buddy_list_reads')
+             FROM old.buddy_list_reads",
+            CURSOR_ORD.replace("{post}", "last_post_id").replace("{at}", "last_post_created_at")
+        ),
+        [],
+    )?;
+    conn.execute(
+        &format!(
+            "INSERT INTO post_read (reader, channel_id, last_post_id, last_post_at, last_ord, updated_at, legacy)
+             SELECT 'owner', list_id, post_id, created_at, {}, ?1, json_object('source', 'owner-channel-reads.json') FROM owner_read",
+            CURSOR_ORD.replace("{post}", "post_id").replace("{at}", "created_at")
+        ),
         [&now],
     )?;
     let direct_reads = match options.mark_direct_read {
@@ -617,8 +662,8 @@ pub fn import(source: &Path, target: &Path, owner_reads: &Path, options: ImportO
         true => {
             let cursors = conn.execute(
                 &format!(
-                    "INSERT INTO post_read (reader, channel_id, last_post_id, last_post_at, updated_at, legacy)
-                     SELECT reader, channel_id, post_id, post_at, ?1, json_object('source', '{DIRECT_READ_SOURCE}')
+                    "INSERT INTO post_read (reader, channel_id, last_post_id, last_post_at, last_ord, updated_at, legacy)
+                     SELECT reader, channel_id, post_id, post_at, post_ord, ?1, json_object('source', '{DIRECT_READ_SOURCE}')
                      FROM ({DIRECT_READ_CURSORS}) WHERE true ON CONFLICT(reader, channel_id) DO NOTHING"
                 ),
                 [&now],

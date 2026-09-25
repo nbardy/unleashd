@@ -52,7 +52,7 @@ pub(crate) fn get_run(conn: &Connection, id: &str) -> Result<Run> {
         .ok_or_else(|| CoreError::not_found("run", id))
 }
 
-pub(crate) fn plus_ms(now: &str, ms: i64) -> Result<String> {
+fn plus_ms(now: &str, ms: i64) -> Result<String> {
     let t = DateTime::parse_from_rfc3339(now).map_err(|e| CoreError::Invalid(format!("time {now:?}: {e}")))?;
     Ok((t.with_timezone(&Utc) + Duration::milliseconds(ms)).format("%Y-%m-%dT%H:%M:%S%.3fZ").to_string())
 }
@@ -140,7 +140,7 @@ impl Store {
                        AND (SELECT count(*) FROM run l WHERE l.buddy_id = r.buddy_id AND l.status IN ('running','cancel_requested'))
                             < b.max_active_runs
                        AND (r.task_id IS NULL OR EXISTS (SELECT 1 FROM task t WHERE t.id = r.task_id AND t.paused = 0))
-                     ORDER BY r.ready_at, r.created_at LIMIT 1",
+                     ORDER BY r.ready_at, r.id LIMIT 1",
                 )?
                 .query_row([now], |r| r.get(0))
                 .optional()?;
@@ -253,10 +253,12 @@ impl Store {
 
     pub fn list_runs(&self, query: RunQuery, limit: i64) -> Result<Vec<Run>> {
         let (filter, mut args): (&str, Vec<Value>) = match query {
-            RunQuery::Buddy { buddy_id } => ("buddy_id = ? ORDER BY created_at DESC", vec![buddy_id.into()]),
-            RunQuery::Conversation { conversation_id } => ("conversation_id = ? ORDER BY created_at DESC", vec![conversation_id.into()]),
-            RunQuery::Task { task_id } => ("task_id = ? ORDER BY created_at DESC", vec![task_id.into()]),
-            RunQuery::Queued => ("status = 'queued' ORDER BY ready_at, created_at", vec![]),
+            RunQuery::Buddy { buddy_id } => ("buddy_id = ? ORDER BY created_at DESC, id DESC", vec![buddy_id.into()]),
+            RunQuery::Conversation { conversation_id } => {
+                ("conversation_id = ? ORDER BY created_at DESC, id DESC", vec![conversation_id.into()])
+            }
+            RunQuery::Task { task_id } => ("task_id = ? ORDER BY created_at DESC, id DESC", vec![task_id.into()]),
+            RunQuery::Queued => ("status = 'queued' ORDER BY ready_at, id", vec![]),
             RunQuery::Live { workspace_id } => {
                 ("status IN ('running','cancel_requested') AND workspace_id = ? ORDER BY started_at", vec![workspace_id.into()])
             }

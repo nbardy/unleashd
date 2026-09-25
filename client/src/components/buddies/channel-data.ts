@@ -170,8 +170,8 @@ export function threadFeed(rootId: string): PostFeed<ThreadPage> {
   };
 }
 
-const cursorQuery = (cursor: Cursor) =>
-  `before=${encodeURIComponent(cursor.createdAt)}&beforeId=${encodeURIComponent(cursor.id)}`;
+// Pages go back by the post's ordered id (a UUIDv7 the server issues in write order).
+const cursorQuery = (cursor: Cursor) => `before=${encodeURIComponent(cursor.ord)}`;
 
 function latestResource<V>(feed: PostFeed<V>) {
   const url = `${feed.base}limit=${CHANNEL_PAGE}`;
@@ -363,6 +363,8 @@ function outboxPost(entry: OutboxEntry): Post {
         evidence: [],
         request: { state: 'none' },
         createdAt: entry.createdAt,
+        // After every served post (hex UUIDs sort below 'z'), in the order they were sent.
+        ord: `z-outbox-${entry.createdAt}-${entry.key}`,
       };
   }
 }
@@ -370,9 +372,9 @@ function outboxPost(entry: OutboxEntry): Post {
 // Posts arrive newest-first; a Slack transcript reads oldest-first with the
 // newest message at the bottom, next to the composer.
 export function channelRows(newestFirst: readonly Post[]): ChannelRow[] {
-  const posts = [...newestFirst].sort(
-    (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime()
-  );
+  // By the ordered id (write order), never by createdAt: posts written in one millisecond tie on
+  // it and came back shuffled (2026-09-25). Plain string order is the id's order.
+  const posts = [...newestFirst].sort((a, b) => (a.ord < b.ord ? -1 : a.ord > b.ord ? 1 : 0));
   const rows: ChannelRow[] = [];
   let previous: Post | null = null;
   for (const post of posts) {

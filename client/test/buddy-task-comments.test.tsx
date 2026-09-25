@@ -19,6 +19,7 @@ test('task comments show durable authorship, body and ordinary file evidence', (
           evidence: ['agent_notes/partial.md', 'commit:abc'],
           request: { state: 'none' },
           createdAt: '2026-09-14T10:00:00Z',
+          ord: '2',
         },
         {
           id: 'gone',
@@ -28,6 +29,7 @@ test('task comments show durable authorship, body and ordinary file evidence', (
           evidence: [],
           request: { state: 'none' },
           createdAt: '2026-09-14T09:00:00Z',
+          ord: '1',
         },
       ]}
     />

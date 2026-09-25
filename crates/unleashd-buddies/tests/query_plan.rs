@@ -38,7 +38,7 @@ fn workload(s: &mut unleashd_buddies::Store) {
     let ask =
         s.post(&mid, dm.clone(), PostInput { from_conversation_id: Some("c-mid".into()), ..input(PostKind::Request, "do", "p3") }).unwrap();
     s.post(&ic, dm, input(PostKind::Inform, "on it", "p4")).unwrap();
-    let cursor = Some(Cursor { created_at: "2999-01-01T00:00:00.000Z".into(), id: "z".into() });
+    let cursor = Some(Cursor { ord: "ffffffff-ffff-7fff-bfff-ffffffffffff".into() });
     for q in [
         PostQuery::Channel { channel_id: channel.id.clone() },
         PostQuery::Thread { root_id: top.id.clone() },

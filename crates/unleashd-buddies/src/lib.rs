@@ -3,6 +3,7 @@
 
 pub mod docs;
 pub mod error;
+pub mod ids;
 pub mod import;
 #[cfg(feature = "node")]
 pub mod node;
