@@ -11,8 +11,8 @@ import {
 } from '@unleashd/shared';
 import type { DiscoveredSession } from '../src/adapters/disk-adapter';
 import { buildFirstTurnCliContent } from '../src/buddies/turn-policy';
+import type { ConversationRecordStore } from '../src/conversations/config-records';
 import type { ConversationConfigService } from '../src/conversations/config-service';
-import type { ConversationConfigStore } from '../src/conversations/config-store';
 import type {
   ConversationBroadcast,
   ConversationOptions,
@@ -116,7 +116,7 @@ async function hydrateOne(input: {
     completionSuppression: { clear: () => {} },
     configStore: {
       findBySession: async () => record,
-    } as unknown as ConversationConfigStore,
+    } as unknown as ConversationRecordStore,
     configService: {
       hydrate: async () => ({
         state: { config: {}, revision: 0, resolution: { status: 'resolved', value: {} } },
@@ -265,7 +265,7 @@ async function recoverAll(input: {
     sessions: { registerAlias: () => {}, unregisterAlias: () => {}, aliasFor: () => undefined },
     externalActivity: { clear: () => {}, has: () => false },
     completionSuppression: { clear: () => {} },
-    configStore: { findBySession: async () => undefined } as unknown as ConversationConfigStore,
+    configStore: { findBySession: async () => undefined } as unknown as ConversationRecordStore,
     configService: {
       hydrate: async (request: { conversationId: string }) => {
         if (request.conversationId === input.failFor) {
@@ -562,7 +562,7 @@ async function pollExistingKind(input: {
       isSuppressed: () => false,
       prune: () => {},
     },
-    configStore: { findBySession: async () => null } as unknown as ConversationConfigStore,
+    configStore: { findBySession: async () => null } as unknown as ConversationRecordStore,
     configService: {} as ConversationConfigService,
     loadConversations: async () => ({ mtimes: new Map<string, number>() }),
     pollConversations: async () => ({

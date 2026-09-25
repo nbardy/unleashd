@@ -1,9 +1,15 @@
 import assert from 'node:assert/strict';
-import { mkdtemp, rm } from 'node:fs/promises';
+import { access, mkdir, mkdtemp, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
 import type { ConfigResolution, ConversationConfig, Provider } from '@unleashd/shared';
+import {
+  ConfigRevisionConflictError,
+  type ConversationRecordStore,
+  openRecords,
+  recordsLocation,
+} from '../src/conversations/config-records';
 import {
   ConversationConfigResolutionError,
   type ConversationConfigResolver,
@@ -11,11 +17,8 @@ import {
   ConversationTombstonedError,
   applyConversationConfigPatch,
 } from '../src/conversations/config-service';
-import {
-  ConfigRevisionConflictError,
-  ConversationConfigStore,
-} from '../src/conversations/config-store';
 import { migrateLegacyConversationConfig } from '../src/conversations/legacy-config-migration';
+import { recordStore } from './fixtures/records';
 
 const CONVERSATION_ID = '550e8400-e29b-41d4-a716-446655440000';
 const FORK_ID = '550e8400-e29b-41d4-a716-446655440001';
@@ -84,15 +87,11 @@ const resolver: ConversationConfigResolver = {
 };
 
 async function withService(
-  run: (service: ConversationConfigService, store: ConversationConfigStore) => Promise<void>
+  run: (service: ConversationConfigService, store: ConversationRecordStore) => Promise<void>
 ): Promise<void> {
   const root = await mkdtemp(path.join(os.tmpdir(), 'unleashd-config-service-'));
-  const store = new ConversationConfigStore({ appDataRoot: root });
-  const service = new ConversationConfigService({
-    store,
-    resolver,
-    now: () => new Date('2026-07-28T12:00:00.000Z'),
-  });
+  const store = recordStore(root, () => new Date('2026-07-28T12:00:00.000Z'));
+  const service = new ConversationConfigService({ store, resolver });
   try {
     await run(service, store);
   } finally {
@@ -283,7 +282,7 @@ test('matching create replay recovers crash metadata without duplicating the rec
     assert.equal(replayed.replayed, true);
     assert.equal(replayed.record.workingDirectory, '/tmp/project');
     assert.equal(replayed.record.creation?.initialMessage, 'Start here');
-    assert.equal((await store.list()).length, 1);
+    assert.equal((await store.listSummaries()).length, 1);
 
     await assert.rejects(
       service.createOrReplay({
@@ -361,6 +360,66 @@ test('updates reject stale revisions and unavailable combinations without persis
     assert.equal(unavailable.ok, false);
     assert.equal((await store.getByConversationId(CONVERSATION_ID))?.configRevision, 0);
   });
+});
+
+// Pattern: fix-guards (docs/patterns.md#fix-guards). config-store.ts
+// serialized config writes with in-memory promise locks, which covered one
+// process; the records store compares-and-sets inside its own write
+// transaction (T23b). Two services on two connections (the shape of two
+// processes) update from the same revision: exactly one may commit, and the
+// loser must be told the winner's revision, never overwrite it.
+test('two writers updating from one revision: one commits, the other gets revision_conflict', async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'unleashd-config-cas-'));
+  try {
+    const services = [recordStore(root), recordStore(root)].map(
+      (store) => new ConversationConfigService({ store, resolver })
+    );
+    const created = await services[0].create({
+      conversationId: CONVERSATION_ID,
+      kind: { t: 'chat' },
+      config: DEFAULT_CONFIG,
+    });
+    const idle = { isRunning: false, queueDepth: 0, hasStartedSession: false };
+    const results = await Promise.all(
+      (['low', 'high'] as const).map((effort, i) =>
+        services[i].update(created, idle, {
+          conversationId: CONVERSATION_ID,
+          commandId: effort,
+          expectedRevision: 0,
+          patch: { kind: 'set_reasoning', reasoning: { mode: 'explicit', effort } },
+        })
+      )
+    );
+    const winners = results.flatMap((r) => (r.ok ? [r.value] : []));
+    const losers = results.flatMap((r) => (r.ok ? [] : [r.error]));
+    assert.equal(winners.length, 1);
+    assert.equal(losers.length, 1);
+    assert.equal(losers[0].code, 'revision_conflict');
+    assert.match(losers[0].message, /expected 0, actual 1/);
+    const stored = await recordStore(root).getByConversationId(CONVERSATION_ID);
+    assert.equal(stored?.configRevision, 1);
+    assert.equal(stored?.provenance, 'user');
+    assert.deepEqual(stored?.config, winners[0].next.config);
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
+});
+
+// Opening a missing records file creates an EMPTY store: a data dir that still
+// holds the JSON records would boot with every conversation's config gone.
+test('a data dir with unimported JSON records refuses to boot', async () => {
+  const root = await mkdtemp(path.join(os.tmpdir(), 'unleashd-records-unimported-'));
+  try {
+    await mkdir(path.join(root, 'conversation-config', 'v1', 'by-conversation'), {
+      recursive: true,
+    });
+    const location = recordsLocation(root);
+    assert.equal(location.t, 'unimported');
+    await assert.rejects(openRecords(location), /records-tool -- import[\s\S]*ok=true/);
+    await assert.rejects(access(location.file), { code: 'ENOENT' });
+  } finally {
+    await rm(root, { recursive: true, force: true });
+  }
 });
 
 test('create and fork require a currently resolved configuration', async () => {

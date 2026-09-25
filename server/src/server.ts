@@ -33,11 +33,13 @@ import {
   type BuddyCreationService,
   createBuddyCreationService,
 } from './conversations/buddy-creation-service';
+import {
+  ConversationRecordStore,
+  openRecords,
+  recordsLocation,
+} from './conversations/config-records';
 import { ConversationConfigService } from './conversations/config-service';
-import { ConversationConfigStore } from './conversations/config-store';
-import { retireLegacyUiState } from './conversations/legacy-ui-state';
 import { runtimeMessageSource } from './conversations/messages';
-import { migrateConversationRecords } from './conversations/record-migration';
 import { type ConversationRuntime, createConversationRuntime } from './conversations/runtime';
 import { registerConversationRoutes } from './http/conversation-routes';
 import { registerCoreRoutes } from './http/core-routes';
@@ -161,12 +163,11 @@ server.on('upgrade', (request, socket, head) => {
   });
 });
 wss.on('connection', (client) => superviseLiveness(client, WS_LIVENESS_INTERVAL_MS));
-const conversationConfigStore = new ConversationConfigStore({
-  appDataRoot: APP_DATA_DIR,
-  logger: {
-    warn: (warning) => console.warn('[conversation-config]', warning),
-  },
-});
+// Opened now, awaited first thing in `initialize`: a data dir whose JSON
+// records were never imported fails boot there with the import command.
+const conversationConfigStore = new ConversationRecordStore(
+  openRecords(recordsLocation(APP_DATA_DIR))
+);
 const normalizedSessionCache = new NormalizedSessionCache(
   path.join(APP_DATA_DIR, 'session-cache-v1')
 );
@@ -673,6 +674,7 @@ void runServerStartup(
     server,
     initialize: async () => {
       await errorJournal.initialize();
+      await conversationConfigStore.opened();
       installConsoleErrorCapture(errorJournal);
       startEventLoopStallMonitor(errorJournal);
       // The one Buddy tool endpoint, on its own loopback listener (never the gated app).
@@ -686,11 +688,6 @@ void runServerStartup(
       await normalizedSessionCache.initialize();
       await turnAttemptJournal.initialize();
       await persistedServerState.initialize();
-      // Before the config store reads a record: v1 records carry no kind.
-      // One-time; the module goes once the live data dir is migrated (T09).
-      await migrateConversationRecords({ appDataRoot: APP_DATA_DIR });
-      // Before any conversation loads: runtimes copy record.done at construction.
-      await retireLegacyUiState({ dataDirectory: APP_DATA_DIR, store: conversationConfigStore });
       await paletteService.initialize();
       // Uploads retention: a worker-thread pass now and daily. Every place a message or post can
       // name an upload is a reference root; see uploads/gc.ts for the deletion rule.
@@ -709,7 +706,7 @@ void runServerStartup(
           path.dirname(buddiesDatabasePath()),
         ],
         protectedNames: [
-          ...(await conversationConfigStore.list()).map((record) => record.conversationId),
+          ...(await conversationConfigStore.listSummaries()).map((record) => record.conversationId),
           ...conversations.keys(),
         ],
         maxAgeMs: UPLOADS_RETENTION_MS,
@@ -737,8 +734,7 @@ void runServerStartup(
       return true;
     },
     abortStartup: () => shutdownController?.abortStartup(),
-    loadConversations: () =>
-      conversationConfigStore.withSessionLookupIndex(sessionLoader.loadExistingConversations),
+    loadConversations: sessionLoader.loadExistingConversations,
     startPolling: sessionLoader.startFilePolling,
   }
 )
