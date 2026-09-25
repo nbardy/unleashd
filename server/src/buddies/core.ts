@@ -80,17 +80,46 @@ export function buddiesDatabasePath(env: NodeJS.ProcessEnv = process.env): strin
 }
 
 /**
- * Open the core. A missing file fails loudly with the import command: `BuddiesCore.open`
- * would otherwise create an EMPTY database there, and the server would run with no buddies
- * instead of the owner's (no silent fallback to the old file either).
+ * Where the Buddies database stands on this machine, decided once at boot. Mirrors
+ * `recordsLocation` (conversations/config-records.ts): `fresh` is a first-time install with no
+ * v33 file either, and gets an empty database. Until 2026-09-26 a missing file was always
+ * "import first", so a new user, with nothing to import, never had working Buddies.
  */
-export async function openBuddiesCore(file: string): Promise<BuddiesCore> {
-  if (!fs.existsSync(file)) {
-    throw new Error(
-      `Buddies database ${file} does not exist. Import the v33 database first:\n  buddies-import import --from ~/.buddies/buddies.sqlite --to ${file} --report ${file}.import.json\n  buddies-import verify --from ~/.buddies/buddies.sqlite --to ${file} --import-report ${file}.import.json --out ${file}.verify.json\n(or set UNLEASHD_BUDDIES_DB). See crates/unleashd-buddies/README.md "Deploy".`
-    );
+export type BuddiesLocation =
+  | { t: 'database'; file: string }
+  | { t: 'fresh'; file: string }
+  | { t: 'unimported'; file: string; legacy: string };
+
+export function buddiesLocation(
+  file: string,
+  legacy: string = path.join(os.homedir(), '.buddies', 'buddies.sqlite')
+): BuddiesLocation {
+  if (fs.existsSync(file)) return { t: 'database', file };
+  if (fs.existsSync(legacy)) return { t: 'unimported', file, legacy };
+  return { t: 'fresh', file };
+}
+
+/**
+ * Pattern: fix-guards (docs/patterns.md#fix-guards) — no silent fallback.
+ * `BuddiesCore.open` creates an EMPTY database at a missing path, so a machine that still holds
+ * the v33 file would run with no buddies instead of the owner's; that case fails loudly with
+ * the import command (and never falls back to opening the old file). Guard: the
+ * "missing Buddies database" tests in server/test/buddies-v2.test.ts.
+ */
+export async function openBuddiesCore(location: BuddiesLocation): Promise<BuddiesCore> {
+  switch (location.t) {
+    case 'database':
+      return BuddiesCore.open(location.file);
+    case 'fresh':
+      fs.mkdirSync(path.dirname(location.file), { recursive: true });
+      return BuddiesCore.open(location.file);
+    case 'unimported': {
+      const { file, legacy } = location;
+      throw new Error(
+        `Buddies database ${file} does not exist, but ${legacy} does. Import it first:\n  buddies-import import --from ${legacy} --to ${file} --report ${file}.import.json\n  buddies-import verify --from ${legacy} --to ${file} --import-report ${file}.import.json --out ${file}.verify.json\n(or set UNLEASHD_BUDDIES_DB). See crates/unleashd-buddies/README.md "Deploy".`
+      );
+    }
   }
-  return BuddiesCore.open(file);
 }
 
 /**

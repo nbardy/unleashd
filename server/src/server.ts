@@ -87,6 +87,7 @@ import {
   OWNER,
   archivedBuddyIds,
   buddiesDatabasePath,
+  buddiesLocation,
   lateBoundCore,
   openBuddiesCore,
 } from './buddies/core';
@@ -268,9 +269,10 @@ async function startIngestList(): Promise<void> {
 }
 
 // ---- Buddies: the crate (the new-schema DB) and the modules over it -------------------------
-// The DB is never the v33 ~/.buddies/buddies.sqlite; a missing file fails every Buddy call with
-// the import command (core.ts), while ordinary chats keep working.
-const buddiesReady = openBuddiesCore(buddiesDatabasePath());
+// The DB is never the v33 ~/.buddies/buddies.sqlite. A missing file while the v33 one exists fails
+// every Buddy call with the import command (core.ts), while ordinary chats keep working; a
+// first-time install (neither file) starts with an empty database.
+const buddiesReady = openBuddiesCore(buddiesLocation(buddiesDatabasePath()));
 buddiesReady.catch((error) => console.error('[buddies] Buddies are unavailable:', error.message));
 const buddiesCore = lateBoundCore(buddiesReady);
 const buddyEvents = createBuddyEvents();

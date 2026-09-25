@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { mkdtempSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import type { AddressInfo } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -24,7 +24,7 @@ import {
   parseGateVerdict,
 } from '../src/buddies/channel-reply-gate';
 import { createChannels } from '../src/buddies/channels';
-import { OWNER, buddyActor, openBuddiesCore } from '../src/buddies/core';
+import { OWNER, buddiesLocation, buddyActor, openBuddiesCore } from '../src/buddies/core';
 import { type BuddyEvent, createBuddyEvents } from '../src/buddies/events';
 import { createGrants } from '../src/buddies/grants';
 import { startMcpEndpoint } from '../src/buddies/mcp';
@@ -657,11 +657,34 @@ test('the reviewer climbs the ladder on credit exhaustion and curates memory on 
   }
 });
 
-test('the server never runs on a missing Buddies database: it names the import command', async () => {
-  await assert.rejects(
-    openBuddiesCore(join(tmpdir(), 'no-such-dir', 'buddies-v3.sqlite')),
-    /buddies-import import --from/
-  );
+// A missing new-schema file means two different things (core.ts `buddiesLocation`): the owner
+// still has the v33 file (import it, never run empty over it), or this is a first-time install
+// (nothing to import; before 2026-09-26 it was told to import anyway and never got Buddies).
+test('a missing Buddies database with the v33 file present names the import command', async () => {
+  const scratch = mkdtempSync(join(tmpdir(), 'buddies-location-'));
+  try {
+    const legacy = join(scratch, 'buddies.sqlite');
+    writeFileSync(legacy, '');
+    const file = join(scratch, 'buddies-v3.sqlite');
+    await assert.rejects(
+      openBuddiesCore(buddiesLocation(file, legacy)),
+      /buddies-import import --from/
+    );
+    assert.equal(existsSync(file), false, 'no empty database is created over an unimported one');
+  } finally {
+    rmSync(scratch, { recursive: true, force: true });
+  }
+});
+
+test('a first-time install with no Buddies database at all opens an empty one', async () => {
+  const scratch = mkdtempSync(join(tmpdir(), 'buddies-location-'));
+  try {
+    const file = join(scratch, 'nested', 'buddies-v3.sqlite');
+    const core = await openBuddiesCore(buddiesLocation(file, join(scratch, 'buddies.sqlite')));
+    assert.deepEqual(await core.listWorkspaces(), []);
+  } finally {
+    rmSync(scratch, { recursive: true, force: true });
+  }
 });
 
 test('the briefing tool guide stays inside its budget', () => {
