@@ -512,74 +512,58 @@ export const SetConversationConfigCommandSchema = z.object({
 });
 export type SetConversationConfigCommand = z.infer<typeof SetConversationConfigCommandSchema>;
 
-export const StopConversationMessageSchema = z.object({
+const StopConversationMessageSchema = z.object({
   type: z.literal('stop_conversation'),
   conversationId: ConversationIdSchema,
 });
 
-export type StopConversationMessage = z.infer<typeof StopConversationMessageSchema>;
-
-export const SetConversationDoneMessageSchema = z.object({
+const SetConversationDoneMessageSchema = z.object({
   type: z.literal('set_conversation_done'),
   conversationId: ConversationIdSchema,
   done: z.boolean(),
 });
 
-export type SetConversationDoneMessage = z.infer<typeof SetConversationDoneMessageSchema>;
-
-export const DeleteConversationMessageSchema = z.object({
+const DeleteConversationMessageSchema = z.object({
   type: z.literal('delete_conversation'),
   conversationId: ConversationIdSchema,
 });
 
-export type DeleteConversationMessage = z.infer<typeof DeleteConversationMessageSchema>;
-
 // Queue Messages (Client → Server)
-export const QueueMessageSchema = z.object({
+const QueueMessageSchema = z.object({
   type: z.literal('queue_message'),
   commandId: z.string().min(1),
   conversationId: ConversationIdSchema,
   content: z.string().min(1),
 });
 
-export type QueueMessage = z.infer<typeof QueueMessageSchema>;
-
-export const InterruptAndSendMessageSchema = z.object({
+const InterruptAndSendMessageSchema = z.object({
   type: z.literal('interrupt_and_send'),
   commandId: z.string().min(1),
   conversationId: ConversationIdSchema,
   content: z.string().min(1),
 });
 
-export type InterruptAndSendMessage = z.infer<typeof InterruptAndSendMessageSchema>;
-
-export const CancelQueuedMessageSchema = z.object({
+const CancelQueuedMessageSchema = z.object({
   type: z.literal('cancel_queued_message'),
   conversationId: ConversationIdSchema,
   messageId: z.string(),
 });
 
-export type CancelQueuedMessage = z.infer<typeof CancelQueuedMessageSchema>;
-
-export const ClearQueueMessageSchema = z.object({
+const ClearQueueMessageSchema = z.object({
   type: z.literal('clear_queue'),
   conversationId: ConversationIdSchema,
 });
 
-export type ClearQueueMessage = z.infer<typeof ClearQueueMessageSchema>;
-
 // Promote a pending queued message to run next, interrupting the active
 // turn when there is one. Fire-and-forget like cancel/clear: the
 // queue_updated broadcast is the confirmation.
-export const PromoteQueuedMessageSchema = z.object({
+const PromoteQueuedMessageSchema = z.object({
   type: z.literal('promote_queued_message'),
   conversationId: ConversationIdSchema,
   messageId: z.string(),
 });
 
-export type PromoteQueuedMessage = z.infer<typeof PromoteQueuedMessageSchema>;
-
-export const ClientMessageSchema = z.discriminatedUnion('type', [
+const ClientMessageSchema = z.discriminatedUnion('type', [
   CreateConversationCommandSchema,
   SetConversationConfigCommandSchema,
   StopConversationMessageSchema,
@@ -632,7 +616,7 @@ export const SeenMessageIndexSchema = z.record(z.string(), z.number());
 
 export const PROTOCOL_VERSION = 3;
 
-export const HelloMessageSchema = EncodedRowsSchema.extend({
+const HelloMessageSchema = EncodedRowsSchema.extend({
   type: z.literal('hello'),
   protocol: z.object({ version: z.literal(PROTOCOL_VERSION) }),
   defaultCwd: z.string(),
@@ -640,38 +624,35 @@ export const HelloMessageSchema = EncodedRowsSchema.extend({
   loading: z.boolean(),
   archivedBuddyIds: z.array(z.string()),
 });
-export type HelloMessage = z.infer<typeof HelloMessageSchema>;
 
 /** Upsert rows (discovery batches, external refresh, a creation seen by other sockets). */
-export const RowsMessageSchema = EncodedRowsSchema.extend({ type: z.literal('rows') });
-export type RowsMessage = z.infer<typeof RowsMessageSchema>;
+const RowsMessageSchema = EncodedRowsSchema.extend({ type: z.literal('rows') });
 
-export const RemovedMessageSchema = z.object({
+const RemovedMessageSchema = z.object({
   type: z.literal('removed'),
   ids: z.array(ConversationIdSchema),
 });
 
 /** Startup hydration finished; `conversationIds` is the authoritative membership. */
-export const ReadyMessageSchema = z.object({
+const ReadyMessageSchema = z.object({
   type: z.literal('ready'),
   conversationIds: z.array(ConversationIdSchema),
 });
 
-export const PatchMessageSchema = z.object({
+const PatchMessageSchema = z.object({
   type: z.literal('patch'),
   id: ConversationIdSchema,
   patch: RowPatchSchema,
 });
-export type PatchMessage = z.infer<typeof PatchMessageSchema>;
 
-export const GeneralCommandErrorSchema = z.object({
+const GeneralCommandErrorSchema = z.object({
   code: z.string().min(1),
   message: z.string().min(1),
   details: z.unknown().optional(),
 });
 export type GeneralCommandError = z.infer<typeof GeneralCommandErrorSchema>;
 
-export const CommandErrorSchema = z.union([ConfigErrorSchema, GeneralCommandErrorSchema]);
+const CommandErrorSchema = z.union([ConfigErrorSchema, GeneralCommandErrorSchema]);
 export type CommandError = z.infer<typeof CommandErrorSchema>;
 
 /**
@@ -681,7 +662,7 @@ export type CommandError = z.infer<typeof CommandErrorSchema>;
  * A rejection never carries a snapshot: the authoritative state already went
  * out as a patch.
  */
-export const AckMessageSchema = z.object({
+const AckMessageSchema = z.object({
   type: z.literal('ack'),
   commandId: z.string().min(1),
   result: z.discriminatedUnion('t', [
@@ -694,37 +675,32 @@ export const AckMessageSchema = z.object({
     }),
   ]),
 });
-export type AckMessage = z.infer<typeof AckMessageSchema>;
 
-export const MessageMessageSchema = z.object({
+const MessageMessageSchema = z.object({
   type: z.literal('message'),
   conversationId: ConversationIdSchema,
   role: z.enum(['user', 'assistant', 'system']),
   content: z.string(),
 });
-export type MessageMessage = z.infer<typeof MessageMessageSchema>;
 
-export const ChunkMessageSchema = z.object({
+const ChunkMessageSchema = z.object({
   type: z.literal('chunk'),
   conversationId: ConversationIdSchema,
   text: z.string(),
 });
-export type ChunkMessage = z.infer<typeof ChunkMessageSchema>;
 
-export const MessageCompleteMessageSchema = z.object({
+const MessageCompleteMessageSchema = z.object({
   type: z.literal('message_complete'),
   conversationId: ConversationIdSchema,
   reason: z.enum(['success', 'error', 'out_of_tokens', 'killed']).optional(),
 });
-export type MessageCompleteMessage = z.infer<typeof MessageCompleteMessageSchema>;
 
-export const ErrorMessageSchema = z.object({
+const ErrorMessageSchema = z.object({
   type: z.literal('error'),
   message: z.string(),
 });
-export type ErrorMessage = z.infer<typeof ErrorMessageSchema>;
 
-export const ServerMessageSchema = z.discriminatedUnion('type', [
+const ServerMessageSchema = z.discriminatedUnion('type', [
   HelloMessageSchema,
   RowsMessageSchema,
   RemovedMessageSchema,
@@ -751,33 +727,15 @@ export type ServerMessageInput = z.input<typeof ServerMessageSchema>;
 // =============================================================================
 // Validation Helpers
 // =============================================================================
-
-/**
- * Parse and validate a client message. Throws ZodError if invalid.
- */
-export function parseClientMessage(data: unknown): ClientMessage {
-  return ClientMessageSchema.parse(data);
-}
+// Only the two parsers the transports call stay exported (T14b removed ~20 unused
+// per-message type aliases, the throwing parsers and the is*Message guards).
+// Pattern: one-type-source (docs/patterns.md#one-type-source)
 
 /**
  * Safely parse a client message. Returns success/error result.
  */
 export function safeParseClientMessage(data: unknown) {
   return ClientMessageSchema.safeParse(data);
-}
-
-/**
- * Parse and validate a server message. Throws ZodError if invalid.
- */
-export function parseServerMessage(data: unknown): ServerMessage {
-  return ServerMessageSchema.parse(data);
-}
-
-/**
- * Safely parse a server message. Returns success/error result.
- */
-export function safeParseServerMessage(data: unknown) {
-  return ServerMessageSchema.safeParse(data);
 }
 
 /**
@@ -806,17 +764,6 @@ export function classifyServerFrame(raw: unknown): ServerFrame {
     : { t: 'invalid', issues: parsed.error.issues.map((issue) => issue.message).join('; ') };
 }
 
-// =============================================================================
-// Type Guards (for backwards compatibility)
-// =============================================================================
-
-export function isClientMessage(msg: unknown): msg is ClientMessage {
-  return ClientMessageSchema.safeParse(msg).success;
-}
-
-export function isServerMessage(msg: unknown): msg is ServerMessage {
-  return ServerMessageSchema.safeParse(msg).success;
-}
 
 // =============================================================================
 // JSONL Adapter Types (for persistence layer)
