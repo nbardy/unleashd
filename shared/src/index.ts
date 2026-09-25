@@ -768,47 +768,6 @@ export function classifyServerFrame(raw: unknown): ServerFrame {
     : { t: 'invalid', issues: parsed.error.issues.map((issue) => issue.message).join('; ') };
 }
 
-// =============================================================================
-// JSONL Adapter Types (for persistence layer)
-// =============================================================================
-
-export {
-  // Content block types
-  JsonlTextBlockSchema,
-  JsonlThinkingBlockSchema,
-  JsonlToolUseBlockSchema,
-  JsonlToolResultBlockSchema,
-  JsonlContentBlockSchema,
-  type JsonlTextBlock,
-  type JsonlThinkingBlock,
-  type JsonlToolUseBlock,
-  type JsonlToolResultBlock,
-  type JsonlContentBlock,
-  // Entry types
-  JsonlUserEntrySchema,
-  JsonlAssistantEntrySchema,
-  JsonlProgressEntrySchema,
-  JsonlSystemEntrySchema,
-  JsonlFileHistorySnapshotEntrySchema,
-  JsonlQueueOperationEntrySchema,
-  JsonlEntrySchema,
-  type JsonlUserEntry,
-  type JsonlAssistantEntry,
-  type JsonlProgressEntry,
-  type JsonlSystemEntry,
-  type JsonlFileHistorySnapshotEntry,
-  type JsonlQueueOperationEntry,
-  type JsonlEntry,
-  type JsonlSession,
-  // Type guards
-  isJsonlUserEntry,
-  isJsonlAssistantEntry,
-  isJsonlTextBlock,
-  isJsonlThinkingBlock,
-  isJsonlToolUseBlock,
-  isJsonlToolResultBlock,
-} from './adapters/jsonl.types.js';
-
 // Oompa raw JSON file types (auto-generated from oompa_loompas schemas)
 export type {
   OompaCycle,
@@ -816,36 +775,6 @@ export type {
   OompaStarted,
   OompaStopped,
 } from './generated/oompa-types.js';
-
-// Codex Native Session Types (for reading ~/.codex/sessions/)
-export {
-  // Schemas
-  CodexSessionMetaSchema,
-  CodexResponseMessageSchema,
-  CodexFunctionCallSchema,
-  CodexFunctionCallOutputSchema,
-  CodexUserMessageEventSchema,
-  CodexAgentMessageEventSchema,
-  CodexTurnContextSchema,
-  CodexSessionEntrySchema,
-  // Types
-  type CodexSessionMeta,
-  type CodexResponseMessage,
-  type CodexFunctionCall,
-  type CodexFunctionCallOutput,
-  type CodexUserMessageEvent,
-  type CodexAgentMessageEvent,
-  type CodexTurnContext,
-  type CodexSessionEntry,
-  type CodexParsedSession,
-  // Type guards
-  isCodexSessionMeta,
-  isCodexResponseMessage,
-  isCodexFunctionCall,
-  isCodexFunctionCallOutput,
-  isCodexUserMessageEvent,
-  isCodexAgentMessageEvent,
-} from './adapters/codex-session.types.js';
 
 export * from './buddy-workspace-activity.js';
 export * from './buddy-channel-posts.js';

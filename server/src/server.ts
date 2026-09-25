@@ -8,20 +8,16 @@ import compression from 'compression';
 import express, { type ErrorRequestHandler } from 'express';
 import { v4 as uuidv4 } from 'uuid';
 import { WebSocketServer } from 'ws';
-import { loadAllConversations, pollForChanges } from './adapters/loader';
-import { NormalizedSessionCache } from './adapters/session-cache';
-import { TranscriptTails } from './adapters/transcript-tails';
 import { appDataDirectory, uploadsDirectory } from './app-data';
 import { createConversationApplicationContext } from './application/context';
 import { registerAuthRoutes } from './auth/express';
 import { authorizeUpgrade } from './auth/gate';
 import { describePolicy, resolveAuthPolicy } from './auth/policy';
-import { setIgnorePatterns } from './config';
+import { setIgnorePatterns, shouldIgnoreWorkingDirectory } from './config';
 import {
   BUDDY_BACKGROUND_TURN_MS,
   BUDDY_RUNNER_BACKSTOP_MS,
   EXTERNAL_GRACE_MS,
-  FILE_POLL_INTERVAL_MS,
   HOT_RELOAD_FORCE_EXIT_GRACE_MS,
   LOCAL_COMPLETION_SUPPRESS_MS,
   PALETTE_GENERATION_TIMEOUT_MS,
@@ -39,8 +35,12 @@ import {
   recordsLocation,
 } from './conversations/config-records';
 import { ConversationConfigService } from './conversations/config-service';
-import { runtimeMessageSource } from './conversations/messages';
-import { type ConversationRuntime, createConversationRuntime } from './conversations/runtime';
+import { ConversationTombstonedError } from './conversations/config-service';
+import {
+  type ConversationRuntime,
+  createConversationRuntime,
+  overlayHistoryFields,
+} from './conversations/runtime';
 import { registerConversationRoutes } from './http/conversation-routes';
 import { registerCoreRoutes } from './http/core-routes';
 import { registerErrorDiagnosticsRoutes } from './http/error-diagnostics-routes';
@@ -55,7 +55,7 @@ import { registerUsageRoutes } from './http/usage-routes';
 import { type BootedIngest, bootIngest } from './ingest/boot';
 import type { ConversationList } from './ingest/conversation-list';
 import { currentIngest } from './ingest/instance';
-import { createSessionLoader } from './lifecycle/session-loader';
+import { createRuntimeBuilder } from './ingest/runtimes';
 import { type ShutdownController, registerShutdownHandlers } from './lifecycle/shutdown';
 import { runServerStartup } from './lifecycle/startup';
 import { registerStaticClient } from './lifecycle/static-client';
@@ -76,14 +76,8 @@ import { readLatestSwarmRuntime, registerSwarmRoutes } from './swarm';
 import { registerConversationWebSocket } from './transport/conversation-websocket';
 import { WS_LIVENESS_INTERVAL_MS, superviseLiveness } from './transport/websocket';
 
-import {
-  CLAUDE_PROJECTS_DIR,
-  CODEX_SESSIONS_DIR,
-  CURSOR_PROJECTS_DIR,
-  GEMINI_SESSIONS_DIR,
-  MUSE_SESSIONS_DIR,
-  OPENCODE_MESSAGE_DIR,
-} from './adapters/jsonl';
+import { type SessionRow, defaultRoots } from '@unleashd/ingest';
+import { validate as isUuid } from 'uuid';
 import { auditLocalAgents } from './audit.js';
 import { createBriefings } from './buddies/briefing';
 import { type StableConversationPorts, slotOf } from './buddies/buddy-conversation-slots';
@@ -106,8 +100,6 @@ import { type RunnerHost, createRunner } from './buddies/runner';
 import { UPLOADS_RETENTION_MS, startUploadsGc } from './uploads/gc';
 
 let startupAuditResults: ReturnType<typeof auditLocalAgents> = [];
-
-const VERBOSE = process.env.VERBOSE === '1' || process.argv.includes('--verbose');
 
 const app = express();
 const server = http.createServer(app);
@@ -168,10 +160,6 @@ wss.on('connection', (client) => superviseLiveness(client, WS_LIVENESS_INTERVAL_
 const conversationConfigStore = new ConversationRecordStore(
   openRecords(recordsLocation(APP_DATA_DIR))
 );
-const normalizedSessionCache = new NormalizedSessionCache(
-  path.join(APP_DATA_DIR, 'session-cache-v1')
-);
-const transcriptTails = new TranscriptTails();
 const conversationConfigService = new ConversationConfigService({
   store: conversationConfigStore,
   resolver: {
@@ -209,23 +197,72 @@ const applicationContext = createConversationApplicationContext<ConversationRunt
 });
 const conversations = applicationContext.registry;
 
-// The conversation list read from the ingest store (T13b S1). Until the store's initial scan
-// commits, nothing is listed from it: the loader's runtimes are the whole list, as before.
-const STARTING_LIST: Pick<ConversationList, 'rows' | 'ids'> = { rows: () => [], ids: () => [] };
-let conversationList: Pick<ConversationList, 'rows' | 'ids'> = STARTING_LIST;
+// The conversation list and every history, read from the ingest store (T13b). Until the store's
+// initial scan commits nothing is listed, and a history request waits for it.
+let conversationList: ConversationList | null = null;
 let bootedIngest: Promise<BootedIngest> | null = null;
+let resolveListReady: (list: ConversationList) => void = () => undefined;
+const listReady = new Promise<ConversationList>((resolve) => {
+  resolveListReady = resolve;
+});
+
+/**
+ * A session no record binds: a CLI run outside the app (or before this server started). It
+ * becomes a discovered record, as the old poller's hydration did. A session a runtime already
+ * owns (its binding not yet persisted) or one deleted in this app is never re-created.
+ */
+async function discoverSession(session: SessionRow) {
+  const sessions = applicationContext.sessions;
+  if (session.cwd.t === 'unknown') return null;
+  if (sessions.isKnown(session.sessionId) || sessions.isDeleted(session.sessionId)) return null;
+  if (shouldIgnoreWorkingDirectory(session.cwd.path)) return null;
+  const binding = { provider: session.provider, sessionId: session.sessionId };
+  try {
+    const hydrated = await conversationConfigService.hydrate({
+      conversationId: isUuid(session.sessionId) ? session.sessionId : uuidv4(),
+      sessionBindings: [binding],
+      currentSession: binding,
+      workingDirectory: session.cwd.path,
+      // The oompa tag is the one classification a transcript may propose (disk-adapter did the
+      // same); Buddy and Builder identity is never read from transcript text.
+      discoveredKind:
+        session.identity.t === 'worker'
+          ? {
+              t: 'worker',
+              swarmId: session.identity.swarmId ?? null,
+              workerId: session.identity.workerId ?? null,
+              role: session.identity.role,
+            }
+          : { t: 'chat' },
+      legacy: {
+        provider: session.provider,
+        reportedModel: session.observedModel ?? undefined,
+        source: 'external_session',
+      },
+    });
+    return hydrated.record;
+  } catch (error) {
+    if (error instanceof ConversationTombstonedError) return null;
+    throw error;
+  }
+}
 
 async function startIngestList(): Promise<void> {
   bootedIngest = bootIngest(
     { home: os.homedir(), appDataDir: APP_DATA_DIR },
     {
       records: conversationConfigStore,
-      isLive: (id) => conversations.has(id),
+      runtime: (id) => conversations.get(id),
+      discover: discoverSession,
+      externalActivity: applicationContext.externalActivity,
+      completionSuppression: applicationContext.completionSuppression,
+      externalGraceMs: EXTERNAL_GRACE_MS,
       broadcast: applicationContext.broadcast,
     }
   );
   const { list } = await bootedIngest;
   conversationList = list;
+  resolveListReady(list);
   const rows = list.rows();
   if (rows.length > 0) applicationContext.broadcast({ type: 'rows', ...encodeRows(rows) });
 }
@@ -284,20 +321,7 @@ const initialLoadComplete = new Promise<void>((resolve) => {
 // Helper Functions
 // =============================================================================
 
-const STARTUP_INITIAL_LOAD_LIMIT = readPositiveIntEnv('CWV_STARTUP_INITIAL_LOAD_LIMIT', 500);
-const STARTUP_PARSE_CONCURRENCY = readPositiveIntEnv('CWV_STARTUP_PARSE_CONCURRENCY', 16);
-const STARTUP_LOAD_BATCH_SIZE = readPositiveIntEnv('CWV_STARTUP_BATCH_SIZE', 100);
-const STARTUP_INITIAL_BATCH_SIZE = readPositiveIntEnv('CWV_STARTUP_INITIAL_BATCH_SIZE', 20);
-const STARTUP_PROGRESS_FILE_STEP = readPositiveIntEnv('CWV_STARTUP_LOG_EVERY_FILES', 500);
 const AGENT_CLI_DEBUG_EVENTS = process.env.AGENT_CLI_DEBUG_EVENTS === '1';
-
-function readPositiveIntEnv(name: string, fallback: number): number {
-  const raw = process.env[name];
-  if (!raw) return fallback;
-  const parsed = Number.parseInt(raw, 10);
-  if (!Number.isFinite(parsed) || parsed <= 0) return fallback;
-  return parsed;
-}
 
 const buddyCreationService: BuddyCreationService = createBuddyCreationService({
   configService: conversationConfigService,
@@ -386,11 +410,18 @@ const Conversation = createConversationRuntime({
   readLatestOompaRuntime: readLatestSwarmRuntime,
   createSessionId: uuidv4,
   turnAttempts: turnAttemptObserver,
+  history: {
+    fields: (conversation) =>
+      conversationList?.historyFields(conversation) ?? overlayHistoryFields(conversation),
+    idle: (conversationId) => conversationList?.idle(conversationId),
+  },
 });
 
 registerConversationWebSocket(wss, {
   registry: applicationContext.registry,
-  listedRows: () => conversationList.rows(),
+  listedRows: () => conversationList?.rows() ?? [],
+  materialize: (id) => runtimeBuilder.materialize(id),
+  forgetListed: (id) => conversationList?.forget(id),
   sessions: applicationContext.sessions,
   externalActivity: applicationContext.externalActivity,
   completionSuppression: applicationContext.completionSuppression,
@@ -474,8 +505,8 @@ registerUploadRoutes(app, UPLOADS_DIR);
 registerCoreRoutes(app, () => startupAuditResults);
 registerConversationRoutes(
   app,
-  (id) => conversations.get(id),
-  runtimeMessageSource((id) => conversations.get(id)),
+  (id) => runtimeBuilder.materialize(id),
+  async (id, page) => (await listReady).page(id, page),
   {
     getBranch: async (id) => (await conversationConfigService.getRecord(id))?.creation?.branch,
     ingest: currentIngest,
@@ -557,7 +588,25 @@ registerBuddyRoutes(app, {
 
 registerSearchRoutes(
   app,
-  () => conversations.values(),
+  async (query, limit) => {
+    const slot = currentIngest();
+    if (slot.t !== 'ready') return [];
+    const list = await listReady;
+    return (await slot.ingest.search(query, limit)).flatMap((hit) => {
+      const located = list.locate(hit.sessionId);
+      return located
+        ? [
+            {
+              ...located,
+              messageIndex: hit.message.seq,
+              role: hit.message.role,
+              content: hit.message.content,
+              timestamp: new Date(hit.message.at ?? 0),
+            },
+          ]
+        : [];
+    });
+  },
   async () => {
     const archived = await archivedBuddyIdsOrNone();
     return (conversationId) => {
@@ -567,9 +616,12 @@ registerSearchRoutes(
   }
 );
 
-const isUnderKnownProject = createKnownProjectAuthorizer(() =>
-  Array.from(conversations.values(), (conversation) => conversation.workingDirectory)
-);
+// Every listed conversation's directory, not only the runtimes' (most listed ones have none).
+const knownProjectRoots = () => [
+  ...Array.from(conversations.values(), (conversation) => conversation.workingDirectory),
+  ...(conversationList?.rows().map((row) => row.cwd) ?? []),
+];
+const isUnderKnownProject = createKnownProjectAuthorizer(knownProjectRoots);
 registerFilesystemRoutes(app, {
   uploadsDirectory: UPLOADS_DIR,
   isUnderKnownProject,
@@ -577,8 +629,7 @@ registerFilesystemRoutes(app, {
 
 registerSwarmRoutes(app, {
   isUnderKnownProject,
-  listProjectRoots: () =>
-    Array.from(conversations.values(), (conversation) => conversation.workingDirectory),
+  listProjectRoots: knownProjectRoots,
   resolveWorkingDirectory: resolveWorkingDirectoryInput,
   commandTimeoutMs: SWARM_CONTEXT_COMMAND_TIMEOUT_MS,
 });
@@ -630,7 +681,11 @@ shutdownController = registerShutdownHandlers(
     flushState: async () => {
       await Promise.all([turnAttemptJournal.flush(), errorJournal.flush()]);
       await buddyMcp?.close();
-      if (bootedIngest) await (await bootedIngest).ingest.stop();
+      if (bootedIngest) {
+        const { ingest, list } = await bootedIngest;
+        list.stop();
+        await ingest.stop();
+      }
     },
     broadcastMessage: (conversationId, content) => {
       applicationContext.broadcast({ type: 'message', conversationId, role: 'system', content });
@@ -639,38 +694,14 @@ shutdownController = registerShutdownHandlers(
   }
 );
 
-const sessionLoader = createSessionLoader({
-  options: {
-    startupLimit: STARTUP_INITIAL_LOAD_LIMIT,
-    startupConcurrency: STARTUP_PARSE_CONCURRENCY,
-    startupBatchSize: STARTUP_LOAD_BATCH_SIZE,
-    startupInitialBatchSize: STARTUP_INITIAL_BATCH_SIZE,
-    startupLogEveryFiles: STARTUP_PROGRESS_FILE_STEP,
-    pollIntervalMs: FILE_POLL_INTERVAL_MS,
-    externalGraceMs: EXTERNAL_GRACE_MS,
-    verbose: VERBOSE,
-  },
+const runtimeBuilder = createRuntimeBuilder({
   registry: applicationContext.registry,
-  sessions: applicationContext.sessions,
-  externalActivity: applicationContext.externalActivity,
-  completionSuppression: applicationContext.completionSuppression,
-  configStore: conversationConfigStore,
+  records: conversationConfigStore,
   configService: conversationConfigService,
-  loadConversations: (options) =>
-    loadAllConversations({ ...options, cache: normalizedSessionCache }),
-  pollConversations: (mtimes, activeIds, options) => {
-    noteActivity('timer session-poll');
-    return pollForChanges(mtimes, activeIds, {
-      ...options,
-      cache: normalizedSessionCache,
-      tails: transcriptTails,
-    });
-  },
+  joined: (id) => conversationList?.joined(id),
   createConversation: (options) => new Conversation(options),
-  createId: uuidv4,
   resolveBuddyConversation,
   dispatchInitialMessage: buddyCreationService.dispatchInitialMessageIfPending,
-  persistCurrentSession: buddyCreationService.persistCurrentSession,
   broadcast: applicationContext.broadcast,
 });
 
@@ -700,7 +731,6 @@ void runServerStartup(
         uploadsRoot: () => UPLOADS_DIR,
       });
       startupAuditResults = auditLocalAgents();
-      await normalizedSessionCache.initialize();
       await turnAttemptJournal.initialize();
       await persistedServerState.initialize();
       await paletteService.initialize();
@@ -709,14 +739,9 @@ void runServerStartup(
       startUploadsGc(async () => ({
         uploadsDir: UPLOADS_DIR,
         referenceRoots: [
-          CLAUDE_PROJECTS_DIR,
-          CODEX_SESSIONS_DIR,
+          // The transcript roots the ingest store watches, plus Codex's archive (not ingested).
+          ...defaultRoots(os.homedir()).map((root) => root.path),
           path.join(os.homedir(), '.codex', 'archived_sessions'),
-          path.dirname(OPENCODE_MESSAGE_DIR),
-          GEMINI_SESSIONS_DIR,
-          path.join(os.homedir(), '.gemini-sandbox'),
-          MUSE_SESSIONS_DIR,
-          CURSOR_PROJECTS_DIR,
           APP_DATA_DIR,
           path.dirname(buddiesDatabasePath()),
         ],
@@ -744,17 +769,19 @@ void runServerStartup(
       resolveInitialLoad();
       applicationContext.broadcast({
         type: 'ready',
-        conversationIds: [...new Set([...conversations.keys(), ...conversationList.ids()])],
+        conversationIds: [
+          ...new Set([...conversations.keys(), ...(conversationList?.ids() ?? [])]),
+        ],
       });
       return true;
     },
     abortStartup: () => shutdownController?.abortStartup(),
-    // The loader still hydrates runtimes (message bodies, until T13b S2); the list comes
-    // from the ingest store in parallel. `ready` names both.
+    // The list (and every history) comes from the ingest store; app-created records then
+    // become runtimes, joined with their sessions. `ready` names both.
     loadConversations: async () => {
-      await Promise.all([sessionLoader.loadExistingConversations(), startIngestList()]);
+      await startIngestList();
+      await runtimeBuilder.recover();
     },
-    startPolling: sessionLoader.startFilePolling,
   }
 )
   .catch((error) => {

@@ -11,7 +11,7 @@
 import type { Ingest } from '@unleashd/ingest';
 
 /** The read models routes use. A `Pick` so a test can pass a real `Ingest` or a tiny fake. */
-export type IngestReads = Pick<Ingest, 'usage' | 'latestContext' | 'session'>;
+export type IngestReads = Pick<Ingest, 'usage' | 'latestContext' | 'session' | 'search'>;
 
 export type IngestSlot = { t: 'starting' } | { t: 'ready'; ingest: IngestReads };
 

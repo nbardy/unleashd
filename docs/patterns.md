@@ -65,8 +65,10 @@ conversation applies the effects.
 meter (`session.context`) are read models of that one ingest. The server reads them through
 `server/src/ingest/instance.ts` (`/api/usage` in `usage-routes.ts`, the meter in `session-context.ts`);
 their own transcript parsers (1,209 lines) were deleted in T13b.
-The conversation list is a read model of the same store: `server/src/ingest/conversation-list.ts` joins records
-with `listSessions` rows at boot (`ingest/boot.ts`) and turns `onChange` into field patches (T13b S1).
+The conversation list and every message history are read models of the same store:
+`server/src/ingest/conversation-list.ts` joins records with `listSessions` rows and serves pages from
+`Ingest.messages` merged with the runtime's live-turn overlay; `onChange` becomes field patches (T13b S1/S2).
+The TS transcript parsers, session cache and 5 s poller (`server/src/adapters/*`, ~5,000 lines) were deleted.
 
 ## idempotency-keys
 **Smell:** ad-hoc dedupe, retry flags, "did we already do this?" queries.

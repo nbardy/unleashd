@@ -572,6 +572,9 @@ function patchEffects(id: string, patch: RowPatch): void {
     case 'activity':
       activityMoved(id, patch.messageCount);
       return;
+    case 'rewritten':
+      historyReplaced(id);
+      return;
     case 'done':
     case 'label':
     case 'session':
@@ -601,6 +604,13 @@ function configLanded(commandId: string | null): void {
 function activityMoved(id: string, messageCount: number): void {
   const transcript = readTranscript(id);
   if (!transcript || transcript.messages.length === messageCount) return;
+  staleTranscriptIds.add(id);
+  if (id === jotaiStore.get(activeConversationIdAtom)) refreshIfStale(id);
+}
+
+/** The server replaced this history: a loaded copy refetches (its epoch no longer matches). */
+function historyReplaced(id: string): void {
+  if (!readTranscript(id)) return;
   staleTranscriptIds.add(id);
   if (id === jotaiStore.get(activeConversationIdAtom)) refreshIfStale(id);
 }

@@ -79,57 +79,36 @@ The submodule implementation lives in `src/build.ts`, `src/process-runner.ts`,
    Muse reads `mcpServers`, not the legacy `mcp_servers`: with both keys
    present it drops every MCP server.
 
-## 2) Registry-first persistence
+## 2) Transcripts: the ingest store
 
-Persisted sessions are loaded through the adapter registry
-(`server/src/adapters/{registry,disk-adapter,loader}.ts`).
+Provider transcripts are read by ONE reader, the ingest crate
+(`crates/unleashd-ingest`), which keeps its own SQLite cache
+(`<appData>/ingest.sqlite`) and watches the provider roots. The server never
+parses a transcript (T13b S2 deleted `server/src/adapters/*`: the TS parsers,
+the 500-transcript startup window, the session cache and the 5 s poller).
 
-Adding a provider means adding:
-- a harness,
-- a server provider,
-- a disk adapter (if persisted artifacts are needed).
+- **List:** `server/src/ingest/conversation-list.ts` joins every active record
+  with the store's session rows (`listSessions`). A session no record binds is
+  discovered into a record (`discoverSession` in `server.ts`). `onChange` sends
+  row patches; a transcript written by another process shows as running until
+  it is quiet for `EXTERNAL_GRACE_MS` (one backstop timer, armed only then).
+- **Bodies:** `GET /api/conversations/:id/messages` is `list.page`: the bound
+  sessions' settled prefixes (`Ingest.messages`) merged with the runtime's
+  live-turn overlay by `mergeSessionMessages`. While a turn runs, changes to
+  its transcript queue; when its process exits they settle, and the provider's
+  rows replace the overlay's. A replaced history bumps the page epoch and sends
+  a `rewritten` patch so loaded clients refetch.
+- **Runtimes:** `server/src/ingest/runtimes.ts` builds a runtime from a record:
+  every app-created record at boot, any other conversation on first use (open,
+  or a WS command). A runtime's `messages` is only the overlay.
 
-Startup imports use `ConversationConfigStore.withSessionLookupIndex` to scan
-saved configuration identities once. Without it, every unfamiliar native session
-can trigger two full record scans, even when its transcript hits the session cache.
-The first scope builds an in-memory index (session ID → conversation IDs) from
-that scan, and the index then lives for the process: every write through the
-store maintains it, so after startup a lookup miss is the answer and never
-rescans. Until 2026-09-25 it was dropped when the scope ended, and each miss the
-poller made for a new external session (up to 3 per session) read all ~7,800
-records (~3.2s). Every hit still reads the authoritative record. Another
-process's writes are found through the durable `by-session/` index it maintains,
-which lookup consults first; a record with no durable entry (older versions) is
-covered by the startup scan. The scope's cached record scan (served by `list()`)
-is released on completion or failure. This optimization preserves the existing
-hydration/readiness barrier.
-
-**Startup cost rules** (2026-09-25: the barrier took 67-102s on ~7,700 sources
-and ~7,800 records; these brought it to 14-20s on the same data). Each is
-guarded by a test; every one of them regressed by growing with history size.
-
-- **One record scan per startup, and nothing waits for it.** The lookup scope's
-  scan runs alongside discovery; only a lookup miss awaits it. `list()` inside
-  the scope serves that scan plus fresh reads of records this store wrote since —
-  recovery used to rescan all records a second time.
-- **No per-binding scan of sources.** Adapters declare `sessionFileKeys(path)`;
-  the loader indexes discovery once. A `matches(file, id)` predicate made each
-  binding walk every source (O(bindings × sources), ~8s).
-- **No per-row work for a lone transcript.** `mergeSessionMessages` returns a
-  single source unchanged; the general merge stringifies every row.
-- **Recovered conversations stream.** They broadcast in batches like transcript
-  batches, and recovery runs 16-wide. `conversation_load_complete` only prunes
-  the client's list; it never adds.
-- **Do not reintroduce per-file work on boot** that does not scale with the
-  newest 500 sources (e.g. the removed chmod of every session-cache record).
-- **The session cache holds only live sources.** After a discovery that failed
-  for no provider, startup deletes records outside the discovered set (13,375 →
-  7,475 records). Never prune after a failed discovery: it would drop that
-  provider's whole cache.
-- **Recovery dispatches only pending first messages.** A record whose
-  `initialMessage` is absent or dispatched skips the claim (two record reads).
+Adding a provider means adding a harness, a server provider, and a parser in
+the crate (if it persists transcripts).
 
 ### 2.0) A config record is not a conversation
+
+(Before T13b S2. The loader and its 500-transcript window are gone; the rule that a
+discovered record alone never becomes a runtime holds in `ingest/runtimes.ts` `recover`.)
 
 Startup hydrates only the newest `STARTUP_INITIAL_LOAD_LIMIT` (500) transcripts;
 the mtime baseline still records every source, so `limit` is a real hydration
@@ -247,18 +226,11 @@ Flow is:
 4. Events update runtime state and stream to the client; completion reconciles and broadcasts authoritative snapshots.
 
 `server` state remains authoritative while the provider process is active.
-Poller/loader merges skip active in-memory IDs.
+Transcript changes to a conversation whose turn is running wait until it is idle.
 
-The poller resumes an append-only transcript (Claude) from its last byte
-offset instead of re-parsing it (`server/src/adapters/transcript-tails.ts`,
-`DiskAdapter.growth`). Before this, a still-running 120MB external Claude
-session cost ~1.2s of main-thread parsing every 5s and queued every WS command
-behind it (2026-09-25). After it, the same poll takes ~15ms. A resume is taken
-only when the file provably only grew: same inode, no shrink, and unchanged
-bytes just before the offset. Any other case is a named full read. Codex,
-Cursor, Gemini, OpenCode and Muse stay `rewritten` (full parse). Codex could be
-next, but its turn lifecycle and final sort need the whole file first. Guard:
-`server/test/transcript-tail-poll.test.ts`.
+Transcript changes arrive from the ingest store's watcher, which resumes an
+append-only file from its last offset (crate `read.rs`); the server re-lists
+only the changed sessions.
 
 Buddy provider-session bindings also persist the host-resolved disclosure audience.
 On restart, the runtime compares that saved key with freshly resolved access before

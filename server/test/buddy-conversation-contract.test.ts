@@ -4,7 +4,6 @@ import test from 'node:test';
 import { buddyKind } from '@unleashd/shared';
 import { createDefaultConversationConfig } from '@unleashd/shared';
 import type { BuddyContext } from '@unleashd/shared';
-import { sessionToConversation } from '../src/adapters/disk-adapter';
 import { buildFirstTurnCliContent } from '../src/buddies/turn-policy';
 import { type ConversationOptions, createConversationRuntime } from '../src/conversations/runtime';
 import { resolveConfigAgainstProviderCatalog } from '../src/providers/catalog-service';
@@ -94,6 +93,8 @@ test('empty Buddy WebSocket creation resolves and registers without sending a pr
     webSocketServer as never,
     {
       listedRows: () => [],
+      materialize: async () => undefined,
+      forgetListed: () => undefined,
       registry: {
         get: (id: string) => conversations.get(id),
         set: (conversation: InstanceType<typeof fixture.Conversation>) => {
@@ -252,6 +253,8 @@ test('existing hydrated Buddy messages repair the durable link before admission'
     webSocketServer as never,
     {
       listedRows: () => [],
+      materialize: async () => undefined,
+      forgetListed: () => undefined,
       registry: {
         get: (id: string) => registry.get(id),
         set: (value: typeof conversation) => registry.set(value.id, value),
@@ -347,6 +350,8 @@ test('replaying create_conversation reports the real failure, not a config misma
     webSocketServer as never,
     {
       listedRows: () => [],
+      materialize: async () => undefined,
+      forgetListed: () => undefined,
       registry: {
         get: (id: string) => conversations.get(id),
         set: () => undefined,
@@ -456,33 +461,4 @@ test('hidden Buddy briefing is injected exactly once and never on resumed turns'
     swarmDebugPrefix: null,
   });
   assert.equal(resumedWithoutLoadedMessages, 'Resume.');
-});
-
-test('disk hydration removes the hidden Buddy briefing and never classifies the turn as Swarm', () => {
-  // Even a legacy-looking worker tag in the user's actual prompt cannot turn
-  // typed Buddy ownership into an Oompa conversation.
-  const visiblePrompt = '[oompa:legacy-swarm:worker-1] What should we ship next?';
-  const hydrated = sessionToConversation({
-    sessionId: 'provider-session',
-    filePath: '/tmp/provider-session.jsonl',
-    workingDirectory: '/tmp',
-    provider: 'codex',
-    model: 'gpt-5.6-sol',
-    createdAt: new Date('2026-01-01T00:00:00.000Z'),
-    modifiedAt: new Date('2026-01-01T00:01:00.000Z'),
-    messages: [
-      {
-        role: 'user',
-        content: `<!-- unleashd:buddy-context ${JSON.stringify(buddyContext)} -->\nPRIVATE BRIEFING\n<!-- /unleashd:buddy-context -->\n\n${visiblePrompt}`,
-        timestamp: new Date('2026-01-01T00:00:00.000Z'),
-      },
-    ],
-  });
-
-  assert.ok(hydrated);
-  // Identity is the record's (T09); the transcript only proposes chat here.
-  assert.deepEqual(hydrated.discoveredKind, { t: 'chat' });
-  assert.equal(hydrated.messages[0].content, visiblePrompt);
-  assert.equal(hydrated.messages[0].content.includes('PRIVATE BRIEFING'), false);
-  assert.equal(hydrated.swarmDebugPrefix, null);
 });

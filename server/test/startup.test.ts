@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { runServerStartup } from '../src/lifecycle/startup';
 
-test('startup exposes one authoritative hydration barrier before polling', async () => {
+test('startup exposes one authoritative hydration barrier before ready', async () => {
   const events: string[] = [];
 
   await runServerStartup(
@@ -40,13 +40,10 @@ test('startup exposes one authoritative hydration barrier before polling', async
       loadConversations: async () => {
         events.push('hydrate');
       },
-      startPolling: () => {
-        events.push('poll');
-      },
     }
   );
 
-  assert.deepEqual(events, ['initialize', 'listen', 'hydrate', 'scheduler', 'ready', 'poll']);
+  assert.deepEqual(events, ['initialize', 'listen', 'hydrate', 'scheduler', 'ready']);
 });
 
 test('startup does not release readiness or background work after hydration fails', async () => {
@@ -88,9 +85,6 @@ test('startup does not release readiness or background work after hydration fail
         },
         abortStartup: () => {
           events.push('abort');
-        },
-        startPolling: () => {
-          events.push('poll');
         },
       }
     ),
@@ -134,9 +128,6 @@ test('reload during scheduler startup pauses the scheduler before aborting readi
       },
       abortStartup: () => {
         events.push('abort');
-      },
-      startPolling: () => {
-        events.push('poll');
       },
     }
   );

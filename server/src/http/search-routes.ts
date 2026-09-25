@@ -1,13 +1,17 @@
 import type { Express, Request, Response } from 'express';
 
-export interface SearchableConversation {
-  id: string;
+/**
+ * One matching message and the conversation it belongs to. Bodies are not in memory (T13b S2):
+ * matches come from the ingest store's deep search (`Ingest.search`). `messageIndex` is the
+ * message's position in its session (the conversation's own index when it has one session).
+ */
+export interface SearchMatch {
+  conversationId: string;
   workingDirectory: string;
-  messages: Array<{
-    role: 'user' | 'assistant' | 'system';
-    content: string;
-    timestamp: Date | string;
-  }>;
+  messageIndex: number;
+  role: 'user' | 'assistant' | 'system';
+  content: string;
+  timestamp: Date;
 }
 
 const SNIPPET_RADIUS = 60;
@@ -26,7 +30,7 @@ function buildSnippet(content: string, query: string): string {
 
 export function registerSearchRoutes(
   app: Express,
-  getConversations: () => Iterable<SearchableConversation>,
+  search: (query: string, limit: number) => Promise<SearchMatch[]>,
   getVisibility?: () => Promise<(conversationId: string) => boolean>
 ): void {
   app.get('/api/search', async (req: Request, res: Response, next) => {
@@ -51,33 +55,21 @@ export function registerSearchRoutes(
         return;
       }
 
-      const lowerQuery = query.toLowerCase();
-      const matches = [];
-      for (const conversation of getConversations()) {
-        if (visible && !visible(conversation.id)) continue;
-        if (filterDirectory && !conversation.workingDirectory.startsWith(filterDirectory)) {
-          continue;
-        }
-        for (let index = 0; index < conversation.messages.length; index++) {
-          const message = conversation.messages[index];
-          if (!message.content.toLowerCase().includes(lowerQuery)) continue;
-          matches.push({
-            conversationId: conversation.id,
-            messageIndex: index,
-            role: message.role,
-            snippet: buildSnippet(message.content, query),
-            workingDirectory: conversation.workingDirectory,
-            timestampMs: new Date(message.timestamp).getTime(),
-          });
-        }
-      }
-
-      matches.sort((a, b) => b.timestampMs - a.timestampMs);
+      // The store returns newest first; filters apply after, so over-read to fill `limit`.
+      const matches = (await search(query, HARD_RESULT_LIMIT * 5)).filter(
+        (match) =>
+          (!visible || visible(match.conversationId)) &&
+          (!filterDirectory || match.workingDirectory.startsWith(filterDirectory))
+      );
       res.json({
         query,
-        results: matches.slice(0, limit).map(({ timestampMs, ...match }) => ({
-          ...match,
-          timestamp: new Date(timestampMs).toISOString(),
+        results: matches.slice(0, limit).map((match) => ({
+          conversationId: match.conversationId,
+          messageIndex: match.messageIndex,
+          role: match.role,
+          snippet: buildSnippet(match.content, query),
+          workingDirectory: match.workingDirectory,
+          timestamp: match.timestamp.toISOString(),
         })),
       });
     } catch (error) {

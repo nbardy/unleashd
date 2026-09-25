@@ -9,7 +9,6 @@ import type {
   ServerMessageInput,
   SubAgent,
 } from '@unleashd/shared';
-import { formatToolUse, isCompletionOnlyToolUse } from '../adapters/tool-format';
 import {
   TURN_BRIDGE_TIMEOUT_MS,
   TURN_MAX_RUNTIME_MS,
@@ -32,6 +31,7 @@ import {
   failRunningSubAgents,
   subAgentFoldFor,
 } from './subagents';
+import { formatToolUse, isCompletionOnlyToolUse } from './tool-format';
 import {
   type TurnTimeoutKind,
   TurnWatchdog,

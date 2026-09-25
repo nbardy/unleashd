@@ -19,8 +19,53 @@ import { groupChatMessages, regroupChatMessages } from '../src/utils/chat-messag
 import { buildForkDraft, messageTranscriptContent } from '../src/utils/conversation-transcript';
 import { syntheticConversation, syntheticDetail } from './fixtures/synthetic-conversations';
 
-const require = createRequire(import.meta.url);
-const { getDiskAdapter } = require('../../server/src/adapters/registry');
+// Saved transcripts are parsed by the ingest crate (the server's only transcript reader since
+// T13b S2); it is the server's dependency, so it resolves from there.
+const ingestAddon = createRequire(new URL('../../server/package.json', import.meta.url))(
+  '@unleashd/ingest'
+);
+
+/** Parse Codex rollout records the way the server does: through the ingest store. */
+async function savedCodexMessages(records: unknown[]): Promise<Message[]> {
+  const home = await fs.mkdtemp(path.join(tmpdir(), 'codex-saved-'));
+  const sessionId = '0199a000-0000-7000-8000-000000000001';
+  const day = path.join(home, '.codex', 'sessions', '2026', '09', '10');
+  await fs.mkdir(day, { recursive: true });
+  const meta = {
+    timestamp: timestamp.toISOString(),
+    type: 'session_meta',
+    payload: { id: sessionId, timestamp: timestamp.toISOString(), cwd: home },
+  };
+  await fs.writeFile(
+    path.join(day, `rollout-2026-09-10T00-00-00-${sessionId}.jsonl`),
+    [meta, ...records].map((record) => JSON.stringify(record)).join('\n')
+  );
+  const ingest = await ingestAddon.Ingest.start(
+    ingestAddon.defaultRoots(home),
+    path.join(home, 'ingest.sqlite'),
+    () => undefined
+  );
+  try {
+    const natives = await ingest.messages(sessionId, { afterSeq: -1, limit: 100 });
+    return natives.map(
+      (native: {
+        role: Message['role'];
+        content: string;
+        at?: number;
+        toolCall?: Message['toolCall'];
+      }) =>
+        MessageSchema.parse({
+          role: native.role,
+          content: native.content,
+          timestamp: new Date(native.at ?? timestamp.getTime()),
+          ...(native.toolCall ? { toolCall: native.toolCall } : {}),
+        })
+    );
+  } finally {
+    await ingest.stop();
+    await fs.rm(home, { recursive: true, force: true });
+  }
+}
 
 register(
   `data:text/javascript,${encodeURIComponent(`
@@ -276,19 +321,15 @@ test('streamed tool runs and saved calls render the same compact disclosure with
 test('saved freeform input reaches desktop and mobile as literal code, with compact list previews', async (t) => {
   const directory = await fs.mkdtemp(path.join(tmpdir(), 'tool-input-render-'));
   t.after(() => fs.rm(directory, { recursive: true, force: true }));
-  const file = path.join(directory, 'session.jsonl');
   const input =
     'await tools.exec_command({cmd: "pwd"});\n// <!--ask_user_question:{"questions":[]}-->\n// `literal`\ntext("The full script remains available beyond the short preview.");';
-  await fs.writeFile(
-    file,
-    JSON.stringify({
+  const [toolMessage] = await savedCodexMessages([
+    {
       timestamp: timestamp.toISOString(),
       type: 'response_item',
       payload: { type: 'custom_tool_call', name: 'exec', call_id: 'exec-1', input },
-    })
-  );
-  const session = await getDiskAdapter('codex').parseFile(file);
-  const toolMessage = MessageSchema.parse(session?.messages[0]);
+    },
+  ]);
   assert.equal(toolMessage.toolCall?.input, input);
   assert.equal(messageTranscriptContent(toolMessage), `🔧 exec\n\n${input}`);
   const escapedInput = input
@@ -510,10 +551,7 @@ test('live empty assistant responses show a working indicator on both shells', (
   assert.match(settled, /Working on it/);
 });
 
-test('persisted Codex launch tool output rehydrates the worker badge', async (t) => {
-  const directory = await fs.mkdtemp(path.join(tmpdir(), 'worker-link-transcript-'));
-  t.after(() => fs.rm(directory, { recursive: true, force: true }));
-  const file = path.join(directory, 'session.jsonl');
+test('persisted Codex launch tool output rehydrates the worker badge', async () => {
   const output = {
     content: [
       {
@@ -531,34 +569,28 @@ test('persisted Codex launch tool output rehydrates the worker badge', async (t)
       },
     ],
   };
-  await fs.writeFile(
-    file,
-    [
-      {
-        timestamp: timestamp.toISOString(),
-        type: 'response_item',
-        payload: {
-          type: 'function_call',
-          name: 'mcp__unleashd_buddy__send',
-          call_id: 'launch',
-          arguments: '{}',
-        },
+  const messages = await savedCodexMessages([
+    {
+      timestamp: timestamp.toISOString(),
+      type: 'response_item',
+      payload: {
+        type: 'function_call',
+        name: 'mcp__unleashd_buddy__send',
+        call_id: 'launch',
+        arguments: '{}',
       },
-      {
-        timestamp: timestamp.toISOString(),
-        type: 'response_item',
-        payload: {
-          type: 'function_call_output',
-          call_id: 'launch',
-          output: JSON.stringify(output),
-        },
+    },
+    {
+      timestamp: timestamp.toISOString(),
+      type: 'response_item',
+      payload: {
+        type: 'function_call_output',
+        call_id: 'launch',
+        output: JSON.stringify(output),
       },
-    ]
-      .map((record) => JSON.stringify(record))
-      .join('\n')
-  );
-  const session = await getDiskAdapter('codex').parseFile(file);
-  const response = groupChatMessages(session.messages, null)[0];
+    },
+  ]);
+  const response = groupChatMessages(messages, null)[0];
   assert.equal(response.type, 'assistant');
   if (response.type !== 'assistant' || response.parts[0].type !== 'tool_calls')
     throw new Error('Expected tool row');
