@@ -8,7 +8,7 @@ import {
   useRef,
   useState,
 } from 'react';
-import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import {
   childRowsFamily,
   commandFor,
@@ -31,7 +31,10 @@ import { useCopyAction } from '../../hooks/useCopyAction';
 import { useProviderCatalog } from '../../hooks/useProviderCatalog';
 import { useTurnDiagnostics } from '../../hooks/useTurnDiagnostics';
 import { SwarmConvoPrefix } from '../../swarm';
-import { mobileConversationRouteState } from '../../utils/conversation-route-state';
+import {
+  mobileConversationRouteState,
+  resolveMobileConversationDestination,
+} from '../../utils/conversation-route-state';
 import { rowBuddy } from '../../utils/conversation-row';
 import { type OpenConversation, buildThreadTranscript } from '../../utils/conversation-transcript';
 import { shortenHomePath } from '../../utils/directories';
@@ -100,6 +103,17 @@ function ForkButton({ conversation }: { conversation: OpenConversation }) {
   );
 }
 
+type BackProps = { backTo?: string; onBack?: MouseEventHandler<HTMLAnchorElement> };
+
+/** The header's ← link; absent when embedded without a back target. */
+function BackArrow({ backTo, onBack }: BackProps) {
+  return backTo ? (
+    <Link to={backTo} replace className="mobile-chat__back" onClick={onBack} aria-label="Back">
+      ←
+    </Link>
+  ) : null;
+}
+
 export function ConversationView({
   conversationId,
   backTo,
@@ -107,11 +121,8 @@ export function ConversationView({
   headerAside,
 }: {
   conversationId: string;
-  /** Omit to render no back control (embedded use). */
-  backTo?: string;
-  onBack?: MouseEventHandler<HTMLAnchorElement>;
   headerAside?: ReactNode;
-}) {
+} & BackProps) {
   const conversation = useAtomValue(rowFamily(conversationId));
   const dmBuddy = rowBuddy(conversation);
   const transcript = useAtomValue(transcriptFamily(conversationId));
@@ -252,17 +263,7 @@ export function ConversationView({
       <div className="mobile-chat">
         <div className="mobile-chat__header ui-stack">
           <div className="mobile-chat__titlebar ui-row">
-            {backTo ? (
-              <Link
-                to={backTo}
-                replace
-                className="mobile-chat__back"
-                onClick={onBack}
-                aria-label="Back"
-              >
-                ←
-              </Link>
-            ) : null}
+            <BackArrow backTo={backTo} onBack={onBack} />
             <div className="mobile-chat__heading">
               <div className="mobile-chat__dir ui-truncate" title={workingDirectory}>
                 {pendingDir}
@@ -325,17 +326,7 @@ export function ConversationView({
       <div className="mobile-chat">
         <div className="mobile-chat__header ui-stack">
           <div className="mobile-chat__titlebar ui-row">
-            {backTo ? (
-              <Link
-                to={backTo}
-                replace
-                className="mobile-chat__back"
-                onClick={onBack}
-                aria-label="Back"
-              >
-                ←
-              </Link>
-            ) : null}
+            <BackArrow backTo={backTo} onBack={onBack} />
             <span style={{ fontSize: 13, fontWeight: 600 }}>{conversationId.slice(0, 8)}</span>
           </div>
         </div>
@@ -367,17 +358,7 @@ export function ConversationView({
     <div className="mobile-chat">
       <div className="mobile-chat__header ui-stack">
         <div className="mobile-chat__titlebar ui-row">
-          {backTo ? (
-            <Link
-              to={backTo}
-              replace
-              className="mobile-chat__back"
-              onClick={onBack}
-              aria-label="Back"
-            >
-              ←
-            </Link>
-          ) : null}
+          <BackArrow backTo={backTo} onBack={onBack} />
           <div className="mobile-chat__heading">
             <div className="mobile-chat__dir ui-truncate" title={conversation.cwd}>
               {dirDisplay}
@@ -389,21 +370,17 @@ export function ConversationView({
               {/* One compact line: status + model. The model used to be three
                   always-visible dropdown chips that wrapped onto two or three
                   rows on a phone and ate a third of the screen. */}
-              {detail ? (
-                <>
-                  <button
-                    type="button"
-                    className="mobile-chat__model"
-                    onClick={() => setModelSheetOpen(true)}
-                    aria-haspopup="dialog"
-                    title="Change model"
-                  >
-                    {modelSummary(detail.config.config, catalog)}
-                    {configSaving ? ' …' : ''}
-                    <span aria-hidden="true"> ▾</span>
-                  </button>
-                </>
-              ) : null}
+              <button
+                type="button"
+                className="mobile-chat__model"
+                onClick={() => setModelSheetOpen(true)}
+                aria-haspopup="dialog"
+                title="Change model"
+              >
+                {modelSummary(detail.config.config, catalog)}
+                {configSaving ? ' …' : ''}
+                <span aria-hidden="true"> ▾</span>
+              </button>
             </div>
           </div>
           <div className="mobile-chat__actions ui-row">
@@ -524,4 +501,20 @@ export function ConversationView({
       ) : null}
     </div>
   );
+}
+
+/** The /chat/:id route: a wrapper only, so Buddy surfaces embedding ConversationView miss nothing. */
+export function ChatMobile() {
+  const { id = '' } = useParams<{ id: string }>();
+  const conversation = useAtomValue(rowFamily(id));
+  const location = useLocation();
+  const navigate = useNavigate();
+  const destination = resolveMobileConversationDestination(location.state, conversation);
+  const handleBack: MouseEventHandler<HTMLAnchorElement> = (event) => {
+    // A direct deep link (router key `default`) lets the anchor use the fallback path.
+    if (location.key === 'default') return;
+    event.preventDefault();
+    navigate(-1);
+  };
+  return <ConversationView conversationId={id} backTo={destination.path} onBack={handleBack} />;
 }

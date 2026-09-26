@@ -111,7 +111,7 @@ const ConversationListMobile = lazyNamed(() =>
   import('./mobile/conversations/ConversationListMobile').then((m) => m.ConversationListMobile)
 );
 const ChatMobile = lazyNamed(() =>
-  import('./mobile/conversations/ChatMobile').then((m) => m.ChatMobile)
+  import('./mobile/conversations/ConversationView').then((m) => m.ChatMobile)
 );
 const BuddiesMobile = lazyNamed(() =>
   import('./mobile/buddies/BuddiesMobile').then((m) => m.BuddiesMobile)

@@ -185,7 +185,7 @@ function CopyGlyph({ children }: { children: ReactNode }) {
 }
 
 /** One glyph per copy state — a Record so a new state is a type error, not a fallthrough. */
-const COPY_GLYPH: Record<CopyState, ReactNode> = {
+export const COPY_GLYPH: Record<CopyState, ReactNode> = {
   idle: (
     <CopyGlyph>
       <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
