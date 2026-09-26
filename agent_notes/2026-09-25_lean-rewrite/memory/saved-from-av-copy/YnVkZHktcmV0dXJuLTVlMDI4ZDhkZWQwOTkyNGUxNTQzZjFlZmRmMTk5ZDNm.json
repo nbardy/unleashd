@@ -1,0 +1,82 @@
+{
+  "version": 1,
+  "conversationId": "buddy-return-5e028d8ded09924e1543f1efdf199d3f",
+  "sessionBindings": [],
+  "currentSession": {
+    "provider": "codex",
+    "sessionId": "01a0d846-3127-7782-a7ef-17320edb127d",
+    "buddyAudienceKey": "{\"v\":1,\"fence\":\"a06f39c4fbf9be0805094411f0ca48a692190261b905236cf8d10e2032804dad\",\"readAllWork\":false,\"projects\":[\"buddy_project_04a8ebc1-ad0e-4e3a-ab51-5c19d85f651d\",\"buddy_project_059caa3d-b50d-4f13-a8e7-9f9b85003efa\",\"buddy_project_0844a2d3-eebe-4051-9c5e-95023235c902\",\"buddy_project_09f27719-e0c7-4b89-9016-505514244819\",\"buddy_project_108af12f-e6ec-4f7c-b7e6-ac9157b637d6\",\"buddy_project_12125437-cdf4-4f3a-9144-04c6ef776819\",\"buddy_project_1606b0b2-d6d7-407d-9960-ff280a81e910\",\"buddy_project_18987e93-3e32-4478-84ac-74fdd087809b\",\"buddy_project_1ed37776-c1bd-4675-a998-3c165bd74b35\",\"buddy_project_200b302f-6840-4b52-b7c3-c18ad3ef98c9\",\"buddy_project_20c1b2ba-2e40-4f90-951b-0297b93d1b1c\",\"buddy_project_2157ae4d-1cc4-40bc-8884-73bf45c55e2e\",\"buddy_project_24fadd49-2675-473b-aade-331c6dcf56a7\",\"buddy_project_256faadc-4c34-4793-84bb-bb5058b25c40\",\"buddy_project_272c603f-07f4-4261-8a50-8b3768476e16\",\"buddy_project_296b46a3-f880-45ef-aab1-25e12b3c9807\",\"buddy_project_2d6506df-b72c-400d-841a-7ffebfb9ffae\",\"buddy_project_2e16f995-5ce3-4ea5-ae96-aa382f3b3184\",\"buddy_project_2fc11c3b-891e-4dbc-a165-8856731b91a4\",\"buddy_project_365adcbc-b93d-4a42-a462-d18cf17ab6ab\",\"buddy_project_366fbcd6-0792-48fe-b282-1ddadc96e479\",\"buddy_project_37eddc3e-3044-4af4-9f32-ed47c9b9b70d\",\"buddy_project_394a794d-91b5-4827-80ba-fbad97cfb680\",\"buddy_project_39b353cf-ea4f-4340-87fb-b315e53c70f6\",\"buddy_project_3b67af59-1f0f-47e2-8966-b7c482d852f9\",\"buddy_project_3d010f8e-748d-434b-803b-58bd478652f3\",\"buddy_project_4179d7f9-e09f-4914-bb86-1cf89d26aa7c\",\"buddy_project_444d8194-d11c-4631-8917-ec6a80671ebd\",\"buddy_project_49d5aaa0-cfa1-4a9b-a970-ec4e9e50c1f1\",\"buddy_project_53488f52-e09a-4160-ac4d-3a04953e6060\",\"buddy_project_538e18d4-205e-4b01-b77c-4a6df03281e8\",\"buddy_project_56531db8-9d4c-4bb0-a072-f63f7b6ca74d\",\"buddy_project_56d17d7b-0f38-49e3-b375-e98b574af87e\",\"buddy_project_5a993cba-64e2-4eac-b1c6-9acd8b8d9e81\",\"buddy_project_5d42b4af-10fc-4356-b74d-1dd1a006410b\",\"buddy_project_5ebed68c-2c09-4790-a533-0582cdb5e21f\",\"buddy_project_5f980ad2-438b-43b0-9520-dd238c7c5fdc\",\"buddy_project_619b3db5-faac-4190-bf1b-336002432f5c\",\"buddy_project_61de0662-1d13-4d3b-a36e-2e51f5c0d8e0\",\"buddy_project_61eb8279-faa8-4e18-8eb3-3e2f3c302058\",\"buddy_project_6209b269-634c-402f-9e4c-590d82809212\",\"buddy_project_63a30650-a08f-4155-aea0-8038544b744f\",\"buddy_project_65c153ee-2972-4e6a-9d11-785db0d09026\",\"buddy_project_66e99a1b-77bd-4ce1-ae6d-74f18445e509\",\"buddy_project_68586ef3-2c77-43e3-b5cd-8d0ae0e34fc8\",\"buddy_project_6c886515-5ef0-4931-9f0b-0502d1dcbfe0\",\"buddy_project_6d89398c-1be8-44d6-95f2-b8e33f1b3c29\",\"buddy_project_7c9c0aae-af0d-4194-b7f6-6b75cc9d0139\",\"buddy_project_84061c74-8885-42a7-8a77-27f27a9a55ba\",\"buddy_project_86bb7e84-6326-42ab-a033-0ac340e6d227\",\"buddy_project_89bc73e6-9e8d-4c97-84c9-94267c15d9c2\",\"buddy_project_8af13e41-8fe2-4d15-bd6d-dee1c4d582de\",\"buddy_project_8c06224d-8184-4a17-b318-3df16a543c8e\",\"buddy_project_95285275-c5ea-479a-ac72-6388c4011707\",\"buddy_project_96dd7203-2194-4fbc-a651-463d13bb02b0\",\"buddy_project_98d2dc73-bf80-4d75-b7b7-838492118af7\",\"buddy_project_9a9eb9ee-ba09-446b-b676-e6de4e106ece\",\"buddy_project_9b2316c2-d43a-4a1e-9c85-eb7422a20ace\",\"buddy_project_9cd60310-ee7d-4bb9-a058-ad063bf3c872\",\"buddy_project_9ea809f4-620b-4f7d-a20c-f6b1bfd49afd\",\"buddy_project_a148a8c4-4bc8-4a9a-962c-cc02cbb536c1\",\"buddy_project_a537cbd2-7833-4142-8af7-5af94be8b0af\",\"buddy_project_a655841c-1672-4f8c-a042-36ae06b4473a\",\"buddy_project_ab483aa5-7c96-41ef-aa8c-9fbe2205f7f2\",\"buddy_project_af9ea9ab-96a3-4e47-ba0d-0f5c8f3a19c0\",\"buddy_project_afe30afa-a95c-4ea9-b5d5-b481d3f1afc5\",\"buddy_project_b251d689-7c03-4845-91b0-9d8c7817edc7\",\"buddy_project_b3d70ca9-cef8-463d-8c12-0933a830f32b\",\"buddy_project_b42df202-4044-4275-99c5-14e3db1f5c87\",\"buddy_project_b4c63458-bc4a-462f-ae95-282e08f411d4\",\"buddy_project_b72072fa-3cbe-46a2-ad9c-074adb9212a7\",\"buddy_project_b934f28c-c6f0-478f-b7a6-9549d7b4e6c4\",\"buddy_project_ba344641-4c64-4881-88b1-29c5b1367231\",\"buddy_project_bacd9105-d509-4bac-a7ef-12e83cb7faa0\",\"buddy_project_bb809351-9dbb-4d88-a243-8af118f39f96\",\"buddy_project_c54571cd-e1b9-47ea-aa49-3e890a01ffcb\",\"buddy_project_c5ea3e48-7568-4da8-a1b0-d3c9f9d14cda\",\"buddy_project_c823a1c3-535e-40d7-b420-ff4f634f0bbf\",\"buddy_project_c9926d89-0150-464c-ad1b-aaf1fc4a038d\",\"buddy_project_c9ddcac6-4b9c-46e3-b396-f50e5160ed5c\",\"buddy_project_dfed3d12-3ecc-4737-8a9f-30103a0c98ca\",\"buddy_project_e3d8e8db-ace2-465b-be7d-b92a62e1b490\",\"buddy_project_ea92d9ed-f5e3-4f93-b1f9-d9fad54ebbc4\",\"buddy_project_ea9a3f86-e491-4e34-b69e-a42b575bde23\",\"buddy_project_eaa96345-350a-47f4-bee6-1e752f5947d8\",\"buddy_project_eb37b01b-bf57-4d34-8bb0-dd6d1c4ede16\",\"buddy_project_ebe1bb49-3851-4db7-9b62-60eff2f718b5\",\"buddy_project_ecb85707-9da2-4ae3-94d2-ba34049d36e5\",\"buddy_project_f58fc2f6-341a-4dcc-9254-baf38a40390c\",\"buddy_project_f6840de9-9353-4b73-b3c5-087cba43f298\",\"buddy_project_f7d142b1-af84-4297-8e9c-d93176489ed4\",\"buddy_project_f7f230f5-213c-4850-b9ce-d0c3cfcde489\",\"buddy_project_f8c25227-3dd7-449f-925f-6c156d8ddfb4\",\"buddy_project_f8ef0288-91dd-4f6a-8475-ae152f99fb68\",\"buddy_project_f943404b-512e-4dc9-9b7d-48717230e0b3\",\"buddy_project_fc7e060d-f619-4a6c-bf0d-edd3927471c4\",\"buddy_project_fed32271-f425-4c89-88b6-3e4c73a9fedd\",\"buddy_project_ff599882-e1cf-4607-b13a-3ec0e25e1bf8\"],\"reads\":[]}"
+  },
+  "status": "active",
+  "done": false,
+  "workingDirectory": "/Users/nicholasbardy/git/wave_sim",
+  "creation": {
+    "commandId": "coordination-return-buddy-return-5e028d8ded09924e1543f1efdf199d3f",
+    "fingerprint": "74833cb8eda05d21740684e7ba9594826feef5f2fcfde93b89a27821d5cdf1cf",
+    "placement": "background",
+    "buddyContext": {
+      "buddyId": "buddy_17d87208-f595-4d83-bbc8-b227e3b4920d",
+      "workspaceId": "project_88cdc98e-13d1-426a-9544-7e7830a2b5c6",
+      "buddyProjectId": null,
+      "legacyWorkItemId": null,
+      "automationRunId": null,
+      "delegatedByBuddyId": null,
+      "parentBuddyConversationId": "0c204c7b-c392-55b3-82a0-108e1a9e73c9",
+      "allowedBuddyOperations": [
+        "buddy.get_capabilities",
+        "buddy.create_buddy",
+        "buddy.set_relationship",
+        "buddy.get_profile",
+        "buddy.update_profile",
+        "buddy.get_memory",
+        "buddy.get_soul",
+        "buddy.update_soul",
+        "buddy.set_automation",
+        "buddy.list_buddies",
+        "buddy.get_message",
+        "buddy.get_runs",
+        "buddy.get_team_state",
+        "buddy.append_task_comment",
+        "buddy.list_task_comments",
+        "buddy.new_project",
+        "buddy.stop",
+        "buddy.retry_run",
+        "buddy.get_current_work",
+        "buddy.get_inbox",
+        "buddy.get_automations",
+        "buddy.update_project",
+        "buddy.update_memory",
+        "buddy.remember_note",
+        "buddy.recall",
+        "buddy.send",
+        "buddy.reply",
+        "buddy.new_list",
+        "buddy.post",
+        "buddy.get_list",
+        "buddy.search_posts",
+        "buddy.get_thread"
+      ]
+    }
+  },
+  "config": {
+    "provider": "codex",
+    "model": {
+      "mode": "explicit",
+      "modelId": "gpt-6-astra"
+    },
+    "reasoning": {
+      "mode": "explicit",
+      "effort": "high"
+    }
+  },
+  "recordRevision": 1,
+  "configRevision": 0,
+  "lastResolvedConfig": {
+    "provider": "codex",
+    "modelId": "gpt-6-astra",
+    "reasoningEffort": "high"
+  },
+  "provenance": "user",
+  "createdAt": "2026-09-25T11:14:31.618Z",
+  "updatedAt": "2026-09-25T11:14:36.130Z"
+}

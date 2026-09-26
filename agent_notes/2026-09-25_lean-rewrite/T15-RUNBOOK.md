@@ -1,8 +1,17 @@
 # T15 runbook: live switch to lean/integration (owner-gated)
 
 Dry run of every data step on a 2026-09-26 snapshot: `T15-dryrun.md` (all verifies ok).
+Importer fixes (dropped-table counts, no-soul verify, corrupt-record reject) are on
+`fix/importer-robustness` (8b69d7a); merge it into lean/integration before step 0 (IMPORTERS.md).
 Target: `origin/lean/integration` at its current HEAD (the final review ran on 6b5c6c1 plus the review/final fixes; f6f629b was the dry-run SHA). Paste the blocks in order in ONE zsh shell (the variables carry over).
 Every block that can fail ends in a gate. If a gate prints `ABORT`, stop and go to ROLLBACK.
+
+> **Update 2026-09-26 (evening):** `main` (6505330) now contains all of lean/integration, including the
+> Buddy memory unification and M5 (agent-cli 076f3fe). The two prep conflicts are already resolved in it, and
+> integration records the working branch as merged (its launch-2.0 commits merge cleanly). Step 7 is now
+> "merge `main` into the working branch" (or check out `main`). The import CLIs are prebuilt in
+> `~/.cache/unleashd/bin/` (buddies-import 19:07 with the memory fold; records-tool unchanged);
+> set `BI=~/.cache/unleashd/bin/buddies-import RT=~/.cache/unleashd/bin/records-tool`.
 
 ## 0. Prep (backend still RUNNING; nothing live is touched)
 
@@ -80,8 +89,14 @@ final review, `records-tool` refuses a source without `by-conversation/` (a wron
 import and verify zero records as ok=true).
 Not imported by design (DESIGN.md "Deleted outright"): sprints, work_items, skills, delegations,
 reviews, approvals, builder_creations, access grants, mail, checkpoints. Their rows stay only in
-`$BK/buddies-v33.sqlite`; to see what that drops:
-`for t in sprints work_items buddy_skills buddy_delegations buddy_reviews buddy_approval_requests buddy_builder_creations buddy_access_grants buddy_mail_effects buddy_mail_inbound buddy_checkpoints; do echo "$t $(sqlite3 $BK/buddies-v33.sqlite "select count(*) from $t")"; done`
+`$BK/buddies-v33.sqlite`. Since fix/importer-robustness the import prints one line per dropped table
+and the report carries them: `jq -c '.dropped_tables' $B3.import.json` (snapshot: 77 rows; sprints 3,
+work_items 15, skills 4, delegations 10, reviews 2, approvals 3, builder_creations 9, access grants 2,
+mail 0+0, checkpoints 29).
+A corrupt record file no longer aborts the migration: it stays byte-for-byte in `by-conversation/`,
+is listed under `rejected` (not `failures`) in `migration-v2-report.json`, and `records-tool import`
+keeps it as a `corrupt_json` reject that verify compares byte-for-byte. See them:
+`jq -c '.rejected' $C/conversation-config/v1/migration-v2-report.json`.
 
 ## 4. Verifies (the gate)
 
@@ -95,8 +110,12 @@ else
   echo 'ABORT: verify failed; removing the new files'; rm -f $B3 $B3-wal $B3-shm $CR $CR-wal $CR-shm
 fi
 ```
-Expected (dry run): every Buddies line `ok`, soul_files `{"match":45,"match_no_header":4,"no_path_empty":3}`;
+Expected (dry run): every Buddies line `ok`, soul_files `{"match":45,"match_no_header":4,"no_path_empty":3}`
+(a Buddy with no soul on either side now counts as `no_soul`, not an abort; `doc_lost`/`doc_invented` fail);
 records `ok=true ... 1/1 rejects byte-equal` (the one reject is a stray by-session `.tmp` file).
+Soul verify reads the LIVE soul files: a soul edited between the v33 backup and the verify shows as
+`differ` and fails the gate (the 2026-09-26 re-run hit this on a snapshot DB vs a soul edited later;
+with the backend stopped from step 1 it cannot happen).
 
 ## 5. File placement
 

@@ -112,3 +112,52 @@ swarm quarantined, not deleted · Buddies core in Rust, in-process napi-rs · ag
 **Deferred follow-ups** (documented, not in this wrap-up): T20 one view tree and T21b CSS shells (they rewrite files the other session is
 editing; start after it commits and PORT-3 lands); the budget passes; the memory-curation harness (baseline prompt + 40 paid calls);
 swarm deletion and feature removals (owner decisions); deleting the one-time importers and record-migration after the live swap.
+
+## Final sweep of other sessions' work (2026-09-26)
+
+| Item | Result |
+|---|---|
+| Main checkout: 72 uncommitted files | committed as-is on the channels branch (493c1c7, pushed); PORT-3 re-applies them onto integration |
+| 4 launch-2.0 commits (product/releases) | cherry-picked into integration (1b66314…) |
+| lane/notes-to-agent-notes (notes as agent_notes files + memory-carryover test) | merged d2c072b, survival clean, full `pnpm test` green |
+| Submodule 85ba151, efe0503 (claude session-limit, 12 h background wait) | pushed to agent-cli remote |
+| Submodule 1aa5554 (codex web search) | a duplicate of what integration already has (execute.ts:161); pushed as a backup branch |
+| 3 muse subagent-v2 worktrees (127 files each, identical) | formatter-only churn, discarded; their HEAD commits are already in integration |
+| Old `main` worktree | a submodule checkout drift only, no code |
+| Next | PORT-3 → then a FEATURE AUDIT: every channel/Slack QoL feature from the other sessions' history must be shown present in integration |
+
+## Final cleanup wave (2026-09-26, max 4 agents)
+
+Cleanup done: removed 9 worktrees + the old codex worktree, 26 local branches, and 3 merged remote branches (each checked
+for unique work first). Left: main checkout, lean-integration, lane-port3; branches: working branch, lean/integration, main,
+port/qol-3. Submodule branches kept (integration points into them).
+
+| Slot | Work | Status |
+|---|---|---|
+| 1 | PORT-3: snapshot 493c1c7, including the 7 audit-listed channel features | ◐ running |
+| 2 | Dead-code sweep (outside the channel files PORT-3 owns) | ◐ running |
+| 3 | Importer robustness: dropped-table counts, soul-less Buddies, corrupt record kept as reject | ◐ running |
+| 4 | Stale tab after the swap: a version-mismatch banner plus a server close code for old clients | ◐ running |
+| next | Channel CSS tokens (~230 literals, 760/640/600 breakpoints) | after PORT-3 |
+| next | T20 one view tree, sliced by screen group → T21b CSS shells | after PORT-3 |
+| next | Budget passes: server (20k vs ~9k), client, Rust | after the dead-code sweep |
+| owner | T15 swap; merge → main; memory-curation harness; swarm deletion/feature removals | ⛔ |
+
+**Final cleanup wave results:** PORT-3 merged 0def15d (7 snapshot-only channel features + runtime fixes); stale-tab 979a5eb
+(v3 socket path + close code 4426 + reload banner; old tabs show disconnected, runbook step added); importer robustness d7e5390
+(dropped-table counts, soul-less Buddies, corrupt record kept as reject); dead-code sweep db98212 (~1,500 lines, CSS ceiling now
+14,801). The gate script is fail-closed (pipefail) after a piped invariants check once let a red G8 through. That was fixed within
+minutes (b05b43a).
+Remaining: channel parity (running); channel CSS tokens; T20 view tree → T21b CSS shells; budget passes; test-only code in
+turn-policy (~70 lines); unused addon fns pruneEvents/listChannels; the memory-curation runbook (restore the harness or retire it:
+owner); T15 swap and merge → main (owner).
+
+### Wave 2026-09-26 (late)
+- Merged: channel parity fc5b976 (mobile Home rows + conversation eye, /chat DM notice, 12 h background wait); server-core budget (−829, BUDGET-SERVER.md); Agent/Task sub-agent tool + typed task.started/finished (submodule fix/claude-background-task-events 31469d4, AGENT-TOOL.md); channel CSS tokens (232 literals → 0, G7 exemption list deleted, G8 14704; CSS-TOKENS.md).
+- Gate lesson: run `pnpm run bootstrap` (builds the submodule) — a hand-rolled install+shared+addons missed a submodule bump.
+- Running: budget-buddies; T20-A panels, T20-B picker+search, T20-C Buddy tabs.
+- Next: T20-D swarm views, T20-E transcript rows + composer, T20-F lists + new-conversation form; then T21b CSS shells; client budget pass.
+- Open: background Agent shows "completed" at launch (task.finished carries the id; not yet wired); CSS-token screenshot diff needs a throwaway server on copied data.
+- T20 COMPLETE (a039b77): six slices merged — A panels, B picker+search, C Buddy page, D swarm, E transcript+composer, F rows+new-conversation form. Views in client/src/views/*, named variant props, views-boundary test. CSS 14801 → 13140 this session. Background Agent completes on task.finished (fe98768). Budget-buddies −446 (942d6a0). Swarm observer flake fixed (baseline read, not delay).
+- Running: T21b shells (+ palette overlay, legacy picker classes, palette ARIA, media-query gate); client TS budget pass; screenshot compare db98212 vs a039b77 on copied data.
+- Another session: lane/memory-{unify,import,reviewer,bench,credits} built on integration (memory benchmark port = answers the benchmark decision). Not ours; don't touch.

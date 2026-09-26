@@ -30,9 +30,8 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const repositoryRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-// Shared by every worktree of this checkout (the lane layout keeps it beside the repo).
-const BUILD_ROOT =
-  process.env.UNLEASHD_BUILD_ROOT ?? path.join(os.homedir(), 'git', 'unleashd-lean-scope');
+// Shared by every worktree of this checkout: one addon cache and one cargo target dir.
+const BUILD_ROOT = process.env.UNLEASHD_BUILD_ROOT ?? path.join(os.homedir(), '.cache', 'unleashd');
 export const DEFAULT_CACHE_ROOT =
   process.env.UNLEASHD_ADDON_CACHE ?? path.join(BUILD_ROOT, '.addon-cache');
 const LOCK_POLL_MS = 500;

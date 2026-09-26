@@ -1,0 +1,213 @@
+where	method	server_uses	files
+store.js:272	coordinationTransaction	1	buddies/run-executor.ts:1
+store.js:276	close	16	adapters/jsonl.ts:1 adapters/transcript-tails.ts:1 buddies/control-server.ts:1 buddies/mcp-server.ts:4 buddies/memory-review-mcp.ts:1 buddies/owner-mcp.ts:1 conversations/config-store.ts:2 lifecycle/system-ports.ts:2 observability/error-journal.ts:1 observability/turn-attempt-journal.ts:1 server.ts:1
+store.js:280	backupDatabase	0	
+store.js:1515	createProject	1	buddies/builder-mcp-server.ts:1
+store.js:1541	getProject	0	
+store.js:1548	listProjects	0	
+store.js:1552	createWorkspace	1	buddies/builder.ts:1
+store.js:1556	getWorkspace	0	
+store.js:1560	listWorkspaces	7	buddies/builder-mcp-server.ts:1 buddies/builder.ts:4 buddies/owner-channel-reads.ts:1 buddies/owner-team-configuration.ts:1
+store.js:1564	createBuddy	1	buddies/builder-mcp-server.ts:1
+store.js:1637	createBuddyFromBuilder	1	buddies/builder.ts:1
+store.js:1803	getBuddyBuilderResult	2	buddies/builder.ts:2
+store.js:1820	listBuddyBuilderResults	1	buddies/builder.ts:1
+store.js:1832	getBuddy	30	buddies/buddy-conversation-slots.ts:1 buddies/channel-responder.ts:2 buddies/channel-text.ts:1 buddies/direct-reports.ts:1 buddies/directory.ts:1 buddies/dispatch-service.ts:1 buddies/operations.ts:5 buddies/routes.ts:7 buddies/run-executor.ts:1 buddies/soul.ts:1 buddies/team-access.ts:3 buddies/team-observation.ts:1 buddies/team-readiness.ts:1 buddies/visibility.ts:1 server.ts:3
+store.js:1862	updateBuddy	7	buddies/builder.ts:4 buddies/routes.ts:2 buddies/soul.ts:1
+store.js:1942	listBuddies	8	buddies/builder-mcp-server.ts:1 buddies/builder.ts:1 buddies/directory.ts:1 buddies/routes.ts:4 server.ts:1
+store.js:1966	assignBuddyToProject	0	
+store.js:1980	listBuddyProjects	0	
+store.js:1994	assignBuddyToWorkspace	0	
+store.js:1998	listBuddyWorkspaces	13	buddies/buddy-conversation-slots.ts:1 buddies/directory.ts:1 buddies/operations.ts:4 buddies/routes.ts:6 buddies/team-readiness.ts:1
+store.js:2017	reassignOwnedProject	0	
+store.js:2058	setBuddyRelationship	3	buddies/builder.ts:2 buddies/routes.ts:1
+store.js:2123	removeBuddyRelationship	0	
+store.js:2130	listBuddyRelationships	8	buddies/builder.ts:2 buddies/directory.ts:1 buddies/operations.ts:3 buddies/routes.ts:1 buddies/team-access.ts:1
+store.js:2147	recordAuditEvent	9	buddies/closure.ts:3 buddies/memory-review.ts:1 buddies/operations.ts:1 buddies/owner-resources.ts:1 buddies/routes.ts:1 buddies/scheduler.ts:1 server.ts:1
+store.js:2184	getAuditEvent	0	
+store.js:2196	listAuditEvents	1	buddies/operations.ts:1
+store.js:2229	listBuddyActivity	1	buddies/integration.ts:1
+store.js:2270	summarizeMemoryWrites	1	buddies/scheduler.ts:1
+store.js:2291	createApprovalRequest	1	buddies/operations.ts:1
+store.js:2398	getApprovalRequest	2	buddies/routes.ts:2
+store.js:2405	listApprovalRequests	3	buddies/operations.ts:1 buddies/routes.ts:2
+store.js:2437	resolveApprovalRequest	1	buddies/routes.ts:1
+store.js:2473	assignBuddySkill	1	buddies/routes.ts:1
+store.js:2495	removeBuddySkill	0	
+store.js:2504	listBuddySkills	1	buddies/routes.ts:1
+store.js:2513	sendMessage	2	buddies/dispatch-service.ts:1 transport/conversation-websocket.ts:1
+store.js:2562	getMessage	21	buddies/dispatch-service.ts:5 buddies/operations.ts:6 buddies/routes.ts:1 buddies/run-executor.ts:5 buddies/team-access.ts:1 buddies/team-observation.ts:2 buddies/team-readiness.ts:1
+store.js:2573	listMessages	3	buddies/operations.ts:1 buddies/routes.ts:2
+store.js:2602	bindMessageConversation	1	buddies/dispatch-service.ts:1
+store.js:2609	replyMessage	1	buddies/operations.ts:1
+store.js:2623	replyToOwnerMessage	3	buddies/routes.ts:3
+store.js:2654	finishMessageWait	4	buddies/dispatch-service.ts:4
+store.js:2661	cancelConversationMessageWaits	0	
+store.js:2666	finishConversationMessages	1	buddies/integration.ts:1
+store.js:2674	failMessage	1	buddies/dispatch-service.ts:1
+store.js:2680	createDelegation	1	buddies/operations.ts:1
+store.js:2723	getDelegation	2	buddies/operations.ts:2
+store.js:2728	claimDelegationDispatch	0	
+store.js:2756	bindDelegationConversation	0	
+store.js:2782	failDelegationDispatch	0	
+store.js:2804	updateDelegation	4	buddies/closure.ts:1 buddies/operations.ts:2 buddies/routes.ts:1
+store.js:2832	listDelegations	4	buddies/closure.ts:1 buddies/operations.ts:2 buddies/routes.ts:1
+store.js:2859	createReview	1	buddies/operations.ts:1
+store.js:2915	getReview	1	buddies/operations.ts:1
+store.js:2920	updateReview	4	buddies/closure.ts:2 buddies/operations.ts:1 buddies/routes.ts:1
+store.js:2952	listReviews	3	buddies/closure.ts:1 buddies/operations.ts:1 buddies/routes.ts:1
+store.js:2979	createSprint	0	
+store.js:3012	getSprint	0	
+store.js:3017	getActiveSprint	0	
+store.js:3025	completeSprint	0	
+store.js:3038	newProject	1	buddies/operations.ts:1
+store.js:3101	upsertBuddyProject	0	
+store.js:3143	getBuddyProject	20	buddies/builder.ts:3 buddies/operations.ts:4 buddies/owner-resources.ts:3 buddies/routes.ts:6 buddies/run-executor.ts:3 buddies/team-observation.ts:1
+store.js:3155	listBuddyOwnedProjects	12	buddies/builder.ts:2 buddies/channel-routes.ts:1 buddies/memory-review.ts:1 buddies/operations.ts:3 buddies/owner-resources.ts:1 buddies/routes.ts:4
+store.js:3193	listTodos	0	
+store.js:3206	updateProject	1	buddies/operations.ts:1
+store.js:3298	updateMemory	5	buddies/memory-review.ts:1 buddies/operations.ts:2 buddies/owner-resources.ts:2
+store.js:3318	updateSoul	2	buddies/soul.ts:2
+store.js:3342	exportCheck	0	
+store.js:3363	fixExport	0	
+store.js:3536	readBuddySoul	3	buddies/memory-review.ts:1 buddies/soul.ts:2
+store.js:3552	rememberNote	3	buddies/memory-review.ts:1 buddies/operations.ts:2
+store.js:3724	recall	20	buddies/change-feed.ts:1 buddies/knowledge.ts:1 buddies/mcp-server.ts:7 buddies/memory-review.ts:2 buddies/operations.ts:7 buddies/routes.ts:2
+store.js:3835	readBuddyMemory	6	buddies/memory-review.ts:2 buddies/operations.ts:2 buddies/owner-resources.ts:1 buddies/routes.ts:1
+store.js:3872	createWorkItem	0	
+store.js:3944	upsertWorkItem	0	
+store.js:3988	getWorkItem	1	buddies/integration.ts:1
+store.js:3993	updateWorkItemStatus	1	buddies/routes.ts:1
+store.js:4021	listWorkItems	1	buddies/routes.ts:1
+store.js:4053	currentWork	0	
+store.js:4066	auditWorkMigration	0	
+store.js:4101	dashboard	1	buddies/routes.ts:1
+store.js:4127	getBuddyTeamState	4	buddies/builder.ts:2 buddies/routes.ts:2
+store.js:4149	overview	1	buddies/routes.ts:1
+store.js:4273	getBuddyContext	5	buddies/integration.ts:2 buddies/memory-review.ts:2 buddies/routes.ts:1
+store.js:4317	createAutomation	2	buddies/operations.ts:1 buddies/routes.ts:1
+store.js:4387	getAutomation	9	buddies/operations.ts:2 buddies/routes.ts:1 buddies/run-executor.ts:3 buddies/scheduler.ts:3
+store.js:4395	listAutomations	7	buddies/operations.ts:3 buddies/routes.ts:4
+store.js:4419	updateAutomation	7	buddies/operations.ts:3 buddies/routes.ts:2 buddies/run-executor.ts:2
+store.js:4484	deleteAutomation	0	
+store.js:4488	archiveAutomation	1	buddies/routes.ts:1
+store.js:4518	listDueAutomations	1	buddies/scheduler.ts:1
+store.js:4535	claimAutomationRun	2	buddies/scheduler.ts:2
+store.js:4652	getAutomationRun	3	buddies/dispatch-service.ts:1 buddies/scheduler.ts:2
+store.js:4660	getAutomationRunByIdempotencyKey	0	
+store.js:4667	updateAutomationRun	8	buddies/scheduler.ts:8
+store.js:4796	listAutomationRuns	2	buddies/operations.ts:1 buddies/routes.ts:1
+store.js:4810	getAutomationRunByConversationId	1	buddies/routes.ts:1
+store.js:4818	listNonterminalAutomationRuns	5	buddies/routes.ts:3 buddies/run-executor.ts:1 buddies/scheduler.ts:1
+store.js:4828	assertAutomationOperationAllowed	3	buddies/control-server.ts:1 buddies/dispatch-service.ts:1 buddies/operations.ts:1
+store.js:4854	withAutomationRunAuthority	2	buddies/dispatch-service.ts:1 buddies/operations.ts:1
+store.js:4872	linkConversation	1	buddies/integration.ts:1
+store.js:4952	updateConversationLink	1	buddies/integration.ts:1
+store.js:4983	getConversationLink	0	
+store.js:4988	listConversationLinks	4	buddies/operations.ts:1 buddies/routes.ts:3
+store.js:5012	countHeldDirectReports	0	
+store.js:5043	resolveHireTarget	0	
+store.js:5098	hireDirectReport	0	
+store.js:5430	retireDirectReport	1	buddies/direct-reports.ts:1
+coordination.js:128	getCoordinatedMessageByKey	1	buddies/dispatch-service.ts:1
+coordination.js:135	assertWorkerParent	0	
+coordination.js:139	coordinationActiveCounts	0	
+coordination.js:155	activeRunLimitReason	0	
+coordination.js:181	coordinationBackgroundActiveCounts	0	
+coordination.js:191	enqueueBuddyChatRun	3	buddies/chat-run-admission.ts:1 conversations/runtime.ts:2
+coordination.js:205	startBuddyChatRun	2	buddies/chat-run-admission.ts:1 conversations/runtime.ts:1
+coordination.js:214	abandonQueuedBuddyChatRuns	2	buddies/chat-run-admission.ts:1 buddies/run-executor.ts:1
+coordination.js:226	sendCoordinatedMessage	1	buddies/dispatch-service.ts:1
+coordination.js:424	enqueueMessageReply	0	
+coordination.js:447	coordinationCommand	6	buddies/builder.ts:2 buddies/operations.ts:3 buddies/owner-resources.ts:1
+coordination.js:476	enqueueBuddyRun	2	buddies/run-executor.ts:2
+coordination.js:537	getBuddyRun	26	buddies/chat-run-admission.ts:1 buddies/coordination-store.ts:1 buddies/dispatch-service.ts:1 buddies/knowledge.ts:1 buddies/operations.ts:4 buddies/run-executor.ts:13 buddies/team-access.ts:1 buddies/team-observation.ts:1 buddies/team-readiness.ts:2 server.ts:1
+coordination.js:544	listBuddyRuns	8	buddies/operations.ts:1 buddies/routes.ts:2 buddies/run-executor.ts:4 buddies/team-observation.ts:1
+coordination.js:586	inspectBuddyAdmission	2	buddies/run-executor.ts:1 buddies/team-readiness.ts:1
+coordination.js:625	claimBuddyRun	1	buddies/run-executor.ts:1
+coordination.js:665	withBuddyRunAuthority	4	buddies/dispatch-service.ts:3 buddies/operations.ts:1
+coordination.js:697	startBuddyRun	1	buddies/run-executor.ts:1
+coordination.js:730	finishBuddyRun	4	buddies/run-executor.ts:3 server.ts:1
+coordination.js:762	enqueueBuddyFailureNotice	0	
+coordination.js:793	ensureInterruptionReport	0	
+coordination.js:854	reconcileInterruptionReports	0	
+coordination.js:878	enqueueInterruptionReportReturn	0	
+coordination.js:912	holdBuddyRun	7	buddies/run-executor.ts:7
+coordination.js:918	recoverBuddyRuns	1	buddies/run-executor.ts:1
+coordination.js:942	repairBuddyRun	1	buddies/routes.ts:1
+coordination.js:967	retryBuddyRun	2	buddies/operations.ts:1 buddies/routes.ts:1
+coordination.js:1040	cancelBuddyRun	4	buddies/operations.ts:1 buddies/routes.ts:1 buddies/run-executor.ts:2
+coordination.js:1048	stopBuddyMessageRoot	2	buddies/operations.ts:1 buddies/routes.ts:1
+coordination-work.js:83	appendTaskComment	2	buddies/operations.ts:1 buddies/routes.ts:1
+coordination-work.js:127	listTaskComments	2	buddies/operations.ts:1 buddies/routes.ts:1
+coordination-work.js:148	reparentBuddy	1	buddies/routes.ts:1
+coordination-work.js:179	getCoordinationMembership	32	buddies/builder.ts:2 buddies/directory.ts:4 buddies/operations.ts:6 buddies/owner-resources.ts:1 buddies/routes.ts:6 buddies/run-executor.ts:2 buddies/team-access.ts:2 buddies/team-observation.ts:2 buddies/team-readiness.ts:7
+coordination-work.js:188	setCoordinationMembership	1	buddies/routes.ts:1
+coordination-work.js:222	isCoordinationManager	2	buddies/team-access.ts:1 buddies/team-readiness.ts:1
+coordination-work.js:230	projectAncestors	1	buddies/memory-review.ts:1
+coordination-work.js:244	canReadCoordinationProject	8	buddies/memory-review.ts:1 buddies/operations.ts:5 buddies/team-observation.ts:1 buddies/team-readiness.ts:1
+coordination-work.js:262	canManageCoordinationProject	2	buddies/operations.ts:2
+coordination-work.js:273	assertProjectExecution	0	
+coordination-work.js:296	createCoordinatedProject	5	buddies/builder.ts:2 buddies/operations.ts:1 buddies/owner-resources.ts:1 buddies/routes.ts:1
+coordination-work.js:329	finishProjectHandoffs	1	buddies/run-executor.ts:1
+coordination-work.js:461	updateCoordinatedProject	4	buddies/operations.ts:1 buddies/owner-resources.ts:1 buddies/routes.ts:2
+coordination-receipts.js:32	previewCoordinatedMessage	2	buddies/dispatch-service.ts:2
+coordination-receipts.js:74	recordRunExecution	1	buddies/run-executor.ts:1
+coordination-receipts.js:92	checkpointBuddyRun	0	
+coordination-receipts.js:101	listRunCheckpoints	3	buddies/run-executor.ts:2 buddies/team-observation.ts:1
+coordination-receipts.js:112	getMessageDeliveries	1	buddies/team-observation.ts:1
+coordination-receipts.js:135	getBuddyRunRecovery	2	buddies/operations.ts:1 buddies/team-observation.ts:1
+coordination-receipts.js:237	recoverClosedBackgroundMessage	0	
+coordination-receipts.js:300	retryUndeliveredInputs	1	buddies/run-executor.ts:1
+coordination-approvals.js:20	attachMessageApproval	0	
+coordination-approvals.js:37	resolveMessageApproval	0	
+coordination-approvals.js:44	consumeProjectApproval	0	
+background-work.js:50	getBackgroundWork	0	
+background-work.js:183	getProjectBackgroundExecution	1	buddies/routes.ts:1
+background-work.js:194	backgroundParentMessage	0	
+background-work.js:208	assertBackgroundReply	0	
+background-work.js:226	reconcileBackgroundWork	1	buddies/run-executor.ts:1
+background-work.js:332	settleBackgroundReply	0	
+background-work.js:356	deliverBackgroundReply	0	
+team-access.js:53	getTeamContractVersion	1	buddies/team-access.ts:1
+team-access.js:55	setBuddyAccess	0	
+team-access.js:88	getBuddyAccess	0	
+team-access.js:94	listBuddyAccess	2	buddies/routes.ts:2
+team-access.js:100	buddyCapability	6	buddies/operations.ts:3 buddies/team-access.ts:2 buddies/team-readiness.ts:1
+team-access.js:116	requireBuddyCapability	6	buddies/direct-reports.ts:2 buddies/operations.ts:4
+team-access.js:127	createTeamBuddy	2	buddies/direct-reports.ts:1 buddies/operations.ts:1
+team-access.js:155	setTeamRelationship	2	buddies/direct-reports.ts:1 buddies/operations.ts:1
+team-access.js:186	getTeamProfile	2	buddies/operations.ts:1 buddies/owner-resources.ts:1
+team-access.js:193	updateTeamProfile	2	buddies/operations.ts:1 buddies/owner-resources.ts:1
+team-access.js:219	readTeamDocument	1	buddies/operations.ts:1
+team-access.js:231	updateTeamDocument	2	buddies/operations.ts:2
+team-access.js:274	getMessageExecution	1	buddies/team-access.ts:1
+team-configuration.js:333	prepareTeamConfiguration	2	buddies/owner-team-configuration.ts:2
+team-configuration.js:899	teamConfigurationReadiness	0	
+team-configuration.js:1035	applyTeamConfiguration	2	buddies/owner-team-configuration.ts:2
+team-configuration.js:1245	refreshTeamConfigurationResult	0	
+team-configuration.js:1287	getTeamConfiguration	2	buddies/owner-team-configuration.ts:2
+knowledge.js:75	checkKnowledgeDocument	1	buddies/knowledge.ts:1
+knowledge.js:76	readKnowledgeDocument	6	buddies/integration.ts:1 buddies/knowledge.ts:3 buddies/memory-review.ts:1 buddies/routes.ts:1
+knowledge.js:101	replaceKnowledgeDocument	3	buddies/knowledge.ts:2 buddies/memory-review.ts:1
+knowledge.js:115	listKnowledgeDocuments	3	buddies/integration.ts:1 buddies/knowledge.ts:1 buddies/routes.ts:1
+knowledge.js:132	listKnowledgeScopes	1	buddies/routes.ts:1
+knowledge.js:145	knowledgeAudienceKey	1	buddies/integration.ts:1
+mailbox.js:21	prepareMailEffect	0	
+mailbox.js:31	getMailEffect	0	
+mailbox.js:32	authorizeMailEffect	0	
+mailbox.js:40	claimMailEffect	0	
+mailbox.js:52	settleMailEffect	0	
+mailbox.js:62	recordInboundMail	0	
+lists.js:209	createList	2	buddies/operations.ts:1 buddies/routes.ts:1
+lists.js:233	getList	7	buddies/channel-responder.ts:1 buddies/channel-routes.ts:2 buddies/operations.ts:3 buddies/routes.ts:1
+lists.js:238	listLists	3	buddies/operations.ts:1 buddies/owner-channel-reads.ts:1 buddies/routes.ts:1
+lists.js:247	createPost	4	buddies/channel-responder.ts:2 buddies/channel-routes.ts:1 buddies/operations.ts:1
+lists.js:299	getPost	7	buddies/channel-responder.ts:3 buddies/channel-routes.ts:1 buddies/operations.ts:1 buddies/routes.ts:2
+lists.js:308	listPosts	3	buddies/channel-pages.ts:1 buddies/channel-responder.ts:1 buddies/owner-channel-reads.ts:1
+lists.js:332	listThread	1	buddies/owner-channel-reads.ts:1
+lists.js:349	searchPosts	1	buddies/operations.ts:1
+lists.js:390	pagePosts	5	buddies/channel-pages.ts:3 buddies/channel-responder.ts:2
+lists.js:414	newestListPost	2	buddies/operations.ts:1 buddies/owner-channel-reads.ts:1
+lists.js:420	listUnread	1	buddies/operations.ts:1
+lists.js:434	markListRead	1	buddies/operations.ts:1
