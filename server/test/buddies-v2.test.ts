@@ -721,7 +721,9 @@ test('a scheduled run asks for help in the background and its answer comes back 
   }
 });
 
-test('the reviewer climbs the ladder on credit exhaustion and curates memory on the same endpoint', async () => {
+// The reviewer used to see prose only (tool calls dropped) in a private temp cwd, so it tried to
+// verify claims with file tools and the guard killed it (12 failed reviews, 2026-09 audit).
+test('the reviewer climbs the ladder on credit exhaustion, sees tool calls, runs in the workspace, and curates memory on the same endpoint', async () => {
   const scratch = mkdtempSync(join(tmpdir(), 'buddies-review-'));
   const dbPath = join(scratch, 'db.sqlite');
   const core = await BuddiesCore.open(dbPath);
@@ -739,6 +741,7 @@ test('the reviewer climbs the ladder on credit exhaustion and curates memory on 
   const grants = createGrants({ ttlMs: 60_000 });
   const endpoint = await startMcpEndpoint({ core, events, grants, uploadsRoot: () => scratch });
   const harnesses: string[] = [];
+  const requests: ProviderRequest[] = [];
   let spec!: McpServerSpec;
   const reviewer = createMemoryReviewer({
     core,
@@ -747,6 +750,7 @@ test('the reviewer climbs the ladder on credit exhaustion and curates memory on 
     logger: { warn: () => undefined },
     execute: ((request: ProviderRequest) => {
       harnesses.push(request.harness);
+      requests.push(request);
       spec = request.mcpServers!.unleashd_memory;
       const exhausted = request.harness === 'codex';
       const completed = (async () => {
@@ -792,7 +796,15 @@ test('the reviewer climbs the ladder on credit exhaustion and curates memory on 
       conversationId: 'chat',
       context: { buddyId: lead.id, workspaceId: ws, coordinationRunId: 'run-chat' },
       completedAt: new Date().toISOString(),
-      messages: [{ role: 'user', content: 'I prefer dark mode' }],
+      messages: [
+        { role: 'user', content: 'I prefer dark mode' },
+        {
+          role: 'assistant',
+          content: '',
+          toolCall: { name: 'Read', input: `agent_notes/theme.md ${'y'.repeat(600)}` },
+        },
+        { role: 'assistant', content: '', toolCall: { name: 'exec_command' } },
+      ],
     });
     const receipt = await until(
       async () =>
@@ -807,6 +819,15 @@ test('the reviewer climbs the ladder on credit exhaustion and curates memory on 
     assert.equal(body.model, 'grok-4.7-low');
     assert.equal(body.fallbackFrom, 'gpt-6-luna');
     assert.equal(body.writes.working, 1);
+    const prompt = requests[1].prompt;
+    assert.match(prompt, /\[tool call\] Read agent_notes\/theme\.md y+…\[truncated 221 chars\]/);
+    assert.ok(!prompt.includes('y'.repeat(401)), 'tool input is bounded');
+    assert.match(prompt, /\[tool call\] exec_command"/, 'an input-less call is its name');
+    assert.deepEqual(
+      requests.map((r) => r.cwd),
+      [scratch, scratch],
+      'every rung runs in the workspace root'
+    );
     const working = await core.readDoc(OWNER, {
       buddyId: lead.id,
       scope: { kind: 'buddy' },
@@ -815,6 +836,84 @@ test('the reviewer climbs the ladder on credit exhaustion and curates memory on 
     });
     assert.equal(working?.content, 'Owner prefers dark mode');
     assert.equal(await probe(spec), 401, "the reviewer's grant dies with its attempt");
+  } finally {
+    reviewer.stop();
+    await endpoint.close();
+    rmSync(scratch, { recursive: true, force: true });
+  }
+});
+
+// One 120 s budget used to cover the whole ladder, so a slow first rung starved the rest
+// (41 timed-out reviews). The budget is per rung, and a rung that times out climbs.
+test('a reviewer rung that outlives its timeout climbs to the next rung, which completes', async () => {
+  const scratch = mkdtempSync(join(tmpdir(), 'buddies-review-timeout-'));
+  const core = await BuddiesCore.open(join(scratch, 'db.sqlite'));
+  const ws = (await core.createWorkspace(OWNER, { name: 'Team', rootPath: scratch })).id;
+  const lead = await core.createBuddy(OWNER, {
+    workspaceId: ws,
+    slug: 'lead',
+    name: 'Lead',
+    role: 'r',
+    manager: { kind: 'nobody' },
+    backgroundEnabled: true,
+    key: 'lead',
+  });
+  const grants = createGrants({ ttlMs: 60_000 });
+  const endpoint = await startMcpEndpoint({
+    core,
+    events: createBuddyEvents(),
+    grants,
+    uploadsRoot: () => scratch,
+  });
+  const reviewer = createMemoryReviewer({
+    core,
+    grants,
+    spec: endpoint.spec,
+    timeoutMs: 200,
+    logger: { warn: () => undefined },
+    execute: ((request: ProviderRequest) => {
+      const spec = request.mcpServers!.unleashd_memory;
+      let stopped!: () => void;
+      const killed = new Promise<void>((resolve) => {
+        stopped = resolve;
+      });
+      const completed = (async () => {
+        // The first rung hangs until the reviewer stops it; the second does the work.
+        if (request.harness === 'codex') await killed;
+        else await call(spec, 'doc_read', { kind: 'working' });
+        return { exitCode: 0, signal: null, sessionId: 's', reason: 'success' };
+      })();
+      return {
+        child: { exitCode: 0 },
+        events: (async function* () {
+          await completed;
+          yield* [];
+        })(),
+        completed,
+        stop: () => stopped(),
+      };
+    }) as never,
+  });
+  try {
+    reviewer.start();
+    reviewer.enqueue({
+      attemptId: 'a1',
+      conversationId: 'chat',
+      context: { buddyId: lead.id, workspaceId: ws, coordinationRunId: 'run-chat' },
+      completedAt: new Date().toISOString(),
+      messages: [{ role: 'user', content: 'hello' }],
+    });
+    const receipt = await until(
+      async () =>
+        (await core.listEvents(lead.id, Number.MAX_SAFE_INTEGER, 20)).find(
+          (e) => e.op === 'memory_review'
+        ),
+      'the review receipt'
+    );
+    const body = JSON.parse(receipt.payload);
+    assert.equal(body.status, 'complete', body.error);
+    assert.equal(body.model, 'grok-4.7-low');
+    assert.equal(body.fallbackFrom, 'gpt-6-luna');
   } finally {
     reviewer.stop();
     await endpoint.close();

@@ -11,10 +11,16 @@ const CURSOR_PROJECTS_DIR = path.join(os.homedir(), '.cursor', 'projects');
  * `~/.cursor/projects/<encoded cwd>/agent-transcripts/<sessionId>/`, and the
  * Cursor disk adapter imports that as a conversation. A background run that
  * must stay invisible (the reply gate, the memory reviewer) therefore deletes
- * its own project dir, found by session id, once the process has exited.
+ * its own files, found by session id, once the process has exited.
  *
  * Found by session id rather than by re-encoding the cwd: the directory name
  * is a lossy encoding (see resolveEncodedProjectDirectory), a uuid is not.
+ *
+ * Only THIS run's files: its transcript and the agent-tools/*.txt spills its transcript names
+ * (raw MCP output, i.e. Buddy memory). The project dir goes too once no other session is left in
+ * it. Removing the whole dir unconditionally was right while every caller ran in a private
+ * mkdtemp cwd, but the memory reviewer runs in the Buddy's workspace root since 2026-09-26, where
+ * that dir holds the owner's own Cursor sessions. Guard: cursor-ephemeral.test.ts.
  */
 export function discardCursorTranscript(
   sessionId: string,
@@ -23,13 +29,28 @@ export function discardCursorTranscript(
   if (!sessionId || !fs.existsSync(projectsDir)) return;
   for (const project of fs.readdirSync(projectsDir)) {
     const projectDir = path.join(projectsDir, project);
-    if (!fs.existsSync(path.join(projectDir, 'agent-transcripts', sessionId))) continue;
-    // The whole project dir, not just the transcript: callers MUST run cursor in a
-    // private mkdtemp cwd, so the dir belongs to this one run. Removing only the
-    // transcript leaked one dir per run, plus agent-tools/*.txt raw MCP output
-    // (Buddy memory content), and every leaked dir lengthens the adapter scan.
-    fs.rmSync(projectDir, { recursive: true, force: true });
+    const transcripts = path.join(projectDir, 'agent-transcripts');
+    const own = path.join(transcripts, sessionId);
+    if (!fs.existsSync(own)) continue;
+    for (const spill of namedToolSpills(own))
+      fs.rmSync(path.join(projectDir, 'agent-tools', spill), { force: true });
+    fs.rmSync(own, { recursive: true, force: true });
+    if (fs.readdirSync(transcripts).length === 0)
+      fs.rmSync(projectDir, { recursive: true, force: true });
   }
+}
+
+function namedToolSpills(transcriptDir: string): string[] {
+  return fs
+    .readdirSync(transcriptDir, { recursive: true, withFileTypes: true })
+    .filter((entry) => entry.isFile())
+    .flatMap((entry) =>
+      [
+        ...fs
+          .readFileSync(path.join(entry.parentPath, entry.name), 'utf8')
+          .matchAll(/agent-tools\/([\w-]+\.txt)/g),
+      ].map((match) => match[1])
+    );
 }
 
 type Turn = ReturnType<typeof executeCommand>;

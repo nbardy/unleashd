@@ -19,6 +19,17 @@ The September 13 selected prompt scored **19/20** manually graded case runs
 versus **16/20** for the original control. Those are historical observations,
 not an expected score for every rerun or a production reliability estimate.
 
+**2026-09-26 change (M3, unbenchmarked).** `MEMORY_REVIEW_INSTRUCTIONS` was
+rewritten around the two docs and "update when relevant" (in-flight → working,
+resolved → removed from working, lasting preference/lesson → long_term, nothing
+new → NONE, read workspace files read-only to check a claim, never write). The
+live harness is removed, so it has NOT been rerun: the 19/20 above describes the
+September 13 prompt, not this one. Four other variables changed in the same
+commit and must be labelled separately on the next rerun: the transcript now
+carries tool-call lines (name + input capped at 400 chars), the reviewer runs in
+the Buddy's workspace root with read-only file tools per harness, and the
+runtime limit is 300 s per ladder rung.
+
 ## What it measures
 
 Ten synthetic analogues of the September 13, 2026 cross-Buddy audit exercise the
@@ -74,7 +85,7 @@ pnpm exec tsx --test server/test/buddy-memory-curation.test.ts
 
 Replace `NEW-RUN-ID` with a unique label. With ten cases this requests **40 model
 invocations** (10 cases × 2 variants × 2 repeats), with up to two subtests running
-concurrently. Each reviewer has a 120-second runtime limit; the harness allows
+concurrently. Each reviewer had a 120-second runtime limit when this was written (now 300 s per ladder rung); the harness allows
 150 seconds to drain, 180 seconds per subtest and 50 minutes for the parent test.
 Record infrastructure failures separately from semantic failures; never quietly
 exclude them from the results.

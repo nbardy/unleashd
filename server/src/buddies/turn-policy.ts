@@ -533,7 +533,7 @@ export class BuddyTurnPolicy implements TurnPolicy {
         completedAt: new Date().toISOString(),
         messages: messages
           .slice(ticket.messageStart)
-          .map(({ role, content }) => ({ role, content })),
+          .map(({ role, content, toolCall }) => ({ role, content, toolCall })),
       });
     } catch (error) {
       console.error('[buddies] Could not enqueue memory review', this.host.id, error);
