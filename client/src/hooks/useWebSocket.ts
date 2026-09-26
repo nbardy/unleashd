@@ -42,7 +42,7 @@ export function useWebSocket(url: string, onMessage: (data: ServerMessage) => vo
   const isIntentionalClose = useRef(false);
   // STABILITY FIX: Use ref for callback to avoid reconnecting when callback changes.
   // Without this, any state change that causes handleMessage to be recreated
-  // (like activeConversationId) would cause WebSocket to disconnect/reconnect.
+  // (like the active route) would cause WebSocket to disconnect/reconnect.
   const onMessageRef = useRef(onMessage);
   onMessageRef.current = onMessage;
 

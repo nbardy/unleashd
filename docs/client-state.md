@@ -43,7 +43,7 @@ Derived:
 | Bodies, detail, queue | `transcriptFamily(id)` through `useConversationBodies(id)`, which also loads it |
 | Pending creation or config command | `commandFor(id)` |
 | Connected? load complete? default cwd? | `connectionAtom` (`loadCompleteOf`, `defaultCwdOf`) |
-| The active conversation | The route (`/chat/:id`); `prefs.activeConversationId` is only for reopening on load |
+| The active conversation | The route (`/chat/:id`); nothing persists it |
 | Persisted UI preference | `useAtomValue(prefsAtom).field` |
 | Any read-only server view (Buddy panels, swarm runs, catalog, git log) | `usePolledFetch` over the keyed cache in `atoms/resources.ts` |
 | Buddy directory / detail / automations | `useBuddyOverview`, `useBuddyDetailData`, `useBuddyAutomations` in `hooks/useBuddyData.ts` — both shells |

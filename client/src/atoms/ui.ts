@@ -6,9 +6,9 @@ import { jotaiStore } from './store';
 // =============================================================================
 // Device UI state — browser localStorage only, never synced to the server.
 //
-//   prefs ('unleashd-ui-local') — view state: last conversation (restore only;
-//     the route owns the active id), gallery
-//     expansion, list toggles, view mode, last directory, promoted workers.
+//   prefs ('unleashd-ui-local') — view state: gallery expansion, list
+//     toggles, last directory, promoted workers. The route owns the active
+//     conversation; nothing restores it from prefs.
 //   seen ('unleashd-seen-message-index') — NEW badge: last viewed message
 //     index per conversation. Its own key because
 //     it changes on every viewed message; the prefs blob should not be
@@ -28,13 +28,11 @@ export const LOCAL_STORAGE_KEY = 'unleashd-ui-local';
 const SEEN_STORAGE_KEY = 'unleashd-seen-message-index';
 
 const PREFS_DEFAULTS: DeviceUiPrefs = {
-  activeConversationId: null,
   galleryExpandedProjects: [],
   galleryCollapsedProjects: [],
   showTempSessions: false,
   showDoneConversations: false,
   showWorkerConversations: false,
-  sidebarViewMode: 'grouped',
   lastWorkingDirectory: null,
   promotedWorkers: [],
 };
@@ -103,8 +101,8 @@ const seenStorage = validatedStorage<Record<string, number>>((raw) => {
   return result.success ? result.data : null;
 });
 
-// getOnInit — read synchronously at first get so App.tsx restore-on-load sees
-// the persisted activeConversationId on its initial render.
+// getOnInit — read synchronously at first get so the first render sees the
+// persisted prefs.
 // Read with `useAtomValue(prefsAtom).field`: prefs change only on a user
 // action, so one atom replaces the nine per-field ones it had until T19.
 export const prefsAtom = atomWithStorage<DeviceUiPrefs>(
@@ -125,10 +123,6 @@ export const seenAtom = atomWithStorage<Record<string, number>>(SEEN_STORAGE_KEY
 
 function setPrefs(patch: Partial<DeviceUiPrefs>): void {
   jotaiStore.set(prefsAtom, { ...jotaiStore.get(prefsAtom), ...patch });
-}
-
-export function setSavedActiveConversationId(id: string | null): void {
-  setPrefs({ activeConversationId: id });
 }
 
 export function setLastWorkingDirectory(dir: string): void {

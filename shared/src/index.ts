@@ -535,13 +535,11 @@ export type ClientMessage = z.infer<typeof ClientMessageSchema>;
 // record instead: the retired server-synced UI blob keyed them by an unstable
 // id and lost writes on refresh and reconnect.
 export const DeviceUiPrefsSchema = z.object({
-  activeConversationId: z.string().nullable(),
   galleryExpandedProjects: z.array(z.string()),
   galleryCollapsedProjects: z.array(z.string()),
   showTempSessions: z.boolean(),
   showDoneConversations: z.boolean(),
   showWorkerConversations: z.boolean(),
-  sidebarViewMode: z.enum(['grouped', 'list']),
   lastWorkingDirectory: z.string().nullable(),
   promotedWorkers: z.array(z.string()),
 });
