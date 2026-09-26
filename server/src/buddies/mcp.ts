@@ -83,24 +83,6 @@ const docScopeInput = z
   .default('turn')
   .describe("'turn': this conversation's audience (default); 'buddy': the portable doc");
 
-type DocInput = { buddyId?: string; kind: DocRef['kind']; scope: 'turn' | 'buddy'; name?: string };
-type DocWriteInput = DocInput & {
-  content: string;
-  baseRevision: number;
-  reason: string;
-  key: string;
-};
-
-function docRef(grant: BuddyGrant, input: DocInput): DocRef {
-  const scope: DocScope = input.scope === 'buddy' ? { kind: 'buddy' } : grant.scope;
-  return {
-    buddyId: input.buddyId ?? grant.buddyId,
-    scope,
-    kind: input.kind,
-    name: input.name ?? '',
-  };
-}
-
 type Kinds = z.ZodType<DocRef['kind']>;
 const docReadSchema = (kinds: Kinds) =>
   z.object({
@@ -110,11 +92,7 @@ const docReadSchema = (kinds: Kinds) =>
     name: z.string().optional(),
   });
 const docWriteSchema = (kinds: Kinds) =>
-  z.object({
-    buddyId: z.string().optional().describe('Default: you'),
-    kind: kinds,
-    scope: docScopeInput,
-    name: z.string().optional(),
+  docReadSchema(kinds).extend({
     content: z.string().max(40_000),
     baseRevision: z
       .number()
@@ -127,18 +105,14 @@ const docWriteSchema = (kinds: Kinds) =>
     key,
   });
 
-function readDocs(deps: ToolDeps, grant: BuddyGrant, input: DocInput) {
-  return deps.core.readDoc(grant.principal, docRef(grant, input));
-}
-
-async function writeDoc(deps: ToolDeps, grant: BuddyGrant, input: DocWriteInput) {
-  return deps.core.writeDoc(grant.principal, {
-    doc: docRef(grant, input),
-    content: input.content,
-    baseRevision: input.baseRevision,
-    reason: input.reason,
-    key: input.key,
-  });
+function docRef(grant: BuddyGrant, input: z.infer<ReturnType<typeof docReadSchema>>): DocRef {
+  const scope: DocScope = input.scope === 'buddy' ? { kind: 'buddy' } : grant.scope;
+  return {
+    buddyId: input.buddyId ?? grant.buddyId,
+    scope,
+    kind: input.kind,
+    name: input.name ?? '',
+  };
 }
 
 const taskWriteSchema = () =>
@@ -210,6 +184,15 @@ async function writeTask(
     }
   }
 }
+
+type TaskView =
+  | { kind: 'owner'; buddyId: string }
+  | { kind: 'workspace'; workspaceId: string }
+  | { kind: 'task'; taskId: string };
+const readTasks = (deps: ToolDeps, grant: TurnGrant, view: TaskView) =>
+  view.kind === 'task'
+    ? taskDetail(deps.core, grant.author, view.taskId, 20)
+    : deps.core.listTasks(view);
 
 // Pattern: table-driven (docs/patterns.md#table-driven)
 const BUDDY_TOOLS = {
@@ -313,18 +296,16 @@ const BUDDY_TOOLS = {
         ])
         .default({ kind: 'mine' }),
     }),
-    async handler(deps, grant, input) {
-      switch (input.view.kind) {
-        case 'mine':
-          return deps.core.listTasks({ kind: 'owner', buddyId: grant.buddyId });
-        case 'owner':
-          return deps.core.listTasks({ kind: 'owner', buddyId: input.view.buddyId });
-        case 'workspace':
-          return deps.core.listTasks({ kind: 'workspace', workspaceId: grant.workspaceId });
-        case 'task':
-          return taskDetail(deps.core, grant.author, input.view.taskId, 20);
-      }
-    },
+    handler: (deps, grant, { view }) =>
+      readTasks(
+        deps,
+        grant,
+        view.kind === 'mine'
+          ? { kind: 'owner', buddyId: grant.buddyId }
+          : view.kind === 'workspace'
+            ? { kind: 'workspace', workspaceId: grant.workspaceId }
+            : view
+      ),
   }),
   task_write: buddyTool({
     description:
@@ -338,14 +319,21 @@ const BUDDY_TOOLS = {
       'Read a doc: soul, working or long-term memory, or shared docs. Returns its revision for doc_write. Detailed notes are agent_notes/*.md files in the workspace: read and search them with your own file tools.',
     writes: false,
     schema: docReadSchema(docKind),
-    handler: readDocs,
+    handler: (deps, grant, input) => deps.core.readDoc(grant.principal, docRef(grant, input)),
   }),
   doc_write: buddyTool({
     description:
       'Replace a doc with complete content (compare-and-swap on baseRevision; every revision is kept). Tasks own current work: never copy task status into memory.',
     writes: true,
     schema: docWriteSchema(docKind),
-    handler: writeDoc,
+    handler: (deps, grant, { content, baseRevision, reason, key, ...doc }) =>
+      deps.core.writeDoc(grant.principal, {
+        doc: docRef(grant, doc),
+        content,
+        baseRevision,
+        reason,
+        key,
+      }),
   }),
   runs: buddyTool({
     description: "List a buddy's runs (default: yours), read one, or cancel one.",
@@ -483,16 +471,7 @@ const BUILDER_TOOLS = {
         z.object({ kind: z.literal('task'), taskId: z.string().min(1) }),
       ]),
     }),
-    async handler(deps, grant, input) {
-      switch (input.view.kind) {
-        case 'owner':
-          return deps.core.listTasks({ kind: 'owner', buddyId: input.view.buddyId });
-        case 'workspace':
-          return deps.core.listTasks({ kind: 'workspace', workspaceId: input.view.workspaceId });
-        case 'task':
-          return taskDetail(deps.core, grant.author, input.view.taskId, 20);
-      }
-    },
+    handler: (deps, grant, { view }) => readTasks(deps, grant, view),
   }),
   task_write: teamTool({
     description:
