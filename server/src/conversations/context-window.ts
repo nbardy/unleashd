@@ -1,16 +1,5 @@
-/**
- * Resolving the model's real context window — the DENOMINATOR of the context
- * meter.
- *
- * This replaces a hardcoded 200_000, which was the single largest source of
- * error in the meter: Opus 5.5, Fable 5.1 and Sonnet 5 all carry 1M windows, so a
- * thread reading "220k / 200k" was actually at 22% of its real budget. Only
- * Haiku 4.5 is genuinely a 200K model.
- *
- * Resolution is a sum type rather than a number so the fallback can never be
- * silent: an unknown model id surfaces as `source: 'unknown'` and the UI can
- * say so, instead of quietly asserting a window we did not measure.
- */
+// The context meter's denominator. A sum type so the fallback is never silent: an unknown model
+// is `source: 'unknown'` (docs/context-meter.md#window; replaced a hardcoded 200_000).
 
 export type ContextWindow =
   /** Operator override via UNLEASHD_CONTEXT_BUDGET_TOKENS. Beats everything. */
@@ -22,45 +11,24 @@ export type ContextWindow =
   /** No match. `tokens` is a floor for display only — treat as a lower bound. */
   | { source: 'unknown'; tokens: number; modelId: string | null };
 
-/**
- * The conservative floor used when nothing identifies the model. Chosen as the
- * smallest window any model we ship reaches, so a meter built on it reads FULL
- * early rather than falsely roomy. It is never silently presented as truth —
- * it only ever arrives tagged `source: 'unknown'`.
- */
+/** The smallest window we ship: the meter reads full early, never falsely roomy. */
 export const UNKNOWN_MODEL_WINDOW_FLOOR = 200_000;
 
 const TOKENS_1M = 1_000_000;
 const TOKENS_200K = 200_000;
 
-/**
- * Claude model windows keyed by the catalog's ALIAS ids (see
- * shared/src/generated/catalog.ts: CLAUDE_MODEL_IDS). These are the ids a
- * conversation config actually stores.
- *
- * The 1M entries assume the default `claude -p` configuration. The window
- * narrows to 200K on Bedrock/GCP/Foundry, on Opus 4.6 / Sonnet 4.6 without
- * extended context, or when CLAUDE_CODE_DISABLE_1M_CONTEXT=1 is set — none of
- * which we can observe from here. An operator on those paths should set
- * UNLEASHD_CONTEXT_BUDGET_TOKENS, which outranks this table.
- */
+// Keyed by the catalog alias ids a config stores; 1M assumes default `claude -p`
+// (docs/context-meter.md#window for when it narrows).
 const CLAUDE_ALIAS_WINDOWS: Readonly<Record<string, number>> = {
   fable: TOKENS_1M,
-  // Retired 2026-09-23 (superseded by claude-opus-5-5): kept so stored
-  // explicit `opus` configs still resolve instead of dropping to the floor.
+  // Retired 2026-09-23; kept so stored `opus` configs still resolve.
   opus: TOKENS_1M,
   'claude-opus-5-5': TOKENS_1M,
   sonnet: TOKENS_1M,
   haiku: TOKENS_200K,
 };
 
-/**
- * Fallback matcher for the provider-REPORTED model name (e.g.
- * "claude-sonnet-4-5-20250929"), which is what we have when the conversation
- * ran on a provider default and stored no explicit model id. Ordered most to
- * least specific; `haiku` must be tested before the 1M families so a
- * "claude-haiku-*" name cannot be swept up by a looser rule.
- */
+// The provider-reported name when no model id was stored; haiku must match first.
 const REPORTED_NAME_WINDOWS: ReadonlyArray<readonly [RegExp, number]> = [
   [/haiku/i, TOKENS_200K],
   [/opus|sonnet|fable/i, TOKENS_1M],
@@ -78,10 +46,7 @@ export interface ContextWindowInput {
   modelId?: string | null;
   /** Provider-reported model name, available once a turn has run. */
   reportedModelName?: string | null;
-  /**
-   * Window the harness reported alongside usage this turn. Present for codex,
-   * absent for claude — absent means "resolve it from the model", not "unknown".
-   */
+  /** The harness's own window (codex); absent means resolve from the model. */
   reportedWindow?: number | null;
 }
 

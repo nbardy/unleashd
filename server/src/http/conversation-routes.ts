@@ -42,20 +42,13 @@ export interface RoutedConversation extends ContextSubject {
 
 export interface ContextBreakdownSection {
   chars: number;
-  /** Heuristic estimate (chars/4), not provider tokenization. */
+  /** chars/4, not provider tokenization. */
   tokensEst: number;
-  /**
-   * `tokensEst` rescaled so the five sections sum to the provider's measured
-   * context. Equal to `tokensEst` when there is nothing measured to scale to.
-   */
+  /** Rescaled to fit a smaller measured context; else `tokensEst`. */
   tokensScaled: number;
 }
 
-/**
- * How the headline number was obtained. `measured` is the provider's own count
- * for the latest request; `estimated` is our chars/4 fallback for a thread that
- * has not reported usage yet (or a harness that reports none, like muse).
- */
+/** `measured`: the provider's count for the latest request; `estimated`: chars/4. */
 export type ContextReadingSource = 'measured' | 'estimated';
 
 export interface ContextBreakdownResponse {
@@ -63,10 +56,6 @@ export interface ContextBreakdownResponse {
   sessionId: string;
   provider: Provider;
   modelName: string | null;
-  /**
-   * The meter's denominator and where it came from. Replaces the former
-   * hardcoded 200_000, which read ~5x too full on every 1M-window model.
-   */
   contextWindow: ContextWindow;
   /** Alias of `contextWindow.tokens`, kept so older clients keep rendering. */
   budgetTokens: number;
@@ -74,27 +63,12 @@ export interface ContextBreakdownResponse {
   readingSource: ContextReadingSource;
   /** The headline: measured context when available, else the estimate. */
   totalTokens: number;
-  /**
-   * Measured context minus what our five sections model — the harness's own
-   * system prompt and tool schemas, which we never see. Measured at ~39.5k for
-   * a one-word claude prompt, so it is not a rounding error. Zero when the
-   * reading is an estimate, or after a compaction (sections are scaled down
-   * instead).
-   */
+  /** Unmodelled harness overhead (docs/context-meter.md#bands); 0 for an estimate. */
   residualTokens: number;
-  /**
-   * Set when our full-history estimate exceeds the provider's measured context:
-   * the provider dropped history we still hold. Our store is append-only, so
-   * this is the only way that inequality arises.
-   */
+  /** The provider dropped history we hold (docs/context-meter.md#bands). */
   compaction: {
     detected: boolean;
-    /**
-     * `marker` means the harness recorded the boundary in its own log — exact,
-     * and the only form that can report pre/post counts. `inferred` means we
-     * only know the measured context came in under what we model. Never blend
-     * the two: one is the provider's word, the other is our arithmetic.
-     */
+    /** The harness's own marker, or our ratio inference; never blended. */
     source: 'marker' | 'inferred';
     historyTokensEst: number;
     measuredTokens: number;
@@ -158,13 +132,7 @@ async function providerReadings(slot: IngestSlot, sessionId: string): Promise<Pr
   }
 }
 
-/**
- * Below this ratio of measured-to-modelled we call it a compaction rather than
- * estimator drift. chars/4 is rough in both directions, and the measured number
- * additionally INCLUDES harness overhead our sections omit, so a measured total
- * that still lands meaningfully under our estimate cannot be explained by
- * estimator error alone -- history was dropped provider-side.
- */
+/** Measured under this share of the estimate = compaction, not drift (docs/context-meter.md#bands). */
 const COMPACTION_RATIO = 0.9;
 
 /** Heuristic estimate: ceil(chars/4). Labeled estimate everywhere it surfaces. */
@@ -178,8 +146,19 @@ function sectionOf(chars: number): ContextBreakdownSection {
   return { chars: normalized, tokensEst, tokensScaled: tokensEst };
 }
 
-function scaleSection(section: ContextBreakdownSection, factor: number): ContextBreakdownSection {
-  return { ...section, tokensScaled: Math.round(section.tokensEst * factor) };
+type Sections = Record<(typeof SECTION_KEYS)[number], ContextBreakdownSection>;
+const SECTION_KEYS = ['history', 'briefing', 'memory', 'mcp', 'handoff'] as const;
+
+function sumOf(sections: Sections, field: 'chars' | 'tokensEst'): number {
+  return SECTION_KEYS.reduce((sum, key) => sum + sections[key][field], 0);
+}
+
+function scaled(sections: Sections, factor: number): Sections {
+  const out = { ...sections };
+  for (const key of SECTION_KEYS) {
+    out[key] = { ...sections[key], tokensScaled: Math.round(sections[key].tokensEst * factor) };
+  }
+  return out;
 }
 
 // composeConversation (buddies/integration.ts) joins prefix + middle + suffix.
@@ -243,46 +222,18 @@ export function buildContextBreakdown(
   }
   const handoffText = handoffParts.join('\n');
 
-  const sections = {
+  const sections: Sections = {
     history: sectionOf(historyChars),
     briefing: sectionOf(briefingText.length),
     memory: sectionOf(memoryText.length),
     mcp: sectionOf(mcpText.length),
     handoff: sectionOf(handoffText.length),
   };
-  const totalChars =
-    sections.history.chars +
-    sections.briefing.chars +
-    sections.memory.chars +
-    sections.mcp.chars +
-    sections.handoff.chars;
-  const totalTokensEst =
-    sections.history.tokensEst +
-    sections.briefing.tokensEst +
-    sections.memory.tokensEst +
-    sections.mcp.tokensEst +
-    sections.handoff.tokensEst;
+  const totalChars = sumOf(sections, 'chars');
+  const totalTokensEst = sumOf(sections, 'tokensEst');
 
-  // The provider's own count for the latest request. `providerUsage` on the
-  // conversation is the live path (an agent-cli `usage` event, persisted on the
-  // session binding); the session-file parser remains the fallback for turns
-  // that predate it. Neither is an estimate.
-  // Two provider-truth paths, same question. The live `usage` event is freshest
-  // but only exists for turns taken since we started listening; the harness's
-  // own session log is retroactive and covers every turn ever taken (and is the
-  // ONLY source for codex and muse, whose stdout carries no per-request token
-  // fields at all). Live wins when present; the file is what makes an idle
-  // thread read correctly instead of falling back to chars/4.
-  //
-  // A live reading that exceeds a KNOWN window is not a context size at all --
-  // it is a cumulative aggregate a parser passed through (2026-09-22: codex
-  // exec stdout reported the session total 16,062,762 as the context on a
-  // 258,400 window). A real per-request context cannot pass the window the
-  // provider enforces, so the implausible live value is dropped and the file
-  // (or the estimate) answers instead. This also heals sessions whose stored
-  // binding still carries a pre-fix aggregate. Operator budgets and
-  // unknown-model floors are excluded: exceeding a configured budget is
-  // meaningful over-budget signal, and a floor is a display guess, not physics.
+  // Live usage beats the session log, unless it exceeds a known window: then it is a
+  // cumulative aggregate (2026-09-22, codex 16M on 258k) (docs/context-meter.md#measured).
   const liveTokens = conversation.providerUsage?.contextTokens ?? null;
   const livePlausible =
     liveTokens === null ||
@@ -293,14 +244,11 @@ export function buildContextBreakdown(
     (livePlausible ? liveTokens : null) ?? sessionContext?.contextTokens ?? null;
   const budgetTokens = contextWindow.tokens;
 
-  // Two readings, two clean paths. Measured: sections keep their estimate and
-  // the unmodelled harness overhead becomes its own band -- unless the measured
-  // total came in UNDER what we model, which only happens when the provider
-  // compacted, and then the sections scale down to fit.
+  // Estimated, or measured: residual band when the model fits, scaled bands when it does not.
   const reading = ((): {
     source: ContextReadingSource;
     total: number;
-    sections: typeof sections;
+    sections: Sections;
     residual: number;
     compaction: ContextBreakdownResponse['compaction'];
   } => {
@@ -314,33 +262,19 @@ export function buildContextBreakdown(
       };
     }
 
-    // Whether history was DROPPED and whether our bands FIT the measured total
-    // are two different questions, and the old code answered them with one
-    // branch. A marker can fire while the bands still fit; the bands can
-    // overflow slightly from estimator drift with no compaction at all.
-
-    // Did the provider drop history? Prefer the harness's own marker: it is
-    // exact, needs no tuned margin, and cannot false-positive when our chars/4
-    // estimate happens to run hot. The ratio stays only as the fallback for a
-    // reading with no session log behind it.
+    // Dropped history and fitting bands are separate questions; the marker wins over the ratio.
     const marker = sessionContext?.compaction ?? null;
+    const detected = {
+      detected: true,
+      historyTokensEst: sections.history.tokensEst,
+      measuredTokens,
+    };
     const compaction: ContextBreakdownResponse['compaction'] = marker
-      ? {
-          detected: true,
-          source: 'marker',
-          historyTokensEst: sections.history.tokensEst,
-          measuredTokens,
-          count: marker.count,
-          preTokens: marker.preTokens,
-          postTokens: marker.postTokens,
-          trigger: marker.trigger,
-        }
+      ? { ...detected, source: 'marker', ...marker }
       : measuredTokens < totalTokensEst * COMPACTION_RATIO
         ? {
-            detected: true,
+            ...detected,
             source: 'inferred',
-            historyTokensEst: sections.history.tokensEst,
-            measuredTokens,
             count: null,
             preTokens: null,
             postTokens: null,
@@ -348,9 +282,6 @@ export function buildContextBreakdown(
           }
         : null;
 
-    // Do the bands fit? They may never sum to more than the real context, so
-    // scale them down when they overflow and show the unmodelled harness
-    // overhead as a residual when they leave room.
     if (measuredTokens >= totalTokensEst) {
       return {
         source: 'measured',
@@ -364,13 +295,7 @@ export function buildContextBreakdown(
     return {
       source: 'measured',
       total: measuredTokens,
-      sections: {
-        history: scaleSection(sections.history, factor),
-        briefing: scaleSection(sections.briefing, factor),
-        memory: scaleSection(sections.memory, factor),
-        mcp: scaleSection(sections.mcp, factor),
-        handoff: scaleSection(sections.handoff, factor),
-      },
+      sections: scaled(sections, factor),
       residual: 0,
       compaction,
     };
@@ -440,9 +365,7 @@ export function registerConversationRoutes(
       } catch {
         branch = null;
       }
-      // The harness's own session log (via the ingest store): cumulative usage, plus the latest
-      // request's context, window and compaction markers. Retroactive, so a thread that has not
-      // taken a turn since the live event shipped still reads correctly.
+      // The harness's session log via ingest: retroactive (docs/context-meter.md#measured).
       let readings: ProviderReadings = { usage: null, context: null };
       try {
         readings = data.sessionId
@@ -466,8 +389,7 @@ export function registerConversationRoutes(
       const contextWindow = resolveContextWindow({
         modelId: resolved?.modelId ?? null,
         reportedModelName: data.observedModel,
-        // codex reports its window on the same record as its usage, so the file
-        // supplies the denominator too when the live event has not run.
+        // codex reports its window with its usage, so the file can supply it too.
         reportedWindow: data.providerUsage?.contextWindow ?? sessionContext?.contextWindow ?? null,
       });
       const history =
