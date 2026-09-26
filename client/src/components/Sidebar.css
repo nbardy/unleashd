@@ -191,12 +191,6 @@
   color: var(--text-primary);
 }
 
-.provider-option.selected {
-  background: var(--bg-tertiary);
-  border-color: var(--accent-primary);
-  color: var(--text-emphasis);
-}
-
 .provider-option input[type="radio"],
 .model-option input[type="radio"] {
   display: none;
@@ -222,6 +216,7 @@
   transition: all 0.2s;
 }
 
+.provider-option.selected,
 .model-option.selected {
   background: var(--bg-tertiary);
   border-color: var(--accent-primary);

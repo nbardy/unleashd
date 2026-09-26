@@ -248,7 +248,13 @@ does not push a client refresh. Both tools are in the default run policy
   on the current harness. Earlier generations stay live and show above a "New
   chat" divider; a link to an earlier one offers "Latest chat". Server:
   `channels.newDirect` / `directChain` (`GET /api/buddies/:id/direct/chain`,
-  `POST …/direct/new-chat`).
+  `POST …/direct/new-chat`). Starting one marks the earlier generations done,
+  so the sidebar lists only the current chat under the Buddy; they stay live
+  and reachable from the DM (above the divider) and by link.
+- **A DM on the conversation page** (`/chat/:id`, both trees) is not a second
+  joined view: `DmChannelsNotice` says it lives in Channels, links "Open in
+  Channels" to the latest generation, and offers New chat, which opens there.
+  It renders only when the chain lists the id, so seat and Wake chats get none.
 - **Retry on another harness.** A reply that failed because of its harness
   (out of tokens, or a provider error such as Codex rejecting a model; shared
   `isHarnessRetryFailure`) shows "Retry with a different harness". In a thread it

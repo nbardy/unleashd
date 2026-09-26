@@ -26,6 +26,7 @@ import {
 } from '../../atoms/conversations';
 import { forkConversation } from '../../atoms/fork-actions';
 import { markMessagesSeen, setSavedActiveConversationId } from '../../atoms/ui';
+import { DmChannelsNotice } from '../../components/buddies/DmChannelsNotice';
 import { useConversationBodies } from '../../hooks/useConversationBodies';
 import { useCopyAction } from '../../hooks/useCopyAction';
 import { useProviderCatalog } from '../../hooks/useProviderCatalog';
@@ -33,6 +34,7 @@ import { useSavedPrompts } from '../../hooks/useSavedPrompts';
 import { useTurnDiagnostics } from '../../hooks/useTurnDiagnostics';
 import { MobileSwarmPrefix } from '../../swarm';
 import { mobileConversationRouteState } from '../../utils/conversation-route-state';
+import { rowBuddy } from '../../utils/conversation-row';
 import { type OpenConversation, buildThreadTranscript } from '../../utils/conversation-transcript';
 import { shortenHomePath } from '../../utils/directories';
 import { buildUnifiedSubAgents } from '../../utils/subAgents';
@@ -280,6 +282,7 @@ export function ConversationView({
   headerAside?: ReactNode;
 }) {
   const conversation = useAtomValue(rowFamily(conversationId));
+  const dmBuddy = rowBuddy(conversation);
   const transcript = useAtomValue(transcriptFamily(conversationId));
   const detail = detailOf(transcript);
   const messages = messagesOf(transcript);
@@ -643,6 +646,14 @@ export function ConversationView({
           </div>
         ) : null}
       </div>
+
+      {dmBuddy !== null && (
+        <DmChannelsNotice
+          conversationId={conversation.id}
+          buddy={dmBuddy}
+          className="dm-channels-notice ui-row ui-muted"
+        />
+      )}
 
       {/* Thread-context strip — mirrors Chat.tsx: SubAgentPanel + ResumeThreadWidget + SwarmConvoPrefix,
           rendered with MobileSection/MobileSurface primitives and shared data derivation. */}

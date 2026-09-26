@@ -553,12 +553,6 @@
   background: var(--danger-bright);
 }
 
-.send-btn:disabled,
-.save-prompt-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
 /* Save prompt button */
 .save-prompt-btn {
   padding: var(--sp-2);
@@ -571,11 +565,6 @@
   align-items: center;
   justify-content: center;
   overflow: hidden;
-}
-
-.save-prompt-btn:hover:not(:disabled) {
-  background: var(--border-color);
-  transform: scale(1.05);
 }
 
 .save-icon {
@@ -1261,11 +1250,14 @@
   overflow: hidden;
 }
 
+.save-prompt-btn:hover:not(:disabled),
 .upload-btn:hover:not(:disabled) {
   background: var(--border-color);
   transform: scale(1.05);
 }
 
+.send-btn:disabled,
+.save-prompt-btn:disabled,
 .upload-btn:disabled {
   opacity: 0.5;
   cursor: not-allowed;

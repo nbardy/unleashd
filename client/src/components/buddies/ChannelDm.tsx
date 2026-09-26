@@ -2,7 +2,7 @@ import type { ConversationConfig } from '@unleashd/shared';
 import { useAtomValue } from 'jotai';
 import { type ReactNode, useLayoutEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { queueMessage } from '../../atoms/actions';
+import { queueMessage, setConversationDone } from '../../atoms/actions';
 import {
   detailOf,
   groupsFamily,
@@ -80,10 +80,29 @@ const FRAMES = {
 type Frame = (typeof FRAMES)[DmFrame];
 
 /** GET /api/buddies/:buddyId/direct/chain: live DM generations, oldest first. */
-type DirectChain = { buddyId: string; generations: string[] };
+export type DirectChain = { buddyId: string; generations: string[] };
 
 export const directChainUrl = (buddyId: string) =>
   `/api/buddies/${encodeURIComponent(buddyId)}/direct/chain`;
+
+/**
+ * "New chat" (or the out-of-tokens retry): the DM's next generation. The earlier ones are marked
+ * done, so the sidebar lists only the current chat, as the snapshot's chain filter did; they stay
+ * live, so the DM still draws them above the divider and `/chat/:id` still opens them.
+ */
+export async function startNewDirectChat(
+  buddyId: string,
+  earlier: readonly string[],
+  input: { config: ConversationConfig; message?: string }
+): Promise<string> {
+  const { conversationId } = await buddyWrite<{ conversationId: string }>(
+    `/api/buddies/${encodeURIComponent(buddyId)}/direct/new-chat`,
+    'POST',
+    input
+  );
+  for (const id of earlier) setConversationDone(id, true);
+  return conversationId;
+}
 
 export function ChannelDm({
   conversationId,
@@ -129,11 +148,7 @@ export function ChannelDm({
   // An earlier generation shows alone, with a way to the latest; the latest shows every one.
   const shown = latest === conversationId ? generations : [conversationId];
   const newChat = async (input: { config: ConversationConfig; message?: string }) => {
-    const { conversationId: next } = await buddyWrite<{ conversationId: string }>(
-      `/api/buddies/${encodeURIComponent(buddyId)}/direct/new-chat`,
-      'POST',
-      input
-    );
+    const next = await startNewDirectChat(buddyId, generations, input);
     await chain.refetch();
     onConversation(next);
   };
