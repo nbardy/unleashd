@@ -1,4 +1,14 @@
-import { Fragment, type ReactNode, memo, useCallback, useMemo, useRef, useState } from 'react';
+import {
+  Fragment,
+  type ReactNode,
+  createContext,
+  memo,
+  useCallback,
+  useContext,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import { createPortal } from 'react-dom';
 import { type Components, type ExtraProps, defaultUrlTransform } from 'react-markdown';
 import { Link } from 'react-router-dom';
@@ -187,65 +197,84 @@ function TaskBlock({
   );
 }
 
-function channelComponents(
-  buddyNames: Readonly<Record<string, string>>,
-  tasks: ReadonlyMap<string, ChannelTask>,
-  onOpen: OpenTask
-): Components {
-  return {
-    p: ({ node, children }) => {
-      const taskId = standaloneTaskId(node);
-      return taskId === null ? (
-        <p>{children}</p>
-      ) : (
-        <TaskBlock taskId={taskId} task={tasks.get(taskId)} onOpen={onOpen} />
+// The overrides are ONE module constant; the data they read (names, Tasks,
+// the overlay opener) arrives through context. hast-util-to-jsx-runtime uses
+// each override as the element TYPE, so a new function identity is a new
+// component to React and everything under it remounts. They used to be built
+// per render from buddyNames/tasks, which the workspace poll (activity every
+// 10s, Tasks every 15s, plus WS pushes) re-creates — so an embedded <video>
+// remounted and restarted a few seconds into playback (#bugfixes, 2026-09-26).
+interface ChannelMarkdownData {
+  buddyNames: Readonly<Record<string, string>>;
+  tasks: ReadonlyMap<string, ChannelTask>;
+  onOpenTask(taskId: string): void;
+}
+
+const ChannelMarkdownDataContext = createContext<ChannelMarkdownData | null>(null);
+
+function useChannelMarkdownData(): ChannelMarkdownData {
+  const data = useContext(ChannelMarkdownDataContext);
+  if (!data) throw new Error('channel markdown overrides render only inside ChannelMarkdown');
+  return data;
+}
+
+function ChannelTaskBlock({ taskId }: { taskId: string }) {
+  const { tasks, onOpenTask } = useChannelMarkdownData();
+  return <TaskBlock taskId={taskId} task={tasks.get(taskId)} onOpen={onOpenTask} />;
+}
+
+function ChannelLink({ href, children }: { href?: string; children?: ReactNode }) {
+  const { buddyNames, tasks, onOpenTask } = useChannelMarkdownData();
+  const link = parseChannelLink(href ?? '');
+  switch (link.kind) {
+    case 'buddy':
+      return (
+        <Link className="channel-mention" to={`/buddies/${encodeURIComponent(link.id)}`}>
+          @{buddyNames[link.id] ?? String(children).replace(/^@/, '')}
+        </Link>
       );
-    },
-    li: ({ node, children, className }) => {
-      const taskId = standaloneTaskId(node);
-      return taskId === null ? (
-        <li className={className}>{children}</li>
-      ) : (
-        <li className="channel-task-block-item">
-          <TaskBlock taskId={taskId} task={tasks.get(taskId)} onOpen={onOpen} />
-        </li>
+    case 'task':
+      return (
+        <TaskChip taskId={link.id} label={children} task={tasks.get(link.id)} onOpen={onOpenTask} />
       );
-    },
-    a: ({ href, children }) => {
-      const link = parseChannelLink(href ?? '');
-      switch (link.kind) {
-        case 'buddy':
-          return (
-            <Link className="channel-mention" to={`/buddies/${encodeURIComponent(link.id)}`}>
-              @{buddyNames[link.id] ?? String(children).replace(/^@/, '')}
-            </Link>
-          );
-        case 'task':
-          return (
-            <TaskChip taskId={link.id} label={children} task={tasks.get(link.id)} onOpen={onOpen} />
-          );
-        case 'web':
-          return (
-            <a href={link.href} target="_blank" rel="noreferrer">
-              {children}
-            </a>
-          );
-      }
-    },
-    img: ({ src, alt }) => {
-      const source = typeof src === 'string' ? src : '';
-      const url = mediaUrl(source);
-      return isVideoSource(source) ? (
-        // biome-ignore lint/a11y/useMediaCaption: user-posted clips carry no caption track
-        <video className="channel-media" src={url} controls preload="metadata" title={alt} />
-      ) : (
-        <a className="channel-media-link" href={url} target="_blank" rel="noreferrer">
-          <img className="channel-media" src={url} alt={alt ?? ''} loading="lazy" />
+    case 'web':
+      return (
+        <a href={link.href} target="_blank" rel="noreferrer">
+          {children}
         </a>
       );
-    },
-  };
+  }
 }
+
+const CHANNEL_COMPONENTS: Components = {
+  p: ({ node, children }) => {
+    const taskId = standaloneTaskId(node);
+    return taskId === null ? <p>{children}</p> : <ChannelTaskBlock taskId={taskId} />;
+  },
+  li: ({ node, children, className }) => {
+    const taskId = standaloneTaskId(node);
+    return taskId === null ? (
+      <li className={className}>{children}</li>
+    ) : (
+      <li className="channel-task-block-item">
+        <ChannelTaskBlock taskId={taskId} />
+      </li>
+    );
+  },
+  a: ({ href, children }) => <ChannelLink href={href}>{children}</ChannelLink>,
+  img: ({ src, alt }) => {
+    const source = typeof src === 'string' ? src : '';
+    const url = mediaUrl(source);
+    return isVideoSource(source) ? (
+      // biome-ignore lint/a11y/useMediaCaption: user-posted clips carry no caption track
+      <video className="channel-media" src={url} controls preload="metadata" title={alt} />
+    ) : (
+      <a className="channel-media-link" href={url} target="_blank" rel="noreferrer">
+        <img className="channel-media" src={url} alt={alt ?? ''} loading="lazy" />
+      </a>
+    );
+  },
+};
 
 // Memoized: a markdown render still walks the hast into React, and a row re-renders
 // whenever who is replying changes. The cache keeps an unchanged post's body,
@@ -262,37 +291,45 @@ export const ChannelMarkdown = memo(function ChannelMarkdown({
 }) {
   const [openTaskId, setOpenTaskId] = useState<string | null>(null);
   const closeTask = useCallback(() => setOpenTaskId(null), []);
-  const components = useMemo(
-    () => channelComponents(buddyNames, tasks, setOpenTaskId),
+  const data = useMemo(
+    () => ({ buddyNames, tasks, onOpenTask: setOpenTaskId }),
     [buddyNames, tasks]
   );
   const openTask = openTaskId === null ? undefined : tasks.get(openTaskId);
   const segments = useMemo(() => splitToolActivity(body), [body]);
   const pipeline = useMarkdownPipeline(CHANNEL_MARKDOWN);
   const markdown = (text: string, key?: number) => (
-    <Fragment key={key}>{renderMarkdownCached(pipeline, text, components)}</Fragment>
+    <Fragment key={key}>{renderMarkdownCached(pipeline, text, CHANNEL_COMPONENTS)}</Fragment>
   );
   return (
-    <div className="channel-markdown">
-      {openTask && <ChannelTaskOverlay task={openTask} names={buddyNames} onClose={closeTask} />}
-      {segments.map((segment, index) =>
-        segment.type === 'tool_calls' ? (
-          <ChatActivity
-            key={index}
-            label={`${segment.count} tool ${segment.count === 1 ? 'call' : 'calls'}`}
-          >
-            {markdown(segment.content)}
-          </ChatActivity>
-        ) : (
-          <ChannelTextBody
-            key={index}
-            content={segment.content}
-            markdown={markdown}
-            startIndex={index * 1000}
+    <ChannelMarkdownDataContext.Provider value={data}>
+      <div className="channel-markdown">
+        {openTask && (
+          <ChannelTaskOverlay
+            task={openTask}
+            names={buddyNames}
+            onClose={closeTask}
           />
-        )
-      )}
-    </div>
+        )}
+        {segments.map((segment, index) =>
+          segment.type === 'tool_calls' ? (
+            <ChatActivity
+              key={index}
+              label={`${segment.count} tool ${segment.count === 1 ? 'call' : 'calls'}`}
+            >
+              {markdown(segment.content)}
+            </ChatActivity>
+          ) : (
+            <ChannelTextBody
+              key={index}
+              content={segment.content}
+              markdown={markdown}
+              startIndex={index * 1000}
+            />
+          )
+        )}
+      </div>
+    </ChannelMarkdownDataContext.Provider>
   );
 });
 
