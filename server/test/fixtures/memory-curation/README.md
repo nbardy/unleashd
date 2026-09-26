@@ -8,7 +8,7 @@ grading. Project agents discover it through the root `AGENTS.md` and
 | Resource | Purpose |
 |---|---|
 | [Cases and rubrics](cases.ts) | Synthetic inputs, expected behavior and assertion flags |
-| Live harness | **Removed in T11 (2026-09-25)** with the stdio reviewer it drove; the reviewer now uses `doc_read`/`doc_write` on the one HTTP endpoint. Port it onto `createMemoryReviewer` before the next rerun (listed for T14) |
+| [Live harness](../../buddy-memory-curation.test.ts) | Runs the production `createMemoryReviewer` (real `executeCommand`, real ladder, real MCP endpoint, real `BuddiesCore` on a temp DB) on each case. Ported 2026-09-26 (M4) after T11 removed the stdio harness |
 | [Frozen original control](baseline-2026-09-13.txt) | Pre-curation instruction text; retain unchanged |
 | [Current reviewer](../../../src/buddies/memory-review.ts) | Candidate instructions, runtime configuration and the reviewer's tool schema (`doc_read`/`doc_write`, `server/src/buddies/mcp.ts`) |
 | [September 13 report](../../../../docs/memory-curation-evaluation-2026-09-13.md) | Method, selection rationale, results and known misses |
@@ -23,7 +23,7 @@ not an expected score for every rerun or a production reliability estimate.
 rewritten around the two docs and "update when relevant" (in-flight → working,
 resolved → removed from working, lasting preference/lesson → long_term, nothing
 new → NONE, read workspace files read-only to check a claim, never write). The
-live harness is removed, so it has NOT been rerun: the 19/20 above describes the
+live harness was ported in M4 but has NOT been run (owner gate: it costs credits): the 19/20 above describes the
 September 13 prompt, not this one. Four other variables changed in the same
 commit and must be labelled separately on the next rerun: the transcript now
 carries tool-call lines (name + input capped at 400 chars), the reviewer runs in
@@ -32,158 +32,138 @@ runtime limit is 300 s per ladder rung.
 
 ## What it measures
 
-Ten synthetic analogues of the September 13, 2026 cross-Buddy audit exercise the
-real reviewer, Codex runner, scoped MCP tools and disposable canonical store.
-Private Buddy memories and conversations are not copied into these fixtures.
-`cases.ts` defines the inputs and rubric before execution; the model never sees
-the rubric. The frozen baseline is the instruction text preceding the curation
-change. The candidate is the current `MEMORY_REVIEW_INSTRUCTIONS` export.
+Each Buddy has ONE working doc and ONE long-term doc, shared by every turn. After a completed
+turn the reviewer reads both and updates them when relevant. The benchmark feeds the real
+reviewer one synthetic completed turn per case and records what it saved.
 
-The runner deliberately ignores repository/user instructions: `AGENTS.md` guides
-the engineer maintaining the benchmark, not the reviewer being measured.
+- **A-J** (September 13 analogues): curation quality — duplicate cleanup, decision provenance,
+  corrections, qualified evidence, no-ops, truncation, quoted injection.
+- **K-O** (relevance, 2026-09-26): does the right thing land in the right doc?
+  K in-flight work waiting on the owner → working; L a resolved item leaves working (the turn
+  carries the edit as a `toolCall`, and the edited file is seeded in the workspace so the
+  reviewer can read it); M a lasting owner preference → long-term; N small talk → no writes,
+  report NONE; O a different conversation continues an item from earlier → updated in place,
+  not duplicated.
+
+Private Buddy memories and conversations are not copied into these fixtures. `cases.ts`
+defines inputs, `checks` and `rubric` before execution; the model never sees either. The
+runner ignores repository/user instructions: `AGENTS.md` guides the engineer, not the reviewer.
+
+There is no baseline arm any more: `createMemoryReviewer` has no instruction override, so the
+harness measures the current `MEMORY_REVIEW_INSTRUCTIONS` only. `baseline-2026-09-13.txt`
+stays frozen for a future comparison, which needs a test-only instructions seam first.
 
 ## Setup and execution
 
-Use the repository's normal dependency setup: Node >=22.5, pnpm (the root manifest
-pins 9.15.0), initialized `vendor/agent-cli-tool` submodule and installed workspace
-dependencies. See the [development setup](../../../../README.md). Live evaluation
-also requires an authenticated Codex CLI that supports the flags in
-[the production runner](../../../src/buddies/memory-review-runner.ts) and access to
-the configured reviewer model. It makes real model calls and consumes provider
-usage; ordinary tests do not enable it. A running Unleashd web server is unnecessary:
-the harness starts a temporary control server and isolated store.
+Normal dependency setup (Node >=22.5, pnpm, initialized `vendor/agent-cli-tool`, `pnpm run
+bootstrap`). A live run needs the authenticated reviewer CLIs of the ladder (codex, then
+cursor-agent, claude, muse; `MEMORY_REVIEW_MODELS` in `server/src/buddies/memory-review.ts`).
+No Unleashd server is needed: every run gets its own temp DB, workspace and MCP endpoint.
 
-From the repository root, validate deterministic boundaries without model calls:
+Default mode (what `pnpm test:server` runs) is **skipped** and makes no model calls. A skipped
+live test is not a benchmark pass:
 
 ```sh
-UNLEASHD_LIVE_MEMORY_CURATION=0 UNLEASHD_LIVE_MEMORY_REVIEW=0 \
-pnpm exec tsx --test server/test/buddy-memory-review.test.ts \
-  server/test/conversation-runtime.test.ts server/test/buddy-memory-curation.test.ts
+pnpm exec tsx --test server/test/buddy-memory-curation.test.ts
 ```
 
-The curation test is **skipped** in that command. A skipped live test is not a
-semantic benchmark pass. To check live wiring with one candidate run first:
+Pilot one case first (1 review):
 
 ```sh
 UNLEASHD_LIVE_MEMORY_CURATION=1 \
-UNLEASHD_MEMORY_CURATION_CASE=A-duplicate-cleanup \
+UNLEASHD_MEMORY_CURATION_CASE=K-inflight-to-working \
 UNLEASHD_MEMORY_CURATION_REPEATS=1 \
-UNLEASHD_MEMORY_CURATION_VARIANT=candidate \
 UNLEASHD_MEMORY_CURATION_RESULTS=/tmp/memory-curation-pilot-NEW-RUN-ID \
 pnpm exec tsx --test server/test/buddy-memory-curation.test.ts
 ```
 
-For the full comparison, start with the case and variant filters unset:
+Full run:
 
 ```sh
-unset UNLEASHD_MEMORY_CURATION_CASE UNLEASHD_MEMORY_CURATION_VARIANT
+unset UNLEASHD_MEMORY_CURATION_CASE
 UNLEASHD_LIVE_MEMORY_CURATION=1 \
 UNLEASHD_MEMORY_CURATION_REPEATS=2 \
-UNLEASHD_MEMORY_CURATION_RESULTS=/tmp/memory-curation-comparison-NEW-RUN-ID \
+UNLEASHD_MEMORY_CURATION_RESULTS=/tmp/memory-curation-NEW-RUN-ID \
 pnpm exec tsx --test server/test/buddy-memory-curation.test.ts
 ```
 
-Replace `NEW-RUN-ID` with a unique label. With ten cases this requests **40 model
-invocations** (10 cases × 2 variants × 2 repeats), with up to two subtests running
-concurrently. Each reviewer had a 120-second runtime limit when this was written (now 300 s per ladder rung); the harness allows
-150 seconds to drain, 180 seconds per subtest and 50 minutes for the parent test.
-Record infrastructure failures separately from semantic failures; never quietly
-exclude them from the results.
+**Cost: cases × repeats reviews.** With 15 cases and 2 repeats that is **30 reviews = 30 model
+calls** when the first rung (codex) has credits. A review climbs the ladder only on
+`out_of_tokens` or a rung timeout, so the ceiling is 4 calls per review (120 for the full run).
+Up to 2 reviews run concurrently. Each rung has `MEMORY_REVIEW_TIMEOUT_MS` (300 s); each
+subtest allows every rung its timeout plus margin.
 
-The default is two runs per case and variant, alternating variant order. Both
-variants use the same current tool descriptions, model (`gpt-5.6-luna`), effort
-(`low`), runtime limits and fixture inputs; only the main instructions differ.
-This measures the main prompt change conditional on the revised tool wording,
-not the separate effect of the tool descriptions.
+The ladder is production's and it is NOT disabled here: a result may come from a fallback
+model. Every row records the receipt's `model` and `fallbackFrom`; group and grade by model,
+never mix them silently.
 
-Production reviews fall back to `muse-spark-1.3` when Luna credits run out (see
-"The reviewer ladder" in `product/buddies/PLANNING_MEMORY.md`). This benchmark
-must NOT: a fallback changes the model under comparison, and the baseline variant
-loses its instruction override with it, because that override rewrites codex's
-`model_instructions_file` and `muse exec` has no counterpart. The harness asserts
-`receipt.fallbackFrom === undefined` and aborts with "out of credits" rather than
-publishing a mislabelled result, and every result row records the receipt's
-actual model and effort instead of the intended constants.
+Controls:
 
-Optional controls:
-
-- `UNLEASHD_MEMORY_CURATION_CASE`: one exact case ID from `cases.ts`.
+- `UNLEASHD_MEMORY_CURATION_CASE`: one exact case ID from `cases.ts` (unknown IDs fail loudly).
 - `UNLEASHD_MEMORY_CURATION_REPEATS`: 1–3, default 2.
-- `UNLEASHD_MEMORY_CURATION_VARIANT`: `baseline` or `candidate`; omitted runs both.
-- `UNLEASHD_MEMORY_CURATION_RESULTS`: output directory; omitted creates a temporary one.
+- `UNLEASHD_MEMORY_CURATION_RESULTS`: JSON results directory; omitted creates a temp one (its
+  path is printed as a test diagnostic).
 
-Use a new output directory for every invocation, including retries. The harness
-writes deterministic case/variant/repeat filenames and does **not** prevent
-overwriting existing results. Freeze source during a run; do not edit prompts,
-tools, the baseline or fixtures while it is running.
-Each JSON result records prompt/tool-description hashes, before/after documents,
-tool calls and results, the reviewer receipt and its report. Inspect those saved
-documents against every rubric item; a model's report is not a grade.
+Use a new results directory per invocation; files are named `<case>.r<repeat>.json` and are
+overwritten. Freeze source during a run.
 
-Results are saved before post-run assertions. A setup or pre-drain failure may
-occur before any JSON is saved, so retain stdout/stderr and identify uninvoked
-cases. Temporary output is not durable: before relying on reviewed results for
-a handoff, copy them into a subdirectory of a dated `docs/benchmarks/` directory.
-Those subdirectories are git-ignored; commit only the dated directory's README,
-prompts, grades and `sha256.json`.
+Each result JSON holds provenance (commit, dirty flag, sha256 of the instructions, `cases.ts`
+and the harness, the ladder, the rung timeout), the case input, reviewer warnings and a
+`result` that is one of:
+
+- `reviewed`: the receipt (status/model/fallbackFrom/writes), before/after snapshots of soul,
+  working and long-term (content + revision), every rung's streamed text and tool uses, the
+  final report and one `verdict` per check.
+- `infra`: a setup crash (`receipt: null`) or a review that did not complete (failed,
+  interrupted, skipped receipt). Infra rows are never graded and never dropped.
+
+`summary.json` lists every run as `infra`, `checks-failed` or `checks-passed`. The JSON is saved
+before assertions, so a failing subtest still leaves its evidence. Copy results you rely on
+into a dated `docs/benchmarks/` subdirectory (git-ignored); commit only its README, grades and
+`sha256.json`.
 
 ## Grading and comparison
 
-Automated checks cover completion, document limits, unchanged soul, private-scope
-isolation and candidate memory reads. Expected no-op cases reject any write;
-note-reuse cases reject duplicate notes, and the calibration case requires the
-exact existing note name in compact memory. Semantic judgments such as correct
-decision attribution and preservation of qualified evidence still require review.
+Automated verdicts, per run: `soulUnchanged` and `withinLimits` (working ≤ 2,000, long-term ≤
+4,000 chars) always, plus each case's `checks`:
 
-Several extra assertions apply only to the candidate; semantic rubrics provide
-the common comparison across both variants. For new grading, record each rubric
-judgment, a short reason and concrete output/tool evidence, plus case, variant,
-repeat, result path and grader identity. A case passes only when all applicable
-rubric items hold. Keep automated outcomes separate from semantic outcomes. The
-historical grade files contain case-level reasons only; do not invent older
-item-level judgments.
+| Check | Passes when |
+|---|---|
+| `noWrites` | neither memory doc gained a revision |
+| `unchanged` | that doc's revision is unchanged |
+| `includes` / `excludes` | the case-insensitive pattern matches / does not match the final doc |
+| `occursOnce` | exactly one match (continued in place, no duplicate) |
+| `reportsNone` | the final report contains `NONE` |
 
-Define acceptance criteria before tuning. Unsupported authority/owner policy,
-lost valid knowledge, invented completion, scope leakage, invalid references,
-stale overwrites and duplicate notes where reuse suffices are failures. Any
-accepted miss needs an explicit disposition: the September 13 winner retains
-operational bookkeeping in one run, so its selection is not a perfect pass.
+Patterns are deliberately loose; a check pass is necessary, not sufficient. The `rubric` lines
+are graded manually from the saved docs: record each judgment, a short reason and evidence,
+plus case, repeat, model, result path and grader. A case passes only when its checks AND
+rubric hold. Keep automated and semantic outcomes separate, and report infra failures per
+case alongside them.
 
-Report passes/attempts per case and variant, missing results, setup failures and
-repeat variability. For future comparisons, mask treatment labels during grading
-where practical, calibrate graders on reviewed examples, and keep unseen cases
-for evaluation after tuning. The original grading was manual and unblinded.
-
-The ordinary `buddy-memory-review.test.ts` and `conversation-runtime.test.ts`
-suites cover real MCP transport, stale-write reconciliation, partial saves,
-cancellation and successful-turn admission. Case G is a successful report of a
-child failure; it does not test admission of failed Buddy turns. No live Buddy
-state is rewritten by this evaluation. These small repeated examples are a
-development regression set, not a held-out estimate of production reliability.
+Unsupported owner policy, lost valid knowledge, invented completion, stale pending items left
+in working, duplicated items, and preferences written to working are failures. Define the
+acceptance bar before tuning. Small repeated synthetic cases are a development regression
+set, not a production reliability estimate. The historical September 13 grades were manual
+and unblinded; they do not describe the current prompt.
 
 ## Extending or changing the benchmark
 
 1. Add a minimal synthetic `CurationCase` to `cases.ts` with a stable unique ID,
-   `working`, `longTerm`, `messages` and a rubric fixed before execution. Optional
-   `note` seeds one same-audience evidence record. Link the motivating defect with
-   an authorized evidence reference; do not copy private production memory.
-2. `noOp` requires no document/note writes; `reuseNote` requires recall and zero
-   new notes; `notePointer` requires the seeded note's exact name in compact
-   memory. These flags drive candidate assertions, not reviewer instructions.
-   Use observable output/transport assertions, not source-text tests.
+   `working`, `longTerm`, `messages` (with `toolCall` entries when the turn acted),
+   `checks` and a rubric fixed before execution. Optional `files` seeds the Buddy's
+   workspace. Do not copy private production memory.
+2. `checks` are the machine-checkable flags (table above); add a new `CurationCheck`
+   kind with its handler in the harness's `judge` only when no existing kind fits.
 3. Preserve old IDs and the frozen baseline. Date/version changes to existing
    inputs or rubrics and report changed case sets separately. Never silently
    regrade old results with a new rubric.
-4. Run deterministic boundaries, a live pilot when needed, then both variants on
+4. Run deterministic boundaries, a live pilot when needed, then the full run on
    identical fixed inputs with repeats. Preserve unsuccessful attempts too. Record
    command/filters, prompt/tool/fixture/harness hashes, code commit plus dirty
    snapshots, CLI/package versions, model/effort, outputs and grades.
-5. Choose the control explicitly. The current harness always uses the **original
-   pre-curation prompt**; there is no environment control for an arbitrary prompt
-   or the September 13 winner. For a later accepted control, add a versioned
-   fixture and test-only selection at the existing execute seam, retaining the old
-   baseline. Use an isolated checkout; avoid production override flags or briefly
-   replacing a running server's prompt to perform an experiment.
+5. A control arm needs a test-only instructions seam on `createMemoryReviewer`
+   (none exists). Use an isolated checkout; never swap a running server's prompt.
 6. Write a new dated report with the decision-maker, rationale, acceptance bar,
    failures, tradeoffs and artifact hashes. Link it here and retain earlier reports.
    Native Buddy projects own current task status; private notes supplement the
