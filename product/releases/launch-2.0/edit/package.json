@@ -4,9 +4,9 @@
   "type": "module",
   "scripts": {
     "studio": "remotion studio src/index.ts",
-    "render:design-iteration": "remotion render src/index.ts DesignIteration out/design-iteration.mp4",
+    "render:design-iteration": "remotion render src/index.ts DesignIteration out/design-iteration.mp4 --crf=16",
     "still:design-iteration": "remotion still src/index.ts DesignIteration out/design-iteration.png",
-    "render:overload": "remotion render src/index.ts Overload out/overload.mp4"
+    "render:overload": "remotion render src/index.ts Overload out/overload.video.mp4 --crf=16 --muted && remotion render src/index.ts Overload out/overload.wav --codec=wav && ffmpeg -y -loglevel error -i out/overload.video.mp4 -i out/overload.wav -map 0:v -map 1:a -c:v copy -c:a aac -b:a 256k -movflags +faststart out/overload.mp4"
   },
   "dependencies": {
     "@remotion/cli": "4.0.529",

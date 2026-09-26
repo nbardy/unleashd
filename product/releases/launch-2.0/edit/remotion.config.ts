@@ -4,4 +4,4 @@ import { Config } from '@remotion/cli/config';
 Config.setPublicDir('../footage');
 Config.setVideoImageFormat('jpeg');
 Config.setCodec('h264');
-Config.setCrf(16);
+// CRF is passed per render (package.json scripts): a global CRF makes `--codec=wav` renders fail.

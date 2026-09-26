@@ -8,6 +8,7 @@ import type React from 'react';
 import { AbsoluteFill, Easing, Img, Sequence, interpolate, random, useCurrentFrame } from 'remotion';
 import wordmark from '../../brand/unleashd-wordmark-3d_trimmed.png';
 import { Block, INK, clamp01, easeOutBack, lerp } from './blocks';
+import { type Cue, KEYS, POPS, SFX, Soundtrack } from './soundtrack';
 
 export const FPS = 60;
 export const WIDTH = 1920;
@@ -20,6 +21,9 @@ const T = {
   title: 15.0, // voice line "Don't worry, we've got you covered." sits ~13.4–15.0 over the card
   end: 18.0,
 };
+// Entrances inside the card and title scenes, in seconds from each scene's start.
+const CARD = { overload: 0.35, feeling: 0.95 };
+const TITLE = { introducing: 0.3, reveal: 0.55, badge: 1.3 };
 export const DURATION = Math.round(T.end * FPS);
 const frames = (s: number) => Math.round(s * FPS);
 
@@ -168,7 +172,8 @@ const titleCase = (s: string) => s[0].toUpperCase() + s.slice(1);
 const recentsFrom = (start: number, n: number) =>
   Array.from({ length: n }, (_, j) => titleCase(PROMPTS[(start + j * 5) % PROMPTS.length]));
 
-const FOCUS: WindowSpec[] = [
+type FocusSpec = WindowSpec & { place: Extract<Place, { kind: 'focus' }> };
+const FOCUS: FocusSpec[] = [
   {
     at: 0.25,
     look: 'studioDark',
@@ -535,31 +540,67 @@ const OverloadCard: React.FC = () => {
   const t = useCurrentFrame() / FPS;
   return (
     <AbsoluteFill style={{ background: INK.night, alignItems: 'center', justifyContent: 'center', gap: 44 }}>
-      <Block text="AI Overload!" u={t - 0.35} size="xxl" fill={INK.red} ink={INK.cream} rot={-3} />
-      <Block text="We're all feeling it." u={t - 0.95} size="md" fill={INK.surface} ink={INK.cream} rot={0} />
+      <Block text="AI Overload!" u={t - CARD.overload} size="xxl" fill={INK.red} ink={INK.cream} rot={-3} />
+      <Block text="We're all feeling it." u={t - CARD.feeling} size="md" fill={INK.surface} ink={INK.cream} rot={0} />
     </AbsoluteFill>
   );
 };
 
 const Title: React.FC = () => {
   const t = useCurrentFrame() / FPS;
-  const reveal = Easing.out(Easing.cubic)(clamp01((t - 0.55) / 0.7));
+  const reveal = Easing.out(Easing.cubic)(clamp01((t - TITLE.reveal) / 0.7));
   return (
     <AbsoluteFill style={{ background: INK.night, alignItems: 'center', justifyContent: 'center' }}>
       <AbsoluteFill style={{ background: INK.plate, opacity: clamp01(t / 0.5) }} />
       <div style={{ position: 'relative', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
-        <Block text="Introducing" u={t - 0.3} size="md" fill={INK.surface} ink={INK.cream} rot={0} />
+        <Block text="Introducing" u={t - TITLE.introducing} size="md" fill={INK.surface} ink={INK.cream} rot={0} />
         <Img src={wordmark} style={{ width: 1150, opacity: reveal, transform: `scale(${lerp(0.92, 1, reveal)})` }} />
         <div style={{ position: 'absolute', right: -40, bottom: 40 }}>
-          <Block text="2.0" u={t - 1.3} size="xl" fill={INK.wordmarkOrange} ink={INK.plate} rot={-6} />
+          <Block text="2.0" u={t - TITLE.badge} size="xl" fill={INK.wordmarkOrange} ink={INK.plate} rot={-6} />
         </div>
       </div>
     </AbsoluteFill>
   );
 };
 
+// ---- Sound: every cue is derived from the same timeline the picture uses -------------------------
+
+// One tick per character, at the moment typedText() reveals it.
+const keyCues = (w: WindowSpec, volume: number): Cue[] =>
+  [...w.prompt].map((_, j) => ({
+    at: w.at + w.typeAt + (w.typeFor * (j + 0.5)) / w.prompt.length,
+    src: KEYS[j % KEYS.length],
+    volume,
+  }));
+
+const focusCues = (w: FocusSpec): Cue[] => [
+  { at: w.at, src: POPS[0], volume: 0.5 },
+  ...keyCues(w, 0.35),
+  { at: w.at + sendAt(w), src: SFX.send, volume: 0.6 },
+  { at: w.at + w.place.minimizeAt, src: SFX.whoosh, volume: 0.45 },
+];
+
+// Pops climb in pitch as the pile grows; only the early arrivals get audible typing and a send,
+// past that the pops are the rhythm.
+const pileCues = (w: WindowSpec, i: number): Cue[] => [
+  { at: w.at, src: POPS[Math.min(POPS.length - 1, Math.floor(i / 8))], volume: 0.45 },
+  ...(i < 6 ? keyCues(w, 0.15) : []),
+  ...(i < 30 ? [{ at: w.at + sendAt(w), src: SFX.send, volume: 0.22 }] : []),
+];
+
+const OVERLOAD_CUES: Cue[] = [
+  ...FOCUS.flatMap(focusCues),
+  ...PILE.flatMap(pileCues),
+  { at: T.rampStart, src: SFX.riser, volume: 0.6 }, // ends exactly on T.cut: the silence is the drop
+  { at: T.cut + CARD.overload, src: SFX.impact, volume: 1 },
+  { at: T.cut + CARD.feeling, src: SFX.thud, volume: 0.5 },
+  { at: T.title, src: SFX.pad, volume: 0.5 },
+  { at: T.title + TITLE.badge, src: SFX.sparkle, volume: 0.35 },
+];
+
 export const Overload: React.FC = () => (
   <AbsoluteFill>
+    <Soundtrack cues={OVERLOAD_CUES} fps={FPS} />
     <Sequence durationInFrames={frames(T.cut)}>
       <Pileup />
     </Sequence>

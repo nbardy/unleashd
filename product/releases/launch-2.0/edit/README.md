@@ -6,7 +6,7 @@ Timelines as code. Remotion for the cut, ffmpeg underneath. Raw recordings stay 
 ```bash
 pnpm install --ignore-workspace          # standalone: not part of the repo's pnpm workspace
 pnpm studio                              # scrubbable preview in the browser
-pnpm run render:overload                 # -> out/overload.mp4 (beats 1–5, 18 s)
+pnpm run render:overload                 # -> out/overload.mp4 (beats 1–5, 18 s, with sound)
 pnpm run render:design-iteration         # -> out/design-iteration.mp4 (1920×1080, 60 fps)
 ```
 
@@ -34,6 +34,24 @@ chips), a ChatGPT-style assistant with a pill composer, and a CLI. Each has a si
 recents. On send, the greeting clears, the prompt moves to the top and the composer drops to
 the bottom. The windows use no product names or logos. Arrival times are the music grid:
 when the track lands, move `T` and `GAPS` onto its beats.
+
+### Sound (draft 3)
+
+Sound design only, not music: every sample is synthesized by `../sound/synth.py`
+(`uv run --with numpy python product/releases/launch-2.0/sound/synth.py`), so we own it all.
+Where a sound plays is `OVERLOAD_CUES` in `src/Overload.tsx`, derived from the same timeline
+as the picture: one key tick per revealed character, a send blip, a whoosh on minimize, a
+pop per pile window climbing in pitch every 8 arrivals, a riser that ends exactly on the
+hard cut (the silence is the drop), an impact on "AI Overload!", a thud on "We're all feeling
+it.", a D-major pad under the title and a sparkle on "2.0". A music bed goes under this
+when one is chosen; retime `T`/`GAPS` to its beats.
+
+**Audio sync gotcha:** Remotion's own mp4 (AAC) output plays the sound about 43 ms (2048
+samples, the AAC priming) late, measured on 2026-09-26: the impact hit at 12.093 s instead of
+12.050 s. Its WAV output is sample-exact. So `render:overload` renders a muted video and a WAV
+and muxes them with ffmpeg, which writes the edit list that cancels the priming. Don't
+collapse it back into a single `remotion render`. For the same reason, CRF is a per-script
+flag, not in `remotion.config.ts`: a global CRF makes `--codec=wav` renders fail.
 
 ## DesignIteration — beat 6, "screenshots of the app being developed"
 

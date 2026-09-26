@@ -58,6 +58,8 @@ product/**
 !product/releases/launch-2.0/fonts/**
 !product/releases/launch-2.0/logos/**
 !product/releases/launch-2.0/brand/**
+# Synthesized sound-design samples + their generator (sound/synth.py), ~1.4 MB.
+!product/releases/launch-2.0/sound/**
 # Remotion edit project; its own .gitignore keeps node_modules/ and out/ renders out.
 !product/releases/launch-2.0/edit/**
 output
