@@ -147,9 +147,6 @@ export function createRunner(options: {
       workspaceId: run.workspaceId,
       coordinationRunId: run.id,
       buddyProjectId: run.taskId ?? null,
-      knowledgeScope: run.taskId
-        ? { kind: 'project', projectId: run.taskId }
-        : { kind: 'workspace', workspaceId: run.workspaceId },
     };
   }
 

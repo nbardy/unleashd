@@ -94,7 +94,7 @@ const PostBodySchema = z
   .strict();
 const DocWriteSchema = z
   .object({
-    scope: z.enum(['buddy', 'workspace', 'task', 'thread']).default('buddy'),
+    scope: z.enum(['buddy', 'workspace']).default('buddy'),
     scopeId: z.string().min(1).optional(),
     name: z.string().default(''),
     content: z.string().max(40_000),
@@ -159,8 +159,6 @@ const CursorSchema = z.object({
 /** A doc scope from the query string: the portable doc by default. */
 const DOC_SCOPES: Record<string, (id: string) => DocScope> = {
   workspace: (workspaceId) => ({ kind: 'workspace', workspaceId }),
-  task: (taskId) => ({ kind: 'task', taskId }),
-  thread: (threadId) => ({ kind: 'thread', threadId }),
 };
 function scopeOf(scope: string, scopeId: string | undefined): DocScope {
   if (scope === 'buddy') return { kind: 'buddy' };

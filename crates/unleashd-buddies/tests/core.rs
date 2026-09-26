@@ -158,6 +158,23 @@ fn write_doc_is_compare_and_swap_and_keeps_every_revision() {
     }
 }
 
+// 2026-09-26: memory scoped per chat left 519 copies and new chats opened empty. A memory kind
+// has one address, the Buddy; any other scope is refused, never silently stored as a second copy.
+#[test]
+fn memory_kinds_are_refused_outside_buddy_scope() {
+    let mut f = fixture();
+    let s = &mut f.store;
+    let workspace = DocScope::Workspace { workspace_id: WS.into() };
+    for kind in [DocKind::Soul, DocKind::Working, DocKind::LongTerm] {
+        let doc = DocRef { scope: workspace.clone(), kind, ..soul("ic") };
+        let err = s.write_doc(&buddy("ic"), DocWrite { doc: doc.clone(), ..write("ic", "x", 0, kind.as_str()) }).unwrap_err();
+        assert!(matches!(err, CoreError::Invalid(_)), "{err}");
+        assert!(matches!(s.read_doc(&buddy("ic"), doc).unwrap_err(), CoreError::Invalid(_)));
+    }
+    let shared = DocRef { scope: workspace, kind: DocKind::Shared, name: "plan".into(), ..soul("ic") };
+    s.write_doc(&buddy("ic"), DocWrite { doc: shared, ..write("ic", "x", 0, "shared") }).unwrap();
+}
+
 #[test]
 fn upsert_task_is_compare_and_swap() {
     let mut f = fixture();

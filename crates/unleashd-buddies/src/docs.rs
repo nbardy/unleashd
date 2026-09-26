@@ -31,16 +31,23 @@ fn find(conn: &Connection, doc: &DocRef) -> Result<Option<Doc>> {
     Ok(conn.prepare_cached(&sql)?.query_row(params![doc.buddy_id, scope_kind, scope_id, doc.kind, doc.name], doc_row).optional()?)
 }
 
-/// A doc lives in its buddy's workspace, except workspace- and task-scoped docs.
+/// The one address rule: a memory kind (soul, working, long_term) is Buddy-scoped. A
+/// Workspace-scoped memory would split one Buddy's memory into copies again (2026-09-26).
+fn check_address(doc: &DocRef) -> Result<()> {
+    match (&doc.scope, doc.kind) {
+        (DocScope::Workspace { .. }, DocKind::Soul | DocKind::Working | DocKind::LongTerm) => {
+            Err(CoreError::Invalid(format!("{} is Buddy-scoped", doc.kind.as_str())))
+        }
+        (DocScope::Workspace { .. }, DocKind::Shared) | (DocScope::Buddy, _) => Ok(()),
+    }
+}
+
+/// A doc lives in its buddy's workspace, except workspace-scoped shared docs.
 fn doc_workspace(tx: &Connection, doc: &DocRef) -> Result<String> {
+    check_address(doc)?;
     match &doc.scope {
-        DocScope::Buddy | DocScope::Thread { .. } => Ok(get_buddy(tx, &doc.buddy_id)?.workspace_id),
+        DocScope::Buddy => Ok(get_buddy(tx, &doc.buddy_id)?.workspace_id),
         DocScope::Workspace { workspace_id } => Ok(workspace_id.clone()),
-        DocScope::Task { task_id } => tx
-            .prepare_cached("SELECT workspace_id FROM task WHERE id = ?1")?
-            .query_row([task_id], |r| r.get(0))
-            .optional()?
-            .ok_or_else(|| CoreError::not_found("task", task_id)),
     }
 }
 
@@ -48,6 +55,7 @@ impl Store {
     /// The current doc, or None when it was never written.
     pub fn read_doc(&self, actor: &Actor, doc: DocRef) -> Result<Option<Doc>> {
         require(&self.conn, actor, Op::ReadDoc, &Subject::Buddy { id: doc.buddy_id.clone() })?;
+        check_address(&doc)?;
         find(&self.conn, &doc)
     }
 

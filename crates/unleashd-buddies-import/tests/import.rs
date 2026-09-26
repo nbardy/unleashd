@@ -101,7 +101,11 @@ fn import_then_verify_then_catch_tampering() {
 
     assert_eq!(report.dropped_read_events, 1, "buddy.get_inbox is a read");
     assert_eq!(report.non_home_memberships.len(), 1);
-    assert_eq!(report.divergent_thread_souls[0]["doc_id"], "k1");
+    // k3, Worker's only long_term copy, is workspace-scoped: it wins with no head to compete.
+    assert_eq!(report.memory_fold_winners[0]["doc_id"], "mem_b2_long_term");
+    assert_eq!(report.memory_fold_winners[0]["source_id"], "k3");
+    // k1, Lead's thread soul, is newer than the soul head, but only the head is ever the soul.
+    assert_eq!(report.folded_copies, 1, "k1 is archived, not imported");
     assert_eq!(report.converted_schedules[0]["cron"], "*/30 * * * *");
     assert!(matches!(report.soul_files.iter().find(|s| s.slug == "lead").unwrap().state, SoulFileState::Present { .. }));
     assert!(import(&old, &new, &owner_reads, ImportOptions::default()).is_err(), "an existing target is never overwritten");
@@ -172,7 +176,8 @@ fn import_then_verify_then_catch_tampering() {
     conn.execute("UPDATE post SET body = 'please build!' WHERE id = 'm1'", []).unwrap();
     conn.execute("UPDATE post SET body = 'built!' WHERE id = 'reply_m1'", []).unwrap();
     conn.execute("UPDATE post SET root_id = NULL WHERE id = 'm3'", []).unwrap();
-    conn.execute("UPDATE doc_revision SET content = 'repo lies' WHERE doc_id = 'k3'", []).unwrap();
+    // k3 (Worker's only long_term copy) is the winner imported as mem_b2_long_term.
+    conn.execute("UPDATE doc_revision SET content = 'repo lies' WHERE doc_id = 'mem_b2_long_term'", []).unwrap();
     // An ordered id that is not a UUIDv7 (it would sort after every real post).
     conn.execute("UPDATE post SET ord = 'x' || ord WHERE id = 'm1'", []).unwrap();
     conn.execute("DELETE FROM post_read WHERE reader = 'b1' AND json_extract(legacy, '$.source') = 'import:direct-read'", []).unwrap();
@@ -182,7 +187,8 @@ fn import_then_verify_then_catch_tampering() {
     let bad = verify(&old, &new, &report.soul_files, &report.owner_reads, &report.direct_reads).unwrap();
     assert!(!bad.ok);
     let failed: Vec<&str> = bad.classes.iter().filter(|c| !c.ok).map(|c| c.class.as_str()).collect();
-    assert!(failed.contains(&"messages_by_sender") && failed.contains(&"knowledge_revisions_by_buddy_scope_kind"), "{failed:?}");
+    assert!(failed.contains(&"messages_by_sender"), "{failed:?}");
+    assert!(bad.revision_chains.mismatches.iter().any(|m| m.starts_with("mem_b2_long_term")), "{:?}", bad.revision_chains.mismatches);
     assert_eq!(bad.answers.mismatches, ["m1"], "the answer text must be byte-identical to the v33 reply");
     assert_eq!(bad.links.mismatches, ["m3: same-channel v33 root lost"]);
     assert!(!bad.read_cursors.ok, "owner-channel-reads.json changed since the import");
@@ -190,6 +196,80 @@ fn import_then_verify_then_catch_tampering() {
     assert!(!bad.revision_chains.ok && !bad.soul.ok);
     assert!(!bad.ordering.ok, "an ordered id that is not a UUIDv7 is caught");
     assert_eq!(bad.soul.files_changed, ["lead"]);
+}
+
+/// The memory fold (lean memory design, "Migration"): every v33 copy of a Buddy's memory kind
+/// competes, the newest becomes its one doc with its own chain renumbered 1..n, and every other
+/// copy lands in the Buddy's memory-archive.md. A copy that is neither imported nor archived is
+/// memory silently lost; the verifier's archive count is the tripwire.
+#[test]
+fn memory_folds_to_the_newest_copy_and_archives_the_rest() {
+    let dir = tempfile::tempdir().unwrap();
+    let old = fixture(dir.path());
+    Connection::open(&old)
+        .unwrap()
+        .execute_batch(
+            "INSERT INTO buddy_memory_revisions VALUES
+               ('mr6','b2','working',1,NULL,'head plan','seed','migration',NULL,'{}','x','2026-07-01T00:00:00.000Z');
+             INSERT INTO buddy_memory_heads VALUES ('b2','working','mr6',1,'2026-07-01T00:00:00.000Z');
+             INSERT INTO buddy_knowledge VALUES
+               ('k5','b2','p1','owner_thread','conv-1','working','',1,'thread one','2026-07-02T00:00:00.000Z'),
+               ('k6','b2','p1','owner_thread','conv-2','working','',3,'thread two, newest','2026-07-09T00:00:00.000Z'),
+               ('k7','b2','p1','project','t1','working','',1,'task copy','2026-07-05T00:00:00.000Z'),
+               ('k8','b2','p1','owner_thread','conv-3','soul','',1,'a thread-only soul','2026-07-10T00:00:00.000Z');
+             INSERT INTO buddy_knowledge_revisions VALUES
+               ('k5',1,'thread one','seed','b2','{}','2026-07-02T00:00:00.000Z'),
+               ('k6',1,'thread two','seed','b2','{}','2026-07-08T00:00:00.000Z'),
+               ('k6',3,'thread two, newest','edit','b2','{}','2026-07-09T00:00:00.000Z'),
+               ('k7',1,'task copy','seed','b2','{}','2026-07-05T00:00:00.000Z'),
+               ('k8',1,'a thread-only soul','seed','b2','{}','2026-07-10T00:00:00.000Z');",
+        )
+        .unwrap();
+    // The stored hash must be the content's, as v33 wrote it.
+    Connection::open(&old)
+        .unwrap()
+        .execute("UPDATE buddy_memory_revisions SET sha256 = ?1 WHERE id = 'mr6'", [sha256_hex(b"head plan")])
+        .unwrap();
+    let new = dir.path().join("new.sqlite");
+    let report = import(&old, &new, &dir.path().join("owner-channel-reads.json"), ImportOptions::default()).unwrap();
+    let conn = Connection::open(&new).unwrap();
+    let row = |sql: &str| conn.query_row(sql, [], |r| r.get::<_, String>(0)).unwrap();
+    assert_eq!(row("SELECT CAST(count(*) AS TEXT) FROM doc WHERE buddy_id = 'b2' AND kind = 'working'"), "1");
+    assert_eq!(
+        row("SELECT id || '|' || scope_kind || '|' || revision || '|' || content || '|' || json_extract(legacy, '$.source_id') FROM doc
+             WHERE buddy_id = 'b2' AND kind = 'working'"),
+        "mem_b2_working|buddy|2|thread two, newest|k6",
+        "the gap in k6's chain (1, 3) is renumbered so the head is revision 2"
+    );
+    assert_eq!(
+        row(
+            "SELECT group_concat(revision || '=' || json_extract(legacy, '$.source_revision'), ' ') FROM doc_revision WHERE doc_id = 'mem_b2_working'"
+        ),
+        "1=1 2=3"
+    );
+    // The soul is the owner's: a newer thread soul (k8) never replaces the head (orchestrator
+    // decision 2026-09-26; 4 live thread souls were newer than their heads).
+    assert_eq!(row("SELECT id || '|' || content FROM doc WHERE buddy_id = 'b2' AND kind = 'soul'"), "mem_b2_soul|");
+    assert_eq!(report.folded_copies, 5, "Lead's k1; Worker's working head, k5, k7 and soul k8");
+
+    let archive = unleashd_buddies_import::notes::archive_plan(&old).unwrap();
+    let worker = archive.iter().find(|f| f.buddy_id == "b2").unwrap();
+    assert_eq!(worker.path, dir.path().join("agent_notes/buddy-notes/worker/memory-archive.md"));
+    assert_eq!(worker.sections, 4);
+    let (head, thread, task) =
+        (worker.text.find("head plan").unwrap(), worker.text.find("thread one").unwrap(), worker.text.find("task copy").unwrap());
+    assert!(head < thread && thread < task, "oldest first");
+    assert!(worker.text.contains("working (project t1)") && !worker.text.contains("thread two"));
+    assert!(worker.text.contains("soul (owner_thread conv-3)\n_revision 1, buddy_knowledge k8_\n\na thread-only soul"));
+
+    let ok = verify(&old, &new, &report.soul_files, &report.owner_reads, &report.direct_reads).unwrap();
+    assert!(ok.ok, "{}", serde_json::to_string_pretty(&ok).unwrap());
+    // Dropping a folded copy from the import without archiving it must fail.
+    conn.execute("DELETE FROM doc_revision WHERE doc_id = 'mem_b2_working'", []).unwrap();
+    conn.execute("DELETE FROM doc WHERE id = 'mem_b2_working'", []).unwrap();
+    let bad = verify(&old, &new, &report.soul_files, &report.owner_reads, &report.direct_reads).unwrap();
+    assert_eq!(bad.memory_archive.mismatches, ["b2"]);
+    assert!(!bad.ok);
 }
 
 fn json_row(path: &std::path::Path, sql: &str) -> i64 {
@@ -221,7 +301,7 @@ fn notes_leave_as_agent_notes_files() {
     let files = unleashd_buddies_import::notes::plan(&old).unwrap();
     assert_eq!(files.len(), 1, "both of Worker's notes are from one day");
     assert_eq!(files[0].path, dir.path().join("agent_notes/buddy-notes/worker/2026-07-06.md"));
-    assert_eq!(files[0].notes, 2);
+    assert_eq!(files[0].sections, 2);
     let text = &files[0].text;
     assert!(text.contains("use sqlite"), "a plain owner note is kept as typed");
     assert!(text.contains("09:00Z — Queue choice") && text.contains("Chose sqlite over redis"));
@@ -305,7 +385,11 @@ fn a_buddy_without_a_soul_verifies_but_a_lost_soul_fails() {
 
     // Lost: the source had a soul, the target has none.
     conn.execute("DELETE FROM doc WHERE buddy_id = 'b4'", []).unwrap();
-    conn.execute("DELETE FROM doc_revision WHERE doc_id IN (SELECT id FROM doc WHERE buddy_id = 'b1' AND kind = 'soul' AND scope_kind = 'buddy')", []).unwrap();
+    conn.execute(
+        "DELETE FROM doc_revision WHERE doc_id IN (SELECT id FROM doc WHERE buddy_id = 'b1' AND kind = 'soul' AND scope_kind = 'buddy')",
+        [],
+    )
+    .unwrap();
     conn.execute("DELETE FROM doc WHERE buddy_id = 'b1' AND kind = 'soul' AND scope_kind = 'buddy'", []).unwrap();
     let lost = run();
     assert!(!lost.ok && !lost.soul.ok);

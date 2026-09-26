@@ -4,8 +4,9 @@
 //!   buddies-import verify --from <v33.sqlite> --to <new.sqlite> --import-report <import.json> --out <verify.json>
 //!   buddies-import export-notes --from <v33.sqlite> [--write]
 //!
-//! `export-notes` prints where each note file would go; `--write` writes them into each
-//! workspace's agent_notes/buddy-notes/ (refusing if any already exists). Notes are not imported.
+//! `export-notes` prints where each note file and each Buddy's memory-archive.md (the memory
+//! copies the fold did not import) would go; `--write` writes them into each workspace's
+//! agent_notes/buddy-notes/ (refusing if any already exists). Notes are not imported.
 //!
 //! Both read the v33 file read-only. `import` refuses an existing target. `verify` exits 1 on any
 //! mismatch. Neither writes a soul file. `--owner-reads` defaults to the server's
@@ -38,9 +39,10 @@ fn run(args: &[String]) -> Result<bool, String> {
     let from = arg(args, "--from")?;
     match args.first().map(String::as_str) {
         Some("export-notes") => {
-            let files = notes::plan(&from).map_err(|e| format!("[{}] {e}", e.code()))?;
+            let mut files = notes::plan(&from).map_err(|e| format!("[{}] {e}", e.code()))?;
+            files.extend(notes::archive_plan(&from).map_err(|e| format!("[{}] {e}", e.code()))?);
             for file in &files {
-                println!("{:>4} notes  {}", file.notes, file.path.display());
+                println!("{:>4} sections  {}", file.sections, file.path.display());
             }
             if args.iter().any(|a| a == "--write") {
                 notes::write(&files).map_err(|e| format!("[{}] {e}", e.code()))?;
@@ -81,6 +83,7 @@ fn run(args: &[String]) -> Result<bool, String> {
                 ("links", &report.links),
                 ("read_cursors", &report.read_cursors),
                 ("ordering", &report.ordering),
+                ("memory_archive", &report.memory_archive),
             ] {
                 println!("{name:<42} {:>6} rows  {:>4} identical  {}", c.rows_new, c.identical, ok(c.ok));
             }

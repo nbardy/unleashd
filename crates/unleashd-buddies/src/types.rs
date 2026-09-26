@@ -192,13 +192,13 @@ pub enum Outcome {
 }
 
 /// Doc audience. Columns (scope_kind, scope_id); Buddy scope's id is the buddy, Workspace's the workspace.
+/// Memory kinds (soul, working, long_term) are always Buddy-scoped: one per Buddy, read by every
+/// turn kind and the owner's Memory tab. Only shared docs may be Workspace-scoped.
 #[cfg_attr(feature = "node", napi_derive::napi(discriminant = "kind", discriminant_case = "lowercase"))]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum DocScope {
     Buddy,
     Workspace { workspace_id: String },
-    Task { task_id: String },
-    Thread { thread_id: String },
 }
 
 impl DocScope {
@@ -206,16 +206,12 @@ impl DocScope {
         match self {
             DocScope::Buddy => ("buddy", buddy_id),
             DocScope::Workspace { workspace_id } => ("workspace", workspace_id),
-            DocScope::Task { task_id } => ("task", task_id),
-            DocScope::Thread { thread_id } => ("thread", thread_id),
         }
     }
     pub fn from_columns(kind: &str, id: String) -> Result<DocScope> {
         match kind {
             "buddy" => Ok(DocScope::Buddy),
             "workspace" => Ok(DocScope::Workspace { workspace_id: id }),
-            "task" => Ok(DocScope::Task { task_id: id }),
-            "thread" => Ok(DocScope::Thread { thread_id: id }),
             other => Err(CoreError::Corrupt(format!("doc scope_kind {other:?}"))),
         }
     }

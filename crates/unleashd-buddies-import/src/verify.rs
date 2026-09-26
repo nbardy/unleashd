@@ -17,8 +17,8 @@
 //!   owner-channel-reads.json, re-read now and required to be unchanged since the import.
 
 use crate::import::{
-    CURSOR_ORD, DIRECT_READ_CURSORS, DM_KEY, DirectReads, OwnerReads, SoulFile, SoulFileState, load_owner_reads, open_source, soul_files,
-    uri,
+    CURSOR_ORD, DIRECT_READ_CURSORS, DM_KEY, DirectReads, OwnerReads, SoulFile, SoulFileState, load_owner_reads, memory_copies,
+    open_source, register_sha256, soul_files, uri, winner_chains,
 };
 use rusqlite::{Connection, OpenFlags, OptionalExtension};
 use serde::Serialize;
@@ -96,37 +96,24 @@ fn classes() -> Vec<(&'static str, String, String)> {
              FROM post p JOIN channel c ON c.id = p.channel_id WHERE c.kind = 'task'"
                 .into(),
         ),
+        // The memory fold (import.rs `memory_copies`): per (buddy, kind) the one imported doc is the
+        // newest copy, byte for byte. Its chain is checked by `check_chains`, the rest by `check_archive`.
         (
-            "memory_revisions_by_buddy_kind",
-            "SELECT buddy_id || '/' || document_kind, json_array(revision, body) FROM buddy_memory_revisions".into(),
-            "SELECT coalesce(d.buddy_id || '/' || d.kind, 'orphan:' || r.doc_id), json_array(r.revision, r.content)
-             FROM doc_revision r LEFT JOIN doc d ON d.id = r.doc_id WHERE r.doc_id GLOB 'mem_*'"
-                .into(),
+            "memory_winners_by_buddy_kind",
+            format!(
+                "SELECT buddy_id || '/' || kind, json_array('mem_' || buddy_id || '_' || kind, 'buddy', buddy_id, '', content)
+                 FROM ({}) WHERE winner",
+                memory_copies("")
+            ),
+            "SELECT buddy_id || '/' || kind, json_array(id, scope_kind, scope_id, name, content) FROM doc WHERE kind != 'shared'".into(),
         ),
         (
-            "memory_heads_by_buddy_kind",
-            "SELECT h.buddy_id || '/' || h.document_kind, json_array(r.revision, r.body) FROM buddy_memory_heads h
-             JOIN buddy_memory_revisions r ON r.id = h.revision_id"
+            "shared_docs_by_buddy_scope",
+            "SELECT buddy_id || '/' || CASE scope_kind WHEN 'workspace' THEN 'workspace' ELSE 'buddy' END,
+               json_array(id, CASE scope_kind WHEN 'workspace' THEN scope_id ELSE buddy_id END, name, revision, content)
+             FROM buddy_knowledge WHERE kind = 'shared'"
                 .into(),
-            "SELECT buddy_id || '/' || kind, json_array(revision, content) FROM doc WHERE scope_kind = 'buddy'".into(),
-        ),
-        (
-            "knowledge_docs_by_buddy_scope_kind",
-            "SELECT buddy_id || '/' || CASE scope_kind WHEN 'owner_thread' THEN 'thread' WHEN 'project' THEN 'task' ELSE scope_kind END
-               || '/' || kind, json_array(id, scope_id, name, revision, content) FROM buddy_knowledge WHERE kind != 'note'"
-                .into(),
-            "SELECT buddy_id || '/' || scope_kind || '/' || kind, json_array(id, scope_id, name, revision, content) FROM doc WHERE scope_kind != 'buddy'"
-                .into(),
-        ),
-        (
-            "knowledge_revisions_by_buddy_scope_kind",
-            "SELECT coalesce(k.buddy_id || '/' || CASE k.scope_kind WHEN 'owner_thread' THEN 'thread' WHEN 'project' THEN 'task'
-               ELSE k.scope_kind END || '/' || k.kind, 'orphan:' || r.document_id), json_array(r.document_id, r.revision, r.content)
-             FROM buddy_knowledge_revisions r LEFT JOIN buddy_knowledge k ON k.id = r.document_id WHERE k.kind IS NOT 'note'"
-                .into(),
-            "SELECT coalesce(d.buddy_id || '/' || d.scope_kind || '/' || d.kind, 'orphan:' || r.doc_id), json_array(r.doc_id, r.revision, r.content)
-             FROM doc_revision r LEFT JOIN doc d ON d.id = r.doc_id WHERE r.doc_id NOT GLOB 'mem_*'"
-                .into(),
+            "SELECT buddy_id || '/' || scope_kind, json_array(id, scope_id, name, revision, content) FROM doc WHERE kind = 'shared'".into(),
         ),
     ]
 }
@@ -204,6 +191,8 @@ pub struct VerifyReport {
     /// in time, and every read cursor's `last_ord` is its post's (or its instant's ceiling).
     pub ordering: RowCheck,
     pub revision_chains: ChainCheck,
+    /// Per Buddy: memory copies folded away == sections in its memory-archive.md.
+    pub memory_archive: RowCheck,
     pub soul: SoulCheck,
 }
 
@@ -267,11 +256,15 @@ fn chains(conn: &Connection, sql: &str, mismatches: &mut Vec<String>) -> Result<
 
 fn check_chains(old: &Connection, new: &Connection) -> Result<ChainCheck> {
     let mut mismatches = Vec::new();
+    // Winners only: a folded copy's chain is archived, not imported.
     let a = chains(
         old,
-        "SELECT 'mem_' || buddy_id || '_' || document_kind, revision, body, sha256 FROM buddy_memory_revisions
-         UNION ALL SELECT document_id, revision, content, NULL FROM buddy_knowledge_revisions
-           WHERE document_id NOT IN (SELECT id FROM buddy_knowledge WHERE kind = 'note')",
+        &format!(
+            "SELECT doc_id, revision, content, stored_sha256 FROM ({})
+             UNION ALL SELECT document_id, revision, content, NULL FROM buddy_knowledge_revisions
+               WHERE document_id IN (SELECT id FROM buddy_knowledge WHERE kind = 'shared')",
+            winner_chains("")
+        ),
         &mut mismatches,
     )?;
     let b = chains(new, "SELECT doc_id, revision, content, sha256 FROM doc_revision", &mut mismatches)?;
@@ -291,6 +284,34 @@ fn check_chains(old: &Connection, new: &Connection) -> Result<ChainCheck> {
     )?;
     mismatches.extend(stale_heads.into_iter().map(|d| format!("{d}: head is not its last revision")));
     Ok(ChainCheck { ok: mismatches.is_empty(), docs: b.len(), revisions: b.values().map(BTreeSet::len).sum(), mismatches })
+}
+
+/// Per Buddy, the memory copies the fold dropped (every v33 copy minus the docs imported) must
+/// equal the sections `export-notes` archives for it. Both sides are counted independently: the
+/// source tables and the imported docs on one side, the archive plan on the other.
+fn check_archive(source: &Path, old: &Connection, new: &Connection) -> Result<RowCheck> {
+    let mut a: BTreeMap<String, i64> = collect(
+        old.prepare(
+            "SELECT buddy_id, count(*) FROM (SELECT buddy_id FROM buddy_memory_heads
+               UNION ALL SELECT buddy_id FROM buddy_knowledge WHERE kind IN ('soul','working','long_term')) GROUP BY buddy_id",
+        )?
+        .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?,
+    )?
+    .into_iter()
+    .collect();
+    let imported: Vec<(String, i64)> = collect(
+        new.prepare("SELECT buddy_id, count(*) FROM doc WHERE kind != 'shared' GROUP BY buddy_id")?
+            .query_map([], |r| Ok((r.get(0)?, r.get(1)?)))?,
+    )?;
+    for (buddy, n) in imported {
+        *a.entry(buddy).or_insert(0) -= n;
+    }
+    let old_rows: Rows = a.into_iter().filter(|(_, n)| *n != 0).map(|(b, n)| (b, n.to_string())).collect();
+    let mut archived: BTreeMap<String, usize> = BTreeMap::new();
+    for file in crate::notes::archive_plan(source)? {
+        *archived.entry(file.buddy_id).or_insert(0) += file.sections;
+    }
+    Ok(compare(&old_rows, &archived.into_iter().map(|(b, n)| (b, n.to_string())).collect()))
 }
 
 /// Front matter written by the v33 soul renderer: `---\nversion: N\nupdated: …\ndocument: soul\n---\n\n`.
@@ -369,8 +390,7 @@ fn check_soul(old: &Connection, new: &Connection, baseline: &[SoulFile]) -> Resu
     let mut split = BTreeMap::new();
     let mut differ = Vec::new();
     for file in &current {
-        let verdict =
-            soul_verdict(&file.state, &soul_doc(old, OLD_SOUL, &file.buddy_id)?, &soul_doc(new, NEW_SOUL, &file.buddy_id)?)?;
+        let verdict = soul_verdict(&file.state, &soul_doc(old, OLD_SOUL, &file.buddy_id)?, &soul_doc(new, NEW_SOUL, &file.buddy_id)?)?;
         if matches!(verdict, "differ" | "file_missing" | "doc_lost" | "doc_invented") {
             differ.push(format!("{}: {verdict}", file.slug));
         }
@@ -487,6 +507,7 @@ pub fn verify(
     direct_reads: &DirectReads,
 ) -> Result<VerifyReport> {
     let old = open_source(source)?;
+    register_sha256(&old)?;
     let new = open_new(target)?;
     let classes = classes().iter().map(|c| check_class(&old, &new, c)).collect::<Result<Vec<_>>>()?;
     let answers = check_answers(&old, &new)?;
@@ -494,7 +515,15 @@ pub fn verify(
     let read_cursors = check_reads(&old, &new, owner_reads, direct_reads)?;
     let ordering = check_ordering(&new)?;
     let revision_chains = check_chains(&old, &new)?;
+    let memory_archive = check_archive(source, &old, &new)?;
     let soul = check_soul(&old, &new, soul_baseline)?;
-    let ok = classes.iter().all(|c| c.ok) && answers.ok && links.ok && read_cursors.ok && ordering.ok && revision_chains.ok && soul.ok;
-    Ok(VerifyReport { ok, classes, answers, links, read_cursors, ordering, revision_chains, soul })
+    let ok = classes.iter().all(|c| c.ok)
+        && answers.ok
+        && links.ok
+        && read_cursors.ok
+        && ordering.ok
+        && revision_chains.ok
+        && memory_archive.ok
+        && soul.ok;
+    Ok(VerifyReport { ok, classes, answers, links, read_cursors, ordering, revision_chains, memory_archive, soul })
 }

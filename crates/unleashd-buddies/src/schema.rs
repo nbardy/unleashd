@@ -97,7 +97,7 @@ CREATE TABLE post_read (
 
 CREATE TABLE doc (
   id TEXT PRIMARY KEY, buddy_id TEXT NOT NULL REFERENCES buddy(id), workspace_id TEXT NOT NULL,
-  scope_kind TEXT NOT NULL CHECK(scope_kind IN ('buddy','workspace','task','thread')), scope_id TEXT NOT NULL,
+  scope_kind TEXT NOT NULL CHECK(scope_kind IN ('buddy','workspace')), scope_id TEXT NOT NULL,
   kind TEXT NOT NULL CHECK(kind IN ('soul','working','long_term','shared')), name TEXT NOT NULL DEFAULT '',
   revision INTEGER NOT NULL CHECK(revision > 0), content TEXT NOT NULL, updated_at TEXT NOT NULL, legacy TEXT,
   UNIQUE(buddy_id, scope_kind, scope_id, kind, name)) STRICT;

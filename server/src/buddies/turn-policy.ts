@@ -22,7 +22,6 @@ import {
   formatCommonToolResult,
 } from '../turns/policy';
 import { BUDDY_BUILDER_BRIEFING } from './builder';
-import { docScopeFor } from './core';
 import type { BuddyPolicyPort } from './policy-port';
 import type { OwnedChatRun } from './runner';
 
@@ -248,6 +247,31 @@ export class BuddyBuilderTurnPolicy implements TurnPolicy {
   }
 }
 
+// Pattern: pure-core (docs/patterns.md#pure-core)
+/**
+ * The provider-session fence of a Buddy conversation. An owner input or a seat's `buddy_post` is
+ * the conversation's own audience; any other turn (worker, message, schedule) is its work's: the
+ * task, else the workspace. It no longer addresses memory (one per Buddy), but its strings are the
+ * ones sessions were saved under before 2026-09-26, so a deploy resumes every saved session.
+ */
+export function sessionAudienceKey(
+  origin: TurnInput['origin'],
+  conversationId: string,
+  context: Pick<BuddyContext, 'buddyProjectId' | 'workspaceId'>
+): string {
+  switch (origin) {
+    case 'owner_input':
+    case 'buddy_post':
+      return JSON.stringify({ kind: 'thread', threadId: conversationId });
+    case 'buddy_message':
+    case 'schedule':
+    case 'unknown':
+      return context.buddyProjectId
+        ? JSON.stringify({ kind: 'task', taskId: context.buddyProjectId })
+        : JSON.stringify({ kind: 'workspace', workspaceId: context.workspaceId });
+  }
+}
+
 // --- Buddy ---------------------------------------------------------------------
 
 /** The run a turn executes under: a foreground chat's admitted run, or a runner-owned run. */
@@ -260,13 +284,13 @@ type RunExecution = {
 
 export interface BuddyTurnPolicySeed {
   readonly memorySnapshot: MemorySnapshot | null;
-  /** The doc-audience key the restored provider session was saved under. */
+  /** The session audience key the restored provider session was saved under. */
   readonly audienceKey: string | null;
 }
 
 export class BuddyTurnPolicy implements TurnPolicy {
   private memory: MemorySnapshot | null;
-  // The doc audience the current provider session was built under (persisted with it).
+  // The session audience key the current provider session was built under (persisted with it).
   private providerAudienceKey: string | null;
   // Memory generation the current provider session was last briefed with; null means
   // "unknown" (new, reset, restored, or failed spawn) and forces one re-brief.
@@ -300,14 +324,14 @@ export class BuddyTurnPolicy implements TurnPolicy {
 
   // --- admission -------------------------------------------------------------
 
-  gate(input: TurnInput, fromQueue: boolean): TurnGate {
+  gate(_input: TurnInput, fromQueue: boolean): TurnGate {
     // A runner-owned run already holds its slot; only chat turns queue for one.
     if (this.execution) return 'send';
     // Chat turns are admitted through the queue, so a turn waiting for a run slot is visible as
     // pending and later sends line up behind it. The queue keeps the input's provenance: a
     // 'buddy_post' seat turn dropped here would come back 'unknown'.
     if (!fromQueue) return 'enqueue';
-    const owned = this.admitChatRun(input);
+    const owned = this.admitChatRun();
     if (!owned) return 'wait';
     this.admittedChatRun = owned;
     return 'admitted';
@@ -316,9 +340,9 @@ export class BuddyTurnPolicy implements TurnPolicy {
   // Admitted: the owned run. Otherwise the queue head goes back to pending and the shared tick
   // re-runs processQueue. The run's lease is its deadline: the runner leases every claim for
   // TURN_MAX_RUNTIME_MS (runner.ts; 600 s killed live owner chats on 2026-09-10).
-  private admitChatRun(input: TurnInput): OwnedChatRun | null {
+  private admitChatRun(): OwnedChatRun | null {
     this.chatTicket ??= {
-      turnId: this.buddies.enqueueChat(this.contextForInput(input), this.host.id),
+      turnId: this.buddies.enqueueChat(this.turnContext(), this.host.id),
       stopWaiting: waitForChatRunSlot(() => this.host.processQueue()),
     };
     const admission = this.buddies.admission(this.chatTicket.turnId);
@@ -374,50 +398,28 @@ export class BuddyTurnPolicy implements TurnPolicy {
 
   // --- context and briefing ----------------------------------------------------
 
-  /**
-   * The doc audience of an input. An owner input and a seat's `buddy_post` read the thread's own
-   * audience; anything else the work's (its task, else the workspace). A runner-owned run brings
-   * its own context.
-   */
-  private contextForInput(input: TurnInput): BuddyContext {
-    const context = this.execution?.context ?? this.kind.context;
-    switch (input.origin) {
-      case 'owner_input':
-      case 'buddy_post':
-        return {
-          ...context,
-          knowledgeScope: { kind: 'owner_thread', conversationId: this.host.id },
-        };
-      case 'buddy_message':
-      case 'schedule':
-      case 'unknown':
-        return {
-          ...context,
-          knowledgeScope:
-            context.knowledgeScope ??
-            (context.buddyProjectId
-              ? { kind: 'project', projectId: context.buddyProjectId }
-              : { kind: 'workspace', workspaceId: context.workspaceId }),
-        };
-    }
+  /** The context a turn runs under: a runner-owned run's own, else the conversation's. */
+  private turnContext(): BuddyContext {
+    return this.execution?.context ?? this.kind.context;
   }
 
-  // A provider session holds what its audience could read. It resumes only under the same doc
-  // audience; a different or unknown one (a session saved before its audience was recorded)
-  // starts fresh, while the display history stays. Guard: conversation-history.test.ts
-  // "privacy rotation retains display history…" ("unproven disclosure state starts fresh").
-  private admitAudience(context: BuddyContext): void {
-    const key = JSON.stringify(docScopeFor(context));
+  // A provider session holds what its audience saw. It resumes only under the same audience key;
+  // a different or unknown one (a session saved before its key was recorded) starts fresh, while
+  // the display history stays. Guard: conversation-runtime.test.ts "session audience key: …".
+  private admitAudience(input: TurnInput, context: BuddyContext): void {
+    const key = sessionAudienceKey(input.origin, this.host.id, context);
     if (this.providerAudienceKey !== key && this.host.hasStartedSession()) {
-      console.log(`[${this.host.id}] Buddy context reset: the doc audience changed or is unknown`);
+      console.log(
+        `[${this.host.id}] Buddy context reset: the session audience changed or is unknown`
+      );
       this.host.resetProcess();
     }
     this.providerAudienceKey = key;
   }
 
   prepare(input: TurnInput): boolean {
-    const context = this.contextForInput(input);
-    this.admitAudience(context);
+    const context = this.turnContext();
+    this.admitAudience(input, context);
     const current = this.buddies.currentBriefing(context);
     this.memory = createMemorySnapshot(current.briefing, current.memoryGeneration);
     // Re-brief only when this provider session has not yet seen the current memory generation.
@@ -467,9 +469,9 @@ export class BuddyTurnPolicy implements TurnPolicy {
   startTurn(input: TurnInput, config: ResolvedExecutionConfig) {
     const owned = this.admittedChatRun;
     this.admittedChatRun = null;
-    if (owned) this.ownChatRun(owned, input);
+    if (owned) this.ownChatRun(owned);
     assertBuddyProviderSupportsMcp(config.provider);
-    const context = this.execution?.context ?? this.contextForInput(input);
+    const context = this.turnContext();
     const mcpServers = this.buddies.mcpServers({
       context,
       conversationId: this.host.id,
@@ -484,9 +486,9 @@ export class BuddyTurnPolicy implements TurnPolicy {
    * The admitted chat run owns this turn until it drains: its deadline (the run's lease) expires
    * as max_runtime_timeout, never user_stop, and the run settles once on the terminal event.
    */
-  private ownChatRun(owned: OwnedChatRun, input: TurnInput): void {
+  private ownChatRun(owned: OwnedChatRun): void {
     this.execution = {
-      context: { ...this.contextForInput(input), coordinationRunId: owned.id },
+      context: { ...this.turnContext(), coordinationRunId: owned.id },
       leaseToken: owned.claim_token,
     };
     const timer = setTimeout(
@@ -503,8 +505,8 @@ export class BuddyTurnPolicy implements TurnPolicy {
     });
   }
 
-  spawned(input: TurnInput, review: { attemptId: string; messageStart: number }): void {
-    this.reviewTicket = { ...review, context: this.contextForInput(input) };
+  spawned(review: { attemptId: string; messageStart: number }): void {
+    this.reviewTicket = { ...review, context: this.turnContext() };
   }
 
   spawnFailed(): void {
@@ -531,7 +533,7 @@ export class BuddyTurnPolicy implements TurnPolicy {
         completedAt: new Date().toISOString(),
         messages: messages
           .slice(ticket.messageStart)
-          .map(({ role, content }) => ({ role, content })),
+          .map(({ role, content, toolCall }) => ({ role, content, toolCall })),
       });
     } catch (error) {
       console.error('[buddies] Could not enqueue memory review', this.host.id, error);

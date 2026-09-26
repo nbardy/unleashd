@@ -40,8 +40,6 @@ test('a scoped doc is read and written at its own scope, never as the Buddy-scop
   assert.equal(url.searchParams.get('scope'), 'workspace');
   assert.equal(url.searchParams.get('scopeId'), 'ws-1');
   assert.equal(url.searchParams.get('name'), 'release-checklist');
-  const thread = addressOf(doc({ scope: { kind: 'thread', threadId: 'post-9' } }));
-  assert.deepEqual(thread, { scope: 'thread', scopeId: 'post-9', name: 'release-checklist' });
 });
 
 test('revision history lists newest first with its reason and author', () => {

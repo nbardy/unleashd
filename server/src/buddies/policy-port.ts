@@ -3,7 +3,6 @@ import type { McpServerSpec } from '@nbardy/agent-cli';
 import type { BuddyContext } from '@unleashd/shared';
 import { TURN_MAX_RUNTIME_MS } from '../constants/timeouts';
 import type { Briefings, ResolvedBuddyConversation } from './briefing';
-import { docScopeFor } from './core';
 import type { Grants, TurnGrant } from './grants';
 import { MCP_SERVER_NAME } from './mcp';
 import type { CompletedBuddyTurn, MemoryReviewer } from './memory-review';
@@ -74,7 +73,6 @@ export function createBuddyPolicyPort(deps: {
         buddyId: context.buddyId,
         workspaceId: context.workspaceId,
         conversationId,
-        scope: docScopeFor(context),
         runId: context.coordinationRunId ?? null,
       });
       if (owner) grants.promoteToOwner(conversationId);

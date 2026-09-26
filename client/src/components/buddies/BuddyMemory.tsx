@@ -34,18 +34,12 @@ export function addressOf(doc: Doc): DocAddress {
       return { scope: 'buddy', name: doc.name };
     case 'workspace':
       return { scope: 'workspace', scopeId: doc.scope.workspaceId, name: doc.name };
-    case 'task':
-      return { scope: 'task', scopeId: doc.scope.taskId, name: doc.name };
-    case 'thread':
-      return { scope: 'thread', scopeId: doc.scope.threadId, name: doc.name };
   }
 }
 
 const SCOPE_LABEL: { [K in DocScope['kind']]: string } = {
   buddy: 'This Buddy',
   workspace: 'Workspace',
-  task: 'Task',
-  thread: 'Thread',
 };
 
 export const readUrl = (buddyId: string, kind: DocKind, address: DocAddress) =>

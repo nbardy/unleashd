@@ -319,7 +319,7 @@ export class TurnRunner {
       throw error;
     }
 
-    host.policy.spawned(turn.input, {
+    host.policy.spawned({
       attemptId: this.activeAttemptId ?? crypto.randomUUID(),
       messageStart: Math.max(0, host.messages.length - 1),
     });

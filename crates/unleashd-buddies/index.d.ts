@@ -210,12 +210,14 @@ export interface DocRevision {
   createdAt: string
 }
 
-/** Doc audience. Columns (scope_kind, scope_id); Buddy scope's id is the buddy, Workspace's the workspace. */
+/**
+ * Doc audience. Columns (scope_kind, scope_id); Buddy scope's id is the buddy, Workspace's the workspace.
+ * Memory kinds (soul, working, long_term) are always Buddy-scoped: one per Buddy, read by every
+ * turn kind and the owner's Memory tab. Only shared docs may be Workspace-scoped.
+ */
 export type DocScope =
   | { kind: 'buddy' }
   | { kind: 'workspace'; workspaceId: string }
-  | { kind: 'task'; taskId: string }
-  | { kind: 'thread'; threadId: string }
 
 export interface DocWrite {
   doc: DocRef

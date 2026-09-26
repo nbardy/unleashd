@@ -71,7 +71,7 @@ export interface TurnPolicy {
     input: TurnInput,
     config: ResolvedExecutionConfig
   ): { mcpServers?: Record<string, McpServerSpec> };
-  spawned(input: TurnInput, review: { attemptId: string; messageStart: number }): void;
+  spawned(review: { attemptId: string; messageStart: number }): void;
   spawnFailed(): void;
   formatToolResult(output: unknown): string | null;
   streamCompleted(): void;

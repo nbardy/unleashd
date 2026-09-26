@@ -72,9 +72,9 @@ fn workload(s: &mut unleashd_buddies::Store) {
     let written = s
         .write_doc(&mid, DocWrite { doc: doc.clone(), content: "m".into(), base_revision: 0, reason: "r".into(), key: "d".into() })
         .unwrap();
-    let task_doc = DocRef { scope: DocScope::Task { task_id: "none".into() }, ..doc.clone() };
+    let shared_doc = DocRef { scope: DocScope::Workspace { workspace_id: WS.into() }, kind: DocKind::Shared, ..doc.clone() };
     s.read_doc(&ic, doc).unwrap();
-    s.read_doc(&ic, task_doc).unwrap();
+    s.read_doc(&ic, shared_doc).unwrap();
     s.list_docs(&ic, "ic", DocKind::Working).unwrap();
     s.doc_revisions(&ic, &written.id).unwrap();
 

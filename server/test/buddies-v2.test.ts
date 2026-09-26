@@ -14,7 +14,7 @@ import {
   type Post,
   type ThreadStat,
 } from '@unleashd/buddies-core';
-import { createDefaultConversationConfig } from '@unleashd/shared';
+import { type BuddyContext, createDefaultConversationConfig } from '@unleashd/shared';
 import express from 'express';
 import { BUDDY_TOOL_GUIDE, composeBriefing, createBriefings } from '../src/buddies/briefing';
 import { type StableConversationPorts, slotOf } from '../src/buddies/buddy-conversation-slots';
@@ -436,7 +436,6 @@ test('an MCP write fires the change bus in this process (B2)', async () => {
       buddyId: w.lead.id,
       workspaceId: w.ws,
       conversationId: 'c',
-      scope: { kind: 'buddy' },
       runId: null,
     });
     const before = w.events.length;
@@ -722,7 +721,9 @@ test('a scheduled run asks for help in the background and its answer comes back 
   }
 });
 
-test('the reviewer climbs the ladder on credit exhaustion and curates memory on the same endpoint', async () => {
+// The reviewer used to see prose only (tool calls dropped) in a private temp cwd, so it tried to
+// verify claims with file tools and the guard killed it (12 failed reviews, 2026-09 audit).
+test('the reviewer climbs the ladder on credit exhaustion, sees tool calls, runs in the workspace, and curates memory on the same endpoint', async () => {
   const scratch = mkdtempSync(join(tmpdir(), 'buddies-review-'));
   const dbPath = join(scratch, 'db.sqlite');
   const core = await BuddiesCore.open(dbPath);
@@ -740,6 +741,7 @@ test('the reviewer climbs the ladder on credit exhaustion and curates memory on 
   const grants = createGrants({ ttlMs: 60_000 });
   const endpoint = await startMcpEndpoint({ core, events, grants, uploadsRoot: () => scratch });
   const harnesses: string[] = [];
+  const requests: ProviderRequest[] = [];
   let spec!: McpServerSpec;
   const reviewer = createMemoryReviewer({
     core,
@@ -748,6 +750,7 @@ test('the reviewer climbs the ladder on credit exhaustion and curates memory on 
     logger: { warn: () => undefined },
     execute: ((request: ProviderRequest) => {
       harnesses.push(request.harness);
+      requests.push(request);
       spec = request.mcpServers!.unleashd_memory;
       const exhausted = request.harness === 'codex';
       const completed = (async () => {
@@ -791,9 +794,17 @@ test('the reviewer climbs the ladder on credit exhaustion and curates memory on 
     reviewer.enqueue({
       attemptId: 'a1',
       conversationId: 'chat',
-      context: { buddyId: lead.id, workspaceId: ws },
+      context: { buddyId: lead.id, workspaceId: ws, coordinationRunId: 'run-chat' },
       completedAt: new Date().toISOString(),
-      messages: [{ role: 'user', content: 'I prefer dark mode' }],
+      messages: [
+        { role: 'user', content: 'I prefer dark mode' },
+        {
+          role: 'assistant',
+          content: '',
+          toolCall: { name: 'Read', input: `agent_notes/theme.md ${'y'.repeat(600)}` },
+        },
+        { role: 'assistant', content: '', toolCall: { name: 'exec_command' } },
+      ],
     });
     const receipt = await until(
       async () =>
@@ -808,6 +819,15 @@ test('the reviewer climbs the ladder on credit exhaustion and curates memory on 
     assert.equal(body.model, 'grok-4.7-low');
     assert.equal(body.fallbackFrom, 'gpt-6-luna');
     assert.equal(body.writes.working, 1);
+    const prompt = requests[1].prompt;
+    assert.match(prompt, /\[tool call\] Read agent_notes\/theme\.md y+…\[truncated 221 chars\]/);
+    assert.ok(!prompt.includes('y'.repeat(401)), 'tool input is bounded');
+    assert.match(prompt, /\[tool call\] exec_command"/, 'an input-less call is its name');
+    assert.deepEqual(
+      requests.map((r) => r.cwd),
+      [scratch, scratch],
+      'every rung runs in the workspace root'
+    );
     const working = await core.readDoc(OWNER, {
       buddyId: lead.id,
       scope: { kind: 'buddy' },
@@ -816,6 +836,84 @@ test('the reviewer climbs the ladder on credit exhaustion and curates memory on 
     });
     assert.equal(working?.content, 'Owner prefers dark mode');
     assert.equal(await probe(spec), 401, "the reviewer's grant dies with its attempt");
+  } finally {
+    reviewer.stop();
+    await endpoint.close();
+    rmSync(scratch, { recursive: true, force: true });
+  }
+});
+
+// One 120 s budget used to cover the whole ladder, so a slow first rung starved the rest
+// (41 timed-out reviews). The budget is per rung, and a rung that times out climbs.
+test('a reviewer rung that outlives its timeout climbs to the next rung, which completes', async () => {
+  const scratch = mkdtempSync(join(tmpdir(), 'buddies-review-timeout-'));
+  const core = await BuddiesCore.open(join(scratch, 'db.sqlite'));
+  const ws = (await core.createWorkspace(OWNER, { name: 'Team', rootPath: scratch })).id;
+  const lead = await core.createBuddy(OWNER, {
+    workspaceId: ws,
+    slug: 'lead',
+    name: 'Lead',
+    role: 'r',
+    manager: { kind: 'nobody' },
+    backgroundEnabled: true,
+    key: 'lead',
+  });
+  const grants = createGrants({ ttlMs: 60_000 });
+  const endpoint = await startMcpEndpoint({
+    core,
+    events: createBuddyEvents(),
+    grants,
+    uploadsRoot: () => scratch,
+  });
+  const reviewer = createMemoryReviewer({
+    core,
+    grants,
+    spec: endpoint.spec,
+    timeoutMs: 200,
+    logger: { warn: () => undefined },
+    execute: ((request: ProviderRequest) => {
+      const spec = request.mcpServers!.unleashd_memory;
+      let stopped!: () => void;
+      const killed = new Promise<void>((resolve) => {
+        stopped = resolve;
+      });
+      const completed = (async () => {
+        // The first rung hangs until the reviewer stops it; the second does the work.
+        if (request.harness === 'codex') await killed;
+        else await call(spec, 'doc_read', { kind: 'working' });
+        return { exitCode: 0, signal: null, sessionId: 's', reason: 'success' };
+      })();
+      return {
+        child: { exitCode: 0 },
+        events: (async function* () {
+          await completed;
+          yield* [];
+        })(),
+        completed,
+        stop: () => stopped(),
+      };
+    }) as never,
+  });
+  try {
+    reviewer.start();
+    reviewer.enqueue({
+      attemptId: 'a1',
+      conversationId: 'chat',
+      context: { buddyId: lead.id, workspaceId: ws, coordinationRunId: 'run-chat' },
+      completedAt: new Date().toISOString(),
+      messages: [{ role: 'user', content: 'hello' }],
+    });
+    const receipt = await until(
+      async () =>
+        (await core.listEvents(lead.id, Number.MAX_SAFE_INTEGER, 20)).find(
+          (e) => e.op === 'memory_review'
+        ),
+      'the review receipt'
+    );
+    const body = JSON.parse(receipt.payload);
+    assert.equal(body.status, 'complete', body.error);
+    assert.equal(body.model, 'grok-4.7-low');
+    assert.equal(body.fallbackFrom, 'gpt-6-luna');
   } finally {
     reviewer.stop();
     await endpoint.close();
@@ -868,109 +966,109 @@ test('an unimported v33 file under BUDDIES_HOME is still found', async () => {
 });
 
 // Regression (2026-09-26): memory the reviewer saved after a chat never reached the next chat.
-// Real turns carry an owner_thread scope, so each chat read and wrote its own working and
-// long-term memory; a new chat opened on "(No working memory yet.)" while 77 per-chat copies
-// piled up for one Buddy. The ladder test above passed anyway: its turn had no scope, a shape
-// production never sends. This one uses the real shape end to end: a chat turn, the reviewer
-// writing through its own grant with the default scope, then a DIFFERENT chat's briefing.
-test(
-  "memory the reviewer saves after one chat is in the next chat's briefing",
-  {
-    // Fails today: memory is scoped per chat. Remove when working/long-term become per-Buddy.
-    todo: 'memory is per-chat (owner_thread scope)',
-  },
-  async () => {
-    const scratch = mkdtempSync(join(tmpdir(), 'buddies-carry-'));
-    const core = await BuddiesCore.open(join(scratch, 'db.sqlite'));
-    const ws = (await core.createWorkspace(OWNER, { name: 'Team', rootPath: scratch })).id;
-    const lead = await core.createBuddy(OWNER, {
-      workspaceId: ws,
-      slug: 'lead',
-      name: 'Lead',
-      role: 'r',
-      manager: { kind: 'nobody' },
-      backgroundEnabled: true,
-      key: 'lead',
+// Owner chats carried an owner_thread scope, so each chat read and wrote its own working and
+// long-term memory; a new chat opened on "(No working memory yet.)" while 519 per-chat copies
+// piled up. This uses the real shape end to end: an owner chat turn's context, the reviewer
+// writing through its own grant, then a DIFFERENT chat's briefing and the owner's Memory tab row.
+test("memory the reviewer saves after one chat is in the next chat's briefing", async () => {
+  const scratch = mkdtempSync(join(tmpdir(), 'buddies-carry-'));
+  const core = await BuddiesCore.open(join(scratch, 'db.sqlite'));
+  const ws = (await core.createWorkspace(OWNER, { name: 'Team', rootPath: scratch })).id;
+  const lead = await core.createBuddy(OWNER, {
+    workspaceId: ws,
+    slug: 'lead',
+    name: 'Lead',
+    role: 'r',
+    manager: { kind: 'nobody' },
+    backgroundEnabled: true,
+    key: 'lead',
+  });
+  const grants = createGrants({ ttlMs: 60_000 });
+  const reviewEndpoint = await startMcpEndpoint({
+    core,
+    events: createBuddyEvents(),
+    grants,
+    uploadsRoot: () => scratch,
+  });
+  // An owner chat turn's context: the conversation's, plus its admitted chat run.
+  const chat = (conversationId: string): BuddyContext => ({
+    buddyId: lead.id,
+    workspaceId: ws,
+    coordinationRunId: `run-${conversationId}`,
+  });
+  const reviewer = createMemoryReviewer({
+    core,
+    grants,
+    spec: reviewEndpoint.spec,
+    logger: { warn: () => undefined },
+    execute: ((request: ProviderRequest) => {
+      const spec = request.mcpServers!.unleashd_memory;
+      const completed = (async () => {
+        for (const [kind, content] of [
+          ['working', 'Mid-migration: step 2 of 3 done, waiting on the owner for step 3'],
+          ['long_term', 'Owner prefers restrained UI'],
+        ]) {
+          const read = await call(spec, 'doc_read', { kind });
+          assert.equal(read.isError, false, read.text);
+          const write = await call(spec, 'doc_write', {
+            kind,
+            content,
+            baseRevision: 0,
+            reason: 'from the chat',
+            key: kind,
+          });
+          assert.equal(write.isError, false, write.text);
+        }
+        return { exitCode: 0, signal: null, sessionId: 's', reason: 'success' };
+      })();
+      return {
+        child: { exitCode: 0 },
+        events: (async function* () {
+          await completed;
+          yield* [];
+        })(),
+        completed,
+        stop: () => undefined,
+      };
+    }) as never,
+  });
+  try {
+    reviewer.start();
+    reviewer.enqueue({
+      attemptId: 'a1',
+      conversationId: 'chat-A',
+      context: chat('chat-A'),
+      completedAt: new Date().toISOString(),
+      messages: [
+        { role: 'user', content: 'Do steps 1 and 2 of the migration; I will approve step 3.' },
+        { role: 'assistant', content: 'Steps 1 and 2 are done.' },
+      ],
     });
-    const grants = createGrants({ ttlMs: 60_000 });
-    const reviewEndpoint = await startMcpEndpoint({
-      core,
-      events: createBuddyEvents(),
-      grants,
-      uploadsRoot: () => scratch,
-    });
-    const chat = (conversationId: string) => ({
-      buddyId: lead.id,
-      workspaceId: ws,
-      knowledgeScope: { kind: 'owner_thread' as const, conversationId },
-    });
-    const reviewer = createMemoryReviewer({
-      core,
-      grants,
-      spec: reviewEndpoint.spec,
-      logger: { warn: () => undefined },
-      execute: ((request: ProviderRequest) => {
-        const spec = request.mcpServers!.unleashd_memory;
-        const completed = (async () => {
-          for (const [kind, content] of [
-            ['working', 'Mid-migration: step 2 of 3 done, waiting on the owner for step 3'],
-            ['long_term', 'Owner prefers restrained UI'],
-          ]) {
-            const read = await call(spec, 'doc_read', { kind });
-            assert.equal(read.isError, false, read.text);
-            const write = await call(spec, 'doc_write', {
-              kind,
-              content,
-              baseRevision: 0,
-              reason: 'from the chat',
-              key: kind,
-            });
-            assert.equal(write.isError, false, write.text);
-          }
-          return { exitCode: 0, signal: null, sessionId: 's', reason: 'success' };
-        })();
-        return {
-          child: { exitCode: 0 },
-          events: (async function* () {
-            await completed;
-            yield* [];
-          })(),
-          completed,
-          stop: () => undefined,
-        };
-      }) as never,
-    });
-    try {
-      reviewer.start();
-      reviewer.enqueue({
-        attemptId: 'a1',
-        conversationId: 'chat-A',
-        context: chat('chat-A'),
-        completedAt: new Date().toISOString(),
-        messages: [
-          { role: 'user', content: 'Do steps 1 and 2 of the migration; I will approve step 3.' },
-          { role: 'assistant', content: 'Steps 1 and 2 are done.' },
-        ],
-      });
-      const receipt = await until(
-        async () =>
-          (await core.listEvents(lead.id, Number.MAX_SAFE_INTEGER, 20)).find(
-            (e) => e.op === 'memory_review'
-          ),
-        'the review receipt'
-      );
-      assert.equal(JSON.parse(receipt.payload).status, 'complete');
+    const receipt = await until(
+      async () =>
+        (await core.listEvents(lead.id, Number.MAX_SAFE_INTEGER, 20)).find(
+          (e) => e.op === 'memory_review'
+        ),
+      'the review receipt'
+    );
+    assert.equal(JSON.parse(receipt.payload).status, 'complete');
 
-      const next = await composeBriefing(core, chat('chat-B'));
-      assert.match(next.briefing, /step 2 of 3 done/, 'working memory reaches the next chat');
-      assert.match(next.briefing, /Owner prefers restrained UI/, 'long-term memory reaches it');
-    } finally {
-      reviewer.stop();
-      await reviewEndpoint.close();
-      rmSync(scratch, { recursive: true, force: true });
-    }
+    const next = await composeBriefing(core, chat('chat-B'));
+    assert.match(next.briefing, /step 2 of 3 done/, 'working memory reaches the next chat');
+    assert.match(next.briefing, /Owner prefers restrained UI/, 'long-term memory reaches it');
+    const ownerTab = await core.readDoc(OWNER, {
+      buddyId: lead.id,
+      scope: { kind: 'buddy' },
+      kind: 'working',
+      name: '',
+    });
+    assert.match(ownerTab?.content ?? '', /step 2 of 3 done/, "the owner's Memory tab row");
+  } finally {
+    reviewer.stop();
+    await reviewEndpoint.close();
+    rmSync(scratch, { recursive: true, force: true });
   }
-);
+});
 
 test('the briefing tool guide stays inside its budget', () => {
   // A runtime throw on this budget failed every owner-thread turn on 2026-09-21; it is a test now.
@@ -1145,7 +1243,6 @@ test('owner routes: a DM request is answered over HTTP, typed errors keep their 
       buddyId: w.lead.id,
       workspaceId: w.ws,
       conversationId: 'c',
-      scope: { kind: 'buddy' },
       runId: null,
     });
     const searched = await call(w.endpoint.spec(grant), 'channel_read', {
