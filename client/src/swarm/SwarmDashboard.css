@@ -1,145 +1,48 @@
-/* =============================================================================
-   SwarmDashboard.css — Project-level overview for oompa worker swarms
-   ============================================================================= */
-
-.swarm-dashboard {
-  flex: 1;
-  overflow: hidden;
-  min-height: 0;
-}
-
-.swarm-dashboard-header {
-  gap: var(--sp-7);
-  padding: var(--sp-7) var(--sp-10);
-  border-bottom: 1px solid var(--border-subtle);
-}
-
-.swarm-dashboard-header h2 {
-  margin: 0;
-  font-size: var(--fs-6);
-  color: var(--text-emphasis);
-  font-weight: 500;
-}
-
-.swarm-dashboard-content {
-  flex: 1;
-  padding: var(--sp-9) var(--sp-10);
-  overflow-y: auto;
-  gap: var(--sp-8);
-  background: var(--bg-content);
-}
-
-/* Project card — each project with workers gets one of these */
-.swarm-project-card {
-  background: var(--bg-card);
-  border-radius: var(--ui-radius);
-  padding: var(--sp-8) var(--sp-9);
-  border: 1px solid var(--border-subtle);
-  border-left: 4px solid transparent;
-  cursor: pointer;
-  transition: all 0.2s;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: var(--sp-8);
-}
-
-.swarm-project-card:hover {
-  background: var(--bg-panel);
-  border-color: var(--border-default);
-  transform: translateY(-1px);
-}
-
-.swarm-project-info {
+/* SwarmDashboard.tsx — one card per swarm project, both layouts. */
+.swarm-dashboard-list {
   gap: var(--sp-4);
-  min-width: 0;
 }
 
-.swarm-project-name {
-  font-size: var(--fs-7);
-  font-weight: 600;
-  color: var(--text-emphasis);
+.swarm-dashboard-card {
+  gap: var(--sp-2);
+  padding: var(--sp-6) var(--sp-7);
+  border-left-width: 3px;
+  background: var(--bg-card);
+  color: inherit;
+  text-decoration: none;
+  transition: border-color 0.15s ease, background 0.15s ease;
 }
 
-.swarm-project-path {
-  font-size: var(--fs-3);
-  font-family: var(--font-mono);
+.swarm-dashboard-card:hover {
+  background: var(--bg-hover);
 }
 
-.swarm-project-stats {
-  gap: var(--sp-6);
-  flex-wrap: wrap;
+.swarm-dashboard-card[data-running="true"] {
+  box-shadow: inset 0 0 0 1px var(--ai-dim);
 }
 
-.swarm-stat {
-  gap: var(--sp-3);
-  font-size: var(--fs-3);
-  color: var(--text-secondary);
+.swarm-dashboard-card-top {
+  gap: var(--sp-4);
+  justify-content: space-between;
 }
 
-.swarm-stat-value {
-  font-weight: 600;
+.swarm-dashboard-card-name {
   font-size: var(--fs-5);
+  font-weight: 600;
 }
 
-.swarm-stat-value.running {
-  color: var(--ai);
-}
-
-.swarm-stat-value.idle {
-  color: var(--text-muted);
-}
-
-.swarm-stat-divider {
-  width: 1px;
-  height: 16px;
-  background: var(--border-subtle);
-}
-
-.swarm-project-right {
-  align-items: flex-end;
-  gap: var(--sp-5);
-  flex-shrink: 0;
-}
-
-.swarm-time-ago {
+.swarm-dashboard-card-path {
+  font-family: var(--font-mono);
   font-size: var(--fs-2);
 }
 
-.swarm-open-btn {
-  padding: var(--sp-4) var(--sp-7);
-  background: color-mix(in srgb, var(--primary) 15%, transparent);
-  border: 1px solid color-mix(in srgb, var(--primary) 40%, transparent);
-  color: var(--primary-bright);
-  font-size: var(--fs-4);
-  font-weight: 500;
-  transition: all 0.2s;
-  white-space: nowrap;
+.swarm-dashboard-card-stats {
+  flex-wrap: wrap;
+  gap: var(--sp-2) var(--sp-6);
+  font-size: var(--fs-2);
 }
 
-.swarm-open-btn:hover {
-  background: color-mix(in srgb, var(--primary) 25%, transparent);
-  border-color: var(--primary);
-  color: var(--primary-bright);
+.swarm-dashboard-card-open {
+  margin-left: auto;
+  color: var(--primary);
 }
-
-/* Running pulse on project cards with active workers */
-.swarm-project-card.has-running {
-  border-left-color: var(--ai);
-}
-
-.swarm-project-card.has-running .swarm-project-name::after {
-  content: "";
-  display: inline-block;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--ai);
-  margin-left: 10px;
-  animation: pulse 1.5s infinite;
-  vertical-align: middle;
-}
-
-/* Swarm count badges */
-
-/* Reuse state-badge from Gallery.css */

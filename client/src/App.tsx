@@ -119,9 +119,6 @@ const BuddiesMobile = lazyNamed(() =>
 const BuddyDetailMobile = lazyNamed(() =>
   import('./mobile/buddies/BuddyDetailMobile').then((m) => m.BuddyDetailMobile)
 );
-const SwarmsMobile = lazyNamed(SWARM_PAGE_LOADERS.dashboardMobile);
-const SwarmDetailMobile = lazyNamed(SWARM_PAGE_LOADERS.detailMobile);
-const SwarmAnalyticsMobile = lazyNamed(SWARM_PAGE_LOADERS.analyticsMobile);
 const SearchMobile = lazyNamed(() =>
   import('./mobile/search/SearchMobile').then((m) => m.SearchMobile)
 );
@@ -149,9 +146,9 @@ const DEVICE_CHUNKS: Record<DeviceKind, ReadonlyArray<{ preload: () => Promise<u
     ChatMobile,
     BuddiesMobile,
     BuddyDetailMobile,
-    SwarmsMobile,
-    SwarmDetailMobile,
-    SwarmAnalyticsMobile,
+    SwarmDashboard,
+    SwarmDetail,
+    SwarmAnalytics,
     SearchMobile,
     ChannelsMobile,
     BuddyWorkspaceActivity,
@@ -208,12 +205,20 @@ const ROUTES: RouteDef[] = [
     desktop: () => <BuddiesDashboard />,
     mobile: () => <BuddyDetailMobile />,
   },
-  { path: '/workers', desktop: () => <SwarmDashboard />, mobile: () => <SwarmsMobile /> },
-  { path: '/workers/detail', desktop: () => <SwarmDetail />, mobile: () => <SwarmDetailMobile /> },
+  {
+    path: '/workers',
+    desktop: () => <SwarmDashboard layout="wide" />,
+    mobile: () => <SwarmDashboard layout="narrow" />,
+  },
+  {
+    path: '/workers/detail',
+    desktop: () => <SwarmDetail layout="wide" />,
+    mobile: () => <SwarmDetail layout="narrow" />,
+  },
   {
     path: '/workers/analytics',
-    desktop: () => <SwarmAnalytics />,
-    mobile: () => <SwarmAnalyticsMobile />,
+    desktop: () => <SwarmAnalytics layout="wide" />,
+    mobile: () => <SwarmAnalytics layout="narrow" />,
   },
   {
     path: '/done',

@@ -1,945 +1,414 @@
-/* =============================================================================
-   SwarmDetail.css — Drilled-in swarm view with parallel chat panes, roster,
-   git log, and oompa config peek.
-
-   Layout:
-   ┌──────────────────────────────────────────────────────┐
-   │ Header: ← Swarm Projects Overview  project_name      │
-   ├────────┬─────────────────────────────────────────────┤
-   │ Roster │ Left Chat Pane       │ Right Chat Pane       │
-   │ 220px  │ flex: 1              │ flex: 1               │
-   ├────────┴──────────────────────┴───────────────────────┤
-   │ Bottom panels: Git Log (left) │ Config (right)        │
-   └──────────────────────────────┴────────────────────────┘
-   ============================================================================= */
-
-.swarm-detail {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  min-height: 0;
+/* SwarmDetail.tsx + SwarmDetailPanels.tsx, both layouts. */
+.swarm-detail-mono {
+  font-family: var(--font-mono);
 }
 
-.swarm-detail-header {
-  gap: var(--sp-7);
-  padding: var(--sp-6) var(--sp-9);
-  border-bottom: 1px solid var(--border-subtle);
-  background: var(--bg-card);
-  flex-shrink: 0;
-}
-
-.swarm-detail-header h2 {
-  margin: 0;
-  font-size: var(--fs-6);
-  color: var(--text-emphasis);
-  font-weight: 600;
-}
-
-.swarm-detail-title-block {
-  gap: var(--sp-1);
-}
-
-.swarm-detail-header-stats {
-  margin-left: auto;
-  gap: var(--sp-6);
-}
-
-.swarm-run-controls {
-  gap: var(--sp-4);
-}
-
-.swarm-run-actions {
-  display: flex;
-  gap: var(--sp-3);
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity 0.2s ease-in-out;
-}
-
-.swarm-run-controls:hover .swarm-run-actions {
-  opacity: 1;
-  pointer-events: auto;
-}
-
-.swarm-header-badge.state-running {
-  padding: var(--sp-2) var(--sp-6);
-  font-size: var(--fs-4);
-}
-
-.swarm-header-badge.state-running .state-indicator {
-  width: 10px;
-  height: 10px;
-}
-
-/* Info icon button + hover tooltip for verbose project stats */
-.swarm-info-btn-wrap {
-  position: relative;
-}
-
-.swarm-info-btn {
-  background: none;
-  border: none;
-  padding: 0 var(--sp-2);
-  font-size: var(--fs-5);
-  cursor: default;
-  line-height: 1;
-}
-
-.swarm-info-btn:hover,
-.task-new {
-  color: var(--text-secondary);
-}
-
-.swarm-info-tooltip {
-  display: none;
-  position: absolute;
-  top: calc(100% + 6px);
-  right: 0;
-  background: var(--bg-elevated);
-  padding: var(--sp-4) var(--sp-6);
-  font-size: var(--fs-2);
-  color: var(--text-secondary);
-  white-space: nowrap;
-  z-index: 100;
-  flex-direction: column;
-  gap: var(--sp-2);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
-  pointer-events: none;
-}
-
-.swarm-info-btn-wrap:hover .swarm-info-tooltip {
-  display: flex;
-}
-
-/* =============================================================================
-   Main body — roster sidebar + parallel panes
-   ============================================================================= */
-
-.swarm-detail-body {
-  flex: 1;
-  display: flex;
-  overflow: hidden;
-  min-height: 0;
-}
-
-/* =============================================================================
-   Worker Roster (left sidebar)
-   ============================================================================= */
-
-.swarm-roster {
-  width: 220px;
-  flex-shrink: 0;
-  background: var(--bg-card);
-  border-right: 1px solid var(--border-subtle);
-  overflow-y: auto;
-}
-
-.swarm-roster-list {
-  flex: 1;
-  overflow-y: auto;
-  padding: var(--sp-3) 0;
-}
-
-.roster-worker {
+.swarm-detail-signals {
   flex-wrap: wrap;
-  gap: var(--sp-4);
-  padding: var(--sp-4) var(--sp-6);
-  cursor: pointer;
-  transition: background 0.15s;
-  font-size: var(--fs-4);
-  color: var(--text-secondary);
-}
-
-.roster-worker:hover,
-.swarm-panel-toggle:hover,
-.git-log-entry:hover {
-  background: var(--bg-hover);
-}
-
-.roster-worker.selected {
-  background: color-mix(in srgb, var(--ai) 12%, transparent);
-  color: var(--ai-bright);
-  border-left: 3px solid var(--ai);
-  padding-left: var(--sp-5);
-}
-
-.roster-exec-group.selected {
-  background: color-mix(in srgb, var(--ai) 6%, transparent);
-}
-
-.roster-status-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  flex-shrink: 0;
-}
-
-.roster-status-dot.running {
-  background: var(--ai);
-  animation: pulse 1.5s infinite;
-}
-
-.roster-status-dot.idle {
-  background: var(--text-muted);
-}
-
-.roster-worker-id {
-  flex: 1;
-  font-family: var(--font-mono);
+  gap: var(--sp-3);
   font-size: var(--fs-3);
 }
 
-.roster-worker-msgs,
-.expand-indicator {
-  font-size: var(--fs-1);
+.swarm-detail-signal[data-signal="stop"] {
+  color: var(--warning);
+  border-color: var(--warning);
 }
 
-/* (L/R pane buttons removed — click worker to select) */
-
-/* Roster summary stats */
-.roster-stats {
-  padding: var(--sp-6) var(--sp-6);
-  border-top: 1px solid var(--border-subtle);
-  gap: var(--sp-2);
-  font-size: var(--fs-3);
+.swarm-detail-signal[data-signal="kill"] {
+  color: var(--danger);
+  border-color: var(--danger);
 }
 
-.roster-stat-row {
-  display: flex;
-  justify-content: space-between;
+.swarm-detail-signal[data-confirm="true"][data-signal="stop"] {
+  background: var(--warning);
+  color: var(--bg-card);
 }
 
-.roster-stat-value {
-  font-weight: 600;
-  color: var(--text-secondary);
-}
-
-/* =============================================================================
-   Parallel Chat Panes (center)
-   ============================================================================= */
-
-.swarm-panes {
-  flex: 1;
-  display: flex;
-  overflow: hidden;
-  min-width: 0;
-}
-
-.worker-chat-pane,
-.swarm-bottom-panel {
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-}
-
-.worker-chat-pane + .worker-chat-pane,
-.swarm-bottom-panel + .swarm-bottom-panel {
-  border-left: 1px solid var(--border-subtle);
-}
-
-.worker-chat-pane.empty {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--bg-content);
-}
-
-.worker-pane-header {
-  gap: var(--sp-5);
-  padding: var(--sp-4) var(--sp-7);
-  background: var(--bg-card);
-  border-bottom: 1px solid var(--border-subtle);
-  flex-shrink: 0;
-}
-
-.worker-pane-header.pane-cyan {
-  border-bottom-color: var(--ai);
-}
-
-.worker-pane-header.pane-magenta {
-  border-bottom-color: var(--meta);
-}
-
-.worker-pane-id {
-  font-family: var(--font-mono);
-  font-size: var(--fs-3);
-}
-
-.worker-pane-provider {
-  font-size: var(--fs-1);
-  padding: var(--sp-1) var(--sp-3);
-  border-radius: var(--ui-radius);
-  font-weight: 600;
-  text-transform: uppercase;
-}
-
-.worker-pane-provider.provider-claude {
-  background: color-mix(in srgb, var(--primary) 20%, transparent);
-  color: var(--primary);
-}
-
-.worker-pane-provider.provider-codex {
-  background: color-mix(in srgb, var(--meta) 20%, transparent);
-  color: var(--meta);
-}
-
-.worker-pane-provider.provider-opencode {
-  background: color-mix(in srgb, var(--success) 20%, transparent);
-  color: var(--success);
-}
-.worker-pane-provider.provider-gemini {
-  background: color-mix(in srgb, var(--success) 20%, transparent);
-  color: var(--user-bright);
-}
-
-.worker-pane-messages {
-  flex: 1;
-  overflow: hidden;
-  min-height: 0;
-}
-
-/* Pane label — Task Log / Review */
-.pane-label {
-  font-size: var(--fs-1);
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  padding: var(--sp-1) var(--sp-3);
-  border-radius: var(--ui-radius);
-}
-
-.pane-label.cyan {
-  background: color-mix(in srgb, var(--ai) 15%, transparent);
-  color: var(--ai);
-}
-
-.pane-label.magenta {
-  background: color-mix(in srgb, var(--meta) 15%, transparent);
-  color: var(--meta);
-}
-
-/* =============================================================================
-   Bottom Panels — Git Log + Config
-   ============================================================================= */
-
-.swarm-bottom-panels {
-  display: flex;
-  border-top: 1px solid var(--border-subtle);
-  height: 240px;
-  flex-shrink: 0;
-  overflow: hidden;
-  transition: height 0.2s ease;
-}
-
-/* Collapse the bottom panel container when both panels are collapsed */
-.swarm-bottom-panels:has(.swarm-bottom-panel.collapsed + .swarm-bottom-panel.collapsed) {
-  height: auto;
-}
-
-.swarm-panel-header {
-  padding: var(--sp-5) var(--sp-7);
-  font-size: var(--fs-3);
-  font-weight: 600;
-  color: var(--text-secondary);
-  background: var(--bg-card);
-  border-bottom: 1px solid var(--border-subtle);
-  flex-shrink: 0;
-  gap: var(--sp-4);
-}
-
-/* Clickable variant — used when panel has collapse toggle */
-.swarm-panel-toggle {
-  width: 100%;
-  text-align: left;
-  border: none;
-  cursor: pointer;
-  transition: background 0.15s;
-  border-radius: 0;
-}
-
-.panel-toggle-icon {
-  font-size: var(--fs-1);
-  flex-shrink: 0;
-}
-
-/* Collapsed panel: hide content, shrink height */
-.swarm-bottom-panel.collapsed {
-  flex: 0 0 auto;
-  width: 50%;
-}
-
-.swarm-bottom-panel.collapsed .swarm-panel-header,
-.roster-exec-group:last-child {
-  border-bottom: none;
-}
-
-.swarm-panel-content {
-  flex: 1;
-  overflow-y: auto;
-  padding: var(--sp-4) 0;
-  background: var(--bg-content);
-}
-
-/* Git Log entries */
-.git-log-entry {
-  display: flex;
-  align-items: baseline;
-  gap: var(--sp-5);
-  padding: var(--sp-2) var(--sp-7);
-  font-size: var(--fs-3);
-  transition: background 0.1s;
-}
-
-.git-hash {
-  font-family: var(--font-mono);
-  color: var(--ai);
-  flex-shrink: 0;
-}
-
-.git-message {
-  flex: 1;
-  color: var(--text-primary);
-}
-
-.git-author {
-  flex-shrink: 0;
-  font-size: var(--fs-2);
-}
-
-.git-date {
-  flex-shrink: 0;
-  font-size: var(--fs-2);
-  white-space: nowrap;
-}
-
-/* Config section */
-.config-summary {
-  padding: var(--sp-4) var(--sp-7);
-  gap: var(--sp-4);
-}
-
-.config-worker-row {
-  gap: var(--sp-5);
-  font-size: var(--fs-3);
-  color: var(--text-primary);
-  padding: var(--sp-2) 0;
-}
-
-.config-model-badge {
-  font-size: var(--fs-1);
-  padding: var(--sp-1) var(--sp-4);
-  border-radius: var(--ui-radius);
-  font-weight: 600;
-  background: color-mix(in srgb, var(--primary) 15%, transparent);
-  color: var(--primary-bright);
-}
-
-.config-count,
-.run-time,
-.run-review-time {
-  font-size: var(--fs-2);
-}
-
-.config-prompt-path {
-  font-family: var(--font-mono);
-  font-size: var(--fs-2);
-  color: var(--ai);
-  cursor: pointer;
-  transition: color 0.15s;
-}
-
-.config-prompt-path:hover {
-  color: var(--ai-bright);
-  text-decoration: underline;
-}
-
-.config-prompt-content {
-  margin: 4px 0 8px 16px;
-  padding: var(--sp-4) var(--sp-6);
-  background: var(--bg-panel);
-  border-radius: var(--ui-radius);
-  border-left: 2px solid var(--ai-dim);
-  font-size: var(--fs-2);
-  font-family: var(--font-mono);
-  color: var(--text-secondary);
-  white-space: pre-wrap;
-  max-height: 200px;
-  overflow-y: auto;
-}
-
-/* Loading / error states */
-.panel-loading,
-.panel-error,
-.panel-empty {
-  padding: var(--sp-7);
-  text-align: center;
-  color: var(--text-muted);
-  font-size: var(--fs-3);
-}
-
-/* =============================================================================
-   Role Badges — exec (work), review, fix
-   ============================================================================= */
-
-.role-badge {
-  display: inline-block;
-  padding: var(--sp-1) var(--sp-3);
-  border-radius: var(--ui-radius);
-  font-size: var(--fs-1);
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-}
-
-.role-badge.role-work {
-  background: color-mix(in srgb, var(--ai) 18%, transparent);
-  color: var(--ai);
-}
-
-.role-badge.role-review {
-  background: color-mix(in srgb, var(--meta) 18%, transparent);
-  color: var(--meta);
-}
-
-.role-badge.role-fix {
-  background: color-mix(in srgb, var(--queue) 18%, transparent);
-  color: var(--queue);
-}
-
-/* Model name in roster */
-.roster-model {
-  font-size: var(--fs-1);
-  font-family: var(--font-mono);
-  flex-shrink: 0;
-}
-
-/* Exec group container — visual grouping of exec + its reviews */
-.roster-exec-group {
-  border-bottom: 1px solid var(--border-subtle);
-}
-
-/* (Nested review rows removed — reviews shown in right pane on click) */
-
-/* Review count badge on exec row */
-.roster-review-count {
-  font-size: var(--fs-1);
-  padding: var(--sp-1) var(--sp-2);
-  border-radius: var(--ui-radius);
-  background: color-mix(in srgb, var(--meta) 15%, transparent);
-  color: var(--meta);
-  font-weight: 600;
-  flex-shrink: 0;
-}
-
-/* Small verdict indicator pip */
-.verdict-pip {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  flex-shrink: 0;
-}
-
-.verdict-pip.verdict-approved {
-  background: var(--success);
-}
-
-.verdict-pip.verdict-needs-changes {
-  background: var(--queue);
-}
-
-.verdict-pip.verdict-rejected {
+.swarm-detail-signal[data-confirm="true"][data-signal="kill"] {
   background: var(--danger);
+  color: var(--bg-card);
 }
 
-.verdict-pip.verdict-pending {
-  background: var(--ai);
-  animation: pulse 1.5s infinite;
-}
-
-/* =============================================================================
-   Tab Bar — Workers / Reviews
-   ============================================================================= */
-
-.swarm-tabs {
-  display: flex;
-  gap: 0;
+.swarm-detail-tabs {
+  gap: var(--sp-2);
   border-bottom: 1px solid var(--border-subtle);
-  padding: 0 var(--sp-9);
-  flex-shrink: 0;
-  background: var(--bg-card);
 }
 
-.swarm-tab {
-  padding: var(--sp-5) var(--sp-8);
+.swarm-detail-tab {
+  padding: var(--sp-4) var(--sp-6);
   border: none;
-  border-radius: 0;
-  outline: none;
-  background: transparent;
-  font-size: var(--fs-4);
-  font-weight: 500;
-  cursor: pointer;
   border-bottom: 2px solid transparent;
-  transition: all 0.15s;
+  background: none;
+  color: var(--text-muted);
+  font-size: var(--fs-4);
+  cursor: pointer;
 }
 
-.swarm-tab:focus {
-  outline: none;
-}
-
-.swarm-tab:hover {
+.swarm-detail-tab[aria-selected="true"] {
   color: var(--text-primary);
-}
-
-.swarm-tab.active {
-  color: var(--text-emphasis);
   border-bottom-color: var(--primary);
 }
 
-/* Verdict badges */
-.verdict-badge {
-  padding: var(--sp-1) var(--sp-4);
+/* ---- Workers, wide: roster + panes ---- */
+.swarm-detail-workers {
+  align-items: stretch;
+  gap: var(--sp-6);
+  flex: none;
+  height: 70vh;
+}
+
+.swarm-detail-roster {
+  flex: none;
+  width: 220px;
+  gap: var(--sp-1);
+  overflow-y: auto;
+}
+
+.swarm-detail-roster-row {
+  gap: var(--sp-3);
+  padding: var(--sp-3) var(--sp-4);
+  border: 1px solid transparent;
+  border-radius: var(--ui-radius);
+  background: none;
+  color: var(--text-primary);
+  font-size: var(--fs-3);
+  text-align: left;
+  cursor: pointer;
+}
+
+.swarm-detail-roster-row:hover {
+  background: var(--bg-hover);
+}
+
+.swarm-detail-roster-row[aria-pressed="true"] {
+  background: var(--bg-selected);
+  border-color: var(--border-default);
+}
+
+.swarm-detail-review-count {
+  margin-left: auto;
+  color: var(--meta);
+  font-size: var(--fs-1);
+}
+
+.swarm-verdict-pip {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+
+.swarm-detail-panes {
+  flex: 1;
+  align-items: stretch;
+  gap: var(--sp-6);
+  min-width: 0;
+}
+
+.swarm-detail-pane {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid var(--border-subtle);
+  border-top: 2px solid var(--ai);
+  border-radius: var(--ui-radius);
+  background: var(--bg-card);
+  overflow: hidden;
+}
+
+.swarm-detail-pane[data-accent="review"] {
+  border-top-color: var(--meta);
+}
+
+.swarm-detail-pane-head {
+  gap: var(--sp-4);
+  padding: var(--sp-3) var(--sp-5);
+  border-bottom: 1px solid var(--border-subtle);
+  font-size: var(--fs-2);
+}
+
+.swarm-detail-pane-messages {
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.swarm-detail-role {
+  padding: 0 var(--sp-2);
+  border-radius: var(--ui-radius);
+  background: var(--bg-elevated);
+  color: var(--meta);
+  font-size: var(--fs-1);
+  text-transform: uppercase;
+}
+
+/* ---- Workers, narrow: stacked groups ---- */
+.swarm-detail-groups {
+  gap: var(--sp-5);
+}
+
+.swarm-detail-group {
+  gap: var(--sp-3);
+  padding: var(--sp-5);
+  background: var(--bg-card);
+}
+
+.swarm-detail-worker-link {
+  gap: var(--sp-4);
+  padding: var(--sp-4) var(--sp-5);
+  color: inherit;
+  font-size: var(--fs-5);
+  text-decoration: none;
+}
+
+.swarm-detail-worker-state {
+  margin-left: auto;
+  font-size: var(--fs-2);
+}
+
+.swarm-detail-snippet {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  font-size: var(--fs-3);
+}
+
+.swarm-detail-group-reviews {
+  gap: var(--sp-2);
+  padding-left: var(--sp-6);
+  border-left: 2px solid var(--border-subtle);
+  font-size: var(--fs-2);
+}
+
+/* ---- Verdicts (runs panel + worker lists) ---- */
+.swarm-verdict {
+  align-self: flex-start;
+  padding: 0 var(--sp-3);
   border-radius: var(--ui-radius);
   font-size: var(--fs-1);
-  font-weight: 700;
-  letter-spacing: 0.5px;
-  margin-left: auto;
+  font-weight: 600;
+  text-transform: uppercase;
 }
 
-.verdict-badge.verdict-approved {
-  background: color-mix(in srgb, var(--success) 20%, transparent);
-  color: var(--success-bright);
+.swarm-verdict[data-verdict="approved"],
+.swarm-verdict-pip[data-verdict="approved"] {
+  background: var(--success);
+  color: var(--text-on-accent);
 }
 
-.verdict-badge.verdict-needs-changes {
-  background: color-mix(in srgb, var(--queue) 20%, transparent);
-  color: var(--queue);
+.swarm-verdict[data-verdict="needs-changes"],
+.swarm-verdict-pip[data-verdict="needs-changes"] {
+  background: var(--queue);
+  color: var(--text-on-accent);
 }
 
-.verdict-badge.verdict-rejected {
-  background: color-mix(in srgb, var(--danger) 20%, transparent);
-  color: var(--danger);
+.swarm-verdict[data-verdict="rejected"],
+.swarm-verdict-pip[data-verdict="rejected"] {
+  background: var(--danger);
+  color: var(--text-on-accent);
 }
 
-.verdict-badge.verdict-pending {
-  background: color-mix(in srgb, var(--ai) 15%, transparent);
-  color: var(--ai);
+/* ---- Run overview ---- */
+.swarm-detail-runs {
+  gap: var(--sp-6);
 }
 
-.verdict-badge.verdict-unknown {
-  background: color-mix(in srgb, var(--text-muted) 15%, transparent);
-  color: var(--text-muted);
+.swarm-detail-run-picker {
+  gap: var(--sp-3);
+  overflow-x: auto;
 }
 
-/* =============================================================================
-   Runs Tab — structured run history with metrics and review logs
-   ============================================================================= */
-
-.swarm-runs-body {
-  flex: 1;
-  overflow-y: auto;
-  padding: var(--sp-7) var(--sp-9);
-  min-height: 0;
+.swarm-detail-run-chip {
+  flex: none;
+  gap: var(--sp-4);
+  padding: var(--sp-3) var(--sp-5);
+  background: var(--bg-card);
+  color: var(--text-primary);
+  font-size: var(--fs-2);
+  cursor: pointer;
 }
 
-.swarm-runs-panel {
+.swarm-detail-run-chip[data-active="true"] {
+  border-color: var(--primary);
+  background: var(--bg-selected);
+}
+
+.swarm-detail-card {
+  gap: var(--sp-5);
+  padding: var(--sp-6);
+  background: var(--bg-card);
+}
+
+.swarm-detail-card h4 {
+  margin: 0;
+  font-size: var(--fs-4);
+}
+
+.swarm-detail-card-head {
+  flex-wrap: wrap;
+  gap: var(--sp-6);
+  font-size: var(--fs-2);
+}
+
+.swarm-detail-run-stats {
+  flex-wrap: wrap;
   gap: var(--sp-7);
 }
 
-/* Run selector — single horizontal scrollable row */
-.runs-selector {
-  display: flex;
-  gap: var(--sp-4);
-  flex-wrap: nowrap;
-  overflow-x: auto;
-  padding-bottom: var(--sp-6);
-  border-bottom: 1px solid var(--border-subtle);
-  scrollbar-width: thin;
-  scrollbar-color: var(--border-subtle) transparent;
-}
-
-.runs-selector::-webkit-scrollbar {
-  height: 4px;
-}
-
-.runs-selector::-webkit-scrollbar-thumb {
-  background: var(--border-subtle);
-  border-radius: var(--ui-radius);
-}
-
-.run-selector-btn {
-  gap: var(--sp-3);
-  padding: var(--sp-3) var(--sp-6);
-  background: var(--bg-card);
-  color: var(--text-secondary);
-  font-size: var(--fs-3);
-  cursor: pointer;
-  transition: border-color 0.15s;
-}
-.run-selector-btn:hover {
-  border-color: var(--ai);
-}
-.run-selector-btn.active {
-  border-color: var(--ai);
-  background: var(--ai-dim);
-  color: var(--text-primary);
-}
-
-.run-id {
-  font-family: var(--font-mono);
-  font-weight: 600;
-}
-.run-status-badge {
-  padding: var(--sp-1) var(--sp-3);
-  border-radius: var(--ui-radius);
-  font-size: var(--fs-1);
-  font-weight: 600;
-  background: var(--bg-elevated);
-}
-.run-status-badge.has-completions {
-  background: var(--success-dim);
-  color: var(--success-bright);
-}
-
-/* Run summary card */
-.run-summary {
-  background: var(--bg-card);
-  padding: var(--sp-7);
-}
-
-.run-summary-header {
-  display: flex;
-  align-items: baseline;
-  gap: var(--sp-6);
-  margin-bottom: 12px;
-}
-.run-summary-header h4 {
-  margin: 0;
-  color: var(--text-primary);
-  font-size: var(--fs-5);
-}
-.run-started,
-.run-finished {
+.swarm-detail-run-stat {
   font-size: var(--fs-2);
-  color: var(--text-muted);
 }
 
-.run-summary-stats {
-  display: flex;
-  gap: var(--sp-9);
-  justify-content: space-between;
-  margin-bottom: 16px;
-  padding: var(--sp-6);
-  background: var(--bg-elevated);
-  border-radius: var(--ui-radius);
-}
-
-.run-stat,
-.task-row {
-  align-items: center;
-  gap: var(--sp-1);
-}
-.run-stat-label,
-.task-sublabel {
-  font-size: var(--fs-1);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-}
-
-.run-stat-tasks {
-  align-items: flex-start;
-}
-.run-stat-tasks-breakdown {
-  display: flex;
-  gap: var(--sp-6);
-  margin-top: 4px;
-}
-.task-count {
+.swarm-detail-run-stat-value {
   font-size: var(--fs-7);
-  font-weight: 700;
+  font-weight: 600;
 }
-.task-pending {
-  color: var(--warning);
-}
-.task-completed {
+
+.swarm-detail-run-stat[data-tone="success"] .swarm-detail-run-stat-value {
   color: var(--success);
 }
 
-.run-stat-cycles {
-  align-items: flex-end;
-}
-.run-stat-cycles-progress {
-  display: flex;
-  align-items: baseline;
-  gap: var(--sp-1);
-  margin-top: 2px;
-}
-.cycles-done {
-  font-size: var(--fs-7);
-  font-weight: 700;
-  color: var(--text-primary);
-}
-.cycles-sep {
-  font-size: var(--fs-5);
-}
-.cycles-total {
-  font-size: var(--fs-5);
-  font-weight: 600;
-}
-.run-stat-cycles-breakdown {
-  display: flex;
-  gap: var(--sp-5);
-  margin-top: 4px;
-}
-.cycles-merges {
-  font-size: var(--fs-2);
-  font-weight: 600;
-  color: #4a9e6a;
-}
-.cycles-rejected {
-  font-size: var(--fs-2);
-  font-weight: 600;
-  color: #c0504a;
+.swarm-detail-run-stat[data-tone="danger"] .swarm-detail-run-stat-value {
+  color: var(--danger);
 }
 
-/* Per-worker table */
-.run-workers-table {
+.swarm-detail-table-scroll {
+  overflow-x: auto;
+}
+
+.swarm-detail-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: var(--fs-3);
-}
-.run-workers-table th {
-  text-align: left;
-  padding: var(--sp-3) var(--sp-4);
-  color: var(--text-muted);
-  font-weight: 600;
-  font-size: var(--fs-1);
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  border-bottom: 1px solid var(--border-subtle);
-}
-.run-workers-table td {
-  padding: var(--sp-3) var(--sp-4);
-  color: var(--text-secondary);
-  border-bottom: 1px solid var(--border-subtle);
-}
-.worker-id-cell {
-  font-family: var(--font-mono);
-  font-weight: 600;
-  color: var(--text-primary);
+  font-size: var(--fs-2);
 }
 
-/* Status column: color dot instead of text badge */
-.worker-status-dot {
+.swarm-detail-table th,
+.swarm-detail-table td {
+  padding: var(--sp-2) var(--sp-4);
+  border-bottom: 1px solid var(--border-subtle);
+  text-align: left;
+  white-space: nowrap;
+}
+
+.swarm-detail-table th {
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+.swarm-detail-status {
   display: inline-block;
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  flex-shrink: 0;
+  background: var(--text-muted);
 }
 
-.worker-status-dot.status-running,
-.worker-status-dot.status-starting {
-  background: var(--success);
-  animation: pulse 1.5s infinite;
-}
-
-.worker-status-dot.status-done,
-.worker-status-dot.status-completed {
+.swarm-detail-status[data-status="running"] {
   background: var(--ai);
 }
 
-.worker-status-dot.status-exhausted {
-  background: var(--warning);
+.swarm-detail-status[data-status="done"],
+.swarm-detail-status[data-status="completed"] {
+  background: var(--success);
 }
 
-.worker-status-dot.status-error {
+.swarm-detail-status[data-status="error"] {
   background: var(--danger);
 }
 
-/* Row tint by status */
-.run-workers-table tr[data-status="running"],
-.run-workers-table tr[data-status="starting"] {
-  background: color-mix(in oklch, var(--success) 6%, transparent);
-}
-
-.run-workers-table tr[data-status="error"] {
-  background: color-mix(in oklch, var(--danger) 5%, transparent);
-}
-
-/* Review log entries */
-.run-reviews {
-  background: var(--bg-card);
-  padding: var(--sp-7);
-}
-.run-reviews h4 {
-  margin: 0 0 12px 0;
-  color: var(--text-primary);
-  font-size: var(--fs-5);
-}
-
-.run-reviews-list {
-  gap: var(--sp-2);
-}
-
-.run-review-entry {
-  overflow: hidden;
-}
-
-.run-review-header {
-  gap: var(--sp-4);
-  padding: var(--sp-4) var(--sp-6);
-  cursor: pointer;
-  font-size: var(--fs-3);
-  transition: background 0.15s;
-}
-.run-review-header:hover {
-  background: var(--bg-elevated);
-}
-
-.run-review-worker {
-  font-family: var(--font-mono);
-  font-weight: 600;
-  color: var(--text-primary);
-  min-width: 50px;
-}
-.run-review-iter {
-  min-width: 50px;
-}
-.run-review-files {
-  margin-left: auto;
-}
-.run-review-output {
-  padding: var(--sp-6);
-  background: var(--bg-base);
+.swarm-detail-review {
   border-top: 1px solid var(--border-subtle);
-  max-height: 400px;
-  overflow-y: auto;
 }
-.run-review-output pre {
+
+.swarm-detail-review-head {
+  flex-wrap: wrap;
+  gap: var(--sp-4);
+  padding: var(--sp-3) 0;
+  border: none;
+  background: none;
+  color: inherit;
+  font-size: var(--fs-2);
+  text-align: left;
+  cursor: pointer;
+}
+
+.swarm-detail-pre {
+  max-height: 400px;
   margin: 0;
-  font-size: var(--fs-3);
-  line-height: 1.5;
-  color: var(--text-secondary);
+  padding: var(--sp-4);
+  overflow: auto;
+  border-radius: var(--ui-radius);
+  background: var(--bg-darkest);
+  font-family: var(--font-mono);
+  font-size: var(--fs-2);
   white-space: pre-wrap;
   word-break: break-word;
 }
 
-/* =============================================================================
-   Debug Conversation Button — opens a Claude chat pre-seeded with swarm context
-   ============================================================================= */
-
-.swarm-debug-btn {
-  padding: var(--sp-1) var(--sp-5);
-  font-size: var(--fs-2);
-  font-weight: 500;
-  border: 1px solid var(--primary);
-  background: var(--bg-card);
-  color: var(--primary);
-  transition: background 0.15s, box-shadow 0.15s;
+/* ---- Bottom panels: commits + config ---- */
+.swarm-detail-bottom {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: var(--sp-6);
 }
 
-.swarm-debug-btn:hover {
-  background: var(--primary-dim);
-  box-shadow: 0 0 0 1px var(--primary-glow);
+.swarm-detail-panel {
+  background: var(--bg-card);
+  overflow: hidden;
+}
+
+.swarm-detail-panel-toggle {
+  gap: var(--sp-4);
+  padding: var(--sp-4) var(--sp-6);
+  border: none;
+  background: none;
+  color: var(--text-primary);
+  font-size: var(--fs-3);
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.swarm-detail-panel-body {
+  max-height: 280px;
+  padding: 0 var(--sp-6) var(--sp-6);
+  overflow-y: auto;
+  font-size: var(--fs-2);
+}
+
+.swarm-detail-commit {
+  gap: var(--sp-4);
+  padding: var(--sp-1) 0;
+}
+
+.swarm-detail-commit-hash {
+  color: var(--primary);
+}
+
+.swarm-detail-commit-message {
+  flex: 1;
+  min-width: 0;
+}
+
+.swarm-detail-config {
+  gap: var(--sp-4);
+}
+
+.swarm-detail-config-row {
+  gap: var(--sp-4);
+}
+
+.swarm-detail-model {
+  padding: 0 var(--sp-3);
+  border-radius: var(--ui-radius);
+  background: var(--bg-elevated);
+  font-family: var(--font-mono);
+}
+
+.swarm-detail-prompt-path {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--primary);
+  font-family: var(--font-mono);
+  font-size: var(--fs-2);
+  cursor: pointer;
 }

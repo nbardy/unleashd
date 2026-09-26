@@ -517,7 +517,7 @@ export function ConversationView({
           ) : null}
           {showSwarmPrefix ? (
             <SwarmConvoPrefix
-              presentation="card"
+              layout="narrow"
               prefix={visibleSwarmDebugPrefix!}
               swarmId={conversation.kind.t === 'worker' ? conversation.kind.swarmId : null}
             />

@@ -621,7 +621,7 @@ export function Chat({ id }: { id: string }) {
           {visibleSwarmDebugPrefix && (
             <div style={{ paddingBottom: '24px' }}>
               <SwarmConvoPrefix
-                presentation="panel"
+                layout="wide"
                 prefix={visibleSwarmDebugPrefix}
                 swarmId={conversation.kind.t === 'worker' ? conversation.kind.swarmId : null}
               />
