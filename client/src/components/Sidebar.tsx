@@ -32,13 +32,13 @@ import { getProjectColor } from '../utils/projectColors';
 import { formatTimeAgo, getConversationLastActivity, getMinutesElapsed } from '../utils/time';
 import { ConversationConfigPicker } from '../views/config/ConversationConfigPicker';
 import { PathAutocomplete } from './PathAutocomplete';
-import { SearchPalette } from './SearchPalette';
 import { DmIcon, WakeIcon, WakeIndicator } from './buddies/WakeIndicator';
 import { useBuddyDirectActions } from './buddies/buddy-direct-actions';
 import { buddyTabPath } from './buddies/buddy-tabs';
 import { ownerUnreadTotal, useOwnerInboxes } from './buddies/channel-data';
 import { createBuddyViaBuilder } from './buddies/create-buddy-builder';
 import './Sidebar.css';
+import { SearchView } from '../views/search/SearchView';
 import { useTimeTick } from '../hooks/useTimeTick';
 
 function SidebarFolderIcon() {
@@ -428,17 +428,13 @@ export function Sidebar() {
           </div>
         )}
 
-        <SearchPalette
-          isOpen={showSearch}
-          onClose={() => setShowSearch(false)}
-          onSelectConversation={(id) => {
-            navigate(`/chat/${id}`);
-          }}
-          onSelectBuddy={(id) => {
-            navigate(`/buddies/${id}`);
-          }}
-          filterDirectory={searchFilterDir}
-        />
+        {showSearch && (
+          <SearchView
+            presentation="palette"
+            folder={searchFilterDir ?? ''}
+            onClose={() => setShowSearch(false)}
+          />
+        )}
       </div>
 
       <div className="conversations-list">
