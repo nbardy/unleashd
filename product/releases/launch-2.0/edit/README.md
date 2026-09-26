@@ -83,7 +83,8 @@ privacy note in `../footage/FOOTAGE.md`.
 
 Source: `src/DesignReview.tsx` (footage D). Same card-over-blur camera as DesignIteration, but
 a shot can frame any source region (`x`, `w`, `top`, `scale`), not only the thread pane.
-Rough cut 1, 2026-09-26: 13.0 s, silent.
+Each hold also drifts in (`zoom` 1.04–1.10, anchored at `ox`/`oy` in the card) toward where the
+action is, so no shot sits dead still. Rough cut 2, 2026-09-26: 13.0 s, silent.
 
 | Out (s) | Source | Speed | Shot |
 |---|---|---|---|

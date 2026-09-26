@@ -40,15 +40,19 @@ export const DURATION = cutStarts[CUTS.length];
 
 // Camera state. A shot lifts the source region [x, x+w] × [top, …] out as a card at `scale`,
 // centred over a blurred, dimmed backdrop. focus 0 = that region pixel-aligned in the plain frame.
-type Shot = { focus: number; x: number; w: number; top: number; scale: number };
+// zoom is the soft push inside the card, anchored at (ox, oy) as fractions of the card: every
+// hold drifts in toward where the action is, so no shot sits dead still.
+type Shot = { focus: number; x: number; w: number; top: number; scale: number; zoom: number; ox: number; oy: number };
 type Key = { t: number; shot: Shot };
 
-const COMPOSER: Shot = { focus: 1, x: 540, w: 2080, top: 706, scale: 0.85 };
+const STILL = { zoom: 1, ox: 0.5, oy: 0.5 };
+const COMPOSER: Shot = { focus: 1, x: 540, w: 2080, top: 706, scale: 0.85, ...STILL, ox: 0.35, oy: 0.85 };
 const FULL: Shot = { ...COMPOSER, focus: 0 };
-const PANE_WAIT: Shot = { focus: 1, x: 2156, w: 818, top: 632, scale: 0.8 }; // request + typing
-const PANE_REPLY: Shot = { ...PANE_WAIT, top: 480 }; // request + "On it"
-const POSTS: Shot = { focus: 1, x: 540, w: 1620, top: 800, scale: 1 };
-const SHOTS: Shot = { focus: 1, x: 2156, w: 818, top: 250, scale: 1 }; // screenshots in the pane
+const PANE_WAIT: Shot = { focus: 1, x: 2156, w: 818, top: 632, scale: 0.8, ...STILL, oy: 0.3 }; // request + typing
+const PANE_REPLY: Shot = { ...PANE_WAIT, top: 480, oy: 0.7 }; // request + "On it"
+const POSTS: Shot = { focus: 1, x: 540, w: 1620, top: 800, scale: 1, ...STILL, ox: 0.3, oy: 0.6 }; // iPad link
+const SHOTS: Shot = { focus: 1, x: 2156, w: 818, top: 250, scale: 1, ...STILL, oy: 0.45 }; // screenshots in the pane
+const push = (s: Shot, zoom: number): Shot => ({ ...s, zoom });
 
 // Output seconds. Two keys at the same instant are a hard cut.
 const at = (cut: number) => cutStarts[cut] / FPS;
@@ -57,15 +61,15 @@ const CAMERA: Key[] = [
   { t: 0, shot: FULL },
   { t: 0.15, shot: FULL },
   { t: 0.9, shot: COMPOSER },
-  { t: SENT, shot: COMPOSER },
+  { t: SENT, shot: push(COMPOSER, 1.05) },
   { t: SENT + 0.8, shot: PANE_WAIT },
-  { t: at(1), shot: PANE_WAIT },
+  { t: at(1), shot: push(PANE_WAIT, 1.04) },
   { t: at(1), shot: PANE_REPLY },
-  { t: at(2), shot: PANE_REPLY },
+  { t: at(2), shot: push(PANE_REPLY, 1.08) },
   { t: at(2), shot: POSTS },
-  { t: at(4), shot: POSTS },
+  { t: at(4), shot: push(POSTS, 1.1) },
   { t: at(4), shot: SHOTS },
-  { t: DURATION / FPS, shot: SHOTS },
+  { t: DURATION / FPS, shot: push(SHOTS, 1.06) },
 ];
 
 const ease = Easing.inOut(Easing.cubic);
@@ -82,6 +86,9 @@ const shotAt = (t: number): Shot => {
     w: lerp(a.w, b.w, u),
     top: lerp(a.top, b.top, u),
     scale: lerp(a.scale, b.scale, u),
+    zoom: lerp(a.zoom, b.zoom, u),
+    ox: lerp(a.ox, b.ox, u),
+    oy: lerp(a.oy, b.oy, u),
   };
 };
 
@@ -138,7 +145,7 @@ const LaterChip: React.FC<{ u: number }> = ({ u }) => {
 
 const Frame: React.FC<{ cut: Cut; startFrame: number; chip: boolean }> = ({ cut, startFrame, chip }) => {
   const frame = useCurrentFrame();
-  const { focus, x, w, top, scale: s } = shotAt((startFrame + frame) / FPS);
+  const { focus, x, w, top, scale: s, zoom, ox, oy } = shotAt((startFrame + frame) / FPS);
 
   // Card rect interpolated from where the region sits in the full frame (focus 0) to the
   // centred card (focus 1). At focus 0 the card is pixel-aligned with the backdrop.
@@ -174,10 +181,12 @@ const Frame: React.FC<{ cut: Cut; startFrame: number; chip: boolean }> = ({ cut,
           outline: `1px solid rgba(255,255,255,${0.08 * focus})`,
         }}
       >
-        <Footage
-          cut={cut}
-          style={{ left: -x * scale, top: -srcTop * scale, width: SRC.w * scale, height: SRC.h * scale }}
-        />
+        <div style={{ position: 'absolute', inset: 0, transform: `scale(${zoom})`, transformOrigin: `${ox * 100}% ${oy * 100}%` }}>
+          <Footage
+            cut={cut}
+            style={{ left: -x * scale, top: -srcTop * scale, width: SRC.w * scale, height: SRC.h * scale }}
+          />
+        </div>
       </div>
       {chip && <LaterChip u={frame / FPS} />}
     </AbsoluteFill>
