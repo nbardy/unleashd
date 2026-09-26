@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import { discardCursorTranscript } from '../src/buddies/cursor-ephemeral';
+import { discardCursorTranscript } from '../src/buddies/detached-cli';
 
 // Regression: the first version removed only agent-transcripts/<sessionId>, so
 // every Cursor reply gate / memory review leaked its project dir, including

@@ -1,4 +1,5 @@
 import crypto from 'node:crypto';
+import { harnessMcpCapability } from '@nbardy/agent-cli';
 import type {
   BuddyContext,
   BuddyKind,
@@ -7,7 +8,6 @@ import type {
   Provider as ProviderName,
   ResolvedExecutionConfig,
 } from '@unleashd/shared';
-import { harnessMcpCapability } from '@nbardy/agent-cli';
 import { formatBuddyBuilderToolResult } from '@unleashd/shared';
 import type { ConversationRuntimeView } from '../conversations/runtime';
 import type { TurnTerminalCause } from '../observability';

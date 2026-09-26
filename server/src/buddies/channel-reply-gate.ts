@@ -4,7 +4,7 @@ import path from 'node:path';
 import type { ExecuteCommandRequest } from '@nbardy/agent-cli';
 import { executeCommand } from '@nbardy/agent-cli';
 import type { ConversationConfig, ResolvedExecutionConfig } from '@unleashd/shared';
-import { discardCursorTranscript } from './cursor-ephemeral';
+import { runDetached } from './detached-cli';
 
 // The thread follow-up gate: "should you respond, or leave it to another team
 // member?" asked of one Buddy about one new thread post. It is a bare CLI run
@@ -99,7 +99,7 @@ function gateRequest(
     // dir, so Cursor refuses to start unless `--trust` is passed — a real
     // seat turn runs in a directory the owner already trusted, which is why
     // the same harness answers a mention and then fails this gate. Its
-    // transcript is deleted after exit (discardGateSession), and effort
+    // transcript is deleted after exit (runDetached), and effort
     // lives in the model id.
     case 'cursor':
       return {
@@ -112,18 +112,6 @@ function gateRequest(
         harness,
         extraArgs: ['--mode', 'ask', '--trust'],
       };
-  }
-}
-
-/** Only cursor persists a run it cannot be told to skip; see cursor-ephemeral.ts. */
-function discardGateSession(harness: GateHarness, sessionId: string): void {
-  switch (harness) {
-    case 'cursor':
-      return discardCursorTranscript(sessionId);
-    case 'claude':
-    case 'codex':
-    case 'muse':
-      return;
   }
 }
 
@@ -142,50 +130,35 @@ function gateHarness(provider: ResolvedExecutionConfig['provider']): GateHarness
 
 async function runGate(
   execute: typeof executeCommand,
-  harness: GateHarness,
   request: ExecuteCommandRequest
 ): Promise<GateVerdict> {
-  const turn = execute(request);
+  const deadline = AbortSignal.timeout(GATE_TIMEOUT_MS);
   let output = '';
   let providerError = '';
   let violation: GateVerdict | null = null;
-  const stop = (verdict: GateVerdict) => {
-    violation ??= verdict;
-    turn.stop();
-  };
-  const timer = setTimeout(
-    () => stop({ kind: 'failed', reason: `no answer within ${GATE_TIMEOUT_MS / 1000}s` }),
-    GATE_TIMEOUT_MS
-  );
-  const killTimer = setTimeout(() => turn.stop('SIGKILL'), GATE_TIMEOUT_MS + 5_000);
-  try {
-    const consumed = (async () => {
-      for await (const event of turn.events) {
-        if (event.type === 'text.delta') {
-          output += event.text;
-          if (output.length > GATE_MAX_CHARS) stop({ kind: 'unparseable', output });
-        } else if (event.type === 'error' || event.type === 'out_of_tokens') {
-          providerError = event.message;
-        } else if (event.type === 'tool.use') {
-          stop({ kind: 'unparseable', output: `(called tool ${event.name})` });
-        }
-      }
-    })();
-    const [completion, events] = await Promise.allSettled([turn.completed, consumed]);
-    if (completion.status === 'fulfilled') discardGateSession(harness, completion.value.sessionId);
-    if (violation) return violation;
-    if (events.status === 'rejected') throw events.reason;
-    if (completion.status === 'rejected') throw completion.reason;
-    if (completion.value.reason !== 'success')
-      return {
-        kind: 'failed',
-        reason: `gate run ended: ${completion.value.reason}${providerError ? ` (${providerError})` : ''}`,
-      };
-    return parseGateVerdict(output);
-  } finally {
-    clearTimeout(timer);
-    clearTimeout(killTimer);
-  }
+  const result = await runDetached(execute, request, deadline, (event, stop) => {
+    if (event.type === 'text.delta') output += event.text;
+    if (event.type === 'error' || event.type === 'out_of_tokens') providerError = event.message;
+    const broken =
+      event.type === 'tool.use'
+        ? `(called tool ${event.name})`
+        : output.length > GATE_MAX_CHARS
+          ? output
+          : null;
+    if (broken === null) return;
+    violation ??= { kind: 'unparseable', output: broken };
+    stop();
+  });
+  if (violation) return violation;
+  if (deadline.aborted)
+    return { kind: 'failed', reason: `no answer within ${GATE_TIMEOUT_MS / 1000}s` };
+  const completion = result();
+  if (completion.reason !== 'success')
+    return {
+      kind: 'failed',
+      reason: `gate run ended: ${completion.reason}${providerError ? ` (${providerError})` : ''}`,
+    };
+  return parseGateVerdict(output);
 }
 
 export function createCliReplyGate(ports: {
@@ -200,7 +173,7 @@ export function createCliReplyGate(ports: {
       return { kind: 'failed', reason: `no reply gate for provider ${execution.provider}` };
     const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'unleashd-reply-gate-'));
     try {
-      return await runGate(execute, harness, gateRequest(harness, execution, prompt, directory));
+      return await runGate(execute, gateRequest(harness, execution, prompt, directory));
     } finally {
       fs.rmSync(directory, { recursive: true, force: true });
     }

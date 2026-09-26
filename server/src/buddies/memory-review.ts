@@ -6,7 +6,7 @@ import type { ExecuteCommandRequest, McpServerSpec } from '@nbardy/agent-cli';
 import { executeCommand } from '@nbardy/agent-cli';
 import type { BuddyContext } from '@unleashd/shared';
 import { type BuddiesCore, buddyActor, docScopeFor } from './core';
-import { discardCursorTranscript } from './cursor-ephemeral';
+import { runDetached } from './detached-cli';
 import type { BuddyGrant, Grants } from './grants';
 
 /**
@@ -130,7 +130,6 @@ interface Harness {
   request(launch: Launch): ExecuteCommandRequest;
   /** Which tool.use names this CLI may emit; anything else kills the review. */
   authorizes(toolName: string): boolean;
-  discardSession?(sessionId: string): void;
 }
 
 const CODEX_DISABLED = [
@@ -261,7 +260,6 @@ const HARNESSES: Record<MemoryReviewModelChoice['harness'], Harness> = {
       extraArgs: ['--mode', 'ask'],
     }),
     authorizes: (name) => name === 'getMcpTools' || isMemoryTool(name),
-    discardSession: discardCursorTranscript,
   },
 };
 
@@ -273,40 +271,22 @@ async function runAttempt(
   execute: typeof executeCommand,
   signal: AbortSignal
 ): Promise<Attempt> {
-  const turn = execute(harness.request(launch));
-  let killTimer: ReturnType<typeof setTimeout> | undefined;
-  const stop = () => {
-    turn.stop();
-    killTimer ??= setTimeout(() => turn.stop('SIGKILL'), 2_000);
-  };
-  signal.addEventListener('abort', stop, { once: true });
-  try {
-    let failure: string | undefined;
-    const consumed = (async () => {
-      for await (const event of turn.events) {
-        if (event.type === 'tool.use' && !harness.authorizes(event.name)) {
-          failure = `Memory reviewer attempted a non-memory tool: ${event.name}`;
-          stop();
-        } else if (event.type === 'error') failure = event.message;
-      }
-    })();
-    // Keep process ownership until the CLI exited AND its events drained.
-    const [completion, events] = await Promise.allSettled([turn.completed, consumed]);
-    if (completion.status === 'fulfilled') harness.discardSession?.(completion.value.sessionId);
-    signal.throwIfAborted();
-    if (events.status === 'rejected') throw events.reason;
-    if (completion.status === 'rejected') throw completion.reason;
-    const result = completion.value;
-    if (!failure && result.reason === 'success' && result.exitCode === 0)
-      return { kind: 'success' };
-    const message = failure ?? `Memory reviewer exited: ${result.reason} (${result.exitCode})`;
-    // Credit exhaustion is the one failure the ladder answers; a tool violation or crash does not.
-    if (!failure && result.reason === 'out_of_tokens') return { kind: 'out_of_tokens', message };
-    throw new Error(message);
-  } finally {
-    signal.removeEventListener('abort', stop);
-    if (killTimer) clearTimeout(killTimer);
-  }
+  let failure: string | undefined;
+  const result = await runDetached(execute, harness.request(launch), signal, (event, stop) => {
+    if (event.type === 'tool.use' && !harness.authorizes(event.name)) {
+      failure = `Memory reviewer attempted a non-memory tool: ${event.name}`;
+      stop();
+    } else if (event.type === 'error') failure = event.message;
+  });
+  signal.throwIfAborted();
+  const completion = result();
+  if (!failure && completion.reason === 'success' && completion.exitCode === 0)
+    return { kind: 'success' };
+  const message =
+    failure ?? `Memory reviewer exited: ${completion.reason} (${completion.exitCode})`;
+  // Credit exhaustion is the one failure the ladder answers; a tool violation or crash does not.
+  if (!failure && completion.reason === 'out_of_tokens') return { kind: 'out_of_tokens', message };
+  throw new Error(message);
 }
 
 // ---- the queue --------------------------------------------------------------------------------
