@@ -1,5 +1,4 @@
 import {
-  type ConversationRecord,
   ConversationRecordStore,
   openRecords,
   recordsLocation,
@@ -11,16 +10,4 @@ import {
  */
 export function recordStore(root: string, now?: () => Date): ConversationRecordStore {
   return new ConversationRecordStore(openRecords(recordsLocation(root)), now);
-}
-
-/**
- * Test-only: overwrite a record with arbitrary content (a kind or provider the
- * store has no mutation for). Recreates it, so revisions restart at 0.
- */
-export async function replaceRecord(
-  store: ConversationRecordStore,
-  record: ConversationRecord
-): Promise<void> {
-  await store.purge(record.conversationId);
-  await store.create(record);
 }

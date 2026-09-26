@@ -96,19 +96,3 @@ export function syntheticDetail(
     ...overrides,
   };
 }
-
-/** A long transcript: per turn a question, prose, a tool call and an answer. */
-export function syntheticTranscript(turns: number): Message[] {
-  const records: Message[] = [];
-  for (let turn = 0; turn < turns; turn++) {
-    const at = new Date(EPOCH + turn * 60_000);
-    records.push(syntheticMessage('user', `Question ${turn}`, at));
-    records.push(syntheticMessage('assistant', `Looking at ${turn}`, at));
-    records.push({
-      ...syntheticMessage('assistant', '', at),
-      toolCall: { name: 'Read', input: `{"path":"/src/file-${turn}.ts"}` },
-    });
-    records.push(syntheticMessage('assistant', `Answer ${turn}: ${'detail '.repeat(40)}`, at));
-  }
-  return records;
-}
