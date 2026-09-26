@@ -7,6 +7,7 @@ export const Root: React.FC = () => (
     <Composition
       id="Overload"
       component={Overload.Overload}
+      defaultProps={{ calm: 'epiano' as Overload.Calm }}
       durationInFrames={Overload.DURATION}
       fps={Overload.FPS}
       width={Overload.WIDTH}

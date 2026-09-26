@@ -2,16 +2,27 @@
 // plays them. Samples are synthesized by ../../sound/synth.py, so we own every sound.
 import type React from 'react';
 import { Audio, Sequence } from 'remotion';
-import gtrA3 from '../../sound/gtr-A3.wav';
-import gtrA4 from '../../sound/gtr-A4.wav';
-import gtrB3 from '../../sound/gtr-B3.wav';
-import gtrD3 from '../../sound/gtr-D3.wav';
-import gtrD4 from '../../sound/gtr-D4.wav';
-import gtrE4 from '../../sound/gtr-E4.wav';
-import gtrFs3 from '../../sound/gtr-Fs3.wav';
-import gtrFs4 from '../../sound/gtr-Fs4.wav';
-import gtrG2 from '../../sound/gtr-G2.wav';
 import impact from '../../sound/impact.wav';
+import epG2 from '../../sound/ep-G2.wav';
+import epD3 from '../../sound/ep-D3.wav';
+import epFs3 from '../../sound/ep-Fs3.wav';
+import epA3 from '../../sound/ep-A3.wav';
+import epB3 from '../../sound/ep-B3.wav';
+import epCs4 from '../../sound/ep-Cs4.wav';
+import epD4 from '../../sound/ep-D4.wav';
+import epE4 from '../../sound/ep-E4.wav';
+import epFs4 from '../../sound/ep-Fs4.wav';
+import epA4 from '../../sound/ep-A4.wav';
+import marG3 from '../../sound/mar-G3.wav';
+import marD4 from '../../sound/mar-D4.wav';
+import marFs4 from '../../sound/mar-Fs4.wav';
+import marA4 from '../../sound/mar-A4.wav';
+import marB4 from '../../sound/mar-B4.wav';
+import marD5 from '../../sound/mar-D5.wav';
+import marFs5 from '../../sound/mar-Fs5.wav';
+import strDmaj9 from '../../sound/str-Dmaj9.wav';
+import strGmaj7 from '../../sound/str-Gmaj7.wav';
+import strD69 from '../../sound/str-D69.wav';
 import key0 from '../../sound/key-0.wav';
 import key1 from '../../sound/key-1.wav';
 import key2 from '../../sound/key-2.wav';
@@ -33,11 +44,11 @@ import whoosh from '../../sound/whoosh.wav';
 export const KEYS = [key0, key1, key2];
 export const POPS = [pop0, pop1, pop2, pop3, pop4, pop5, pop6, pop7]; // rising pitch
 export const SFX = { impact, pad, riser, send, sparkle, thud, whoosh };
-// Soft guitar, one plucked-string sample per note (Karplus-Strong in synth.py).
-export const GUITAR = {
-  G2: gtrG2, D3: gtrD3, Fs3: gtrFs3, A3: gtrA3, B3: gtrB3, D4: gtrD4, E4: gtrE4, Fs4: gtrFs4, A4: gtrA4,
-};
-export type GuitarNote = keyof typeof GUITAR;
+// The calm after the boom, three candidate instruments (synth.py): per-note electric piano and
+// marimba, per-chord strings.
+export const EPIANO = { G2: epG2, D3: epD3, Fs3: epFs3, A3: epA3, B3: epB3, Cs4: epCs4, D4: epD4, E4: epE4, Fs4: epFs4, A4: epA4 };
+export const MARIMBA = { G3: marG3, D4: marD4, Fs4: marFs4, A4: marA4, B4: marB4, D5: marD5, Fs5: marFs5 };
+export const STRINGS = { Dmaj9: strDmaj9, Gmaj7: strGmaj7, D69: strD69 };
 
 export type Cue = { at: number; src: string; volume: number }; // at = output seconds
 

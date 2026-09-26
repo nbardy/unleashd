@@ -8,7 +8,7 @@ import type React from 'react';
 import { AbsoluteFill, Easing, Img, Sequence, interpolate, random, useCurrentFrame } from 'remotion';
 import wordmark from '../../brand/unleashd-wordmark-3d_trimmed.png';
 import { Block, INK, clamp01, easeOutBack, lerp } from './blocks';
-import { type Cue, GUITAR, type GuitarNote, KEYS, POPS, SFX, Soundtrack } from './soundtrack';
+import { type Cue, EPIANO, KEYS, MARIMBA, POPS, SFX, STRINGS, Soundtrack } from './soundtrack';
 
 export const FPS = 60;
 export const WIDTH = 1920;
@@ -588,39 +588,60 @@ const pileCues = (w: WindowSpec, i: number): Cue[] => [
   ...(i < 30 ? [{ at: w.at + sendAt(w), src: SFX.send, volume: 0.22 }] : []),
 ];
 
-// After the boom, the calm answer (owner idea, 2026-09-26): a soft fingerpicked guitar. Dadd9
-// picked under "We're all feeling it." and the voice line, a rolled Gmaj7 landing on the title,
-// resolving to a rolled Dadd9 on "2.0" that rings on into beat 6. The pick grid is set so the
-// title falls exactly four eighths after the guitar enters.
+// After the boom, the calm answer. The owner liked the boom and the riser but not the soft guitar
+// (2026-09-26), so three instruments are auditioned; each gets a part written for it. Grid: the
+// title falls exactly four eighths after the calm enters, "2.0" resolves it.
 const EIGHTH = 0.4375; // ≈ 69 bpm
-const GUITAR_IN = T.title - 4 * EIGHTH; // 13.25 s, just after the thud
-const picked = (at: number, notes: GuitarNote[], volume: number): Cue[] =>
-  notes.map((n, k) => ({ at: at + k * EIGHTH, src: GUITAR[n], volume }));
-const rolled = (at: number, notes: GuitarNote[], volume: number): Cue[] =>
-  notes.map((n, k) => ({ at: at + k * 0.035, src: GUITAR[n], volume }));
+const CALM_IN = T.title - 4 * EIGHTH; // 13.25 s, just after the thud
+const BADGE = T.title + TITLE.badge; // 16.3 s
+const picked = <N extends string>(bank: Record<N, string>, at: number, notes: N[], volume: number): Cue[] =>
+  notes.map((n, k) => ({ at: at + k * EIGHTH, src: bank[n], volume }));
+const rolled = <N extends string>(bank: Record<N, string>, at: number, notes: N[], volume: number): Cue[] =>
+  notes.map((n, k) => ({ at: at + k * 0.05, src: bank[n], volume }));
+const titlePad: Cue = { at: T.title, src: SFX.pad, volume: 0.25 };
 
-// Levels: the boom stays the loudest moment; stacked strums sum, so they sit lower than single picks.
-const GUITAR_CUES: Cue[] = [
-  ...picked(GUITAR_IN, ['D3', 'A3', 'E4', 'Fs4'], 0.4),
-  ...rolled(T.title, ['G2', 'D3', 'Fs3', 'B3', 'D4'], 0.3),
-  ...picked(T.title + 2 * EIGHTH, ['B3', 'D4'], 0.32),
-  ...rolled(T.title + TITLE.badge, ['D3', 'A3', 'D4', 'E4', 'Fs4', 'A4'], 0.26),
-];
+export type Calm = 'epiano' | 'strings' | 'marimba';
+// Levels: the boom stays the loudest moment; stacked chords sum, so they sit lower than single notes.
+const CALM: Record<Calm, Cue[]> = {
+  // Soft rolled jazz voicings, Dmaj9 → Gmaj7 → D6/9, with a two-note melody answering each chord.
+  epiano: [
+    ...rolled(EPIANO, CALM_IN, ['D3', 'A3', 'Cs4', 'E4'], 0.16),
+    ...picked(EPIANO, CALM_IN + 2 * EIGHTH, ['Fs4', 'A4'], 0.2),
+    ...rolled(EPIANO, T.title, ['G2', 'B3', 'D4', 'Fs4'], 0.16),
+    ...picked(EPIANO, T.title + 2 * EIGHTH, ['A4'], 0.2),
+    ...rolled(EPIANO, BADGE, ['D3', 'A3', 'B3', 'E4', 'Fs4'], 0.15),
+    titlePad,
+  ],
+  // No attacks at all: one warm swell that turns on the title and settles on "2.0".
+  strings: [
+    { at: CALM_IN, src: STRINGS.Dmaj9, volume: 0.6 },
+    { at: T.title, src: STRINGS.Gmaj7, volume: 0.6 },
+    { at: BADGE, src: STRINGS.D69, volume: 0.6 },
+  ],
+  // Soft mallets: a rising D arpeggio, G under the title, a rolled D chord on "2.0".
+  marimba: [
+    ...picked(MARIMBA, CALM_IN, ['D4', 'Fs4', 'A4', 'D5'], 0.38),
+    ...rolled(MARIMBA, T.title, ['G3', 'D4'], 0.34),
+    ...picked(MARIMBA, T.title + EIGHTH, ['B4', 'D5'], 0.34),
+    ...rolled(MARIMBA, BADGE, ['D4', 'Fs4', 'A4', 'Fs5'], 0.2),
+    titlePad,
+  ],
+};
 
-const OVERLOAD_CUES: Cue[] = [
+const overloadCues = (calm: Calm): Cue[] => [
   ...FOCUS.flatMap(focusCues),
   ...PILE.flatMap(pileCues),
   { at: T.rampStart, src: SFX.riser, volume: 0.6 }, // ends exactly on T.cut: the silence is the drop
   { at: T.cut + CARD.overload, src: SFX.impact, volume: 1 },
   { at: T.cut + CARD.feeling, src: SFX.thud, volume: 0.5 },
-  ...GUITAR_CUES,
-  { at: T.title, src: SFX.pad, volume: 0.28 }, // pad sits under the guitar now
-  { at: T.title + TITLE.badge, src: SFX.sparkle, volume: 0.35 },
+  ...CALM[calm],
+  { at: BADGE, src: SFX.sparkle, volume: 0.35 },
 ];
 
-export const Overload: React.FC = () => (
+// `calm` picks the instrument after the boom; render a variant with --props='{"calm":"strings"}'.
+export const Overload: React.FC<{ calm: Calm }> = ({ calm }) => (
   <AbsoluteFill>
-    <Soundtrack cues={OVERLOAD_CUES} fps={FPS} />
+    <Soundtrack cues={overloadCues(calm)} fps={FPS} />
     <Sequence durationInFrames={frames(T.cut)}>
       <Pileup />
     </Sequence>
