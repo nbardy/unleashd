@@ -1,24 +1,9 @@
 /**
- * The conversation LIST and its message HISTORY as read models of the ingest store: each active
- * conversation record joined with the transcript rows (`Ingest.listSessions`) of the sessions it
- * binds, and its bodies read from those sessions (`Ingest.messages`) merged with the live-turn
- * overlay a runtime holds.
- *
- * Why this exists (T13b): the TS loader hydrated only the newest 500 transcripts, so the list and
- * every openable history were capped at what it had parsed into memory, and a 5 s poller re-parsed
- * whatever changed. The crate lists every session in ~0.65 s and serves any page by `seq`, so
- * nothing here waits on, or is capped by, transcript parsing.
- *
- * History = merge(each bound session's SETTLED prefix, the runtime's overlay). A settle snapshots
- * the sessions' counts; it runs at join and on `onChange` for an idle conversation. While a turn
- * runs, changes queue and the natives stay frozen, so the overlay (what this server streamed) and
- * the provider's own flush of the same turn never both show: the settle at idle lets the existing
- * dedupe (`mergeSessionMessages`) replace the live rows with the native ones. The row count is
- * `settled count + overlay grown since`, i.e. exactly the length of the history served.
- *
- * Guards: server/test/ingest-list.test.ts (rows, records after boot, labels, counts) and
- * server/test/ingest-history.test.ts (full history outside the old window, overlay without
- * duplicates, `rewritten` → refetch).
+ * The conversation list and its message history as read models of the ingest store (T13b): each
+ * active record joined with its bound sessions' rows, and bodies = merge(each session's SETTLED
+ * prefix, the runtime's live-turn overlay). Changes queue while a turn runs and settle at idle, so
+ * overlay and native rows never both show (docs/architecture.md, "List"). Row count = settled
+ * count + overlay grown since. Guards: ingest-list.test.ts, ingest-history.test.ts.
  */
 // Pattern: one-write-path (docs/patterns.md#one-write-path)
 
@@ -63,11 +48,7 @@ type Listing =
   | { t: 'listed'; row: ConversationRow }
   /** No bound transcript in the store: only a runtime (app-created, not yet run) shows it. */
   | { t: 'no_transcript' }
-  /**
-   * No working directory anywhere: neither the record nor any transcript names one. Today these are
-   * the Muse approval-review children (95 on 2026-09-26); the old loader showed them under the
-   * server's own cwd, which was a guess. Left out and counted instead.
-   */
+  /** No cwd in record or transcripts (Muse approval-review children); never guessed, counted. */
   | { t: 'no_cwd' };
 
 /** A settle: the sessions' counts the served history is cut at, and that history's length. */
@@ -257,7 +238,7 @@ export interface ConversationListDependencies {
   logger?: Pick<Console, 'log' | 'warn' | 'error'>;
 }
 
-async function forEachConcurrently<T>(
+export async function forEachConcurrently<T>(
   items: readonly T[],
   limit: number,
   run: (item: T) => Promise<void>
@@ -337,7 +318,7 @@ export async function createConversationList(
   async function history(record: RecordSummary, settled: Settled): Promise<Message[]> {
     const id = record.conversationId;
     const overlay = dependencies.runtime(id)?.messages ?? EMPTY;
-    const key = `${settled.epoch}:${[...settled.counts.values()].join(',')}:${overlay.length}`;
+    const key = servedKey(settled, overlay.length);
     const cached = served.get(id);
     if (cached?.key === key) return cached.messages;
     const messages = mergeSessionMessages(await natives(record, settled.counts), overlay);
@@ -376,10 +357,7 @@ export async function createConversationList(
     if (!replaced) return next;
     const bumped = { ...next, epoch: epoch + 1 };
     // Re-key the cached merge under the new epoch so the first page does not merge again.
-    served.set(id, {
-      key: `${bumped.epoch}:${[...counts.values()].join(',')}:${overlay.length}`,
-      messages: merged,
-    });
+    served.set(id, { key: servedKey(bumped, overlay.length), messages: merged });
     return bumped;
   }
 
@@ -589,11 +567,7 @@ export async function createConversationList(
     async page(conversationId, { afterSeq, limit }) {
       const record = recordOf.get(conversationId);
       const runtime = dependencies.runtime(conversationId);
-      if (!record) {
-        if (!runtime) return null;
-        const messages = runtime.messages;
-        return pageOf(0, messages, afterSeq, limit);
-      }
+      if (!record) return runtime ? pageOf(0, runtime.messages, afterSeq, limit) : null;
       await settling.get(conversationId);
       const settled = settledOf.get(conversationId) ?? unsettled(record);
       return pageOf(settled.epoch, await history(record, settled), afterSeq, limit);
@@ -629,6 +603,10 @@ export async function createConversationList(
       backstop = null;
     },
   };
+}
+
+function servedKey(settled: Settled, overlayLength: number): string {
+  return `${settled.epoch}:${[...settled.counts.values()].join(',')}:${overlayLength}`;
 }
 
 function pageOf(

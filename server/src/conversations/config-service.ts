@@ -82,16 +82,6 @@ export interface HydratedConversationConfig {
   diagnostics: SessionConfigDiagnostic[];
 }
 
-export interface ForkConversationConfigInput {
-  conversationId: string;
-  kind: ConversationKind;
-  source: ConversationConfigState;
-  sessionBindings?: readonly SessionBinding[];
-  currentSession?: SessionBinding;
-  workingDirectory?: string;
-  creation?: ConversationCreationMetadata;
-}
-
 export interface ConversationConfigServiceOptions {
   store: ConversationRecordStore;
   resolver: ConversationConfigResolver;
@@ -106,15 +96,16 @@ export function applyConversationConfigPatch(
   context: ConfigUpdateContext,
   patch: ConversationConfigPatch
 ): Result<ConversationConfig, ConfigError> {
-  const changesProvider =
-    (patch.kind === 'set_provider' && patch.provider !== current.provider) ||
-    (patch.kind === 'replace' && patch.config.provider !== current.provider);
+  const nextProvider =
+    patch.kind === 'set_provider'
+      ? patch.provider
+      : patch.kind === 'replace'
+        ? patch.config.provider
+        : current.provider;
+  const changesProvider = nextProvider !== current.provider;
 
-  // A running CLI receives an immutable ResolvedExecutionConfig snapshot at
-  // spawn time. Model/reasoning changes are therefore safe while a turn is in
-  // flight and take effect on the next turn (including the next queued turn).
-  // Provider changes remain blocked because they would invalidate the active
-  // provider session and its resume state.
+  // A spawned turn holds an immutable config snapshot, so model/effort changes apply to the next
+  // turn; a provider change would invalidate the active session and its resume state.
   if (changesProvider && (context.isRunning || context.queueDepth > 0)) {
     return failure(
       'conversation_busy',
@@ -123,37 +114,15 @@ export function applyConversationConfigPatch(
         : 'Provider cannot change while messages are queued'
     );
   }
-
-  if (patch.kind === 'set_provider') {
-    if (context.hasStartedSession && patch.provider !== current.provider) {
-      return failure(
-        'provider_locked',
-        'Provider cannot change after the conversation has started',
-        current.provider
-      );
-    }
-    if (patch.provider === current.provider) return { ok: true, value: current };
-    return {
-      ok: true,
-      value: applyConversationConfigSelectionPatch(current, patch),
-    };
-  }
-
-  if (
-    patch.kind === 'replace' &&
-    context.hasStartedSession &&
-    patch.config.provider !== current.provider
-  ) {
+  if (changesProvider && context.hasStartedSession) {
     return failure(
       'provider_locked',
       'Provider cannot change after the conversation has started',
       current.provider
     );
   }
-  return {
-    ok: true,
-    value: applyConversationConfigSelectionPatch(current, patch),
-  };
+  if (patch.kind === 'set_provider' && !changesProvider) return { ok: true, value: current };
+  return { ok: true, value: applyConversationConfigSelectionPatch(current, patch) };
 }
 
 export class ConversationConfigService {
@@ -176,15 +145,9 @@ export class ConversationConfigService {
   async createOrReplay(input: NewConversationConfigInput): Promise<CreateConversationConfigResult> {
     const existing = await this.store.getByConversationId(input.conversationId);
     if (existing) {
-      if (existing.status === 'deleted') {
-        throw new ConversationTombstonedError(existing);
-      }
+      if (existing.status === 'deleted') throw new ConversationTombstonedError(existing);
       if (isMatchingCreateReplay(existing, input)) {
-        return {
-          state: await this.stateFromRecord(existing),
-          record: existing,
-          replayed: true,
-        };
+        return { ...(await this.existing(existing)), replayed: true };
       }
       throw new ConfigRevisionConflictError(-1, existing.configRevision);
     }
@@ -208,14 +171,7 @@ export class ConversationConfigService {
       if (!(error instanceof ConfigRevisionConflictError)) throw error;
       const winner = await this.store.getByConversationId(input.conversationId);
       if (!winner || !isMatchingCreateReplay(winner, input)) throw error;
-      if (winner.status === 'deleted') {
-        throw new ConversationTombstonedError(winner);
-      }
-      return {
-        state: await this.stateFromRecord(winner),
-        record: winner,
-        replayed: true,
-      };
+      return { ...(await this.existing(winner)), replayed: true };
     }
     return {
       state: { config: input.config, revision: 0, resolution },
@@ -229,12 +185,8 @@ export class ConversationConfigService {
       (await this.store.getByConversationId(input.conversationId)) ??
       (await findFirstSessionRecord(this.store, input.sessionBindings));
     if (existing) {
-      if (existing.status === 'deleted') {
-        throw new ConversationTombstonedError(existing);
-      }
-      // Each update returns the record it read or wrote, so the result needs no
-      // re-read. Startup hydrates ~1,100 records; the extra read per record was
-      // a measurable share of the startup barrier (2026-09-25).
+      if (existing.status === 'deleted') throw new ConversationTombstonedError(existing);
+      // Updates return the record they wrote: no re-read (a measurable share of boot, 2026-09-25).
       let refreshed = existing;
       for (const binding of input.sessionBindings) {
         refreshed =
@@ -247,12 +199,7 @@ export class ConversationConfigService {
           (await this.store.setCurrentSession(existing.conversationId, inferredCurrentSession)) ??
           refreshed;
       }
-      return {
-        state: await this.stateFromRecord(refreshed),
-        record: refreshed,
-        migrated: false,
-        diagnostics: [],
-      };
+      return { ...(await this.existing(refreshed)), migrated: false, diagnostics: [] };
     }
 
     const migration = configFromSessionEvidence(input.sessionEvidence);
@@ -271,21 +218,12 @@ export class ConversationConfigService {
       });
     } catch (error) {
       if (!(error instanceof ConfigRevisionConflictError)) throw error;
-      // Hydration can race when two native artifacts identify the same
-      // conversation. Durable state wins; inferred state is never overwritten.
+      // Two native artifacts raced for one conversation: durable state wins.
       const winner =
         (await this.store.getByConversationId(input.conversationId)) ??
         (await findFirstSessionRecord(this.store, input.sessionBindings));
       if (!winner) throw error;
-      if (winner.status === 'deleted') {
-        throw new ConversationTombstonedError(winner);
-      }
-      return {
-        state: await this.stateFromRecord(winner),
-        record: winner,
-        migrated: false,
-        diagnostics: [],
-      };
+      return { ...(await this.existing(winner)), migrated: false, diagnostics: [] };
     }
     return {
       state: { config: record.config, revision: 0, resolution },
@@ -293,31 +231,6 @@ export class ConversationConfigService {
       migrated: true,
       diagnostics: migration.diagnostics,
     };
-  }
-
-  async fork(input: ForkConversationConfigInput): Promise<ConversationConfigState> {
-    const resolution = await this.resolver.resolve(input.source.config);
-    assertResolved(resolution);
-    await this.store.create({
-      conversationId: input.conversationId,
-      sessionBindings: input.sessionBindings,
-      currentSession: input.currentSession,
-      workingDirectory: input.workingDirectory,
-      creation: input.creation,
-      kind: input.kind,
-      config: input.source.config,
-      lastResolvedConfig: resolution.value,
-      provenance: 'user',
-    });
-    return { config: input.source.config, revision: 0, resolution };
-  }
-
-  async bindSession(conversationId: string, binding: SessionBinding): Promise<void> {
-    await this.store.addSessionBinding(conversationId, binding);
-  }
-
-  appendBranchLaunch(conversationId: string, digest: string, handoff: string) {
-    return this.store.appendBranchLaunch(conversationId, digest, handoff);
   }
 
   async setCurrentSession(conversationId: string, binding: SessionBinding): Promise<void> {
@@ -330,10 +243,6 @@ export class ConversationConfigService {
 
   getRecord(conversationId: string): Promise<ConversationRecord | undefined> {
     return this.store.getByConversationId(conversationId);
-  }
-
-  listRecoverable(): Promise<ConversationRecord[]> {
-    return this.store.listActive();
   }
 
   claimInitialMessageDispatch(
@@ -418,19 +327,19 @@ export class ConversationConfigService {
     };
   }
 
-  private async stateFromRecord(record: ConversationRecord): Promise<ConversationConfigState> {
+  /** A live record's state (a tombstone throws); an unavailable resolution keeps its last one. */
+  private async existing(
+    record: ConversationRecord
+  ): Promise<{ state: ConversationConfigState; record: ConversationRecord }> {
+    if (record.status === 'deleted') throw new ConversationTombstonedError(record);
     const current = await this.resolver.resolve(record.config);
-    if (current.status === 'unavailable' && record.lastResolvedConfig) {
-      return {
-        config: record.config,
-        revision: record.configRevision,
-        resolution: { ...current, lastResolved: record.lastResolvedConfig },
-      };
-    }
+    const resolution =
+      current.status === 'unavailable' && record.lastResolvedConfig
+        ? { ...current, lastResolved: record.lastResolvedConfig }
+        : current;
     return {
-      config: record.config,
-      revision: record.configRevision,
-      resolution: current,
+      state: { config: record.config, revision: record.configRevision, resolution },
+      record,
     };
   }
 }
@@ -469,11 +378,9 @@ export class ConversationTombstonedError extends Error {
   }
 }
 
-// The stored fingerprint hashes the config the conversation was CREATED with. After a settings
-// change (a thread seat's model or reasoning) the caller reopens it with the current config, so
-// compare against the same creation at that config too; otherwise the reopen conflicts and the
-// reply cannot continue (493c1c7; guard: config-service.test.ts "a config update stays
-// replayable…"). Computed at replay because the records store keeps creation write-once.
+// The stored fingerprint is of the CREATION config; a reopen after a settings change sends the
+// current one, so match that too or the reply conflicts (493c1c7; guard config-service.test.ts
+// "a config update stays replayable…"). Computed here: creation is write-once.
 function fingerprintAtCurrentConfig(existing: ConversationRecord): string | null {
   const creation = existing.creation;
   if (!creation?.fingerprint || existing.workingDirectory === undefined) return null;
@@ -550,11 +457,7 @@ export interface SessionConfigDiagnostic {
   reasoningEffort?: string;
 }
 
-/**
- * κ for a discovered native session with no record: session evidence → config.
- * Until S11 (2026-09-26) this was legacy-config-migration.ts, which also decoded
- * retired Codex `<model>-<effort>` composites; T14a found no live data needing it.
- */
+/** κ for a discovered native session with no record: session evidence → config. */
 function configFromSessionEvidence(evidence: SessionConfigEvidence): {
   config: ConversationConfig;
   provenance: ConfigProvenance;
@@ -595,8 +498,7 @@ function configFromSessionEvidence(evidence: SessionConfigEvidence): {
     config: {
       provider: evidence.provider,
       model: modelValid && modelId ? { mode: 'explicit', modelId } : { mode: 'default' },
-      // Missing/unknown effort maps to disabled. Applying today's default would
-      // silently change the command used to resume a historical session.
+      // Unknown effort is disabled: today's default would change a historical resume command.
       reasoning:
         reasoningValid && reasoningEffort
           ? { mode: 'explicit', effort: reasoningEffort }

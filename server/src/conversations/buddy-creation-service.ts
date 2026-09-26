@@ -8,19 +8,15 @@ import type {
 import { buddyKind, normalizeModelId } from '@unleashd/shared';
 import type { ResolvedBuddyConversation } from '../buddies/briefing';
 import { configFromProviderPreferences } from './config-mapping';
-import type { ConversationConfigService } from './config-service';
 import { INITIAL_MESSAGE_DISPATCH_LEASE_MS } from './config-records';
+import type { ConversationConfigService } from './config-service';
+import { createConversationService } from './creation-service';
 import type {
   ConversationBroadcast,
   ConversationOptions,
   ConversationRuntime,
   ConversationRuntimeView,
 } from './runtime';
-
-import { createConversationService, creationFingerprint } from './creation-service';
-export { creationFingerprint } from './creation-service';
-export type { CreationFingerprintInput } from './creation-service';
-import type { CreationFingerprintInput } from './creation-service';
 
 export interface CreateServerBuddyConversationInput {
   config?: ConversationConfig;
@@ -78,7 +74,6 @@ export interface BuddyCreationServicePorts {
 
 export interface BuddyCreationService {
   ensureConversationReady(conversation: ConversationRuntime): Promise<ConversationRuntime>;
-  creationFingerprint(input: CreationFingerprintInput): string;
   persistCurrentSession(
     conversation: ConversationRuntimeView,
     sessionId: string,
@@ -153,9 +148,7 @@ export function createBuddyCreationService(ports: BuddyCreationServicePorts): Bu
           conversation.enqueueMessage(initialMessage, currentOptions?.ownerInput);
         if (currentOptions?.enqueueAuthorized) {
           try {
-            // The authority check, any durable binding, and enqueue are one
-            // synchronous critical section. There is no await where cancellation
-            // can interleave. Ownership design I2/I7 (2026-08-24).
+            // Authority check, binding and enqueue: one synchronous critical section (I2/I7).
             currentOptions.enqueueAuthorized(enqueue);
           } catch (error) {
             dispatchOptions.delete(conversation.id);
@@ -221,44 +214,21 @@ export function createBuddyCreationService(ports: BuddyCreationServicePorts): Bu
     });
   }
 
-  async function createAndRegister(input: {
-    conversationId: string;
-    workingDirectory: string;
-    resolved: ResolvedBuddyConversation;
-    config: ConversationConfig;
-    commandId: string;
-    initialMessage?: string;
-    visibility?: BuddyVisibility;
-    branch?: ConversationBranch;
-  }): Promise<ConversationRuntime> {
-    const conversation = await createOrReuse({
-      conversationId: input.conversationId,
-      workingDirectory: input.workingDirectory,
-      config: input.config,
-      commandId: input.commandId,
-      initialMessage: input.initialMessage,
-      branch: input.branch,
-      kind: buddyKind(input.resolved.context, input.visibility),
-      buddyBriefing: input.resolved.briefing,
-    });
-    conversation.publishRow();
-    return conversation;
-  }
-
   async function createServerBuddyConversation(
     input: CreateServerBuddyConversationInput
   ): Promise<ConversationRuntime> {
     const resolved = await ports.resolveBuddyConversation(input.context);
-    const conversation = await createAndRegister({
+    const conversation = await createOrReuse({
       conversationId: input.conversationId ?? ports.createId(),
       workingDirectory: ports.resolveWorkingDirectory(resolved.workingDirectory),
-      resolved,
       config: input.config ?? resolveConfig(resolved),
       commandId: input.commandId,
       initialMessage: input.initialMessage,
       branch: input.branch,
-      visibility: input.visibility,
+      kind: buddyKind(resolved.context, input.visibility),
+      buddyBriefing: resolved.briefing,
     });
+    conversation.publishRow();
     if (!input.deferInitialMessage)
       await dispatchInitialMessageIfPending(
         conversation,
@@ -293,7 +263,6 @@ export function createBuddyCreationService(ports: BuddyCreationServicePorts): Bu
 
   return {
     ensureConversationReady: createOrReuse.ensureReady,
-    creationFingerprint,
     persistCurrentSession,
     dispatchInitialMessageIfPending,
     createServerBuddyConversation,

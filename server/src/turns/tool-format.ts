@@ -254,60 +254,48 @@ function commandFromDisplayText(name: string, displayText?: string): string | nu
   return text;
 }
 
-function getEmoji(toolName: string): string {
-  switch (toolName) {
-    // Claude Code tool names
-    case 'Bash':
-    case 'shell':
-      return '⚡';
-    case 'Read':
-      return '📖';
-    case 'Write':
-      return '✍️';
-    case 'Edit':
-      return '✏️';
-    case 'Glob':
-      return '📂';
-    case 'Grep':
-      return '🔍';
-    case 'WebFetch':
-      return '🌐';
-    case 'WebSearch':
-      return '🔍';
-    case 'Agent':
-      return '▶️';
-    case 'TodoWrite':
-      return '📝';
-    case 'NotebookRead':
-      return '📓';
-    case 'NotebookEdit':
-      return '📓';
-    // Legacy / other provider tool names
-    case 'read_file':
-      return '📖';
-    case 'write_file':
-      return '✍️';
-    case 'replace':
-      return '✏️';
-    case 'run_shell_command':
-      return '⚡';
-    case 'list_directory':
-      return '📂';
-    case 'glob':
-      return '📂';
-    case 'grep_search':
-      return '🔍';
-    case 'web_fetch':
-      return '🌐';
-    case 'code_execution':
-      return '📓';
-    case 'patch':
-      return '🔀';
-    case 'Task':
-      return '▶️';
-    default:
-      return '🔧';
+// Claude Code names and the other harnesses' names for the same tools.
+const TOOL_EMOJI = new Map<string, string>([
+  ...['Bash', 'shell', 'run_shell_command'].map((n) => [n, '⚡'] as const),
+  ...['Read', 'read_file'].map((n) => [n, '📖'] as const),
+  ...['Write', 'write_file'].map((n) => [n, '✍️'] as const),
+  ...['Edit', 'replace'].map((n) => [n, '✏️'] as const),
+  ...['Glob', 'glob', 'list_directory'].map((n) => [n, '📂'] as const),
+  ...['Grep', 'WebSearch', 'grep_search'].map((n) => [n, '🔍'] as const),
+  ...['WebFetch', 'web_fetch'].map((n) => [n, '🌐'] as const),
+  ...['Agent', 'Task'].map((n) => [n, '▶️'] as const),
+  ...['NotebookRead', 'NotebookEdit', 'code_execution'].map((n) => [n, '📓'] as const),
+  ['TodoWrite', '📝'],
+  ['patch', '🔀'],
+]);
+
+// The input field that summarizes a tool: its own field first, then the generic ones in order.
+const NAMED_ARG = new Map([
+  ['Agent', 'description'],
+  ['Task', 'description'],
+  ['WebFetch', 'url'],
+  ['WebSearch', 'query'],
+]);
+const GENERIC_ARGS = ['file_path', 'notebook_path', 'pattern', 'path', 'dir_path', 'query'];
+
+function shellSummary(command: string): string {
+  const subcommand = detectOompaSubcommand(command);
+  const oneLine = normalizeLine(command);
+  return subcommand ? `oompa ${subcommand} :: ${oneLine}` : oneLine;
+}
+
+function argSummaryOf(name: string, record: Record<string, unknown>): string {
+  const command =
+    (typeof record.command === 'string' && record.command) ||
+    (typeof record.cmd === 'string' && record.cmd) ||
+    null;
+  if (SHELL_TOOL_NAMES.has(name) && command) return shellSummary(command);
+  const named = NAMED_ARG.get(name);
+  for (const field of named ? [named, ...GENERIC_ARGS] : GENERIC_ARGS) {
+    const value = record[field];
+    if (typeof value === 'string') return value;
   }
+  return '';
 }
 
 /**
@@ -333,53 +321,12 @@ export function formatToolUse(name: string, input?: unknown, displayText?: strin
     return `<!--ask_user_question:${JSON.stringify(input || {})}-->`;
   }
 
-  const emoji = getEmoji(name);
+  const emoji = TOOL_EMOJI.get(name) ?? '🔧';
   const record = asRecord(input);
-
-  // Format the argument summary
-  let argSummary = '';
-  if (record) {
-    const command =
-      (typeof record.command === 'string' && record.command) ||
-      (typeof record.cmd === 'string' && record.cmd) ||
-      null;
-
-    if (SHELL_TOOL_NAMES.has(name) && command) {
-      const subcommand = detectOompaSubcommand(command);
-      const oneLine = normalizeLine(command);
-      argSummary = subcommand ? `oompa ${subcommand} :: ${oneLine}` : oneLine;
-    } else if (name === 'Agent' && typeof record.description === 'string') {
-      argSummary = record.description;
-    } else if (name === 'Task' && typeof record.description === 'string') {
-      argSummary = record.description;
-    } else if (name === 'WebFetch' && typeof record.url === 'string') {
-      argSummary = record.url;
-    } else if (name === 'WebSearch' && typeof record.query === 'string') {
-      argSummary = record.query;
-    } else if (typeof record.file_path === 'string') {
-      // Covers Read, Write, Edit, read_file, write_file, replace, NotebookRead, NotebookEdit
-      argSummary = record.file_path;
-    } else if (typeof record.notebook_path === 'string') {
-      argSummary = record.notebook_path;
-    } else if (typeof record.pattern === 'string') {
-      // Covers Glob, Grep, glob, grep_search
-      argSummary = record.pattern;
-    } else if (typeof record.path === 'string') {
-      argSummary = record.path;
-    } else if (typeof record.dir_path === 'string') {
-      argSummary = record.dir_path;
-    } else if (typeof record.query === 'string') {
-      argSummary = record.query;
-    }
-  }
-
+  let argSummary = record ? argSummaryOf(name, record) : '';
   if (!argSummary && SHELL_TOOL_NAMES.has(name)) {
     const fallbackCommand = commandFromDisplayText(name, displayText);
-    if (fallbackCommand) {
-      const subcommand = detectOompaSubcommand(fallbackCommand);
-      const oneLine = normalizeLine(fallbackCommand);
-      argSummary = subcommand ? `oompa ${subcommand} :: ${oneLine}` : oneLine;
-    }
+    if (fallbackCommand) argSummary = shellSummary(fallbackCommand);
   }
 
   if (argSummary) {

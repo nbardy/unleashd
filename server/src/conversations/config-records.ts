@@ -96,8 +96,7 @@ export function openRecords(location: RecordsLocation): Promise<Addon.Conversati
 function unimportedMessage(location: Extract<RecordsLocation, { t: 'unimported' }>): string {
   const root = location.appDataRoot;
   const copy = path.join(root, 'records-import');
-  const tool =
-    'cargo run --release --manifest-path crates/Cargo.toml -p unleashd-records-tool --';
+  const tool = 'cargo run --release --manifest-path crates/Cargo.toml -p unleashd-records-tool --';
   return [
     `Conversation records ${location.file} do not exist, but ${root}/conversation-config does.`,
     'Import them once, with the backend stopped (from the repo root):',
@@ -156,14 +155,6 @@ export class ConversationRecordStore {
 
   listSummaries(): Promise<Addon.RecordSummary[]> {
     return this.ready.then((store) => store.listSummaries());
-  }
-
-  /** Every active record in full (startup recovery). */
-  async listActive(): Promise<ConversationRecord[]> {
-    const store = await this.ready;
-    const active = (await store.listSummaries()).filter((s) => s.status === 'active');
-    const records = await Promise.all(active.map((s) => store.get(s.conversationId)));
-    return records.flatMap((r) => (r === null ? [] : [record(r)]));
   }
 
   /** An existing id is `ConfigRevisionConflictError(-1)`; the caller decides replay. */
@@ -230,42 +221,6 @@ export class ConversationRecordStore {
   }
 
   /** Replace a legacy (session-id) conversation id, keeping its bindings. */
-  async rekeyConversation(
-    conversationId: string,
-    replacementId: string
-  ): Promise<ConversationRecord> {
-    const outcome = await (await this.ready).rekey(conversationId, replacementId);
-    switch (outcome.t) {
-      case 'rekeyed':
-        return record(outcome.record);
-      case 'missing':
-        throw new Error(`Conversation config not found: ${conversationId}`);
-      case 'exists':
-        throw new ConfigRevisionConflictError(-1, outcome.current.configRevision);
-    }
-  }
-
-  async appendBranchLaunch(
-    conversationId: string,
-    digest: string,
-    handoff: string
-  ): Promise<ConversationRecord> {
-    const outcome = await (await this.ready).appendBranchLaunch(conversationId, digest, handoff);
-    switch (outcome.t) {
-      case 'recorded':
-        return record(outcome.record);
-      case 'missing':
-        throw new Error(`Conversation config not found: ${conversationId}`);
-      case 'unavailable':
-        throw new Error('Launch branch unavailable');
-      case 'full':
-        // Never silently discard launch context needed by an outstanding request.
-        throw new Error(
-          'Background review launch history is full; start another owner conversation'
-        );
-    }
-  }
-
   /** Undefined when no record exists for this id. */
   async setDone(conversationId: string, done: boolean): Promise<ConversationRecord | undefined> {
     return maybe(await (await this.ready).setDone(conversationId, done, this.at()));

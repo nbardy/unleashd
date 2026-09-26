@@ -80,6 +80,20 @@ startup barrier and is admitted while the server is `starting`. Other WS command
 barrier. HTTP mutations return `503 server_starting` until the server is `idle`. See
 [architecture](architecture.md) for lifecycle ownership and failure behavior.
 
+Every command takes its shutdown slot (`beginCommand`) BEFORE awaiting the barrier: the slot is
+what the shutdown coordinator counts as active work. Until 2026-09-25 the barrier was awaited
+first, so a parked command was invisible; a dev reload requested while `starting` exited the
+backend as soon as startup completed, and a `queue_message` typed during boot woke into
+`reloading` and was rejected with `server_draining`. Holding the slot keeps the backend `idle`
+until the command finishes. The barrier also means "startup is over", not "succeeded": a
+failure or SIGTERM during boot resolves it too, so only a backend that reached `idle` runs
+commands on existing history. Guard: `a command parked on the startup barrier runs before a
+reload queued during startup`.
+
+A message command whose conversation is not held is REJECTED, never accepted: the composer
+empties on submit, so accepting a message the server never admitted discards the text silently
+(the old `registry.get(id)?.enqueue(...)` + unconditional accept did exactly that).
+
 ## Replay of `create_conversation` can send `ack created` THEN `ack rejected`
 
 When a client re-sends `create_conversation` for an id the server already
@@ -195,3 +209,17 @@ to refresh, and the client refreshes the channel list with them because its rows
 count every post, plus any mounted Task-filtered feed (`/api/buddies/tasks/<id>/posts`),
 which spans channels; there is still one refresh path. It is not debounced: the
 client's in-flight join already folds a burst.
+
+## Liveness
+
+A laptop that slept, or a connection the dev port proxy holds open after the far end vanished,
+leaves a half-open socket: no FIN arrives, neither side sees `close`, broadcasts go nowhere, and
+the client never reconnects (reconnect is the only path to a fresh `hello` and resent pending
+creations). `superviseLiveness` (server/src/transport/websocket.ts) pings every 20 s and
+terminates a peer that did not pong since the previous ping; a browser answers pings at the
+protocol level. Two ways a LIVE peer misses a pong, both found in review of 4d2b990: our own event
+loop stalled (the overdue tick runs before the poll phase reads a pong that already arrived, so a
+late tick is our fault), or a slow link is still downloading a large frame and our ping sits
+behind it (a shrinking send buffer means bytes flow). A half-open socket shows neither. Guards:
+`liveness terminates a half-open peer and keeps a responsive one`, `liveness does not terminate a
+responsive peer when the server loop stalls`.

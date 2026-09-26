@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import type {
   BuddyContext,
   ClientMessage,
+  CommandError,
   ConversationKind,
   ConversationRow,
   CreateKind,
@@ -58,15 +59,9 @@ export interface ResolvedBuddyConversation {
 
 export interface ConversationWebSocketDependencies {
   registry: ConversationRegistry<ConversationRuntime>;
-  /**
-   * List rows of conversations the registry does not hold (the ingest list,
-   * server/src/ingest/conversation-list.ts). `hello` sends registry rows plus these.
-   */
+  /** Rows of listed conversations the registry does not hold; `hello` adds registry rows. */
   listedRows(): ConversationRow[];
-  /**
-   * The runtime of a listed conversation, built from its record on first use (T13b S2: most
-   * listed conversations have none until opened or sent a command).
-   */
+  /** A listed conversation's runtime, built from its record on first use. */
   materialize(conversationId: string): Promise<unknown>;
   /** A deleted conversation leaves the ingest list too (its record is tombstoned). */
   forgetListed(conversationId: string): void;
@@ -75,10 +70,7 @@ export interface ConversationWebSocketDependencies {
   completionSuppression: CompletionSuppression;
   initialLoadComplete: Promise<void>;
   isInitialLoadComplete(): boolean;
-  /**
-   * Admit one command as active work the shutdown coordinator counts, also
-   * while `starting`; null once the backend is reloading or shutting down.
-   */
+  /** One command as counted active work (also while `starting`); null once draining. */
   beginCommand(): (() => void) | null;
   configService: ConversationConfigService;
   getArchivedBuddyIds?(): Promise<string[]>;
@@ -111,9 +103,7 @@ export function registerConversationWebSocket(
   });
   webSocketServer.on('connection', (socket, request) => {
     const logger = dependencies.logger ?? console;
-    // A client of another protocol cannot read these frames. Closing with a
-    // typed code makes the tab show it (a pre-v3 tab reads it as a lost
-    // connection) instead of keeping a list that silently stops updating.
+    // Another protocol cannot read these frames: a typed close, not a list that stops updating.
     if (requestedProtocol(request.url ?? '/') !== PROTOCOL_VERSION) {
       socket.close(PROTOCOL_MISMATCH_CLOSE_CODE, `protocol ${PROTOCOL_VERSION}`);
       return;
@@ -125,6 +115,10 @@ export function registerConversationWebSocket(
     socket.on('message', async (message) => {
       let activeCommand: { commandId: string; conversationId?: string } | null = null;
       let releaseCommand: (() => void) | null = null;
+      const reject = (error: CommandError) =>
+        activeCommand
+          ? sendCommandRejected(socket, { ...activeCommand, error })
+          : sendProtocolError(socket, error.message);
       try {
         const parsed: unknown = JSON.parse(message.toString());
         const result = safeParseClientMessage(parsed);
@@ -141,42 +135,22 @@ export function registerConversationWebSocket(
             ...('conversationId' in data ? { conversationId: data.conversationId } : {}),
           };
         }
-        const rejectDraining = () => {
-          const unavailable =
-            'Backend reload is draining active turns; try again after reconnecting';
-          if (activeCommand) {
-            sendCommandRejected(socket, {
-              ...activeCommand,
-              error: { code: 'server_draining', message: unavailable },
-            });
-          } else {
-            sendProtocolError(socket, unavailable);
-          }
-        };
-        // Take the command slot BEFORE awaiting the startup barrier: the slot
-        // is what the shutdown coordinator counts as active work. Until
-        // 2026-09-25 the barrier was awaited first, so a command parked on it
-        // was invisible. A dev reload requested while `starting` (handleReload
-        // accepts it) then exited the backend the moment markReady ran
-        // completeStartup, and the parked queue_message woke into `reloading`
-        // and was rejected with server_draining: a message typed during boot
-        // was lost to a file save. Holding the slot keeps the backend `idle`
-        // until this command finishes; the queued reload happens after it.
+        const rejectDraining = () =>
+          reject({
+            code: 'server_draining',
+            message: 'Backend reload is draining active turns; try again after reconnecting',
+          });
+        // The slot is taken BEFORE the barrier, and the barrier resolving does not mean
+        // success (docs/ws-contract-surprises.md; guard "a command parked on the startup barrier…").
         releaseCommand = dependencies.beginCommand();
         if (!releaseCommand) {
           rejectDraining();
           return;
         }
-        // A new UUID and durable config record cannot collide with historical
-        // session hydration, so creation is safe as soon as durable services
-        // and the WebSocket are available. Commands against existing history
-        // still wait for that history to become authoritative.
+        // A create cannot collide with history, so only other commands wait for it.
         if (data.type !== 'create_conversation') {
           await dependencies.initialLoadComplete;
           if (socket.readyState !== WebSocket.OPEN) return;
-          // The barrier means "startup is over", not "startup succeeded": a
-          // startup failure or SIGTERM during boot resolves it too. Only a
-          // backend that reached `idle` may run commands on existing history.
           if (!dependencies.isInitialLoadComplete()) {
             rejectDraining();
             return;
@@ -195,6 +169,10 @@ export function registerConversationWebSocket(
 
         switch (data.type) {
           case 'create_conversation': {
+            const rejectCreate = (error: unknown) => {
+              logger.error('Conversation creation failed', error);
+              reject({ code: 'create_failed', message: replayFailureMessage(error) });
+            };
             let buddyResolution: ResolvedBuddyConversation | null = null;
             try {
               buddyResolution =
@@ -202,12 +180,7 @@ export function registerConversationWebSocket(
                   ? await dependencies.resolveBuddyConversation(data.kind.context)
                   : null;
             } catch (error) {
-              logger.error('Conversation creation failed', error);
-              sendCommandRejected(socket, {
-                commandId: data.commandId,
-                conversationId: data.conversationId,
-                error: { code: 'create_failed', message: replayFailureMessage(error) },
-              });
+              rejectCreate(error);
               break;
             }
 
@@ -226,11 +199,7 @@ export function registerConversationWebSocket(
               if (!persisted) {
                 const directoryError = validateWorkingDirectory(workingDirectory);
                 if (directoryError) {
-                  sendCommandRejected(socket, {
-                    commandId: data.commandId,
-                    conversationId: data.conversationId,
-                    error: directoryError,
-                  });
+                  reject(directoryError);
                   break;
                 }
               }
@@ -253,12 +222,9 @@ export function registerConversationWebSocket(
                 ownerInput: { origin: 'owner_input', inputId: data.commandId },
               });
             } catch (error) {
-              logger.error('Conversation creation failed', error);
-              sendCommandRejected(socket, {
-                commandId: data.commandId,
-                conversationId: data.conversationId,
-                error: { code: 'create_failed', message: errorMessage(error) },
-              });
+              // By error type: a replay can send `created` then `rejected`
+              // (docs/ws-contract-surprises.md#replay-of-create_conversation…).
+              rejectCreate(error);
             }
             break;
           }
@@ -272,9 +238,8 @@ export function registerConversationWebSocket(
             const deletedDurably = await dependencies.configService.delete(data.conversationId);
             if (conversation) {
               conversation.stop();
-              // stop() only closes Buddy ownership while a provider process is
-              // running. Deleting an idle persistent Buddy thread must also
-              // terminalize its durable link (and delegated/review work).
+              // stop() closes Buddy ownership only while a process runs; an idle thread's
+              // durable link (and delegated/review work) is terminalized here.
               dependencies.cancelBuddyConversation(conversation);
               dependencies.registry.delete(data.conversationId);
               dependencies.sessions.markDeleted(conversation.sessionId);
@@ -307,8 +272,7 @@ export function registerConversationWebSocket(
             if (!record) throw new Error(`Conversation ${data.conversationId} has no record`);
             conversation.done = record.done;
             // Pattern: patches-not-snapshots (docs/patterns.md#patches-not-snapshots)
-            // One field. v2 re-sent the whole conversation with every message:
-            // 1.36 MB per socket for a 1,099-message chat (2026-09-25).
+            // v2 re-sent the conversation: 1.36 MB for a 1,099-message chat (2026-09-25).
             // Guard: wire-v3.test.ts "a done toggle sends one small patch".
             dependencies.broadcast({
               type: 'patch',
@@ -321,11 +285,7 @@ export function registerConversationWebSocket(
           case 'set_conversation_config': {
             const conversation = dependencies.registry.get(data.conversationId);
             if (!conversation) {
-              sendCommandRejected(socket, {
-                commandId: data.commandId,
-                conversationId: data.conversationId,
-                error: { code: 'conversation_not_found', message: 'Conversation not found' },
-              });
+              reject({ code: 'conversation_not_found', message: 'Conversation not found' });
               break;
             }
             const result = await updateRuntimeConfig(
@@ -334,18 +294,13 @@ export function registerConversationWebSocket(
               data
             );
             if (!result.ok) {
-              // The authoritative state goes first, to the requester only, so
-              // its picker shows what the server holds before the error.
+              // The authoritative state first, to the requester only, then the error.
               sendToClient(socket, {
                 type: 'patch',
                 id: conversation.id,
                 patch: { t: 'config', state: conversation.configState(), commandId: null },
               });
-              sendCommandRejected(socket, {
-                commandId: data.commandId,
-                conversationId: data.conversationId,
-                error: result.error,
-              });
+              reject(result.error);
               break;
             }
             // The patch carrying this commandId is the requester's acknowledgement.
@@ -357,23 +312,15 @@ export function registerConversationWebSocket(
             break;
           }
 
-          // Both owner sends share one admission. A missing runtime is a
-          // REJECTION, never an acceptance: the composer empties on submit
-          // (client optimistic send), so acknowledging a message the server
-          // never admitted discards the user's text with no error anywhere.
-          // The old `registry.get(id)?.enqueue(...)` + unconditional accept
-          // was exactly that silent drop.
+          // A missing runtime is a REJECTION, never an acceptance: the composer already
+          // emptied (docs/ws-contract-surprises.md, silent drop).
           case 'queue_message':
           case 'interrupt_and_send': {
             const conversation = dependencies.registry.get(data.conversationId);
             if (!conversation) {
-              sendCommandRejected(socket, {
-                commandId: data.commandId,
-                conversationId: data.conversationId,
-                error: {
-                  code: 'conversation_not_found',
-                  message: `Conversation ${data.conversationId} is not open on this server`,
-                },
+              reject({
+                code: 'conversation_not_found',
+                message: `Conversation ${data.conversationId} is not open on this server`,
               });
               break;
             }
@@ -423,8 +370,7 @@ async function sendInitialState(
     ? await dependencies.getArchivedBuddyIds()
     : [];
   if (socket.readyState !== WebSocket.OPEN) return;
-  // Rows only: no message bodies, config, queue or Buddy run data. v2's `init`
-  // carried all of it (1.87 MB for 1,161 conversations on 2026-09-25).
+  // Rows only; v2's `init` carried everything (1.87 MB for 1,161 conversations, 2026-09-25).
   // Guard: wire-v3.test.ts "hello stays inside its per-row budget".
   sendToClient(socket, {
     type: 'hello',
@@ -485,14 +431,10 @@ function rejectInvalidMessage(
     .join('; ');
   logger.error(`[WS] Invalid client message: ${issueSummary}`);
   const commandId =
-    typeof parsed === 'object' &&
-    parsed !== null &&
-    'commandId' in parsed &&
-    typeof parsed.commandId === 'string' &&
-    parsed.commandId.length > 0
+    typeof parsed === 'object' && parsed !== null && 'commandId' in parsed
       ? parsed.commandId
       : null;
-  if (commandId) {
+  if (typeof commandId === 'string' && commandId) {
     sendCommandRejected(socket, {
       commandId,
       error: { code: 'invalid_message', message: `Invalid message: ${issueSummary}` },
@@ -520,17 +462,7 @@ function errorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
 }
 
-/**
- * Message for a create_conversation replay that threw. Three distinct failures
- * reach that catch: createOrReplay rejects a fingerprint mismatch with
- * ConfigRevisionConflictError and a deleted id with ConversationTombstonedError;
- * anything else came from dispatchInitialMessage (it rethrows Buddy-authority
- * rejections) or the config store. Until 2026-09-06 all three were reported as
- * "already exists with different configuration" — and the dispatch case landed
- * right after conversation_created, so the client showed a config mismatch for
- * a conversation it had just been told exists. The type is the only reliable
- * discriminator; the message is what the user reads.
- */
+/** A failed create/replay's message, by error type (docs/ws-contract-surprises.md, 2026-09-06). */
 function replayFailureMessage(error: unknown): string {
   if (error instanceof ConfigRevisionConflictError) {
     return 'Conversation ID already exists with different configuration';

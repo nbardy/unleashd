@@ -5,8 +5,8 @@ import { type BuddyContext, createDefaultConversationConfig } from '@unleashd/sh
 import {
   type BuddyCreationServicePorts,
   createBuddyCreationService,
-  creationFingerprint,
 } from '../src/conversations/buddy-creation-service';
+import { creationFingerprint } from '../src/conversations/creation-service';
 import type { ConversationOptions, ConversationRuntime } from '../src/conversations/runtime';
 
 const context = {
