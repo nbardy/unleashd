@@ -110,8 +110,10 @@ immer were removed in T19. See [client state](client-state.md).
 Desktop mounts `WorkspaceSlack` OUTSIDE the shell (its rail replaces the
 sidebar); mobile mounts `ChannelsMobile` INSIDE `ShellMobile` (`App.tsx`:
 `OUTSIDE_SHELL` / `INSIDE_SHELL` keyed by `DeviceKind`). On mobile the query
-picks Home ⊕ Channel ⊕ Thread (`mobile/channels/channel-route.ts`); Channel and
-Thread are immersive panes, so ShellMobile hides the tab bar there and uses the
+picks Home ⊕ Channel ⊕ Thread ⊕ Task (`mobile/channels/channel-route.ts`; Task is
+the desktop `?channel=&task=` Task filter, restored on mobile by the 2026-09-26
+feature audit after the lean rewrite left it desktop-only); every screen but Home
+is an immersive pane, so ShellMobile hides the tab bar there and uses the
 pane layout. Shared, CSS-owning pieces come from `components/buddies/`
 (`ChannelMarkdown`, `ChannelComposer`, `channel-data.ts`); a channel post's
 purpose is read through `postPurposeLabel`/`postPurposeTag`, since gate G2 greps

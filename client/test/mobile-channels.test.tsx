@@ -229,3 +229,102 @@ test('the Channels tab opens the most recently active workspace first', async ()
     ['u', 'a']
   );
 });
+
+// Feature audit 2026-09-26: the Task filter (one Task's posts across every
+// channel) was desktop-only after the lean rewrite. Mobile had one until then,
+// in the Buddy Mailbox channel reader (d382234: "on mobile the only Task filter
+// over channel posts"). A desktop `?channel=&task=` link must open it on a
+// phone too, and each post must link into its own channel.
+test('the mobile Task filter opens from a channel and links each post into its own channel', async () => {
+  const ws = 'ws-phone-task';
+  const base = `/buddies/workspaces/${ws}/channels`;
+  await loadResource({
+    key: '/api/buddies/overview',
+    load: async () => [rosterFixture([lead], { id: ws, name: 'unleashd' })],
+  });
+  await loadResource({
+    key: `/api/buddies/workspaces/${ws}/inbox`,
+    load: async () =>
+      inboxFixture([
+        { channel: publicChannel('ch_gen', 'general', ws), unread: 0 },
+        { channel: publicChannel('ch_ops', 'ops', ws), unread: 0 },
+      ]),
+  });
+  await loadResource({
+    key: `/api/buddies/tasks?workspaceId=${ws}`,
+    load: async () => [
+      {
+        id: 'task-ship',
+        workspaceId: ws,
+        ownerId: 'lead',
+        title: 'Ship channels',
+        doneCriteria: 'Shipped',
+        status: 'in_progress',
+        paused: false,
+        epoch: 1,
+        evidence: [],
+        position: 0,
+        revision: 1,
+        createdAt: '2026-09-24T00:00:00.000Z',
+        updatedAt: '2026-09-24T00:00:00.000Z',
+      },
+    ],
+  });
+  await loadResource({ key: '/api/buddies/channels/ch_gen/responding', load: async () => [] });
+  const aboutTask = postFixture({
+    id: 'about-task',
+    channelId: 'ch_gen',
+    taskId: 'task-ship',
+    body: 'Started on it.',
+    createdAt: '2026-09-24T01:00:00.000Z',
+  });
+  await loadResource({
+    key: '/api/buddies/channels/ch_gen/posts?limit=50',
+    load: async () => ({ posts: [aboutTask] }),
+  });
+  await loadResource({
+    key: '/api/buddies/tasks/task-ship/posts?limit=50',
+    load: async () => ({
+      posts: [
+        postFixture({
+          id: 'ops-reply',
+          channelId: 'ch_ops',
+          rootId: 'ops-root',
+          taskId: 'task-ship',
+          body: 'Deployed to staging.',
+          createdAt: '2026-09-24T02:00:00.000Z',
+        }),
+        aboutTask,
+      ],
+    }),
+  });
+
+  const channel = render(`${base}?channel=ch_gen`);
+  assert.match(
+    channel,
+    /<select class="mobile-channel__task-filter ui-control" aria-label="Filter by Task"/
+  );
+  assert.match(channel, /<option value="task-ship">Task: Ship channels<\/option>/);
+
+  const url = `${base}?channel=ch_gen&task=task-ship`;
+  assert.deepEqual(mobileChannelScreen(new URL(url, 'http://x').search), {
+    kind: 'task',
+    channelId: 'ch_gen',
+    taskId: 'task-ship',
+  });
+  const html = render(url);
+  assert.match(html, /<h1>Task: Ship channels<\/h1>/);
+  assert.match(
+    html,
+    new RegExp(`class="mobile-channel-header__back"[^>]*href="${base}\\?channel=ch_gen"`)
+  );
+  assert.match(html, /Deployed to staging\./);
+  assert.match(html, /Started on it\./);
+  // The reply links to itself inside its thread in #ops, not into #general.
+  assert.match(
+    html,
+    new RegExp(
+      `class="mobile-channel-post__reply" href="${base}\\?channel=ch_ops&amp;thread=ops-root&amp;post=ops-reply"[^>]*>#ops</a>`
+    )
+  );
+});
