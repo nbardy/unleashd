@@ -19,6 +19,8 @@ import {
  */
 
 type ToolUseEvent = Extract<UnifiedAgentEvent, { type: 'tool.use' }>;
+type TaskStartedEvent = Extract<UnifiedAgentEvent, { type: 'task.started' }>;
+type TaskFinishedEvent = Extract<UnifiedAgentEvent, { type: 'task.finished' }>;
 
 export interface SubAgentHost {
   readonly conversationId: string;
@@ -34,19 +36,52 @@ export type ToolLine = 'show' | 'hide';
 
 export interface SubAgentFold {
   toolUse(host: SubAgentHost, event: ToolUseEvent): ToolLine;
+  /** The harness started a task: bind it to the sub-agent its tool call spawned. */
+  taskStarted(host: SubAgentHost, event: TaskStartedEvent): void;
+  /** The harness says a task ended: that is the sub-agent's real end. */
+  taskFinished(host: SubAgentHost, event: TaskFinishedEvent): void;
   /** The parent turn completed: settle the agents this harness only infers. */
   parentCompleted(host: SubAgentHost, completedAt: Date): void;
 }
 
+/**
+ * A background `Agent` returns its tool_result ("Async agent launched") at once and keeps running;
+ * only the harness's task events say when it ends (agent-cli `task.started` / `task.finished`,
+ * Claude's task_started / task_notification). The spawn tool.use carries no tool-call id, so
+ * `task.started` is bound to the spawn by the launch description it repeats verbatim, and the
+ * sub-agent keeps the call id as `providerThreadId` for `task.finished`. A sub-agent whose task
+ * never finishes settles by the turn-end rule (`parentCompleted` / `failRunningSubAgents`).
+ * Guard: conversation-runtime.test.ts "a recorded background agent stays running until its task
+ * finishes".
+ */
 function genericFold(provider: Provider): SubAgentFold {
+  // This turn's spawns still waiting for their task.started, keyed by launch description.
+  const launches: { description: unknown; agent: SubAgent }[] = [];
   return {
     toolUse(host, event) {
       if (isSubagentSpawnTool(provider, event.name)) {
-        spawnGenericAgent(host, provider, event);
+        const agent = spawnGenericAgent(host, provider, event);
+        launches.push({ description: event.input.description, agent });
         return 'hide';
       }
       noteActiveAgentTool(host, event);
       return 'show';
+    },
+    taskStarted(_host, event) {
+      const index = launches.findIndex((launch) => launch.description === event.description);
+      if (index < 0) return; // a task no spawn launched (a shell, a nested agent's tool)
+      const [{ agent }] = launches.splice(index, 1);
+      agent.providerThreadId = event.toolUseId;
+    },
+    taskFinished(host, event) {
+      const agent = host.agents.find((a) => a.providerThreadId === event.toolUseId);
+      if (!agent || agent.status !== 'running') return;
+      agent.status = event.status === 'completed' ? 'completed' : 'error';
+      agent.rawStatus = event.status;
+      agent.statusSource = 'native';
+      agent.completedAt = new Date();
+      agent.currentAction = agent.status === 'completed' ? 'Done' : 'Error';
+      host.changed(agent);
     },
     parentCompleted(host, completedAt) {
       completeRunning(host, completedAt, () => true);
@@ -54,7 +89,7 @@ function genericFold(provider: Provider): SubAgentFold {
   };
 }
 
-function spawnGenericAgent(host: SubAgentHost, provider: Provider, event: ToolUseEvent): void {
+function spawnGenericAgent(host: SubAgentHost, provider: Provider, event: ToolUseEvent): SubAgent {
   const description = getSubagentDescription(provider, event.name, event.input);
   const blockId = (event.input as { _blockId?: string })._blockId || host.newId();
   const subAgent: SubAgent = {
@@ -71,6 +106,7 @@ function spawnGenericAgent(host: SubAgentHost, provider: Provider, event: ToolUs
     `[${host.conversationId}] Sub-agent started: ${blockId.substring(0, 8)} - "${description.substring(0, 50)}"`
   );
   host.changed(subAgent);
+  return subAgent;
 }
 
 /** A non-spawn tool is attributed to the running sub-agent as its current action. */
@@ -114,36 +150,38 @@ export function failRunningSubAgents(agents: SubAgent[], completedAt: Date): voi
 
 // --- Codex native collab threads --------------------------------------------
 
-const codexGeneric = genericFold('codex');
-
-const codexFold: SubAgentFold = {
-  toolUse(host, event) {
-    if (!isCodexCollabToolName(event.name)) return codexGeneric.toolUse(host, event);
-    const { phase, receiverThreadIds, prompt, agentStates } = extractCodexCollabToolInput(
-      event.input
-    );
-    // The started phase renders as an ordinary tool line; the completed phase
-    // carries the per-child states and replaces the line with agent rows.
-    if (phase !== 'completed') return 'show';
-    const childIds = new Set<string>([...receiverThreadIds, ...Object.keys(agentStates)]);
-    for (const childId of childIds) {
-      const agentState = agentStates[childId];
-      applyCodexChildState(
-        host,
-        childId,
-        event.name,
-        prompt,
-        agentState?.status,
-        agentState?.message
+function codexFold(): SubAgentFold {
+  const codexGeneric = genericFold('codex');
+  return {
+    ...codexGeneric,
+    toolUse(host, event) {
+      if (!isCodexCollabToolName(event.name)) return codexGeneric.toolUse(host, event);
+      const { phase, receiverThreadIds, prompt, agentStates } = extractCodexCollabToolInput(
+        event.input
       );
-    }
-    return 'hide';
-  },
-  // Native threads report their own terminal state; only inferred agents settle here.
-  parentCompleted(host, completedAt) {
-    completeRunning(host, completedAt, (agent) => !agent.providerThreadId);
-  },
-};
+      // The started phase renders as an ordinary tool line; the completed phase
+      // carries the per-child states and replaces the line with agent rows.
+      if (phase !== 'completed') return 'show';
+      const childIds = new Set<string>([...receiverThreadIds, ...Object.keys(agentStates)]);
+      for (const childId of childIds) {
+        const agentState = agentStates[childId];
+        applyCodexChildState(
+          host,
+          childId,
+          event.name,
+          prompt,
+          agentState?.status,
+          agentState?.message
+        );
+      }
+      return 'hide';
+    },
+    // Native threads report their own terminal state; only inferred agents settle here.
+    parentCompleted(host, completedAt) {
+      completeRunning(host, completedAt, (agent) => !agent.providerThreadId);
+    },
+  };
+}
 
 function applyCodexChildState(
   host: SubAgentHost,
@@ -235,16 +273,17 @@ function broadcastAgentUpdate(host: SubAgentHost, agent: SubAgent): void {
 }
 
 // Pattern: table-driven (docs/patterns.md#table-driven)
-/** Harness capability table: which sub-agent protocol each harness speaks. */
-const SUB_AGENT_FOLDS: Record<Provider, SubAgentFold> = {
-  claude: genericFold('claude'),
+/** Harness capability table: which sub-agent protocol each harness speaks. One fold per turn. */
+const SUB_AGENT_FOLDS: Record<Provider, () => SubAgentFold> = {
+  claude: () => genericFold('claude'),
   codex: codexFold,
-  gemini: genericFold('gemini'),
-  opencode: genericFold('opencode'),
-  cursor: genericFold('cursor'),
-  muse: genericFold('muse'),
+  gemini: () => genericFold('gemini'),
+  opencode: () => genericFold('opencode'),
+  cursor: () => genericFold('cursor'),
+  muse: () => genericFold('muse'),
 };
 
+/** A fresh fold for one turn of `provider`. */
 export function subAgentFoldFor(provider: Provider): SubAgentFold {
-  return SUB_AGENT_FOLDS[provider];
+  return SUB_AGENT_FOLDS[provider]();
 }

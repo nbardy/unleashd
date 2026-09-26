@@ -935,6 +935,47 @@ test('a recorded Claude 2.1 Agent launch becomes a sub-agent', async () => {
   );
 });
 
+// A background `Agent`'s tool_result ("Async agent launched") returns at once while the agent
+// keeps working; only Claude's task_notification (agent-cli `task.finished`) marks its end.
+// The row read `completed` from launch on; it now follows the task events.
+test('a recorded background agent stays running until its task finishes', async () => {
+  const events = recordedBackgroundAgentTurn();
+  const statusAfter: string[] = [];
+  const { conversation } = runtimeFixture({
+    provider: 'claude',
+    executeTurn: fakeExecuteTurn(() => ({
+      child: { exitCode: 0 },
+      events: (async function* () {
+        for (const event of events) {
+          yield event;
+          statusAfter.push(`${event.type}:${conversation.subAgents[0]?.status ?? 'none'}`);
+        }
+      })(),
+      completed: Promise.resolve({
+        exitCode: 0,
+        signal: null,
+        sessionId: 'scripted-session',
+        reason: 'success',
+      }),
+      stop: () => undefined,
+    })),
+  });
+  conversation.sendMessage('scripted');
+  await conversation.waitForTurnDrain();
+
+  const launch = events.findIndex((event) => event.type === 'tool.result');
+  const agentStart = events.find(
+    (event): event is Extract<UnifiedAgentEvent, { type: 'task.started' }> =>
+      event.type === 'task.started' && event.background
+  );
+  const agentFinish = events.findIndex(
+    (event) => event.type === 'task.finished' && event.toolUseId === agentStart?.toolUseId
+  );
+  assert.equal(statusAfter[launch], 'tool.result:running', 'launch result leaves it running');
+  assert.equal(statusAfter[agentFinish - 1], 'tool.result:running', 'still running before');
+  assert.equal(statusAfter[agentFinish], 'task.finished:completed', 'its task end completes it');
+});
+
 test('bridge watchdog terminates a turn when neither unified events nor heartbeats arrive', (t) => {
   t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: 0 });
   const stub = openTurnStub();
