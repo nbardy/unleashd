@@ -386,7 +386,8 @@
   margin-top: 4px;
 }
 
-.channel-composer-model-actions button {
+.channel-composer-model-actions button,
+.channel-inline-action {
   padding: 4px 12px;
   border: 1px solid var(--border-subtle);
   border-radius: 7px;
@@ -397,9 +398,16 @@
   cursor: pointer;
 }
 
-.channel-composer-model-actions button:disabled {
+.channel-composer-model-actions button:disabled,
+.channel-inline-action:disabled {
   opacity: 0.45;
   cursor: default;
+}
+
+/* A retry or New chat button: the harness popover opens above it (493c1c7). */
+.channel-harness-picker {
+  position: relative;
+  margin-top: var(--sp-3);
 }
 
 .channel-composer-model-actions .channel-composer-model-done {

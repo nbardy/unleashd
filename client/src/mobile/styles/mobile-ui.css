@@ -778,22 +778,6 @@
 /* ---- Attach button + pending files (shared behaviour with desktop Chat.tsx) ---- */
 /* Uses same hook (usePendingAttachments) and same localStorage key / upload path.
    Visuals are mobile-scaled: horizontal chip strip above the composer box. */
-.mobile-composer__btn--attach {
-  background: var(--bg-raised-2);
-  color: var(--text-secondary);
-  border: 1px solid var(--border-subtle);
-}
-
-.mobile-composer__btn--attach:disabled {
-  opacity: 0.45;
-  cursor: default;
-  transform: none;
-}
-
-.mobile-composer__btn--attach:active:not(:disabled) {
-  background: var(--bg-raised-1);
-}
-
 /* ---- Slim conversation header ---- */
 .mobile-chat__heading {
   flex: 1;
@@ -1103,6 +1087,7 @@
 }
 
 /* Composer prompt buttons — same 30px circle as attach/send */
+.mobile-composer__btn--attach,
 .mobile-composer__btn--save,
 .mobile-composer__btn--palette {
   background: var(--bg-raised-2);
@@ -1110,12 +1095,14 @@
   border: 1px solid var(--border-subtle);
 }
 
+.mobile-composer__btn--attach:disabled,
 .mobile-composer__btn--save:disabled {
   opacity: 0.45;
   cursor: default;
   transform: none;
 }
 
+.mobile-composer__btn--attach:active:not(:disabled),
 .mobile-composer__btn--save:active:not(:disabled),
 .mobile-composer__btn--palette:active {
   background: var(--bg-raised-1);

@@ -1,11 +1,14 @@
 import { useAtomValue } from 'jotai';
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
+import { rowFamily } from '../../atoms/conversations';
 import { BuddySigil } from '../../components/buddies/BuddySigil';
-import { ChannelAuthor, useChatPageDm } from '../../components/buddies/ChannelAuthor';
+import { ChannelAuthor, type OpenDm } from '../../components/buddies/ChannelAuthor';
+import { ChannelDm } from '../../components/buddies/ChannelDm';
 import { ChannelHistory, ChannelLoader } from '../../components/buddies/ChannelLoader';
 import { ChannelMarkdown, TypingDots } from '../../components/buddies/ChannelMarkdown';
 import { CopyLinkButton } from '../../components/buddies/CopyLinkButton';
+import { ReplyRetry } from '../../components/buddies/HarnessPicker';
 import { TaskFilter } from '../../components/buddies/TaskFilter';
 import { WakeIcon, WakeIndicator } from '../../components/buddies/WakeIndicator';
 import { errorText } from '../../components/buddies/api';
@@ -43,13 +46,14 @@ import { channelLinkPath, postLink } from '../../components/buddies/channel-link
 import type { Buddy, ChannelUnread, Inbox, Post } from '../../components/buddies/types';
 import { useBuddyOverview } from '../../hooks/useBuddyData';
 import { mobileConversationRouteState } from '../../utils/conversation-route-state';
+import { rowBuddy } from '../../utils/conversation-row';
 import {
   MobileEmptyPanel,
   MobileHeaderAction,
   MobilePage,
   MobileSection,
 } from '../components/MobileUI';
-import { ChannelComposerMobile } from './ChannelComposerMobile';
+import { ChannelComposerMobile, MobileChannelComposeFrame } from './ChannelComposerMobile';
 import { buddyWorkspaceActivityAtom, overviewWorkspaces } from './ChannelsIndex';
 import { type MobileChannelScreen, channelsHref, mobileChannelScreen } from './channel-route';
 
@@ -116,7 +120,70 @@ function renderScreen(screen: MobileChannelScreen, context: ScreenContext) {
           context={context}
         />
       );
+    case 'dm':
+      return (
+        <DmScreen
+          key={screen.conversationId}
+          conversationId={screen.conversationId}
+          context={context}
+        />
+      );
   }
+}
+
+// A Buddy DM stays inside Channels (493c1c7): the current query is kept, so Back (dropping `dm`)
+// returns to the channel, thread or Home it was opened from.
+function useChannelsDm(): OpenDm {
+  const navigate = useNavigate();
+  const location = useLocation();
+  return (conversationId) => {
+    const params = new URLSearchParams(location.search);
+    params.set('dm', conversationId);
+    navigate(`${location.pathname}?${params}`);
+  };
+}
+
+// A Buddy DM drawn as a thread. The Buddy Builder chat is the hire flow, so it opens the
+// conversation page instead, with Back returning here without `dm`.
+function DmScreen({ conversationId, context }: { conversationId: string; context: ScreenContext }) {
+  const location = useLocation();
+  const navigate = useNavigate();
+  const row = useAtomValue(rowFamily(conversationId));
+  const buddy = rowBuddy(row);
+  const back = new URLSearchParams(location.search);
+  back.delete('dm');
+  const backSearch = back.size ? `?${back}` : '';
+  const builder = row !== null && buddy === null;
+  useEffect(() => {
+    if (!builder) return;
+    navigate(`/chat/${encodeURIComponent(conversationId)}`, {
+      replace: true,
+      state: mobileConversationRouteState({ ...location, search: backSearch }),
+    });
+  }, [builder, conversationId, location, backSearch, navigate]);
+  if (buddy === null) return <ChannelLoader label="Opening DM…" />;
+  const member = context.directory.activeMembers.find((entry) => entry.id === buddy.buddyId);
+  const name = member?.name ?? 'Buddy';
+  return (
+    <ChannelDm
+      conversationId={conversationId}
+      buddyId={buddy.buddyId}
+      buddyName={name}
+      buddyRole={member?.role ?? 'Direct message'}
+      buddyNames={context.directory.buddyNames}
+      tasks={context.directory.taskById}
+      frame="mobile"
+      linkPath={channelLinkPath(context.workspaceId, { kind: 'dm', conversationId })}
+      backTo={`${location.pathname}${backSearch}`}
+      onConversation={(next) => {
+        back.set('dm', next);
+        navigate(`${location.pathname}?${back}`, { replace: true });
+      }}
+      composeShell={(composer) => (
+        <MobileChannelComposeFrame title={name}>{composer}</MobileChannelComposeFrame>
+      )}
+    />
+  );
 }
 
 /** The screen's channel as the inbox lists it; a channel the inbox has not listed yet reads as unknown. */
@@ -245,8 +312,8 @@ function ChannelsHome({ context }: { context: ScreenContext }) {
 // Slack's DM row: tapping the Buddy opens the conversation (its one ongoing
 // DM, history kept). Wake is a visible button, since touch has no hover.
 function BuddyRow({ member }: { member: Buddy }) {
-  // Back from the DM returns here, not to the Buddies tab.
-  const openDm = useChatPageDm();
+  // The DM opens inside Channels; Back returns here, not to the Buddies tab.
+  const openDm = useChannelsDm();
   const location = useLocation();
   const direct = useBuddyDirectActions(member.id);
   const { action } = direct;
@@ -416,7 +483,7 @@ function PostFooter({ post, context }: { post: Post; context: RowContext }) {
 }
 
 function Row({ row, context }: { row: ChannelRow; context: RowContext }) {
-  const openDm = useChatPageDm();
+  const openDm = useChannelsDm();
   switch (row.kind) {
     case 'day':
       return (
@@ -452,6 +519,7 @@ function Row({ row, context }: { row: ChannelRow; context: RowContext }) {
               buddyNames={context.directory.buddyNames}
               tasks={context.directory.taskById}
             />
+            <ReplyRetry post={row.post} />
             <PostFooter post={row.post} context={context} />
           </div>
         </li>
@@ -471,6 +539,7 @@ function Row({ row, context }: { row: ChannelRow; context: RowContext }) {
               buddyNames={context.directory.buddyNames}
               tasks={context.directory.taskById}
             />
+            <ReplyRetry post={row.post} />
             <PostFooter post={row.post} context={context} />
           </div>
         </li>

@@ -14,7 +14,7 @@ import {
   queueMessage,
 } from '../atoms/actions';
 import type { QueuedMessage } from '../atoms/actions';
-import { setConversationConfig } from '../atoms/commands';
+import { createConversation, setConversationConfig } from '../atoms/commands';
 import {
   childRowsFamily,
   commandFor,
@@ -54,6 +54,8 @@ import { ResumeThreadWidget } from './ResumeThreadWidget';
 import { SubAgentPanel } from './SubAgentPanel';
 import { TurnStatus } from './TurnStatus';
 import { VirtualizedMessageList } from './VirtualizedMessageList';
+import { HarnessPicker } from './buddies/HarnessPicker';
+import { lastOwnerText } from './buddies/channel-dm';
 import {
   shouldPresentTurnAttempt,
   shouldShowTypingIndicator,
@@ -218,6 +220,14 @@ export function Chat({ id }: { id: string }) {
   const runtimeTurnActive = isRunning || isStreaming;
   const { attempt: latestTurnAttempt } = useTurnDiagnostics(id, runtimeTurnActive);
   const restartRecovery = useRestartRecovery(id ?? '', latestTurnAttempt, runtimeTurnActive);
+  // A plain chat that ran out of tokens can rerun its last message on another harness. Buddy
+  // conversations retry inside Channels (the DM's new chat, the thread's new seat).
+  const outOfTokensRetry =
+    conversation?.kind.t === 'chat' &&
+    !runtimeTurnActive &&
+    latestTurnAttempt?.terminalCause === 'out_of_tokens'
+      ? lastOwnerText(messages)
+      : null;
   const turnDiagnostics =
     latestTurnAttempt && shouldPresentTurnAttempt(latestTurnAttempt, runtimeTurnActive)
       ? turnDiagnosticsFromAttempt(latestTurnAttempt)
@@ -793,6 +803,26 @@ export function Chat({ id }: { id: string }) {
 
       <div className="input-container">
         {restartRecovery ? <RestartRecoveryPrompt recovery={restartRecovery} /> : null}
+        {outOfTokensRetry !== null && (
+          // 493c1c7: an out-of-tokens chat had no way forward but to copy the message by hand.
+          <HarnessPicker
+            label="Retry with a different harness"
+            note="This harness is out of tokens. The retry starts a new chat on the one you pick and sends your last message there."
+            confirm="Retry"
+            seed={null}
+            excluded={conversation.provider}
+            buddy={false}
+            onConfirm={async (config) => {
+              const next = createConversation({
+                workingDirectory: conversation.cwd,
+                config,
+                kind: { t: 'chat' },
+                initialMessage: outOfTokensRetry,
+              });
+              navigate(`/chat/${encodeURIComponent(next)}`);
+            }}
+          />
+        )}
         {currentMessage && (
           <div className="current-message-indicator ui-row">
             <span className="current-message-label">Current message</span>

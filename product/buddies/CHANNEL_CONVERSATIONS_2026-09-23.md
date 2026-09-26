@@ -239,6 +239,23 @@ does not push a client refresh. Both tools are in the default run policy
 - Both appear on Buddy rows in the desktop channels rail, the desktop main
   sidebar (hover, after the running counts), and mobile Channels Home (tap row =
   DM, visible Wake button). Shared client logic: `buddy-direct-actions.ts`.
+- Inside Channels the DM is drawn as a thread (`ChannelDm.tsx`): sigil, name,
+  time and `ChannelMarkdown` for both sides, and a channel-style composer (attach
+  + Send). Desktop opens it in the main pane (`?dm=`); the phone opens it as its
+  own Channels screen on the same URL, and Back drops `dm`. The Buddy Builder
+  chat still uses the conversation page.
+- **New chat** starts the next DM generation with no handoff; the picker opens
+  on the current harness. Earlier generations stay live and show above a "New
+  chat" divider; a link to an earlier one offers "Latest chat". Server:
+  `channels.newDirect` / `directChain` (`GET /api/buddies/:id/direct/chain`,
+  `POST …/direct/new-chat`).
+- **Retry on another harness.** A reply that failed because of its harness
+  (out of tokens, or a provider error such as Codex rejecting a model; shared
+  `isHarnessRetryFailure`) shows "Retry with a different harness". In a thread it
+  reruns the reply on a new seat (`POST /api/buddies/posts/:id/retry`); in a DM
+  it is a new chat on the picked harness that resends the owner's last message;
+  a plain chat that ran out of tokens starts a new chat the same way. The
+  harness that failed is refused.
 
 ## Mobile (2026-09-24)
 

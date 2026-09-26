@@ -9,9 +9,11 @@ import { BuddyRailRow, CreatingBuddyRailRow } from './BuddyRailRow';
 import { BuddySigil } from './BuddySigil';
 import { ChannelAuthor, type OpenDm } from './ChannelAuthor';
 import { ChannelComposer } from './ChannelComposer';
+import { ChannelDm } from './ChannelDm';
 import { ChannelHistory, ChannelLoader } from './ChannelLoader';
 import { ChannelMarkdown, TypingDots } from './ChannelMarkdown';
 import { CopyLinkButton } from './CopyLinkButton';
+import { ReplyRetry } from './HarnessPicker';
 import { TaskFilter } from './TaskFilter';
 import { errorText } from './api';
 import { useNewBuddy } from './buddy-direct-actions';
@@ -319,6 +321,7 @@ function LeadRow({ post, context }: { post: Post; context: RowContext }) {
           <PostMeta post={post} context={context} />
         </div>
         <PostBody post={post} context={context} />
+        <ReplyRetry post={post} />
         <ThreadSummary post={post} context={context} />
       </div>
       <MessageActions post={post} context={context} />
@@ -346,6 +349,7 @@ function ContinuationRow({ post, context }: { post: Post; context: RowContext })
           <PostMeta post={post} context={context} />
         </span>
         <PostBody post={post} context={context} />
+        <ReplyRetry post={post} />
         <ThreadSummary post={post} context={context} />
       </div>
       <MessageActions post={post} context={context} />
@@ -684,16 +688,45 @@ function ChannelPane({
   );
 }
 
-// A DM inside the channels view: the ordinary chat, beside the rail, the way
-// Slack opens a DM. Mounted only once the client holds the conversation — the
-// DM may be created by the click that opened it, and Chat bounces to '/' when
-// it cannot find its conversation (AGENTS.md: availability-check every
-// "open this conversation" affordance).
-function DmPane({ conversationId, available }: { conversationId: string; available: boolean }) {
+// A DM inside the channels view, beside the rail, the way Slack opens one. A Buddy DM is drawn as
+// a thread (ChannelDm, 493c1c7). The Buddy Builder chat keeps the conversation page: it is the
+// hire flow. Chat is mounted only once the client holds the conversation — the click that opened
+// it may have created it, and Chat bounces when it cannot find it (AGENTS.md availability rule).
+function DmPane({
+  conversationId,
+  available,
+  workspaceId,
+  directory,
+  onConversation,
+}: {
+  conversationId: string;
+  available: boolean;
+  workspaceId: string;
+  directory: WorkspaceDirectory;
+  onConversation: OpenDm;
+}) {
+  const buddy = rowBuddy(useAtomValue(rowFamily(conversationId)));
+  if (buddy === null)
+    return (
+      <section className="channel-browser-dm" aria-label="Direct message">
+        {available ? <Chat id={conversationId} /> : <ChannelLoader label="Opening DM…" />}
+      </section>
+    );
+  const member = directory.activeMembers.find((entry) => entry.id === buddy.buddyId);
   return (
-    <section className="channel-browser-dm" aria-label="Direct message">
-      {available ? <Chat id={conversationId} /> : <ChannelLoader label="Opening DM…" />}
-    </section>
+    <ChannelDm
+      conversationId={conversationId}
+      buddyId={buddy.buddyId}
+      buddyName={member?.name ?? 'Buddy'}
+      buddyRole={member?.role ?? 'Direct message'}
+      buddyNames={directory.buddyNames}
+      tasks={directory.taskById}
+      frame="desktop"
+      linkPath={channelLinkPath(workspaceId, { kind: 'dm', conversationId })}
+      backTo={null}
+      onConversation={onConversation}
+      composeShell={(composer) => composer}
+    />
   );
 }
 
@@ -1036,7 +1069,14 @@ export function ChannelBrowser({
       </nav>
       <main className="channel-browser-main">
         {dm ? (
-          <DmPane conversationId={dm} available={availableConversationIds.has(dm)} />
+          <DmPane
+            key={dm}
+            conversationId={dm}
+            available={availableConversationIds.has(dm)}
+            workspaceId={workspaceId}
+            directory={directory}
+            onConversation={openDm}
+          />
         ) : selected ? (
           <ChannelPane
             key={selected.channel.id}

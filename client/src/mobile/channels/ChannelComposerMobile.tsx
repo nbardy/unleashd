@@ -1,4 +1,4 @@
-import { type ComponentProps, useRef, useState } from 'react';
+import { type ComponentProps, type ReactNode, useRef, useState } from 'react';
 import { ChannelComposer } from '../../components/buddies/ChannelComposer';
 import { FullscreenComposer } from '../components/FullscreenComposer';
 
@@ -18,6 +18,21 @@ export function ChannelComposerMobile({
   title,
   ...composer
 }: { title: string } & ComponentProps<typeof ChannelComposer>) {
+  return (
+    <MobileChannelComposeFrame title={title}>
+      <ChannelComposer {...composer} />
+    </MobileChannelComposeFrame>
+  );
+}
+
+/** The fullscreen frame alone, for a composer that is not ChannelComposer (the DM's, 493c1c7). */
+export function MobileChannelComposeFrame({
+  title,
+  children,
+}: {
+  title: string;
+  children: ReactNode;
+}) {
   const [editing, setEditing] = useState(false);
   const buttonPointer = useRef(false);
   const stopEditing = () => {
@@ -53,7 +68,7 @@ export function ChannelComposerMobile({
             Done
           </button>
         </div>
-        <ChannelComposer {...composer} />
+        {children}
       </div>
     </FullscreenComposer>
   );

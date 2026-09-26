@@ -8,7 +8,7 @@ import type { Post } from './types';
  * — so one link opens the same place on desktop and phone. `channel` is a
  * channel id of any kind (public or direct).
  *
- *   D = Channel ⊕ Thread ⊕ Reply
+ *   D = Channel ⊕ Thread ⊕ Reply ⊕ DM (a Buddy DM conversation, drawn as a thread: 493c1c7)
  *
  * A top-level message IS its thread's root, so its link is the thread link:
  * the thread pane fetches the root by id, so the link works however old the
@@ -19,7 +19,8 @@ import type { Post } from './types';
 export type ChannelLink =
   | { kind: 'channel'; channelId: string }
   | { kind: 'thread'; channelId: string; rootId: string }
-  | { kind: 'reply'; channelId: string; rootId: string; postId: string };
+  | { kind: 'reply'; channelId: string; rootId: string; postId: string }
+  | { kind: 'dm'; conversationId: string };
 
 export function postLink(post: Post): ChannelLink {
   return post.rootId === undefined
@@ -35,6 +36,8 @@ function linkParams(link: ChannelLink): Record<string, string> {
       return { channel: link.channelId, thread: link.rootId };
     case 'reply':
       return { channel: link.channelId, thread: link.rootId, post: link.postId };
+    case 'dm':
+      return { dm: link.conversationId };
   }
 }
 
