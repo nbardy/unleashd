@@ -32,7 +32,10 @@ pub struct ImportReport {
     /// Audit rows for pure reads, dropped by design (events are mutations only).
     pub dropped_read_events: i64,
     pub non_home_memberships: Vec<Value>,
-    pub divergent_thread_souls: Vec<Value>,
+    /// Memory folds whose winner is not the legacy head (a thread/task/workspace copy was newer).
+    pub memory_fold_winners: Vec<Value>,
+    /// Memory copies not imported (they are archived by `export-notes`).
+    pub folded_copies: i64,
     pub converted_schedules: Vec<Value>,
     /// Dangling references carried over from the source (`PRAGMA foreign_key_check`), reported, not repaired.
     pub foreign_key_violations: Vec<Value>,
@@ -103,6 +106,14 @@ pub const DIRECT_READ_CURSORS: &str = "SELECT r.reader, c.id AS channel_id, last
 /// A read cursor's ordered id: the post's own when it exists, else the ceiling id of its time
 /// ("read through that instant": an owner baseline has post id '').
 pub const CURSOR_ORD: &str = "coalesce((SELECT p.ord FROM post p WHERE p.id = {post}), ord_ceiling({at}))";
+
+/// `sha256(text)`: hex digest, as `winner_chains` and the knowledge revisions need.
+pub fn register_sha256(conn: &Connection) -> Result<()> {
+    conn.create_scalar_function("sha256", 1, FunctionFlags::SQLITE_UTF8 | FunctionFlags::SQLITE_DETERMINISTIC, |ctx| {
+        Ok(sha256_hex(ctx.get::<String>(0)?.as_bytes()))
+    })?;
+    Ok(())
+}
 
 /// `ord_ceiling(time)`: the greatest ordered id of that millisecond (ids.rs).
 pub fn register_ord_ceiling(conn: &Connection) -> Result<()> {
@@ -214,6 +225,8 @@ fn setup_sql() -> Vec<String> {
          FROM chain JOIN (SELECT a.id, CASE WHEN r.member_key = a.member_key AND a.root_message_id != a.id THEN a.root_message_id END AS local
                           FROM msg a LEFT JOIN msg r ON r.id = a.root_message_id) top ON top.id = chain.top"
             .into(),
+        format!("CREATE TEMP TABLE mem_copy AS {}", memory_copies("old.")),
+        format!("CREATE TEMP TABLE mem_chain AS {}", winner_chains("old.")),
         "CREATE TEMP TABLE owner_read (list_id TEXT NOT NULL, post_id TEXT NOT NULL, created_at TEXT NOT NULL)".into(),
     ]
 }
@@ -246,6 +259,47 @@ pub fn open_source(path: &Path) -> Result<Connection> {
         SOURCE_VERSION => Ok(conn),
         v => Err(CoreError::WrongDatabase(format!("{}: user_version {v}, expected {SOURCE_VERSION}", path.display()))),
     }
+}
+
+/// Every v33 copy of a Buddy's soul/working/long_term memory: the legacy head and each
+/// `buddy_knowledge` copy of that kind in any scope. The lean store keeps ONE doc per (Buddy,
+/// kind), so `rank` 1 (newest `updated_at`; the head wins a tie) is imported as `mem_<buddy>_<kind>`
+/// and every other copy is archived to agent_notes by `export-notes` (notes.rs). Import, export and
+/// verify all rank through this one query, so the fold and the archive cannot drift. `db` is the
+/// schema prefix (`old.` inside the import's ATTACH, `` on a directly opened v33 file).
+pub fn memory_copies(db: &str) -> String {
+    format!(
+        "SELECT *, row_number() OVER (PARTITION BY buddy_id, kind ORDER BY updated_at DESC, source DESC, source_id) AS rank FROM (
+           SELECT h.buddy_id, h.document_kind AS kind, 'buddy_memory_heads' AS source, h.revision_id AS source_id,
+             'head:' || h.buddy_id || '/' || h.document_kind AS chain, 'buddy' AS scope_kind, h.buddy_id AS scope_id, r.revision,
+             r.body AS content, h.updated_at
+           FROM {db}buddy_memory_heads h JOIN {db}buddy_memory_revisions r ON r.id = h.revision_id
+           UNION ALL
+           SELECT buddy_id, kind, 'buddy_knowledge', id, id, scope_kind, scope_id, revision, content, updated_at
+           FROM {db}buddy_knowledge WHERE kind IN ('soul','working','long_term'))"
+    )
+}
+
+/// Each winner's own revision chain, renumbered 1..n in source order (5 knowledge chains on the
+/// 2026-09-26 copy have gaps) so the imported doc's revision is its last and CAS works. The
+/// source revision stays in `legacy`. `sha256` is the stored hash (memory) or NULL (knowledge).
+pub fn winner_chains(db: &str) -> String {
+    format!(
+        "SELECT 'mem_' || w.buddy_id || '_' || w.kind AS doc_id,
+           row_number() OVER (PARTITION BY w.buddy_id, w.kind ORDER BY x.revision) AS revision, x.revision AS source_revision,
+           x.content, x.reason, x.author, x.provenance, coalesce(x.sha256, sha256(x.content)) AS sha256, x.stored_sha256, x.created_at,
+           json_patch(x.legacy, json_object('source_revision', x.revision)) AS legacy
+         FROM ({}) w JOIN (
+           SELECT 'head:' || buddy_id || '/' || document_kind AS chain, revision, body AS content, reasoning AS reason, author_kind AS author,
+             provenance_json AS provenance, sha256, sha256 AS stored_sha256, created_at,
+             json_object('id', id, 'base_revision_id', base_revision_id, 'requested_by', requested_by) AS legacy
+           FROM {db}buddy_memory_revisions
+           UNION ALL
+           SELECT document_id, revision, content, reason, author, provenance, NULL, NULL, created_at, json_object('document_id', document_id)
+           FROM {db}buddy_knowledge_revisions) x ON x.chain = w.chain
+         WHERE w.rank = 1",
+        memory_copies(db)
+    )
 }
 
 pub const V33_SOUL_PATHS: &str =
@@ -299,6 +353,15 @@ const DOMAIN_CHECKS: &[(&str, &str)] = &[
     (
         "buddy_automations.job_kind not prompt",
         "SELECT count(*) FROM old.buddy_automations WHERE job_kind != 'prompt' OR json_extract(job_payload, '$.prompt') IS NULL",
+    ),
+    (
+        "buddy_knowledge.kind unknown",
+        "SELECT count(*) FROM old.buddy_knowledge WHERE kind NOT IN ('soul','working','long_term','shared','note')",
+    ),
+    (
+        "shared docs whose names clash once thread/task scope folds into the buddy",
+        "SELECT count(*) FROM old.buddy_knowledge a JOIN old.buddy_knowledge b ON b.buddy_id = a.buddy_id AND b.name = a.name AND b.id > a.id
+         WHERE a.kind = 'shared' AND b.kind = 'shared' AND a.scope_kind != 'workspace' AND b.scope_kind != 'workspace'",
     ),
     (
         "buddy_knowledge.scope_kind unknown",
@@ -421,28 +484,24 @@ fn mapping_sql() -> Vec<String> {
          SELECT id, 'tc_' || project_id, nullif(author, 'owner'), project_id, body, evidence, created_at,
            json_object('source', 'buddy_task_comments'), 'pending:' || id
          FROM old.buddy_task_comments".into(),
+        // Memory folds to one doc per (Buddy, kind): the newest copy wins with its own chain (MEMORY_COPIES).
         "INSERT INTO doc (id, buddy_id, workspace_id, scope_kind, scope_id, kind, name, revision, content, updated_at, legacy)
-         SELECT 'mem_' || h.buddy_id || '_' || h.document_kind, h.buddy_id, b.project_id, 'buddy', h.buddy_id, h.document_kind, '',
-           r.revision, r.body, h.updated_at,
-           json_object('source', 'buddy_memory_heads', 'head_revision_id', h.revision_id, 'generation', h.generation)
-         FROM old.buddy_memory_heads h JOIN old.buddies b ON b.id = h.buddy_id JOIN old.buddy_memory_revisions r ON r.id = h.revision_id".into(),
-        "INSERT INTO doc_revision SELECT 'mem_' || buddy_id || '_' || document_kind, revision, body, reasoning, author_kind,
-           provenance_json, sha256, created_at,
-           json_object('id', id, 'base_revision_id', base_revision_id, 'requested_by', requested_by)
-         FROM old.buddy_memory_revisions".into(),
-        // A thread-scoped soul that differs from the buddy's soul head is kept as its own doc and flagged (DESIGN decision 7).
+         SELECT 'mem_' || c.buddy_id || '_' || c.kind, c.buddy_id, b.project_id, 'buddy', c.buddy_id, c.kind, '',
+           (SELECT w.revision FROM mem_chain w WHERE w.doc_id = 'mem_' || c.buddy_id || '_' || c.kind AND w.source_revision = c.revision),
+           c.content, c.updated_at,
+           json_object('source', c.source, 'source_id', c.source_id, 'scope_kind', c.scope_kind, 'scope_id', c.scope_id,
+             'revision', c.revision)
+         FROM mem_copy c JOIN old.buddies b ON b.id = c.buddy_id WHERE c.rank = 1".into(),
+        "INSERT INTO doc_revision SELECT doc_id, revision, content, reason, author, provenance, sha256, created_at, legacy FROM mem_chain".into(),
+        // Shared docs: thread/task scope folds into the Buddy's own scope (DOMAIN_CHECKS rejects a name clash).
         // Notes are not imported: they leave as agent_notes/*.md files (`buddies-import export-notes`, notes.rs).
         "INSERT INTO doc (id, buddy_id, workspace_id, scope_kind, scope_id, kind, name, revision, content, updated_at, legacy)
-         SELECT k.id, k.buddy_id, k.workspace_id,
-           CASE k.scope_kind WHEN 'owner_thread' THEN 'thread' WHEN 'project' THEN 'task' ELSE k.scope_kind END,
-           k.scope_id, k.kind, k.name, k.revision, k.content, k.updated_at,
-           json_object('source', 'buddy_knowledge', 'scope_kind', k.scope_kind, 'flag',
-             CASE WHEN k.kind = 'soul' AND k.content IS NOT (SELECT r.body FROM old.buddy_memory_heads h
-               JOIN old.buddy_memory_revisions r ON r.id = h.revision_id WHERE h.buddy_id = k.buddy_id AND h.document_kind = 'soul')
-             THEN 'divergent_thread_soul' END)
-         FROM old.buddy_knowledge k WHERE k.kind != 'note'".into(),
+         SELECT k.id, k.buddy_id, k.workspace_id, CASE k.scope_kind WHEN 'workspace' THEN 'workspace' ELSE 'buddy' END,
+           CASE k.scope_kind WHEN 'workspace' THEN k.scope_id ELSE k.buddy_id END, k.kind, k.name, k.revision, k.content, k.updated_at,
+           json_object('source', 'buddy_knowledge', 'scope_kind', k.scope_kind, 'scope_id', k.scope_id)
+         FROM old.buddy_knowledge k WHERE k.kind = 'shared'".into(),
         "INSERT INTO doc_revision SELECT document_id, revision, content, reason, author, provenance, sha256(content), created_at, NULL
-         FROM old.buddy_knowledge_revisions WHERE document_id NOT IN (SELECT id FROM old.buddy_knowledge WHERE kind = 'note')".into(),
+         FROM old.buddy_knowledge_revisions WHERE document_id IN (SELECT id FROM old.buddy_knowledge WHERE kind = 'shared')".into(),
         "INSERT INTO run (id, input_key, attempt, input_kind, input_id, buddy_id, workspace_id, conversation_id, task_id, task_epoch,
            after_run_id, retry_of, status, lease_token, lease_expires_at, deadline, snapshot, outcome, error_code, error,
            ready_at, created_at, started_at, ended_at, legacy)
@@ -539,14 +598,20 @@ fn count_pairs() -> Vec<(&'static str, String, &'static str)> {
             "SELECT count(*) FROM post_read WHERE reader = 'owner' AND json_extract(legacy, '$.source') IS NOT 'import:direct-read'",
         ),
         (
-            "doc",
-            "SELECT (SELECT count(*) FROM old.buddy_memory_heads) + (SELECT count(*) FROM old.buddy_knowledge WHERE kind != 'note')".into(),
-            "SELECT count(*) FROM doc",
+            "doc:memory (one per buddy and kind)",
+            "SELECT count(DISTINCT buddy_id || '/' || kind) FROM mem_copy".into(),
+            "SELECT count(*) FROM doc WHERE kind != 'shared'",
+        ),
+        (
+            "doc:shared",
+            "SELECT count(*) FROM old.buddy_knowledge WHERE kind = 'shared'".into(),
+            "SELECT count(*) FROM doc WHERE kind = 'shared'",
         ),
         (
             "doc_revision",
-            "SELECT (SELECT count(*) FROM old.buddy_memory_revisions) + (SELECT count(*) FROM old.buddy_knowledge_revisions
-               WHERE document_id NOT IN (SELECT id FROM old.buddy_knowledge WHERE kind = 'note'))".into(),
+            "SELECT (SELECT count(*) FROM mem_chain) + (SELECT count(*) FROM old.buddy_knowledge_revisions
+               WHERE document_id IN (SELECT id FROM old.buddy_knowledge WHERE kind = 'shared'))"
+                .into(),
             "SELECT count(*) FROM doc_revision",
         ),
         ("schedule", "SELECT count(*) FROM old.buddy_automations".into(), "SELECT count(*) FROM schedule"),
@@ -633,9 +698,7 @@ pub fn import(source: &Path, target: &Path, owner_reads: &Path, options: ImportO
 
     let conn = schema::open(&target.to_string_lossy())?;
     conn.execute_batch("PRAGMA foreign_keys = OFF")?;
-    conn.create_scalar_function("sha256", 1, FunctionFlags::SQLITE_UTF8 | FunctionFlags::SQLITE_DETERMINISTIC, |ctx| {
-        Ok(sha256_hex(ctx.get::<String>(0)?.as_bytes()))
-    })?;
+    register_sha256(&conn)?;
     conn.execute("ATTACH DATABASE ?1 AS old", [uri(source)])?;
     let old_version: i64 = conn.query_row("PRAGMA old.user_version", [], |r| r.get(0))?;
     if old_version != SOURCE_VERSION {
@@ -724,11 +787,13 @@ pub fn import(source: &Path, target: &Path, owner_reads: &Path, options: ImportO
            'background_enabled', m.background_enabled, 'dispatch', m.dispatch)
          FROM old.buddy_projects m JOIN old.buddies b ON b.id = m.buddy_id WHERE m.project_id != b.project_id ORDER BY b.slug, m.project_id",
     )?;
-    let divergent_thread_souls = json_rows(
+    let memory_fold_winners = json_rows(
         &conn,
-        "SELECT json_object('doc_id', d.id, 'buddy_id', d.buddy_id, 'slug', b.slug, 'thread_id', d.scope_id, 'revision', d.revision)
-         FROM doc d JOIN buddy b ON b.id = d.buddy_id WHERE json_extract(d.legacy, '$.flag') = 'divergent_thread_soul' ORDER BY b.slug",
+        "SELECT json_object('doc_id', 'mem_' || c.buddy_id || '_' || c.kind, 'slug', b.slug, 'kind', c.kind, 'source_id', c.source_id,
+           'scope_kind', c.scope_kind, 'scope_id', c.scope_id, 'updated_at', c.updated_at)
+         FROM mem_copy c JOIN old.buddies b ON b.id = c.buddy_id WHERE c.rank = 1 AND c.source != 'buddy_memory_heads' ORDER BY b.slug, c.kind",
     )?;
+    let folded_copies: i64 = conn.query_row("SELECT count(*) FROM mem_copy WHERE rank > 1", [], |r| r.get(0))?;
     let cross_channel_roots: i64 =
         conn.query_row("SELECT count(*) FROM msg a JOIN msg r ON r.id = a.root_message_id WHERE r.member_key != a.member_key", [], |r| {
             r.get(0)
@@ -745,7 +810,8 @@ pub fn import(source: &Path, target: &Path, owner_reads: &Path, options: ImportO
         counts,
         dropped_read_events,
         non_home_memberships,
-        divergent_thread_souls,
+        memory_fold_winners,
+        folded_copies,
         converted_schedules,
         foreign_key_violations,
         soul_files: soul_baseline,

@@ -3,8 +3,11 @@
 //! `buddy_knowledge` rows of kind `note`. This carries the existing ones across, one file per
 //! Buddy per UTC day, under `<workspace root>/agent_notes/buddy-notes/<buddy>/<date>.md`.
 //! (1,081 notes on the 2026-09-26 copy; one file each would have put 519 files in one repo.)
+//!
+//! The memory fold (import.rs `memory_copies`) imports one soul/working/long_term doc per Buddy;
+//! every other copy is archived here, one `memory-archive.md` per Buddy, oldest first.
 
-use crate::import::open_source;
+use crate::import::{memory_copies, open_source};
 use rusqlite::params;
 use serde::Deserialize;
 use std::collections::BTreeMap;
@@ -51,11 +54,12 @@ impl NoteBody {
     }
 }
 
-/// One output file and the notes in it, oldest first.
+/// One output file and the sections (notes or archived memory copies) in it, oldest first.
 #[derive(Debug)]
 pub struct NoteFile {
     pub path: PathBuf,
-    pub notes: usize,
+    pub buddy_id: String,
+    pub sections: usize,
     pub text: String,
 }
 
@@ -71,8 +75,7 @@ fn slug(name: &str) -> String {
     out.trim_matches('-').to_string()
 }
 
-/// Groups every note row into its file. Two Buddies with the same name slug in one workspace
-/// would share a folder, so that is an error rather than a merge.
+/// Groups every note row into its file.
 pub fn plan(source: &Path) -> Result<Vec<NoteFile>> {
     let conn = open_source(source)?;
     let mut stmt = conn.prepare(
@@ -92,34 +95,94 @@ pub fn plan(source: &Path) -> Result<Vec<NoteFile>> {
         ))
     })?;
     let mut owners: BTreeMap<PathBuf, String> = BTreeMap::new();
-    let mut files: BTreeMap<PathBuf, (String, Vec<String>)> = BTreeMap::new();
+    let mut files: Files = BTreeMap::new();
     for row in rows {
         let (root, buddy_id, name, scope_kind, scope_id, updated_at, content) = row?;
-        let folder = Path::new(&root).join("agent_notes/buddy-notes").join(slug(&name));
-        if let Some(other) = owners.insert(folder.clone(), buddy_id.clone())
-            && other != buddy_id
-        {
-            return Err(CoreError::Invalid(format!(
-                "buddies {other} and {buddy_id} both export to {}",
-                folder.display()
-            )));
-        }
+        let folder = buddy_folder(&mut owners, &root, &buddy_id, &name)?;
         let (date, time) = (&updated_at[..10], &updated_at[11..16]);
         let section = NoteBody::parse(&content).render(&format!("{time}Z"), &format!("{scope_kind} {scope_id}"));
         files
             .entry(folder.join(format!("{date}.md")))
-            .or_insert_with(|| (format!("# {name} notes, {date}\n\nExported from the Buddies note store.\n"), Vec::new()))
-            .1
+            .or_insert_with(|| (buddy_id, format!("# {name} notes, {date}\n\nExported from the Buddies note store.\n"), Vec::new()))
+            .2
             .push(section);
     }
-    Ok(files
+    Ok(into_files(files))
+}
+
+type Files = BTreeMap<PathBuf, (String, String, Vec<String>)>;
+
+fn into_files(files: Files) -> Vec<NoteFile> {
+    files
         .into_iter()
-        .map(|(path, (header, sections))| NoteFile {
+        .map(|(path, (buddy_id, header, sections))| NoteFile {
             path,
-            notes: sections.len(),
+            buddy_id,
+            sections: sections.len(),
             text: format!("{header}\n{}", sections.join("\n")),
         })
-        .collect())
+        .collect()
+}
+
+/// A Buddy's folder under its workspace. Two Buddies with the same name slug in one workspace
+/// would share a folder, so that is an error rather than a merge.
+fn buddy_folder(owners: &mut BTreeMap<PathBuf, String>, root: &str, buddy_id: &str, name: &str) -> Result<PathBuf> {
+    let folder = Path::new(root).join("agent_notes/buddy-notes").join(slug(name));
+    match owners.insert(folder.clone(), buddy_id.to_string()) {
+        Some(other) if other != buddy_id => {
+            Err(CoreError::Invalid(format!("buddies {other} and {buddy_id} both export to {}", folder.display())))
+        }
+        _ => Ok(folder),
+    }
+}
+
+/// Every memory copy the fold did not import (rank > 1), one `memory-archive.md` per Buddy in
+/// its home workspace, oldest first. The verifier counts these sections per Buddy.
+pub fn archive_plan(source: &Path) -> Result<Vec<NoteFile>> {
+    let conn = open_source(source)?;
+    let mut stmt = conn.prepare(&format!(
+        "SELECT w.root_path, b.id, b.name, c.scope_kind, c.scope_id, c.kind, c.revision, c.updated_at, c.source, c.source_id, c.content
+         FROM ({}) c JOIN buddies b ON b.id = c.buddy_id JOIN projects w ON w.id = b.project_id
+         WHERE c.rank > 1 ORDER BY w.root_path, b.name, c.updated_at, c.source_id",
+        memory_copies("")
+    ))?;
+    let rows = stmt.query_map([], |r| {
+        Ok((
+            r.get::<_, String>(0)?,
+            r.get::<_, String>(1)?,
+            r.get::<_, String>(2)?,
+            r.get::<_, String>(3)?,
+            r.get::<_, String>(4)?,
+            r.get::<_, String>(5)?,
+            r.get::<_, i64>(6)?,
+            r.get::<_, String>(7)?,
+            r.get::<_, String>(8)?,
+            r.get::<_, String>(9)?,
+            r.get::<_, String>(10)?,
+        ))
+    })?;
+    let mut owners: BTreeMap<PathBuf, String> = BTreeMap::new();
+    let mut files: Files = BTreeMap::new();
+    for row in rows {
+        let (root, buddy_id, name, scope_kind, scope_id, kind, revision, updated_at, source, source_id, content) = row?;
+        let folder = buddy_folder(&mut owners, &root, &buddy_id, &name)?;
+        let section = format!(
+            "## {updated_at} — {kind} ({scope_kind} {scope_id})\n_revision {revision}, {source} {source_id}_\n\n{}\n",
+            content.trim()
+        );
+        files
+            .entry(folder.join("memory-archive.md"))
+            .or_insert_with(|| {
+                let header = format!(
+                    "# {name} memory archive\n\nMemory copies superseded when the Buddy's memory folded to one doc per kind \
+                     (the newest copy was kept). Oldest first.\n"
+                );
+                (buddy_id, header, Vec::new())
+            })
+            .2
+            .push(section);
+    }
+    Ok(into_files(files))
 }
 
 /// Writes every planned file. Refuses before writing anything if one already exists, so a
