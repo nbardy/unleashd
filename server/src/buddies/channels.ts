@@ -19,7 +19,6 @@ import {
   scanGenerations,
   stableConversationId,
 } from './buddy-conversation-slots';
-import { canonicalizePostMedia, describeMediaProblems } from './channel-media';
 import type { ReplyGate } from './channel-reply-gate';
 import { type BuddiesCore, OWNER, buddyActor } from './core';
 import type { BuddyEvents } from './events';
@@ -32,11 +31,13 @@ import type { BuddyEvents } from './events';
 //               the thread's last MAX_BUDDY_CHAIN posts are all Buddies', until the owner speaks.
 // SEATS: every reply goes to the Buddy's seat in that thread, ONE resumed conversation per
 // (thread, Buddy) (buddy-conversation-slots.ts). The owner's mention-chip model pick opens a new
-// seat generation when the current seat runs anything else. The server posts the final text into
-// the thread as that Buddy. Known gap: a turn in flight at restart loses its reply post.
+// seat generation when the current seat runs anything else. The Buddy posts its own reply with the
+// `post` tool; its text output is a private scratchpad and never reaches the channel (493c1c7: the
+// server used to paste the final text, tool transcript and all, or "(no reply text)"). A turn that
+// posts nothing, or fails, leaves a visible reply_failed notice. Known gap: a turn in flight at
+// restart leaves neither its post (if not yet written) nor the notice.
 
 const CONTEXT_POSTS = 10;
-const MAX_REPLY_BYTES = 32_000;
 const MAX_BUDDY_CHAIN = 3;
 const THREAD_PAGE = 200;
 
@@ -198,7 +199,11 @@ export function createChannels(ports: ChannelsPorts) {
       `Reply to the latest message, from ${label(input.trigger.author, nameMap)}:`,
       readableChannelText(input.trigger.body),
       '',
-      'Your final answer is posted into the thread as your reply, verbatim, as markdown: direct and concise. Embed media as ![alt](/absolute/path); reference a task as [title](task:<id>). Do not also post it. If it needs real work, do it or hand it off, then say what you did.',
+      'Nobody reads your text output: it is a private scratchpad, use it to think. People only see what you post in this thread. ' +
+        `Post with post({ channel: { id: "${input.channel.id}" }, replyToId: "${input.rootId}", purpose: "reply", body, key }). ` +
+        'You may post more than once: a short progress note, then the result. Write posts direct and concise, as markdown. ' +
+        'Embed media as ![alt](/absolute/path); reference a task as [title](task:<id>). Put anything long in a file or a Task and link it. ' +
+        'If this turn ends without a post, the thread gets a failure notice, not your scratchpad. If it needs real work, do it or hand it off, then post what you did.',
     ].join('\n');
   }
 
@@ -301,43 +306,35 @@ export function createChannels(ports: ChannelsPorts) {
     return seatFor(request, seats, profileConfig(await core.getBuddy(buddyId)));
   }
 
-  async function postReply(
-    input: Reply,
-    conversationId: string | null,
-    outcome: { kind: 'answered'; text: string } | { kind: 'failed'; reason: string }
-  ) {
-    const base = {
-      kind: 'inform' as const,
-      evidence: [],
-      replyToId: input.trigger.id,
-      fromConversationId: conversationId ?? undefined,
-      key: `thread-reply:${input.trigger.id}:${input.buddyId}`,
-    };
-    const author = buddyActor(input.buddyId);
-    const to = { kind: 'id' as const, id: input.channel.id };
-    switch (outcome.kind) {
-      case 'answered': {
-        const media = canonicalizePostMedia(outcome.text.trim() || '(no reply text)', {
-          uploadsRoot: ports.uploadsRoot(),
-          channelId: input.channel.id,
-        });
-        // The Buddy cannot fix a reference after its turn ended, so a bad one stays visible.
-        const body = media.problems.length
-          ? `${media.body}\n\n_Some media could not be attached: ${describeMediaProblems(media.problems)}_`
-          : media.body;
-        const post = await core.post(author, to, { ...base, purpose: 'reply', body: clip(body) });
-        ports.events.emit({ kind: 'posted', post, channel: input.channel });
-        return;
+  // A failure notice asks nobody to follow up, so it is pushed but not announced as a post.
+  async function postFailure(input: Reply, conversationId: string | null, reason: string) {
+    await core.post(
+      buddyActor(input.buddyId),
+      { kind: 'id', id: input.channel.id },
+      {
+        kind: 'inform',
+        evidence: [],
+        replyToId: input.trigger.id,
+        fromConversationId: conversationId ?? undefined,
+        key: `thread-reply:${input.trigger.id}:${input.buddyId}`,
+        purpose: 'reply_failed',
+        body: `Couldn’t reply: ${reason}`,
       }
-      // A failure notice asks nobody to follow up, so it is pushed but not announced as a post.
-      case 'failed':
-        await core.post(author, to, {
-          ...base,
-          purpose: 'reply_failed',
-          body: `Couldn’t reply: ${outcome.reason}`,
-        });
-        ports.channelChanged(input.channel.id);
-    }
+    );
+    ports.channelChanged(input.channel.id);
+  }
+
+  // What this Buddy posted in the thread since `before` (post ids seen when the turn began),
+  // not counting its own failure notices. That is the reply; the text output is not.
+  async function postedSince(input: Reply, before: ReadonlySet<string>): Promise<boolean> {
+    const thread = await wholeThread(await core.getPost(OWNER, input.rootId));
+    return thread.some(
+      (post) =>
+        !before.has(post.id) &&
+        post.author.kind === 'buddy' &&
+        post.author.id === input.buddyId &&
+        post.purpose !== 'reply_failed'
+    );
   }
 
   function trackRunSlot(
@@ -359,9 +356,13 @@ export function createChannels(ports: ChannelsPorts) {
     };
   }
 
-  // Every failure — seat or turn — becomes a visible reply_failed post.
+  // A turn that posted nothing — seat, turn failure, or silence — becomes a visible reply_failed post.
   async function runReply(input: Reply): Promise<void> {
     let conversationId: string | null = null;
+    let failure = 'the turn ended without a channel post';
+    const before = new Set(
+      (await wholeThread(await core.getPost(OWNER, input.rootId))).map((post) => post.id)
+    );
     try {
       const seat = await seatConfig(input.rootId, input.buddyId, input.request);
       const conversation = await openConversation(ports.conversations, {
@@ -377,7 +378,7 @@ export function createChannels(ports: ChannelsPorts) {
       const seatPromptText = await seatPrompt(input, conversation.id);
       const trigger = await core.getPost(OWNER, input.trigger.id);
       let untrack: () => void = () => undefined;
-      const text = await awaitTurn(
+      await awaitTurn(
         conversation,
         () => {
           conversation.sendSessionRelativeMessage(seatPromptText, seatTurnInput(trigger));
@@ -386,13 +387,11 @@ export function createChannels(ports: ChannelsPorts) {
         'Buddy turn failed'
       ).finally(() => untrack());
       seenThrough.set(conversation.id, input.trigger.id);
-      await postReply(input, conversationId, { kind: 'answered', text });
     } catch (error) {
-      await postReply(input, conversationId, {
-        kind: 'failed',
-        reason: error instanceof Error ? error.message : String(error),
-      });
+      failure = error instanceof Error ? error.message : String(error);
     }
+    if (await postedSince(input, before)) return;
+    await postFailure(input, conversationId, failure);
   }
 
   function reply(input: Reply): void {
@@ -494,7 +493,7 @@ export function createChannels(ports: ChannelsPorts) {
           `[channels] reply gate failed for ${input.buddyId} on post ${input.trigger.id}: ${verdict.reason}`
         );
         if (input.trigger.author.kind === 'owner')
-          await postReply(
+          await postFailure(
             {
               channel: input.channel,
               cause: 'follow_up',
@@ -504,10 +503,7 @@ export function createChannels(ports: ChannelsPorts) {
               buddyId: input.buddyId,
             },
             null,
-            {
-              kind: 'failed',
-              reason: `could not decide whether to reply (${verdict.reason})`,
-            }
+            `could not decide whether to reply (${verdict.reason})`
           );
     }
   }
@@ -646,15 +642,6 @@ export function createChannels(ports: ChannelsPorts) {
       return { conversationId: conversation.id };
     },
   };
-}
-
-function clip(text: string): string {
-  if (Buffer.byteLength(text, 'utf8') <= MAX_REPLY_BYTES) return text;
-  const suffix = '\n\n… [reply truncated; the full answer is in the conversation]';
-  let clipped = text.slice(0, MAX_REPLY_BYTES - 200);
-  while (Buffer.byteLength(clipped + suffix, 'utf8') > MAX_REPLY_BYTES)
-    clipped = clipped.slice(0, -200);
-  return clipped + suffix;
 }
 
 // A seat is also an ordinary chat: the owner may be typing in it.

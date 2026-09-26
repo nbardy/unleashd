@@ -172,6 +172,10 @@ async function world() {
   const turns: Turn[] = [];
   const during = new Map<number, (turn: Turn) => Promise<void>>();
   const answers = new Map<number, string>();
+  // A channel seat's reply is the Buddy's own `post` (channels.ts). The fake model follows the
+  // prompt's instruction and posts its answer, except in turns listed in `silent`.
+  const silent = new Set<number>();
+  const seatPost = /post\(\{ channel: \{ id: "([^"]+)" \}, replyToId: "([^"]+)"/;
   const executeTurn = ((request: ProviderRequest) => {
     const turn: Turn = { n: turns.length + 1, request, mcp: request.mcpServers!.unleashd_buddy };
     turns.push(turn);
@@ -196,7 +200,19 @@ async function world() {
         yield { type: 'session.started' as const, sessionId };
         yield { type: 'turn.started' as const };
         await during.get(turn.n)?.(turn);
-        yield { type: 'text.delta' as const, text: answers.get(turn.n) ?? `Answer ${turn.n}` };
+        const answer = answers.get(turn.n) ?? `Answer ${turn.n}`;
+        const seat = seatPost.exec(request.prompt);
+        if (seat && !silent.has(turn.n)) {
+          const posted = await call(turn.mcp, 'post', {
+            channel: { id: seat[1] },
+            replyToId: seat[2],
+            purpose: 'reply',
+            body: answer,
+            key: `seat-reply-${turn.n}`,
+          });
+          assert.equal(posted.isError, false, posted.text);
+        }
+        yield { type: 'text.delta' as const, text: answer };
         yield { type: 'turn.complete' as const, reason: 'success' as const };
         finish({ exitCode: 0, signal: null, sessionId, reason: 'success' });
       })(),
@@ -312,6 +328,7 @@ async function world() {
     turns,
     during,
     answers,
+    silent,
     gate,
     channels,
     creation,
@@ -507,6 +524,47 @@ test('B1: a seat turn holds owner authority only when the owner wrote its trigge
       w.turns[1].request.prompt,
       /Replies since then/,
       'a resumed seat is sent only what is new'
+    );
+  } finally {
+    await w.close();
+  }
+});
+
+// 493c1c7: the server pasted the seat's final text into the thread — the scratchpad, tool lines
+// and all, or "(no reply text)". Now the Buddy's own posts are the reply, and silence is a notice.
+test('a seat reply is what the Buddy posts; a turn that posts nothing leaves a failure notice', async () => {
+  const w = await world();
+  try {
+    const say = (body: string, replyToId?: string) =>
+      w.core.post(
+        OWNER,
+        { kind: 'id', id: w.general.id },
+        { kind: 'inform', body, replyToId, evidence: [], key: body }
+      );
+    const thread = async (rootId: string) =>
+      (await w.core.listPosts(OWNER, { kind: 'thread', rootId }, null, 50)).posts.reverse();
+    const root = await say(`[@Lead](buddy:${w.lead.id}) status?`);
+    w.answers.set(1, 'Shipped');
+    await w.channels.respondToOwnerPost(w.general, root, new Map());
+    await until(async () => (await thread(root.id)).length === 1, 'the posted reply');
+    const [reply] = await thread(root.id);
+    assert.equal(reply.body, 'Shipped');
+    assert.equal(reply.purpose, 'reply');
+
+    w.silent.add(2);
+    w.answers.set(2, 'private scratchpad text');
+    const again = await say(`[@Lead](buddy:${w.lead.id}) and now?`, root.id);
+    await w.channels.respondToOwnerPost(w.general, again, new Map());
+    const notice = await until(
+      async () => (await thread(root.id)).find((post) => post.purpose === 'reply_failed'),
+      'the missing-post notice'
+    );
+    assert.match(notice.body, /without a channel post/);
+    assert.equal(notice.replyToId, again.id, 'only the silent turn is a failure');
+    assert.equal(
+      (await thread(root.id)).some((post) => post.body.includes('private scratchpad')),
+      false,
+      'the text output never reaches the channel'
     );
   } finally {
     await w.close();

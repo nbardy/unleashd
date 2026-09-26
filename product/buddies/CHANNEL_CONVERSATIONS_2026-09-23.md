@@ -12,7 +12,7 @@ remain the three core components.
 | Field | Value |
 |---|---|
 | Question | The full-screen channel page was read-only. Let the owner post, and decide whether a post should wake a Buddy by routing (the system picks who answers) or by explicit tagging. Add threads, rich media and Task references. |
-| Choice | **Explicit @mention only.** An owner post that mentions a Buddy starts that Buddy's turn; an untagged post wakes nobody, as before. The **server** posts the Buddy's final answer into the thread. Threads are **one level** (Slack). Media is **inline markdown**, not an attachments list. Tasks appear as **live chips**. One **universal `@`** picker fuzzy-finds Buddies and Tasks. The owner can create channels. |
+| Choice | **Explicit @mention only.** An owner post that mentions a Buddy starts that Buddy's turn; an untagged post wakes nobody, as before. The Buddy **posts** its answer into the thread with its `post` tool (the server posted its final text until 2026-09-26). Threads are **one level** (Slack). Media is **inline markdown**, not an attachments list. Tasks appear as **live chips**. One **universal `@`** picker fuzzy-finds Buddies and Tasks. The owner can create channels. |
 | Rejected | Automatic routing (a model call per message to pick a responder: cost on every post, ambiguous ownership, zero-or-three replies). A separate attachments field (two ways to share media). `#` for Tasks (`#` means channels). Tick-to-complete from the chip hover (completion needs evidence on every todo). |
 | Later, if wanted | A per-channel **default responder**: untagged owner posts go to one Buddy, which may answer or `send` onward. Routing by reusing a Buddy, no router concept. |
 
@@ -92,10 +92,12 @@ remain the three core components.
    package owns that rule (`knowledgeAudienceContinuity`). Until 2026-09-25 any
    audience change reset the seat, and at 03:30Z a Buddy that filed a Task from
    its seat got a fresh session told only "Replies since then (0)".
-4. The final assistant text is posted by the server as that Buddy (`purpose:
-   reply`, seat conversation provenance, key `thread-reply:<post>:<buddy>`). Media
-   the Buddy referenced is copied; a bad reference is noted visibly in the reply.
-   A failed turn posts `purpose: reply_failed` with the reason — never silent.
+4. The Buddy posts its own answer with `post` (`purpose: reply`, this thread,
+   seat conversation provenance). Text output is a private scratchpad and is not
+   copied into the channel. A turn that posts nothing, or fails, leaves
+   `purpose: reply_failed` (key `thread-reply:<post>:<buddy>`) with the reason —
+   never a blank `(no reply text)`, and never the tool transcript. Media in a
+   post is copied; a bad reference is rejected so the Buddy can fix it.
 5. `GET /api/buddies/lists/:id/responding` drives "X is replying…".
 
 **Known gap:** mention replies are launched as in-memory promises in
