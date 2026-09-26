@@ -58,8 +58,7 @@ Two gotchas, both already handled by `pnpm test:client`:
   applies a tsconfig only to the files it includes. The same config is what
   `pnpm typecheck` uses to typecheck the tests, so no `import React` is needed.
 - Only markup that renders on first paint is visible. Anything behind local
-  state (desktop `AutomationCard`'s run history sits behind a `showRuns`
-  toggle) will not appear — assert against a section that renders immediately.
+  state (anything behind a toggle or a menu) will not appear — assert against a section that renders immediately.
 
 `client/test/buddy-conversation-links.test.tsx` is the worked example.
 

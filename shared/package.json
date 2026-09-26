@@ -10,12 +10,6 @@
       "import": "./dist/index.js",
       "require": "./dist/cjs/index.js",
       "default": "./dist/index.js"
-    },
-    "./utils/jsonc": {
-      "types": "./dist/utils/jsonc.d.ts",
-      "import": "./dist/utils/jsonc.js",
-      "require": "./dist/cjs/utils/jsonc.js",
-      "default": "./dist/utils/jsonc.js"
     }
   },
   "scripts": {

@@ -20,13 +20,13 @@ else
 fi
 echo
 
-echo "==> Gate G2: raw .buddyContext / .purpose reads in client/src/mobile/ — use getConversationKind()"
-# All mobile code must read BuddyContext via getConversationKind/matchConversationKind/buddyContextFromKind
-# (conversation-kind.ts), never raw field access. One-allowed consumer is components/buddies/buddies-shaping.ts
+echo "==> Gate G2: raw .buddyContext / .purpose reads in client/src/mobile/ — use the row kind"
+# All mobile code must read identity from the row's `kind` via matchConversationKind
+# (shared/src/conversation-config.ts), never raw field access. One-allowed consumer is components/buddies/buddies-shaping.ts
 # which is outside mobile/. Zero hits expected in mobile/.
 # Exclude parsed.*.purpose from buddy-review-message parser (pure helper, not Conversation.purpose).
 if grep -R --include="*.ts" --include="*.tsx" -n "\.buddyContext\|\.purpose" client/src/mobile 2>/dev/null | grep -v "parsed\.purpose" | grep -v "parsed\.subjectBuddyId" | grep -v "No raw \.buddyContext" ; then
-  echo "G2 FAIL: raw .buddyContext or .purpose read in client/src/mobile/. Use getConversationKind() / buddyContextFromKind()."
+  echo "G2 FAIL: raw .buddyContext or .purpose read in client/src/mobile/. Read row.kind / matchConversationKind()."
   FAIL=1
 else
   echo "G2 PASS"
@@ -205,7 +205,7 @@ echo "==> Gate G8: total client CSS lines must not grow"
 # Ratchet: the lean rewrite takes CSS from 18.4k lines to a ~3.75k budget
 # (lean-scope 06 §3). When a change cuts CSS, lower CSS_LINE_CEILING to the new
 # total in the same commit so the cut cannot silently grow back.
-CSS_LINE_CEILING=14836 # +5 update banner (.app-update-banner, a real new feature): its branch paid 5 by deleting a rule the PORT-3 merge had already consolidated, so the payment evaporated on merge; owed back by the dead-code sweep, 2026-09-26; 14831 port 493c1c7 DM thread + harness retry (paid by merging the mobile attach/save/palette rules); 14836 port 493c1c7 Task overlay (paid by merging identical mobile-ui/Sidebar rules), 2026-09-26; earlier: 14838 feature audit (mobile Task filter, paid by merging mobile-channels rules), 2026-09-26; earlier: 14841 S6 + port 6d04860, 14855 S6, 14947 port, 14961 port a2e4135, T22-S4 14975 (T21a 14980; 15834 on lean/integration 4e5a01c)
+CSS_LINE_CEILING=14801 # merged total after the dead-code sweep (-40, repays the +5 update banner), 2026-09-26; earlier: 14836 banner, 14831 PORT-3, 14838 audit, 14841 S6+port, 14855 S6, 14947, 14961, 14975, 14980; 15834 on 4e5a01c
 CSS_LINES="$(find client/src -name '*.css' -print0 | xargs -0 cat | wc -l | tr -d ' ')"
 if [ "$CSS_LINES" -gt "$CSS_LINE_CEILING" ]; then
   echo "G8 FAIL: client CSS is $CSS_LINES lines, ceiling $CSS_LINE_CEILING. Reuse a primitive (ui/primitives.css) or cut elsewhere."

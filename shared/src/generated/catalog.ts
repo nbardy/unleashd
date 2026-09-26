@@ -49,7 +49,6 @@ export const CURSOR_MODEL_REGISTRY = [
     "isDefault": false
   }
 ] as const;
-export const CURSOR_MODEL_IDS = ["composer-2.5","grok-4.7-xhigh","grok-4.7-high","grok-4.7-medium","grok-4.7-low","cursor-grok-4.5-high","cursor-grok-4.5-medium","cursor-grok-4.5-low"] as const;
 
 export const CLAUDE_EFFORT_LEVELS = ["low","medium","high","xhigh","max"] as const;
 export const CODEX_EFFORT_LEVELS = ["minimal","low","medium","high","xhigh","max","ultra"] as const;

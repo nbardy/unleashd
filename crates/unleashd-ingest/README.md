@@ -82,7 +82,7 @@ re-read whole when their stamp moves.
 | merge-review envelope no longer stripped (8c9fcfa) | stripped |
 | Builder receipts embed the Zod-normalized event | embed the recorded event (the client parses both to the same value) |
 
-`tools/ingest-parity.ts` compares both over the real local roots; see T12-ingest-crate.md.
+The one-off parity tool that compared both over the real local roots was deleted with the TS parsers; see T12-ingest-crate.md.
 
 ## Conversation records (T23a)
 

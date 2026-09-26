@@ -18,7 +18,6 @@ export interface CreateConversationInput extends CreationFingerprintInput {
   conversationId: string;
   commandId: string;
   buddyBriefing?: string;
-  automationClaimToken?: string;
 }
 
 export interface ConversationCreationPorts {
@@ -88,7 +87,6 @@ export function createConversationService(ports: ConversationCreationPorts) {
         swarmDebugPrefix: input.swarmDebugPrefix ?? null,
         resumedFromConversationId: input.resumedFromConversationId ?? null,
         buddyBriefing: input.buddyBriefing,
-        automationClaimToken: input.automationClaimToken,
       });
       ports.registerConversation(conversation);
     }

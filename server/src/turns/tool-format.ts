@@ -388,10 +388,3 @@ export function formatToolUse(name: string, input?: unknown, displayText?: strin
 
   return `${emoji} ${name}${argSummary ? ` ${argSummary}` : ''}`;
 }
-
-export function formatToolResult(content: string): string {
-  if (content.length > 200) {
-    return `[Tool result: ${content.substring(0, 200)}...]`;
-  }
-  return `[Tool result: ${content}]`;
-}

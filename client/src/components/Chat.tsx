@@ -31,7 +31,7 @@ import {
   transcriptFamily,
 } from '../atoms/conversations';
 import { forkConversation } from '../atoms/fork-actions';
-import { markMessagesSeen, setSavedActiveConversationId } from '../atoms/ui';
+import { markMessagesSeen } from '../atoms/ui';
 import { useComposerSubmission } from '../hooks/useComposerSubmission';
 import { useConversationBodies } from '../hooks/useConversationBodies';
 import { useConversationDraft } from '../hooks/useConversationDraft';
@@ -260,10 +260,6 @@ export function Chat({ id }: { id: string }) {
     noClick: true,
     noKeyboard: true,
   });
-
-  useEffect(() => {
-    if (id) setSavedActiveConversationId(id);
-  }, [id]);
 
   useEffect(() => {
     if (id && !conversation && !pendingCreation && hasConversations) {

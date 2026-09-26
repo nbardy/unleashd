@@ -208,8 +208,6 @@ export interface ConversationOptions {
   buddyBriefing?: string | null;
   /** Native generation when the Buddy resolver provides one; otherwise derived from the briefing. */
   buddyMemoryGeneration?: MemoryGenerationInput | null;
-  /** Server-private automation ownership. Never serialized or placed in BuddyContext. */
-  automationClaimToken?: string | null;
   /** Usage restored from the persisted session binding on reload. */
   existingProviderUsage?: ProviderTurnUsage | null;
 }
@@ -381,8 +379,6 @@ export function createConversationRuntime(
     }
     // Track if we've started a CLI session (for --resume vs --session-id)
     private _hasStartedSession: boolean;
-    // Server-private automation ownership. Never serialized or placed in BuddyContext.
-    private _automationClaimToken: string | null = null;
     private _sendingFromQueue = false;
     private readonly runner: TurnRunner;
 
@@ -417,7 +413,6 @@ export function createConversationRuntime(
         swarmDebugPrefix = null,
         buddyBriefing = null,
         buddyMemoryGeneration = null,
-        automationClaimToken = null,
       } = opts;
       this.id = id;
       // sessionId defaults to id so JSONL filename matches Map key (no poller mismatch).
@@ -434,7 +429,6 @@ export function createConversationRuntime(
       this.configRevision = configState.revision;
       this.configResolution = configState.resolution;
       this.done = opts.done;
-      this._automationClaimToken = automationClaimToken;
       this._kind = kind;
       this.parentConversationId = parentConversationId;
       this.resumedFromConversationId = resumedFromConversationId;

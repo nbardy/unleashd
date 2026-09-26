@@ -32,8 +32,6 @@ import { hasUnseenAfter, prefsAtom, seenAtom } from './ui';
 export type {
   ConversationListEntry,
   ListIndex,
-  SidebarFolderGroup,
-  SidebarFolderView,
 } from './conversation-index';
 
 // =============================================================================

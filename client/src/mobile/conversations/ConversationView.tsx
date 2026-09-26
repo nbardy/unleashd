@@ -25,7 +25,7 @@ import {
   transcriptFamily,
 } from '../../atoms/conversations';
 import { forkConversation } from '../../atoms/fork-actions';
-import { markMessagesSeen, setSavedActiveConversationId } from '../../atoms/ui';
+import { markMessagesSeen } from '../../atoms/ui';
 import { useConversationBodies } from '../../hooks/useConversationBodies';
 import { useCopyAction } from '../../hooks/useCopyAction';
 import { useProviderCatalog } from '../../hooks/useProviderCatalog';
@@ -342,11 +342,6 @@ export function ConversationView({
   } = useSavedPrompts();
   const [showPalette, setShowPalette] = useState(false);
   const [paletteSelectedContent, setPaletteSelectedContent] = useState<string | null>(null);
-
-  // The route owns the active id; prefs keep the last one for restore-on-load.
-  useEffect(() => {
-    if (conversationId) setSavedActiveConversationId(conversationId);
-  }, [conversationId]);
 
   // Same derivation as Chat.tsx: unified sub-agents + swarm prefix + resume lineage.
   // Reuses shared utils so desktop and mobile cannot drift.

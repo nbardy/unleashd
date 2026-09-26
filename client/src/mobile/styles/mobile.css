@@ -9,7 +9,6 @@
 /* ---- Tokens (mobile-specific; app color tokens stay in index.css) ---- */
 :root {
   --mobile-tab-bar-height: 56px;
-  --mobile-header-height: 52px;
   --mobile-content-max-width: 720px;
 }
 

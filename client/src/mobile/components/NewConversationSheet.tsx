@@ -80,7 +80,7 @@ export function NewConversationSheet({
       const conversationId = await createFromRequest({
         kind,
         workingDirectory: resolvedDirectory,
-        // Catalog-derived default; 'claude' fallback matches shared DEFAULT_PROVIDER.
+        // Catalog-derived default; 'claude' until the catalog loads.
         config: createDefaultConversationConfig(
           (catalog?.providers[0]?.id ?? 'claude') as ConversationConfig['provider']
         ),

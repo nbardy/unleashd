@@ -28,15 +28,6 @@ export const PROVIDER_OPTIONS: readonly ProviderMetadata[] = ProviderSchema.opti
   ...PROVIDER_METADATA[id],
 }));
 
-export const PROVIDER_IDS: readonly Provider[] = ProviderSchema.options;
-
-/**
- * Default provider when no explicit selection exists.
- * Single source for client draft defaults and server fallbacks.
- * Keep aligned with shared/src/conversation-config.ts createDefaultConversationConfig()
- * and server catalog-service.
- */
-export const DEFAULT_PROVIDER: Provider = 'claude';
 
 export const getProviderMetadata = (provider: Provider): ProviderMetadata => ({
   id: provider,

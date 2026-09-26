@@ -14,7 +14,7 @@ const REPO_ROOT = resolve(__dirname, '../..');
 const CATALOG_PATH = join(REPO_ROOT, 'vendor/agent-cli-tool/catalog.jsonc');
 const OUT_FILE = join(REPO_ROOT, 'shared/src/generated/catalog.ts');
 
-// Minimal JSONC stripper — same regex as shared/src/utils/jsonc.ts
+// Minimal JSONC stripper: the catalog has no // inside strings.
 function stripJsonc(text: string): string {
   return text.replace(/\/\/.*$/gm, '').replace(/\/\*[\s\S]*?\*\//g, '');
 }
@@ -93,7 +93,6 @@ async function main() {
   lines.push(`export const MUSE_MODEL_IDS = ${JSON.stringify(museIds)} as const;`);
   lines.push('');
   // Cursor registry
-  const cursorIds = cursor.models.map((m) => m.id);
   lines.push(
     `export const CURSOR_MODEL_REGISTRY = ${JSON.stringify(
       cursor.models.map((m) => ({
@@ -105,7 +104,6 @@ async function main() {
       2
     )} as const;`
   );
-  lines.push(`export const CURSOR_MODEL_IDS = ${JSON.stringify(cursorIds)} as const;`);
   lines.push('');
   // Effort levels
   lines.push(`export const CLAUDE_EFFORT_LEVELS = ${JSON.stringify(claudeLevels)} as const;`);

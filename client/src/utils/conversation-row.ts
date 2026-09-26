@@ -5,11 +5,6 @@ export function isRowRunning(row: Pick<ConversationRow, 'run'>): boolean {
   return row.run === 'running' || row.run === 'streaming';
 }
 
-/** Queued work, or a process alive: the conversation is busy. */
-export function isRowBusy(row: Pick<ConversationRow, 'run'>): boolean {
-  return row.run !== 'idle';
-}
-
 export type BuddyRowKind = Extract<RowKind, { t: 'buddy' }>;
 
 /** The Buddy ids of a Buddy thread's row, or null for every other kind. */

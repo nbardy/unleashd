@@ -13,8 +13,7 @@ export function registerCoreRoutes(app: Express, getAuditResults: () => unknown)
   });
 
   app.get('/api/models', (request: Request, response: Response) => {
-    // Historically defaults to 'claude' when ?provider= is omitted for backward compat.
-    // Catalog's DEFAULT_PROVIDER is 'claude'; callers should send ?provider= explicitly.
+    // Defaults to 'claude' when ?provider= is omitted; callers should send it explicitly.
     const providerName = (request.query.provider as string) || 'claude';
     if (!(providerName in providers)) {
       response.status(400).json({

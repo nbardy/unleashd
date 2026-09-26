@@ -16,7 +16,7 @@ Never import another `components/*.tsx` or its CSS. Swarm parsers were moved to 
 
 Grep gates (run `pnpm check:client-invariants` / `bash tools/check-client-invariants.sh`):
 - **G1** — `jotaiStore.set` only inside `client/src/atoms/`. Components call actions.
-- **G2** — no raw `.buddyContext` / `.purpose` reads in `client/src/mobile/` — use `getConversationKind` / `matchConversationKind` / `buddyContextFromKind` (`shared/src/conversation-kind.ts`).
+- **G2** — no raw `.buddyContext` / `.purpose` reads in `client/src/mobile/` — read the row's `kind` / `matchConversationKind` (`shared/src/conversation-config.ts`).
 - **G3** — no `components/` imports in `mobile/` except `components/buddies/` (see above).
 
 ### DeviceKind — the only sum type at the shell
@@ -67,7 +67,7 @@ trees cannot drift on what counts as a recent folder.
 
 `atoms/ui.ts` holds device-local state only. Nothing in it syncs to the server:
 
-- **prefs** (`atomWithStorage` under `localStorage['unleashd-ui-local']`) — `{ activeConversationId, galleryExpandedProjects, galleryCollapsedProjects, showTempSessions, showDoneConversations, showWorkerConversations, sidebarViewMode, lastWorkingDirectory, promotedWorkers }`
+- **prefs** (`atomWithStorage` under `localStorage['unleashd-ui-local']`) — `{ galleryExpandedProjects, galleryCollapsedProjects, showTempSessions, showDoneConversations, showWorkerConversations, lastWorkingDirectory, promotedWorkers }`
 - **seen** (`localStorage['unleashd-seen-message-index']`) — NEW-badge message index per conversation, its own key because it changes on every viewed message
 
 Done (hidden) is not UI state: it is `conversation.done`, stored on the
@@ -80,11 +80,9 @@ The server retired that file once (`retireLegacyUiState`, deleted in T23b after
 the live retirement ran).
 
 Storage reads go through `DeviceUiPrefsSchema.partial().safeParse` (discard whole
-blob on failure — no silent half-merge). Subscribe via per-field derived atoms
-(`savedActiveConversationIdAtom`, `promotedWorkersAtom`, ...); mutate only via
-exported action functions. Phone never mutates desktop-local fields. The
-persisted `savedActiveConversationIdAtom` is distinct from the ephemeral
-routing `activeConversationIdAtom` in `conversations.ts` (dual-active-id).
+blob on failure — no silent half-merge). Read with `useAtomValue(prefsAtom).field`;
+mutate only via exported action functions. Phone never mutates desktop-local
+fields. The active conversation is the route, never a pref.
 
 ### Mutation rule
 

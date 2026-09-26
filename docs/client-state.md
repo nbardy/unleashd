@@ -43,10 +43,10 @@ Derived:
 | Bodies, detail, queue | `transcriptFamily(id)` through `useConversationBodies(id)`, which also loads it |
 | Pending creation or config command | `commandFor(id)` |
 | Connected? load complete? default cwd? | `connectionAtom` (`loadCompleteOf`, `defaultCwdOf`) |
-| The active conversation | The route (`/chat/:id`); `prefs.activeConversationId` is only for reopening on load |
+| The active conversation | The route (`/chat/:id`); nothing persists it |
 | Persisted UI preference | `useAtomValue(prefsAtom).field` |
 | Any read-only server view (Buddy panels, swarm runs, catalog, git log) | `usePolledFetch` over the keyed cache in `atoms/resources.ts` |
-| Buddy directory / detail / automations | `useBuddyOverview`, `useBuddyDetailData`, `useBuddyAutomations` in `hooks/useBuddyData.ts` — both shells |
+| Buddy directory / detail | `useBuddyOverview`, `useBuddyDetail`, `useBuddyPage` in `hooks/useBuddyData.ts` — both shells |
 | A Buddy page's derived model + `talk` / open-project actions | `useBuddyPage` in `hooks/useBuddyData.ts` — the shells only render |
 
 Never call `useAtomValue(rowsAtom)` in a component. For lists, subscribe the
@@ -256,8 +256,7 @@ The same applies to `useProviderCatalog` (was a hand-rolled
 now uses the desktop hook rather than its own URL). If you add a Buddy read,
 add it there — not as a `fetch` in a component.
 
-`useBuddyPage` goes one step further: the ~80 lines of memos, `talk` and
-`openProjectConversation` that both shells derived from the detail bundle live
+`useBuddyPage` goes one step further: the memos and `talk` that both shells derived from the detail bundle live
 there once. The shell passes its own `openConversation` (mobile threads route
 state through it) and renders what comes back.
 
@@ -281,7 +280,7 @@ collides with the user opening that chat joins it rather than racing it.
 in place, so subscribed panels update with no spinner. `invalidateBuddyResources()`
 is the named predicate for Buddy data. It fires from the WS spine on
 `buddies_changed` — the server's debounced change feed
-(`server/src/buddies/change-feed.ts`), which announces every Buddy-store write
+(the Buddy change bus in `server/src/server.ts`), which announces every Buddy-store write
 whether it came from an owner route, an owner MCP tool, a Buddy's MCP tool or
 the scheduler — and on create/delete of a Buddy-context conversation, which the
 client already knows about. `channel_changed {channelId}` is the precise one:

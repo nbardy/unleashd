@@ -147,19 +147,19 @@ Provider stdout parsing is centralized in `agent-cli-tool`.
 ### Codex
 - Self-persists to `~/.codex/sessions/YYYY/MM/DD/*.jsonl`
 - Server does not mirror-write Codex files; native Codex sessions are the source of truth
-- During active turns, in-memory streaming state is authoritative; file poller skips active session IDs
+- During active turns, in-memory streaming state is authoritative; the ingest watcher skips active session IDs
 - For Codex spawned sub-agent sessions, `session_meta.payload.source.subagent.thread_spawn.parent_thread_id` is mapped to `Conversation.parentConversationId` and projected into the same header sub-agent panel used by provider Task-tool sub-agents
 
 ### OpenCode
 - Self-persists message metadata to `~/.local/share/opencode/storage/message/{session-id}/*.json`
 - Message content is reconstructed from associated part files in `~/.local/share/opencode/storage/part/{message-id}/*.json`
 - Session metadata (cwd/title/time) is read from `~/.local/share/opencode/storage/session/{project-id}/{session-id}.json` when present
-- During active turns, in-memory streaming state is authoritative; file poller skips active session IDs
+- During active turns, in-memory streaming state is authoritative; the ingest watcher skips active session IDs
 
 ### Loading
-- `server/src/adapters/jsonl.ts` loads Claude from `~/.claude/projects/*`, Codex from `~/.codex/sessions/YYYY/MM/DD/*`, and OpenCode from `~/.local/share/opencode/storage/message/*`
+- The `unleashd-ingest` addon (`crates/unleashd-ingest`) loads Claude from `~/.claude/projects/*`, Codex from `~/.codex/sessions/YYYY/MM/DD/*`, and OpenCode from `~/.local/share/opencode/storage/message/*`
 - `inferProviderFromModel(model)` is used only for Claude-format entries; native Codex/OpenCode sources are loaded as `provider=codex` / `provider=opencode`
-- Polling detects external changes for all three providers (user ran `claude` / `codex` / `opencode` in terminal)
+- The ingest file watcher detects external changes for all three providers (user ran `claude` / `codex` / `opencode` in terminal)
 
 ## Permissions
 
@@ -187,8 +187,7 @@ Set `CLAUDE_MAX_PERMISSIONS=false` or `CODEX_MAX_PERMISSIONS=false` to disable.
    - Add model schema (e.g. `NewProviderModelSchema`) to `ModelIdSchema` union
 
 4. **Persistence** (if the agent doesn't self-persist):
-   - Create adapter in `server/src/adapters/`
-   - Add loading path to `jsonl.ts`
+   - Add a transcript parser to `crates/unleashd-ingest` (see its README)
 
 5. **Session ID capture**:
    - Emit canonical session-start events from `agent-cli-tool` so `server` can update `conversation.sessionId`

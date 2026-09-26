@@ -49,7 +49,6 @@ import { DRAFT_KEY_PREFIX, PENDING_FILES_KEY_PREFIX, removeSeenIndex } from './u
 
 export type { QueuedMessage } from '@unleashd/shared';
 export { createConversation } from './commands';
-export type { CreateArgs as CreateConversationArgs } from './commands';
 
 // =============================================================================
 // Chunk buffer
@@ -323,11 +322,6 @@ export function noteClientOutdated(serverVersion: number): void {
  */
 export function setConversationDone(conversationId: string, done: boolean): void {
   sendNow({ type: 'set_conversation_done', conversationId, done });
-}
-
-export function stopConversation(conversationId: string): void {
-  if (!readConversation(conversationId)) return;
-  sendNow({ type: 'stop_conversation', conversationId });
 }
 
 /**

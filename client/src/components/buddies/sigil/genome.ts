@@ -135,16 +135,6 @@ export function nameLatent(name: string): Latent {
   return Array.from({ length: LATENT_DIM }, next);
 }
 
-export function lerpLatent(a: Latent, b: Latent, t: number): Latent {
-  // Spherical-ish: renormalise so the midpoint keeps a typical latent norm
-  // instead of shrinking toward the origin (which would look washed out).
-  const mixed = a.map((x, i) => x * (1 - t) + b[i] * t);
-  const norm = (v: Latent) => Math.hypot(...v);
-  const target = norm(a) * (1 - t) + norm(b) * t;
-  const scale = target / Math.max(norm(mixed), 1e-9);
-  return mixed.map((x) => x * scale);
-}
-
 // The fixed decoder: DECODER_ROWS seeded random directions in latent space.
 // Each parameter reads one row's projection, so all 32 dimensions shape it.
 const CPPN_WEIGHT_COUNT = 6 * 8 + 9 * 8 + 9 + 8;

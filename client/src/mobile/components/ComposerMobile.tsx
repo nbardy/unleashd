@@ -25,7 +25,6 @@ export function ComposerMobile({
   isRunning,
   isStreaming,
   queue,
-  queueLength: queueLengthLegacy,
   disabledReason,
   onOpenPalette,
   paletteSelectedContent,
@@ -34,10 +33,8 @@ export function ComposerMobile({
   conversationId: string;
   isRunning: boolean;
   isStreaming: boolean;
-  /** Full queue list — per-item cancel via cancelQueuedMessage. Prefer over queueLength. */
+  /** Full queue list — per-item cancel via cancelQueuedMessage. */
   queue?: readonly QueuedMessage[];
-  /** @deprecated — use queue. Kept for backward compat during migration. */
-  queueLength?: number;
   /** Set to render the composer inert with an explanation (e.g. unconfirmed). */
   disabledReason?: string;
   /** Optional: called when the palette button is pressed (parent owns palette). */
@@ -52,18 +49,6 @@ export function ComposerMobile({
   // read so standalone use still shows queue. Hook before any early return.
   const queueFromAtom = queueOf(useAtomValue(transcriptFamily(conversationId ?? '')));
   const resolvedQueue: readonly QueuedMessage[] = queue ?? queueFromAtom ?? [];
-  // Legacy fallback: queueLength prop → synthesize length for sendLabel
-  const effectiveQueue: readonly QueuedMessage[] =
-    queue !== undefined
-      ? queue
-      : queueLengthLegacy !== undefined
-        ? Array.from({ length: queueLengthLegacy }, (_, i) => ({
-            id: `legacy-${i}`,
-            content: '',
-            queuedAt: new Date(0),
-            status: 'pending' as const,
-          }))
-        : resolvedQueue;
 
   const [expanded, setExpanded] = useState(false);
   const closeEditor = useCallback(() => {
@@ -216,7 +201,7 @@ export function ComposerMobile({
   );
 
   const hasActiveTurn = isRunning || isStreaming;
-  const hasQueue = effectiveQueue.length > 0;
+  const hasQueue = resolvedQueue.length > 0;
   const hasText = draft.trim().length > 0;
   const hasAttachments = pendingFiles.length > 0;
   const canSend = hasText || hasAttachments;

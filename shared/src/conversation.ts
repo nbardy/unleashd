@@ -45,7 +45,6 @@ export const SubAgentStatusSourceSchema = z.enum([
   'inferred_parent_completion',
   'recovered_from_disk',
 ]);
-export type SubAgentStatusSource = z.infer<typeof SubAgentStatusSourceSchema>;
 
 export const SubAgentSchema = z.object({
   id: z.string(),
@@ -153,7 +152,6 @@ export const TurnObservationSchema = z.object({
   // none (muse). Never an estimate.
   usage: ProviderTurnUsageSchema.nullable(),
 });
-export type TurnObservation = z.infer<typeof TurnObservationSchema>;
 
 export const ConversationDetailSchema = z.object({
   id: ConversationIdSchema,
