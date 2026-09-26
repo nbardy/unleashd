@@ -336,36 +336,6 @@
   background: color-mix(in srgb, var(--text-emphasis) 50%, transparent);
 }
 
-/* Quiet tree rows; only the current conversation gets a filled selection. */
-.conversation-item {
-  --sidebar-row-hover: color-mix(in srgb, var(--text-emphasis) 5%, transparent);
-  --sidebar-row-fill: transparent;
-  padding: var(--sp-3) var(--sp-6);
-  margin: 1px 0;
-  border-radius: 0;
-  background: transparent;
-  cursor: pointer;
-  transition: background 0.15s, box-shadow 0.15s;
-  position: relative;
-  border: none;
-  /* Keep the full-width paint geometry mounted; hover only changes its color. */
-  box-shadow: 0 0 0 100vmax var(--sidebar-row-fill);
-  clip-path: inset(0 -100vmax);
-}
-
-.conversation-item:hover {
-  --sidebar-row-fill: var(--sidebar-row-hover);
-  background: var(--sidebar-row-hover);
-}
-
-.conversation-item.active {
-  --sidebar-row-selection: color-mix(in srgb, var(--sidebar-selection) 70%, transparent);
-  --sidebar-row-fill: var(--sidebar-row-selection);
-  background: var(--sidebar-row-selection);
-  color: var(--sidebar-selection-text);
-  animation: sidebar-selection-pop 180ms cubic-bezier(0.22, 1, 0.36, 1) both;
-}
-
 @keyframes sidebar-selection-pop {
   0% {
     transform: scaleY(0.985);
@@ -378,52 +348,12 @@
   }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .conversation-item.active {
-    animation: none;
-  }
-}
-
-.conversation-item.active .conversation-title {
-  color: var(--sidebar-selection-text);
-  font-weight: 600;
-}
-
 .pending-creation,
 .sidebar-buddy-project-header {
   width: 100%;
   color: inherit;
   font: inherit;
   text-align: left;
-}
-
-/* The one conversation row: [badge] title — time [NEW] [status/Stop].
-   Every sidebar conversation (buddy, grouped, list, older, pending) uses this.
-   Title is the only flexible child; everything else stays at natural width.
-   Deliberately NO hover padding here: .done-btn is a right-aligned overlay and
-   reserving space for it on hover shifts the whole row left, which reads as jitter. */
-.conversation-row {
-  gap: var(--sp-3);
-  flex: 1;
-  min-width: 0;
-  overflow: hidden;
-}
-
-/* Folder badge — colored text label at top of each conversation item.
-   No background pill — just the colored font is the project identity marker.
-   Color set via inline style from getProjectColor(). */
-.folder-badge {
-  font-size: var(--fs-1);
-  font-family: var(--font-mono);
-  font-weight: 600;
-  padding: 0;
-  background: none !important;
-  border-radius: 0;
-  line-height: 1;
-  /* Capped share of the row, and never shrinks below it — the title (flex-basis 0)
-     absorbs the squeeze instead, so the badge stays readable in a narrow sidebar. */
-  flex: 0 0 auto;
-  max-width: 30%;
 }
 
 .folder-group-name-button {
@@ -458,17 +388,6 @@
   animation: glow-pulse 1.5s ease-in-out infinite;
 }
 
-/* Finished unread responses use a quiet accent from the current palette. */
-.status-indicator.unread {
-  background: color-mix(in oklch, var(--primary) 70%, var(--text-primary));
-}
-
-/* Pending indicator: conversation has queued messages waiting to be sent. */
-.status-indicator.pending {
-  background: var(--warning, #f0a030);
-  animation: glow-pulse 1.5s ease-in-out infinite;
-}
-
 @keyframes glow-pulse {
   0%,
   100% {
@@ -477,18 +396,6 @@
   50% {
     box-shadow: 0 0 8px var(--success), 0 0 16px var(--success-glow);
   }
-}
-
-/* Title — the only flexible cell in the row; ellipsises when space runs out. */
-.conversation-title {
-  flex: 1 1 0;
-  min-width: 0;
-  font-size: var(--fs-3);
-  line-height: 1.4;
-  color: var(--text-primary);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .show-more-btn {
@@ -720,61 +627,20 @@ a.sidebar-buddy-wake-done {
   }
 }
 
-/* Conversation items under a buddy — about 1/2 the padding/margin per thread */
-.buddy-subgroup .conversation-item {
-  padding: var(--sp-3) var(--sp-6) var(--sp-3) var(--sp-10);
-  margin-left: 0;
-}
-
 .buddy-subgroup .show-more-btn,
 .buddy-subgroup .folder-group-all-done {
   margin-left: 0;
   padding-left: var(--sp-10);
 }
 
-.conversation-row-sep {
-  font-size: var(--fs-2);
-  flex-shrink: 0;
+/* Conversation rows under a buddy are indented under the buddy header. */
+.buddy-subgroup .conversation-row__line {
+  padding-left: var(--sp-10);
 }
 
-.conversation-row .conversation-time-ago,
-.conversation-row .status-indicator {
-  flex-shrink: 0;
-}
-
-.conversation-time-ago {
-  font-size: var(--fs-1);
-  white-space: nowrap;
-}
-
-/* conversation-dir removed — folder is now shown as top-left badge */
-
-/* Opaque hover action at the far right of every conversation row. */
-.done-btn {
-  position: absolute;
-  right: 0;
-  top: 50%;
-  transform: translateY(-50%);
-  padding: var(--sp-2) var(--sp-4);
-  background: var(--bg-tertiary);
-  color: var(--text-primary);
-  font-size: var(--fs-2);
-  cursor: pointer;
-  opacity: 0;
-  transition: background 0.2s;
-}
-
-.conversation-item:hover .done-btn,
-.conversation-item:focus-within .done-btn,
 .folder-group-header:hover .folder-group-add-btn,
 .folder-group-header:focus-within .folder-group-add-btn {
   opacity: 1;
-}
-
-.done-btn:hover {
-  background: color-mix(in srgb, var(--success) 20%, var(--bg-tertiary));
-  border-color: var(--success);
-  color: var(--success);
 }
 
 /* =============================================================================
@@ -947,19 +813,8 @@ a.sidebar-buddy-wake-done {
   line-height: 1.35;
 }
 
-.sidebar .folder-group-header:focus-visible,
-.sidebar .conversation-item:focus-visible {
+.sidebar .folder-group-header:focus-visible {
   outline: 2px solid var(--accent-primary);
   outline-offset: -2px;
 }
 
-/* Keep selected-row metadata legible, including age colors supplied by the row. */
-.sidebar .conversation-item.active .conversation-time-ago,
-.sidebar .conversation-item.active .conversation-row-sep,
-.sidebar .conversation-item.active .folder-badge {
-  color: var(--sidebar-selection-text) !important;
-}
-
-.sidebar .conversation-item.active .status-indicator:not(.running):not(.pending):not(.unread) {
-  background: var(--sidebar-selection-text);
-}

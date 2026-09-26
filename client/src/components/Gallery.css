@@ -145,41 +145,6 @@
   color: var(--text-primary);
 }
 
-.gallery-card {
-  background: var(--bg-card); /* Tier 2 */
-  border-radius: var(--ui-radius);
-  padding: var(--sp-8);
-  border: 1px solid var(--border-subtle);
-  border-top: 4px solid transparent; /* Viridis accent color applied via inline style */
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.gallery-card:hover {
-  background: var(--bg-panel); /* Tier 3 on hover */
-  border-color: var(--border-default);
-  /* border-top-color is set by viridis inline style - preserved on hover */
-  transform: translateY(-2px);
-}
-
-.gallery-card-header {
-  justify-content: space-between;
-  margin-bottom: 8px;
-}
-
-.gallery-card-id {
-  font-size: var(--fs-4);
-  color: var(--text-secondary);
-  font-family: var(--font-mono);
-  gap: var(--sp-4);
-}
-
-/* Provider badge */
-
-.gallery-card-status {
-  gap: var(--sp-4);
-}
-
 /* State badge - unified indicator for running/looping/idle states */
 .state-badge {
   gap: var(--sp-3);
@@ -228,30 +193,6 @@
   50% {
     opacity: 0.5;
   }
-}
-
-.gallery-messages {
-  max-height: 200px;
-  overflow-y: auto;
-  margin-top: 12px;
-}
-
-.gallery-message {
-  padding: var(--sp-4) var(--sp-6);
-  margin-bottom: 8px;
-  background: var(--bg-tertiary);
-  border-radius: var(--ui-radius);
-  font-size: var(--fs-4);
-}
-
-.gallery-message.user {
-  background: var(--bg-user-message);
-  border-left: 3px solid var(--accent-user);
-}
-
-.gallery-message.assistant {
-  background: var(--bg-assistant-message);
-  border-left: 3px solid var(--accent-assistant);
 }
 
 /* =============================================================================
@@ -308,26 +249,6 @@
   border-left: 4px solid var(--success);
 }
 
-/* Done card — slightly dimmed */
-.gallery-card:is(.done-card, .worker-card) {
-  opacity: 0.75;
-}
-
-.gallery-card:is(.done-card, .worker-card):hover {
-  opacity: 1;
-}
-
-/* Restore button on done cards */
-.undo-done-btn,
-.promote-worker-btn {
-  padding: var(--sp-1) var(--sp-5);
-  background: transparent;
-  color: var(--text-secondary);
-  font-size: var(--fs-2);
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
 /* Done view header — back button + title */
 .gallery-done-header {
   gap: var(--sp-7);
@@ -354,12 +275,6 @@
 .back-to-gallery-btn:hover {
   background: var(--border-color);
   color: var(--text-emphasis);
-}
-
-.undo-done-btn:hover {
-  background: color-mix(in srgb, var(--success) 20%, transparent);
-  border-color: var(--success);
-  color: var(--success);
 }
 
 /* =============================================================================
@@ -404,12 +319,6 @@
   color: var(--primary-bright);
   background: var(--primary-glow);
   border-color: color-mix(in srgb, var(--primary) 35%, transparent);
-}
-
-.promote-worker-btn:hover {
-  background: color-mix(in srgb, var(--primary) 20%, transparent);
-  border-color: var(--primary);
-  color: var(--primary);
 }
 
 @media (max-width: 768px) {
