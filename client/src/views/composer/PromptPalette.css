@@ -1,3 +1,4 @@
+/* The saved-prompt palette (views/composer/PromptPalette.tsx), both frames. */
 .prompt-palette-overlay {
   position: fixed;
   top: 0;
@@ -12,7 +13,7 @@
   z-index: 1000;
 }
 
-.prompt-palette {
+.prompt-palette--popover {
   background: var(--bg-panel);
   border: 1px solid var(--bg-hover);
   border-radius: var(--ui-radius);
@@ -42,6 +43,7 @@
 .prompt-palette-results {
   max-height: 320px;
   overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .prompt-palette-item {
@@ -61,6 +63,7 @@
 }
 
 .prompt-name {
+  min-width: 0;
   font-weight: 500;
   color: var(--text-emphasis);
 }
@@ -107,4 +110,38 @@
 .prompt-palette-empty {
   padding: var(--sp-11) var(--sp-8);
   text-align: center;
+}
+
+/* ---- presentation="sheet": the list inside a mobile bottom sheet ---- */
+.prompt-palette--sheet {
+  max-height: 72vh;
+}
+
+.prompt-palette--sheet .prompt-palette-input {
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--ui-radius);
+  font-size: var(--fs-6);
+}
+
+.prompt-palette--sheet .prompt-palette-results {
+  max-height: 42vh;
+  -webkit-overflow-scrolling: touch;
+}
+
+.prompt-palette--sheet .prompt-palette-item {
+  padding: var(--sp-5) var(--sp-6);
+  -webkit-tap-highlight-color: transparent;
+}
+
+.prompt-palette__hint {
+  margin: 2px 0 0;
+  font-size: var(--fs-2);
+  text-align: center;
+}
+
+/* No hover on touch: delete stays visible on every row. */
+@media (hover: none) {
+  .prompt-delete-btn {
+    display: flex;
+  }
 }

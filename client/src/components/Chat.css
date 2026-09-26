@@ -374,19 +374,6 @@
   flex-shrink: 0;
 }
 
-.send-action {
-  align-items: stretch;
-  gap: var(--sp-2);
-}
-
-.send-queue-hint {
-  font-size: var(--fs-2);
-  font-family: var(--font-mono);
-  line-height: 1;
-  text-align: center;
-  white-space: nowrap;
-}
-
 .message-input {
   flex: 1;
   /* Left padding (20px) matches .message-content padding-left so typed text
@@ -416,29 +403,6 @@
   border-color: var(--danger);
   background: var(--bg-error-message);
   box-shadow: 0 0 0 2px var(--danger-glow);
-}
-
-.send-btn {
-  padding: var(--sp-6) var(--sp-9);
-  background: var(--accent-primary);
-  color: var(--text-on-accent);
-  border: none;
-  font-size: var(--fs-5);
-  transition: background 0.2s;
-  white-space: nowrap;
-}
-
-.send-btn:hover {
-  background: var(--accent-primary-hover);
-}
-
-/* Interrupt mode styling for send button — red to signal destructive action */
-.send-btn.interrupt-mode {
-  background: var(--danger);
-}
-
-.send-btn.interrupt-mode:hover {
-  background: var(--danger-bright);
 }
 
 /* Save prompt button */
@@ -573,11 +537,6 @@
   }
 }
 
-.pending-file-remove:hover {
-  background: var(--accent-error);
-  color: var(--text-on-accent);
-}
-
 /* =============================================================================
    FILE UPLOAD — Button, drag-active indicator, and pending file previews
    ============================================================================= */
@@ -598,7 +557,6 @@
   transform: scale(1.05);
 }
 
-.send-btn:disabled,
 .save-prompt-btn:disabled,
 .upload-btn:disabled {
   opacity: 0.5;
@@ -642,83 +600,6 @@
   font-weight: 600;
   color: var(--accent-primary);
   letter-spacing: 0.5px;
-}
-
-/* Pending files preview — horizontal strip above the textarea */
-.pending-files {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--sp-4);
-  margin-bottom: 8px;
-}
-
-.pending-file-item {
-  gap: var(--sp-3);
-  padding: var(--sp-2) var(--sp-4);
-  background: var(--bg-tertiary);
-  font-size: var(--fs-3);
-  color: var(--text-secondary);
-}
-
-.pending-file-thumb {
-  width: 32px;
-  height: 32px;
-  object-fit: cover;
-  border-radius: var(--ui-radius);
-}
-
-.pending-file-icon {
-  font-size: var(--fs-7);
-  line-height: 1;
-}
-
-.pending-file-name {
-  max-width: 120px;
-}
-
-.pending-file-remove {
-  width: 18px;
-  height: 18px;
-  border: none;
-  background: color-mix(in srgb, var(--danger) 30%, transparent);
-  color: var(--accent-error);
-  font-size: var(--fs-3);
-  font-weight: bold;
-  line-height: 1;
-  justify-content: center;
-  transition: all 0.2s;
-}
-
-/* Upload failure banner — sits directly above the pending-files tray.
-   A drop that fails must not look like a drop that was ignored: during the
-   2026-08-20 hot-reload drain the upload 503'd and only console.error'd, so
-   drag-and-drop read as silently broken. See hooks/usePendingAttachments.ts. */
-.chat-upload-error {
-  gap: var(--sp-4);
-  margin: 0 0 6px 0;
-  padding: var(--sp-3) var(--sp-5);
-  border: 1px solid var(--error, #dc322f);
-  border-radius: var(--ui-radius);
-  background: color-mix(in srgb, var(--error, #dc322f) 12%, transparent);
-  color: var(--error, #dc322f);
-  font-size: var(--fs-3);
-  line-height: 1.4;
-}
-
-.chat-upload-error__text {
-  flex: 1 1 0;
-  min-width: 0;
-}
-
-.chat-upload-error__dismiss {
-  flex: 0 0 auto;
-  padding: 0 var(--sp-2);
-  border: none;
-  background: transparent;
-  color: inherit;
-  font-size: var(--fs-6);
-  line-height: 1;
-  cursor: pointer;
 }
 
 /* Harness popup: the header keeps one lean summary row; the full
