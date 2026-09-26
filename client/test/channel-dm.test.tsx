@@ -137,7 +137,7 @@ test('a phone DM stays in Channels with Back to where it was opened', async () =
       </Provider>
     </MemoryRouter>
   );
-  assert.match(html, /class="mobile-channel" aria-label="Direct message with Lead"/);
+  assert.match(html, /class="mobile-channel[^"]*" aria-label="Direct message with Lead"/);
   assert.match(
     html,
     new RegExp(`aria-label="Back" href="/buddies/workspaces/${WS}/channels\\?channel=ch_a"`)

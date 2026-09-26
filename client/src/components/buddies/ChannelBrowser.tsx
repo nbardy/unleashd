@@ -95,14 +95,14 @@ function InstanceTag({
   const label = `conv ${conversationId.slice(0, 8)}`;
   return available ? (
     <Link
-      className="channel-browser-instance"
+      className="channel-browser-instance ui-muted"
       to={`/chat/${encodeURIComponent(conversationId)}`}
       title={`Open conversation ${conversationId}`}
     >
       {label}
     </Link>
   ) : (
-    <span className="channel-browser-instance" title={conversationId}>
+    <span className="channel-browser-instance ui-muted" title={conversationId}>
       {label}
     </span>
   );
@@ -127,7 +127,7 @@ function PostChannel({ post, context }: { post: Post; context: RowContext }) {
     case 'task':
       return (
         <Link
-          className="channel-browser-instance"
+          className="channel-browser-instance ui-muted"
           to={channelLinkPath(context.workspaceId, postLink(post))}
         >
           {context.place.channelNames.get(post.channelId) ?? 'another channel'}
@@ -153,7 +153,7 @@ function PostMeta({ post, context }: { post: Post; context: RowContext }) {
 
 function Replying({ text }: { text: string }) {
   return (
-    <span className="channel-browser-replying" aria-live="polite">
+    <span className="channel-browser-replying ui-inline-row ui-muted" aria-live="polite">
       <TypingDots />
       {text}
     </span>
@@ -307,7 +307,7 @@ function ContinuationRow({ post, context }: { post: Post; context: RowContext })
       data-linked={post.id === context.linkedPostId ? 'true' : undefined}
     >
       <time
-        className="channel-browser-gutter-time"
+        className="channel-browser-gutter-time ui-muted"
         dateTime={post.createdAt}
         title={new Date(post.createdAt).toLocaleString()}
       >
@@ -393,7 +393,7 @@ function ThreadPane({
   );
   useMarkChannelRead(channelId, entry.unread, newestServedId(thread.posts) ?? root?.id ?? null);
   return (
-    <aside className="channel-thread" aria-label="Thread">
+    <aside className="channel-thread ui-stack" aria-label="Thread">
       <header className="channel-thread-header ui-row">
         <div>
           <h2>Thread</h2>
@@ -413,7 +413,11 @@ function ThreadPane({
           </button>
         </div>
       </header>
-      <div className="channel-browser-scroll" ref={follow.scrollRef} onScroll={follow.onScroll}>
+      <div
+        className="channel-browser-scroll ui-stack"
+        ref={follow.scrollRef}
+        onScroll={follow.onScroll}
+      >
         {(thread.latest.kind === 'failed' || thread.latest.kind === 'stale') && (
           <p className="channel-browser-error" role="alert">
             Thread could not refresh: {thread.latest.error.message}
@@ -426,7 +430,7 @@ function ThreadPane({
           </ol>
         )}
         {root && (
-          <div className="channel-thread-divider ui-row">
+          <div className="channel-thread-divider ui-muted ui-row">
             <span>Replies</span>
           </div>
         )}
@@ -471,7 +475,11 @@ function TaskTranscript({ taskId, context }: { taskId: string; context: RowConte
   const rows = useMemo(() => channelRows(feed.posts ?? []), [feed.posts]);
   const follow = useFollowBottom(rows.length, feed.posts, null);
   return (
-    <div className="channel-browser-scroll" ref={follow.scrollRef} onScroll={follow.onScroll}>
+    <div
+      className="channel-browser-scroll ui-stack"
+      ref={follow.scrollRef}
+      onScroll={follow.onScroll}
+    >
       {(feed.latest.kind === 'failed' || feed.latest.kind === 'stale') && (
         <p className="channel-browser-error" role="alert">
           Task posts could not refresh: {feed.latest.error.message}
@@ -481,7 +489,7 @@ function TaskTranscript({ taskId, context }: { taskId: string; context: RowConte
         loading: () => <ChannelLoader label="Loading the Task's posts…" />,
         failed: () => null,
         empty: () => (
-          <div className="channel-browser-empty ui-row">
+          <div className="channel-browser-empty ui-muted ui-row">
             <span>No posts about this Task yet.</span>
           </div>
         ),
@@ -567,7 +575,10 @@ function ChannelPane({
   const taskContext: RowContext = { ...base, place: { kind: 'task', channelNames } };
   return (
     <div className="channel-browser-panes" data-thread={threadId ? 'open' : undefined}>
-      <section className="channel-browser-pane" aria-label={`${heading.mark}${heading.name}`}>
+      <section
+        className="channel-browser-pane ui-stack"
+        aria-label={`${heading.mark}${heading.name}`}
+      >
         <header className="channel-browser-pane-header ui-row">
           <div className="channel-browser-pane-title">
             <h2>
@@ -592,7 +603,11 @@ function ChannelPane({
           />
         </header>
         {taskFilter === null ? (
-          <div className="channel-browser-scroll" ref={follow.scrollRef} onScroll={follow.onScroll}>
+          <div
+            className="channel-browser-scroll ui-stack"
+            ref={follow.scrollRef}
+            onScroll={follow.onScroll}
+          >
             {(feed.latest.kind === 'failed' || feed.latest.kind === 'stale') && (
               <p className="channel-browser-error" role="alert">
                 Posts could not refresh: {feed.latest.error.message}
@@ -602,7 +617,7 @@ function ChannelPane({
               loading: () => <ChannelLoader label={`Loading ${heading.mark}${heading.name}…`} />,
               failed: () => null,
               empty: () => (
-                <div className="channel-browser-empty ui-row">
+                <div className="channel-browser-empty ui-muted ui-row">
                   <strong>
                     {heading.mark}
                     {heading.name}
@@ -732,13 +747,13 @@ function WorkspaceSwitcher({
     <div className="channel-browser-switcher" ref={rootRef}>
       <button
         type="button"
-        className="channel-browser-workspace"
+        className="channel-browser-workspace ui-row"
         aria-haspopup="menu"
         aria-expanded={open}
         onClick={() => setOpen((value) => !value)}
       >
         <h1>{workspaceName}</h1>
-        <span className="channel-browser-caret" aria-hidden="true">
+        <span className="channel-browser-caret ui-muted" aria-hidden="true">
           ▾
         </span>
       </button>
@@ -758,7 +773,7 @@ function WorkspaceSwitcher({
                   </span>
                   {workspace.name}
                   {workspace.id === workspaceId && (
-                    <span className="channel-browser-switcher-check" aria-hidden="true">
+                    <span className="channel-browser-switcher-check ui-muted" aria-hidden="true">
                       ✓
                     </span>
                   )}
@@ -809,7 +824,7 @@ function NewChannelForm({
       }}
     >
       <label>
-        <span className="channel-browser-hash" aria-hidden="true">
+        <span className="channel-browser-hash ui-muted" aria-hidden="true">
           #
         </span>
         <input
@@ -878,10 +893,10 @@ function RailChannel({
         onClick={onSelect}
         title={heading.about}
       >
-        <span className="channel-browser-hash" aria-hidden="true">
+        <span className="channel-browser-hash ui-muted" aria-hidden="true">
           {heading.mark}
         </span>
-        <span className="channel-browser-channel-name">{heading.name}</span>
+        <span className="channel-browser-channel-name ui-truncate">{heading.name}</span>
         <RequestsBadge count={requests} />
       </button>
     </li>
@@ -950,19 +965,19 @@ export function ChannelBrowser({
   );
   return (
     <div className="channel-browser" aria-label="Channels">
-      <nav className="channel-browser-rail">
-        <header className="channel-browser-rail-header">
-          <Link className="channel-browser-exit" to="/" title="Back to workspaces">
+      <nav className="channel-browser-rail ui-stack">
+        <header className="channel-browser-rail-header ui-stack">
+          <Link className="channel-browser-exit ui-muted" to="/" title="Back to workspaces">
             ← Workspaces
           </Link>
           <WorkspaceSwitcher workspaceId={workspaceId} workspaceName={directory.workspaceName} />
         </header>
         <div className="channel-browser-rail-scroll">
           <div className="channel-browser-rail-section-row ui-row">
-            <h3 className="channel-browser-rail-section">Channels</h3>
+            <h3 className="channel-browser-rail-section ui-muted">Channels</h3>
             <button
               type="button"
-              className="channel-browser-rail-add"
+              className="channel-browser-rail-add ui-muted"
               onClick={() => setCreating(true)}
               title="New channel"
               aria-label="New channel"
@@ -985,21 +1000,21 @@ export function ChannelBrowser({
             <p role="alert">Channels could not refresh: {inbox.error.message}</p>
           )}
           {inbox.data && rail.channels.length === 0 ? (
-            <p className="channel-browser-rail-empty">No channels yet.</p>
+            <p className="channel-browser-rail-empty ui-muted">No channels yet.</p>
           ) : (
             <ul className="channel-browser-channels">{rail.channels.map(railRow)}</ul>
           )}
           {rail.direct.length > 0 && (
             <>
-              <h3 className="channel-browser-rail-section">Direct messages</h3>
+              <h3 className="channel-browser-rail-section ui-muted">Direct messages</h3>
               <ul className="channel-browser-channels">{rail.direct.map(railRow)}</ul>
             </>
           )}
           <div className="channel-browser-rail-section-row ui-row">
-            <h3 className="channel-browser-rail-section">Buddies</h3>
+            <h3 className="channel-browser-rail-section ui-muted">Buddies</h3>
             <button
               type="button"
-              className="channel-browser-rail-add"
+              className="channel-browser-rail-add ui-muted"
               onClick={newBuddy.start}
               disabled={newBuddy.state.kind === 'pending'}
               title="New Buddy"
@@ -1009,12 +1024,12 @@ export function ChannelBrowser({
             </button>
           </div>
           {newBuddy.state.kind === 'failed' && (
-            <p className="channel-browser-rail-empty" role="alert">
+            <p className="channel-browser-rail-empty ui-muted" role="alert">
               {newBuddy.state.message}
             </p>
           )}
           {directory.activeMembers.length === 0 && !creatingBuddy ? (
-            <p className="channel-browser-rail-empty">No Buddies yet.</p>
+            <p className="channel-browser-rail-empty ui-muted">No Buddies yet.</p>
           ) : (
             <ul className="channel-browser-buddies">
               {creatingBuddy && (
@@ -1066,7 +1081,7 @@ export function ChannelBrowser({
             openDm={openDm}
           />
         ) : (
-          <div className="channel-browser-empty ui-row">
+          <div className="channel-browser-empty ui-muted ui-row">
             <strong>{inbox.data ? 'No channels yet' : 'Loading channels…'}</strong>
             {inbox.data && (
               <button

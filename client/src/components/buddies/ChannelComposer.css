@@ -28,12 +28,12 @@
   display: block;
   width: 100%;
   min-height: 42px;
-  padding: 11px 14px 4px;
+  padding: var(--sp-6) var(--sp-7) var(--sp-2);
   border: 0;
   background: transparent;
   color: var(--text-primary);
   font: inherit;
-  font-size: 14.5px;
+  font-size: var(--fs-post);
   line-height: 1.5;
   white-space: pre-wrap;
   overflow-wrap: break-word;
@@ -84,10 +84,8 @@
 }
 
 .channel-composer-bar {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 4px 8px 8px;
+  gap: var(--sp-5);
+  padding: var(--sp-2) var(--sp-4) var(--sp-4);
 }
 
 .channel-composer-attach {
@@ -100,7 +98,7 @@
   border-radius: 50%;
   background: color-mix(in srgb, var(--text-emphasis) 8%, transparent);
   color: var(--text-secondary);
-  font-size: 16px;
+  font-size: var(--fs-6);
   line-height: 1;
   cursor: pointer;
 }
@@ -112,15 +110,11 @@
 .channel-composer-hint {
   flex: 1;
   min-width: 0;
-  overflow: hidden;
-  color: var(--text-muted);
-  font-size: 11.5px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  font-size: var(--fs-3);
 }
 
 .channel-composer-hint kbd {
-  padding: 0 4px;
+  padding: 0 var(--sp-2);
   border: 1px solid var(--border-subtle);
   border-radius: 4px;
   font: 500 10.5px / 1.5 var(--font-mono);
@@ -131,13 +125,13 @@
 }
 
 .channel-composer-send {
-  padding: 5px 14px;
+  padding: var(--sp-3) var(--sp-7);
   border: 0;
   border-radius: 7px;
   background: color-mix(in srgb, var(--theme-user) 70%, transparent);
   color: var(--text-bright);
   font: inherit;
-  font-size: 13px;
+  font-size: var(--fs-4);
   font-weight: 600;
   cursor: pointer;
 }
@@ -155,10 +149,10 @@
   left: 0;
   z-index: 20;
   display: grid;
-  gap: 1px;
+  gap: var(--sp-1);
   max-height: 320px;
   margin: 0;
-  padding: 6px;
+  padding: var(--sp-3);
   overflow-y: auto;
   border: 1px solid var(--border-subtle);
   border-radius: 10px;
@@ -171,16 +165,16 @@
   display: grid;
   grid-template-columns: 22px minmax(0, max-content) minmax(0, 1fr);
   align-items: center;
-  gap: 10px;
+  gap: var(--sp-5);
   width: 100%;
   height: 34px;
-  padding: 0 8px;
+  padding: 0 var(--sp-4);
   border: 0;
   border-radius: 6px;
   background: transparent;
   color: var(--text-secondary);
   font: inherit;
-  font-size: 13.5px;
+  font-size: var(--fs-5);
   text-align: left;
   cursor: pointer;
 }
@@ -200,23 +194,15 @@
 
 .channel-composer-picker-task {
   background: color-mix(in srgb, var(--text-emphasis) 8%, transparent);
-  color: var(--text-muted);
-  font-size: 12px;
+  font-size: var(--fs-3);
 }
 
 .channel-composer-picker-label {
-  overflow: hidden;
   font-weight: 600;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .channel-composer-picker-detail {
-  overflow: hidden;
-  color: var(--text-muted);
-  font-size: 12px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  font-size: var(--fs-3);
 }
 
 /* Mention chips: one per Buddy the text mentions. Clicking opens the harness /
@@ -224,7 +210,7 @@
 .channel-composer-mentions {
   display: flex;
   flex: 1;
-  gap: 6px;
+  gap: var(--sp-3);
   min-width: 0;
   overflow-x: auto;
   scrollbar-width: none;
@@ -235,20 +221,18 @@
 }
 
 .channel-composer-mention {
-  display: inline-flex;
   flex: 0 1 auto;
   min-width: 0;
-  align-items: center;
-  gap: 6px;
+  gap: var(--sp-3);
   max-width: 360px;
   height: 26px;
-  padding: 0 9px 0 4px;
+  padding: 0 var(--sp-5) 0 var(--sp-2);
   border: 1px solid var(--border-subtle);
   border-radius: 13px;
   background: transparent;
   color: var(--text-secondary);
   font: inherit;
-  font-size: 12px;
+  font-size: var(--fs-3);
   cursor: pointer;
 }
 
@@ -275,16 +259,12 @@
 
 .channel-composer-mention-name {
   min-width: 2em;
-  overflow: hidden;
   font-weight: 600;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 /* On a narrow bar the name gives way first: the model is the point. */
 .channel-composer-mention-model {
   flex: none;
-  color: var(--text-muted);
   white-space: nowrap;
 }
 
@@ -308,11 +288,9 @@
   margin: 0; /* <dialog open> is centered by the UA sheet */
   color: inherit;
   z-index: 20;
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
+  gap: var(--sp-3);
   max-height: min(60vh, 440px);
-  padding: 12px 14px;
+  padding: var(--sp-6) var(--sp-7);
   overflow-y: auto;
   border: 1px solid var(--border-subtle);
   border-radius: 10px;
@@ -321,11 +299,8 @@
 }
 
 .channel-composer-model-head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  color: var(--text-muted);
-  font-size: 13px;
+  gap: var(--sp-4);
+  font-size: var(--fs-4);
 }
 
 .channel-composer-model-head strong {
@@ -335,7 +310,7 @@
 .channel-composer-model .new-conv-label {
   margin: 6px 0 0;
   color: var(--text-muted);
-  font-size: 11px;
+  font-size: var(--fs-2);
   font-weight: 600;
 }
 
@@ -343,7 +318,7 @@
 .channel-composer-model .model-selector {
   display: flex;
   flex-wrap: wrap;
-  gap: 4px;
+  gap: var(--sp-2);
 }
 
 /* Compact pills. The chat picker's option classes carry flex-grow and sizing
@@ -352,8 +327,8 @@
   flex: none;
   min-width: 0;
   min-height: 28px;
-  padding: 3px 10px;
-  font-size: 12.5px;
+  padding: var(--sp-2) var(--sp-5);
+  font-size: var(--fs-4);
   white-space: nowrap;
 }
 
@@ -369,32 +344,31 @@
 .channel-composer-model .custom-model-option {
   display: flex;
   align-items: center;
-  gap: 8px;
-  font-size: 12px;
+  gap: var(--sp-4);
+  font-size: var(--fs-3);
 }
 
 .channel-composer-model-note {
   margin: 4px 0 0;
-  color: var(--text-muted);
-  font-size: 11.5px;
+  font-size: var(--fs-3);
 }
 
 .channel-composer-model-actions {
   display: flex;
   justify-content: flex-end;
-  gap: 8px;
+  gap: var(--sp-4);
   margin-top: 4px;
 }
 
 .channel-composer-model-actions button,
 .channel-inline-action {
-  padding: 4px 12px;
+  padding: var(--sp-2) var(--sp-6);
   border: 1px solid var(--border-subtle);
   border-radius: 7px;
   background: transparent;
   color: var(--text-secondary);
   font: inherit;
-  font-size: 12.5px;
+  font-size: var(--fs-4);
   cursor: pointer;
 }
 

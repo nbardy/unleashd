@@ -154,7 +154,7 @@ test('mobile channel screen: back to Home, thread link, touch composer', async (
   // Every root opens its thread screen at the shared URL (posts carry no reply count).
   assert.match(
     html,
-    /class="mobile-channel-post__reply" href="\/buddies\/workspaces\/ws-phone\/channels\?channel=ch_a&amp;thread=post_ask"/
+    /class="mobile-channel-post__reply[^"]*" href="\/buddies\/workspaces\/ws-phone\/channels\?channel=ch_a&amp;thread=post_ask"/
   );
   // Touch composer: Return is a newline, so no Shift+Enter hint.
   assert.match(html, /placeholder="Message #general"/);
@@ -207,11 +207,11 @@ test('a reply permalink opens its thread with the reply highlighted and the root
 test('mobile channels Home lists channels, DMs by Buddy, and Buddies with a visible Wake', async () => {
   await seed();
   const html = render(CHANNELS);
-  assert.match(html, /mobile-channels-row__name">general</);
+  assert.match(html, /mobile-channels-row__name[^"]*">general</);
   assert.match(html, /Add channel/);
   const dms = html.slice(html.indexOf('Direct messages'));
   assert.match(dms, /href="\/buddies\/workspaces\/ws-phone\/channels\?channel=ch_dm"/);
-  assert.match(html, /mobile-channels-row__name">Lead</);
+  assert.match(html, /mobile-channels-row__name[^"]*">Lead</);
   assert.match(html, /aria-label="Wake Lead: catch up on the channels and act"/);
 });
 
@@ -245,7 +245,7 @@ test('mobile Home starts and lists a Buddy setup chat; a held post offers its co
   jotaiStore.set(rowsAtom, new Map(rows.map((row) => [row.id, row])));
   try {
     const home = render(CHANNELS);
-    assert.match(home, /mobile-channels-row__name">New Buddy</);
+    assert.match(home, /mobile-channels-row__name[^"]*">New Buddy</);
     assert.equal(home.match(/Creating buddy<\/em>/g)?.length, 1, 'one setup row: the open one');
     assert.match(home, /aria-label="Archive Buddy setup"/);
     const channel = render(`${CHANNELS}?channel=ch_a`);
@@ -368,7 +368,7 @@ test('the mobile Task filter opens from a channel and links each post into its o
   assert.match(
     html,
     new RegExp(
-      `class="mobile-channel-post__reply" href="${base}\\?channel=ch_ops&amp;thread=ops-root&amp;post=ops-reply"[^>]*>#ops</a>`
+      `class="mobile-channel-post__reply[^"]*" href="${base}\\?channel=ch_ops&amp;thread=ops-root&amp;post=ops-reply"[^>]*>#ops</a>`
     )
   );
 });

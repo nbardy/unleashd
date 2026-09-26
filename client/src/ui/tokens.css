@@ -15,12 +15,13 @@
  *          drops its secondary columns.
  */
 :root {
-  /* Type scale: 9 steps. */
+  /* Type scale: 9 steps, plus --fs-post (the one channel reading size). */
   --fs-1: 10px; /* micro labels, badges */
   --fs-2: 11px; /* meta, secondary rows */
   --fs-3: 12px; /* desktop body-small, controls */
   --fs-4: 13px; /* desktop body */
   --fs-5: 14px; /* emphasis, mobile secondary */
+  --fs-post: 15px; /* channel reading size: post bodies, author names, thread titles */
   --fs-6: 16px; /* mobile body, section titles */
   --fs-7: 18px; /* panel titles */
   --fs-8: 24px; /* page titles, large glyphs */

@@ -147,23 +147,14 @@ echo "==> Gate G7: no literal px font-size / padding / gap, and only the two bre
 # client/src/ui/tokens.css; this keeps a new `padding: 7px` from starting the
 # drift again. Breakpoints cannot be var(), so their VALUES are checked: 768px
 # (device switch) and 340px (compact phone), see tokens.css.
-# KNOWN_LITERAL is a ratchet for files T21a did not own (Buddy UI, T11/T22):
-# a file may not exceed its count; when you lower one, lower its entry.
+# Every stylesheet is covered: the last exemptions (Channel*.css,
+# mobile-channels.css) reached 0 on 2026-09-26 and KNOWN_LITERAL is gone.
 if ! node <<'NODE'
 const fs = require('fs');
 const path = require('path');
 const SRC = 'client/src';
 const TOKENS = 'ui/tokens.css';
 const BREAKPOINTS = new Set(['768px', '340px']);
-const KNOWN_LITERAL = {
-  // Channel UI, owned by T11/T22 when T21a ran (2026-09-25). Only goes down.
-  // The Buddy files reached 0 in S6 (2026-09-26) and left the list.
-  'components/buddies/ChannelBrowser.css': 107,
-  'components/buddies/ChannelComposer.css': 43,
-  'components/buddies/ChannelContent.css': 23,
-  'components/buddies/ChannelLoader.css': 11,
-  'mobile/styles/mobile-channels.css': 49,
-};
 const walk = (d) => fs.readdirSync(d, { withFileTypes: true }).flatMap((e) => {
   const p = path.join(d, e.name);
   return e.isDirectory() ? walk(p) : [p];
@@ -171,7 +162,6 @@ const walk = (d) => fs.readdirSync(d, { withFileTypes: true }).flatMap((e) => {
 const DECL = /(?:^|[{;\s])(font-size|padding(?:-[a-z-]+)?|gap|row-gap|column-gap)\s*:([^;{}]*)/g;
 const PX = /(?:^|[\s(,])-?(\d*\.?\d+)px\b/g;
 const bad = [];
-const lower = [];
 for (const file of walk(SRC).filter((f) => f.endsWith('.css'))) {
   const rel = path.relative(SRC, file);
   if (rel === TOKENS) continue;
@@ -186,11 +176,8 @@ for (const file of walk(SRC).filter((f) => f.endsWith('.css'))) {
       if (!BREAKPOINTS.has(w[1])) hits.push(`${rel}:${text.slice(0, m.index).split('\n').length} @media ${w[1]}`);
     }
   }
-  const allowed = KNOWN_LITERAL[rel] ?? 0;
-  if (hits.length > allowed) bad.push(`${rel}: ${hits.length} literal(s), allowed ${allowed}\n    ${hits.slice(0, 8).join('\n    ')}`);
-  else if (hits.length < allowed) lower.push(`${rel}: ${hits.length} < ${allowed}, lower KNOWN_LITERAL`);
+  if (hits.length) bad.push(`${rel}: ${hits.length} literal(s)\n    ${hits.slice(0, 8).join('\n    ')}`);
 }
-for (const l of lower) console.log('  note: ' + l);
 if (bad.length) { bad.forEach((b) => console.error('  ' + b)); process.exit(1); }
 NODE
 then
@@ -205,7 +192,7 @@ echo "==> Gate G8: total client CSS lines must not grow"
 # Ratchet: the lean rewrite takes CSS from 18.4k lines to a ~3.75k budget
 # (lean-scope 06 §3). When a change cuts CSS, lower CSS_LINE_CEILING to the new
 # total in the same commit so the cut cannot silently grow back.
-CSS_LINE_CEILING=14799 # channel parity merged (DM notice +10, paid by Chat.css/Sidebar.css merges), 2026-09-26; earlier: 14801 dead-code sweep, 14836 banner, 14831 PORT-3, 14838 audit, 14841 S6+port, 14855 S6, 14947, 14961, 14975, 14980; 15834 on 4e5a01c
+CSS_LINE_CEILING=14704 # channel CSS on tokens + primitives (-95), 2026-09-26; earlier: 14799 channel parity merged (DM notice +10, paid by Chat.css/Sidebar.css merges); channel parity merged (DM notice +10, paid by Chat.css/Sidebar.css merges), 2026-09-26; earlier: 14801 dead-code sweep, 14836 banner, 14831 PORT-3, 14838 audit, 14841 S6+port, 14855 S6, 14947, 14961, 14975, 14980; 15834 on 4e5a01c
 CSS_LINES="$(find client/src -name '*.css' -print0 | xargs -0 cat | wc -l | tr -d ' ')"
 if [ "$CSS_LINES" -gt "$CSS_LINE_CEILING" ]; then
   echo "G8 FAIL: client CSS is $CSS_LINES lines, ceiling $CSS_LINE_CEILING. Reuse a primitive (ui/primitives.css) or cut elsewhere."

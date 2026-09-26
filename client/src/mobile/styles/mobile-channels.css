@@ -10,7 +10,7 @@
   /* minmax(0, …): a grid item's min-width is its content by default, so a
      long nowrap role line widened the column and pushed Wake off-screen. */
   grid-template-columns: minmax(0, 1fr);
-  gap: 2px;
+  gap: var(--sp-1);
   margin: 0;
   padding: 0;
   list-style: none;
@@ -18,17 +18,15 @@
 
 .mobile-channels-workspaces {
   margin-bottom: 16px;
-  padding-bottom: 12px;
+  padding-bottom: var(--sp-6);
   border-bottom: 1px solid var(--border-subtle);
 }
 
 .mobile-channels-row {
-  display: flex;
-  align-items: center;
-  gap: 12px;
+  gap: var(--sp-6);
   width: 100%;
   min-height: 48px;
-  padding: 6px 4px;
+  padding: var(--sp-3) var(--sp-2);
   border: 0;
   border-radius: var(--ui-radius);
   background: transparent;
@@ -59,14 +57,14 @@
   width: 28px;
   height: 28px;
   color: var(--text-muted);
-  font-size: 18px;
+  font-size: var(--fs-7);
 }
 
 .mobile-channels-row__mark {
   border-radius: var(--ui-radius);
   background: color-mix(in srgb, var(--text-emphasis) 10%, transparent);
   color: var(--text-emphasis);
-  font-size: 13px;
+  font-size: var(--fs-4);
   font-weight: 700;
 }
 
@@ -79,27 +77,18 @@
 }
 
 .mobile-channels-row__stack {
-  display: flex;
   flex: 1;
-  flex-direction: column;
   min-width: 0;
 }
 
 .mobile-channels-row__name {
   flex: 1;
   min-width: 0;
-  overflow: hidden;
-  font-size: 16px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  font-size: var(--fs-6);
 }
 
 .mobile-channels-row__detail {
-  overflow: hidden;
-  color: var(--text-muted);
-  font-size: 13px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+  font-size: var(--fs-4);
 }
 
 /* Owner unread (Slack): new → bold and bright, read → dimmed. */
@@ -115,7 +104,7 @@
 .mobile-channels-row__badge {
   flex: none;
   min-width: 20px;
-  padding: 3px 7px;
+  padding: var(--sp-2) var(--sp-4);
   border-radius: 999px;
   background: var(--danger);
   color: #fff;
@@ -124,9 +113,7 @@
 }
 
 .mobile-channels-buddy {
-  display: flex;
-  align-items: center;
-  gap: 4px;
+  gap: var(--sp-2);
 }
 
 .mobile-channels-buddy > .mobile-channels-row {
@@ -149,7 +136,6 @@
   border: 0;
   border-radius: var(--ui-radius);
   background: transparent;
-  color: var(--text-muted);
 }
 
 .mobile-channels-wake:active {
@@ -158,10 +144,7 @@
 }
 
 .mobile-channels-wake-status {
-  display: inline-flex;
   flex: none;
-  align-items: center;
-  color: var(--text-muted);
 }
 
 a.mobile-channels-wake-done {
@@ -174,36 +157,36 @@ a.mobile-channels-wake-done {
 
 .mobile-channels-new {
   display: grid;
-  gap: 8px;
-  padding: 10px 4px;
+  gap: var(--sp-4);
+  padding: var(--sp-5) var(--sp-2);
 }
 
 .mobile-channels-new input {
   min-height: 44px;
-  padding: 0 12px;
+  padding: 0 var(--sp-6);
   border: 1px solid var(--border-subtle);
   border-radius: var(--ui-radius);
   background: var(--bg-base);
   color: var(--text-primary);
   font: inherit;
-  font-size: 16px; /* 16px stops iOS zooming into the field */
+  font-size: var(--fs-6); /* 16px stops iOS zooming into the field */
 }
 
 .mobile-channels-new__problem {
   margin: 0;
   color: var(--theme-warning);
-  font-size: 13px;
+  font-size: var(--fs-4);
 }
 
 .mobile-channels-new__actions {
   display: flex;
   justify-content: flex-end;
-  gap: 8px;
+  gap: var(--sp-4);
 }
 
 .mobile-channels-new__actions button {
   min-height: 44px;
-  padding: 0 16px;
+  padding: 0 var(--sp-7);
   border: 1px solid var(--border-subtle);
   border-radius: var(--ui-radius);
   background: transparent;
@@ -225,17 +208,13 @@ a.mobile-channels-wake-done {
 /* ── Channel / thread screen: a pane, header + transcript + composer ──── */
 
 .mobile-channel {
-  display: flex;
   flex: 1;
-  flex-direction: column;
   min-height: 0;
 }
 
 .mobile-channel-header {
-  display: flex;
   flex: none;
-  align-items: center;
-  gap: 4px;
+  gap: var(--sp-2);
   min-height: 52px;
   /* No safe-area-inset-top: .mobile-shell pads it; doubled, it left a
      status-bar-sized gap above the header (#bugfixes 2026-09-25, a2e4135). */
@@ -250,7 +229,7 @@ a.mobile-channels-wake-done {
   width: 44px;
   height: 44px;
   color: var(--text-secondary);
-  font-size: 28px;
+  font-size: var(--fs-9);
   line-height: 1;
   text-decoration: none;
 }
@@ -264,7 +243,7 @@ a.mobile-channels-wake-done {
   margin: 0;
   overflow: hidden;
   color: var(--text-bright);
-  font-size: 17px;
+  font-size: var(--fs-7);
   font-weight: 700;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -274,7 +253,7 @@ a.mobile-channels-wake-done {
   margin: 1px 0 0;
   overflow: hidden;
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: var(--fs-3);
   text-overflow: ellipsis;
   white-space: nowrap;
 }
@@ -284,7 +263,7 @@ a.mobile-channels-wake-done {
   min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
-  padding: 4px 0 12px;
+  padding: var(--sp-2) 0 var(--sp-6);
 }
 
 /* The Task filter picker under a channel's header (TaskFilter.tsx). */
@@ -296,7 +275,7 @@ a.mobile-channels-wake-done {
 .mobile-channel__error {
   margin: 8px 14px;
   color: var(--theme-warning);
-  font-size: 13px;
+  font-size: var(--fs-4);
 }
 
 .mobile-channel__posts {
@@ -312,28 +291,29 @@ a.mobile-channels-wake-done {
 }
 
 .mobile-channel-day span {
-  padding: 2px 10px;
+  padding: var(--sp-1) var(--sp-5);
   border: 1px solid var(--border-subtle);
   border-radius: 999px;
   color: var(--text-secondary);
-  font-size: 12px;
+  font-size: var(--fs-3);
   font-weight: 600;
 }
 
 .mobile-channel-post {
-  padding: 3px 14px;
+  padding: var(--sp-2) var(--sp-7);
 }
 
 .mobile-channel-post--lead {
   display: grid;
   grid-template-columns: 36px minmax(0, 1fr);
-  column-gap: 10px;
+  column-gap: var(--sp-5);
   margin-top: 8px;
 }
 
 /* Continuations line up with the lead's text column, as in Slack. */
 .mobile-channel-post--continuation {
-  padding-left: 60px;
+  /* 60px: avatar + column gap, kept exact rather than snapped to a token. */
+  padding-left: calc(var(--sp-11) + var(--sp-8));
 }
 
 .mobile-channel-post__avatar {
@@ -348,12 +328,12 @@ a.mobile-channels-wake-done {
   display: flex;
   flex-wrap: wrap;
   align-items: baseline;
-  gap: 2px 8px;
+  gap: var(--sp-1) var(--sp-4);
 }
 
 .mobile-channel-post__author {
   color: var(--text-bright);
-  font-size: 15px;
+  font-size: var(--fs-post);
   font-weight: 700;
   text-decoration: none;
   /* a DM button (ChannelAuthor): shed the global button chrome */
@@ -366,11 +346,11 @@ a.mobile-channels-wake-done {
 
 .mobile-channel-post__heading time {
   color: var(--text-muted);
-  font-size: 12px;
+  font-size: var(--fs-3);
 }
 
 .mobile-channel-post__purpose {
-  padding: 1px 6px;
+  padding: var(--sp-1) var(--sp-3);
   border-radius: var(--ui-radius);
   background: color-mix(in srgb, var(--theme-ai) 14%, transparent);
   color: var(--ai-bright);
@@ -387,7 +367,7 @@ a.mobile-channels-wake-done {
 }
 
 .mobile-channel .channel-markdown {
-  font-size: 15px;
+  font-size: var(--fs-post);
 }
 
 .mobile-channel .channel-media {
@@ -395,20 +375,15 @@ a.mobile-channels-wake-done {
 }
 
 .mobile-channel-post__footer {
-  display: flex;
   flex-wrap: wrap;
-  align-items: center;
-  gap: 4px 12px;
+  gap: var(--sp-2) var(--sp-6);
   margin-top: 2px;
 }
 
 /* 44px-tall tap areas that sit on one text line visually. */
 .mobile-channel-post__reply {
-  display: inline-flex;
-  align-items: center;
   min-height: 32px;
-  color: var(--text-muted);
-  font-size: 13px;
+  font-size: var(--fs-4);
   text-decoration: none;
 }
 
@@ -416,9 +391,9 @@ a.mobile-channels-wake-done {
 .mobile-channel__replying {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--sp-3);
   color: var(--text-muted);
-  font-size: 13px;
+  font-size: var(--fs-4);
   font-style: italic;
 }
 
@@ -427,12 +402,9 @@ a.mobile-channels-wake-done {
 }
 
 .mobile-channel-divider {
-  display: flex;
-  align-items: center;
-  gap: 10px;
+  gap: var(--sp-5);
   margin: 8px 14px 0;
-  color: var(--text-muted);
-  font-size: 12px;
+  font-size: var(--fs-3);
 }
 
 .mobile-channel-divider::after {
@@ -563,8 +535,7 @@ a.mobile-channels-wake-done {
   border: 0;
   border-radius: 8px;
   background: transparent;
-  color: var(--text-muted);
-  font-size: 15px;
+  font-size: var(--fs-post);
 }
 
 .mobile-channel-header__link[data-copy-state="copied"] {

@@ -53,7 +53,7 @@ function TaskCardBody({ task }: { task: ChannelTask }) {
       <span className="channel-task-card-title">{task.title}</span>
       <span className="channel-task-card-status" data-tone={status.tone}>
         {status.glyph} {status.label}
-        <span className="channel-task-card-owner"> · {task.ownerName}</span>
+        <span className="channel-task-card-owner ui-muted"> · {task.ownerName}</span>
       </span>
       {task.todosTotal > 0 && (
         <span className="channel-task-card-progress">

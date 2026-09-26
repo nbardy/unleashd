@@ -41,11 +41,11 @@ export type DmFrame = 'desktop' | 'mobile';
 // Pattern: table-driven (docs/patterns.md#table-driven)
 const FRAMES = {
   desktop: {
-    pane: 'channel-browser-pane',
+    pane: 'channel-browser-pane ui-stack',
     header: 'channel-browser-pane-header ui-row',
     heading: 'channel-browser-pane-title',
     link: 'channel-browser-header-action',
-    scroll: 'channel-browser-scroll',
+    scroll: 'channel-browser-scroll ui-stack',
     error: 'channel-browser-error',
     list: 'channel-browser-messages',
     day: 'channel-browser-day ui-row',
@@ -55,14 +55,14 @@ const FRAMES = {
     content: 'channel-browser-message-content',
     meta: 'channel-browser-message-heading',
     author: 'channel-browser-author',
-    divider: 'channel-thread-divider ui-row',
+    divider: 'channel-thread-divider ui-muted ui-row',
     note: 'channel-thread-replying',
   },
   mobile: {
-    pane: 'mobile-channel',
-    header: 'mobile-channel-header',
+    pane: 'mobile-channel ui-stack',
+    header: 'mobile-channel-header ui-row',
     heading: 'mobile-channel-header__heading',
-    link: 'mobile-channel-header__link',
+    link: 'mobile-channel-header__link ui-muted',
     scroll: 'mobile-channel__scroll',
     error: 'mobile-channel__error',
     list: 'mobile-channel__posts',
@@ -73,7 +73,7 @@ const FRAMES = {
     content: 'mobile-channel-post__content',
     meta: 'mobile-channel-post__heading',
     author: 'mobile-channel-post__author',
-    divider: 'mobile-channel-divider',
+    divider: 'mobile-channel-divider ui-row ui-muted',
     note: 'mobile-channel__replying',
   },
 } as const;
@@ -421,7 +421,7 @@ function DmComposer({
           }}
         />
       </div>
-      <div className="channel-composer-bar">
+      <div className="channel-composer-bar ui-row">
         <button
           type="button"
           className="channel-composer-attach"
@@ -442,7 +442,7 @@ function DmComposer({
             event.target.value = '';
           }}
         />
-        <span className="channel-composer-hint">
+        <span className="channel-composer-hint ui-truncate ui-muted">
           {problem ? (
             <span className="channel-composer-problem" role="alert">
               {problem}
