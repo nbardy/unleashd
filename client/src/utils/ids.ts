@@ -1,16 +1,6 @@
 /**
- * Client-owned id generation.
- *
- * `crypto.randomUUID()` is gated on a secure context. The dev server is reached
- * over a plain-HTTP LAN IP from phones (http://192.168.x.x:7489), where
- * `crypto.randomUUID` is `undefined` — every creation path threw
- * "crypto.randomUUID is not a function" on mobile Safari while working fine on
- * localhost. `crypto.getRandomValues` is NOT secure-context gated, so it is the
- * fallback and covers every browser this app runs in.
- *
- * All ids must come from here. A bare `crypto.randomUUID()` call site is a
- * mobile-over-LAN crash waiting to happen; `tools/check-client-invariants.sh`
- * gate G4 enforces it.
+ * Client ids: crypto.randomUUID is undefined over LAN http, so fall back to getRandomValues. All
+ * ids come from here (gate G4). See docs/client-rationale.md#client-ids.
  */
 
 const HEX: readonly string[] = Array.from({ length: 256 }, (_, i) =>

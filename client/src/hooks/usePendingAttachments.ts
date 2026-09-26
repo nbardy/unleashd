@@ -100,14 +100,8 @@ export interface UploadedFileDescriptor {
 }
 
 /**
- * Backoff schedule for a retryable upload rejection, in ms.
- *
- * Sized against a real dev restart, not a reconnect blip: the server refuses
- * every non-GET with 503 `server_draining` while `state === 'reloading'`
- * (server.ts), then the replacement process refuses with `server_starting`
- * until it finishes rehydrating persisted conversations. A single ~1s retry
- * lands squarely inside that second window and fails anyway; ~7s of total
- * patience covers a normal restart.
+ * Backoff for a retryable upload rejection (ms): ~7s total covers a dev restart's draining +
+ * starting windows. See docs/client-rationale.md#upload-backoff.
  */
 export const UPLOAD_RETRY_BACKOFF_MS = [750, 1500, 2500, 4000, 6000, 8000, 10000];
 
@@ -130,19 +124,9 @@ function isRetryableUploadRejection(
 }
 
 /**
- * POST the attachments, retrying only while the server reports a drain.
- *
- * SUBTLE — the retry counter lives HERE and not as a defaulted second parameter
- * on the hook's callback. `handleFilesUpload` is handed straight to
- * react-dropzone as `onDrop` (Chat.tsx), and react-dropzone invokes it as
- * `onDrop(acceptedFiles, fileRejections, event)`. A `(files, attempt = 0)`
- * signature therefore receives `fileRejections` (an array) as `attempt` on every
- * drag-and-drop, so an `attempt === 0` guard is false on the first try and the
- * retry silently never runs — paste retried, drag did not. TypeScript cannot
- * catch it: the hook's public type declares one parameter, and a 1-arg function
- * is assignable to a 3-arg callback slot. Keep the public callback unary.
- *
- * `fetchImpl`/`sleepImpl` are seams for the regression test only.
+ * POST attachments, retrying only while the server drains. The counter lives here, not as a
+ * defaulted 2nd param: react-dropzone calls onDrop with 3 args (guard: upload-drain-retry.test.ts).
+ * See docs/client-rationale.md#upload-drain-retry.
  */
 export async function uploadFilesWithDrainRetry(
   conversationId: string,

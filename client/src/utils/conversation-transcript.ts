@@ -2,17 +2,9 @@ import type { ConversationDetail, ConversationRow, Message } from '@unleashd/sha
 import { shortenHomePath } from './directories';
 
 /**
- * Plain-text transcript of a conversation, and the draft seeded into a fork.
- *
- * Extracted from Chat.tsx so the mobile conversation view forks with identical
- * semantics. Chat "Fork" is a SOFT HANDOFF — a new conversation carrying the
- * prior transcript as its draft, created with `kind: {t:'fork', from}` for
- * lineage. The server upgrades the first send to a provider-session fork (CLI
- * `--fork` / emulateFork) only for same-provider FORK_CAPABLE_PROVIDERS pairs;
- * see shared/src/index.ts around the FORK_CAPABLE_PROVIDERS block.
- *
- * Because it is text-only, fork works across providers — the draft is all the
- * next CLI receives, so it must stand alone.
+ * Plain-text transcript and the fork draft, shared by both trees. Fork is a soft handoff: a new
+ * conversation whose draft carries the transcript, so it must stand alone across providers. See
+ * docs/client-rationale.md#fork-transcript.
  */
 
 /** An open conversation: its row, its loaded detail and its loaded bodies. */

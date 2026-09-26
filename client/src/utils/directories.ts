@@ -27,19 +27,9 @@ export function normalizeFolderDirectory(path: string): string {
 }
 
 /**
- * Grouping key for the sidebar's recent-folder groups: the project a
- * conversation belongs to, not the exact directory it ran in.
- *
- * Worktrees are per-iteration scratch dirs (`<project>/.ws<swarm>-w3-i7`), so
- * keying groups on the raw working directory gave every iteration its own
- * header — 1,107 groups for room-runners-arena-lib alone on 2026-09-06, all
- * rendering as the same truncated `~/git/room-runners-aren…`. Folding them onto
- * the project root matches what `recentDirectoriesAtom` already does for the
- * "pick a directory" surfaces.
- *
- * Deliberately NOT folded into `normalizeFolderDirectory`: that one answers
- * "which directory did the user mean", and silently rewriting a worktree the
- * user typed into its parent repo would start conversations in the wrong tree.
+ * Sidebar group key: the project root, so per-iteration worktrees share one group. Not folded into
+ * normalizeFolderDirectory, which must keep the directory the user meant (guard: folder-
+ * grouping.test.ts). See docs/client-rationale.md#folder-group-key.
  */
 export function folderGroupKey(workingDirectory: string): string {
   return getProjectRoot(normalizeFolderDirectory(workingDirectory));

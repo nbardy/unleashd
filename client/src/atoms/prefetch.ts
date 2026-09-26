@@ -3,20 +3,8 @@ import { connectionAtom, listIndexAtom, loadCompleteOf, transcriptFamily } from 
 import { type Resource, isResourceCached, loadResource } from './resources';
 import { jotaiStore } from './store';
 
-// =============================================================================
-// Prefetch — warm what the user is about to open, before they open it.
-//
-// `init` ships conversation SUMMARIES, so the first visit to each chat costs a
-// round trip for its history. That is fine on desktop over loopback and very
-// much not fine on a phone over the LAN, where it is the whole "why is opening
-// a conversation slow" complaint. The data is small and already on the machine;
-// the only reason to wait for it is that nobody asked early.
-//
-// Two rules keep this from making things worse:
-//   - Idle only. Prefetch must never compete with the view actually on screen.
-//   - Bounded concurrency. A burst of parallel GETs from a phone is slower
-//     than a lazy load, not faster.
-// =============================================================================
+// Warm conversation details before they are opened: idle only, bounded concurrency. See
+// docs/client-rationale.md#prefetch.
 
 /**
  * How many of the most recent chats to warm. The chat inbox renders 50; the

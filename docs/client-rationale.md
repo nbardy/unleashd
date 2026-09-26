@@ -518,3 +518,151 @@ secure-context requirement. Returns whether the text actually landed, so
 callers can show a failure instead of a success state that never arrives.
 
 All clipboard writes must go through here; gate G5 enforces it.
+
+<a id="upload-drain-retry"></a>
+## uploadFilesWithDrainRetry: keep the dropzone callback unary
+
+From `client/src/hooks/usePendingAttachments.ts`.
+
+POST the attachments, retrying only while the server reports a drain.
+
+SUBTLE — the retry counter lives HERE and not as a defaulted second parameter
+on the hook's callback. `handleFilesUpload` is handed straight to
+react-dropzone as `onDrop` (Chat.tsx), and react-dropzone invokes it as
+`onDrop(acceptedFiles, fileRejections, event)`. A `(files, attempt = 0)`
+signature therefore receives `fileRejections` (an array) as `attempt` on every
+drag-and-drop, so an `attempt === 0` guard is false on the first try and the
+retry silently never runs — paste retried, drag did not. TypeScript cannot
+catch it: the hook's public type declares one parameter, and a 1-arg function
+is assignable to a 3-arg callback slot. Keep the public callback unary.
+
+`fetchImpl`/`sleepImpl` are seams for the regression test only.
+
+<a id="upload-backoff"></a>
+## Upload retry backoff
+
+From `client/src/hooks/usePendingAttachments.ts`.
+
+Backoff schedule for a retryable upload rejection, in ms.
+
+Sized against a real dev restart, not a reconnect blip: the server refuses
+every non-GET with 503 `server_draining` while `state === 'reloading'`
+(server.ts), then the replacement process refuses with `server_starting`
+until it finishes rehydrating persisted conversations. A single ~1s retry
+lands squarely inside that second window and fails anyway; ~7s of total
+patience covers a normal restart.
+
+<a id="keyed-atoms"></a>
+## KeyedAtoms: per-key subscriptions
+
+From `client/src/atoms/structural.ts`.
+
+A map of per-key values that readers subscribe to ONE KEY at a time.
+
+A plain `atom(new Map())` read through `atomFamily(id => atom(get =>
+get(mapAtom).get(id)))` recomputes every mounted per-id atom on every write,
+whatever key changed. Here each key has its own primitive atom and a write
+sets only the keys it touched, so a reader of key B does no work at all when
+key A changes.
+
+- `all`: read the whole map (imperative reads); write replaces the whole map,
+  diffing by `Object.is` to find the touched keys.
+- `patch`: set and remove named keys without visiting the others.
+- `byKey(key)`: the per-key atom; `absent` when the key is not present.
+- `onCommit`: runs inside the same write with the touched keys, for indexes
+  that must move in step with the map.
+
+<a id="channel-outbox"></a>
+## Channel outbox
+
+From `client/src/atoms/channel-outbox.ts`.
+
+=============================================================================
+Channel outbox — owner posts shown before the server has them.
+
+Sending used to wait for the POST and then a feed refetch before the message
+appeared. Under load (2026-09-25: load average 232, owner-reported "slow
+delay") each of those took seconds, so Send felt broken. Now the composer
+files the post here the moment Send is pressed and the feed renders it
+straight away; the server copy replaces it when a refetch returns it.
+
+  Sending — the POST is in flight; rendered from the draft.
+  Sent    — the POST returned this post; rendered until a refetch includes
+            it. Dropping it on the POST response instead would blink the
+            message out until the refetch landed.
+A failed POST removes the entry and the composer gets its text back.
+=============================================================================
+
+<a id="prefetch"></a>
+## Prefetch of conversation details
+
+From `client/src/atoms/prefetch.ts`.
+
+=============================================================================
+Prefetch — warm what the user is about to open, before they open it.
+
+`init` ships conversation SUMMARIES, so the first visit to each chat costs a
+round trip for its history. That is fine on desktop over loopback and very
+much not fine on a phone over the LAN, where it is the whole "why is opening
+a conversation slow" complaint. The data is small and already on the machine;
+the only reason to wait for it is that nobody asked early.
+
+Two rules keep this from making things worse:
+  - Idle only. Prefetch must never compete with the view actually on screen.
+  - Bounded concurrency. A burst of parallel GETs from a phone is slower
+    than a lazy load, not faster.
+=============================================================================
+
+<a id="folder-group-key"></a>
+## folderGroupKey vs normalizeFolderDirectory
+
+From `client/src/utils/directories.ts`.
+
+Grouping key for the sidebar's recent-folder groups: the project a
+conversation belongs to, not the exact directory it ran in.
+
+Worktrees are per-iteration scratch dirs (`<project>/.ws<swarm>-w3-i7`), so
+keying groups on the raw working directory gave every iteration its own
+header — 1,107 groups for room-runners-arena-lib alone on 2026-09-06, all
+rendering as the same truncated `~/git/room-runners-aren…`. Folding them onto
+the project root matches what `recentDirectoriesAtom` already does for the
+"pick a directory" surfaces.
+
+Deliberately NOT folded into `normalizeFolderDirectory`: that one answers
+"which directory did the user mean", and silently rewriting a worktree the
+user typed into its parent repo would start conversations in the wrong tree.
+
+<a id="client-ids"></a>
+## Client ids without a secure context
+
+From `client/src/utils/ids.ts`.
+
+Client-owned id generation.
+
+`crypto.randomUUID()` is gated on a secure context. The dev server is reached
+over a plain-HTTP LAN IP from phones (http://192.168.x.x:7489), where
+`crypto.randomUUID` is `undefined` — every creation path threw
+"crypto.randomUUID is not a function" on mobile Safari while working fine on
+localhost. `crypto.getRandomValues` is NOT secure-context gated, so it is the
+fallback and covers every browser this app runs in.
+
+All ids must come from here. A bare `crypto.randomUUID()` call site is a
+mobile-over-LAN crash waiting to happen; `tools/check-client-invariants.sh`
+gate G4 enforces it.
+
+<a id="fork-transcript"></a>
+## Fork is a soft handoff
+
+From `client/src/utils/conversation-transcript.ts`.
+
+Plain-text transcript of a conversation, and the draft seeded into a fork.
+
+Extracted from Chat.tsx so the mobile conversation view forks with identical
+semantics. Chat "Fork" is a SOFT HANDOFF — a new conversation carrying the
+prior transcript as its draft, created with `kind: {t:'fork', from}` for
+lineage. The server upgrades the first send to a provider-session fork (CLI
+`--fork` / emulateFork) only for same-provider FORK_CAPABLE_PROVIDERS pairs;
+see shared/src/index.ts around the FORK_CAPABLE_PROVIDERS block.
+
+Because it is text-only, fork works across providers — the draft is all the
+next CLI receives, so it must stand alone.

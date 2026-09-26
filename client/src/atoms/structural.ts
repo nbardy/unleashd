@@ -6,20 +6,9 @@ import { atomFamily } from 'jotai-family';
 // =============================================================================
 
 /**
- * A map of per-key values that readers subscribe to ONE KEY at a time.
- *
- * A plain `atom(new Map())` read through `atomFamily(id => atom(get =>
- * get(mapAtom).get(id)))` recomputes every mounted per-id atom on every write,
- * whatever key changed. Here each key has its own primitive atom and a write
- * sets only the keys it touched, so a reader of key B does no work at all when
- * key A changes.
- *
- * - `all`: read the whole map (imperative reads); write replaces the whole map,
- *   diffing by `Object.is` to find the touched keys.
- * - `patch`: set and remove named keys without visiting the others.
- * - `byKey(key)`: the per-key atom; `absent` when the key is not present.
- * - `onCommit`: runs inside the same write with the touched keys, for indexes
- *   that must move in step with the map.
+ * Per-key values read ONE key at a time: each key has its own atom and a write sets only the keys
+ * it touched. `all` replaces (diffed by Object.is), `patch` sets/removes, `onCommit` moves indexes
+ * in step. See docs/client-rationale.md#keyed-atoms.
  */
 export interface KeyedAtoms<V, A> {
   all: WritableAtom<ReadonlyMap<string, V>, [ReadonlyMap<string, V>], void>;
