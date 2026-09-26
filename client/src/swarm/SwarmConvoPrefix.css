@@ -269,3 +269,24 @@ code.swarm-prefix-val {
   max-height: 300px;
   overflow-y: auto;
 }
+
+.swarm-prefix-configs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+}
+
+/* Narrow (mobile conversation pane): full width, key above value. */
+.swarm-convo-prefix[data-layout="narrow"] {
+  margin: var(--sp-4) 0 0;
+}
+
+.swarm-convo-prefix[data-layout="narrow"] .swarm-prefix-row {
+  flex-direction: column;
+  gap: 0;
+}
+
+.swarm-convo-prefix[data-layout="narrow"] .swarm-prefix-stat-grid {
+  flex-wrap: wrap;
+  gap: var(--sp-5);
+}

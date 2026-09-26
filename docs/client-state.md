@@ -252,8 +252,8 @@ carry a private copy of the three-request detail assembly plus generation
 counters; the Sidebar, SearchPalette, BuddiesMobile and BuddiesDashboard each
 fetched `/api/buddies/overview` their own way. Now they share one key each.
 The same applies to `useProviderCatalog` (was a hand-rolled
-`useSyncExternalStore` cache) and `useSwarmRuntimeSnapshots` (SwarmDetailMobile
-now uses the desktop hook rather than its own URL). If you add a Buddy read,
+`useSyncExternalStore` cache) and `useSwarmRuntimeSnapshots` (one swarm view
+per screen since T20, so one caller per page). If you add a Buddy read,
 add it there — not as a `fetch` in a component.
 
 `useBuddyPage` goes one step further: the memos and `talk` that both shells derived from the detail bundle live

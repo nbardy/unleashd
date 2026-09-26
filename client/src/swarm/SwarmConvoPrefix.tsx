@@ -1,22 +1,19 @@
 import { useMemo, useState } from 'react';
-import './SwarmConvoPrefix.css';
-
+import type { SwarmLayout } from './SwarmPage';
 import { parseAvailableConfigs, parseStatsFromPrefix, parseWorkerTable } from './swarmConvoParsers';
-
-// Re-export parsers for mobile (utils path is canonical; component re-export keeps old import paths working)
-export {
-  parseAvailableConfigs,
-  parseStatsFromPrefix,
-  parseWorkerTable,
-} from './swarmConvoParsers';
+import './SwarmConvoPrefix.css';
 
 interface SwarmConvoPrefixProps {
   prefix: string;
   swarmId: string | null;
+  layout: SwarmLayout;
 }
 
-export function SwarmConvoPrefix({ prefix, swarmId }: SwarmConvoPrefixProps) {
-  const [expanded, setExpanded] = useState(true);
+/** On a phone the card starts folded so the transcript stays in view. */
+const START_EXPANDED: Record<SwarmLayout, boolean> = { wide: true, narrow: false };
+
+export function SwarmConvoPrefix({ prefix, swarmId, layout }: SwarmConvoPrefixProps) {
+  const [expanded, setExpanded] = useState(START_EXPANDED[layout]);
 
   const stats = useMemo(() => parseStatsFromPrefix(prefix), [prefix]);
   const workerTable = useMemo(() => parseWorkerTable(prefix), [prefix]);
@@ -36,7 +33,7 @@ export function SwarmConvoPrefix({ prefix, swarmId }: SwarmConvoPrefixProps) {
     statChips.push({ label: 'Err', value: stats.errors, kind: 'error' });
 
   return (
-    <div className="swarm-convo-prefix">
+    <div className="swarm-convo-prefix" data-layout={layout}>
       <button
         type="button"
         className={`swarm-prefix-token ui-control ui-inline-row ${expanded ? 'expanded' : 'collapsed'}`}
@@ -86,20 +83,11 @@ export function SwarmConvoPrefix({ prefix, swarmId }: SwarmConvoPrefixProps) {
               </div>
             )}
             {availableConfigs.length > 0 && (
-              <div className="swarm-prefix-row" style={{ alignItems: 'flex-start' }}>
-                <span className="swarm-prefix-key ui-muted" style={{ marginTop: '2px' }}>
-                  Available Configs
-                </span>
-                <div
-                  className="swarm-prefix-val"
-                  style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}
-                >
+              <div className="swarm-prefix-row">
+                <span className="swarm-prefix-key ui-muted">Available Configs</span>
+                <div className="swarm-prefix-val swarm-prefix-configs">
                   {availableConfigs.map((cfg) => (
-                    <span
-                      key={cfg}
-                      className="swarm-stat-chip chip-neutral"
-                      style={{ margin: 0, padding: '2px 6px', fontSize: '10px' }}
-                    >
+                    <span key={cfg} className="swarm-stat-chip chip-neutral">
                       {cfg}
                     </span>
                   ))}
