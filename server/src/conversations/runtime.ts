@@ -58,13 +58,8 @@ import {
 import { type QueueEntry, TurnQueue } from '../turns/queue';
 import { type TurnBroadcast, TurnRunner, type TurnRunnerPorts } from '../turns/runner';
 
-/**
- * The conversation: its record, its queue, its turn policy and the runner for
- * its current turn. Turn mechanics live in turns/ (queue, runner, watchdog,
- * sub-agent folds), kind-specific behavior in the policy chosen once by kind
- * (turns/policy.ts, buddies/turn-policy.ts), swarm observation in
- * swarm/observer.ts.
- */
+// The conversation: record + queue + kind policy + the runner of its current turn. Turn
+// mechanics live in turns/, kind behavior in the policy chosen once by kind.
 
 export type { SeatTurnInput, SessionRelativePrompt } from '../turns/input';
 
@@ -132,11 +127,7 @@ export interface HistorySubject {
   hasActiveProcess(): boolean;
 }
 
-/**
- * The history port (server/src/ingest/conversation-list.ts): rows take their durable fields
- * from it, so a runtime's row and a listed row follow one rule; `idle` applies transcript
- * changes that were held back while a turn ran.
- */
+/** The history port (ingest/conversation-list.ts): one row rule; `idle` applies held-back changes. */
 export interface RuntimeHistory {
   fields(conversation: HistorySubject): HistoryRowFields;
   idle(conversationId: string): void;
@@ -169,8 +160,7 @@ export interface ConversationOptions {
   id: string;
   workingDirectory?: string | null;
   configState: ConversationConfigState;
-  /** From the durable record. Required so a load path cannot forget it and
-   *  resurrect a hidden conversation; new conversations pass false. */
+  /** Required, so no load path can forget it and resurrect a hidden conversation. */
   done: boolean;
   existingSessionId?: string;
   /** Host-owned metadata from the matching durable provider-session binding. */
@@ -247,46 +237,37 @@ export class Conversation extends EventEmitter {
   get process(): ChildProcess | null {
     return this._process;
   }
-  // The provider process exiting is the idle boundary: transcript changes that arrived while
-  // the turn ran are merged now, replacing the overlay's rows with the provider's own.
+  // Process exit is the idle boundary: held-back transcript changes replace the overlay now.
   set process(value: ChildProcess | null) {
     const ended = this._process !== null && value === null;
     this._process = value;
     if (ended) this.env.history.idle(this.id);
   }
   isRunning: boolean;
-  // Server-authoritative: assistant is actively producing content.
-  // INVARIANT: !isRunning → !isStreaming (enforced by the runner's completion paths).
+  // INVARIANT: !isRunning → !isStreaming (the runner's completion paths enforce it).
   isStreaming: boolean;
   createdAt: Date;
   workingDirectory: string;
   config: ConversationConfig;
   configRevision: number;
   configResolution: ConfigResolution;
-  // Mirror of record.done. Written only by the set_conversation_done
-  // handler, after the record write succeeds.
+  // Mirror of record.done, written only after set_conversation_done's record write.
   done: boolean;
-  // Parent conversation id for provider-native spawned sub-agent threads.
-  // For Codex this is resolved from thread_spawn.parent_thread_id.
+  // Parent of a provider-native sub-agent thread (Codex: thread_spawn.parent_thread_id).
   parentConversationId: string | null;
-  // Chat "Fork" soft-handoff lineage (UI). Not a provider-session fork.
-  // See the shared FORK_CAPABLE_PROVIDERS comment for when it upgrades to a session fork.
+  // Chat "Fork" lineage (UI), not a provider-session fork (docs/turn-lifecycle.md#chat-fork).
   resumedFromConversationId: string | null;
-  // Provider-reported model (e.g. "claude-sonnet-4-5-20250929"). An observation
-  // of the latest turn, never configuration authority (that is `config`).
+  // The latest turn's reported model: an observation, never configuration (that is `config`).
   observedModel: string | null;
-  // Provider-generated conversation label (Claude ai-title/custom-title).
-  // Undefined until observed; the row label falls back to first-message text.
+  // Provider-generated label; until observed the row label is the first message.
   title: string | undefined;
   private _titleSource: 'ai' | 'custom' | null = null;
-  // Debug prefix for swarm conversations — prepended to first CLI message.
-  // Stays on the object (never cleared) so the detail carries it for rendering.
+  // Swarm debug prefix for the first CLI message; kept so the detail can render it.
   swarmDebugPrefix: string | null;
   // Latest request's usage on the current session (docs/turn-lifecycle.md#provider-usage).
   providerUsage: ProviderTurnUsage | null;
   subAgents: SubAgent[];
-  // Server-owned message queue — persists across client navigation/refresh.
-  // Client mirrors this state via queue_updated broadcasts.
+  // Server-owned queue; clients mirror it from `queue` patches.
   readonly turnQueue = new TurnQueue();
   get queue(): QueuedMessage[] {
     return this.turnQueue.items;
@@ -296,9 +277,7 @@ export class Conversation extends EventEmitter {
   private _sendingFromQueue = false;
   private readonly runner: TurnRunner;
 
-  // The one identity (shared ConversationKindSchema). Setting it re-selects
-  // the turn policy: the ONE place a conversation's kind decides turn
-  // behavior (`policyFor`).
+  // The one identity; setting it re-selects the turn policy (`policyFor`).
   private _kind: ConversationKind;
   private _policy: TurnPolicy;
   get kind(): ConversationKind {
@@ -332,8 +311,7 @@ export class Conversation extends EventEmitter {
       buddyMemoryGeneration = null,
     } = opts;
     this.id = id;
-    // sessionId defaults to id so JSONL filename matches Map key (no poller mismatch).
-    // Only differs from id after resetProcess() rotates it for fresh CLI context.
+    // Defaults to id (transcript name = conversation id) until resetProcess rotates it.
     this.sessionId = existingSessionId ?? id;
     this.env.deps.registerSessionAlias(this.sessionId, this.id);
     this.process = null;
@@ -373,11 +351,7 @@ export class Conversation extends EventEmitter {
   }
 
   // Pattern: sum-types (docs/patterns.md#sum-types)
-  /**
-   * The turn policy for a kind — a thin dispatcher, one policy per kind. A
-   * general chat gets the no-op ChatTurnPolicy; Buddy code lives only in
-   * buddies/turn-policy.ts.
-   */
+  /** One policy per kind; Buddy code lives only in buddies/turn-policy.ts. */
   private policyFor(kind: ConversationKind, seed: BuddyTurnPolicySeed): TurnPolicy {
     return matchConversationKind<TurnPolicy>(kind, {
       chat: () => new ChatTurnPolicy(() => this.swarmDebugPrefix),
@@ -492,8 +466,7 @@ export class Conversation extends EventEmitter {
     this.appendMessage({ role: 'system', content, timestamp: new Date() });
   }
 
-  // The one resume/fresh decision: the runner passes --resume on it and
-  // sendAdmittedMessage words a SessionRelativePrompt by it, so they agree.
+  // The one resume/fresh decision, for both --resume and the prompt's wording.
   private resumesProviderSession(forkSourceSessionId: string | undefined): boolean {
     return !forkSourceSessionId && this._hasStartedSession;
   }
@@ -664,8 +637,7 @@ export class Conversation extends EventEmitter {
     this.runner.stop(reason);
   }
 
-  // Reset process for fresh context (used in loop with clearContext).
-  // Generates new CLI session ID while keeping conversation ID for UI continuity.
+  // A fresh provider session under the same conversation id.
   resetProcess(): void {
     this.runner.reset();
     const oldSessionId = this.sessionId;
@@ -706,10 +678,7 @@ export class Conversation extends EventEmitter {
     this.publish({ t: 'run', run });
   }
 
-  /**
-   * Admit a message: register its turn attempt and build the queue entry.
-   * Placement (append vs prepend) is the caller's decision.
-   */
+  /** Register the turn attempt and build the entry; the caller places it. */
   private createQueueEntry(prompt: SessionRelativePrompt, input: TurnInput): QueueEntry {
     const message: QueuedMessage = {
       id: crypto.randomUUID(),
@@ -736,10 +705,7 @@ export class Conversation extends EventEmitter {
     }
   }
 
-  /**
-   * Add a message to the queue. If the conversation is ready and idle,
-   * process immediately. Otherwise it sits until the next status/ready change.
-   */
+  /** Queue a message; an idle conversation sends it at once. */
   enqueueMessage(content: string, ownerInput?: OwnerInput): void {
     this.enqueuePrompt(sameEitherWay(content), ownerInput ?? unknownInput());
   }
@@ -753,12 +719,7 @@ export class Conversation extends EventEmitter {
     this.processQueue();
   }
 
-  /**
-   * Stop the active turn and send now, ahead of the queue. Pending queued
-   * work is KEPT — interrupt stops the turn, not the queue (Clear drops the
-   * queue). The killed turn's in-flight head is retired; everything else
-   * stays in order behind the new message.
-   */
+  /** Stop the turn and send first; pending work is KEPT, only the in-flight head retires. */
   interruptAndSend(content: string, ownerInput?: OwnerInput): void {
     if (this.refusesUserInput()) return;
     this.retireInFlightHead();
@@ -774,11 +735,7 @@ export class Conversation extends EventEmitter {
     this.processQueue();
   }
 
-  /**
-   * Move a pending queued message to the front so it runs next,
-   * interrupting the active turn when there is one. Unknown or non-pending
-   * ids are a no-op, like cancelQueuedMessage.
-   */
+  /** Move a pending message first and interrupt the turn; unknown ids are a no-op. */
   promoteQueuedMessage(messageId: string): void {
     if (this.refusesUserInput()) return;
     const promoted = this.turnQueue.promote(messageId);
@@ -793,9 +750,7 @@ export class Conversation extends EventEmitter {
     this.processQueue();
   }
 
-  /**
-   * Cancel a pending queued message by ID. Cannot cancel messages already sending.
-   */
+  /** Cancel a pending message (never one already sending). */
   cancelQueuedMessage(messageId: string): void {
     const removed = this.turnQueue.removePending(messageId);
     if (!removed) return;
@@ -804,9 +759,7 @@ export class Conversation extends EventEmitter {
     this.broadcastQueue();
   }
 
-  /**
-   * Clear all pending messages from the queue. Messages currently sending are kept.
-   */
+  /** Drop every pending message; one sending is kept. */
   clearQueue(): void {
     const removed = this.turnQueue.clearPending();
     for (const entry of removed) this.runner.cancelQueuedAttempt(entry);
@@ -815,14 +768,10 @@ export class Conversation extends EventEmitter {
     this.broadcastQueue();
   }
 
-  /**
-   * Process the next queued message if the conversation is idle.
-   * Called from: the runner after a turn drains, enqueueMessage (new message).
-   */
+  /** Send the next queued message when idle (after a drain, or on enqueue). */
   processQueue(): void {
     if (!this._policy.acceptsUserInput) {
-      // Old persisted queue state must not become an authority bypass after
-      // restart. User admission is closed on every automation transcript.
+      // Queued state must never bypass a closed (automation) transcript.
       this.clearQueue();
       return;
     }
@@ -836,16 +785,13 @@ export class Conversation extends EventEmitter {
     try {
       this._sendingFromQueue = true;
       try {
-        // Automation transcripts never reach here (cleared above), so this is
-        // sendMessage without its refusal, carrying the item's own wording
-        // and provenance (never serialized for restore).
+        // sendMessage without the refusal, with the item's own wording and provenance.
         this.sendMessageInternal(next.prompt, next.input);
       } finally {
         this._sendingFromQueue = false;
       }
     } catch (error) {
-      // Provider admission can still fail synchronously at a future seam.
-      // Never strand the queue head in "sending" when no process exists.
+      // A synchronous failure must never strand the head in "sending".
       if (this.turnQueue.head() === next && this.turnQueue.releaseHead()) {
         this.broadcastQueue();
       }
@@ -981,11 +927,9 @@ const HIDDEN_ENVELOPE_RE = /<!--[\s\S]*?-->/g;
 const OOMPA_TAG_RE = /^\[oompa[^\]]*\]\s*/i;
 
 /**
- * The label of a conversation whose transcript the ingest store has not read yet: provider
- * title, else the first user message with hidden `<!-- ... -->` envelopes and the oompa tag
- * removed, folded onto one line. It is the crate's rule for a listed row, so the label does not
- * change when the transcript lands (T13b S2; until then the runtime kept line 1 at 80 chars and
- * the list folded every line at 60, so multi-line prompts showed two labels).
+ * The label before ingest reads the transcript: provider title, else the first user message
+ * without hidden envelopes or the oompa tag. The crate's rule, so it does not change when the
+ * transcript lands (T13b S2: two rules showed multi-line prompts under two labels).
  */
 export function conversationLabel(title: string | undefined, messages: readonly Message[]): string {
   if (title?.trim()) return title.trim();
