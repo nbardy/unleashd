@@ -200,10 +200,10 @@ video.channel-media {
   border-radius: 999px;
   background: var(--bg-base);
   color: var(--text-bright);
+  font-family: inherit;
   font-size: 13px;
   font-weight: 600;
   line-height: 1.6;
-  text-decoration: none;
   vertical-align: bottom;
 }
 
@@ -213,8 +213,9 @@ video.channel-media {
   text-overflow: ellipsis;
 }
 
-.channel-markdown a.channel-task-chip:hover {
+.channel-markdown button.channel-task-chip:hover {
   border-color: var(--border-emphasis);
+  cursor: pointer;
 }
 
 .channel-task-chip-glyph {
@@ -270,11 +271,32 @@ video.channel-media {
   max-width: 420px;
   margin: 6px 0;
   color: var(--text-primary);
-  text-decoration: none;
+  font-family: inherit;
+  text-align: left;
 }
 
-.channel-markdown a.channel-task-block:hover {
+.channel-markdown .channel-task-block:hover {
   border-color: var(--border-emphasis);
+  cursor: pointer;
+}
+
+/* A Task click: the Task over the channel, not a trip to the Work tab (493c1c7). */
+.channel-task-overlay {
+  gap: var(--sp-5);
+  width: min(560px, 100%);
+  max-height: 80vh;
+  padding: var(--sp-6);
+  background: var(--bg-panel);
+  color: var(--text-primary);
+}
+
+.channel-task-overlay::backdrop {
+  background: rgb(0 0 0 / 45%);
+}
+
+.channel-task-overlay-header {
+  flex-wrap: wrap;
+  gap: var(--sp-4);
 }
 
 .channel-markdown li.channel-task-block-item {

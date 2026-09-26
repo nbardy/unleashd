@@ -1,4 +1,4 @@
-import { Fragment, type ReactNode, memo, useMemo, useRef, useState } from 'react';
+import { Fragment, type ReactNode, memo, useCallback, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { type Components, type ExtraProps, defaultUrlTransform } from 'react-markdown';
 import { Link } from 'react-router-dom';
@@ -14,6 +14,7 @@ import {
 import { splitToolActivity } from '../../utils/tool-activity-segments';
 import { AskUserQuestionWidget, parseAskUserQuestion } from '../AskUserQuestion';
 import { InlineBuddyBuilderResult } from './BuddyBuilderResultCard';
+import { ChannelTaskOverlay } from './ChannelTaskOverlay';
 import { type ChannelTask, isVideoSource, mediaUrl, parseChannelLink } from './channel-text';
 import { taskStatusView } from './ui-contract';
 import './ChannelContent.css';
@@ -23,7 +24,8 @@ import './ChannelContent.css';
 //   [@Name](buddy:<id>)  → mention pill linking to the Buddy
 //   [Title](task:<id>)   → live Task: a one-line chip with a hover card in
 //                          running text; a card of its own when the ref is
-//                          the whole paragraph or list item
+//                          the whole paragraph or list item. A click opens the
+//                          Task overlay; it does not leave Channels.
 //   ![alt](/abs/path)    → inline image, or a video player for .mp4/.webm/.mov
 // A mention reply is the Buddy's final assistant message, and live providers
 // embed their tool calls in it as `🔧 name …` / `⚡ Bash …` lines. Those runs
@@ -69,10 +71,6 @@ function TaskCardBody({ task }: { task: ChannelTask }) {
   );
 }
 
-function taskHref(task: ChannelTask): string {
-  return `/buddies/${encodeURIComponent(task.ownerId)}/work`;
-}
-
 type CardPlacement = { left: number; top: number } | { left: number; bottom: number };
 
 // The hover card is portalled and fixed to the viewport, clamped to its
@@ -89,16 +87,20 @@ function placeCard(trigger: DOMRect): CardPlacement {
     : { left, top: trigger.bottom + CARD_GAP };
 }
 
+type OpenTask = (taskId: string) => void;
+
 function TaskChip({
   taskId,
   label,
   task,
+  onOpen,
 }: {
   taskId: string;
   label: ReactNode;
   task: ChannelTask | undefined;
+  onOpen: OpenTask;
 }) {
-  const chipRef = useRef<HTMLAnchorElement>(null);
+  const chipRef = useRef<HTMLButtonElement>(null);
   const [placement, setPlacement] = useState<CardPlacement | null>(null);
   if (!task) {
     return (
@@ -118,22 +120,26 @@ function TaskChip({
   const close = () => setPlacement(null);
   return (
     <>
-      <Link
+      <button
         ref={chipRef}
+        type="button"
         className="channel-task-chip"
         data-tone={status.tone}
-        to={taskHref(task)}
         aria-label={`${task.title} — ${status.label}`}
         onMouseEnter={open}
         onMouseLeave={close}
         onFocus={open}
         onBlur={close}
+        onClick={() => {
+          close();
+          onOpen(task.id);
+        }}
       >
         <span className="channel-task-chip-glyph" aria-hidden="true">
           {status.glyph}
         </span>
         <span className="channel-task-chip-title">{task.title}</span>
-      </Link>
+      </button>
       {placement &&
         createPortal(
           <span className="channel-task-card" role="tooltip" style={placement}>
@@ -158,22 +164,33 @@ function standaloneTaskId(node: ExtraProps['node']): string | null {
   return link.kind === 'task' ? link.id : null;
 }
 
-function TaskBlock({ taskId, task }: { taskId: string; task: ChannelTask | undefined }) {
-  if (!task) return <TaskChip taskId={taskId} label={`Task ${taskId}`} task={undefined} />;
+function TaskBlock({
+  taskId,
+  task,
+  onOpen,
+}: {
+  taskId: string;
+  task: ChannelTask | undefined;
+  onOpen: OpenTask;
+}) {
+  if (!task)
+    return <TaskChip taskId={taskId} label={`Task ${taskId}`} task={undefined} onOpen={onOpen} />;
   return (
-    <Link
+    <button
+      type="button"
       className="channel-task-block"
       data-tone={taskStatusView(task.status).tone}
-      to={taskHref(task)}
+      onClick={() => onOpen(task.id)}
     >
       <TaskCardBody task={task} />
-    </Link>
+    </button>
   );
 }
 
 function channelComponents(
   buddyNames: Readonly<Record<string, string>>,
-  tasks: ReadonlyMap<string, ChannelTask>
+  tasks: ReadonlyMap<string, ChannelTask>,
+  onOpen: OpenTask
 ): Components {
   return {
     p: ({ node, children }) => {
@@ -181,7 +198,7 @@ function channelComponents(
       return taskId === null ? (
         <p>{children}</p>
       ) : (
-        <TaskBlock taskId={taskId} task={tasks.get(taskId)} />
+        <TaskBlock taskId={taskId} task={tasks.get(taskId)} onOpen={onOpen} />
       );
     },
     li: ({ node, children, className }) => {
@@ -190,7 +207,7 @@ function channelComponents(
         <li className={className}>{children}</li>
       ) : (
         <li className="channel-task-block-item">
-          <TaskBlock taskId={taskId} task={tasks.get(taskId)} />
+          <TaskBlock taskId={taskId} task={tasks.get(taskId)} onOpen={onOpen} />
         </li>
       );
     },
@@ -204,7 +221,9 @@ function channelComponents(
             </Link>
           );
         case 'task':
-          return <TaskChip taskId={link.id} label={children} task={tasks.get(link.id)} />;
+          return (
+            <TaskChip taskId={link.id} label={children} task={tasks.get(link.id)} onOpen={onOpen} />
+          );
         case 'web':
           return (
             <a href={link.href} target="_blank" rel="noreferrer">
@@ -241,7 +260,13 @@ export const ChannelMarkdown = memo(function ChannelMarkdown({
   buddyNames: Readonly<Record<string, string>>;
   tasks: ReadonlyMap<string, ChannelTask>;
 }) {
-  const components = useMemo(() => channelComponents(buddyNames, tasks), [buddyNames, tasks]);
+  const [openTaskId, setOpenTaskId] = useState<string | null>(null);
+  const closeTask = useCallback(() => setOpenTaskId(null), []);
+  const components = useMemo(
+    () => channelComponents(buddyNames, tasks, setOpenTaskId),
+    [buddyNames, tasks]
+  );
+  const openTask = openTaskId === null ? undefined : tasks.get(openTaskId);
   const segments = useMemo(() => splitToolActivity(body), [body]);
   const pipeline = useMarkdownPipeline(CHANNEL_MARKDOWN);
   const markdown = (text: string, key?: number) => (
@@ -249,6 +274,7 @@ export const ChannelMarkdown = memo(function ChannelMarkdown({
   );
   return (
     <div className="channel-markdown">
+      {openTask && <ChannelTaskOverlay task={openTask} names={buddyNames} onClose={closeTask} />}
       {segments.map((segment, index) =>
         segment.type === 'tool_calls' ? (
           <ChatActivity

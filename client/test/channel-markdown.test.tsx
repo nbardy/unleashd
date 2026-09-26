@@ -13,6 +13,10 @@ register(
   import.meta.url
 );
 const { ChannelMarkdown } = await import('../src/components/buddies/ChannelMarkdown');
+const { ChannelTaskOverlay } = await import('../src/components/buddies/ChannelTaskOverlay');
+const { Provider } = await import('jotai');
+const { jotaiStore } = await import('../src/atoms/store');
+const { loadResource } = await import('../src/atoms/resources');
 type ChannelTask = import('../src/components/buddies/channel-text').ChannelTask;
 
 // Regression, #buddies-dev 2026-09-24: a mention reply is the Buddy's final
@@ -69,11 +73,13 @@ test('a Task ref is an inline chip in a sentence and a card on its own line', ()
     );
 
   const inline = render(`I filed that as ${ref}, marked ready.`);
+  // A button, not a link: a Task click opens the overlay and stays in Channels (493c1c7).
   assert.match(
     inline,
-    /^<div class="channel-markdown"><p>I filed that as <a[^>]*class="channel-task-chip"/
+    /^<div class="channel-markdown"><p>I filed that as <button[^>]*class="channel-task-chip"/
   );
-  assert.match(inline, /<\/a>, marked ready\.<\/p>/);
+  assert.match(inline, /<\/button>, marked ready\.<\/p>/);
+  assert.doesNotMatch(inline, /href="\/buddies\//);
   assert.doesNotMatch(inline, /channel-task-block/);
 
   for (const body of [ref, `- ${ref}\n- ${ref}`]) {
@@ -127,4 +133,57 @@ test('sibling structured markers never paint raw in channels', () => {
   assert.doesNotMatch(html, /ask_user_question/);
   assert.doesNotMatch(html, /buddy_worker_thread/);
   assert.doesNotMatch(html, /buddy-review-result/);
+});
+
+// 493c1c7: a Task click left Channels for the owner's Work tab. It now opens the Task over the
+// channel: its criteria, todos and comments, with the Work tab one link away.
+test('the Task overlay shows the Task detail in place, with a way on to Work', async () => {
+  const task: ChannelTask = {
+    id: 'task_9',
+    title: 'Ship the overlay',
+    status: 'in_progress',
+    ownerId: 'lead',
+    ownerName: 'Lead',
+    topLevel: true,
+    nextAction: undefined,
+    todosDone: 0,
+    todosTotal: 1,
+  };
+  const stored = {
+    id: 'task_9',
+    workspaceId: 'ws',
+    ownerId: 'lead',
+    title: 'Ship the overlay',
+    doneCriteria: 'The chip opens it',
+    status: 'in_progress',
+    paused: false,
+    epoch: 0,
+    evidence: [],
+    position: 0,
+    revision: 1,
+    createdAt: '2026-09-26T00:00:00Z',
+    updatedAt: '2026-09-26T00:00:00Z',
+  };
+  await loadResource({
+    key: '/api/buddies/tasks/task_9',
+    load: async () => ({
+      task: stored,
+      channel: { id: 'ch_task', workspaceId: 'ws', kind: { type: 'task', taskId: 'task_9' } },
+      children: [{ ...stored, id: 'todo_1', title: 'Write the test' }],
+      comments: [],
+      runs: [],
+    }),
+  });
+  const html = renderToStaticMarkup(
+    <MemoryRouter>
+      <Provider store={jotaiStore}>
+        <ChannelTaskOverlay task={task} names={{ lead: 'Lead' }} onClose={() => undefined} />
+      </Provider>
+    </MemoryRouter>
+  );
+  assert.match(html, /<dialog[^>]*aria-label="Ship the overlay"/);
+  assert.match(html, /The chip opens it/);
+  assert.match(html, /Write the test/);
+  assert.match(html, /href="\/buddies\/lead\/work"[^>]*>Open in Work</);
+  assert.match(html, /aria-label="Close task"/);
 });

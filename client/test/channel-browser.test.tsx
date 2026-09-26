@@ -220,11 +220,8 @@ test('posts render markdown mentions, Task chips and media; DMs list by member w
   assert.match(html, /class="channel-browser-author">You</);
   assert.match(html, /<a class="channel-mention" href="\/buddies\/lead"[^>]*>@Lead<\/a>/);
   assert.doesNotMatch(html, /buddy:lead/);
-  // Live chip: in-progress tone, links to the owner's work.
-  assert.match(
-    html,
-    /class="channel-task-chip" data-tone="active"[^>]*href="\/buddies\/lead\/work"/
-  );
+  // Live chip: in-progress tone; a click opens the Task overlay in place (493c1c7).
+  assert.match(html, /<button[^>]*class="channel-task-chip" data-tone="active"/);
   // Local media goes through the authenticated file route; .mp4 is a player.
   assert.match(
     html,
