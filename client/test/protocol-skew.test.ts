@@ -1,9 +1,20 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { type ServerMessage, classifyServerFrame, encodeRows } from '@unleashd/shared';
-import { handleMessage, noteProtocolMismatch } from '../src/atoms/actions';
+import {
+  PROTOCOL_MISMATCH_CLOSE_CODE,
+  PROTOCOL_VERSION,
+  type ServerMessage,
+  classifyServerFrame,
+  classifySocketClose,
+  encodeRows,
+} from '@unleashd/shared';
+import { Provider } from 'jotai';
+import { createElement } from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+import { handleMessage, noteClientOutdated, noteProtocolMismatch } from '../src/atoms/actions';
 import { connectionAtom, rowsAtom } from '../src/atoms/conversations';
 import { jotaiStore } from '../src/atoms/store';
+import { UpdateBanner } from '../src/components/UpdateBanner';
 import { syntheticConversation } from './fixtures/synthetic-conversations';
 
 /**
@@ -71,4 +82,37 @@ test('a pre-rename channel_changed frame is invalid; the renamed one names its c
     t: 'message',
     message: { type: 'channel_changed', channelId: 'ch_a' },
   });
+});
+
+// Regression (lean-scope final review, "Open"): a tab left open across a
+// protocol swap kept its list and silently stopped updating. A newer server
+// closes the socket with PROTOCOL_MISMATCH_CLOSE_CODE; the tab must show the
+// reload banner, while an OLDER server (dev reload in flight) stays a quiet
+// skew that reconnecting heals.
+test('a newer server closing with the mismatch code shows the reload banner', () => {
+  const banner = () =>
+    renderToStaticMarkup(
+      createElement(Provider, { store: jotaiStore }, createElement(UpdateBanner))
+    );
+  const held = syntheticConversation(3, { id: 'held' });
+  jotaiStore.set(rowsAtom, new Map([[held.id, held]]));
+
+  const older = classifySocketClose(
+    PROTOCOL_MISMATCH_CLOSE_CODE,
+    `protocol ${PROTOCOL_VERSION - 1}`
+  );
+  assert.deepEqual(older, { t: 'skew', serverVersion: PROTOCOL_VERSION - 1 });
+  noteProtocolMismatch(PROTOCOL_VERSION - 1);
+  assert.equal(banner(), '');
+
+  const newer = classifySocketClose(
+    PROTOCOL_MISMATCH_CLOSE_CODE,
+    `protocol ${PROTOCOL_VERSION + 1}`
+  );
+  assert.deepEqual(newer, { t: 'outdated', serverVersion: PROTOCOL_VERSION + 1 });
+  noteClientOutdated(PROTOCOL_VERSION + 1);
+  assert.match(banner(), /The app was updated — reload/);
+  assert.match(banner(), /Reload<\/button>/);
+  assert.deepEqual([...jotaiStore.get(rowsAtom).keys()], ['held']);
+  assert.deepEqual(classifySocketClose(1006, ''), { t: 'dropped' });
 });

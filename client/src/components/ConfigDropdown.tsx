@@ -9,6 +9,7 @@ import './ConfigDropdown.css';
 /** The status dot's class and label (`.status-dot.connected` etc. in CSS). */
 function connectionLabel({ socket, server }: Connection): string {
   if (server.tag === 'skew') return 'backend reloading';
+  if (server.tag === 'outdated') return 'app updated';
   switch (socket.tag) {
     case 'connecting':
       return 'connecting';

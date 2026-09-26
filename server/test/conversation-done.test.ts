@@ -4,7 +4,7 @@ import { mkdtemp, rm } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import test from 'node:test';
-import { type ServerMessage, createDefaultConversationConfig } from '@unleashd/shared';
+import { type ServerMessage, WS_PATH, createDefaultConversationConfig } from '@unleashd/shared';
 import { ConversationConfigService } from '../src/conversations/config-service';
 import { createConversationRuntime } from '../src/conversations/runtime';
 import { resolveConfigAgainstProviderCatalog } from '../src/providers/catalog-service';
@@ -94,7 +94,7 @@ test('a hide set over the WebSocket survives session rotation and a restart', as
       send() {}
     }
     const socket = new Socket();
-    webSocketServer.emit('connection', socket);
+    webSocketServer.emit('connection', socket, { url: WS_PATH });
     const setDone = async (done: boolean) => {
       const landed = new Promise<void>((resolve) => {
         onBroadcast = resolve;

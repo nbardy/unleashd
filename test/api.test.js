@@ -6,6 +6,7 @@
  */
 
 const WebSocket = require('ws');
+const { WS_PATH } = require('@unleashd/shared');
 const { spawn } = require('node:child_process');
 const crypto = require('node:crypto');
 const fs = require('node:fs');
@@ -13,7 +14,7 @@ const os = require('node:os');
 const path = require('node:path');
 
 const PORT = 3001; // Use different port for tests
-const SERVER_URL = `ws://localhost:${PORT}`;
+const SERVER_URL = `ws://localhost:${PORT}${WS_PATH}`;
 
 let serverProcess = null;
 let testDataDir = null;

@@ -370,7 +370,12 @@ magenta). Run 1 and 3 back-to-back: live data drifts (sidebar badges,
   (fixed in e54fe26). The parsed type stays required, so servers still set it.
   A protocol VERSION change is different: the client reads a v2 `init` as a
   typed skew (keeps its rows, shows "backend reloading", reconnects) — guard
-  `client/test/protocol-skew.test.ts`.
+  `client/test/protocol-skew.test.ts`. The other direction: the socket URL is
+  `WS_PATH` (`/ws?protocol=N`), and the server closes a socket naming another
+  protocol (or none: pre-v3 code) with `PROTOCOL_MISMATCH_CLOSE_CODE` 4426. A
+  current tab then shows "The app was updated — reload"; a pre-v3 tab cannot
+  reload itself and only shows "disconnected", so reload open tabs after a
+  protocol swap. Guard: `server/test/websocket-lifecycle.test.ts`.
 - Protocol v3 (T09): `hello`/`rows` carry list rows only (`ConversationRow`,
   ~200 B each); detail (config, queue, sub-agents, latest turn) is
   `GET /api/conversations/:id`; bodies page from

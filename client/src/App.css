@@ -105,6 +105,11 @@ body {
   background: color-mix(in srgb, var(--primary) 20%, transparent);
   color: var(--primary);
 }
+.app-update-banner {
+  position: fixed;
+  inset: var(--sp-3) var(--sp-3) auto;
+  z-index: 1000;
+}
 /* Optional recovery for client-mirrored work interrupted by a server restart. */
 .restart-recovery {
   display: flex;

@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import test from 'node:test';
-import { buddyKind } from '@unleashd/shared';
+import { WS_PATH, buddyKind } from '@unleashd/shared';
 import { createDefaultConversationConfig } from '@unleashd/shared';
 import type { BuddyContext } from '@unleashd/shared';
 import { buildFirstTurnCliContent } from '../src/buddies/turn-policy';
@@ -159,7 +159,7 @@ test('empty Buddy WebSocket creation resolves and registers without sending a pr
   );
 
   const socket = new FakeSocket();
-  webSocketServer.emit('connection', socket);
+  webSocketServer.emit('connection', socket, { url: WS_PATH });
   assert.deepEqual(JSON.parse(socket.sent[0]), {
     type: 'hello',
     protocol: { version: 3 },
@@ -296,7 +296,7 @@ test('existing hydrated Buddy messages repair the durable link before admission'
     } as never
   );
   const socket = new FakeSocket();
-  webSocketServer.emit('connection', socket);
+  webSocketServer.emit('connection', socket, { url: WS_PATH });
 
   for (const [type, commandId, messageId] of [
     ['queue_message', 'queue-command', undefined],
@@ -397,7 +397,7 @@ test('replaying create_conversation reports the real failure, not a config misma
   );
 
   const socket = new FakeSocket();
-  webSocketServer.emit('connection', socket);
+  webSocketServer.emit('connection', socket, { url: WS_PATH });
   socket.emit(
     'message',
     Buffer.from(

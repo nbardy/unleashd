@@ -4,6 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { after, before, describe, test } from 'node:test';
+import { WS_PATH } from '@unleashd/shared';
 import { WebSocket } from 'ws';
 import { resolveAuthPolicy } from '../src/auth/policy';
 
@@ -81,7 +82,7 @@ async function stopServer(): Promise<void> {
 
 function connectWebSocket(headers: Record<string, string>): Promise<'open' | 'rejected'> {
   return new Promise((resolve) => {
-    const socket = new WebSocket(`ws://127.0.0.1:${PORT}/ws`, { headers });
+    const socket = new WebSocket(`ws://127.0.0.1:${PORT}${WS_PATH}`, { headers });
     const timer = setTimeout(() => {
       socket.terminate();
       resolve('rejected');
@@ -284,7 +285,7 @@ describe('shared-secret auth (real server)', () => {
   });
 
   test('the WebSocket negotiates permessage-deflate and init arrives intact', async () => {
-    const socket = new WebSocket(`ws://127.0.0.1:${PORT}/ws`, {
+    const socket = new WebSocket(`ws://127.0.0.1:${PORT}${WS_PATH}`, {
       headers: { cookie: `unleashd_auth=${TOKEN}` },
     });
     try {

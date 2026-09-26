@@ -1,6 +1,11 @@
-import { type ServerFrame, type ServerMessage, classifyServerFrame } from '@unleashd/shared';
+import {
+  type ServerFrame,
+  type ServerMessage,
+  classifyServerFrame,
+  classifySocketClose,
+} from '@unleashd/shared';
 import { useCallback, useEffect, useRef } from 'react';
-import { noteProtocolMismatch, setSocket } from '../atoms/actions';
+import { noteClientOutdated, noteProtocolMismatch, setSocket } from '../atoms/actions';
 import { probeSessionAfterSocketFailure } from '../auth/session';
 
 // Pattern: parse-dont-validate (docs/patterns.md#parse-dont-validate)
@@ -84,10 +89,19 @@ export function useWebSocket(url: string, onMessage: (data: ServerMessage) => vo
       }
     };
 
-    ws.onclose = () => {
+    ws.onclose = (event) => {
       if (wsRef.current !== ws) return;
       wsRef.current = null;
       if (isMounted.current && !isIntentionalClose.current) {
+        // A newer server refuses this tab's protocol (shared
+        // PROTOCOL_MISMATCH_CLOSE_CODE). Reconnecting cannot help — only
+        // loading the new client does — so stop and show UpdateBanner.
+        const closed = classifySocketClose(event.code, event.reason);
+        if (closed.t === 'outdated') {
+          noteClientOutdated(closed.serverVersion);
+          return;
+        }
+        if (closed.t === 'skew') noteProtocolMismatch(closed.serverVersion);
         setSocket({ tag: 'closed' });
         // A rejected (401) upgrade looks identical to a dead server here.
         void probeSessionAfterSocketFailure();

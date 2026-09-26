@@ -1,3 +1,4 @@
+import { WS_PATH } from '@unleashd/shared';
 import { Provider } from 'jotai';
 import {
   type ComponentType,
@@ -11,6 +12,7 @@ import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { handleMessage } from './atoms/actions';
 import { startConversationPrefetch } from './atoms/prefetch';
 import { jotaiStore } from './atoms/store';
+import { UpdateBanner } from './components/UpdateBanner';
 import { useOwnerUnreadTitle } from './components/buddies/channel-data';
 import { useWebSocket } from './hooks/useWebSocket';
 import { type DeviceKind, useDeviceKind } from './mobile/hooks/useDeviceKind';
@@ -27,10 +29,10 @@ import './components/buddies/BuddyDetail.css';
 function wsUrlForLocation(loc: Location): string {
   const protocol = loc.protocol;
   if (protocol === 'http:') {
-    return `ws://${loc.host}/ws`;
+    return `ws://${loc.host}${WS_PATH}`;
   }
   if (protocol === 'https:') {
-    return `wss://${loc.host}/ws`;
+    return `wss://${loc.host}${WS_PATH}`;
   }
   throw new Error(`Unsupported protocol for WebSocket: ${protocol}`);
 }
@@ -306,7 +308,12 @@ function AppInner() {
     initSettings().catch(console.error);
   }, []);
 
-  return <AppRoutes device={device} />;
+  return (
+    <>
+      <UpdateBanner />
+      <AppRoutes device={device} />
+    </>
+  );
 }
 
 function App() {
