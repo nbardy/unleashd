@@ -148,3 +148,32 @@ test('v1 records become v2 with one stored kind; everything else is preserved', 
   const report = JSON.parse(await readFile(path.join(root1, 'migration-v2-report.json'), 'utf8'));
   assert.equal(report.migrated, 6);
 });
+
+// Final review, 2026-09-26: one corrupt record file threw out of the read
+// loop and aborted the whole T09 step, while `records-tool import` keeps such
+// a file as a `corrupt_json` reject (bytes stored, counted by its verify). The
+// migration must leave it byte-for-byte where the importer reads it, list it
+// in the report (never a silent drop), and migrate every other record.
+test('a corrupt record file is kept byte-for-byte as a reject; the rest migrate', async (t) => {
+  const { root } = await fixture();
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const root1 = path.join(root, 'conversation-config', 'v1');
+  const corrupt = path.join(root1, 'by-conversation', 'Y29ycnVwdA.json');
+  const bytes = Buffer.from('{"version": 1, "conversationId": "corrupt", "sta');
+  await writeFile(corrupt, bytes);
+
+  const result = await migrateConversationRecords({
+    appDataRoot: root,
+    logger: { log: () => undefined, warn: () => undefined },
+  });
+  assert.equal(result.t, 'migrated');
+  if (result.t !== 'migrated') return;
+  assert.deepEqual(result.report.failures, []);
+  assert.equal(result.report.migrated, 6);
+  assert.deepEqual(
+    result.report.rejected.map(({ file, reason }) => ({ file, reason })),
+    [{ file: 'Y29ycnVwdA.json', reason: 'corrupt_json' }]
+  );
+  assert.deepEqual(await readFile(corrupt), bytes);
+  assert.ok((await readdir(root1)).includes('.migrated-to-v2'));
+});
