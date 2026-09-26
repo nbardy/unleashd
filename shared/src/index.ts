@@ -82,7 +82,7 @@ import {
 import type { CatalogProviderEntry } from './generated/catalog.js';
 
 export { PROVIDER_MODEL_CATALOG } from './generated/catalog.js';
-export type { CatalogModel, CatalogProviderEntry } from './generated/catalog.js';
+export type { CatalogProviderEntry } from './generated/catalog.js';
 
 // Re-export generated arrays so consumers can import from shared entry point
 export const CLAUDE_EFFORT_LEVELS = GEN_CLAUDE_EFFORT_LEVELS;

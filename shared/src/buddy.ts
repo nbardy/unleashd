@@ -15,7 +15,6 @@ export const BuddySummarySchema = z.object({
   model: z.string().min(1).nullable(),
   reasoning_effort: z.string().min(1).nullable(),
 });
-export type BuddySummary = z.infer<typeof BuddySummarySchema>;
 
 export const BuddyWorkspaceSummarySchema = z.object({
   id: z.string().min(1),
@@ -24,7 +23,6 @@ export const BuddyWorkspaceSummarySchema = z.object({
   root_path: z.string().min(1),
   assignment_role: z.string().nullish(),
 });
-export type BuddyWorkspaceSummary = z.infer<typeof BuddyWorkspaceSummarySchema>;
 
 /** Saved work projection; the project store remains the authority for its current state. */
 export const BuddyBuilderProjectSchema = z.object({

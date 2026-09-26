@@ -49,7 +49,6 @@ import { DRAFT_KEY_PREFIX, PENDING_FILES_KEY_PREFIX, removeSeenIndex } from './u
 
 export type { QueuedMessage } from '@unleashd/shared';
 export { createConversation } from './commands';
-export type { CreateArgs as CreateConversationArgs } from './commands';
 
 // =============================================================================
 // Chunk buffer

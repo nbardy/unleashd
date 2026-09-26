@@ -130,7 +130,6 @@ export const ConversationSessionBindingSchema = z.object({
   // fresh provider context; carrying the old number forward would overstate it.
   latestUsage: ProviderTurnUsageSchema.optional(),
 });
-export type ConversationSessionBinding = z.infer<typeof ConversationSessionBindingSchema>;
 
 export const ConversationLifecycleStatusSchema = z.enum(['active', 'deleted']);
 
@@ -168,7 +167,6 @@ export const BuddyVisibilitySchema = z.enum(['foreground', 'background']);
 export type BuddyVisibility = z.infer<typeof BuddyVisibilitySchema>;
 
 export const WorkerRoleSchema = z.enum(['work', 'review', 'fix']);
-export type WorkerRole = z.infer<typeof WorkerRoleSchema>;
 
 export const ConversationKindSchema = z.discriminatedUnion('t', [
   z.object({ t: z.literal('chat') }),

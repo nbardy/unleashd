@@ -36,7 +36,6 @@ export type {
   Inbox,
   Post,
   PostPage,
-  RequestState,
   Run,
   RunInput,
   RunStatus,

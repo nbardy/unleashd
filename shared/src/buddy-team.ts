@@ -25,6 +25,3 @@ export const BuddyTeamStateSchema = z.object({
     })
     .optional(),
 });
-
-export type BuddyEmployment = z.infer<typeof BuddyEmploymentSchema>;
-export type BuddyTeamState = z.infer<typeof BuddyTeamStateSchema>;
