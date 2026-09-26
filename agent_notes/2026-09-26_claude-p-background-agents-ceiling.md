@@ -64,3 +64,44 @@ with exit success, and the resume reports it stopped; raw stream shows
 Probe-writing gotcha: Claude Code's Bash tool refuses a leading `sleep N`
 (`Blocked: sleep 30 followed by: …`). A worker told to `sleep 30 && touch x`
 therefore finishes instantly having done nothing. Use `python3 -c "time.sleep"`.
+
+## Follow-up, 2026-09-26: the 20 minutes was not an Unleashd timeout
+
+Re-read of session `dbfcd9c4` (419 lines) and `turn-attempts.jsonl`.
+
+The parent did not run out of tokens and Unleashd did not cut the turn at 20
+minutes. Every assistant stop in that session is `tool_use` or `end_turn`.
+There is no `max_tokens` stop. The idle the owner saw is the model ending its
+turn on purpose:
+
+| Time (UTC) | stop_reason | output tokens | cache read |
+|---|---|---|---|
+| 14:56:29 | `end_turn` | 2394 | 178322 |
+| 15:06:02 | `end_turn` | 580 | 192557 |
+| 16:20:21 | `end_turn` | 1241 | 223786 |
+
+The ~20 minutes is wall clock from the first answer (14:56:29) to the post
+(15:16:03): about 10 minutes of the parent still working after L5 woke it,
+then exactly 10 minutes of Claude's print-mode ceiling. Both exits are
+`attempt_terminal` / `terminalCause: provider_complete` (15:16:03 and
+16:30:22). Unleashd's own limits, from `server/src/constants/timeouts.ts`:
+
+- turn max runtime: 24 hours (`CWV_TURN_MAX_RUNTIME_MS`)
+- provider idle: 60 minutes (`CWV_TURN_PROVIDER_IDLE_TIMEOUT_MS`). Wrapper
+  heartbeats do not reset this, and the native-session probe is Codex-only,
+  so a silent Claude wait still dies here.
+- bridge stall: 2 minutes, reset by those heartbeats
+
+No 20-minute constant exists.
+
+## 12-hour ceiling
+
+`vendor/agent-cli-tool` now sets `CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS` to
+`43200000` (12 hours) on every Claude spawn when the parent environment has
+not set it. An explicit value still wins (the live ceiling test sets `10000`).
+Unit test: `test/build.test.ts` ("defaults the print-mode background wait to
+12 hours"). Branch `test/claude-bg-ceiling-2026-09-26`, not pushed.
+
+That does not by itself let a Buddy turn wait 12 hours. While the parent is
+idle, the Claude parser drops `task_*` events, so Unleashd sees only
+heartbeats and the 60-minute provider-idle watchdog still kills the process.

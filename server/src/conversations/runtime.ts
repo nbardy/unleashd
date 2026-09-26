@@ -524,8 +524,20 @@ function stderrSnippet(value: string, maxLength = 400): string {
 }
 const OUT_OF_TOKENS_PATTERN =
   /out of tokens|token limit|usage limit|insufficient (?:credits|balance)|exceeded(?: your)?(?: current)? quota|credit balance|rate limit exceeded/i;
-function normalizeProviderErrorMessage(message: string): string {
+function providerErrorText(message: string): string {
   const trimmed = message.trim();
+  if (!trimmed.startsWith('{')) return trimmed;
+  try {
+    const parsed = JSON.parse(trimmed) as { error?: { message?: unknown }; message?: unknown };
+    const inner = parsed.error?.message ?? parsed.message;
+    if (typeof inner === 'string' && inner.trim()) return inner.trim();
+  } catch {
+    // The harness sent prose, not a JSON error envelope.
+  }
+  return trimmed;
+}
+function normalizeProviderErrorMessage(message: string): string {
+  const trimmed = providerErrorText(message);
   if (!trimmed) return 'Unknown provider error';
   if (!OUT_OF_TOKENS_PATTERN.test(trimmed)) return trimmed;
   if (/^out of tokens:/i.test(trimmed)) return trimmed;
@@ -851,6 +863,11 @@ export function createConversationRuntime(
     // The close handler checks this to skip redundant work on normal completion, while still
     // running full cleanup on crash/kill/error paths where message_complete never fired.
     private _turnCompletedCleanly = false;
+    // A timeout or stop has already finalized the user-visible turn. Later
+    // provider events are dropped. A normal turn.complete does NOT seal: on
+    // resume Claude can emit a result for drained task-notifications before
+    // the prompt's own answer, and that answer must still be recorded.
+    private _turnSealed = false;
     private _activeAttemptId: string | null = null;
     private _nextAttempt: { attemptId: string; queueMessageId?: string } | null = null;
     private _queuedAttemptIds = new Map<string, string>();
@@ -860,6 +877,7 @@ export function createConversationRuntime(
     // `fresh`; a missing entry therefore errs toward more context, never less.
     private _queuedPrompts = new Map<string, SessionRelativePrompt>();
     private _terminalCauseHint: TurnTerminalCause | null = null;
+    private _providerFailureMessage: string | null = null;
     private _stopCause: 'user_stop' | 'server_restart' | null = null;
     private _lastAttemptActivityAt = 0;
     private _lastAttemptActivitySource: TurnActivitySource | null = null;
@@ -1008,6 +1026,7 @@ export function createConversationRuntime(
       }
       this._activeAttemptId = null;
       this._terminalCauseHint = null;
+      this._providerFailureMessage = null;
       this._stopCause = null;
     }
 
@@ -1053,7 +1072,9 @@ export function createConversationRuntime(
       this._stderrBuffer = '';
       this._sawMeaningfulProviderOutputThisRun = false;
       this._turnCompletedCleanly = false;
+      this._turnSealed = false;
       this._terminalCauseHint = null;
+      this._providerFailureMessage = null;
       this._stopCause = null;
       this._processStartTime = Date.now();
       this._lastAttemptActivityAt = 0;
@@ -1260,10 +1281,13 @@ export function createConversationRuntime(
       const consumeEvents = async (): Promise<void> => {
         for await (const event of turn.events) {
           if (runToken !== this._runToken) return;
-          // A timeout finalizes the user-visible turn before the child has
-          // necessarily acknowledged SIGTERM. Ignore any buffered/late
+          // A timeout or stop finalizes the user-visible turn before the child
+          // has necessarily acknowledged SIGTERM. Ignore any buffered/late
           // provider events so they cannot resurrect or complete it twice.
-          if (this._turnCompletedCleanly) continue;
+          // A normal turn.complete does not seal: a resumed Claude seat can
+          // emit a result for drained task-notifications before the prompt's
+          // own answer, and those later events are the answer.
+          if (this._turnSealed) continue;
           this._noteTurnActivity(event);
           switch (event.type) {
             case 'session.started': {
@@ -1348,17 +1372,19 @@ export function createConversationRuntime(
             }
             case 'out_of_tokens': {
               this._terminalCauseHint = 'out_of_tokens';
+              this._providerFailureMessage = normalizeProviderErrorMessage(event.message);
               this.handleOutput({
                 type: 'error',
-                message: normalizeProviderErrorMessage(event.message),
+                message: this._providerFailureMessage,
               });
               break;
             }
             case 'error': {
               this._terminalCauseHint = 'provider_error';
+              this._providerFailureMessage = normalizeProviderErrorMessage(event.message);
               this.handleOutput({
                 type: 'error',
-                message: normalizeProviderErrorMessage(event.message),
+                message: this._providerFailureMessage,
               });
               break;
             }
@@ -1478,6 +1504,7 @@ export function createConversationRuntime(
               this.broadcastQueue();
             }
             const completionFailure =
+              this._providerFailureMessage ??
               eventConsumptionError?.message ??
               automationCompletionError ??
               (this._terminalCauseHint === 'out_of_tokens'
@@ -2714,6 +2741,7 @@ export function createConversationRuntime(
       }
       this._clearTurnWatchdogs();
       if (!this.process) return;
+      this._turnSealed = true;
       this._stopCause = reason;
       if (this._activeAttemptId) {
         turnAttempts.stopping(this._activeAttemptId);
@@ -2962,6 +2990,9 @@ export function createConversationRuntime(
       });
       // Mark turn as cleanly completed so the close handler (triggered by SIGTERM
       // below) takes the fast path and doesn't emit a duplicate system message.
+      // Seal so a late provider event cannot append another answer after the
+      // timeout message.
+      this._turnSealed = true;
       this._turnCompletedCleanly = true;
       updateBuddyConversationLink(this, 'failed');
       settleBuddyDelegation(this, 'failed', timeout.message);

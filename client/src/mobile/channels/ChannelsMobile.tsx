@@ -1,13 +1,30 @@
-import type { BuddyMailingListPost, BuddyOwnerPostResult, OwnerListUnread } from '@unleashd/shared';
-import { useMemo, useState } from 'react';
-import { Link, useLocation, useParams } from 'react-router-dom';
+import {
+  type BuddyMailingListPost,
+  type BuddyOwnerPostResult,
+  type OwnerListUnread,
+  getBuddyId,
+  isBuddyBuilderConversation,
+} from '@unleashd/shared';
+import { useAtomValue } from 'jotai';
+import { useEffect, useMemo, useState } from 'react';
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
+import { buddyBuilderConversationsAtom } from '../../atoms/buddy-sidebar';
+import { availableConversationIdSetAtom, conversationAtomFamily } from '../../atoms/conversations';
 import { BuddySigil } from '../../components/buddies/BuddySigil';
-import { ChannelAuthor, useChatPageDm } from '../../components/buddies/ChannelAuthor';
+import { ChannelAuthor, type OpenDm } from '../../components/buddies/ChannelAuthor';
+import { ChannelDm } from '../../components/buddies/ChannelDm';
 import { ChannelHistory, ChannelLoader } from '../../components/buddies/ChannelLoader';
 import { ChannelMarkdown, TypingDots } from '../../components/buddies/ChannelMarkdown';
+import { ConversationEye } from '../../components/buddies/ConversationEye';
 import { CopyLinkButton } from '../../components/buddies/CopyLinkButton';
+import { OutOfTokensChannelRetry } from '../../components/buddies/HarnessRetry';
+import { latestActiveBuddyBuilder } from '../../components/buddies/channel-buddy-builder';
+import { setConversationDone } from '../../atoms/actions';
 import { WakeIcon, WakeIndicator } from '../../components/buddies/WakeIndicator';
-import { useBuddyDirectActions } from '../../components/buddies/buddy-direct-actions';
+import {
+  useBuddyDirectActions,
+  useChannelNewBuddy,
+} from '../../components/buddies/buddy-direct-actions';
 import {
   type BuddyMailingListSummary,
   CHANNEL_BACKSTOP_MS,
@@ -39,6 +56,7 @@ import {
 } from '../../components/buddies/channel-data';
 import { channelLinkPath } from '../../components/buddies/channel-link';
 import { useBuddyOverview } from '../../hooks/useBuddyData';
+import { mobileConversationRouteState } from '../../utils/conversation-route-state';
 import { usePolledFetch } from '../../hooks/usePolledFetch';
 import {
   MobileEmptyPanel,
@@ -46,7 +64,7 @@ import {
   MobilePage,
   MobileSection,
 } from '../components/MobileUI';
-import { ChannelComposerMobile } from './ChannelComposerMobile';
+import { ChannelComposerMobile, MobileChannelComposeFrame } from './ChannelComposerMobile';
 import { overviewWorkspaces } from './ChannelsIndex';
 import { type MobileChannelScreen, channelsHref, mobileChannelScreen } from './channel-route';
 
@@ -69,6 +87,7 @@ export function ChannelsMobile() {
   );
   useWarmChannelPosts(lists.data);
   const ownerUnread = useOwnerUnread();
+  const availableConversationIds = useAtomValue(availableConversationIdSetAtom);
   const unreadByList = useMemo(
     () => ownerUnreadByList(ownerUnread.data, workspaceId),
     [ownerUnread.data, workspaceId]
@@ -79,6 +98,7 @@ export function ChannelsMobile() {
     lists: lists.data ?? null,
     refetchLists: lists.refetch,
     unreadByList,
+    availableConversationIds,
   });
 }
 
@@ -88,6 +108,7 @@ type ScreenContext = {
   lists: readonly BuddyMailingListSummary[] | null;
   refetchLists(): Promise<void>;
   unreadByList: ReadonlyMap<string, OwnerListUnread>;
+  availableConversationIds: ReadonlySet<string>;
 };
 
 function renderScreen(screen: MobileChannelScreen, context: ScreenContext) {
@@ -106,7 +127,93 @@ function renderScreen(screen: MobileChannelScreen, context: ScreenContext) {
           context={context}
         />
       );
+    case 'dm':
+      return (
+        <DmScreen
+          key={screen.conversationId}
+          conversationId={screen.conversationId}
+          context={context}
+        />
+      );
   }
+}
+
+// Stay inside Channels. The previous channel query is kept so Back (dropping
+// `dm`) returns to it; a DM opened from Home has nothing else in the query.
+function useChannelsOpenDm(workspaceId: string): OpenDm {
+  const navigate = useNavigate();
+  const location = useLocation();
+  return (conversationId) => {
+    const params = new URLSearchParams(location.search);
+    params.delete('thread');
+    params.delete('post');
+    params.delete('task');
+    params.set('dm', conversationId);
+    navigate(`/buddies/workspaces/${encodeURIComponent(workspaceId)}/channels?${params}`);
+  };
+}
+
+// A Buddy DM uses the thread transcript and composer. The Builder is the hire
+// flow, so it still opens the conversation page; Back returns to Channels
+// without the `dm` param (that screen would only redirect here again).
+function DmScreen({
+  conversationId,
+  context,
+}: {
+  conversationId: string;
+  context: ScreenContext;
+}) {
+  const location = useLocation();
+  const navigate = useNavigate();
+  const conversation = useAtomValue(conversationAtomFamily(conversationId));
+  const builders = useAtomValue(buddyBuilderConversationsAtom);
+  const builder =
+    builders.some((entry) => entry.id === conversationId && !entry.done) ||
+    (conversation !== null && isBuddyBuilderConversation(conversation));
+  useEffect(() => {
+    if (!builder) return;
+    const params = new URLSearchParams(location.search);
+    params.delete('dm');
+    const search = params.toString();
+    navigate(`/chat/${encodeURIComponent(conversationId)}`, {
+      replace: true,
+      state: mobileConversationRouteState({
+        pathname: location.pathname,
+        search: search ? `?${search}` : '',
+        hash: location.hash,
+        state: location.state,
+      }),
+    });
+  }, [builder, conversationId, location, navigate]);
+  const backParams = new URLSearchParams(location.search);
+  backParams.delete('dm');
+  const backQuery = backParams.toString();
+  const backTo = `/buddies/workspaces/${encodeURIComponent(context.workspaceId)}/channels${
+    backQuery ? `?${backQuery}` : ''
+  }`;
+  const member = context.directory.activeMembers.find(
+    (item) => item.id === getBuddyId(conversation)
+  );
+  const name = member?.name ?? 'Buddy';
+  if (builder) return <ChannelLoader label="Opening Buddy Builder…" />;
+  return (
+    <ChannelDm
+      conversationId={conversationId}
+      workspaceId={context.workspaceId}
+      buddyName={name}
+      buddyRole={member?.role ?? 'Direct message'}
+      buddyNames={context.directory.buddyNames}
+      tasks={context.directory.taskById}
+      frame="mobile"
+      backTo={backTo}
+      onConversation={(nextId) =>
+        navigate(channelsHref(context.workspaceId, { kind: 'dm', conversationId: nextId }))
+      }
+      composeShell={(composer) => (
+        <MobileChannelComposeFrame title={name}>{composer}</MobileChannelComposeFrame>
+      )}
+    />
+  );
 }
 
 // ── Home ────────────────────────────────────────────────────────────────────
@@ -197,11 +304,7 @@ function ChannelsHome({ context }: { context: ScreenContext }) {
         {lists === null && <MobileEmptyPanel>Loading channels…</MobileEmptyPanel>}
       </MobileSection>
       <MobileSection title="Buddies" meta="Tap to message · ☀ to wake">
-        <ul className="mobile-channels-list">
-          {directory.activeMembers.map((member) => (
-            <BuddyRow key={member.id} member={member} workspaceId={workspaceId} />
-          ))}
-        </ul>
+        <BuddySection workspaceId={workspaceId} directory={directory} />
       </MobileSection>
     </MobilePage>
   );
@@ -217,11 +320,73 @@ function RepliesBadge({ unread }: { unread: OwnerListUnread | undefined }) {
   );
 }
 
-// Slack's DM row: tapping the Buddy opens the conversation (its one ongoing
-// DM, history kept). Wake is a visible button, since touch has no hover.
+function BuddySection({
+  workspaceId,
+  directory,
+}: {
+  workspaceId: string;
+  directory: WorkspaceDirectory;
+}) {
+  const openDm = useChannelsOpenDm(workspaceId);
+  const newBuddy = useChannelNewBuddy(openDm);
+  const creatingBuddy = latestActiveBuddyBuilder(useAtomValue(buddyBuilderConversationsAtom));
+  return (
+    <>
+      <button
+        type="button"
+        className="mobile-channels-row mobile-channels-row--add"
+        disabled={newBuddy.pending}
+        onClick={newBuddy.start}
+      >
+        <span className="mobile-channels-row__hash" aria-hidden="true">
+          +
+        </span>
+        <span className="mobile-channels-row__name">New Buddy</span>
+      </button>
+      {newBuddy.error && (
+        <p className="mobile-channels-new__problem" role="alert">
+          {newBuddy.error}
+        </p>
+      )}
+      <ul className="mobile-channels-list">
+        {creatingBuddy && (
+          <li className="mobile-channels-buddy">
+            <button
+              type="button"
+              className="mobile-channels-row"
+              onClick={() => openDm(creatingBuddy.id)}
+            >
+              <BuddySigil className="mobile-channels-row__sigil" name="Creating buddy" />
+              <span className="mobile-channels-row__stack">
+                <span className="mobile-channels-row__name mobile-channels-creating-label">
+                  Creating buddy
+                </span>
+              </span>
+            </button>
+            <button
+              type="button"
+              className="mobile-channels-archive"
+              aria-label="Archive Buddy setup"
+              title="Archive this setup chat"
+              onClick={() => setConversationDone(creatingBuddy.id, true)}
+            >
+              ×
+            </button>
+          </li>
+        )}
+        {directory.activeMembers.map((member) => (
+          <BuddyRow key={member.id} member={member} workspaceId={workspaceId} />
+        ))}
+      </ul>
+    </>
+  );
+}
+
+// Slack's DM row: tapping the Buddy opens the DM inside Channels. Wake is a
+// visible button, since touch has no hover.
 function BuddyRow({ member, workspaceId }: { member: ChannelMember; workspaceId: string }) {
   // Back from the DM returns here, not to the Buddies tab.
-  const openDm = useChatPageDm();
+  const openDm = useChannelsOpenDm(workspaceId);
   const direct = useBuddyDirectActions(member.id, workspaceId);
   const { action } = direct;
   return (
@@ -341,6 +506,7 @@ type RowContext = {
   workspaceId: string;
   directory: WorkspaceDirectory;
   place: RowPlace;
+  availableConversationIds: ReadonlySet<string>;
   // The reply a permalink named (`?post=`); its row is highlighted.
   linkedPostId: string | null;
 };
@@ -393,7 +559,7 @@ function PostFooter({ post, context }: { post: BuddyMailingListPost; context: Ro
 }
 
 function Row({ row, context }: { row: ChannelRow; context: RowContext }) {
-  const openDm = useChatPageDm();
+  const openDm = useChannelsOpenDm(context.workspaceId);
   switch (row.kind) {
     case 'day':
       return (
@@ -424,12 +590,20 @@ function Row({ row, context }: { row: ChannelRow; context: RowContext }) {
               />
               <time dateTime={row.post.createdAt}>{clockTime(row.post.createdAt)}</time>
               <PostPurpose post={row.post} />
+              <ConversationEye
+                className="mobile-channel-post__eye"
+                conversationId={row.post.senderConversationId}
+                available={context.availableConversationIds.has(
+                  row.post.senderConversationId ?? ''
+                )}
+              />
             </div>
             <ChannelMarkdown
               body={row.post.body}
               buddyNames={context.directory.buddyNames}
               tasks={context.directory.taskById}
             />
+            <OutOfTokensChannelRetry post={row.post} />
             <PostFooter post={row.post} context={context} />
           </div>
         </li>
@@ -444,11 +618,17 @@ function Row({ row, context }: { row: ChannelRow; context: RowContext }) {
         >
           <div className="mobile-channel-post__content">
             <PostPurpose post={row.post} />
+            <ConversationEye
+              className="mobile-channel-post__eye"
+              conversationId={row.post.senderConversationId}
+              available={context.availableConversationIds.has(row.post.senderConversationId ?? '')}
+            />
             <ChannelMarkdown
               body={row.post.body}
               buddyNames={context.directory.buddyNames}
               tasks={context.directory.taskById}
             />
+            <OutOfTokensChannelRetry post={row.post} />
             <PostFooter post={row.post} context={context} />
           </div>
         </li>
@@ -504,6 +684,7 @@ function ChannelScreen({ listId, context }: { listId: string; context: ScreenCon
       responding,
       unreadThreads: new Set(arrival.unreadThreads),
     },
+    availableConversationIds: context.availableConversationIds,
     linkedPostId: null,
   };
   // The mailing list's own description — unrelated to the conversation field gate G2 guards.
@@ -597,6 +778,7 @@ function ThreadScreen({
     workspaceId,
     directory,
     place: { kind: 'thread' },
+    availableConversationIds: context.availableConversationIds,
     linkedPostId,
   };
   const root = thread.data?.root;
@@ -652,6 +834,7 @@ function ThreadScreen({
         threadRootId={rootId}
         placeholder="Reply…"
         references={directory.references}
+        seats={thread.data?.seats}
         submit="button"
         onPosted={() => {
           follow.pin();

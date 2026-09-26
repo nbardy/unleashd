@@ -213,7 +213,7 @@ video.channel-media {
   text-overflow: ellipsis;
 }
 
-.channel-markdown a.channel-task-chip:hover {
+.channel-markdown .channel-task-chip:hover {
   border-color: var(--border-emphasis);
 }
 
@@ -270,10 +270,13 @@ video.channel-media {
   max-width: 420px;
   margin: 6px 0;
   color: var(--text-primary);
+  font: inherit;
+  text-align: left;
   text-decoration: none;
+  cursor: pointer;
 }
 
-.channel-markdown a.channel-task-block:hover {
+.channel-markdown .channel-task-block:hover {
   border-color: var(--border-emphasis);
 }
 
@@ -315,6 +318,105 @@ video.channel-media {
 
 .channel-task-card-next {
   color: var(--text-secondary);
+}
+
+/* Task click stays in Channels: a centered sheet over the transcript. */
+.channel-task-overlay-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  width: min(560px, calc(100vw - 48px));
+  max-height: min(80vh, 720px);
+  margin: auto;
+  overflow: auto;
+  padding: 16px 18px 18px;
+  border: 1px solid var(--border-default);
+  border-radius: 12px;
+  background: var(--bg-panel);
+  color: var(--text-primary);
+  box-shadow: 0 24px 64px rgb(0 0 0 / 40%);
+}
+
+.channel-task-overlay-dialog::backdrop {
+  background: rgb(0 0 0 / 45%);
+}
+
+.channel-task-overlay-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.channel-task-overlay-title {
+  margin: 0;
+  color: var(--text-bright);
+  font-size: 16px;
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.channel-task-overlay-meta {
+  margin: 4px 0 0;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.channel-task-overlay-close {
+  flex: none;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.channel-task-overlay-close:hover {
+  background: color-mix(in srgb, var(--text-emphasis) 7%, transparent);
+  color: var(--text-bright);
+}
+
+.channel-task-overlay-section h3 {
+  margin: 0 0 4px;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.channel-task-overlay-section p {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: 13.5px;
+  line-height: 1.45;
+  white-space: pre-wrap;
+}
+
+.channel-task-overlay-todos {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: 13.5px;
+  line-height: 1.4;
+}
+
+.channel-task-overlay-todos p {
+  margin: 2px 0 0;
+  color: var(--text-secondary);
+}
+
+.channel-task-overlay-error {
+  margin: 0;
+  color: var(--theme-warning);
+  font-size: 13px;
 }
 
 .channel-typing-dots {

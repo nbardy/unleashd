@@ -2792,9 +2792,7 @@
           "persistedAt": "2026-09-12T16:14:52.737Z",
           "outcome": "failed",
           "evidenceCount": 2,
-          "deliveryStates": [
-            "message_reply: complete"
-          ],
+          "deliveryStates": ["message_reply: complete"],
           "deliveries": [
             {
               "runId": "buddy_run_2d09289f-7681-472a-9aaa-40156e2ac473",
@@ -2816,9 +2814,7 @@
         "checkpointCount": 0,
         "checkpointNextOffset": null,
         "recovery": {
-          "controllerBuddyIds": [
-            "buddy_d3f11f11-d010-4383-bc72-940bfe6ef8cd"
-          ],
+          "controllerBuddyIds": ["buddy_d3f11f11-d010-4383-bc72-940bfe6ef8cd"],
           "mode": "attempt",
           "successorRunId": null,
           "canRetry": false,
@@ -2864,9 +2860,7 @@
           "persistedAt": "2026-09-12T16:14:52.733Z",
           "outcome": "failed",
           "evidenceCount": 2,
-          "deliveryStates": [
-            "message_reply: complete"
-          ],
+          "deliveryStates": ["message_reply: complete"],
           "deliveries": [
             {
               "runId": "buddy_run_3b898b8a-e986-4059-9f40-3e43880e4ae7",
@@ -2888,9 +2882,7 @@
         "checkpointCount": 0,
         "checkpointNextOffset": null,
         "recovery": {
-          "controllerBuddyIds": [
-            "buddy_d3f11f11-d010-4383-bc72-940bfe6ef8cd"
-          ],
+          "controllerBuddyIds": ["buddy_d3f11f11-d010-4383-bc72-940bfe6ef8cd"],
           "mode": "attempt",
           "successorRunId": null,
           "canRetry": false,
@@ -2930,9 +2922,7 @@
           "persistedAt": "2026-09-12T16:14:00.623Z",
           "outcome": "failed",
           "evidenceCount": 2,
-          "deliveryStates": [
-            "message_reply: complete"
-          ],
+          "deliveryStates": ["message_reply: complete"],
           "deliveries": [
             {
               "runId": "buddy_run_b33ecadf-84ee-4fd2-baad-090538894f18",
@@ -2954,9 +2944,7 @@
         "checkpointCount": 0,
         "checkpointNextOffset": null,
         "recovery": {
-          "controllerBuddyIds": [
-            "buddy_d3f11f11-d010-4383-bc72-940bfe6ef8cd"
-          ],
+          "controllerBuddyIds": ["buddy_d3f11f11-d010-4383-bc72-940bfe6ef8cd"],
           "mode": "attempt",
           "successorRunId": null,
           "canRetry": false,
@@ -3002,9 +2990,7 @@
           "persistedAt": "2026-09-12T16:14:52.737Z",
           "outcome": "failed",
           "evidenceCount": 2,
-          "deliveryStates": [
-            "message_reply: complete"
-          ],
+          "deliveryStates": ["message_reply: complete"],
           "deliveries": [
             {
               "runId": "buddy_run_2d09289f-7681-472a-9aaa-40156e2ac473",
@@ -3026,9 +3012,7 @@
         "checkpointCount": 0,
         "checkpointNextOffset": null,
         "recovery": {
-          "controllerBuddyIds": [
-            "buddy_d3f11f11-d010-4383-bc72-940bfe6ef8cd"
-          ],
+          "controllerBuddyIds": ["buddy_d3f11f11-d010-4383-bc72-940bfe6ef8cd"],
           "mode": "successor_request",
           "successorRunId": null,
           "canRetry": false,
@@ -3074,9 +3058,7 @@
           "persistedAt": "2026-09-12T16:14:52.733Z",
           "outcome": "failed",
           "evidenceCount": 2,
-          "deliveryStates": [
-            "message_reply: complete"
-          ],
+          "deliveryStates": ["message_reply: complete"],
           "deliveries": [
             {
               "runId": "buddy_run_3b898b8a-e986-4059-9f40-3e43880e4ae7",
@@ -3098,9 +3080,7 @@
         "checkpointCount": 0,
         "checkpointNextOffset": null,
         "recovery": {
-          "controllerBuddyIds": [
-            "buddy_d3f11f11-d010-4383-bc72-940bfe6ef8cd"
-          ],
+          "controllerBuddyIds": ["buddy_d3f11f11-d010-4383-bc72-940bfe6ef8cd"],
           "mode": "successor_request",
           "successorRunId": null,
           "canRetry": false,
@@ -3146,9 +3126,7 @@
           "persistedAt": "2026-09-12T16:14:00.623Z",
           "outcome": "failed",
           "evidenceCount": 2,
-          "deliveryStates": [
-            "message_reply: complete"
-          ],
+          "deliveryStates": ["message_reply: complete"],
           "deliveries": [
             {
               "runId": "buddy_run_b33ecadf-84ee-4fd2-baad-090538894f18",
@@ -3170,9 +3148,7 @@
         "checkpointCount": 0,
         "checkpointNextOffset": null,
         "recovery": {
-          "controllerBuddyIds": [
-            "buddy_d3f11f11-d010-4383-bc72-940bfe6ef8cd"
-          ],
+          "controllerBuddyIds": ["buddy_d3f11f11-d010-4383-bc72-940bfe6ef8cd"],
           "mode": "successor_request",
           "successorRunId": null,
           "canRetry": false,

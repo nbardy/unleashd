@@ -3,13 +3,13 @@ import { useLocation, useNavigate } from 'react-router-dom';
 import { mobileConversationRouteState } from '../../utils/conversation-route-state';
 import { useBuddyDirectActions } from './buddy-direct-actions';
 
-/** Where a resolved DM opens. The caller's surface decides (see useChatPageDm). */
+/** Where a resolved DM opens. The caller's surface decides. */
 export type OpenDm = (conversationId: string) => void;
 
-// Mobile: the DM is the full-screen chat page; Back returns to the channel it
-// was opened from. Desktop opens it inside the channels view instead
-// (ChannelBrowser's `?dm=`), so the rail stays put — owner feedback 2026-09-25:
-// a name click leaving Slack for the conversation list felt like a different app.
+// Leaves Channels for the conversation page. Buddy DMs opened from Channels
+// stay in that view (`?dm=`) and use the thread transcript instead. This
+// remains for a surface that still wants the conversation page, with Back
+// returning to the screen it was opened from.
 export function useChatPageDm(): OpenDm {
   const navigate = useNavigate();
   const location = useLocation();

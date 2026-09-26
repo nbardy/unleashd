@@ -16,6 +16,8 @@ import {
   type ChannelComposerDraft,
   ChannelComposerDraftSchema,
   type ChannelReference,
+  type ConversationConfig,
+  type ProviderCatalog,
 } from '@unleashd/shared';
 
 // A Buddy carries what its turn runs on by default, so the composer's mention
@@ -341,4 +343,66 @@ export function parseChannelLink(href: string): ChannelLink {
   if (href.startsWith('buddy:')) return { kind: 'buddy', id: href.slice('buddy:'.length) };
   if (href.startsWith('task:')) return { kind: 'task', id: href.slice('task:'.length) };
   return { kind: 'web', href };
+}
+
+// What a mentioned Buddy's reply will run on, as the chip and picker see it.
+// `seat` is that Buddy's latest harness, model, and reasoning in this thread.
+// `profile` is the profile default — exact only when the Buddy has no seat
+// here yet. `unreported` is a backend that predates execution on members.
+export type MentionChoice =
+  | { kind: 'chosen'; config: ConversationConfig }
+  | { kind: 'seat'; config: ConversationConfig }
+  | { kind: 'profile'; profile: ConversationConfig }
+  | { kind: 'unreported' };
+
+export function mentionChoice(
+  buddy: BuddyReference,
+  choices: ReadonlyMap<string, ConversationConfig>,
+  seats: readonly { buddyId: string; config: ConversationConfig }[]
+): MentionChoice {
+  const chosen = choices.get(buddy.id);
+  if (chosen) return { kind: 'chosen', config: chosen };
+  const seat = seats.find((entry) => entry.buddyId === buddy.id);
+  if (seat) return { kind: 'seat', config: seat.config };
+  switch (buddy.execution.kind) {
+    case 'profile':
+      return { kind: 'profile', profile: buddy.execution.config };
+    case 'unreported':
+      return { kind: 'unreported' };
+  }
+}
+
+function configLabel(config: ConversationConfig, catalog: ProviderCatalog | null): string {
+  const provider = catalog?.providers.find((candidate) => candidate.id === config.provider);
+  const modelId =
+    config.model.mode === 'explicit' ? config.model.modelId : provider?.defaultModelId;
+  const model = provider?.models.find((candidate) => candidate.id === modelId);
+  // Model names already carry their family ("Claude Opus 5.5"); the picker
+  // shows the harness.
+  return model?.displayName ?? modelId ?? `${config.provider} default`;
+}
+
+export function choiceLabel(choice: MentionChoice, catalog: ProviderCatalog | null): string {
+  switch (choice.kind) {
+    case 'chosen':
+    case 'seat':
+      return configLabel(choice.config, catalog);
+    case 'profile':
+      return configLabel(choice.profile, catalog);
+    case 'unreported':
+      return 'default';
+  }
+}
+
+// Where the picker opens. Null only for `unreported`, whose chip is disabled.
+export function pickerValue(choice: MentionChoice): ConversationConfig | null {
+  switch (choice.kind) {
+    case 'chosen':
+    case 'seat':
+      return choice.config;
+    case 'profile':
+      return choice.profile;
+    case 'unreported':
+      return null;
+  }
 }

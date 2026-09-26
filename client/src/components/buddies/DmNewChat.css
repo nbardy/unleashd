@@ -1,0 +1,106 @@
+.dm-new-chat__rule {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 36px 0;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.dm-new-chat__pill {
+  position: relative;
+  border: 1px solid var(--border-default);
+  border-radius: 999px;
+  padding: 3px 10px;
+  background: var(--bg-primary);
+}
+
+.dm-new-chat__pill-tip {
+  display: none;
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 4px 8px;
+  border-radius: var(--ui-radius);
+  background: var(--bg-elevated, var(--bg-secondary));
+  border: 1px solid var(--border-default);
+  color: var(--text-secondary);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-transform: none;
+  white-space: nowrap;
+  z-index: 1;
+}
+
+.dm-new-chat__pill:hover .dm-new-chat__pill-tip,
+.dm-new-chat__pill:focus .dm-new-chat__pill-tip,
+.dm-new-chat__pill:focus-visible .dm-new-chat__pill-tip {
+  display: block;
+}
+
+.dm-new-chat__rule::before,
+.dm-new-chat__rule::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border-default);
+}
+
+.dm-new-chat__harness {
+  padding: 4px 24px 12px;
+}
+
+.dm-new-chat__harness-label {
+  margin: 0 0 8px;
+  color: var(--text-muted);
+  font-size: 12px;
+}
+
+.new-chat-btn {
+  background: none;
+  border: none;
+  border-radius: var(--ui-radius);
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 4px;
+}
+
+.new-chat-btn:hover {
+  color: var(--ai-bright);
+}
+
+.new-chat-btn:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.dm-new-chat__hover {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 48px;
+}
+
+.dm-new-chat__hover .new-chat-btn {
+  opacity: 0;
+}
+
+.dm-new-chat__hover:hover .new-chat-btn,
+.dm-new-chat__hover:focus-within .new-chat-btn {
+  opacity: 1;
+}
+
+@media (hover: none) {
+  .dm-new-chat__hover .new-chat-btn {
+    opacity: 1;
+  }
+}

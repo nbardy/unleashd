@@ -1,0 +1,125 @@
+.harness-retry {
+  position: relative;
+  margin-top: 6px;
+}
+
+.harness-retry__open {
+  padding: 3px 10px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.harness-retry__open:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.harness-retry__error {
+  margin: 4px 0 0;
+  color: var(--error, #c44);
+  font-size: 12px;
+}
+
+.harness-retry__backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 29;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: default;
+}
+
+.harness-retry__dialog {
+  position: fixed;
+  z-index: 30;
+  top: 50%;
+  left: 50%;
+  width: min(440px, calc(100vw - 32px));
+  max-height: min(70vh, 520px);
+  margin: 0;
+  padding: 12px 14px;
+  overflow-y: auto;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: inherit;
+  border: 1px solid var(--border-subtle);
+  border-radius: 10px;
+  background: var(--bg-panel);
+  box-shadow: 0 12px 32px rgb(0 0 0 / 28%);
+}
+
+.harness-retry__dialog .new-conv-label {
+  margin: 6px 0 0;
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.harness-retry__dialog .provider-selector,
+.harness-retry__dialog .model-selector {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.harness-retry__dialog .ui-choice.ui-choice {
+  flex: none;
+  min-width: 0;
+  min-height: 28px;
+  padding: 3px 10px;
+  font-size: 12.5px;
+  white-space: nowrap;
+}
+
+.harness-retry__dialog input[type='radio'] {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+}
+
+.harness-retry__note {
+  margin: 0;
+  color: var(--text-muted);
+  font-size: 12.5px;
+}
+
+.harness-retry__actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.harness-retry__actions button {
+  padding: 4px 12px;
+  border: 1px solid var(--border-subtle);
+  border-radius: 7px;
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+
+.harness-retry__actions button:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.harness-retry__confirm {
+  border-color: transparent;
+  background: color-mix(in srgb, var(--theme-user) 70%, transparent);
+  color: var(--text-bright);
+  font-weight: 600;
+}

@@ -16,6 +16,7 @@ import {
   type PersistedConversationConfigRecord,
   type SessionBinding,
 } from './config-store';
+import { creationFingerprint } from './creation-service';
 import {
   type LegacyConfigDiagnostic,
   type LegacyConfigEvidence,
@@ -391,6 +392,10 @@ export class ConversationConfigService {
     const nextRecord: PersistedConversationConfigRecord = {
       ...existing,
       config: transition.value,
+      // The creation fingerprint hashes the config. Leave it stale and the
+      // next reopen of this conversation — a thread seat after a model or
+      // reasoning change — conflicts and the reply cannot continue.
+      creation: creationAtConfig(existing, transition.value),
       recordRevision: existing.recordRevision + 1,
       configRevision: nextRevision,
       lastResolvedConfig: resolution.value,
@@ -479,6 +484,29 @@ export class ConversationTombstonedError extends Error {
     super(`Conversation has been deleted: ${record.conversationId}`);
     this.name = 'ConversationTombstonedError';
   }
+}
+
+// Rewrite the creation fingerprint for the config the conversation now runs.
+// Other creation fields stay; only the config portion of the hash moved.
+function creationAtConfig(
+  existing: PersistedConversationConfigRecord,
+  config: ConversationConfig
+): ConversationCreationMetadata | undefined {
+  const creation = existing.creation;
+  if (!creation?.fingerprint) return creation;
+  return {
+    ...creation,
+    fingerprint: creationFingerprint({
+      workingDirectory: existing.workingDirectory as string,
+      config,
+      initialMessage: creation.initialMessage,
+      swarmDebugPrefix: creation.swarmDebugPrefix,
+      resumedFromConversationId: creation.resumedFromConversationId,
+      buddyContext: creation.buddyContext,
+      purpose: creation.purpose,
+      branch: creation.branch,
+    }),
+  };
 }
 
 function isMatchingCreateReplay(

@@ -41,6 +41,7 @@ import { FilePreview, getPreviewType, getPreviewableLocalHref } from './FilePrev
 import { InlineSwarmRunWidget } from './InlineSwarmRunWidget';
 import { SwarmConvoPrefix } from './SwarmConvoPrefix';
 import { InlineBuddyBuilderResult } from './buddies/BuddyBuilderResultCard';
+import { DmNewChatDivider } from './buddies/DmNewChatDivider';
 import { InlineBuddyTeamConfiguration } from './buddies/BuddyTeamConfiguration';
 import { effectiveSwarmDebugPrefix } from './buddies/ui-contract';
 
@@ -650,7 +651,7 @@ function StandaloneMessage({
 // =============================================================================
 
 interface VirtualizedMessageListProps {
-  messageGroups: MessageGroup[];
+  messageGroups: readonly MessageGroup[];
   isRunning: boolean;
   /** Owning turn still active (isRunning || isStreaming at the call site).
       Feeds the in-bubble working indicator on the live assistant response. */
@@ -666,10 +667,13 @@ interface VirtualizedMessageListProps {
   swarmDebugPrefix?: string | null;
   swarmId?: string | null;
   buddyContext?: BuddyContext;
+  /** Sits in the scroll, under the last message. */
+  afterMessages?: React.ReactNode;
 }
 
 // Estimate height based on content — rough approximation before measurement
 function estimateGroupSize(group: MessageGroup): number {
+  if (group.type === 'dm_divider') return 88;
   if (group.type === 'assistant') {
     return (
       48 +
@@ -703,6 +707,7 @@ export function VirtualizedMessageList({
   swarmDebugPrefix,
   swarmId,
   buddyContext,
+  afterMessages,
 }: VirtualizedMessageListProps) {
   const parentRef = useRef<HTMLDivElement>(null);
   const stickyBottomRef = useRef(true);
@@ -912,6 +917,7 @@ export function VirtualizedMessageList({
           })}
         </div>
       )}
+      {afterMessages}
     </div>
   );
 }
@@ -1010,6 +1016,8 @@ export const VirtualizedGroup = memo(
     workingDirectory,
     isLiveTurn,
   }: VirtualizedGroupProps) {
+    if (group.type === 'dm_divider') return <DmNewChatDivider harness={group.harness} />;
+
     if (group.type === 'assistant') {
       return (
         <AssistantResponseBlock

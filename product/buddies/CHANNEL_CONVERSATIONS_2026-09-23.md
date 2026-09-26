@@ -92,10 +92,12 @@ remain the three core components.
    package owns that rule (`knowledgeAudienceContinuity`). Until 2026-09-25 any
    audience change reset the seat, and at 03:30Z a Buddy that filed a Task from
    its seat got a fresh session told only "Replies since then (0)".
-4. The final assistant text is posted by the server as that Buddy (`purpose:
-   reply`, seat conversation provenance, key `thread-reply:<post>:<buddy>`). Media
-   the Buddy referenced is copied; a bad reference is noted visibly in the reply.
-   A failed turn posts `purpose: reply_failed` with the reason — never silent.
+4. The Buddy posts its own answer with `post` (`purpose: reply`, this thread).
+   Text output is a private scratchpad and is not copied into the channel. A
+   turn that posts nothing, or fails, leaves `purpose: reply_failed` with the
+   reason — never a blank `(no reply text)`, and never the tool transcript.
+   Media the Buddy referenced in a post is copied; a bad reference is noted
+   visibly in the reply.
 5. `GET /api/buddies/lists/:id/responding` drives "X is replying…".
 
 **Known gap:** mention replies are launched as in-memory promises in
@@ -179,9 +181,12 @@ Guard: the follow-up test in `server/test/channel-conversations.test.ts`.
   replies, item 2) and sticks for every later reply there. A mention with no
   choice keeps the seat; in a new thread that is the profile default. Any
   harness works on any mention: a different pick opens a new seat generation.
-- **Open gap:** the chip shows the PROFILE default for an un-picked mention,
-  which is wrong in a thread whose seat runs an earlier pick. Fix: return
-  each Buddy's seat config with the thread read and seed the chip from it.
+- **Chip baseline:** the thread read includes `seats`, the latest harness,
+  model, and reasoning per Buddy who has posted or been @mentioned. The chip
+  opens on that, so a change continues from it. A Buddy with no seat yet
+  shows the profile default, which is also what the first reply runs on.
+  A settings change on the seat conversation itself rewrites the creation
+  fingerprint, so the next reply reopens that same seat on the new settings.
 - **Defaults on the chip:** workspace activity members carry
   `execution: {kind:'profile', config}` from `buddyExecutionPreferences()` (the
   same mapping turn creation uses). The wire default is `{kind:'unreported'}`
@@ -233,6 +238,11 @@ does not push a client refresh. Both tools are in the default run policy
 - Both appear on Buddy rows in the desktop channels rail, the desktop main
   sidebar (hover, after the running counts), and mobile Channels Home (tap row =
   DM, visible Wake button). Shared client logic: `buddy-direct-actions.ts`.
+- Inside Channels the DM uses the thread transcript and the channel composer
+  (sigil, name, time, `ChannelMarkdown`, attach + Send), not the conversation
+  page. Desktop opens it in the main pane (`?dm=`). Phone opens it as its own
+  screen on that same URL; Back drops `dm` and returns to the channel or Home
+  it was opened from. The Buddy Builder still uses the conversation page.
 
 ## Mobile (2026-09-24)
 

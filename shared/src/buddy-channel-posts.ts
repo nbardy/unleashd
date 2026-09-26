@@ -31,9 +31,18 @@ export const BuddyMailingListPostSchema = z.object({
 
 export const BuddyMailingListPostsSchema = z.array(BuddyMailingListPostSchema);
 
+// The harness, model, and reasoning a Buddy's next reply in this thread runs
+// on: its latest seat, not the profile default. Absent until that Buddy has
+// one. `.default([])` so a server that predates the field still parses.
+export const ThreadSeatSchema = z.object({
+  buddyId: z.string(),
+  config: ConversationConfigSchema,
+});
+
 export const BuddyChannelThreadSchema = z.object({
   root: BuddyMailingListPostSchema,
   replies: BuddyMailingListPostsSchema,
+  seats: z.array(ThreadSeatSchema).default([]),
 });
 
 export const BuddyMentionDispatchSchema = z.discriminatedUnion('status', [
@@ -59,6 +68,7 @@ export const BuddyOwnerPostResultSchema = z.object({
 
 export type BuddyListAuthor = z.infer<typeof BuddyListAuthorSchema>;
 export type BuddyMailingListPost = z.infer<typeof BuddyMailingListPostSchema>;
+export type ThreadSeat = z.infer<typeof ThreadSeatSchema>;
 export type BuddyChannelThread = z.infer<typeof BuddyChannelThreadSchema>;
 export type BuddyMentionDispatch = z.infer<typeof BuddyMentionDispatchSchema>;
 export type OwnerPostMentionConfig = z.infer<typeof OwnerPostMentionConfigSchema>;

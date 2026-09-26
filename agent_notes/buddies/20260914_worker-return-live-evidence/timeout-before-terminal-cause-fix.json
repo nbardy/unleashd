@@ -100,9 +100,7 @@
                       "maxActiveRuns": 2
                     },
                     "relationships": [],
-                    "allowedOperations": [
-                      "send"
-                    ],
+                    "allowedOperations": ["send"],
                     "deniedOperations": {
                       "get_profile": {
                         "code": "owner_grant_required",

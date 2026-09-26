@@ -9,9 +9,11 @@ import {
 } from 'react';
 import { BrowserRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { handleMessage, setSendFn, setWsStatus } from './atoms/actions';
+import { type DirectChains, DIRECT_CHAINS_URL } from './atoms/dm-chain';
 import { startConversationPrefetch } from './atoms/prefetch';
 import { jotaiStore } from './atoms/store';
 import { useOwnerUnreadTitle } from './components/buddies/channel-data';
+import { usePolledFetch } from './hooks/usePolledFetch';
 import { useWebSocket } from './hooks/useWebSocket';
 import { type DeviceKind, useDeviceKind } from './mobile/hooks/useDeviceKind';
 import { initSettings } from './stores/settingsStore';
@@ -312,6 +314,11 @@ function AppRoutes({ device }: { device: DeviceKind }) {
   );
 }
 
+function DirectChainPoller() {
+  usePolledFetch<DirectChains>(DIRECT_CHAINS_URL, 15000);
+  return null;
+}
+
 function AppInner() {
   const device = useDeviceKind();
   useWebSocketBridge();
@@ -322,7 +329,12 @@ function AppInner() {
     initSettings().catch(console.error);
   }, []);
 
-  return <AppRoutes device={device} />;
+  return (
+    <>
+      <DirectChainPoller />
+      <AppRoutes device={device} />
+    </>
+  );
 }
 
 function App() {

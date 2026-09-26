@@ -14,6 +14,7 @@ import {
   type BuddyBuilderResult,
   type BuddyBuilderResults,
   type BuddyContext,
+  type ConversationConfig,
   BuddyMessageReplySchema,
   type BuddyRun,
   BuddyWorkspaceActivitySchema,
@@ -57,10 +58,10 @@ import {
 import { assertBuddyProviderSupportsMcp } from './provider-capability';
 import { publicAutomationRun } from './public-automation-run';
 import { readBuddySoul, updateBuddySoul } from './soul';
-import { type WorkspaceWriter, ensureWorkspace, listWorkspaceHome } from './workspace-home';
 import { getTeamCapabilities, messageExecution, teamStore } from './team-access';
 import { observeBuddyTeam } from './team-observation';
 import { visibleBuddyPayload } from './visibility';
+import { type WorkspaceWriter, ensureWorkspace, listWorkspaceHome } from './workspace-home';
 
 /** Upper bound on one inactive-access read; the response counts what it left out. */
 const INACTIVE_ACCESS_LIMIT = 200;
@@ -104,6 +105,14 @@ export interface BuddyRouteDependencies {
    * See docs/architecture.md 2.1.
    */
   isConversationDeleted(conversationId: string): Promise<boolean>;
+  /**
+   * Latest seat config per Buddy in a thread, for the mention chip. Omitted
+   * on a server that has no channel responder wired; the read then returns
+   * `seats: []` and the chip shows the profile default.
+   */
+  threadSeats?(
+    threadRootId: string
+  ): Promise<Array<{ buddyId: string; config: ConversationConfig }>>;
 }
 
 // The page query every owner feed route reads (channel-pages.ts FeedRead).
@@ -899,6 +908,7 @@ export function registerBuddyRoutes(app: Express, dependencies: BuddyRouteDepend
     res.json({
       root: withPostProvenanceFields(root),
       replies: readFeed(buddies, feed, read).map(withPostProvenanceFields),
+      seats: dependencies.threadSeats ? await dependencies.threadSeats(root.id) : [],
     });
   });
 

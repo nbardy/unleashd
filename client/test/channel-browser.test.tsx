@@ -127,6 +127,7 @@ test('channel browser renders a Slack transcript, oldest first, with instance ta
   assert.equal(html.match(/channel-browser-instance/g)?.length, 1);
   assert.match(html, /<option value="task-alpha"/);
   assert.doesNotMatch(html, /buddy-messages-list-composer/);
+  assert.match(html, /aria-label="New Buddy"/);
 });
 
 // Regression guard for the instance-uuid feature: two conversations running

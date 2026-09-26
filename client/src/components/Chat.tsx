@@ -17,8 +17,8 @@ import {
 } from '../atoms/actions';
 import type { QueuedMessage } from '../atoms/actions';
 import { setConversationConfig } from '../atoms/config-actions';
+import { dmTranscriptGroupsAtomFamily } from '../atoms/dm-chain';
 import {
-  chatMessageGroupsAtomFamily,
   childConversationsAtomFamily,
   conversationAtomFamily,
   conversationDetailsLoadedAtomFamily,
@@ -52,7 +52,10 @@ import { SubAgentPanel } from './SubAgentPanel';
 import { SwarmConvoPrefix } from './SwarmConvoPrefix';
 import { TurnStatus } from './TurnStatus';
 import { VirtualizedMessageList } from './VirtualizedMessageList';
+import { useDmSplit } from './buddies/buddy-direct-actions';
+import { OutOfTokensChatRetry } from './buddies/HarnessRetry';
 import { effectiveSwarmDebugPrefix } from './buddies/ui-contract';
+import './buddies/DmNewChat.css';
 import {
   shouldPresentTurnAttempt,
   shouldShowTypingIndicator,
@@ -311,7 +314,12 @@ export function Chat({ id }: { id: string }) {
 
   const timeAgo = useTimeAgo(lastMessageTime);
 
-  const messageGroups = useAtomValue(chatMessageGroupsAtomFamily(id ?? ''));
+  const transcriptGroups = useAtomValue(dmTranscriptGroupsAtomFamily(id ?? ''));
+  const dmSplit = useDmSplit(id ?? '');
+  const priorDmId = dmSplit.role === 'prior' ? dmSplit.currentId : null;
+  useEffect(() => {
+    if (priorDmId) navigate(`/chat/${encodeURIComponent(priorDmId)}`, { replace: true });
+  }, [priorDmId, navigate]);
 
   const swarmDebugPrefix = conversation?.swarmDebugPrefix;
   // readBuddyContext derives a FRESH object from conversation.kind on every call, so
@@ -613,7 +621,9 @@ export function Chat({ id }: { id: string }) {
                     />
                     {!canChangeHarness && (
                       <p className="chat-config-note">
-                        Harness is fixed once a conversation starts.
+                        {dmSplit.role === 'current'
+                          ? 'Start a new chat to change harness'
+                          : 'Harness is fixed once a conversation starts.'}
                       </p>
                     )}
                   </div>
@@ -650,6 +660,11 @@ export function Chat({ id }: { id: string }) {
           )}
         </div>
         <div className="header-status">
+          {dmSplit.error && !(dmSplit.role === 'current' && dmSplit.priorIds.length > 0) ? (
+            <span className="config-save-state error" role="alert">
+              {dmSplit.error}
+            </span>
+          ) : null}
           <button
             type="button"
             className="fork-thread-btn"
@@ -718,6 +733,18 @@ export function Chat({ id }: { id: string }) {
           ) : (
             <div className={`chat-status-indicator ${isRunning || isStreaming ? 'running' : ''}`} />
           )}
+          <OutOfTokensChatRetry
+            conversationId={conversation.id}
+            terminalCause={latestTurnAttempt?.terminalCause ?? null}
+            turnActive={runtimeTurnActive}
+            messages={conversation.messages}
+            workingDirectory={conversation.workingDirectory}
+            provider={conversation.provider ?? null}
+            requiresBuddyMcp={requiresBuddyMcp}
+            swarmDebugPrefix={conversation.swarmDebugPrefix ?? undefined}
+            buddyContext={buddyContext}
+            onStarted={(nextId) => navigate(`/chat/${encodeURIComponent(nextId)}`)}
+          />
         </div>
       </div>
 
@@ -730,7 +757,8 @@ export function Chat({ id }: { id: string }) {
         </div>
       )}
 
-      {conversation.messages.length === 0 ? (
+      {conversation.messages.length === 0 &&
+      !(dmSplit.role === 'current' && dmSplit.priorIds.length > 0) ? (
         <div className="messages-container">
           {buddyContext && <BuddyConvoHeader context={buddyContext} />}
           {visibleSwarmDebugPrefix && (
@@ -778,7 +806,7 @@ export function Chat({ id }: { id: string }) {
         <div className="messages-container-wrapper">
           <VirtualizedMessageList
             key={id}
-            messageGroups={messageGroups}
+            messageGroups={transcriptGroups}
             isRunning={isStreaming}
             isTurnActive={runtimeTurnActive}
             lastMessageRef={lastMessageRef}
@@ -791,6 +819,25 @@ export function Chat({ id }: { id: string }) {
             swarmDebugPrefix={visibleSwarmDebugPrefix}
             swarmId={conversation.swarmId ?? null}
             buddyContext={buddyContext}
+            afterMessages={
+              dmSplit.role === 'current' &&
+              (conversation.messages.length > 0 || isRunning || queue.length > 0) ? (
+                <div className="dm-new-chat__hover chat-reading-column">
+                  <button
+                    type="button"
+                    className="new-chat-btn"
+                    disabled={dmSplit.pending}
+                    onClick={() => {
+                      void dmSplit.startNewChat().then((conversationId) => {
+                        if (conversationId) navigate(`/chat/${encodeURIComponent(conversationId)}`);
+                      });
+                    }}
+                  >
+                    {dmSplit.pending ? 'Starting…' : 'New chat'}
+                  </button>
+                </div>
+              ) : null
+            }
           />
           {shouldShowTypingIndicator(isStreaming, streamingText) && (
             <div className="typing-indicator-overlay">
@@ -808,6 +855,52 @@ export function Chat({ id }: { id: string }) {
             >
               &#x25BC;
             </button>
+          )}
+        </div>
+      )}
+
+      {dmSplit.role === 'current' && dmSplit.priorIds.length > 0 && canChangeHarness && (
+        <div className="dm-new-chat__harness">
+          <p className="dm-new-chat__harness-label">Harness for this chat</p>
+          {dmSplit.error ? (
+            <p className="config-save-state error" role="alert">
+              {dmSplit.error}
+            </p>
+          ) : null}
+          {catalog && conversationConfig ? (
+            <ConversationConfigPicker
+              value={conversationConfig}
+              catalog={catalog}
+              disabled={configIsSaving}
+              inlineDefaults
+              providerFilter={(providerId) =>
+                !requiresBuddyMcp ||
+                providerId === conversation.provider ||
+                catalog.providers.some(
+                  (provider) => provider.id === providerId && provider.supportsRequiredMcp
+                )
+              }
+              onChange={(config) => {
+                const modelId =
+                  config.model.mode === 'explicit'
+                    ? config.model.modelId
+                    : headerProvider?.defaultModelId;
+                const model = headerProvider?.models.find((item) => item.id === modelId);
+                updateHeaderConfig({
+                  kind: 'replace',
+                  config: {
+                    ...config,
+                    reasoning:
+                      config.reasoning.mode === 'explicit' &&
+                      !model?.reasoning?.levels.includes(config.reasoning.effort)
+                        ? { mode: 'default' }
+                        : config.reasoning,
+                  },
+                });
+              }}
+            />
+          ) : (
+            <p className="dm-new-chat__harness-label">Loading harness options…</p>
           )}
         </div>
       )}

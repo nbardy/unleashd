@@ -12,8 +12,8 @@ import {
 } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
 import { loadConversationDetails, setActiveConversationId } from '../../atoms/actions';
+import { dmTranscriptGroupsAtomFamily } from '../../atoms/dm-chain';
 import {
-  chatMessageGroupsAtomFamily,
   childConversationsAtomFamily,
   conversationAtomFamily,
   conversationDetailsLoadedAtomFamily,
@@ -25,6 +25,9 @@ import {
 } from '../../atoms/conversations';
 import { forkConversation } from '../../atoms/fork-actions';
 import { markMessagesSeen, setSavedActiveConversationId } from '../../atoms/ui';
+import { DmNewChatDivider } from '../../components/buddies/DmNewChatDivider';
+import { OutOfTokensChatRetry } from '../../components/buddies/HarnessRetry';
+import { useDmSplit } from '../../components/buddies/buddy-direct-actions';
 import { effectiveSwarmDebugPrefix } from '../../components/buddies/ui-contract';
 import { useCopyAction } from '../../hooks/useCopyAction';
 import { useProviderCatalog } from '../../hooks/useProviderCatalog';
@@ -467,10 +470,21 @@ export function ConversationView({
   onBack?: MouseEventHandler<HTMLAnchorElement>;
   headerAside?: ReactNode;
 }) {
+  const navigate = useNavigate();
+  const location = useLocation();
   const conversation = useAtomValue(conversationAtomFamily(conversationId));
   const detailsLoaded = useAtomValue(conversationDetailsLoadedAtomFamily(conversationId));
   const streamingText = useAtomValue(streamingAtomFamily(conversationId));
-  const messageGroups = useAtomValue(chatMessageGroupsAtomFamily(conversationId));
+  const messageGroups = useAtomValue(dmTranscriptGroupsAtomFamily(conversationId));
+  const dmSplit = useDmSplit(conversationId);
+  const priorDmId = dmSplit.role === 'prior' ? dmSplit.currentId : null;
+  useEffect(() => {
+    if (!priorDmId) return;
+    navigate(`/chat/${encodeURIComponent(priorDmId)}`, {
+      replace: true,
+      state: mobileConversationRouteState(location),
+    });
+  }, [priorDmId, navigate, location]);
   const totalMessageCount = conversation?.messages.length ?? 0;
   const pendingCreation = useAtomValue(pendingCreationAtomFamily(conversationId));
   const conversationLoadComplete = useAtomValue(conversationLoadCompleteAtom);
@@ -848,6 +862,22 @@ export function ConversationView({
           </div>
           <div className="mobile-chat__actions">
             {headerAside}
+            <OutOfTokensChatRetry
+              conversationId={conversation.id}
+              terminalCause={latestTurnAttempt?.terminalCause ?? null}
+              turnActive={runtimeTurnActive}
+              messages={conversation.messages}
+              workingDirectory={conversation.workingDirectory}
+              provider={conversation.provider ?? null}
+              requiresBuddyMcp={Boolean(buddyContext) || isBuddyBuilderConversation(conversation)}
+              swarmDebugPrefix={conversation.swarmDebugPrefix ?? undefined}
+              buddyContext={buddyContext ?? undefined}
+              onStarted={(nextId) =>
+                navigate(`/chat/${encodeURIComponent(nextId)}`, {
+                  state: mobileConversationRouteState(location),
+                })
+              }
+            />
             <CopyThreadButton conversation={conversation} />
             <ForkButton conversation={conversation} />
           </div>
@@ -904,6 +934,14 @@ export function ConversationView({
         ) : (
           messageGroups.slice(firstShownGroup).map((group, windowIndex) => {
             const index = firstShownGroup + windowIndex;
+            if (group.type === 'dm_divider') {
+              return (
+                <DmNewChatDivider
+                  key={`divider-${group.firstMessageIndex}`}
+                  harness={group.harness}
+                />
+              );
+            }
             return group.type === 'assistant' ? (
               <AssistantResponseRow
                 key={group.firstMessageIndex}
@@ -922,6 +960,47 @@ export function ConversationView({
             );
           })
         )}
+        {dmSplit.role === 'current' &&
+          (conversation.messages.length > 0 || conversation.isRunning || queue.length > 0) && (
+            <div className="dm-new-chat__hover">
+              <button
+                type="button"
+                className="new-chat-btn"
+                disabled={dmSplit.pending}
+                onClick={() => {
+                  void dmSplit.startNewChat().then((nextId) => {
+                    if (!nextId) return;
+                    navigate(`/chat/${encodeURIComponent(nextId)}`, {
+                      state: mobileConversationRouteState(location),
+                    });
+                  });
+                }}
+              >
+                {dmSplit.pending ? 'Starting…' : 'New chat'}
+              </button>
+            </div>
+          )}
+        {dmSplit.role === 'current' &&
+          dmSplit.priorIds.length > 0 &&
+          conversation.messages.length === 0 &&
+          !conversation.isRunning &&
+          queue.length === 0 && (
+            <div className="dm-new-chat__harness">
+              <p className="dm-new-chat__harness-label">Harness for this chat</p>
+              <button
+                type="button"
+                className="mobile-chat__action"
+                onClick={() => setModelSheetOpen(true)}
+              >
+                Choose harness
+              </button>
+              {dmSplit.error ? (
+                <p role="alert" className="dm-new-chat__harness-label">
+                  {dmSplit.error}
+                </p>
+              ) : null}
+            </div>
+          )}
         {turnActive && !streamingText && !turnDiagnostics && !liveBubbleHostsWorking && (
           <div className="mobile-chat__thinking">Thinking…</div>
         )}

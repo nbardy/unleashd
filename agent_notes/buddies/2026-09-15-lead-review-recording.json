@@ -23,10 +23,7 @@
       },
       "evidenceCount": 26,
       "todoEvidenceCount": 6,
-      "truncatedFields": [
-        "next_action",
-        "blocked_reason"
-      ]
+      "truncatedFields": ["next_action", "blocked_reason"]
     },
     {
       "id": "buddy_project_67c0de12-9b60-4748-ae8b-0a88792c2f74",
@@ -49,9 +46,7 @@
       },
       "evidenceCount": 0,
       "todoEvidenceCount": 0,
-      "truncatedFields": [
-        "next_action"
-      ]
+      "truncatedFields": ["next_action"]
     },
     {
       "id": "buddy_project_4f875aff-3481-4ba9-8aab-eb0ea62c1308",
@@ -74,9 +69,7 @@
       },
       "evidenceCount": 0,
       "todoEvidenceCount": 0,
-      "truncatedFields": [
-        "next_action"
-      ]
+      "truncatedFields": ["next_action"]
     },
     {
       "id": "buddy_project_cdae619b-6e1d-4d5b-9c78-84308f418344",
@@ -99,9 +92,7 @@
       },
       "evidenceCount": 0,
       "todoEvidenceCount": 0,
-      "truncatedFields": [
-        "next_action"
-      ]
+      "truncatedFields": ["next_action"]
     },
     {
       "id": "buddy_project_56ced029-2ce3-4897-b037-462d5a01e2ff",
@@ -124,9 +115,7 @@
       },
       "evidenceCount": 0,
       "todoEvidenceCount": 0,
-      "truncatedFields": [
-        "next_action"
-      ]
+      "truncatedFields": ["next_action"]
     },
     {
       "id": "buddy_project_4abf69fe-7981-4934-aaa0-7b4d2908906e",
@@ -149,9 +138,7 @@
       },
       "evidenceCount": 0,
       "todoEvidenceCount": 0,
-      "truncatedFields": [
-        "next_action"
-      ]
+      "truncatedFields": ["next_action"]
     },
     {
       "id": "buddy_project_075e367e-3442-474c-a58d-8094aec59e25",
@@ -174,9 +161,7 @@
       },
       "evidenceCount": 0,
       "todoEvidenceCount": 0,
-      "truncatedFields": [
-        "next_action"
-      ]
+      "truncatedFields": ["next_action"]
     },
     {
       "id": "buddy_project_6efaffd1-0415-4dcf-80a4-bb6599d924b7",
@@ -199,9 +184,7 @@
       },
       "evidenceCount": 0,
       "todoEvidenceCount": 10,
-      "truncatedFields": [
-        "next_action"
-      ]
+      "truncatedFields": ["next_action"]
     },
     {
       "id": "buddy_project_62511186-9ab4-4ec6-aece-4bdf39307527",
@@ -500,9 +483,7 @@
       },
       "evidenceCount": 4,
       "todoEvidenceCount": 0,
-      "truncatedFields": [
-        "next_action"
-      ]
+      "truncatedFields": ["next_action"]
     },
     {
       "id": "buddy_project_acaeb801-5a82-4f45-b7fa-84e62f5799fd",
@@ -801,9 +782,7 @@
       },
       "evidenceCount": 2,
       "todoEvidenceCount": 33,
-      "truncatedFields": [
-        "next_action"
-      ]
+      "truncatedFields": ["next_action"]
     },
     {
       "id": "buddy_project_f24b0cc3-e82e-40ab-b974-5f1bfc469950",
@@ -849,9 +828,7 @@
       },
       "evidenceCount": 0,
       "todoEvidenceCount": 4,
-      "truncatedFields": [
-        "next_action"
-      ]
+      "truncatedFields": ["next_action"]
     },
     {
       "id": "buddy_project_14923985-6366-4c5a-9d08-855832dcd35c",
@@ -920,9 +897,7 @@
       },
       "evidenceCount": 2,
       "todoEvidenceCount": 15,
-      "truncatedFields": [
-        "next_action"
-      ]
+      "truncatedFields": ["next_action"]
     },
     {
       "id": "buddy_project_f5e8e43a-9c69-4dd2-82d1-c6c953e3549b",
@@ -945,9 +920,7 @@
       },
       "evidenceCount": 4,
       "todoEvidenceCount": 22,
-      "truncatedFields": [
-        "next_action"
-      ]
+      "truncatedFields": ["next_action"]
     },
     {
       "id": "buddy_project_d5172569-a7bd-4e9c-be5e-5eb9b8e56b82",

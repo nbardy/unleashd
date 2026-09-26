@@ -1,20 +1,25 @@
 /**
  * Which mobile channels screen a URL names. The URL is the one desktop uses —
- * /buddies/workspaces/:id/channels?channel=&thread=&post= — so links work on
+ * /buddies/workspaces/:id/channels?channel=&thread=&post=&dm= — so links work on
  * both devices; mobile renders it as Slack does on a phone: one screen at a
  * time. `post` is the reply a permalink names (components/buddies/channel-link.ts).
+ * `dm` is a Buddy DM and wins over a channel still in the query, so Back can
+ * drop `dm` and return to the channel the DM was opened from.
  *
- *   D = Home (channel list + Buddies) ⊕ Channel ⊕ Thread
+ *   D = Home (channel list + Buddies) ⊕ Channel ⊕ Thread ⊕ DM
  */
 export type MobileChannelScreen =
   | { kind: 'home' }
   | { kind: 'channel'; listId: string }
-  | { kind: 'thread'; listId: string; rootId: string; linkedPostId: string | null };
+  | { kind: 'thread'; listId: string; rootId: string; linkedPostId: string | null }
+  | { kind: 'dm'; conversationId: string };
 
 const CHANNELS_PATH = /^\/buddies\/workspaces\/[^/]+\/channels\/?$/;
 
 export function mobileChannelScreen(search: string): MobileChannelScreen {
   const params = new URLSearchParams(search);
+  const dm = params.get('dm');
+  if (dm) return { kind: 'dm', conversationId: dm };
   const listId = params.get('channel');
   const rootId = params.get('thread');
   if (listId && rootId) return { kind: 'thread', listId, rootId, linkedPostId: params.get('post') };
@@ -44,5 +49,7 @@ export function channelsHref(workspaceId: string, screen: MobileChannelScreen): 
         ? thread
         : `${thread}&post=${encodeURIComponent(screen.linkedPostId)}`;
     }
+    case 'dm':
+      return `${base}?dm=${encodeURIComponent(screen.conversationId)}`;
   }
 }

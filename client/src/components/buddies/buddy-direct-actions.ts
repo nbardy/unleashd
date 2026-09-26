@@ -9,8 +9,19 @@
  */
 import { useAtomValue } from 'jotai';
 import { useEffect, useState } from 'react';
+import {
+  type DirectChain,
+  DIRECT_CHAINS_URL,
+  chainForConversation,
+  directChainsAtom,
+} from '../../atoms/dm-chain';
+import { loadConversationDetails, setConversationDone } from '../../atoms/actions';
+import { buddyBuilderConversationsAtom } from '../../atoms/buddy-sidebar';
 import { conversationAtomFamily } from '../../atoms/conversations';
+import { invalidateResources } from '../../atoms/resources';
 import { buddyApi } from './api';
+import { createBuddyViaBuilder } from './create-buddy-builder';
+import type { OpenDm } from './ChannelAuthor';
 
 export type DirectAction =
   | { kind: 'idle' }
@@ -19,6 +30,28 @@ export type DirectAction =
 
 // Each wake gets a fresh attempt number so its status view remounts clean.
 export type WakeAttempt = { conversationId: string; attempt: number };
+
+/** Start Buddy Builder and open it in the channels DM pane (same spine as sidebar +). */
+export function useChannelNewBuddy(openDm: OpenDm) {
+  const builders = useAtomValue(buddyBuilderConversationsAtom);
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const start = () => {
+    if (pending) return;
+    for (const entry of builders) {
+      if (!entry.done) setConversationDone(entry.id, true);
+    }
+    setPending(true);
+    setError(null);
+    void createBuddyViaBuilder()
+      .then((conversationId) => openDm(conversationId))
+      .catch((cause: unknown) => {
+        setError(cause instanceof Error ? cause.message : String(cause));
+      })
+      .finally(() => setPending(false));
+  };
+  return { pending, error, start };
+}
 
 export function useBuddyDirectActions(buddyId: string, workspaceId: string) {
   const [action, setAction] = useState<DirectAction>({ kind: 'idle' });
@@ -63,6 +96,65 @@ export type WakePhase =
   | { kind: 'waiting' }
   | { kind: 'running' }
   | { kind: 'done'; available: boolean };
+
+export type DmSplit =
+  | { role: 'none' }
+  | { role: 'current'; chain: DirectChain; priorIds: string[] }
+  | { role: 'prior'; currentId: string };
+
+export function useDmSplit(conversationId: string): DmSplit & {
+  pending: boolean;
+  error: string | null;
+  startNewChat: () => Promise<string | null>;
+} {
+  const chains = useAtomValue(directChainsAtom);
+  const chain = chainForConversation(chains, conversationId);
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const split: DmSplit = !chain
+    ? { role: 'none' }
+    : chain.currentId === conversationId
+      ? {
+          role: 'current',
+          chain,
+          priorIds: chain.generations
+            .map((generation) => generation.conversationId)
+            .filter((id) => id !== chain.currentId),
+        }
+      : { role: 'prior', currentId: chain.currentId };
+  const priorKey = split.role === 'current' ? split.priorIds.join(',') : '';
+  useEffect(() => {
+    if (!priorKey) return;
+    for (const id of priorKey.split(',')) {
+      void loadConversationDetails(id).catch(() => undefined);
+    }
+  }, [priorKey]);
+  const startNewChat = (): Promise<string | null> => {
+    if (split.role !== 'current' || pending) return Promise.resolve(null);
+    const { buddyId, workspaceId } = split.chain;
+    setPending(true);
+    setError(null);
+    return buddyApi<{ conversationId: string }>(
+      `/api/buddies/${encodeURIComponent(buddyId)}/direct/new-chat`,
+      {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ workspaceId }),
+      }
+    )
+      .then(({ conversationId }) => {
+        invalidateResources((key) => key === DIRECT_CHAINS_URL);
+        setPending(false);
+        return conversationId;
+      })
+      .catch((cause: unknown) => {
+        setPending(false);
+        setError(cause instanceof Error ? cause.message : String(cause));
+        return null;
+      });
+  };
+  return { ...split, pending, error, startNewChat };
+}
 
 export function useWakePhase(conversationId: string): WakePhase {
   const conversation = useAtomValue(conversationAtomFamily(conversationId));

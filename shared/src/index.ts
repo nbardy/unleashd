@@ -35,6 +35,7 @@ import {
 } from './provider-catalog.js';
 
 export * from './conversation-config.js';
+export * from './out-of-tokens.js';
 export * from './conversation-kind.js';
 export * from './buddy.js';
 export * from './buddy-access.js';

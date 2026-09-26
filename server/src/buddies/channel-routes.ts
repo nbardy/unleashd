@@ -1,5 +1,9 @@
 import fs from 'node:fs';
-import { type ConversationConfig, OwnerPostMentionConfigSchema } from '@unleashd/shared';
+import {
+  type ConversationConfig,
+  ConversationConfigSchema,
+  OwnerPostMentionConfigSchema,
+} from '@unleashd/shared';
 import type { Express, Request, Response } from 'express';
 import multer from 'multer';
 import { z } from 'zod';
@@ -164,8 +168,47 @@ export function registerChannelRoutes(app: Express, dependencies: ChannelRouteDe
     })
   );
 
+  // Retry one out-of-tokens Buddy reply on a harness the owner picks. The
+  // failed post stays; the new attempt is a later reply in the same thread.
+  const RetrySchema = z.object({ config: ConversationConfigSchema }).strict();
+  app.post(
+    '/api/buddies/lists/:listId/posts/:postId/retry',
+    handle(400, async (req, res) => {
+      const buddies = await getStore();
+      const list = buddies.getList(req.params.listId);
+      if (!list) {
+        res.status(404).json({ error: 'Mailing list not found' });
+        return;
+      }
+      const post = buddies.getPost(req.params.postId);
+      if (!post || post.listId !== list.id) {
+        res.status(404).json({ error: 'Post not found in this list' });
+        return;
+      }
+      const { config } = RetrySchema.parse(req.body);
+      res.status(202).json(await responder.retryOutOfTokens(list, post, config));
+    })
+  );
+
   // DM: the one ongoing owner conversation with a Buddy (buddy-direct.ts).
   const DirectSchema = z.object({ workspaceId: z.string().min(1) }).strict();
+  app.get(
+    '/api/buddies/direct/chains',
+    handle(400, async (_req, res) => {
+      res.json(await direct.chains());
+    })
+  );
+  const NewChatSchema = DirectSchema.extend({
+    config: ConversationConfigSchema.optional(),
+    message: z.string().trim().min(1).max(100_000).optional(),
+  });
+  app.post(
+    '/api/buddies/:buddyId/direct/new-chat',
+    handle(400, async (req, res) => {
+      const { workspaceId, config, message } = NewChatSchema.parse(req.body);
+      res.json(await direct.newChat(req.params.buddyId, workspaceId, { config, message }));
+    })
+  );
   app.post(
     '/api/buddies/:buddyId/direct',
     handle(400, async (req, res) => {

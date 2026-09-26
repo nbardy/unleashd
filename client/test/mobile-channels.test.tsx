@@ -15,7 +15,7 @@ register(
   import.meta.url
 );
 const { ChannelsMobile } = await import('../src/mobile/channels/ChannelsMobile');
-const { isImmersiveChannelRoute, mobileChannelScreen } = await import(
+const { channelsHref, isImmersiveChannelRoute, mobileChannelScreen } = await import(
   '../src/mobile/channels/channel-route'
 );
 const { channelLinkPath, postLink } = await import('../src/components/buddies/channel-link');
@@ -80,7 +80,14 @@ test('channel URLs belong to the Channels tab; only channel and thread screens a
   assert.equal(isImmersiveChannelRoute(CHANNELS, ''), false);
   assert.equal(isImmersiveChannelRoute(CHANNELS, '?channel=list_a'), true);
   assert.equal(isImmersiveChannelRoute(CHANNELS, '?channel=list_a&thread=post_1'), true);
+  assert.equal(isImmersiveChannelRoute(CHANNELS, '?dm=conv_1'), true);
   assert.equal(isImmersiveChannelRoute('/buddies/b1', '?channel=list_a'), false);
+  assert.deepEqual(mobileChannelScreen('?dm=conv_1'), { kind: 'dm', conversationId: 'conv_1' });
+  assert.deepEqual(mobileChannelScreen('?channel=list_a&dm=conv_1'), {
+    kind: 'dm',
+    conversationId: 'conv_1',
+  });
+  assert.equal(channelsHref(WS, { kind: 'dm', conversationId: 'conv_1' }), `${CHANNELS}?dm=conv_1`);
   // A DM opened from Channels comes back to the exact channels screen.
   const back = resolveMobileConversationDestination(
     {

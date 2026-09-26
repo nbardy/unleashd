@@ -1,6 +1,7 @@
 import { atom } from 'jotai';
 import type { Buddy, BuddyOverview, Workspace } from '../components/buddies/types';
 import { archivedBuddyIdsAtom } from './buddy-visibility';
+import { priorDirectConversationIdsAtom } from './dm-chain';
 import { directoryFacts } from './conversation-index';
 import {
   type ConversationListEntry,
@@ -99,6 +100,7 @@ export const buddySidebarProjectsAtom = stableAtom((get): BuddySidebarProject[] 
   const archived = get(archivedBuddyIdsAtom);
   const all = get(conversationListAtom);
   const ids = get(availableConversationIdSetAtom);
+  const priorDmIds = get(priorDirectConversationIdsAtom);
   const projects = new Map<string, BuddySidebarProject>();
   const entries = new Map<string, BuddySidebarItemData>();
   const entryKey = (buddyId: string, workspaceId: string) => JSON.stringify([workspaceId, buddyId]);
@@ -167,6 +169,15 @@ export const buddySidebarProjectsAtom = stableAtom((get): BuddySidebarProject[] 
     const workspaceId = conversation.buddyWorkspaceId ?? '';
     const item = entries.get(entryKey(conversation.buddyId, workspaceId));
     if (!item) continue;
+    // An earlier DM generation stays in the store so the open chat can draw it
+    // above the New chat divider. It is not its own sidebar row.
+    if (priorDmIds.has(conversation.id)) {
+      if (conversation.isRunning && conversation.placement !== 'background') {
+        item.foregroundRunningCount += 1;
+        projects.get(workspaceId)!.runningCount += 1;
+      }
+      continue;
+    }
     touch(item, conversation.activityMs);
     // Background conversations have their own destination, including tasks
     // linked to a foreground parent. Count them before hiding nested chat rows.

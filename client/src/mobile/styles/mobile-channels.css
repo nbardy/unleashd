@@ -138,6 +138,31 @@
   color: var(--theme-warning);
 }
 
+.mobile-channels-creating-label {
+  font-style: italic;
+  color: var(--text-muted);
+}
+
+.mobile-channels-archive {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  border: 0;
+  border-radius: var(--ui-radius);
+  background: transparent;
+  color: var(--text-muted);
+  font-size: 22px;
+  line-height: 1;
+}
+
+.mobile-channels-archive:active {
+  background: color-mix(in srgb, var(--text-emphasis) 10%, transparent);
+  color: var(--text-bright);
+}
+
 /* Touch has no hover, so Wake is a visible 44px button on every Buddy row. */
 .mobile-channels-wake {
   display: grid;
@@ -263,6 +288,43 @@ a.mobile-channels-wake-done {
   min-width: 0;
 }
 
+.mobile-channel-dm-heading {
+  flex: 1;
+}
+
+.mobile-channel-dm-actions {
+  display: flex;
+  flex: none;
+  align-items: center;
+}
+
+.mobile-channel-dm-new {
+  flex: none;
+  min-height: 44px;
+  padding: 0 10px;
+  border: 0;
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 15px;
+  font-weight: 600;
+}
+
+.mobile-channel-dm-new:disabled {
+  opacity: 0.5;
+}
+
+.mobile-channel-dm-empty {
+  margin: 16px 14px;
+  color: var(--text-muted);
+  font-size: 14px;
+}
+
+.mobile-channel-dm-divider {
+  padding: 0 14px;
+  list-style: none;
+}
+
 .mobile-channel-header__heading h1 {
   margin: 0;
   overflow: hidden;
@@ -368,6 +430,16 @@ a.mobile-channels-wake-done {
 .mobile-channel-post__heading time {
   color: var(--text-muted);
   font-size: 12px;
+}
+
+.mobile-channel-post__eye {
+  display: inline-grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  margin-left: auto;
+  color: var(--text-muted);
+  text-decoration: none;
 }
 
 .mobile-channel-post__purpose {

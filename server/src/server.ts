@@ -1,6 +1,6 @@
 import http from 'node:http';
 import path from 'node:path';
-import type { Provider as ProviderName } from '@unleashd/shared';
+import type { ConversationConfig, Provider as ProviderName } from '@unleashd/shared';
 import { resolveSessionTranscript } from './adapters/registry';
 import { resolveBuddyAssignmentConfig } from './buddies/assignment-config';
 import { chatRunAdmission } from './buddies/chat-run-admission';
@@ -488,7 +488,14 @@ onBuddiesChanged(() => {
 });
 registerBuddyMutationFeed(app);
 
+// Assigned once the channel responder exists. The thread read is registered
+// above that, and the mention chip needs each Buddy's latest seat from it.
+let threadSeats: (
+  threadRootId: string
+) => Promise<Array<{ buddyId: string; config: ConversationConfig }>> = async () => [];
+
 registerBuddyRoutes(app, {
+  threadSeats: (threadRootId) => threadSeats(threadRootId),
   onBuddyArchived: async (buddyId) => {
     applicationContext.broadcast({ type: 'buddy_archived', buddyId });
     for (const conversation of conversations.values()) {
@@ -556,6 +563,7 @@ const channelResponder = createChannelResponder({
     },
   }),
 });
+threadSeats = (threadRootId) => channelResponder.threadSeats(threadRootId);
 onChannelPost((post) => {
   channelChanged(post.listId);
   void channelResponder.considerThreadPost(post).catch((error) => {

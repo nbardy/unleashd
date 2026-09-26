@@ -23,7 +23,8 @@ export type AssistantResponse = {
 
 export type MessageGroup =
   | AssistantResponse
-  | { type: 'single'; messages: Message[]; firstMessageIndex: number };
+  | { type: 'single'; messages: Message[]; firstMessageIndex: number }
+  | { type: 'dm_divider'; firstMessageIndex: number; harness: string | null };
 
 /** Provider records are transcript fragments, not independently actionable chat bubbles.
  * One response owns their ordered parts, virtual item, heading and Copy action.

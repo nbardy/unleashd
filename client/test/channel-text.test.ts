@@ -1,15 +1,19 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import type { ConversationConfig, ProviderCatalog } from '@unleashd/shared';
 import {
   type ChannelReference,
   activeReferenceQuery,
+  choiceLabel,
   completesPickedReference,
   composerReferenceMarks,
   decodeChannelDraft,
   encodeChannelDraft,
   encodeReferences,
   insertReference,
+  mentionChoice,
   mentionedBuddies,
+  pickerValue,
   rankReferences,
 } from '../src/components/buddies/channel-text';
 
@@ -155,4 +159,64 @@ test('a restored draft still encodes its mentions', () => {
   // and a blob that is not a draft is discarded whole.
   assert.equal(encodeChannelDraft({ text: '', picked: [lead] }), '');
   assert.deepEqual(decodeChannelDraft('{"text":7}'), { text: '', picked: [] });
+});
+
+const PROFILE: ConversationConfig = {
+  provider: 'codex',
+  model: { mode: 'explicit', modelId: 'gpt-5.6-sol' },
+  reasoning: { mode: 'default' },
+};
+const SEAT: ConversationConfig = {
+  provider: 'claude',
+  model: { mode: 'explicit', modelId: 'opus' },
+  reasoning: { mode: 'explicit', effort: 'high' },
+};
+const catalog = {
+  revision: 'test',
+  providers: [
+    {
+      id: 'claude',
+      displayName: 'Claude',
+      defaultModelId: 'opus',
+      models: [{ id: 'opus', displayName: 'Claude Opus' }],
+      supportsRequiredMcp: true,
+    },
+    {
+      id: 'codex',
+      displayName: 'Codex',
+      defaultModelId: 'gpt-5.6-sol',
+      models: [{ id: 'gpt-5.6-sol', displayName: 'GPT Sol' }],
+      supportsRequiredMcp: true,
+    },
+  ],
+} as ProviderCatalog;
+
+// An un-picked mention in a thread must show the Buddy's latest seat, not
+// the profile default. The profile is only the baseline when there is no seat.
+test('a mention chip labels the thread seat, and the profile only when there is none', () => {
+  const buddy: ChannelReference = {
+    kind: 'buddy',
+    id: 'b1',
+    label: 'Lead',
+    detail: '',
+    execution: { kind: 'profile', config: PROFILE },
+  };
+  if (buddy.kind !== 'buddy') return;
+  const none = mentionChoice(buddy, new Map(), []);
+  assert.equal(none.kind, 'profile');
+  assert.equal(choiceLabel(none, catalog), 'GPT Sol');
+  assert.deepEqual(pickerValue(none), PROFILE);
+
+  const seated = mentionChoice(buddy, new Map(), [{ buddyId: 'b1', config: SEAT }]);
+  assert.equal(seated.kind, 'seat');
+  assert.equal(choiceLabel(seated, catalog), 'Claude Opus');
+  assert.deepEqual(pickerValue(seated), SEAT);
+
+  const chosen = mentionChoice(
+    buddy,
+    new Map([['b1', PROFILE]]),
+    [{ buddyId: 'b1', config: SEAT }]
+  );
+  assert.equal(chosen.kind, 'chosen');
+  assert.equal(choiceLabel(chosen, catalog), 'GPT Sol');
 });

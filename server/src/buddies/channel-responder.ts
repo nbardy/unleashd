@@ -1,5 +1,13 @@
+import { randomUUID } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
-import type { ConversationConfig } from '@unleashd/shared';
+import {
+  type ConversationConfig,
+  RETRY_PROVIDER_EVIDENCE_PREFIX,
+  RETRY_TRIGGER_EVIDENCE_PREFIX,
+  evidenceField,
+  isHarnessRetryFailure,
+  isOutOfTokensFailure,
+} from '@unleashd/shared';
 import { awaitTurn } from '../conversations/await-turn';
 import {
   buddyExecutionPreferences,
@@ -27,6 +35,7 @@ import {
   readableChannelText,
   transcriptLine,
 } from './channel-text';
+import { assertBuddyProviderSupportsMcp } from './provider-capability';
 import type {
   BuddiesStorePort,
   BuddyListAuthor,
@@ -299,11 +308,15 @@ function buildPrompt(input: {
     `Reply to the latest message, from ${authorLabel(input.trigger.author, input.store)}:`,
     readableChannelText(input.trigger.body),
     '',
-    'Your final answer to this turn is posted into the thread as your reply, verbatim, as markdown. ' +
-      'Write it for the channel: direct and concise. Embed an image or video with ' +
-      '![alt](/absolute/path) (the file is copied into the channel) and reference a Task with ' +
-      '[title](task:<projectId>). Do not also call post for this reply. If the request needs ' +
-      'real work, do it or hand it off with send/update_project, then say what you did.',
+    'Nobody reads your text output. It is a private scratchpad; use it to think. ' +
+      'People only see what you post in this thread. Post with ' +
+      `post({ listId: "${input.list.id}", threadId: "${input.trigger.threadRootId ?? input.trigger.id}", purpose: "reply", body }). ` +
+      'You may post more than once — a short progress note, then the result. Write those posts ' +
+      'clearly. Embed an image or video with ![alt](/absolute/path) (the file is copied into the ' +
+      'channel) and reference a Task with [title](task:<projectId>). Put anything long in a ' +
+      'markdown file or a Task and link it from the post. If this turn ends without a post, the ' +
+      'thread gets a failure notice, not your scratchpad. If the request needs real work, do it ' +
+      'or hand it off with send/update_project, then post what you did.',
   ].join('\n');
 }
 
@@ -359,6 +372,32 @@ function wholeThread(store: BuddiesStorePort, root: BuddyMailingListPost): Buddy
     if (page.length < THREAD_PAGE) return posts;
     anchor = page[page.length - 1].id;
   }
+}
+
+function postIdsInThread(store: BuddiesStorePort, threadRootId: string): Set<string> {
+  const root = store.getPost(threadRootId);
+  if (!root) return new Set();
+  return new Set(wholeThread(store, root).map((post) => post.id));
+}
+
+// A post this Buddy wrote into the thread during the turn. That is the reply.
+// The scratchpad is not. reply_failed is the notice written when nothing was
+// posted, so it does not count as one.
+function postedDuringTurn(
+  store: BuddiesStorePort,
+  threadRootId: string,
+  buddyId: string,
+  before: ReadonlySet<string>
+): boolean {
+  const root = store.getPost(threadRootId);
+  if (!root) return false;
+  return wholeThread(store, root).some(
+    (post) =>
+      !before.has(post.id) &&
+      post.author.kind === 'buddy' &&
+      post.author.buddyId === buddyId &&
+      post.purpose !== 'reply_failed'
+  );
 }
 
 function trailingBuddyPosts(thread: BuddyMailingListPost[]): number {
@@ -550,27 +589,112 @@ export function createChannelResponder(ports: ChannelResponderPorts) {
     return seatFor({ kind: 'keep' }, seats, profileConfig(store, buddyId)).config;
   }
 
+  // Latest seat per Buddy who has spoken or been @mentioned in the thread.
+  // A Buddy with no seat yet is omitted; the client then shows the profile
+  // default, which is also what the first reply runs on.
+  async function threadSeats(threadRootId: string) {
+    const store = await ports.getStore();
+    const root = store.getPost(threadRootId);
+    if (!root || root.threadRootId !== null) return [];
+    const buddyIds = new Set<string>();
+    for (const post of wholeThread(store, root)) {
+      for (const buddyId of buddyAuthorIds(post.author)) buddyIds.add(buddyId);
+      for (const buddyId of dispatchedMentions(post)) buddyIds.add(buddyId);
+    }
+    const seats = [];
+    for (const buddyId of buddyIds) {
+      const current = (await currentSeats(threadRootId, buddyId)).current;
+      if (current) seats.push({ buddyId, config: current.config });
+    }
+    return seats;
+  }
+
+  function seatProvider(conversation: ConversationRuntime): string | null {
+    const config = (conversation as unknown as { config?: ConversationConfig }).config;
+    if (config?.provider) return config.provider;
+    return typeof conversation.provider === 'string' ? conversation.provider : null;
+  }
+
+  // A failure written before retries were stamped has no trigger id. The post
+  // it was answering is the newest earlier post that is not itself one of this
+  // Buddy's failure notices.
+  function triggerForFailure(
+    store: BuddiesStorePort,
+    post: BuddyMailingListPost
+  ): BuddyMailingListPost | null {
+    const stamped = evidenceField(post.evidence, RETRY_TRIGGER_EVIDENCE_PREFIX);
+    if (stamped) return store.getPost(stamped);
+    const rootId = post.threadRootId;
+    if (!rootId) return null;
+    const root = store.getPost(rootId);
+    if (!root) return null;
+    const thread = wholeThread(store, root);
+    const index = thread.findIndex((entry) => entry.id === post.id);
+    const buddyId = post.author.kind === 'buddy' ? post.author.buddyId : null;
+    for (let cursor = index - 1; cursor >= 0; cursor -= 1) {
+      const candidate = thread[cursor];
+      if (
+        buddyId &&
+        candidate.purpose === 'reply_failed' &&
+        candidate.author.kind === 'buddy' &&
+        candidate.author.buddyId === buddyId
+      ) {
+        continue;
+      }
+      return candidate;
+    }
+    return null;
+  }
+
+  async function failedProvider(
+    post: BuddyMailingListPost,
+    threadRootId: string,
+    buddyId: string
+  ): Promise<string | null> {
+    const stamped = evidenceField(post.evidence, RETRY_PROVIDER_EVIDENCE_PREFIX);
+    if (stamped) return stamped;
+    if (post.senderConversationId) {
+      const slot = await ports.conversations.slot(post.senderConversationId);
+      if (slot.kind === 'live') return slot.config.provider;
+    }
+    return (await seatConfig(threadRootId, buddyId)).provider;
+  }
+
   async function postReply(input: {
     list: BuddyMailingList;
     trigger: BuddyMailingListPost;
     threadRootId: string;
     buddyId: string;
     conversationId: string | null;
+    provider: string | null;
+    attemptKey?: string;
     outcome: { kind: 'answered'; text: string } | { kind: 'failed'; reason: string };
   }): Promise<void> {
     const store = await ports.getStore();
+    const evidence = [`${RETRY_TRIGGER_EVIDENCE_PREFIX}${input.trigger.id}`];
+    if (input.provider) evidence.push(`${RETRY_PROVIDER_EVIDENCE_PREFIX}${input.provider}`);
     const base = {
       list: input.list.id,
       author: { kind: 'buddy', buddyId: input.buddyId } as const,
-      key: `thread-reply:${input.trigger.id}:${input.buddyId}`,
-      evidence: [],
+      key: input.attemptKey ?? `thread-reply:${input.trigger.id}:${input.buddyId}`,
+      evidence,
       threadRoot: input.threadRootId,
       conversationId: input.conversationId,
       runId: null,
     };
     switch (input.outcome.kind) {
       case 'answered': {
-        const media = canonicalizePostMedia(input.outcome.text.trim() || '(no reply text)', {
+        const text = input.outcome.text.trim();
+        if (!text) {
+          store.createPost({
+            ...base,
+            purpose: 'reply_failed',
+            body: 'Couldn’t reply: the turn ended without a channel post',
+          });
+          ports.channelChanged(input.list.id);
+          return;
+        }
+        const media = canonicalizePostMedia(text, {
           uploadsRoot: ports.uploadsRoot(),
           listId: input.list.id,
         });
@@ -606,13 +730,16 @@ export function createChannelResponder(ports: ChannelResponderPorts) {
     trigger: BuddyMailingListPost;
     threadRootId: string;
     buddyId: string;
+    attemptKey?: string;
   };
 
   // Every failure — seat, turn — becomes a visible reply_failed post.
   async function runReply(input: Reply): Promise<void> {
     const store = await ports.getStore();
+    const before = postIdsInThread(store, input.threadRootId);
     let conversationId: string | null = null;
-    let outcome: { kind: 'answered'; text: string } | { kind: 'failed'; reason: string };
+    let provider: string | null = null;
+    let failure: string | null = null;
     try {
       const conversation = await openSeat(
         input.list,
@@ -621,12 +748,13 @@ export function createChannelResponder(ports: ChannelResponderPorts) {
         input.request
       );
       conversationId = conversation.id;
+      provider = seatProvider(conversation);
       await untilIdle(conversation);
       contextReadAt.set(pairKey(input.threadRootId, input.buddyId), new Date().toISOString());
       const prompt = seatPrompt(store, input, conversation.id);
       const turnInput = seatTurnInput(store, input.trigger.id);
       let untrack: () => void = () => undefined;
-      const text = await awaitTurn(
+      await awaitTurn(
         conversation,
         () => {
           conversation.sendSessionRelativeMessage(prompt, turnInput);
@@ -639,11 +767,25 @@ export function createChannelResponder(ports: ChannelResponderPorts) {
         'Buddy turn failed'
       ).finally(() => untrack());
       seenThrough.set(conversation.id, input.trigger.id);
-      outcome = { kind: 'answered', text };
     } catch (error) {
-      outcome = { kind: 'failed', reason: error instanceof Error ? error.message : String(error) };
+      failure = error instanceof Error ? error.message : String(error);
     }
-    await postReply({ ...input, conversationId, outcome });
+    const posted = postedDuringTurn(
+      await ports.getStore(),
+      input.threadRootId,
+      input.buddyId,
+      before
+    );
+    if (posted) return;
+    await postReply({
+      ...input,
+      conversationId,
+      provider,
+      outcome: {
+        kind: 'failed',
+        reason: failure ?? 'the turn ended without a channel post',
+      },
+    });
   }
 
   function reply(input: Reply): void {
@@ -707,8 +849,36 @@ export function createChannelResponder(ports: ChannelResponderPorts) {
     gate(next);
   }
 
+  // The post a no-mention gate should judge: the latest thread post at or
+  // after the one that queued it, skipping this Buddy's own posts and posts
+  // that already @mention it (those dispatch on their own). A burst, or a
+  // newer post landing while the question is out, is decided once, on that
+  // latest post — not on the older one the gate started with.
+  function followUpSubject(
+    store: BuddiesStorePort,
+    input: FollowUp
+  ): BuddyMailingListPost | null {
+    const root = store.getPost(input.root.id);
+    if (!root || root.threadRootId !== null) return null;
+    const thread = wholeThread(store, root);
+    const from = thread.findIndex((post) => post.id === input.trigger.id);
+    const tail = from === -1 ? thread : thread.slice(from);
+    for (let index = tail.length - 1; index >= 0; index--) {
+      const post = tail[index];
+      if (buddyAuthorIds(post.author).includes(input.buddyId)) continue;
+      if (dispatchedMentions(post).includes(input.buddyId)) continue;
+      // Another Buddy's gate-failure notice is not a new message to judge.
+      if (post.purpose === 'reply_failed' && post.id !== input.trigger.id) continue;
+      return post;
+    }
+    return null;
+  }
+
   async function followUp(input: FollowUp): Promise<void> {
+    const key = pairKey(input.root.id, input.buddyId);
     const store = await ports.getStore();
+    const trigger = followUpSubject(store, input);
+    if (!trigger) return;
     const profile = (buddyId: string) => {
       const buddy = store.getBuddy(buddyId);
       return { name: buddy?.name ?? buddyId, role: buddy?.role ?? '' };
@@ -719,18 +889,23 @@ export function createChannelResponder(ports: ChannelResponderPorts) {
         list: input.list,
         buddy: profile(input.buddyId),
         others: input.others.map(profile),
-        trigger: input.trigger,
-        context: threadContext(store, input.root.id, input.trigger),
+        trigger,
+        context: threadContext(store, input.root.id, trigger),
         store,
       }),
     });
+    const current = followUpSubject(await ports.getStore(), { ...input, trigger });
+    if (!current || current.id !== trigger.id) {
+      if (current) deferred.set(key, { ...input, trigger: current });
+      return;
+    }
     switch (verdict.kind) {
       case 'respond':
         return reply({
           list: input.list,
           cause: { kind: 'follow_up' },
           request: { kind: 'keep' },
-          trigger: input.trigger,
+          trigger,
           threadRootId: input.root.id,
           buddyId: input.buddyId,
         });
@@ -747,7 +922,7 @@ export function createChannelResponder(ports: ChannelResponderPorts) {
         logger.warn(
           `[channel-responder] reply gate failed for ${input.buddyId} on post ${input.trigger.id}: ${verdict.reason}`
         );
-        return gateFailedNotice(input, verdict.reason);
+        return gateFailedNotice({ ...input, trigger }, verdict.reason);
     }
   }
 
@@ -766,15 +941,18 @@ export function createChannelResponder(ports: ChannelResponderPorts) {
     reason: string
   ): Promise<void> {
     switch (input.trigger.author.kind) {
-      case 'owner':
+      case 'owner': {
+        const config = await seatConfig(input.root.id, input.buddyId);
         return postReply({
           list: input.list,
           trigger: input.trigger,
           threadRootId: input.root.id,
           buddyId: input.buddyId,
           conversationId: null,
+          provider: config.provider,
           outcome: { kind: 'failed', reason: `could not decide whether to reply (${reason})` },
         });
+      }
       case 'buddy':
         return;
     }
@@ -807,6 +985,53 @@ export function createChannelResponder(ports: ChannelResponderPorts) {
         });
         return { buddyId, status: 'started' };
       });
+    },
+
+    /**
+     * Rerun a reply whose harness failed (out of tokens, or a provider error
+     * such as Codex rejecting the model) on a new seat when the chosen harness
+     * differs. A started session cannot change provider, so the same harness
+     * is refused.
+     */
+    async retryOutOfTokens(
+      list: BuddyMailingList,
+      post: BuddyMailingListPost,
+      config: ConversationConfig
+    ): Promise<MentionDispatch> {
+      if (post.listId !== list.id) throw new Error('Post is not in this channel');
+      if (post.purpose !== 'reply_failed' || post.author.kind !== 'buddy')
+        throw new Error('Only a failed Buddy reply can be retried');
+      if (!isHarnessRetryFailure(post.body))
+        throw new Error(
+          'Only an out-of-tokens or provider-error failure can be retried on another harness'
+        );
+      assertBuddyProviderSupportsMcp(config.provider);
+      const buddyId = post.author.buddyId;
+      const store = await ports.getStore();
+      const admitted = eligibility(store, buddyId, list.workspaceId);
+      if (admitted.kind === 'rejected')
+        return { buddyId, status: 'rejected', reason: admitted.reason };
+      const threadRootId = post.threadRootId ?? post.id;
+      const current = await failedProvider(post, threadRootId, buddyId);
+      if (current && config.provider === current)
+        throw new Error(
+          `Pick a different harness. ${current} is the one that ${
+            isOutOfTokensFailure(post.body) ? 'ran out of tokens' : 'failed'
+          }.`
+        );
+      const trigger = triggerForFailure(store, post);
+      if (!trigger) throw new Error('The message this reply was answering is gone');
+      const mentioned = mentionedBuddyIds(trigger.body).includes(buddyId);
+      reply({
+        list,
+        cause: mentioned ? { kind: 'mention' } : { kind: 'follow_up' },
+        request: { kind: 'chosen', config },
+        trigger,
+        threadRootId,
+        buddyId,
+        attemptKey: `thread-reply:${trigger.id}:${buddyId}:retry:${randomUUID()}`,
+      });
+      return { buddyId, status: 'started' };
     },
 
     /**
@@ -847,6 +1072,9 @@ export function createChannelResponder(ports: ChannelResponderPorts) {
         });
       }
     },
+
+    /** Latest harness/model/reasoning per Buddy already in this thread. */
+    threadSeats,
 
     /** Buddies currently composing a reply in this list, for "X is replying…". */
     responding(listId: string): ChannelResponse[] {

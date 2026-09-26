@@ -271,12 +271,46 @@
   min-height: 0;
 }
 
-/* A DM open inside the channels view: the ordinary chat view fills the pane. */
+/* Buddy Builder still fills the pane with the conversation view. */
 .channel-browser-dm {
   display: flex;
   flex: 1;
   min-width: 0;
   min-height: 0;
+}
+
+.channel-dm-new {
+  flex: none;
+  padding: 4px 10px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.channel-dm-new:hover {
+  background: color-mix(in srgb, var(--text-emphasis) 7%, transparent);
+  color: var(--text-bright);
+}
+
+.channel-dm-new:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.channel-dm-empty {
+  margin: 24px;
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.channel-browser-dm-divider {
+  padding: 0 24px;
+  list-style: none;
 }
 
 .channel-browser-pane {
@@ -607,6 +641,11 @@ a.channel-browser-instance:hover {
   min-width: 0;
 }
 
+.channel-browser-buddy-creating-label {
+  font-style: italic;
+  color: var(--text-muted);
+}
+
 .channel-browser-buddy[data-failed] .channel-browser-channel-name {
   color: var(--theme-warning);
 }
@@ -826,6 +865,7 @@ a.channel-browser-buddy-done {
   color: var(--text-muted);
   font: inherit;
   font-size: 13px;
+  text-decoration: none;
   cursor: pointer;
 }
 

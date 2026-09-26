@@ -7,7 +7,7 @@ import type { BuddyMailingListPost } from '@unleashd/shared';
  * ?channel=&thread=&post= (mobile parses it in mobile/channels/channel-route.ts)
  * — so one link opens the same place on desktop and phone.
  *
- *   D = Channel ⊕ Thread ⊕ Reply
+ *   D = Channel ⊕ Thread ⊕ Reply ⊕ DM
  *
  * A top-level message IS its thread's root, so its link is the thread link.
  * That is deliberate: the thread pane fetches the root by id, so the link
@@ -18,7 +18,8 @@ import type { BuddyMailingListPost } from '@unleashd/shared';
 export type ChannelLink =
   | { kind: 'channel'; listId: string }
   | { kind: 'thread'; listId: string; rootId: string }
-  | { kind: 'reply'; listId: string; rootId: string; postId: string };
+  | { kind: 'reply'; listId: string; rootId: string; postId: string }
+  | { kind: 'dm'; conversationId: string };
 
 export function postLink(post: BuddyMailingListPost): ChannelLink {
   return post.threadRootId === null
@@ -34,6 +35,8 @@ function linkParams(link: ChannelLink): Record<string, string> {
       return { channel: link.listId, thread: link.rootId };
     case 'reply':
       return { channel: link.listId, thread: link.rootId, post: link.postId };
+    case 'dm':
+      return { dm: link.conversationId };
   }
 }
 

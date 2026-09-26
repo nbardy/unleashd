@@ -15,6 +15,7 @@ import {
   ConfigRevisionConflictError,
   ConversationConfigStore,
 } from '../src/conversations/config-store';
+import { creationFingerprint } from '../src/conversations/creation-service';
 import { migrateLegacyConversationConfig } from '../src/conversations/legacy-config-migration';
 
 const CONVERSATION_ID = '550e8400-e29b-41d4-a716-446655440000';
@@ -250,6 +251,57 @@ test('Fable session hydration recovers reported model names and preserves saved 
     assert.equal(existing.migrated, false);
     assert.deepEqual(existing.state.config, savedConfig);
     assert.deepEqual((await store.getByConversationId(FORK_ID))?.config, savedConfig);
+  });
+});
+
+test('a config update stays replayable, so a thread seat reopens on the new settings', async () => {
+  await withService(async (service) => {
+    const buddyContext = { buddyId: 'buddy_1', workspaceId: 'project_1' };
+    const fingerprintFor = (config: ConversationConfig) =>
+      creationFingerprint({
+        workingDirectory: '/tmp/project',
+        config,
+        buddyContext,
+      });
+    const created = await service.createOrReplay({
+      conversationId: CONVERSATION_ID,
+      workingDirectory: '/tmp/project',
+      config: DEFAULT_CONFIG,
+      creation: {
+        commandId: 'channel-thread-seat',
+        fingerprint: fingerprintFor(DEFAULT_CONFIG),
+        buddyContext,
+      },
+    });
+    const nextConfig: ConversationConfig = {
+      ...DEFAULT_CONFIG,
+      reasoning: { mode: 'explicit', effort: 'low' },
+    };
+    const updated = await service.update(
+      created.state,
+      { isRunning: false, queueDepth: 0, hasStartedSession: true },
+      {
+        conversationId: CONVERSATION_ID,
+        commandId: 'set-reasoning',
+        expectedRevision: 0,
+        patch: { kind: 'set_reasoning', reasoning: nextConfig.reasoning },
+      }
+    );
+    assert.equal(updated.ok, true);
+    if (!updated.ok) return;
+
+    const replayed = await service.createOrReplay({
+      conversationId: CONVERSATION_ID,
+      workingDirectory: '/tmp/project',
+      config: nextConfig,
+      creation: {
+        commandId: 'channel-thread-seat',
+        fingerprint: fingerprintFor(nextConfig),
+        buddyContext,
+      },
+    });
+    assert.equal(replayed.replayed, true);
+    assert.deepEqual(replayed.state.config.reasoning, { mode: 'explicit', effort: 'low' });
   });
 });
 

@@ -73,9 +73,10 @@ test('a Task ref is an inline chip in a sentence and a card on its own line', ()
   const inline = render(`I filed that as ${ref}, marked ready.`);
   assert.match(
     inline,
-    /^<div class="channel-markdown"><p>I filed that as <a[^>]*class="channel-task-chip"/
+    /^<div class="channel-markdown"><p>I filed that as <button[^>]*class="channel-task-chip"/
   );
-  assert.match(inline, /<\/a>, marked ready\.<\/p>/);
+  assert.match(inline, /<\/button>, marked ready\.<\/p>/);
+  assert.doesNotMatch(inline, /href="\/buddies\//);
   assert.doesNotMatch(inline, /channel-task-block/);
 
   for (const body of [ref, `- ${ref}\n- ${ref}`]) {

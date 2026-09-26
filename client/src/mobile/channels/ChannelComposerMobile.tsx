@@ -1,4 +1,4 @@
-import { type ComponentProps, useRef, useState } from 'react';
+import { type ComponentProps, type ReactNode, useRef, useState } from 'react';
 import { ChannelComposer } from '../../components/buddies/ChannelComposer';
 import { FullscreenComposer } from '../components/FullscreenComposer';
 
@@ -14,10 +14,13 @@ import { FullscreenComposer } from '../components/FullscreenComposer';
 // relatedTarget; collapsing then would move the button before its click
 // lands. Pointer intent keeps the frame up until the click, then any click
 // that leaves the field unfocused ends editing.
-export function ChannelComposerMobile({
+export function MobileChannelComposeFrame({
   title,
-  ...composer
-}: { title: string } & ComponentProps<typeof ChannelComposer>) {
+  children,
+}: {
+  title: string;
+  children: ReactNode;
+}) {
   const [editing, setEditing] = useState(false);
   const buttonPointer = useRef(false);
   const stopEditing = () => {
@@ -53,9 +56,20 @@ export function ChannelComposerMobile({
             Done
           </button>
         </div>
-        <ChannelComposer {...composer} />
+        {children}
       </div>
     </FullscreenComposer>
+  );
+}
+
+export function ChannelComposerMobile({
+  title,
+  ...composer
+}: { title: string } & ComponentProps<typeof ChannelComposer>) {
+  return (
+    <MobileChannelComposeFrame title={title}>
+      <ChannelComposer {...composer} />
+    </MobileChannelComposeFrame>
   );
 }
 

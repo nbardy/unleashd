@@ -232,6 +232,34 @@ test('resumed Buddy turns re-brief only when the memory generation changes', asy
   );
 });
 
+test('an early turn.complete does not drop the prompt answer that follows it', async () => {
+  async function* events() {
+    yield { type: 'turn.started' as const };
+    yield { type: 'turn.complete' as const, reason: 'success' as const };
+    yield { type: 'text.delta' as const, text: 'The real answer' };
+  }
+  const fixture = runtimeFixture({
+    executeTurn: (() => ({
+      child: { exitCode: 0 },
+      events: events(),
+      completed: Promise.resolve({
+        exitCode: 0,
+        signal: null,
+        sessionId: 'provider-session',
+        reason: 'success' as const,
+      }),
+      stop: () => undefined,
+    })) as NonNullable<ConversationRuntimeDependencies['executeTurn']>,
+  });
+  let output = '';
+  fixture.conversation.once('buddy-turn-complete', (text: string) => {
+    output = text;
+  });
+  fixture.conversation.sendMessage('The owner prompt');
+  await eventually(() => assert.equal(fixture.conversation.hasActiveProcess(), false));
+  assert.match(output, /The real answer/);
+});
+
 test('provider completion waits for the normalized event stream and session persistence', async () => {
   const persistence = deferred<void>();
   const completion = deferred<{

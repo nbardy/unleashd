@@ -84,9 +84,7 @@
                       "maxActiveRuns": 2
                     },
                     "relationships": [],
-                    "allowedOperations": [
-                      "send"
-                    ],
+                    "allowedOperations": ["send"],
                     "deniedOperations": {
                       "get_profile": {
                         "code": "owner_grant_required",
@@ -410,9 +408,7 @@
                 "status": "replied",
                 "outcome": "done",
                 "reply_body": "done",
-                "reply_evidence": [
-                  "artifact.txt"
-                ],
+                "reply_evidence": ["artifact.txt"],
                 "replied_by": "buddy_464f73d4-dec0-4740-95b4-92c7bf0429a2",
                 "wait_until": null,
                 "wait_status": "none",

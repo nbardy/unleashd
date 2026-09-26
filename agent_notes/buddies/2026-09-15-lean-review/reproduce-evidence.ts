@@ -29,46 +29,94 @@ async function main() {
   }
   const observations = [];
   try {
-    for (const [label, ownerId] of [['self', lead.id], ['supervised', worker.id]]) {
+    for (const [label, ownerId] of [
+      ['self', lead.id],
+      ['supervised', worker.id],
+    ]) {
       const created = await call('new_project', {
-        key: `fixture-${label}`, ownerId, title: `${label} Task`,
+        key: `fixture-${label}`,
+        ownerId,
+        title: `${label} Task`,
         definitionOfDone: 'Original criteria',
         todos: [{ title: 'Step', definitionOfDone: 'Original step criteria' }],
       });
-      const read = async () => (await call('get_current_work', {
-        projectId: created.id, includeClosed: true, view: 'full',
-      })).items[0];
+      const read = async () =>
+        (
+          await call('get_current_work', {
+            projectId: created.id,
+            includeClosed: true,
+            view: 'full',
+          })
+        ).items[0];
       let project = await read();
       await call('update_project', {
-        projectId: project.id, baseRevision: project.revision, key: `seed-${label}`,
+        projectId: project.id,
+        baseRevision: project.revision,
+        key: `seed-${label}`,
         evidence: ['saved-project-artifact'],
-        todoOperations: [{ operation: 'update', todoId: project.todos[0].id,
-          evidence: ['saved-step-artifact'] }],
+        todoOperations: [
+          { operation: 'update', todoId: project.todos[0].id, evidence: ['saved-step-artifact'] },
+        ],
       });
       project = await read();
-      const before = { project: project.completion_evidence, todo: project.todos[0].completion_evidence };
+      const before = {
+        project: project.completion_evidence,
+        todo: project.todos[0].completion_evidence,
+      };
       await call('update_project', {
-        projectId: project.id, baseRevision: project.revision, key: `title-${label}`,
+        projectId: project.id,
+        baseRevision: project.revision,
+        key: `title-${label}`,
         title: `${label} Task renamed`,
       });
       project = await read();
-      const titleOnly = { project: project.completion_evidence, todo: project.todos[0].completion_evidence };
+      const titleOnly = {
+        project: project.completion_evidence,
+        todo: project.todos[0].completion_evidence,
+      };
       assert.deepEqual(titleOnly, before, 'Title-only control preserves evidence');
       await call('update_project', {
-        projectId: project.id, baseRevision: project.revision, key: `criteria-${label}`,
+        projectId: project.id,
+        baseRevision: project.revision,
+        key: `criteria-${label}`,
         definitionOfDone: 'Clarified criteria',
-        todoOperations: [{ operation: 'update', todoId: project.todos[0].id,
-          definitionOfDone: 'Clarified step criteria' }],
+        todoOperations: [
+          {
+            operation: 'update',
+            todoId: project.todos[0].id,
+            definitionOfDone: 'Clarified step criteria',
+          },
+        ],
       });
       project = await read();
-      const after = { project: project.completion_evidence, todo: project.todos[0].completion_evidence };
-      observations.push({ label, before, titleOnly, after,
-        evidencePreserved: JSON.stringify(after) === JSON.stringify(before) });
+      const after = {
+        project: project.completion_evidence,
+        todo: project.todos[0].completion_evidence,
+      };
+      observations.push({
+        label,
+        before,
+        titleOnly,
+        after,
+        evidencePreserved: JSON.stringify(after) === JSON.stringify(before),
+      });
     }
-    console.log(JSON.stringify({ observedAt: new Date().toISOString(),
-      boundary: 'real native MCP over disposable BuddiesStore(:memory:)', observations }, null, 2));
-    assert.equal(observations.filter(x => !x.evidencePreserved).length, 2,
-      'The recorded defect reproduces for self and supervised edits');
+    console.log(
+      JSON.stringify(
+        {
+          observedAt: new Date().toISOString(),
+          boundary: 'real native MCP over disposable BuddiesStore(:memory:)',
+          observations,
+        },
+        null,
+        2
+      )
+    );
+    assert.equal(
+      observations.filter((x) => !x.evidencePreserved).length,
+      2,
+      'The recorded defect reproduces for self and supervised edits'
+    );
   } finally {
     await client.close();
     await server.close();
@@ -76,4 +124,7 @@ async function main() {
   }
 }
 
-main().catch(error => { console.error(error); process.exitCode = 1; });
+main().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});

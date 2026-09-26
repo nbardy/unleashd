@@ -10,7 +10,8 @@ import type { ConversationConfig, ConversationConfigState } from '@unleashd/shar
 import express from 'express';
 import { slotOf } from '../src/buddies/buddy-conversation-slots';
 import { WAKE_MESSAGE, createBuddyDirect } from '../src/buddies/buddy-direct';
-import { onChannelPost } from '../src/buddies/channel-post-feed';
+import { onChannelPost, announceChannelPost } from '../src/buddies/channel-post-feed';
+import { canonicalizePostMedia } from '../src/buddies/channel-media';
 import {
   type GateVerdict,
   createCliReplyGate,
@@ -124,6 +125,7 @@ async function harness() {
   const created: string[] = [];
   const deleted = new Set<string>();
   const channelChanges: string[] = [];
+  const seats = new Map<string, { root: string; buddyId: string }>();
   const slots = { full: false };
   const configService = new ConversationConfigService({
     store: new ConversationConfigStore({ appDataRoot: join(scratch, 'config') }),
@@ -166,6 +168,7 @@ async function harness() {
       .json({ error: error instanceof Error ? error.message : String(error) });
   registerBuddyRoutes(app, {
     getStore: async () => store,
+    threadSeats: (threadRootId) => responder.threadSeats(threadRootId),
     getScheduler: () => null,
     sendError,
     getNextAutomationRunAt: () => new Date().toISOString(),
@@ -239,8 +242,11 @@ async function harness() {
       return result.json as { post: BuddyMailingListPost; mentions: unknown[] };
     },
     /** The Buddy's seat conversation id in a thread (generation 0 unless given). */
-    seat: (root: string, buddyId: string, generation = 0) =>
-      threadConversationId(root, buddyId, generation),
+    seat: (root: string, buddyId: string, generation = 0) => {
+      const id = threadConversationId(root, buddyId, generation);
+      seats.set(id, { root, buddyId });
+      return id;
+    },
     /** The next turn sent to a conversation, claimed so the next call waits for the one after. */
     async nextTurn(conversationId: string) {
       const runtime = await until(() => runtimes.get(conversationId), `runtime ${conversationId}`);
@@ -250,7 +256,31 @@ async function harness() {
         runtime,
         prompt: prompt.content,
         ownerInput: prompt.ownerInput,
-        complete: (text: string) => runtime.emit('buddy-turn-complete', text),
+        complete: (text: string) => {
+          const seat = seats.get(conversationId);
+          const trimmed = text.trim();
+          if (seat && trimmed) {
+            const root = store.getPost(seat.root);
+            if (root) {
+              const media = canonicalizePostMedia(trimmed, {
+                uploadsRoot,
+                listId: root.listId,
+              });
+              const { post } = store.createPost({
+                list: root.listId,
+                author: { kind: 'buddy', buddyId: seat.buddyId },
+                key: `seat-post:${conversationId}:${index}`,
+                purpose: 'reply',
+                body: media.body,
+                evidence: [],
+                threadRoot: seat.root,
+                conversationId,
+              });
+              announceChannelPost(post);
+            }
+          }
+          runtime.emit('buddy-turn-complete', text);
+        },
         fail: (reason: string) => runtime.emit('buddy-turn-failed', reason),
       };
     },
@@ -306,6 +336,9 @@ test('owner @mention runs a turn and the answer lands in the thread with its med
     // Channel context and readable mentions reach the model.
     assert.match(first.prompt, /Shipped the settings page yesterday/);
     assert.match(first.prompt, /@Lead does this look right\?/);
+    assert.match(first.prompt, /private scratchpad/);
+    assert.match(first.prompt, /post\(\{ listId:/);
+    assert.doesNotMatch(first.prompt, /Do not also call post/);
     const responding = await h.api(`/api/buddies/lists/${list.id}/responding`);
     assert.deepEqual(
       responding.json.map((row: { buddyId: string; threadRootId: string }) => [
@@ -357,6 +390,23 @@ test('owner @mention runs a turn and the answer lands in the thread with its med
     assert.equal(failed.senderConversationId, seat);
     assert.deepEqual(h.created, [seat]);
 
+    // A turn that never posts is a visible failure, not a blank "(no reply text)".
+    await h.post(list.id, {
+      key: 'silent',
+      body: `[@Lead](buddy:${h.lead.id}) one more`,
+      threadRootId: root.id,
+    });
+    (await h.nextTurn(seat)).complete('   ');
+    const silent = await until(
+      () => h.replies(root.id).find((post) => post.body.includes('without a channel post')),
+      'missing-post notice'
+    );
+    assert.equal(silent.purpose, 'reply_failed');
+    assert.equal(
+      h.replies(root.id).some((post) => post.body.includes('no reply text')),
+      false
+    );
+
     // Buddy-authored mentions never start turns.
     const buddyMention = await h.post(list.id, {
       author: { kind: 'buddy', buddyId: h.lead.id },
@@ -403,6 +453,11 @@ test('a picked harness sticks for the Buddy in the thread; a different pick open
     const seat = h.seat(root.id, h.lead.id, 0);
     const first = await h.nextTurn(seat);
     assert.deepEqual(first.runtime.config, CLAUDE);
+    // The thread read reports that seat, so the mention chip starts there
+    // instead of the profile default (Codex for this Buddy).
+    const thread = await h.api(`/api/buddies/lists/${list.id}/threads/${root.id}?limit=50`);
+    assert.equal(thread.status, 200);
+    assert.deepEqual(thread.json.seats, [{ buddyId: h.lead.id, config: CLAUDE }]);
 
     // An unpicked mention while that turn runs resumes the Claude seat, but
     // waits: turn events carry no identity, so a second prompt sent now would
@@ -479,6 +534,53 @@ test('DM reopens one conversation, wake queues the catch-up there, and a deleted
     assert.equal(h.created.length, 2);
 
     const outsider = await h.api(`/api/buddies/${h.outsider.id}/wake`, workspace);
+    assert.equal(outsider.status, 400);
+    assert.match(outsider.json.error, /outside this workspace/);
+  } finally {
+    h.close();
+  }
+});
+
+// New chat keeps the earlier DM and opens the next generation on the same
+// harness, with no handoff prompt. The picker can still change provider until
+// the first message, because the new session has not started.
+test('DM new chat opens the next generation and leaves the previous one live', async () => {
+  const h = await harness();
+  try {
+    const workspace = { workspaceId: h.workspace.id };
+    const first = await h.api(`/api/buddies/${h.lead.id}/direct`, workspace);
+    assert.equal(first.status, 200, JSON.stringify(first.json));
+    const started = h.runtimes.get(first.json.conversationId);
+    assert.ok(started);
+    started.prompts.push({ content: 'prior turn', ownerInput: {} });
+
+    const split = await h.api(`/api/buddies/${h.lead.id}/direct/new-chat`, workspace);
+    assert.equal(split.status, 200, JSON.stringify(split.json));
+    assert.notEqual(split.json.conversationId, first.json.conversationId);
+    const fresh = h.runtimes.get(split.json.conversationId);
+    assert.ok(fresh);
+    assert.deepEqual(fresh.config, started.config);
+    assert.equal(fresh.prompts.length, 0);
+    assert.equal(fresh.enqueued.length, 0);
+
+    const reopened = await h.api(`/api/buddies/${h.lead.id}/direct`, workspace);
+    assert.equal(reopened.json.conversationId, split.json.conversationId);
+
+    const woken = await h.api(`/api/buddies/${h.lead.id}/wake`, workspace);
+    assert.equal(woken.json.conversationId, split.json.conversationId);
+
+    const chains = await h.api('/api/buddies/direct/chains');
+    assert.equal(chains.status, 200, JSON.stringify(chains.json));
+    const chain = chains.json.chains.find(
+      (item: { buddyId: string }) => item.buddyId === h.lead.id
+    );
+    assert.equal(chain.currentId, split.json.conversationId);
+    assert.deepEqual(
+      chain.generations.map((item: { conversationId: string }) => item.conversationId),
+      [first.json.conversationId, split.json.conversationId]
+    );
+
+    const outsider = await h.api(`/api/buddies/${h.outsider.id}/direct/new-chat`, workspace);
     assert.equal(outsider.status, 400);
     assert.match(outsider.json.error, /outside this workspace/);
   } finally {
@@ -841,6 +943,49 @@ test('an owner follow-up sent while the Buddy is still replying is asked once th
   }
 });
 
+// A no-mention gate that is still open when a newer post lands must decide
+// about that latest post. Acting on the older one posts a reply or a failure
+// notice for a message the thread has already moved past.
+test('a follow-up gate still open when a newer post arrives decides the latest one', async () => {
+  const h = await harness();
+  try {
+    const list = h.newList('latest');
+    const { post: root } = await h.post(list.id, {
+      key: 'root',
+      author: { kind: 'buddy', buddyId: h.lead.id },
+      body: 'I own the backend.',
+    });
+    await h.post(list.id, {
+      key: 'first',
+      body: 'Is the login page ready?',
+      threadRootId: root.id,
+    });
+    const stale = await h.gate(0);
+    assert.match(stale.prompt, /New message, from Owner:\nIs the login page ready\?/);
+    await h.post(list.id, {
+      key: 'second',
+      body: 'Actually, is the signup page ready?',
+      threadRootId: root.id,
+    });
+    stale.answer({ kind: 'respond' });
+    const asked = await h.gate(1);
+    assert.match(asked.prompt, /New message, from Owner:\nActually, is the signup page ready\?/);
+    assert.doesNotMatch(asked.prompt, /New message, from Owner:\nIs the login page ready\?/);
+    asked.answer({ kind: 'respond' });
+    const turn = await h.nextTurn(h.seat(root.id, h.lead.id));
+    assert.match(
+      turn.prompt,
+      /Reply to the latest message, from Owner:\nActually, is the signup page ready\?/
+    );
+    turn.complete('Signup is Friday.');
+    await until(() => h.replies(root.id).at(-1)!.body === 'Signup is Friday.', 'reply to the latest');
+    await settle();
+    assert.equal(h.gates.length, 2, 'the older post is not asked again');
+  } finally {
+    h.close();
+  }
+});
+
 // Follow-ups use the Buddy's seat, so the owner's pick on an earlier mention
 // carries over — gate question included (a gate on the profile harness would
 // fail whenever that harness is down) — while a Buddy never picked for stays
@@ -884,6 +1029,34 @@ test('a follow-up keeps the harness the owner picked for that Buddy earlier in t
   } finally {
     h.close();
   }
+});
+
+// The gate's cwd is a scratch directory Cursor has never trusted. A seat turn
+// in the repo does not hit that check, so a mention can succeed while the
+// no-mention gate exits before any text.
+test('the cursor reply gate trusts its scratch directory', async () => {
+  let request: { extraArgs?: string[]; cwd?: string } | undefined;
+  const gate = createCliReplyGate({
+    resolveExecution: async () => ({ provider: 'cursor', modelId: 'grok-4.7-low' }),
+    execute: ((input: { extraArgs?: string[]; cwd?: string }) => {
+      request = input;
+      return {
+        events: (async function* () {
+          yield { type: 'text.delta', text: '<no>' };
+        })(),
+        completed: Promise.resolve({ reason: 'success', sessionId: 'gate-session' }),
+        stop: () => undefined,
+      };
+    }) as never,
+  });
+  const verdict = await gate({
+    config: configFromProviderPreferences({ provider: 'cursor' }),
+    prompt: 'p',
+  });
+  assert.deepEqual(verdict, { kind: 'pass' });
+  assert.ok(request?.extraArgs?.includes('--trust'));
+  assert.equal(request?.extraArgs?.[request.extraArgs.indexOf('--mode') + 1], 'ask');
+  assert.match(request?.cwd ?? '', /unleashd-reply-gate-/);
 });
 
 // "Let it do a few tokens": the gate is a strict parse, and a model that keeps
@@ -988,6 +1161,139 @@ test('a reply waiting for a run slot shows as queued, then replying, then lands'
     turn.complete('Here now.');
     await until(() => h.replies(root.id).length === 1, 'reply post');
     await until(async () => (await states()).length === 0, 'responding entry cleared');
+  } finally {
+    h.close();
+  }
+});
+
+test('an out-of-tokens channel failure retries on a new seat; other failures do not', async () => {
+  const h = await harness();
+  try {
+    const list = h.newList('retry-harness');
+    const { post: root } = await h.post(list.id, {
+      key: 'ask',
+      body: `[@Lead](buddy:${h.lead.id}) review the login`,
+    });
+    const seat = h.seat(root.id, h.lead.id, 0);
+    (await h.nextTurn(seat)).fail('Provider ran out of tokens');
+    const failed = await until(
+      () => h.replies(root.id).find((post) => post.purpose === 'reply_failed'),
+      'out-of-tokens notice'
+    );
+    assert.match(failed.body, /ran out of tokens/);
+    assert.ok(failed.evidence.some((item) => item === `trigger:${root.id}`));
+    assert.ok(failed.evidence.some((item) => item === 'provider:codex'));
+
+    const same = await h.api(`/api/buddies/lists/${list.id}/posts/${failed.id}/retry`, {
+      config: CODEX,
+    });
+    assert.equal(same.status, 400);
+    assert.match(same.json.error, /different harness/);
+
+    const switched = await h.api(`/api/buddies/lists/${list.id}/posts/${failed.id}/retry`, {
+      config: CLAUDE,
+    });
+    assert.equal(switched.status, 202, JSON.stringify(switched.json));
+    const retrySeat = h.seat(root.id, h.lead.id, 1);
+    const retried = await h.nextTurn(retrySeat);
+    assert.deepEqual(retried.runtime.config, CLAUDE);
+    assert.match(retried.prompt, /review the login/);
+    retried.complete('Reviewed on Claude.');
+    await until(
+      () => h.replies(root.id).some((post) => post.body === 'Reviewed on Claude.'),
+      'retried reply'
+    );
+
+    await h.post(list.id, {
+      key: 'other',
+      body: `[@Lead](buddy:${h.lead.id}) and the header?`,
+      threadRootId: root.id,
+    });
+    (await h.nextTurn(retrySeat)).fail('Buddy provider is unavailable: claude');
+    const other = await until(
+      () => h.replies(root.id).find((post) => post.body.includes('unavailable')),
+      'other failure'
+    );
+    const refused = await h.api(`/api/buddies/lists/${list.id}/posts/${other.id}/retry`, {
+      config: CODEX,
+    });
+    assert.equal(refused.status, 400);
+    assert.match(refused.json.error, /out-of-tokens or provider-error/);
+
+    const codeFailed = h.raw.createPost({
+      list: list.id,
+      author: { kind: 'buddy', buddyId: h.lead.id },
+      key: 'code-fail',
+      purpose: 'reply_failed',
+      body: 'Couldn’t reply: Provider completed the turn with reason: error',
+      evidence: [`trigger:${root.id}`, 'provider:codex'],
+      threadRoot: root.id,
+    }).post;
+    const codeRetry = await h.api(`/api/buddies/lists/${list.id}/posts/${codeFailed.id}/retry`, {
+      config: CLAUDE,
+    });
+    assert.equal(codeRetry.status, 202, JSON.stringify(codeRetry.json));
+    const codeTurn = await h.nextTurn(retrySeat);
+    assert.deepEqual(codeTurn.runtime.config, CLAUDE);
+    codeTurn.complete('Retried after the provider error.');
+
+    // A notice written before the trigger was stamped still finds the post it answered.
+    const plainList = h.newList('unstamped');
+    const { post: plain } = await h.post(plainList.id, {
+      key: 'plain',
+      body: 'please retry this',
+    });
+    const bare = h.raw.createPost({
+      list: plainList.id,
+      author: { kind: 'buddy', buddyId: h.lead.id },
+      key: 'bare-fail',
+      purpose: 'reply_failed',
+      body: 'Couldn’t reply: out_of_tokens',
+      evidence: [],
+      threadRoot: plain.id,
+    }).post;
+    const fromBare = await h.api(`/api/buddies/lists/${plainList.id}/posts/${bare.id}/retry`, {
+      config: CLAUDE,
+    });
+    assert.equal(fromBare.status, 202, JSON.stringify(fromBare.json));
+    const bareTurn = await h.nextTurn(h.seat(plain.id, h.lead.id, 0));
+    assert.match(bareTurn.prompt, /please retry this/);
+    bareTurn.complete('Retried the unstamped notice.');
+    await until(
+      () => h.replies(plain.id).some((post) => post.body.includes('Retried the unstamped')),
+      'unstamped retry reply'
+    );
+    await settle();
+  } finally {
+    h.close();
+  }
+});
+
+test('an out-of-tokens DM retry opens the next chat on the chosen harness and resends', async () => {
+  const h = await harness();
+  try {
+    const workspace = { workspaceId: h.workspace.id };
+    const first = await h.api(`/api/buddies/${h.lead.id}/direct`, workspace);
+    assert.equal(first.status, 200, JSON.stringify(first.json));
+    const same = await h.api(`/api/buddies/${h.lead.id}/direct/new-chat`, {
+      ...workspace,
+      config: CODEX,
+      message: 'try again',
+    });
+    assert.equal(same.status, 400);
+    assert.match(same.json.error, /different harness/);
+
+    const next = await h.api(`/api/buddies/${h.lead.id}/direct/new-chat`, {
+      ...workspace,
+      config: CLAUDE,
+      message: 'try again',
+    });
+    assert.equal(next.status, 200, JSON.stringify(next.json));
+    const fresh = h.runtimes.get(next.json.conversationId);
+    assert.ok(fresh);
+    assert.deepEqual(fresh.config, CLAUDE);
+    assert.equal(fresh.enqueued[0]?.content, 'try again');
+    assert.equal(h.runtimes.has(first.json.conversationId), true);
   } finally {
     h.close();
   }

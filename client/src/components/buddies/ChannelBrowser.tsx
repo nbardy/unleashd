@@ -3,21 +3,28 @@ import {
   type BuddyOwnerPostResult,
   type OwnerListUnread,
   getBuddyContext,
+  isBuddyBuilderConversation,
 } from '@unleashd/shared';
 import { useAtomValue } from 'jotai';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams, useSearchParams } from 'react-router-dom';
-import { buddySidebarChannelsAtom } from '../../atoms/buddy-sidebar';
+import { buddyBuilderConversationsAtom, buddySidebarChannelsAtom } from '../../atoms/buddy-sidebar';
 import { availableConversationIdSetAtom, conversationAtomFamily } from '../../atoms/conversations';
 import { usePolledFetch } from '../../hooks/usePolledFetch';
 import { Chat } from '../Chat';
+import { ChannelDm } from './ChannelDm';
 import { BuddyRailRow } from './BuddyRailRow';
 import { BuddySigil } from './BuddySigil';
 import { ChannelAuthor, type OpenDm } from './ChannelAuthor';
 import { ChannelComposer } from './ChannelComposer';
 import { ChannelHistory, ChannelLoader } from './ChannelLoader';
 import { ChannelMarkdown, TypingDots } from './ChannelMarkdown';
+import { ConversationEye } from './ConversationEye';
 import { CopyLinkButton } from './CopyLinkButton';
+import { OutOfTokensChannelRetry } from './HarnessRetry';
+import { latestActiveBuddyBuilder } from './channel-buddy-builder';
+import { CreatingBuddyRailRow } from './CreatingBuddyRailRow';
+import { useChannelNewBuddy } from './buddy-direct-actions';
 import {
   type BuddyMailingListSummary,
   CHANNEL_BACKSTOP_MS,
@@ -219,6 +226,11 @@ function ReplyAction({ post, context }: { post: BuddyMailingListPost; context: R
 function MessageActions({ post, context }: { post: BuddyMailingListPost; context: RowContext }) {
   return (
     <div className="channel-browser-message-actions" role="toolbar" aria-label="Message actions">
+      <ConversationEye
+        className="channel-browser-message-action"
+        conversationId={post.senderConversationId}
+        available={context.availableConversationIds.has(post.senderConversationId ?? '')}
+      />
       <ReplyAction post={post} context={context} />
       <CopyLinkButton
         className="channel-browser-message-action"
@@ -260,6 +272,7 @@ function LeadRow({ post, context }: { post: BuddyMailingListPost; context: RowCo
           <PostMeta post={post} context={context} />
         </div>
         <PostBody post={post} context={context} />
+        <OutOfTokensChannelRetry post={post} />
         <ThreadSummary post={post} context={context} />
       </div>
       <MessageActions post={post} context={context} />
@@ -287,6 +300,7 @@ function ContinuationRow({ post, context }: { post: BuddyMailingListPost; contex
           <PostMeta post={post} context={context} />
         </span>
         <PostBody post={post} context={context} />
+        <OutOfTokensChannelRetry post={post} />
         <ThreadSummary post={post} context={context} />
       </div>
       <MessageActions post={post} context={context} />
@@ -419,6 +433,7 @@ function ThreadPane({
         threadRootId={rootId}
         placeholder={root ? `Reply to ${plainChannelText(root.body).slice(0, 40)}…` : 'Reply…'}
         references={references}
+        seats={thread.data?.seats}
         submit="enter"
         onPosted={() => {
           follow.pin();
@@ -616,16 +631,48 @@ function ChannelPane({
   );
 }
 
-// A DM inside the channels view: the ordinary chat, beside the rail, the way
-// Slack opens a DM. Mounted only once the client holds the conversation — the
-// DM may be created by the click that opened it, and Chat bounces to '/' when
-// it cannot find its conversation (AGENTS.md: availability-check every
-// "open this conversation" affordance).
-function DmPane({ conversationId, available }: { conversationId: string; available: boolean }) {
+// A DM inside the channels view, beside the rail. A Buddy DM uses the thread
+// transcript and composer. The Buddy Builder keeps the conversation page: that
+// thread is the hire flow, and Chat bounces to '/' until the client holds it.
+function DmPane({
+  conversationId,
+  available,
+  builder,
+  workspaceId,
+  buddyName,
+  buddyRole,
+  buddyNames,
+  tasks,
+  onConversation,
+}: {
+  conversationId: string;
+  available: boolean;
+  builder: boolean;
+  workspaceId: string;
+  buddyName: string;
+  buddyRole: string;
+  buddyNames: Readonly<Record<string, string>>;
+  tasks: ReadonlyMap<string, ChannelTask>;
+  onConversation(nextId: string): void;
+}) {
+  if (builder) {
+    return (
+      <section className="channel-browser-dm" aria-label="Direct message">
+        {available ? <Chat id={conversationId} /> : <ChannelLoader label="Opening DM…" />}
+      </section>
+    );
+  }
   return (
-    <section className="channel-browser-dm" aria-label="Direct message">
-      {available ? <Chat id={conversationId} /> : <ChannelLoader label="Opening DM…" />}
-    </section>
+    <ChannelDm
+      conversationId={conversationId}
+      workspaceId={workspaceId}
+      buddyName={buddyName}
+      buddyRole={buddyRole}
+      buddyNames={buddyNames}
+      tasks={tasks}
+      frame="desktop"
+      onConversation={onConversation}
+    />
   );
 }
 
@@ -829,6 +876,7 @@ export function ChannelBrowser({
     () => workspaceDirectory(workspaceName, members, tasks),
     [workspaceName, members, tasks]
   );
+  const creatingBuddy = latestActiveBuddyBuilder(useAtomValue(buddyBuilderConversationsAtom));
   const selected = data?.find((list) => list.id === params.get('channel')) ?? data?.[0] ?? null;
   const select = (next: { channel: string; task: string | null; thread: string | null }) =>
     setParams({
@@ -839,8 +887,13 @@ export function ChannelBrowser({
   // An open DM replaces the channel in the main pane; picking a channel closes it.
   const dm = params.get('dm');
   const openDm: OpenDm = (conversationId) => setParams({ dm: conversationId });
+  const newBuddy = useChannelNewBuddy(openDm);
   const dmConversation = useAtomValue(conversationAtomFamily(dm ?? ''));
   const dmBuddyId = getBuddyContext(dmConversation)?.buddyId;
+  const dmMember = activeMembers.find((member) => member.id === dmBuddyId);
+  const dmBuilder =
+    creatingBuddy?.id === dm ||
+    (dmConversation !== null && isBuddyBuilderConversation(dmConversation));
   return (
     <div className="channel-browser" aria-label="Channels">
       <nav className="channel-browser-rail">
@@ -900,27 +953,61 @@ export function ChannelBrowser({
               ))}
             </ul>
           )}
-          {activeMembers.length > 0 && (
-            <>
-              <h3 className="channel-browser-rail-section">Buddies</h3>
-              <ul className="channel-browser-buddies">
-                {activeMembers.map((member) => (
-                  <BuddyRailRow
-                    key={member.id}
-                    member={member}
-                    workspaceId={workspaceId}
-                    openDm={openDm}
-                    current={member.id === dmBuddyId}
-                  />
-                ))}
-              </ul>
-            </>
+          <div className="channel-browser-rail-section-row">
+            <h3 className="channel-browser-rail-section">Buddies</h3>
+            <button
+              type="button"
+              className="channel-browser-rail-add"
+              onClick={newBuddy.start}
+              disabled={newBuddy.pending}
+              title="New Buddy"
+              aria-label="New Buddy"
+            >
+              +
+            </button>
+          </div>
+          {newBuddy.error && (
+            <p className="channel-browser-rail-empty" role="alert">
+              {newBuddy.error}
+            </p>
+          )}
+          {activeMembers.length === 0 && !creatingBuddy ? (
+            <p className="channel-browser-rail-empty">No Buddies yet.</p>
+          ) : (
+            <ul className="channel-browser-buddies">
+              {creatingBuddy && (
+                <CreatingBuddyRailRow
+                  conversationId={creatingBuddy.id}
+                  openDm={openDm}
+                  current={dm === creatingBuddy.id}
+                />
+              )}
+              {activeMembers.map((member) => (
+                <BuddyRailRow
+                  key={member.id}
+                  member={member}
+                  workspaceId={workspaceId}
+                  openDm={openDm}
+                  current={member.id === dmBuddyId}
+                />
+              ))}
+            </ul>
           )}
         </div>
       </nav>
       <main className="channel-browser-main">
         {dm ? (
-          <DmPane conversationId={dm} available={availableConversationIds.has(dm)} />
+          <DmPane
+            conversationId={dm}
+            available={availableConversationIds.has(dm)}
+            builder={dmBuilder}
+            workspaceId={workspaceId}
+            buddyName={dmMember?.name ?? 'Buddy'}
+            buddyRole={dmMember?.role ?? 'Direct message'}
+            buddyNames={buddyNames}
+            tasks={taskById}
+            onConversation={openDm}
+          />
         ) : selected ? (
           <ChannelPane
             key={selected.id}
