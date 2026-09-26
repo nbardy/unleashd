@@ -192,7 +192,7 @@ export function createChannels(ports: ChannelsPorts) {
     }
   }
 
-  async function prompt(input: Reply, context: string[], nameMap: Names): Promise<string> {
+  function prompt(input: Reply, context: string[], nameMap: Names): string {
     return [
       ...context,
       '',
@@ -211,60 +211,50 @@ export function createChannels(ports: ChannelsPorts) {
   // reached a fresh session, which then saw "Replies since then (0)" and no thread at all.
   async function seatPrompt(input: Reply, seatId: string): Promise<SessionRelativePrompt> {
     const nameMap = await names(input.channel.workspaceId);
-    const where = `#${input.channel.kind.type === 'public' ? input.channel.kind.name : input.channel.id} (channel ${input.channel.id})`;
-    if (input.trigger.rootId === undefined || input.trigger.rootId === null) {
+    const { channel, trigger } = input;
+    const where = `#${channel.kind.type === 'public' ? channel.kind.name : channel.id} (channel ${channel.id})`;
+    const lines = (posts: Post[]) => posts.map((p) => transcriptLine(p, nameMap));
+    const omitted = (count: number, what: string) =>
+      count > 0 ? [`… ${count} ${what} omitted …`] : [];
+    const compose = (subject: string, intro: string, context: string[]) =>
+      prompt(
+        input,
+        [`${headline(input.cause, subject)} in ${where}. ${intro}`, '', ...context],
+        nameMap
+      );
+    if (trigger.rootId === undefined || trigger.rootId === null) {
       const page = await core.listPosts(
         OWNER,
-        { kind: 'channel', channelId: input.channel.id },
+        { kind: 'channel', channelId: channel.id },
         null,
         CONTEXT_POSTS + 1
       );
-      const posts = page.posts
-        .filter((post) => post.id !== input.trigger.id)
-        .slice(0, CONTEXT_POSTS)
-        .reverse();
-      const text = await prompt(
-        input,
-        [
-          `${headline(input.cause, 'a new message')} in ${where}. The ${posts.length} most recent top-level posts, oldest first:`,
-          '',
-          ...posts.map((p) => transcriptLine(p, nameMap)),
-        ],
-        nameMap
+      const posts = page.posts.filter((post) => post.id !== trigger.id).slice(0, CONTEXT_POSTS);
+      const text = compose(
+        'a new message',
+        `The ${posts.length} most recent top-level posts, oldest first:`,
+        lines(posts.reverse())
       );
       return { resumed: text, fresh: text };
     }
     const thread = await wholeThread(await core.getPost(OWNER, input.rootId));
-    const context = tail(thread, input.trigger);
-    const fresh = await prompt(
-      input,
-      [
-        `${headline(input.cause, 'a thread')} in ${where}. The root, then its most recent replies, oldest first:`,
-        '',
-        transcriptLine(context.root, nameMap),
-        ...(context.omitted > 0 ? [`… ${context.omitted} earlier replies omitted …`] : []),
-        ...context.shown.map((p) => transcriptLine(p, nameMap)),
-      ],
-      nameMap
-    );
+    const context = tail(thread, trigger);
+    const fresh = compose('a thread', 'The root, then its most recent replies, oldest first:', [
+      transcriptLine(context.root, nameMap),
+      ...omitted(context.omitted, 'earlier replies'),
+      ...lines(context.shown),
+    ]);
     const seen = seenThrough.get(seatId);
     if (seen === undefined) return { fresh, resumed: fresh };
     // An anchor that is gone finds -1, so the whole thread counts as unseen: more, never less.
     const unseen = thread
       .slice(thread.findIndex((post) => post.id === seen) + 1)
-      .filter((post) => post.id !== input.trigger.id && post.conversationId !== seatId);
+      .filter((post) => post.id !== trigger.id && post.conversationId !== seatId);
     const shown = unseen.slice(-CONTEXT_POSTS);
-    const resumed = await prompt(
-      input,
-      [
-        `${headline(input.cause, 'a thread')} in ${where}. You have seen this thread through your last turn. Replies since then, oldest first (${shown.length}):`,
-        '',
-        ...(unseen.length > shown.length
-          ? [`… ${unseen.length - shown.length} earlier new replies omitted …`]
-          : []),
-        ...shown.map((p) => transcriptLine(p, nameMap)),
-      ],
-      nameMap
+    const resumed = compose(
+      'a thread',
+      `You have seen this thread through your last turn. Replies since then, oldest first (${shown.length}):`,
+      [...omitted(unseen.length - shown.length, 'earlier new replies'), ...lines(shown)]
     );
     return { fresh, resumed };
   }
