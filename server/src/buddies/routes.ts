@@ -11,7 +11,11 @@ import type {
   RunQuery,
   TaskQuery,
 } from '@unleashd/buddies-core';
-import { type ConversationConfig, OwnerPostMentionConfigSchema } from '@unleashd/shared';
+import {
+  type ConversationConfig,
+  ConversationConfigSchema,
+  OwnerPostMentionConfigSchema,
+} from '@unleashd/shared';
 import type { Express, Request, Response } from 'express';
 import multer from 'multer';
 import { z } from 'zod';
@@ -185,6 +189,13 @@ const ChannelSchema = z
     key,
   })
   .strict();
+const RetrySchema = z.object({ config: ConversationConfigSchema }).strict();
+const NewDirectSchema = z
+  .object({
+    config: ConversationConfigSchema.optional(),
+    message: z.string().trim().min(1).max(100_000).optional(),
+  })
+  .strict();
 const DirectPostSchema = PostBodySchema.extend({ members: z.array(z.string().min(1)).min(1) });
 const AnswerSchema = z
   .object({ body: z.string().trim().min(1).max(32_000), evidence, key })
@@ -345,6 +356,12 @@ export function registerBuddyRoutes(app: Express, deps: BuddyRouteDeps): void {
       201,
     ],
     ['post', '/api/buddies/:buddyId/direct', (req) => channels.openDirect(p(req, 'buddyId'))],
+    ['get', '/api/buddies/:buddyId/direct/chain', (req) => channels.directChain(p(req, 'buddyId'))],
+    [
+      'post',
+      '/api/buddies/:buddyId/direct/new-chat',
+      (req) => channels.newDirect(p(req, 'buddyId'), NewDirectSchema.parse(req.body ?? {})),
+    ],
     ['post', '/api/buddies/:buddyId/wake', (req) => channels.wake(p(req, 'buddyId')), 202],
     // ---- docs -----------------------------------------------------------------------------------
     [
@@ -540,6 +557,17 @@ export function registerBuddyRoutes(app: Express, deps: BuddyRouteDeps): void {
         return ownerPost(body, { kind: 'direct', members: [OWNER, ...members.map(buddyActor)] });
       },
       201,
+    ],
+    // A failed reply's retry on another harness (493c1c7); the new attempt is a later reply.
+    [
+      'post',
+      '/api/buddies/posts/:postId/retry',
+      async (req) =>
+        channels.retryReply(
+          await core.getPost(OWNER, p(req, 'postId')),
+          RetrySchema.parse(req.body).config
+        ),
+      202,
     ],
     [
       'post',

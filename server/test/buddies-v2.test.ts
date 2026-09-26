@@ -175,6 +175,8 @@ async function world() {
   // A channel seat's reply is the Buddy's own `post` (channels.ts). The fake model follows the
   // prompt's instruction and posts its answer, except in turns listed in `silent`.
   const silent = new Set<number>();
+  // Turns that end out of tokens, as a harness at its usage limit reports it.
+  const outOfTokens = new Set<number>();
   const seatPost = /post\(\{ channel: \{ id: "([^"]+)" \}, replyToId: "([^"]+)"/;
   const executeTurn = ((request: ProviderRequest) => {
     const turn: Turn = { n: turns.length + 1, request, mcp: request.mcpServers!.unleashd_buddy };
@@ -200,6 +202,12 @@ async function world() {
         yield { type: 'session.started' as const, sessionId };
         yield { type: 'turn.started' as const };
         await during.get(turn.n)?.(turn);
+        if (outOfTokens.has(turn.n)) {
+          yield { type: 'out_of_tokens' as const, message: 'You have hit your usage limit' };
+          yield { type: 'turn.complete' as const, reason: 'out_of_tokens' as const };
+          finish({ exitCode: 0, signal: null, sessionId, reason: 'success' });
+          return;
+        }
         const answer = answers.get(turn.n) ?? `Answer ${turn.n}`;
         const seat = seatPost.exec(request.prompt);
         if (seat && !silent.has(turn.n)) {
@@ -329,6 +337,7 @@ async function world() {
     during,
     answers,
     silent,
+    outOfTokens,
     gate,
     channels,
     creation,
@@ -567,6 +576,99 @@ test('a seat reply is what the Buddy posts; a turn that posts nothing leaves a f
       'the text output never reaches the channel'
     );
   } finally {
+    await w.close();
+  }
+});
+
+// 493c1c7: a reply that failed on its harness (here out of tokens) had no way forward but to
+// re-mention and hope. The owner reruns it on another harness; the same harness is refused.
+test('a harness failure is retried on another harness, in a new seat of the same thread', async () => {
+  const w = await world();
+  try {
+    const root = await w.core.post(
+      OWNER,
+      { kind: 'id', id: w.general.id },
+      { kind: 'inform', body: `[@Lead](buddy:${w.lead.id}) ship it`, evidence: [], key: 'ask' }
+    );
+    w.outOfTokens.add(1);
+    await w.channels.respondToOwnerPost(w.general, root, new Map());
+    const thread = async () =>
+      (await w.core.listPosts(OWNER, { kind: 'thread', rootId: root.id }, null, 50)).posts;
+    const notice = await until(
+      async () => (await thread()).find((post) => post.purpose === 'reply_failed'),
+      'the out-of-tokens notice'
+    );
+    assert.match(notice.body, /Out of tokens/);
+    await assert.rejects(
+      w.channels.retryReply(notice, createDefaultConversationConfig('codex')),
+      /Pick a different harness/
+    );
+    const retried = await w.channels.retryReply(notice, createDefaultConversationConfig('claude'));
+    assert.deepEqual(retried, { buddyId: w.lead.id, status: 'started' });
+    const answer = await until(
+      async () => (await thread()).find((post) => post.purpose === 'reply'),
+      'the retried reply'
+    );
+    assert.equal(answer.replyToId, root.id);
+    assert.equal(w.turns[1].request.harness, 'claude');
+
+    const silent = await w.core.post(
+      buddyActor(w.lead.id),
+      { kind: 'id', id: w.general.id },
+      {
+        kind: 'inform',
+        purpose: 'reply_failed',
+        body: 'Couldn’t reply: Buddy is not active',
+        replyToId: root.id,
+        evidence: [],
+        key: 'not-harness',
+      }
+    );
+    await assert.rejects(
+      w.channels.retryReply(silent, createDefaultConversationConfig('claude')),
+      /out-of-tokens or provider-error/
+    );
+  } finally {
+    await w.close();
+  }
+});
+
+// 493c1c7: "New chat" in a DM starts the next generation and keeps the earlier ones, which the DM
+// shows above a divider; the out-of-tokens retry is a new chat on another harness that resends.
+test('a DM new chat opens the next generation; the chain keeps every earlier one', async () => {
+  const w = await world();
+  const { server, http } = await ownerHttp(w);
+  try {
+    const first = (await w.channels.openDirect(w.lead.id)).conversationId;
+    const created = await http('POST', `/api/buddies/${w.lead.id}/direct/new-chat`, {});
+    assert.equal(created.status, 200, JSON.stringify(created.body));
+    const second = (created.body as unknown as { conversationId: string }).conversationId;
+    assert.notEqual(second, first);
+    assert.deepEqual((await w.channels.openDirect(w.lead.id)).conversationId, second);
+    await assert.rejects(
+      w.channels.newDirect(w.lead.id, {
+        config: createDefaultConversationConfig('codex'),
+        message: 'again',
+      }),
+      /Pick a different harness/
+    );
+    const third = (
+      await w.channels.newDirect(w.lead.id, {
+        config: createDefaultConversationConfig('claude'),
+        message: 'Resend this',
+      })
+    ).conversationId;
+    const chain = await http('GET', `/api/buddies/${w.lead.id}/direct/chain`);
+    assert.deepEqual((chain.body as unknown as { generations: string[] }).generations, [
+      first,
+      second,
+      third,
+    ]);
+    await until(() => w.turns.length === 1, 'the resent message runs');
+    assert.equal(w.turns[0].request.harness, 'claude');
+    assert.match(w.turns[0].request.prompt, /Resend this/);
+  } finally {
+    server.close();
     await w.close();
   }
 });

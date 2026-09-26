@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 import type { Actor, Buddy, Channel, Cursor, Post } from '@unleashd/buddies-core';
-import type { ConversationConfig } from '@unleashd/shared';
+import { type ConversationConfig, isHarnessRetryFailure } from '@unleashd/shared';
 import { awaitTurn } from '../conversations/await-turn';
 import {
   buddyExecutionPreferences,
@@ -15,6 +15,7 @@ import type {
 import {
   type LiveConversation,
   type StableConversationPorts,
+  liveGenerations,
   openConversation,
   scanGenerations,
   stableConversationId,
@@ -126,6 +127,8 @@ type Reply = {
   trigger: Post;
   rootId: string;
   buddyId: string;
+  /** '' for the first reply to a trigger; a retry's own suffix keeps its failure notice apart. */
+  attempt: string;
 };
 type FollowUp = { channel: Channel; trigger: Post; root: Post; buddyId: string; others: string[] };
 
@@ -199,11 +202,7 @@ export function createChannels(ports: ChannelsPorts) {
       `Reply to the latest message, from ${label(input.trigger.author, nameMap)}:`,
       readableChannelText(input.trigger.body),
       '',
-      'Nobody reads your text output: it is a private scratchpad, use it to think. People only see what you post in this thread. ' +
-        `Post with post({ channel: { id: "${input.channel.id}" }, replyToId: "${input.rootId}", purpose: "reply", body, key }). ` +
-        'You may post more than once: a short progress note, then the result. Write posts direct and concise, as markdown. ' +
-        'Embed media as ![alt](/absolute/path); reference a task as [title](task:<id>). Put anything long in a file or a Task and link it. ' +
-        'If this turn ends without a post, the thread gets a failure notice, not your scratchpad. If it needs real work, do it or hand it off, then post what you did.',
+      `Nobody reads your text output: it is a private scratchpad, use it to think. People only see what you post in this thread. Post with post({ channel: { id: "${input.channel.id}" }, replyToId: "${input.rootId}", purpose: "reply", body, key }). You may post more than once: a short progress note, then the result. Write posts direct and concise, as markdown. Embed media as ![alt](/absolute/path); reference a task as [title](task:<id>). Put anything long in a file or a Task and link it. If this turn ends without a post, the thread gets a failure notice, not your scratchpad. If it needs real work, do it or hand it off, then post what you did.`,
     ].join('\n');
   }
 
@@ -316,7 +315,7 @@ export function createChannels(ports: ChannelsPorts) {
         evidence: [],
         replyToId: input.trigger.id,
         fromConversationId: conversationId ?? undefined,
-        key: `thread-reply:${input.trigger.id}:${input.buddyId}`,
+        key: `thread-reply:${input.trigger.id}:${input.buddyId}${input.attempt}`,
         purpose: 'reply_failed',
         body: `Couldn’t reply: ${reason}`,
       }
@@ -478,6 +477,7 @@ export function createChannels(ports: ChannelsPorts) {
           trigger: input.trigger,
           rootId: input.root.id,
           buddyId: input.buddyId,
+          attempt: '',
         });
       case 'pass':
         return;
@@ -501,6 +501,7 @@ export function createChannels(ports: ChannelsPorts) {
               trigger: input.trigger,
               rootId: input.root.id,
               buddyId: input.buddyId,
+              attempt: '',
             },
             null,
             `could not decide whether to reply (${verdict.reason})`
@@ -584,6 +585,7 @@ export function createChannels(ports: ChannelsPorts) {
             trigger: post,
             rootId: rootOf(post),
             buddyId,
+            attempt: '',
           });
           return { buddyId, status: 'started' };
         })
@@ -625,6 +627,91 @@ export function createChannels(ports: ChannelsPorts) {
           ...response,
           state: queuedForSlot.has(key) ? 'queued' : 'replying',
         }));
+    },
+
+    /**
+     * Rerun a reply whose HARNESS failed (out of tokens, a provider error) on the harness the owner
+     * picks, in a new seat; the failure notice stays and the new attempt is a later reply. A started
+     * session cannot change provider, so the harness that failed is refused (493c1c7).
+     */
+    async retryReply(failed: Post, config: ConversationConfig): Promise<MentionDispatch> {
+      if (failed.purpose !== 'reply_failed' || failed.author.kind !== 'buddy' || !failed.replyToId)
+        throw new Error('Only a failed Buddy reply can be retried');
+      if (!isHarnessRetryFailure(failed.body))
+        throw new Error('Only an out-of-tokens or provider-error failure can be retried');
+      const buddyId = failed.author.id;
+      const channel = await core.openChannel(OWNER, { kind: 'id', id: failed.channelId });
+      const admitted = await eligible(buddyId, channel.workspaceId);
+      if (!admitted.ok) return { buddyId, status: 'rejected', reason: admitted.reason };
+      const trigger = await core.getPost(OWNER, failed.replyToId);
+      const rootId = rootOf(trigger);
+      // The harness that failed: the seat that wrote the notice, else (a gate failure) the seat.
+      const slot = failed.conversationId
+        ? await ports.conversations.slot(failed.conversationId)
+        : ({ kind: 'absent' } as const);
+      const failedProvider =
+        slot.kind === 'live'
+          ? slot.config.provider
+          : (await seatConfig(rootId, buddyId, { kind: 'keep' })).config.provider;
+      if (config.provider === failedProvider)
+        throw new Error(`Pick a different harness. ${failedProvider} is the one that failed.`);
+      reply({
+        channel,
+        cause:
+          trigger.author.kind === 'owner' && mentionedBuddyIds(trigger.body).includes(buddyId)
+            ? 'mention'
+            : 'follow_up',
+        request: { kind: 'chosen', config },
+        trigger,
+        rootId,
+        buddyId,
+        attempt: `:retry:${randomUUID()}`,
+      });
+      return { buddyId, status: 'started' };
+    },
+
+    /** The owner's DM generations with a Buddy, oldest first; the newest is the current chat. */
+    async directChain(buddyId: string): Promise<{ buddyId: string; generations: string[] }> {
+      const buddy = await core.getBuddy(buddyId);
+      return {
+        buddyId,
+        generations: await liveGenerations(ports.conversations, (g) =>
+          directConversationId(buddy.workspaceId, buddyId, g)
+        ),
+      };
+    },
+
+    /**
+     * "New chat" in a DM: the next generation, with no handoff. Earlier ones stay live, so the DM
+     * shows them above a divider. `config` defaults to the current chat's; with `message` it is the
+     * out-of-tokens retry, which must move to another harness and resends the owner's message.
+     */
+    async newDirect(
+      buddyId: string,
+      input: { config?: ConversationConfig; message?: string }
+    ): Promise<{ conversationId: string }> {
+      const buddy = await core.getBuddy(buddyId);
+      const admitted = await eligible(buddyId, buddy.workspaceId);
+      if (!admitted.ok) throw new Error(admitted.reason);
+      const { current, next } = await scanGenerations(ports.conversations, (g) =>
+        directConversationId(buddy.workspaceId, buddyId, g)
+      );
+      if (input.message && input.config?.provider === current?.config.provider)
+        throw new Error(
+          `Pick a different harness. ${input.config?.provider} is the one that failed.`
+        );
+      const conversation = await openConversation(ports.conversations, {
+        context: { buddyId, workspaceId: buddy.workspaceId },
+        conversationId: next,
+        commandId: `buddy-dm-${next}`,
+        config: input.config ?? current?.config,
+      });
+      if (input.message)
+        conversation.enqueueMessage(input.message, {
+          origin: 'owner_input',
+          inputId: `retry-${randomUUID()}`,
+        });
+      return { conversationId: conversation.id };
     },
 
     /** The owner's ongoing chat with a Buddy (not a channel DM): open it. */
