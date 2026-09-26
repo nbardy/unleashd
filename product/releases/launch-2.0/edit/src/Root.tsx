@@ -1,6 +1,7 @@
 import { Composition } from 'remotion';
 import * as DesignIteration from './DesignIteration';
 import * as DesignReview from './DesignReview';
+import * as NativeMultimedia from './NativeMultimedia';
 import * as Overload from './Overload';
 
 export const Root: React.FC = () => (
@@ -28,6 +29,14 @@ export const Root: React.FC = () => (
       fps={DesignReview.FPS}
       width={DesignReview.WIDTH}
       height={DesignReview.HEIGHT}
+    />
+    <Composition
+      id="NativeMultimedia"
+      component={NativeMultimedia.NativeMultimedia}
+      durationInFrames={NativeMultimedia.DURATION}
+      fps={NativeMultimedia.FPS}
+      width={NativeMultimedia.WIDTH}
+      height={NativeMultimedia.HEIGHT}
     />
   </>
 );

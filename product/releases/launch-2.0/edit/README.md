@@ -9,6 +9,8 @@ pnpm studio                              # scrubbable preview in the browser
 pnpm run render:overload                 # -> out/overload.mp4 (beats 1–5, 18 s, with sound)
 pnpm run render:design-iteration         # -> out/design-iteration.mp4 (1920×1080, 60 fps)
 pnpm run render:design-review            # -> out/design-review.mp4 (13 s, silent)
+pnpm run render:native-multimedia        # -> out/native-multimedia.mp4 (9.4 s, EDM build + drop)
+./bank.sh                                # copy finished renders into ../clips/ (the clips bank)
 ```
 
 Licence: Remotion is source-available and free for individuals and companies of up to 3
@@ -93,3 +95,28 @@ Rough cut 1, 2026-09-26: 13.0 s, silent.
 | 11.3–13.0 | 438.4–441.8 s: Desktop screenshots scroll | 2× | pane card |
 
 The real wait is ~6.5 minutes; the chip says so rather than implying the reply was instant.
+
+## NativeMultimedia — opens the features section
+
+Source: `src/NativeMultimedia.tsx` (`CUTS`, `CAMERA`, `CARDS`). Rough cut 1, 2026-09-26: 9.375 s
+= 5 bars of the EDM cue at 128 BPM. Every cut and card sits on a beat (`BEAT`, `DROP`).
+
+| Out (s) | Source | Shot |
+|---|---|---|
+| 0–3.28 | footage 1, 0.9–9.4 s at 2.6× | owner types "@Marketing Designer Can you share with me the latest video". Eases from full frame into the composer strip. The pauses after "video," are cut |
+| 3.28 | send blip | hard cut on beat 8 to the thread |
+| 3.28–9.375 | footage 2, from 1.0 s at 1× | the reply with the launch video playing inline. Pushes into the player (4.7–6.1 s) |
+| 5.16 | card | **Native multimedia** |
+| 7.5 | the drop | **Code +** / **Design +** / **Marketing!**, one per beat, with a 6% punch on the window |
+
+Music: `../sound/edm-build.wav` from `../sound/edm.py`. It's synthesized, so we own it (128 BPM, D major / B minor
+next to the marimba; 4-bar build, gap, drop at exactly 7.500 s, 4 bars of groove to 15 s). The
+"echoing voice" is formant-synthesized vowels ("oh-ah", "ay-oh") with a ping-pong echo, not
+words. There are stems (`edm-stem-{drums,music,vox}.wav`) for rebalancing. The cut uses bars 1–5; bars 6–8 are
+for the flash cards that follow.
+
+Footage 2 is our capture, not a screen recording: `../capture/record-thread.mjs` drives
+headless Chrome over CDP and poses every frame. It sets the thread's scroll and the video's
+`currentTime`, then takes one screenshot, so it's a true 60 fps at 2974×1882 on any machine. A live CDP
+screencast managed 5 fps at that size, and its frames ignore `deviceScaleFactor`. Re-shoot
+with the command in `../footage/FOOTAGE.md`.
