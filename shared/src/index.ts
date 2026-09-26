@@ -16,7 +16,6 @@ import {
 } from './conversation-config.js';
 import { CreateKindSchema, EncodedRowsSchema, RowPatchSchema } from './conversation.js';
 import {
-  PROVIDER_IDS,
   PROVIDER_METADATA,
   PROVIDER_OPTIONS,
   type Provider,
@@ -40,7 +39,6 @@ export {
   type ProviderMetadata,
   PROVIDER_METADATA,
   PROVIDER_OPTIONS,
-  PROVIDER_IDS,
   getProviderMetadata,
 };
 
