@@ -126,3 +126,29 @@ for _ in range(9):
     tt = np.clip(t - start, 0, None)
     sparkle += np.sin(2 * np.pi * f * tt) * np.exp(-tt / 0.12) * (t >= start)
 write("sparkle", sparkle, peak=0.7)
+
+# Soft guitar: Karplus-Strong plucked string, one sample per note so the timeline places every
+# pluck (fingerpicked arpeggios and rolled strums in Overload.tsx). The excitation is low-passed
+# noise, which reads as a soft thumb pluck rather than a pick; a pluck-position comb and a gentle
+# lowpass give the nylon-ish body.
+GUITAR_NOTES = {"G2": 98.00, "D3": 146.83, "F#3": 185.00, "A3": 220.00, "B3": 246.94,
+                "D4": 293.66, "E4": 329.63, "F#4": 369.99, "A4": 440.00}
+
+
+def pluck(freq: float, seconds: float = 5.0, ring: float = 7.0) -> np.ndarray:
+    # The two-point average adds half a sample of delay; take it off the loop length to stay in tune.
+    period = int(round(SR / freq - 0.5))
+    loss = 0.001 ** (1 / (ring * freq))  # fundamental falls 60 dB over `ring` seconds
+    line = list(lowpass(rng.uniform(-1, 1, period), 1800.0))
+    out = np.empty(int(seconds * SR))
+    for i in range(len(out)):
+        j = i % period
+        cur = line[j]
+        out[i] = cur
+        line[j] = loss * 0.5 * (cur + line[(j + 1) % period])
+    comb = out - 0.35 * np.concatenate([np.zeros(period // 5), out[: len(out) - period // 5]])
+    return lowpass(comb, 3200.0)
+
+
+for name, freq in GUITAR_NOTES.items():
+    write(f"gtr-{name.replace('#', 's')}", pluck(freq), peak=0.8)

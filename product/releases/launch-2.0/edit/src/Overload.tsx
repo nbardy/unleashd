@@ -8,7 +8,7 @@ import type React from 'react';
 import { AbsoluteFill, Easing, Img, Sequence, interpolate, random, useCurrentFrame } from 'remotion';
 import wordmark from '../../brand/unleashd-wordmark-3d_trimmed.png';
 import { Block, INK, clamp01, easeOutBack, lerp } from './blocks';
-import { type Cue, KEYS, POPS, SFX, Soundtrack } from './soundtrack';
+import { type Cue, GUITAR, type GuitarNote, KEYS, POPS, SFX, Soundtrack } from './soundtrack';
 
 export const FPS = 60;
 export const WIDTH = 1920;
@@ -588,13 +588,33 @@ const pileCues = (w: WindowSpec, i: number): Cue[] => [
   ...(i < 30 ? [{ at: w.at + sendAt(w), src: SFX.send, volume: 0.22 }] : []),
 ];
 
+// After the boom, the calm answer (owner idea, 2026-09-26): a soft fingerpicked guitar. Dadd9
+// picked under "We're all feeling it." and the voice line, a rolled Gmaj7 landing on the title,
+// resolving to a rolled Dadd9 on "2.0" that rings on into beat 6. The pick grid is set so the
+// title falls exactly four eighths after the guitar enters.
+const EIGHTH = 0.4375; // ≈ 69 bpm
+const GUITAR_IN = T.title - 4 * EIGHTH; // 13.25 s, just after the thud
+const picked = (at: number, notes: GuitarNote[], volume: number): Cue[] =>
+  notes.map((n, k) => ({ at: at + k * EIGHTH, src: GUITAR[n], volume }));
+const rolled = (at: number, notes: GuitarNote[], volume: number): Cue[] =>
+  notes.map((n, k) => ({ at: at + k * 0.035, src: GUITAR[n], volume }));
+
+// Levels: the boom stays the loudest moment; stacked strums sum, so they sit lower than single picks.
+const GUITAR_CUES: Cue[] = [
+  ...picked(GUITAR_IN, ['D3', 'A3', 'E4', 'Fs4'], 0.4),
+  ...rolled(T.title, ['G2', 'D3', 'Fs3', 'B3', 'D4'], 0.3),
+  ...picked(T.title + 2 * EIGHTH, ['B3', 'D4'], 0.32),
+  ...rolled(T.title + TITLE.badge, ['D3', 'A3', 'D4', 'E4', 'Fs4', 'A4'], 0.26),
+];
+
 const OVERLOAD_CUES: Cue[] = [
   ...FOCUS.flatMap(focusCues),
   ...PILE.flatMap(pileCues),
   { at: T.rampStart, src: SFX.riser, volume: 0.6 }, // ends exactly on T.cut: the silence is the drop
   { at: T.cut + CARD.overload, src: SFX.impact, volume: 1 },
   { at: T.cut + CARD.feeling, src: SFX.thud, volume: 0.5 },
-  { at: T.title, src: SFX.pad, volume: 0.5 },
+  ...GUITAR_CUES,
+  { at: T.title, src: SFX.pad, volume: 0.28 }, // pad sits under the guitar now
   { at: T.title + TITLE.badge, src: SFX.sparkle, volume: 0.35 },
 ];
 

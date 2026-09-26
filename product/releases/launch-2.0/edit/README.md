@@ -35,7 +35,7 @@ recents. On send, the greeting clears, the prompt moves to the top and the compo
 the bottom. The windows use no product names or logos. Arrival times are the music grid:
 when the track lands, move `T` and `GAPS` onto its beats.
 
-### Sound (draft 3)
+### Sound (draft 4)
 
 Sound design only, not music: every sample is synthesized by `../sound/synth.py`
 (`uv run --with numpy python product/releases/launch-2.0/sound/synth.py`), so we own it all.
@@ -43,7 +43,11 @@ Where a sound plays is `OVERLOAD_CUES` in `src/Overload.tsx`, derived from the s
 as the picture: one key tick per revealed character, a send blip, a whoosh on minimize, a
 pop per pile window climbing in pitch every 8 arrivals, a riser that ends exactly on the
 hard cut (the silence is the drop), an impact on "AI Overload!", a thud on "We're all feeling
-it.", a D-major pad under the title and a sparkle on "2.0". A music bed goes under this
+it.", then a soft fingerpicked guitar (Karplus-Strong plucked string, one sample per note)
+that is the calm answer to the chaos: Dadd9 picked under the voice line, a rolled Gmaj7 on the
+title, a rolled Dadd9 on "2.0" that rings on into beat 6. A quiet D-major pad sits under it and
+a sparkle marks "2.0". Levels: the boom (~-3 dB peak) stays the loudest moment, the guitar
+sits around -6 to -8 dB. A music bed goes under this
 when one is chosen; retime `T`/`GAPS` to its beats.
 
 **Audio sync gotcha:** Remotion's own mp4 (AAC) output plays the sound about 43 ms (2048

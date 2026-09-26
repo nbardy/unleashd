@@ -2,6 +2,15 @@
 // plays them. Samples are synthesized by ../../sound/synth.py, so we own every sound.
 import type React from 'react';
 import { Audio, Sequence } from 'remotion';
+import gtrA3 from '../../sound/gtr-A3.wav';
+import gtrA4 from '../../sound/gtr-A4.wav';
+import gtrB3 from '../../sound/gtr-B3.wav';
+import gtrD3 from '../../sound/gtr-D3.wav';
+import gtrD4 from '../../sound/gtr-D4.wav';
+import gtrE4 from '../../sound/gtr-E4.wav';
+import gtrFs3 from '../../sound/gtr-Fs3.wav';
+import gtrFs4 from '../../sound/gtr-Fs4.wav';
+import gtrG2 from '../../sound/gtr-G2.wav';
 import impact from '../../sound/impact.wav';
 import key0 from '../../sound/key-0.wav';
 import key1 from '../../sound/key-1.wav';
@@ -24,6 +33,11 @@ import whoosh from '../../sound/whoosh.wav';
 export const KEYS = [key0, key1, key2];
 export const POPS = [pop0, pop1, pop2, pop3, pop4, pop5, pop6, pop7]; // rising pitch
 export const SFX = { impact, pad, riser, send, sparkle, thud, whoosh };
+// Soft guitar, one plucked-string sample per note (Karplus-Strong in synth.py).
+export const GUITAR = {
+  G2: gtrG2, D3: gtrD3, Fs3: gtrFs3, A3: gtrA3, B3: gtrB3, D4: gtrD4, E4: gtrE4, Fs4: gtrFs4, A4: gtrA4,
+};
+export type GuitarNote = keyof typeof GUITAR;
 
 export type Cue = { at: number; src: string; volume: number }; // at = output seconds
 
