@@ -7,7 +7,7 @@ import { useAtomValue } from 'jotai';
 import { useState } from 'react';
 import { rowFamily } from '../../atoms/conversations';
 import { useProviderCatalog } from '../../hooks/useProviderCatalog';
-import { ConversationConfigPicker } from '../ConversationConfigPicker';
+import { ConversationConfigPicker } from '../../views/config/ConversationConfigPicker';
 import { buddyWrite, errorText } from './api';
 import type { Post } from './types';
 import './ChannelComposer.css';

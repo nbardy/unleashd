@@ -46,7 +46,9 @@ import {
 import { ComposerMobile } from '../components/ComposerMobile';
 import { AssistantResponseRow, MessageRow } from '../components/MessageRow';
 import { MobileBadge, MobileSection, MobileSurface } from '../components/MobileUI';
-import { ModelSheetMobile, modelSummary } from '../components/ModelSheetMobile';
+import { setConversationConfig } from '../../atoms/commands';
+import { ConfigOverlay } from '../../views/config/ConfigOverlay';
+import { modelSummary } from '../../views/config/config-options';
 import { PromptPaletteMobile } from '../components/PromptPaletteMobile';
 import { MobileQueueStrip } from './MobileQueueStrip';
 
@@ -739,10 +741,16 @@ export function ConversationView({
       />
 
       {modelSheetOpen ? (
-        <ModelSheetMobile
-          conversationId={conversation.id}
-          config={detail.config.config}
-          configRevision={detail.config.revision}
+        <ConfigOverlay
+          presentation="sheet"
+          value={detail.config.config}
+          onChange={(config) =>
+            setConversationConfig({
+              conversationId: conversation.id,
+              expectedRevision: detail.config.revision,
+              patch: { kind: 'replace', config },
+            })
+          }
           onClose={() => setModelSheetOpen(false)}
         />
       ) : null}

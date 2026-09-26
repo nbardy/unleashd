@@ -30,7 +30,7 @@ import { isRowRunning } from '../utils/conversation-row';
 import { normalizeFolderDirectory, shortenHomePath } from '../utils/directories';
 import { getProjectColor } from '../utils/projectColors';
 import { formatTimeAgo, getConversationLastActivity, getMinutesElapsed } from '../utils/time';
-import { ConversationConfigPicker } from './ConversationConfigPicker';
+import { ConversationConfigPicker } from '../views/config/ConversationConfigPicker';
 import { PathAutocomplete } from './PathAutocomplete';
 import { SearchPalette } from './SearchPalette';
 import { DmIcon, WakeIcon, WakeIndicator } from './buddies/WakeIndicator';

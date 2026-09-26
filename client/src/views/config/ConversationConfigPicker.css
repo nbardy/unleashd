@@ -1,0 +1,237 @@
+/* Provider / model / reasoning picker (views/config). Option appearance
+   (padding, border, colours, selected state) is `.ui-choice` in
+   ui/controls.css; only layout lives here. Presentations below:
+   default (forms), `.config-overlay--popover` (desktop header),
+   `.config-overlay--sheet` (mobile). */
+
+.config-picker__section {
+  display: contents;
+}
+
+.config-picker__label {
+  margin-top: 4px;
+  color: var(--text-secondary);
+  font-size: var(--fs-3);
+  font-weight: 500;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.config-picker__group {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-4);
+  margin-bottom: 4px;
+}
+
+.config-picker__group--provider {
+  flex-wrap: nowrap;
+  gap: var(--sp-3);
+}
+
+.config-picker__option {
+  flex: 1 1 auto;
+  min-width: 100px;
+  position: relative;
+  justify-content: center;
+  white-space: nowrap;
+}
+
+.config-picker__group--provider .config-picker__option {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+/* Visually hidden, still focusable: arrow keys move through each radiogroup. */
+.config-picker__option input[type="radio"] {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.config-picker__meta {
+  font-family: var(--font-mono);
+  font-size: var(--fs-2);
+}
+
+.config-picker__custom {
+  flex: 1 1 100%;
+  display: grid;
+  gap: var(--sp-3);
+  color: var(--text-secondary);
+  font-size: var(--fs-2);
+}
+
+.config-picker__custom input {
+  min-width: 0;
+  padding: var(--sp-4) var(--sp-5);
+  border: 1px solid var(--border-color);
+  border-radius: var(--ui-radius);
+  background: var(--bg-secondary);
+  color: var(--text-primary);
+  font: inherit;
+}
+
+.config-picker__custom input:focus {
+  outline: none;
+  border-color: var(--accent-primary);
+}
+
+.config-picker__custom input:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+/* ---- Overlay chrome, shared by both presentations ---- */
+
+.config-overlay__header {
+  justify-content: space-between;
+  font-size: var(--fs-2);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.config-overlay__close {
+  padding: var(--sp-1) var(--sp-4);
+  border: 1px solid transparent;
+  background: transparent;
+  font: inherit;
+}
+
+.config-overlay__close:hover {
+  border-color: var(--border-default);
+  color: var(--text-primary);
+}
+
+.config-overlay__options {
+  gap: var(--sp-4);
+}
+
+.config-overlay__note {
+  margin: 4px 0 0;
+  font-size: var(--fs-3);
+}
+
+.config-overlay__note--error {
+  color: var(--error, #dc322f);
+}
+
+.config-overlay .config-picker__label {
+  margin: 8px 0 0;
+  color: var(--text-primary);
+  font-size: var(--fs-2);
+  text-transform: none;
+  letter-spacing: normal;
+}
+
+/* ---- popover: desktop header. One scrolling row per group; the `default`
+   marker hangs under its pill. ---- */
+
+.config-overlay-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 12vh;
+  background: rgba(0, 0, 0, 0.45);
+}
+
+.config-overlay--popover {
+  position: relative;
+  margin: 0;
+  gap: var(--sp-5);
+  width: min(960px, calc(100vw - 48px));
+  max-height: 80vh;
+  overflow-y: auto;
+  padding: var(--sp-6) var(--sp-7);
+  border: 1px solid var(--border-default);
+  border-radius: var(--ui-radius);
+  background: var(--bg-panel);
+  box-shadow: 0 16px 48px color-mix(in srgb, var(--bg-darkest) 60%, transparent);
+}
+
+.config-overlay--popover .config-picker__group {
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  gap: var(--sp-3);
+  margin: 0;
+  padding-bottom: var(--sp-7);
+}
+
+.config-overlay--popover .config-picker__option {
+  flex: 0 0 auto;
+  min-width: 0;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.config-overlay--popover .config-picker__option:hover:has(input:not(:disabled)) {
+  border-color: color-mix(in srgb, var(--warning) 40%, transparent);
+  background: color-mix(in srgb, var(--warning) 18%, transparent);
+  color: var(--text-emphasis);
+}
+
+.config-overlay--popover .config-picker__meta {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  font-family: inherit;
+  font-size: var(--fs-1);
+  line-height: 1;
+  text-align: center;
+}
+
+/* ---- sheet: mobile. Native <dialog> in the top layer, bottom-anchored. ---- */
+
+.config-overlay--sheet {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 560px;
+  max-height: 88vh;
+  margin: auto auto 0;
+  padding: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  border-bottom: none;
+  background: var(--bg-raised-1);
+  color: var(--text-primary);
+}
+
+.config-overlay--sheet::backdrop {
+  background: rgb(0 0 0 / 55%);
+}
+
+.config-overlay__inner {
+  gap: var(--sp-5);
+  padding: var(--sp-5) var(--sp-7) calc(var(--sp-8) + env(safe-area-inset-bottom));
+}
+
+.config-overlay__grabber {
+  flex: none;
+  align-self: center;
+  width: 38px;
+  height: 4px;
+  border-radius: var(--ui-radius);
+  background: var(--border-strong);
+}
+
+.config-overlay--sheet .config-picker__group {
+  flex-wrap: wrap;
+  gap: var(--sp-3);
+}
+
+.config-overlay--sheet .config-picker__option {
+  --ui-choice-height: 44px;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 100%;
+}

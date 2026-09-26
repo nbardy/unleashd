@@ -4,7 +4,7 @@ import { outboxDrop, outboxSending, outboxSent } from '../../atoms/channel-outbo
 import { useConversationDraft } from '../../hooks/useConversationDraft';
 import { useProviderCatalog } from '../../hooks/useProviderCatalog';
 import { newId } from '../../utils/ids';
-import { ConversationConfigPicker } from '../ConversationConfigPicker';
+import { ConversationConfigPicker } from '../../views/config/ConversationConfigPicker';
 import { BuddySigil } from './BuddySigil';
 import { buddyApi, buddyWrite, errorText } from './api';
 import {
