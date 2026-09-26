@@ -42,7 +42,31 @@ pub struct ImportReport {
     pub cross_channel_roots: i64,
     pub owner_reads: OwnerReads,
     pub direct_reads: DirectReads,
+    /// Row counts of the v33 tables deleted by design (DESIGN.md "Deleted outright"). They are
+    /// not imported; these rows stay only in the v33 backup.
+    pub dropped_tables: Vec<DroppedTable>,
 }
+
+#[derive(Debug, Serialize)]
+pub struct DroppedTable {
+    pub table: String,
+    pub rows: i64,
+}
+
+/// v33 tables with no home in the new schema (DESIGN.md "Deleted outright"). Counted, never read.
+pub const DROPPED_TABLES: &[&str] = &[
+    "sprints",
+    "work_items",
+    "buddy_skills",
+    "buddy_delegations",
+    "buddy_reviews",
+    "buddy_approval_requests",
+    "buddy_builder_creations",
+    "buddy_access_grants",
+    "buddy_mail_effects",
+    "buddy_mail_inbound",
+    "buddy_checkpoints",
+];
 
 /// Import choices. `mark_direct_read` is ON by default (owner decision, T11): v33 kept no read
 /// state for messages, so without it every imported DM counts as unread for the owner and each
@@ -687,6 +711,13 @@ pub fn import(source: &Path, target: &Path, owner_reads: &Path, options: ImportO
     }
     let dropped_read_events: i64 =
         conn.query_row(&format!("SELECT count(*) FROM old.buddy_audit_events WHERE {IS_READ}"), [], |r| r.get(0))?;
+    let dropped_tables = DROPPED_TABLES
+        .iter()
+        .map(|table| -> Result<DroppedTable> {
+            let rows = conn.query_row(&format!("SELECT count(*) FROM old.{table}"), [], |r| r.get(0))?;
+            Ok(DroppedTable { table: table.to_string(), rows })
+        })
+        .collect::<Result<Vec<_>>>()?;
     let non_home_memberships = json_rows(
         &conn,
         "SELECT json_object('buddy_id', b.id, 'slug', b.slug, 'home_workspace', b.project_id, 'workspace', m.project_id,
@@ -721,5 +752,6 @@ pub fn import(source: &Path, target: &Path, owner_reads: &Path, options: ImportO
         cross_channel_roots,
         owner_reads,
         direct_reads,
+        dropped_tables,
     })
 }

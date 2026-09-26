@@ -62,6 +62,12 @@ export interface RecordMigrationReport {
   markerDerived: Array<{ conversationId: string; kind: ConversationKind['t'] }>;
   verified: number;
   failures: Array<{ file: string; error: string }>;
+  /**
+   * Files kept byte-for-byte where they are, unmigrated, for `records-tool
+   * import` to store as a reject of the same reason (its verify compares the
+   * bytes). Not a failure: the importer accounts for them.
+   */
+  rejected: Array<{ file: string; reason: 'corrupt_json'; error: string }>;
 }
 
 export type RecordMigrationResult =
@@ -114,11 +120,26 @@ export async function migrateConversationRecords(options: {
     markerDerived: [],
     verified: 0,
     failures: [],
+    rejected: [],
   };
 
   const pending: Array<{ file: string; record: V1Record }> = [];
   for (const file of files) {
-    const decoded = JSON.parse(await readFile(path.join(conversationDirectory, file), 'utf8'));
+    const text = await readFile(path.join(conversationDirectory, file), 'utf8');
+    let decoded: { version?: unknown } | null;
+    try {
+      decoded = JSON.parse(text);
+    } catch (error) {
+      // Final review 2026-09-26: a corrupt file used to throw here and abort
+      // the whole step. It is left untouched in by-conversation/, where
+      // records-tool import keeps it as a `corrupt_json` reject.
+      report.rejected.push({
+        file,
+        reason: 'corrupt_json',
+        error: error instanceof Error ? error.message : String(error),
+      });
+      continue;
+    }
     if (decoded?.version === CONVERSATION_RECORD_VERSION) {
       report.alreadyV2 += 1;
       continue;
@@ -188,7 +209,7 @@ export async function migrateConversationRecords(options: {
   await writeFile(markerPath, `${report.migratedAt}\n`, 'utf8');
   logger.log(
     `[record-migration] v1 -> v2: ${report.migrated} migrated, ${report.alreadyV2} already v2, ` +
-      `kinds ${JSON.stringify(report.byKind)}; report ${reportPath}`
+      `${report.rejected.length} kept as rejects, kinds ${JSON.stringify(report.byKind)}; report ${reportPath}`
   );
   return { t: 'migrated', report, reportPath };
 }

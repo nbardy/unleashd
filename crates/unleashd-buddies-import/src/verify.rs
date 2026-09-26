@@ -20,7 +20,7 @@ use crate::import::{
     CURSOR_ORD, DIRECT_READ_CURSORS, DM_KEY, DirectReads, OwnerReads, SoulFile, SoulFileState, load_owner_reads, open_source, soul_files,
     uri,
 };
-use rusqlite::{Connection, OpenFlags};
+use rusqlite::{Connection, OpenFlags, OptionalExtension};
 use serde::Serialize;
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
@@ -307,7 +307,58 @@ fn strip_front_matter(raw: &str) -> (Option<i64>, &str) {
     }
 }
 
-fn check_soul(new: &Connection, baseline: &[SoulFile]) -> Result<SoulCheck> {
+/// A Buddy's database soul on one side. `Absent` is a legitimate state (a Buddy that never had a
+/// soul memory head, e.g. 3 builder Buddies on the 2026-09-26 snapshot), not an error: verify used
+/// to abort on it with QueryReturnedNoRows. Its content is compared by `memory_heads_by_buddy_kind`.
+enum SoulDoc {
+    Present { content: String, revision: i64 },
+    Absent,
+}
+
+fn soul_doc(conn: &Connection, sql: &str, buddy_id: &str) -> Result<SoulDoc> {
+    let row: Option<(String, i64)> = conn.query_row(sql, [buddy_id], |r| Ok((r.get(0)?, r.get(1)?))).optional()?;
+    Ok(match row {
+        Some((content, revision)) => SoulDoc::Present { content, revision },
+        None => SoulDoc::Absent,
+    })
+}
+
+const OLD_SOUL: &str = "SELECT r.body, r.revision FROM buddy_memory_heads h JOIN buddy_memory_revisions r ON r.id = h.revision_id
+     WHERE h.buddy_id = ?1 AND h.document_kind = 'soul'";
+const NEW_SOUL: &str =
+    "SELECT content, revision FROM doc WHERE buddy_id = ?1 AND scope_kind = 'buddy' AND scope_id = ?1 AND kind = 'soul' AND name = ''";
+
+/// The soul file against the soul doc both sides hold. Failing verdicts: differ, file_missing,
+/// doc_lost (the source had a soul, the target has none), doc_invented (the reverse).
+fn soul_verdict(file: &SoulFileState, old: &SoulDoc, new: &SoulDoc) -> Result<&'static str> {
+    Ok(match (old, new) {
+        (SoulDoc::Absent, SoulDoc::Absent) => match file {
+            SoulFileState::NoPath => "no_soul",
+            SoulFileState::Missing { .. } => "file_missing",
+            // Neither side holds a database soul; the file itself is checked unchanged above.
+            SoulFileState::Present { .. } => "file_only",
+        },
+        (SoulDoc::Present { .. }, SoulDoc::Absent) => "doc_lost",
+        (SoulDoc::Absent, SoulDoc::Present { .. }) => "doc_invented",
+        (SoulDoc::Present { .. }, SoulDoc::Present { content, revision }) => match file {
+            SoulFileState::NoPath if content.is_empty() => "no_path_empty",
+            SoulFileState::NoPath => "no_path_db_only",
+            SoulFileState::Missing { .. } => "file_missing",
+            SoulFileState::Present { path, .. } => {
+                let raw = std::fs::read_to_string(path)?;
+                let (version, body) = strip_front_matter(&raw);
+                match (body.trim_end() == content.trim_end(), version) {
+                    (true, Some(v)) if v == *revision => "match",
+                    (true, Some(_)) => "match_body_version_differs",
+                    (true, None) => "match_no_header",
+                    (false, _) => "differ",
+                }
+            }
+        },
+    })
+}
+
+fn check_soul(old: &Connection, new: &Connection, baseline: &[SoulFile]) -> Result<SoulCheck> {
     let current = soul_files(
         new,
         "SELECT b.id, b.slug, b.soul_path, w.root_path FROM buddy b JOIN workspace w ON w.id = b.workspace_id ORDER BY b.slug",
@@ -318,27 +369,9 @@ fn check_soul(new: &Connection, baseline: &[SoulFile]) -> Result<SoulCheck> {
     let mut split = BTreeMap::new();
     let mut differ = Vec::new();
     for file in &current {
-        let (content, revision): (String, i64) = new.query_row(
-            "SELECT content, revision FROM doc WHERE buddy_id = ?1 AND scope_kind = 'buddy' AND scope_id = ?1 AND kind = 'soul' AND name = ''",
-            [&file.buddy_id],
-            |r| Ok((r.get(0)?, r.get(1)?)),
-        )?;
-        let verdict = match &file.state {
-            SoulFileState::NoPath if content.is_empty() => "no_path_empty",
-            SoulFileState::NoPath => "no_path_db_only",
-            SoulFileState::Missing { .. } => "file_missing",
-            SoulFileState::Present { path, .. } => {
-                let raw = std::fs::read_to_string(path)?;
-                let (version, body) = strip_front_matter(&raw);
-                match (body.trim_end() == content.trim_end(), version) {
-                    (true, Some(v)) if v == revision => "match",
-                    (true, Some(_)) => "match_body_version_differs",
-                    (true, None) => "match_no_header",
-                    (false, _) => "differ",
-                }
-            }
-        };
-        if matches!(verdict, "differ" | "file_missing") {
+        let verdict =
+            soul_verdict(&file.state, &soul_doc(old, OLD_SOUL, &file.buddy_id)?, &soul_doc(new, NEW_SOUL, &file.buddy_id)?)?;
+        if matches!(verdict, "differ" | "file_missing" | "doc_lost" | "doc_invented") {
             differ.push(format!("{}: {verdict}", file.slug));
         }
         *split.entry(verdict.to_string()).or_insert(0) += 1;
@@ -461,7 +494,7 @@ pub fn verify(
     let read_cursors = check_reads(&old, &new, owner_reads, direct_reads)?;
     let ordering = check_ordering(&new)?;
     let revision_chains = check_chains(&old, &new)?;
-    let soul = check_soul(&new, soul_baseline)?;
+    let soul = check_soul(&old, &new, soul_baseline)?;
     let ok = classes.iter().all(|c| c.ok) && answers.ok && links.ok && read_cursors.ok && ordering.ok && revision_chains.ok && soul.ok;
     Ok(VerifyReport { ok, classes, answers, links, read_cursors, ordering, revision_chains, soul })
 }

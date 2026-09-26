@@ -58,6 +58,9 @@ fn run(args: &[String]) -> Result<bool, String> {
             for (mapping, old, new) in &report.counts {
                 println!("{mapping:<20} {old:>7} → {new:>7}");
             }
+            for d in &report.dropped_tables {
+                println!("{:<20} {:>7} rows not imported (kept only in the v33 backup)", d.table, d.rows);
+            }
             Ok(true)
         }
         Some("verify") => {
