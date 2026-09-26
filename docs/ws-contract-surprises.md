@@ -70,7 +70,7 @@ commands from the previous socket epoch. A lost acknowledgement must not leave t
 
 A row whose `messageCount` differs from a loaded transcript is how a client learns that history is
 stale: the open conversation pages in its tail in place, any other loaded one does so when opened
-(`refreshIfStale` in `client/src/atoms/actions.ts`). The disk poller sends ONLY rows; until
+(`bodiesStep` in `client/src/hooks/useConversationBodies.ts`, then `refreshTranscript`). The disk poller sends ONLY rows; until
 2026-09-25 it pushed the full history (~400-500KB) of every still-growing external transcript to every
 client every 5s. Guard: `client/test/summary-history-refresh.test.ts`.
 
