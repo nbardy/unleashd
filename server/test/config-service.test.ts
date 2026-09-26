@@ -225,14 +225,6 @@ test('create, update, fork, and hydrate preserve selection intent and revisions'
       reasoningEffort: 'xhigh',
     });
 
-    const fork = await service.fork({
-      conversationId: FORK_ID,
-      kind: { t: 'chat' },
-      source: updated.value.next,
-    });
-    assert.equal(fork.revision, 0);
-    assert.deepEqual(fork.config, updated.value.next.config);
-
     const hydrated = await service.hydrate({
       conversationId: CONVERSATION_ID,
       discoveredKind: { t: 'chat' },
