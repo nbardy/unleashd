@@ -141,6 +141,37 @@ function rejectAutomation(): never {
   throw new Error('Legacy automation transcripts are read-only; schedules run as Buddy runs now');
 }
 
+/**
+ * Call `done` once, when the turn drains. A failure while the process still runs waits for the
+ * drain and then wins over the completion. Returns a detach for a turn that never started.
+ */
+function onTurnDrained(
+  host: BuddyPolicyHost,
+  done: (status: 'complete' | 'failed', detail: string) => void
+): () => void {
+  let pendingFailure: string | null = null;
+  const detach = () => {
+    host.off('buddy-turn-complete', complete);
+    host.off('buddy-turn-failed', failed);
+  };
+  const complete = (output: string) => {
+    detach();
+    if (pendingFailure === null) done('complete', output);
+    else done('failed', pendingFailure);
+  };
+  const failed = (error: string) => {
+    if (host.hasProcess()) {
+      pendingFailure = error;
+      return;
+    }
+    detach();
+    done('failed', error);
+  };
+  host.once('buddy-turn-complete', complete);
+  host.on('buddy-turn-failed', failed);
+  return detach;
+}
+
 // --- Buddy Builder -------------------------------------------------------------
 
 /** The Buddy Builder thread: team tools on owner input, its own briefing, no Buddy identity. */
@@ -465,25 +496,11 @@ export class BuddyTurnPolicy implements TurnPolicy {
     // A 24 h deadline must not by itself keep a process alive (the runtime tests' turns that
     // never answer left it pending, and the test process never exited).
     timer.unref?.();
-    const settle = (status: 'complete' | 'failed', detail: string) => {
+    onTurnDrained(this.host, (status, detail) => {
       clearTimeout(timer);
-      this.host.off('buddy-turn-complete', complete);
-      this.host.off('buddy-turn-failed', failed);
       this.execution = null;
       this.buddies.settle(owned.id, owned.claim_token, status, detail);
-    };
-    let pendingFailure: string | null = null;
-    const complete = (output: string) =>
-      settle(pendingFailure ? 'failed' : 'complete', pendingFailure ?? output);
-    const failed = (error: string) => {
-      if (this.host.hasProcess()) {
-        pendingFailure = error;
-        return;
-      }
-      settle('failed', error);
-    };
-    this.host.once('buddy-turn-complete', complete);
-    this.host.on('buddy-turn-failed', failed);
+    });
   }
 
   spawned(input: TurnInput, review: { attemptId: string; messageStart: number }): void {
@@ -559,50 +576,25 @@ export class BuddyTurnPolicy implements TurnPolicy {
     }
     this.execution = { context, leaseToken, onAdmitted };
     return new Promise<string>((resolve, reject) => {
-      const cleanup = () => {
-        this.host.off('buddy-turn-complete', complete);
-        this.host.off('buddy-turn-failed', failed);
+      const detach = onTurnDrained(this.host, (status, detail) => {
+        try {
+          onDrained?.(status, detail, this.execution?.terminalCause);
+        } catch (error) {
+          this.execution = null;
+          return reject(error);
+        }
         this.execution = null;
-      };
-      let pendingFailure: string | null = null;
-      const complete = (output: string) => {
-        if (pendingFailure) {
-          failed(pendingFailure);
-          return;
-        }
-        try {
-          onDrained?.('complete', output, this.execution?.terminalCause);
-          cleanup();
-          resolve(output);
-        } catch (error) {
-          cleanup();
-          reject(error);
-        }
-      };
-      const failed = (reason: string) => {
-        if (this.host.hasProcess()) {
-          pendingFailure = reason;
-          return;
-        }
-        try {
-          onDrained?.('failed', reason, this.execution?.terminalCause);
-        } catch (error) {
-          cleanup();
-          reject(error);
-          return;
-        }
-        cleanup();
-        reject(new Error(reason));
-      };
-      this.host.once('buddy-turn-complete', complete);
-      this.host.on('buddy-turn-failed', failed);
+        if (status === 'complete') resolve(detail);
+        else reject(new Error(detail));
+      });
       try {
         this.host.send(sameEitherWay(content), {
           origin: 'buddy_message',
           inputId: context.coordinationRunId!,
         });
       } catch (error) {
-        cleanup();
+        detach();
+        this.execution = null;
         reject(error);
       }
     });
