@@ -36,9 +36,7 @@
             },
             "evidenceCount": 0,
             "todoEvidenceCount": 0,
-            "truncatedFields": [
-              "next_action"
-            ]
+            "truncatedFields": ["next_action"]
           },
           {
             "id": "buddy_project_9864f34e-b435-43b1-80b1-07cc51645fbe",
@@ -61,9 +59,7 @@
             },
             "evidenceCount": 2,
             "todoEvidenceCount": 33,
-            "truncatedFields": [
-              "next_action"
-            ]
+            "truncatedFields": ["next_action"]
           },
           {
             "id": "buddy_project_de5267b7-26f7-45c1-8819-cb0954ec1255",
@@ -86,9 +82,7 @@
             },
             "evidenceCount": 4,
             "todoEvidenceCount": 0,
-            "truncatedFields": [
-              "next_action"
-            ]
+            "truncatedFields": ["next_action"]
           },
           {
             "id": "buddy_project_4f875aff-3481-4ba9-8aab-eb0ea62c1308",
@@ -111,9 +105,7 @@
             },
             "evidenceCount": 0,
             "todoEvidenceCount": 0,
-            "truncatedFields": [
-              "next_action"
-            ]
+            "truncatedFields": ["next_action"]
           }
         ],
         "nextCursor": "work:37e39645988b3865a7f9ef559817921b:4",

@@ -1,15 +1,19 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import type { ConversationConfig } from '@unleashd/shared';
 import {
   type ChannelReference,
   activeReferenceQuery,
+  choiceLabel,
   completesPickedReference,
   composerReferenceMarks,
   decodeChannelDraft,
   encodeChannelDraft,
   encodeReferences,
   insertReference,
+  mentionChoice,
   mentionedBuddies,
+  pickerValue,
   rankReferences,
 } from '../src/components/buddies/channel-text';
 
@@ -155,4 +159,33 @@ test('a restored draft still encodes its mentions', () => {
   // and a blob that is not a draft is discarded whole.
   assert.equal(encodeChannelDraft({ text: '', picked: [lead] }), '');
   assert.deepEqual(decodeChannelDraft('{"text":7}'), { text: '', picked: [] });
+});
+
+// 493c1c7: an un-picked mention in a thread showed the Buddy's PROFILE default even though its
+// seat there runs an earlier pick, so the chip lied and a change started from the wrong baseline.
+test('a mention chip opens on the thread seat; the profile applies only without one', () => {
+  const profile: ConversationConfig = {
+    provider: 'codex',
+    model: { mode: 'explicit', modelId: 'gpt-5.6-sol' },
+    reasoning: { mode: 'default' },
+  };
+  const seat: ConversationConfig = {
+    provider: 'claude',
+    model: { mode: 'explicit', modelId: 'opus' },
+    reasoning: { mode: 'explicit', effort: 'high' },
+  };
+  const buddy = { ...lead, execution: { kind: 'profile', config: profile } } as const;
+  const none = mentionChoice(buddy, new Map(), []);
+  assert.deepEqual(pickerValue(none), profile);
+  assert.equal(choiceLabel(none, null), 'gpt-5.6-sol');
+
+  const seated = mentionChoice(buddy, new Map(), [{ buddyId: 'b1', config: seat }]);
+  assert.deepEqual(pickerValue(seated), seat);
+  assert.equal(choiceLabel(seated, null), 'opus');
+
+  const chosen = mentionChoice(buddy, new Map([['b1', profile]]), [
+    { buddyId: 'b1', config: seat },
+  ]);
+  assert.equal(chosen.kind, 'chosen', 'a pick in this composer beats the seat');
+  assert.deepEqual(pickerValue(chosen), profile);
 });

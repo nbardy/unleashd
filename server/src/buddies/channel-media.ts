@@ -84,11 +84,11 @@ function copyIntoChannel(
 /**
  * Copy every local media reference into the channel directory and rewrite the
  * body to point at the copies. Remote URLs and already-copied files pass
- * through untouched. Problems are returned, never swallowed: the MCP `post`
- * path rejects them so the Buddy can fix its reference; the server-posted
- * mention reply renders them visibly (see `describeMediaProblems`).
+ * through untouched. Problems are returned, never swallowed: every post path
+ * (the MCP `post` tool, the owner routes) rejects them so the author can fix
+ * its reference.
  */
-export function canonicalizePostMedia(
+function canonicalizePostMedia(
   body: string,
   input: { uploadsRoot: string; channelId: string }
 ): CanonicalizedPostBody {
@@ -113,7 +113,7 @@ export function canonicalizePostMedia(
   return { body: rewritten, problems };
 }
 
-export function describeMediaProblems(problems: readonly ChannelMediaProblem[]): string {
+function describeMediaProblems(problems: readonly ChannelMediaProblem[]): string {
   return problems
     .map((problem) => `${problem.reference} (${problem.reason.replaceAll('_', ' ')})`)
     .join(', ');

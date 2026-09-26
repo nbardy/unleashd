@@ -6,13 +6,17 @@
  * `task` is the Task filter (one Task's posts across every channel), opened
  * from its channel.
  *
- *   D = Home (channel list + Buddies) ⊕ Channel ⊕ Thread ⊕ Task
+ *   D = Home (channel list + Buddies) ⊕ Channel ⊕ Thread ⊕ Task ⊕ DM
+ *
+ * `dm` is a Buddy DM conversation drawn as a thread (493c1c7). It wins over the other params,
+ * which stay in the URL so Back (dropping `dm`) returns to the screen the DM was opened from.
  */
 export type MobileChannelScreen =
   | { kind: 'home' }
   | { kind: 'channel'; channelId: string }
   | { kind: 'thread'; channelId: string; rootId: string; linkedPostId: string | null }
-  | { kind: 'task'; channelId: string; taskId: string };
+  | { kind: 'task'; channelId: string; taskId: string }
+  | { kind: 'dm'; conversationId: string };
 
 const CHANNELS_PATH = /^\/buddies\/workspaces\/[^/]+\/channels\/?$/;
 
@@ -21,6 +25,8 @@ export function mobileChannelScreen(search: string): MobileChannelScreen {
   const channelId = params.get('channel');
   const rootId = params.get('thread');
   const taskId = params.get('task');
+  const dm = params.get('dm');
+  if (dm) return { kind: 'dm', conversationId: dm };
   if (channelId && rootId)
     return { kind: 'thread', channelId, rootId, linkedPostId: params.get('post') };
   if (channelId && taskId) return { kind: 'task', channelId, taskId };
@@ -52,5 +58,7 @@ export function channelsHref(workspaceId: string, screen: MobileChannelScreen): 
     }
     case 'task':
       return `${base}?channel=${encodeURIComponent(screen.channelId)}&task=${encodeURIComponent(screen.taskId)}`;
+    case 'dm':
+      return `${base}?dm=${encodeURIComponent(screen.conversationId)}`;
   }
 }

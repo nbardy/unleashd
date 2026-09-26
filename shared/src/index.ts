@@ -727,6 +727,7 @@ export type {
 
 export * from './buddy-workspace-activity.js';
 export * from './buddy-channel-posts.js';
+export * from './harness-retry.js';
 export * from './buddy-team-configuration.js';
 
 export * from './buddy-team-configuration-result.js';

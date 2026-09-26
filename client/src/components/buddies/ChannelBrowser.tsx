@@ -5,15 +5,18 @@ import { listField, rowFamily } from '../../atoms/conversations';
 import { useBuddyOverview } from '../../hooks/useBuddyData';
 import { rowBuddy } from '../../utils/conversation-row';
 import { Chat } from '../Chat';
-import { BuddyRailRow } from './BuddyRailRow';
+import { BuddyRailRow, CreatingBuddyRailRow } from './BuddyRailRow';
 import { BuddySigil } from './BuddySigil';
 import { ChannelAuthor, type OpenDm } from './ChannelAuthor';
 import { ChannelComposer } from './ChannelComposer';
+import { ChannelDm } from './ChannelDm';
 import { ChannelHistory, ChannelLoader } from './ChannelLoader';
 import { ChannelMarkdown, TypingDots } from './ChannelMarkdown';
 import { CopyLinkButton } from './CopyLinkButton';
+import { ReplyRetry } from './HarnessPicker';
 import { TaskFilter } from './TaskFilter';
 import { errorText } from './api';
+import { useNewBuddy } from './buddy-direct-actions';
 import {
   type ChannelHeading,
   type ChannelRow,
@@ -101,6 +104,38 @@ function InstanceTag({
     <span className="channel-browser-instance" title={conversationId}>
       {label}
     </span>
+  );
+}
+
+function EyeIcon() {
+  return (
+    <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
+      <path
+        d="M1.5 8s2.5-4.5 6.5-4.5S14.5 8 14.5 8s-2.5 4.5-6.5 4.5S1.5 8 1.5 8z"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.5"
+        strokeLinejoin="round"
+      />
+      <circle cx="8" cy="8" r="1.75" fill="none" stroke="currentColor" strokeWidth="1.5" />
+    </svg>
+  );
+}
+
+// The hover toolbar's way into the conversation that wrote the post, while the client holds
+// it. A reply is now what the Buddy chose to post (channels.ts), so its reasoning lives there.
+function ConversationEye({ post, context }: { post: Post; context: RowContext }) {
+  if (!post.conversationId || !context.availableConversationIds.has(post.conversationId))
+    return null;
+  return (
+    <Link
+      className="channel-browser-message-action"
+      to={`/chat/${encodeURIComponent(post.conversationId)}`}
+      title="Open the conversation"
+      aria-label="Open the conversation"
+    >
+      <EyeIcon />
+    </Link>
   );
 }
 
@@ -239,6 +274,7 @@ function ReplyAction({ post, context }: { post: Post; context: RowContext }) {
 function MessageActions({ post, context }: { post: Post; context: RowContext }) {
   return (
     <div className="channel-browser-message-actions" role="toolbar" aria-label="Message actions">
+      <ConversationEye post={post} context={context} />
       <ReplyAction post={post} context={context} />
       <CopyLinkButton
         className="channel-browser-message-action"
@@ -285,6 +321,7 @@ function LeadRow({ post, context }: { post: Post; context: RowContext }) {
           <PostMeta post={post} context={context} />
         </div>
         <PostBody post={post} context={context} />
+        <ReplyRetry post={post} />
         <ThreadSummary post={post} context={context} />
       </div>
       <MessageActions post={post} context={context} />
@@ -312,6 +349,7 @@ function ContinuationRow({ post, context }: { post: Post; context: RowContext })
           <PostMeta post={post} context={context} />
         </span>
         <PostBody post={post} context={context} />
+        <ReplyRetry post={post} />
         <ThreadSummary post={post} context={context} />
       </div>
       <MessageActions post={post} context={context} />
@@ -446,6 +484,7 @@ function ThreadPane({
         placeholder={root ? `Reply to ${plainChannelText(root.body).slice(0, 40)}…` : 'Reply…'}
         references={context.directory.references}
         submit="enter"
+        seats={thread.latest.data?.seats}
         onPosted={() => {
           follow.pin();
           void thread.latest.refetch();
@@ -649,16 +688,45 @@ function ChannelPane({
   );
 }
 
-// A DM inside the channels view: the ordinary chat, beside the rail, the way
-// Slack opens a DM. Mounted only once the client holds the conversation — the
-// DM may be created by the click that opened it, and Chat bounces to '/' when
-// it cannot find its conversation (AGENTS.md: availability-check every
-// "open this conversation" affordance).
-function DmPane({ conversationId, available }: { conversationId: string; available: boolean }) {
+// A DM inside the channels view, beside the rail, the way Slack opens one. A Buddy DM is drawn as
+// a thread (ChannelDm, 493c1c7). The Buddy Builder chat keeps the conversation page: it is the
+// hire flow. Chat is mounted only once the client holds the conversation — the click that opened
+// it may have created it, and Chat bounces when it cannot find it (AGENTS.md availability rule).
+function DmPane({
+  conversationId,
+  available,
+  workspaceId,
+  directory,
+  onConversation,
+}: {
+  conversationId: string;
+  available: boolean;
+  workspaceId: string;
+  directory: WorkspaceDirectory;
+  onConversation: OpenDm;
+}) {
+  const buddy = rowBuddy(useAtomValue(rowFamily(conversationId)));
+  if (buddy === null)
+    return (
+      <section className="channel-browser-dm" aria-label="Direct message">
+        {available ? <Chat id={conversationId} /> : <ChannelLoader label="Opening DM…" />}
+      </section>
+    );
+  const member = directory.activeMembers.find((entry) => entry.id === buddy.buddyId);
   return (
-    <section className="channel-browser-dm" aria-label="Direct message">
-      {available ? <Chat id={conversationId} /> : <ChannelLoader label="Opening DM…" />}
-    </section>
+    <ChannelDm
+      conversationId={conversationId}
+      buddyId={buddy.buddyId}
+      buddyName={member?.name ?? 'Buddy'}
+      buddyRole={member?.role ?? 'Direct message'}
+      buddyNames={directory.buddyNames}
+      tasks={directory.taskById}
+      frame="desktop"
+      linkPath={channelLinkPath(workspaceId, { kind: 'dm', conversationId })}
+      backTo={null}
+      onConversation={onConversation}
+      composeShell={(composer) => composer}
+    />
   );
 }
 
@@ -898,6 +966,9 @@ export function ChannelBrowser({
   const openDm: OpenDm = (conversationId) => setParams({ dm: conversationId });
   const dmConversation = useAtomValue(rowFamily(dm ?? ''));
   const dmBuddyId = rowBuddy(dmConversation)?.buddyId;
+  const newBuddy = useNewBuddy(openDm);
+  // The newest unfinished Buddy Builder chat, surfaced in the rail as "Creating buddy".
+  const creatingBuddy = useAtomValue(listField('builders')).find((entry) => !entry.done);
   const railRow = (entry: ChannelUnread) => (
     <RailChannel
       key={entry.channel.id}
@@ -955,26 +1026,57 @@ export function ChannelBrowser({
               <ul className="channel-browser-channels">{rail.direct.map(railRow)}</ul>
             </>
           )}
-          {directory.activeMembers.length > 0 && (
-            <>
-              <h3 className="channel-browser-rail-section">Buddies</h3>
-              <ul className="channel-browser-buddies">
-                {directory.activeMembers.map((member) => (
-                  <BuddyRailRow
-                    key={member.id}
-                    member={member}
-                    openDm={openDm}
-                    current={member.id === dmBuddyId}
-                  />
-                ))}
-              </ul>
-            </>
+          <div className="channel-browser-rail-section-row ui-row">
+            <h3 className="channel-browser-rail-section">Buddies</h3>
+            <button
+              type="button"
+              className="channel-browser-rail-add"
+              onClick={newBuddy.start}
+              disabled={newBuddy.state.kind === 'pending'}
+              title="New Buddy"
+              aria-label="New Buddy"
+            >
+              +
+            </button>
+          </div>
+          {newBuddy.state.kind === 'failed' && (
+            <p className="channel-browser-rail-empty" role="alert">
+              {newBuddy.state.message}
+            </p>
+          )}
+          {directory.activeMembers.length === 0 && !creatingBuddy ? (
+            <p className="channel-browser-rail-empty">No Buddies yet.</p>
+          ) : (
+            <ul className="channel-browser-buddies">
+              {creatingBuddy && (
+                <CreatingBuddyRailRow
+                  conversationId={creatingBuddy.id}
+                  openDm={openDm}
+                  current={dm === creatingBuddy.id}
+                />
+              )}
+              {directory.activeMembers.map((member) => (
+                <BuddyRailRow
+                  key={member.id}
+                  member={member}
+                  openDm={openDm}
+                  current={member.id === dmBuddyId}
+                />
+              ))}
+            </ul>
           )}
         </div>
       </nav>
       <main className="channel-browser-main">
         {dm ? (
-          <DmPane conversationId={dm} available={availableConversationIds.has(dm)} />
+          <DmPane
+            key={dm}
+            conversationId={dm}
+            available={availableConversationIds.has(dm)}
+            workspaceId={workspaceId}
+            directory={directory}
+            onConversation={openDm}
+          />
         ) : selected ? (
           <ChannelPane
             key={selected.channel.id}

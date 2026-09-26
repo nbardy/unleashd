@@ -21,6 +21,7 @@ import {
   type ConversationRecordStore,
   type SessionBinding,
 } from './config-records';
+import { creationFingerprint } from './creation-service';
 
 export interface ConversationConfigResolver {
   resolve(config: ConversationConfig): Promise<ConfigResolution>;
@@ -468,6 +469,25 @@ export class ConversationTombstonedError extends Error {
   }
 }
 
+// The stored fingerprint hashes the config the conversation was CREATED with. After a settings
+// change (a thread seat's model or reasoning) the caller reopens it with the current config, so
+// compare against the same creation at that config too; otherwise the reopen conflicts and the
+// reply cannot continue (493c1c7; guard: config-service.test.ts "a config update stays
+// replayable…"). Computed at replay because the records store keeps creation write-once.
+function fingerprintAtCurrentConfig(existing: ConversationRecord): string | null {
+  const creation = existing.creation;
+  if (!creation?.fingerprint || existing.workingDirectory === undefined) return null;
+  return creationFingerprint({
+    workingDirectory: existing.workingDirectory,
+    config: existing.config,
+    initialMessage: creation.initialMessage,
+    swarmDebugPrefix: creation.swarmDebugPrefix,
+    resumedFromConversationId: creation.resumedFromConversationId,
+    kind: existing.kind,
+    branch: creation.branch,
+  });
+}
+
 function isMatchingCreateReplay(
   existing: ConversationRecord,
   input: NewConversationConfigInput
@@ -476,7 +496,13 @@ function isMatchingCreateReplay(
   const fingerprint = input.creation?.fingerprint;
   if (!commandId && !fingerprint) return false;
   if (commandId && existing.creation?.commandId !== commandId) return false;
-  if (fingerprint && existing.creation?.fingerprint !== fingerprint) return false;
+  if (
+    fingerprint &&
+    existing.creation?.fingerprint !== fingerprint &&
+    fingerprintAtCurrentConfig(existing) !== fingerprint
+  ) {
+    return false;
+  }
   if (
     input.creation?.initialMessage !== undefined &&
     existing.creation?.initialMessage !== input.creation.initialMessage

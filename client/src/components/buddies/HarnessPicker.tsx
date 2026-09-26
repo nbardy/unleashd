@@ -1,0 +1,154 @@
+import {
+  type ConversationConfig,
+  isHarnessRetryFailure,
+  isOutOfTokensFailure,
+} from '@unleashd/shared';
+import { useAtomValue } from 'jotai';
+import { useState } from 'react';
+import { rowFamily } from '../../atoms/conversations';
+import { useProviderCatalog } from '../../hooks/useProviderCatalog';
+import { ConversationConfigPicker } from '../ConversationConfigPicker';
+import { buddyWrite, errorText } from './api';
+import type { Post } from './types';
+import './ChannelComposer.css';
+
+// A button that opens the composer's harness/model popover (the mention chip's, same classes) and
+// confirms one choice. Callers (493c1c7): "Retry with a different harness" under a failed reply,
+// an out-of-tokens DM or chat, and "New chat" in a DM. A Buddy turn (`buddy`) needs the Buddy MCP
+// tools, and `excluded` is the harness that just failed, which the server would refuse anyway.
+export function HarnessPicker({
+  label,
+  note,
+  confirm,
+  seed,
+  excluded,
+  buddy,
+  onConfirm,
+}: {
+  label: string;
+  note: string;
+  confirm: string;
+  /** Where the picker opens; null picks the first other harness that can run a Buddy. */
+  seed: ConversationConfig | null;
+  excluded: string | null;
+  buddy: boolean;
+  onConfirm(config: ConversationConfig): Promise<unknown>;
+}) {
+  const { catalog } = useProviderCatalog();
+  const [draft, setDraft] = useState<ConversationConfig | null>(null);
+  const [open, setOpen] = useState(false);
+  const [state, setState] = useState<
+    { kind: 'idle' | 'busy' } | { kind: 'failed'; message: string }
+  >({ kind: 'idle' });
+  const allowed = (providerId: string) =>
+    providerId !== excluded &&
+    (catalog?.providers.some((p) => p.id === providerId && (!buddy || p.supportsRequiredMcp)) ??
+      false);
+  const fallback = catalog?.providers.find((provider) => allowed(provider.id));
+  const value =
+    draft ??
+    seed ??
+    (fallback
+      ? { provider: fallback.id, model: { mode: 'default' }, reasoning: { mode: 'default' } }
+      : null);
+  const close = () => setOpen(false);
+  return (
+    <div className="channel-harness-picker">
+      <button
+        type="button"
+        className="channel-inline-action"
+        disabled={state.kind === 'busy'}
+        onClick={() => {
+          setDraft(null);
+          setOpen(true);
+        }}
+      >
+        {state.kind === 'busy' ? 'Starting…' : label}
+      </button>
+      {state.kind === 'failed' && (
+        <p className="channel-composer-problem" role="alert">
+          {state.message}
+        </p>
+      )}
+      {open && (
+        <>
+          <button
+            type="button"
+            className="channel-composer-model-backdrop"
+            aria-label="Close harness picker"
+            tabIndex={-1}
+            onClick={close}
+          />
+          <dialog
+            open
+            className="channel-composer-model"
+            aria-label={label}
+            onKeyDown={(event) => {
+              if (event.key !== 'Escape') return;
+              event.preventDefault();
+              close();
+            }}
+          >
+            <p className="channel-composer-model-note">{note}</p>
+            {catalog && value ? (
+              <ConversationConfigPicker
+                value={value}
+                catalog={catalog}
+                providerFilter={allowed}
+                onChange={setDraft}
+              />
+            ) : (
+              <p className="channel-composer-model-note">
+                {catalog ? 'No other harness can run this Buddy.' : 'Loading harness options…'}
+              </p>
+            )}
+            <div className="channel-composer-model-actions">
+              <button type="button" onClick={close}>
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="channel-composer-model-done"
+                disabled={value === null || value.provider === excluded}
+                onClick={() => {
+                  if (value === null) return;
+                  close();
+                  setState({ kind: 'busy' });
+                  onConfirm(value).then(
+                    () => setState({ kind: 'idle' }),
+                    (cause: unknown) => setState({ kind: 'failed', message: errorText(cause) })
+                  );
+                }}
+              >
+                {confirm}
+              </button>
+            </div>
+          </dialog>
+        </>
+      )}
+    </div>
+  );
+}
+
+/** Under a Buddy's failed reply: rerun it on another harness when its harness was the problem. */
+export function ReplyRetry({ post }: { post: Post }) {
+  const seat = useAtomValue(rowFamily(post.conversationId ?? ''));
+  if (post.purpose !== 'reply_failed' || !isHarnessRetryFailure(post.body)) return null;
+  return (
+    <HarnessPicker
+      label="Retry with a different harness"
+      note={
+        isOutOfTokensFailure(post.body)
+          ? 'This harness is out of tokens. The retry runs on the one you pick, in this thread.'
+          : 'This harness couldn’t finish the turn. The retry runs on the one you pick, in this thread.'
+      }
+      confirm="Retry"
+      seed={null}
+      excluded={seat?.provider ?? null}
+      buddy
+      onConfirm={(config) =>
+        buddyWrite(`/api/buddies/posts/${encodeURIComponent(post.id)}/retry`, 'POST', { config })
+      }
+    />
+  );
+}

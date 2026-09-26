@@ -95,9 +95,7 @@
           "checkpointCount": 0,
           "checkpointNextOffset": null,
           "recovery": {
-            "controllerBuddyIds": [
-              "buddy_b2ff0a7e-591c-4e76-9cc1-0cda8d171ec3"
-            ],
+            "controllerBuddyIds": ["buddy_b2ff0a7e-591c-4e76-9cc1-0cda8d171ec3"],
             "mode": "attempt",
             "successorRunId": null,
             "canRetry": false,
@@ -160,9 +158,7 @@
           "checkpointCount": 0,
           "checkpointNextOffset": null,
           "recovery": {
-            "controllerBuddyIds": [
-              "buddy_b2ff0a7e-591c-4e76-9cc1-0cda8d171ec3"
-            ],
+            "controllerBuddyIds": ["buddy_b2ff0a7e-591c-4e76-9cc1-0cda8d171ec3"],
             "mode": "attempt",
             "successorRunId": null,
             "canRetry": false,
@@ -393,9 +389,7 @@
             "maxActiveRuns": 2
           },
           "relationships": [],
-          "allowedOperations": [
-            "send"
-          ],
+          "allowedOperations": ["send"],
           "deniedOperations": {
             "get_profile": {
               "code": "owner_grant_required",

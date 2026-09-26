@@ -20,6 +20,7 @@ import type {
   ThreadStat,
   Workspace,
 } from '@unleashd/buddies-core';
+import type { ConversationConfig } from '@unleashd/shared';
 
 // Pattern: one-type-source (docs/patterns.md#one-type-source)
 export type {
@@ -85,11 +86,15 @@ export interface TaskDetail {
 /** GET /api/buddies/channels/:channelId/posts — top-level posts, each root's reply stats beside. */
 export type ChannelPage = PostPage & { threads: ThreadStat[] };
 
-/** GET /api/buddies/posts/:postId/thread — replies newest first. */
+/** A Buddy's latest seat in a thread: what its next reply runs on (server channels.ts). */
+export type ThreadSeat = { buddyId: string; config: ConversationConfig };
+
+/** GET /api/buddies/posts/:postId/thread — replies newest first, and each Buddy's seat. */
 export interface ThreadPage {
   root: Post;
   posts: Post[];
   next?: Cursor;
+  seats: ThreadSeat[];
 }
 
 /** GET /api/buddies/channels/:channelId/responding */

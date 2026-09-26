@@ -251,6 +251,69 @@ test('provider completion waits for the normalized event stream and session pers
   assert.ok(reviews[0].attemptId);
 });
 
+// 493c1c7: a resumed Claude seat emitted a result for drained task-notifications
+// before the prompt's own answer; sealing on that first turn.complete dropped the answer.
+test('an early turn.complete does not drop the prompt answer that follows it', async () => {
+  async function* events() {
+    yield { type: 'turn.started' as const };
+    yield { type: 'turn.complete' as const, reason: 'success' as const };
+    yield { type: 'text.delta' as const, text: 'The real answer' };
+  }
+  const fixture = runtimeFixture({
+    executeTurn: fakeExecuteTurn(() => ({
+      child: { exitCode: 0 },
+      events: events(),
+      completed: Promise.resolve({
+        exitCode: 0,
+        signal: null,
+        sessionId: 'provider-session',
+        reason: 'success',
+      }),
+      stop: () => undefined,
+    })),
+  });
+  let output = '';
+  fixture.conversation.once('buddy-turn-complete', (text: string) => {
+    output = text;
+  });
+  fixture.conversation.sendMessage('The owner prompt');
+  await eventually(() => assert.equal(fixture.conversation.hasActiveProcess(), false));
+  assert.match(output, /The real answer/);
+});
+
+// The terminal failure names the provider's own message, unwrapped from its JSON
+// envelope, instead of the generic "Provider reported an error" (493c1c7).
+test('a provider error fails the turn with its own message, not the JSON envelope', async () => {
+  async function* events() {
+    yield { type: 'turn.started' as const };
+    yield {
+      type: 'error' as const,
+      message: '{"error":{"message":"The gpt-5.4 model is not supported when using Codex"}}',
+    };
+    yield { type: 'turn.complete' as const, reason: 'error' as const };
+  }
+  const fixture = runtimeFixture({
+    executeTurn: fakeExecuteTurn(() => ({
+      child: { exitCode: 1 },
+      events: events(),
+      completed: Promise.resolve({
+        exitCode: 1,
+        signal: null,
+        sessionId: 'provider-session',
+        reason: 'error',
+      }),
+      stop: () => undefined,
+    })),
+  });
+  let failure = '';
+  fixture.conversation.once('buddy-turn-failed', (reason: string) => {
+    failure = reason;
+  });
+  fixture.conversation.sendMessage('Run the turn');
+  await eventually(() => assert.equal(fixture.conversation.hasActiveProcess(), false));
+  assert.equal(failure, 'The gpt-5.4 model is not supported when using Codex');
+});
+
 test('event-stream failure after turn.complete fails automation after joined drain', async () => {
   const reviews: CompletedBuddyTurn[] = [];
   async function* events() {

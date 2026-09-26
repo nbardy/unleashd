@@ -172,6 +172,12 @@ async function world() {
   const turns: Turn[] = [];
   const during = new Map<number, (turn: Turn) => Promise<void>>();
   const answers = new Map<number, string>();
+  // A channel seat's reply is the Buddy's own `post` (channels.ts). The fake model follows the
+  // prompt's instruction and posts its answer, except in turns listed in `silent`.
+  const silent = new Set<number>();
+  // Turns that end out of tokens, as a harness at its usage limit reports it.
+  const outOfTokens = new Set<number>();
+  const seatPost = /post\(\{ channel: \{ id: "([^"]+)" \}, replyToId: "([^"]+)"/;
   const executeTurn = ((request: ProviderRequest) => {
     const turn: Turn = { n: turns.length + 1, request, mcp: request.mcpServers!.unleashd_buddy };
     turns.push(turn);
@@ -196,7 +202,25 @@ async function world() {
         yield { type: 'session.started' as const, sessionId };
         yield { type: 'turn.started' as const };
         await during.get(turn.n)?.(turn);
-        yield { type: 'text.delta' as const, text: answers.get(turn.n) ?? `Answer ${turn.n}` };
+        if (outOfTokens.has(turn.n)) {
+          yield { type: 'out_of_tokens' as const, message: 'You have hit your usage limit' };
+          yield { type: 'turn.complete' as const, reason: 'out_of_tokens' as const };
+          finish({ exitCode: 0, signal: null, sessionId, reason: 'success' });
+          return;
+        }
+        const answer = answers.get(turn.n) ?? `Answer ${turn.n}`;
+        const seat = seatPost.exec(request.prompt);
+        if (seat && !silent.has(turn.n)) {
+          const posted = await call(turn.mcp, 'post', {
+            channel: { id: seat[1] },
+            replyToId: seat[2],
+            purpose: 'reply',
+            body: answer,
+            key: `seat-reply-${turn.n}`,
+          });
+          assert.equal(posted.isError, false, posted.text);
+        }
+        yield { type: 'text.delta' as const, text: answer };
         yield { type: 'turn.complete' as const, reason: 'success' as const };
         finish({ exitCode: 0, signal: null, sessionId, reason: 'success' });
       })(),
@@ -312,6 +336,8 @@ async function world() {
     turns,
     during,
     answers,
+    silent,
+    outOfTokens,
     gate,
     channels,
     creation,
@@ -509,6 +535,140 @@ test('B1: a seat turn holds owner authority only when the owner wrote its trigge
       'a resumed seat is sent only what is new'
     );
   } finally {
+    await w.close();
+  }
+});
+
+// 493c1c7: the server pasted the seat's final text into the thread — the scratchpad, tool lines
+// and all, or "(no reply text)". Now the Buddy's own posts are the reply, and silence is a notice.
+test('a seat reply is what the Buddy posts; a turn that posts nothing leaves a failure notice', async () => {
+  const w = await world();
+  try {
+    const say = (body: string, replyToId?: string) =>
+      w.core.post(
+        OWNER,
+        { kind: 'id', id: w.general.id },
+        { kind: 'inform', body, replyToId, evidence: [], key: body }
+      );
+    const thread = async (rootId: string) =>
+      (await w.core.listPosts(OWNER, { kind: 'thread', rootId }, null, 50)).posts.reverse();
+    const root = await say(`[@Lead](buddy:${w.lead.id}) status?`);
+    w.answers.set(1, 'Shipped');
+    await w.channels.respondToOwnerPost(w.general, root, new Map());
+    await until(async () => (await thread(root.id)).length === 1, 'the posted reply');
+    const [reply] = await thread(root.id);
+    assert.equal(reply.body, 'Shipped');
+    assert.equal(reply.purpose, 'reply');
+
+    w.silent.add(2);
+    w.answers.set(2, 'private scratchpad text');
+    const again = await say(`[@Lead](buddy:${w.lead.id}) and now?`, root.id);
+    await w.channels.respondToOwnerPost(w.general, again, new Map());
+    const notice = await until(
+      async () => (await thread(root.id)).find((post) => post.purpose === 'reply_failed'),
+      'the missing-post notice'
+    );
+    assert.match(notice.body, /without a channel post/);
+    assert.equal(notice.replyToId, again.id, 'only the silent turn is a failure');
+    assert.equal(
+      (await thread(root.id)).some((post) => post.body.includes('private scratchpad')),
+      false,
+      'the text output never reaches the channel'
+    );
+  } finally {
+    await w.close();
+  }
+});
+
+// 493c1c7: a reply that failed on its harness (here out of tokens) had no way forward but to
+// re-mention and hope. The owner reruns it on another harness; the same harness is refused.
+test('a harness failure is retried on another harness, in a new seat of the same thread', async () => {
+  const w = await world();
+  try {
+    const root = await w.core.post(
+      OWNER,
+      { kind: 'id', id: w.general.id },
+      { kind: 'inform', body: `[@Lead](buddy:${w.lead.id}) ship it`, evidence: [], key: 'ask' }
+    );
+    w.outOfTokens.add(1);
+    await w.channels.respondToOwnerPost(w.general, root, new Map());
+    const thread = async () =>
+      (await w.core.listPosts(OWNER, { kind: 'thread', rootId: root.id }, null, 50)).posts;
+    const notice = await until(
+      async () => (await thread()).find((post) => post.purpose === 'reply_failed'),
+      'the out-of-tokens notice'
+    );
+    assert.match(notice.body, /Out of tokens/);
+    await assert.rejects(
+      w.channels.retryReply(notice, createDefaultConversationConfig('codex')),
+      /Pick a different harness/
+    );
+    const retried = await w.channels.retryReply(notice, createDefaultConversationConfig('claude'));
+    assert.deepEqual(retried, { buddyId: w.lead.id, status: 'started' });
+    const answer = await until(
+      async () => (await thread()).find((post) => post.purpose === 'reply'),
+      'the retried reply'
+    );
+    assert.equal(answer.replyToId, root.id);
+    assert.equal(w.turns[1].request.harness, 'claude');
+
+    const silent = await w.core.post(
+      buddyActor(w.lead.id),
+      { kind: 'id', id: w.general.id },
+      {
+        kind: 'inform',
+        purpose: 'reply_failed',
+        body: 'Couldn’t reply: Buddy is not active',
+        replyToId: root.id,
+        evidence: [],
+        key: 'not-harness',
+      }
+    );
+    await assert.rejects(
+      w.channels.retryReply(silent, createDefaultConversationConfig('claude')),
+      /out-of-tokens or provider-error/
+    );
+  } finally {
+    await w.close();
+  }
+});
+
+// 493c1c7: "New chat" in a DM starts the next generation and keeps the earlier ones, which the DM
+// shows above a divider; the out-of-tokens retry is a new chat on another harness that resends.
+test('a DM new chat opens the next generation; the chain keeps every earlier one', async () => {
+  const w = await world();
+  const { server, http } = await ownerHttp(w);
+  try {
+    const first = (await w.channels.openDirect(w.lead.id)).conversationId;
+    const created = await http('POST', `/api/buddies/${w.lead.id}/direct/new-chat`, {});
+    assert.equal(created.status, 200, JSON.stringify(created.body));
+    const second = (created.body as unknown as { conversationId: string }).conversationId;
+    assert.notEqual(second, first);
+    assert.deepEqual((await w.channels.openDirect(w.lead.id)).conversationId, second);
+    await assert.rejects(
+      w.channels.newDirect(w.lead.id, {
+        config: createDefaultConversationConfig('codex'),
+        message: 'again',
+      }),
+      /Pick a different harness/
+    );
+    const third = (
+      await w.channels.newDirect(w.lead.id, {
+        config: createDefaultConversationConfig('claude'),
+        message: 'Resend this',
+      })
+    ).conversationId;
+    const chain = await http('GET', `/api/buddies/${w.lead.id}/direct/chain`);
+    assert.deepEqual((chain.body as unknown as { generations: string[] }).generations, [
+      first,
+      second,
+      third,
+    ]);
+    await until(() => w.turns.length === 1, 'the resent message runs');
+    assert.equal(w.turns[0].request.harness, 'claude');
+    assert.match(w.turns[0].request.prompt, /Resend this/);
+  } finally {
+    server.close();
     await w.close();
   }
 });
@@ -811,7 +971,6 @@ test(
     }
   }
 );
-
 
 test('the briefing tool guide stays inside its budget', () => {
   // A runtime throw on this budget failed every owner-thread turn on 2026-09-21; it is a test now.
@@ -1120,6 +1279,47 @@ test('owner routes restore what the T11 client migration dropped: reply stats, t
 // Port of 6d04860 (workspace home "New workspace"): the crate reuses a workspace only on an
 // IDENTICAL root_path string, so a trailing slash or a symlink used to register the same folder
 // twice. A file, a missing folder or `/` must be a 400, never a workspace.
+// 493c1c7: the mention chip opened on the PROFILE default even in a thread whose seat runs an
+// earlier pick, so a later "change the model" started from the wrong baseline.
+test('a thread read names each Buddy’s current seat, so the mention chip opens on it', async () => {
+  const w = await world();
+  const { server, http } = await ownerHttp(w);
+  try {
+    const pick = {
+      provider: 'claude' as const,
+      model: { mode: 'default' as const },
+      reasoning: { mode: 'explicit' as const, effort: 'high' },
+    };
+    const posted = await http('POST', `/api/buddies/channels/${w.general.id}/posts`, {
+      body: `[@Lead](buddy:${w.lead.id}) plan it`,
+      mentionConfigs: [{ buddyId: w.lead.id, config: pick }],
+      key: 'seat-pick',
+    });
+    assert.equal(posted.status, 201, JSON.stringify(posted.body));
+    const root = (posted.body as unknown as { post: Post }).post;
+    const replied = async () =>
+      (await w.core.listPosts(OWNER, { kind: 'thread', rootId: root.id }, null, 50)).posts.some(
+        (post) => post.author.kind === 'buddy'
+      );
+    await until(replied, "Lead's reply");
+    assert.equal(w.turns.length, 1, 'the reply ran in a seat');
+    // Designer posts too, but has no seat of its own: it is left out (its profile applies).
+    await w.core.post(
+      buddyActor(w.designer.id),
+      { kind: 'id', id: w.general.id },
+      { kind: 'inform', body: 'noted', replyToId: root.id, evidence: [], key: 'designer-noted' }
+    );
+    const thread = await http('GET', `/api/buddies/posts/${root.id}/thread`);
+    assert.equal(thread.status, 200);
+    assert.deepEqual((thread.body as unknown as { seats: unknown }).seats, [
+      { buddyId: w.lead.id, config: pick },
+    ]);
+  } finally {
+    server.close();
+    await w.close();
+  }
+});
+
 test('New workspace from a folder: the name defaults to the folder, any spelling of it reuses one workspace', async () => {
   const w = await world();
   const { server, http } = await ownerHttp(w);

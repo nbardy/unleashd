@@ -133,7 +133,16 @@ export class TurnRunner {
   // cleanup. The close handler then takes the fast path, while crash/kill/error
   // paths where it never fired still run the full cleanup.
   private completedCleanly = false;
+  // A timeout or stop already finalized the user-visible turn: later provider
+  // events are dropped. A normal turn.complete does NOT seal. On resume Claude
+  // can emit a result for drained task-notifications before the prompt's own
+  // answer, and that answer must still be recorded (493c1c7; guard:
+  // conversation-runtime.test.ts "an early turn.complete does not drop …").
+  private sealed = false;
   private terminalCauseHint: TurnTerminalCause | null = null;
+  // The provider's own error text. It names the failure on the terminal path
+  // instead of the generic "Provider reported an error".
+  private providerFailureMessage: string | null = null;
   private stopCause: 'user_stop' | 'server_restart' | null = null;
   private processStartTime = 0;
   private lastAttemptActivityAt = 0;
@@ -220,6 +229,7 @@ export class TurnRunner {
     this.host.turnQueue.forgetAttempt(this.activeAttemptId);
     this.activeAttemptId = null;
     this.terminalCauseHint = null;
+    this.providerFailureMessage = null;
     this.stopCause = null;
   }
 
@@ -279,7 +289,9 @@ export class TurnRunner {
     this.stderrBuffer = '';
     this.sawMeaningfulOutput = false;
     this.completedCleanly = false;
+    this.sealed = false;
     this.terminalCauseHint = null;
+    this.providerFailureMessage = null;
     this.stopCause = null;
     this.processStartTime = Date.now();
     this.lastAttemptActivityAt = 0;
@@ -390,7 +402,7 @@ export class TurnRunner {
   }
 
   get streamClosed(): boolean {
-    return this.completedCleanly;
+    return this.sealed;
   }
 
   async bindSession(sessionId: string): Promise<void> {
@@ -455,7 +467,8 @@ export class TurnRunner {
 
   noteFailure(cause: 'out_of_tokens' | 'provider_error', message: string): void {
     this.terminalCauseHint = cause;
-    this.surfaceError(normalizeProviderErrorMessage(message));
+    this.providerFailureMessage = normalizeProviderErrorMessage(message);
+    this.surfaceError(this.providerFailureMessage);
   }
 
   noteUsage(usage: Omit<ProviderTurnUsage, 'observedAt'>): void {
@@ -628,6 +641,7 @@ export class TurnRunner {
     this.ports.markLocalCompletionSuppression(host.id, host.sessionId);
     if (host.turnQueue.finishHead()) host.broadcastQueue();
     const completionFailure =
+      this.providerFailureMessage ??
       fold.streamError?.message ??
       fold.completionError ??
       (this.terminalCauseHint === 'out_of_tokens'
@@ -753,6 +767,7 @@ export class TurnRunner {
     this.clearWatchdogs();
     const proc = host.process;
     if (!proc) return;
+    this.sealed = true;
     this.stopCause = reason;
     if (this.activeAttemptId) {
       this.ports.turnAttempts.stopping(this.activeAttemptId);
@@ -832,7 +847,9 @@ export class TurnRunner {
     this.broadcastStatus();
     host.publishTurnEnd();
     // The close handler (after SIGTERM below) takes the fast path and does not
-    // add a duplicate system message.
+    // add a duplicate system message. Seal so a late provider event cannot
+    // append another answer after the timeout message.
+    this.sealed = true;
     this.completedCleanly = true;
     host.policy.ended({ t: 'failed', detail: timeout.message });
     host.emit('buddy-turn-failed', timeout.message);
@@ -880,9 +897,10 @@ class EventFold {
   async consume(events: AsyncIterable<UnifiedAgentEvent>): Promise<void> {
     for await (const event of events) {
       if (!this.runner.isCurrent(this.runToken)) return;
-      // A timeout finalizes the user-visible turn before the child has
+      // A timeout or stop finalizes the user-visible turn before the child has
       // necessarily acknowledged SIGTERM. Ignore buffered/late provider events
-      // so they cannot resurrect or complete it twice.
+      // so they cannot resurrect or complete it twice. A normal turn.complete
+      // does not seal: the events after it can be the prompt's own answer.
       if (this.runner.streamClosed) continue;
       this.runner.noteActivity(event);
       await this.apply(event);
@@ -1026,8 +1044,23 @@ function stderrSnippet(value: string, maxLength = 400): string {
 const OUT_OF_TOKENS_PATTERN =
   /out of tokens|token limit|usage limit|insufficient (?:credits|balance)|exceeded(?: your)?(?: current)? quota|credit balance|rate limit exceeded/i;
 
-function normalizeProviderErrorMessage(message: string): string {
+// Harnesses sometimes hand back the raw API error envelope
+// ({"error":{"message":…}}); the owner should read the message, not the JSON.
+function providerErrorText(message: string): string {
   const trimmed = message.trim();
+  if (!trimmed.startsWith('{')) return trimmed;
+  try {
+    const parsed = JSON.parse(trimmed) as { error?: { message?: unknown }; message?: unknown };
+    const inner = parsed.error?.message ?? parsed.message;
+    if (typeof inner === 'string' && inner.trim()) return inner.trim();
+  } catch {
+    // Prose that starts with a brace, not an envelope.
+  }
+  return trimmed;
+}
+
+function normalizeProviderErrorMessage(message: string): string {
+  const trimmed = providerErrorText(message);
   if (!trimmed) return 'Unknown provider error';
   if (!OUT_OF_TOKENS_PATTERN.test(trimmed)) return trimmed;
   if (/^out of tokens:/i.test(trimmed)) return trimmed;

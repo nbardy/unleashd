@@ -292,13 +292,6 @@
 
 /* View mode toggle: grouped vs list */
 
-.status-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: var(--text-muted);
-}
-
 .status-dot.connected {
   background: var(--accent-success);
 }
@@ -454,6 +447,7 @@
   outline: none;
 }
 
+.status-dot,
 .status-indicator {
   width: 8px;
   height: 8px;

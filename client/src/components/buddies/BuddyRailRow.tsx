@@ -1,3 +1,4 @@
+import { setConversationDone } from '../../atoms/actions';
 import { BuddySigil } from './BuddySigil';
 import type { OpenDm } from './ChannelAuthor';
 import { WakeIcon, WakeIndicator } from './WakeIndicator';
@@ -52,6 +53,45 @@ export function BuddyRailRow({
           onClick={direct.wake}
         >
           <WakeIcon />
+        </button>
+      </span>
+    </li>
+  );
+}
+
+const CREATING = 'Creating buddy';
+
+// The Buddy Builder chat in progress, above the Buddies it will add: opens in the DM pane; on
+// hover, × archives the setup chat (marks it done).
+export function CreatingBuddyRailRow({
+  conversationId,
+  openDm,
+  current,
+}: {
+  conversationId: string;
+  openDm: OpenDm;
+  current: boolean;
+}) {
+  return (
+    <li className="channel-browser-buddy">
+      <button
+        type="button"
+        className="channel-browser-buddy-link"
+        aria-label={`Continue ${CREATING}`}
+        aria-current={current ? 'page' : undefined}
+        onClick={() => openDm(conversationId)}
+      >
+        <BuddySigil className="channel-browser-buddy-sigil" name={CREATING} />
+        <em className="channel-browser-channel-name ui-muted">{CREATING}</em>
+      </button>
+      <span className="channel-browser-buddy-actions">
+        <button
+          type="button"
+          title="Archive this setup chat"
+          aria-label="Archive Buddy setup"
+          onClick={() => setConversationDone(conversationId, true)}
+        >
+          ×
         </button>
       </span>
     </li>

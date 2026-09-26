@@ -6,15 +6,11 @@
       "label": "self",
       "before": {
         "project": "[\"saved-project-artifact\"]",
-        "todo": [
-          "saved-step-artifact"
-        ]
+        "todo": ["saved-step-artifact"]
       },
       "titleOnly": {
         "project": "[\"saved-project-artifact\"]",
-        "todo": [
-          "saved-step-artifact"
-        ]
+        "todo": ["saved-step-artifact"]
       },
       "after": {
         "project": "[]",
@@ -26,15 +22,11 @@
       "label": "supervised",
       "before": {
         "project": "[\"saved-project-artifact\"]",
-        "todo": [
-          "saved-step-artifact"
-        ]
+        "todo": ["saved-step-artifact"]
       },
       "titleOnly": {
         "project": "[\"saved-project-artifact\"]",
-        "todo": [
-          "saved-step-artifact"
-        ]
+        "todo": ["saved-step-artifact"]
       },
       "after": {
         "project": "[]",

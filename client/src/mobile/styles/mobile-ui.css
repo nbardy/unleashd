@@ -120,17 +120,6 @@
   background: var(--bg-raised-2);
 }
 
-.mobile-ui-card--button:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
-
-.mobile-ui-card--button:disabled {
-  cursor: default;
-  opacity: 0.55;
-  transform: none;
-}
-
 .mobile-ui-badge {
   flex: none;
   min-height: 20px;
@@ -203,11 +192,7 @@
   transform: scale(0.96);
 }
 
-.mobile-ui-header-action:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 2px;
-}
-
+.mobile-ui-card--button:disabled,
 .mobile-ui-header-action:disabled {
   cursor: default;
   opacity: 0.55;
@@ -488,11 +473,6 @@
 .mobile-chat__action:disabled {
   cursor: default;
   opacity: 0.45;
-}
-
-.mobile-chat__action-error {
-  color: var(--theme-danger);
-  font-size: var(--fs-2);
 }
 
 .mobile-chat__messages {
@@ -798,22 +778,6 @@
 /* ---- Attach button + pending files (shared behaviour with desktop Chat.tsx) ---- */
 /* Uses same hook (usePendingAttachments) and same localStorage key / upload path.
    Visuals are mobile-scaled: horizontal chip strip above the composer box. */
-.mobile-composer__btn--attach {
-  background: var(--bg-raised-2);
-  color: var(--text-secondary);
-  border: 1px solid var(--border-subtle);
-}
-
-.mobile-composer__btn--attach:disabled {
-  opacity: 0.45;
-  cursor: default;
-  transform: none;
-}
-
-.mobile-composer__btn--attach:active:not(:disabled) {
-  background: var(--bg-raised-1);
-}
-
 /* ---- Slim conversation header ---- */
 .mobile-chat__heading {
   flex: 1;
@@ -912,6 +876,8 @@
   background: var(--bg-raised-2);
 }
 
+.mobile-ui-card--button:focus-visible,
+.mobile-ui-header-action:focus-visible,
 .mobile-message__copy:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
@@ -1121,6 +1087,7 @@
 }
 
 /* Composer prompt buttons — same 30px circle as attach/send */
+.mobile-composer__btn--attach,
 .mobile-composer__btn--save,
 .mobile-composer__btn--palette {
   background: var(--bg-raised-2);
@@ -1128,12 +1095,14 @@
   border: 1px solid var(--border-subtle);
 }
 
+.mobile-composer__btn--attach:disabled,
 .mobile-composer__btn--save:disabled {
   opacity: 0.45;
   cursor: default;
   transform: none;
 }
 
+.mobile-composer__btn--attach:active:not(:disabled),
 .mobile-composer__btn--save:active:not(:disabled),
 .mobile-composer__btn--palette:active {
   background: var(--bg-raised-1);

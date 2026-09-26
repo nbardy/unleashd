@@ -12,7 +12,7 @@ remain the three core components.
 | Field | Value |
 |---|---|
 | Question | The full-screen channel page was read-only. Let the owner post, and decide whether a post should wake a Buddy by routing (the system picks who answers) or by explicit tagging. Add threads, rich media and Task references. |
-| Choice | **Explicit @mention only.** An owner post that mentions a Buddy starts that Buddy's turn; an untagged post wakes nobody, as before. The **server** posts the Buddy's final answer into the thread. Threads are **one level** (Slack). Media is **inline markdown**, not an attachments list. Tasks appear as **live chips**. One **universal `@`** picker fuzzy-finds Buddies and Tasks. The owner can create channels. |
+| Choice | **Explicit @mention only.** An owner post that mentions a Buddy starts that Buddy's turn; an untagged post wakes nobody, as before. The Buddy **posts** its answer into the thread with its `post` tool (the server posted its final text until 2026-09-26). Threads are **one level** (Slack). Media is **inline markdown**, not an attachments list. Tasks appear as **live chips**. One **universal `@`** picker fuzzy-finds Buddies and Tasks. The owner can create channels. |
 | Rejected | Automatic routing (a model call per message to pick a responder: cost on every post, ambiguous ownership, zero-or-three replies). A separate attachments field (two ways to share media). `#` for Tasks (`#` means channels). Tick-to-complete from the chip hover (completion needs evidence on every todo). |
 | Later, if wanted | A per-channel **default responder**: untagged owner posts go to one Buddy, which may answer or `send` onward. Routing by reusing a Buddy, no router concept. |
 
@@ -92,10 +92,12 @@ remain the three core components.
    package owns that rule (`knowledgeAudienceContinuity`). Until 2026-09-25 any
    audience change reset the seat, and at 03:30Z a Buddy that filed a Task from
    its seat got a fresh session told only "Replies since then (0)".
-4. The final assistant text is posted by the server as that Buddy (`purpose:
-   reply`, seat conversation provenance, key `thread-reply:<post>:<buddy>`). Media
-   the Buddy referenced is copied; a bad reference is noted visibly in the reply.
-   A failed turn posts `purpose: reply_failed` with the reason — never silent.
+4. The Buddy posts its own answer with `post` (`purpose: reply`, this thread,
+   seat conversation provenance). Text output is a private scratchpad and is not
+   copied into the channel. A turn that posts nothing, or fails, leaves
+   `purpose: reply_failed` (key `thread-reply:<post>:<buddy>`) with the reason —
+   never a blank `(no reply text)`, and never the tool transcript. Media in a
+   post is copied; a bad reference is rejected so the Buddy can fix it.
 5. `GET /api/buddies/lists/:id/responding` drives "X is replying…".
 
 **Known gap:** mention replies are launched as in-memory promises in
@@ -180,9 +182,12 @@ an owner post is shown), ported from `channel-conversations.test.ts` in T11.
   replies, item 2) and sticks for every later reply there. A mention with no
   choice keeps the seat; in a new thread that is the profile default. Any
   harness works on any mention: a different pick opens a new seat generation.
-- **Open gap:** the chip shows the PROFILE default for an un-picked mention,
-  which is wrong in a thread whose seat runs an earlier pick. Fix: return
-  each Buddy's seat config with the thread read and seed the chip from it.
+- **Chip baseline:** the thread read includes `seats`, the latest harness,
+  model, and reasoning per Buddy who has posted or been @mentioned. The chip
+  opens on that, so a change continues from it. A Buddy with no seat yet
+  shows the profile default, which is also what the first reply runs on.
+  A settings change on the seat conversation itself keeps its create replay
+  matching, so the next reply reopens that same seat on the new settings.
 - **Defaults on the chip:** workspace activity members carry
   `execution: {kind:'profile', config}` from `buddyExecutionPreferences()` (the
   same mapping turn creation uses). The wire default is `{kind:'unreported'}`
@@ -234,6 +239,23 @@ does not push a client refresh. Both tools are in the default run policy
 - Both appear on Buddy rows in the desktop channels rail, the desktop main
   sidebar (hover, after the running counts), and mobile Channels Home (tap row =
   DM, visible Wake button). Shared client logic: `buddy-direct-actions.ts`.
+- Inside Channels the DM is drawn as a thread (`ChannelDm.tsx`): sigil, name,
+  time and `ChannelMarkdown` for both sides, and a channel-style composer (attach
+  + Send). Desktop opens it in the main pane (`?dm=`); the phone opens it as its
+  own Channels screen on the same URL, and Back drops `dm`. The Buddy Builder
+  chat still uses the conversation page.
+- **New chat** starts the next DM generation with no handoff; the picker opens
+  on the current harness. Earlier generations stay live and show above a "New
+  chat" divider; a link to an earlier one offers "Latest chat". Server:
+  `channels.newDirect` / `directChain` (`GET /api/buddies/:id/direct/chain`,
+  `POST …/direct/new-chat`).
+- **Retry on another harness.** A reply that failed because of its harness
+  (out of tokens, or a provider error such as Codex rejecting a model; shared
+  `isHarnessRetryFailure`) shows "Retry with a different harness". In a thread it
+  reruns the reply on a new seat (`POST /api/buddies/posts/:id/retry`); in a DM
+  it is a new chat on the picked harness that resends the owner's last message;
+  a plain chat that ran out of tokens starts a new chat the same way. The
+  harness that failed is refused.
 
 ## Mobile (2026-09-24)
 

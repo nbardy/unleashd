@@ -76,6 +76,28 @@ export async function scanGenerations(
   throw new Error(`Every conversation generation here is used (${MAX_GENERATIONS})`);
 }
 
+/** Every live generation's id, oldest first (the newest is the current one). */
+export async function liveGenerations(
+  ports: Pick<StableConversationPorts, 'slot'>,
+  idOf: (generation: number) => string
+): Promise<string[]> {
+  const live: string[] = [];
+  for (let generation = 0; generation < MAX_GENERATIONS; generation += 1) {
+    const conversationId = idOf(generation);
+    const slot = await ports.slot(conversationId);
+    switch (slot.kind) {
+      case 'absent':
+        return live;
+      case 'deleted':
+        break;
+      case 'live':
+        live.push(conversationId);
+        break;
+    }
+  }
+  return live;
+}
+
 /** Reopen the runtime if it is registered, else create (or replay) it. */
 export async function openConversation(
   ports: StableConversationPorts,

@@ -1,23 +1,12 @@
-import { useLocation, useNavigate } from 'react-router-dom';
-import { mobileConversationRouteState } from '../../utils/conversation-route-state';
 import { useBuddyDirectActions } from './buddy-direct-actions';
 import type { Actor } from './types';
 
-/** Where a resolved DM opens. The caller's surface decides (see useChatPageDm). */
+/**
+ * Where a resolved DM opens: inside Channels on both devices (`?dm=`), drawn as a thread
+ * (ChannelDm). Owner feedback 2026-09-25: a name click leaving Slack for the conversation list
+ * felt like a different app; the phone did so until 493c1c7.
+ */
 export type OpenDm = (conversationId: string) => void;
-
-// Mobile: the DM is the full-screen chat page; Back returns to the channel it
-// was opened from. Desktop opens it inside the channels view instead
-// (ChannelBrowser's `?dm=`), so the rail stays put — owner feedback 2026-09-25:
-// a name click leaving Slack for the conversation list felt like a different app.
-export function useChatPageDm(): OpenDm {
-  const navigate = useNavigate();
-  const location = useLocation();
-  return (conversationId) =>
-    navigate(`/chat/${encodeURIComponent(conversationId)}`, {
-      state: mobileConversationRouteState(location),
-    });
-}
 
 // A post's author inside Channels, desktop and mobile. Like Slack, a Buddy's
 // name opens the DM with it (the one ongoing owner chat, history kept —
