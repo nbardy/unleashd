@@ -10,8 +10,10 @@
  */
 import { useAtomValue } from 'jotai';
 import { useEffect, useState } from 'react';
-import { rowFamily } from '../../atoms/conversations';
+import { setConversationDone } from '../../atoms/actions';
+import { listField, rowFamily } from '../../atoms/conversations';
 import { buddyAction, errorText } from './api';
+import { createBuddyViaBuilder } from './create-buddy-builder';
 
 export type DirectAction =
   | { kind: 'idle' }
@@ -77,4 +79,28 @@ export function useWakePhase(conversationId: string): WakePhase {
       // Availability-checked: the atom is null once the client no longer holds it.
       return { kind: 'done', available: conversation !== null };
   }
+}
+
+/**
+ * "+" beside the channels rail's Buddies: start a Buddy Builder chat and open it in the DM pane
+ * (the sidebar's New Buddy spine). One setup chat at a time: earlier unfinished ones are marked
+ * done, so the rail's "Creating buddy" row is always the newest (493c1c7).
+ */
+export function useNewBuddy(open: (conversationId: string) => void) {
+  const builders = useAtomValue(listField('builders'));
+  const [state, setState] = useState<DirectAction>({ kind: 'idle' });
+  return {
+    state,
+    start() {
+      if (state.kind === 'pending') return;
+      for (const entry of builders) if (!entry.done) setConversationDone(entry.id, true);
+      setState({ kind: 'pending', action: 'dm' });
+      createBuddyViaBuilder()
+        .then((conversationId) => {
+          setState({ kind: 'idle' });
+          open(conversationId);
+        })
+        .catch((cause: unknown) => setState({ kind: 'failed', message: errorText(cause) }));
+    },
+  };
 }

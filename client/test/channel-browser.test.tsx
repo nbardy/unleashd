@@ -20,6 +20,8 @@ const { channelRows, workspaceDirectory } = await import('../src/components/budd
 const { Provider } = await import('jotai');
 const { jotaiStore } = await import('../src/atoms/store');
 const { loadResource } = await import('../src/atoms/resources');
+const { rowsAtom } = await import('../src/atoms/conversations');
+const { syntheticConversation } = await import('./fixtures/synthetic-conversations');
 
 const lead = buddyFixture({ id: 'lead', name: 'Lead', role: 'Own the work' });
 const dev = buddyFixture({ id: 'dev', name: 'Dev', role: 'Build the work' });
@@ -295,4 +297,47 @@ test('the channel and thread panes open on their newest page and page back', asy
   const flame = 'class="channel-history"';
   inOrder(channelPane, [flame, 'Body of top-0.', 'Body of top-49.']);
   inOrder(threadPane, ['Body of root.', flame, 'Body of reply-0.', 'Body of reply-49.']);
+});
+
+// 493c1c7: the rail had no way to start a Buddy, a running Builder chat vanished from Channels,
+// and a posted reply gave no way into the conversation that wrote it.
+test('the rail starts and lists a Buddy setup chat; a held post offers its conversation', async () => {
+  await seedSlack();
+  const at = Date.parse('2026-09-21');
+  const builder = (id: string, done: boolean, minutes: number) =>
+    syntheticConversation(1, {
+      id,
+      kind: { t: 'builder' },
+      done,
+      createdAt: at + minutes * 60_000,
+      activityAt: at + minutes * 60_000,
+    });
+  jotaiStore.set(
+    rowsAtom,
+    new Map(
+      [
+        builder('builder-new', false, 2),
+        builder('builder-old', false, 1),
+        builder('builder-done', true, 3),
+      ].map((row) => [row.id, row])
+    )
+  );
+  try {
+    const html = render('ws-slack', slackDirectory());
+    assert.match(html, /aria-label="New Buddy"/);
+    assert.equal(
+      html.match(/Continue Creating buddy/g)?.length,
+      1,
+      'one setup row: the newest open'
+    );
+    assert.match(html, /<button[^>]*aria-label="Continue Creating buddy"/);
+    // Only the post whose conversation the client holds gets the eye.
+    assert.equal(
+      html.match(/aria-label="Open the conversation" href="\/chat\/conv-aaaa111122223333"/g)
+        ?.length,
+      1
+    );
+  } finally {
+    jotaiStore.set(rowsAtom, new Map());
+  }
 });
