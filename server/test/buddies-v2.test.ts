@@ -812,7 +812,6 @@ test(
   }
 );
 
-
 test('the briefing tool guide stays inside its budget', () => {
   // A runtime throw on this budget failed every owner-thread turn on 2026-09-21; it is a test now.
   assert.ok(BUDDY_TOOL_GUIDE.length <= 3_000, `${BUDDY_TOOL_GUIDE.length} chars`);
@@ -1120,6 +1119,47 @@ test('owner routes restore what the T11 client migration dropped: reply stats, t
 // Port of 6d04860 (workspace home "New workspace"): the crate reuses a workspace only on an
 // IDENTICAL root_path string, so a trailing slash or a symlink used to register the same folder
 // twice. A file, a missing folder or `/` must be a 400, never a workspace.
+// 493c1c7: the mention chip opened on the PROFILE default even in a thread whose seat runs an
+// earlier pick, so a later "change the model" started from the wrong baseline.
+test('a thread read names each Buddy’s current seat, so the mention chip opens on it', async () => {
+  const w = await world();
+  const { server, http } = await ownerHttp(w);
+  try {
+    const pick = {
+      provider: 'claude' as const,
+      model: { mode: 'default' as const },
+      reasoning: { mode: 'explicit' as const, effort: 'high' },
+    };
+    const posted = await http('POST', `/api/buddies/channels/${w.general.id}/posts`, {
+      body: `[@Lead](buddy:${w.lead.id}) plan it`,
+      mentionConfigs: [{ buddyId: w.lead.id, config: pick }],
+      key: 'seat-pick',
+    });
+    assert.equal(posted.status, 201, JSON.stringify(posted.body));
+    const root = (posted.body as unknown as { post: Post }).post;
+    const replied = async () =>
+      (await w.core.listPosts(OWNER, { kind: 'thread', rootId: root.id }, null, 50)).posts.some(
+        (post) => post.author.kind === 'buddy'
+      );
+    await until(replied, "Lead's reply");
+    assert.equal(w.turns.length, 1, 'the reply ran in a seat');
+    // Designer posts too, but has no seat of its own: it is left out (its profile applies).
+    await w.core.post(
+      buddyActor(w.designer.id),
+      { kind: 'id', id: w.general.id },
+      { kind: 'inform', body: 'noted', replyToId: root.id, evidence: [], key: 'designer-noted' }
+    );
+    const thread = await http('GET', `/api/buddies/posts/${root.id}/thread`);
+    assert.equal(thread.status, 200);
+    assert.deepEqual((thread.body as unknown as { seats: unknown }).seats, [
+      { buddyId: w.lead.id, config: pick },
+    ]);
+  } finally {
+    server.close();
+    await w.close();
+  }
+});
+
 test('New workspace from a folder: the name defaults to the folder, any spelling of it reuses one workspace', async () => {
   const w = await world();
   const { server, http } = await ownerHttp(w);

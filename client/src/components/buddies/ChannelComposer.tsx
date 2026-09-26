@@ -10,8 +10,10 @@ import { buddyApi, buddyWrite, errorText } from './api';
 import {
   type BuddyReference,
   type ChannelReference,
+  type MentionChoice,
   activeReferenceQuery,
   channelDraftId,
+  choiceLabel,
   completesPickedReference,
   composerReferenceMarks,
   decodeChannelDraft,
@@ -19,10 +21,12 @@ import {
   encodeReferences,
   insertReference,
   mediaMarkdown,
+  mentionChoice,
   mentionedBuddies,
+  pickerValue,
   rankReferences,
 } from './channel-text';
-import type { PostResult } from './types';
+import type { PostResult, ThreadSeat } from './types';
 import './ChannelComposer.css';
 
 type UploadedFile = { originalName: string; absolutePath: string };
@@ -30,6 +34,7 @@ type UploadedFile = { originalName: string; absolutePath: string };
 const MAX_TEXTAREA_HEIGHT = 240;
 
 const NO_CHOICES: ReadonlyMap<string, ConversationConfig> = new Map();
+const NO_SEATS: readonly ThreadSeat[] = [];
 
 // The owner's composer. Posts as the owner (never a stand-in Buddy). One
 // universal @ menu fuzzy-finds Buddies and Tasks: a Buddy becomes a mention
@@ -40,7 +45,9 @@ const NO_CHOICES: ReadonlyMap<string, ConversationConfig> = new Map();
 // Every Buddy the text mentions gets a chip on the bar; clicking it opens the
 // chat's harness/model picker for that Buddy's reply. The choice is sent
 // beside the post (mentionConfigs) and becomes the Buddy's seat in the thread:
-// every later reply there keeps it (channel-responder.ts).
+// every later reply there keeps it (channels.ts). In a thread the chip opens
+// on that Buddy's latest seat (the thread read's `seats`), so a change
+// continues from there instead of the profile default.
 //
 // Unsent text survives navigation and reload through the chat's own draft
 // hook (useConversationDraft), one draft per channel and per thread. The
@@ -55,6 +62,7 @@ export function ChannelComposer({
   placeholder,
   rootId,
   references,
+  seats = NO_SEATS,
   submit,
   onPosted,
 }: {
@@ -63,6 +71,8 @@ export function ChannelComposer({
   /** The thread this composer replies in; null posts at the top level. */
   rootId: string | null;
   references: readonly ChannelReference[];
+  /** Each thread Buddy's latest seat; none at the top level (no thread yet). */
+  seats?: readonly ThreadSeat[];
   submit: ComposerSubmit;
   onPosted(result: PostResult): void;
 }) {
@@ -244,7 +254,7 @@ export function ChannelComposer({
       {choosing && (
         <MentionModelPopover
           buddy={choosing}
-          choice={mentionChoice(choosing, choices)}
+          choice={mentionChoice(choosing, choices, seats)}
           catalog={catalog}
           onChange={(config) => setChoices(new Map(choices).set(choosing.id, config))}
           onReset={() => {
@@ -368,7 +378,7 @@ export function ChannelComposer({
               <MentionChip
                 key={buddy.id}
                 buddy={buddy}
-                choice={mentionChoice(buddy, choices)}
+                choice={mentionChoice(buddy, choices, seats)}
                 catalog={catalog}
                 open={buddy.id === choosingFor}
                 onOpen={() => {
@@ -427,66 +437,6 @@ function ComposerHighlight({
   if (cursor < text.length) parts.push(text.slice(cursor));
   if (text.endsWith('\n')) parts.push(<br key="trail" />);
   return parts;
-}
-
-// What a mentioned Buddy's reply will run on, as the chip and picker see it.
-// `profile` is the Buddy's profile default — exact for a new thread; in a
-// thread where the owner already picked for this Buddy, an unchosen reply
-// keeps that pick (its seat), which the chip does not know yet. `unreported`
-// is a profile whose harness this client's schema does not know
-// (channel-data.ts profileExecution); there is nothing honest to open the
-// picker at.
-type MentionChoice =
-  | { kind: 'chosen'; config: ConversationConfig }
-  | { kind: 'profile'; profile: ConversationConfig }
-  | { kind: 'unreported' };
-
-function mentionChoice(
-  buddy: BuddyReference,
-  choices: ReadonlyMap<string, ConversationConfig>
-): MentionChoice {
-  const chosen = choices.get(buddy.id);
-  if (chosen) return { kind: 'chosen', config: chosen };
-  switch (buddy.execution.kind) {
-    case 'profile':
-      return { kind: 'profile', profile: buddy.execution.config };
-    case 'unreported':
-      return { kind: 'unreported' };
-  }
-}
-
-function configLabel(config: ConversationConfig, catalog: ProviderCatalog | null): string {
-  const provider = catalog?.providers.find((candidate) => candidate.id === config.provider);
-  const modelId =
-    config.model.mode === 'explicit' ? config.model.modelId : provider?.defaultModelId;
-  const model = provider?.models.find((candidate) => candidate.id === modelId);
-  // Model names already carry their family ("Claude Opus 5.5"); the picker
-  // shows the harness.
-  return model?.displayName ?? modelId ?? `${config.provider} default`;
-}
-
-function choiceLabel(choice: MentionChoice, catalog: ProviderCatalog | null): string {
-  switch (choice.kind) {
-    case 'chosen':
-      return configLabel(choice.config, catalog);
-    case 'profile':
-      return configLabel(choice.profile, catalog);
-    case 'unreported':
-      return 'default';
-  }
-}
-
-// Where the picker opens: the pick so far, else the profile default. Null
-// only for `unreported`, whose chip is disabled.
-function pickerValue(choice: MentionChoice): ConversationConfig | null {
-  switch (choice.kind) {
-    case 'chosen':
-      return choice.config;
-    case 'profile':
-      return choice.profile;
-    case 'unreported':
-      return null;
-  }
 }
 
 function MentionChip({
@@ -581,7 +531,9 @@ function MentionModelPopover({
           <p className="channel-composer-model-note">Loading harness options…</p>
         )}
         <p className="channel-composer-model-note">
-          {`Applies to ${buddy.label}’s replies in this thread from now on. Without a choice, ${buddy.label} keeps what it already uses here.`}
+          {choice.kind === 'seat'
+            ? `Continues on ${buddy.label}’s latest harness, model and reasoning in this thread. A change here sticks for later replies.`
+            : `Applies to ${buddy.label}’s replies in this thread from now on. Without a choice, ${buddy.label} keeps what it already uses here.`}
         </p>
         <div className="channel-composer-model-actions">
           <button type="button" onClick={onReset} disabled={choice.kind !== 'chosen'}>

@@ -519,7 +519,11 @@ export function registerBuddyRoutes(app: Express, deps: BuddyRouteDeps): void {
       '/api/buddies/posts/:postId/thread',
       async (req) => {
         const root = await core.getPost(OWNER, p(req, 'postId'));
-        return { root, ...(await feedPage(req, { kind: 'thread', rootId: root.id })) };
+        return {
+          root,
+          ...(await feedPage(req, { kind: 'thread', rootId: root.id })),
+          seats: await channels.threadSeats(root.id),
+        };
       },
     ],
     [

@@ -445,6 +445,7 @@ function ThreadPane({
         placeholder={root ? `Reply to ${plainChannelText(root.body).slice(0, 40)}…` : 'Reply…'}
         references={context.directory.references}
         submit="enter"
+        seats={thread.latest.data?.seats}
         onPosted={() => {
           follow.pin();
           void thread.latest.refetch();

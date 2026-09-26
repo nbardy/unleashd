@@ -80,6 +80,7 @@ export function seatTurnInput(trigger: Post): SeatTurnInput {
   }
 }
 
+export type ThreadSeat = { buddyId: string; config: ConversationConfig };
 export type SeatRequest = { kind: 'keep' } | { kind: 'chosen'; config: ConversationConfig };
 export type MentionDispatch =
   | { buddyId: string; status: 'started' }
@@ -594,6 +595,31 @@ export function createChannels(ports: ChannelsPorts) {
     },
 
     considerThreadPost,
+
+    /**
+     * Each thread Buddy's latest seat (harness, model, reasoning): the one its next reply runs
+     * on. The mention chip opens on it; until 493c1c7 it showed the profile default, which is
+     * wrong once an earlier pick made the seat. A Buddy with no seat yet is omitted (its first
+     * reply runs on the profile default, which the client already has).
+     */
+    async threadSeats(rootId: string): Promise<ThreadSeat[]> {
+      const root = await core.getPost(OWNER, rootId);
+      if (root.rootId) return [];
+      const buddyIds = new Set<string>();
+      for (const post of await wholeThread(root)) {
+        for (const id of buddyAuthor(post)) buddyIds.add(id);
+        if (post.author.kind === 'owner')
+          for (const id of mentionedBuddyIds(post.body)) buddyIds.add(id);
+      }
+      const seats: ThreadSeat[] = [];
+      for (const buddyId of buddyIds) {
+        const { current } = await scanGenerations(ports.conversations, (g) =>
+          threadConversationId(rootId, buddyId, g)
+        );
+        if (current) seats.push({ buddyId, config: current.config });
+      }
+      return seats;
+    },
 
     /** Buddies composing a reply in this channel, for "X is replying…". */
     responding(channelId: string): ChannelResponse[] {

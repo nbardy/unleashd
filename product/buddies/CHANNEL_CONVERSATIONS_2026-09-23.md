@@ -180,9 +180,12 @@ an owner post is shown), ported from `channel-conversations.test.ts` in T11.
   replies, item 2) and sticks for every later reply there. A mention with no
   choice keeps the seat; in a new thread that is the profile default. Any
   harness works on any mention: a different pick opens a new seat generation.
-- **Open gap:** the chip shows the PROFILE default for an un-picked mention,
-  which is wrong in a thread whose seat runs an earlier pick. Fix: return
-  each Buddy's seat config with the thread read and seed the chip from it.
+- **Chip baseline:** the thread read includes `seats`, the latest harness,
+  model, and reasoning per Buddy who has posted or been @mentioned. The chip
+  opens on that, so a change continues from it. A Buddy with no seat yet
+  shows the profile default, which is also what the first reply runs on.
+  A settings change on the seat conversation itself keeps its create replay
+  matching, so the next reply reopens that same seat on the new settings.
 - **Defaults on the chip:** workspace activity members carry
   `execution: {kind:'profile', config}` from `buddyExecutionPreferences()` (the
   same mapping turn creation uses). The wire default is `{kind:'unreported'}`
