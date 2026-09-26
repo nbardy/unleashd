@@ -40,10 +40,8 @@
   },
   "devDependencies": {
     "@biomejs/biome": "^1.9.4",
-    "concurrently": "^9.1.2",
     "json-schema-to-typescript": "^15.0.4",
-    "tsx": "^4.7.0",
-    "ws": "^8.14.2"
+    "tsx": "^4.7.0"
   },
   "bin": {
     "unleashd": "./bin/unleashd.js"
