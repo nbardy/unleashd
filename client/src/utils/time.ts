@@ -22,16 +22,6 @@ export function getMinutesElapsed(date: Date): number {
 }
 
 /**
- * Get the timestamp of the last message in a conversation's messages array.
- * Returns undefined if there are no messages or no timestamp.
- */
-export function getLastMessageTime(messages: { timestamp?: Date | string }[]): Date | undefined {
-  if (messages.length === 0) return undefined;
-  const last = messages[messages.length - 1];
-  return last.timestamp ? new Date(last.timestamp) : undefined;
-}
-
-/**
  * Last activity of a conversation row: its last message, or its creation when
  * empty. The server derives `activityAt` once (epoch ms), so list views never
  * parse dates per comparison (that cost ~50ms per sort of 1,100 rows before

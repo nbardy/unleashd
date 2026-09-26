@@ -190,4 +190,3 @@ export function hasUnseenAfter(lastSeen: number | undefined, totalMessages: numb
   if (totalMessages === 0 || lastSeen === undefined) return false;
   return lastSeen < totalMessages - 1;
 }
-

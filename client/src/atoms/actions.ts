@@ -313,11 +313,6 @@ export function setConversationDone(conversationId: string, done: boolean): void
   sendNow({ type: 'set_conversation_done', conversationId, done });
 }
 
-export function stopConversation(conversationId: string): void {
-  if (!readConversation(conversationId)) return;
-  sendNow({ type: 'stop_conversation', conversationId });
-}
-
 /**
  * End all work on a conversation. WebSocket messages are processed in order,
  * so pending work is cleared before the active provider process is stopped.
