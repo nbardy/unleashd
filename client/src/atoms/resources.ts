@@ -2,26 +2,9 @@ import { atom } from 'jotai';
 import { atomFamily } from 'jotai-family';
 import { jotaiStore } from './store';
 
-// =============================================================================
-// Keyed resource cache — the one local store behind every read-only HTTP view.
-//
-// Before this module every `usePolledFetch` call site held its result in
-// component `useState`, so a route change unmounted the data and the next
-// mount refetched from zero behind a spinner. On mobile that is the whole
-// "every page I open makes me wait" experience: the bytes were already on the
-// device a moment ago and got thrown away by React, not by the server.
-//
-// State lives here instead, keyed by request. Three properties follow:
-//
-//   1. Remount is free. A cached key renders immediately and revalidates in
-//      the background (stale-while-revalidate), so navigation never blanks.
-//   2. Cross-key races are unrepresentable. A late response for buddy A
-//      writes to buddy A's entry; a component now showing buddy B reads B's
-//      entry and cannot see it. Call sites used to hand-roll this check
-//      ("is this response for what I'm displaying?") three different ways.
-//   3. Push invalidation has exactly one entry point. `invalidateResources`
-//      re-runs the loaders for live keys; nothing else has to be taught.
-// =============================================================================
+// Keyed resource cache behind every read-only HTTP view: remount is free (stale-while-revalidate),
+// a late response lands on its own key, and `invalidateResources` is the one push entry point. See
+// docs/client-rationale.md#resource-cache.
 
 /**
  * Canonical request: a stable cache key plus a loader.
@@ -253,16 +236,9 @@ export function seedResource<T>(resource: Resource<T>, value: T): void {
 }
 
 /**
- * Re-run the loader for every MOUNTED key the predicate selects.
- *
- * This is the hook for "the database changed" pushes: a server event maps to
- * one call here instead of to twenty call sites. Entries are refreshed in
- * place, so a subscribed view updates without flashing a spinner.
- *
- * Unmounted keys are deliberately left alone. A remount always revalidates
- * (stale-while-revalidate), so refreshing them here buys nothing — and a
- * burst of events against a few hundred retained Buddy keys, three requests
- * each, is exactly the request storm a phone cannot afford.
+ * Re-run the loader for every MOUNTED key the predicate selects. Unmounted keys revalidate on
+ * remount; refreshing them here is a request storm. See docs/client-rationale.md#invalidate-
+ * resources.
  */
 export function invalidateResources(matches: (key: string) => boolean): void {
   for (const key of mounted.keys()) {
@@ -286,26 +262,9 @@ export const invalidateBuddyResources = (): void =>
   invalidateResources((key) => key.startsWith('/api/buddies') || key.startsWith('buddy-'));
 
 /**
- * One channel changed — a post, a read mark, or who is replying (server
- * `channel_changed`; its `channelId` is the id of a channel of ANY kind: public,
- * direct or task). Every per-channel key is a URL under
- * `/api/buddies/channels/<id>` (built in components/buddies/channel-data.ts),
- * so one prefix selects its posts and responders.
- *
- * The push names only the channel, so keys that are not addressed by it
- * refresh whenever they are mounted — in practice the one of each on screen:
- *   - threads (`/api/buddies/posts/<rootId>/thread`), keyed by their root;
- *   - the owner's inboxes (`/api/buddies/workspaces/<ws>/inbox`, and the
- *     all-workspace fan-out `buddy-owner-inboxes:<ids>` the title, sidebar and
- *     mobile tab read): unread counts, requests and DMs span every channel,
- *     and the server pushes `channel_changed` when the owner marks one read,
- *     which is what clears it on other devices;
- *   - task details (`/api/buddies/tasks/<id>`), whose comments are the task
- *     channel's posts.
- *   - the Task filter's feed (`/api/buddies/tasks/<id>/posts`), which spans
- *     channels; without it a filtered view waited out the backstop (T22).
- * A Buddy's mention reply is announced only here, never by `buddies_changed`,
- * so without these the rail lagged by up to the 30 s backstop.
+ * One channel changed (`channel_changed`): refresh its `/api/buddies/channels/<id>` keys plus
+ * mounted threads, owner inboxes and task keys, which the push does not name. See docs/client-
+ * rationale.md#invalidate-channel.
  */
 export const invalidateChannelResources = (channelId: string): void => {
   const channel = `/api/buddies/channels/${encodeURIComponent(channelId)}`;

@@ -3,26 +3,9 @@ import { atomWithStorage } from 'jotai/utils';
 import type { SyncStorage } from 'jotai/vanilla/utils/atomWithStorage';
 import { jotaiStore } from './store';
 
-// =============================================================================
-// Device UI state — browser localStorage only, never synced to the server.
-//
-//   prefs ('unleashd-ui-local') — view state: gallery expansion, list
-//     toggles, last directory, promoted workers. The route owns the active
-//     conversation; nothing restores it from prefs.
-//   seen ('unleashd-seen-message-index') — NEW badge: last viewed message
-//     index per conversation. Its own key because
-//     it changes on every viewed message; the prefs blob should not be
-//     rewritten at that rate.
-//
-// Done (hidden) is NOT here: it is a fact about the conversation, stored on
-// the server's conversation record and read as `conversation.done`. It used to
-// live in a server-synced blob keyed by `sessionId ?? id`; the server rotates
-// sessionId, and the blob's debounced snapshot POST lost writes on refresh
-// and reconnect — hidden conversations kept reappearing (2026-09-23).
-//
-// Mutate ONLY via the exported action functions — jotaiStore.set lives inside
-// atoms/ (gate G1).
-// =============================================================================
+// Device UI state in localStorage: prefs ('unleashd-ui-local') and seen ('unleashd-seen-message-
+// index'). Done lives on the server record, not here. Mutate only via the exported actions (gate
+// G1). See docs/client-rationale.md#device-ui-state.
 
 export const LOCAL_STORAGE_KEY = 'unleashd-ui-local';
 const SEEN_STORAGE_KEY = 'unleashd-seen-message-index';

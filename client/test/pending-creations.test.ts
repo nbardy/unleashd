@@ -7,7 +7,8 @@ import {
   classifyServerFrame,
   encodeRows,
 } from '@unleashd/shared';
-import { createConversation, handleMessage } from '../src/atoms/actions';
+import { handleMessage } from '../src/atoms/actions';
+import { createConversation } from '../src/atoms/commands';
 import { commandFor } from '../src/atoms/conversations';
 import { jotaiStore } from '../src/atoms/store';
 import { openSocket } from './fixtures/client-store';

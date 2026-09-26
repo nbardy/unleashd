@@ -1,5 +1,4 @@
 import type { ButtonHTMLAttributes, HTMLAttributes, PropsWithChildren, ReactNode } from 'react';
-import { Link, type LinkProps } from 'react-router-dom';
 
 function classes(...values: Array<string | false | null | undefined>) {
   return values.filter(Boolean).join(' ');
@@ -49,31 +48,6 @@ export function MobileSection({ title, meta, className, children }: MobileSectio
   );
 }
 
-export function MobileCardButton({
-  className,
-  type = 'button',
-  children,
-  ...props
-}: ButtonHTMLAttributes<HTMLButtonElement>) {
-  return (
-    <button
-      {...props}
-      type={type}
-      className={classes('ui-surface ui-card', 'mobile-ui-card--button', className)}
-    >
-      {children}
-    </button>
-  );
-}
-
-export function MobileCardLink({ className, children, ...props }: LinkProps) {
-  return (
-    <Link {...props} className={classes('ui-surface ui-card', 'mobile-ui-card--button', className)}>
-      {children}
-    </Link>
-  );
-}
-
 /**
  * Primary action in a page header — the "+ New" affordance on Chats, Swarms and
  * Buddies. Sized to the 44px tap target so it stays reachable one-handed.
@@ -92,41 +66,6 @@ export function MobileHeaderAction({
     >
       {children}
     </button>
-  );
-}
-
-export function MobileSurface({
-  className,
-  children,
-  ...props
-}: PropsWithChildren<HTMLAttributes<HTMLDivElement>>) {
-  return (
-    <div {...props} className={classes('ui-surface ui-card', className)}>
-      {children}
-    </div>
-  );
-}
-
-type MobileBadgeProps = PropsWithChildren<
-  HTMLAttributes<HTMLSpanElement> & { tone?: 'neutral' | 'active' | 'accent' }
->;
-
-export function MobileBadge({ tone = 'neutral', className, children, ...props }: MobileBadgeProps) {
-  return (
-    <span
-      {...props}
-      className={classes('ui-badge ui-inline-row ui-card ui-muted', `ui-badge--${tone}`, className)}
-    >
-      {children}
-    </span>
-  );
-}
-
-export function MobilePath({ className, children, ...props }: HTMLAttributes<HTMLSpanElement>) {
-  return (
-    <span {...props} className={classes('mobile-ui-path ui-truncate ui-muted', className)}>
-      {children}
-    </span>
   );
 }
 
@@ -155,6 +94,32 @@ export function MobileEmptyPanel({
   return (
     <div {...props} className={classes('mobile-ui-empty-panel ui-muted', className)}>
       {children}
+    </div>
+  );
+}
+
+/** Empty state for mobile lists: icon + message + optional CTA; the caller owns copy and action. */
+type EmptyStateProps = {
+  icon?: string;
+  title?: string;
+  message: string;
+  actionLabel?: string;
+  onAction?: () => void;
+};
+
+export function EmptyState({ icon = '∅', title, message, actionLabel, onAction }: EmptyStateProps) {
+  return (
+    <div className="mobile-empty ui-stack" role="status" aria-live="polite">
+      <div className="mobile-empty__icon ui-muted" aria-hidden="true">
+        {icon}
+      </div>
+      {title ? <h2 className="mobile-empty__title">{title}</h2> : null}
+      <p className="mobile-empty__message">{message}</p>
+      {actionLabel && onAction ? (
+        <button type="button" className="mobile-empty__cta" onClick={onAction}>
+          {actionLabel}
+        </button>
+      ) : null}
     </div>
   );
 }

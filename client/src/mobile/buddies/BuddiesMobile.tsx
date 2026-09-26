@@ -1,13 +1,17 @@
 import { useAtomValue } from 'jotai';
 import { type ReactNode, useMemo, useState } from 'react';
 import { Link, useLocation, useNavigate } from 'react-router-dom';
+import { createBuddyViaBuilder } from '../../components/buddies/create-buddy-builder';
 import { initials } from '../../components/buddies/ui-contract';
 import { useBuddyOverview } from '../../hooks/useBuddyData';
 import { mobileConversationRouteState } from '../../utils/conversation-route-state';
 import { mobileBuddyDirectoryAtom } from '../atoms/buddies';
-import { createBuddyViaBuilder } from '../atoms/create';
-import { EmptyState } from '../components/EmptyState';
-import { MobileHeaderAction, MobilePage, MobileRefreshNotice } from '../components/MobileUI';
+import {
+  EmptyState,
+  MobileHeaderAction,
+  MobilePage,
+  MobileRefreshNotice,
+} from '../components/MobileUI';
 
 export function BuddiesMobile() {
   const navigate = useNavigate();

@@ -15,20 +15,9 @@ import { type CreateKind, createFromRequest } from './create';
 import './NewConversationForm.css';
 
 /**
- * NewConversationForm — the one new-conversation form. The desktop Sidebar
- * shows it in its centered modal (`layout="modal"`), mobile in a bottom sheet
- * (`layout="sheet"`, mobile/components/NewConversationSheet). The container
- * owns the title and dismissal; the form owns the fields and the create.
- *
- * Both layouts share: the directory field with fuzzy recent-folder + filesystem
- * suggestions and path validation (PathAutocomplete), the default directory
- * (latest activity → last used → server cwd), Chat and Swarm actions, the
- * disconnected note and the error. Layouts differ only as data (LAYOUT):
- *   - modal: autofocus the path, full provider/model picker inline.
- *   - sheet: no autofocus (the phone keyboard would cover the sheet), tappable
- *     recent folders (typing a path on a phone is miserable), and the catalog
- *     default provider — ChatMobile's header picker changes it before the first
- *     message, and the picker's option CSS lives in the desktop Sidebar.css.
+ * The one new-conversation form: desktop modal (`layout="modal"`) or mobile sheet (`"sheet"`). The
+ * container owns title and dismissal; layouts differ only as data (LAYOUT). See docs/client-
+ * rationale.md#new-conversation-form.
  */
 
 export type NewConversationLayout = 'modal' | 'sheet';

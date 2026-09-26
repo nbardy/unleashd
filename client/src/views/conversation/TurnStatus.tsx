@@ -1,8 +1,10 @@
+import { useEffect, useState } from 'react';
 import {
-  type TurnStatusViewModelOptions,
-  useTurnStatusViewModel,
-} from '../../hooks/useTurnStatusViewModel';
-import type { TurnDiagnosticsViewModel } from '../../utils/turn-diagnostics';
+  type TurnDiagnosticsInput,
+  type TurnDiagnosticsViewModel,
+  buildTurnDiagnosticsViewModel,
+  isActiveTurnStatus,
+} from '../../utils/turn-diagnostics';
 import './TurnStatus.css';
 
 /**
@@ -54,18 +56,21 @@ export function TurnStatusView({ view, presentation, className = '' }: TurnStatu
   );
 }
 
-export interface TurnStatusProps extends TurnStatusViewModelOptions {
-  presentation: TurnStatusPresentation;
-  className?: string;
-}
-
+/** `now` pins the clock (tests); otherwise it ticks each second while the turn is live. */
 export function TurnStatus({
   diagnostics,
   now,
-  refreshIntervalMs,
   presentation,
-  className,
-}: TurnStatusProps) {
-  const view = useTurnStatusViewModel({ diagnostics, now, refreshIntervalMs });
-  return <TurnStatusView view={view} presentation={presentation} className={className} />;
+}: { diagnostics: TurnDiagnosticsInput; now?: number; presentation: TurnStatusPresentation }) {
+  const [clock, setClock] = useState(() => now ?? Date.now());
+  useEffect(() => {
+    if (now !== undefined) return setClock(now);
+    if (!isActiveTurnStatus(diagnostics.status) && diagnostics.lastActivityAt == null) {
+      return setClock(Date.now());
+    }
+    const timer = window.setInterval(() => setClock(Date.now()), 1_000);
+    return () => window.clearInterval(timer);
+  }, [diagnostics.lastActivityAt, diagnostics.status, now]);
+  const view = buildTurnDiagnosticsViewModel(diagnostics, now ?? clock);
+  return <TurnStatusView view={view} presentation={presentation} />;
 }

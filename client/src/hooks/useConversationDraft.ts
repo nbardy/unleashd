@@ -37,33 +37,9 @@ function writeDraftFor(conversationId: string, value: string): void {
 }
 
 /**
- * Portable draft persistence + focus — merging desktop Chat.tsx and mobile
- * ComposerMobile.tsx into one clean path.
- *
- * Both trees previously drove `localStorage` key `draft:{conversationId}`
- * independently:
- *  - Desktop (Chat.tsx): uncontrolled textarea via ref callback, `draftValueRef`,
- *    `saveDraft` reading refs, `textarea.focus()` in attach callback.
- *  - Mobile (ComposerMobile): controlled `draft` state + `draftRef`/`draftKeyRef`
- *    + debounced `writeDraft`, flush on `useEffect` cleanup.
- *
- * Mobile documented the subtle stale-closure bug: an effect keyed on
- * `[conversationId, draft]` closes over the *previous* draft (`''`) and its
- * cleanup deletes the key the load just read — silently eating forked drafts.
- * Fix: `writeDraft` reads refs, never state.
- *
- * This hook is the canonical implementation:
- *  - Storage reads/writes go through refs (never state closure).
- *  - Debounced write (500ms) + flush on `pagehide`, `visibilitychange`, and
- *    effect cleanup (conversation switch / HMR unmount).
- *  - Applies draft to textarea and auto-heights, then restores focus without
- *    stealing focus from another input. HMR-safe: uses `useLayoutEffect`-ish
- *    timing via `requestAnimationFrame` so Vite Fast Refresh patching Chat.tsx
- *    without a DOM unmount still re-focuses.
- *
- * Portable: both Chat.tsx (desktop, maxHeight 300) and ComposerMobile
- * (mobile, maxHeight 120) consume this. `controlled` mode drives React state;
- * `uncontrolled` mode writes directly to `textarea.value` (desktop).
+ * The one draft path for both composers (`draft:<id>`). Storage goes through refs, never state
+ * closures, or a switch-cleanup deletes the forked draft it just loaded. See docs/client-
+ * rationale.md#conversation-draft.
  */
 export interface UseConversationDraftOptions {
   conversationId: string | null | undefined;

@@ -47,9 +47,6 @@ import {
 import { jotaiStore } from './store';
 import { DRAFT_KEY_PREFIX, PENDING_FILES_KEY_PREFIX, removeSeenIndex } from './ui';
 
-export type { QueuedMessage } from '@unleashd/shared';
-export { createConversation } from './commands';
-
 // =============================================================================
 // Chunk buffer
 //

@@ -2,12 +2,12 @@
 // highlight.js + katex stylesheets load lazily with their plugins —
 // see utils/lazyMarkdownPlugins.ts. Do not re-add a static CSS import here.
 import type { BuddyContext, ConversationRow } from '@unleashd/shared';
+import type { QueuedMessage } from '@unleashd/shared';
 import { useAtomValue } from 'jotai';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { clearQueue, endConversation, interruptAndSend, queueMessage } from '../atoms/actions';
-import type { QueuedMessage } from '../atoms/actions';
 import { createConversation, setConversationConfig } from '../atoms/commands';
 import {
   childRowsFamily,
@@ -40,9 +40,15 @@ import { copyText } from '../utils/clipboard';
 import { buildThreadTranscript } from '../utils/conversation-transcript';
 import { buildUnifiedSubAgents } from '../utils/subAgents';
 import { formatTimeAgo } from '../utils/time';
+import {
+  shouldPresentTurnAttempt,
+  shouldShowTypingIndicator,
+  turnDiagnosticsFromAttempt,
+} from '../utils/turn-diagnostics';
 import { ComposerAttachments, UploadErrorNotice } from '../views/composer/ComposerAttachments';
 import { PromptPalette } from '../views/composer/PromptPalette';
 import { SendControls } from '../views/composer/SendControls';
+import { ConfigOverlay } from '../views/config/ConfigOverlay';
 import { QueuedMessages } from '../views/conversation/QueuedMessages';
 import { ResumeSource } from '../views/conversation/ResumeSource';
 import { SubAgentPanel } from '../views/conversation/SubAgentPanel';
@@ -50,30 +56,21 @@ import { TurnStatus } from '../views/conversation/TurnStatus';
 import { BuddyConvoHeader } from './BuddyConvoHeader';
 import { ContextBreakdownMeter } from './ContextBreakdownMeter';
 import { VirtualizedMessageList } from './VirtualizedMessageList';
+import { COPY_GLYPH } from '../views/transcript/markdown-components';
 import { DmChannelsNotice } from './buddies/DmChannelsNotice';
 import { HarnessPicker } from './buddies/HarnessPicker';
 import { lastOwnerText } from './buddies/channel-dm';
-import {
-  shouldPresentTurnAttempt,
-  shouldShowTypingIndicator,
-  turnDiagnosticsFromAttempt,
-} from './turn-diagnostics';
-import { ConfigOverlay } from '../views/config/ConfigOverlay';
 import './Chat.css';
 import { useTimeTick } from '../hooks/useTimeTick';
 import { rowBuddy } from '../utils/conversation-row';
 import { shortenHomePath } from '../utils/directories';
 
-// Stable reference for empty queue — avoids new [] on every render triggering re-renders
 const BUDDY_STARTER_PROMPTS = [
   'Create a Buddy who owns product research for my team.',
   'Create a team for this workspace: a researcher, a designer, and an engineer.',
 ] as const;
 
-// Deprecated helper kept for local parity — use getBuddyContext (kind-aware) instead.
-// The holistic kind type is the canonical source; legacy buddyContext is compat only.
-// The Buddy header needs only the ids the row carries (the run data stays on
-// the server since T09).
+// The Buddy header needs only the ids the row carries (run data stays on the server, T09).
 function headerBuddyContext(kind: ConversationRow['kind'] | undefined): BuddyContext | undefined {
   return kind?.t === 'buddy'
     ? { buddyId: kind.buddyId, workspaceId: kind.workspaceId, buddyProjectId: null }
@@ -168,7 +165,7 @@ export function Chat({ id }: { id: string }) {
     uploadError,
     dismissUploadError,
     removeFile: removePendingFile,
-    handlePaste: handlePasteFromHook,
+    handlePaste,
   } = attachments;
 
   // One send path, shared with mobile. Owns take/clear/deliver/restore and the
@@ -212,9 +209,6 @@ export function Chat({ id }: { id: string }) {
     !isRunning &&
     !isStreaming;
 
-  const isRunningRef = useRef(isRunning);
-  isRunningRef.current = isRunning;
-  const canInput = confirmed;
   const currentMessage = queue.find((m) => m.status === 'sending') ?? null;
   const pendingQueue = queue.filter((m) => m.status === 'pending');
   // Enter should switch to interrupt mode as soon as a turn is in flight,
@@ -263,10 +257,6 @@ export function Chat({ id }: { id: string }) {
     const textarea = textareaRef.current;
     if (textarea) setDraftValue(textarea.value);
   };
-
-  // Delegate to shared hook — same framing as mobile so paste in either
-  // tree lands identically (clipboard items → upload → preview).
-  const handlePaste = handlePasteFromHook;
 
   // IMPORTANT: All hooks must be called before any early return.
   const activityAt = conversation && conversation.messageCount > 0 ? conversation.activityAt : null;
@@ -382,13 +372,19 @@ export function Chat({ id }: { id: string }) {
     (model) => model.id === resolvedHeaderModelId
   );
   const headerReasoning = conversationConfig?.reasoning;
+  const headerEffort =
+    headerReasoning?.mode === 'explicit'
+      ? headerReasoning.effort
+      : headerReasoning?.mode === 'disabled'
+        ? null
+        : (resolvedConfig?.reasoningEffort ?? null);
   const headerReasoningLabel =
     headerReasoning?.mode === 'explicit'
       ? headerReasoning.effort
       : headerReasoning?.mode === 'disabled'
         ? 'No reasoning'
-        : resolvedConfig?.reasoningEffort
-          ? `Default · ${resolvedConfig.reasoningEffort}`
+        : headerEffort
+          ? `Default · ${headerEffort}`
           : 'Default';
   const headerModelLabel = resolvedHeaderModel?.displayName ?? resolvedHeaderModelId ?? 'Default';
   // "Claude Opus 5" under the Claude provider is redundant — the summary drops
@@ -397,12 +393,6 @@ export function Chat({ id }: { id: string }) {
     headerProvider && headerModelLabel.startsWith(`${headerProvider.displayName} `)
       ? headerModelLabel.slice(headerProvider.displayName.length + 1)
       : headerModelLabel;
-  const headerEffort =
-    headerReasoning?.mode === 'explicit'
-      ? headerReasoning.effort
-      : headerReasoning?.mode === 'disabled'
-        ? null
-        : (resolvedConfig?.reasoningEffort ?? null);
   const headerEffortShortLabel = headerEffort
     ? headerEffort.charAt(0).toUpperCase() + headerEffort.slice(1)
     : null;
@@ -423,14 +413,13 @@ export function Chat({ id }: { id: string }) {
   // at the two entry points below — the Send button and handleKeyDown.
   const handleQueue = () => submit(queueMessage);
   const handleInterrupt = () => submit(interruptAndSend);
-  const handleSend = handleQueue;
 
   const handleClearQueue = () => {
     if (id) clearQueue(id);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Tab' && !e.shiftKey && hasContent && canInput) {
+    if (e.key === 'Tab' && !e.shiftKey && hasContent && confirmed) {
       e.preventDefault();
       handleQueue();
       return;
@@ -554,36 +543,7 @@ export function Chat({ id }: { id: string }) {
             onClick={handleCopyThread}
             title="Copy full thread"
           >
-            {threadCopied ? (
-              <svg
-                aria-hidden="true"
-                width="14"
-                height="14"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <polyline points="20 6 9 17 4 12" />
-              </svg>
-            ) : (
-              <svg
-                aria-hidden="true"
-                width="14"
-                height="14"
-                viewBox="0 0 24 24"
-                fill="none"
-                stroke="currentColor"
-                strokeWidth="2"
-                strokeLinecap="round"
-                strokeLinejoin="round"
-              >
-                <rect x="9" y="9" width="13" height="13" rx="2" ry="2" />
-                <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1" />
-              </svg>
-            )}
+            {COPY_GLYPH[threadCopied ? 'copied' : 'idle']}
           </button>
           {!confirmed && <div className="ready-badge ui-inline-row waiting">Starting...</div>}
           {pendingQueue.length > 0 && (
@@ -765,14 +725,14 @@ export function Chat({ id }: { id: string }) {
                   ? 'I want a Buddy or team for…'
                   : 'Type your message...'
             }
-            disabled={!canInput}
+            disabled={!confirmed}
           />
           <div className="input-actions">
             <button
               type="button"
               className="upload-btn ui-control ui-row"
               onClick={openFilePicker}
-              disabled={!canInput || isUploading}
+              disabled={!confirmed || isUploading}
               title="Attach files (drag & drop also supported)"
             >
               <span className="upload-icon ui-row">&#x1F4CE;</span>
@@ -804,7 +764,7 @@ export function Chat({ id }: { id: string }) {
               turnActive={hasActiveTurn}
               hasQueue={pendingQueue.length > 0}
               canSend={confirmed && hasContent}
-              onSend={handleSend}
+              onSend={handleQueue}
               onInterrupt={handleInterrupt}
               onQueue={handleQueue}
               onStop={() => endConversation(conversation.id)}

@@ -1,18 +1,7 @@
 /**
- * Clipboard writes that survive a non-secure context.
- *
- * `navigator.clipboard` is secure-context gated, exactly like
- * `crypto.randomUUID` (see utils/ids.ts). Over `http://<lan-ip>:7489` — how a
- * phone reaches the dev server — the whole `clipboard` object is `undefined`,
- * so `navigator.clipboard.writeText(...)` throws a TypeError before it can
- * reject. It works on `localhost` because loopback counts as secure, which is
- * why this never showed up in dev.
- *
- * Falls back to the legacy `document.execCommand('copy')` path, which has no
- * secure-context requirement. Returns whether the text actually landed, so
- * callers can show a failure instead of a success state that never arrives.
- *
- * All clipboard writes must go through here; gate G5 enforces it.
+ * Clipboard writes that survive a non-secure context (LAN http has no navigator.clipboard): fall
+ * back to execCommand and return whether it landed. All writes go through here (gate G5). See
+ * docs/client-rationale.md#clipboard.
  */
 
 function copyViaExecCommand(text: string): boolean {

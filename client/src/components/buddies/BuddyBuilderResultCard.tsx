@@ -2,8 +2,8 @@ import { type BuddyBuilderEvent, BuddyBuilderEventSchema } from '@unleashd/share
 import { useAtomValue } from 'jotai';
 import { useId } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { createConversation } from '../../atoms/actions';
 import { archivedBuddyIdsAtom } from '../../atoms/buddy-visibility';
+import { createConversation } from '../../atoms/commands';
 import { buddyTabPath } from './buddy-tabs';
 import './BuddyBuilderResultCard.css';
 

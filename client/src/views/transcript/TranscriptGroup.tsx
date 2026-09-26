@@ -20,13 +20,20 @@ import {
 import { remarkBreaks } from '../../utils/remark-breaks';
 import { splitStructuredMessageContent } from '../../utils/structured-message-segments';
 import { splitToolActivity } from '../../utils/tool-activity-segments';
-import { execInputPreview } from '../../utils/tool-call-preview';
 import {
   CopyButton,
   makeMarkdownComponents,
   normalizeLatexDelimiters,
 } from './markdown-components';
 import './Transcript.css';
+
+/** A readable label for freeform exec calls; the full input stays below it. */
+function execInputPreview(toolCall: Message['toolCall']): string | null {
+  if (!toolCall || !['exec', 'functions.exec'].includes(toolCall.name)) return null;
+  const input = toolCall.input?.replace(/\s+/g, ' ').trim();
+  if (!input) return null;
+  return input.length > 120 ? `${input.slice(0, 119)}…` : input;
+}
 
 /**
  * One transcript row per message group, rendered by BOTH list containers:

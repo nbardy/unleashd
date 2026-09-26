@@ -1,5 +1,5 @@
 import type { ConversationConfig } from '@unleashd/shared';
-import { createConversation } from '../../atoms/actions';
+import { createConversation } from '../../atoms/commands';
 import { setLastWorkingDirectory } from '../../atoms/ui';
 
 /**

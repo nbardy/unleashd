@@ -2,7 +2,8 @@ import type { ConversationRow, SwarmRun, SwarmRunSummary } from '@unleashd/share
 import { useAtomValue } from 'jotai';
 import { type ReactNode, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useLocation, useNavigate, useSearchParams } from 'react-router-dom';
-import { createConversation, readConversationMessages } from '../atoms/actions';
+import { readConversationMessages } from '../atoms/actions';
+import { createConversation } from '../atoms/commands';
 import { groupsFamily, rowFamily } from '../atoms/conversations';
 import { markMessagesSeen } from '../atoms/ui';
 import { VirtualizedMessageList } from '../components/VirtualizedMessageList';

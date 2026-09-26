@@ -10,32 +10,9 @@ import remarkRehype from 'remark-rehype';
 import { type PluggableList, type Processor, unified } from 'unified';
 
 /**
- * Markdown rendering with the unified processor built ONCE per plugin config,
- * not once per message.
- *
- * Why this exists: react-markdown's `<Markdown>` builds a fresh
- * `unified().use(...)` chain on every render and `parse()` freezes it, which
- * re-runs every plugin attacher — remark-gfm/remark-math re-assemble their
- * micromark extensions and rehype-highlight builds a new lowlight instance
- * with every bundled grammar. Measured 2026-09-25 opening a 1,099-message
- * conversation on mobile (4x CPU throttle): react-markdown was 1,060 of the
- * 1,255ms commit, ~391ms of it in unified `freeze()` alone. Desktop paid the
- * same per virtualized row (66 of 158ms).
- *
- * The shape: a `MarkdownFlavor` is a module constant (remark plugins + URL
- * policy); `markdownPipeline(flavor, rehypePlugins)` returns the one frozen
- * processor for that flavor and rehype plugin list (the lazy katex/highlight
- * list from `useLazyMarkdownPlugins` is itself stable, so this is a WeakMap
- * hit). The finished hast tree per (pipeline, content) of SETTLED content is
- * kept in a bounded module LRU, so a row that remounts — virtualizer scroll,
- * mobile "load earlier", re-opening a conversation — skips parse + highlight
- * entirely and only pays the hast→React conversion. A message a streaming turn
- * is still appending to goes through `renderMarkdownLive` and never enters it.
- *
- * Cached trees are shared across renders and handed to components as `node`,
- * so they must never be mutated after `compileCached()` finishes. Everything
- * react-markdown's post-pass did in place (raw HTML → text, URL policy) is done
- * once here, before the tree enters the cache.
+ * One frozen unified processor per flavor (react-markdown re-froze per render: ~391ms of a 1,255ms
+ * commit), plus an LRU of settled hast trees. Cached trees are shared: never mutate after
+ * compileCached(). See docs/client-rationale.md#markdown-pipeline.
  */
 
 export interface MarkdownFlavor {

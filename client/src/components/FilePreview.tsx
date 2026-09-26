@@ -1,20 +1,7 @@
 /**
- * FilePreview — inline file path preview for images, HTML, video, and markdown in chat messages.
- *
- * Detects file paths (in inline code) ending in previewable extensions and renders
- * them as: icon + clickable link + hover popup preview.
- *
- * Supports both absolute paths (`/data/runs/.../00000.png`) and relative paths
- * (`test_outputs/ssim_debug/render_00000.png`). Relative paths require at least
- * one `/` directory separator to avoid false-matching bare filenames in prose.
- * When a `workingDirectory` prop is provided, relative paths are resolved against
- * it for the API URL while the original relative path is displayed as link text.
- *
- * The popup renders via React Portal to document.body so it escapes parent
- * overflow:hidden / overflow:auto containers (e.g. .messages-container).
- *
- * Wired into react-markdown via the `code` component override in
- * VirtualizedMessageList.tsx.
+ * Inline preview (icon + link + hover popup via portal) for image/html/video/markdown paths in code
+ * spans; relative paths resolve against `workingDirectory`. See docs/client-rationale.md#file-
+ * preview.
  */
 
 import type { ReactNode } from 'react';
@@ -35,26 +22,8 @@ const WINDOWS_ABSOLUTE_FILE_RE = /^\/[A-Za-z]:\//;
 export type PreviewableFileType = 'image' | 'html' | 'video' | 'markdown';
 
 /**
- * Returns 'image' | 'html' | 'video' | 'markdown' | null for a given text string.
- * Matches absolute paths (`/foo/bar.png`) and relative paths with at least one
- * directory separator (`test_outputs/render.png`). Bare filenames like `foo.png`
- * are rejected to avoid false-matching inline code in prose.
- *
- * IMPORTANT: This function handles SINGLE-LINE text only. Multi-line code blocks
- * must go through classifyPathBlock() in VirtualizedMessageList.tsx, which calls
- * getPreviewType per-line. Do NOT remove the newline guard below — it is defense
- * in depth against a bug where a multi-line code block like:
- *
- *   ```
- *   /path/to/img1.png
- *   /path/to/img2.png
- *   ...
- *   /path/to/img3.png
- *   ```
- *
- * was passed as ONE string to this function. Since the string has no spaces,
- * contains "/", and ends with ".png", it matched — rendering the entire block
- * as a single FilePreview (all paths collapsed into one line, no hover).
+ * Previewable type for a SINGLE-LINE absolute or relative (has a `/`) path. Keep the newline guard:
+ * a multi-line block once rendered as one preview. See docs/client-rationale.md#preview-type.
  */
 export function getPreviewType(text: string): PreviewableFileType | null {
   // DO NOT REMOVE: Rejects multi-line and whitespace text. See docstring above.
