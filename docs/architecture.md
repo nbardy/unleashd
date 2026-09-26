@@ -349,3 +349,15 @@ record; full transcripts hydrate through the detail route.
 
 Details and code patterns: [client state](client-state.md) and
 [WS contract notes](ws-contract-surprises.md).
+
+## Default workspace is not `process.cwd()`
+
+The dev supervisor spawns the server with `cwd: <repo>/server` (tools/watch-server.mjs), so
+`process.cwd()` resolved to the server PACKAGE. Every Buddy Builder conversation started in
+`<repo>/server`, and an agent using root-relative paths ("server/src/...") hit
+`<repo>/server/server/src/...` (ENOENT, "No such file or directory (os error 2)" on its first
+read_file). Production runs from the repo root, so it only reproduced in dev.
+`resolveDefaultWorkingDirectory` (server/src/http/path-utils.ts) resolves:
+`UNLEASHD_DEFAULT_CWD` → the enclosing pnpm workspace root (at most 4 levels up) →
+`process.cwd()`. It is only a default: a Buddy with a workspace uses its `root_path`.
+

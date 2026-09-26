@@ -23,83 +23,28 @@ export function registerFilesystemRoutes(
     const inputPath = typeof req.query.path === 'string' ? req.query.path : '';
     const trimmedInput = inputPath.trim();
     const useHomeAlias = trimmedInput.startsWith('~');
-
+    const visible = (name: string) => !name.startsWith('.');
     if (!trimmedInput) {
-      try {
-        const entries = await fs.promises.readdir(HOME_DIRECTORY, { withFileTypes: true });
-        res.json(
-          entries
-            .filter((entry) => entry.isDirectory() && !entry.name.startsWith('.'))
-            .slice(0, 20)
-            .map((entry) => ({
-              name: entry.name,
-              path: path.join(HOME_DIRECTORY, entry.name),
-              isDirectory: true,
-            }))
-        );
-      } catch {
-        res.json([]);
-      }
+      res.json((await subdirectories(HOME_DIRECTORY, visible, (full) => full)) ?? []);
       return;
     }
-
     const normalizedPath = normalizeDirectoryInput(trimmedInput);
     if (!normalizedPath) {
       res.json([]);
       return;
     }
     const partialSegment = path.basename(normalizedPath);
-    const includeHidden = partialSegment.startsWith('.');
-
-    try {
-      const stats = await fs.promises.stat(normalizedPath);
-      if (stats.isDirectory()) {
-        const entries = await fs.promises.readdir(normalizedPath, { withFileTypes: true });
-        res.json(
-          entries
-            .filter(
-              (entry) => entry.isDirectory() && (includeHidden || !entry.name.startsWith('.'))
-            )
-            .slice(0, 20)
-            .map((entry) => ({
-              name: entry.name,
-              path: displayPathWithHomeAlias(path.join(normalizedPath, entry.name), useHomeAlias),
-              isDirectory: true,
-            }))
-        );
-        return;
-      }
-    } catch {
-      // A partial path is handled by listing its parent below.
+    const shown = partialSegment.startsWith('.') ? () => true : visible;
+    const display = (full: string) => displayPathWithHomeAlias(full, useHomeAlias);
+    // A directory lists its children; a partial path lists its parent's matching children.
+    const listed = await subdirectories(normalizedPath, shown, display);
+    if (listed) {
+      res.json(listed);
+      return;
     }
-
-    const parentDirectory = path.dirname(normalizedPath);
     const partial = partialSegment.toLowerCase();
-    try {
-      const stats = await fs.promises.stat(parentDirectory);
-      if (stats.isDirectory()) {
-        const entries = await fs.promises.readdir(parentDirectory, { withFileTypes: true });
-        res.json(
-          entries
-            .filter(
-              (entry) =>
-                entry.isDirectory() &&
-                (includeHidden || !entry.name.startsWith('.')) &&
-                entry.name.toLowerCase().startsWith(partial)
-            )
-            .slice(0, 20)
-            .map((entry) => ({
-              name: entry.name,
-              path: displayPathWithHomeAlias(path.join(parentDirectory, entry.name), useHomeAlias),
-              isDirectory: true,
-            }))
-        );
-        return;
-      }
-    } catch {
-      // An invalid parent has no suggestions.
-    }
-    res.json([]);
+    const matching = (name: string) => shown(name) && name.toLowerCase().startsWith(partial);
+    res.json((await subdirectories(path.dirname(normalizedPath), matching, display)) ?? []);
   });
 
   app.get('/api/validate-path', async (req: Request, res: Response) => {
@@ -148,28 +93,7 @@ export function registerFilesystemRoutes(
   const mayServe = (resolvedPath: string): boolean =>
     isUnderKnownProject(resolvedPath) || isPathWithin(uploadsDirectory, resolvedPath);
 
-  app.get('/api/files', (req: Request, res: Response) => {
-    const filePath = req.query.path as string;
-    if (!filePath || !filePath.startsWith('/')) {
-      res.status(400).json({ error: 'Absolute path required' });
-      return;
-    }
-    const resolved = path.resolve(filePath);
-    if (resolved !== path.normalize(filePath)) {
-      res.status(400).json({ error: 'Path traversal rejected' });
-      return;
-    }
-    if (!mayServe(resolved)) {
-      res.status(403).json({ error: 'Path not under any known project' });
-      return;
-    }
-    res.sendFile(resolved, (error) => {
-      handleSendFileError(error, res, resolved);
-    });
-  });
-
-  app.get('/api/serve/*', (req: Request, res: Response) => {
-    const rawPath = `/${req.params[0]}`;
+  const serve = (res: Response, rawPath: string) => {
     const resolved = path.resolve(rawPath);
     if (resolved !== path.normalize(rawPath)) {
       res.status(400).json({ error: 'Path traversal rejected' });
@@ -179,10 +103,41 @@ export function registerFilesystemRoutes(
       res.status(403).json({ error: 'Path not under any known project' });
       return;
     }
-    res.sendFile(resolved, (error) => {
-      handleSendFileError(error, res, resolved);
-    });
+    res.sendFile(resolved, (error) => handleSendFileError(error, res, resolved));
+  };
+
+  app.get('/api/files', (req: Request, res: Response) => {
+    const filePath = req.query.path as string;
+    if (!filePath || !filePath.startsWith('/')) {
+      res.status(400).json({ error: 'Absolute path required' });
+      return;
+    }
+    serve(res, filePath);
   });
+
+  app.get('/api/serve/*', (req: Request, res: Response) => serve(res, `/${req.params[0]}`));
+}
+
+/** Up to 20 subdirectories whose names pass `accept`; null when `directory` is no readable dir. */
+async function subdirectories(
+  directory: string,
+  accept: (name: string) => boolean,
+  display: (fullPath: string) => string
+): Promise<Array<{ name: string; path: string; isDirectory: true }> | null> {
+  try {
+    if (!(await fs.promises.stat(directory)).isDirectory()) return null;
+    const entries = await fs.promises.readdir(directory, { withFileTypes: true });
+    return entries
+      .filter((entry) => entry.isDirectory() && accept(entry.name))
+      .slice(0, 20)
+      .map((entry) => ({
+        name: entry.name,
+        path: display(path.join(directory, entry.name)),
+        isDirectory: true as const,
+      }));
+  } catch {
+    return null;
+  }
 }
 
 function handleSendFileError(error: Error | undefined, response: Response, filePath: string): void {

@@ -4,21 +4,10 @@ import type { Express } from 'express';
 import { z } from 'zod';
 import type { IngestAccessor, IngestReads } from '../ingest/instance';
 
-// =============================================================================
-// GET /api/usage?days=N — token usage and estimated cost of the last N days (default 30).
-//
-// Pattern: one-write-path (docs/patterns.md#one-write-path)
-// The numbers are a read model of the ingest store (`Ingest.usage`, crates/unleashd-ingest):
-// transcripts are parsed once, by the crate, into per-request `usage_turn` rows. Until
-// 2026-09-26 this route re-parsed every transcript itself: 16.5 s for days=30 on the dev
-// machine (T13a measured 38.4 s), against ~10 ms of indexed range queries now.
-// Guard: server/test/usage-context-async-parity.test.ts (real crate over a fixture HOME).
-//
-// Windows count REQUESTS by their own transcript time. The old parsers credited a whole Claude
-// session to its file mtime and a whole Codex session to its start day, so a month-old session
-// touched yesterday counted in full ($10,234 vs $8,570 for days=30 on 2026-09-25, T13a).
-// Days are UTC, the crate's `day` key.
-// =============================================================================
+// GET /api/usage?days=N (default 30). Pattern: one-write-path (docs/patterns.md#one-write-path)
+// A read model of the ingest store's per-request `usage_turn` rows: ~10 ms, where re-parsing
+// transcripts took 16.5 s (T13a). Windows count requests by their own time (UTC days), not a
+// session's mtime ($10,234 vs $8,570, 2026-09-25). Guard: usage-context-async-parity.test.ts.
 
 const HOUR_MS = 60 * 60 * 1000;
 const DAY_MS = 24 * HOUR_MS;
@@ -151,9 +140,7 @@ function codexLimits(raw: string | undefined): RateLimit[] {
     console.warn('[usage] unrecognized Codex rate_limits payload:', parsed.error.message);
     return [];
   }
-  // Codex sends whichever windows the plan has: the weekly window can arrive as
-  // `primary` with `secondary` absent, so the slot name says nothing about the
-  // duration — label every window that exists from its minutes.
+  // The slot name says nothing about duration (weekly can be `primary`): label by minutes.
   const { primary, secondary } = parsed.data;
   return [primary, secondary]
     .filter((w): w is z.infer<typeof CodexWindowSchema> => w != null)
@@ -170,6 +157,17 @@ export function rateWindowLabel(minutes: number): string {
   if (minutes % 1440 === 0) return `${minutes / 1440}d`;
   if (minutes % 60 === 0) return `${minutes / 60}h`;
   return `${minutes}m`;
+}
+
+function totalsOf(sessions: readonly SessionUsage[]): Omit<DailyUsage, 'date'> {
+  const sum = (field: 'inputTokens' | 'outputTokens' | 'costUsd') =>
+    sessions.reduce((n, s) => n + s[field], 0);
+  return {
+    inputTokens: sum('inputTokens'),
+    outputTokens: sum('outputTokens'),
+    costUsd: sum('costUsd'),
+    sessions: sessions.length,
+  };
 }
 
 export async function usageResponse(
@@ -192,13 +190,7 @@ export async function usageResponse(
           since: Math.max(start, since),
           until: start + DAY_MS,
         });
-        return {
-          date,
-          inputTokens: sessions.reduce((n, s) => n + s.inputTokens, 0),
-          outputTokens: sessions.reduce((n, s) => n + s.outputTokens, 0),
-          costUsd: sessions.reduce((n, s) => n + s.costUsd, 0),
-          sessions: sessions.length,
-        };
+        return { date, ...totalsOf(sessions) };
       })
   );
   daily.sort((a, b) => b.date.localeCompare(a.date));
@@ -222,29 +214,25 @@ export async function usageResponse(
     claudeTokensSince(ingest, now - 7 * DAY_MS),
   ]);
   if (claude5h + claudeWeek > 0) {
+    const tokenWindow = (label: string, windowMinutes: number, tokenCount: number) => ({
+      label,
+      usedPercent: 0,
+      windowMinutes,
+      resetsAt: null,
+      tokenCount,
+    });
     rateLimits.claude = [
-      {
-        label: '5h window',
-        usedPercent: 0,
-        windowMinutes: 300,
-        resetsAt: null,
-        tokenCount: claude5h,
-      },
-      {
-        label: 'Weekly',
-        usedPercent: 0,
-        windowMinutes: 10080,
-        resetsAt: null,
-        tokenCount: claudeWeek,
-      },
+      tokenWindow('5h window', 300, claude5h),
+      tokenWindow('Weekly', 10080, claudeWeek),
     ];
   }
 
+  const totals = totalsOf(window.sessions);
   return {
-    totalCostUsd: window.sessions.reduce((n, s) => n + s.costUsd, 0),
-    totalInputTokens: window.sessions.reduce((n, s) => n + s.inputTokens, 0),
-    totalOutputTokens: window.sessions.reduce((n, s) => n + s.outputTokens, 0),
-    totalSessions: window.sessions.length,
+    totalCostUsd: totals.costUsd,
+    totalInputTokens: totals.inputTokens,
+    totalOutputTokens: totals.outputTokens,
+    totalSessions: totals.sessions,
     days,
     daily,
     topSessions,

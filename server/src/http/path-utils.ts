@@ -9,29 +9,9 @@ export const HOME_DIRECTORY = os.homedir();
 const WORKSPACE_SEARCH_DEPTH = 4;
 
 /**
- * The default workspace handed to a user-facing conversation.
- *
- * NOT `process.cwd()`. The dev supervisor spawns the server with
- * `cwd: <repo>/server` (tools/watch-server.mjs), so `process.cwd()` was
- * resolving to the server PACKAGE directory. Every Buddy Builder conversation
- * therefore started in `<repo>/server`, and an agent reasoning about the repo
- * with root-relative paths ("server/src/...") resolved them to
- * `<repo>/server/server/src/...` — ENOENT, surfacing as
- * "No such file or directory (os error 2)" on its first read_file.
- *
- * Production (`node server/dist/server.js` from the repo root) had a different
- * cwd than dev, which is why this only ever reproduced in dev.
- *
- * Resolution order:
- *  1. `UNLEASHD_DEFAULT_CWD` — explicit operator override, always wins.
- *  2. The enclosing pnpm workspace root, if the cwd sits inside one. This is
- *     what turns `<repo>/server` back into `<repo>`.
- *  3. `process.cwd()` — unchanged behaviour when the server runs outside a
- *     workspace (a global install, say).
- *
- * Note this is only a DEFAULT. A buddy with a workspace uses that workspace's
- * `root_path`; this is the fallback for conversations that have no workspace
- * yet, the Buddy Builder chief among them.
+ * The default workspace for a conversation with none: UNLEASHD_DEFAULT_CWD, else the enclosing
+ * pnpm workspace root, else cwd. NOT `process.cwd()` alone: dev runs in `<repo>/server`
+ * (docs/architecture.md#default-workspace-is-not-processcwd).
  */
 export function resolveDefaultWorkingDirectory(
   env: NodeJS.ProcessEnv = process.env,
@@ -82,13 +62,7 @@ export function displayPathWithHomeAlias(resolvedPath: string, useHomeAlias: boo
     : resolvedPath;
 }
 
-/**
- * Return whether candidate is root itself or a descendant of root.
- *
- * A string-prefix check is not a path boundary check: `/work/app-evil` starts
- * with `/work/app`. `path.relative` gives us path segments, so parent traversal
- * and absolute cross-volume results can be rejected explicitly.
- */
+/** Root itself or a descendant, by path segments: `/work/app-evil` is not within `/work/app`. */
 export function isPathWithin(
   root: string,
   candidate: string,
