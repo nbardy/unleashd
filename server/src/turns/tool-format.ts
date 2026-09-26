@@ -1,3 +1,5 @@
+import { CLAUDE_SUBAGENT_TOOL_NAMES } from '@nbardy/agent-cli';
+
 const TOOL_SUMMARY_MAX_LEN = 100;
 const MAX_SHELL_PARSE_DEPTH = 3;
 const SHELL_TOOL_NAMES = new Set(['Bash', 'run_shell_command', 'shell']);
@@ -255,6 +257,7 @@ function commandFromDisplayText(name: string, displayText?: string): string | nu
 }
 
 function getEmoji(toolName: string): string {
+  if (CLAUDE_SUBAGENT_TOOL_NAMES.has(toolName)) return '▶️';
   switch (toolName) {
     // Claude Code tool names
     case 'Bash':
@@ -303,8 +306,6 @@ function getEmoji(toolName: string): string {
       return '📓';
     case 'patch':
       return '🔀';
-    case 'Task':
-      return '▶️';
     default:
       return '🔧';
   }
@@ -348,9 +349,7 @@ export function formatToolUse(name: string, input?: unknown, displayText?: strin
       const subcommand = detectOompaSubcommand(command);
       const oneLine = normalizeLine(command);
       argSummary = subcommand ? `oompa ${subcommand} :: ${oneLine}` : oneLine;
-    } else if (name === 'Agent' && typeof record.description === 'string') {
-      argSummary = record.description;
-    } else if (name === 'Task' && typeof record.description === 'string') {
+    } else if (CLAUDE_SUBAGENT_TOOL_NAMES.has(name) && typeof record.description === 'string') {
       argSummary = record.description;
     } else if (name === 'WebFetch' && typeof record.url === 'string') {
       argSummary = record.url;

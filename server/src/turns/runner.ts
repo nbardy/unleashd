@@ -534,6 +534,14 @@ export class TurnRunner {
     this.ports.broadcast({ type: 'chunk', conversationId: this.host.id, text: chunkText });
   }
 
+  applyTaskStarted(event: Extract<UnifiedAgentEvent, { type: 'task.started' }>): void {
+    this.backgroundWait.taskStarted(event);
+  }
+
+  applyTaskFinished(event: Extract<UnifiedAgentEvent, { type: 'task.finished' }>): void {
+    this.backgroundWait.taskFinished(event, this.watchdog);
+  }
+
   applyToolResult(output: unknown): void {
     const content = this.host.policy.formatToolResult(output);
     if (content) this.appendText(`\n${content}\n`);
@@ -958,6 +966,12 @@ class EventFold {
       // codex sub-agent fold (turns/subagents.ts), which keeps the UI's
       // description and tool counts; this duplicate is not consumed yet.
       case 'subagent.state':
+        return;
+      case 'task.started':
+        runner.applyTaskStarted(event);
+        return;
+      case 'task.finished':
+        runner.applyTaskFinished(event);
         return;
     }
   }

@@ -15,8 +15,17 @@ fn gemini_label(name: &str) -> Option<&'static str> {
     }
 }
 
+/// Claude's sub-agent spawn tool: `Agent` since Claude Code 2.1, `Task` before. Transcripts on
+/// disk carry both. Mirrors agent-cli's CLAUDE_SUBAGENT_TOOL_NAMES; matching only `Task` hid
+/// every 2.1 sub-agent.
+pub const CLAUDE_SPAWN_TOOLS: &[&str] = &["Agent", "Task"];
+
+pub fn is_claude_spawn_tool(name: &str) -> bool {
+    CLAUDE_SPAWN_TOOLS.contains(&name)
+}
+
 pub fn is_spawn_tool(provider: Provider, name: &str) -> bool {
-    name == "Task"
+    is_claude_spawn_tool(name)
         || (provider == Provider::Gemini && gemini_label(name).is_some())
         || (provider == Provider::Codex && name == "spawn_agent")
 }
@@ -26,7 +35,7 @@ fn first_string(input: &Value, keys: &[&str]) -> Option<String> {
 }
 
 fn description(provider: Provider, name: &str, input: &Value) -> String {
-    if name == "Task" {
+    if is_claude_spawn_tool(name) {
         let description = first_string(input, &["description"]).unwrap_or_else(|| "Running sub-agent task...".into());
         return match first_string(input, &["subagent_type"]) {
             Some(kind) => format!("[{kind}] {description}"),

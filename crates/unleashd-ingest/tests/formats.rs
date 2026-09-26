@@ -166,6 +166,29 @@ fn claude_titles_usage_receipts_and_reply_times() {
     assert_resume_equals_full(Format::Claude, dir.path(), "resume.jsonl", &text);
 }
 
+/// Claude Code 2.1 renamed the sub-agent tool `Task` to `Agent`; only `Task` was a spawn tool, so
+/// 2.1 transcripts showed no sub-agents. Input as recorded from claude 2.1.283
+/// (vendor/agent-cli-tool/test/fixtures/claude-2.1.283-background-agent.jsonl).
+#[test]
+fn claude_agent_tool_is_a_sub_agent() {
+    let dir = tempfile::tempdir().unwrap();
+    let agent = json!({ "description": "Run background task and reply", "prompt": "Run the shell command", "run_in_background": true });
+    let text = jsonl(&[
+        claude_user("launch it", "2026-09-26T00:00:00.000Z"),
+        claude_assistant(
+            "msg_a",
+            json!([{ "type": "tool_use", "id": "tu1", "name": "Agent", "input": agent }]),
+            "2026-09-26T00:00:01.000Z",
+        ),
+    ]);
+    let path = dir.path().join("-w").join("agent.jsonl");
+    write(&path, &text);
+    let (messages, row) = parse(Format::Claude, &path);
+    assert_eq!(contents(&messages)[1], "▶️ Agent Run background task and reply");
+    let sub_agents = row.unwrap().facts.sub_agents;
+    assert_eq!(sub_agents.iter().map(|a| a.description.as_str()).collect::<Vec<_>>(), ["Run background task and reply"]);
+}
+
 #[test]
 fn claude_without_cwd_falls_back_to_the_project_directory_name_as_a_guess() {
     let dir = tempfile::tempdir().unwrap();

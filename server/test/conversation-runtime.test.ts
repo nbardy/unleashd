@@ -1,7 +1,9 @@
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import test from 'node:test';
-import type { UnifiedAgentEvent } from '@nbardy/agent-cli';
+import { type UnifiedAgentEvent, createParser } from '@nbardy/agent-cli';
 import { buddyKind } from '@unleashd/shared';
 import type { Provider } from '@unleashd/shared';
 import { type ConversationConfig, createDefaultConversationConfig } from '@unleashd/shared';
@@ -17,6 +19,11 @@ import { resolveConfigAgainstProviderCatalog } from '../src/providers/catalog-se
 import { type TurnTimeoutKind, TurnWatchdog } from '../src/turns/watchdog';
 import { fakeBuddyPort } from './fixtures/buddy-port';
 import { fakeExecuteTurn } from './fixtures/fake-turn';
+
+const BACKGROUND_AGENT_FIXTURE = join(
+  __dirname,
+  '../../vendor/agent-cli-tool/test/fixtures/claude-2.1.283-background-agent.jsonl'
+);
 
 function runtimeFixture(
   options: {
@@ -843,46 +850,69 @@ test('timer-only heartbeats cannot mask provider idleness, while native advancem
   watchdog.clear();
 });
 
-// agent_notes/2026-09-26_claude-p-background-agents-ceiling.md: agent-cli lets `claude -p` wait
-// 12 h for its background agents, but the parent is silent meanwhile (the parser drops task_*),
-// so the 60-minute provider-idle watchdog killed every such wait. A launch now widens only that
-// clock, by the harness's declared wait, and the turn still ends if Claude hangs past it.
-test('a Claude turn waiting on a background agent outlives the provider-idle limit', async (t) => {
-  t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: 0 });
+/**
+ * Runs a Claude turn that emits `events`, then only bridge heartbeats (the parent is idle) for up
+ * to `minutes`. Returns whether the turn is still running and how often it was stopped.
+ */
+async function silentClaudeTurn(
+  t: { mock: { timers: { tick(ms: number): void } } },
+  events: UnifiedAgentEvent[],
+  minutes: number
+) {
   const flush = () => new Promise<void>((resolve) => setImmediate(resolve));
   const heartbeat: UnifiedAgentEvent = { type: 'progress', source: 'agent-cli.heartbeat' };
-  const run = async (launch: UnifiedAgentEvent, minutes: number) => {
-    const queued: UnifiedAgentEvent[] = [{ type: 'turn.started' }, launch];
-    let wake: (() => void) | null = null;
-    const stub = openTurnStub();
-    const turn = {
-      ...stub.turn,
-      events: (async function* () {
-        for (;;) {
-          while (queued.length > 0) yield queued.shift()!;
-          await new Promise<void>((resolve) => {
-            wake = resolve;
-          });
-        }
-      })(),
-    };
-    const { conversation } = runtimeFixture({
-      provider: 'claude',
-      executeTurn: fakeExecuteTurn(() => turn),
-    });
-    conversation.sendMessage('start the workers');
-    await flush();
-    // Only bridge heartbeats from here on: the parent is idle, its background agent works.
-    for (let minute = 1; minute <= minutes && conversation.isRunning; minute += 1) {
-      t.mock.timers.tick(60_000);
-      queued.push(heartbeat);
-      (wake as (() => void) | null)?.();
-      await flush();
-    }
-    const outcome = { running: conversation.isRunning, stops: stub.stops() };
-    if (outcome.running) conversation.stop();
-    return outcome;
+  const queued: UnifiedAgentEvent[] = [...events];
+  let wake: (() => void) | null = null;
+  const stub = openTurnStub();
+  const turn = {
+    ...stub.turn,
+    events: (async function* () {
+      for (;;) {
+        while (queued.length > 0) yield queued.shift()!;
+        await new Promise<void>((resolve) => {
+          wake = resolve;
+        });
+      }
+    })(),
   };
+  const { conversation } = runtimeFixture({
+    provider: 'claude',
+    executeTurn: fakeExecuteTurn(() => turn),
+  });
+  conversation.sendMessage('start the workers');
+  await flush();
+  for (let minute = 1; minute <= minutes && conversation.isRunning; minute += 1) {
+    t.mock.timers.tick(60_000);
+    queued.push(heartbeat);
+    (wake as (() => void) | null)?.();
+    await flush();
+  }
+  const outcome = { running: conversation.isRunning, stops: stub.stops() };
+  if (outcome.running) conversation.stop();
+  return outcome;
+}
+
+/**
+ * The unified events agent-cli's own Claude parser produces for a recorded claude 2.1.283 turn:
+ * one `Agent` launched with run_in_background (its sub-agent runs a foreground Bash, also a
+ * Claude task), then that agent's task start and finish.
+ */
+function recordedBackgroundAgentTurn(): UnifiedAgentEvent[] {
+  const parse = createParser('claude');
+  return readFileSync(BACKGROUND_AGENT_FIXTURE, 'utf-8')
+    .split('\n')
+    .filter((line) => line.trim())
+    .flatMap((line) => parse(JSON.parse(line)));
+}
+
+// agent_notes/2026-09-26_claude-p-background-agents-ceiling.md: agent-cli lets `claude -p` wait
+// 12 h for its background agents, but the parent is silent meanwhile, so the 60-minute
+// provider-idle watchdog killed every such wait. A launch now widens only that clock, by the
+// harness's declared wait, and the turn still ends if Claude hangs past it.
+test('a Claude turn waiting on a background agent outlives the provider-idle limit', async (t) => {
+  t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: 0 });
+  const run = (launch: UnifiedAgentEvent, minutes: number) =>
+    silentClaudeTurn(t, [{ type: 'turn.started' }, launch], minutes);
   const agent = (runInBackground: boolean): UnifiedAgentEvent => ({
     type: 'tool.use',
     name: 'Agent',
@@ -899,6 +929,37 @@ test('a Claude turn waiting on a background agent outlives the provider-idle lim
 
   const hung = await run(agent(true), waitMinutes + idleMinutes + 1);
   assert.deepEqual(hung, { running: false, stops: 1 }, 'past the declared wait it stalls again');
+});
+
+// The widened budget used to last the whole turn: agent-cli's Claude parser dropped the
+// task_* lines, so nothing said the agents were done and a turn hung after they finished lived
+// 13 h. The finish of the last background task now restores the normal idle limit.
+test('a recorded background agent finishing restores the idle limit', async (t) => {
+  t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: 0 });
+  // Claude flushes every `result` only at exit, so the live stream ends at the last task line.
+  const live = recordedBackgroundAgentTurn().filter((event) => event.type !== 'turn.complete');
+  const agentFinish = live.findIndex(
+    (event) =>
+      event.type === 'task.finished' &&
+      live.some((e) => e.type === 'task.started' && e.background && e.taskId === event.taskId)
+  );
+  assert.ok(agentFinish > 0, 'the fixture carries the background agent finishing');
+
+  const stillWorking = await silentClaudeTurn(t, live.slice(0, agentFinish), 61);
+  assert.deepEqual(stillWorking, { running: true, stops: 0 }, 'agent still running: waiting');
+
+  const finished = await silentClaudeTurn(t, live, 61);
+  assert.deepEqual(finished, { running: false, stops: 1 }, 'agent done: silence is a stall');
+});
+
+test('a recorded Claude 2.1 Agent launch becomes a sub-agent', async () => {
+  // Claude Code 2.1 names its spawn tool `Agent`; only `Task` was recognised, so 2.1
+  // background agents never appeared as sub-agents.
+  const { conversation } = await runScriptedTurn('claude', recordedBackgroundAgentTurn());
+  assert.deepEqual(
+    conversation.subAgents.map((agent) => agent.description),
+    ['Run background task and reply']
+  );
 });
 
 test('bridge watchdog terminates a turn when neither unified events nor heartbeats arrive', (t) => {

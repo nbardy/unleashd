@@ -1,3 +1,4 @@
+import { CLAUDE_SUBAGENT_TOOL_NAMES } from '@nbardy/agent-cli';
 import type { Provider, SubAgentStatus } from '@unleashd/shared';
 
 const GEMINI_LOCAL_AGENT_LABELS: Record<string, string> = {
@@ -47,9 +48,12 @@ function normalizeCodexAgentState(value: unknown): CodexCollabAgentState | null 
   return out;
 }
 
+// Claude's spawn tool is `Agent` since Claude Code 2.1 and `Task` before; matching only `Task`
+// hid every 2.1 sub-agent. The harness owns the name set (agent-cli CLAUDE_SUBAGENT_TOOL_NAMES).
+// Guard: conversation-runtime.test.ts "a recorded Claude 2.1 Agent launch becomes a sub-agent".
 export function isSubagentSpawnTool(provider: Provider, toolName: string): boolean {
   return (
-    toolName === 'Task' ||
+    CLAUDE_SUBAGENT_TOOL_NAMES.has(toolName) ||
     (provider === 'gemini' && toolName in GEMINI_LOCAL_AGENT_LABELS) ||
     (provider === 'codex' && toolName === 'spawn_agent')
   );
@@ -60,7 +64,7 @@ export function getSubagentDescription(
   toolName: string,
   input: Record<string, unknown>
 ): string {
-  if (toolName === 'Task') {
+  if (CLAUDE_SUBAGENT_TOOL_NAMES.has(toolName)) {
     const description = firstString(input.description) ?? 'Running sub-agent task...';
     const subagentType = firstString(input.subagent_type);
     return subagentType ? `[${subagentType}] ${description}` : description;

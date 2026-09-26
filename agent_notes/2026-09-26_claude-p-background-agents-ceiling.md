@@ -32,7 +32,9 @@ session `dbfcd9c4-62ea-4322-b6b7-ff4d4701a1fd`, Claude Code 2.1.282).
 - Background task lifecycle DOES stream live as `system` events:
   `task_started` (description, `is_background`), `task_progress`,
   `task_updated`, `task_notification`, `background_tasks_changed`.
-  The claude parser drops them today.
+  The claude parser now emits task_started / task_notification as typed
+  `task.started` / `task.finished` (agent-cli 31469d4); the turn watchdog's
+  widened idle budget narrows when the last background task finishes.
 - The channel reply is the last assistant message at process exit
   (`server/src/conversations/runtime.ts` `buddy-turn-complete`). Activity after
   the real answer (here a notification dequeued at the ceiling) can replace it

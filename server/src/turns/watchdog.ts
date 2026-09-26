@@ -19,7 +19,8 @@ import { noteActivity } from '../observability/event-loop-stall';
  *   deadline uses the conversation budget and reports timeout after joined
  *   drain`).
  * A turn that launched a background task (turns/background-wait.ts) widens only the
- * provider-idle budget, by its harness's declared wait; the max clock never moves.
+ * provider-idle budget, by its harness's declared wait, until its last background task
+ * finishes; the max clock never moves.
  */
 
 export type TurnTimeoutKind = 'bridge' | 'provider' | 'max';
@@ -84,13 +85,19 @@ export class TurnWatchdog {
    * The turn launched a background task its harness waits for after the parent goes idle, up
    * to `waitMs`. Silence within that wait is not a stall, so for the rest of the turn the
    * provider-idle budget is the wait plus the normal idle budget (a harness that still hangs
-   * after its own ceiling dies as before). No completion is visible, so it never narrows back.
+   * after its own ceiling dies as before). `endBackgroundWait` narrows it back.
    */
   allowBackgroundWait(waitMs: number): void {
     this.providerIdleBudgetMs = Math.max(
       this.providerIdleBudgetMs,
       this.budgets.providerIdleMs + waitMs
     );
+    this.armProviderIdle();
+  }
+
+  /** Every background task of the turn has finished: silence is a stall again. */
+  endBackgroundWait(): void {
+    this.providerIdleBudgetMs = this.budgets.providerIdleMs;
     this.armProviderIdle();
   }
 
