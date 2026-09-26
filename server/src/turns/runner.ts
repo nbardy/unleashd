@@ -39,15 +39,9 @@ import {
   turnAttemptActivityFromEvent,
 } from './watchdog';
 
-/**
- * Spawns one provider turn through agent-cli and folds its `UnifiedAgentEvent`
- * stream into the conversation (messages, streaming status, sub-agents,
- * session binding, usage). Events are typed once, by agent-cli; the former
- * ProviderEvent re-typing layer is gone (T08 S1). No Buddy code and no
- * provider branching live here: kind-specific behavior arrives through the
- * conversation's TurnPolicy, harness differences through the sub-agent fold
- * table and agent-cli.
- */
+// One provider turn through agent-cli, its `UnifiedAgentEvent` stream folded into the
+// conversation. Kind behavior comes from the TurnPolicy, harness differences from the
+// sub-agent fold table; there is no provider branching here. Notes: docs/turn-lifecycle.md.
 
 type ToolUseEvent = Extract<UnifiedAgentEvent, { type: 'tool.use' }>;
 type CompletionReason = Extract<UnifiedAgentEvent, { type: 'turn.complete' }>['reason'];
@@ -129,37 +123,29 @@ export class TurnRunner {
   private stderrBuffer = '';
   // Whether assistant text or a tool event reached the unified stream.
   private sawMeaningfulOutput = false;
-  // When true, turn.complete (or a timeout) already performed the user-visible
-  // cleanup. The close handler then takes the fast path, while crash/kill/error
-  // paths where it never fired still run the full cleanup.
+  // turn.complete (or a timeout) already did the user-visible cleanup; settle takes the fast path.
   private completedCleanly = false;
-  // A timeout or stop already finalized the user-visible turn: later provider
-  // events are dropped. A normal turn.complete does NOT seal. On resume Claude
-  // can emit a result for drained task-notifications before the prompt's own
-  // answer, and that answer must still be recorded (493c1c7; guard:
-  // conversation-runtime.test.ts "an early turn.complete does not drop …").
+  // A timeout or stop finalized the turn; later events are dropped. turn.complete does NOT
+  // seal (docs/turn-lifecycle.md#early-turn-complete; guard "an early turn.complete does not drop …").
   private sealed = false;
   private terminalCauseHint: TurnTerminalCause | null = null;
-  // The provider's own error text. It names the failure on the terminal path
-  // instead of the generic "Provider reported an error".
+  // The provider's own error text, preferred over the generic terminal message.
   private providerFailureMessage: string | null = null;
   private stopCause: 'user_stop' | 'server_restart' | null = null;
   private processStartTime = 0;
   private lastAttemptActivityAt = 0;
   private lastAttemptActivitySource: TurnActivitySource | null = null;
   private lastObservedActivity: TurnAttemptActivity | null = null;
-  // Set when providerUsage changed during the active turn and has not yet been
-  // persisted. Avoids a CAS write per streamed usage event.
+  // Usage changed this turn and is unpersisted (one CAS write per turn, not per event).
   private providerUsageDirty = false;
   private activeAttemptId: string | null = null;
-  private nextAttempt: { attemptId: string; queueMessageId?: string } | null = null;
+  private nextAttempt: string | null = null;
   // Chosen once per turn from the harness capability table (turns/subagents.ts).
   private subAgentFold: SubAgentFold = subAgentFoldFor('claude');
   // This turn's subscription to its folder's swarm observer (swarm/observer.ts).
   private stopSwarmWatch: (() => void) | null = null;
-  // Bridge / provider-idle / max-runtime clocks. The max budget is passed
-  // explicitly: foreground Buddy turns must never inherit a shorter claim
-  // default (incident 2026-09-10, see turns/watchdog.ts).
+  // The max budget is passed explicitly: foreground Buddy turns never inherit a shorter
+  // claim default (docs/incident-2026-09-10-buddy-chat-timeout.md).
   private readonly watchdog = new TurnWatchdog(
     {
       bridgeMs: TURN_BRIDGE_TIMEOUT_MS,
@@ -186,35 +172,28 @@ export class TurnRunner {
 
   // --- attempt records ---------------------------------------------------------
 
-  /** The queue head about to be sent reuses its registered attempt. */
-  prepareQueuedAttempt(entry: QueueEntry): void {
-    if (!entry.attemptId) {
-      entry.attemptId = crypto.randomUUID();
-      this.ports.turnAttempts.queued({
-        attemptId: entry.attemptId,
-        conversationId: this.host.id,
-        queueMessageId: entry.message.id,
-        providerSessionId: this.host.sessionId,
-      });
-    }
-    this.nextAttempt = { attemptId: entry.attemptId, queueMessageId: entry.message.id };
-  }
-
-  /** Make the prepared (or a new) attempt the active one. */
-  beginAttempt(): void {
-    const prepared = this.nextAttempt;
-    this.nextAttempt = null;
-    if (prepared) {
-      this.activeAttemptId = prepared.attemptId;
-      return;
-    }
+  /** Register a queued attempt (for a queue entry, or a direct send when absent). */
+  createQueuedAttempt(queueMessageId?: string): string {
     const attemptId = crypto.randomUUID();
     this.ports.turnAttempts.queued({
       attemptId,
       conversationId: this.host.id,
+      queueMessageId,
       providerSessionId: this.host.sessionId,
     });
-    this.activeAttemptId = attemptId;
+    return attemptId;
+  }
+
+  /** The queue head about to be sent reuses its registered attempt. */
+  prepareQueuedAttempt(entry: QueueEntry): void {
+    entry.attemptId ??= this.createQueuedAttempt(entry.message.id);
+    this.nextAttempt = entry.attemptId;
+  }
+
+  /** Make the prepared (or a new) attempt the active one. */
+  beginAttempt(): void {
+    this.activeAttemptId = this.nextAttempt ?? this.createQueuedAttempt();
+    this.nextAttempt = null;
   }
 
   finishAttempt(state: AttemptState, terminalCause: TurnTerminalCause): void {
@@ -233,6 +212,11 @@ export class TurnRunner {
     this.stopCause = null;
   }
 
+  /** A stop's terminal record: a restart interrupts, an owner stop cancels. */
+  private finishStopped(cause: 'user_stop' | 'server_restart'): void {
+    this.finishAttempt(cause === 'server_restart' ? 'interrupted' : 'cancelled', cause);
+  }
+
   cancelQueuedAttempt(entry: QueueEntry): void {
     if (!entry.attemptId) return;
     this.ports.turnAttempts.terminal({
@@ -242,17 +226,6 @@ export class TurnRunner {
       providerSessionId: this.host.sessionId,
     });
     entry.attemptId = null;
-  }
-
-  createQueuedAttempt(queueMessageId: string): string {
-    const attemptId = crypto.randomUUID();
-    this.ports.turnAttempts.queued({
-      attemptId,
-      conversationId: this.host.id,
-      queueMessageId,
-      providerSessionId: this.host.sessionId,
-    });
-    return attemptId;
   }
 
   drain(): Promise<void> | null {
@@ -316,12 +289,8 @@ export class TurnRunner {
     let handle: ReturnType<typeof executeCommand>;
     try {
       const extras = host.policy.startTurn(turn.input, turn.config);
-      // One request shape for every harness. Effort is a pass-through string:
-      // configuration validation rejects levels the provider does not accept,
-      // and agent-cli maps it to a flag only for harnesses that take one
-      // (execute.ts), so the cast covers only its `never` typing on the rest.
-      // Replaces three identical per-provider branches (T08 S2). Guard:
-      // `every harness receives its resolved effort in one request shape`.
+      // One request shape for every harness; the cast covers agent-cli's `never` effort typing
+      // on harnesses without effort (docs/turn-lifecycle.md#one-request-shape).
       handle = this.ports.executeTurn({
         harness: turn.config.provider,
         mode: 'conversation',
@@ -340,11 +309,8 @@ export class TurnRunner {
       host.policy.spawnFailed();
       this.finishAttempt('failed', 'spawn_failed');
       const message = error instanceof Error ? error.message : String(error);
-      // An automation subscribes to this event before calling sendMessage(). A
-      // provider/configuration failure can happen synchronously, before there
-      // is a child process whose completion could reject the run. Keep this
-      // signal at the conversation boundary so every caller sees one terminal
-      // result. See agent_notes/2026-08-24_automation-execution-ownership-design.md.
+      // A synchronous spawn failure has no child to complete: signal it here so an
+      // automation's run sees one terminal result (docs/turn-lifecycle.md#one-terminal-path).
       host.emit('buddy-turn-failed', message);
       throw error;
     }
@@ -374,13 +340,8 @@ export class TurnRunner {
     const turnDrain = handle.completed
       .then(async (completion) => {
         if (runToken !== this.runToken) return;
-        // `completed` describes child-process termination, not consumption of
-        // the normalized event stream. In particular, session persistence is
-        // asynchronous. Releasing ownership before that consumer drains can
-        // start the next queued turn while text/session/turn.complete events
-        // from this one are still being applied. One joined terminal path is
-        // simpler than trying to make every event handler replay-safe. See
-        // agent_notes/2026-08-24_automation-execution-ownership-design.md.
+        // Child exit is not event-stream EOF: settle only after both join
+        // (docs/turn-lifecycle.md#one-terminal-path).
         await eventConsumption;
         if (runToken !== this.runToken) return;
         await this.settle(completion, fold);
@@ -406,19 +367,24 @@ export class TurnRunner {
   }
 
   async bindSession(sessionId: string): Promise<void> {
+    await this.adoptSession(sessionId, this.host.policy.audienceKey());
+    this.host.publish({ t: 'session', sessionId });
+  }
+
+  /** The provider named its session: alias it, persist it, bind the attempt to it. */
+  private async adoptSession(sessionId: string, audienceKey: string | undefined): Promise<void> {
     const host = this.host;
-    if (sessionId !== host.sessionId) console.log(`[${host.id}] Session captured: ${sessionId}`);
     const oldSessionId = host.sessionId;
     host.sessionId = sessionId;
     if (oldSessionId !== sessionId) {
+      console.log(`[${host.id}] Session captured: ${sessionId}`);
       this.ports.unregisterSessionAlias(oldSessionId, { keepKnown: true });
     }
     this.ports.registerSessionAlias(sessionId, host.id);
-    await host.persistSession(sessionId, host.policy.audienceKey());
+    await host.persistSession(sessionId, audienceKey);
     if (this.activeAttemptId) {
       this.ports.turnAttempts.bindProviderSession(this.activeAttemptId, sessionId);
     }
-    host.publish({ t: 'session', sessionId });
   }
 
   noteActivity(event: UnifiedAgentEvent): void {
@@ -448,8 +414,7 @@ export class TurnRunner {
   }
 
   logProgress(event: Extract<UnifiedAgentEvent, { type: 'progress' }>): void {
-    // Always log provider warnings (network retries, etc.) — operational
-    // signals, not debug noise. Other progress events only log with debug on.
+    // Provider warnings are operational signals; other progress logs only with debug on.
     if (event.source === 'gemini.warning') {
       console.warn(
         `[${this.host.id}] provider warning:`,
@@ -472,13 +437,8 @@ export class TurnRunner {
   }
 
   noteUsage(usage: Omit<ProviderTurnUsage, 'observedAt'>): void {
-    // Provider-counted truth for the request that just completed. agent-cli
-    // already canonicalised the per-harness conventions and excluded claude's
-    // turn-aggregate `result` usage and its subagent measurements, so take this
-    // verbatim — re-deriving it here would reintroduce the double-counting
-    // those parsers avoid. Last write wins within a turn: a turn can issue
-    // several requests (tool loops), and the latest is the live context size.
-    // It can go DOWN when the provider compacts; that is the signal, not a bug.
+    // Verbatim from agent-cli, last write wins; it may go down on compaction
+    // (docs/turn-lifecycle.md#provider-usage).
     this.host.providerUsage = { ...usage, observedAt: new Date().toISOString() };
     this.providerUsageDirty = true;
   }
@@ -509,8 +469,7 @@ export class TurnRunner {
   applyToolUse(event: ToolUseEvent): void {
     this.ensureAssistantMessage();
     if (this.subAgentFold.toolUse(this.subAgentHost, event) === 'hide') return;
-    // Normalize tool line formatting across providers (Claude/Gemini/Codex).
-    // Suppress Codex shell completion-only events to avoid duplicate lines.
+    // Codex shell completion-only events would duplicate the tool line.
     if (isCompletionOnlyToolUse(event.name, event.input, event.displayText)) return;
     const formattedTool = formatToolUse(event.name, event.input, event.displayText);
     if (!formattedTool) return;
@@ -537,31 +496,20 @@ export class TurnRunner {
   /** turn.complete: close the UI stream. Execution ownership ends only at drain. */
   completeMessage(reason: CompletionReason): void {
     const host = this.host;
-    // Clear watchdog timers immediately — the turn completed normally.
-    // Without this they dangle until process close, risking a spurious timeout.
+    // Clear now or the timers dangle until close and can fire a spurious timeout. The
+    // attempt is terminalized only at the joined drain.
     this.clearWatchdogs();
-    // The attempt is terminalized only after child exit and event EOF join. See
-    // invariant I8 and its alternatives in the ownership design note.
     const completedAt = new Date();
-    const lastMsg = host.messages[host.messages.length - 1];
-    if (lastMsg && lastMsg.role === 'assistant' && !lastMsg.completedAt) {
-      lastMsg.completedAt = completedAt;
-      lastMsg.completionReason = reason;
-    }
+    this.closeAssistantMessage(completedAt, reason);
     this.subAgentFold.parentCompleted(this.subAgentHost, completedAt);
 
-    // Broadcast message_complete BEFORE status(isStreaming=false). The client's
-    // message_complete handler flushes its chunk buffer; the last buffered text
-    // must land before isStreaming=false hides the typing dots.
+    // message_complete BEFORE run=idle: the client flushes its chunk buffer on it.
     this.ports.broadcast({ type: 'message_complete', conversationId: host.id, reason });
 
-    // turn.complete means the assistant has finished this turn from the user's
-    // perspective; clear busy state now instead of waiting for child teardown.
+    // Finished from the user's view: clear busy now, not at child teardown.
     host.isStreaming = false;
     host.isRunning = false;
-    this.ports.clearExternalRunningStatus(host.id, host.sessionId);
-    this.ports.markLocalCompletionSuppression(host.id, host.sessionId);
-    this.broadcastStatus();
+    this.releaseRunFlags();
     host.publishTurnEnd();
     this.completedCleanly = true;
     host.policy.streamCompleted();
@@ -587,29 +535,15 @@ export class TurnRunner {
     const host = this.host;
     const { exitCode, signal, sessionId, reason } = completion;
     this.clearWatchdogs();
-    if (sessionId && sessionId !== host.sessionId) {
-      const oldSessionId = host.sessionId;
-      host.sessionId = sessionId;
-      this.ports.unregisterSessionAlias(oldSessionId, { keepKnown: true });
-      this.ports.registerSessionAlias(sessionId, host.id);
-      await host.persistSession(sessionId, undefined);
-      if (this.activeAttemptId) {
-        this.ports.turnAttempts.bindProviderSession(this.activeAttemptId, sessionId);
-      }
-    }
+    if (sessionId && sessionId !== host.sessionId) await this.adoptSession(sessionId, undefined);
 
-    // Flush once per turn rather than per usage event: a tool loop emits one per
-    // request, and each write is a CAS round-trip on the config record. Filed
-    // against the session settled just above, so a mid-turn rotation records the
-    // usage under the session that actually holds that context.
+    // Once per turn, filed under the session settled above (docs/turn-lifecycle.md#provider-usage).
     if (this.providerUsageDirty && host.providerUsage) {
       this.providerUsageDirty = false;
       try {
         await this.ports.persistSessionUsage?.(host.id, host.sessionId, host.providerUsage);
       } catch (error) {
-        // The meter is observability. Losing a usage write must never fail a
-        // turn that otherwise succeeded; the session-file parser still covers
-        // this session on the next read.
+        // The meter is observability; a lost write never fails the turn.
         console.warn(
           `[${host.id}] Failed to persist provider usage:`,
           error instanceof Error ? error.message : String(error)
@@ -635,8 +569,7 @@ export class TurnRunner {
   ): void {
     const host = this.host;
     host.policy.revoke();
-    host.process = null;
-    this.stopTurn = null;
+    this.detachProcess();
     this.ports.clearExternalRunningStatus(host.id, host.sessionId);
     this.ports.markLocalCompletionSuppression(host.id, host.sessionId);
     if (host.turnQueue.finishHead()) host.broadcastQueue();
@@ -650,20 +583,15 @@ export class TurnRunner {
           ? 'Provider reported an error'
           : null);
     if (completionFailure) {
-      if (this.stopCause) {
+      if (this.stopCause) this.finishStopped(this.stopCause);
+      else
         this.finishAttempt(
-          this.stopCause === 'server_restart' ? 'interrupted' : 'cancelled',
-          this.stopCause
+          'failed',
+          this.terminalCauseHint === 'out_of_tokens' ? 'out_of_tokens' : 'provider_error'
         );
-      } else if (this.terminalCauseHint === 'out_of_tokens') {
-        this.finishAttempt('failed', 'out_of_tokens');
-      } else {
-        this.finishAttempt('failed', 'provider_error');
-      }
       host.emit('buddy-turn-failed', completionFailure);
     } else {
-      // Enqueue memory review before completion listeners or processQueue can
-      // start another turn.
+      // Review is enqueued before listeners or processQueue can start another turn.
       if (completion.reason === 'success' && completion.exitCode === 0 && !this.stopCause) {
         host.policy.reviewCompleted(host.messages);
       }
@@ -684,10 +612,7 @@ export class TurnRunner {
     const host = this.host;
     const { exitCode, reason } = completion;
     if (reason === 'killed' && this.stopCause) {
-      this.finishAttempt(
-        this.stopCause === 'server_restart' ? 'interrupted' : 'cancelled',
-        this.stopCause
-      );
+      this.finishStopped(this.stopCause);
     } else if (reason === 'out_of_tokens' || this.terminalCauseHint === 'out_of_tokens') {
       this.finishAttempt('failed', 'out_of_tokens');
     } else if (this.terminalCauseHint === 'provider_error') {
@@ -707,31 +632,17 @@ export class TurnRunner {
       host.appendMessage({ role: 'system', content: systemMessage.text, timestamp: new Date() });
     }
 
-    // INVARIANT: a dead process cannot stream. This is the safety net for
-    // crash/kill/OOM — every path that skips turn.complete.
-    const lastMsg = host.messages[host.messages.length - 1];
-    if (lastMsg && lastMsg.role === 'assistant' && !lastMsg.completedAt) {
-      lastMsg.completedAt = new Date();
-      lastMsg.completionReason = reason || (exitCode === 0 ? 'success' : 'error');
-    }
+    // INVARIANT: a dead process cannot stream (every path that skipped turn.complete).
+    this.closeAssistantMessage(new Date(), reason || (exitCode === 0 ? 'success' : 'error'));
     host.isStreaming = false;
     host.isRunning = false;
-    host.process = null;
-    this.stopTurn = null;
-    // Suppress external-running detection for trailing disk writes from this
-    // just-finished local run. Also clear any stale external flag immediately.
-    this.ports.clearExternalRunningStatus(host.id, host.sessionId);
-    this.ports.markLocalCompletionSuppression(host.id, host.sessionId);
-    this.broadcastStatus();
+    this.detachProcess();
+    this.releaseRunFlags();
     host.policy.ended(
       reason === 'killed' ? { t: 'cancelled', detail: reason } : { t: 'failed', detail: reason }
     );
     host.emit('buddy-turn-failed', reason);
-    // Dequeue the "sending" message (completed or crashed) and process next.
-    // This is the SINGLE code path for dequeue, for success and crash alike.
     if (host.turnQueue.finishHead()) host.broadcastQueue();
-    // WS message ordering guarantees clients see status:false before the next
-    // spawn's status:true. No delay needed.
     host.processQueue();
   }
 
@@ -745,8 +656,7 @@ export class TurnRunner {
     this.surfaceError(normalizeProviderErrorMessage(message));
     host.isStreaming = false;
     host.isRunning = false;
-    host.process = null;
-    this.stopTurn = null;
+    this.detachProcess();
     this.broadcastStatus();
     host.policy.ended({ t: 'failed', detail: message });
     host.emit('buddy-turn-failed', message);
@@ -771,14 +681,11 @@ export class TurnRunner {
     this.stopCause = reason;
     if (this.activeAttemptId) {
       this.ports.turnAttempts.stopping(this.activeAttemptId);
-      if (reason === 'server_restart') this.finishAttempt('interrupted', 'server_restart');
+      if (reason === 'server_restart') this.finishStopped(reason);
     }
     const stopTurn = this.stopTurn;
-    // CRITICAL: Don't set isRunning here. The close handler does that. This
-    // keeps it atomic: process exits → state updated → queue dequeued →
-    // processQueue() spawns next. Setting state here could let processQueue fire
-    // while the old process is still alive, and start()'s isRunning guard would
-    // silently drop the queued message.
+    // Never clear isRunning here: settle does, after exit, so processQueue cannot
+    // start while the old process lives (start()'s guard would drop the message).
     stopTurn?.('SIGTERM');
     host.policy.ended({ t: 'cancelled' });
     escalateKill(proc, stopTurn, STOP_KILL_GRACE_MS, () =>
@@ -800,8 +707,7 @@ export class TurnRunner {
     escalateKill(proc, stopTurn, TURN_TIMEOUT_KILL_GRACE_MS, () =>
       console.warn(`[${host.id}] Reset process did not exit after SIGTERM, sending SIGKILL`)
     );
-    host.process = null;
-    this.stopTurn = null;
+    this.detachProcess();
     host.isStreaming = false;
     host.isRunning = false;
     this.broadcastStatus();
@@ -831,24 +737,15 @@ export class TurnRunner {
     this.finishAttempt('failed', timeout.terminalCause);
 
     const completedAt = new Date();
-    const lastMsg = host.messages[host.messages.length - 1];
-    if (lastMsg?.role === 'assistant' && !lastMsg.completedAt) {
-      lastMsg.completedAt = completedAt;
-      lastMsg.completionReason = 'error';
-    }
+    this.closeAssistantMessage(completedAt, 'error');
     failRunningSubAgents(host.subAgents, completedAt);
-    // Commit buffered text before status:false makes the client discard its
-    // transient streaming buffer, then publish the authoritative transcript.
+    // Commit buffered text before run=idle discards the client's streaming buffer.
     this.ports.broadcast({ type: 'message_complete', conversationId: host.id, reason: 'error' });
     host.isStreaming = false;
     host.isRunning = false;
-    this.ports.clearExternalRunningStatus(host.id, host.sessionId);
-    this.ports.markLocalCompletionSuppression(host.id, host.sessionId);
-    this.broadcastStatus();
+    this.releaseRunFlags();
     host.publishTurnEnd();
-    // The close handler (after SIGTERM below) takes the fast path and does not
-    // add a duplicate system message. Seal so a late provider event cannot
-    // append another answer after the timeout message.
+    // Settle takes the fast path (no duplicate message); sealed drops late answers.
     this.sealed = true;
     this.completedCleanly = true;
     host.policy.ended({ t: 'failed', detail: timeout.message });
@@ -880,13 +777,32 @@ export class TurnRunner {
   broadcastStatus(): void {
     this.host.publishRun();
   }
+
+  private detachProcess(): void {
+    this.host.process = null;
+    this.stopTurn = null;
+  }
+
+  // The local run ended: clear stale external-running flags and suppress
+  // external-running detection for this run's trailing disk writes.
+  private releaseRunFlags(): void {
+    this.ports.clearExternalRunningStatus(this.host.id, this.host.sessionId);
+    this.ports.markLocalCompletionSuppression(this.host.id, this.host.sessionId);
+    this.broadcastStatus();
+  }
+
+  private closeAssistantMessage(completedAt: Date, reason: CompletionReason): void {
+    const last = this.host.messages.at(-1);
+    if (last?.role !== 'assistant' || last.completedAt) return;
+    last.completedAt = completedAt;
+    last.completionReason = reason;
+  }
 }
 
 /** One turn's event stream folded into its runner: one handler per event type. */
 class EventFold {
   streamError: Error | null = null;
-  // A turn.complete that reports failure fails automation even though the
-  // stream closed cleanly.
+  // A failing turn.complete fails automation although the stream closed cleanly.
   completionError: string | null = null;
 
   constructor(
@@ -897,10 +813,7 @@ class EventFold {
   async consume(events: AsyncIterable<UnifiedAgentEvent>): Promise<void> {
     for await (const event of events) {
       if (!this.runner.isCurrent(this.runToken)) return;
-      // A timeout or stop finalizes the user-visible turn before the child has
-      // necessarily acknowledged SIGTERM. Ignore buffered/late provider events
-      // so they cannot resurrect or complete it twice. A normal turn.complete
-      // does not seal: the events after it can be the prompt's own answer.
+      // Late events after a timeout/stop cannot resurrect the turn.
       if (this.runner.streamClosed) continue;
       this.runner.noteActivity(event);
       await this.apply(event);
@@ -949,9 +862,7 @@ class EventFold {
       case 'usage':
         runner.noteUsage(event.usage);
         return;
-      // Codex collab sub-agents are folded from their tool.use events by the
-      // codex sub-agent fold (turns/subagents.ts), which keeps the UI's
-      // description and tool counts; this duplicate is not consumed yet.
+      // Codex collab is folded from tool.use (turns/subagents.ts); this duplicate is unused.
       case 'subagent.state':
         return;
     }
@@ -977,8 +888,7 @@ function crashMessage(
   run: { sawOutput: boolean; durationMs: number }
 ): { level: 'error' | 'info'; text: string } | null {
   const { exitCode, reason } = completion;
-  // The executeCommand completion reason comes first: it carries protocol-level
-  // failures that can otherwise look like successful exits.
+  // The completion reason first: it carries protocol failures that look like clean exits.
   if (reason === 'killed') {
     return {
       level: 'error',

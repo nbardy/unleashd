@@ -56,7 +56,7 @@ import {
   type TurnPolicy,
 } from '../turns/policy';
 import { type QueueEntry, TurnQueue } from '../turns/queue';
-import { type TurnBroadcast, TurnRunner } from '../turns/runner';
+import { type TurnBroadcast, TurnRunner, type TurnRunnerPorts } from '../turns/runner';
 
 /**
  * The conversation: its record, its queue, its turn policy and the runner for
@@ -89,20 +89,10 @@ function unknownInput(): TurnInput {
   return { origin: 'unknown', inputId: crypto.randomUUID() };
 }
 
-/**
- * The host server's ports. The turn core uses these; the Buddy policies
- * (buddies/turn-policy.ts) use `BuddyTurnPolicyDependencies`.
- */
-export interface ConversationRuntimeDependencies extends BuddyTurnPolicyDependencies {
-  broadcast(data: ConversationBroadcast): void;
-  registerSessionAlias(sessionId: string | null | undefined, conversationId: string): void;
-  unregisterSessionAlias(
-    sessionId: string | null | undefined,
-    options?: { keepKnown?: boolean }
-  ): void;
-  clearExternalRunningStatus(...ids: Array<string | null | undefined>): void;
-  clearLocalCompletionSuppression(...ids: Array<string | null | undefined>): void;
-  markLocalCompletionSuppression(...ids: Array<string | null | undefined>): void;
+/** The host server's ports: the runner's, the Buddy policies', and the conversation's own. */
+export interface ConversationRuntimeDependencies
+  extends BuddyTurnPolicyDependencies,
+    Omit<TurnRunnerPorts, 'executeTurn' | 'turnAttempts' | 'swarmObservers'> {
   persistCurrentSession(
     conversation: ConversationRuntimeView,
     sessionId: string,
@@ -118,17 +108,6 @@ export interface ConversationRuntimeDependencies extends BuddyTurnPolicyDependen
       }
     | undefined;
   readLatestOompaRuntime(projectRoot: string): Promise<OompaRuntimeSnapshot>;
-  createSessionId(): string;
-  /**
-   * Durably record provider-counted usage against a session. Optional because
-   * the meter is observability: a host that omits it still runs turns, and the
-   * session-file parser remains the fallback source.
-   */
-  persistSessionUsage?(
-    conversationId: string,
-    sessionId: string,
-    usage: ProviderTurnUsage
-  ): Promise<void>;
   /** Test seam for the real provider boundary; production uses agent-cli directly. */
   executeTurn?: typeof executeCommand;
   turnAttempts?: RuntimeTurnAttemptObserver;
@@ -302,15 +281,8 @@ export function createConversationRuntime(
     createSessionId,
   } = dependencies;
   const history = dependencies.history ?? OVERLAY_ONLY_HISTORY;
-  const runnerPorts = {
-    broadcast,
-    registerSessionAlias,
-    unregisterSessionAlias,
-    clearExternalRunningStatus: dependencies.clearExternalRunningStatus,
-    clearLocalCompletionSuppression: dependencies.clearLocalCompletionSuppression,
-    markLocalCompletionSuppression: dependencies.markLocalCompletionSuppression,
-    persistSessionUsage: dependencies.persistSessionUsage,
-    createSessionId,
+  const runnerPorts: TurnRunnerPorts = {
+    ...dependencies,
     executeTurn: dependencies.executeTurn ?? executeCommand,
     turnAttempts: dependencies.turnAttempts ?? NOOP_TURN_ATTEMPT_OBSERVER,
     // One async swarm poller per working directory, shared by all turns there.
@@ -365,10 +337,7 @@ export function createConversationRuntime(
     // Debug prefix for swarm conversations — prepended to first CLI message.
     // Stays on the object (never cleared) so the detail carries it for rendering.
     swarmDebugPrefix: string | null;
-    // Provider-counted usage for the latest request on the CURRENT session.
-    // Written from `usage` events during the turn and flushed to the session
-    // binding when the turn ends, so a reload does not have to re-parse the
-    // transcript. Cleared on session reset: a new session is a new context.
+    // Latest request's usage on the current session (docs/turn-lifecycle.md#provider-usage).
     providerUsage: ProviderTurnUsage | null;
     subAgents: SubAgent[];
     // Server-owned message queue — persists across client navigation/refresh.
@@ -434,8 +403,6 @@ export function createConversationRuntime(
       this.resumedFromConversationId = resumedFromConversationId;
       this.observedModel = observedModel;
       this.title = title ?? undefined;
-      // A hydrated title already resolved custom-over-ai precedence in the
-      // file backfill, so it is sticky: live ai noise must not overwrite it.
       this._titleSource = this.title !== undefined ? 'custom' : null;
       this.swarmDebugPrefix = kind.t === 'chat' ? swarmDebugPrefix : null;
       this._policy = this.policyFor(this._kind, {
@@ -516,10 +483,7 @@ export function createConversationRuntime(
       return persistCurrentSession(this, sessionId, audienceKey);
     }
 
-    // Provider-generated label (Claude ai-title/custom-title). Custom (user-set)
-    // always wins; auto titles never overwrite a custom one. Hydrated titles
-    // count as custom-sticky: the file backfill already resolved precedence, so
-    // live ai noise must not clobber it — only a live custom event can.
+    // Custom beats ai; a hydrated title counts as custom (the backfill resolved precedence).
     observeTitle(title: string, source: 'ai' | 'custom'): void {
       const next = title.trim();
       if (!next) return;
@@ -549,29 +513,26 @@ export function createConversationRuntime(
     }
 
     sendMessage(content: string, ownerInput?: OwnerInput): void {
-      if (!this._policy.acceptsUserInput) {
-        this.refuseAutomationTranscript();
-        return;
-      }
+      if (this.refusesUserInput()) return;
       this.sendMessageInternal(sameEitherWay(content), ownerInput ?? unknownInput());
     }
 
-    // The caller cannot pick the wording itself: whether this turn resumes is
-    // decided at admission (sendAdmittedMessage), which for a Buddy turn can
-    // follow a wait for a run slot, and where a changed Buddy audience rotates
-    // the provider session. Asking first and sending one prompt after leaves a
-    // window for that decision to flip, so the caller hands over both wordings.
+    // Both wordings: resume is decided at admission (docs/turn-lifecycle.md#session-relative-prompt).
     sendSessionRelativeMessage(prompt: SessionRelativePrompt, input: SeatTurnInput): void {
-      if (!this._policy.acceptsUserInput) {
-        this.refuseAutomationTranscript();
-        return;
-      }
+      if (this.refusesUserInput()) return;
       this.sendMessageInternal(prompt, input);
     }
 
     /** Coordinator-only admission for an owned automation occurrence (see BuddyTurnPolicy). */
     sendAutomationMessage(content: string): void {
       this._policy.sendAutomation(content);
+    }
+
+    /** Automation transcripts are read-only: refuse (with a system line) and report it. */
+    private refusesUserInput(): boolean {
+      if (this._policy.acceptsUserInput) return false;
+      this.refuseAutomationTranscript();
+      return true;
     }
 
     private refuseAutomationTranscript(message?: string): void {
@@ -627,10 +588,7 @@ export function createConversationRuntime(
         return;
       }
       const forkSourceSessionId = fork.t === 'session' ? fork.sessionId : undefined;
-      // Worded here, at admission (a queued Buddy turn may have waited for a
-      // run slot), after the audience check above may have rotated the
-      // provider session, and by the same decision the runner resumes on:
-      // a fresh session always gets `fresh`.
+      // Worded at admission, by the decision the runner resumes on.
       const resume = this.resumesProviderSession(forkSourceSessionId);
       const content = resume ? prompt.resumed : prompt.fresh;
 
@@ -638,9 +596,8 @@ export function createConversationRuntime(
       const executionConfig = this.preflightExecution();
       if (!executionConfig) return;
 
-      // UI/history retain clean user text; the provider gets the policy's
-      // prompt. When provider-session inheritance ran, skip first-turn briefing
-      // / pasted-context prefixes — the CLI already has the source transcript.
+      // History keeps the clean text; the provider gets the policy's prompt (none after a
+      // session fork: the CLI has the source transcript).
       const cliContent =
         forkSourceSessionId && !refreshBriefing
           ? content
@@ -653,8 +610,7 @@ export function createConversationRuntime(
 
       this.appendMessage({ role: 'user', content, timestamp: new Date() });
       this._policy.admitted(input, content);
-      // Owner workflow guidance lives in the native MCP tool descriptions.
-      // Spawn with input provenance supplied by the host producer, never transcript text.
+      // Provenance comes from the host producer, never transcript text.
       this.runner.start({
         content: cliContent,
         config: executionConfig,
@@ -664,20 +620,8 @@ export function createConversationRuntime(
       });
     }
 
-    /**
-     * Chat "Fork" (soft handoff): resumedFromConversationId is UI lineage.
-     * Context lives in the draft / first user message, so changing provider
-     * before send must still work. The first send opportunistically upgrades
-     * to provider-session inheritance when the source has the same provider,
-     * that harness can fork, and the memory generations match. Anything else
-     * stays a soft handoff and must never reject the send.
-     *
-     * Bug (2026-08-20): muse -> muse Chat Fork died with `Harness "muse" does
-     * not support fork.` because only the same-provider branch reached
-     * prepareSession. Capability, not provider equality, decides the path.
-     * Guard: `same-provider fork on a fork-incapable harness falls back to
-     * string handoff`.
-     */
+    // Soft handoff, upgraded to session inheritance by capability, never rejecting the send
+    // (docs/turn-lifecycle.md#chat-fork; guard `same-provider fork on a fork-incapable harness …`).
     private chatForkSource():
       | { t: 'none' }
       | { t: 'session'; sessionId: string }
@@ -727,17 +671,13 @@ export function createConversationRuntime(
     }
 
     private preflightExecution(): ResolvedExecutionConfig | undefined {
-      // Resolve immediately before any message or queue mutation.
-      // Catalog changes may affect defaults without changing durable intent.
+      // docs/turn-lifecycle.md#preflight
       const resolution = this.refreshConfigResolution();
       if (resolution.status !== 'resolved') {
         this.refusePreflight(`Configuration unavailable: ${resolution.error.message}`);
         return undefined;
       }
       try {
-        // A configuration admission rule, not a provider process failure.
-        // Checking it here keeps a queued message retryable and prevents a
-        // synchronous throw at spawn from leaving the queue head "sending".
         this._policy.preflight(resolution.value.provider);
       } catch (error) {
         this.refusePreflight(error instanceof Error ? error.message : String(error));
@@ -746,10 +686,7 @@ export function createConversationRuntime(
       return resolution.value;
     }
 
-    // Preflight has no child process and therefore no later completion event.
-    // Terminalise and notify here, at the single point that owns the error, so
-    // an automation's runTurn promise cannot wait until its outer timeout. See
-    // agent_notes/2026-08-24_automation-execution-ownership-design.md.
+    // No child, so no later completion: terminalise here (docs/turn-lifecycle.md#one-terminal-path).
     private refusePreflight(errorMessage: string): void {
       console.error(`[${this.id}] ${errorMessage}`);
       this.appendMessage({
@@ -788,14 +725,11 @@ export function createConversationRuntime(
       const oldSessionId = this.sessionId;
       this.sessionId = createSessionId();
       this._policy.sessionReset();
-      // A reset starts an empty provider context. Carrying the old session's
-      // token count forward would show a full meter on a fresh thread.
+      // A new session is an empty context: no carried-over meter.
       this.providerUsage = null;
       unregisterSessionAlias(oldSessionId, { keepKnown: true });
       registerSessionAlias(this.sessionId, this.id);
-      // This UUID is provisional until the provider confirms it. Persisting it
-      // as current here would make restart treat a never-started session as
-      // resumable.
+      // Provisional until the provider confirms it; never persisted as resumable here.
       this._hasStartedSession = false;
       console.log(
         `[${this.id}] Reset session: ${oldSessionId.substring(0, 8)}... -> ${this.sessionId.substring(0, 8)}...`
@@ -841,6 +775,12 @@ export function createConversationRuntime(
       return { message, input: Object.freeze({ ...input }), prompt, attemptId };
     }
 
+    private logEntry(what: string, { message }: QueueEntry): void {
+      console.log(
+        `[${this.id}] ${what} id=${message.id.substring(0, 8)}, queueDepth=${this.turnQueue.length}, contentLen=${message.content.length}, preview="${formatLogPreview(message.content)}"`
+      );
+    }
+
     private retireInFlightHead(): void {
       const retired = this.turnQueue.retireInFlightHead();
       if (retired) {
@@ -859,16 +799,10 @@ export function createConversationRuntime(
     }
 
     private enqueuePrompt(prompt: SessionRelativePrompt, input: TurnInput): void {
-      if (!this._policy.acceptsUserInput) {
-        this.refuseAutomationTranscript();
-        return;
-      }
-      const queueDepthBefore = this.turnQueue.length;
+      if (this.refusesUserInput()) return;
       const entry = this.createQueueEntry(prompt, input);
       this.turnQueue.pushBack(entry);
-      console.log(
-        `[${this.id}] Queued message id=${entry.message.id.substring(0, 8)}, queueDepth=${queueDepthBefore}->${this.turnQueue.length}, contentLen=${entry.message.content.length}, preview="${formatLogPreview(entry.message.content)}"`
-      );
+      this.logEntry('Queued message', entry);
       this.broadcastQueue();
       this.processQueue();
     }
@@ -880,22 +814,16 @@ export function createConversationRuntime(
      * stays in order behind the new message.
      */
     interruptAndSend(content: string, ownerInput?: OwnerInput): void {
-      if (!this._policy.acceptsUserInput) {
-        this.refuseAutomationTranscript();
-        return;
-      }
+      if (this.refusesUserInput()) return;
       this.retireInFlightHead();
 
       if (this.process) {
         this.stop();
       }
 
-      const queueDepthBefore = this.turnQueue.length;
       const entry = this.createQueueEntry(sameEitherWay(content), ownerInput ?? unknownInput());
       this.turnQueue.pushFront(entry);
-      console.log(
-        `[${this.id}] interrupt_and_send id=${entry.message.id.substring(0, 8)}, queueDepth=${queueDepthBefore}->${this.turnQueue.length}, contentLen=${content.length}, preview="${formatLogPreview(content)}"`
-      );
+      this.logEntry('interrupt_and_send', entry);
       this.broadcastQueue();
       this.processQueue();
     }
@@ -906,10 +834,7 @@ export function createConversationRuntime(
      * ids are a no-op, like cancelQueuedMessage.
      */
     promoteQueuedMessage(messageId: string): void {
-      if (!this._policy.acceptsUserInput) {
-        this.refuseAutomationTranscript();
-        return;
-      }
+      if (this.refusesUserInput()) return;
       const promoted = this.turnQueue.promote(messageId);
       if (!promoted) return;
       console.log(
@@ -960,9 +885,7 @@ export function createConversationRuntime(
       if (!next) return; // empty, or the head is already in flight
 
       this.runner.prepareQueuedAttempt(next);
-      console.log(
-        `[${this.id}] processQueue sending id=${next.message.id.substring(0, 8)}, queueDepth=${this.turnQueue.length}, contentLen=${next.message.content.length}, preview="${formatLogPreview(next.message.content)}"`
-      );
+      this.logEntry('processQueue sending', next);
       this.broadcastQueue();
       try {
         this._sendingFromQueue = true;
@@ -1024,9 +947,7 @@ export function createConversationRuntime(
       return this.configResolution;
     }
 
-    // Harness/provider can only be changed before the first turn has started.
-    // Once a session has started, provider-specific state (session files, resume
-    // IDs, and message history) is no longer safely interchangeable.
+    // Only before the first turn: session files and resume ids are provider-specific.
     canChangeProvider(): boolean {
       return (
         !this._hasStartedSession &&
