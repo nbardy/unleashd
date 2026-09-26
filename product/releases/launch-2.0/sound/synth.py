@@ -127,9 +127,9 @@ for _ in range(9):
     sparkle += np.sin(2 * np.pi * f * tt) * np.exp(-tt / 0.12) * (t >= start)
 write("sparkle", sparkle, peak=0.7)
 
-# ---- The calm after the boom: three instruments to choose from (owner, 2026-09-26: the guitar
-# was "trash", try others). Per-note samples so the timeline (CALM in Overload.tsx) places every
-# note; the strings are per-chord because a pad has no attacks to place.
+# ---- The calm after the boom: soft marimba. Owner pick 2026-09-26 over a synthesized guitar
+# ("trash"), an FM electric piano and a strings pad; those are in git history (e27982d).
+# Per-note samples so the timeline (OVERLOAD_CUES in Overload.tsx) places every note.
 
 NAMES = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"]
 
@@ -144,25 +144,7 @@ def file_name(prefix: str, note: str) -> str:
     return f"{prefix}-{note.replace('#', 's')}"
 
 
-# A: electric piano, DX-style FM. A 1:1 modulator whose index falls away gives the warm bark;
-# a quiet 14:1 modulator with a very fast decay gives the tine "ding" at the attack.
-def epiano(f: float, seconds: float = 4.0) -> np.ndarray:
-    t = t_axis(seconds)
-    decay = 1.6 * (220 / f) ** 0.3  # low notes ring longer
-    body_index = 0.3 + 1.6 * np.exp(-t / 0.4)
-    tine_index = 1.2 * np.exp(-t / 0.02)
-    body = np.sin(2 * np.pi * f * t + body_index * np.sin(2 * np.pi * f * t))
-    tine = np.sin(2 * np.pi * f * t + tine_index * np.sin(2 * np.pi * 14 * f * t))
-    env = np.minimum(1, t / 0.004) * np.exp(-t / decay)
-    trem = 1 + 0.08 * np.sin(2 * np.pi * 4.5 * t)
-    return (0.8 * body + 0.35 * tine) * env * trem
-
-
-for note in ["G2", "D3", "F#3", "A3", "B3", "C#4", "D4", "E4", "F#4", "A4"]:
-    write(file_name("ep", note), epiano(hz(note)), peak=0.8)
-
-
-# C: marimba, modal synthesis. A tuned bar rings at about 1x, 4x and 10x its fundamental; the
+# Marimba, modal synthesis. A tuned bar rings at about 1x, 4x and 10x its fundamental; the
 # upper modes die fast, which is the wooden "tock" turning into a soft tone. Plus a felt click.
 def marimba(f: float, seconds: float = 2.5) -> np.ndarray:
     t = t_axis(seconds)
@@ -175,28 +157,3 @@ def marimba(f: float, seconds: float = 2.5) -> np.ndarray:
 
 for note in ["G3", "D4", "F#4", "A4", "B4", "D5", "F#5"]:
     write(file_name("mar", note), marimba(hz(note)), peak=0.8)
-
-
-# B: strings pad. Each note is five detuned saw voices built additively with a soft spectral
-# tilt (no buzz), a vibrato that fades in, a slow swell and a release tail. Chord lengths are
-# tied to the picture like the riser: D until the title (4 eighths = 1.75 s), G until "2.0"
-# (1.3 s), then the last D rings on into beat 6. The release tails overlap into a crossfade.
-def strings(notes: list[str], hold: float, attack: float, release: float) -> np.ndarray:
-    t = t_axis(hold + release)
-    vib = 1 + 0.0035 * np.sin(2 * np.pi * 5.2 * t) * np.minimum(1, t / 1.2)
-    out = np.zeros_like(t)
-    for note in notes:
-        f = hz(note)
-        for cents in (-14, -6, 0, 6, 14):
-            fv = f * 2 ** (cents / 1200)
-            phase = 2 * np.pi * np.cumsum(fv * vib) / SR + rng.uniform(0, 2 * np.pi)
-            n_max = int(4000 / f)
-            out += sum(np.sin(n * phase) / n * np.exp(-n * f / 1400) for n in range(1, n_max + 1))
-    swell = np.minimum(1, t / attack) ** 2
-    tail = np.clip((hold + release - t) / release, 0, 1)
-    return out * swell * tail
-
-
-write("str-Dmaj9", strings(["D3", "A3", "C#4", "E4", "F#4"], hold=1.75, attack=1.2, release=0.9), peak=0.8)
-write("str-Gmaj7", strings(["G2", "D3", "F#3", "B3", "D4"], hold=1.3, attack=0.5, release=0.9), peak=0.8)
-write("str-D69", strings(["D3", "A3", "B3", "E4", "F#4"], hold=3.0, attack=0.5, release=1.5), peak=0.8)

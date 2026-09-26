@@ -35,7 +35,7 @@ recents. On send, the greeting clears, the prompt moves to the top and the compo
 the bottom. The windows use no product names or logos. Arrival times are the music grid:
 when the track lands, move `T` and `GAPS` onto its beats.
 
-### Sound (draft 5)
+### Sound
 
 Sound design only, not music: every sample is synthesized by `../sound/synth.py`
 (`uv run --with numpy python product/releases/launch-2.0/sound/synth.py`), so we own it all.
@@ -43,13 +43,11 @@ Where a sound plays is `OVERLOAD_CUES` in `src/Overload.tsx`, derived from the s
 as the picture: one key tick per revealed character, a send blip, a whoosh on minimize, a
 pop per pile window climbing in pitch every 8 arrivals, a riser that ends exactly on the
 hard cut (the silence is the drop), an impact on "AI Overload!", a thud on "We're all feeling
-it.", then the calm answer. The owner kept the boom and riser but rejected a synthesized
-guitar (2026-09-26), so three instruments are auditioned, picked with the `calm` prop:
-`epiano` (FM Rhodes-style rolled chords, Dmaj9 → Gmaj7 → D6/9, default), `strings` (a slow
-swell, one sample per chord) and `marimba` (modal-synthesis mallets, rising arpeggio). A sparkle
-marks "2.0". Render a variant with `--props='{"calm":"strings"}'`. Levels: the boom (~-3 dB
-peak) stays the loudest moment; each calm variant peaks around -6.5 to -9.5 dB. When one is
-chosen, delete the other two (samples, `CALM` entries, synth.py sections). A music bed goes under this
+it.", then the calm answer: soft marimba (modal synthesis), a rising D arpeggio under the voice
+line, G under the title and a rolled D chord on "2.0", over a quiet D-major pad; a sparkle
+marks "2.0". Owner pick 2026-09-26 over a synthesized guitar ("trash"), an FM electric piano
+and a strings pad; those live in git history (e27982d). Levels: the boom (~-3 dB peak) stays
+the loudest moment; the marimba peaks around -6.5 to -8.5 dB. A music bed goes under this
 when one is chosen; retime `T`/`GAPS` to its beats.
 
 **Audio sync gotcha:** Remotion's own mp4 (AAC) output plays the sound about 43 ms (2048
