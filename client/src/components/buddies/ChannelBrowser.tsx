@@ -12,6 +12,7 @@ import { ChannelComposer } from './ChannelComposer';
 import { ChannelDm } from './ChannelDm';
 import { ChannelHistory, ChannelLoader } from './ChannelLoader';
 import { ChannelMarkdown, TypingDots } from './ChannelMarkdown';
+import { ConversationEye } from './ConversationEye';
 import { CopyLinkButton } from './CopyLinkButton';
 import { ReplyRetry } from './HarnessPicker';
 import { TaskFilter } from './TaskFilter';
@@ -104,38 +105,6 @@ function InstanceTag({
     <span className="channel-browser-instance" title={conversationId}>
       {label}
     </span>
-  );
-}
-
-function EyeIcon() {
-  return (
-    <svg viewBox="0 0 16 16" width="16" height="16" aria-hidden="true">
-      <path
-        d="M1.5 8s2.5-4.5 6.5-4.5S14.5 8 14.5 8s-2.5 4.5-6.5 4.5S1.5 8 1.5 8z"
-        fill="none"
-        stroke="currentColor"
-        strokeWidth="1.5"
-        strokeLinejoin="round"
-      />
-      <circle cx="8" cy="8" r="1.75" fill="none" stroke="currentColor" strokeWidth="1.5" />
-    </svg>
-  );
-}
-
-// The hover toolbar's way into the conversation that wrote the post, while the client holds
-// it. A reply is now what the Buddy chose to post (channels.ts), so its reasoning lives there.
-function ConversationEye({ post, context }: { post: Post; context: RowContext }) {
-  if (!post.conversationId || !context.availableConversationIds.has(post.conversationId))
-    return null;
-  return (
-    <Link
-      className="channel-browser-message-action"
-      to={`/chat/${encodeURIComponent(post.conversationId)}`}
-      title="Open the conversation"
-      aria-label="Open the conversation"
-    >
-      <EyeIcon />
-    </Link>
   );
 }
 
@@ -274,7 +243,7 @@ function ReplyAction({ post, context }: { post: Post; context: RowContext }) {
 function MessageActions({ post, context }: { post: Post; context: RowContext }) {
   return (
     <div className="channel-browser-message-actions" role="toolbar" aria-label="Message actions">
-      <ConversationEye post={post} context={context} />
+      <ConversationEye post={post} className="channel-browser-message-action" linkState={null} />
       <ReplyAction post={post} context={context} />
       <CopyLinkButton
         className="channel-browser-message-action"

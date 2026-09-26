@@ -25,6 +25,8 @@ const { mobilePrimarySectionForPath, resolveMobileConversationDestination } = aw
 const { Provider } = await import('jotai');
 const { jotaiStore } = await import('../src/atoms/store');
 const { loadResource } = await import('../src/atoms/resources');
+const { rowsAtom } = await import('../src/atoms/conversations');
+const { syntheticConversation } = await import('./fixtures/synthetic-conversations');
 
 const WS = 'ws-phone';
 const CHANNELS = `/buddies/workspaces/${WS}/channels`;
@@ -211,6 +213,48 @@ test('mobile channels Home lists channels, DMs by Buddy, and Buddies with a visi
   assert.match(dms, /href="\/buddies\/workspaces\/ws-phone\/channels\?channel=ch_dm"/);
   assert.match(html, /mobile-channels-row__name">Lead</);
   assert.match(html, /aria-label="Wake Lead: catch up on the channels and act"/);
+});
+
+// PORT-3 left these desktop-only (e9e3426): a phone could not start a Buddy, a running Builder
+// chat vanished from Home, and a posted reply gave no way into the conversation that wrote it.
+test('mobile Home starts and lists a Buddy setup chat; a held post offers its conversation', async () => {
+  await seed();
+  await loadResource({
+    key: '/api/buddies/channels/ch_a/posts?limit=50',
+    load: async () => ({
+      posts: [
+        postFixture({ id: 'post_held', conversationId: 'conv-held', body: 'Held.' }),
+        postFixture({ id: 'post_gone', conversationId: 'conv-deleted', body: 'Gone.' }),
+      ],
+    }),
+  });
+  const at = Date.parse('2026-09-21');
+  const builder = (id: string, done: boolean, minutes: number) =>
+    syntheticConversation(1, {
+      id,
+      kind: { t: 'builder' },
+      done,
+      createdAt: at + minutes * 60_000,
+      activityAt: at + minutes * 60_000,
+    });
+  const rows = [
+    builder('builder-open', false, 2),
+    builder('builder-done', true, 3),
+    syntheticConversation(2, { id: 'conv-held' }),
+  ];
+  jotaiStore.set(rowsAtom, new Map(rows.map((row) => [row.id, row])));
+  try {
+    const home = render(CHANNELS);
+    assert.match(home, /mobile-channels-row__name">New Buddy</);
+    assert.equal(home.match(/Creating buddy<\/em>/g)?.length, 1, 'one setup row: the open one');
+    assert.match(home, /aria-label="Archive Buddy setup"/);
+    const channel = render(`${CHANNELS}?channel=ch_a`);
+    // Only the post whose conversation the client holds gets the eye.
+    assert.equal(channel.match(/aria-label="Open the conversation"/g)?.length, 1);
+    assert.match(channel, /aria-label="Open the conversation" href="\/chat\/conv-held"/);
+  } finally {
+    jotaiStore.set(rowsAtom, new Map());
+  }
 });
 
 // Regression guard: the Channels tab once opened the alphabetically first

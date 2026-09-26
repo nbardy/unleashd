@@ -316,6 +316,7 @@ test('the rail starts and lists a Buddy setup chat; a held post offers its conve
         builder('builder-new', false, 2),
         builder('builder-old', false, 1),
         builder('builder-done', true, 3),
+        syntheticConversation(2, { id: 'conv-aaaa111122223333' }),
       ].map((row) => [row.id, row])
     )
   );
