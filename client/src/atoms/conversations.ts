@@ -267,7 +267,7 @@ const settledGroupsFamily = atomFamily((id: string) =>
 );
 
 // While a reply streams (~60 frames a second) only the last group is rebuilt:
-// every other group is the settled object, so VirtualizedGroup skips.
+// every other group is the settled object, so TranscriptGroup skips.
 export const groupsFamily = atomFamily((id: string) =>
   labelled(
     atom((get) => {

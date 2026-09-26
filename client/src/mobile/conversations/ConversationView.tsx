@@ -45,8 +45,8 @@ import {
 import { QueuedMessages } from '../../views/conversation/QueuedMessages';
 import { ResumeSource } from '../../views/conversation/ResumeSource';
 import { SubAgentPanel } from '../../views/conversation/SubAgentPanel';
+import { TranscriptGroup } from '../../views/transcript/TranscriptGroup';
 import { ComposerMobile } from '../components/ComposerMobile';
-import { AssistantResponseRow, MessageRow } from '../components/MessageRow';
 import { ModelSheetMobile, modelSummary } from '../components/ModelSheetMobile';
 import { PromptPaletteMobile } from '../components/PromptPaletteMobile';
 
@@ -544,20 +544,15 @@ export function ConversationView({
         ) : (
           messageGroups.slice(firstShownGroup).map((group, windowIndex) => {
             const index = firstShownGroup + windowIndex;
-            return group.type === 'assistant' ? (
-              <AssistantResponseRow
+            return (
+              <TranscriptGroup
                 key={group.firstMessageIndex}
-                response={group}
-                isLast={index === messageGroups.length - 1}
+                presentation="footer"
+                group={group}
+                isLastGroup={index === messageGroups.length - 1}
                 lastMessageRef={lastMessageRef}
-                isLive={turnActive && index === messageGroups.length - 1}
-              />
-            ) : (
-              <MessageRow
-                key={group.firstMessageIndex}
-                message={group.messages[0]}
-                isLast={index === messageGroups.length - 1}
-                lastMessageRef={lastMessageRef}
+                workingDirectory={conversation.cwd}
+                isLiveTurn={turnActive && index === messageGroups.length - 1}
               />
             );
           })
