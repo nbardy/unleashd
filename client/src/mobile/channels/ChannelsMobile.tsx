@@ -210,14 +210,14 @@ function ChannelsHome({ context }: { context: ScreenContext }) {
     return (
       <li key={entry.channel.id}>
         <Link
-          className="mobile-channels-row"
+          className="mobile-channels-row ui-row"
           data-unread={channelUnreadAttr(entry.unread)}
           to={channelsHref(workspaceId, { kind: 'channel', channelId: entry.channel.id })}
         >
           <span className="mobile-channels-row__hash" aria-hidden="true">
             {heading.mark}
           </span>
-          <span className="mobile-channels-row__name">{heading.name}</span>
+          <span className="mobile-channels-row__name ui-truncate">{heading.name}</span>
           {requests > 0 && (
             <span
               className="mobile-channels-row__badge"
@@ -250,7 +250,7 @@ function ChannelsHome({ context }: { context: ScreenContext }) {
           {workspaces.map((workspace) => (
             <li key={workspace.id}>
               <Link
-                className="mobile-channels-row"
+                className="mobile-channels-row ui-row"
                 to={channelsHref(workspace.id, { kind: 'home' })}
                 replace
                 aria-current={workspace.id === workspaceId ? 'page' : undefined}
@@ -259,7 +259,7 @@ function ChannelsHome({ context }: { context: ScreenContext }) {
                 <span className="mobile-channels-row__mark" aria-hidden="true">
                   {workspace.name.slice(0, 1).toUpperCase()}
                 </span>
-                <span className="mobile-channels-row__name">{workspace.name}</span>
+                <span className="mobile-channels-row__name ui-truncate">{workspace.name}</span>
                 {workspace.id === workspaceId && <span aria-hidden="true">✓</span>}
               </Link>
             </li>
@@ -282,13 +282,13 @@ function ChannelsHome({ context }: { context: ScreenContext }) {
             ) : (
               <button
                 type="button"
-                className="mobile-channels-row mobile-channels-row--add"
+                className="mobile-channels-row ui-row mobile-channels-row--add"
                 onClick={() => setCreating(true)}
               >
                 <span className="mobile-channels-row__hash" aria-hidden="true">
                   +
                 </span>
-                <span className="mobile-channels-row__name">Add channel</span>
+                <span className="mobile-channels-row__name ui-truncate">Add channel</span>
               </button>
             )}
           </li>
@@ -318,14 +318,14 @@ function BuddySection({ members }: { members: readonly Buddy[] }) {
       <li>
         <button
           type="button"
-          className="mobile-channels-row mobile-channels-row--add"
+          className="mobile-channels-row ui-row mobile-channels-row--add"
           disabled={newBuddy.state.kind === 'pending'}
           onClick={newBuddy.start}
         >
           <span className="mobile-channels-row__hash" aria-hidden="true">
             +
           </span>
-          <span className="mobile-channels-row__name">New Buddy</span>
+          <span className="mobile-channels-row__name ui-truncate">New Buddy</span>
         </button>
         {newBuddy.state.kind === 'failed' && (
           <p className="mobile-channels-new__problem" role="alert">
@@ -334,14 +334,18 @@ function BuddySection({ members }: { members: readonly Buddy[] }) {
         )}
       </li>
       {creating && (
-        <li className="mobile-channels-buddy">
-          <button type="button" className="mobile-channels-row" onClick={() => openDm(creating.id)}>
+        <li className="mobile-channels-buddy ui-row">
+          <button
+            type="button"
+            className="mobile-channels-row ui-row"
+            onClick={() => openDm(creating.id)}
+          >
             <BuddySigil className="mobile-channels-row__sigil" name="Creating buddy" />
-            <em className="mobile-channels-row__name">Creating buddy</em>
+            <em className="mobile-channels-row__name ui-truncate">Creating buddy</em>
           </button>
           <button
             type="button"
-            className="mobile-channels-wake"
+            className="mobile-channels-wake ui-muted"
             aria-label="Archive Buddy setup"
             onClick={() => setConversationDone(creating.id, true)}
           >
@@ -365,17 +369,20 @@ function BuddyRow({ member }: { member: Buddy }) {
   const direct = useBuddyDirectActions(member.id);
   const { action } = direct;
   return (
-    <li className="mobile-channels-buddy" data-failed={action.kind === 'failed' || undefined}>
+    <li
+      className="mobile-channels-buddy ui-row"
+      data-failed={action.kind === 'failed' || undefined}
+    >
       <button
         type="button"
-        className="mobile-channels-row"
+        className="mobile-channels-row ui-row"
         disabled={action.kind === 'pending'}
         onClick={() => direct.openDm(openDm)}
       >
         <BuddySigil className="mobile-channels-row__sigil" name={member.name} />
-        <span className="mobile-channels-row__stack">
-          <span className="mobile-channels-row__name">{member.name}</span>
-          <span className="mobile-channels-row__detail">
+        <span className="mobile-channels-row__stack ui-stack">
+          <span className="mobile-channels-row__name ui-truncate">{member.name}</span>
+          <span className="mobile-channels-row__detail ui-truncate ui-muted">
             {action.kind === 'failed' ? action.message : member.role}
           </span>
         </span>
@@ -385,14 +392,14 @@ function BuddyRow({ member }: { member: Buddy }) {
           key={direct.woken.attempt}
           conversationId={direct.woken.conversationId}
           name={member.name}
-          className="mobile-channels-wake-status"
+          className="mobile-channels-wake-status ui-inline-row ui-muted"
           doneClassName="mobile-channels-wake-done"
           linkState={mobileConversationRouteState(location)}
         />
       )}
       <button
         type="button"
-        className="mobile-channels-wake"
+        className="mobile-channels-wake ui-muted"
         aria-label={`Wake ${member.name}: catch up on the channels and act`}
         disabled={action.kind === 'pending'}
         onClick={direct.wake}
@@ -498,9 +505,9 @@ function PostFooter({ post, context }: { post: Post; context: RowContext }) {
       return null;
     case 'task':
       return (
-        <div className="mobile-channel-post__footer">
+        <div className="mobile-channel-post__footer ui-row">
           <Link
-            className="mobile-channel-post__reply"
+            className="mobile-channel-post__reply ui-inline-row ui-muted"
             to={channelLinkPath(context.place.workspaceId, postLink(post))}
           >
             {context.place.channelNames.get(post.channelId) ?? 'another channel'}
@@ -511,9 +518,9 @@ function PostFooter({ post, context }: { post: Post; context: RowContext }) {
       const place = context.place;
       const replying = place.responding.get(post.id);
       return (
-        <div className="mobile-channel-post__footer">
+        <div className="mobile-channel-post__footer ui-row">
           <Link
-            className="mobile-channel-post__reply"
+            className="mobile-channel-post__reply ui-inline-row ui-muted"
             to={place.threadHref(post.rootId ?? post.id)}
           >
             Thread
@@ -565,7 +572,7 @@ function Row({ row, context }: { row: ChannelRow; context: RowContext }) {
               <PostPurpose post={row.post} />
               <ConversationEye
                 post={row.post}
-                className="mobile-channel-post__reply"
+                className="mobile-channel-post__reply ui-inline-row ui-muted"
                 linkState={linkState}
               />
             </div>
@@ -591,7 +598,7 @@ function Row({ row, context }: { row: ChannelRow; context: RowContext }) {
             <PostPurpose post={row.post} />
             <ConversationEye
               post={row.post}
-              className="mobile-channel-post__reply"
+              className="mobile-channel-post__reply ui-inline-row ui-muted"
               linkState={linkState}
             />
             <ChannelMarkdown
@@ -619,7 +626,7 @@ function ScreenHeader({
   link: { path: string; label: string };
 }) {
   return (
-    <header className="mobile-channel-header">
+    <header className="mobile-channel-header ui-row">
       <Link className="mobile-channel-header__back" to={backTo} aria-label="Back">
         ‹
       </Link>
@@ -627,7 +634,11 @@ function ScreenHeader({
         <h1>{title}</h1>
         <p>{subtitle}</p>
       </div>
-      <CopyLinkButton className="mobile-channel-header__link" path={link.path} label={link.label} />
+      <CopyLinkButton
+        className="mobile-channel-header__link ui-muted"
+        path={link.path}
+        label={link.label}
+      />
     </header>
   );
 }
@@ -659,7 +670,7 @@ function ChannelScreen({ channelId, context }: { channelId: string; context: Scr
   const title = `${heading.mark} ${heading.name}`;
   const navigate = useNavigate();
   return (
-    <div className="mobile-channel">
+    <div className="mobile-channel ui-stack">
       <ScreenHeader
         backTo={channelsHref(workspaceId, { kind: 'home' })}
         title={title}
@@ -756,7 +767,7 @@ function TaskScreen({
     linkedPostId: null,
   };
   return (
-    <div className="mobile-channel">
+    <div className="mobile-channel ui-stack">
       <ScreenHeader
         backTo={channelsHref(workspaceId, { kind: 'channel', channelId })}
         title={`Task: ${directory.taskById.get(taskId)?.title ?? taskId}`}
@@ -827,7 +838,7 @@ function ThreadScreen({
   useMarkChannelRead(channelId, entry?.unread, newestServedId(thread.posts) ?? root?.id ?? null);
   const rowContext: RowContext = { directory, place: { kind: 'thread' }, linkedPostId };
   return (
-    <div className="mobile-channel">
+    <div className="mobile-channel ui-stack">
       <ScreenHeader
         backTo={channelsHref(workspaceId, { kind: 'channel', channelId })}
         title="Thread"
@@ -849,7 +860,7 @@ function ThreadScreen({
             <Row row={{ kind: 'lead', key: root.id, post: root }} context={rowContext} />
           </ol>
         )}
-        {root && <div className="mobile-channel-divider">Replies</div>}
+        {root && <div className="mobile-channel-divider ui-row ui-muted">Replies</div>}
         {root && (
           <ChannelHistory
             edge={thread.edge}

@@ -86,7 +86,7 @@ test('a Task ref is an inline chip in a sentence and a card on its own line', ()
     const block = render(body);
     assert.doesNotMatch(block, /channel-task-chip/);
     assert.match(block, /class="channel-task-block"/);
-    assert.match(block, /Open<span class="channel-task-card-owner"> · Buddies Development Lead/);
+    assert.match(block, /Open<span class="channel-task-card-owner[^"]*"> · Buddies Development Lead/);
     assert.match(block, /width:20%.*1\/5 todos/);
   }
 });

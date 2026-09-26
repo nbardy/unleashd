@@ -6,7 +6,7 @@
 .channel-markdown {
   margin-top: 2px;
   color: var(--text-primary);
-  font-size: 14.5px;
+  font-size: var(--fs-post);
   line-height: 1.55;
   overflow-wrap: anywhere;
 }
@@ -30,7 +30,7 @@
 
 .channel-markdown ul,
 .channel-markdown ol {
-  padding-left: 22px;
+  padding-left: var(--sp-9);
 }
 
 /* Explicit markers: a post body sits inside the message <ol>, so the UA's
@@ -60,7 +60,7 @@
 
 /* GFM `- [ ]` items: the checkbox is the marker. */
 .channel-markdown .contains-task-list {
-  padding-left: 4px;
+  padding-left: var(--sp-2);
   list-style: none;
 }
 
@@ -99,20 +99,20 @@
 }
 
 .channel-markdown blockquote {
-  padding-left: 12px;
+  padding-left: var(--sp-6);
   border-left: 3px solid var(--border-emphasis);
   color: var(--text-secondary);
 }
 
 .channel-markdown code {
-  padding: 1px 5px;
+  padding: var(--sp-1) var(--sp-3);
   border-radius: 4px;
   background: color-mix(in srgb, var(--text-emphasis) 9%, transparent);
   font: 0.88em / 1.4 var(--font-mono);
 }
 
 .channel-markdown pre {
-  padding: 10px 12px;
+  padding: var(--sp-5) var(--sp-6);
   overflow-x: auto;
   border: 1px solid var(--border-subtle);
   border-radius: 8px;
@@ -135,12 +135,12 @@
   max-width: 100%;
   overflow-x: auto;
   border-collapse: collapse;
-  font-size: 13.5px;
+  font-size: var(--fs-5);
 }
 
 .channel-markdown th,
 .channel-markdown td {
-  padding: 4px 10px;
+  padding: var(--sp-2) var(--sp-5);
   border: 1px solid var(--border-subtle);
   overflow-wrap: normal;
 }
@@ -156,7 +156,7 @@
 }
 
 .channel-markdown .channel-mention {
-  padding: 0 3px;
+  padding: 0 var(--sp-2);
   border-radius: 4px;
   background: color-mix(in srgb, var(--theme-user) 18%, transparent);
   color: var(--text-bright);
@@ -192,16 +192,16 @@ video.channel-media {
 .channel-markdown .channel-task-chip {
   display: inline-flex;
   align-items: baseline;
-  gap: 5px;
+  gap: var(--sp-3);
   max-width: min(100%, 22em);
-  padding: 0 7px;
+  padding: 0 var(--sp-4);
   white-space: nowrap;
   border: 1px solid var(--border-subtle);
   border-radius: 999px;
   background: var(--bg-base);
   color: var(--text-bright);
   font-family: inherit;
-  font-size: 13px;
+  font-size: var(--fs-4);
   font-weight: 600;
   line-height: 1.6;
   vertical-align: bottom;
@@ -219,7 +219,7 @@ video.channel-media {
 }
 
 .channel-task-chip-glyph {
-  font-size: 11px;
+  font-size: var(--fs-2);
 }
 
 .channel-task-chip[data-tone="active"] .channel-task-chip-glyph,
@@ -245,12 +245,12 @@ video.channel-media {
 .channel-task-card,
 .channel-markdown .channel-task-block {
   display: grid;
-  gap: 6px;
-  padding: 10px 12px;
+  gap: var(--sp-3);
+  padding: var(--sp-5) var(--sp-6);
   border: 1px solid var(--border-subtle);
   border-radius: 10px;
   background: var(--bg-panel);
-  font-size: 12.5px;
+  font-size: var(--fs-4);
   font-weight: 400;
   line-height: 1.45;
   white-space: normal;
@@ -305,12 +305,8 @@ video.channel-media {
 
 .channel-task-card-title {
   color: var(--text-bright);
-  font-size: 13.5px;
+  font-size: var(--fs-5);
   font-weight: 600;
-}
-
-.channel-task-card-owner {
-  color: var(--text-muted);
 }
 
 .channel-task-card-progress {
@@ -330,7 +326,7 @@ video.channel-media {
 
 .channel-task-card-count {
   position: relative;
-  padding-left: 6px;
+  padding-left: var(--sp-3);
   color: var(--text-secondary);
   font: 500 10.5px / 16px var(--font-mono);
 }
@@ -341,7 +337,7 @@ video.channel-media {
 
 .channel-typing-dots {
   display: inline-flex;
-  gap: 3px;
+  gap: var(--sp-2);
 }
 
 .channel-typing-dots span {

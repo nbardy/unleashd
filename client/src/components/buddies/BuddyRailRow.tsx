@@ -22,7 +22,10 @@ export function BuddyRailRow({
   const direct = useBuddyDirectActions(member.id);
   const { action } = direct;
   return (
-    <li className="channel-browser-buddy" data-failed={action.kind === 'failed' || undefined}>
+    <li
+      className="channel-browser-buddy ui-row"
+      data-failed={action.kind === 'failed' || undefined}
+    >
       <button
         type="button"
         className="channel-browser-buddy-link"
@@ -33,14 +36,14 @@ export function BuddyRailRow({
         onClick={() => direct.openDm(openDm)}
       >
         <BuddySigil className="channel-browser-buddy-sigil" name={member.name} />
-        <span className="channel-browser-channel-name">{member.name}</span>
+        <span className="channel-browser-channel-name ui-truncate">{member.name}</span>
       </button>
       {direct.woken && (
         <WakeIndicator
           key={direct.woken.attempt}
           conversationId={direct.woken.conversationId}
           name={member.name}
-          className="channel-browser-buddy-status"
+          className="channel-browser-buddy-status ui-inline-row ui-muted"
           doneClassName="channel-browser-buddy-done"
         />
       )}
@@ -73,7 +76,7 @@ export function CreatingBuddyRailRow({
   current: boolean;
 }) {
   return (
-    <li className="channel-browser-buddy">
+    <li className="channel-browser-buddy ui-row">
       <button
         type="button"
         className="channel-browser-buddy-link"
@@ -82,7 +85,7 @@ export function CreatingBuddyRailRow({
         onClick={() => openDm(conversationId)}
       >
         <BuddySigil className="channel-browser-buddy-sigil" name={CREATING} />
-        <em className="channel-browser-channel-name ui-muted">{CREATING}</em>
+        <em className="channel-browser-channel-name ui-truncate ui-muted">{CREATING}</em>
       </button>
       <span className="channel-browser-buddy-actions">
         <button

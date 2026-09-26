@@ -282,8 +282,10 @@ export function ChannelComposer({
                 onMouseEnter={() => setHighlight(index)}
               >
                 <ReferenceIcon reference={reference} />
-                <span className="channel-composer-picker-label">{reference.label}</span>
-                <span className="channel-composer-picker-detail">{reference.detail}</span>
+                <span className="channel-composer-picker-label ui-truncate">{reference.label}</span>
+                <span className="channel-composer-picker-detail ui-truncate ui-muted">
+                  {reference.detail}
+                </span>
               </button>
             </li>
           ))}
@@ -351,7 +353,7 @@ export function ChannelComposer({
           }}
         />
       </div>
-      <div className="channel-composer-bar">
+      <div className="channel-composer-bar ui-row">
         <button
           type="button"
           className="channel-composer-attach"
@@ -392,7 +394,7 @@ export function ChannelComposer({
             ))}
           </div>
         )}
-        <span className="channel-composer-hint">
+        <span className="channel-composer-hint ui-truncate ui-muted">
           {problem ? (
             <span className="channel-composer-problem" role="alert">
               {problem}
@@ -455,7 +457,7 @@ function MentionChip({
   return (
     <button
       type="button"
-      className="channel-composer-mention"
+      className="channel-composer-mention ui-inline-row"
       data-chosen={choice.kind === 'chosen' || undefined}
       aria-haspopup="dialog"
       aria-expanded={open}
@@ -469,8 +471,10 @@ function MentionChip({
       onClick={onOpen}
     >
       <BuddySigil className="channel-composer-mention-sigil" name={buddy.label} />
-      <span className="channel-composer-mention-name">{buddy.label}</span>
-      <span className="channel-composer-mention-model">{choiceLabel(choice, catalog)}</span>
+      <span className="channel-composer-mention-name ui-truncate">{buddy.label}</span>
+      <span className="channel-composer-mention-model ui-muted">
+        {choiceLabel(choice, catalog)}
+      </span>
     </button>
   );
 }
@@ -502,7 +506,7 @@ function MentionModelPopover({
       />
       <dialog
         open
-        className="channel-composer-model"
+        className="channel-composer-model ui-stack"
         aria-label={`Model for ${buddy.label}`}
         onKeyDown={(event) => {
           if (event.key !== 'Escape') return;
@@ -510,7 +514,7 @@ function MentionModelPopover({
           onClose();
         }}
       >
-        <div className="channel-composer-model-head">
+        <div className="channel-composer-model-head ui-row ui-muted">
           <BuddySigil className="channel-composer-mention-sigil" name={buddy.label} />
           <strong>{buddy.label}</strong>
           <span>replies on</span>
@@ -528,9 +532,9 @@ function MentionModelPopover({
             onChange={onChange}
           />
         ) : (
-          <p className="channel-composer-model-note">Loading harness options…</p>
+          <p className="channel-composer-model-note ui-muted">Loading harness options…</p>
         )}
-        <p className="channel-composer-model-note">
+        <p className="channel-composer-model-note ui-muted">
           {choice.kind === 'seat'
             ? `Continues on ${buddy.label}’s latest harness, model and reasoning in this thread. A change here sticks for later replies.`
             : `Applies to ${buddy.label}’s replies in this thread from now on. Without a choice, ${buddy.label} keeps what it already uses here.`}
@@ -555,7 +559,7 @@ function ReferenceIcon({ reference }: { reference: ChannelReference }) {
     case 'task':
       return (
         <span
-          className="channel-composer-picker-icon channel-composer-picker-task"
+          className="channel-composer-picker-icon channel-composer-picker-task ui-muted"
           aria-hidden="true"
         >
           {reference.status === 'done' ? '✓' : '◇'}

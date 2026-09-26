@@ -81,7 +81,7 @@ test('channel browser renders a Slack transcript, oldest first, with instance ta
   await seedSlack();
   const html = render('ws-slack', slackDirectory());
   assert.match(html, /<h1>unleashd<\/h1>/);
-  assert.match(html, /channel-browser-channel-name">Standups</);
+  assert.match(html, /channel-browser-channel-name[^"]*">Standups</);
   const newerAt = html.indexOf('Newer handoff without a live thread.');
   const olderAt = html.indexOf('Older update from the first run.');
   assert.ok(newerAt !== -1 && olderAt !== -1, 'all posts render');
@@ -234,7 +234,7 @@ test('posts render markdown mentions, Task chips and media; DMs list by member w
   assert.doesNotMatch(html, />Gone</);
   // The DM row: named by its Buddy, badged with the request awaiting the owner.
   const dms = html.slice(html.indexOf('Direct messages'));
-  assert.match(dms, /channel-browser-channel-name">Lead</);
+  assert.match(dms, /channel-browser-channel-name[^"]*">Lead</);
   assert.match(dms, /aria-label="1 requests waiting on you"/);
   assert.match(html, /data-unread="new"/);
 });

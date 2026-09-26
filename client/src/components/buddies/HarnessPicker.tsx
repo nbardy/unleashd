@@ -81,7 +81,7 @@ export function HarnessPicker({
           />
           <dialog
             open
-            className="channel-composer-model"
+            className="channel-composer-model ui-stack"
             aria-label={label}
             onKeyDown={(event) => {
               if (event.key !== 'Escape') return;
@@ -89,7 +89,7 @@ export function HarnessPicker({
               close();
             }}
           >
-            <p className="channel-composer-model-note">{note}</p>
+            <p className="channel-composer-model-note ui-muted">{note}</p>
             {catalog && value ? (
               <ConversationConfigPicker
                 value={value}
@@ -98,7 +98,7 @@ export function HarnessPicker({
                 onChange={setDraft}
               />
             ) : (
-              <p className="channel-composer-model-note">
+              <p className="channel-composer-model-note ui-muted">
                 {catalog ? 'No other harness can run this Buddy.' : 'Loading harness options…'}
               </p>
             )}

@@ -8,7 +8,7 @@ import './ChannelLoader.css';
 // mobile share it (gate G3 allows components/buddies/).
 export function ChannelLoader({ label }: { label: string }) {
   return (
-    <output className="channel-loader" aria-live="polite">
+    <output className="channel-loader ui-stack" aria-live="polite">
       <svg className="channel-loader-flame" viewBox="0 0 32 44" aria-hidden="true">
         <defs>
           <linearGradient id="channel-loader-outer" x1="0" y1="1" x2="0" y2="0">
@@ -91,7 +91,7 @@ export function ChannelHistory({
 
 function HistoryFailed({ error, onRetry }: { error: Error; onRetry(): void }) {
   return (
-    <div className="channel-history channel-history-failed" role="alert">
+    <div className="channel-history channel-history-failed ui-row" role="alert">
       <span>Older posts could not load: {error.message}</span>
       <button type="button" onClick={onRetry}>
         Retry
