@@ -5,16 +5,23 @@ import {
   EMPLOYEE_TAB_LABELS_SHORT,
   buddyTabPath,
 } from './buddy-tabs';
+import type { BuddyPageLayout } from './BuddyPage';
 import type { EmployeeTab } from './types';
 
 const PRIMARY: EmployeeTab[] = ['conversations', 'work', 'mailbox'];
 const SECONDARY = EMPLOYEE_TABS.filter((tab) => !PRIMARY.includes(tab));
+/** The "More" summary names the open secondary tab; a narrow column gets the short name. */
+const SUMMARY_LABELS: Record<BuddyPageLayout, Record<EmployeeTab, string>> = {
+  wide: EMPLOYEE_TAB_LABELS,
+  narrow: EMPLOYEE_TAB_LABELS_SHORT,
+};
+
 export function BuddySectionNav({
   buddyId,
   activeTab,
-  compact = false,
-}: { buddyId: string; activeTab: EmployeeTab; compact?: boolean }) {
-  const labels = compact ? EMPLOYEE_TAB_LABELS_SHORT : EMPLOYEE_TAB_LABELS;
+  layout,
+}: { buddyId: string; activeTab: EmployeeTab; layout: BuddyPageLayout }) {
+  const labels = SUMMARY_LABELS[layout];
   const link = (tab: EmployeeTab) => (
     <Link
       key={tab}
