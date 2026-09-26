@@ -229,3 +229,41 @@ fn notes_leave_as_agent_notes_files() {
     unleashd_buddies_import::notes::write(&files).unwrap();
     assert!(unleashd_buddies_import::notes::write(&files).is_err(), "a rerun never overwrites a note file");
 }
+
+/// The 11 v33 tables DESIGN.md deletes outright are not imported; their rows live only in the v33
+/// backup. The report must count every one, so the owner sees exactly what the swap leaves behind
+/// (final review, 2026-09-26: they were missing from the report). A table dropped from this list
+/// without being imported would silently vanish from the owner's view of what stays behind.
+#[test]
+fn report_counts_every_dropped_table() {
+    let dir = tempfile::tempdir().unwrap();
+    let old = fixture(dir.path());
+    Connection::open(&old)
+        .unwrap()
+        .execute_batch(
+            "INSERT INTO sprints VALUES ('s1','p1','S1',NULL,'completed',NULL,NULL,'2026-07-01T00:00:00.000Z','2026-07-01T00:00:00.000Z'),
+                                        ('s2','p1','S2',NULL,'planned',NULL,NULL,'2026-07-01T00:00:00.000Z','2026-07-01T00:00:00.000Z');
+             INSERT INTO buddy_skills VALUES ('sk1','b1','review','skills/review.md','always','2026-07-01T00:00:00.000Z','2026-07-01T00:00:00.000Z');",
+        )
+        .unwrap();
+    let new = dir.path().join("new.sqlite");
+    let report = import(&old, &new, &dir.path().join("owner-channel-reads.json"), ImportOptions::default()).unwrap();
+    let counts: Vec<(&str, i64)> = report.dropped_tables.iter().map(|d| (d.table.as_str(), d.rows)).collect();
+    assert_eq!(
+        counts,
+        [
+            ("sprints", 2),
+            ("work_items", 0),
+            ("buddy_skills", 1),
+            ("buddy_delegations", 0),
+            ("buddy_reviews", 0),
+            ("buddy_approval_requests", 0),
+            ("buddy_builder_creations", 0),
+            ("buddy_access_grants", 0),
+            ("buddy_mail_effects", 0),
+            ("buddy_mail_inbound", 0),
+            ("buddy_checkpoints", 0),
+        ]
+    );
+    assert!(verify(&old, &new, &report.soul_files, &report.owner_reads, &report.direct_reads).unwrap().ok);
+}
