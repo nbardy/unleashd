@@ -170,3 +170,56 @@ test('only a harness failure offers a retry on another harness', () => {
   assert.equal(failed('Couldn’t reply: Buddy is not active'), '');
   assert.equal(failed('Couldn’t reply: the turn ended without a channel post'), '');
 });
+
+// PORT-3 "needs owner" (493c1c7 Chat.tsx): the /chat page stitched a DM's generations and sent an
+// earlier one to the latest. DMs live in Channels now, so the page points there instead of
+// drawing a second joined view. Without this, a DM opened from the sidebar was a dead end: no
+// New chat, and no hint that its earlier or later chats exist.
+test('the conversation page sends a Buddy DM chat to Channels; other Buddy chats get no notice', async () => {
+  await seed();
+  const { ChatRoute } = await import('../src/components/Chat');
+  const SEAT = '11111111-1111-4111-8111-000000000009';
+  const seat = syntheticConversation(3, {
+    id: SEAT,
+    kind: { t: 'buddy', buddyId: 'lead', workspaceId: WS, visibility: 'foreground' },
+    messageCount: 2,
+  });
+  jotaiStore.set(rowsAtom, new Map([...jotaiStore.get(rowsAtom), [SEAT, seat]]));
+  jotaiStore.set(transcriptStore.patch, {
+    set: [
+      [
+        SEAT,
+        {
+          tag: 'loaded' as const,
+          epoch: 0,
+          messages: [message('user', 'Seat question', 5)],
+          detail: syntheticDetail(SEAT),
+        },
+      ],
+    ],
+    remove: [],
+  });
+  const page = (id: string) =>
+    renderToStaticMarkup(
+      <MemoryRouter initialEntries={[`/chat/${id}`]}>
+        <Provider store={jotaiStore}>
+          <Routes>
+            <Route path="/chat/:id" element={<ChatRoute />} />
+          </Routes>
+        </Provider>
+      </MemoryRouter>
+    );
+  const latest = `href="/buddies/workspaces/${WS}/channels\\?dm=${NEW}"`;
+  const current = page(NEW);
+  assert.match(current, /This DM lives in Channels/);
+  assert.match(current, new RegExp(`${latest}[^>]*>Open in Channels<`));
+  assert.match(current, /class="channel-inline-action">New chat</);
+  // An earlier generation says so and opens the latest, as the snapshot's redirect did.
+  const earlier = page(OLD);
+  assert.match(earlier, /An earlier chat in this DM/);
+  assert.match(earlier, new RegExp(`${latest}[^>]*>Open in Channels<`));
+  // A seat or Wake chat is a Buddy conversation but not a DM generation.
+  const other = page(SEAT);
+  assert.match(other, /class="chat-view /, 'the page rendered the conversation');
+  assert.doesNotMatch(other, /Open in Channels/);
+});

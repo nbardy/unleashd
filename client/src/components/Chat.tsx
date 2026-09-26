@@ -54,6 +54,7 @@ import { ResumeThreadWidget } from './ResumeThreadWidget';
 import { SubAgentPanel } from './SubAgentPanel';
 import { TurnStatus } from './TurnStatus';
 import { VirtualizedMessageList } from './VirtualizedMessageList';
+import { DmChannelsNotice } from './buddies/DmChannelsNotice';
 import { HarnessPicker } from './buddies/HarnessPicker';
 import { lastOwnerText } from './buddies/channel-dm';
 import {
@@ -63,6 +64,7 @@ import {
 } from './turn-diagnostics';
 import './Chat.css';
 import { useTimeTick } from '../hooks/useTimeTick';
+import { rowBuddy } from '../utils/conversation-row';
 import { shortenHomePath } from '../utils/directories';
 
 // Stable reference for empty queue — avoids new [] on every render triggering re-renders
@@ -214,6 +216,8 @@ export function Chat({ id }: { id: string }) {
   // ?helper=buddies query param (lost on refresh/sidebar nav, which made
   // Builder threads indistinguishable from normal chats).
   const isBuddyBuilder = conversation?.kind.t === 'builder';
+  // A Buddy DM generation points to Channels (DmChannelsNotice renders only for DM chats).
+  const dmBuddy = rowBuddy(conversation);
   const isBuddyBuilderHelper = confirmed && isBuddyBuilder;
   const isRunning = conversation?.run === 'running' || conversation?.run === 'streaming';
   const isStreaming = conversation?.run === 'streaming';
@@ -864,6 +868,14 @@ export function Chat({ id }: { id: string }) {
               ))}
             </ul>
           </div>
+        )}
+
+        {dmBuddy !== null && (
+          <DmChannelsNotice
+            conversationId={conversation.id}
+            buddy={dmBuddy}
+            className="dm-channels-notice chat-reading-column ui-row ui-muted"
+          />
         )}
 
         {uploadError && (

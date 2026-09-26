@@ -410,6 +410,17 @@
   margin-top: var(--sp-3);
 }
 
+/* A Buddy DM on the conversation page: Open in Channels + New chat (DmChannelsNotice). */
+.dm-channels-notice {
+  flex-wrap: wrap;
+  gap: var(--sp-3);
+  padding: var(--sp-2) var(--sp-4);
+}
+
+.dm-channels-notice > .channel-harness-picker {
+  margin-top: 0;
+}
+
 .channel-composer-model-actions .channel-composer-model-done {
   border-color: transparent;
   background: color-mix(in srgb, var(--theme-user) 70%, transparent);

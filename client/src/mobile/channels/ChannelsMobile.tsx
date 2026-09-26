@@ -1,18 +1,20 @@
 import { useAtomValue } from 'jotai';
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
-import { rowFamily } from '../../atoms/conversations';
+import { setConversationDone } from '../../atoms/actions';
+import { listField, rowFamily } from '../../atoms/conversations';
 import { BuddySigil } from '../../components/buddies/BuddySigil';
 import { ChannelAuthor, type OpenDm } from '../../components/buddies/ChannelAuthor';
 import { ChannelDm } from '../../components/buddies/ChannelDm';
 import { ChannelHistory, ChannelLoader } from '../../components/buddies/ChannelLoader';
 import { ChannelMarkdown, TypingDots } from '../../components/buddies/ChannelMarkdown';
+import { ConversationEye } from '../../components/buddies/ConversationEye';
 import { CopyLinkButton } from '../../components/buddies/CopyLinkButton';
 import { ReplyRetry } from '../../components/buddies/HarnessPicker';
 import { TaskFilter } from '../../components/buddies/TaskFilter';
 import { WakeIcon, WakeIndicator } from '../../components/buddies/WakeIndicator';
 import { errorText } from '../../components/buddies/api';
-import { useBuddyDirectActions } from '../../components/buddies/buddy-direct-actions';
+import { useBuddyDirectActions, useNewBuddy } from '../../components/buddies/buddy-direct-actions';
 import {
   type ChannelHeading,
   type ChannelRow,
@@ -299,13 +301,58 @@ function ChannelsHome({ context }: { context: ScreenContext }) {
         </MobileSection>
       )}
       <MobileSection title="Buddies" meta="Tap to message · ☀ to wake">
-        <ul className="mobile-channels-list">
-          {directory.activeMembers.map((member) => (
-            <BuddyRow key={member.id} member={member} />
-          ))}
-        </ul>
+        <BuddySection members={directory.activeMembers} />
       </MobileSection>
     </MobilePage>
+  );
+}
+
+// The rail's '+' and "Creating buddy" row (desktop e9e3426), as touch rows: New Buddy starts a
+// Buddy Builder chat, which DmScreen hands to the conversation page; × archives that setup chat.
+function BuddySection({ members }: { members: readonly Buddy[] }) {
+  const openDm = useChannelsDm();
+  const newBuddy = useNewBuddy(openDm);
+  const creating = useAtomValue(listField('builders')).find((entry) => !entry.done);
+  return (
+    <ul className="mobile-channels-list">
+      <li>
+        <button
+          type="button"
+          className="mobile-channels-row mobile-channels-row--add"
+          disabled={newBuddy.state.kind === 'pending'}
+          onClick={newBuddy.start}
+        >
+          <span className="mobile-channels-row__hash" aria-hidden="true">
+            +
+          </span>
+          <span className="mobile-channels-row__name">New Buddy</span>
+        </button>
+        {newBuddy.state.kind === 'failed' && (
+          <p className="mobile-channels-new__problem" role="alert">
+            {newBuddy.state.message}
+          </p>
+        )}
+      </li>
+      {creating && (
+        <li className="mobile-channels-buddy">
+          <button type="button" className="mobile-channels-row" onClick={() => openDm(creating.id)}>
+            <BuddySigil className="mobile-channels-row__sigil" name="Creating buddy" />
+            <em className="mobile-channels-row__name">Creating buddy</em>
+          </button>
+          <button
+            type="button"
+            className="mobile-channels-wake"
+            aria-label="Archive Buddy setup"
+            onClick={() => setConversationDone(creating.id, true)}
+          >
+            ×
+          </button>
+        </li>
+      )}
+      {members.map((member) => (
+        <BuddyRow key={member.id} member={member} />
+      ))}
+    </ul>
   );
 }
 
@@ -484,6 +531,9 @@ function PostFooter({ post, context }: { post: Post; context: RowContext }) {
 
 function Row({ row, context }: { row: ChannelRow; context: RowContext }) {
   const openDm = useChannelsDm();
+  const location = useLocation();
+  // Back from the conversation page returns to this channel screen.
+  const linkState = mobileConversationRouteState(location);
   switch (row.kind) {
     case 'day':
       return (
@@ -513,6 +563,11 @@ function Row({ row, context }: { row: ChannelRow; context: RowContext }) {
               />
               <time dateTime={row.post.createdAt}>{clockTime(row.post.createdAt)}</time>
               <PostPurpose post={row.post} />
+              <ConversationEye
+                post={row.post}
+                className="mobile-channel-post__reply"
+                linkState={linkState}
+              />
             </div>
             <ChannelMarkdown
               body={row.post.body}
@@ -534,6 +589,11 @@ function Row({ row, context }: { row: ChannelRow; context: RowContext }) {
         >
           <div className="mobile-channel-post__content">
             <PostPurpose post={row.post} />
+            <ConversationEye
+              post={row.post}
+              className="mobile-channel-post__reply"
+              linkState={linkState}
+            />
             <ChannelMarkdown
               body={row.post.body}
               buddyNames={context.directory.buddyNames}
