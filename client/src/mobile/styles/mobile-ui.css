@@ -145,144 +145,6 @@
   transform: none;
 }
 
-/* ---- Create sheet ---- */
-
-/* Native <dialog>: showModal() puts it in the top layer, so no z-index needed.
-   Bottom-anchored via auto side margins + 0 bottom margin. */
-.mobile-sheet {
-  box-sizing: border-box;
-  width: 100%;
-  max-width: 560px;
-  max-height: 88vh;
-  margin: auto auto 0;
-  padding: 0;
-  overflow-y: auto;
-  -webkit-overflow-scrolling: touch;
-  overscroll-behavior: contain;
-  border-bottom: none;
-  background: var(--bg-raised-1);
-  color: var(--text-primary);
-}
-
-.mobile-sheet::backdrop {
-  background: rgb(0 0 0 / 55%);
-}
-
-.mobile-sheet__inner {
-  gap: var(--sp-5);
-  padding: var(--sp-5) var(--sp-7) calc(var(--sp-8) + env(safe-area-inset-bottom));
-}
-
-.mobile-sheet *,
-.mobile-sheet *::before,
-.mobile-sheet *::after {
-  box-sizing: border-box;
-}
-
-.mobile-sheet__grabber {
-  flex: none;
-  align-self: center;
-  width: 38px;
-  height: 4px;
-  border-radius: var(--ui-radius);
-  background: var(--border-strong);
-}
-
-.mobile-sheet__header {
-  justify-content: space-between;
-  gap: var(--sp-6);
-}
-
-.mobile-sheet__title {
-  margin: 0;
-  color: var(--text-primary);
-  font-size: var(--fs-7);
-  font-weight: 700;
-  letter-spacing: -0.02em;
-}
-
-.mobile-sheet__close {
-  justify-content: center;
-  flex: none;
-  width: 36px;
-  height: 36px;
-  background: var(--bg-raised-2);
-  font: inherit;
-  font-size: var(--fs-5);
-  cursor: pointer;
-}
-
-.mobile-sheet__section-title {
-  color: var(--text-muted);
-  font-size: var(--fs-2);
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
-
-.mobile-sheet__section-title {
-  margin-top: 4px;
-}
-
-.mobile-sheet__input {
-  width: 100%;
-  min-width: 0;
-  /* 16px keeps iOS Safari from zooming the viewport on focus. */
-  padding: var(--sp-6);
-  background: var(--bg-raised-2);
-  color: var(--text-primary);
-  font-family: var(--font-mono);
-  font-size: var(--fs-6);
-  line-height: 1.35;
-}
-
-.mobile-sheet__input--filter {
-  font-family: inherit;
-}
-
-.mobile-sheet__input:focus-visible {
-  outline: 2px solid var(--accent);
-  outline-offset: 1px;
-}
-
-.mobile-sheet__recent {
-  display: block;
-  width: 100%;
-  min-width: 0;
-  padding: var(--sp-5) var(--sp-6);
-  background: var(--bg-raised-2);
-  color: inherit;
-  font: inherit;
-  text-align: left;
-  cursor: pointer;
-  -webkit-tap-highlight-color: transparent;
-}
-
-.mobile-sheet__recent--selected {
-  border-color: var(--accent);
-}
-
-.mobile-sheet__recent-name {
-  display: block;
-  color: var(--text-primary);
-  font-size: var(--fs-5);
-  font-weight: 600;
-}
-
-.mobile-sheet__recent-path {
-  display: block;
-  font-family: var(--font-mono);
-  font-size: var(--fs-2);
-}
-
-.mobile-sheet__note {
-  /* __note is an <output> (inline by default) — block keeps it on its own row. */
-  display: block;
-  padding: var(--sp-4) var(--sp-1);
-  color: var(--text-muted);
-  font-size: var(--fs-3);
-}
-
 .mobile-sheet__error {
   padding: var(--sp-5) var(--sp-6);
   border: 1px solid color-mix(in srgb, var(--theme-error, #ef4444) 45%, var(--border-subtle));
@@ -573,7 +435,6 @@
   font-size: var(--fs-3);
   word-break: break-word;
 }
-}
 
 .mobile-chat__typing,
 .mobile-composer__typing {
@@ -721,4 +582,35 @@
 .mobile-ui-header-action:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
+}
+
+/* Text links and muted copy (was mobile-controls.css). */
+.mobile-link {
+  gap: var(--sp-3);
+  min-height: 36px;
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--accent);
+  font: inherit;
+  font-size: var(--fs-4);
+  text-align: left;
+  text-decoration: none;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.mobile-link[aria-disabled="true"] {
+  color: var(--text-muted);
+  cursor: default;
+}
+
+.mobile-link:active {
+  opacity: 0.7;
+}
+
+.mobile-muted {
+  margin: 0;
+  font-size: var(--fs-3);
+  line-height: 1.45;
 }

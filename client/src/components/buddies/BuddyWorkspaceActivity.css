@@ -196,25 +196,23 @@ a.buddy-workspace-job:hover {
   cursor: pointer;
 }
 
-@media (max-width: 768px) {
-  .buddy-workspace-page {
-    width: auto;
-    padding: var(--sp-8) var(--sp-6) var(--sp-11);
-  }
+[data-device="mobile"] .buddy-workspace-page {
+  width: auto;
+  padding: var(--sp-8) var(--sp-6) var(--sp-11);
+}
 
-  .buddy-workspace-heading-row {
-    align-items: flex-start;
-    flex-direction: column;
-    gap: var(--sp-6);
-  }
+[data-device="mobile"] .buddy-workspace-heading-row {
+  align-items: flex-start;
+  flex-direction: column;
+  gap: var(--sp-6);
+}
 
-  .buddy-workspace-job {
-    grid-template-columns: 7px auto minmax(0, 1fr);
-  }
+[data-device="mobile"] .buddy-workspace-job {
+  grid-template-columns: 7px auto minmax(0, 1fr);
+}
 
-  .buddy-workspace-job-meta {
-    grid-column: 3;
-  }
+[data-device="mobile"] .buddy-workspace-job-meta {
+  grid-column: 3;
 }
 
 .buddy-workspace-channels-open {

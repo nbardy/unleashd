@@ -100,3 +100,64 @@
   background: var(--accent);
   color: var(--text-on-accent);
 }
+
+/* Bottom sheet: the `sheet` presentation of an overlay (config picker, prompt
+   palette, new conversation). A modal <dialog> anchored to the bottom edge;
+   the caller owns showModal/close. Comes after .ui-card so its border-bottom
+   wins. Moved from mobile-ui.css `.mobile-sheet*`, which only the mobile tree
+   loaded, so a shared view could not rely on it (T21b). */
+.ui-sheet {
+  width: 100%;
+  max-width: 560px;
+  max-height: 88vh;
+  margin: auto auto 0;
+  padding: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  border-bottom: none;
+  background: var(--bg-raised-1);
+  color: var(--text-primary);
+}
+
+.ui-sheet::backdrop {
+  background: rgb(0 0 0 / 55%);
+}
+
+.ui-sheet__inner {
+  gap: var(--sp-5);
+  padding: var(--sp-5) var(--sp-7) calc(var(--sp-8) + env(safe-area-inset-bottom));
+}
+
+.ui-sheet__grabber {
+  flex: none;
+  align-self: center;
+  width: 38px;
+  height: 4px;
+  border-radius: var(--ui-radius);
+  background: var(--border-strong);
+}
+
+.ui-sheet__header {
+  justify-content: space-between;
+  gap: var(--sp-6);
+}
+
+.ui-sheet__title {
+  margin: 0;
+  color: var(--text-primary);
+  font-size: var(--fs-7);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.ui-sheet__close {
+  justify-content: center;
+  flex: none;
+  width: 36px;
+  height: 36px;
+  background: var(--bg-raised-2);
+  font: inherit;
+  font-size: var(--fs-5);
+  cursor: pointer;
+}

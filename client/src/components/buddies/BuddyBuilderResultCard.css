@@ -111,9 +111,7 @@
   font-size: var(--fs-2);
 }
 
-@media (max-width: 768px) {
-  .buddy-created-card__conversation,
-  .buddy-created-card__info {
-    min-height: 44px;
-  }
+[data-device="mobile"] .buddy-created-card__conversation,
+[data-device="mobile"] .buddy-created-card__info {
+  min-height: 44px;
 }

@@ -145,46 +145,6 @@
   color: var(--text-primary);
 }
 
-/* State badge - unified indicator for running/looping/idle states */
-.state-badge {
-  gap: var(--sp-3);
-  padding: var(--sp-1) var(--sp-5);
-  border-radius: var(--ui-radius);
-  font-size: var(--fs-2);
-  font-weight: 500;
-}
-
-.state-badge .state-indicator {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-}
-
-.state-badge .state-label {
-  white-space: nowrap;
-}
-
-/* Idle state - muted */
-.state-badge.state-idle {
-  background: color-mix(in srgb, var(--text-muted) 20%, transparent);
-  color: var(--text-secondary);
-}
-
-.state-badge.state-idle .state-indicator {
-  background: var(--text-muted);
-}
-
-/* Running state - cyan with pulse */
-.state-badge.state-running {
-  background: color-mix(in srgb, var(--ai) 20%, transparent);
-  color: var(--ai);
-}
-
-.state-badge.state-running .state-indicator {
-  background: var(--ai);
-  animation: pulse 1.5s infinite;
-}
-
 @keyframes pulse {
   0%,
   100% {
@@ -319,21 +279,4 @@
   color: var(--primary-bright);
   background: var(--primary-glow);
   border-color: color-mix(in srgb, var(--primary) 35%, transparent);
-}
-
-@media (max-width: 768px) {
-  .gallery-content {
-    --gallery-content-padding-inline: 16px;
-    padding-top: var(--sp-7);
-    padding-bottom: var(--sp-7);
-  }
-
-  .project-header {
-    padding-top: var(--sp-6);
-    padding-bottom: var(--sp-6);
-  }
-
-  .project-done-toggle {
-    padding: 0 var(--sp-6);
-  }
 }

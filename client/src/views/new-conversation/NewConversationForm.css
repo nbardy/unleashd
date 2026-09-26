@@ -34,7 +34,7 @@
 }
 
 /* The inline provider/model picker (modal layout). */
-.new-conversation :is(.provider-selector, .model-selector) {
+.new-conversation .config-picker__group {
   display: flex;
   flex-wrap: wrap;
   gap: var(--sp-3);

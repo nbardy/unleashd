@@ -1,4 +1,4 @@
-import { type ReactNode, useEffect, useRef, useState } from 'react';
+import { type ReactNode, useEffect, useId, useRef, useState } from 'react';
 import type { SavedPrompt } from '../../hooks/useSavedPrompts';
 import './PromptPalette.css';
 
@@ -55,7 +55,7 @@ function SheetFrame({ isOpen, onClose, children }: FrameProps) {
   return (
     <dialog
       ref={dialogRef}
-      className="mobile-sheet ui-card prompt-palette prompt-palette--sheet"
+      className="ui-sheet ui-card prompt-palette prompt-palette--sheet"
       aria-label="Saved prompts"
       onCancel={onClose}
       // A click on the dialog element itself is a click on the backdrop.
@@ -64,13 +64,13 @@ function SheetFrame({ isOpen, onClose, children }: FrameProps) {
       }}
       onClose={onClose}
     >
-      <div className="mobile-sheet__inner ui-stack">
-        <div className="mobile-sheet__grabber" aria-hidden="true" />
-        <div className="mobile-sheet__header ui-row">
-          <h2 className="mobile-sheet__title">Prompts</h2>
+      <div className="ui-sheet__inner ui-stack">
+        <div className="ui-sheet__grabber" aria-hidden="true" />
+        <div className="ui-sheet__header ui-row">
+          <h2 className="ui-sheet__title">Prompts</h2>
           <button
             type="button"
-            className="mobile-sheet__close ui-inline-row ui-card ui-muted"
+            className="ui-sheet__close ui-inline-row ui-card ui-muted"
             onClick={onClose}
             aria-label="Close"
           >
@@ -104,6 +104,7 @@ export function PromptPalette({
   const [query, setQuery] = useState('');
   const [selectedIndex, setSelectedIndex] = useState(0);
   const inputRef = useRef<HTMLInputElement>(null);
+  const listId = useId();
 
   const results = fuzzySearch(query);
 
@@ -155,53 +156,79 @@ export function PromptPalette({
   const Frame = FRAMES[presentation];
   return (
     <Frame isOpen={isOpen} onClose={onClose}>
+      {/* Combobox + listbox (WAI-ARIA APG): focus stays in the input and
+          aria-activedescendant names the highlighted option, so ↑/↓ announce each
+          prompt. Options are real buttons (click, tap and Enter work without a
+          handler of our own) with tabIndex -1 so Tab leaves the palette instead of
+          walking every row. The delete button cannot live inside an option (no
+          interactive descendants), so it sits beside it, hidden from the
+          accessibility tree; ⌘/Ctrl+Backspace is its keyboard path. */}
       <input
         ref={inputRef}
         type="text"
+        role="combobox"
+        aria-expanded={results.length > 0}
+        aria-controls={listId}
+        aria-activedescendant={results[selectedIndex] ? `${listId}-${selectedIndex}` : undefined}
+        aria-autocomplete="list"
+        aria-keyshortcuts="Meta+Backspace Control+Backspace"
+        aria-label="Search saved prompts"
         className="prompt-palette-input"
         placeholder="Search saved prompts… (⌘⌫ to delete)"
         value={query}
         onChange={(e) => setQuery(e.target.value)}
         onKeyDown={handleKeyDown}
       />
-      <div className="prompt-palette-results">
+      <div
+        className="prompt-palette-results"
+        // biome-ignore lint/a11y/useSemanticElements: a native <select> cannot render two-line rows
+        role="listbox"
+        id={listId}
+        aria-label="Saved prompts"
+        tabIndex={-1}
+      >
         {results.length > 0 ? (
           results.map((prompt, i) => (
             <div
               key={prompt.id}
-              tabIndex={-1}
               className={`prompt-palette-item ${i === selectedIndex ? 'selected' : ''}`}
-              onClick={() => choose(prompt)}
-              onKeyDown={handleKeyDown}
               onMouseEnter={() => setSelectedIndex(i)}
             >
-              <div className="prompt-item-header ui-row">
-                <span className="prompt-name ui-truncate">{prompt.name}</span>
-                <div className="prompt-item-actions ui-row">
+              <button
+                type="button"
+                // biome-ignore lint/a11y/useSemanticElements: <option> only renders inside a native <select>
+                role="option"
+                id={`${listId}-${i}`}
+                aria-selected={i === selectedIndex}
+                tabIndex={-1}
+                className="prompt-palette-option"
+                onClick={() => choose(prompt)}
+                onKeyDown={handleKeyDown}
+              >
+                <span className="prompt-item-header ui-row">
+                  <span className="prompt-name ui-truncate">{prompt.name}</span>
                   <span className="prompt-usage ui-muted">used {prompt.usageCount}×</span>
-                  <button
-                    type="button"
-                    className="prompt-delete-btn ui-control"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      deletePrompt(prompt.id);
-                    }}
-                    aria-label={`Delete ${prompt.name}`}
-                    title="Delete prompt"
-                  >
-                    ×
-                  </button>
-                </div>
-              </div>
-              <div className="prompt-preview ui-truncate">
-                {prompt.content.length > 100
-                  ? `${prompt.content.substring(0, 100)}…`
-                  : prompt.content}
-              </div>
+                </span>
+                <span className="prompt-preview ui-truncate">
+                  {prompt.content.length > 100
+                    ? `${prompt.content.substring(0, 100)}…`
+                    : prompt.content}
+                </span>
+              </button>
+              <button
+                type="button"
+                className="prompt-delete-btn ui-control"
+                tabIndex={-1}
+                aria-hidden="true"
+                onClick={() => deletePrompt(prompt.id)}
+                title="Delete prompt"
+              >
+                ×
+              </button>
             </div>
           ))
         ) : (
-          <div className="prompt-palette-empty ui-muted">
+          <div className="prompt-palette-empty ui-muted" role="presentation">
             {prompts.length === 0
               ? 'No saved prompts yet. Use the save button in the composer to add one.'
               : 'No prompts match your search'}

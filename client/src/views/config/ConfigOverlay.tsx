@@ -147,15 +147,15 @@ function Sheet({ children, onClose }: { children: ReactNode; onClose: () => void
   return (
     <dialog
       ref={ref}
-      className="config-overlay config-overlay--sheet ui-card"
+      className="config-overlay config-overlay--sheet ui-sheet ui-card"
       aria-label="Model settings"
       onCancel={onClose}
       onClick={(event) => {
         if (event.target === ref.current) onClose();
       }}
     >
-      <div className="config-overlay__inner ui-stack">
-        <div className="config-overlay__grabber" aria-hidden="true" />
+      <div className="ui-sheet__inner ui-stack">
+        <div className="ui-sheet__grabber" aria-hidden="true" />
         <Header onClose={onClose} />
         {children}
       </div>

@@ -63,8 +63,10 @@ client/src/atoms/ui.ts             → device-local UI prefs + NEW-badge seen in
   UsagePanel). Keying supersedes the old abort-on-change guard: a late response
   lands on its own key, which whoever switched away is no longer reading, so
   never re-add a `data.id === currentId` check at a call site.
-- `jotaiStore.set` only inside `client/src/atoms/`. Mobile never imports
-  `components/*` except `components/buddies/`.
+- `jotaiStore.set` only inside `client/src/atoms/`. The shells never import
+  each other (mobile/ vs `components/*` outside `components/buddies/`);
+  `views/` imports neither. Width `@media` lives only in shell CSS (G9); a
+  view's device tweak is a colocated `[data-device="mobile"] .x` rule.
   Gates: `bash tools/check-client-invariants.sh`.
 - One WS bridge (`App.tsx`), one `handleMessage` spine — never a second.
 - Auth gate stays FIRST in the Express chain and the WS stays `noServer` +

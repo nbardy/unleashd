@@ -54,14 +54,12 @@
   text-decoration: none;
 }
 
-@media (max-width: 768px) {
-  .buddy-convo-header__summary {
-    flex-wrap: wrap;
-  }
+[data-device="mobile"] .buddy-convo-header__summary {
+  flex-wrap: wrap;
+}
 
-  .buddy-convo-header__project {
-    flex-basis: 100%;
-    order: 3;
-    padding-left: var(--sp-11);
-  }
+[data-device="mobile"] .buddy-convo-header__project {
+  flex-basis: 100%;
+  order: 3;
+  padding-left: var(--sp-11);
 }

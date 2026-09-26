@@ -169,14 +169,12 @@ body {
   opacity: 0.6;
 }
 
-@media (max-width: 768px) {
-  .restart-recovery {
-    align-items: stretch;
-    flex-direction: column;
-    gap: var(--sp-4);
-  }
+[data-device="mobile"] .restart-recovery {
+  align-items: stretch;
+  flex-direction: column;
+  gap: var(--sp-4);
+}
 
-  .restart-recovery__actions button {
-    flex: 1;
-  }
+[data-device="mobile"] .restart-recovery__actions button {
+  flex: 1;
 }
