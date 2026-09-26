@@ -16,7 +16,7 @@ Never import another `components/*.tsx` or its CSS. Swarm parsers were moved to 
 
 Grep gates (run `pnpm check:client-invariants` / `bash tools/check-client-invariants.sh`):
 - **G1** — `jotaiStore.set` only inside `client/src/atoms/`. Components call actions.
-- **G2** — no raw `.buddyContext` / `.purpose` reads in `client/src/mobile/` — use `getConversationKind` / `matchConversationKind` / `buddyContextFromKind` (`shared/src/conversation-kind.ts`).
+- **G2** — no raw `.buddyContext` / `.purpose` reads in `client/src/mobile/` — read the row's `kind` / `matchConversationKind` (`shared/src/conversation-config.ts`).
 - **G3** — no `components/` imports in `mobile/` except `components/buddies/` (see above).
 
 ### DeviceKind — the only sum type at the shell

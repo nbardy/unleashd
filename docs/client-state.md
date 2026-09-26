@@ -281,7 +281,7 @@ collides with the user opening that chat joins it rather than racing it.
 in place, so subscribed panels update with no spinner. `invalidateBuddyResources()`
 is the named predicate for Buddy data. It fires from the WS spine on
 `buddies_changed` — the server's debounced change feed
-(`server/src/buddies/change-feed.ts`), which announces every Buddy-store write
+(the Buddy change bus in `server/src/server.ts`), which announces every Buddy-store write
 whether it came from an owner route, an owner MCP tool, a Buddy's MCP tool or
 the scheduler — and on create/delete of a Buddy-context conversation, which the
 client already knows about. `channel_changed {channelId}` is the precise one:

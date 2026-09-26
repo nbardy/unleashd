@@ -20,13 +20,13 @@ else
 fi
 echo
 
-echo "==> Gate G2: raw .buddyContext / .purpose reads in client/src/mobile/ — use getConversationKind()"
-# All mobile code must read BuddyContext via getConversationKind/matchConversationKind/buddyContextFromKind
-# (conversation-kind.ts), never raw field access. One-allowed consumer is components/buddies/buddies-shaping.ts
+echo "==> Gate G2: raw .buddyContext / .purpose reads in client/src/mobile/ — use the row kind"
+# All mobile code must read identity from the row's `kind` via matchConversationKind
+# (shared/src/conversation-config.ts), never raw field access. One-allowed consumer is components/buddies/buddies-shaping.ts
 # which is outside mobile/. Zero hits expected in mobile/.
 # Exclude parsed.*.purpose from buddy-review-message parser (pure helper, not Conversation.purpose).
 if grep -R --include="*.ts" --include="*.tsx" -n "\.buddyContext\|\.purpose" client/src/mobile 2>/dev/null | grep -v "parsed\.purpose" | grep -v "parsed\.subjectBuddyId" | grep -v "No raw \.buddyContext" ; then
-  echo "G2 FAIL: raw .buddyContext or .purpose read in client/src/mobile/. Use getConversationKind() / buddyContextFromKind()."
+  echo "G2 FAIL: raw .buddyContext or .purpose read in client/src/mobile/. Read row.kind / matchConversationKind()."
   FAIL=1
 else
   echo "G2 PASS"
