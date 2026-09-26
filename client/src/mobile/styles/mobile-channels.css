@@ -157,10 +157,6 @@
   color: var(--text-bright);
 }
 
-.mobile-channels-wake:disabled {
-  opacity: 0.5;
-}
-
 .mobile-channels-wake-status {
   display: inline-flex;
   flex: none;
@@ -221,6 +217,7 @@ a.mobile-channels-wake-done {
   color: var(--text-on-accent);
 }
 
+.mobile-channels-wake:disabled,
 .mobile-channels-new__actions button:disabled {
   opacity: 0.5;
 }
@@ -258,7 +255,8 @@ a.mobile-channels-wake-done {
   text-decoration: none;
 }
 
-.mobile-channel-header__heading {
+.mobile-channel-header__heading,
+.mobile-channel-post__content {
   min-width: 0;
 }
 
@@ -287,6 +285,12 @@ a.mobile-channels-wake-done {
   overflow-y: auto;
   overscroll-behavior: contain;
   padding: 4px 0 12px;
+}
+
+/* The Task filter picker under a channel's header (TaskFilter.tsx). */
+.mobile-channel__task-filter {
+  flex: none;
+  margin: var(--sp-4) var(--sp-6) 0;
 }
 
 .mobile-channel__error {
@@ -338,10 +342,6 @@ a.mobile-channels-wake-done {
   height: 36px;
   margin-top: 2px;
   border-radius: 8px;
-}
-
-.mobile-channel-post__content {
-  min-width: 0;
 }
 
 .mobile-channel-post__heading {
@@ -407,12 +407,9 @@ a.mobile-channels-wake-done {
   display: inline-flex;
   align-items: center;
   min-height: 32px;
+  color: var(--text-muted);
   font-size: 13px;
   text-decoration: none;
-}
-
-.mobile-channel-post__reply {
-  color: var(--text-muted);
 }
 
 .mobile-channel-post__replying,

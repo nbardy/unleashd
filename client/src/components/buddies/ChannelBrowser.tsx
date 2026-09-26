@@ -12,6 +12,7 @@ import { ChannelComposer } from './ChannelComposer';
 import { ChannelHistory, ChannelLoader } from './ChannelLoader';
 import { ChannelMarkdown, TypingDots } from './ChannelMarkdown';
 import { CopyLinkButton } from './CopyLinkButton';
+import { TaskFilter } from './TaskFilter';
 import { errorText } from './api';
 import { useNewBuddy } from './buddy-direct-actions';
 import {
@@ -528,41 +529,6 @@ function TaskTranscript({ taskId, context }: { taskId: string; context: RowConte
   );
 }
 
-// The Task picker offers the Tasks this channel's loaded posts are about, plus
-// the one the URL names (a pasted link may name a Task this page has not loaded).
-function TaskFilter({
-  posts,
-  taskFilter,
-  tasks,
-  onTaskFilter,
-}: {
-  posts: readonly Post[] | null;
-  taskFilter: string | null;
-  tasks: WorkspaceDirectory['taskById'];
-  onTaskFilter: (taskId: string | null) => void;
-}) {
-  const taskIds = useMemo(() => {
-    const ids = new Set(posts?.flatMap((post) => (post.taskId === undefined ? [] : [post.taskId])));
-    if (taskFilter !== null) ids.add(taskFilter);
-    return [...ids];
-  }, [posts, taskFilter]);
-  return taskIds.length === 0 ? null : (
-    <select
-      className="channel-browser-task-filter ui-control"
-      aria-label="Filter by Task"
-      value={taskFilter ?? ''}
-      onChange={(event) => onTaskFilter(event.target.value || null)}
-    >
-      <option value="">All posts</option>
-      {taskIds.map((taskId) => (
-        <option key={taskId} value={taskId}>
-          Task: {tasks.get(taskId)?.title ?? taskId}
-        </option>
-      ))}
-    </select>
-  );
-}
-
 function ChannelPane({
   entry,
   workspaceId,
@@ -640,6 +606,7 @@ function ChannelPane({
             </p>
           </div>
           <TaskFilter
+            className="channel-browser-task-filter"
             posts={feed.posts}
             taskFilter={taskFilter}
             tasks={directory.taskById}

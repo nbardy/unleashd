@@ -1,11 +1,12 @@
 import { useAtomValue } from 'jotai';
 import { useMemo, useState } from 'react';
-import { Link, useLocation, useParams } from 'react-router-dom';
+import { Link, useLocation, useNavigate, useParams } from 'react-router-dom';
 import { BuddySigil } from '../../components/buddies/BuddySigil';
 import { ChannelAuthor, useChatPageDm } from '../../components/buddies/ChannelAuthor';
 import { ChannelHistory, ChannelLoader } from '../../components/buddies/ChannelLoader';
 import { ChannelMarkdown, TypingDots } from '../../components/buddies/ChannelMarkdown';
 import { CopyLinkButton } from '../../components/buddies/CopyLinkButton';
+import { TaskFilter } from '../../components/buddies/TaskFilter';
 import { WakeIcon, WakeIndicator } from '../../components/buddies/WakeIndicator';
 import { errorText } from '../../components/buddies/api';
 import { useBuddyDirectActions } from '../../components/buddies/buddy-direct-actions';
@@ -27,6 +28,7 @@ import {
   postPurposeTag,
   railChannels,
   renderFeed,
+  taskPostsFeed,
   threadFeed,
   useChannelFeed,
   useChannelResponding,
@@ -37,7 +39,7 @@ import {
   useWorkspaceDirectory,
   useWorkspaceInbox,
 } from '../../components/buddies/channel-data';
-import { channelLinkPath } from '../../components/buddies/channel-link';
+import { channelLinkPath, postLink } from '../../components/buddies/channel-link';
 import type { Buddy, ChannelUnread, Inbox, Post } from '../../components/buddies/types';
 import { useBuddyOverview } from '../../hooks/useBuddyData';
 import { mobileConversationRouteState } from '../../utils/conversation-route-state';
@@ -55,6 +57,7 @@ import { type MobileChannelScreen, channelsHref, mobileChannelScreen } from './c
 //   Home    — channels, DMs and Buddies, tab bar visible
 //   Channel — full-height transcript, composer pinned, no tab bar
 //   Thread  — the root, its replies, a reply composer
+//   Task    — one Task's posts across every channel (the Task filter)
 // Same URL as desktop (/buddies/workspaces/:id/channels?channel=&thread=), so
 // a link opens the right place on either device. `channel` names a public
 // channel or a DM channel. Desktop hover affordances become visible taps here
@@ -101,6 +104,15 @@ function renderScreen(screen: MobileChannelScreen, context: ScreenContext) {
           channelId={screen.channelId}
           rootId={screen.rootId}
           linkedPostId={screen.linkedPostId}
+          context={context}
+        />
+      );
+    case 'task':
+      return (
+        <TaskScreen
+          key={screen.taskId}
+          channelId={screen.channelId}
+          taskId={screen.taskId}
           context={context}
         />
       );
@@ -338,14 +350,16 @@ function NewChannelForm({
 // ── Transcript rows ─────────────────────────────────────────────────────────
 
 // Where a row sits: in the channel (tap Thread to open its thread, see who is
-// replying) or inside the thread already. D = Channel ⊕ Thread.
+// replying), inside the thread already, or in the Task filter (posts from any
+// channel, each linked into its own). D = Channel ⊕ Thread ⊕ Task.
 type RowPlace =
   | {
       kind: 'channel';
       threadHref(rootId: string): string;
       responding: ReadonlyMap<string, string>;
     }
-  | { kind: 'thread' };
+  | { kind: 'thread' }
+  | { kind: 'task'; workspaceId: string; channelNames: ReadonlyMap<string, string> };
 
 type RowContext = {
   directory: WorkspaceDirectory;
@@ -368,6 +382,17 @@ function PostFooter({ post, context }: { post: Post; context: RowContext }) {
   switch (context.place.kind) {
     case 'thread':
       return null;
+    case 'task':
+      return (
+        <div className="mobile-channel-post__footer">
+          <Link
+            className="mobile-channel-post__reply"
+            to={channelLinkPath(context.place.workspaceId, postLink(post))}
+          >
+            {context.place.channelNames.get(post.channelId) ?? 'another channel'}
+          </Link>
+        </div>
+      );
     case 'channel': {
       const place = context.place;
       const replying = place.responding.get(post.id);
@@ -503,6 +528,7 @@ function ChannelScreen({ channelId, context }: { channelId: string; context: Scr
     linkedPostId: null,
   };
   const title = `${heading.mark} ${heading.name}`;
+  const navigate = useNavigate();
   return (
     <div className="mobile-channel">
       <ScreenHeader
@@ -513,6 +539,16 @@ function ChannelScreen({ channelId, context }: { channelId: string; context: Scr
           path: channelLinkPath(workspaceId, { kind: 'channel', channelId }),
           label: 'Copy link to channel',
         }}
+      />
+      <TaskFilter
+        className="mobile-channel__task-filter"
+        posts={feed.posts}
+        taskFilter={null}
+        tasks={directory.taskById}
+        onTaskFilter={(taskId) =>
+          taskId !== null &&
+          navigate(channelsHref(workspaceId, { kind: 'task', channelId, taskId }))
+        }
       />
       <div className="mobile-channel__scroll" ref={follow.scrollRef} onScroll={follow.onScroll}>
         {(feed.latest.kind === 'failed' || feed.latest.kind === 'stale') && (
@@ -554,6 +590,79 @@ function ChannelScreen({ channelId, context }: { channelId: string; context: Scr
           void feed.latest.refetch();
         }}
       />
+    </div>
+  );
+}
+
+// ── Task ────────────────────────────────────────────────────────────────────
+
+// The Task filter: one Task's posts from every channel, newest page first and
+// paged back like a channel; each row links to the post in its own channel.
+function TaskScreen({
+  channelId,
+  taskId,
+  context,
+}: {
+  channelId: string;
+  taskId: string;
+  context: ScreenContext;
+}) {
+  const { workspaceId, directory } = context;
+  const feed = useChannelFeed(taskPostsFeed(taskId));
+  const rows = useMemo(() => channelRows(feed.posts ?? []), [feed.posts]);
+  const follow = useFollowBottom(rows.length, feed.posts, null);
+  const channelNames = useMemo(
+    () =>
+      new Map(
+        context.listed.map((entry) => {
+          const heading = channelHeading(entry.channel.kind, directory.buddyNames);
+          return [entry.channel.id, `${heading.mark}${heading.name}`] as const;
+        })
+      ),
+    [context.listed, directory.buddyNames]
+  );
+  const rowContext: RowContext = {
+    directory,
+    place: { kind: 'task', workspaceId, channelNames },
+    linkedPostId: null,
+  };
+  return (
+    <div className="mobile-channel">
+      <ScreenHeader
+        backTo={channelsHref(workspaceId, { kind: 'channel', channelId })}
+        title={`Task: ${directory.taskById.get(taskId)?.title ?? taskId}`}
+        subtitle="One Task, across every channel"
+        link={{
+          path: channelsHref(workspaceId, { kind: 'task', channelId, taskId }),
+          label: 'Copy link to Task filter',
+        }}
+      />
+      <div className="mobile-channel__scroll" ref={follow.scrollRef} onScroll={follow.onScroll}>
+        {(feed.latest.kind === 'failed' || feed.latest.kind === 'stale') && (
+          <p className="mobile-channel__error" role="alert">
+            Task posts could not refresh: {feed.latest.error.message}
+          </p>
+        )}
+        {renderFeed(feedPhase(feed.latest.kind, feed.posts), {
+          loading: () => <ChannelLoader label="Loading the Task's posts…" />,
+          failed: () => null,
+          empty: () => <MobileEmptyPanel>No posts about this Task yet.</MobileEmptyPanel>,
+          posts: () => (
+            <>
+              <ChannelHistory
+                edge={feed.edge}
+                scrollRef={follow.scrollRef}
+                onReach={() => void feed.loadOlder(follow.hold)}
+              />
+              <ol className="mobile-channel__posts">
+                {rows.map((row) => (
+                  <Row key={row.key} row={row} context={rowContext} />
+                ))}
+              </ol>
+            </>
+          ),
+        })}
+      </div>
     </div>
   );
 }
