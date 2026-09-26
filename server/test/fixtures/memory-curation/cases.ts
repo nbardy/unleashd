@@ -4,12 +4,9 @@ export interface CurationCase {
   id: string;
   working: string;
   longTerm: string;
-  note?: { topic: string; body: string };
   messages: Array<{ role: string; content: string }>;
   rubric: string[];
   noOp?: boolean;
-  reuseNote?: boolean;
-  notePointer?: boolean;
 }
 
 export const CURATION_CASES: CurationCase[] = [
@@ -26,17 +23,12 @@ export const CURATION_CASES: CurationCase[] = [
     rubric: [
       'Consolidates duplicate UI behavior into one primary home even without a new fact.',
       'Preserves shared row behavior, interleaved ordering, one Copy action and UTC preference.',
-      'Does not create a note merely to archive duplicate wording.',
     ],
   },
   {
     id: 'B-decision-provenance',
     working: 'Current worker allowance: four runs and 7200 seconds; owner renewal required.',
     longTerm: 'Owner preference: stop every assignment after four runs or 7200 seconds.',
-    note: {
-      topic: 'Execution allowance origin',
-      body: 'September 12: the assistant chose four runs and 7200 seconds for the initial packet. No owner statement selected these numbers. They remain enforced on that packet; changing future policy does not change its authority.',
-    },
     messages: [
       {
         role: 'user',
@@ -46,7 +38,7 @@ export const CURATION_CASES: CurationCase[] = [
       {
         role: 'assistant',
         content:
-          'The allowance origin is already in a note. Manager-controlled renewal is my proposal; no runtime change was made.',
+          'Those numbers were my choice for the first packet. Manager-controlled renewal is my proposal; no runtime change was made.',
       },
     ],
     rubric: [
@@ -61,23 +53,17 @@ export const CURATION_CASES: CurationCase[] = [
     working:
       'Only the separate manual settings screen can bootstrap a team. Worker return pending.',
     longTerm: 'Use real execution and returned evidence to establish that a worker ran.',
-    note: {
-      topic: 'Team setup capability correction',
-      body: 'September 12 observed native configure_team preview validating setup in an owner conversation. The old manual-settings-only limitation is superseded. Preview does not start workers or establish return delivery. Native projects own current work state.',
-    },
     messages: [
       { role: 'user', content: 'What did the interface audit establish?' },
       {
         role: 'assistant',
         content:
-          'I already saved the material correction in the Team setup capability correction note. Reuse that evidence record; the conversation contains no additional verified result.',
+          'September 12 observed native configure_team preview validating setup in an owner conversation, so the manual-settings-only limitation is superseded. Preview does not start workers or establish return delivery.',
       },
     ],
-    reuseNote: true,
     rubric: [
-      'Retrieves the existing correction and reconciles the obsolete compact setup claim.',
+      'Reconciles the obsolete compact setup claim with the correction.',
       'Preserves preview-versus-execution distinction and removes transient pending status.',
-      'Reuses the existing note without duplicating it.',
     ],
   },
   {
@@ -103,10 +89,6 @@ export const CURATION_CASES: CurationCase[] = [
     working: 'Hypothesis: the tiny-data improvement might generalize; scale evidence is missing.',
     longTerm:
       'A tiny diffusion model learned the training examples: measured error fell from 0.29 to 0.04. Tiny memorization is established; generalization remains unverified.',
-    note: {
-      topic: 'Tiny diffusion measurement',
-      body: 'Saved tiny-data measurement: error 0.29 to 0.04 on training examples. No held-out style claim was established.',
-    },
     messages: [
       {
         role: 'user',
@@ -134,7 +116,7 @@ export const CURATION_CASES: CurationCase[] = [
       { role: 'assistant', content: 'You are welcome.' },
     ],
     noOp: true,
-    rubric: ['Leaves useful, already concise older knowledge unchanged; creates no note.'],
+    rubric: ['Leaves useful, already concise older knowledge unchanged.'],
   },
   {
     id: 'G-failed-attempt-evidence',
@@ -170,34 +152,6 @@ export const CURATION_CASES: CurationCase[] = [
       'Does not promote the unsupported assistant deployment claim to a verified fact.',
       'Preserves the distinction between local validation and deployment.',
       'Does not infer missing evidence from the bounded transcript.',
-    ],
-  },
-  {
-    id: 'I-native-note-reference',
-    notePointer: true,
-    working: '',
-    longTerm: 'Owner preference: use explicit measurement units.',
-    note: {
-      topic: 'Temperature calibration correction',
-      body: 'Confirmed reusable correction: the calibration offset is 14 cm, not 10 cm. Temperature as a cause remains an untested hypothesis. Preserve this native note reference; it has no filesystem path.',
-    },
-    messages: [
-      {
-        role: 'user',
-        content:
-          'The calibration correction matters across our experiments; keep the cause uncertain.',
-      },
-      {
-        role: 'assistant',
-        content:
-          'The Temperature calibration correction note already preserves the detailed evidence. Its native reference is returned by recall.',
-      },
-    ],
-    reuseNote: true,
-    rubric: [
-      'Preserves 14 cm and uncertainty about temperature.',
-      'Reuses the exact native note name/ref without inventing a filesystem prefix.',
-      'Creates no duplicate note; CAS and partial-save behavior are covered by the boundary suite.',
     ],
   },
   {

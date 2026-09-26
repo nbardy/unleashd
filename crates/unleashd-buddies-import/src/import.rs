@@ -407,6 +407,7 @@ fn mapping_sql() -> Vec<String> {
            json_object('id', id, 'base_revision_id', base_revision_id, 'requested_by', requested_by)
          FROM old.buddy_memory_revisions".into(),
         // A thread-scoped soul that differs from the buddy's soul head is kept as its own doc and flagged (DESIGN decision 7).
+        // Notes are not imported: they leave as agent_notes/*.md files (`buddies-import export-notes`, notes.rs).
         "INSERT INTO doc (id, buddy_id, workspace_id, scope_kind, scope_id, kind, name, revision, content, updated_at, legacy)
          SELECT k.id, k.buddy_id, k.workspace_id,
            CASE k.scope_kind WHEN 'owner_thread' THEN 'thread' WHEN 'project' THEN 'task' ELSE k.scope_kind END,
@@ -415,9 +416,9 @@ fn mapping_sql() -> Vec<String> {
              CASE WHEN k.kind = 'soul' AND k.content IS NOT (SELECT r.body FROM old.buddy_memory_heads h
                JOIN old.buddy_memory_revisions r ON r.id = h.revision_id WHERE h.buddy_id = k.buddy_id AND h.document_kind = 'soul')
              THEN 'divergent_thread_soul' END)
-         FROM old.buddy_knowledge k".into(),
+         FROM old.buddy_knowledge k WHERE k.kind != 'note'".into(),
         "INSERT INTO doc_revision SELECT document_id, revision, content, reason, author, provenance, sha256(content), created_at, NULL
-         FROM old.buddy_knowledge_revisions".into(),
+         FROM old.buddy_knowledge_revisions WHERE document_id NOT IN (SELECT id FROM old.buddy_knowledge WHERE kind = 'note')".into(),
         "INSERT INTO run (id, input_key, attempt, input_kind, input_id, buddy_id, workspace_id, conversation_id, task_id, task_epoch,
            after_run_id, retry_of, status, lease_token, lease_expires_at, deadline, snapshot, outcome, error_code, error,
            ready_at, created_at, started_at, ended_at, legacy)
@@ -515,12 +516,13 @@ fn count_pairs() -> Vec<(&'static str, String, &'static str)> {
         ),
         (
             "doc",
-            "SELECT (SELECT count(*) FROM old.buddy_memory_heads) + (SELECT count(*) FROM old.buddy_knowledge)".into(),
+            "SELECT (SELECT count(*) FROM old.buddy_memory_heads) + (SELECT count(*) FROM old.buddy_knowledge WHERE kind != 'note')".into(),
             "SELECT count(*) FROM doc",
         ),
         (
             "doc_revision",
-            "SELECT (SELECT count(*) FROM old.buddy_memory_revisions) + (SELECT count(*) FROM old.buddy_knowledge_revisions)".into(),
+            "SELECT (SELECT count(*) FROM old.buddy_memory_revisions) + (SELECT count(*) FROM old.buddy_knowledge_revisions
+               WHERE document_id NOT IN (SELECT id FROM old.buddy_knowledge WHERE kind = 'note'))".into(),
             "SELECT count(*) FROM doc_revision",
         ),
         ("schedule", "SELECT count(*) FROM old.buddy_automations".into(), "SELECT count(*) FROM schedule"),

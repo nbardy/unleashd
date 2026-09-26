@@ -113,7 +113,7 @@ fn classes() -> Vec<(&'static str, String, String)> {
         (
             "knowledge_docs_by_buddy_scope_kind",
             "SELECT buddy_id || '/' || CASE scope_kind WHEN 'owner_thread' THEN 'thread' WHEN 'project' THEN 'task' ELSE scope_kind END
-               || '/' || kind, json_array(id, scope_id, name, revision, content) FROM buddy_knowledge"
+               || '/' || kind, json_array(id, scope_id, name, revision, content) FROM buddy_knowledge WHERE kind != 'note'"
                 .into(),
             "SELECT buddy_id || '/' || scope_kind || '/' || kind, json_array(id, scope_id, name, revision, content) FROM doc WHERE scope_kind != 'buddy'"
                 .into(),
@@ -122,7 +122,7 @@ fn classes() -> Vec<(&'static str, String, String)> {
             "knowledge_revisions_by_buddy_scope_kind",
             "SELECT coalesce(k.buddy_id || '/' || CASE k.scope_kind WHEN 'owner_thread' THEN 'thread' WHEN 'project' THEN 'task'
                ELSE k.scope_kind END || '/' || k.kind, 'orphan:' || r.document_id), json_array(r.document_id, r.revision, r.content)
-             FROM buddy_knowledge_revisions r LEFT JOIN buddy_knowledge k ON k.id = r.document_id"
+             FROM buddy_knowledge_revisions r LEFT JOIN buddy_knowledge k ON k.id = r.document_id WHERE k.kind IS NOT 'note'"
                 .into(),
             "SELECT coalesce(d.buddy_id || '/' || d.scope_kind || '/' || d.kind, 'orphan:' || r.doc_id), json_array(r.doc_id, r.revision, r.content)
              FROM doc_revision r LEFT JOIN doc d ON d.id = r.doc_id WHERE r.doc_id NOT GLOB 'mem_*'"
@@ -270,7 +270,8 @@ fn check_chains(old: &Connection, new: &Connection) -> Result<ChainCheck> {
     let a = chains(
         old,
         "SELECT 'mem_' || buddy_id || '_' || document_kind, revision, body, sha256 FROM buddy_memory_revisions
-         UNION ALL SELECT document_id, revision, content, NULL FROM buddy_knowledge_revisions",
+         UNION ALL SELECT document_id, revision, content, NULL FROM buddy_knowledge_revisions
+           WHERE document_id NOT IN (SELECT id FROM buddy_knowledge WHERE kind = 'note')",
         &mut mismatches,
     )?;
     let b = chains(new, "SELECT doc_id, revision, content, sha256 FROM doc_revision", &mut mismatches)?;
