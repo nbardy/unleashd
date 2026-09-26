@@ -32,7 +32,7 @@ These are the only statuses the UI should use for color/state logic.
   - `client/src/atoms/actions.ts`
 - Client display merge:
   - `client/src/utils/subAgents.ts`
-  - `client/src/components/SubAgentPanel.tsx`
+  - `client/src/views/conversation/SubAgentPanel.tsx` (both trees: `presentation` `tree` | `cards`)
 
 ## Upstream Codex runtime shape
 

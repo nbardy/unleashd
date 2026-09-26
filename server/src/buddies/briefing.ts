@@ -46,6 +46,24 @@ const memoryText = (doc: Doc | null, empty: string) =>
   doc ? `Revision: ${doc.revision}\n${bounded(doc.content, MAX.memory)}` : `Revision: 0\n${empty}`;
 
 /**
+ * A Buddy's soul, working and long-term memory, and its tasks: the one read the briefing and the
+ * memory reviewer share. Memory is addressed by the Buddy alone. Until 2026-09-26 owner chats used
+ * per-chat copies (519; every new chat opened empty; the owner's Memory tab edited rows no agent
+ * read). Guard: buddies-v2.test.ts "memory the reviewer saves after one chat is in the next chat's briefing".
+ */
+export async function readBuddyState(core: BuddiesCore, buddyId: string) {
+  const read = (kind: 'soul' | 'working' | 'long_term') =>
+    core.readDoc(buddyActor(buddyId), { buddyId, scope: { kind: 'buddy' }, kind, name: '' });
+  const [soul, working, longTerm, tasks] = await Promise.all([
+    read('soul'),
+    read('working'),
+    read('long_term'),
+    core.listTasks({ kind: 'owner', buddyId }),
+  ]);
+  return { soul, working, longTerm, tasks };
+}
+
+/**
  * The briefing for one Buddy: its soul, working and long-term memory, the same rows for every turn
  * kind (owner chat, channel post, worker, schedule, message) and the owner's Memory tab.
  */
@@ -58,18 +76,7 @@ export async function composeBriefing(
     throw new Error(`Buddy is ${buddy.status}; only active Buddies can start conversations`);
   const workspace = (await core.listWorkspaces()).find((w) => w.id === context.workspaceId);
   if (!workspace) throw new Error(`Buddy workspace ${context.workspaceId} not found`);
-  const me = buddyActor(buddy.id);
-  // One memory per Buddy. Until 2026-09-26 owner chats read a per-chat copy: 519 copies, every
-  // new chat opened empty, and the owner's Memory tab edited rows no agent read. Guard:
-  // buddies-v2.test.ts "memory the reviewer saves after one chat is in the next chat's briefing".
-  const read = (kind: 'soul' | 'working' | 'long_term') =>
-    core.readDoc(me, { buddyId: buddy.id, scope: { kind: 'buddy' }, kind, name: '' });
-  const [soul, working, longTerm, tasks] = await Promise.all([
-    read('soul'),
-    read('working'),
-    read('long_term'),
-    core.listTasks({ kind: 'owner', buddyId: buddy.id }),
-  ]);
+  const { soul, working, longTerm, tasks } = await readBuddyState(core, buddy.id);
   const open = tasks.filter((task) => task.status !== 'done' && task.status !== 'cancelled');
   const briefing = [
     `You are ${buddy.name}. This is your persistent Buddy identity.`,

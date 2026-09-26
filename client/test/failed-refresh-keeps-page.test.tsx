@@ -102,13 +102,13 @@ test('a failed refresh keeps a loaded Buddy page on the phone, with a notice', a
 
   online = true;
   await refresh();
-  assert.match(phone(), /<h1 class="mobile-buddy-detail__name">Ada<\/h1>/);
+  assert.match(phone(), /<h1>Ada<\/h1>/);
 
   // The 2026-09-24 incident: one background refresh fails over a loaded page.
   online = false;
   await refresh();
   const html = phone();
-  assert.match(html, /<h1 class="mobile-buddy-detail__name">Ada<\/h1>/);
+  assert.match(html, /<h1>Ada<\/h1>/);
   assert.doesNotMatch(html, /Could not load buddy/);
   assert.match(html, /Could not refresh: Failed to fetch/);
 });

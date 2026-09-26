@@ -1,10 +1,5 @@
 /**
- * client/src/utils/swarmAnalyticsParsers.ts
- *
- * Pure timeline + stats parsers extracted from SwarmAnalytics.tsx:128-222
- * (timeline) and 421-447 (stats). No React, no CSS side-effect imports.
- *
- * Desktop SwarmAnalytics and mobile SwarmAnalyticsMobile import from here.
+ * Pure timeline + stats parsers for SwarmAnalytics (both layouts). No React, no CSS.
  */
 
 import type { SwarmReviewLog, SwarmRunLog, SwarmRunSummary } from '@unleashd/shared';

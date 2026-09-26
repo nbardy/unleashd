@@ -346,3 +346,166 @@
 .buddy-doc__heading small {
   color: var(--text-secondary);
 }
+
+/* Buddy page frame (BuddyPage.tsx), one view on both trees. `--wide` is the
+   desktop page scroller; `--narrow` is a padded column inside the mobile
+   shell's scroller. Replaced BuddiesDashboard.css's hero and the whole of
+   mobile/styles/mobile-buddy.css (2026-09-26, T20). */
+.buddy-page {
+  color: var(--text-primary);
+}
+.buddy-page--wide {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  background: var(--bg-content);
+}
+.buddy-page--narrow {
+  padding: var(--sp-6) var(--sp-8) calc(var(--sp-8) + env(safe-area-inset-bottom));
+}
+.buddy-page__status {
+  display: grid;
+  justify-items: center;
+  gap: var(--sp-4);
+  padding: var(--sp-9);
+  color: var(--text-secondary);
+  text-align: center;
+}
+.buddy-page__hero {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+.buddy-page--wide .buddy-page__hero {
+  padding: var(--sp-7) var(--sp-10) 0;
+  background: color-mix(in oklch, var(--bg-card) 86%, transparent);
+}
+.buddy-page__back {
+  align-self: flex-start;
+  gap: var(--sp-3);
+  min-height: 40px;
+  color: var(--text-secondary);
+  text-decoration: none;
+  font-size: var(--fs-4);
+}
+.buddy-page__back:hover {
+  color: var(--ai-bright);
+}
+.buddy-page__main {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--sp-9);
+  padding-bottom: var(--sp-7);
+}
+.buddy-page--narrow .buddy-page__main {
+  flex-direction: column;
+  gap: var(--sp-3);
+  padding-bottom: var(--sp-4);
+}
+.buddy-page__identity {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-6);
+  min-width: 0;
+}
+.buddy-page__avatar {
+  display: grid;
+  flex: none;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border: 1px solid color-mix(in srgb, var(--ai) 55%, transparent);
+  border-radius: var(--ui-radius);
+  color: var(--ai-bright);
+  background: linear-gradient(145deg, var(--ai-glow), var(--bg-panel));
+  font-size: var(--fs-5);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+}
+.buddy-page--narrow .buddy-page__avatar {
+  display: none;
+}
+.buddy-page__copy {
+  flex: 1;
+  min-width: 0;
+}
+.buddy-page__title {
+  gap: var(--sp-4);
+}
+.buddy-page__title h1 {
+  margin: 0;
+  color: var(--text-bright);
+  font-size: var(--fs-8);
+  font-weight: 600;
+  line-height: 1.15;
+  letter-spacing: -0.02em;
+  overflow-wrap: anywhere;
+}
+.buddy-page__title > span {
+  padding: var(--sp-1) var(--sp-2);
+  color: var(--ai-bright);
+  background: var(--ai-glow);
+  font-size: var(--fs-1);
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+.buddy-page__role {
+  margin: 2px 0 0;
+  color: var(--text-secondary);
+  font-size: var(--fs-4);
+  line-height: 1.45;
+}
+.buddy-page--narrow .buddy-detail-about > summary {
+  min-height: 44px;
+}
+.buddy-page__content {
+  width: min(1220px, calc(100% - 64px));
+  margin: 0 auto;
+  padding: var(--sp-7) 0 var(--sp-11);
+}
+.buddy-page--narrow .buddy-page__content {
+  width: auto;
+  padding: 0;
+}
+
+/* Narrow: editorial hierarchy for tab bodies and touch-sized fields. */
+.buddy-page--narrow :where(h2) {
+  margin: 0;
+  color: var(--text-bright);
+  font-size: var(--fs-7);
+  font-weight: 600;
+  letter-spacing: -0.02em;
+}
+.buddy-page--narrow :where(h3) {
+  margin: 16px 0 0;
+  color: var(--text-emphasis);
+  font-size: var(--fs-5);
+  font-weight: 600;
+}
+.buddy-page--narrow :where(p) {
+  margin: 0;
+}
+.buddy-page--narrow .buddy-page__content > section {
+  margin-top: 16px;
+  font-size: var(--fs-4);
+  line-height: 1.6;
+}
+.buddy-page--narrow :where(input:not([type="checkbox"]), select, textarea) {
+  box-sizing: border-box;
+  min-width: 0;
+  max-width: 100%;
+  min-height: 44px;
+  padding: var(--sp-5) var(--sp-6);
+  border: 1px solid var(--border-default);
+  border-radius: var(--ui-radius);
+  background: var(--bg-raised-1);
+  color: var(--text-emphasis);
+  font-family: inherit;
+  font-size: var(--fs-6);
+}
+.buddy-page :where(button, summary, a):focus-visible {
+  outline: 2px solid var(--accent-primary);
+  outline-offset: 3px;
+}

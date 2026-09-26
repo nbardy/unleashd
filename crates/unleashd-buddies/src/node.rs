@@ -107,11 +107,6 @@ impl BuddiesCore {
     }
 
     #[napi]
-    pub async fn list_channels(&self, workspace_id: String) -> napi::Result<Vec<Channel>> {
-        call(&self.store, move |s| s.list_channels(&workspace_id)).await
-    }
-
-    #[napi]
     pub async fn read_doc(&self, actor: Actor, doc: DocRef) -> napi::Result<Option<Doc>> {
         call(&self.store, move |s| s.read_doc(&actor, doc)).await
     }
@@ -227,11 +222,6 @@ impl BuddiesCore {
     }
 
     #[napi]
-    pub async fn prune_events(&self, before: String) -> napi::Result<i64> {
-        call(&self.store, move |s| s.prune_events(&before)).await
-    }
-
-    #[napi]
     pub async fn list_events(&self, buddy_id: String, before_seq: i64, limit: i64) -> napi::Result<Vec<Event>> {
         call(&self.store, move |s| s.list_events(&buddy_id, before_seq, limit)).await
     }
@@ -254,10 +244,5 @@ impl BuddiesCore {
     #[napi]
     pub async fn bind_conversation(&self, actor: Actor, input: ConversationInput) -> napi::Result<Conversation> {
         call(&self.store, move |s| s.bind_conversation(&actor, input)).await
-    }
-
-    #[napi]
-    pub async fn get_conversation(&self, id: String) -> napi::Result<Option<Conversation>> {
-        call(&self.store, move |s| s.get_conversation(&id)).await
     }
 }

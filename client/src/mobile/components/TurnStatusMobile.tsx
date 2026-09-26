@@ -1,34 +1,9 @@
-import {
-  type TurnStatusViewModelOptions,
-  useTurnStatusViewModel,
-} from '../../hooks/useTurnStatusViewModel';
+import type { TurnStatusViewModelOptions } from '../../hooks/useTurnStatusViewModel';
+import { TurnStatus } from '../../views/conversation/TurnStatus';
 
-export interface TurnStatusMobileProps extends TurnStatusViewModelOptions {
-  className?: string;
-}
-
-export function TurnStatusMobile({
-  diagnostics,
-  className = '',
-  now,
-  refreshIntervalMs,
-}: TurnStatusMobileProps) {
-  const view = useTurnStatusViewModel({ diagnostics, now, refreshIntervalMs });
-  const classes = ['mobile-turn-status', `mobile-turn-status--${view.tone}`, className]
-    .filter(Boolean)
-    .join(' ');
-
-  return (
-    <output className={classes} aria-live="polite" title={view.title}>
-      <span className="mobile-turn-status__indicator" aria-hidden="true" />
-      <span className="mobile-turn-status__label">{view.label}</span>
-      {view.duration ? <span className="mobile-turn-status__duration">{view.duration}</span> : null}
-      {view.lastActivity ? (
-        <span className="mobile-turn-status__activity">{view.lastActivity}</span>
-      ) : null}
-      {view.reason ? (
-        <span className="mobile-turn-status__reason ui-truncate">{view.reason}</span>
-      ) : null}
-    </output>
-  );
+// T20 slice A: the pill is views/conversation/TurnStatus. This delegate exists
+// only because ComposerMobile belongs to the composer lane; when that lane lands,
+// render <TurnStatus presentation="composer" /> there and delete this file.
+export function TurnStatusMobile(props: TurnStatusViewModelOptions) {
+  return <TurnStatus {...props} presentation="composer" />;
 }

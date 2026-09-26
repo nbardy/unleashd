@@ -9,8 +9,10 @@ Mobile is a second view tree over the same shared core, not a fork. One `jotaiSt
 ### What mobile may import
 
 ```
-atoms/*, hooks/*, utils/*, shared/*, components/buddies/{api,types,ui-contract,buddies-shaping}.ts
+atoms/*, hooks/*, utils/*, shared/*, views/*, components/buddies/{api,types,ui-contract,buddies-shaping}.ts
 ```
+
+**Shared views (owner decision O1, T20).** Device-agnostic content lives in `client/src/views/<group>/` and both trees render it: `views/conversation/` holds `SubAgentPanel`, `ResumeSource`, `QueuedMessages`, `TurnStatus`. Where the output differs by device the view takes a named variant chosen by its caller (`presentation: 'tree' | 'cards'`, `'icon' | 'card'`, `'list' | 'disclosure'`, `'header' | 'composer'`), never a boolean and never `useDeviceKind`. A view never imports `mobile/*` or a desktop shell component (Sidebar, Gallery, SettingsMenu, ShellDesktop) — guard `client/test/views-boundary.test.ts`. Its CSS sits next to it with component-prefixed classes plus `ui/primitives.css` (`ui-section__*`, `ui-surface`, `ui-badge`, moved there from `mobile-ui.css`).
 
 Never import another `components/*.tsx` or its CSS. Swarm parsers were moved to `utils/swarmConvoParsers.ts` / `utils/swarmAnalyticsParsers.ts` precisely so mobile can reuse logic without pulling desktop view trees. `components/buddies/*` is the one allowed exception — its `buddies-shaping.ts` is pure shaping (no JSX/CSS side-effects) co-located with `api.ts`/`types.ts`/`ui-contract.ts`.
 
@@ -29,20 +31,25 @@ export function useDeviceKind(): DeviceKind { /* sticky per page load */ }
 
 `T1`: `'mobile'|'desktop'` not `boolean isMobile` — anonymous `true⊕false` leaks `if(isMobile)` downstream. Computed once at module load via `matchMedia('(max-width: 768px)')` and cached for the page load (`sticky`, not resize-reactive — live swap would remount the tree and lose composer drafts). `matchMedia` missing → typed `throw` (`T4`, no silent desktop default). Single dispatch point is `App.tsx: const device = useDeviceKind()` → `SHELLS[device]` (δ #1) → `pick(r)` leaf factory (δ #2). Leaf handlers never re-ask `isMobile`.
 
-### Where device-specific view state lives
+### Shared views (`client/src/views/`, owner decision O1)
 
-`docs/client-state.md: Adding a new collection view` says "all collection views in `derived atoms.ts`". **Exception:** device-specific derived views live in `mobile/atoms/`, not `conversations.ts`, to keep the canonical core clean. Canonical example:
+Device-agnostic content lives in `client/src/views/<group>/` and is used by
+both trees. A view never imports `mobile/*`, the desktop shell components
+(Sidebar, Gallery, SettingsMenu) or `useDeviceKind`. When the devices differ
+only in presentation, the caller picks a named variant, never a boolean:
 
-```ts
-// client/src/mobile/atoms/search.ts
-export type MobileSearchState = { kind: 'idle' } | { kind: 'searching'; query: string };
-export const mobileSearchStateAtom = atom<MobileSearchState>({ kind: 'idle' });
-export const mobileSearchResultsAtom = atom((get) => get(mobileSearchStateAtom).kind === 'idle'
-  ? get(listField('order'))
-  : filter(get(listField('order')), query) /* via utils/fuzzyMatch over rowFamily(id) */);
-```
+- `views/config/` — the provider/model/reasoning option list
+  (`config-options.ts`, pure) and `ConversationConfigPicker`.
+  `ConfigOverlay presentation: 'popover' | 'sheet'` is the desktop Chat header
+  popover and the mobile model sheet.
+- `views/search/` — `SearchView presentation: 'palette' | 'page'`: the desktop
+  ⌘P palette and the mobile Search tab share one ranking (Buddies, local
+  conversations, grouped message history) and one result list. Its state is
+  `atoms/search.ts` (`searchQueryAtom`, a sum type — never an `atom<string>('')`
+  sentinel — and `searchMatchesFamily(folder)`).
 
-`T2`: `MobileSearchState` sum type, never `atom<string>('')` sentinel. `mobile/atoms/search.ts → atoms/conversations.ts` is allowed; core never imports mobile.
+Device-specific derived views that are not shared content still live in
+`mobile/atoms/`, never in `conversations.ts`.
 
 ### Creation actions (`mobile/atoms/create.ts`)
 
@@ -98,7 +105,7 @@ immer were removed in T19. See [client state](client-state.md).
 
 ### Stale link note
 
-`client/src/components/SubAgentPanel.tsx:158` previously linked to `/swarms/project` — dead link matching no `App.tsx` route. Retarget to `/workers/detail` or remove; do not copy the stale path into mobile.
+`client/src/views/conversation/SubAgentPanel.tsx` (then `components/SubAgentPanel.tsx:158`) previously linked to `/swarms/project` — dead link matching no `App.tsx` route. Retarget to `/workers/detail` or remove; do not copy the stale path into mobile.
 
 ---
 

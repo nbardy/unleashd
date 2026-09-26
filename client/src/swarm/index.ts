@@ -10,15 +10,15 @@
  */
 import { type ComponentProps, type ComponentType, Suspense, createElement, lazy } from 'react';
 
-/** Page loaders; App.tsx wraps each in its own `lazyNamed` route chunk. */
+/**
+ * Page loaders; App.tsx wraps each in its own `lazyNamed` route chunk. One view
+ * per screen: the route table passes `layout` ('wide' on desktop, 'narrow' on
+ * mobile), never the view itself.
+ */
 export const SWARM_PAGE_LOADERS = {
   dashboard: () => import('./SwarmDashboard').then((m) => m.SwarmDashboard),
   detail: () => import('./SwarmDetail').then((m) => m.SwarmDetail),
   analytics: () => import('./SwarmAnalytics').then((m) => m.SwarmAnalytics),
-  dashboardMobile: () => import('./mobile/SwarmsMobile').then((m) => m.SwarmsMobile),
-  detailMobile: () => import('./mobile/SwarmDetailMobile').then((m) => m.SwarmDetailMobile),
-  analyticsMobile: () =>
-    import('./mobile/SwarmAnalyticsMobile').then((m) => m.SwarmAnalyticsMobile),
 };
 
 /**
@@ -32,12 +32,10 @@ function lazyPanel<C extends ComponentType<any>>(load: () => Promise<C>) {
     createElement(Suspense, { fallback: null }, createElement(Lazy, props));
 }
 
+/** The swarm prefix card; each caller passes its tree's `layout`. */
 export const SwarmConvoPrefix = lazyPanel(() =>
   import('./SwarmConvoPrefix').then((m) => m.SwarmConvoPrefix)
 );
 export const InlineSwarmRunWidget = lazyPanel(() =>
   import('./InlineSwarmRunWidget').then((m) => m.InlineSwarmRunWidget)
-);
-export const MobileSwarmPrefix = lazyPanel(() =>
-  import('./mobile/MobileSwarmPrefix').then((m) => m.MobileSwarmPrefix)
 );

@@ -252,13 +252,15 @@ carry a private copy of the three-request detail assembly plus generation
 counters; the Sidebar, SearchPalette, BuddiesMobile and BuddiesDashboard each
 fetched `/api/buddies/overview` their own way. Now they share one key each.
 The same applies to `useProviderCatalog` (was a hand-rolled
-`useSyncExternalStore` cache) and `useSwarmRuntimeSnapshots` (SwarmDetailMobile
-now uses the desktop hook rather than its own URL). If you add a Buddy read,
+`useSyncExternalStore` cache) and `useSwarmRuntimeSnapshots` (one swarm view
+per screen since T20, so one caller per page). If you add a Buddy read,
 add it there — not as a `fetch` in a component.
 
 `useBuddyPage` goes one step further: the memos and `talk` that both shells derived from the detail bundle live
-there once. The shell passes its own `openConversation` (mobile threads route
-state through it) and renders what comes back.
+there once. Its one consumer is `components/buddies/BuddyPage.tsx`, the single
+Buddy page view both trees mount (T20, 2026-09-26). The shell picks
+`layout: 'wide' | 'narrow'` and passes its own `openConversation` (mobile
+threads route state through it); the view never asks which device it is on.
 
 Push invalidation (`invalidateResources`) refreshes MOUNTED keys only. A remount
 always revalidates, so touching retained-but-unmounted keys would only turn a

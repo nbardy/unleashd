@@ -1,11 +1,6 @@
 /**
- * client/src/utils/swarmConvoParsers.ts
- *
- * Pure parsers extracted from SwarmConvoPrefix.tsx:10-71.
- * No React, no CSS side-effect imports — safe for mobile `utils/` path.
- *
- * Mobile (SwarmDetailMobile / SwarmsMobile) imports from here;
- * desktop SwarmConvoPrefix re-exports from here and stays thin.
+ * Pure parsers for the swarm debug/setup prefix, rendered by SwarmConvoPrefix
+ * (both layouts). No React, no CSS.
  */
 
 export interface SwarmPrefixStats {

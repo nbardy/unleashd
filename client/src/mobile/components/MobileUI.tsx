@@ -39,11 +39,9 @@ export function MobileSection({ title, meta, className, children }: MobileSectio
   return (
     <section className={classes('mobile-ui-section', className)}>
       {title != null || meta != null ? (
-        <header className="mobile-ui-section__header">
-          {title != null ? <h2 className="mobile-ui-section__title">{title}</h2> : null}
-          {meta != null ? (
-            <span className="mobile-ui-section__meta ui-truncate">{meta}</span>
-          ) : null}
+        <header className="ui-section__header">
+          {title != null ? <h2 className="ui-section__title">{title}</h2> : null}
+          {meta != null ? <span className="ui-section__meta ui-truncate">{meta}</span> : null}
         </header>
       ) : null}
       {children}
@@ -61,7 +59,7 @@ export function MobileCardButton({
     <button
       {...props}
       type={type}
-      className={classes('mobile-ui-card ui-card', 'mobile-ui-card--button', className)}
+      className={classes('ui-surface ui-card', 'mobile-ui-card--button', className)}
     >
       {children}
     </button>
@@ -70,10 +68,7 @@ export function MobileCardButton({
 
 export function MobileCardLink({ className, children, ...props }: LinkProps) {
   return (
-    <Link
-      {...props}
-      className={classes('mobile-ui-card ui-card', 'mobile-ui-card--button', className)}
-    >
+    <Link {...props} className={classes('ui-surface ui-card', 'mobile-ui-card--button', className)}>
       {children}
     </Link>
   );
@@ -106,7 +101,7 @@ export function MobileSurface({
   ...props
 }: PropsWithChildren<HTMLAttributes<HTMLDivElement>>) {
   return (
-    <div {...props} className={classes('mobile-ui-card ui-card', className)}>
+    <div {...props} className={classes('ui-surface ui-card', className)}>
       {children}
     </div>
   );
@@ -120,11 +115,7 @@ export function MobileBadge({ tone = 'neutral', className, children, ...props }:
   return (
     <span
       {...props}
-      className={classes(
-        'mobile-ui-badge ui-inline-row ui-card ui-muted',
-        `mobile-ui-badge--${tone}`,
-        className
-      )}
+      className={classes('ui-badge ui-inline-row ui-card ui-muted', `ui-badge--${tone}`, className)}
     >
       {children}
     </span>

@@ -1,0 +1,24 @@
+/* Card presentation of the thread-context panels (mobile pane): a
+   `ui-surface ui-card ui-row context-card` row. Header and badge are ui/ primitives. */
+.context-card {
+  gap: var(--sp-5);
+  padding: var(--sp-5) var(--sp-6);
+}
+
+.context-card__body {
+  flex: 1;
+  min-width: 0;
+}
+
+.context-card__title {
+  font-size: var(--fs-3);
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.context-card__meta {
+  margin-top: 2px;
+  color: var(--text-muted);
+  font-size: var(--fs-2);
+  line-height: 1.35;
+}

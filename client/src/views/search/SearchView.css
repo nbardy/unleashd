@@ -1,0 +1,225 @@
+/* Search (views/search): one result list for the desktop palette and the
+   mobile Search tab. Presentation differences are the two modifier blocks
+   at the end. */
+
+.search-view__input-row {
+  position: relative;
+  gap: var(--sp-5);
+}
+
+.search-view__input {
+  flex: 1;
+  min-width: 0;
+  background: transparent;
+  border: none;
+  color: var(--text-emphasis);
+  font-size: var(--fs-6);
+  outline: none;
+}
+
+.search-view__input::placeholder {
+  color: var(--text-muted);
+}
+
+.search-view__results {
+  min-width: 0;
+}
+
+.search-view__section-title {
+  margin: 0;
+  padding: var(--sp-4) var(--sp-7) var(--sp-2);
+  font-size: var(--fs-1);
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.search-view__item {
+  display: block;
+  min-width: 0;
+  padding: var(--sp-5) var(--sp-7);
+  border-bottom: 1px solid var(--border-default);
+  color: inherit;
+  text-decoration: none;
+  cursor: pointer;
+}
+
+.search-view__item:hover,
+.search-view__item.selected {
+  background: var(--bg-hover);
+}
+
+.search-view__item:focus-visible {
+  outline: 2px solid var(--accent-primary);
+  outline-offset: -2px;
+}
+
+.search-view__item--gone {
+  cursor: default;
+  opacity: 0.6;
+}
+
+.search-view__head {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: var(--sp-4);
+  margin-bottom: 4px;
+}
+
+.search-view__kind,
+.search-view__role {
+  flex: none;
+  padding: var(--sp-1) var(--sp-2);
+  border-radius: var(--ui-radius);
+  background: var(--bg-tertiary);
+  font-size: var(--fs-1);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.search-view__kind--buddy {
+  color: var(--ai-bright);
+  background: var(--ai-glow);
+}
+
+.search-view__kind--chat,
+.search-view__role--assistant {
+  color: var(--primary-bright);
+  background: color-mix(in srgb, var(--primary) 20%, transparent);
+}
+
+.search-view__role--user {
+  color: var(--user-bright);
+  background: color-mix(in srgb, var(--user) 20%, transparent);
+}
+
+.search-view__title {
+  flex: 1;
+  color: var(--text-secondary);
+  font-family: var(--font-mono);
+  font-size: var(--fs-2);
+  font-weight: 600;
+}
+
+.search-view__meta,
+.search-view__time {
+  flex: none;
+  font-size: var(--fs-1);
+  white-space: nowrap;
+}
+
+.search-view__snippet {
+  display: -webkit-box;
+  overflow: hidden;
+  color: var(--text-primary);
+  font-size: var(--fs-4);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.search-view__highlight {
+  padding: 0 var(--sp-1);
+  border-radius: var(--ui-radius);
+  background: color-mix(in srgb, var(--warning) 35%, transparent);
+  color: var(--warning-bright);
+}
+
+.search-view__status {
+  margin: 0;
+  padding: var(--sp-5) var(--sp-7);
+  font-size: var(--fs-3);
+  text-align: center;
+}
+
+/* ---- palette: desktop ⌘P overlay ---- */
+
+.search-view-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: var(--overlay-top);
+  background: color-mix(in srgb, var(--bg-darkest) 50%, transparent);
+}
+
+.search-view--palette {
+  width: 100%;
+  max-width: 640px;
+  max-height: 480px;
+  overflow: hidden;
+  border: 1px solid var(--bg-hover);
+  border-radius: var(--ui-radius);
+  background: var(--bg-panel);
+  box-shadow: 0 20px 40px color-mix(in srgb, var(--bg-darkest) 40%, transparent);
+}
+
+.search-view--palette .search-view__input-row {
+  padding: var(--sp-6) var(--sp-7);
+  border-bottom: 1px solid var(--bg-hover);
+}
+
+.search-view--palette .search-view__results {
+  flex: 1;
+  overflow-y: auto;
+}
+
+.search-view__esc {
+  flex-shrink: 0;
+  padding: var(--sp-1) var(--sp-3);
+  background: var(--bg-tertiary);
+  font-family: system-ui, sans-serif;
+  font-size: var(--fs-1);
+}
+
+/* ---- page: mobile Search tab. Touch-sized field, full-width rows. ---- */
+
+.search-view--page {
+  gap: var(--sp-4);
+  min-width: 0;
+}
+
+.search-view--page .search-view__input {
+  height: 44px;
+  padding: 0 var(--sp-11) 0 var(--sp-6);
+  border-radius: var(--ui-radius);
+  background: var(--bg-raised-2);
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.search-view--page .search-view__input::-webkit-search-cancel-button {
+  display: none;
+}
+
+.search-view__clear {
+  position: absolute;
+  top: 50%;
+  right: 6px;
+  display: grid;
+  width: 32px;
+  height: 32px;
+  padding: 0;
+  place-items: center;
+  transform: translateY(-50%);
+  border: 0;
+  background: transparent;
+  font: inherit;
+  font-size: var(--fs-8);
+  line-height: 1;
+}
+
+.search-view--page .search-view__section-title,
+.search-view--page .search-view__item,
+.search-view--page .search-view__status {
+  padding-inline: var(--sp-2);
+}
+
+.search-view--page .search-view__item:active {
+  background: var(--bg-raised-2);
+}

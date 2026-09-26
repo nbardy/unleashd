@@ -4,7 +4,7 @@
    summary card with stats grid, worker table, and raw prefix.
    ============================================================================= */
 
-.swarm-convo-prefix {
+.swarm-convo-prefix[data-layout="wide"] {
   margin: 8px 24px 0;
 }
 
@@ -268,4 +268,26 @@ code.swarm-prefix-val {
   word-break: break-word;
   max-height: 300px;
   overflow-y: auto;
+}
+
+.swarm-prefix-configs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+}
+
+/* Narrow (mobile conversation pane): full width, key above value. */
+.swarm-convo-prefix[data-layout="narrow"] {
+  margin: var(--sp-4) 0 0;
+}
+
+.swarm-convo-prefix[data-layout="narrow"] .swarm-prefix-row {
+  flex-direction: column;
+  gap: 0;
+}
+
+.swarm-convo-prefix[data-layout="narrow"] .swarm-prefix-token,
+.swarm-convo-prefix[data-layout="narrow"] .swarm-prefix-stat-grid {
+  flex-wrap: wrap;
+  gap: var(--sp-5);
 }

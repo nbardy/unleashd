@@ -41,7 +41,7 @@ async function writeRun(projectRoot: string, runId: string, workerStatus: 'runni
 }
 
 async function until(condition: () => boolean, label: string): Promise<void> {
-  for (let attempt = 0; attempt < 200; attempt += 1) {
+  for (let attempt = 0; attempt < 500; attempt += 1) {
     if (condition()) return;
     await delay(10);
   }
@@ -81,10 +81,14 @@ test('a swarm launched during a turn becomes a sub-agent row that completes when
   await writeRun(projectRoot, 'run-before', 'stopped');
   const agents: SubAgent[] = [];
   const changes: Array<{ id: string; status: string }> = [];
-  const observers = new SwarmObservers((folder) => readLatestSwarmRuntime(folder), {
-    intervalMs: 30,
-    throttleMs: 20,
-  });
+  let reads = 0;
+  const observers = new SwarmObservers(
+    (folder) => {
+      reads += 1;
+      return readLatestSwarmRuntime(folder);
+    },
+    { intervalMs: 30, throttleMs: 20 }
+  );
   const stop = watchSwarmRuns(observers, projectRoot, {
     conversationId: 'conversation',
     agents,
@@ -92,7 +96,10 @@ test('a swarm launched during a turn becomes a sub-agent row that completes when
     newId: () => 'unused',
   });
   context.after(stop);
-  await delay(60);
+  // Reads are serial, so a second read means the baseline read has resolved. A fixed
+  // delay(60) here flaked under load (2026-09-26, load 12 on 10 cores): the baseline
+  // landed after run-launched was written, so the launch became the baseline.
+  await until(() => reads >= 2, 'baseline read');
   assert.equal(agents.length, 0, 'a run that predates the turn is its baseline, not a launch');
 
   // Newer mtime than run-before, so it is the latest run.

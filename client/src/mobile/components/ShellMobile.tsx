@@ -12,7 +12,6 @@ import { useKeyboardInset } from '../hooks/useKeyboardInset';
 import '../styles/mobile.css';
 import '../styles/mobile-ui.css';
 import '../styles/mobile-controls.css';
-import '../styles/mobile-buddy.css';
 import '../styles/mobile-channels.css';
 
 /**

@@ -98,11 +98,6 @@ impl Store {
         })
     }
 
-    /// Retention: delete events recorded before `before`. Returns the number removed.
-    pub fn prune_events(&mut self, before: &str) -> Result<i64> {
-        self.write(|tx| Ok(tx.execute("DELETE FROM event WHERE at < ?1", [before])? as i64))
-    }
-
     pub fn list_events(&self, buddy_id: &str, before_seq: i64, limit: i64) -> Result<Vec<Event>> {
         let sql = format!("SELECT {EVENT_COLS} FROM event WHERE buddy_id = ?1 AND seq < ?2 ORDER BY seq DESC LIMIT ?3");
         collect(self.conn.prepare_cached(&sql)?.query_map(params![buddy_id, before_seq, limit], event_row)?)
@@ -133,10 +128,6 @@ impl Store {
             )?;
             get_conversation(tx, &input.id)?.ok_or_else(|| CoreError::not_found("conversation", &input.id))
         })
-    }
-
-    pub fn get_conversation(&self, id: &str) -> Result<Option<Conversation>> {
-        get_conversation(&self.conn, id)
     }
 }
 

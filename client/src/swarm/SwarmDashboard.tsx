@@ -1,218 +1,110 @@
-import type { ConversationRow } from '@unleashd/shared';
 import { useAtomValue } from 'jotai';
-import { useMemo } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { isRowRunning, rowWorker } from '../utils/conversation-row';
+import { type ReactNode, useMemo, useState } from 'react';
+import { Link } from 'react-router-dom';
+import { useTimeTick } from '../hooks/useTimeTick';
+import { NewConversationSheet } from '../mobile/components/NewConversationSheet';
+import { shortenHomePath } from '../utils/directories';
 import { getProjectColor } from '../utils/projectColors';
 import { formatTimeAgo } from '../utils/time';
-import { getProjectName } from './swarmUtils';
-import { getWorkerVisibilitySummary } from './swarmWorkerVisibility';
+import { type SwarmBack, type SwarmLayout, SwarmPage } from './SwarmPage';
+import { type SwarmProjectCard, buildProjectCards } from './swarm-groups';
+import { swarmWorkersByProjectAtom } from './swarm-workers';
 import { useSwarmProjects } from './useSwarmProjects';
 import { useSwarmRuntimeSnapshots } from './useSwarmRuntimeSnapshots';
 import './SwarmDashboard.css';
-import { useTimeTick } from '../hooks/useTimeTick';
-import { shortenHomePath } from '../utils/directories';
-import { swarmWorkersByProjectAtom } from './swarm-workers';
 
-interface SwarmProject {
-  projectRoot: string;
-  projectName: string;
-  /** Historical JSONL session files (one per worker iteration) */
-  sessions: readonly ConversationRow[];
-  /** Configured worker slots (from runtime or distinct workerIds) */
-  workerCount: number;
-  runningCount: number;
-  idleCount: number;
-  /** Recorded swarm runs (from runtime runCount or distinct swarmIds) */
-  runCount: number;
-  latestActivity: Date | undefined;
-  accentColor: string;
+/** Desktop reaches the dashboard from the gallery; on mobile it is a tab root. */
+const BACK: Record<SwarmLayout, SwarmBack | null> = {
+  wide: { to: '/chats', label: 'Gallery' },
+  narrow: null,
+};
+
+/** "+ New" opens the mobile creation sheet; desktop starts swarms from its sidebar. */
+const NEW_SWARM: Record<SwarmLayout, () => ReactNode> = {
+  wide: () => null,
+  narrow: NewSwarmAction,
+};
+
+function NewSwarmAction() {
+  const [open, setOpen] = useState(false);
+  return (
+    <>
+      <button type="button" className="swarm-btn ui-control" onClick={() => setOpen(true)}>
+        + New
+      </button>
+      {open && <NewConversationSheet kind="swarm" onClose={() => setOpen(false)} />}
+    </>
+  );
 }
 
-export function SwarmDashboard() {
-  // Swarm workers by project root; re-renders only when a worker changes.
-  const workerConversationsByProject = useAtomValue(swarmWorkersByProjectAtom);
-  const navigate = useNavigate();
-  const runtimeProjectRoots = useMemo(
-    () => Array.from(workerConversationsByProject.keys()).sort(),
-    [workerConversationsByProject]
-  );
-  const runtimeSnapshots = useSwarmRuntimeSnapshots(runtimeProjectRoots);
+const plural = (n: number, word: string) => `${n} ${word}${n === 1 ? '' : 's'}`;
 
-  // Primary discovery: projects with oompa runs/ directories on disk.
-  // This surfaces swarms regardless of worker harness (gemini, codex, etc.).
-  const runsDiscoveredProjects = useSwarmProjects();
-
+export function SwarmDashboard({ layout }: { layout: SwarmLayout }) {
+  const workersByProject = useAtomValue(swarmWorkersByProjectAtom);
+  const roots = useMemo(() => [...workersByProject.keys()].sort(), [workersByProject]);
+  const runtimeSnapshots = useSwarmRuntimeSnapshots(roots);
+  const discovered = useSwarmProjects();
   useTimeTick();
 
-  // Merge conversation-based projects with runs-discovered projects.
-  // Conversation data enriches runs-discovered projects; runs-discovered
-  // projects ensure visibility even without worker conversation files.
-  const swarmProjects = useMemo((): SwarmProject[] => {
-    const projectMap = new Map<string, SwarmProject>();
-
-    // First pass: projects with worker conversations (existing behavior)
-    for (const [projectRoot, sessions] of workerConversationsByProject.entries()) {
-      const runtime = runtimeSnapshots[projectRoot];
-      const runtimeRun = runtime?.available ? runtime.run : null;
-      const visibility = getWorkerVisibilitySummary(sessions, runtime, (worker) =>
-        isRowRunning(worker)
-      );
-
-      const distinctSwarmIds = new Set(
-        sessions.map((s) => rowWorker(s)?.swarmId ?? null).filter(Boolean)
-      );
-      const runCount = runtimeRun?.runCount ?? distinctSwarmIds.size;
-
-      let latestActivity: Date | undefined;
-      for (const w of sessions) {
-        const lastTime = new Date(w.activityAt);
-        if (lastTime && (!latestActivity || lastTime > latestActivity)) {
-          latestActivity = lastTime;
-        }
-      }
-
-      projectMap.set(projectRoot, {
-        projectRoot,
-        projectName: getProjectName(projectRoot),
-        sessions,
-        workerCount: visibility.totalWorkers,
-        runningCount: visibility.runningWorkers,
-        idleCount: Math.max(visibility.totalWorkers - visibility.runningWorkers, 0),
-        runCount,
-        latestActivity,
-        accentColor: getProjectColor(projectRoot),
-      });
-    }
-
-    // Second pass: add runs-discovered projects that have no worker conversations.
-    // These are projects where workers use non-Claude harnesses (gemini, codex).
-    for (const discovered of runsDiscoveredProjects) {
-      if (projectMap.has(discovered.projectRoot)) continue; // already covered
-      const runtimeRun = discovered.runtime?.available ? discovered.runtime.run : null;
-
-      projectMap.set(discovered.projectRoot, {
-        projectRoot: discovered.projectRoot,
-        projectName: discovered.projectName,
-        sessions: [],
-        workerCount: runtimeRun?.totalWorkers ?? 0,
-        runningCount: runtimeRun?.activeWorkers ?? 0,
-        idleCount: Math.max((runtimeRun?.totalWorkers ?? 0) - (runtimeRun?.activeWorkers ?? 0), 0),
-        runCount: runtimeRun?.runCount ?? 1,
-        latestActivity: undefined,
-        accentColor: getProjectColor(discovered.projectRoot),
-      });
-    }
-
-    return Array.from(projectMap.values()).sort((a, b) => {
-      // Running projects first, then by latest activity
-      if (a.runningCount > 0 && b.runningCount === 0) return -1;
-      if (b.runningCount > 0 && a.runningCount === 0) return 1;
-      const aTime = a.latestActivity?.getTime() ?? 0;
-      const bTime = b.latestActivity?.getTime() ?? 0;
-      return bTime - aTime;
-    });
-  }, [runtimeSnapshots, workerConversationsByProject, runsDiscoveredProjects]);
-
-  if (swarmProjects.length === 0) {
-    return (
-      <div className="swarm-dashboard ui-stack">
-        <div className="swarm-dashboard-header ui-row">
-          <button
-            type="button"
-            className="back-to-gallery-btn ui-control"
-            onClick={() => navigate('/chats')}
-          >
-            &#8592; Gallery
-          </button>
-          <h2>Swarm Dashboard</h2>
-        </div>
-        <div className="swarm-dashboard-content ui-stack">
-          <div className="empty-state ui-muted">
-            No worker conversations. Workers are detected by the [oompa] prefix in the first
-            message.
-          </div>
-        </div>
-      </div>
-    );
-  }
+  const cards = useMemo(
+    () => buildProjectCards(workersByProject, runtimeSnapshots, discovered),
+    [workersByProject, runtimeSnapshots, discovered]
+  );
+  const NewSwarm = NEW_SWARM[layout];
 
   return (
-    <div className="swarm-dashboard ui-stack">
-      <div className="swarm-dashboard-header ui-row">
-        <button
-          type="button"
-          className="back-to-gallery-btn ui-control"
-          onClick={() => navigate('/chats')}
-        >
-          &#8592; Gallery
-        </button>
-        <h2>Swarm Dashboard</h2>
+    <SwarmPage
+      layout={layout}
+      className="swarm-dashboard"
+      back={BACK[layout]}
+      title="Swarms"
+      subtitle={plural(cards.length, 'project')}
+      actions={<NewSwarm />}
+    >
+      {cards.length === 0 ? (
+        <div className="swarm-empty ui-muted">
+          No swarms yet. Workers appear here when an oompa swarm starts (detected by the [oompa]
+          prefix in their first message).
+        </div>
+      ) : (
+        <div className="swarm-dashboard-list ui-stack">
+          {cards.map((card) => (
+            <ProjectCard key={card.projectRoot} card={card} />
+          ))}
+        </div>
+      )}
+    </SwarmPage>
+  );
+}
+
+function ProjectCard({ card }: { card: SwarmProjectCard }) {
+  const running = card.runningCount > 0;
+  return (
+    <Link
+      className="swarm-dashboard-card ui-stack ui-card"
+      data-running={running}
+      style={{ borderLeftColor: getProjectColor(card.projectRoot) }}
+      to={`/workers/detail?project=${encodeURIComponent(card.projectRoot)}`}
+    >
+      <div className="swarm-dashboard-card-top ui-row">
+        <span className="swarm-dashboard-card-name ui-truncate">{card.projectName}</span>
+        <span className="swarm-badge ui-inline-row" data-running={running}>
+          {running ? `${card.runningCount} running` : 'idle'}
+        </span>
       </div>
-      <div className="swarm-dashboard-content ui-stack">
-        {swarmProjects.map((project) => (
-          <div
-            key={project.projectRoot}
-            className={`swarm-project-card ${project.runningCount > 0 ? 'has-running' : ''}`}
-            style={{ borderLeftColor: project.accentColor }}
-            onClick={() =>
-              navigate(`/workers/detail?project=${encodeURIComponent(project.projectRoot)}`)
-            }
-          >
-            <div className="swarm-project-info ui-stack">
-              <div className="swarm-project-name">{project.projectName}</div>
-              <div className="swarm-project-path ui-truncate ui-muted">
-                {shortenHomePath(project.projectRoot)}
-              </div>
-              <div className="swarm-project-stats ui-row">
-                <span className="swarm-stat ui-inline-row">
-                  <span className="swarm-stat-value">{project.sessions.length}</span>
-                  session{project.sessions.length !== 1 ? 's' : ''}
-                </span>
-                <span className="swarm-stat-divider" />
-                {project.runningCount > 0 && (
-                  <span className="swarm-stat ui-inline-row">
-                    <span className="swarm-stat-value running">{project.runningCount}</span>
-                    running
-                  </span>
-                )}
-                {project.idleCount > 0 && (
-                  <span className="swarm-stat ui-inline-row">
-                    <span className="swarm-stat-value idle">{project.idleCount}</span>
-                    idle
-                  </span>
-                )}
-                {project.runCount > 1 && (
-                  <>
-                    <span className="swarm-stat-divider" />
-                    <span className="swarm-stat ui-inline-row">
-                      <span className="swarm-stat-value">{project.runCount}</span>
-                      swarm run{project.runCount !== 1 ? 's' : ''}
-                    </span>
-                  </>
-                )}
-              </div>
-            </div>
-            <div className="swarm-project-right ui-stack">
-              {project.latestActivity && (
-                <span className="swarm-time-ago ui-muted">
-                  {formatTimeAgo(project.latestActivity)}
-                </span>
-              )}
-              <button
-                type="button"
-                className="swarm-open-btn ui-control"
-                onClick={(e) => {
-                  e.stopPropagation();
-                  navigate(`/workers/detail?project=${encodeURIComponent(project.projectRoot)}`);
-                }}
-              >
-                Open Swarm &#8594;
-              </button>
-            </div>
-          </div>
-        ))}
+      <span className="swarm-dashboard-card-path ui-truncate ui-muted" title={card.projectRoot}>
+        {shortenHomePath(card.projectRoot)}
+      </span>
+      <div className="swarm-dashboard-card-stats ui-row ui-muted">
+        <span>{plural(card.workerCount, 'worker')}</span>
+        <span>{plural(card.sessionCount, 'session')}</span>
+        {card.idleCount > 0 && <span>{card.idleCount} idle</span>}
+        {card.runCount > 1 && <span>{plural(card.runCount, 'swarm run')}</span>}
+        {card.latestActivity !== null && (
+          <span>{formatTimeAgo(new Date(card.latestActivity))}</span>
+        )}
+        <span className="swarm-dashboard-card-open">Open →</span>
       </div>
-    </div>
+    </Link>
   );
 }

@@ -56,36 +56,30 @@ export type Grants = ReturnType<typeof createGrants>;
 export function createGrants(options: { ttlMs: number; now?: () => number }) {
   const now = options.now ?? Date.now;
   const byToken = new Map<string, TurnGrant>();
-  const token = () => randomBytes(32).toString('base64url');
 
-  function put(grant: TurnGrant): TurnGrant {
-    byToken.set(grant.token, grant);
-    return grant;
+  function issue<G extends TurnGrant>(
+    grant: Omit<G, 'token' | 'expiresAt' | 'observe'> & { observe?: GrantBase['observe'] }
+  ): G {
+    const issued = {
+      ...grant,
+      observe: grant.observe ?? ignore,
+      token: randomBytes(32).toString('base64url'),
+      expiresAt: now() + options.ttlMs,
+    } as unknown as G;
+    byToken.set(issued.token, issued);
+    return issued;
   }
 
   return {
-    issueBuddy(input: BuddyGrantInput): BuddyGrant {
-      return put({
+    issueBuddy: (input: BuddyGrantInput) =>
+      issue<BuddyGrant>({
         ...input,
-        token: token(),
-        expiresAt: now() + options.ttlMs,
         author: buddyActor(input.buddyId),
         principal: buddyActor(input.buddyId),
-        observe: input.observe ?? ignore,
-      }) as BuddyGrant;
-    },
+      }),
 
-    issueBuilder(conversationId: string): BuilderGrant {
-      return put({
-        role: 'builder',
-        token: token(),
-        conversationId,
-        expiresAt: now() + options.ttlMs,
-        author: OWNER,
-        principal: OWNER,
-        observe: ignore,
-      }) as BuilderGrant;
-    },
+    issueBuilder: (conversationId: string) =>
+      issue<BuilderGrant>({ role: 'builder', conversationId, author: OWNER, principal: OWNER }),
 
     /**
      * The owner wrote this turn's input: the conversation's worker grant becomes an owner grant.
@@ -104,10 +98,6 @@ export function createGrants(options: { ttlMs: number; now?: () => number }) {
       if (grant.expiresAt > now()) return grant;
       byToken.delete(bearer);
       return null;
-    },
-
-    revoke(bearer: string): void {
-      byToken.delete(bearer);
     },
 
     revokeConversation(conversationId: string): void {

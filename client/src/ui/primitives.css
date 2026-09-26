@@ -44,3 +44,59 @@
   border-radius: var(--ui-radius);
   cursor: pointer;
 }
+
+/* Titled section, raised surface and badge: the card vocabulary of the
+   conversation views and the mobile pages (moved from mobile-ui.css, T20). */
+.ui-section__header {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sp-5);
+  min-width: 0;
+  margin: 0 2px 9px;
+}
+
+.ui-section__title,
+.ui-section__meta {
+  min-width: 0;
+  margin: 0;
+  color: var(--text-muted);
+  font-size: var(--fs-2);
+  font-weight: 700;
+  line-height: 1.3;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.ui-surface {
+  width: 100%;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  background: var(--bg-raised-1);
+  color: inherit;
+}
+
+.ui-badge {
+  flex: none;
+  min-height: 20px;
+  padding: var(--sp-1) var(--sp-3);
+  background: var(--bg-raised-2);
+  font-size: var(--fs-1);
+  font-weight: 700;
+  line-height: 1.2;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.ui-badge--active {
+  border-color: color-mix(in srgb, var(--theme-success) 35%, var(--border-subtle));
+  color: var(--theme-success);
+}
+
+.ui-badge--accent {
+  border-color: transparent;
+  background: var(--accent);
+  color: var(--text-on-accent);
+}

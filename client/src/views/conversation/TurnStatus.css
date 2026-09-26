@@ -36,6 +36,16 @@
   color: var(--theme-base0);
 }
 
+/* `composer` presentation (mobile): borderless, wraps on narrow screens. */
+.turn-status--composer {
+  flex-wrap: wrap;
+  max-width: 100%;
+  padding: var(--sp-1) 0;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+}
+
 .turn-status--neutral {
   color: var(--theme-base01);
 }

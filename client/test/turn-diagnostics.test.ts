@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
+import { register } from 'node:module';
 import test from 'node:test';
 import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { TurnStatusView } from '../src/components/TurnStatusView';
 import {
   type TurnDiagnosticsInput,
   buildTurnDiagnosticsViewModel,
@@ -11,7 +11,17 @@ import {
   turnDiagnosticsFromAttempt,
   turnDiagnosticsPollDelay,
 } from '../src/components/turn-diagnostics';
-import { TurnStatusMobile } from '../src/mobile/components/TurnStatusMobile';
+
+register(
+  `data:text/javascript,${encodeURIComponent(`
+    export async function load(url, context, nextLoad) {
+      if (url.endsWith('.css')) return { format: 'module', source: '', shortCircuit: true };
+      return nextLoad(url, context);
+    }
+  `)}`,
+  import.meta.url
+);
+const { TurnStatus, TurnStatusView } = await import('../src/views/conversation/TurnStatus');
 
 const baseAttempt = {
   createdAt: '2026-07-29T00:00:00.000Z',
@@ -143,8 +153,8 @@ test('status component renders heartbeat-only startup as waiting, not generic ac
   assert.equal(diagnostics.activity?.kind, 'bridge_heartbeat');
   assert.equal(view.tone, 'warning');
   for (const component of [
-    createElement(TurnStatusView, { view }),
-    createElement(TurnStatusMobile, { diagnostics, now }),
+    createElement(TurnStatusView, { view, presentation: 'header' }),
+    createElement(TurnStatus, { diagnostics, now, presentation: 'composer' }),
   ]) {
     const markup = renderToStaticMarkup(component);
     assert.match(markup, /Waiting for provider output/);
@@ -153,8 +163,8 @@ test('status component renders heartbeat-only startup as waiting, not generic ac
   }
 });
 
-test('compact density drops routine activity text but never hides a stall', () => {
-  // Regression guard: the chat header renders TurnStatus with density="compact"
+test('header presentation drops routine activity text but never hides a stall', () => {
+  // Regression guard: the chat header renders TurnStatus presentation="header"
   // to kill "Running 7s Provider output just now". Compacting must not also
   // swallow the warning/danger detail that is the whole point of the pill.
   const healthy = turnDiagnosticsFromAttempt({
@@ -178,7 +188,7 @@ test('compact density drops routine activity text but never hides a stall', () =
     renderToStaticMarkup(
       createElement(TurnStatusView, {
         view: buildTurnDiagnosticsViewModel(input, now),
-        density: 'compact',
+        presentation: 'header',
       })
     );
 

@@ -6,13 +6,7 @@ import { useAtomValue } from 'jotai';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import {
-  cancelQueuedMessage,
-  clearQueue,
-  interruptAndSend,
-  promoteQueuedMessage,
-  queueMessage,
-} from '../atoms/actions';
+import { clearQueue, interruptAndSend, queueMessage } from '../atoms/actions';
 import type { QueuedMessage } from '../atoms/actions';
 import { createConversation, setConversationConfig } from '../atoms/commands';
 import {
@@ -46,13 +40,13 @@ import { copyText } from '../utils/clipboard';
 import { buildThreadTranscript } from '../utils/conversation-transcript';
 import { buildUnifiedSubAgents } from '../utils/subAgents';
 import { formatTimeAgo } from '../utils/time';
+import { QueuedMessages } from '../views/conversation/QueuedMessages';
+import { ResumeSource } from '../views/conversation/ResumeSource';
+import { SubAgentPanel } from '../views/conversation/SubAgentPanel';
+import { TurnStatus } from '../views/conversation/TurnStatus';
 import { BuddyConvoHeader } from './BuddyConvoHeader';
 import { ContextBreakdownMeter } from './ContextBreakdownMeter';
-import { ConversationConfigPicker } from './ConversationConfigPicker';
 import { PromptPalette } from './PromptPalette';
-import { ResumeThreadWidget } from './ResumeThreadWidget';
-import { SubAgentPanel } from './SubAgentPanel';
-import { TurnStatus } from './TurnStatus';
 import { VirtualizedMessageList } from './VirtualizedMessageList';
 import { DmChannelsNotice } from './buddies/DmChannelsNotice';
 import { HarnessPicker } from './buddies/HarnessPicker';
@@ -62,6 +56,7 @@ import {
   shouldShowTypingIndicator,
   turnDiagnosticsFromAttempt,
 } from './turn-diagnostics';
+import { ConfigOverlay } from '../views/config/ConfigOverlay';
 import './Chat.css';
 import { useTimeTick } from '../hooks/useTimeTick';
 import { rowBuddy } from '../utils/conversation-row';
@@ -128,38 +123,10 @@ export function Chat({ id }: { id: string }) {
   const resumedFromConversationId = conversation?.resumedFrom ?? '';
   const resumedFromConversation = useAtomValue(rowFamily(resumedFromConversationId));
 
-  const {
-    catalog,
-    isLoading: catalogIsLoading,
-    error: catalogError,
-    retry: retryCatalog,
-  } = useProviderCatalog();
+  const { catalog, isLoading: catalogIsLoading, retry: retryCatalog } = useProviderCatalog();
   // Header shows a compact "Opus 5 · High" summary; the full provider/model/
   // reasoning pickers only mount once the summary is expanded.
   const [headerConfigExpanded, setHeaderConfigExpanded] = useState(false);
-  const configPickerRef = useRef<HTMLDialogElement>(null);
-
-  // Click-outside / Escape closes the harness popup.
-  useEffect(() => {
-    if (!headerConfigExpanded) return;
-    const handleClickOutside = (e: MouseEvent) => {
-      const target = e.target as Node;
-      if (configPickerRef.current && !configPickerRef.current.contains(target)) {
-        setHeaderConfigExpanded(false);
-      }
-    };
-    const handleEscape = (e: KeyboardEvent) => {
-      if (e.key === 'Escape') {
-        setHeaderConfigExpanded(false);
-      }
-    };
-    document.addEventListener('mousedown', handleClickOutside);
-    document.addEventListener('keydown', handleEscape);
-    return () => {
-      document.removeEventListener('mousedown', handleClickOutside);
-      document.removeEventListener('keydown', handleEscape);
-    };
-  }, [headerConfigExpanded]);
 
   const {
     savePrompt,
@@ -456,14 +423,6 @@ export function Chat({ id }: { id: string }) {
   const handleInterrupt = () => submit(interruptAndSend);
   const handleSend = handleQueue;
 
-  const handleRemoveFromQueue = (messageId: string) => {
-    if (id) cancelQueuedMessage(id, messageId);
-  };
-
-  const handleSendNow = (messageId: string) => {
-    if (id) promoteQueuedMessage(id, messageId);
-  };
-
   const handleClearQueue = () => {
     if (id) clearQueue(id);
   };
@@ -525,104 +484,36 @@ export function Chat({ id }: { id: string }) {
             </button>
           </div>
           {headerConfigExpanded && (
-            <div
-              className="chat-config-modal-backdrop"
-              onMouseDown={(event) => {
-                if (event.target === event.currentTarget) {
-                  setHeaderConfigExpanded(false);
-                }
+            <ConfigOverlay
+              presentation="popover"
+              value={conversationConfig}
+              onClose={() => setHeaderConfigExpanded(false)}
+              onChange={(config) => updateHeaderConfig({ kind: 'replace', config })}
+              picker={{
+                disabled: configIsSaving,
+                providerDisabled: !canChangeHarness,
+                defaults: 'inline',
+                providerFilter: (providerId) =>
+                  !requiresBuddyMcp ||
+                  providerId === conversation.provider ||
+                  (catalog?.providers.some(
+                    (provider) => provider.id === providerId && provider.supportsRequiredMcp
+                  ) ??
+                    false),
               }}
-            >
-              {/* Full harness picker lives in a popup so the header stays one
-              lean row; the summary button above only opens/closes this. */}
-              <dialog
-                open
-                className="chat-config-modal ui-stack"
-                aria-label="Conversation harness settings"
-                ref={configPickerRef}
-              >
-                <div className="chat-config-modal__header ui-row ui-muted">
-                  <span>Conversation settings</span>
-                  <button
-                    type="button"
-                    className="chat-config-modal__close ui-control ui-muted"
-                    aria-label="Close harness settings"
-                    onClick={() => {
-                      setHeaderConfigExpanded(false);
-                    }}
-                  >
-                    ✕
-                  </button>
-                </div>
-                {!catalog && (
-                  <div className="chat-config-note ui-muted" role="status">
-                    {catalogIsLoading || !catalogError ? (
-                      'Loading harness options…'
-                    ) : (
-                      <>
-                        <p>Could not load harness options. Please try again.</p>
-                        <button type="button" onClick={retryCatalog}>
-                          Retry
-                        </button>
-                      </>
-                    )}
-                  </div>
-                )}
-                {catalog && !conversationConfig && (
-                  <p className="chat-config-note ui-muted" role="status">
-                    Conversation settings are unavailable. Reload the conversation to try again.
-                  </p>
-                )}
-                {catalog && conversationConfig && (
-                  <div className="chat-config-options ui-stack">
-                    <ConversationConfigPicker
-                      value={conversationConfig}
-                      catalog={catalog}
-                      disabled={configIsSaving}
-                      providerDisabled={!canChangeHarness}
-                      inlineDefaults
-                      providerFilter={(providerId) =>
-                        !requiresBuddyMcp ||
-                        providerId === conversation.provider ||
-                        catalog.providers.some(
-                          (provider) => provider.id === providerId && provider.supportsRequiredMcp
-                        )
-                      }
-                      onChange={(config) => {
-                        const modelId =
-                          config.model.mode === 'explicit'
-                            ? config.model.modelId
-                            : headerProvider?.defaultModelId;
-                        const model = headerProvider?.models.find((item) => item.id === modelId);
-                        updateHeaderConfig({
-                          kind: 'replace',
-                          config: {
-                            ...config,
-                            reasoning:
-                              config.reasoning.mode === 'explicit' &&
-                              !model?.reasoning?.levels.includes(config.reasoning.effort)
-                                ? { mode: 'default' }
-                                : config.reasoning,
-                          },
-                        });
-                      }}
-                    />
-                    {!canChangeHarness && (
-                      <p className="chat-config-note ui-muted">
-                        Harness is fixed once a conversation starts.
-                      </p>
-                    )}
-                  </div>
-                )}
-
-                {configIsSaving && <span className="config-save-state ui-muted">Saving…</span>}
-                {configError && (
-                  <span className="config-save-state ui-muted error" role="alert">
-                    {configError}
-                  </span>
-                )}
-              </dialog>
-            </div>
+              notes={[
+                ...(canChangeHarness
+                  ? []
+                  : [
+                      {
+                        tone: 'info' as const,
+                        text: 'Harness is fixed once a conversation starts.',
+                      },
+                    ]),
+                ...(configIsSaving ? [{ tone: 'info' as const, text: 'Saving…' }] : []),
+                ...(configError ? [{ tone: 'error' as const, text: configError }] : []),
+              ]}
+            />
           )}
           <Link
             className="chat-dir ui-truncate ui-muted"
@@ -636,7 +527,8 @@ export function Chat({ id }: { id: string }) {
           <ContextBreakdownMeter conversationId={conversation.id} />
           {timeAgo && <span className="chat-time-ago ui-muted">{timeAgo}</span>}
           {conversation.resumedFrom && (
-            <ResumeThreadWidget
+            <ResumeSource
+              presentation="icon"
               sourceConversationId={conversation.resumedFrom}
               sourceConversation={resumedFromConversation}
             />
@@ -706,11 +598,7 @@ export function Chat({ id }: { id: string }) {
             </div>
           )}
           {turnDiagnostics ? (
-            <TurnStatus
-              diagnostics={turnDiagnostics}
-              className="chat-turn-status"
-              density="compact"
-            />
+            <TurnStatus presentation="header" diagnostics={turnDiagnostics} />
           ) : (
             <div className={`chat-status-indicator ${isRunning || isStreaming ? 'running' : ''}`} />
           )}
@@ -719,7 +607,11 @@ export function Chat({ id }: { id: string }) {
 
       {unifiedSubAgents.length > 0 && (
         <div className="thread-context">
-          <SubAgentPanel subAgents={unifiedSubAgents} workingDirectory={conversation.cwd} />
+          <SubAgentPanel
+            presentation="tree"
+            subAgents={unifiedSubAgents}
+            workingDirectory={conversation.cwd}
+          />
         </div>
       )}
 
@@ -729,6 +621,7 @@ export function Chat({ id }: { id: string }) {
           {visibleSwarmDebugPrefix && (
             <div style={{ paddingBottom: '24px' }}>
               <SwarmConvoPrefix
+                layout="wide"
                 prefix={visibleSwarmDebugPrefix}
                 swarmId={conversation.kind.t === 'worker' ? conversation.kind.swarmId : null}
               />
@@ -830,45 +723,7 @@ export function Chat({ id }: { id: string }) {
           </div>
         )}
 
-        {pendingQueue.length > 0 && (
-          <div className="queued-messages">
-            <div className="queued-messages-header ui-row">
-              <span className="queued-badge">Queued ({pendingQueue.length})</span>
-              <button
-                type="button"
-                className="clear-queue-header-btn ui-control"
-                onClick={handleClearQueue}
-                title="Clear all queued messages"
-              >
-                Clear All
-              </button>
-            </div>
-            <ul className="queued-messages-list ui-stack">
-              {pendingQueue.map((qm, index) => (
-                <li key={qm.id} className="queued-message-item pending">
-                  <span className="queued-message-content">{qm.content}</span>
-                  <span className="queued-message-status">#{index + 1} in queue</span>
-                  <button
-                    type="button"
-                    className="queued-message-send-now ui-control"
-                    onClick={() => handleSendNow(qm.id)}
-                    title="Send now — run this next, interrupting the active turn"
-                  >
-                    Send now
-                  </button>
-                  <button
-                    type="button"
-                    className="queued-message-remove ui-control ui-row"
-                    onClick={() => handleRemoveFromQueue(qm.id)}
-                    title="Remove from queue"
-                  >
-                    &times;
-                  </button>
-                </li>
-              ))}
-            </ul>
-          </div>
-        )}
+        <QueuedMessages presentation="list" conversationId={conversation.id} queue={queue} />
 
         {dmBuddy !== null && (
           <DmChannelsNotice
