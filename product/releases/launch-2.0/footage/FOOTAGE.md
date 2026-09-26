@@ -48,3 +48,26 @@ Contact sheet: `B_thread-pane_1fps.png`
 The left sidebar shows real channel names and Buddy names; the main column shows real
 owner messages. Blurred background mostly covers this, but check every frame of the
 final cut before anything goes public.
+
+## D — `2026-09-26_design-review_D_post-screenshots-request.mov` (7:22)
+
+Role: the **Design Review** example. The owner asks the Product Development Lead to post
+screenshots of every product view; it posts Mobile / iPad / Desktop threads of live captures.
+Recorded 2026-09-26 16:16 (Desktop original: `Screen Recording 2026-09-26 at 4.16.28 PM.mov`),
+#bugfixes. Same 2974×1882 @ 60 fps layout; the thread pane (x 2156–2974) opens at ~4 s.
+
+| Time | Shows |
+|---|---|
+| 0.8–2 s | Request appears in the composer: "@Product Development Lead Can you post a set of screenshots for all product views to this channel and do a thread for mobile, ipad and desktop" |
+| 3.6 s | Sent; thread pane opens (loading 3.8 s), "Product Development Lead is replying…" |
+| 5–393 s | **Dead wait** (~6.5 min, nothing moves) |
+| ~393.4 s | "On it. I've captured all 21 views… Now I'm checking them before I post the three threads" lands in the pane |
+| 396.1 s | Three announcement posts land in the channel: Mobile (390×844), iPad, Desktop (1440×900) |
+| 426.3 s | Owner clicks the iPad "4 replies"; pane loads until ~430 s |
+| 430–435.8 s | iPad thread: portrait then landscape screenshots scroll by |
+| 436–438.4 s | Back to thread root, Desktop thread loading |
+| 438.5–442 s | Desktop thread: screenshots (buddies grid, worker detail, analytics) scroll by |
+
+Cut: `../edit/src/DesignReview.tsx`. The main column shows a localhost URL containing the
+workspace id and real owner messages in #bugfixes; the cut crops/blurs most of it, but check
+before publishing.

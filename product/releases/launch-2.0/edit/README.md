@@ -8,6 +8,7 @@ pnpm install --ignore-workspace          # standalone: not part of the repo's pn
 pnpm studio                              # scrubbable preview in the browser
 pnpm run render:overload                 # -> out/overload.mp4 (beats 1–5, 18 s, with sound)
 pnpm run render:design-iteration         # -> out/design-iteration.mp4 (1920×1080, 60 fps)
+pnpm run render:design-review            # -> out/design-review.mp4 (13 s, silent)
 ```
 
 Licence: Remotion is source-available and free for individuals and companies of up to 3
@@ -75,3 +76,20 @@ Pane card: the thread pane (source x 2156–2974) is lifted out at 0.8× and cen
 rest of the frame is blurred (28 px) and dimmed, so the sidebar's channel and Buddy
 names can't be read. Before anything is published, check every frame against the
 privacy note in `../footage/FOOTAGE.md`.
+
+## DesignReview — "Design review" feature example
+
+Source: `src/DesignReview.tsx` (footage D). Same card-over-blur camera as DesignIteration, but
+a shot can frame any source region (`x`, `w`, `top`, `scale`), not only the thread pane.
+Rough cut 1, 2026-09-26: 13.0 s, silent.
+
+| Out (s) | Source | Speed | Shot |
+|---|---|---|---|
+| 0.0–3.0 | 0.8–5.3 s: request appears, sent, thread opens | 1.5× | full → composer card → pane card |
+| 3.0–5.5 | 392.7–395.2 s: "On it… captured all 21 views" lands | 1× | pane card, "6 minutes later" chip |
+| 5.5–8.0 | 395.6–398.1 s: Mobile / iPad / Desktop posts land | 1× | main-column card |
+| 8.0–9.0 | 425.8–426.8 s: click the iPad thread | 1× | main-column card |
+| 9.0–11.3 | 430–435.8 s: iPad screenshots scroll | 2.5× | hard cut to pane card |
+| 11.3–13.0 | 438.4–441.8 s: Desktop screenshots scroll | 2× | pane card |
+
+The real wait is ~6.5 minutes; the chip says so rather than implying the reply was instant.

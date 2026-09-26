@@ -1,5 +1,6 @@
 import { Composition } from 'remotion';
 import * as DesignIteration from './DesignIteration';
+import * as DesignReview from './DesignReview';
 import * as Overload from './Overload';
 
 export const Root: React.FC = () => (
@@ -19,6 +20,14 @@ export const Root: React.FC = () => (
       fps={DesignIteration.FPS}
       width={DesignIteration.WIDTH}
       height={DesignIteration.HEIGHT}
+    />
+    <Composition
+      id="DesignReview"
+      component={DesignReview.DesignReview}
+      durationInFrames={DesignReview.DURATION}
+      fps={DesignReview.FPS}
+      width={DesignReview.WIDTH}
+      height={DesignReview.HEIGHT}
     />
   </>
 );
