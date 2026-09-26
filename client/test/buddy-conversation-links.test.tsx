@@ -132,7 +132,7 @@ test('Buddy conversations show real previews, sort running first, and react to c
 });
 
 test('Buddy navigation keeps secondary sections reachable as real routes', () => {
-  const html = render(<BuddySectionNav buddyId="buddy-1" activeTab="memory" />);
+  const html = render(<BuddySectionNav buddyId="buddy-1" activeTab="memory" layout="wide" />);
   assert.ok(html.includes('href="/buddies/buddy-1/conversations"'));
   const memoryLink = html.match(/<a[^>]*href="\/buddies\/buddy-1\/memory"[^>]*>/)?.[0];
   assert.ok(memoryLink?.includes('aria-current="page"'));

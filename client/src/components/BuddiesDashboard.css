@@ -391,104 +391,16 @@
   background: var(--ai-glow);
 }
 
-.buddies-hero {
-  padding: var(--sp-7) var(--sp-10) 0;
-  background: color-mix(in oklch, var(--bg-card) 86%, transparent);
-}
-
-.buddies-hero-main {
-  justify-content: space-between;
-  gap: var(--sp-9);
-  padding-bottom: var(--sp-7);
-}
-
-.buddy-identity {
-  gap: var(--sp-6);
-  min-width: 0;
-}
-
-.buddy-back-button {
-  display: grid;
-  place-items: center;
-  width: 30px;
-  height: 30px;
-  margin-right: -6px;
-  border: 1px solid var(--border-default);
-  color: var(--text-secondary);
-  background: var(--bg-card);
-}
-
-.buddy-back-button:hover {
-  border-color: var(--ai);
-  color: var(--ai-bright);
-}
-
-.buddy-avatar {
-  display: grid;
-  place-items: center;
-  width: 44px;
-  height: 44px;
-  border: 1px solid color-mix(in srgb, var(--ai) 55%, transparent);
-  border-radius: var(--ui-radius);
-  color: var(--ai-bright);
-  background: linear-gradient(145deg, var(--ai-glow), var(--bg-panel));
-  font-size: var(--fs-5);
-  font-weight: 700;
-  letter-spacing: 0.08em;
-}
-
-.buddy-identity-copy {
-  min-width: 0;
-}
-
-.buddy-identity-title {
-  gap: var(--sp-4);
-}
-
-.buddy-identity-title > span {
-  padding: var(--sp-1) var(--sp-2);
-  color: var(--ai-bright);
-  background: var(--ai-glow);
-  font-size: var(--fs-1);
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.buddy-identity h1 {
-  margin: 2px 0 0;
-  color: var(--text-bright);
-}
-
-.buddy-identity h1 {
-  margin: 0;
-  font-size: var(--fs-8);
-  line-height: 1.2;
-}
-
-.buddy-identity p {
-  margin: 2px 0 0;
-  color: var(--text-secondary);
-  font-size: var(--fs-3);
-}
-
-.buddies-content {
-  width: min(1220px, calc(100% - 64px));
-  margin: 0 auto;
-  padding: var(--sp-7) 0 var(--sp-11);
-}
-
 /* One narrow-window block at the 768px device switch (was 720px + 900px; at
    <=720px both fired and the 900px padding won, so that is the value kept). This
    sheet is desktop-tree only, so it applies to a desktop window narrowed below
    768px. */
 @media (max-width: 768px) {
-  .buddies-hero-main {
-    align-items: flex-start;
+  .buddy-page--wide .buddy-page__main {
     flex-direction: column;
   }
 
-  .buddies-content {
+  .buddy-page--wide .buddy-page__content {
     width: min(100% - 32px, 1220px);
   }
 
