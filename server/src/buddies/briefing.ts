@@ -45,6 +45,24 @@ export const BUDDY_TOOL_GUIDE = [
 const memoryText = (doc: Doc | null, empty: string) =>
   doc ? `Revision: ${doc.revision}\n${bounded(doc.content, MAX.memory)}` : `Revision: 0\n${empty}`;
 
+/** A Buddy's soul (in `soulScope`), its working and long-term memory in `scope`, and its tasks. */
+export async function readBuddyState(
+  core: BuddiesCore,
+  buddyId: string,
+  scope: DocScope,
+  soulScope: DocScope
+) {
+  const read = (kind: 'soul' | 'working' | 'long_term', docScope: DocScope) =>
+    core.readDoc(buddyActor(buddyId), { buddyId, scope: docScope, kind, name: '' });
+  const [soul, working, longTerm, tasks] = await Promise.all([
+    read('soul', soulScope),
+    read('working', scope),
+    read('long_term', scope),
+    core.listTasks({ kind: 'owner', buddyId }),
+  ]);
+  return { soul, working, longTerm, tasks };
+}
+
 /**
  * The briefing for one Buddy in one audience. The soul is the portable one except in a team
  * audience (task/workspace), which reads its own published soul; memory is the audience's.
@@ -58,17 +76,9 @@ export async function composeBriefing(
     throw new Error(`Buddy is ${buddy.status}; only active Buddies can start conversations`);
   const workspace = (await core.listWorkspaces()).find((w) => w.id === context.workspaceId);
   if (!workspace) throw new Error(`Buddy workspace ${context.workspaceId} not found`);
-  const me = buddyActor(buddy.id);
   const scope = docScopeFor(context);
   const soulScope: DocScope = scope.kind === 'thread' ? { kind: 'buddy' } : scope;
-  const read = (kind: 'soul' | 'working' | 'long_term', docScope: DocScope) =>
-    core.readDoc(me, { buddyId: buddy.id, scope: docScope, kind, name: '' });
-  const [soul, working, longTerm, tasks] = await Promise.all([
-    read('soul', soulScope),
-    read('working', scope),
-    read('long_term', scope),
-    core.listTasks({ kind: 'owner', buddyId: buddy.id }),
-  ]);
+  const { soul, working, longTerm, tasks } = await readBuddyState(core, buddy.id, scope, soulScope);
   const open = tasks.filter((task) => task.status !== 'done' && task.status !== 'cancelled');
   const briefing = [
     `You are ${buddy.name}. This is your persistent Buddy identity.`,

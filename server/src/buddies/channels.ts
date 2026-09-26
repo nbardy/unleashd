@@ -15,7 +15,6 @@ import type {
 import {
   type LiveConversation,
   type StableConversationPorts,
-  liveGenerations,
   openConversation,
   scanGenerations,
   stableConversationId,
@@ -193,7 +192,7 @@ export function createChannels(ports: ChannelsPorts) {
     }
   }
 
-  async function prompt(input: Reply, context: string[], nameMap: Names): Promise<string> {
+  function prompt(input: Reply, context: string[], nameMap: Names): string {
     return [
       ...context,
       '',
@@ -212,60 +211,50 @@ export function createChannels(ports: ChannelsPorts) {
   // reached a fresh session, which then saw "Replies since then (0)" and no thread at all.
   async function seatPrompt(input: Reply, seatId: string): Promise<SessionRelativePrompt> {
     const nameMap = await names(input.channel.workspaceId);
-    const where = `#${input.channel.kind.type === 'public' ? input.channel.kind.name : input.channel.id} (channel ${input.channel.id})`;
-    if (input.trigger.rootId === undefined || input.trigger.rootId === null) {
+    const { channel, trigger } = input;
+    const where = `#${channel.kind.type === 'public' ? channel.kind.name : channel.id} (channel ${channel.id})`;
+    const lines = (posts: Post[]) => posts.map((p) => transcriptLine(p, nameMap));
+    const omitted = (count: number, what: string) =>
+      count > 0 ? [`… ${count} ${what} omitted …`] : [];
+    const compose = (subject: string, intro: string, context: string[]) =>
+      prompt(
+        input,
+        [`${headline(input.cause, subject)} in ${where}. ${intro}`, '', ...context],
+        nameMap
+      );
+    if (trigger.rootId === undefined || trigger.rootId === null) {
       const page = await core.listPosts(
         OWNER,
-        { kind: 'channel', channelId: input.channel.id },
+        { kind: 'channel', channelId: channel.id },
         null,
         CONTEXT_POSTS + 1
       );
-      const posts = page.posts
-        .filter((post) => post.id !== input.trigger.id)
-        .slice(0, CONTEXT_POSTS)
-        .reverse();
-      const text = await prompt(
-        input,
-        [
-          `${headline(input.cause, 'a new message')} in ${where}. The ${posts.length} most recent top-level posts, oldest first:`,
-          '',
-          ...posts.map((p) => transcriptLine(p, nameMap)),
-        ],
-        nameMap
+      const posts = page.posts.filter((post) => post.id !== trigger.id).slice(0, CONTEXT_POSTS);
+      const text = compose(
+        'a new message',
+        `The ${posts.length} most recent top-level posts, oldest first:`,
+        lines(posts.reverse())
       );
       return { resumed: text, fresh: text };
     }
     const thread = await wholeThread(await core.getPost(OWNER, input.rootId));
-    const context = tail(thread, input.trigger);
-    const fresh = await prompt(
-      input,
-      [
-        `${headline(input.cause, 'a thread')} in ${where}. The root, then its most recent replies, oldest first:`,
-        '',
-        transcriptLine(context.root, nameMap),
-        ...(context.omitted > 0 ? [`… ${context.omitted} earlier replies omitted …`] : []),
-        ...context.shown.map((p) => transcriptLine(p, nameMap)),
-      ],
-      nameMap
-    );
+    const context = tail(thread, trigger);
+    const fresh = compose('a thread', 'The root, then its most recent replies, oldest first:', [
+      transcriptLine(context.root, nameMap),
+      ...omitted(context.omitted, 'earlier replies'),
+      ...lines(context.shown),
+    ]);
     const seen = seenThrough.get(seatId);
     if (seen === undefined) return { fresh, resumed: fresh };
     // An anchor that is gone finds -1, so the whole thread counts as unseen: more, never less.
     const unseen = thread
       .slice(thread.findIndex((post) => post.id === seen) + 1)
-      .filter((post) => post.id !== input.trigger.id && post.conversationId !== seatId);
+      .filter((post) => post.id !== trigger.id && post.conversationId !== seatId);
     const shown = unseen.slice(-CONTEXT_POSTS);
-    const resumed = await prompt(
-      input,
-      [
-        `${headline(input.cause, 'a thread')} in ${where}. You have seen this thread through your last turn. Replies since then, oldest first (${shown.length}):`,
-        '',
-        ...(unseen.length > shown.length
-          ? [`… ${unseen.length - shown.length} earlier new replies omitted …`]
-          : []),
-        ...shown.map((p) => transcriptLine(p, nameMap)),
-      ],
-      nameMap
+    const resumed = compose(
+      'a thread',
+      `You have seen this thread through your last turn. Replies since then, oldest first (${shown.length}):`,
+      [...omitted(unseen.length - shown.length, 'earlier new replies'), ...lines(shown)]
     );
     return { fresh, resumed };
   }
@@ -281,16 +270,16 @@ export function createChannels(ports: ChannelsPorts) {
 
   function seatFor(
     request: SeatRequest,
-    seats: { current: LiveConversation | null; next: string },
+    seats: { current: LiveConversation | null; next(): string },
     profile: ConversationConfig
   ): LiveConversation {
     switch (request.kind) {
       case 'keep':
-        return seats.current ?? { conversationId: seats.next, config: profile };
+        return seats.current ?? { conversationId: seats.next(), config: profile };
       case 'chosen':
         return seats.current && isDeepStrictEqual(seats.current.config, request.config)
           ? seats.current
-          : { conversationId: seats.next, config: request.config };
+          : { conversationId: seats.next(), config: request.config };
     }
   }
 
@@ -449,6 +438,15 @@ export function createChannels(ports: ChannelsPorts) {
     };
     const thread = await wholeThread(input.root);
     const context = tail(thread, input.trigger);
+    const followUpReply: Reply = {
+      channel: input.channel,
+      cause: 'follow_up',
+      request: { kind: 'keep' },
+      trigger: input.trigger,
+      rootId: input.root.id,
+      buddyId: input.buddyId,
+      attempt: '',
+    };
     const verdict = await ports.gate({
       config: (await seatConfig(input.root.id, input.buddyId, { kind: 'keep' })).config,
       prompt: [
@@ -470,15 +468,7 @@ export function createChannels(ports: ChannelsPorts) {
     });
     switch (verdict.kind) {
       case 'respond':
-        return reply({
-          channel: input.channel,
-          cause: 'follow_up',
-          request: { kind: 'keep' },
-          trigger: input.trigger,
-          rootId: input.root.id,
-          buddyId: input.buddyId,
-          attempt: '',
-        });
+        return reply(followUpReply);
       case 'pass':
         return;
       case 'unparseable':
@@ -494,35 +484,34 @@ export function createChannels(ports: ChannelsPorts) {
         );
         if (input.trigger.author.kind === 'owner')
           await postFailure(
-            {
-              channel: input.channel,
-              cause: 'follow_up',
-              request: { kind: 'keep' },
-              trigger: input.trigger,
-              rootId: input.root.id,
-              buddyId: input.buddyId,
-              attempt: '',
-            },
+            followUpReply,
             null,
             `could not decide whether to reply (${verdict.reason})`
           );
     }
   }
 
-  async function directConversation(buddyId: string): Promise<ConversationRuntime> {
+  /** The owner's DM generations with an active Buddy (the newest live one is the current chat). */
+  async function directSeats(buddyId: string) {
     const buddy = await core.getBuddy(buddyId);
     const admitted = await eligible(buddyId, buddy.workspaceId);
     if (!admitted.ok) throw new Error(admitted.reason);
-    const { current, next } = await scanGenerations(ports.conversations, (g) =>
+    const seats = await scanGenerations(ports.conversations, (g) =>
       directConversationId(buddy.workspaceId, buddyId, g)
     );
-    const conversationId = current?.conversationId ?? next;
-    return openConversation(ports.conversations, {
-      context: { buddyId, workspaceId: buddy.workspaceId },
-      conversationId,
-      commandId: `buddy-dm-${conversationId}`,
-      config: current?.config,
-    });
+    const open = (conversationId: string, config: ConversationConfig | undefined) =>
+      openConversation(ports.conversations, {
+        context: { buddyId, workspaceId: buddy.workspaceId },
+        conversationId,
+        commandId: `buddy-dm-${conversationId}`,
+        config,
+      });
+    return { ...seats, open };
+  }
+
+  async function directConversation(buddyId: string): Promise<ConversationRuntime> {
+    const { current, next, open } = await directSeats(buddyId);
+    return open(current?.conversationId ?? next(), current?.config);
   }
 
   /** Ask every other Buddy who posted in this post's thread whether to follow up. */
@@ -673,12 +662,10 @@ export function createChannels(ports: ChannelsPorts) {
     /** The owner's DM generations with a Buddy, oldest first; the newest is the current chat. */
     async directChain(buddyId: string): Promise<{ buddyId: string; generations: string[] }> {
       const buddy = await core.getBuddy(buddyId);
-      return {
-        buddyId,
-        generations: await liveGenerations(ports.conversations, (g) =>
-          directConversationId(buddy.workspaceId, buddyId, g)
-        ),
-      };
+      const { live } = await scanGenerations(ports.conversations, (g) =>
+        directConversationId(buddy.workspaceId, buddyId, g)
+      );
+      return { buddyId, generations: live };
     },
 
     /**
@@ -690,22 +677,12 @@ export function createChannels(ports: ChannelsPorts) {
       buddyId: string,
       input: { config?: ConversationConfig; message?: string }
     ): Promise<{ conversationId: string }> {
-      const buddy = await core.getBuddy(buddyId);
-      const admitted = await eligible(buddyId, buddy.workspaceId);
-      if (!admitted.ok) throw new Error(admitted.reason);
-      const { current, next } = await scanGenerations(ports.conversations, (g) =>
-        directConversationId(buddy.workspaceId, buddyId, g)
-      );
+      const { current, next, open } = await directSeats(buddyId);
       if (input.message && input.config?.provider === current?.config.provider)
         throw new Error(
           `Pick a different harness. ${input.config?.provider} is the one that failed.`
         );
-      const conversation = await openConversation(ports.conversations, {
-        context: { buddyId, workspaceId: buddy.workspaceId },
-        conversationId: next,
-        commandId: `buddy-dm-${next}`,
-        config: input.config ?? current?.config,
-      });
+      const conversation = await open(next(), input.config ?? current?.config);
       if (input.message)
         conversation.enqueueMessage(input.message, {
           origin: 'owner_input',

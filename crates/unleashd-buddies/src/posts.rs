@@ -462,12 +462,6 @@ impl Store {
             get_channel(tx, &id)
         })
     }
-
-    /// The workspace's public channels.
-    pub fn list_channels(&self, workspace_id: &str) -> Result<Vec<Channel>> {
-        let sql = format!("SELECT {CHANNEL_COLS} FROM channel c WHERE c.workspace_id = ?1 AND c.kind = 'public' ORDER BY c.name");
-        collect(self.conn.prepare_cached(&sql)?.query_map([workspace_id], channel_row)?)
-    }
 }
 
 fn insert_post(tx: &Transaction, actor: &Actor, channel: &Channel, input: &PostInput) -> Result<String> {

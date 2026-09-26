@@ -1,4 +1,4 @@
-import type { Channel, Post } from '@unleashd/buddies-core';
+import type { Actor, BuddiesCore, Channel, Post } from '@unleashd/buddies-core';
 
 /**
  * The in-process change bus. Every Buddy write (MCP tool, owner route, runner, responder) now
@@ -24,4 +24,15 @@ export function createBuddyEvents() {
       return () => listeners.delete(listener);
     },
   };
+}
+
+/** Announce a written post with its channel (opened as `reader`), for every post writer. */
+export async function announcePost<T extends Post>(
+  deps: { core: BuddiesCore; events: BuddyEvents },
+  reader: Actor,
+  post: T
+): Promise<{ post: T; channel: Channel }> {
+  const channel = await deps.core.openChannel(reader, { kind: 'id', id: post.channelId });
+  deps.events.emit({ kind: 'posted', post, channel });
+  return { post, channel };
 }

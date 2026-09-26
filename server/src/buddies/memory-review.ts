@@ -5,8 +5,9 @@ import path from 'node:path';
 import type { ExecuteCommandRequest, McpServerSpec } from '@nbardy/agent-cli';
 import { executeCommand } from '@nbardy/agent-cli';
 import type { BuddyContext } from '@unleashd/shared';
+import { readBuddyState } from './briefing';
 import { type BuddiesCore, buddyActor, docScopeFor } from './core';
-import { discardCursorTranscript } from './cursor-ephemeral';
+import { runDetached } from './detached-cli';
 import type { BuddyGrant, Grants } from './grants';
 
 /**
@@ -130,44 +131,15 @@ interface Harness {
   request(launch: Launch): ExecuteCommandRequest;
   /** Which tool.use names this CLI may emit; anything else kills the review. */
   authorizes(toolName: string): boolean;
-  discardSession?(sessionId: string): void;
 }
 
-const CODEX_DISABLED = [
-  'shell_tool',
-  'unified_exec',
-  'multi_agent',
-  'multi_agent_v2',
-  'apps',
-  'plugins',
-  'browser_use',
-  'computer_use',
-  'image_generation',
-  'memories',
-  'hooks',
-  'goals',
-  'view_image',
-  'skill_search',
-  'sleep_tool',
-];
+const words = (list: string) => list.trim().split(/\s+/);
+const CODEX_DISABLED = words(`shell_tool unified_exec multi_agent multi_agent_v2 apps plugins
+  browser_use computer_use image_generation memories hooks goals view_image skill_search sleep_tool`);
 // Claude's built-ins stay reachable under --allowedTools (it governs approval, not availability):
 // on 2.1.267 an allow-listed run still called ToolSearch, which the guard kills. Deny them by name.
-const CLAUDE_DENIED = [
-  'ToolSearch',
-  'Bash',
-  'Read',
-  'Write',
-  'Edit',
-  'Glob',
-  'Grep',
-  'WebFetch',
-  'WebSearch',
-  'Task',
-  'Agent',
-  'NotebookEdit',
-  'TodoWrite',
-  'Skill',
-];
+const CLAUDE_DENIED = words(`ToolSearch Bash Read Write Edit Glob Grep WebFetch WebSearch Task
+  Agent NotebookEdit TodoWrite Skill`);
 const base = (launch: Launch, prompt: string) => ({
   mode: 'conversation' as const,
   model: launch.choice.model,
@@ -185,25 +157,16 @@ const HARNESSES: Record<MemoryReviewModelChoice['harness'], Harness> = {
       reasoningEffort: l.choice.reasoningEffort,
       yolo: false,
       extraArgs: [
-        '--ignore-user-config',
-        '--ignore-rules',
-        '--ephemeral',
-        '-s',
-        'read-only',
-        '-c',
-        `model_instructions_file=${JSON.stringify(l.instructionsPath)}`,
-        '-c',
-        'project_doc_max_bytes=0',
-        '-c',
-        'web_search="disabled"',
-        '-c',
-        'tools.update_plan.enabled=false',
-        '-c',
-        'tools.experimental_request_user_input.enabled=false',
-        '-c',
-        'orchestrator.skills.enabled=false',
-        '-c',
-        `mcp_servers.${SERVER}.default_tools_approval_mode="approve"`,
+        ...['--ignore-user-config', '--ignore-rules', '--ephemeral', '-s', 'read-only'],
+        ...[
+          `model_instructions_file=${JSON.stringify(l.instructionsPath)}`,
+          'project_doc_max_bytes=0',
+          'web_search="disabled"',
+          'tools.update_plan.enabled=false',
+          'tools.experimental_request_user_input.enabled=false',
+          'orchestrator.skills.enabled=false',
+          `mcp_servers.${SERVER}.default_tools_approval_mode="approve"`,
+        ].flatMap((setting) => ['-c', setting]),
         ...CODEX_DISABLED.flatMap((feature) => ['--disable', feature]),
       ],
     }),
@@ -261,7 +224,6 @@ const HARNESSES: Record<MemoryReviewModelChoice['harness'], Harness> = {
       extraArgs: ['--mode', 'ask'],
     }),
     authorizes: (name) => name === 'getMcpTools' || isMemoryTool(name),
-    discardSession: discardCursorTranscript,
   },
 };
 
@@ -273,40 +235,22 @@ async function runAttempt(
   execute: typeof executeCommand,
   signal: AbortSignal
 ): Promise<Attempt> {
-  const turn = execute(harness.request(launch));
-  let killTimer: ReturnType<typeof setTimeout> | undefined;
-  const stop = () => {
-    turn.stop();
-    killTimer ??= setTimeout(() => turn.stop('SIGKILL'), 2_000);
-  };
-  signal.addEventListener('abort', stop, { once: true });
-  try {
-    let failure: string | undefined;
-    const consumed = (async () => {
-      for await (const event of turn.events) {
-        if (event.type === 'tool.use' && !harness.authorizes(event.name)) {
-          failure = `Memory reviewer attempted a non-memory tool: ${event.name}`;
-          stop();
-        } else if (event.type === 'error') failure = event.message;
-      }
-    })();
-    // Keep process ownership until the CLI exited AND its events drained.
-    const [completion, events] = await Promise.allSettled([turn.completed, consumed]);
-    if (completion.status === 'fulfilled') harness.discardSession?.(completion.value.sessionId);
-    signal.throwIfAborted();
-    if (events.status === 'rejected') throw events.reason;
-    if (completion.status === 'rejected') throw completion.reason;
-    const result = completion.value;
-    if (!failure && result.reason === 'success' && result.exitCode === 0)
-      return { kind: 'success' };
-    const message = failure ?? `Memory reviewer exited: ${result.reason} (${result.exitCode})`;
-    // Credit exhaustion is the one failure the ladder answers; a tool violation or crash does not.
-    if (!failure && result.reason === 'out_of_tokens') return { kind: 'out_of_tokens', message };
-    throw new Error(message);
-  } finally {
-    signal.removeEventListener('abort', stop);
-    if (killTimer) clearTimeout(killTimer);
-  }
+  let failure: string | undefined;
+  const result = await runDetached(execute, harness.request(launch), signal, (event, stop) => {
+    if (event.type === 'tool.use' && !harness.authorizes(event.name)) {
+      failure = `Memory reviewer attempted a non-memory tool: ${event.name}`;
+      stop();
+    } else if (event.type === 'error') failure = event.message;
+  });
+  signal.throwIfAborted();
+  const completion = result();
+  if (!failure && completion.reason === 'success' && completion.exitCode === 0)
+    return { kind: 'success' };
+  const message =
+    failure ?? `Memory reviewer exited: ${completion.reason} (${completion.exitCode})`;
+  // Credit exhaustion is the one failure the ladder answers; a tool violation or crash does not.
+  if (!failure && completion.reason === 'out_of_tokens') return { kind: 'out_of_tokens', message };
+  throw new Error(message);
 }
 
 // ---- the queue --------------------------------------------------------------------------------
@@ -366,21 +310,10 @@ export function createMemoryReviewer(options: {
     const buddy = await core.getBuddy(buddyId);
     if (buddy.status !== 'active' || buddy.workspaceId !== workspaceId)
       return finish('skipped', 'Buddy is inactive or outside this workspace');
-    const me = buddyActor(buddyId);
     const scope = docScopeFor(turn.context);
-    const read = (kind: 'soul' | 'working' | 'long_term') =>
-      core.readDoc(me, {
-        buddyId,
-        scope: kind === 'soul' ? { kind: 'buddy' } : scope,
-        kind,
-        name: '',
-      });
-    const [soul, working, longTerm, tasks] = await Promise.all([
-      read('soul'),
-      read('working'),
-      read('long_term'),
-      core.listTasks({ kind: 'owner', buddyId }),
-    ]);
+    const { soul, working, longTerm, tasks } = await readBuddyState(core, buddyId, scope, {
+      kind: 'buddy',
+    });
     const evidence = `EVIDENCE_JSON:\n${JSON.stringify({
       buddy: { name: buddy.name, role: buddy.role, soul: soul?.content ?? '' },
       memory: { working, longTerm },
@@ -437,7 +370,7 @@ export function createMemoryReviewer(options: {
             `[memory-review] ${choice.model} is out of credits; trying the next rung: ${exhausted}`
           );
         } finally {
-          grants.revoke(grant.token);
+          grants.revokeConversation(grant.conversationId);
         }
       }
       throw new Error(exhausted);

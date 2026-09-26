@@ -17,7 +17,6 @@ export declare class BuddiesCore {
   inbox(actor: Actor, workspaceId: string): Promise<Inbox>
   markRead(actor: Actor, channelId: string, postId: string): Promise<void>
   createChannel(actor: Actor, input: ChannelInput): Promise<Channel>
-  listChannels(workspaceId: string): Promise<Array<Channel>>
   readDoc(actor: Actor, doc: DocRef): Promise<Doc | null>
   writeDoc(actor: Actor, input: DocWrite): Promise<Doc>
   listDocs(actor: Actor, buddyId: string, kind: DocKind): Promise<Array<Doc>>
@@ -41,13 +40,11 @@ export declare class BuddiesCore {
   listSchedules(buddyId: string): Promise<Array<Schedule>>
   dueSchedules(now: string): Promise<Array<Run>>
   appendEvent(actor: Actor, input: EventInput): Promise<Event>
-  pruneEvents(before: string): Promise<number>
   listEvents(buddyId: string, beforeSeq: number, limit: number): Promise<Array<Event>>
   listWorkspaces(): Promise<Array<Workspace>>
   getBuddy(id: string): Promise<Buddy>
   listBuddies(workspaceId: string): Promise<Array<Buddy>>
   bindConversation(actor: Actor, input: ConversationInput): Promise<Conversation>
-  getConversation(id: string): Promise<Conversation | null>
 }
 
 /**

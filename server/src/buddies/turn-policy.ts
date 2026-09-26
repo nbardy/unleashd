@@ -1,14 +1,14 @@
 import crypto from 'node:crypto';
+import { harnessMcpCapability } from '@nbardy/agent-cli';
 import type {
   BuddyContext,
   BuddyKind,
   BuddyVisibility,
-  ConversationKind,
   Message,
   Provider as ProviderName,
   ResolvedExecutionConfig,
 } from '@unleashd/shared';
-import { formatBuddyBuilderToolResult, matchConversationKind } from '@unleashd/shared';
+import { formatBuddyBuilderToolResult } from '@unleashd/shared';
 import type { ConversationRuntimeView } from '../conversations/runtime';
 import type { TurnTerminalCause } from '../observability';
 import { noteActivity } from '../observability/event-loop-stall';
@@ -19,13 +19,11 @@ import {
   type TurnEnd,
   type TurnGate,
   type TurnPolicy,
-  chatFirstTurnPrompt,
   formatCommonToolResult,
 } from '../turns/policy';
 import { BUDDY_BUILDER_BRIEFING } from './builder';
 import { docScopeFor } from './core';
 import type { BuddyPolicyPort } from './policy-port';
-import { assertBuddyProviderSupportsMcp } from './provider-capability';
 import type { OwnedChatRun } from './runner';
 
 /**
@@ -71,121 +69,31 @@ export interface BuddyPolicyHost {
 /** Boundary input accepts a numeric generation; the runtime stores only an opaque string. */
 export type MemoryGenerationInput = string | number;
 
-export function memoryGenerationForBriefing(briefing: string): string {
-  return `briefing-sha256:${crypto.createHash('sha256').update(briefing, 'utf8').digest('hex')}`;
-}
-
+/** A briefing with no generation is identified by its own hash. */
 export function createMemorySnapshot(
   briefing: string | null | undefined,
   generation?: MemoryGenerationInput | null
 ): MemorySnapshot | null {
   if (briefing === null || briefing === undefined) return null;
-  const normalizedGeneration =
-    generation === null || generation === undefined
-      ? memoryGenerationForBriefing(briefing)
-      : String(generation).trim() || memoryGenerationForBriefing(briefing);
-  return Object.freeze({ briefing, generation: normalizedGeneration });
-}
-
-const BUDDY_CONTEXT_V2_HEADER_RE =
-  /^<!-- unleashd:buddy-context-v2 ([A-Za-z0-9_-]+) ([0-9]+) -->\n/;
-const BUDDY_CONTEXT_V2_SUFFIX = '\n<!-- /unleashd:buddy-context-v2 -->\n\n';
-const MEMORY_GENERATION_RE = /^<!-- unleashd:buddy-memory-generation ([A-Za-z0-9_-]+) -->\n/;
-
-/**
- * Recover the hidden snapshot embedded in a first provider prompt.  This is a
- * compatibility bridge for restart/hydration: the application conversation
- * keeps the same briefing even if the current Buddy memory has advanced.
- */
-export function extractBuddyMemorySnapshot(content: string): MemorySnapshot | null {
-  const header = content.match(BUDDY_CONTEXT_V2_HEADER_RE);
-  if (!header) return null;
-  const briefingLength = Number.parseInt(header[2], 10);
-  const briefingStart = header[0].length;
-  const suffixStart = briefingStart + briefingLength;
-  if (
-    !Number.isSafeInteger(briefingLength) ||
-    briefingLength < 0 ||
-    !content.startsWith(BUDDY_CONTEXT_V2_SUFFIX, suffixStart)
-  ) {
-    return null;
-  }
-  const encodedBriefing = content.slice(briefingStart, suffixStart);
-  const generationMarker = encodedBriefing.match(MEMORY_GENERATION_RE);
-  if (!generationMarker) {
-    return createMemorySnapshot(encodedBriefing);
-  }
-  let generation: string;
-  try {
-    generation = Buffer.from(generationMarker[1], 'base64url').toString('utf8');
-  } catch {
-    return null;
-  }
-  if (!generation) return null;
-  return createMemorySnapshot(encodedBriefing.slice(generationMarker[0].length), generation);
+  const given = generation === null || generation === undefined ? '' : String(generation).trim();
+  const hashed = () =>
+    `briefing-sha256:${crypto.createHash('sha256').update(briefing, 'utf8').digest('hex')}`;
+  return Object.freeze({ briefing, generation: given || hashed() });
 }
 
 // --- First-turn provider prompts ---------------------------------------------
+// History keeps clean user text; only the provider sees the markers.
 
-function buddyFirstTurnPrompt(input: {
-  kind: BuddyKind;
-  content: string;
-  firstUnstartedTurn: boolean;
-  refreshBriefing: boolean;
-  briefing: string | null;
-  memoryGeneration: MemoryGenerationInput | null;
-}): string {
-  if ((!input.firstUnstartedTurn && !input.refreshBriefing) || input.briefing === null)
-    return input.content;
-  const ctx: BuddyContext = input.kind.context;
-  const encodedContext = Buffer.from(JSON.stringify(ctx), 'utf8').toString('base64url');
-  const snapshot = createMemorySnapshot(input.briefing, input.memoryGeneration) as MemorySnapshot;
-  const encodedGeneration = Buffer.from(snapshot.generation, 'utf8').toString('base64url');
-  const snapshotBriefing = `<!-- unleashd:buddy-memory-generation ${encodedGeneration} -->\n${snapshot.briefing}`;
-  return `<!-- unleashd:buddy-context-v2 ${encodedContext} ${snapshotBriefing.length} -->\n${snapshotBriefing}\n<!-- /unleashd:buddy-context-v2 -->\n\n${input.content}`;
+function buddyBriefedPrompt(context: BuddyContext, memory: MemorySnapshot, content: string) {
+  const encodedContext = Buffer.from(JSON.stringify(context), 'utf8').toString('base64url');
+  const encodedGeneration = Buffer.from(memory.generation, 'utf8').toString('base64url');
+  const briefing = `<!-- unleashd:buddy-memory-generation ${encodedGeneration} -->\n${memory.briefing}`;
+  return `<!-- unleashd:buddy-context-v2 ${encodedContext} ${briefing.length} -->\n${briefing}\n<!-- /unleashd:buddy-context-v2 -->\n\n${content}`;
 }
 
 function builderFirstTurnPrompt(content: string, firstUnstartedTurn: boolean): string {
   if (!firstUnstartedTurn) return content;
   return `<!-- unleashd:buddy-builder-v1 ${BUDDY_BUILDER_BRIEFING.length} -->\n${BUDDY_BUILDER_BRIEFING}\n<!-- /unleashd:buddy-builder-v1 -->\n\n${content}`;
-}
-
-/**
- * The provider prompt for a turn, by kind: thin dispatcher over the three
- * first-turn encoders. History keeps clean user text; only the provider sees
- * the markers.
- */
-export function buildFirstTurnCliContent(input: {
-  content: string;
-  messageCount: number;
-  hasStartedSession: boolean;
-  kind: ConversationKind;
-  buddyBriefing: string | null;
-  buddyMemoryGeneration?: MemoryGenerationInput | null;
-  refreshBuddyContext?: boolean;
-  swarmDebugPrefix: string | null;
-}): string {
-  const firstUnstartedTurn = input.messageCount === 0 && !input.hasStartedSession;
-  const chatPrompt = () =>
-    chatFirstTurnPrompt({
-      content: input.content,
-      firstUnstartedTurn,
-      swarmDebugPrefix: input.swarmDebugPrefix,
-    });
-  return matchConversationKind(input.kind, {
-    buddy: (kind) =>
-      buddyFirstTurnPrompt({
-        kind,
-        content: input.content,
-        firstUnstartedTurn,
-        refreshBriefing: input.refreshBuddyContext === true,
-        briefing: input.buddyBriefing,
-        memoryGeneration: input.buddyMemoryGeneration ?? null,
-      }),
-    builder: () => builderFirstTurnPrompt(input.content, firstUnstartedTurn),
-    chat: chatPrompt,
-    worker: chatPrompt,
-  });
 }
 
 // --- Run-slot admission tick -----------------------------------------------
@@ -217,8 +125,51 @@ function waitForChatRunSlot(admit: () => void): () => void {
   };
 }
 
+/**
+ * Buddy identity is an authority boundary, so Buddy turns require a harness with an explicit
+ * required-MCP contract rather than best-effort injection (invariant I11 in
+ * agent_notes/2026-08-24_automation-execution-ownership-design.md).
+ */
+function assertBuddyProviderSupportsMcp(provider: ProviderName): void {
+  if (harnessMcpCapability(provider) === 'required') return;
+  throw new Error(
+    `Provider "${provider}" cannot start Buddy conversations because its harness cannot guarantee required Buddy state tools.`
+  );
+}
+
 function rejectAutomation(): never {
   throw new Error('Legacy automation transcripts are read-only; schedules run as Buddy runs now');
+}
+
+/**
+ * Call `done` once, when the turn drains. A failure while the process still runs waits for the
+ * drain and then wins over the completion. Returns a detach for a turn that never started.
+ */
+function onTurnDrained(
+  host: BuddyPolicyHost,
+  done: (status: 'complete' | 'failed', detail: string) => void
+): () => void {
+  let pendingFailure: string | null = null;
+  const detach = () => {
+    host.off('buddy-turn-complete', complete);
+    host.off('buddy-turn-failed', failed);
+  };
+  const complete = (output: string) => {
+    detach();
+    if (pendingFailure === null) done('complete', output);
+    else done('failed', pendingFailure);
+  };
+  const failed = (error: string) => {
+    if (host.hasProcess()) {
+      pendingFailure = error;
+      return;
+    }
+    detach();
+    done('failed', error);
+  };
+  host.once('buddy-turn-complete', complete);
+  host.on('buddy-turn-failed', failed);
+  return detach;
 }
 
 // --- Buddy Builder -------------------------------------------------------------
@@ -486,14 +437,9 @@ export class BuddyTurnPolicy implements TurnPolicy {
     hasStartedSession: boolean;
     refreshBriefing: boolean;
   }): string {
-    return buddyFirstTurnPrompt({
-      kind: this.kind,
-      content: turn.content,
-      firstUnstartedTurn: turn.messageCount === 0 && !turn.hasStartedSession,
-      refreshBriefing: turn.refreshBriefing,
-      briefing: this.memory?.briefing ?? null,
-      memoryGeneration: this.memory?.generation ?? null,
-    });
+    const first = turn.messageCount === 0 && !turn.hasStartedSession;
+    if ((!first && !turn.refreshBriefing) || !this.memory) return turn.content;
+    return buddyBriefedPrompt(this.kind.context, this.memory, turn.content);
   }
 
   admitted(): void {
@@ -550,25 +496,11 @@ export class BuddyTurnPolicy implements TurnPolicy {
     // A 24 h deadline must not by itself keep a process alive (the runtime tests' turns that
     // never answer left it pending, and the test process never exited).
     timer.unref?.();
-    const settle = (status: 'complete' | 'failed', detail: string) => {
+    onTurnDrained(this.host, (status, detail) => {
       clearTimeout(timer);
-      this.host.off('buddy-turn-complete', complete);
-      this.host.off('buddy-turn-failed', failed);
       this.execution = null;
       this.buddies.settle(owned.id, owned.claim_token, status, detail);
-    };
-    let pendingFailure: string | null = null;
-    const complete = (output: string) =>
-      settle(pendingFailure ? 'failed' : 'complete', pendingFailure ?? output);
-    const failed = (error: string) => {
-      if (this.host.hasProcess()) {
-        pendingFailure = error;
-        return;
-      }
-      settle('failed', error);
-    };
-    this.host.once('buddy-turn-complete', complete);
-    this.host.on('buddy-turn-failed', failed);
+    });
   }
 
   spawned(input: TurnInput, review: { attemptId: string; messageStart: number }): void {
@@ -644,50 +576,25 @@ export class BuddyTurnPolicy implements TurnPolicy {
     }
     this.execution = { context, leaseToken, onAdmitted };
     return new Promise<string>((resolve, reject) => {
-      const cleanup = () => {
-        this.host.off('buddy-turn-complete', complete);
-        this.host.off('buddy-turn-failed', failed);
+      const detach = onTurnDrained(this.host, (status, detail) => {
+        try {
+          onDrained?.(status, detail, this.execution?.terminalCause);
+        } catch (error) {
+          this.execution = null;
+          return reject(error);
+        }
         this.execution = null;
-      };
-      let pendingFailure: string | null = null;
-      const complete = (output: string) => {
-        if (pendingFailure) {
-          failed(pendingFailure);
-          return;
-        }
-        try {
-          onDrained?.('complete', output, this.execution?.terminalCause);
-          cleanup();
-          resolve(output);
-        } catch (error) {
-          cleanup();
-          reject(error);
-        }
-      };
-      const failed = (reason: string) => {
-        if (this.host.hasProcess()) {
-          pendingFailure = reason;
-          return;
-        }
-        try {
-          onDrained?.('failed', reason, this.execution?.terminalCause);
-        } catch (error) {
-          cleanup();
-          reject(error);
-          return;
-        }
-        cleanup();
-        reject(new Error(reason));
-      };
-      this.host.once('buddy-turn-complete', complete);
-      this.host.on('buddy-turn-failed', failed);
+        if (status === 'complete') resolve(detail);
+        else reject(new Error(detail));
+      });
       try {
         this.host.send(sameEitherWay(content), {
           origin: 'buddy_message',
           inputId: context.coordinationRunId!,
         });
       } catch (error) {
-        cleanup();
+        detach();
+        this.execution = null;
         reject(error);
       }
     });

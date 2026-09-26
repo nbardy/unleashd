@@ -10,8 +10,8 @@ import { type ConversationConfig, createDefaultConversationConfig } from '@unlea
 import type { CompletedBuddyTurn } from '../src/buddies/memory-review';
 import type { BuddyPolicyPort } from '../src/buddies/policy-port';
 import type { ChatAdmission } from '../src/buddies/runner';
-import { buildFirstTurnCliContent, extractBuddyMemorySnapshot } from '../src/buddies/turn-policy';
 import {
+  type ConversationOptions,
   type ConversationRuntimeDependencies,
   createConversationRuntime,
 } from '../src/conversations/runtime';
@@ -653,33 +653,6 @@ test('first message in a user fork inherits the native source session without co
   );
 });
 
-test('first Buddy prompt carries a recoverable immutable memory snapshot', () => {
-  const content = buildFirstTurnCliContent({
-    content: 'Start the task',
-    messageCount: 0,
-    hasStartedSession: false,
-    kind: buddyKind({
-      buddyId: 'buddy-1',
-      workspaceId: 'workspace-1',
-      buddyProjectId: null,
-      legacyWorkItemId: null,
-      automationRunId: null,
-      delegatedByBuddyId: null,
-      parentBuddyConversationId: null,
-    }),
-    buddyBriefing: 'Memory generation seven',
-    buddyMemoryGeneration: 7,
-    swarmDebugPrefix: null,
-  });
-
-  const snapshot = extractBuddyMemorySnapshot(content);
-  assert.deepEqual(snapshot, {
-    generation: '7',
-    briefing: 'Memory generation seven',
-  });
-  assert.match(content, /Start the task$/);
-});
-
 test('native session fork falls back to a fresh handoff when memory generation changes', () => {
   const conversations = new Map<
     string,
@@ -992,40 +965,51 @@ test('bridge watchdog terminates a turn when neither unified events nor heartbea
 // carry the builder briefing. A buddy (or general) thread must never be
 // misclassified into the builder prompt — see 2026-09-07 report where a
 // Product Development Lead thread rendered the buddy-builder briefing.
-test('first-turn markers are kind-exclusive: builder, buddy, general', () => {
-  const base = {
-    content: 'Lets make some updates',
-    messageCount: 0,
-    hasStartedSession: false,
-    swarmDebugPrefix: null,
-    buddyBriefing: null,
-  } as const;
+// Driven through the runtime, so this checks the prompt the provider receives.
+test('first-turn markers are kind-exclusive: builder, buddy, general', async () => {
+  const capture = captureSpawns();
+  const fixture = runtimeFixture({
+    executeTurn: capture.executeTurn,
+    readCurrentBuddyContext: () => ({ briefing: 'PRIVATE BRIEFING', memoryGeneration: '7' }),
+  });
+  const firstPrompt = async (kind: ConversationOptions['kind'], id: string) => {
+    const conversation = new fixture.Conversation({
+      done: false,
+      id,
+      workingDirectory: '/tmp',
+      configState: fixture.configState,
+      kind,
+      swarmDebugPrefix: 'SWARM DEBUG',
+    });
+    const before = capture.spawns.length;
+    conversation.sendMessage('Lets make some updates', { origin: 'owner_input', inputId: id });
+    await eventually(() => assert.equal(capture.spawns.length, before + 1));
+    capture.release(conversation);
+    return capture.spawns[before].content;
+  };
 
-  const builder = buildFirstTurnCliContent({ ...base, kind: { t: 'builder' } });
+  const builder = await firstPrompt({ t: 'builder' }, 'builder-thread');
   assert.match(builder, /unleashd:buddy-builder-v1/);
   assert.doesNotMatch(builder, /unleashd:buddy-context-v2/);
 
-  const buddy = buildFirstTurnCliContent({
-    ...base,
-    kind: buddyKind({
-      buddyId: 'buddy-1',
-      workspaceId: 'workspace-1',
-      buddyProjectId: null,
-      legacyWorkItemId: null,
-      automationRunId: null,
-      delegatedByBuddyId: null,
-      parentBuddyConversationId: null,
-    }),
-    buddyBriefing: 'Memory generation seven',
-    buddyMemoryGeneration: 7,
-  });
-  assert.match(buddy, /unleashd:buddy-context-v2/);
-  assert.doesNotMatch(buddy, /unleashd:buddy-builder-v1/);
+  // The hidden briefing is injected once, with its memory generation, and never the swarm prefix.
+  const buddy = await firstPrompt(
+    buddyKind({ buddyId: 'buddy-1', workspaceId: 'workspace-1' }),
+    'buddy-thread'
+  );
+  assert.match(buddy, /^<!-- unleashd:buddy-context-v2 /);
+  assert.equal(buddy.match(/PRIVATE BRIEFING/g)?.length, 1);
+  assert.match(
+    buddy,
+    new RegExp(`buddy-memory-generation ${Buffer.from('7').toString('base64url')} `)
+  );
+  assert.doesNotMatch(buddy, /unleashd:buddy-builder-v1|unleashd:swarm-prefix/);
+  assert.match(buddy, /\n\nLets make some updates$/);
 
-  const general = buildFirstTurnCliContent({ ...base, kind: { t: 'chat' } });
+  const general = await firstPrompt({ t: 'chat' }, 'general-thread');
   assert.doesNotMatch(general, /unleashd:buddy-builder-v1/);
   assert.doesNotMatch(general, /unleashd:buddy-context-v2/);
-  assert.equal(general, 'Lets make some updates');
+  assert.match(general, /unleashd:swarm-prefix/);
 });
 
 test('foreground Buddy deadline uses the conversation budget and reports timeout after joined drain', async (t) => {

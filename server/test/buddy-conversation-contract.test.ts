@@ -4,7 +4,6 @@ import test from 'node:test';
 import { WS_PATH, buddyKind } from '@unleashd/shared';
 import { createDefaultConversationConfig } from '@unleashd/shared';
 import type { BuddyContext } from '@unleashd/shared';
-import { buildFirstTurnCliContent } from '../src/buddies/turn-policy';
 import { type ConversationOptions, createConversationRuntime } from '../src/conversations/runtime';
 import { resolveConfigAgainstProviderCatalog } from '../src/providers/catalog-service';
 import { registerConversationWebSocket } from '../src/transport/conversation-websocket';
@@ -426,39 +425,4 @@ test('replaying create_conversation reports the real failure, not a config misma
     acks.some((message) => message.result?.t === 'created'),
     'the replay still acknowledges the existing conversation before dispatch runs'
   );
-});
-
-test('hidden Buddy briefing is injected exactly once and never on resumed turns', () => {
-  const first = buildFirstTurnCliContent({
-    content: 'Start the campaign.',
-    messageCount: 0,
-    hasStartedSession: false,
-    kind: buddyKind(buddyContext),
-    buddyBriefing: 'PRIVATE BRIEFING',
-    swarmDebugPrefix: 'SWARM DEBUG',
-  });
-  assert.match(first, /^<!-- unleashd:buddy-context-v2 /);
-  assert.equal(first.match(/PRIVATE BRIEFING/g)?.length, 1);
-  assert.equal(first.includes('unleashd:swarm-prefix'), false);
-  assert.match(first, /\n\nStart the campaign\.$/);
-
-  const nextTurn = buildFirstTurnCliContent({
-    content: 'Continue.',
-    messageCount: 2,
-    hasStartedSession: true,
-    kind: buddyKind(buddyContext),
-    buddyBriefing: 'PRIVATE BRIEFING',
-    swarmDebugPrefix: null,
-  });
-  assert.equal(nextTurn, 'Continue.');
-
-  const resumedWithoutLoadedMessages = buildFirstTurnCliContent({
-    content: 'Resume.',
-    messageCount: 0,
-    hasStartedSession: true,
-    kind: buddyKind(buddyContext),
-    buddyBriefing: 'PRIVATE BRIEFING',
-    swarmDebugPrefix: null,
-  });
-  assert.equal(resumedWithoutLoadedMessages, 'Resume.');
 });
