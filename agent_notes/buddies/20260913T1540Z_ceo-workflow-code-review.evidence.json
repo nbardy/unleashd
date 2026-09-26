@@ -21,9 +21,7 @@
   "reproSha256": "cb7e4a75f4c0cbefc510813387f1db661664d8922f80402e48b10d02246b3285",
   "reproductionResult": {
     "messageStatus": "replied",
-    "returnKinds": [
-      "message_reply"
-    ],
+    "returnKinds": ["message_reply"],
     "checkpointSaved": 1,
     "promptIncludesCheckpoint": false
   }
