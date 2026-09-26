@@ -1,43 +1,105 @@
-import type { SubAgent } from '@unleashd/shared';
+import type { SubAgent, SubAgentStatus } from '@unleashd/shared';
 import { useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
+import { ContextBadge, type ContextBadgeTone, ContextSection } from './ContextSection';
 import './SubAgentPanel.css';
 
-interface SubAgentPanelProps {
-  subAgents: SubAgent[];
-  workingDirectory: string;
+/**
+ * Active sub-agents from all providers, plus the last three finished ones.
+ *
+ * `tree` (desktop): a collapsible CLI-style tree. Expands on hover, toggles on
+ * click or Ctrl+O, auto-collapses when every agent finishes.
+ * `cards` (mobile pane): one card per agent under a "Sub-agents" section.
+ */
+export type SubAgentPanelProps =
+  | { presentation: 'tree'; subAgents: SubAgent[]; workingDirectory: string }
+  | { presentation: 'cards'; subAgents: SubAgent[] };
+
+interface ShownSubAgents {
+  active: SubAgent[];
+  display: SubAgent[];
+  total: number;
 }
 
-/**
- * SubAgentPanel - Displays active sub-agents from all providers.
- *
- * Shows a tree-like display with:
- * - Description of the task
- * - Tool use count and token usage
- * - Current action being performed
- * - Status indicator (spinner for running, checkmark for done)
- *
- * Auto-collapses when all agents finish. Can be manually toggled via Ctrl+O.
- */
-export function SubAgentPanel({ subAgents, workingDirectory }: SubAgentPanelProps) {
+function isLive(status: SubAgentStatus): boolean {
+  return status === 'running' || status === 'pending';
+}
+
+function shownSubAgents(subAgents: SubAgent[]): ShownSubAgents {
+  const active = subAgents.filter((a) => isLive(a.status));
+  const recentlyCompleted = subAgents.filter((a) => !isLive(a.status)).slice(-3);
+  return { active, display: [...active, ...recentlyCompleted], total: subAgents.length };
+}
+
+function formatTokens(tokens: number): string {
+  return tokens >= 1000 ? `${(tokens / 1000).toFixed(1)}k` : tokens.toString();
+}
+
+export function SubAgentPanel(props: SubAgentPanelProps) {
+  const shown = shownSubAgents(props.subAgents);
+  if (shown.display.length === 0) return null;
+  return props.presentation === 'tree' ? (
+    <SubAgentTree shown={shown} workingDirectory={props.workingDirectory} />
+  ) : (
+    <SubAgentCards shown={shown} />
+  );
+}
+
+const CARD_BADGE: Record<SubAgentStatus, { tone: ContextBadgeTone; glyph: string }> = {
+  pending: { tone: 'active', glyph: '●' },
+  running: { tone: 'active', glyph: '●' },
+  error: { tone: 'neutral', glyph: '!' },
+  completed: { tone: 'accent', glyph: '✓' },
+};
+
+function SubAgentCards({ shown }: { shown: ShownSubAgents }) {
+  return (
+    <ContextSection
+      title="Sub-agents"
+      meta={`${shown.active.length} running · ${shown.total} total`}
+    >
+      <div className="subagent-cards">
+        {shown.display.map((agent) => (
+          <div key={agent.id} className="ui-surface ui-card ui-row context-card">
+            <ContextBadge tone={CARD_BADGE[agent.status].tone} className="subagent-card__badge">
+              {CARD_BADGE[agent.status].glyph}
+            </ContextBadge>
+            <div className="context-card__body">
+              <div className="context-card__title ui-truncate">{agent.description || agent.id}</div>
+              {agent.currentAction ? (
+                <div className="context-card__meta ui-truncate">{agent.currentAction}</div>
+              ) : null}
+              <div className="subagent-card__stats">
+                {agent.toolUses ? <span>{agent.toolUses} tools</span> : null}
+                {agent.tokens ? <span>{formatTokens(agent.tokens)} tokens</span> : null}
+                <span className="subagent-card__status">{agent.status}</span>
+              </div>
+            </div>
+          </div>
+        ))}
+      </div>
+    </ContextSection>
+  );
+}
+
+function SubAgentTree({
+  shown,
+  workingDirectory,
+}: {
+  shown: ShownSubAgents;
+  workingDirectory: string;
+}) {
   const [isExpanded, setIsExpanded] = useState(true);
   // Track whether the user has manually toggled — if so, don't auto-collapse/expand on hover
   const userToggledRef = useRef(false);
-
-  // Filter to show only active (running) sub-agents, plus recently completed ones
-  const activeAgents = subAgents.filter((a) => a.status === 'running' || a.status === 'pending');
-  const recentlyCompleted = subAgents
-    .filter((a) => a.status === 'completed' || a.status === 'error')
-    .slice(-3); // Show last 3 completed
-
-  const displayAgents = [...activeAgents, ...recentlyCompleted];
+  const displayAgents = shown.display;
+  const runningCount = shown.active.length;
 
   // Auto-collapse when all agents complete (unless user manually toggled)
-  const hasRunning = activeAgents.length > 0;
+  const hasRunning = runningCount > 0;
   const hadRunningRef = useRef(hasRunning);
   useEffect(() => {
     if (hadRunningRef.current && !hasRunning && !userToggledRef.current) {
-      // Transition from running → all done: auto-collapse
       setIsExpanded(false);
     }
     if (hasRunning && !hadRunningRef.current) {
@@ -48,29 +110,11 @@ export function SubAgentPanel({ subAgents, workingDirectory }: SubAgentPanelProp
   }, [hasRunning]);
 
   const handleMouseEnter = () => {
-    if (!userToggledRef.current) {
-      setIsExpanded(true);
-    }
+    if (!userToggledRef.current) setIsExpanded(true);
   };
 
   const handleMouseLeave = () => {
-    if (!userToggledRef.current) {
-      setIsExpanded(false);
-    }
-  };
-
-  // Don't show if no agents
-  if (displayAgents.length === 0) {
-    return null;
-  }
-
-  const runningCount = activeAgents.length;
-
-  const formatTokens = (tokens: number): string => {
-    if (tokens >= 1000) {
-      return `${(tokens / 1000).toFixed(1)}k`;
-    }
-    return tokens.toString();
+    if (!userToggledRef.current) setIsExpanded(false);
   };
 
   const toggleExpanded = () => {
@@ -93,7 +137,6 @@ export function SubAgentPanel({ subAgents, workingDirectory }: SubAgentPanelProp
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
     >
-      {/* Header - always visible */}
       <button
         type="button"
         className="subagent-header ui-row"
@@ -127,32 +170,26 @@ export function SubAgentPanel({ subAgents, workingDirectory }: SubAgentPanelProp
         </svg>
       </button>
 
-      {/* Tree view - collapsible with CSS transition */}
       <div className={`subagent-tree-wrapper ${isExpanded ? 'expanded' : ''}`}>
         <div className="subagent-tree">
           {displayAgents.map((agent, index) => {
             const isLast = index === displayAgents.length - 1;
-            const isRunning = agent.status === 'running' || agent.status === 'pending';
+            const isRunning = isLive(agent.status);
 
             return (
               <div key={agent.id} className="subagent-item">
-                {/* Tree connector */}
-                <span className="tree-connector ui-muted">
-                  {isLast ? '\u2514\u2500' : '\u251C\u2500'}
-                </span>
+                <span className="tree-connector ui-muted">{isLast ? '└─' : '├─'}</span>
 
-                {/* Status indicator */}
                 <span className={`subagent-status ui-inline-row ${agent.status}`}>
                   {isRunning ? (
                     <span className="status-spinner" />
                   ) : agent.status === 'completed' ? (
-                    '\u2713'
+                    '✓'
                   ) : (
-                    '\u2717'
+                    '✗'
                   )}
                 </span>
 
-                {/* Agent info */}
                 <div className="subagent-info">
                   <span className="subagent-description ui-truncate">
                     {agent.id.startsWith('swarm-') ? (
@@ -169,7 +206,7 @@ export function SubAgentPanel({ subAgents, workingDirectory }: SubAgentPanelProp
                   <span className="subagent-stats ui-row">
                     {agent.toolUses > 0 && (
                       <>
-                        <span className="ui-muted">{'\u00B7'}</span>
+                        <span className="ui-muted">{'·'}</span>
                         <span className="stat">
                           {agent.toolUses} tool use{agent.toolUses !== 1 ? 's' : ''}
                         </span>
@@ -177,20 +214,17 @@ export function SubAgentPanel({ subAgents, workingDirectory }: SubAgentPanelProp
                     )}
                     {agent.tokens > 0 && (
                       <>
-                        <span className="ui-muted">{'\u00B7'}</span>
+                        <span className="ui-muted">{'·'}</span>
                         <span className="stat">{formatTokens(agent.tokens)} tokens</span>
                       </>
                     )}
                   </span>
                 </div>
 
-                {/* Current action (shown on second line for running agents) */}
                 {agent.currentAction && (
                   <div className="subagent-current-action ui-row">
-                    <span className="tree-connector-sub ui-muted">
-                      {isLast ? '   ' : '\u2502  '}
-                    </span>
-                    <span className="action-connector ui-muted">{'\u2514'}</span>
+                    <span className="tree-connector-sub ui-muted">{isLast ? '   ' : '│  '}</span>
+                    <span className="action-connector ui-muted">{'└'}</span>
                     <span className={`current-action ui-truncate ${isRunning ? 'active' : 'done'}`}>
                       {agent.currentAction}
                     </span>
@@ -205,16 +239,9 @@ export function SubAgentPanel({ subAgents, workingDirectory }: SubAgentPanelProp
   );
 }
 
-/**
- * Truncate long descriptions for display
- */
 function truncateDescription(description: string, maxLength = 60): string {
-  // Remove leading/trailing whitespace and normalize
   const normalized = description.trim().replace(/\s+/g, ' ');
-
-  if (normalized.length <= maxLength) {
-    return normalized;
-  }
-
-  return `${normalized.substring(0, maxLength - 3)}...`;
+  return normalized.length <= maxLength
+    ? normalized
+    : `${normalized.substring(0, maxLength - 3)}...`;
 }

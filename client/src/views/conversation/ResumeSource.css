@@ -1,4 +1,4 @@
-/* Fork lineage lives in the header; details appear on hover or focus. */
+/* Fork lineage. `icon` presentation lives in the desktop header; details appear on hover or focus. */
 .resume-thread-widget {
   position: relative;
   display: inline-flex;
@@ -55,4 +55,25 @@
 .resume-thread-widget:hover .resume-thread-widget__tooltip,
 .resume-thread-widget:focus-within .resume-thread-widget__tooltip {
   display: flex;
+}
+
+/* ---------- `card` presentation (mobile pane) ---------- */
+.resume-card__link {
+  color: inherit;
+  text-decoration: none;
+}
+
+.resume-card__icon {
+  font-size: var(--fs-5);
+  line-height: 1;
+}
+
+.resume-card__provider {
+  margin-left: 6px;
+  font-size: var(--fs-1);
+}
+
+.resume-card__open {
+  color: var(--text-muted);
+  font-size: var(--fs-3);
 }
