@@ -14,21 +14,17 @@ import {
   buddySidebarAtom,
   buddySidebarOverviewAtom,
 } from '../atoms/buddy-sidebar';
-import {
-  commandsAtom,
-  connectionAtom,
-  defaultCwdOf,
-  listField,
-  pendingCreatesOf,
-} from '../atoms/conversations';
-import { prefsAtom, setLastWorkingDirectory, toggleGalleryCollapsed } from '../atoms/ui';
+import { commandsAtom, connectionAtom, listField, pendingCreatesOf } from '../atoms/conversations';
+import { prefsAtom, toggleGalleryCollapsed } from '../atoms/ui';
 import { useBuddyOverview } from '../hooks/useBuddyData';
 import { useProviderCatalog } from '../hooks/useProviderCatalog';
 import { shortenHomePath } from '../utils/directories';
 import { getProjectColor } from '../utils/projectColors';
 import { ConversationRow } from '../views/conversation-row/ConversationRow';
-import { ConversationConfigPicker } from './ConversationConfigPicker';
-import { PathAutocomplete } from './PathAutocomplete';
+import {
+  type DirectoryStart,
+  NewConversationForm,
+} from '../views/new-conversation/NewConversationForm';
 import { SearchPalette } from './SearchPalette';
 import { DmIcon, WakeIcon, WakeIndicator } from './buddies/WakeIndicator';
 import { useBuddyDirectActions } from './buddies/buddy-direct-actions';
@@ -75,39 +71,26 @@ function SidebarBuddyIcon() {
   );
 }
 
+const DEFAULT_START: DirectoryStart = { t: 'default' };
+
 export function Sidebar() {
-  const latestWorkingDirectory = useAtomValue(listField('latestCwd'));
   const { recent: recentGroups, olderIds } = useAtomValue(listField('folders'));
   const pendingCreations = pendingCreatesOf(useAtomValue(commandsAtom));
   // The route owns the active id (06-target-client §1.4).
   const activeConversationId = useMatch('/chat/:id')?.params.id ?? null;
-  const defaultCwd = defaultCwdOf(useAtomValue(connectionAtom).server);
   const wsStatus = useAtomValue(connectionAtom).socket.tag;
 
-  const { lastWorkingDirectory, galleryCollapsedProjects } = useAtomValue(prefsAtom);
+  const { galleryCollapsedProjects } = useAtomValue(prefsAtom);
 
   const builderConversations = useAtomValue(listField('builders'));
   const collapsedSet = useMemo(() => new Set(galleryCollapsedProjects), [galleryCollapsedProjects]);
 
-  // Deduplicated working directories from all conversations — fed to PathAutocomplete for fuzzy
-  // matching. Derived atom (not a local useMemo) so the mobile create sheet reads the same list.
-  const recentDirectories = useAtomValue(listField('recentDirs'));
-
   const [showSearch, setShowSearch] = useState(false);
   const [searchFilterDir, setSearchFilterDir] = useState<string | undefined>(undefined);
-  const [showPicker, setShowPicker] = useState(false);
-  const [directory, setDirectory] = useState('');
-  const [hasPendingDefault, setHasPendingDefault] = useState(false);
-  const [isDirectoryValid, setIsDirectoryValid] = useState(true);
-  const { catalog, error: catalogError, retry: retryCatalog } = useProviderCatalog();
-  // Default provider is catalog-derived; the 'claude' fallback matches
-  // createDefaultConversationConfig(). Catalog is authoritative once loaded.
-  const defaultProvider = (catalog?.providers[0]?.id ?? 'claude') as ConversationConfig['provider'];
-  const [configDraft, setConfigDraft] = useState<ConversationConfig>(() =>
-    createDefaultConversationConfig(defaultProvider)
-  );
-  const [isCreatingSwarm, setIsCreatingSwarm] = useState(false);
-  const [modalError, setModalError] = useState<string | null>(null);
+  // Null = closed; otherwise where the form's directory field starts.
+  const [picker, setPicker] = useState<DirectoryStart | null>(null);
+  const [creatingSwarm, setCreatingSwarm] = useState(false);
+  const { catalog } = useProviderCatalog();
   const [isOpeningBuddyBuilder, setIsOpeningBuddyBuilder] = useState(false);
   const [buddyBuilderError, setBuddyBuilderError] = useState<string | null>(null);
   const { data: buddyOverview } = useBuddyOverview(30_000);
@@ -127,17 +110,7 @@ export function Sidebar() {
   const navigate = useNavigate();
   const location = useLocation();
 
-  const handleNewConversation = useCallback(() => {
-    // Default to the most recently active conversation's working directory,
-    // then lastWorkingDirectory fallback, then server cwd.
-    const lastDir = latestWorkingDirectory ?? lastWorkingDirectory ?? defaultCwd ?? '/';
-    setDirectory(lastDir);
-    setHasPendingDefault(true);
-    setModalError(null);
-    // Provider default is catalog-derived.
-    setConfigDraft(createDefaultConversationConfig(defaultProvider));
-    setShowPicker(true);
-  }, [latestWorkingDirectory, lastWorkingDirectory, defaultCwd, defaultProvider]);
+  const handleNewConversation = useCallback(() => setPicker(DEFAULT_START), []);
 
   const handleNewBuddyBuilder = useCallback(async () => {
     setIsOpeningBuddyBuilder(true);
@@ -164,13 +137,13 @@ export function Sidebar() {
         item.pendingCreation?.args.workingDirectory ??
         item.workingDirectory;
       // Seed the harness from this buddy's latest thread so a provider/model
-      // picked there sticks for the next thread. Falls back to the global
-      // new-conversation draft only when the buddy has no prior thread.
-      // (The dashboard talk() path seeds from the saved Execution profile
-      // instead; the sidebar has last-used config locally, so it uses that.)
+      // picked there sticks for the next thread; the catalog default otherwise.
+      // (The dashboard talk() path seeds from the saved Execution profile.)
       const seedConfig =
         (latestConversation && readConversationDetail(latestConversation.id)?.config.config) ??
-        configDraft;
+        createDefaultConversationConfig(
+          (catalog?.providers[0]?.id ?? 'claude') as ConversationConfig['provider']
+        );
       // Direct create — reuses pending-creations createConversation + buddyContext shape
       const id = createConversation({
         workingDirectory,
@@ -182,7 +155,7 @@ export function Sidebar() {
       });
       navigate(`/chat/${id}`);
     },
-    [configDraft, navigate]
+    [catalog, navigate]
   );
 
   // Shift+Space global shortcut to open "New Conversation" dialog.
@@ -214,53 +187,8 @@ export function Sidebar() {
     return () => window.removeEventListener('keydown', handleSearchShortcut);
   }, []);
 
-  const handleConfirm = useCallback(() => {
-    if (!directory.trim()) return;
-    setModalError(null);
-    setLastWorkingDirectory(directory);
-    const newId = createConversation({
-      workingDirectory: directory,
-      config: configDraft,
-      kind: { t: 'chat' },
-    });
-    setShowPicker(false);
-    navigate(`/chat/${newId}`);
-  }, [directory, configDraft, navigate]);
-
-  const handleCreateNewSwarm = useCallback(async () => {
-    if (!directory.trim()) return;
-    setModalError(null);
-    setIsCreatingSwarm(true);
-    try {
-      const response = await fetch(`/api/oompa-swarm-context?dir=${encodeURIComponent(directory)}`);
-      const payload = (await response.json().catch(() => ({}))) as {
-        prefix?: string;
-        error?: string;
-      };
-      if (!response.ok || !payload.prefix) {
-        throw new Error(payload.error ?? `Failed to load swarm context (HTTP ${response.status})`);
-      }
-
-      setLastWorkingDirectory(directory);
-      const newId = createConversation({
-        workingDirectory: directory,
-        config: configDraft,
-        swarmDebugPrefix: payload.prefix,
-        kind: { t: 'chat' },
-      });
-      setShowPicker(false);
-      navigate(`/chat/${newId}`);
-    } catch (error) {
-      setModalError((error as Error).message);
-    } finally {
-      setIsCreatingSwarm(false);
-    }
-  }, [directory, configDraft, navigate]);
-
   const handleCancel = () => {
-    if (isCreatingSwarm) return;
-    setShowPicker(false);
-    setModalError(null);
+    if (!creatingSwarm) setPicker(null);
   };
 
   // Stable callback: rows are memoized per id, so a new function identity
@@ -326,81 +254,21 @@ export function Sidebar() {
           </button>
         </div>
 
-        {showPicker && (
+        {picker && (
           <div className="new-conv-overlay ui-row" onClick={handleCancel}>
             <div className="new-conv-modal ui-stack" onClick={(e) => e.stopPropagation()}>
               <h3 className="new-conv-title">New Conversation</h3>
-              <div className="new-conv-label">Working Directory</div>
-              <PathAutocomplete
-                value={directory}
-                onChange={setDirectory}
-                recentDirectories={recentDirectories}
-                placeholder="Search recent or type a path..."
-                className="directory-input"
-                hasPendingDefault={hasPendingDefault}
-                onClearDefault={() => setHasPendingDefault(false)}
-                onConfirm={handleConfirm}
-                onValidationChange={setIsDirectoryValid}
-                autoFocus
+              <NewConversationForm
+                layout="modal"
+                start={picker}
+                primary="chat"
+                onBusyChange={setCreatingSwarm}
+                onCreated={(conversationId) => {
+                  setPicker(null);
+                  setCreatingSwarm(false);
+                  navigate(`/chat/${conversationId}`);
+                }}
               />
-              {catalog ? (
-                <ConversationConfigPicker
-                  value={configDraft}
-                  onChange={setConfigDraft}
-                  catalog={catalog}
-                />
-              ) : (
-                <div className="config-picker-status" role={catalogError ? 'alert' : 'status'}>
-                  {catalogError ? (
-                    <>
-                      Unable to load providers.{' '}
-                      <button type="button" onClick={retryCatalog}>
-                        Retry
-                      </button>
-                    </>
-                  ) : (
-                    'Loading providers…'
-                  )}
-                </div>
-              )}
-              <div className="directory-actions">
-                <button
-                  type="button"
-                  className="dir-action-btn ui-control dir-confirm-btn ui-row"
-                  onClick={handleConfirm}
-                  disabled={wsStatus !== 'open' || !isDirectoryValid || isCreatingSwarm || !catalog}
-                  title={
-                    wsStatus !== 'open'
-                      ? 'Server disconnected'
-                      : !isDirectoryValid
-                        ? 'Invalid directory'
-                        : isCreatingSwarm
-                          ? 'Creating swarm context...'
-                          : 'Create conversation (Shift+Enter)'
-                  }
-                >
-                  Create
-                  <kbd className="btn-shortcut">⇧↵</kbd>
-                </button>
-                <button
-                  type="button"
-                  className="dir-action-btn ui-control dir-swarm-btn"
-                  onClick={() => {
-                    void handleCreateNewSwarm();
-                  }}
-                  disabled={wsStatus !== 'open' || !isDirectoryValid || isCreatingSwarm}
-                  title={
-                    wsStatus !== 'open'
-                      ? 'Server disconnected'
-                      : !isDirectoryValid
-                        ? 'Invalid directory'
-                        : 'Create conversation with swarm context prefix'
-                  }
-                >
-                  {isCreatingSwarm ? 'Preparing...' : 'New Swarm'}
-                </button>
-              </div>
-              {modalError && <div className="new-conv-error">{modalError}</div>}
             </div>
           </div>
         )}
@@ -805,10 +673,7 @@ export function Sidebar() {
                           title={`New conversation in ${dirDisplay}`}
                           onClick={(e) => {
                             e.stopPropagation();
-                            setDirectory(group.directory);
-                            setHasPendingDefault(false);
-                            setModalError(null);
-                            setShowPicker(true);
+                            setPicker({ t: 'chosen', path: group.directory });
                           }}
                         >
                           +
@@ -1020,7 +885,7 @@ function FolderRunningStatus({ count }: { count: number }) {
       aria-label={`${label} in this project`}
       title={label}
     >
-      <span className="status-indicator running" aria-hidden="true" />
+      <span className="conversation-row__dot" data-status="running" aria-hidden="true" />
       <span>{label}</span>
     </span>
   );

@@ -1,0 +1,127 @@
+/* NewConversationForm — shared by the desktop modal and the mobile sheet. */
+
+.new-conversation {
+  gap: var(--sp-4);
+}
+
+.new-conversation__label {
+  margin-top: var(--sp-2);
+  color: var(--text-secondary);
+  font-size: var(--fs-3);
+  font-weight: 500;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.new-conversation__input {
+  width: 100%;
+  padding: var(--sp-5) var(--sp-6);
+  background: var(--bg-primary);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--ui-radius);
+  color: var(--text-emphasis);
+  font: var(--fs-4) var(--font-mono);
+}
+
+.new-conversation__input:focus {
+  outline: none;
+  border-color: var(--accent-primary);
+}
+
+/* 16px keeps iOS Safari from zooming the viewport on focus. */
+[data-layout="sheet"] .new-conversation__input {
+  font-size: var(--fs-6);
+}
+
+/* The inline provider/model picker (modal layout). */
+.new-conversation :is(.provider-selector, .model-selector) {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-3);
+  margin-bottom: var(--sp-2);
+}
+
+.new-conversation__recent {
+  width: 100%;
+  gap: var(--sp-1);
+  padding: var(--sp-5) var(--sp-6);
+  background: var(--bg-raised-2);
+  color: var(--text-primary);
+  font: inherit;
+  font-weight: 600;
+  text-align: left;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.new-conversation__recent[aria-pressed="true"] {
+  border-color: var(--accent);
+}
+
+.new-conversation__recent-path {
+  font: var(--fs-2) var(--font-mono);
+}
+
+.new-conversation__note {
+  /* <output> is inline by default; block keeps it on its own row. */
+  display: block;
+  color: var(--text-muted);
+  font-size: var(--fs-3);
+}
+
+.new-conversation__error {
+  padding: var(--sp-5) var(--sp-6);
+  border: 1px solid color-mix(in srgb, var(--danger) 45%, var(--border-subtle));
+  border-radius: var(--ui-radius);
+  color: var(--danger);
+  font-size: var(--fs-4);
+}
+
+.new-conversation__footer {
+  gap: var(--sp-4);
+  margin-top: var(--sp-5);
+}
+
+/* Sticky in the sheet so the action and its error stay reachable. */
+[data-layout="sheet"] .new-conversation__footer {
+  position: sticky;
+  bottom: calc(-20px - env(safe-area-inset-bottom));
+  margin: 0 -16px calc(-20px - env(safe-area-inset-bottom));
+  padding: var(--sp-5) var(--sp-7) calc(var(--sp-8) + env(safe-area-inset-bottom));
+  border-top: 1px solid var(--border-subtle);
+  background: var(--bg-raised-1);
+}
+
+.new-conversation__actions {
+  gap: var(--sp-5);
+}
+
+.new-conversation__action {
+  flex: 1;
+  justify-content: center;
+  gap: var(--sp-4);
+  min-height: 40px;
+  padding: var(--sp-5) var(--sp-7);
+  font-size: var(--fs-4);
+  font-weight: 500;
+}
+
+.new-conversation__action[data-primary="true"] {
+  border: none;
+  background: var(--accent-success);
+  color: var(--text-on-accent);
+}
+
+.new-conversation__action:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.new-conversation__kbd {
+  padding: var(--sp-1) var(--sp-2);
+  border: 1px solid color-mix(in srgb, var(--text-emphasis) 30%, transparent);
+  border-radius: var(--ui-radius);
+  background: color-mix(in srgb, var(--text-emphasis) 10%, transparent);
+  font: var(--fs-1) / 1.2 system-ui, sans-serif;
+  opacity: 0.7;
+}
