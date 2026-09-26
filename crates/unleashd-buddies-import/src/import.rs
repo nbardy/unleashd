@@ -263,20 +263,26 @@ pub fn open_source(path: &Path) -> Result<Connection> {
 
 /// Every v33 copy of a Buddy's soul/working/long_term memory: the legacy head and each
 /// `buddy_knowledge` copy of that kind in any scope. The lean store keeps ONE doc per (Buddy,
-/// kind), so `rank` 1 (newest `updated_at`; the head wins a tie) is imported as `mem_<buddy>_<kind>`
-/// and every other copy is archived to agent_notes by `export-notes` (notes.rs). Import, export and
-/// verify all rank through this one query, so the fold and the archive cannot drift. `db` is the
-/// schema prefix (`old.` inside the import's ATTACH, `` on a directly opened v33 file).
+/// kind): for working/long_term the newest copy (`updated_at`; the head wins a tie) is the
+/// `winner`, imported as `mem_<buddy>_<kind>`. The soul is the owner's: only the v33 head can win
+/// it (it must keep matching SOUL.md), however new a thread/task/workspace soul copy is
+/// (orchestrator decision, 2026-09-26: 4 of 5 live thread souls were newer than their heads and
+/// would otherwise have replaced the Buddy's soul). Every non-winner is archived to agent_notes by
+/// `export-notes` (notes.rs). Import, export and verify all read `winner` from this one query, so
+/// the fold and the archive cannot drift. `db` is the schema prefix (`old.` inside the import's
+/// ATTACH, `` on a directly opened v33 file).
 pub fn memory_copies(db: &str) -> String {
     format!(
-        "SELECT *, row_number() OVER (PARTITION BY buddy_id, kind ORDER BY updated_at DESC, source DESC, source_id) AS rank FROM (
+        "SELECT *, (rank = 1 AND (kind != 'soul' OR source = 'buddy_memory_heads')) AS winner FROM (
+         SELECT *, row_number() OVER (PARTITION BY buddy_id, kind
+           ORDER BY (kind = 'soul' AND source = 'buddy_memory_heads') DESC, updated_at DESC, source DESC, source_id) AS rank FROM (
            SELECT h.buddy_id, h.document_kind AS kind, 'buddy_memory_heads' AS source, h.revision_id AS source_id,
              'head:' || h.buddy_id || '/' || h.document_kind AS chain, 'buddy' AS scope_kind, h.buddy_id AS scope_id, r.revision,
              r.body AS content, h.updated_at
            FROM {db}buddy_memory_heads h JOIN {db}buddy_memory_revisions r ON r.id = h.revision_id
            UNION ALL
            SELECT buddy_id, kind, 'buddy_knowledge', id, id, scope_kind, scope_id, revision, content, updated_at
-           FROM {db}buddy_knowledge WHERE kind IN ('soul','working','long_term'))"
+           FROM {db}buddy_knowledge WHERE kind IN ('soul','working','long_term')))"
     )
 }
 
@@ -297,7 +303,7 @@ pub fn winner_chains(db: &str) -> String {
            UNION ALL
            SELECT document_id, revision, content, reason, author, provenance, NULL, NULL, created_at, json_object('document_id', document_id)
            FROM {db}buddy_knowledge_revisions) x ON x.chain = w.chain
-         WHERE w.rank = 1",
+         WHERE w.winner",
         memory_copies(db)
     )
 }
@@ -491,7 +497,7 @@ fn mapping_sql() -> Vec<String> {
            c.content, c.updated_at,
            json_object('source', c.source, 'source_id', c.source_id, 'scope_kind', c.scope_kind, 'scope_id', c.scope_id,
              'revision', c.revision)
-         FROM mem_copy c JOIN old.buddies b ON b.id = c.buddy_id WHERE c.rank = 1".into(),
+         FROM mem_copy c JOIN old.buddies b ON b.id = c.buddy_id WHERE c.winner".into(),
         "INSERT INTO doc_revision SELECT doc_id, revision, content, reason, author, provenance, sha256, created_at, legacy FROM mem_chain".into(),
         // Shared docs: thread/task scope folds into the Buddy's own scope (DOMAIN_CHECKS rejects a name clash).
         // Notes are not imported: they leave as agent_notes/*.md files (`buddies-import export-notes`, notes.rs).
@@ -599,7 +605,7 @@ fn count_pairs() -> Vec<(&'static str, String, &'static str)> {
         ),
         (
             "doc:memory (one per buddy and kind)",
-            "SELECT count(DISTINCT buddy_id || '/' || kind) FROM mem_copy".into(),
+            "SELECT count(*) FROM mem_copy WHERE winner".into(),
             "SELECT count(*) FROM doc WHERE kind != 'shared'",
         ),
         (
@@ -791,9 +797,9 @@ pub fn import(source: &Path, target: &Path, owner_reads: &Path, options: ImportO
         &conn,
         "SELECT json_object('doc_id', 'mem_' || c.buddy_id || '_' || c.kind, 'slug', b.slug, 'kind', c.kind, 'source_id', c.source_id,
            'scope_kind', c.scope_kind, 'scope_id', c.scope_id, 'updated_at', c.updated_at)
-         FROM mem_copy c JOIN old.buddies b ON b.id = c.buddy_id WHERE c.rank = 1 AND c.source != 'buddy_memory_heads' ORDER BY b.slug, c.kind",
+         FROM mem_copy c JOIN old.buddies b ON b.id = c.buddy_id WHERE c.winner AND c.source != 'buddy_memory_heads' ORDER BY b.slug, c.kind",
     )?;
-    let folded_copies: i64 = conn.query_row("SELECT count(*) FROM mem_copy WHERE rank > 1", [], |r| r.get(0))?;
+    let folded_copies: i64 = conn.query_row("SELECT count(*) FROM mem_copy WHERE NOT winner", [], |r| r.get(0))?;
     let cross_channel_roots: i64 =
         conn.query_row("SELECT count(*) FROM msg a JOIN msg r ON r.id = a.root_message_id WHERE r.member_key != a.member_key", [], |r| {
             r.get(0)

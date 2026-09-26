@@ -152,12 +152,12 @@ A first-time install (neither file) starts with an empty new-schema database.
    `buddies-import export-notes --from /path/backup-v33.sqlite` prints the plan (154 files for
    1,082 notes on the 2026-09-26 copy); add `--write` to write
    `<workspace>/agent_notes/buddy-notes/<buddy>/<date>.md`. It refuses if any file exists.
-   Memory folds to one doc per Buddy and kind: of the legacy head and every thread/task/workspace
-   copy, the newest becomes `mem_<buddy>_<kind>` with its own chain renumbered 1..n (source id,
+   Memory folds to one doc per Buddy and kind: for working/long_term, of the legacy head and every
+   thread/task/workspace copy, the newest becomes `mem_<buddy>_<kind>` with its own chain renumbered 1..n (source id,
    scope and revision in `legacy`). The same `export-notes` run writes every other copy, oldest
    first, to `<buddy>/memory-archive.md` (524 copies for 30 Buddies on the 2026-09-26 copy), and
-   verify fails unless each Buddy's folded copies equal its archived sections. Four thread souls
-   win this way, so those Buddies' soul docs no longer match their soul files (`soul.folded`).
+   verify fails unless each Buddy's folded copies equal its archived sections. The soul is always
+   the v33 head (it must match SOUL.md); scoped soul copies are archived, never imported.
 3. **Verify** (exit 1 on any mismatch; do not switch unless `"ok": true`):
    `buddies-import verify --from /path/backup-v33.sqlite --to ~/.buddies/buddies-v3.sqlite --import-report ~/.buddies/buddies-v3.import.json --out ~/.buddies/buddies-v3.verify.json`
 4. **Switch**: build the addon (`pnpm --dir crates/unleashd-buddies build`) and deploy the server

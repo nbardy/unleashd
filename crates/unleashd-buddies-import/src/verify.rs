@@ -102,7 +102,7 @@ fn classes() -> Vec<(&'static str, String, String)> {
             "memory_winners_by_buddy_kind",
             format!(
                 "SELECT buddy_id || '/' || kind, json_array('mem_' || buddy_id || '_' || kind, 'buddy', buddy_id, '', content)
-                 FROM ({}) WHERE rank = 1",
+                 FROM ({}) WHERE winner",
                 memory_copies("")
             ),
             "SELECT buddy_id || '/' || kind, json_array(id, scope_kind, scope_id, name, content) FROM doc WHERE kind != 'shared'".into(),
@@ -167,8 +167,6 @@ pub struct SoulCheck {
     /// soul-check.mjs categories against the new DB's soul docs.
     pub split: BTreeMap<String, usize>,
     pub differ: Vec<String>,
-    /// Buddies whose imported soul is a newer thread copy, so it no longer matches the soul file.
-    pub folded: Vec<String>,
 }
 
 /// One v33 row per request (or cursor) compared to its new row, exactly.
@@ -351,20 +349,18 @@ const OLD_SOUL: &str = "SELECT r.body, r.revision FROM buddy_memory_heads h JOIN
 const NEW_SOUL: &str =
     "SELECT content, revision FROM doc WHERE buddy_id = ?1 AND scope_kind = 'buddy' AND scope_id = ?1 AND kind = 'soul' AND name = ''";
 
-/// The soul file against the v33 soul head it was rendered from. Failing verdicts: differ,
-/// file_missing, doc_lost (the source had a soul, the target has none), doc_invented (the
-/// reverse). The imported soul may be a newer thread copy (the memory fold); its bytes are checked
-/// by `memory_winners_by_buddy_kind` and it is listed in `SoulCheck::folded`, not failed here.
+/// The soul file against the soul doc both sides hold. Failing verdicts: differ, file_missing,
+/// doc_lost (the source had a soul, the target has none), doc_invented (the reverse).
 fn soul_verdict(file: &SoulFileState, old: &SoulDoc, new: &SoulDoc) -> Result<&'static str> {
-    Ok(match (new, old) {
+    Ok(match (old, new) {
         (SoulDoc::Absent, SoulDoc::Absent) => match file {
             SoulFileState::NoPath => "no_soul",
             SoulFileState::Missing { .. } => "file_missing",
             // Neither side holds a database soul; the file itself is checked unchanged above.
             SoulFileState::Present { .. } => "file_only",
         },
-        (SoulDoc::Absent, SoulDoc::Present { .. }) => "doc_lost",
-        (SoulDoc::Present { .. }, SoulDoc::Absent) => "doc_invented",
+        (SoulDoc::Present { .. }, SoulDoc::Absent) => "doc_lost",
+        (SoulDoc::Absent, SoulDoc::Present { .. }) => "doc_invented",
         (SoulDoc::Present { .. }, SoulDoc::Present { content, revision }) => match file {
             SoulFileState::NoPath if content.is_empty() => "no_path_empty",
             SoulFileState::NoPath => "no_path_db_only",
@@ -393,15 +389,8 @@ fn check_soul(old: &Connection, new: &Connection, baseline: &[SoulFile]) -> Resu
         current.iter().filter(|s| before.get(s.buddy_id.as_str()) != Some(s)).map(|s| s.slug.clone()).collect();
     let mut split = BTreeMap::new();
     let mut differ = Vec::new();
-    let mut folded = Vec::new();
     for file in &current {
-        let (before, after) = (soul_doc(old, OLD_SOUL, &file.buddy_id)?, soul_doc(new, NEW_SOUL, &file.buddy_id)?);
-        if let (SoulDoc::Present { content: a, .. }, SoulDoc::Present { content: b, .. }) = (&before, &after)
-            && a != b
-        {
-            folded.push(file.slug.clone());
-        }
-        let verdict = soul_verdict(&file.state, &before, &after)?;
+        let verdict = soul_verdict(&file.state, &soul_doc(old, OLD_SOUL, &file.buddy_id)?, &soul_doc(new, NEW_SOUL, &file.buddy_id)?)?;
         if matches!(verdict, "differ" | "file_missing" | "doc_lost" | "doc_invented") {
             differ.push(format!("{}: {verdict}", file.slug));
         }
@@ -413,7 +402,6 @@ fn check_soul(old: &Connection, new: &Connection, baseline: &[SoulFile]) -> Resu
         files_changed,
         split,
         differ,
-        folded,
     })
 }
 

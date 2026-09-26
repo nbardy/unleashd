@@ -101,10 +101,11 @@ fn import_then_verify_then_catch_tampering() {
 
     assert_eq!(report.dropped_read_events, 1, "buddy.get_inbox is a read");
     assert_eq!(report.non_home_memberships.len(), 1);
-    // k1, Lead's thread soul, is newer than the soul head: the fold imports it as Lead's one soul.
-    assert_eq!(report.memory_fold_winners[0]["doc_id"], "mem_b1_soul");
-    assert_eq!(report.memory_fold_winners[0]["source_id"], "k1");
-    assert_eq!(report.folded_copies, 1, "Lead's soul head is archived, not imported");
+    // k3, Worker's only long_term copy, is workspace-scoped: it wins with no head to compete.
+    assert_eq!(report.memory_fold_winners[0]["doc_id"], "mem_b2_long_term");
+    assert_eq!(report.memory_fold_winners[0]["source_id"], "k3");
+    // k1, Lead's thread soul, is newer than the soul head, but only the head is ever the soul.
+    assert_eq!(report.folded_copies, 1, "k1 is archived, not imported");
     assert_eq!(report.converted_schedules[0]["cron"], "*/30 * * * *");
     assert!(matches!(report.soul_files.iter().find(|s| s.slug == "lead").unwrap().state, SoulFileState::Present { .. }));
     assert!(import(&old, &new, &owner_reads, ImportOptions::default()).is_err(), "an existing target is never overwritten");
@@ -119,7 +120,6 @@ fn import_then_verify_then_catch_tampering() {
     assert!(ok.ordering.ok && ok.ordering.mismatches.is_empty());
     assert_eq!(ok.soul.split.get("match"), Some(&1));
     assert_eq!(ok.soul.split.get("no_path_empty"), Some(&2));
-    assert_eq!(ok.soul.folded, ["lead"], "the soul file mirrors the v33 head; the imported soul is the newer thread copy");
 
     // The imported rows carry their meaning, not just their bytes.
     let conn = Connection::open(&new).unwrap();
@@ -215,12 +215,14 @@ fn memory_folds_to_the_newest_copy_and_archives_the_rest() {
              INSERT INTO buddy_knowledge VALUES
                ('k5','b2','p1','owner_thread','conv-1','working','',1,'thread one','2026-07-02T00:00:00.000Z'),
                ('k6','b2','p1','owner_thread','conv-2','working','',3,'thread two, newest','2026-07-09T00:00:00.000Z'),
-               ('k7','b2','p1','project','t1','working','',1,'task copy','2026-07-05T00:00:00.000Z');
+               ('k7','b2','p1','project','t1','working','',1,'task copy','2026-07-05T00:00:00.000Z'),
+               ('k8','b2','p1','owner_thread','conv-3','soul','',1,'a thread-only soul','2026-07-10T00:00:00.000Z');
              INSERT INTO buddy_knowledge_revisions VALUES
                ('k5',1,'thread one','seed','b2','{}','2026-07-02T00:00:00.000Z'),
                ('k6',1,'thread two','seed','b2','{}','2026-07-08T00:00:00.000Z'),
                ('k6',3,'thread two, newest','edit','b2','{}','2026-07-09T00:00:00.000Z'),
-               ('k7',1,'task copy','seed','b2','{}','2026-07-05T00:00:00.000Z');",
+               ('k7',1,'task copy','seed','b2','{}','2026-07-05T00:00:00.000Z'),
+               ('k8',1,'a thread-only soul','seed','b2','{}','2026-07-10T00:00:00.000Z');",
         )
         .unwrap();
     // The stored hash must be the content's, as v33 wrote it.
@@ -245,16 +247,20 @@ fn memory_folds_to_the_newest_copy_and_archives_the_rest() {
         ),
         "1=1 2=3"
     );
-    assert_eq!(report.folded_copies, 4, "Lead's soul head + Worker's head, k5 and k7");
+    // The soul is the owner's: a newer thread soul (k8) never replaces the head (orchestrator
+    // decision 2026-09-26; 4 live thread souls were newer than their heads).
+    assert_eq!(row("SELECT id || '|' || content FROM doc WHERE buddy_id = 'b2' AND kind = 'soul'"), "mem_b2_soul|");
+    assert_eq!(report.folded_copies, 5, "Lead's k1; Worker's working head, k5, k7 and soul k8");
 
     let archive = unleashd_buddies_import::notes::archive_plan(&old).unwrap();
     let worker = archive.iter().find(|f| f.buddy_id == "b2").unwrap();
     assert_eq!(worker.path, dir.path().join("agent_notes/buddy-notes/worker/memory-archive.md"));
-    assert_eq!(worker.sections, 3);
+    assert_eq!(worker.sections, 4);
     let (head, thread, task) =
         (worker.text.find("head plan").unwrap(), worker.text.find("thread one").unwrap(), worker.text.find("task copy").unwrap());
     assert!(head < thread && thread < task, "oldest first");
     assert!(worker.text.contains("working (project t1)") && !worker.text.contains("thread two"));
+    assert!(worker.text.contains("soul (owner_thread conv-3)\n_revision 1, buddy_knowledge k8_\n\na thread-only soul"));
 
     let ok = verify(&old, &new, &report.soul_files, &report.owner_reads, &report.direct_reads).unwrap();
     assert!(ok.ok, "{}", serde_json::to_string_pretty(&ok).unwrap());

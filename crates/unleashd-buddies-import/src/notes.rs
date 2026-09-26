@@ -136,14 +136,14 @@ fn buddy_folder(owners: &mut BTreeMap<PathBuf, String>, root: &str, buddy_id: &s
     }
 }
 
-/// Every memory copy the fold did not import (rank > 1), one `memory-archive.md` per Buddy in
+/// Every memory copy the fold did not import (not the `winner`), one `memory-archive.md` per Buddy in
 /// its home workspace, oldest first. The verifier counts these sections per Buddy.
 pub fn archive_plan(source: &Path) -> Result<Vec<NoteFile>> {
     let conn = open_source(source)?;
     let mut stmt = conn.prepare(&format!(
         "SELECT w.root_path, b.id, b.name, c.scope_kind, c.scope_id, c.kind, c.revision, c.updated_at, c.source, c.source_id, c.content
          FROM ({}) c JOIN buddies b ON b.id = c.buddy_id JOIN projects w ON w.id = b.project_id
-         WHERE c.rank > 1 ORDER BY w.root_path, b.name, c.updated_at, c.source_id",
+         WHERE NOT c.winner ORDER BY w.root_path, b.name, c.updated_at, c.source_id",
         memory_copies("")
     ))?;
     let rows = stmt.query_map([], |r| {
