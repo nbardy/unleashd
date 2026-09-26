@@ -1,22 +1,16 @@
-import { type ConversationConfig, createDefaultConversationConfig } from '@unleashd/shared';
-import { useAtomValue } from 'jotai';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
-import { connectionAtom, defaultCwdOf, listField } from '../../atoms/conversations';
-import { prefsAtom } from '../../atoms/ui';
-import { useProviderCatalog } from '../../hooks/useProviderCatalog';
 import { mobileConversationRouteState } from '../../utils/conversation-route-state';
-import { normalizeFolderDirectory, shortenHomePath } from '../../utils/directories';
-import { type MobileCreateKind, createFromRequest } from '../atoms/create';
+import {
+  type DirectoryStart,
+  NewConversationForm,
+} from '../../views/new-conversation/NewConversationForm';
+import type { CreateKind } from '../../views/new-conversation/create';
 
 /**
- * NewConversationSheet — the mobile "+ New" flow for Chats and Swarms.
- *
- * Deliberately not a port of the desktop modal: typing an absolute path on a
- * phone keyboard is miserable, so recent directories are tappable rows and the
- * free-text field is the fallback, not the primary control. Provider stays at
- * the catalog default here — ChatMobile's header picker can change it before
- * the first message, which is the only point where it matters.
+ * NewConversationSheet — the mobile container for the shared
+ * NewConversationForm ("+ New" on Chats and Swarms). The form is the same one
+ * the desktop modal shows; this file is only the sheet around it.
  *
  * Native <dialog> + showModal() rather than a div overlay: focus trapping,
  * inertness of the page behind, and Esc-to-close come from the platform.
@@ -24,36 +18,20 @@ import { type MobileCreateKind, createFromRequest } from '../atoms/create';
  * which is how backdrop-dismiss is detected below.
  */
 
-const COPY: Record<MobileCreateKind, { title: string; confirm: string; pending: string }> = {
-  chat: { title: 'New chat', confirm: 'Start chat', pending: 'Starting…' },
-  swarm: { title: 'New swarm', confirm: 'Start swarm', pending: 'Loading swarm context…' },
-};
-
-function displayPath(dir: string): string {
-  return shortenHomePath(dir);
-}
+const DEFAULT_START: DirectoryStart = { t: 'default' };
+const TITLE: Record<CreateKind, string> = { chat: 'New chat', swarm: 'New swarm' };
 
 export function NewConversationSheet({
   kind,
   onClose,
 }: {
-  kind: MobileCreateKind;
+  kind: CreateKind;
   onClose: () => void;
 }) {
   const navigate = useNavigate();
   const location = useLocation();
   const chatRouteState = useMemo(() => mobileConversationRouteState(location), [location]);
-  const recentDirectories = useAtomValue(listField('recentDirs'));
-  const lastWorkingDirectory = useAtomValue(prefsAtom).lastWorkingDirectory;
-  const defaultCwd = defaultCwdOf(useAtomValue(connectionAtom).server);
-  const wsStatus = useAtomValue(connectionAtom).socket.tag;
-  const { catalog } = useProviderCatalog();
-
-  const initialDirectory = recentDirectories[0] ?? lastWorkingDirectory ?? defaultCwd ?? '/';
-  const [directory, setDirectory] = useState(initialDirectory);
-  const [filter, setFilter] = useState('');
   const [busy, setBusy] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const dialogRef = useRef<HTMLDialogElement>(null);
 
   useEffect(() => {
@@ -62,42 +40,11 @@ export function NewConversationSheet({
     dialog.showModal();
   }, []);
 
-  const matches = useMemo(() => {
-    const trimmed = filter.trim().toLowerCase();
-    if (!trimmed) return recentDirectories.slice(0, 12);
-    return recentDirectories.filter((dir) => dir.toLowerCase().includes(trimmed)).slice(0, 12);
-  }, [recentDirectories, filter]);
-
-  const resolvedDirectory = normalizeFolderDirectory(directory);
-  const canCreate = directory.trim().length > 0 && wsStatus === 'open' && !busy;
-  const copy = COPY[kind];
-
-  const submit = async () => {
-    if (!canCreate) return;
-    setBusy(true);
-    setError(null);
-    try {
-      const conversationId = await createFromRequest({
-        kind,
-        workingDirectory: resolvedDirectory,
-        // Catalog-derived default; 'claude' until the catalog loads.
-        config: createDefaultConversationConfig(
-          (catalog?.providers[0]?.id ?? 'claude') as ConversationConfig['provider']
-        ),
-      });
-      onClose();
-      navigate(`/chat/${conversationId}`, { state: chatRouteState });
-    } catch (cause) {
-      setError(cause instanceof Error ? cause.message : String(cause));
-      setBusy(false);
-    }
-  };
-
   return (
     <dialog
       ref={dialogRef}
       className="mobile-sheet ui-card"
-      aria-label={copy.title}
+      aria-label={TITLE[kind]}
       onCancel={(event) => {
         // Esc while a create is in flight would strand the pending request.
         if (busy) event.preventDefault();
@@ -110,7 +57,7 @@ export function NewConversationSheet({
       <div className="mobile-sheet__inner ui-stack">
         <div className="mobile-sheet__grabber" aria-hidden="true" />
         <div className="mobile-sheet__header ui-row">
-          <h2 className="mobile-sheet__title">{copy.title}</h2>
+          <h2 className="mobile-sheet__title">{TITLE[kind]}</h2>
           <button
             type="button"
             className="mobile-sheet__close ui-inline-row ui-card ui-muted"
@@ -121,92 +68,16 @@ export function NewConversationSheet({
             ✕
           </button>
         </div>
-
-        <label className="mobile-sheet__label" htmlFor="mobile-new-directory">
-          Working directory
-        </label>
-        <input
-          id="mobile-new-directory"
-          className="mobile-sheet__input ui-card"
-          value={directory}
-          onChange={(event) => setDirectory(event.target.value)}
-          placeholder="/Users/you/git/project"
-          autoComplete="off"
-          autoCapitalize="none"
-          autoCorrect="off"
-          spellCheck={false}
+        <NewConversationForm
+          layout="sheet"
+          start={DEFAULT_START}
+          primary={kind}
+          onBusyChange={setBusy}
+          onCreated={(conversationId) => {
+            onClose();
+            navigate(`/chat/${conversationId}`, { state: chatRouteState });
+          }}
         />
-
-        {recentDirectories.length > 0 && (
-          <>
-            <div className="mobile-sheet__section-title">Recent</div>
-            <input
-              className="mobile-sheet__input ui-card mobile-sheet__input--filter"
-              value={filter}
-              onChange={(event) => setFilter(event.target.value)}
-              placeholder="Filter recent folders…"
-              type="search"
-              inputMode="search"
-              autoComplete="off"
-              spellCheck={false}
-              aria-label="Filter recent folders"
-            />
-            <ul className="mobile-sheet__recents">
-              {matches.map((dir) => {
-                const selected = dir === resolvedDirectory;
-                return (
-                  <li key={dir}>
-                    <button
-                      type="button"
-                      className={
-                        selected
-                          ? 'mobile-sheet__recent ui-card mobile-sheet__recent--selected'
-                          : 'mobile-sheet__recent ui-card'
-                      }
-                      onClick={() => setDirectory(dir)}
-                      aria-pressed={selected}
-                    >
-                      <span className="mobile-sheet__recent-name ui-truncate">
-                        {dir.split('/').filter(Boolean).pop() ?? dir}
-                      </span>
-                      <span className="mobile-sheet__recent-path ui-truncate ui-muted">
-                        {displayPath(dir)}
-                      </span>
-                    </button>
-                  </li>
-                );
-              })}
-              {matches.length === 0 && (
-                <li className="mobile-sheet__no-matches">No recent folder matches that filter.</li>
-              )}
-            </ul>
-          </>
-        )}
-
-        {/* Sticky: with a dozen recent folders the list overflows the sheet, so
-            the primary action must stay reachable without scrolling — and the
-            error must ride with it, or a failed submit reports into dead space
-            the user never scrolls back to. */}
-        <div className="mobile-sheet__footer ui-stack">
-          {error && (
-            <div className="mobile-sheet__error" role="alert">
-              {error}
-            </div>
-          )}
-          {wsStatus !== 'open' && (
-            <output className="mobile-sheet__note">
-              Disconnected from the server — reconnecting.
-            </output>
-          )}
-          <button
-            type="button"
-            className="mobile-sheet__confirm ui-control"
-            onClick={() => void submit()}
-            disabled={!canCreate}
-          >
-            {busy ? copy.pending : copy.confirm}
-          </button>
-        </div>
       </div>
     </dialog>
   );

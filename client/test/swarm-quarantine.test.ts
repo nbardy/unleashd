@@ -18,6 +18,7 @@ const ENTRY_IMPORTERS = [
   'components/Chat.tsx',
   'components/VirtualizedMessageList.tsx',
   'mobile/conversations/ConversationView.tsx',
+  'views/transcript/TranscriptGroup.tsx',
 ];
 
 function sourceFiles(directory: string): string[] {

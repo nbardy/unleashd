@@ -78,8 +78,7 @@ register(
   `)}`,
   import.meta.url
 );
-const { VirtualizedGroup } = await import('../src/components/VirtualizedMessageList');
-const { MessageRow, AssistantResponseRow } = await import('../src/mobile/components/MessageRow');
+const { TranscriptGroup } = await import('../src/views/transcript/TranscriptGroup');
 const timestamp = new Date('2026-09-10T00:00:00Z');
 /** A conversation's loaded bodies: the transcript atom Chat groups are built from. */
 type TestConversation = { id: string; messages: Message[] } & Record<string, unknown>;
@@ -146,7 +145,8 @@ test('one assistant response contains all prose and widgets while streaming stay
   const markup = renderToStaticMarkup(
     <MemoryRouter>
       {groups.map((group, index) => (
-        <VirtualizedGroup
+        <TranscriptGroup
+          presentation="hover"
           key={index}
           group={group}
           isLastGroup={index === groups.length - 1}
@@ -211,7 +211,8 @@ test('response boundaries own one Copy action and preserve ordered tool runs and
   const markup = renderToStaticMarkup(
     <MemoryRouter>
       {groups.map((group, index) => (
-        <VirtualizedGroup
+        <TranscriptGroup
+          presentation="hover"
           key={index}
           group={group}
           isLastGroup={index === groups.length - 1}
@@ -253,11 +254,17 @@ test('response boundaries own one Copy action and preserve ordered tool runs and
   );
   const mobile = renderToStaticMarkup(
     <MemoryRouter>
-      <AssistantResponseRow response={responses[0]} isLast />
+      <TranscriptGroup
+        presentation="footer"
+        group={responses[0]}
+        isLastGroup
+        lastMessageRef={{ current: null }}
+        workingDirectory="/tmp"
+      />
     </MemoryRouter>
   );
   assert.equal((mobile.match(/>Assistant</g) ?? []).length, 1);
-  assert.equal((mobile.match(/class="mobile-message__footer"/g) ?? []).length, 1);
+  assert.equal((mobile.match(/class="message-actions message-actions--footer"/g) ?? []).length, 1);
   for (const text of ['First answer', 'Second answer', 'Checking the result', 'Final answer'])
     assert.ok(mobile.includes(text));
 });
@@ -274,7 +281,8 @@ test('streamed tool runs and saved calls render the same compact disclosure with
     renderToStaticMarkup(
       <MemoryRouter>
         {store.get(groupsFamily(conversation.id)).map((group, index) => (
-          <VirtualizedGroup
+          <TranscriptGroup
+            presentation="hover"
             key={index}
             group={group}
             isLastGroup
@@ -348,14 +356,22 @@ test('saved freeform input reaches desktop and mobile as literal code, with comp
     .replaceAll('"', '&quot;')
     .replaceAll("'", '&#x27;');
   for (const view of [
-    <VirtualizedGroup
+    <TranscriptGroup
+      presentation="hover"
       key="desktop"
       group={{ type: 'single', messages: [toolMessage], firstMessageIndex: 0 }}
       isLastGroup
       lastMessageRef={{ current: null }}
       workingDirectory={directory}
     />,
-    <MessageRow key="mobile" message={toolMessage} isLast />,
+    <TranscriptGroup
+      key="mobile"
+      presentation="footer"
+      group={{ type: 'single', messages: [toolMessage], firstMessageIndex: 0 }}
+      isLastGroup
+      lastMessageRef={{ current: null }}
+      workingDirectory={directory}
+    />,
   ]) {
     const markup = renderToStaticMarkup(<MemoryRouter>{view}</MemoryRouter>);
     const preview = `${input.replace(/\s+/g, ' ').slice(0, 119)}…`;
@@ -388,7 +404,8 @@ test('saved freeform input reaches desktop and mobile as literal code, with comp
   );
   const markup = renderToStaticMarkup(
     <MemoryRouter>
-      <VirtualizedGroup
+      <TranscriptGroup
+        presentation="hover"
         group={response}
         isLastGroup
         lastMessageRef={{ current: null }}
@@ -448,14 +465,22 @@ test('worker launch receipts stay inline in collapsed tool rows on both shells',
           ])
         );
       for (const view of [
-        <VirtualizedGroup
+        <TranscriptGroup
+          presentation="hover"
           key="desktop"
           group={response}
           isLastGroup
           lastMessageRef={{ current: null }}
           workingDirectory="/tmp"
         />,
-        <AssistantResponseRow key="mobile" response={response} isLast />,
+        <TranscriptGroup
+          key="mobile"
+          presentation="footer"
+          group={response}
+          isLastGroup
+          lastMessageRef={{ current: null }}
+          workingDirectory="/tmp"
+        />,
       ]) {
         const markup = renderToStaticMarkup(
           <Provider store={store}>
@@ -493,7 +518,8 @@ test('live empty assistant responses show a working indicator on both shells', (
   const renderDesktop = (isLiveTurn?: boolean) =>
     renderToStaticMarkup(
       <MemoryRouter>
-        <VirtualizedGroup
+        <TranscriptGroup
+          presentation="hover"
           group={response}
           isLastGroup
           lastMessageRef={{ current: null }}
@@ -505,11 +531,13 @@ test('live empty assistant responses show a working indicator on both shells', (
   const renderMobile = (isLive?: boolean) =>
     renderToStaticMarkup(
       <MemoryRouter>
-        <AssistantResponseRow
-          response={response}
-          isLast
+        <TranscriptGroup
+          presentation="footer"
+          group={response}
+          isLastGroup
           lastMessageRef={{ current: null }}
-          isLive={isLive}
+          workingDirectory="/tmp"
+          isLiveTurn={isLive}
         />
       </MemoryRouter>
     );
@@ -517,19 +545,20 @@ test('live empty assistant responses show a working indicator on both shells', (
   // Live turn, empty response: both shells show a working affordance.
   assert.match(renderDesktop(true), /chat-response-working/);
   assert.match(renderDesktop(true), /Thinking/);
-  assert.match(renderMobile(true), /mobile-chat__thinking/);
+  assert.match(renderMobile(true), /chat-response-working/);
 
   // Settled (or unknown) turn state: no indicator, blank bubble as before.
   assert.doesNotMatch(renderDesktop(false), /chat-response-working/);
   assert.doesNotMatch(renderDesktop(), /chat-response-working/);
-  assert.doesNotMatch(renderMobile(false), /mobile-chat__thinking/);
-  assert.doesNotMatch(renderMobile(), /mobile-chat__thinking/);
+  assert.doesNotMatch(renderMobile(false), /chat-response-working/);
+  assert.doesNotMatch(renderMobile(), /chat-response-working/);
 
   // A live turn never flags a non-last group: the indicator belongs to the
   // response the turn is still writing to.
   const stale = renderToStaticMarkup(
     <MemoryRouter>
-      <VirtualizedGroup
+      <TranscriptGroup
+        presentation="hover"
         group={response}
         isLastGroup={false}
         lastMessageRef={{ current: null }}
@@ -547,7 +576,8 @@ test('live empty assistant responses show a working indicator on both shells', (
   } as typeof response;
   const settled = renderToStaticMarkup(
     <MemoryRouter>
-      <VirtualizedGroup
+      <TranscriptGroup
+        presentation="hover"
         group={withContent}
         isLastGroup
         lastMessageRef={{ current: null }}
@@ -635,7 +665,7 @@ test('a streaming frame rebuilds only the last group, and matches a full regroup
     store.set(streamStore.all, new Map([[conversation.id, text]]));
     const live = store.get(groupsAtom);
     assert.equal(live.length, settled.length);
-    // Every group before the tail is the SAME object, so VirtualizedGroup
+    // Every group before the tail is the SAME object, so TranscriptGroup
     // (memo on group identity) skips all of them on a frame.
     for (let i = 0; i < live.length - 1; i++) assert.equal(live[i], settled[i]);
     assert.notEqual(live.at(-1), settled.at(-1));

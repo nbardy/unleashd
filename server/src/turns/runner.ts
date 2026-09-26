@@ -495,10 +495,12 @@ export class TurnRunner {
 
   applyTaskStarted(event: Extract<UnifiedAgentEvent, { type: 'task.started' }>): void {
     this.backgroundWait.taskStarted(event);
+    this.subAgentFold.taskStarted(this.subAgentHost, event);
   }
 
   applyTaskFinished(event: Extract<UnifiedAgentEvent, { type: 'task.finished' }>): void {
     this.backgroundWait.taskFinished(event, this.watchdog);
+    this.subAgentFold.taskFinished(this.subAgentHost, event);
   }
 
   applyToolResult(output: unknown): void {

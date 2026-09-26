@@ -132,7 +132,7 @@ writes only `streamFamily(id)`. Never append chunks to the transcript.
 
 A frame rebuilds only the last message group (`withStreamingTail` in
 `utils/chat-message-groups.ts`); every earlier group is the settled object, so
-`VirtualizedGroup` (memoized on group identity) skips it. Settled groups
+`TranscriptGroup` (memoized on group identity) skips it. Settled groups
 recompute only when the records array changes, and an appended record
 regroups from the last group (`regroupChatMessages`). Until 2026-09-25 each
 frame regrouped the whole transcript and replaced all ~300 groups of a
@@ -340,6 +340,13 @@ conversation opens, 30 more per "Show earlier" (keeping the reader's distance
 from the bottom). New groups append below without unmounting the top one — a
 count-from-the-end window did, which shifted content above the reader on Safari
 (no scroll anchoring).
+
+Only the two list CONTAINERS differ. Both render the same row view,
+`views/transcript/TranscriptGroup`, and pick where a row's actions live with
+`presentation`: `hover` (desktop, Copy revealed on hover/focus) or `footer`
+(mobile, time plus a permanent Copy pill, since touch has no hover). The
+markdown overrides (file previews, code copy, LaTeX delimiters) live beside it
+in `views/transcript/markdown-components.tsx`.
 
 ## Persisted UI state
 

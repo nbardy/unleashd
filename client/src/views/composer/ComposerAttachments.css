@@ -1,0 +1,162 @@
+/* presentation="gallery" */
+.composer-attachments {
+  position: relative;
+  flex: none;
+  min-width: 0;
+}
+.composer-attachments__strip {
+  display: flex;
+  gap: var(--sp-4);
+  padding: var(--sp-4) var(--sp-6);
+  overflow-x: auto;
+  overscroll-behavior: contain;
+}
+.composer-attachments__thumbnail {
+  flex: 0 0 48px;
+  width: 48px;
+  height: 48px;
+  padding: 0;
+  overflow: hidden;
+  background: var(--bg-panel);
+  color: var(--text-primary);
+  font-size: var(--fs-1);
+  overflow-wrap: anywhere;
+}
+.composer-attachments__thumbnail img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+.composer-attachments__gallery {
+  position: absolute;
+  z-index: 6;
+  bottom: 100%;
+  left: 8px;
+  right: 8px;
+  background: var(--bg-panel);
+  border: 1px solid var(--border-default);
+  box-shadow: 0 8px 24px #0004;
+}
+.composer-attachments__gallery header,
+.composer-attachments__page footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--sp-4);
+  padding: 0 var(--sp-4);
+  font-size: var(--fs-3);
+}
+.composer-attachments__gallery button {
+  flex: none;
+  min-height: 44px;
+  border: 0;
+  background: transparent;
+  color: var(--text-secondary);
+  font: inherit;
+}
+.composer-attachments__pages {
+  display: flex;
+  overflow-x: auto;
+  overscroll-behavior: contain;
+  scroll-snap-type: x mandatory;
+}
+.composer-attachments__page {
+  flex: 0 0 100%;
+  min-width: 0;
+  scroll-snap-align: start;
+}
+.composer-attachments__page img,
+.composer-attachments__document {
+  display: block;
+  width: 100%;
+  height: 110px;
+  object-fit: contain;
+}
+.composer-attachments__page footer span {
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+/* presentation="chips" */
+/* Pending files preview — horizontal strip above the textarea */
+.pending-files {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-4);
+  margin-bottom: 8px;
+}
+
+.pending-file-item {
+  gap: var(--sp-3);
+  padding: var(--sp-2) var(--sp-4);
+  background: var(--bg-tertiary);
+  font-size: var(--fs-3);
+  color: var(--text-secondary);
+}
+
+.pending-file-thumb {
+  width: 32px;
+  height: 32px;
+  object-fit: cover;
+  border-radius: var(--ui-radius);
+}
+
+.pending-file-icon {
+  font-size: var(--fs-7);
+  line-height: 1;
+}
+
+.pending-file-name {
+  max-width: 120px;
+}
+
+.pending-file-remove {
+  width: 18px;
+  height: 18px;
+  border: none;
+  background: color-mix(in srgb, var(--danger) 30%, transparent);
+  color: var(--accent-error);
+  font-size: var(--fs-3);
+  font-weight: bold;
+  line-height: 1;
+  justify-content: center;
+  transition: all 0.2s;
+}
+
+/* Upload failure banner — sits directly above the pending-files tray.
+   A drop that fails must not look like a drop that was ignored: during the
+   2026-08-20 hot-reload drain the upload 503'd and only console.error'd, so
+   drag-and-drop read as silently broken. See hooks/usePendingAttachments.ts. */
+.composer-upload-error {
+  gap: var(--sp-4);
+  margin: 0 0 6px 0;
+  padding: var(--sp-3) var(--sp-5);
+  border: 1px solid var(--theme-danger);
+  border-radius: var(--ui-radius);
+  background: color-mix(in srgb, var(--theme-danger) 12%, transparent);
+  color: var(--theme-danger);
+  font-size: var(--fs-3);
+  line-height: 1.4;
+}
+
+.composer-upload-error__text {
+  flex: 1 1 0;
+  min-width: 0;
+}
+
+.composer-upload-error__dismiss {
+  flex: 0 0 auto;
+  padding: 0 var(--sp-2);
+  border: none;
+  background: transparent;
+  color: inherit;
+  font-size: var(--fs-6);
+  line-height: 1;
+  cursor: pointer;
+}
+
+.pending-file-remove:hover {
+  background: var(--accent-error);
+  color: var(--text-on-accent);
+}

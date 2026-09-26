@@ -12,7 +12,7 @@ Mobile is a second view tree over the same shared core, not a fork. One `jotaiSt
 atoms/*, hooks/*, utils/*, shared/*, views/*, components/buddies/{api,types,ui-contract,buddies-shaping}.ts
 ```
 
-**Shared views (owner decision O1, T20).** Device-agnostic content lives in `client/src/views/<group>/` and both trees render it: `views/conversation/` holds `SubAgentPanel`, `ResumeSource`, `QueuedMessages`, `TurnStatus`. Where the output differs by device the view takes a named variant chosen by its caller (`presentation: 'tree' | 'cards'`, `'icon' | 'card'`, `'list' | 'disclosure'`, `'header' | 'composer'`), never a boolean and never `useDeviceKind`. A view never imports `mobile/*` or a desktop shell component (Sidebar, Gallery, SettingsMenu, ShellDesktop) — guard `client/test/views-boundary.test.ts`. Its CSS sits next to it with component-prefixed classes plus `ui/primitives.css` (`ui-section__*`, `ui-surface`, `ui-badge`, moved there from `mobile-ui.css`).
+**Shared views (owner decision O1, T20).** Device-agnostic content lives in `client/src/views/<group>/` and both trees render it: `views/conversation/` holds `SubAgentPanel`, `ResumeSource`, `QueuedMessages`, `TurnStatus`. `views/transcript/` holds `TranscriptGroup`, the one row view under both list containers (`'hover' | 'footer'` actions). `views/composer/` holds `PromptPalette` (`'popover' | 'sheet'`), `ComposerAttachments` (`'chips' | 'gallery'`) + `UploadErrorNotice`, and `SendControls` (`'labelled' | 'icons'`); the composers themselves (Chat.tsx input, `ComposerMobile` + `FullscreenComposer`) stay per tree. Where the output differs by device the view takes a named variant chosen by its caller (`presentation: 'tree' | 'cards'`, `'icon' | 'card'`, `'list' | 'disclosure'`, `'header' | 'composer'`), never a boolean and never `useDeviceKind`. A view never imports `mobile/*` or a desktop shell component (Sidebar, Gallery, SettingsMenu, ShellDesktop) — guard `client/test/views-boundary.test.ts`. Its CSS sits next to it with component-prefixed classes plus `ui/primitives.css` (`ui-section__*`, `ui-surface`, `ui-badge`, moved there from `mobile-ui.css`).
 
 Never import another `components/*.tsx` or its CSS. Swarm parsers were moved to `utils/swarmConvoParsers.ts` / `utils/swarmAnalyticsParsers.ts` precisely so mobile can reuse logic without pulling desktop view trees. `components/buddies/*` is the one allowed exception — its `buddies-shaping.ts` is pure shaping (no JSX/CSS side-effects) co-located with `api.ts`/`types.ts`/`ui-contract.ts`.
 
@@ -51,18 +51,19 @@ only in presentation, the caller picks a named variant, never a boolean:
 Device-specific derived views that are not shared content still live in
 `mobile/atoms/`, never in `conversations.ts`.
 
-### Creation actions (`mobile/atoms/create.ts`)
+### Creation actions (`views/new-conversation/`)
 
-Mobile v1 shipped read-only: no create affordance on Chats, Swarms, or Buddies,
-and empty states that told the user to go use the desktop app. `+ New` on all
-three now routes through `mobile/atoms/create.ts`:
+`+ New` on Chats and Swarms opens `mobile/components/NewConversationSheet`, a
+`<dialog>` around the SAME `NewConversationForm` the desktop Sidebar shows in
+its modal (`layout: 'modal' | 'sheet'`, T20-F). The form creates through
+`views/new-conversation/create.ts`:
 
-- `MobileCreateRequest` (`kind: 'chat' | 'swarm'`) → thin `createFromRequest`
+- `CreateRequest` (`kind: 'chat' | 'swarm'`) → thin `createFromRequest`
   dispatcher → one handler per kind. Both land on the core `createConversation`
   action, so there is no second creation spine; `swarm` only adds the
   `swarmDebugPrefix` from `GET /api/oompa-swarm-context`. That fetch failing
-  surfaces as an error in the sheet — never a silent downgrade to a plain chat.
-- `createBuddyViaBuilder()` is a different shape (no directory, no config):
+  surfaces as an error in the form — never a silent downgrade to a plain chat.
+- `createBuddyViaBuilder()` (re-exported by `mobile/atoms/create.ts`) is a different shape (no directory, no config):
   `POST /api/buddies/builder` with a client-owned `conversationId`, then route
   to the returned Builder thread.
 

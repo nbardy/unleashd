@@ -1,7 +1,7 @@
-import type { ConversationConfig, ConversationRow } from '@unleashd/shared';
+import type { ConversationConfig } from '@unleashd/shared';
 import { createDefaultConversationConfig } from '@unleashd/shared';
 import { useAtom, useAtomValue } from 'jotai';
-import { memo, useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useLocation, useMatch, useNavigate } from 'react-router-dom';
 import {
   createConversation,
@@ -14,24 +14,17 @@ import {
   buddySidebarAtom,
   buddySidebarOverviewAtom,
 } from '../atoms/buddy-sidebar';
-import {
-  commandsAtom,
-  connectionAtom,
-  defaultCwdOf,
-  listField,
-  pendingCreatesOf,
-  rowFamily,
-  unreadFamily,
-} from '../atoms/conversations';
-import { prefsAtom, setLastWorkingDirectory, toggleGalleryCollapsed } from '../atoms/ui';
+import { commandsAtom, connectionAtom, listField, pendingCreatesOf } from '../atoms/conversations';
+import { prefsAtom, toggleGalleryCollapsed } from '../atoms/ui';
 import { useBuddyOverview } from '../hooks/useBuddyData';
 import { useProviderCatalog } from '../hooks/useProviderCatalog';
-import { isRowRunning } from '../utils/conversation-row';
-import { normalizeFolderDirectory, shortenHomePath } from '../utils/directories';
+import { shortenHomePath } from '../utils/directories';
 import { getProjectColor } from '../utils/projectColors';
-import { formatTimeAgo, getConversationLastActivity, getMinutesElapsed } from '../utils/time';
-import { ConversationConfigPicker } from '../views/config/ConversationConfigPicker';
-import { PathAutocomplete } from './PathAutocomplete';
+import { ConversationRow } from '../views/conversation-row/ConversationRow';
+import {
+  type DirectoryStart,
+  NewConversationForm,
+} from '../views/new-conversation/NewConversationForm';
 import { DmIcon, WakeIcon, WakeIndicator } from './buddies/WakeIndicator';
 import { useBuddyDirectActions } from './buddies/buddy-direct-actions';
 import { buddyTabPath } from './buddies/buddy-tabs';
@@ -39,7 +32,6 @@ import { ownerUnreadTotal, useOwnerInboxes } from './buddies/channel-data';
 import { createBuddyViaBuilder } from './buddies/create-buddy-builder';
 import './Sidebar.css';
 import { SearchView } from '../views/search/SearchView';
-import { useTimeTick } from '../hooks/useTimeTick';
 
 function SidebarFolderIcon() {
   return (
@@ -79,52 +71,26 @@ function SidebarBuddyIcon() {
   );
 }
 
-/**
- * Exponential decay for time-ago text brightness.
- * Recent ("just now") = near-white, older = fades toward muted grey.
- *
- * Uses color-mix to blend between --text-bright (near-white) and --text-muted (grey).
- * The mix percentage decays exponentially: 100% bright at 0min, ~40% at 30min, ~15% at 60min.
- * Decay constant 0.03 gives a natural half-life of ~23 minutes.
- */
-function timeAgoColor(minutesElapsed: number): string {
-  const brightPct = Math.round(100 * Math.exp(-0.03 * minutesElapsed));
-  return `color-mix(in oklch, var(--text-bright) ${brightPct}%, var(--text-muted))`;
-}
+const DEFAULT_START: DirectoryStart = { t: 'default' };
 
 export function Sidebar() {
-  const latestWorkingDirectory = useAtomValue(listField('latestCwd'));
   const { recent: recentGroups, olderIds } = useAtomValue(listField('folders'));
   const pendingCreations = pendingCreatesOf(useAtomValue(commandsAtom));
   // The route owns the active id (06-target-client §1.4).
   const activeConversationId = useMatch('/chat/:id')?.params.id ?? null;
-  const defaultCwd = defaultCwdOf(useAtomValue(connectionAtom).server);
   const wsStatus = useAtomValue(connectionAtom).socket.tag;
 
-  const { lastWorkingDirectory, galleryCollapsedProjects } = useAtomValue(prefsAtom);
+  const { galleryCollapsedProjects } = useAtomValue(prefsAtom);
 
   const builderConversations = useAtomValue(listField('builders'));
   const collapsedSet = useMemo(() => new Set(galleryCollapsedProjects), [galleryCollapsedProjects]);
 
-  // Deduplicated working directories from all conversations — fed to PathAutocomplete for fuzzy
-  // matching. Derived atom (not a local useMemo) so the mobile create sheet reads the same list.
-  const recentDirectories = useAtomValue(listField('recentDirs'));
-
   const [showSearch, setShowSearch] = useState(false);
   const [searchFilterDir, setSearchFilterDir] = useState<string | undefined>(undefined);
-  const [showPicker, setShowPicker] = useState(false);
-  const [directory, setDirectory] = useState('');
-  const [hasPendingDefault, setHasPendingDefault] = useState(false);
-  const [isDirectoryValid, setIsDirectoryValid] = useState(true);
-  const { catalog, error: catalogError, retry: retryCatalog } = useProviderCatalog();
-  // Default provider is catalog-derived; the 'claude' fallback matches
-  // createDefaultConversationConfig(). Catalog is authoritative once loaded.
-  const defaultProvider = (catalog?.providers[0]?.id ?? 'claude') as ConversationConfig['provider'];
-  const [configDraft, setConfigDraft] = useState<ConversationConfig>(() =>
-    createDefaultConversationConfig(defaultProvider)
-  );
-  const [isCreatingSwarm, setIsCreatingSwarm] = useState(false);
-  const [modalError, setModalError] = useState<string | null>(null);
+  // Null = closed; otherwise where the form's directory field starts.
+  const [picker, setPicker] = useState<DirectoryStart | null>(null);
+  const [creatingSwarm, setCreatingSwarm] = useState(false);
+  const { catalog } = useProviderCatalog();
   const [isOpeningBuddyBuilder, setIsOpeningBuddyBuilder] = useState(false);
   const [buddyBuilderError, setBuddyBuilderError] = useState<string | null>(null);
   const { data: buddyOverview } = useBuddyOverview(30_000);
@@ -144,17 +110,7 @@ export function Sidebar() {
   const navigate = useNavigate();
   const location = useLocation();
 
-  const handleNewConversation = useCallback(() => {
-    // Default to the most recently active conversation's working directory,
-    // then lastWorkingDirectory fallback, then server cwd.
-    const lastDir = latestWorkingDirectory ?? lastWorkingDirectory ?? defaultCwd ?? '/';
-    setDirectory(lastDir);
-    setHasPendingDefault(true);
-    setModalError(null);
-    // Provider default is catalog-derived.
-    setConfigDraft(createDefaultConversationConfig(defaultProvider));
-    setShowPicker(true);
-  }, [latestWorkingDirectory, lastWorkingDirectory, defaultCwd, defaultProvider]);
+  const handleNewConversation = useCallback(() => setPicker(DEFAULT_START), []);
 
   const handleNewBuddyBuilder = useCallback(async () => {
     setIsOpeningBuddyBuilder(true);
@@ -181,13 +137,13 @@ export function Sidebar() {
         item.pendingCreation?.args.workingDirectory ??
         item.workingDirectory;
       // Seed the harness from this buddy's latest thread so a provider/model
-      // picked there sticks for the next thread. Falls back to the global
-      // new-conversation draft only when the buddy has no prior thread.
-      // (The dashboard talk() path seeds from the saved Execution profile
-      // instead; the sidebar has last-used config locally, so it uses that.)
+      // picked there sticks for the next thread; the catalog default otherwise.
+      // (The dashboard talk() path seeds from the saved Execution profile.)
       const seedConfig =
         (latestConversation && readConversationDetail(latestConversation.id)?.config.config) ??
-        configDraft;
+        createDefaultConversationConfig(
+          (catalog?.providers[0]?.id ?? 'claude') as ConversationConfig['provider']
+        );
       // Direct create — reuses pending-creations createConversation + buddyContext shape
       const id = createConversation({
         workingDirectory,
@@ -199,7 +155,7 @@ export function Sidebar() {
       });
       navigate(`/chat/${id}`);
     },
-    [configDraft, navigate]
+    [catalog, navigate]
   );
 
   // Shift+Space global shortcut to open "New Conversation" dialog.
@@ -231,68 +187,17 @@ export function Sidebar() {
     return () => window.removeEventListener('keydown', handleSearchShortcut);
   }, []);
 
-  const handleConfirm = useCallback(() => {
-    if (!directory.trim()) return;
-    setModalError(null);
-    setLastWorkingDirectory(directory);
-    const newId = createConversation({
-      workingDirectory: directory,
-      config: configDraft,
-      kind: { t: 'chat' },
-    });
-    setShowPicker(false);
-    navigate(`/chat/${newId}`);
-  }, [directory, configDraft, navigate]);
-
-  const handleCreateNewSwarm = useCallback(async () => {
-    if (!directory.trim()) return;
-    setModalError(null);
-    setIsCreatingSwarm(true);
-    try {
-      const response = await fetch(`/api/oompa-swarm-context?dir=${encodeURIComponent(directory)}`);
-      const payload = (await response.json().catch(() => ({}))) as {
-        prefix?: string;
-        error?: string;
-      };
-      if (!response.ok || !payload.prefix) {
-        throw new Error(payload.error ?? `Failed to load swarm context (HTTP ${response.status})`);
-      }
-
-      setLastWorkingDirectory(directory);
-      const newId = createConversation({
-        workingDirectory: directory,
-        config: configDraft,
-        swarmDebugPrefix: payload.prefix,
-        kind: { t: 'chat' },
-      });
-      setShowPicker(false);
-      navigate(`/chat/${newId}`);
-    } catch (error) {
-      setModalError((error as Error).message);
-    } finally {
-      setIsCreatingSwarm(false);
-    }
-  }, [directory, configDraft, navigate]);
-
   const handleCancel = () => {
-    if (isCreatingSwarm) return;
-    setShowPicker(false);
-    setModalError(null);
+    if (!creatingSwarm) setPicker(null);
   };
 
-  // Stable callbacks: rows are memoized per id, so a new function identity
+  // Stable callback: rows are memoized per id, so a new function identity
   // here would re-render every row on every Sidebar render.
-  const handleSelectConversation = useCallback(
-    (conv: ConversationRow) => navigate(`/chat/${conv.id}`),
-    [navigate]
-  );
-
   const pathname = location.pathname;
   const handleDone = useCallback(
-    (conv: ConversationRow, e: React.MouseEvent) => {
-      e.stopPropagation();
-      setConversationDone(conv.id, true);
-      if (pathname.includes(conv.id)) {
+    (id: string) => {
+      setConversationDone(id, true);
+      if (pathname.includes(id)) {
         navigate('/chats');
       }
     },
@@ -349,81 +254,21 @@ export function Sidebar() {
           </button>
         </div>
 
-        {showPicker && (
+        {picker && (
           <div className="new-conv-overlay ui-row" onClick={handleCancel}>
             <div className="new-conv-modal ui-stack" onClick={(e) => e.stopPropagation()}>
               <h3 className="new-conv-title">New Conversation</h3>
-              <div className="new-conv-label">Working Directory</div>
-              <PathAutocomplete
-                value={directory}
-                onChange={setDirectory}
-                recentDirectories={recentDirectories}
-                placeholder="Search recent or type a path..."
-                className="directory-input"
-                hasPendingDefault={hasPendingDefault}
-                onClearDefault={() => setHasPendingDefault(false)}
-                onConfirm={handleConfirm}
-                onValidationChange={setIsDirectoryValid}
-                autoFocus
+              <NewConversationForm
+                layout="modal"
+                start={picker}
+                primary="chat"
+                onBusyChange={setCreatingSwarm}
+                onCreated={(conversationId) => {
+                  setPicker(null);
+                  setCreatingSwarm(false);
+                  navigate(`/chat/${conversationId}`);
+                }}
               />
-              {catalog ? (
-                <ConversationConfigPicker
-                  value={configDraft}
-                  onChange={setConfigDraft}
-                  catalog={catalog}
-                />
-              ) : (
-                <div className="config-picker-status" role={catalogError ? 'alert' : 'status'}>
-                  {catalogError ? (
-                    <>
-                      Unable to load providers.{' '}
-                      <button type="button" onClick={retryCatalog}>
-                        Retry
-                      </button>
-                    </>
-                  ) : (
-                    'Loading providers…'
-                  )}
-                </div>
-              )}
-              <div className="directory-actions">
-                <button
-                  type="button"
-                  className="dir-action-btn ui-control dir-confirm-btn ui-row"
-                  onClick={handleConfirm}
-                  disabled={wsStatus !== 'open' || !isDirectoryValid || isCreatingSwarm || !catalog}
-                  title={
-                    wsStatus !== 'open'
-                      ? 'Server disconnected'
-                      : !isDirectoryValid
-                        ? 'Invalid directory'
-                        : isCreatingSwarm
-                          ? 'Creating swarm context...'
-                          : 'Create conversation (Shift+Enter)'
-                  }
-                >
-                  Create
-                  <kbd className="btn-shortcut">⇧↵</kbd>
-                </button>
-                <button
-                  type="button"
-                  className="dir-action-btn ui-control dir-swarm-btn"
-                  onClick={() => {
-                    void handleCreateNewSwarm();
-                  }}
-                  disabled={wsStatus !== 'open' || !isDirectoryValid || isCreatingSwarm}
-                  title={
-                    wsStatus !== 'open'
-                      ? 'Server disconnected'
-                      : !isDirectoryValid
-                        ? 'Invalid directory'
-                        : 'Create conversation with swarm context prefix'
-                  }
-                >
-                  {isCreatingSwarm ? 'Preparing...' : 'New Swarm'}
-                </button>
-              </div>
-              {modalError && <div className="new-conv-error">{modalError}</div>}
             </div>
           </div>
         )}
@@ -444,21 +289,21 @@ export function Sidebar() {
             <button
               type="button"
               key={creation.conversationId}
-              className={`conversation-item ui-row pending-creation ${
-                creation.conversationId === activeConversationId ? 'active' : ''
+              className={`conversation-row conversation-row--sidebar ui-row pending-creation${
+                creation.conversationId === activeConversationId ? ' conversation-row--active' : ''
               }`}
               onClick={() => navigate(`/chat/${creation.conversationId}`)}
             >
-              <div className="conversation-row ui-row">
-                <span className="folder-badge ui-truncate">
+              <div className="conversation-row__line ui-row">
+                <span className="conversation-row__folder ui-truncate">
                   {creation.args.workingDirectory.split('/').filter(Boolean).pop() ?? '/'}
                 </span>
-                <span className="conversation-title">
+                <span className="conversation-row__title">
                   {creation.state.tag === 'rejected'
                     ? `Failed: ${creation.state.message}`
                     : `Starting ${creation.args.config.provider}…`}
                 </span>
-                <span className="status-indicator pending" />
+                <span className="conversation-row__dot" data-status="queued" />
               </div>
             </button>
           ))}
@@ -547,12 +392,12 @@ export function Sidebar() {
                           return (
                             <>
                               {visibleBuilder.map((entry) => (
-                                <SidebarConversationRow
+                                <ConversationRow
+                                  variant="sidebar"
                                   key={entry.id}
                                   id={entry.id}
-                                  isActive={entry.id === activeConversationId}
-                                  showFolderBadge={false}
-                                  onSelect={handleSelectConversation}
+                                  active={entry.id === activeConversationId}
+                                  folder="hidden"
                                   onDone={onDone}
                                 />
                               ))}
@@ -656,24 +501,24 @@ export function Sidebar() {
                             <>
                               {visibleConvs.length > 0 ? (
                                 visibleConvs.map((entry) => (
-                                  <SidebarConversationRow
+                                  <ConversationRow
+                                    variant="sidebar"
                                     key={entry.id}
                                     id={entry.id}
-                                    isActive={entry.id === activeConversationId}
-                                    showFolderBadge={false}
-                                    onSelect={handleSelectConversation}
+                                    active={entry.id === activeConversationId}
+                                    folder="hidden"
                                     onDone={onDone}
                                   />
                                 ))
                               ) : item.pendingCreation ? (
-                                <div className="conversation-item ui-row pending-creation">
-                                  <div className="conversation-row ui-row">
-                                    <span className="conversation-title">
+                                <div className="conversation-row conversation-row--sidebar ui-row pending-creation">
+                                  <div className="conversation-row__line ui-row">
+                                    <span className="conversation-row__title">
                                       {item.pendingCreation.state.tag === 'rejected'
                                         ? `Failed: ${item.pendingCreation.state.message}`
                                         : `Starting ${item.pendingCreation.args.config.provider}…`}
                                     </span>
-                                    <span className="status-indicator pending" />
+                                    <span className="conversation-row__dot" data-status="queued" />
                                   </div>
                                 </div>
                               ) : item.backgroundConversationCount === 0 ? (
@@ -824,10 +669,7 @@ export function Sidebar() {
                           title={`New conversation in ${dirDisplay}`}
                           onClick={(e) => {
                             e.stopPropagation();
-                            setDirectory(group.directory);
-                            setHasPendingDefault(false);
-                            setModalError(null);
-                            setShowPicker(true);
+                            setPicker({ t: 'chosen', path: group.directory });
                           }}
                         >
                           +
@@ -845,12 +687,12 @@ export function Sidebar() {
                           return activeConvs.length > 0 ? (
                             <>
                               {visibleConvs.map((id) => (
-                                <SidebarConversationRow
+                                <ConversationRow
+                                  variant="sidebar"
                                   key={id}
                                   id={id}
-                                  isActive={id === activeConversationId}
-                                  showFolderBadge={false}
-                                  onSelect={handleSelectConversation}
+                                  active={id === activeConversationId}
+                                  folder="hidden"
                                   onDone={onDone}
                                 />
                               ))}
@@ -894,12 +736,12 @@ export function Sidebar() {
                 <div className="sidebar-section">
                   <div className="sidebar-section-header ui-muted">Older</div>
                   {visibleOlder.map((id) => (
-                    <SidebarConversationRow
+                    <ConversationRow
+                      variant="sidebar"
                       key={id}
                       id={id}
-                      isActive={id === activeConversationId}
-                      showFolderBadge
-                      onSelect={handleSelectConversation}
+                      active={id === activeConversationId}
+                      folder="badge"
                       onDone={onDone}
                     />
                   ))}
@@ -1039,141 +881,8 @@ function FolderRunningStatus({ count }: { count: number }) {
       aria-label={`${label} in this project`}
       title={label}
     >
-      <span className="status-indicator running" aria-hidden="true" />
+      <span className="conversation-row__dot" data-status="running" aria-hidden="true" />
       <span>{label}</span>
     </span>
-  );
-}
-
-/**
- * One sidebar row. Subscribes to its own conversation and seen index, and is
- * memoized, so an event for another conversation re-renders nothing here.
- * It subscribes to the shared 30 s tick for its time-ago label.
- */
-const SidebarConversationRow = memo(function SidebarConversationRow({
-  id,
-  isActive,
-  showFolderBadge,
-  onSelect,
-  onDone,
-}: {
-  id: string;
-  isActive: boolean;
-  showFolderBadge: boolean;
-  onSelect: (conv: ConversationRow) => void;
-  /** Null while disconnected: the command would be dropped, so the button is disabled. */
-  onDone: ((conv: ConversationRow, e: React.MouseEvent) => void) | null;
-}) {
-  const conv = useAtomValue(rowFamily(id));
-  useTimeTick();
-  const hasUnseen = useAtomValue(unreadFamily(id));
-  if (!conv) return null;
-  return (
-    <ConversationItem
-      conv={conv}
-      isActive={isActive}
-      hasUnseen={hasUnseen}
-      showFolderBadge={showFolderBadge}
-      onSelect={onSelect}
-      onDone={onDone}
-    />
-  );
-});
-
-/**
- * Extracted conversation item — avoids duplicating JSX across list/grouped modes.
- * showFolderBadge=false in grouped mode since the folder header already shows the path.
- */
-function ConversationItem({
-  conv,
-  isActive,
-  hasUnseen,
-  showFolderBadge,
-  onSelect,
-  onDone,
-}: {
-  conv: ConversationRow;
-  isActive: boolean;
-  hasUnseen: boolean;
-  showFolderBadge: boolean;
-  onSelect: (conv: ConversationRow) => void;
-  /** Null while disconnected: the command would be dropped, so the button is disabled. */
-  onDone: ((conv: ConversationRow, e: React.MouseEvent) => void) | null;
-}) {
-  const workingDirectory = normalizeFolderDirectory(conv.cwd);
-  const projectColor = getProjectColor(workingDirectory);
-  const dirDisplay = shortenHomePath(workingDirectory);
-  const folderName = workingDirectory.split('/').filter(Boolean).pop() ?? dirDisplay;
-  const title = conv.label;
-
-  const lastTime = getConversationLastActivity(conv);
-  const timeAgo = lastTime ? formatTimeAgo(lastTime) : null;
-  const timeColor = lastTime ? timeAgoColor(getMinutesElapsed(lastTime)) : undefined;
-
-  const itemClasses = isActive ? 'conversation-item ui-row active' : 'conversation-item ui-row';
-
-  // ONE row shape for every conversation, buddy or not:
-  //   [folder badge] title — time [status]  (+ Done on hover)
-  // There used to be a second two-line branch here, kept only for non-buddy rows.
-  // showFolderBadge is a display slot, not a second layout: grouped views hide the
-  // badge because the group header already names the folder.
-  return (
-    <div
-      className={itemClasses}
-      onClick={() => onSelect(conv)}
-      title={`${title}${timeAgo ? ` — ${timeAgo}` : ''}`}
-    >
-      <div className="conversation-row ui-row">
-        {showFolderBadge && (
-          <span
-            className="folder-badge ui-truncate"
-            style={{ color: projectColor }}
-            title={dirDisplay}
-          >
-            {conv.kind.t === 'builder'
-              ? 'Builder'
-              : conv.kind.t === 'buddy'
-                ? 'Buddies'
-                : folderName}
-          </span>
-        )}
-        <span className="conversation-title" title={title}>
-          {title}
-        </span>
-        {timeAgo && (
-          <>
-            <span className="conversation-row-sep ui-muted" aria-hidden="true">
-              —
-            </span>
-            <span className="conversation-time-ago ui-muted" style={{ color: timeColor }}>
-              {timeAgo}
-            </span>
-          </>
-        )}
-        {isRowRunning(conv) ? (
-          <span className="status-indicator running" aria-label="Conversation is running" />
-        ) : (
-          <span
-            className={`status-indicator ${conv.run === 'queued' ? 'pending' : hasUnseen ? 'unread' : ''}`}
-            aria-label={
-              conv.run === 'queued'
-                ? 'Conversation has queued work'
-                : hasUnseen
-                  ? 'Conversation finished with unread messages'
-                  : 'Conversation idle'
-            }
-          />
-        )}
-      </div>
-      <button
-        type="button"
-        className="done-btn ui-card"
-        disabled={onDone === null}
-        title={onDone === null ? 'Reconnecting to the server' : undefined}
-        onClick={(e) => onDone?.(conv, e)}
-      >
-        Done
-      </button>
-    </div>
   );
 }

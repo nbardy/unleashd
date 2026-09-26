@@ -391,7 +391,10 @@ magenta). Run 1 and 3 back-to-back: live data drifts (sidebar badges,
   each write or compression buffers it. Hashed `client/dist/assets/*` are
   `immutable`; everything else served statically is `no-cache`. Guarded by
   `server/test/auth.test.ts` and `server/test/static-client-cache.test.ts`.
-- Sidebar rows are ONE line. `.done-btn` is an absolute overlay on the row's
-  right edge, so anything else anchored right (`.thread-stop-btn`) sits under
-  it and stops receiving clicks. Two-line rows hid this; single-line rows do
-  not. Guarded by `.conversation-item:has(.thread-stop-btn):hover .done-btn`.
+- Sidebar rows are ONE line. The row is the shared
+  `views/conversation-row/ConversationRow` (`variant: 'sidebar' | 'card' |
+  'list'` for Sidebar, Gallery and the mobile lists). Its Done button
+  (`.conversation-row__done`) is an absolute overlay on the row's right edge,
+  so anything else anchored right sits under it and stops receiving clicks.
+  Two-line rows hid this; single-line rows do not. Buttons on a row are
+  siblings of its `<Link>`, never inside it (`conversation-row-links.test.tsx`).
