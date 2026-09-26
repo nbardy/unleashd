@@ -7,6 +7,7 @@ import type {
   Provider as ProviderName,
   ResolvedExecutionConfig,
 } from '@unleashd/shared';
+import { harnessMcpCapability } from '@nbardy/agent-cli';
 import { formatBuddyBuilderToolResult } from '@unleashd/shared';
 import type { ConversationRuntimeView } from '../conversations/runtime';
 import type { TurnTerminalCause } from '../observability';
@@ -23,7 +24,6 @@ import {
 import { BUDDY_BUILDER_BRIEFING } from './builder';
 import { docScopeFor } from './core';
 import type { BuddyPolicyPort } from './policy-port';
-import { assertBuddyProviderSupportsMcp } from './provider-capability';
 import type { OwnedChatRun } from './runner';
 
 /**
@@ -123,6 +123,18 @@ function waitForChatRunSlot(admit: () => void): () => void {
     clearInterval(admissionTick);
     admissionTick = null;
   };
+}
+
+/**
+ * Buddy identity is an authority boundary, so Buddy turns require a harness with an explicit
+ * required-MCP contract rather than best-effort injection (invariant I11 in
+ * agent_notes/2026-08-24_automation-execution-ownership-design.md).
+ */
+function assertBuddyProviderSupportsMcp(provider: ProviderName): void {
+  if (harnessMcpCapability(provider) === 'required') return;
+  throw new Error(
+    `Provider "${provider}" cannot start Buddy conversations because its harness cannot guarantee required Buddy state tools.`
+  );
 }
 
 function rejectAutomation(): never {

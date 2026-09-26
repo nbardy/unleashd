@@ -47,8 +47,8 @@ export function parseGateVerdict(output: string): GateVerdict {
   }
 }
 
-// One request shape per harness a Buddy can run on (provider-capability.ts
-// admits only required-MCP harnesses). Each flag set drops tools, user and
+// One request shape per harness a Buddy can run on (turn-policy.ts
+// `assertBuddyProviderSupportsMcp` admits only required-MCP harnesses). Each flag set drops tools, user and
 // project instructions, and session persistence — a persisted gate transcript
 // would be imported by the disk adapters and show up as a conversation.
 type GateHarness = 'claude' | 'codex' | 'muse' | 'cursor';

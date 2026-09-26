@@ -4,7 +4,6 @@ import type { Briefings } from './briefing';
 import { type BuddiesCore, OWNER, buddyActor, coreError } from './core';
 import type { BuddyEvents } from './events';
 import type { Grants } from './grants';
-import { enqueueDueSchedules } from './schedule';
 
 /**
  * The one executor over the crate's `run` queue. It replaces run-executor, dispatch-service,
@@ -111,7 +110,10 @@ export function createRunner(options: {
 
   async function drain(): Promise<void> {
     again = false;
-    await enqueueDueSchedules(core);
+    // Schedules only enqueue: every due slot becomes one `schedule` run (missed slots collapse
+    // into one) and the schedule advances, in one indexed transaction (the crate's cron math,
+    // with IANA timezones). This replaced scheduler.ts, its legacy executor and its 1 s tick.
+    await core.dueSchedules(new Date().toISOString());
     for (
       let claim = await core.claimRun(options.leaseMs);
       claim;
