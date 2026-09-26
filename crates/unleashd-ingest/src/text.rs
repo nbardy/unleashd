@@ -86,7 +86,7 @@ fn emoji(name: &str) -> &'static str {
         "Glob" | "list_directory" | "glob" => "📂",
         "Grep" | "WebSearch" | "grep_search" => "🔍",
         "WebFetch" | "web_fetch" => "🌐",
-        "Agent" | "Task" => "▶️",
+        name if crate::subagents::is_claude_spawn_tool(name) => "▶️",
         "TodoWrite" => "📝",
         "NotebookRead" | "NotebookEdit" | "code_execution" => "📓",
         "patch" => "🔀",
@@ -357,7 +357,7 @@ pub fn format_tool_use(name: &str, input: Option<&Value>) -> String {
                 Some(sub) => format!("oompa {sub} :: {one_line}"),
                 None => one_line,
             }
-        } else if let (true, Some(d)) = (name == "Agent" || name == "Task", any_str(record, "description")) {
+        } else if let (true, Some(d)) = (crate::subagents::is_claude_spawn_tool(name), any_str(record, "description")) {
             d.to_string()
         } else if let (true, Some(u)) = (name == "WebFetch", any_str(record, "url")) {
             u.to_string()

@@ -1,3 +1,5 @@
+import { CLAUDE_SUBAGENT_TOOL_NAMES } from '@nbardy/agent-cli';
+
 const TOOL_SUMMARY_MAX_LEN = 100;
 const MAX_SHELL_PARSE_DEPTH = 3;
 const SHELL_TOOL_NAMES = new Set(['Bash', 'run_shell_command', 'shell']);
@@ -263,16 +265,15 @@ const TOOL_EMOJI = new Map<string, string>([
   ...['Glob', 'glob', 'list_directory'].map((n) => [n, '📂'] as const),
   ...['Grep', 'WebSearch', 'grep_search'].map((n) => [n, '🔍'] as const),
   ...['WebFetch', 'web_fetch'].map((n) => [n, '🌐'] as const),
-  ...['Agent', 'Task'].map((n) => [n, '▶️'] as const),
+  ...[...CLAUDE_SUBAGENT_TOOL_NAMES].map((n) => [n, '▶️'] as const),
   ...['NotebookRead', 'NotebookEdit', 'code_execution'].map((n) => [n, '📓'] as const),
   ['TodoWrite', '📝'],
   ['patch', '🔀'],
 ]);
 
 // The input field that summarizes a tool: its own field first, then the generic ones in order.
-const NAMED_ARG = new Map([
-  ['Agent', 'description'],
-  ['Task', 'description'],
+const NAMED_ARG = new Map<string, string>([
+  ...[...CLAUDE_SUBAGENT_TOOL_NAMES].map((n) => [n, 'description'] as const),
   ['WebFetch', 'url'],
   ['WebSearch', 'query'],
 ]);
