@@ -392,7 +392,7 @@ fn due_schedules_enqueue_once_per_slot() {
 }
 
 #[test]
-fn events_prune_by_age() {
+fn events_are_idempotent_per_key() {
     let mut f = fixture();
     let s = &mut f.store;
     let input = |key: &str| EventInput {
@@ -405,8 +405,6 @@ fn events_prune_by_age() {
     };
     let first = s.append_event(&buddy("ic"), input("e1")).unwrap();
     assert_eq!(s.append_event(&buddy("ic"), input("e1")).unwrap().seq, first.seq, "same key, same event");
-    assert_eq!(s.prune_events("2000-01-01T00:00:00.000Z").unwrap(), 0);
-    assert_eq!(s.prune_events("2999-01-01T00:00:00.000Z").unwrap(), 1);
 }
 
 #[test]

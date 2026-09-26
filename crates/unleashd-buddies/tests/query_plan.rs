@@ -62,7 +62,6 @@ fn workload(s: &mut unleashd_buddies::Store) {
     s.inbox(&owner, WS).unwrap();
     s.mark_read(&ic, &channel.id, &top.id).unwrap();
     s.mark_read(&ic, &ask.channel_id, &ask.id).unwrap();
-    s.list_channels(WS).unwrap();
 
     let claim = s.claim_run(60_000).unwrap().unwrap();
     s.bind_run(&claim.run.id, &claim.lease_token, "c-ic").unwrap();
@@ -218,7 +217,6 @@ fn workload(s: &mut unleashd_buddies::Store) {
     )
     .unwrap();
     s.list_events("ic", i64::MAX, 10).unwrap();
-    s.prune_events("2000-01-01T00:00:00.000Z").unwrap();
     s.list_workspaces().unwrap();
     s.get_buddy("ic").unwrap();
     s.list_buddies(WS).unwrap();
