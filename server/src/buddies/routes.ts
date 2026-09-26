@@ -39,7 +39,6 @@ import {
   buddyChanges,
   coreError,
   evidence,
-  httpStatus,
   key,
   managerRef,
   taskDetail,
@@ -158,23 +157,16 @@ const CursorSchema = z.object({
 });
 
 /** A doc scope from the query string: the portable doc by default. */
-function scopeOf(scope: string, scopeId: string | undefined, buddyId: string): DocScope {
-  const id = () => {
-    if (!scopeId) throw new Error(`scope ${scope} needs a scopeId`);
-    return scopeId;
-  };
-  switch (scope) {
-    case 'workspace':
-      return { kind: 'workspace', workspaceId: id() };
-    case 'task':
-      return { kind: 'task', taskId: id() };
-    case 'thread':
-      return { kind: 'thread', threadId: id() };
-    case 'buddy':
-      return { kind: 'buddy' };
-    default:
-      throw new Error(`unknown doc scope ${scope} for ${buddyId}`);
-  }
+const DOC_SCOPES: Record<string, (id: string) => DocScope> = {
+  workspace: (workspaceId) => ({ kind: 'workspace', workspaceId }),
+  task: (taskId) => ({ kind: 'task', taskId }),
+  thread: (threadId) => ({ kind: 'thread', threadId }),
+};
+function scopeOf(scope: string, scopeId: string | undefined): DocScope {
+  if (scope === 'buddy') return { kind: 'buddy' };
+  const make = DOC_SCOPES[scope];
+  if (!make) throw new Error(`unknown doc scope ${scope}`);
+  return make(z.string().min(1, `scope ${scope} needs a scopeId`).parse(scopeId));
 }
 
 /** κ for the owner's per-mention model picks: one per Buddy, and only for a mentioned Buddy. */
@@ -317,7 +309,7 @@ export function registerBuddyRoutes(app: Express, deps: BuddyRouteDeps): void {
         const buddyId = p(req, 'buddyId');
         const kind = docKind.parse(p(req, 'kind')) as DocKind;
         if (q(req, 'all') === '1') return core.listDocs(OWNER, buddyId, kind);
-        const scope = scopeOf(q(req, 'scope') ?? 'buddy', q(req, 'scopeId'), buddyId);
+        const scope = scopeOf(q(req, 'scope') ?? 'buddy', q(req, 'scopeId'));
         return core.readDoc(OWNER, { buddyId, scope, kind, name: q(req, 'name') ?? '' });
       },
     ],
@@ -328,7 +320,7 @@ export function registerBuddyRoutes(app: Express, deps: BuddyRouteDeps): void {
         const buddyId = p(req, 'buddyId');
         const { scope, scopeId, name, ...write_ } = DocWriteSchema.parse(req.body);
         const kind = docKind.parse(p(req, 'kind')) as DocKind;
-        const doc = { buddyId, scope: scopeOf(scope, scopeId, buddyId), kind, name };
+        const doc = { buddyId, scope: scopeOf(scope, scopeId), kind, name };
         return write(core.writeDoc(OWNER, { doc, ...write_ }));
       },
     ],
@@ -571,7 +563,7 @@ export function registerBuddyRoutes(app: Express, deps: BuddyRouteDeps): void {
         (body) => res.status(status).json(body ?? null),
         (error: unknown) => {
           const typed = coreError(error);
-          const code = typed ? httpStatus(typed) : error instanceof z.ZodError ? 400 : 500;
+          const code = typed ? typed.httpStatus : error instanceof z.ZodError ? 400 : 500;
           if (code >= 500) console.error('[buddies] request failed:', error);
           const message = error instanceof Error ? error.message : String(error);
           res.status(code).json({ error: typed?.message ?? message });

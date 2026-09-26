@@ -417,7 +417,7 @@ export function createMemoryReviewer(options: {
             `[memory-review] ${choice.model} is out of credits; trying the next rung: ${exhausted}`
           );
         } finally {
-          grants.revoke(grant.token);
+          grants.revokeConversation(grant.conversationId);
         }
       }
       throw new Error(exhausted);

@@ -112,20 +112,27 @@ export async function taskDetail(
   return { task, channel, children, comments: page.posts };
 }
 
-/** The crate's error codes; a rejection's message is `[code] detail` (crate README). */
-export type CoreErrorCode =
-  | 'denied'
-  | 'not_found'
-  | 'revision_conflict'
-  | 'idempotency_conflict'
-  | 'invalid'
-  | 'lease_lost'
-  | 'conversation_busy'
-  | 'corrupt'
-  | 'wrong_database'
-  | 'sqlite'
-  | 'json'
-  | 'io';
+/**
+ * The crate's error codes (a rejection's message is `[code] detail`, crate README), each with its
+ * HTTP status: the owner's request was wrong (400/403/404), the data moved under it (409), or the
+ * store failed (500).
+ */
+// Pattern: table-driven (docs/patterns.md#table-driven)
+const HTTP_STATUS = {
+  denied: 403,
+  not_found: 404,
+  revision_conflict: 409,
+  idempotency_conflict: 409,
+  conversation_busy: 409,
+  lease_lost: 409,
+  invalid: 400,
+  corrupt: 500,
+  wrong_database: 500,
+  sqlite: 500,
+  json: 500,
+  io: 500,
+} as const;
+export type CoreErrorCode = keyof typeof HTTP_STATUS;
 
 export class CoreError extends Error {
   constructor(
@@ -135,6 +142,9 @@ export class CoreError extends Error {
     super(`[${code}] ${detail}`);
     this.name = 'CoreError';
   }
+  get httpStatus(): number {
+    return HTTP_STATUS[this.code];
+  }
 }
 
 /** Parse a crate rejection once, at the boundary. Anything else is not a core error. */
@@ -142,29 +152,6 @@ export function coreError(error: unknown): CoreError | null {
   if (error instanceof CoreError) return error;
   const match = error instanceof Error ? /^\[([a-z_]+)\] ([\s\S]*)$/.exec(error.message) : null;
   return match ? new CoreError(match[1] as CoreErrorCode, match[2]) : null;
-}
-
-/** HTTP status for a core error: the owner's request was wrong, or the data moved under it. */
-export function httpStatus(error: CoreError): number {
-  switch (error.code) {
-    case 'denied':
-      return 403;
-    case 'not_found':
-      return 404;
-    case 'revision_conflict':
-    case 'idempotency_conflict':
-    case 'conversation_busy':
-    case 'lease_lost':
-      return 409;
-    case 'invalid':
-      return 400;
-    case 'corrupt':
-    case 'wrong_database':
-    case 'sqlite':
-    case 'json':
-    case 'io':
-      return 500;
-  }
 }
 
 /**
