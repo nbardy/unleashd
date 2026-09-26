@@ -3,7 +3,12 @@ import { access, mkdir, mkdtemp, rm } from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
-import type { ConfigResolution, ConversationConfig, Provider } from '@unleashd/shared';
+import {
+  type ConfigResolution,
+  type ConversationConfig,
+  type Provider,
+  buddyKind,
+} from '@unleashd/shared';
 import {
   ConfigRevisionConflictError,
   type ConversationRecordStore,
@@ -17,6 +22,7 @@ import {
   ConversationTombstonedError,
   applyConversationConfigPatch,
 } from '../src/conversations/config-service';
+import { creationFingerprint } from '../src/conversations/creation-service';
 import { recordStore } from './fixtures/records';
 
 const CONVERSATION_ID = '550e8400-e29b-41d4-a716-446655440000';
@@ -146,6 +152,44 @@ test('pure provider transition resets dependent selections and enforces lifecycl
   );
   assert.equal(providerWhileBusy.ok, false);
   if (!providerWhileBusy.ok) assert.equal(providerWhileBusy.error.code, 'conversation_busy');
+});
+
+test('a config update stays replayable, so a thread seat reopens on the new settings', async () => {
+  await withService(async (service) => {
+    const kind = buddyKind({ buddyId: 'buddy_1', workspaceId: 'project_1' });
+    const fingerprintFor = (config: ConversationConfig) =>
+      creationFingerprint({ workingDirectory: '/tmp/project', config, kind });
+    const create = (config: ConversationConfig) =>
+      service.createOrReplay({
+        conversationId: CONVERSATION_ID,
+        workingDirectory: '/tmp/project',
+        kind,
+        config,
+        creation: { commandId: 'channel-thread-seat', fingerprint: fingerprintFor(config) },
+      });
+    const created = await create(DEFAULT_CONFIG);
+    const nextConfig: ConversationConfig = {
+      ...DEFAULT_CONFIG,
+      reasoning: { mode: 'explicit', effort: 'low' },
+    };
+    const updated = await service.update(
+      created.state,
+      { isRunning: false, queueDepth: 0, hasStartedSession: true },
+      {
+        conversationId: CONVERSATION_ID,
+        commandId: 'set-reasoning',
+        expectedRevision: 0,
+        patch: { kind: 'set_reasoning', reasoning: nextConfig.reasoning },
+      }
+    );
+    assert.equal(updated.ok, true);
+
+    const replayed = await create(nextConfig);
+    assert.equal(replayed.replayed, true);
+    assert.deepEqual(replayed.state.config.reasoning, { mode: 'explicit', effort: 'low' });
+    // The creation-time config no longer matches what the conversation runs.
+    await assert.rejects(create(DEFAULT_CONFIG), ConfigRevisionConflictError);
+  });
 });
 
 test('create, update, fork, and hydrate preserve selection intent and revisions', async () => {
@@ -444,7 +488,11 @@ test('session hydration never guesses an unknown reported model', async () => {
       conversationId: CONVERSATION_ID,
       discoveredKind: { t: 'chat' },
       sessionBindings: [{ provider: 'codex', sessionId: 'future-codex' }],
-      sessionEvidence: { provider: 'codex', reportedModel: 'gpt-example-ultra', source: 'external_session' },
+      sessionEvidence: {
+        provider: 'codex',
+        reportedModel: 'gpt-example-ultra',
+        source: 'external_session',
+      },
     });
     assert.deepEqual(futureSuffix.state.config.model, { mode: 'default' });
     assert.deepEqual(futureSuffix.state.config.reasoning, { mode: 'disabled' });
