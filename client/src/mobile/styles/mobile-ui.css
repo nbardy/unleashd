@@ -764,27 +764,6 @@
   font-size: var(--fs-3);
   word-break: break-word;
 }
-
-/* ---- Model sheet options ---- */
-.mobile-sheet__options {
-  display: flex;
-  flex-wrap: wrap;
-  gap: var(--sp-3);
-}
-
-/* Option appearance is shared in ui/controls.css. */
-.mobile-sheet__option {
-  --ui-choice-height: 44px;
-  flex: 0 1 auto;
-  max-width: 100%;
-  white-space: nowrap;
-}
-
-.mobile-sheet__option-meta {
-  font-family: var(--font-mono);
-  font-size: var(--fs-2);
-}
-
 /* ---- Message footer actions (MessageRow) ---- */
 /* Touch has no hover state, so the desktop reveal-on-hover copy button has no
    analogue here. The mobile action is permanent but visually quiet, and sits on

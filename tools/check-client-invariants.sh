@@ -192,7 +192,7 @@ echo "==> Gate G8: total client CSS lines must not grow"
 # Ratchet: the lean rewrite takes CSS from 18.4k lines to a ~3.75k budget
 # (lean-scope 06 §3). When a change cuts CSS, lower CSS_LINE_CEILING to the new
 # total in the same commit so the cut cannot silently grow back.
-CSS_LINE_CEILING=14636 # T20-A conversation panels + T20-C Buddy page merged, 2026-09-26; earlier: 14639 Buddy page, 14701 panels, 14704 channel tokens, 14799 parity, 14801 dead-code sweep; 15834 on 4e5a01c
+CSS_LINE_CEILING=14476 # T20-B picker + search merged, 2026-09-26; earlier: 14636 T20-A + T20-C, 14544 picker/search, 14704 channel tokens, 14799 parity, 14801 dead-code sweep; 15834 on 4e5a01c
 CSS_LINES="$(find client/src -name '*.css' -print0 | xargs -0 cat | wc -l | tr -d ' ')"
 if [ "$CSS_LINES" -gt "$CSS_LINE_CEILING" ]; then
   echo "G8 FAIL: client CSS is $CSS_LINES lines, ceiling $CSS_LINE_CEILING. Reuse a primitive (ui/primitives.css) or cut elsewhere."

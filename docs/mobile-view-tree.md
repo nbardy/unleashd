@@ -31,20 +31,25 @@ export function useDeviceKind(): DeviceKind { /* sticky per page load */ }
 
 `T1`: `'mobile'|'desktop'` not `boolean isMobile` — anonymous `true⊕false` leaks `if(isMobile)` downstream. Computed once at module load via `matchMedia('(max-width: 768px)')` and cached for the page load (`sticky`, not resize-reactive — live swap would remount the tree and lose composer drafts). `matchMedia` missing → typed `throw` (`T4`, no silent desktop default). Single dispatch point is `App.tsx: const device = useDeviceKind()` → `SHELLS[device]` (δ #1) → `pick(r)` leaf factory (δ #2). Leaf handlers never re-ask `isMobile`.
 
-### Where device-specific view state lives
+### Shared views (`client/src/views/`, owner decision O1)
 
-`docs/client-state.md: Adding a new collection view` says "all collection views in `derived atoms.ts`". **Exception:** device-specific derived views live in `mobile/atoms/`, not `conversations.ts`, to keep the canonical core clean. Canonical example:
+Device-agnostic content lives in `client/src/views/<group>/` and is used by
+both trees. A view never imports `mobile/*`, the desktop shell components
+(Sidebar, Gallery, SettingsMenu) or `useDeviceKind`. When the devices differ
+only in presentation, the caller picks a named variant, never a boolean:
 
-```ts
-// client/src/mobile/atoms/search.ts
-export type MobileSearchState = { kind: 'idle' } | { kind: 'searching'; query: string };
-export const mobileSearchStateAtom = atom<MobileSearchState>({ kind: 'idle' });
-export const mobileSearchResultsAtom = atom((get) => get(mobileSearchStateAtom).kind === 'idle'
-  ? get(listField('order'))
-  : filter(get(listField('order')), query) /* via utils/fuzzyMatch over rowFamily(id) */);
-```
+- `views/config/` — the provider/model/reasoning option list
+  (`config-options.ts`, pure) and `ConversationConfigPicker`.
+  `ConfigOverlay presentation: 'popover' | 'sheet'` is the desktop Chat header
+  popover and the mobile model sheet.
+- `views/search/` — `SearchView presentation: 'palette' | 'page'`: the desktop
+  ⌘P palette and the mobile Search tab share one ranking (Buddies, local
+  conversations, grouped message history) and one result list. Its state is
+  `atoms/search.ts` (`searchQueryAtom`, a sum type — never an `atom<string>('')`
+  sentinel — and `searchMatchesFamily(folder)`).
 
-`T2`: `MobileSearchState` sum type, never `atom<string>('')` sentinel. `mobile/atoms/search.ts → atoms/conversations.ts` is allowed; core never imports mobile.
+Device-specific derived views that are not shared content still live in
+`mobile/atoms/`, never in `conversations.ts`.
 
 ### Creation actions (`mobile/atoms/create.ts`)
 

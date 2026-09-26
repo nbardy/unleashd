@@ -160,92 +160,10 @@
   box-sizing: border-box;
 }
 
-.new-conv-modal .directory-input:focus,
-.custom-model-option input:focus {
+.new-conv-modal .directory-input:focus {
   outline: none;
   border-color: var(--accent-primary);
 }
-
-.new-conv-modal .provider-selector {
-  display: flex;
-  gap: var(--sp-3);
-  margin-bottom: 4px;
-}
-
-.provider-option {
-  flex: 1 1 0;
-  min-width: 0;
-  justify-content: center;
-  gap: var(--sp-3);
-  padding: var(--sp-5) var(--sp-4);
-  background: var(--bg-tertiary);
-  color: var(--text-secondary);
-  font-size: var(--fs-4);
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.provider-option:hover,
-.model-option:hover {
-  background: var(--border-color);
-  color: var(--text-primary);
-}
-
-.provider-option input[type="radio"],
-.model-option input[type="radio"] {
-  display: none;
-}
-
-.new-conv-modal .model-selector {
-  display: flex;
-  gap: var(--sp-4);
-  margin-bottom: 4px;
-  flex-wrap: wrap;
-}
-
-.model-option {
-  flex: 1;
-  min-width: 100px;
-  justify-content: center;
-  gap: var(--sp-3);
-  padding: var(--sp-4) var(--sp-6);
-  background: var(--bg-tertiary);
-  color: var(--text-secondary);
-  font-size: var(--fs-3);
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.provider-option.selected,
-.model-option.selected {
-  background: var(--bg-tertiary);
-  border-color: var(--accent-primary);
-  color: var(--text-emphasis);
-}
-
-.custom-model-option {
-  flex: 1 1 100%;
-  display: grid;
-  gap: var(--sp-3);
-  color: var(--text-secondary);
-  font-size: var(--fs-2);
-}
-
-.custom-model-option input {
-  min-width: 0;
-  padding: var(--sp-4) var(--sp-5);
-  border: 1px solid var(--border-color);
-  border-radius: var(--ui-radius);
-  background: var(--bg-secondary);
-  color: var(--text-primary);
-  font: inherit;
-}
-
-.custom-model-option input:disabled {
-  cursor: not-allowed;
-  opacity: 0.6;
-}
-
 .new-conv-modal .directory-actions {
   display: flex;
   gap: var(--sp-5);
