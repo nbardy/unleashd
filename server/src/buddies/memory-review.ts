@@ -5,6 +5,7 @@ import path from 'node:path';
 import type { ExecuteCommandRequest, McpServerSpec } from '@nbardy/agent-cli';
 import { executeCommand } from '@nbardy/agent-cli';
 import type { BuddyContext } from '@unleashd/shared';
+import { readBuddyState } from './briefing';
 import { type BuddiesCore, buddyActor, docScopeFor } from './core';
 import { runDetached } from './detached-cli';
 import type { BuddyGrant, Grants } from './grants';
@@ -132,41 +133,13 @@ interface Harness {
   authorizes(toolName: string): boolean;
 }
 
-const CODEX_DISABLED = [
-  'shell_tool',
-  'unified_exec',
-  'multi_agent',
-  'multi_agent_v2',
-  'apps',
-  'plugins',
-  'browser_use',
-  'computer_use',
-  'image_generation',
-  'memories',
-  'hooks',
-  'goals',
-  'view_image',
-  'skill_search',
-  'sleep_tool',
-];
+const words = (list: string) => list.trim().split(/\s+/);
+const CODEX_DISABLED = words(`shell_tool unified_exec multi_agent multi_agent_v2 apps plugins
+  browser_use computer_use image_generation memories hooks goals view_image skill_search sleep_tool`);
 // Claude's built-ins stay reachable under --allowedTools (it governs approval, not availability):
 // on 2.1.267 an allow-listed run still called ToolSearch, which the guard kills. Deny them by name.
-const CLAUDE_DENIED = [
-  'ToolSearch',
-  'Bash',
-  'Read',
-  'Write',
-  'Edit',
-  'Glob',
-  'Grep',
-  'WebFetch',
-  'WebSearch',
-  'Task',
-  'Agent',
-  'NotebookEdit',
-  'TodoWrite',
-  'Skill',
-];
+const CLAUDE_DENIED = words(`ToolSearch Bash Read Write Edit Glob Grep WebFetch WebSearch Task
+  Agent NotebookEdit TodoWrite Skill`);
 const base = (launch: Launch, prompt: string) => ({
   mode: 'conversation' as const,
   model: launch.choice.model,
@@ -184,25 +157,16 @@ const HARNESSES: Record<MemoryReviewModelChoice['harness'], Harness> = {
       reasoningEffort: l.choice.reasoningEffort,
       yolo: false,
       extraArgs: [
-        '--ignore-user-config',
-        '--ignore-rules',
-        '--ephemeral',
-        '-s',
-        'read-only',
-        '-c',
-        `model_instructions_file=${JSON.stringify(l.instructionsPath)}`,
-        '-c',
-        'project_doc_max_bytes=0',
-        '-c',
-        'web_search="disabled"',
-        '-c',
-        'tools.update_plan.enabled=false',
-        '-c',
-        'tools.experimental_request_user_input.enabled=false',
-        '-c',
-        'orchestrator.skills.enabled=false',
-        '-c',
-        `mcp_servers.${SERVER}.default_tools_approval_mode="approve"`,
+        ...['--ignore-user-config', '--ignore-rules', '--ephemeral', '-s', 'read-only'],
+        ...[
+          `model_instructions_file=${JSON.stringify(l.instructionsPath)}`,
+          'project_doc_max_bytes=0',
+          'web_search="disabled"',
+          'tools.update_plan.enabled=false',
+          'tools.experimental_request_user_input.enabled=false',
+          'orchestrator.skills.enabled=false',
+          `mcp_servers.${SERVER}.default_tools_approval_mode="approve"`,
+        ].flatMap((setting) => ['-c', setting]),
         ...CODEX_DISABLED.flatMap((feature) => ['--disable', feature]),
       ],
     }),
@@ -346,21 +310,10 @@ export function createMemoryReviewer(options: {
     const buddy = await core.getBuddy(buddyId);
     if (buddy.status !== 'active' || buddy.workspaceId !== workspaceId)
       return finish('skipped', 'Buddy is inactive or outside this workspace');
-    const me = buddyActor(buddyId);
     const scope = docScopeFor(turn.context);
-    const read = (kind: 'soul' | 'working' | 'long_term') =>
-      core.readDoc(me, {
-        buddyId,
-        scope: kind === 'soul' ? { kind: 'buddy' } : scope,
-        kind,
-        name: '',
-      });
-    const [soul, working, longTerm, tasks] = await Promise.all([
-      read('soul'),
-      read('working'),
-      read('long_term'),
-      core.listTasks({ kind: 'owner', buddyId }),
-    ]);
+    const { soul, working, longTerm, tasks } = await readBuddyState(core, buddyId, scope, {
+      kind: 'buddy',
+    });
     const evidence = `EVIDENCE_JSON:\n${JSON.stringify({
       buddy: { name: buddy.name, role: buddy.role, soul: soul?.content ?? '' },
       memory: { working, longTerm },
