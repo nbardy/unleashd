@@ -22,6 +22,7 @@ import type {
   TurnTerminalCause,
 } from '../observability';
 import { type SwarmObservers, watchSwarmRuns } from '../swarm';
+import { type BackgroundWait, backgroundWaitFor } from './background-wait';
 import type { TurnInput } from './input';
 import type { TurnPolicy } from './policy';
 import type { QueueEntry, TurnQueue } from './queue';
@@ -155,6 +156,8 @@ export class TurnRunner {
   private nextAttempt: { attemptId: string; queueMessageId?: string } | null = null;
   // Chosen once per turn from the harness capability table (turns/subagents.ts).
   private subAgentFold: SubAgentFold = subAgentFoldFor('claude');
+  // Chosen with it: how long the harness may wait silently on background tasks it launched.
+  private backgroundWait: BackgroundWait = backgroundWaitFor('claude');
   // This turn's subscription to its folder's swarm observer (swarm/observer.ts).
   private stopSwarmWatch: (() => void) | null = null;
   // Bridge / provider-idle / max-runtime clocks. The max budget is passed
@@ -298,6 +301,7 @@ export class TurnRunner {
     this.lastAttemptActivitySource = null;
     this.lastObservedActivity = null;
     this.subAgentFold = subAgentFoldFor(turn.config.provider);
+    this.backgroundWait = backgroundWaitFor(turn.config.provider);
     if (this.activeAttemptId) {
       this.ports.turnAttempts.starting(this.activeAttemptId);
       this.ports.turnAttempts.activity(
@@ -508,6 +512,7 @@ export class TurnRunner {
 
   applyToolUse(event: ToolUseEvent): void {
     this.ensureAssistantMessage();
+    this.backgroundWait.toolUse(event, this.watchdog);
     if (this.subAgentFold.toolUse(this.subAgentHost, event) === 'hide') return;
     // Normalize tool line formatting across providers (Claude/Gemini/Codex).
     // Suppress Codex shell completion-only events to avoid duplicate lines.

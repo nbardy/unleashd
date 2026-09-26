@@ -27,6 +27,8 @@ export const TURN_BRIDGE_TIMEOUT_MS = readPositiveIntEnv(
   'CWV_TURN_BRIDGE_TIMEOUT_MS',
   DEFAULT_TURN_BRIDGE_TIMEOUT_MS
 );
+// A turn that launched a background task gets its harness's declared wait on top of this
+// (turns/background-wait.ts): `claude -p` sits silent while its background agents run.
 export const DEFAULT_TURN_PROVIDER_IDLE_TIMEOUT_MS = 60 * 60_000;
 export const TURN_PROVIDER_IDLE_TIMEOUT_MS = readPositiveIntEnv(
   'CWV_TURN_PROVIDER_IDLE_TIMEOUT_MS',

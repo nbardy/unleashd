@@ -18,6 +18,8 @@ import { noteActivity } from '../observability/event-loop-stall';
  *   `max_runtime_timeout`, never `user_stop` (guard: `foreground Buddy
  *   deadline uses the conversation budget and reports timeout after joined
  *   drain`).
+ * A turn that launched a background task (turns/background-wait.ts) widens only the
+ * provider-idle budget, by its harness's declared wait; the max clock never moves.
  */
 
 export type TurnTimeoutKind = 'bridge' | 'provider' | 'max';
@@ -39,6 +41,8 @@ export class TurnWatchdog {
   private startedAt = 0;
   private lastBridgeEventAt = 0;
   private lastProviderProgressAt = 0;
+  // The provider-idle budget of this turn: budgets.providerIdleMs until a background launch.
+  private providerIdleBudgetMs = 0;
   private bridgeTimer: NodeJS.Timeout | null = null;
   private providerIdleTimer: NodeJS.Timeout | null = null;
   private maxTimer: NodeJS.Timeout | null = null;
@@ -55,6 +59,7 @@ export class TurnWatchdog {
     this.startedAt = now;
     this.lastBridgeEventAt = now;
     this.lastProviderProgressAt = now;
+    this.providerIdleBudgetMs = this.budgets.providerIdleMs;
     this.armBridge();
     this.armProviderIdle();
     this.maxTimer = setTimeout(() => this.fire('max'), this.budgets.maxRuntimeMs);
@@ -73,6 +78,20 @@ export class TurnWatchdog {
       this.lastProviderProgressAt = now;
       this.armProviderIdle();
     }
+  }
+
+  /**
+   * The turn launched a background task its harness waits for after the parent goes idle, up
+   * to `waitMs`. Silence within that wait is not a stall, so for the rest of the turn the
+   * provider-idle budget is the wait plus the normal idle budget (a harness that still hangs
+   * after its own ceiling dies as before). No completion is visible, so it never narrows back.
+   */
+  allowBackgroundWait(waitMs: number): void {
+    this.providerIdleBudgetMs = Math.max(
+      this.providerIdleBudgetMs,
+      this.budgets.providerIdleMs + waitMs
+    );
+    this.armProviderIdle();
   }
 
   clear(): void {
@@ -100,7 +119,8 @@ export class TurnWatchdog {
 
   private armProviderIdle(): void {
     if (this.providerIdleTimer) clearTimeout(this.providerIdleTimer);
-    this.providerIdleTimer = setTimeout(() => this.fire('provider'), this.budgets.providerIdleMs);
+    const remaining = this.providerIdleBudgetMs - (Date.now() - this.lastProviderProgressAt);
+    this.providerIdleTimer = setTimeout(() => this.fire('provider'), remaining);
   }
 
   private fire(kind: TurnTimeoutKind): void {

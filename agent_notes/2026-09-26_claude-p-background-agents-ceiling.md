@@ -105,3 +105,13 @@ Unit test: `test/build.test.ts` ("defaults the print-mode background wait to
 That does not by itself let a Buddy turn wait 12 hours. While the parent is
 idle, the Claude parser drops `task_*` events, so Unleashd sees only
 heartbeats and the 60-minute provider-idle watchdog still kills the process.
+
+Fixed on feat/channel-parity: a tool call with `run_in_background: true` in a
+Claude turn widens that turn's provider-idle budget to the declared wait (the
+server's `CLAUDE_CODE_PRINT_BG_WAIT_CEILING_MS`, else agent-cli's 12 h) plus
+the normal 60 minutes (`server/src/turns/background-wait.ts`,
+`TurnWatchdog.allowBackgroundWait`). The bridge and max-runtime clocks are
+unchanged. Guard: `conversation-runtime.test.ts` "a Claude turn waiting on a
+background agent outlives the provider-idle limit". Still open: the parser
+drops `task_*`, so the budget never narrows when the agents finish early, and
+`isSubagentSpawnTool` knows only `Task`, not Claude Code 2.1's `Agent`.
