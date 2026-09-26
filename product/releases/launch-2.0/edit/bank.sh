@@ -10,7 +10,9 @@ mkdir -p "$BANK"
 # id  render  poster-second
 while read -r id render poster; do
   cp "$render" "$BANK/$id.mp4"
-  ffmpeg -v error -y -ss "$poster" -i "$render" -frames:v 1 -vf scale=960:-1 "$BANK/$id.jpg"
+  # -nostdin: ffmpeg otherwise eats the heredoc this loop reads (it swallowed the "0" of
+  # "02_design-iteration" on the second run and banked it as "2_design-iteration").
+  ffmpeg -nostdin -v error -y -ss "$poster" -i "$render" -frames:v 1 -vf scale=960:-1 "$BANK/$id.jpg"
   printf '%-28s %6.2fs\n' "$id" "$(ffprobe -v error -show_entries format=duration -of csv=p=0 "$render")"
 done <<'CLIPS'
 01_overload-open                  out/overload.mp4           12.2

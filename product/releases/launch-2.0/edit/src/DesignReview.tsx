@@ -6,6 +6,7 @@ import type React from 'react';
 import {
   AbsoluteFill,
   Easing,
+  Freeze,
   OffthreadVideo,
   Series,
   interpolate,
@@ -22,19 +23,29 @@ export const HEIGHT = 1080;
 const SRC = { w: 2974, h: 1882 };
 const D = staticFile('2026-09-26_design-review_D_post-screenshots-request.mov');
 
-type Cut = { from: number; to: number; rate: number; note: string };
+// A cut either plays a source span at a rate, or holds one source frame for a while.
+type Play = { kind: 'play'; from: number; to: number; rate: number; note: string };
+type Hold = { kind: 'hold'; at: number; seconds: number; note: string };
+type Cut = Play | Hold;
 
-// Source seconds. Output length of a cut = (to - from) / rate.
+const play = (from: number, to: number, rate: number, note: string): Play => ({ kind: 'play', from, to, rate, note });
+const hold = (at: number, seconds: number, note: string): Hold => ({ kind: 'hold', at, seconds, note });
+
+// Source seconds. The ending holds on a few screenshots with one quick scroll between them
+// (owner, 2026-09-26: rough cut 2 "was too much scrolling at the end").
+const REQUEST = play(0.8, 5.3, 1.5, 'request appears in the composer, sent, thread opens');
 const CUTS: Cut[] = [
-  { from: 0.8, to: 5.3, rate: 1.5, note: 'request appears in the composer, sent, thread opens' },
-  { from: 392.7, to: 395.2, rate: 1, note: '~6 min later: "On it. I\'ve captured all 21 views…" lands' },
-  { from: 395.6, to: 398.1, rate: 1, note: 'Mobile / iPad / Desktop posts land in the channel (396.1)' },
-  { from: 425.8, to: 426.8, rate: 1, note: 'owner clicks the iPad thread (loading 426.8–430 cut)' },
-  { from: 430.0, to: 435.8, rate: 2.5, note: 'iPad screenshots scroll in the thread pane' },
-  { from: 438.4, to: 441.8, rate: 2, note: 'Desktop thread: screenshots scroll' },
+  REQUEST,
+  play(392.7, 395.2, 1, '~6 min later: "On it. I\'ve captured all 21 views…" lands'),
+  play(395.6, 398.1, 1, 'Mobile / iPad / Desktop posts land in the channel (396.1)'),
+  play(425.8, 426.8, 1, 'owner clicks the iPad thread (loading 426.8–430 cut)'),
+  hold(431.75, 1.0, 'iPad landscape: the Buddies grid'),
+  play(431.75, 435.0, 4, 'quick scroll down the iPad thread'),
+  hold(435.0, 0.9, 'iPad landscape: a channel'),
+  hold(438.75, 1.3, 'Desktop thread: the Buddies grid'),
 ];
 
-const cutFrames = (c: Cut) => Math.round(((c.to - c.from) / c.rate) * FPS);
+const cutFrames = (c: Cut) => Math.round((c.kind === 'play' ? (c.to - c.from) / c.rate : c.seconds) * FPS);
 const cutStarts = CUTS.reduce<number[]>((acc, c, i) => [...acc, acc[i] + cutFrames(c)], [0]);
 export const DURATION = cutStarts[CUTS.length];
 
@@ -51,12 +62,15 @@ const FULL: Shot = { ...COMPOSER, focus: 0 };
 const PANE_WAIT: Shot = { focus: 1, x: 2156, w: 818, top: 632, scale: 0.8, ...STILL, oy: 0.3 }; // request + typing
 const PANE_REPLY: Shot = { ...PANE_WAIT, top: 480, oy: 0.7 }; // request + "On it"
 const POSTS: Shot = { focus: 1, x: 540, w: 1620, top: 800, scale: 1, ...STILL, ox: 0.3, oy: 0.6 }; // iPad link
-const SHOTS: Shot = { focus: 1, x: 2156, w: 818, top: 250, scale: 1, ...STILL, oy: 0.45 }; // screenshots in the pane
+// Screenshot holds in the pane, framed on each picture (label above it, source rows).
+const IPAD_BUDDIES: Shot = { focus: 1, x: 2156, w: 818, top: 740, scale: 1.2, ...STILL, oy: 0.45 };
+const IPAD_CHANNEL: Shot = { ...IPAD_BUDDIES, top: 330 };
+const DESKTOP_BUDDIES: Shot = { ...IPAD_BUDDIES, top: 150, oy: 0.35 };
 const push = (s: Shot, zoom: number): Shot => ({ ...s, zoom });
 
 // Output seconds. Two keys at the same instant are a hard cut.
 const at = (cut: number) => cutStarts[cut] / FPS;
-const SENT = (3.6 - CUTS[0].from) / CUTS[0].rate; // the post leaves the composer
+const SENT = (3.6 - REQUEST.from) / REQUEST.rate; // the post leaves the composer
 const CAMERA: Key[] = [
   { t: 0, shot: FULL },
   { t: 0.15, shot: FULL },
@@ -68,8 +82,12 @@ const CAMERA: Key[] = [
   { t: at(2), shot: push(PANE_REPLY, 1.08) },
   { t: at(2), shot: POSTS },
   { t: at(4), shot: push(POSTS, 1.1) },
-  { t: at(4), shot: SHOTS },
-  { t: DURATION / FPS, shot: push(SHOTS, 1.06) },
+  { t: at(4), shot: IPAD_BUDDIES },
+  { t: at(5), shot: push(IPAD_BUDDIES, 1.05) },
+  { t: at(6), shot: IPAD_CHANNEL },
+  { t: at(7), shot: push(IPAD_CHANNEL, 1.05) },
+  { t: at(7), shot: DESKTOP_BUDDIES },
+  { t: DURATION / FPS, shot: push(DESKTOP_BUDDIES, 1.06) },
 ];
 
 const ease = Easing.inOut(Easing.cubic);
@@ -97,7 +115,9 @@ const COVER = WIDTH / SRC.w;
 const COVER_Y = (HEIGHT - SRC.h * COVER) / 2;
 const CARD_H = HEIGHT - 80;
 
-const Footage: React.FC<{ cut: Cut; style: React.CSSProperties }> = ({ cut, style }) => (
+type FootageProps<C> = { cut: C; style: React.CSSProperties };
+
+const PlayFootage: React.FC<FootageProps<Play>> = ({ cut, style }) => (
   <OffthreadVideo
     src={D}
     trimBefore={Math.round(cut.from * FPS)}
@@ -106,6 +126,20 @@ const Footage: React.FC<{ cut: Cut; style: React.CSSProperties }> = ({ cut, styl
     style={{ position: 'absolute', maxWidth: 'none', ...style }}
   />
 );
+
+const HoldFootage: React.FC<FootageProps<Hold>> = ({ cut, style }) => (
+  <Freeze frame={0}>
+    <OffthreadVideo
+      src={D}
+      trimBefore={Math.round(cut.at * FPS)}
+      muted
+      style={{ position: 'absolute', maxWidth: 'none', ...style }}
+    />
+  </Freeze>
+);
+
+const Footage: React.FC<FootageProps<Cut>> = ({ cut, style }) =>
+  cut.kind === 'play' ? <PlayFootage cut={cut} style={style} /> : <HoldFootage cut={cut} style={style} />;
 
 // The honest time-skip: the Lead took about six minutes to capture 21 views at four sizes.
 const LaterChip: React.FC<{ u: number }> = ({ u }) => {
@@ -196,7 +230,7 @@ const Frame: React.FC<{ cut: Cut; startFrame: number; chip: boolean }> = ({ cut,
 export const DesignReview: React.FC = () => (
   <Series>
     {CUTS.map((cut, i) => (
-      <Series.Sequence key={cut.from} durationInFrames={cutFrames(cut)}>
+      <Series.Sequence key={cut.note} durationInFrames={cutFrames(cut)}>
         <Frame cut={cut} startFrame={cutStarts[i]} chip={i === 1} />
       </Series.Sequence>
     ))}

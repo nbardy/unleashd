@@ -84,7 +84,7 @@ privacy note in `../footage/FOOTAGE.md`.
 Source: `src/DesignReview.tsx` (footage D). Same card-over-blur camera as DesignIteration, but
 a shot can frame any source region (`x`, `w`, `top`, `scale`), not only the thread pane.
 Each hold also drifts in (`zoom` 1.04–1.10, anchored at `ox`/`oy` in the card) toward where the
-action is, so no shot sits dead still. Rough cut 2, 2026-09-26: 13.0 s, silent.
+action is, so no shot sits dead still. Rough cut 3, 2026-09-26: 13.0 s, silent.
 
 | Out (s) | Source | Speed | Shot |
 |---|---|---|---|
@@ -92,8 +92,14 @@ action is, so no shot sits dead still. Rough cut 2, 2026-09-26: 13.0 s, silent.
 | 3.0–5.5 | 392.7–395.2 s: "On it… captured all 21 views" lands | 1× | pane card, "6 minutes later" chip |
 | 5.5–8.0 | 395.6–398.1 s: Mobile / iPad / Desktop posts land | 1× | main-column card |
 | 8.0–9.0 | 425.8–426.8 s: click the iPad thread | 1× | main-column card |
-| 9.0–11.3 | 430–435.8 s: iPad screenshots scroll | 2.5× | hard cut to pane card |
-| 11.3–13.0 | 438.4–441.8 s: Desktop screenshots scroll | 2× | pane card |
+| 9.0–10.0 | hold on 431.75 s: iPad landscape Buddies grid | still | hard cut to pane card (1.2×) |
+| 10.0–10.8 | 431.75–435.0 s: quick scroll down the iPad thread | 4× | pane card eases down |
+| 10.8–11.7 | hold on 435.0 s: iPad landscape channel | still | pane card |
+| 11.7–13.0 | hold on 438.75 s: Desktop Buddies grid | still | hard cut, pane card |
+
+Rough cut 3: the owner found the scrolling ending too long ("just show a few screenshots and a
+quick scroll to the other"), so the end holds three screenshots (`hold` cuts, a frozen frame)
+with a single fast scroll between the first two.
 
 The real wait is ~6.5 minutes; the chip says so rather than implying the reply was instant.
 
