@@ -9,8 +9,9 @@
  * Breakpoints cannot be custom properties (var() is invalid inside @media),
  * so G7 enforces the value set instead. Two widths, nothing else:
  *   768px  the device switch (mobile/hooks/useDeviceKind.ts). The tree is picked
- *          once per load, so a desktop window narrowed below it keeps the desktop
- *          tree; its narrow-window tweaks use this same width.
+ *          once per load, so views never query width: a device tweak is a
+ *          [data-device="mobile"] rule, and only shell CSS may use @media width
+ *          (gate G9).
  *   340px  compact phones (iPad Slide Over is 320px): the mobile search row
  *          drops its secondary columns.
  */

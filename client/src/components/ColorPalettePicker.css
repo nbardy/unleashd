@@ -477,30 +477,3 @@
   border: none;
   color: var(--text-on-accent);
 }
-
-/* ─── Responsive ─── */
-
-@media (max-width: 768px) {
-  .palette-picker-content {
-    flex-direction: column;
-  }
-
-  .palette-list {
-    flex-direction: row;
-    flex-wrap: wrap;
-    min-width: auto;
-  }
-
-  .palette-option {
-    flex: 0 0 auto;
-  }
-
-  .color-ramp {
-    flex-wrap: wrap;
-  }
-
-  .ramp-item {
-    flex: 0 0 auto;
-    width: 48px;
-  }
-}

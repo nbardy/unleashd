@@ -43,7 +43,7 @@ export function NewConversationSheet({
   return (
     <dialog
       ref={dialogRef}
-      className="mobile-sheet ui-card"
+      className="ui-sheet ui-card"
       aria-label={TITLE[kind]}
       onCancel={(event) => {
         // Esc while a create is in flight would strand the pending request.
@@ -54,13 +54,13 @@ export function NewConversationSheet({
         if (event.target === dialogRef.current && !busy) onClose();
       }}
     >
-      <div className="mobile-sheet__inner ui-stack">
-        <div className="mobile-sheet__grabber" aria-hidden="true" />
-        <div className="mobile-sheet__header ui-row">
-          <h2 className="mobile-sheet__title">{TITLE[kind]}</h2>
+      <div className="ui-sheet__inner ui-stack">
+        <div className="ui-sheet__grabber" aria-hidden="true" />
+        <div className="ui-sheet__header ui-row">
+          <h2 className="ui-sheet__title">{TITLE[kind]}</h2>
           <button
             type="button"
-            className="mobile-sheet__close ui-inline-row ui-card ui-muted"
+            className="ui-sheet__close ui-inline-row ui-card ui-muted"
             onClick={onClose}
             disabled={busy}
             aria-label="Close"

@@ -15,7 +15,9 @@ and a view picks its device variant through a `presentation` prop set by the cal
 1. `index.css` — palette, semantic tokens and `--ui-radius` shared by every device.
    `ui/controls.css` owns the shared `.ui-choice` appearance used by both model pickers.
 2. `mobile/styles/mobile.css` — shell, safe areas, tab bar, and legacy detail views.
+   Shell CSS is the only place a width `@media` may appear (gate G9).
 3. `mobile/styles/mobile-ui.css` — reusable mobile page and surface grammar.
+   Bottom sheets are `.ui-sheet*` in `ui/primitives.css`, shared with views.
 4. Feature CSS — only layout or states unique to that feature.
 
 ## Primitives

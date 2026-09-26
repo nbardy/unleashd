@@ -19,7 +19,9 @@ Never import another `components/*.tsx` or its CSS. Swarm parsers were moved to 
 Grep gates (run `pnpm check:client-invariants` / `bash tools/check-client-invariants.sh`):
 - **G1** — `jotaiStore.set` only inside `client/src/atoms/`. Components call actions.
 - **G2** — no raw `.buddyContext` / `.purpose` reads in `client/src/mobile/` — read the row's `kind` / `matchConversationKind` (`shared/src/conversation-config.ts`).
-- **G3** — no `components/` imports in `mobile/` except `components/buddies/` (see above).
+- **G3** — the shells never import each other (O1, lean-scope 06 §2.3): `mobile/` never imports the desktop shell (`components/*` outside `components/buddies/`), and the desktop shell never imports `mobile/`. The views half of O1 (`views/` never imports a shell or `mobile/`) is `client/test/views-boundary.test.ts`.
+- **G4–G8** — secure-context wrappers, one CSS owner per class, the token scale, the CSS line ceiling (see the script).
+- **G9** — width `@media` queries only in shell CSS (`App.css`, `components/Sidebar.css`, `mobile/styles/*`). A view that differs by device colocates `[data-device="mobile"] .x { … }` in its own sheet (`ShellMobile` puts `data-device="mobile"` on its root) or reads a `data-layout` / `presentation` variant. A width query in a view sheet also fired for a desktop window narrowed after load, which keeps the desktop tree, so it styled a layout that tree never renders. Overlay sheets use the `.ui-sheet*` primitive in `ui/primitives.css`, never a mobile-only class, because shared views render them on both trees.
 
 ### DeviceKind — the only sum type at the shell
 

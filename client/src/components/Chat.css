@@ -248,7 +248,6 @@
   margin: 0 auto;
 }
 
-
 /* Header status area */
 .header-status {
   gap: var(--sp-4) var(--sp-6);
@@ -303,12 +302,6 @@
   padding: var(--sp-5) var(--sp-9) var(--sp-5) var(--sp-7);
   background: color-mix(in srgb, var(--bg-card) 56%, var(--bg-content));
   border-bottom: 1px solid color-mix(in srgb, var(--border-subtle) 72%, transparent);
-}
-
-@media (max-width: 768px) {
-  .thread-context {
-    padding: var(--sp-4) var(--sp-6);
-  }
 }
 
 /* Ready badge in header */
@@ -589,4 +582,3 @@
   letter-spacing: 0.5px;
 }
 
-}

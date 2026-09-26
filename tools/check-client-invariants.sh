@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# check-client-invariants.sh — 3 grep gates for Mobile PWA (§12, PLANNING_MOBILE.md §12)
+# check-client-invariants.sh — client architecture gates (G1-G9; see docs/mobile-view-tree.md)
 # Fails CI if any invariant is violated. Zero custom plugins — stock grep only.
 set -euo pipefail
 
@@ -33,48 +33,50 @@ else
 fi
 echo
 
-echo "==> Gate G3: components/*.tsx imports in mobile/ — except components/buddies/*"
-# mobile/ may import atoms/*, hooks/*, utils/*, shared/*, components/buddies/* — never other components/*.tsx
-# Parsers now live in utils/, not components/. CSS side-effect imports from components would couple trees.
-# Allow: components/buddies/{api,types,ui-contract,buddies-shaping}.ts — co-located shaping, not view trees.
-# Path-resolving check: resolve each relative import against the importing file's dir and fail
-# if the resolved path is under client/src/components/ and not client/src/components/buddies/.
-# This catches the mobile/index.ts hole where "../components" text looks like mobile/components
-# but actually resolves to the desktop tree.
+echo "==> Gate G3: the two shells never import each other (O1, lean-scope 06 §2.3)"
+# Mobile shell = client/src/mobile/. Desktop shell = client/src/components/
+# outside components/buddies/ (shared Buddy views both trees render).
+# - mobile/ never imports the desktop shell;
+# - the desktop shell never imports mobile/.
+# The third half of O1, "views/ never imports a shell or mobile/", is
+# client/test/views-boundary.test.ts (run by `pnpm test:client`), not repeated here.
+# Imports are resolved against the importing file's dir, so "../components" from
+# mobile/index.ts is caught even though its text looks like mobile/components.
 if ! node <<'NODE'
 const fs = require('fs');
 const path = require('path');
 const ROOT = process.cwd();
-const mobileRoot = path.join(ROOT, 'client/src/mobile');
-const componentsRoot = path.join(ROOT, 'client/src/components') + path.sep;
-const buddiesRoot = path.join(ROOT, 'client/src/components/buddies') + path.sep;
-const importRe = /from\s+["']([^"']+)["']/g;
-let violations = [];
-function walk(dir) {
-  for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
-    const p = path.join(dir, e.name);
-    if (e.isDirectory()) walk(p);
-    else if (e.isFile() && (p.endsWith('.ts') || p.endsWith('.tsx'))) {
-      const src = fs.readFileSync(p, 'utf8');
-      let m;
-      while ((m = importRe.exec(src))) {
-        const spec = m[1];
-        if (!spec.startsWith('.')) continue;
-        const resolved = path.resolve(path.dirname(p), spec);
-        const norm = resolved + path.sep;
-        if (norm.startsWith(componentsRoot) && !norm.startsWith(buddiesRoot)) {
-          violations.push(`${path.relative(ROOT, p)} imports ${spec} -> ${path.relative(ROOT, resolved)}`);
-        }
+const SRC = path.join(ROOT, 'client/src');
+const MOBILE = path.join(SRC, 'mobile') + path.sep;
+const COMPONENTS = path.join(SRC, 'components') + path.sep;
+const BUDDIES = path.join(SRC, 'components/buddies') + path.sep;
+const isDesktop = (p) => p.startsWith(COMPONENTS) && !p.startsWith(BUDDIES);
+const isMobile = (p) => p.startsWith(MOBILE);
+const RULES = [
+  { from: isMobile, to: isDesktop, what: 'mobile shell imports the desktop shell' },
+  { from: isDesktop, to: isMobile, what: 'desktop shell imports the mobile shell' },
+];
+const importRe = /(?:from\s+|import\s*\(\s*|import\s+)["'](\.[^"']*)["']/g;
+const walk = (d) => fs.readdirSync(d, { withFileTypes: true }).flatMap((e) => {
+  const p = path.join(d, e.name);
+  return e.isDirectory() ? walk(p) : /\.(tsx?|css)$/.test(p) ? [p] : [];
+});
+const violations = [];
+for (const file of walk(SRC)) {
+  const src = fs.readFileSync(file, 'utf8');
+  for (const m of src.matchAll(importRe)) {
+    const target = path.resolve(path.dirname(file), m[1]) + path.sep;
+    for (const rule of RULES) {
+      if (rule.from(file) && rule.to(target)) {
+        violations.push(`${rule.what}: ${path.relative(ROOT, file)} -> ${m[1]}`);
       }
     }
   }
 }
-walk(mobileRoot);
-if (violations.length) { violations.forEach(v => console.error('G3 violation: ' + v)); process.exit(1); }
+if (violations.length) { violations.forEach((v) => console.error('G3 violation: ' + v)); process.exit(1); }
 NODE
 then
-  echo "G3 FAIL: mobile/ imports from components/* outside components/buddies/. Move shared logic to utils/ or atoms/."
-  echo "  Allowed: components/buddies/{api,types,ui-contract,buddies-shaping}.ts only."
+  echo "G3 FAIL: a shell imports the other shell. Move the shared piece to views/, ui/, hooks/, utils/ or atoms/."
   FAIL=1
 else
   echo "G3 PASS"
@@ -192,7 +194,7 @@ echo "==> Gate G8: total client CSS lines must not grow"
 # Ratchet: the lean rewrite takes CSS from 18.4k lines to a ~3.75k budget
 # (lean-scope 06 §3). When a change cuts CSS, lower CSS_LINE_CEILING to the new
 # total in the same commit so the cut cannot silently grow back.
-CSS_LINE_CEILING=13140 # T20-E transcript rows + composer merged (T20 view slices complete), 2026-09-26; earlier: 13294 T20-F, 13289 T20-B/D, 14636 T20-A + T20-C, 14704 channel tokens, 14801 dead-code sweep; 15834 on 4e5a01c
+CSS_LINE_CEILING=12670 # T21b shells: dead mobile selectors, width @media → [data-device], .ui-sheet primitive, 2026-09-26; earlier: 13140 T20-E transcript rows + composer merged (T20 view slices complete), 2026-09-26; earlier: 13294 T20-F, 13289 T20-B/D, 14636 T20-A + T20-C, 14704 channel tokens, 14801 dead-code sweep; 15834 on 4e5a01c
 CSS_LINES="$(find client/src -name '*.css' -print0 | xargs -0 cat | wc -l | tr -d ' ')"
 if [ "$CSS_LINES" -gt "$CSS_LINE_CEILING" ]; then
   echo "G8 FAIL: client CSS is $CSS_LINES lines, ceiling $CSS_LINE_CEILING. Reuse a primitive (ui/primitives.css) or cut elsewhere."
@@ -202,9 +204,31 @@ else
 fi
 echo
 
+echo "==> Gate G9: width @media queries only in shell CSS"
+# O1 (lean-scope 06 §2.3): device layout belongs to the shells. A view that
+# differs by device colocates a [data-device="mobile"] rule (ShellMobile sets
+# the attribute on its root) or reads a data-layout / presentation variant the
+# caller picks. A width query in a view sheet would also fire for a desktop
+# window narrowed after load, which keeps the desktop tree (useDeviceKind is
+# sticky), so it styled a layout the tree never renders. prefers-* and
+# hover/pointer queries are not device layout and stay allowed everywhere.
+SHELL_CSS='^client/src/(App\.css|components/Sidebar\.css|mobile/styles/[^/]+\.css)$'
+WIDTH_MEDIA="$(
+  find client/src -name '*.css' | grep -v -E "$SHELL_CSS" | xargs grep -n -E '^[[:space:]]*@media[^{]*width' || true
+)"
+if [ -n "$WIDTH_MEDIA" ]; then
+  echo "$WIDTH_MEDIA" | sed 's/^/  /'
+  echo "G9 FAIL: width @media outside shell CSS (App.css, components/Sidebar.css, mobile/styles/*)."
+  echo "  Fix: [data-device=\"mobile\"] .your-class { ... } in the view's own sheet."
+  FAIL=1
+else
+  echo "G9 PASS"
+fi
+echo
+
 if [ "$FAIL" -ne 0 ]; then
   echo "check-client-invariants: FAILED — fix the gates above."
   exit 1
 fi
 
-echo "check-client-invariants: all 8 gates PASS"
+echo "check-client-invariants: all 9 gates PASS"

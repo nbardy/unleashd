@@ -189,40 +189,7 @@
   text-align: center;
 }
 
-/* ---- sheet: mobile. Native <dialog> in the top layer, bottom-anchored. ---- */
-
-.config-overlay--sheet {
-  box-sizing: border-box;
-  width: 100%;
-  max-width: 560px;
-  max-height: 88vh;
-  margin: auto auto 0;
-  padding: 0;
-  overflow-y: auto;
-  -webkit-overflow-scrolling: touch;
-  overscroll-behavior: contain;
-  border-bottom: none;
-  background: var(--bg-raised-1);
-  color: var(--text-primary);
-}
-
-.config-overlay--sheet::backdrop {
-  background: rgb(0 0 0 / 55%);
-}
-
-.config-overlay__inner {
-  gap: var(--sp-5);
-  padding: var(--sp-5) var(--sp-7) calc(var(--sp-8) + env(safe-area-inset-bottom));
-}
-
-.config-overlay__grabber {
-  flex: none;
-  align-self: center;
-  width: 38px;
-  height: 4px;
-  border-radius: var(--ui-radius);
-  background: var(--border-strong);
-}
+/* ---- sheet: the frame is .ui-sheet (ui/primitives.css); only the options differ. ---- */
 
 .config-overlay--sheet .config-picker__group {
   flex-wrap: wrap;

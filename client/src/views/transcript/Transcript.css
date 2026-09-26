@@ -78,22 +78,20 @@
   font-size: var(--fs-4);
 }
 
-@media (max-width: 768px) {
-  .messages-container {
-    padding: var(--sp-8) var(--sp-7);
-  }
+[data-device="mobile"] .messages-container {
+  padding: var(--sp-8) var(--sp-7);
+}
 
-  .message.user {
-    max-width: 94%;
-  }
+[data-device="mobile"] .message.user {
+  max-width: 94%;
+}
 
-  .message.user > .message-content {
-    padding: var(--sp-5) var(--sp-7);
-  }
+[data-device="mobile"] .message.user > .message-content {
+  padding: var(--sp-5) var(--sp-7);
+}
 
-  .message-role.user {
-    padding-inline: var(--sp-7);
-  }
+[data-device="mobile"] .message-role.user {
+  padding-inline: var(--sp-7);
 }
 
 /* System / loop marker messages — use derived --bg-system-message tint */

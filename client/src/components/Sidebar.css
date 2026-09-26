@@ -139,17 +139,6 @@
   margin-bottom: 8px;
 }
 
-.new-conv-label {
-  font-size: var(--fs-3);
-  font-weight: 500;
-  color: var(--text-secondary);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  margin-top: 4px;
-}
-
-}
-
 /* View mode toggle: grouped vs list */
 
 .status-dot.connected {

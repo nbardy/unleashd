@@ -18,13 +18,10 @@ export interface ConversationConfigPickerProps {
 
 const ANY_PROVIDER = () => true;
 
-// `new-conv-label`, `provider-selector`, `model-selector` and
-// `custom-model-option` are legacy hooks still targeted by ChannelComposer.css
-// (owned by the channel lane). Drop them once that file moves to `config-picker__*`.
 const GROUP_CLASS: Record<ConfigGroup['id'], string> = {
-  provider: 'config-picker__group--provider provider-selector',
-  model: 'model-selector',
-  reasoning: 'model-selector',
+  provider: 'config-picker__group config-picker__group--provider',
+  model: 'config-picker__group',
+  reasoning: 'config-picker__group',
 };
 
 /** Provider / model / reasoning radio groups. One list for every surface and device. */
@@ -50,14 +47,10 @@ export function ConversationConfigPicker({
         const locked = disabled || (group.id === 'provider' && providerDisabled);
         return (
           <div key={group.id} className="config-picker__section">
-            <div className="config-picker__label new-conv-label" id={name}>
+            <div className="config-picker__label" id={name}>
               {group.title}
             </div>
-            <div
-              className={`config-picker__group ${GROUP_CLASS[group.id]}`}
-              role="radiogroup"
-              aria-labelledby={name}
-            >
+            <div className={GROUP_CLASS[group.id]} role="radiogroup" aria-labelledby={name}>
               {group.choices.map((choice) => (
                 <label
                   key={choice.key}
@@ -78,7 +71,7 @@ export function ConversationConfigPicker({
                 </label>
               ))}
               {group.id === 'model' && dynamicModels && (
-                <label className="config-picker__custom custom-model-option">
+                <label className="config-picker__custom">
                   <span>Custom model ID</span>
                   <input
                     type="text"

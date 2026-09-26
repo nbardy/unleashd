@@ -11,7 +11,6 @@ import { isImmersiveChannelRoute } from '../channels/channel-route';
 import { useKeyboardInset } from '../hooks/useKeyboardInset';
 import '../styles/mobile.css';
 import '../styles/mobile-ui.css';
-import '../styles/mobile-controls.css';
 import '../styles/mobile-channels.css';
 
 /**
@@ -77,7 +76,10 @@ export function ShellMobile() {
   const channelsUnread = ownerUnreadTotal(useOwnerInboxes().data, null).unreadChannels > 0;
 
   return (
+    // data-device scopes the colocated device tweaks in view CSS
+    // ([data-device="mobile"] .x), the only device switch views may style on (G9).
     <div
+      data-device="mobile"
       className={
         keyboardOpen ? 'mobile-shell ui-stack mobile-shell--keyboard' : 'mobile-shell ui-stack'
       }

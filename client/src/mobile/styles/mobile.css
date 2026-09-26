@@ -180,23 +180,6 @@
   outline-offset: 2px;
 }
 
-/* ---- Legacy detail-page layout (primary routes use MobilePage) ---- */
-.mobile-hub {
-  padding: var(--sp-8) var(--sp-7) calc(var(--sp-8) + env(safe-area-inset-bottom));
-}
-
-.mobile-hub__header {
-  margin-bottom: 20px;
-}
-
-.mobile-hub__title {
-  font-size: var(--fs-8);
-  font-weight: 700;
-  letter-spacing: -0.02em;
-  color: var(--text-primary);
-  line-height: 1.1;
-}
-
 /* ---- EmptyState ---- */
 .mobile-empty {
   align-items: center;
@@ -402,16 +385,6 @@
 }
 
 /* ---- BuddyDetailMobile ---- */
-
-/* Anchors, not buttons — each tab is a URL, so Back returns to the previous
-   tab instead of leaving the buddy. */
-
-.mobile-buddy-section__heading {
-  font-size: var(--fs-4);
-  font-weight: 700;
-  color: var(--text-primary);
-  letter-spacing: -0.01em;
-}
 
 .mobile-buddies__group-heading::after {
   content: "";

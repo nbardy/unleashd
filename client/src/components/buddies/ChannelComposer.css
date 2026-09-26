@@ -307,15 +307,14 @@
   color: var(--text-bright);
 }
 
-.channel-composer-model .new-conv-label {
+.channel-composer-model .config-picker__label {
   margin: 6px 0 0;
   color: var(--text-muted);
   font-size: var(--fs-2);
   font-weight: 600;
 }
 
-.channel-composer-model .provider-selector,
-.channel-composer-model .model-selector {
+.channel-composer-model .config-picker__group {
   display: flex;
   flex-wrap: wrap;
   gap: var(--sp-2);
@@ -341,7 +340,7 @@
   clip-path: inset(50%);
 }
 
-.channel-composer-model .custom-model-option {
+.channel-composer-model .config-picker__custom {
   display: flex;
   align-items: center;
   gap: var(--sp-4);
