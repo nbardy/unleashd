@@ -267,3 +267,47 @@ fn report_counts_every_dropped_table() {
     );
     assert!(verify(&old, &new, &report.soul_files, &report.owner_reads, &report.direct_reads).unwrap().ok);
 }
+
+/// A Buddy with no soul memory head is legitimate (3 builder Buddies on the 2026-09-26 snapshot).
+/// Verify used to abort (exit 2, QueryReturnedNoRows) on it, blocking the swap. "No soul in the
+/// source" must equal "no soul in the target", while a soul lost or invented still fails.
+#[test]
+fn a_buddy_without_a_soul_verifies_but_a_lost_soul_fails() {
+    let dir = tempfile::tempdir().unwrap();
+    let old = fixture(dir.path());
+    Connection::open(&old)
+        .unwrap()
+        .execute_batch(
+            "INSERT INTO buddies (id, project_id, slug, name, role, status, soul_path, created_at, updated_at)
+               VALUES ('b4','p1','builder','Builder','eng','active',NULL,'2026-07-01T00:00:00.000Z','2026-07-01T00:00:00.000Z');
+             INSERT INTO buddy_projects (buddy_id, project_id, created_at, background_enabled, max_active_runs)
+               VALUES ('b4','p1','2026-07-01T00:00:00.000Z',0,2);",
+        )
+        .unwrap();
+    let new = dir.path().join("new.sqlite");
+    let report = import(&old, &new, &dir.path().join("owner-channel-reads.json"), ImportOptions::default()).unwrap();
+    let run = || verify(&old, &new, &report.soul_files, &report.owner_reads, &report.direct_reads).unwrap();
+    let ok = run();
+    assert!(ok.ok, "{}", serde_json::to_string_pretty(&ok.soul).unwrap());
+    assert_eq!(ok.soul.split.get("no_soul"), Some(&1));
+
+    // Invented: the target has a soul the source never had.
+    let conn = Connection::open(&new).unwrap();
+    conn.execute(
+        "INSERT INTO doc (id, buddy_id, workspace_id, scope_kind, scope_id, kind, name, revision, content, updated_at)
+         SELECT 'mem_b4_soul', 'b4', workspace_id, 'buddy', 'b4', 'soul', '', 1, 'made up', updated_at FROM doc WHERE buddy_id = 'b1' AND kind = 'soul' AND scope_kind = 'buddy'",
+        [],
+    )
+    .unwrap();
+    let invented = run();
+    assert!(!invented.ok && !invented.soul.ok);
+    assert_eq!(invented.soul.differ, ["builder: doc_invented"]);
+
+    // Lost: the source had a soul, the target has none.
+    conn.execute("DELETE FROM doc WHERE buddy_id = 'b4'", []).unwrap();
+    conn.execute("DELETE FROM doc_revision WHERE doc_id IN (SELECT id FROM doc WHERE buddy_id = 'b1' AND kind = 'soul' AND scope_kind = 'buddy')", []).unwrap();
+    conn.execute("DELETE FROM doc WHERE buddy_id = 'b1' AND kind = 'soul' AND scope_kind = 'buddy'", []).unwrap();
+    let lost = run();
+    assert!(!lost.ok && !lost.soul.ok);
+    assert_eq!(lost.soul.differ, ["lead: doc_lost"]);
+}
