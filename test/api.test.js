@@ -13,7 +13,8 @@ const fs = require('node:fs');
 const os = require('node:os');
 const path = require('node:path');
 
-const PORT = 3001; // Use different port for tests
+// Overridable: another local process (a Remotion render, 2026-09-26) held 3001 and failed the gate.
+const PORT = Number(process.env.API_TEST_PORT ?? 3001);
 const SERVER_URL = `ws://localhost:${PORT}${WS_PATH}`;
 
 let serverProcess = null;
