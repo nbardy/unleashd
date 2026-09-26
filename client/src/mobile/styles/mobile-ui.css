@@ -490,11 +490,6 @@
   opacity: 0.45;
 }
 
-.mobile-chat__action-error {
-  color: var(--theme-danger);
-  font-size: var(--fs-2);
-}
-
 .mobile-chat__messages {
   flex: 1;
   gap: var(--sp-4);

@@ -68,7 +68,6 @@
   --bg-raised-4: color-mix(in oklch, var(--theme-bg-surface) 80%, var(--theme-text-muted));
   --bg-raised-5: color-mix(in oklch, var(--theme-bg-surface) 65%, var(--theme-text-muted));
   --bg-raised-6: color-mix(in oklch, var(--theme-bg-surface) 50%, var(--theme-text-muted));
-  --bg-highlight: color-mix(in oklch, var(--theme-bg-surface) 35%, var(--theme-text-muted));
 
   /* =========================================
      DERIVED: Semantic backgrounds
@@ -80,7 +79,6 @@
   --bg-card: var(--bg-raised-2);
   --bg-panel: var(--bg-raised-3);
   --bg-hover: var(--bg-raised-4);
-  --bg-active: var(--bg-raised-5);
   --bg-popup: var(--bg-raised-6);
   --bg-selected: var(--theme-bg-surface);
 
@@ -123,7 +121,6 @@
 
   /* User (messages, active nav) */
   --user: var(--theme-user);
-  --user-dim: color-mix(in oklch, var(--theme-user) 35%, var(--theme-bg-canvas));
   --user-bright: color-mix(in oklch, var(--theme-user) 75%, var(--pole-fg-pop));
   --user-glow: color-mix(in srgb, var(--theme-user) 22%, transparent);
 
@@ -149,13 +146,10 @@
   --warning: var(--theme-warning);
   --warning-dim: color-mix(in oklch, var(--theme-warning) 35%, var(--theme-bg-canvas));
   --warning-bright: color-mix(in oklch, var(--theme-warning) 75%, var(--pole-fg-pop));
-  --warning-glow: color-mix(in srgb, var(--theme-warning) 22%, transparent);
 
   /* Queue (queued, inline code, pending) */
   --queue: var(--theme-queue);
-  --queue-dim: color-mix(in oklch, var(--theme-queue) 35%, var(--theme-bg-canvas));
   --queue-bright: color-mix(in oklch, var(--theme-queue) 75%, var(--pole-fg-pop));
-  --queue-glow: color-mix(in srgb, var(--theme-queue) 22%, transparent);
 
   /* Danger (errors, interrupt) */
   --danger: var(--theme-danger);
@@ -165,9 +159,6 @@
 
   /* Meta (AI model badges, special) */
   --meta: var(--theme-meta);
-  --meta-dim: color-mix(in oklch, var(--theme-meta) 35%, var(--theme-bg-canvas));
-  --meta-bright: color-mix(in oklch, var(--theme-meta) 75%, var(--pole-fg-pop));
-  --meta-glow: color-mix(in srgb, var(--theme-meta) 22%, transparent);
 
   /* =========================================
      DERIVED: Semantic accent mappings
@@ -194,20 +185,7 @@
      ========================================= */
   --bg-user-message: color-mix(in oklch, var(--accent-user) 8%, var(--bg-content));
   --bg-assistant-message: color-mix(in oklch, var(--accent-assistant) 8%, var(--bg-content));
-  --bg-system-message: color-mix(in oklch, var(--accent-warning) 8%, var(--bg-content));
   --bg-error-message: color-mix(in oklch, var(--accent-error) 8%, var(--bg-content));
-
-  /* =========================================
-     CODE STYLING
-     ========================================= */
-  --code-bg: var(--bg-base);
-  --code-text: var(--ai);
-  --code-string: var(--success);
-
-  /* =========================================
-     DERIVED: Semantic accent mappings (cont.)
-     ========================================= */
-  --accent-primary-glow: var(--primary-glow);
 
   /* =========================================
      DERIVED: Elevated surface
