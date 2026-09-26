@@ -1,16 +1,9 @@
 import { useAtomValue } from 'jotai';
-import { memo, useCallback, useMemo, useState } from 'react';
+import { useCallback, useMemo, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { setConversationDone } from '../atoms/actions';
-import {
-  connectionAtom,
-  type ConversationListEntry,
-  listField,
-  rowFamily,
-} from '../atoms/conversations';
+import { type ConversationListEntry, connectionAtom, listField } from '../atoms/conversations';
 import {
   prefsAtom,
-  promoteWorker,
   setShowDoneConversations,
   setShowTempSessions,
   setShowWorkerConversations,
@@ -19,12 +12,9 @@ import {
 } from '../atoms/ui';
 import { useFolderFilter } from '../hooks/useFolderFilter';
 import { useUrlFolderSelection } from '../hooks/useUrlFolderSelection';
-import { isRowRunning } from '../utils/conversation-row';
-import { getProjectColor } from '../utils/projectColors';
-import { formatTimeAgo, getConversationLastActivity } from '../utils/time';
+import { ConversationRow } from '../views/conversation-row/ConversationRow';
 import { FolderFilter } from './FolderFilter';
 import './Gallery.css';
-import { useTimeTick } from '../hooks/useTimeTick';
 import { isWorktreeDirectory, shortenHomePath } from '../utils/directories';
 
 /**
@@ -365,14 +355,14 @@ export function Gallery({ filter }: GalleryProps = {}) {
             <>
               <div className="project-grid">
                 {visibleConversations.map((conv) => (
-                  <GalleryCard
+                  <ConversationRow
+                    variant="card"
                     key={conv.id}
                     id={conv.id}
-                    showWorkerBadge={showWorkerBadge}
-                    isDoneView={isDoneView}
-                    isWorkersView={isWorkersView}
+                    worker={showWorkerBadge}
+                    doneView={isDoneView}
+                    workersView={isWorkersView}
                     connected={connected}
-                    onOpen={openConversation}
                   />
                 ))}
               </div>
@@ -418,7 +408,6 @@ export function Gallery({ filter }: GalleryProps = {}) {
       isDoneView,
       isWorkersView,
       connected,
-      openConversation,
     ]
   );
 
@@ -612,108 +601,3 @@ export function Gallery({ filter }: GalleryProps = {}) {
     </div>
   );
 }
-
-/**
- * One gallery card. Subscribes to its own conversation (for messages, provider
- * and state) and is memoized, so an event for another conversation re-renders
- * nothing here. It subscribes to the shared 30 s tick for its time-ago label.
- */
-const GalleryCard = memo(function GalleryCard({
-  id,
-  showWorkerBadge,
-  isDoneView,
-  isWorkersView,
-  connected,
-  onOpen,
-}: {
-  id: string;
-  showWorkerBadge: boolean;
-  isDoneView: boolean;
-  isWorkersView: boolean;
-  connected: boolean;
-  onOpen: (id: string) => void;
-}) {
-  const conv = useAtomValue(rowFamily(id));
-  useTimeTick();
-  if (!conv) return null;
-  const isDoneConversation = conv.done;
-  const state = isRowRunning(conv) ? 'running' : 'idle';
-  const accentColor = getProjectColor(conv.cwd);
-  const cardClassName = [
-    'gallery-card',
-    isDoneConversation && !isDoneView ? 'done-card' : '',
-    showWorkerBadge && !isWorkersView && !isDoneConversation ? 'worker-card' : '',
-  ]
-    .filter(Boolean)
-    .join(' ');
-
-  const getStateLabel = () => {
-    if (state === 'running') return 'Running';
-    return `Idle · ${formatTimeAgo(getConversationLastActivity(conv))}`;
-  };
-
-  return (
-    <div
-      className={cardClassName}
-      onClick={() => onOpen(conv.id)}
-      style={{ borderTopColor: accentColor }}
-    >
-      <div className="gallery-card-header ui-row">
-        <div className="gallery-card-id ui-row">
-          {conv.id.substring(0, 8)}
-          {showWorkerBadge ? (
-            <span className="provider-badge provider-worker">worker</span>
-          ) : (
-            <span className={`provider-badge provider-${conv.provider || 'claude'}`}>
-              {conv.provider || 'claude'}
-            </span>
-          )}
-        </div>
-        <div className="gallery-card-status ui-row">
-          {isDoneConversation ? (
-            <button
-              type="button"
-              className="undo-done-btn ui-card"
-              disabled={!connected}
-              title={connected ? undefined : 'Reconnecting to the server'}
-              onClick={(e) => {
-                // Restore opens the thread as well as un-marking it. Un-marking
-                // alone makes the card vanish from the Done view with no visible
-                // destination, which reads as "Restore did nothing".
-                e.stopPropagation();
-                setConversationDone(conv.id, false);
-                onOpen(conv.id);
-              }}
-            >
-              Restore
-            </button>
-          ) : showWorkerBadge ? (
-            <button
-              type="button"
-              className="promote-worker-btn ui-card"
-              onClick={(e) => {
-                e.stopPropagation();
-                promoteWorker(conv.id);
-              }}
-            >
-              Promote
-            </button>
-          ) : null}
-          <div className={`state-badge ui-inline-row state-${state}`}>
-            <div className="state-indicator" />
-            <span className="state-label">{getStateLabel()}</span>
-          </div>
-        </div>
-      </div>
-      <div>{conv.messageCount} messages</div>
-      {/* Cards show the row label: lists carry no message bodies (protocol v3). */}
-      <div className="gallery-messages">
-        {conv.messageCount === 0 ? (
-          <div className="empty-state ui-muted">No messages yet</div>
-        ) : (
-          <div className="gallery-message user">{conv.label}</div>
-        )}
-      </div>
-    </div>
-  );
-});

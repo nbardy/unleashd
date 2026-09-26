@@ -51,18 +51,19 @@ only in presentation, the caller picks a named variant, never a boolean:
 Device-specific derived views that are not shared content still live in
 `mobile/atoms/`, never in `conversations.ts`.
 
-### Creation actions (`mobile/atoms/create.ts`)
+### Creation actions (`views/new-conversation/`)
 
-Mobile v1 shipped read-only: no create affordance on Chats, Swarms, or Buddies,
-and empty states that told the user to go use the desktop app. `+ New` on all
-three now routes through `mobile/atoms/create.ts`:
+`+ New` on Chats and Swarms opens `mobile/components/NewConversationSheet`, a
+`<dialog>` around the SAME `NewConversationForm` the desktop Sidebar shows in
+its modal (`layout: 'modal' | 'sheet'`, T20-F). The form creates through
+`views/new-conversation/create.ts`:
 
-- `MobileCreateRequest` (`kind: 'chat' | 'swarm'`) → thin `createFromRequest`
+- `CreateRequest` (`kind: 'chat' | 'swarm'`) → thin `createFromRequest`
   dispatcher → one handler per kind. Both land on the core `createConversation`
   action, so there is no second creation spine; `swarm` only adds the
   `swarmDebugPrefix` from `GET /api/oompa-swarm-context`. That fetch failing
-  surfaces as an error in the sheet — never a silent downgrade to a plain chat.
-- `createBuddyViaBuilder()` is a different shape (no directory, no config):
+  surfaces as an error in the form — never a silent downgrade to a plain chat.
+- `createBuddyViaBuilder()` (re-exported by `mobile/atoms/create.ts`) is a different shape (no directory, no config):
   `POST /api/buddies/builder` with a client-owned `conversationId`, then route
   to the returned Builder thread.
 

@@ -212,7 +212,6 @@
   cursor: pointer;
 }
 
-.mobile-sheet__label,
 .mobile-sheet__section-title {
   color: var(--text-muted);
   font-size: var(--fs-2);
@@ -246,15 +245,6 @@
   outline-offset: 1px;
 }
 
-.mobile-sheet__recents {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: var(--sp-3);
-  margin: 0;
-  padding: 0;
-  list-style: none;
-}
-
 .mobile-sheet__recent {
   display: block;
   width: 100%;
@@ -285,7 +275,6 @@
   font-size: var(--fs-2);
 }
 
-.mobile-sheet__no-matches,
 .mobile-sheet__note {
   /* __note is an <output> (inline by default) — block keeps it on its own row. */
   display: block;
@@ -301,32 +290,6 @@
   color: var(--theme-error, #ef4444);
   font-size: var(--fs-4);
   line-height: 1.4;
-}
-
-.mobile-sheet__footer {
-  position: sticky;
-  bottom: calc(-20px - env(safe-area-inset-bottom));
-  gap: var(--sp-4);
-  margin: 0 -16px calc(-20px - env(safe-area-inset-bottom));
-  padding: var(--sp-5) var(--sp-7) calc(var(--sp-8) + env(safe-area-inset-bottom));
-  border-top: 1px solid var(--border-subtle);
-  background: var(--bg-raised-1);
-}
-
-.mobile-sheet__confirm {
-  min-height: 48px;
-  border: none;
-  background: var(--accent);
-  color: var(--text-on-accent);
-  font: inherit;
-  font-size: var(--fs-5);
-  font-weight: 700;
-  -webkit-tap-highlight-color: transparent;
-}
-
-.mobile-sheet__confirm:disabled {
-  cursor: default;
-  opacity: 0.5;
 }
 
 .mobile-buddies__status {

@@ -1,74 +1,11 @@
 import { useAtomValue } from 'jotai';
-import { memo, useMemo, useState } from 'react';
+import { useMemo, useState } from 'react';
 import { useLocation } from 'react-router-dom';
-import { listField, rowFamily, unreadFamily } from '../../atoms/conversations';
-import { useTimeTick } from '../../hooks/useTimeTick';
+import { listField } from '../../atoms/conversations';
 import { mobileConversationRouteState } from '../../utils/conversation-route-state';
-import { isRowRunning } from '../../utils/conversation-row';
-import { shortenHomePath } from '../../utils/directories';
-import { formatTimeAgo, getConversationLastActivity } from '../../utils/time';
-import {
-  MobileBadge,
-  MobileCardLink,
-  MobileEmptyPanel,
-  MobileHeaderAction,
-  MobilePage,
-  MobilePath,
-} from '../components/MobileUI';
+import { ConversationRow } from '../../views/conversation-row/ConversationRow';
+import { MobileEmptyPanel, MobileHeaderAction, MobilePage } from '../components/MobileUI';
 import { NewConversationSheet } from '../components/NewConversationSheet';
-
-const ConversationListItem = memo(function ConversationListItem({
-  id,
-  routeState,
-}: {
-  id: string;
-  routeState: Record<string, unknown>;
-}) {
-  const conv = useAtomValue(rowFamily(id));
-  const unseen = useAtomValue(unreadFamily(id));
-  useTimeTick();
-
-  if (!conv) return null;
-
-  const lastTime = getConversationLastActivity(conv);
-  const timeAgo = formatTimeAgo(lastTime);
-  const preview = conv.label;
-  const dirDisplay = shortenHomePath(conv.cwd);
-  const folderName = conv.cwd.split('/').filter(Boolean).pop() ?? dirDisplay;
-  return (
-    <MobileCardLink
-      to={`/chat/${encodeURIComponent(conv.id)}`}
-      state={routeState}
-      className="mobile-conversation-item ui-stack"
-    >
-      <div className="mobile-conversation-item__top ui-row">
-        <span className="mobile-conversation-item__title ui-truncate" title={dirDisplay}>
-          {folderName}
-        </span>
-        <span className="mobile-conversation-item__meta ui-row">
-          {conv.done ? <MobileBadge>Done</MobileBadge> : null}
-          {unseen ? <MobileBadge tone="accent">New</MobileBadge> : null}
-          <span className="mobile-conversation-item__time ui-muted">{timeAgo}</span>
-          {isRowRunning(conv) ? (
-            <span
-              className="mobile-conversation-item__status mobile-conversation-item__status--running"
-              aria-label="running"
-            />
-          ) : conv.run === 'queued' ? (
-            <span
-              className="mobile-conversation-item__status mobile-conversation-item__status--queued"
-              aria-label="queued"
-            />
-          ) : null}
-        </span>
-      </div>
-      <div className="mobile-conversation-item__preview ui-truncate" title={preview}>
-        {preview}
-      </div>
-      <MobilePath>{dirDisplay}</MobilePath>
-    </MobileCardLink>
-  );
-});
 
 export function ConversationListMobile({
   scope = 'all',
@@ -88,9 +25,9 @@ export function ConversationListMobile({
         No conversations yet. Tap <strong>+ New</strong> to start one.
       </MobileEmptyPanel>
     ) : (
-      <div className="mobile-ui-stack mobile-conversation-list">
+      <div className="mobile-ui-stack">
         {ids.map((id) => (
-          <ConversationListItem key={id} id={id} routeState={routeState} />
+          <ConversationRow variant="list" key={id} id={id} routeState={routeState} />
         ))}
       </div>
     );
