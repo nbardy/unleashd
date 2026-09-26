@@ -1,14 +1,8 @@
 /**
- * Runtimes built from durable records, never from transcripts.
- *
- * Why this exists (T13b S2): the TS loader parsed the newest 500 transcripts into runtimes and
- * recovered app-created records beside them. Bodies now come from the ingest store
- * (conversation-list.ts), so a runtime is only the record plus the live-turn state:
- *  - at boot, every app-created record (`user` / `legacy_inferred`) becomes one, as before (Buddy
- *    seats, pending first messages and forks are looked up by id);
- *  - any other listed conversation becomes one on first use (opened, or sent a command), from its
- *    record and the store's session rows. Before this, a conversation outside the 500-row window
- *    404'd on open (S1 gap). Guard: server/test/ingest-history.test.ts.
+ * Runtimes built from durable records, never from transcripts (T13b S2): at boot every app-created
+ * record becomes one (Buddy seats, pending first messages and forks are looked up by id); any
+ * other listed conversation becomes one on first use. Before, a conversation outside the loader's
+ * 500-row window 404'd on open. Guard: server/test/ingest-history.test.ts.
  */
 
 import type { SubAgent as NativeSubAgent, SessionRow } from '@unleashd/ingest';
@@ -23,7 +17,7 @@ import type {
   ConversationOptions,
   ConversationRuntime,
 } from '../conversations/runtime';
-import type { JoinedConversation } from './conversation-list';
+import { type JoinedConversation, forEachConcurrently } from './conversation-list';
 
 const RECOVERY_CONCURRENCY = 16;
 const ROW_BATCH = 100;
@@ -73,18 +67,6 @@ function normalizeMemoryGeneration(value: MemoryGenerationInput | null | undefin
   return normalized || null;
 }
 
-async function forEachConcurrently<T>(
-  items: readonly T[],
-  limit: number,
-  run: (item: T) => Promise<void>
-): Promise<void> {
-  let next = 0;
-  const worker = async () => {
-    while (next < items.length) await run(items[next++]);
-  };
-  await Promise.all(Array.from({ length: Math.min(limit, items.length) }, worker));
-}
-
 export function createRuntimeBuilder(dependencies: RuntimeBuilderDependencies): RuntimeBuilder {
   const logger = dependencies.logger ?? console;
   const building = new Map<string, Promise<ConversationRuntime | undefined>>();
@@ -107,9 +89,8 @@ export function createRuntimeBuilder(dependencies: RuntimeBuilderDependencies): 
       hydrated.record.currentSession?.provider === hydrated.state.config.provider
         ? hydrated.record.currentSession
         : undefined;
-    // A conversation with a current provider session is a resumed one, not a new
-    // memory-generation boundary: no briefing is injected on rebuild. A fresh record that has not
-    // started a provider session still needs the latest generation for its pending first message.
+    // A resumed session is no memory-generation boundary: only a record without one (a pending
+    // first message) gets the latest briefing.
     const buddy =
       record.kind.t === 'buddy' && !currentSession
         ? await dependencies.resolveBuddyConversation(record.kind.context).catch((error) => {
@@ -143,8 +124,7 @@ export function createRuntimeBuilder(dependencies: RuntimeBuilderDependencies): 
       buddyBriefing: buddy?.briefing ?? null,
       buddyMemoryGeneration: normalizeMemoryGeneration(buddy?.memoryGeneration),
     });
-    // The record's (or, for a discovered record, the transcript's) birth: the runtime's
-    // `new Date()` default sorted the oldest history to the top as "1m ago".
+    // The record's (discovered: the transcript's) birth, not `new Date()` ("1m ago" on old history).
     conversation.createdAt = new Date(joined?.row?.createdAt ?? record.createdAt);
     conversation.subAgents = current
       ? current.subAgents.map((agent) => recordedSubAgent(agent, current))
@@ -181,9 +161,7 @@ export function createRuntimeBuilder(dependencies: RuntimeBuilderDependencies): 
 
   async function recover(): Promise<void> {
     const summaries = await dependencies.records.listSummaries();
-    // A discovered record is a sidecar for a transcript, not evidence of an app conversation: it
-    // becomes a runtime only when used (5,275 empty "New conversation" rows came from recovering
-    // them eagerly on 2026-09-06).
+    // Discovered records materialize only on use (eager recovery made 5,275 empty rows, 2026-09-06).
     const appCreated = summaries.filter(
       (summary) => summary.status === 'active' && summary.provenance !== 'external_discovered'
     );
@@ -202,8 +180,7 @@ export function createRuntimeBuilder(dependencies: RuntimeBuilderDependencies): 
         if (!conversation) return;
         rows.push(conversation.toRow());
         if (rows.length >= ROW_BATCH) flush();
-        // Absent or already dispatched never becomes pending again, so only a pending one pays
-        // the claim (two record reads).
+        // Only a still-pending first message pays the claim (two record reads).
         const creation = record?.creation;
         if (creation?.initialMessage && !creation.initialMessageDispatchedAt) {
           await dependencies.dispatchInitialMessage(conversation);
