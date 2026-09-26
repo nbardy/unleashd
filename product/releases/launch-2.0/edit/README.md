@@ -27,9 +27,13 @@ Motion draft 1, 2026-09-26: 18.0 s.
 | ~13.4–15.0 | Room for the voice line, "Don't worry, we've got you covered." |
 | 15.0–18.0 | Plate fades to `#002b36`: "Introducing", the 3D wordmark, a "2.0" sticker |
 
-The chat windows are generic on purpose: six made-up skins, no real app UI or marks, so the
-first thing that looks like Unleashd is the title. Arrival times are the music grid: when
-the track lands, move `T` and `GAPS` onto its beats.
+Draft 2 (owner, 2026-09-26: "align to ChatGPT and Codex style"): the windows are
+modelled on the desktop agent apps (`SKINS` in the source). There's a Claude-style studio
+(serif greeting, orange send), a Codex-style workbench (purple-tinted sidebar, repo/Local/branch
+chips), a ChatGPT-style assistant with a pill composer, and a CLI. Each has a sidebar of
+recents. On send, the greeting clears, the prompt moves to the top and the composer drops to
+the bottom. The windows use no product names or logos. Arrival times are the music grid:
+when the track lands, move `T` and `GAPS` onto its beats.
 
 ## DesignIteration — beat 6, "screenshots of the app being developed"
 

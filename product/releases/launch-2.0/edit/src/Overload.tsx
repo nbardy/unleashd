@@ -1,8 +1,9 @@
 // Beats 1–5, the open. One agent chat: type, send, it pops, it minimizes. A second one. Then the
-// pace ramps (1, 2, 4, 8, 16, 30 a second) until chat windows bury the frame. Hard cut to black:
+// pace ramps (2, 4, 8, 16, 30 a second) until chat windows bury the frame. Hard cut to black:
 // "AI Overload! We're all feeling it." Then the title, "Introducing Unleashd 2.0".
-// The windows are deliberately generic chat apps (no real product UI or marks): the first thing
-// that looks like Unleashd is the title. Timeline is data (FOCUS, GAPS, T); components pose it.
+// The windows are styled after the desktop agent apps people already juggle (a Claude-style
+// studio, a Codex-style workbench, a ChatGPT-style assistant, a CLI), per owner direction
+// 2026-09-26, with no product names or logos. Timeline is data (FOCUS, GAPS, T).
 import type React from 'react';
 import { AbsoluteFill, Easing, Img, Sequence, interpolate, random, useCurrentFrame } from 'remotion';
 import wordmark from '../../brand/unleashd-wordmark-3d_trimmed.png';
@@ -22,33 +23,80 @@ const T = {
 export const DURATION = Math.round(T.end * FPS);
 const frames = (s: number) => Math.round(s * FPS);
 
-// ---- Chat window skins -------------------------------------------------------------------------
+// ---- App skins -------------------------------------------------------------------------------------
 
-type Layout = 'chat' | 'terminal';
-type Skin = {
-  layout: Layout;
-  font: string;
+const SANS = '-apple-system, "SF Pro Text", "Segoe UI", Helvetica, Arial, sans-serif';
+const SERIF = 'Georgia, "Times New Roman", serif';
+const MONO = '"SF Mono", Menlo, Consolas, monospace';
+
+// A desktop agent app: sidebar of recent chats, greeting over a big composer until you send.
+type AppSkin = {
+  layout: 'app';
   bg: string;
-  bar: string;
+  sidebar: string; // CSS background
+  divider: string;
   text: string;
-  line: string; // history skeleton bars
+  muted: string;
   bubble: string;
   bubbleText: string;
   composer: string;
+  composerBorder: string;
+  radius: number; // composer corner radius; the assistant style is a full pill
+  send: string;
+  sendInk: string;
+  headingFont: string;
+  heading: (repo: string) => string;
+  placeholder: string;
+  nav: string[];
+  chips: (repo: string) => string[]; // context chips above the composer; none for chat apps
+  model: string;
 };
-const SANS = '-apple-system, "Segoe UI", Helvetica, Arial, sans-serif';
-const MONO = '"SF Mono", Menlo, Consolas, monospace';
+// A coding-agent CLI in a terminal window.
+type TermSkin = { layout: 'terminal'; bg: string; bar: string; text: string; muted: string; accent: string; box: string };
+type Skin = AppSkin | TermSkin;
 
-type Look = 'paper' | 'night' | 'cream' | 'ide' | 'mint' | 'terminal';
+const noChips = () => [];
+const STUDIO_NAV = ['New chat', 'Projects', 'Artifacts', 'Scheduled'];
+const WORKBENCH_NAV = ['New chat', 'Pull requests', 'Scheduled', 'Plugins'];
+const ASSISTANT_NAV = ['New chat', 'Search chats', 'Library', 'Projects'];
+
+type Look = 'studioDark' | 'studioLight' | 'workbenchDark' | 'assistantDark' | 'assistantLight' | 'terminal';
 const SKINS: Record<Look, Skin> = {
-  paper: { layout: 'chat', font: SANS, bg: '#ffffff', bar: '#eceef1', text: '#1f2328', line: '#e1e4e8', bubble: '#2f6feb', bubbleText: '#fff', composer: '#f3f4f6' },
-  night: { layout: 'chat', font: SANS, bg: '#1e1f22', bar: '#2b2d31', text: '#e6e6e6', line: '#34363c', bubble: '#7c5cff', bubbleText: '#fff', composer: '#2b2d31' },
-  cream: { layout: 'chat', font: SANS, bg: '#faf7f2', bar: '#efe9df', text: '#2b2622', line: '#e8e0d3', bubble: '#d9772b', bubbleText: '#fff', composer: '#f1ebe1' },
-  ide: { layout: 'chat', font: SANS, bg: '#1e1e1e', bar: '#252526', text: '#d4d4d4', line: '#303030', bubble: '#0e639c', bubbleText: '#fff', composer: '#2d2d2d' },
-  mint: { layout: 'chat', font: SANS, bg: '#f3fbf7', bar: '#dcf1e7', text: '#183b2c', line: '#d3ebdf', bubble: '#1f9d6b', bubbleText: '#fff', composer: '#e6f5ee' },
-  terminal: { layout: 'terminal', font: MONO, bg: '#0c0c0c', bar: '#1c1c1c', text: '#d0d7de', line: '#1f2a22', bubble: '#56d364', bubbleText: '#0c0c0c', composer: '#0c0c0c' },
+  studioDark: {
+    layout: 'app', bg: '#1a1a19', sidebar: '#1f1f1e', divider: '#2c2c2a', text: '#ecebe7', muted: '#8f8d88',
+    bubble: '#30302e', bubbleText: '#ecebe7', composer: '#232322', composerBorder: '#3b3b38', radius: 20,
+    send: '#c96442', sendInk: '#fff', headingFont: SERIF, heading: () => 'Good afternoon',
+    placeholder: 'How can I help you today?', nav: STUDIO_NAV, chips: noChips, model: 'Agent · Medium',
+  },
+  studioLight: {
+    layout: 'app', bg: '#faf9f5', sidebar: '#f3f1ea', divider: '#e6e3d9', text: '#2f2c25', muted: '#8b877c',
+    bubble: '#efece3', bubbleText: '#2f2c25', composer: '#ffffff', composerBorder: '#e2dfd4', radius: 20,
+    send: '#c96442', sendInk: '#fff', headingFont: SERIF, heading: () => 'Good afternoon',
+    placeholder: 'How can I help you today?', nav: STUDIO_NAV, chips: noChips, model: 'Agent · Medium',
+  },
+  workbenchDark: {
+    layout: 'app', bg: '#1b1b1b', sidebar: 'linear-gradient(165deg, #2c2338, #201d26 55%, #1c1c1c)', divider: '#2a2a2a',
+    text: '#ececec', muted: '#8a8a8a', bubble: '#2d2d2d', bubbleText: '#ececec', composer: '#2a2a2a',
+    composerBorder: '#353535', radius: 22, send: '#3b82f6', sendInk: '#fff', headingFont: SANS,
+    heading: (repo) => `What should we build in ${repo}?`, placeholder: 'Do anything', nav: WORKBENCH_NAV,
+    chips: (repo) => [repo, 'Local', 'main'], model: 'Extra High',
+  },
+  assistantDark: {
+    layout: 'app', bg: '#212121', sidebar: '#171717', divider: '#262626', text: '#ececec', muted: '#9b9b9b',
+    bubble: '#303030', bubbleText: '#ececec', composer: '#303030', composerBorder: '#303030', radius: 34,
+    send: '#ffffff', sendInk: '#000', headingFont: SANS, heading: () => 'What are we working on?',
+    placeholder: 'Ask anything', nav: ASSISTANT_NAV, chips: noChips, model: 'Thinking',
+  },
+  assistantLight: {
+    layout: 'app', bg: '#ffffff', sidebar: '#f9f9f9', divider: '#ececec', text: '#0d0d0d', muted: '#8f8f8f',
+    bubble: '#f1f1f1', bubbleText: '#0d0d0d', composer: '#ffffff', composerBorder: '#e3e3e3', radius: 34,
+    send: '#000000', sendInk: '#fff', headingFont: SANS, heading: () => 'What are we working on?',
+    placeholder: 'Ask anything', nav: ASSISTANT_NAV, chips: noChips, model: 'Thinking',
+  },
+  terminal: { layout: 'terminal', bg: '#0e0e0e', bar: '#1c1c1c', text: '#d8d8d8', muted: '#7a7a7a', accent: '#d97757', box: '#4a4a4a' },
 };
-const LOOKS = Object.keys(SKINS) as Look[];
+// Weighted: mostly the two screenshots' styles, then the assistant, then the CLI.
+const LOOK_POOL: Look[] = ['studioDark', 'studioDark', 'workbenchDark', 'workbenchDark', 'studioLight', 'assistantDark', 'assistantLight', 'terminal'];
 
 // ---- Window content ------------------------------------------------------------------------------
 
@@ -64,9 +112,9 @@ type Place =
 type WindowSpec = {
   at: number; // output seconds the window pops in
   look: Look;
-  title: string;
+  repo: string;
   prompt: string;
-  history: number[]; // widths (0–1) of earlier-message skeleton bars
+  recents: string[]; // sidebar chat titles
   status: Status;
   typeAt: number; // seconds after `at`
   typeFor: number;
@@ -74,31 +122,6 @@ type WindowSpec = {
 };
 const sendAt = (w: WindowSpec) => w.typeAt + w.typeFor + 0.12;
 const statusAt = (w: WindowSpec) => sendAt(w) + 0.3;
-
-const FOCUS: WindowSpec[] = [
-  {
-    at: 0.25,
-    look: 'paper',
-    title: 'New chat',
-    prompt: 'Refactor the auth module and add tests',
-    history: [],
-    status: { kind: 'thinking' },
-    typeAt: 0.45,
-    typeFor: 2.1,
-    place: { kind: 'focus', scale: 1.45, trayX: 190, trayY: 84, minimizeAt: 3.45 },
-  },
-  {
-    at: 4.1,
-    look: 'night',
-    title: 'agent — api-server',
-    prompt: 'Why is CI failing on main?',
-    history: [0.7, 0.45],
-    status: { kind: 'label', text: 'Running tool 3 of 14', tone: 'quiet' },
-    typeAt: 0.3,
-    typeFor: 0.95,
-    place: { kind: 'focus', scale: 1.3, trayX: 410, trayY: 84, minimizeAt: 1.8 },
-  },
-];
 
 const PROMPTS = [
   'fix the flaky login test',
@@ -130,7 +153,7 @@ const PROMPTS = [
   'stop. wait. go back',
   "check the other agent's work",
 ];
-const TITLES = ['New chat', 'Assistant', 'zsh — agent', 'web — agent', 'Untitled', 'research', 'infra', 'support-bot', 'Chat', 'mobile — agent', 'billing', 'docs'];
+const REPOS = ['api-server', 'web', 'mobile', 'infra', 'billing', 'docs', 'auth', 'data-pipeline'];
 const STATUSES: Status[] = [
   { kind: 'thinking' },
   { kind: 'label', text: 'Needs your approval', tone: 'warn' },
@@ -140,6 +163,34 @@ const STATUSES: Status[] = [
   { kind: 'label', text: 'Rate limited, retrying', tone: 'error' },
   { kind: 'label', text: 'Running tool 9 of 30', tone: 'quiet' },
   { kind: 'label', text: 'Context limit reached', tone: 'error' },
+];
+const titleCase = (s: string) => s[0].toUpperCase() + s.slice(1);
+const recentsFrom = (start: number, n: number) =>
+  Array.from({ length: n }, (_, j) => titleCase(PROMPTS[(start + j * 5) % PROMPTS.length]));
+
+const FOCUS: WindowSpec[] = [
+  {
+    at: 0.25,
+    look: 'studioDark',
+    repo: 'auth',
+    prompt: 'Refactor the auth module and add tests',
+    recents: recentsFrom(0, 6),
+    status: { kind: 'thinking' },
+    typeAt: 0.45,
+    typeFor: 2.1,
+    place: { kind: 'focus', scale: 1.5, trayX: 150, trayY: 80, minimizeAt: 3.45 },
+  },
+  {
+    at: 4.1,
+    look: 'workbenchDark',
+    repo: 'api-server',
+    prompt: 'Why is CI failing on main?',
+    recents: recentsFrom(3, 6),
+    status: { kind: 'label', text: 'Running tool 3 of 14', tone: 'quiet' },
+    typeAt: 0.3,
+    typeFor: 0.95,
+    place: { kind: 'focus', scale: 1.4, trayX: 370, trayY: 80, minimizeAt: 1.8 },
+  },
 ];
 
 // Arrival gaps: 2 a second, then 4, 8, 16, 30 — one second each, "too many to count" by the end.
@@ -154,8 +205,8 @@ const GAPS = (
 ).flatMap(([gap, n]) => Array<number>(n).fill(gap));
 const ARRIVALS = GAPS.reduce<number[]>((acc, gap, i) => [...acc, acc[i] + gap], [T.rampStart]).slice(0, -1);
 
-const W = 640;
-const H = 420;
+const W = 900;
+const H = 560;
 
 const PILE: WindowSpec[] = ARRIVALS.map((at, i) => {
   const r = (k: string) => random(`${k}-${i}`);
@@ -164,10 +215,10 @@ const PILE: WindowSpec[] = ARRIVALS.map((at, i) => {
   const spread = lerp(0.45, 1, clamp01(i / 12));
   return {
     at,
-    look: pick(LOOKS, 'look'),
-    title: pick(TITLES, 'title'),
+    look: pick(LOOK_POOL, 'look'),
+    repo: pick(REPOS, 'repo'),
     prompt: PROMPTS[i % PROMPTS.length],
-    history: Array.from({ length: Math.floor(r('hist') * 3) }, (_, j) => lerp(0.35, 0.8, r(`bar${j}`))),
+    recents: recentsFrom(i + 1, 4 + Math.floor(r('recents') * 4)),
     status: STATUSES[i % STATUSES.length],
     typeAt: 0.08,
     typeFor: Math.min(0.9, Math.max(0.2, GAPS[i] * 2.5)),
@@ -175,8 +226,8 @@ const PILE: WindowSpec[] = ARRIVALS.map((at, i) => {
       kind: 'pile',
       x: WIDTH / 2 + (r('x') - 0.5) * WIDTH * 1.05 * spread,
       y: HEIGHT / 2 + (r('y') - 0.5) * HEIGHT * 1.05 * spread,
-      rot: lerp(-7, 7, r('rot')),
-      scale: lerp(0.72, 1, r('scale')),
+      rot: lerp(-6, 6, r('rot')),
+      scale: lerp(0.55, 0.8, r('scale')),
     },
   };
 });
@@ -185,154 +236,220 @@ const WINDOWS = [...FOCUS, ...PILE];
 
 // ---- Window rendering ----------------------------------------------------------------------------
 
-const TONE: Record<Tone, (skin: Skin) => React.CSSProperties> = {
-  quiet: (skin) => ({ color: skin.text, opacity: 0.6 }),
-  warn: () => ({ background: '#f5b300', color: '#1a1400', padding: '3px 10px', borderRadius: 999, fontWeight: 600 }),
-  error: () => ({ background: '#e5484d', color: '#fff', padding: '3px 10px', borderRadius: 999, fontWeight: 600 }),
+const PILL: React.CSSProperties = { padding: '3px 10px', borderRadius: 999, fontWeight: 600 };
+const TONE: Record<Tone, (muted: string) => React.CSSProperties> = {
+  quiet: (muted) => ({ color: muted }),
+  warn: () => ({ ...PILL, background: '#f5b300', color: '#1a1400' }),
+  error: () => ({ ...PILL, background: '#e5484d', color: '#fff' }),
 };
 
 // Thin dispatcher: the status kind picks the rendering.
-const StatusLine: React.FC<{ status: Status; skin: Skin; u: number }> = ({ status, skin, u }) => {
+const StatusLine: React.FC<{ status: Status; muted: string; u: number }> = ({ status, muted, u }) => {
   switch (status.kind) {
     case 'thinking':
-      return <span style={{ color: skin.text, opacity: 0.6 }}>Thinking{'.'.repeat(1 + (Math.floor(u * 4) % 3))}</span>;
+      return <span style={{ color: muted }}>Thinking{'.'.repeat(1 + (Math.floor(u * 4) % 3))}</span>;
     case 'label':
-      return <span style={TONE[status.tone](skin)}>{status.text}</span>;
+      return <span style={TONE[status.tone](muted)}>{status.text}</span>;
   }
 };
 
-type BodyProps = { spec: WindowSpec; skin: Skin; u: number };
-
-const typedText = ({ spec, u }: BodyProps) =>
+const typedText = (spec: WindowSpec, u: number) =>
   spec.prompt.slice(0, Math.round(clamp01((u - spec.typeAt) / spec.typeFor) * spec.prompt.length));
 const caretOn = (u: number) => Math.floor(u * 2.2) % 2 === 0;
+const sendEase = Easing.inOut(Easing.cubic);
 
-const ChatBody: React.FC<BodyProps> = (p) => {
-  const { spec, skin, u } = p;
+const Lights: React.FC = () => (
+  <div style={{ display: 'flex', gap: 8 }}>
+    {['#ff5f57', '#febc2e', '#28c840'].map((c) => (
+      <span key={c} style={{ width: 12, height: 12, borderRadius: 6, background: c }} />
+    ))}
+  </div>
+);
+
+const Sidebar: React.FC<{ skin: AppSkin; recents: string[] }> = ({ skin, recents }) => (
+  <div
+    style={{
+      width: 210,
+      background: skin.sidebar,
+      borderRight: `1px solid ${skin.divider}`,
+      padding: '14px 12px',
+      display: 'flex',
+      flexDirection: 'column',
+      gap: 9,
+      fontSize: 14,
+      color: skin.text,
+    }}
+  >
+    <Lights />
+    <div style={{ height: 8 }} />
+    {skin.nav.map((label) => (
+      <div key={label} style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+        <span style={{ width: 14, height: 14, borderRadius: 4, border: `1.5px solid ${skin.muted}` }} />
+        {label}
+      </div>
+    ))}
+    <div style={{ marginTop: 14, fontSize: 12, color: skin.muted }}>Recents</div>
+    {recents.map((title) => (
+      <div key={title} style={{ fontSize: 13.5, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+        {title}
+      </div>
+    ))}
+  </div>
+);
+
+// Composer: typed text (or the placeholder), then a toolbar with +, model, mic and send.
+const Composer: React.FC<{ skin: AppSkin; spec: WindowSpec; u: number }> = ({ skin, spec, u }) => {
   const sent = u >= sendAt(spec);
-  const pop = easeOutBack(clamp01((u - sendAt(spec)) / 0.25), 2.4);
-  const press = 1 - 0.18 * Math.max(0, 1 - Math.abs(u - sendAt(spec)) / 0.08);
+  const text = sent ? '' : typedText(spec, u);
+  const press = 1 - 0.2 * Math.max(0, 1 - Math.abs(u - sendAt(spec)) / 0.08);
+  const chips = skin.chips(spec.repo);
   return (
-    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', padding: '18px 22px', gap: 12 }}>
-      {spec.history.map((w, j) => (
-        <div
-          key={j}
-          style={{ height: 16, width: `${w * 100}%`, borderRadius: 8, background: skin.line, alignSelf: j % 2 ? 'flex-end' : 'flex-start' }}
-        />
-      ))}
+    <div>
+      {chips.length > 0 && (
+        <div style={{ display: 'flex', gap: 22, padding: '8px 18px 10px', fontSize: 14, color: skin.text }}>
+          {chips.map((c) => (
+            <span key={c}>{c}</span>
+          ))}
+        </div>
+      )}
       <div
         style={{
-          alignSelf: 'flex-end',
-          maxWidth: '82%',
-          background: skin.bubble,
-          color: skin.bubbleText,
-          padding: '10px 16px',
-          borderRadius: 18,
-          fontSize: 19,
-          lineHeight: 1.3,
-          transformOrigin: 'bottom right',
-          transform: `scale(${sent ? pop : 0})`,
-        }}
-      >
-        {spec.prompt}
-      </div>
-      <div style={{ fontSize: 16, visibility: u >= statusAt(spec) ? 'visible' : 'hidden' }}>
-        <StatusLine status={spec.status} skin={skin} u={u} />
-      </div>
-      <div style={{ flex: 1 }} />
-      <div
-        style={{
-          display: 'flex',
-          alignItems: 'center',
-          gap: 12,
           background: skin.composer,
-          borderRadius: 14,
-          padding: '12px 12px 12px 18px',
-          border: `1px solid ${skin.line}`,
+          border: `1px solid ${skin.composerBorder}`,
+          borderRadius: skin.radius,
+          padding: '16px 18px 12px',
+          boxShadow: '0 4px 18px rgba(0,0,0,.12)',
         }}
       >
-        <span style={{ flex: 1, fontSize: 19, color: skin.text, whiteSpace: 'nowrap', overflow: 'hidden' }}>
-          {sent ? '' : typedText(p)}
-          <span style={{ opacity: caretOn(u) ? 1 : 0 }}>|</span>
-        </span>
-        <span
+        <div style={{ fontSize: 17, height: 24, whiteSpace: 'nowrap', overflow: 'hidden', color: text ? skin.text : skin.muted }}>
+          {/* The caret follows what's typed; with nothing typed it sits before the placeholder. */}
+          {text}
+          <span style={{ color: skin.text, opacity: caretOn(u) ? 1 : 0 }}>|</span>
+          {text ? '' : skin.placeholder}
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 14, marginTop: 12, fontSize: 14, color: skin.muted }}>
+          <span style={{ fontSize: 22, lineHeight: 1, color: skin.text }}>+</span>
+          <span style={{ flex: 1 }} />
+          <span>{skin.model} ⌄</span>
+          <span
+            style={{
+              width: 32,
+              height: 32,
+              borderRadius: 16,
+              background: skin.send,
+              color: skin.sendInk,
+              display: 'grid',
+              placeItems: 'center',
+              fontSize: 17,
+              fontWeight: 700,
+              transform: `scale(${press})`,
+            }}
+          >
+            ↑
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const AppWindow: React.FC<{ skin: AppSkin; spec: WindowSpec; u: number }> = ({ skin, spec, u }) => {
+  // m: 0 = empty state (greeting over a centred composer), 1 = conversation (composer at bottom).
+  const m = sendEase(clamp01((u - sendAt(spec)) / 0.35));
+  const pop = easeOutBack(clamp01((u - sendAt(spec) - 0.05) / 0.25), 2.2);
+  return (
+    <div style={{ display: 'flex', width: W, height: H, background: skin.bg, fontFamily: SANS }}>
+      <Sidebar skin={skin} recents={spec.recents} />
+      <div style={{ position: 'relative', flex: 1 }}>
+        <div
           style={{
-            width: 36,
-            height: 36,
-            borderRadius: 18,
-            background: skin.bubble,
-            color: skin.bubbleText,
-            display: 'grid',
-            placeItems: 'center',
-            fontSize: 20,
-            fontWeight: 700,
-            transform: `scale(${press})`,
+            position: 'absolute',
+            left: 0,
+            right: 0,
+            top: 185,
+            textAlign: 'center',
+            fontFamily: skin.headingFont,
+            fontSize: 32,
+            color: skin.text,
+            opacity: 1 - m,
+            transform: `translateY(${-24 * m}px)`,
           }}
         >
-          ↑
-        </span>
+          {skin.heading(spec.repo)}
+        </div>
+        <div style={{ position: 'absolute', left: 48, right: 48, top: lerp(255, H - 150, m) }}>
+          <Composer skin={skin} spec={spec} u={u} />
+        </div>
+        <div
+          style={{
+            position: 'absolute',
+            right: 48,
+            top: 36,
+            maxWidth: '70%',
+            background: skin.bubble,
+            color: skin.bubbleText,
+            padding: '10px 16px',
+            borderRadius: 18,
+            fontSize: 17,
+            lineHeight: 1.35,
+            transformOrigin: 'top right',
+            transform: `scale(${pop})`,
+          }}
+        >
+          {spec.prompt}
+        </div>
+        <div style={{ position: 'absolute', left: 48, top: 104, fontSize: 15, visibility: u >= statusAt(spec) ? 'visible' : 'hidden' }}>
+          <StatusLine status={spec.status} muted={skin.muted} u={u} />
+        </div>
       </div>
     </div>
   );
 };
 
-const TerminalBody: React.FC<BodyProps> = (p) => {
-  const { spec, skin, u } = p;
+// A coding-agent CLI: boxed input line, the sent prompt echoed above it, status under that.
+const TerminalWindow: React.FC<{ skin: TermSkin; spec: WindowSpec; u: number }> = ({ skin, spec, u }) => {
   const sent = u >= sendAt(spec);
-  const prompt = <span style={{ color: skin.bubble }}>{'> '}</span>;
-  const caret = <span style={{ background: skin.text, opacity: caretOn(u) ? 1 : 0 }}>&nbsp;</span>;
   return (
-    <div style={{ flex: 1, padding: '16px 20px', fontSize: 18, lineHeight: 1.6, color: skin.text, display: 'flex', flexDirection: 'column' }}>
-      {spec.history.map((w, j) => (
-        <div key={j} style={{ height: 12, margin: '8px 0', width: `${w * 100}%`, background: skin.line }} />
-      ))}
-      <div>
-        {prompt}
-        {sent ? spec.prompt : typedText(p)}
-        {sent ? null : caret}
-      </div>
-      <div style={{ visibility: u >= statusAt(spec) ? 'visible' : 'hidden' }}>
-        <StatusLine status={spec.status} skin={skin} u={u} />
-      </div>
-      <div style={{ visibility: sent ? 'visible' : 'hidden' }}>
-        {prompt}
-        {caret}
-      </div>
-    </div>
-  );
-};
-
-const BODY: Record<Layout, React.FC<BodyProps>> = { chat: ChatBody, terminal: TerminalBody };
-
-const ChatWindow: React.FC<{ spec: WindowSpec; u: number }> = ({ spec, u }) => {
-  const skin = SKINS[spec.look];
-  const Body = BODY[skin.layout];
-  return (
-    <div
-      style={{
-        width: W,
-        height: H,
-        borderRadius: 14,
-        overflow: 'hidden',
-        background: skin.bg,
-        fontFamily: skin.font,
-        display: 'flex',
-        flexDirection: 'column',
-        boxShadow: '0 30px 80px rgba(0,0,0,.55), 0 0 0 1px rgba(255,255,255,.06)',
-      }}
-    >
-      <div style={{ height: 38, background: skin.bar, display: 'flex', alignItems: 'center', gap: 8, padding: '0 14px' }}>
-        {['#ff5f57', '#febc2e', '#28c840'].map((c) => (
-          <span key={c} style={{ width: 12, height: 12, borderRadius: 6, background: c }} />
-        ))}
-        <span style={{ flex: 1, textAlign: 'center', fontSize: 14, color: skin.text, opacity: 0.7, marginRight: 52 }}>
-          {spec.title}
+    <div style={{ width: W, height: H, background: skin.bg, fontFamily: MONO, color: skin.text, display: 'flex', flexDirection: 'column' }}>
+      <div style={{ height: 36, background: skin.bar, display: 'flex', alignItems: 'center', padding: '0 14px', gap: 14 }}>
+        <Lights />
+        <span style={{ flex: 1, textAlign: 'center', fontSize: 13, color: skin.muted, marginRight: 52 }}>
+          {`~/git/${spec.repo} — zsh`}
         </span>
       </div>
-      <Body spec={spec} skin={skin} u={u} />
+      <div style={{ flex: 1, padding: '18px 22px', fontSize: 17, lineHeight: 1.7, display: 'flex', flexDirection: 'column' }}>
+        <div style={{ color: skin.accent }}>* agent ready in ~/git/{spec.repo}</div>
+        <div style={{ visibility: sent ? 'visible' : 'hidden', color: skin.muted }}>{`> ${spec.prompt}`}</div>
+        <div style={{ visibility: u >= statusAt(spec) ? 'visible' : 'hidden' }}>
+          <StatusLine status={spec.status} muted={skin.accent} u={u} />
+        </div>
+        <div style={{ flex: 1 }} />
+        <div style={{ border: `1px solid ${skin.box}`, borderRadius: 8, padding: '8px 14px', whiteSpace: 'nowrap', overflow: 'hidden' }}>
+          {'> '}
+          {sent ? '' : typedText(spec, u)}
+          <span style={{ background: skin.text, opacity: caretOn(u) ? 1 : 0 }}>&nbsp;</span>
+        </div>
+        <div style={{ fontSize: 13, color: skin.muted, marginTop: 6 }}>? for shortcuts</div>
+      </div>
     </div>
   );
 };
+
+// Thin dispatcher: the skin's layout picks the window.
+const WindowBody: React.FC<{ skin: Skin; spec: WindowSpec; u: number }> = ({ skin, spec, u }) => {
+  switch (skin.layout) {
+    case 'app':
+      return <AppWindow skin={skin} spec={spec} u={u} />;
+    case 'terminal':
+      return <TerminalWindow skin={skin} spec={spec} u={u} />;
+  }
+};
+
+const ChatWindow: React.FC<{ spec: WindowSpec; u: number }> = ({ spec, u }) => (
+  <div style={{ borderRadius: 14, overflow: 'hidden', boxShadow: '0 30px 80px rgba(0,0,0,.55), 0 0 0 1px rgba(255,255,255,.08)' }}>
+    <WindowBody skin={SKINS[spec.look]} spec={spec} u={u} />
+  </div>
+);
 
 // ---- Placement: where a window is and how big, at its local time u -------------------------------
 
@@ -346,7 +463,7 @@ const focusPose = (place: Extract<Place, { kind: 'focus' }>, u: number): Pose =>
     x: lerp(WIDTH / 2, place.trayX, m),
     y: lerp(HEIGHT / 2, place.trayY, m),
     rot: 0,
-    scale: lerp(place.scale, 0.3, m) * lerp(0.7, 1, pop),
+    scale: lerp(place.scale, 0.22, m) * lerp(0.7, 1, pop),
     opacity: Math.min(clamp01(u / 0.08), lerp(1, 0.55, m)),
   };
 };
