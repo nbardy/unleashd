@@ -15,7 +15,6 @@ import type {
 import {
   type LiveConversation,
   type StableConversationPorts,
-  liveGenerations,
   openConversation,
   scanGenerations,
   stableConversationId,
@@ -281,16 +280,16 @@ export function createChannels(ports: ChannelsPorts) {
 
   function seatFor(
     request: SeatRequest,
-    seats: { current: LiveConversation | null; next: string },
+    seats: { current: LiveConversation | null; next(): string },
     profile: ConversationConfig
   ): LiveConversation {
     switch (request.kind) {
       case 'keep':
-        return seats.current ?? { conversationId: seats.next, config: profile };
+        return seats.current ?? { conversationId: seats.next(), config: profile };
       case 'chosen':
         return seats.current && isDeepStrictEqual(seats.current.config, request.config)
           ? seats.current
-          : { conversationId: seats.next, config: request.config };
+          : { conversationId: seats.next(), config: request.config };
     }
   }
 
@@ -449,6 +448,15 @@ export function createChannels(ports: ChannelsPorts) {
     };
     const thread = await wholeThread(input.root);
     const context = tail(thread, input.trigger);
+    const followUpReply: Reply = {
+      channel: input.channel,
+      cause: 'follow_up',
+      request: { kind: 'keep' },
+      trigger: input.trigger,
+      rootId: input.root.id,
+      buddyId: input.buddyId,
+      attempt: '',
+    };
     const verdict = await ports.gate({
       config: (await seatConfig(input.root.id, input.buddyId, { kind: 'keep' })).config,
       prompt: [
@@ -470,15 +478,7 @@ export function createChannels(ports: ChannelsPorts) {
     });
     switch (verdict.kind) {
       case 'respond':
-        return reply({
-          channel: input.channel,
-          cause: 'follow_up',
-          request: { kind: 'keep' },
-          trigger: input.trigger,
-          rootId: input.root.id,
-          buddyId: input.buddyId,
-          attempt: '',
-        });
+        return reply(followUpReply);
       case 'pass':
         return;
       case 'unparseable':
@@ -494,35 +494,34 @@ export function createChannels(ports: ChannelsPorts) {
         );
         if (input.trigger.author.kind === 'owner')
           await postFailure(
-            {
-              channel: input.channel,
-              cause: 'follow_up',
-              request: { kind: 'keep' },
-              trigger: input.trigger,
-              rootId: input.root.id,
-              buddyId: input.buddyId,
-              attempt: '',
-            },
+            followUpReply,
             null,
             `could not decide whether to reply (${verdict.reason})`
           );
     }
   }
 
-  async function directConversation(buddyId: string): Promise<ConversationRuntime> {
+  /** The owner's DM generations with an active Buddy (the newest live one is the current chat). */
+  async function directSeats(buddyId: string) {
     const buddy = await core.getBuddy(buddyId);
     const admitted = await eligible(buddyId, buddy.workspaceId);
     if (!admitted.ok) throw new Error(admitted.reason);
-    const { current, next } = await scanGenerations(ports.conversations, (g) =>
+    const seats = await scanGenerations(ports.conversations, (g) =>
       directConversationId(buddy.workspaceId, buddyId, g)
     );
-    const conversationId = current?.conversationId ?? next;
-    return openConversation(ports.conversations, {
-      context: { buddyId, workspaceId: buddy.workspaceId },
-      conversationId,
-      commandId: `buddy-dm-${conversationId}`,
-      config: current?.config,
-    });
+    const open = (conversationId: string, config: ConversationConfig | undefined) =>
+      openConversation(ports.conversations, {
+        context: { buddyId, workspaceId: buddy.workspaceId },
+        conversationId,
+        commandId: `buddy-dm-${conversationId}`,
+        config,
+      });
+    return { ...seats, open };
+  }
+
+  async function directConversation(buddyId: string): Promise<ConversationRuntime> {
+    const { current, next, open } = await directSeats(buddyId);
+    return open(current?.conversationId ?? next(), current?.config);
   }
 
   /** Ask every other Buddy who posted in this post's thread whether to follow up. */
@@ -673,12 +672,10 @@ export function createChannels(ports: ChannelsPorts) {
     /** The owner's DM generations with a Buddy, oldest first; the newest is the current chat. */
     async directChain(buddyId: string): Promise<{ buddyId: string; generations: string[] }> {
       const buddy = await core.getBuddy(buddyId);
-      return {
-        buddyId,
-        generations: await liveGenerations(ports.conversations, (g) =>
-          directConversationId(buddy.workspaceId, buddyId, g)
-        ),
-      };
+      const { live } = await scanGenerations(ports.conversations, (g) =>
+        directConversationId(buddy.workspaceId, buddyId, g)
+      );
+      return { buddyId, generations: live };
     },
 
     /**
@@ -690,22 +687,12 @@ export function createChannels(ports: ChannelsPorts) {
       buddyId: string,
       input: { config?: ConversationConfig; message?: string }
     ): Promise<{ conversationId: string }> {
-      const buddy = await core.getBuddy(buddyId);
-      const admitted = await eligible(buddyId, buddy.workspaceId);
-      if (!admitted.ok) throw new Error(admitted.reason);
-      const { current, next } = await scanGenerations(ports.conversations, (g) =>
-        directConversationId(buddy.workspaceId, buddyId, g)
-      );
+      const { current, next, open } = await directSeats(buddyId);
       if (input.message && input.config?.provider === current?.config.provider)
         throw new Error(
           `Pick a different harness. ${input.config?.provider} is the one that failed.`
         );
-      const conversation = await openConversation(ports.conversations, {
-        context: { buddyId, workspaceId: buddy.workspaceId },
-        conversationId: next,
-        commandId: `buddy-dm-${next}`,
-        config: input.config ?? current?.config,
-      });
+      const conversation = await open(next(), input.config ?? current?.config);
       if (input.message)
         conversation.enqueueMessage(input.message, {
           origin: 'owner_input',

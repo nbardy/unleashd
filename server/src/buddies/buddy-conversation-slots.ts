@@ -53,49 +53,38 @@ export function stableConversationId(seed: string): string {
 
 export type LiveConversation = { conversationId: string; config: ConversationConfig };
 
-/** The current generation (null when none lives) and the first never used. */
+/**
+ * One scan of a stable conversation's generations: the current one (null when none lives), every
+ * live id oldest first (the DM shows earlier chats above a divider), and the first never used.
+ */
 export async function scanGenerations(
   ports: Pick<StableConversationPorts, 'slot'>,
   idOf: (generation: number) => string
-): Promise<{ current: LiveConversation | null; next: string }> {
+): Promise<{ current: LiveConversation | null; live: string[]; next(): string }> {
   let current: LiveConversation | null = null;
-  for (let generation = 0; generation < MAX_GENERATIONS; generation += 1) {
-    const conversationId = idOf(generation);
-    const slot = await ports.slot(conversationId);
-    switch (slot.kind) {
-      case 'absent':
-        return { current, next: conversationId };
-      case 'deleted':
-        current = null;
-        break;
-      case 'live':
-        current = { conversationId, config: slot.config };
-        break;
-    }
-  }
-  throw new Error(`Every conversation generation here is used (${MAX_GENERATIONS})`);
-}
-
-/** Every live generation's id, oldest first (the newest is the current one). */
-export async function liveGenerations(
-  ports: Pick<StableConversationPorts, 'slot'>,
-  idOf: (generation: number) => string
-): Promise<string[]> {
   const live: string[] = [];
   for (let generation = 0; generation < MAX_GENERATIONS; generation += 1) {
     const conversationId = idOf(generation);
     const slot = await ports.slot(conversationId);
     switch (slot.kind) {
       case 'absent':
-        return live;
+        return { current, live, next: () => conversationId };
       case 'deleted':
+        current = null;
         break;
       case 'live':
+        current = { conversationId, config: slot.config };
         live.push(conversationId);
         break;
     }
   }
-  return live;
+  return {
+    current,
+    live,
+    next: () => {
+      throw new Error(`Every conversation generation here is used (${MAX_GENERATIONS})`);
+    },
+  };
 }
 
 /** Reopen the runtime if it is registered, else create (or replay) it. */
