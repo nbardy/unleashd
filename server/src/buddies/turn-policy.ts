@@ -391,7 +391,7 @@ export class BuddyTurnPolicy implements TurnPolicy {
   // TURN_MAX_RUNTIME_MS (runner.ts; 600 s killed live owner chats on 2026-09-10).
   private admitChatRun(): OwnedChatRun | null {
     this.chatTicket ??= {
-      turnId: this.buddies.enqueueChat(this.contextForInput(), this.host.id),
+      turnId: this.buddies.enqueueChat(this.turnContext(), this.host.id),
       stopWaiting: waitForChatRunSlot(() => this.host.processQueue()),
     };
     const admission = this.buddies.admission(this.chatTicket.turnId);
@@ -448,13 +448,13 @@ export class BuddyTurnPolicy implements TurnPolicy {
   // --- context and briefing ----------------------------------------------------
 
   /** The context a turn runs under: a runner-owned run's own, else the conversation's. */
-  private contextForInput(): BuddyContext {
+  private turnContext(): BuddyContext {
     return this.execution?.context ?? this.kind.context;
   }
 
   // A provider session holds what its audience saw. It resumes only under the same audience key;
   // a different or unknown one (a session saved before its key was recorded) starts fresh, while
-  // the display history stays. Guard: buddies-v2.test.ts "session audience key".
+  // the display history stays. Guard: conversation-runtime.test.ts "session audience key: …".
   private admitAudience(input: TurnInput, context: BuddyContext): void {
     const key = sessionAudienceKey(input.origin, this.host.id, context);
     if (this.providerAudienceKey !== key && this.host.hasStartedSession()) {
@@ -467,7 +467,7 @@ export class BuddyTurnPolicy implements TurnPolicy {
   }
 
   prepare(input: TurnInput): boolean {
-    const context = this.contextForInput();
+    const context = this.turnContext();
     this.admitAudience(input, context);
     const current = this.buddies.currentBriefing(context);
     this.memory = createMemorySnapshot(current.briefing, current.memoryGeneration);
@@ -525,7 +525,7 @@ export class BuddyTurnPolicy implements TurnPolicy {
     this.admittedChatRun = null;
     if (owned) this.ownChatRun(owned);
     assertBuddyProviderSupportsMcp(config.provider);
-    const context = this.execution?.context ?? this.contextForInput();
+    const context = this.turnContext();
     const mcpServers = this.buddies.mcpServers({
       context,
       conversationId: this.host.id,
@@ -542,7 +542,7 @@ export class BuddyTurnPolicy implements TurnPolicy {
    */
   private ownChatRun(owned: OwnedChatRun): void {
     this.execution = {
-      context: { ...this.contextForInput(), coordinationRunId: owned.id },
+      context: { ...this.turnContext(), coordinationRunId: owned.id },
       leaseToken: owned.claim_token,
     };
     const timer = setTimeout(
@@ -574,7 +574,7 @@ export class BuddyTurnPolicy implements TurnPolicy {
   }
 
   spawned(review: { attemptId: string; messageStart: number }): void {
-    this.reviewTicket = { ...review, context: this.contextForInput() };
+    this.reviewTicket = { ...review, context: this.turnContext() };
   }
 
   spawnFailed(): void {
