@@ -66,12 +66,18 @@ function toChannelRef(author: Actor, ref: z.infer<typeof channelRef>): ChannelRe
 
 const docKind = z.enum(['soul', 'working', 'long_term', 'shared']);
 const memoryKind = z.enum(['working', 'long_term']);
+// Soul and memory have one address, the Buddy. Only a shared doc may live in the workspace.
 const docScopeInput = z
-  .enum(['turn', 'buddy'])
-  .default('turn')
-  .describe("'turn': this conversation's audience (default); 'buddy': the portable doc");
+  .enum(['buddy', 'workspace'])
+  .default('buddy')
+  .describe("Shared docs only: 'workspace' for one the whole workspace reads");
 
-type DocInput = { buddyId?: string; kind: DocRef['kind']; scope: 'turn' | 'buddy'; name?: string };
+type DocInput = {
+  buddyId?: string;
+  kind: DocRef['kind'];
+  scope?: 'buddy' | 'workspace';
+  name?: string;
+};
 type DocWriteInput = DocInput & {
   content: string;
   baseRevision: number;
@@ -80,7 +86,10 @@ type DocWriteInput = DocInput & {
 };
 
 function docRef(grant: BuddyGrant, input: DocInput): DocRef {
-  const scope: DocScope = input.scope === 'buddy' ? { kind: 'buddy' } : grant.scope;
+  const scope: DocScope =
+    input.scope === 'workspace'
+      ? { kind: 'workspace', workspaceId: grant.workspaceId }
+      : { kind: 'buddy' };
   return {
     buddyId: input.buddyId ?? grant.buddyId,
     scope,
@@ -568,10 +577,13 @@ const BUILDER_TOOLS = {
 const REVIEWER_TOOLS = {
   doc_read: {
     ...BUDDY_TOOLS.doc_read,
-    schema: docReadSchema(z.enum(['soul', 'working', 'long_term'])),
+    schema: docReadSchema(z.enum(['soul', 'working', 'long_term'])).omit({ scope: true }),
   },
   // The reviewer curates working and long-term memory; it writes no soul or shared docs.
-  doc_write: { ...BUDDY_TOOLS.doc_write, schema: docWriteSchema(memoryKind) },
+  doc_write: {
+    ...BUDDY_TOOLS.doc_write,
+    schema: docWriteSchema(memoryKind).omit({ scope: true }),
+  },
 };
 
 /** Which tools a role is shown. Presentation only: the crate's `authorize` decides every call. */

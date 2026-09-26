@@ -5,7 +5,7 @@ import path from 'node:path';
 import type { ExecuteCommandRequest, McpServerSpec } from '@nbardy/agent-cli';
 import { executeCommand } from '@nbardy/agent-cli';
 import type { BuddyContext } from '@unleashd/shared';
-import { type BuddiesCore, buddyActor, docScopeFor } from './core';
+import { type BuddiesCore, buddyActor } from './core';
 import { discardCursorTranscript } from './cursor-ephemeral';
 import type { BuddyGrant, Grants } from './grants';
 
@@ -367,14 +367,11 @@ export function createMemoryReviewer(options: {
     if (buddy.status !== 'active' || buddy.workspaceId !== workspaceId)
       return finish('skipped', 'Buddy is inactive or outside this workspace');
     const me = buddyActor(buddyId);
-    const scope = docScopeFor(turn.context);
+    // The reviewer reads and writes the Buddy's one memory, the rows every briefing reads. Until
+    // 2026-09-26 it wrote per-chat copies (519; new chats opened empty). Guard: buddies-v2.test.ts
+    // "memory the reviewer saves after one chat is in the next chat's briefing".
     const read = (kind: 'soul' | 'working' | 'long_term') =>
-      core.readDoc(me, {
-        buddyId,
-        scope: kind === 'soul' ? { kind: 'buddy' } : scope,
-        kind,
-        name: '',
-      });
+      core.readDoc(me, { buddyId, scope: { kind: 'buddy' }, kind, name: '' });
     const [soul, working, longTerm, tasks] = await Promise.all([
       read('soul'),
       read('working'),
@@ -410,7 +407,6 @@ export function createMemoryReviewer(options: {
           buddyId,
           workspaceId,
           conversationId: `memory-review:${id}`,
-          scope,
           runId: null,
           observe: (tool, input) => {
             if (++calls > MAX_TOOL_CALLS) throw new Error('Memory review tool-call limit reached');

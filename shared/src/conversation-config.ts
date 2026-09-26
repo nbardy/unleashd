@@ -139,7 +139,8 @@ export const ConversationLifecycleStatusSchema = z.enum(['active', 'deleted']);
 export const ConversationIdSchema = z.string().min(1);
 
 export const BuddyContextSchema = z.object({
-  knowledgeScope: BuddyKnowledgeScopeSchema.optional(),
+  // `knowledgeScope` (per-chat memory audience) was dropped 2026-09-26; old rows carrying it parse
+  // because this object strips unknown keys.
   coordinationRunId: z.string().min(1).nullish(),
   buddyId: z.string().min(1),
   workspaceId: z.string().min(1),

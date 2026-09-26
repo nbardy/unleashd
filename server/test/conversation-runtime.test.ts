@@ -188,6 +188,67 @@ test('resumed Buddy turns re-brief only when the memory generation changes', asy
   );
 });
 
+// The session audience key fences a provider session: owner turns and worker/message turns in one
+// Buddy conversation never share one. Memory stopped using it on 2026-09-26 (one memory per Buddy);
+// its strings did not change, so every session saved under the old key still resumes on deploy.
+test('session audience key: an owner turn resumes a session saved under the old key; a non-owner turn resets it', async () => {
+  type Request = Parameters<NonNullable<ConversationRuntimeDependencies['executeTurn']>>[0];
+  const requests: Request[] = [];
+  const persisted: Array<string | undefined> = [];
+  const fixture = runtimeFixture({
+    readCurrentBuddyContext: () => ({ briefing: 'BRIEFING', memoryGeneration: '1' }),
+    persistCurrentSession: async (_conversation, _sessionId, audienceKey) => {
+      persisted.push(audienceKey);
+    },
+    executeTurn: fakeExecuteTurn((request) => {
+      requests.push(request);
+      const sessionId = request.resumeSessionId ?? `fresh-${requests.length}`;
+      return {
+        child: { exitCode: 0 },
+        events: (async function* () {
+          yield { type: 'session.started' as const, sessionId };
+          yield { type: 'turn.started' as const };
+          yield { type: 'turn.complete' as const, reason: 'success' as const };
+        })(),
+        completed: Promise.resolve({ exitCode: 0, signal: null, sessionId, reason: 'success' }),
+        stop: () => undefined,
+      };
+    }),
+  });
+  const ownerKey = '{"kind":"thread","threadId":"seat-buddy"}';
+  const conversation = new fixture.Conversation({
+    done: false,
+    id: 'seat-buddy',
+    workingDirectory: '/tmp',
+    configState: fixture.configState,
+    kind: buddyKind({ buddyId: 'buddy', workspaceId: 'workspace' }),
+    existingSessionId: 'saved-session',
+    existingSessionAudienceKey: ownerKey,
+  });
+  const turn = async (content: string, owner: boolean) => {
+    conversation.sendMessage(
+      content,
+      owner ? { origin: 'owner_input', inputId: content } : undefined
+    );
+    await eventually(() => assert.equal(conversation.hasActiveProcess(), false));
+  };
+
+  await turn('one', true);
+  await turn('two', true);
+  await turn('from another buddy', false);
+
+  assert.deepEqual(
+    requests.map((request) => request.resumeSessionId),
+    ['saved-session', 'saved-session', undefined],
+    'two owner turns share the saved session; the non-owner turn starts fresh'
+  );
+  assert.deepEqual(persisted, [
+    ownerKey,
+    ownerKey,
+    '{"kind":"workspace","workspaceId":"workspace"}',
+  ]);
+});
+
 test('provider completion waits for the normalized event stream and session persistence', async () => {
   const persistence = deferred<void>();
   const completion = deferred<{

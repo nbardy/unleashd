@@ -1,5 +1,12 @@
 # Buddy memory
 
+> **2026-09-26: one memory per Buddy.** Soul, working and long-term memory are addressed by the
+> Buddy alone: every turn kind, the reviewer and the owner's Memory tab read and write the same
+> rows. Per-chat (`owner_thread`) and per-task audiences are gone (they had left 519 copies and
+> every new chat opened empty); only shared docs keep a scope, Buddy or Workspace. The provider
+> session fence (`sessionAudienceKey`, turn-policy.ts) is unchanged and no longer touches memory.
+> Audience/scope examples below are history.
+
 > **2026-09-26: notes are no longer a store.** A Buddy's detailed notes are
 > `agent_notes/<date>_<topic>.md` files it writes and searches with its own file tools, like
 > every other agent. The `note` doc kind, the note/recall tools and the reviewer's note writes

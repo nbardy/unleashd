@@ -1,5 +1,5 @@
 import { randomBytes } from 'node:crypto';
-import type { Actor, DocScope } from '@unleashd/buddies-core';
+import type { Actor } from '@unleashd/buddies-core';
 import { OWNER, buddyActor } from './core';
 
 /**
@@ -30,8 +30,6 @@ export interface BuddyGrant extends GrantBase {
   readonly role: 'worker' | 'owner' | 'reviewer';
   readonly buddyId: string;
   readonly workspaceId: string;
-  /** The doc audience of the turn (CORE_DESIGN "audience"). */
-  readonly scope: DocScope;
   readonly runId: string | null;
 }
 
@@ -47,7 +45,6 @@ export type BuddyGrantInput = {
   buddyId: string;
   workspaceId: string;
   conversationId: string;
-  scope: DocScope;
   runId: string | null;
   observe?: (tool: string, input: unknown) => void;
 };

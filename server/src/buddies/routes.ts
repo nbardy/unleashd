@@ -137,7 +137,7 @@ const PostBodySchema = z
   .strict();
 const DocWriteSchema = z
   .object({
-    scope: z.enum(['buddy', 'workspace', 'task', 'thread']).default('buddy'),
+    scope: z.enum(['buddy', 'workspace']).default('buddy'),
     scopeId: z.string().min(1).optional(),
     name: z.string().default(''),
     content: z.string().max(40_000),
@@ -218,10 +218,6 @@ function scopeOf(scope: string, scopeId: string | undefined, buddyId: string): D
   switch (scope) {
     case 'workspace':
       return { kind: 'workspace', workspaceId: id() };
-    case 'task':
-      return { kind: 'task', taskId: id() };
-    case 'thread':
-      return { kind: 'thread', threadId: id() };
     case 'buddy':
       return { kind: 'buddy' };
     default:

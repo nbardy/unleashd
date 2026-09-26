@@ -1,8 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { type Actor, BuddiesCore, type DocScope, type Setting } from '@unleashd/buddies-core';
-import type { BuddyContext } from '@unleashd/shared';
+import { type Actor, BuddiesCore, type Setting } from '@unleashd/buddies-core';
 
 export type { BuddiesCore } from '@unleashd/buddies-core';
 
@@ -153,18 +152,4 @@ export async function archivedBuddyIds(core: BuddiesCore): Promise<Set<string>> 
   const workspaces = await core.listWorkspaces();
   const buddies = (await Promise.all(workspaces.map((w) => core.listBuddies(w.id)))).flat();
   return new Set(buddies.filter((buddy) => buddy.status === 'archived').map((buddy) => buddy.id));
-}
-
-/** The doc audience a turn reads and writes under (CORE_DESIGN "audience"). */
-export function docScopeFor(context: Pick<BuddyContext, 'knowledgeScope'>): DocScope {
-  const scope = context.knowledgeScope;
-  if (!scope) return { kind: 'buddy' };
-  switch (scope.kind) {
-    case 'owner_thread':
-      return { kind: 'thread', threadId: scope.conversationId };
-    case 'project':
-      return { kind: 'task', taskId: scope.projectId };
-    case 'workspace':
-      return { kind: 'workspace', workspaceId: scope.workspaceId };
-  }
 }
