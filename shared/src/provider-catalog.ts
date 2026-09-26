@@ -28,7 +28,6 @@ export const PROVIDER_OPTIONS: readonly ProviderMetadata[] = ProviderSchema.opti
   ...PROVIDER_METADATA[id],
 }));
 
-export const PROVIDER_IDS: readonly Provider[] = ProviderSchema.options;
 
 export const getProviderMetadata = (provider: Provider): ProviderMetadata => ({
   id: provider,
