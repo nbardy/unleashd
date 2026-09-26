@@ -1,8 +1,10 @@
 # Mobile UI system
 
-Mobile and desktop share the semantic color tokens in `client/src/index.css`, but
-they intentionally have separate view trees. Reuse visual primitives inside the
-mobile tree instead of importing desktop TSX or desktop feature CSS.
+Mobile and desktop share the semantic color tokens in `client/src/index.css`, the
+primitives in `client/src/ui/`, and the content views in `client/src/views/`
+(transcript rows, composer controls, conversation panels). Only the shells stay
+separate: the mobile tree never imports desktop shell TSX or desktop feature CSS,
+and a view picks its device variant through a `presentation` prop set by the caller.
 
 ## Layers
 
@@ -51,8 +53,9 @@ domain copy, feature state, and feature-specific inner layouts in the feature.
 
 Do not add a primitive for a one-off arrangement. Extract only a contract used
 by at least two routes, and keep the API semantic rather than exposing dozens of
-spacing or color props. New primitives must remain mobile-only and use existing
-semantic tokens rather than introducing a second palette.
+spacing or color props. Primitives live in `ui/` (`ui/primitives.css`, `ui/*.tsx`)
+and are shared by both trees; do not add a mobile-only copy of one. They use the
+existing semantic tokens rather than introducing a second palette.
 
 ## Keep the page shell constant across states
 
@@ -143,7 +146,7 @@ a popover above the composer the keyboard pushed it off-screen. Pane headers und
 `.mobile-shell` never add `env(safe-area-inset-top)` — the shell already pads it,
 and doubling it left a status-bar-sized gap above the channel header.
 
-`ComposerAttachments` presents one horizontally scrolling thumbnail row, with a
+`views/composer/ComposerAttachments` (`presentation="gallery"`) presents one horizontally scrolling thumbnail row, with a
 bounded overlay of swipeable previews and explicit Remove controls. It reuses the
 shared attachment lifecycle and leaves the draft untouched. The tab bar retains an
 explicit `[hidden]` rule. Browser QA and native-device limits are recorded in

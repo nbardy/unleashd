@@ -1,0 +1,110 @@
+/* Queue/interrupt controls (views/composer/SendControls.tsx). */
+
+/* ---- presentation="labelled" ---- */
+.send-action {
+  align-items: stretch;
+  gap: var(--sp-2);
+}
+
+.send-queue-hint {
+  font-size: var(--fs-2);
+  font-family: var(--font-mono);
+  line-height: 1;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.send-btn {
+  padding: var(--sp-6) var(--sp-9);
+  background: var(--accent-primary);
+  color: var(--text-on-accent);
+  border: none;
+  font-size: var(--fs-5);
+  transition: background 0.2s;
+  white-space: nowrap;
+}
+
+.send-btn:hover {
+  background: var(--accent-primary-hover);
+}
+
+/* Interrupt mode styling for send button — red to signal destructive action */
+.send-btn.interrupt-mode {
+  background: var(--danger);
+}
+
+.send-btn.interrupt-mode:hover {
+  background: var(--danger-bright);
+}
+
+.send-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* ---- presentation="icons": the same 30px circle as the composer tools ---- */
+.send-controls__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: none;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  border: none;
+  border-radius: var(--ui-radius);
+  font-size: var(--fs-5);
+  line-height: 1;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform 100ms ease, opacity 120ms ease;
+}
+
+.send-controls__icon:active {
+  transform: scale(0.92);
+}
+
+.send-controls__icon--send {
+  background: var(--accent);
+  color: var(--text-on-accent);
+}
+
+.send-controls__icon--send:disabled {
+  background: var(--bg-raised-2);
+  color: var(--text-muted);
+  cursor: default;
+  opacity: 0.6;
+  transform: none;
+}
+
+.send-controls__icon--stop {
+  background: var(--theme-danger);
+  color: #fff;
+}
+
+/* Queue-during-turn: a secondary action beside Stop, so the destructive
+   Interrupt is never the only way to send while a turn is running. */
+.send-controls__icon--queue {
+  background: var(--bg-raised-2);
+  color: var(--text-primary);
+}
+
+.send-controls__icon--queue:disabled {
+  color: var(--text-muted);
+  cursor: default;
+  opacity: 0.6;
+  transform: none;
+}
+
+.send-controls__stop-glyph {
+  width: 9px;
+  height: 9px;
+  border-radius: var(--ui-radius);
+  background: currentColor;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .send-controls__icon {
+    transition: none;
+  }
+}

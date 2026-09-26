@@ -4,8 +4,8 @@ import { type MarkdownFlavor, type MarkdownPipeline, markdownPipeline } from './
 
 /**
  * ONE loading path for the heavy markdown rehype plugins (katex + highlight.js)
- * shared by the desktop (`components/VirtualizedMessageList.tsx`) and mobile
- * (`mobile/components/MessageRow.tsx`) render trees.
+ * used by the transcript rows (`views/transcript/TranscriptGroup.tsx`), which
+ * both the desktop and mobile trees render.
  *
  * Why this exists: `rehype-katex` pulls in all of KaTeX and `rehype-highlight`
  * pulls in highlight.js with every bundled language. Statically imported from

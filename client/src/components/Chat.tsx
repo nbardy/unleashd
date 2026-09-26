@@ -6,7 +6,7 @@ import { useAtomValue } from 'jotai';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { clearQueue, interruptAndSend, queueMessage } from '../atoms/actions';
+import { clearQueue, endConversation, interruptAndSend, queueMessage } from '../atoms/actions';
 import type { QueuedMessage } from '../atoms/actions';
 import { createConversation, setConversationConfig } from '../atoms/commands';
 import {
@@ -40,13 +40,15 @@ import { copyText } from '../utils/clipboard';
 import { buildThreadTranscript } from '../utils/conversation-transcript';
 import { buildUnifiedSubAgents } from '../utils/subAgents';
 import { formatTimeAgo } from '../utils/time';
+import { ComposerAttachments, UploadErrorNotice } from '../views/composer/ComposerAttachments';
+import { PromptPalette } from '../views/composer/PromptPalette';
+import { SendControls } from '../views/composer/SendControls';
 import { QueuedMessages } from '../views/conversation/QueuedMessages';
 import { ResumeSource } from '../views/conversation/ResumeSource';
 import { SubAgentPanel } from '../views/conversation/SubAgentPanel';
 import { TurnStatus } from '../views/conversation/TurnStatus';
 import { BuddyConvoHeader } from './BuddyConvoHeader';
 import { ContextBreakdownMeter } from './ContextBreakdownMeter';
-import { PromptPalette } from './PromptPalette';
 import { VirtualizedMessageList } from './VirtualizedMessageList';
 import { DmChannelsNotice } from './buddies/DmChannelsNotice';
 import { HarnessPicker } from './buddies/HarnessPicker';
@@ -733,46 +735,13 @@ export function Chat({ id }: { id: string }) {
           />
         )}
 
-        {uploadError && (
-          <div className="chat-upload-error ui-row" role="alert">
-            <span className="chat-upload-error__text">{uploadError}</span>
-            <button
-              type="button"
-              className="chat-upload-error__dismiss"
-              onClick={dismissUploadError}
-              aria-label="Dismiss upload error"
-            >
-              &times;
-            </button>
-          </div>
-        )}
+        {uploadError && <UploadErrorNotice error={uploadError} onDismiss={dismissUploadError} />}
 
-        {pendingFiles.length > 0 && (
-          <div className="pending-files">
-            {pendingFiles.map((file) => (
-              <div key={file.absolutePath} className="pending-file-item ui-row ui-card">
-                {file.previewUrl ? (
-                  <img
-                    className="pending-file-thumb"
-                    src={file.previewUrl}
-                    alt={file.originalName}
-                  />
-                ) : (
-                  <span className="pending-file-icon">&#x1F4C4;</span>
-                )}
-                <span className="pending-file-name ui-truncate">{file.originalName}</span>
-                <button
-                  type="button"
-                  className="pending-file-remove ui-control ui-row"
-                  onClick={() => removePendingFile(file.absolutePath)}
-                  title="Remove file"
-                >
-                  &times;
-                </button>
-              </div>
-            ))}
-          </div>
-        )}
+        <ComposerAttachments
+          presentation="chips"
+          files={pendingFiles}
+          onRemove={removePendingFile}
+        />
 
         {submissionError && (
           <div className="submission-error" role="alert">
@@ -830,31 +799,22 @@ export function Chat({ id }: { id: string }) {
                 <polyline points="7 3 7 8 15 8" />
               </svg>
             </button>
-            <div className="send-action ui-stack">
-              <button
-                type="button"
-                className={`send-btn ui-control ${hasActiveTurn ? 'interrupt-mode' : ''}`}
-                onClick={hasActiveTurn ? handleInterrupt : handleSend}
-                disabled={!confirmed || !hasContent}
-                title={
-                  hasActiveTurn
-                    ? 'Enter: Interrupt & send | Tab: Queue'
-                    : 'Enter: Send | Tab: Queue'
-                }
-              >
-                {hasActiveTurn ? 'Interrupt' : 'Send'}
-              </button>
-              {isStreaming && hasContent && (
-                <div className="send-queue-hint ui-muted" aria-live="polite">
-                  Tab to queue
-                </div>
-              )}
-            </div>
+            <SendControls
+              presentation="labelled"
+              turnActive={hasActiveTurn}
+              hasQueue={pendingQueue.length > 0}
+              canSend={confirmed && hasContent}
+              onSend={handleSend}
+              onInterrupt={handleInterrupt}
+              onQueue={handleQueue}
+              onStop={() => endConversation(conversation.id)}
+            />
           </div>
         </div>
       </div>
 
       <PromptPalette
+        presentation="popover"
         isOpen={showPalette}
         onClose={() => setShowPalette(false)}
         prompts={savedPrompts}

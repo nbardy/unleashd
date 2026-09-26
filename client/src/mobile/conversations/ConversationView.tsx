@@ -29,7 +29,6 @@ import { DmChannelsNotice } from '../../components/buddies/DmChannelsNotice';
 import { useConversationBodies } from '../../hooks/useConversationBodies';
 import { useCopyAction } from '../../hooks/useCopyAction';
 import { useProviderCatalog } from '../../hooks/useProviderCatalog';
-import { useSavedPrompts } from '../../hooks/useSavedPrompts';
 import { useTurnDiagnostics } from '../../hooks/useTurnDiagnostics';
 import { SwarmConvoPrefix } from '../../swarm';
 import { mobileConversationRouteState } from '../../utils/conversation-route-state';
@@ -45,12 +44,11 @@ import {
 import { QueuedMessages } from '../../views/conversation/QueuedMessages';
 import { ResumeSource } from '../../views/conversation/ResumeSource';
 import { SubAgentPanel } from '../../views/conversation/SubAgentPanel';
+import { TranscriptGroup } from '../../views/transcript/TranscriptGroup';
 import { ComposerMobile } from '../components/ComposerMobile';
-import { AssistantResponseRow, MessageRow } from '../components/MessageRow';
 import { setConversationConfig } from '../../atoms/commands';
 import { ConfigOverlay } from '../../views/config/ConfigOverlay';
 import { modelSummary } from '../../views/config/config-options';
-import { PromptPaletteMobile } from '../components/PromptPaletteMobile';
 
 /**
  * ConversationView — the one mobile conversation pane.
@@ -182,22 +180,6 @@ export function ConversationView({
   // window; restored after layout so the reader's place does not jump.
   const bottomOffsetBeforeGrow = useRef<number | null>(null);
 
-  // Prompt palette — shared hook (logic) + mobile sheet (UI). Mirrors Chat.tsx.
-  // Owned here so the palette is available at the conversation-pane level:
-  // ChatMobile is a thin wrapper and buddy inline threads embed ConversationView
-  // directly — owning it here means both get the palette without duplication.
-  // The composer remains thin: it only renders save/ palette buttons and forwards
-  // selections via prop + custom event bridge.
-  const {
-    savePrompt,
-    prompts: savedPrompts,
-    fuzzySearch,
-    incrementUsage,
-    deletePrompt,
-  } = useSavedPrompts();
-  const [showPalette, setShowPalette] = useState(false);
-  const [paletteSelectedContent, setPaletteSelectedContent] = useState<string | null>(null);
-
   // Same derivation as Chat.tsx: unified sub-agents + swarm prefix + resume lineage.
   // Reuses shared utils so desktop and mobile cannot drift.
   const unifiedSubAgents = useMemo(
@@ -230,19 +212,6 @@ export function ConversationView({
     return () => observer.disconnect();
   }, [conversationId, totalMessageCount, messageGroups.length]);
 
-  // Prompt palette: Ctrl+P / Cmd+P at the pane level (matches desktop Chat.tsx).
-  // Owned here so hardware keyboards work even when composer textarea is not focused.
-  useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'p') {
-        e.preventDefault();
-        setShowPalette(true);
-      }
-    };
-    window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
-  }, []);
-
   // Auto-scroll to bottom on new messages (flat list, not virtualized — iOS momentum)
   useEffect(() => {
     const el = scrollRef.current;
@@ -253,15 +222,6 @@ export function ConversationView({
       el.scrollTop = el.scrollHeight;
     }
   }, [messageGroups, streamingText]);
-
-  const handlePaletteSelect = (content: string) => {
-    // Push into composer via prop (primary) + event bridge (fallback if composer remounts)
-    setPaletteSelectedContent(content);
-    window.dispatchEvent(new CustomEvent('prompt-palette:select', { detail: content }));
-    setShowPalette(false);
-    // Clear after a tick so repeated same-content selections re-trigger the effect
-    setTimeout(() => setPaletteSelectedContent(null), 0);
-  };
 
   // Also scroll to bottom on mount / conversation switch
   useEffect(() => {
@@ -365,9 +325,6 @@ export function ConversationView({
           isStreaming={false}
           queue={[]}
           disabledReason={creationError ? 'Creation failed' : 'Waiting for the server to confirm…'}
-          onOpenPalette={() => setShowPalette(true)}
-          onSavePrompt={savePrompt}
-          paletteSelectedContent={paletteSelectedContent}
         />
       </div>
     );
@@ -546,20 +503,15 @@ export function ConversationView({
         ) : (
           messageGroups.slice(firstShownGroup).map((group, windowIndex) => {
             const index = firstShownGroup + windowIndex;
-            return group.type === 'assistant' ? (
-              <AssistantResponseRow
+            return (
+              <TranscriptGroup
                 key={group.firstMessageIndex}
-                response={group}
-                isLast={index === messageGroups.length - 1}
+                presentation="footer"
+                group={group}
+                isLastGroup={index === messageGroups.length - 1}
                 lastMessageRef={lastMessageRef}
-                isLive={turnActive && index === messageGroups.length - 1}
-              />
-            ) : (
-              <MessageRow
-                key={group.firstMessageIndex}
-                message={group.messages[0]}
-                isLast={index === messageGroups.length - 1}
-                lastMessageRef={lastMessageRef}
+                workingDirectory={conversation.cwd}
+                isLiveTurn={turnActive && index === messageGroups.length - 1}
               />
             );
           })
@@ -583,9 +535,6 @@ export function ConversationView({
         isRunning={isRunning}
         isStreaming={isStreaming}
         queue={queue}
-        onOpenPalette={() => setShowPalette(true)}
-        onSavePrompt={savePrompt}
-        paletteSelectedContent={paletteSelectedContent}
       />
 
       {modelSheetOpen ? (
@@ -602,18 +551,6 @@ export function ConversationView({
           onClose={() => setModelSheetOpen(false)}
         />
       ) : null}
-
-      {/* Prompt palette — mobile sheet, owned at pane level so buddy threads share it.
-          Thin UI; logic lives in hooks/useSavedPrompts (same hook desktop uses). */}
-      <PromptPaletteMobile
-        isOpen={showPalette}
-        onClose={() => setShowPalette(false)}
-        onSelect={handlePaletteSelect}
-        prompts={savedPrompts}
-        fuzzySearch={fuzzySearch}
-        incrementUsage={incrementUsage}
-        deletePrompt={deletePrompt}
-      />
     </div>
   );
 }

@@ -1,0 +1,593 @@
+/* Transcript rows (views/transcript/TranscriptGroup.tsx), shared by the desktop
+   virtual list and the mobile windowed list. Containers keep their own CSS. */
+
+.message {
+  max-width: 100%;
+  padding: var(--sp-6) 0 var(--sp-8);
+}
+
+.message.assistant {
+  padding-bottom: 0;
+}
+
+.message.user {
+  width: fit-content;
+  max-width: 88%;
+  margin: 12px 0 28px auto;
+  padding: 0;
+}
+
+.message.user > .message-content {
+  padding: var(--sp-6) var(--sp-8);
+  border-radius: var(--ui-radius);
+  background: color-mix(in srgb, var(--user) 7%, var(--bg-elevated));
+}
+
+.message-role {
+  font-size: var(--fs-3);
+  color: var(--text-emphasis);
+  margin-bottom: 8px;
+  font-weight: 500;
+}
+
+.message-role.user {
+  color: var(--user-bright);
+  padding-inline: var(--sp-8);
+}
+
+.message-role.assistant {
+  color: color-mix(in srgb, var(--ai-bright) 65%, var(--text-bright));
+}
+
+/* Keep prose brighter than metadata without changing the theme or other panels. */
+.message-content {
+  padding: 0;
+  background: transparent;
+  line-height: 1.7;
+  overflow-wrap: anywhere;
+  font-size: var(--fs-5);
+  color: var(--text-bright);
+}
+
+.message-content > :first-child {
+  margin-top: 0;
+}
+
+.message-content > :last-child {
+  margin-bottom: 0;
+}
+
+.chat-response-parts > .message-content + .message-content {
+  margin-top: 8px;
+}
+
+.chat-response-parts > .chat-activity + .message-content,
+.chat-response-parts > .message-content + .chat-activity {
+  margin-top: 2px;
+}
+
+/* Live-but-empty assistant response: the server creates the placeholder at
+   turn.started, before any provider output. Without this the bubble is a
+   blank "Assistant" header for the whole silent phase. */
+.chat-response-working {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-4);
+  padding: var(--sp-2) 0;
+  color: var(--text-secondary);
+  font-size: var(--fs-4);
+}
+
+@media (max-width: 768px) {
+  .messages-container {
+    padding: var(--sp-8) var(--sp-7);
+  }
+
+  .message.user {
+    max-width: 94%;
+  }
+
+  .message.user > .message-content {
+    padding: var(--sp-5) var(--sp-7);
+  }
+
+  .message-role.user {
+    padding-inline: var(--sp-7);
+  }
+}
+
+/* System / loop marker messages — use derived --bg-system-message tint */
+.message.system .message-content {
+  background: transparent;
+  border: none;
+  border-left: 2px solid color-mix(in srgb, var(--warning-dim) 40%, transparent);
+  padding: var(--sp-4) 0 var(--sp-4) var(--sp-7);
+  margin-left: 0;
+}
+
+/* Error messages — use derived --bg-error-message tint */
+.message.error .message-content {
+  background: transparent;
+  border: none;
+  border-left: 2px solid color-mix(in srgb, var(--danger-dim) 40%, transparent);
+  padding: var(--sp-4) 0 var(--sp-4) var(--sp-7);
+  margin-left: 0;
+}
+
+.typing-dot {
+  width: 8px;
+  height: 8px;
+  background: var(--accent-primary);
+  border-radius: 50%;
+  animation: typing-bounce 1.4s infinite ease-in-out both;
+}
+
+.typing-dot:nth-child(1) {
+  animation-delay: -0.32s;
+}
+
+.typing-dot:nth-child(2) {
+  animation-delay: -0.16s;
+}
+
+@keyframes typing-bounce {
+  0%,
+  80%,
+  100% {
+    transform: scale(0.6);
+    opacity: 0.4;
+  }
+  40% {
+    transform: scale(1);
+    opacity: 1;
+  }
+}
+
+/* =============================================================================
+   MARKDOWN STYLING
+   - Supports GitHub Flavored Markdown (GFM): tables, strikethrough, task lists
+   - Uses highlight.js for syntax highlighting (solarized-dark theme)
+   ============================================================================= */
+
+/* Headings */
+.message-content h1,
+.message-content h2,
+.message-content h3,
+.message-content h4,
+.message-content h5,
+.message-content h6 {
+  margin: 16px 0 8px 0;
+  color: var(--text-emphasis);
+  font-weight: 600;
+  line-height: 1.3;
+}
+
+.message-content h1 {
+  font-size: 1.5em;
+  border-bottom: 1px solid var(--border-subtle);
+  padding-bottom: var(--sp-4);
+}
+.message-content h2 {
+  font-size: 1.3em;
+  border-bottom: 1px solid var(--border-subtle);
+  padding-bottom: var(--sp-3);
+}
+.message-content h3 {
+  font-size: 1.15em;
+}
+.message-content h4 {
+  font-size: 1.05em;
+}
+.message-content h5 {
+  font-size: 1em;
+}
+.message-content h6 {
+  font-size: 0.95em;
+  color: var(--text-secondary);
+}
+
+/* Paragraphs */
+.message-content p {
+  margin: 8px 0;
+}
+
+.message-content > :has(+ .chat-activity) {
+  margin-bottom: 2px;
+}
+
+.message-content > .chat-activity + * {
+  margin-top: 2px;
+}
+
+.message-content > .chat-activity > .chat-activity-history > :first-child {
+  margin-top: 0;
+}
+
+.message-content > .chat-activity > .chat-activity-history > :last-child {
+  margin-bottom: 0;
+}
+
+/* LaTeX rendered by KaTeX */
+.message-content .katex-display {
+  margin: 12px 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  padding: var(--sp-2) 0;
+}
+
+.message-content .katex-display > .katex {
+  text-align: left;
+}
+
+.message-content .katex-error {
+  color: var(--accent-error, #ef5350);
+  font-family: var(--font-mono);
+}
+
+/* Inline code */
+.message-content code {
+  background: color-mix(in srgb, var(--queue) 12%, transparent);
+  padding: var(--sp-1) var(--sp-3);
+  border-radius: var(--ui-radius);
+  font-family: var(--font-mono);
+  font-size: 0.85em;
+  color: var(--queue);
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  box-decoration-break: clone;
+  -webkit-box-decoration-break: clone;
+}
+
+/* Code blocks — elevated to darkest bg for clear separation from prose */
+.message-code-block {
+  position: relative;
+  margin: 12px 0;
+}
+
+.message-code-block pre {
+  margin: 0;
+  padding-top: var(--sp-11);
+}
+
+.message-code-copy-btn {
+  position: absolute;
+  top: 8px;
+  left: 8px;
+  z-index: 1;
+  background: transparent;
+  border: none;
+  border-radius: var(--ui-radius);
+  color: var(--text-muted);
+  cursor: pointer;
+  opacity: 0;
+  padding: var(--sp-2);
+  transition: opacity 0.15s, color 0.15s, background 0.15s;
+}
+
+/* Icon-only variant: CopyButton always renders the label so the same component
+   serves both call sites, and the code-block variant hides it here. The
+   accessible name lives on aria-label, so hiding this is not a11y loss. */
+.message-code-copy-btn .copy-btn__label {
+  display: none;
+}
+
+.message-code-block:hover .message-code-copy-btn,
+.message-code-block:focus-within .message-code-copy-btn,
+.message-code-copy-btn.copy-btn--copied,
+.message-code-copy-btn.copy-btn--failed {
+  opacity: 1;
+}
+
+.message-code-copy-btn:hover,
+.message-code-copy-btn:focus-visible {
+  background: color-mix(in srgb, var(--bg-panel) 72%, transparent);
+  color: var(--text-emphasis);
+}
+
+.message-code-copy-btn.copy-btn--copied {
+  background: color-mix(in srgb, var(--bg-panel) 72%, transparent);
+  color: var(--accent-success);
+}
+
+.message-code-copy-btn.copy-btn--failed {
+  background: color-mix(in srgb, var(--bg-panel) 72%, transparent);
+  color: var(--danger);
+}
+
+/* -----------------------------------------------------------------------------
+   Message hover actions (Claude / ChatGPT pattern: a quiet action row *below*
+   the message, revealed on hover). Below rather than pinned top-right because
+   the top-left of every code block already holds its own copy button — a
+   floating overlay in the message corner competes with it and with long
+   assistant turns where the top edge has scrolled away.
+
+   The row reserves its height at all times so revealing it never reflows the
+   thread; only the button fades. `copied` / `failed` keep the button visible
+   after the pointer leaves, so the result is readable.
+   -------------------------------------------------------------------------- */
+.message-actions {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+  margin-top: 2px;
+  /* Reserve the copy action without adding another separator or shifting text. */
+  margin-bottom: -10px;
+}
+
+.message-action-btn {
+  gap: var(--sp-2);
+  padding: var(--sp-1) var(--sp-3);
+  border: none;
+  background: transparent;
+  font: inherit;
+  font-size: var(--fs-2);
+  line-height: 1;
+  letter-spacing: 0.3px;
+  opacity: 0;
+  transition: opacity 0.12s, color 0.12s, background 0.12s;
+}
+
+/* CopyButton ships a 14px glyph for the code-block variant; the inline message
+   action wants a lighter one. Overrides the SVG's width/height attributes. */
+.message-action-btn svg {
+  width: 12px;
+  height: 12px;
+}
+
+.message:hover .message-action-btn,
+.message:focus-within .message-action-btn,
+.message-action-btn.copy-btn--copied,
+.message-action-btn.copy-btn--failed {
+  opacity: 1;
+}
+
+.message-action-btn:hover,
+.message-action-btn:focus-visible {
+  background: color-mix(in srgb, var(--text-emphasis) 8%, transparent);
+  color: var(--text-emphasis);
+}
+
+.message-action-btn.copy-btn--copied {
+  color: var(--accent-success);
+}
+
+.message-action-btn.copy-btn--failed {
+  color: var(--danger);
+}
+
+/* Keyboard users get no hover; never hide a focused control. */
+.message-action-btn:focus-visible {
+  opacity: 1;
+  outline: 1px solid var(--accent-primary);
+  outline-offset: 1px;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .message-action-btn,
+  .message-code-copy-btn {
+    transition: none;
+  }
+}
+
+.message-content pre {
+  background: var(--bg-darkest);
+  padding: var(--sp-7);
+  border-radius: var(--ui-radius);
+  overflow-x: auto;
+  margin: 12px 0;
+  border: 1px solid var(--border-subtle);
+}
+
+.message-content pre code {
+  background: none;
+  padding: 0;
+  color: var(--text-primary);
+  font-size: var(--fs-4);
+  line-height: 1.5;
+}
+
+/* Override highlight.js background to match our code blocks */
+.message-content pre code.hljs {
+  background: transparent;
+  padding: 0;
+}
+
+/* Tables (GFM) */
+.message-content table {
+  border-collapse: collapse;
+  width: 100%;
+  margin: 12px 0;
+  font-size: 0.95em;
+}
+
+.message-content th,
+.message-content td {
+  border: 1px solid var(--border-subtle);
+  padding: var(--sp-4) var(--sp-6);
+  text-align: left;
+}
+
+.message-content th {
+  background: var(--bg-panel);
+  color: var(--text-emphasis);
+  font-weight: 600;
+}
+
+.message-content tr:nth-child(even) {
+  background: color-mix(in srgb, var(--bg-content) 30%, transparent);
+}
+
+.message-content tr:hover {
+  background: color-mix(in srgb, var(--bg-content) 50%, transparent);
+}
+
+/* Lists */
+.message-content ul,
+.message-content ol {
+  margin: 8px 0;
+  padding-left: var(--sp-9);
+}
+
+.message-content li {
+  margin: 2px 0;
+}
+
+.message-content li > p {
+  margin: 0;
+}
+
+.message-content li > ul,
+.message-content li > ol {
+  margin: 4px 0;
+}
+
+/* Task lists (GFM) */
+.message-content ul.contains-task-list {
+  list-style: none;
+  padding-left: 0;
+}
+
+.message-content li.task-list-item {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--sp-4);
+}
+
+.message-content li.task-list-item input[type="checkbox"] {
+  margin-top: 4px;
+  accent-color: var(--accent-user);
+  cursor: default;
+}
+
+/* Strikethrough (GFM) */
+.message-content del {
+  color: var(--text-muted);
+  text-decoration: line-through;
+}
+
+/* Strong / Bold */
+.message-content strong {
+  color: var(--text-emphasis);
+  font-weight: 600;
+}
+
+/* Emphasis / Italic */
+.message-content em {
+  font-style: italic;
+  color: var(--warning);
+}
+
+/* Links — always underlined so auto-linked URLs are visually distinct from text */
+.message-content a {
+  color: var(--user);
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--user) 50%, transparent);
+  text-underline-offset: 2px;
+  cursor: pointer;
+}
+
+.message-content a:hover {
+  text-decoration: underline;
+  text-decoration-color: var(--ai-bright);
+  color: var(--ai-bright);
+}
+
+/* Blockquotes */
+.message-content blockquote {
+  border-left: 4px solid var(--accent-primary);
+  margin: 12px 0;
+  padding: var(--sp-4) var(--sp-7);
+  background: color-mix(in srgb, var(--primary) 10%, transparent);
+  color: var(--text-emphasis);
+}
+
+.message-content blockquote p {
+  margin: 4px 0;
+}
+
+/* Horizontal rules */
+.message-content hr {
+  border: none;
+  border-top: 1px solid var(--border-subtle);
+  margin: 16px 0;
+}
+
+/* Images */
+.message-content img {
+  max-width: 100%;
+  height: auto;
+  border-radius: var(--ui-radius);
+  margin: 8px 0;
+}
+
+/* Definition lists */
+.message-content dl {
+  margin: 8px 0;
+}
+
+.message-content dt {
+  font-weight: 600;
+  color: var(--text-emphasis);
+  margin-top: 8px;
+}
+
+.message-content dd {
+  margin-left: 24px;
+  color: var(--text-emphasis);
+}
+
+/* ---- presentation="footer" (touch) ----
+   Touch has no hover, so the reveal-on-hover copy button has no analogue. The
+   action is permanent but quiet, on the same line as the time, and the row
+   reserves no band of its own: the pill sets the height. */
+.message-actions--footer {
+  gap: var(--sp-4);
+  margin: var(--sp-2) 0 0;
+  font-size: var(--fs-1);
+  color: var(--text-muted);
+}
+
+/* 28px, not the 44px primary target: a secondary action repeated on every row. */
+.message-footer-copy {
+  gap: var(--sp-2);
+  min-height: 28px;
+  margin-left: auto;
+  padding: 0 var(--sp-5);
+  background: transparent;
+  font: inherit;
+  font-size: var(--fs-2);
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.message-footer-copy svg {
+  width: 12px;
+  height: 12px;
+}
+
+.message-footer-copy:active {
+  border-color: var(--border-strong);
+  background: var(--bg-raised-2);
+}
+
+.message-footer-copy:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.message-footer-copy.copy-btn--copied {
+  color: var(--accent-success);
+}
+
+.message-footer-copy.copy-btn--failed {
+  color: var(--danger);
+}
+
+/* No hover on touch: code-block copy buttons stay visible. */
+@media (hover: none) {
+  .message-code-copy-btn {
+    opacity: 1;
+  }
+}

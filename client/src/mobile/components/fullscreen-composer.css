@@ -53,7 +53,7 @@
   display: none;
 }
 .fullscreen-composer--expanded .mobile-composer__error,
-.fullscreen-composer--expanded .mobile-upload-error {
+.fullscreen-composer--expanded .composer-upload-error {
   flex: none;
   max-height: 20%;
   overflow: auto;

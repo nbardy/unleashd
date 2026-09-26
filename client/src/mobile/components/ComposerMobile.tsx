@@ -2,7 +2,7 @@ import type { QueuedMessage } from '@unleashd/shared';
 import { useAtomValue } from 'jotai';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { endConversation, interruptAndSend, queueMessage } from '../../atoms/actions';
-import { queueOf, streamFamily, transcriptFamily } from '../../atoms/conversations';
+import { streamFamily } from '../../atoms/conversations';
 import { useComposerSubmission } from '../../hooks/useComposerSubmission';
 import { useConversationDraft } from '../../hooks/useConversationDraft';
 import { usePendingAttachments } from '../../hooks/usePendingAttachments';
@@ -15,10 +15,11 @@ import {
   shouldShowTypingIndicator,
   turnDiagnosticsFromAttempt,
 } from '../../utils/turn-diagnostics';
+import { ComposerAttachments, UploadErrorNotice } from '../../views/composer/ComposerAttachments';
+import { PromptPalette } from '../../views/composer/PromptPalette';
+import { SendControls } from '../../views/composer/SendControls';
+import { TurnStatus } from '../../views/conversation/TurnStatus';
 import { FullscreenComposer } from './FullscreenComposer';
-import { ComposerAttachments } from './ComposerAttachments';
-import { PromptPaletteMobile } from './PromptPaletteMobile';
-import { TurnStatusMobile } from './TurnStatusMobile';
 
 export function ComposerMobile({
   conversationId,
@@ -26,30 +27,15 @@ export function ComposerMobile({
   isStreaming,
   queue,
   disabledReason,
-  onOpenPalette,
-  paletteSelectedContent,
-  onSavePrompt,
 }: {
   conversationId: string;
   isRunning: boolean;
   isStreaming: boolean;
-  /** Full queue list — per-item cancel via cancelQueuedMessage. */
-  queue?: readonly QueuedMessage[];
+  /** The conversation's queue (the pane reads it once for the queue strip too). */
+  queue: readonly QueuedMessage[];
   /** Set to render the composer inert with an explanation (e.g. unconfirmed). */
   disabledReason?: string;
-  /** Optional: called when the palette button is pressed (parent owns palette). */
-  onOpenPalette?: () => void;
-  /** Optional: content selected from a parent-owned palette to insert. */
-  paletteSelectedContent?: string | null;
-  /** Optional: parent-owned savePrompt (single hook source). Falls back to own hook. */
-  onSavePrompt?: (content: string) => void;
 }) {
-  // Queue — shared atom family with desktop (no new state). Accepts prop
-  // queue list when parent (ConversationView) passes it; falls back to atom
-  // read so standalone use still shows queue. Hook before any early return.
-  const queueFromAtom = queueOf(useAtomValue(transcriptFamily(conversationId ?? '')));
-  const resolvedQueue: readonly QueuedMessage[] = queue ?? queueFromAtom ?? [];
-
   const [expanded, setExpanded] = useState(false);
   const closeEditor = useCallback(() => {
     textareaRef.current?.blur();
@@ -63,9 +49,8 @@ export function ComposerMobile({
   const toolbarPointerRef = useRef(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Prompt palette — thin wrapper over shared hook (logic in hooks/, UI here).
-  // Mirrors desktop Chat.tsx: { savePrompt, fuzzySearch, incrementUsage, deletePrompt } + <PromptPalette>.
-  // Mobile never imports components/* (G3) — this wrapper lives in mobile/components/.
+  // Saved prompts: logic in hooks/useSavedPrompts, the palette is views/composer,
+  // owned by the composer exactly as desktop Chat.tsx owns its own.
   const {
     savePrompt,
     prompts: savedPrompts,
@@ -111,60 +96,28 @@ export function ComposerMobile({
     [setDraftPersisted]
   );
 
-  // Ctrl+P / Cmd+P to open palette — matches desktop Chat.tsx window listener.
-  // Also handles palette selection pushed from parent (ConversationView) via prop.
+  const openPalette = useCallback(() => {
+    textareaRef.current?.blur();
+    setExpanded(false);
+    setShowPalette(true);
+  }, []);
+
+  // Ctrl+P / Cmd+P opens the palette — the same window binding as desktop Chat.tsx.
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'p') {
         e.preventDefault();
-        textareaRef.current?.blur();
-        setExpanded(false);
-        if (onOpenPalette) onOpenPalette();
-        else setShowPalette(true);
+        openPalette();
       }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [onOpenPalette]);
-
-  // Parent-owned palette selection (ConversationView -> ComposerMobile)
-  useEffect(() => {
-    if (paletteSelectedContent) {
-      updateDraft(paletteSelectedContent);
-      requestAnimationFrame(() => textareaRef.current?.focus());
-      // resize textarea to fit
-      if (textareaRef.current) {
-        const ta = textareaRef.current;
-        ta.style.height = 'auto';
-        ta.style.height = `${Math.min(ta.scrollHeight, 120)}px`;
-      }
-    }
-  }, [paletteSelectedContent, updateDraft]);
-
-  // Also listen for custom event bridge (alternative parent->child channel)
-  useEffect(() => {
-    const handler = (e: Event) => {
-      const detail = (e as CustomEvent<string>).detail;
-      if (typeof detail === 'string' && detail) {
-        updateDraft(detail);
-        requestAnimationFrame(() => textareaRef.current?.focus());
-        if (textareaRef.current) {
-          const ta = textareaRef.current;
-          ta.style.height = 'auto';
-          ta.style.height = `${Math.min(ta.scrollHeight, 120)}px`;
-        }
-      }
-    };
-    window.addEventListener('prompt-palette:select', handler as EventListener);
-    return () => window.removeEventListener('prompt-palette:select', handler as EventListener);
-  }, [updateDraft]);
+  }, [openPalette]);
 
   const handleSavePrompt = useCallback(() => {
     const content = draft.trim();
-    if (!content) return;
-    if (onSavePrompt) onSavePrompt(content);
-    else savePrompt(content);
-  }, [draft, savePrompt, onSavePrompt]);
+    if (content) savePrompt(content);
+  }, [draft, savePrompt]);
 
   // Turn diagnostics — same hook as ConversationView (and desktop Chat.tsx).
   // Composer owns its own subscription so typing/turn status remains visible
@@ -201,12 +154,10 @@ export function ComposerMobile({
   );
 
   const hasActiveTurn = isRunning || isStreaming;
-  const hasQueue = resolvedQueue.length > 0;
+  const hasQueue = queue.length > 0;
   const hasText = draft.trim().length > 0;
   const hasAttachments = pendingFiles.length > 0;
   const canSend = hasText || hasAttachments;
-  // One label for the button and the hint below it, so they cannot disagree.
-  const sendLabel = hasActiveTurn ? 'Interrupt' : hasQueue ? 'Queue' : 'Send';
 
   // Optimistic send — same contract as desktop Chat.tsx: the server ack can lag
   // seconds behind the tap (ensureReady + turn-spawn setup), so the composer
@@ -215,6 +166,10 @@ export function ComposerMobile({
     closeEditor();
     await submit(hasActiveTurn ? interruptAndSend : queueMessage);
   }, [submit, hasActiveTurn, closeEditor]);
+  const handleInterrupt = useCallback(async () => {
+    closeEditor();
+    await submit(interruptAndSend);
+  }, [submit, closeEditor]);
 
   // Desktop's only stop affordance is endConversation (clear_queue then
   // stop_conversation, Sidebar.tsx). Mobile called bare stopConversation, so
@@ -251,13 +206,7 @@ export function ComposerMobile({
   // Standard mobile-chat behaviour (Messages, WhatsApp) is return = newline.
   // A hardware keyboard (iPad, Bluetooth) still gets Cmd/Ctrl+Enter to send.
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'p') {
-      e.preventDefault();
-      closeEditor();
-      if (onOpenPalette) onOpenPalette();
-      else setShowPalette(true);
-      return;
-    }
+    // Ctrl/Cmd+P bubbles to the window binding above.
     if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) {
       e.preventDefault();
       if (canSend && !disabled) void handleSend();
@@ -290,7 +239,7 @@ export function ComposerMobile({
         {restartRecovery ? <RestartRecoveryPrompt recovery={restartRecovery} /> : null}
         {composerTurnDiagnostics ? (
           <div className="mobile-composer__turn-status">
-            <TurnStatusMobile diagnostics={composerTurnDiagnostics} />
+            <TurnStatus presentation="composer" diagnostics={composerTurnDiagnostics} />
           </div>
         ) : null}
         {hasActiveTurn && !composerTurnDiagnostics && !composerShowTyping ? (
@@ -305,22 +254,8 @@ export function ComposerMobile({
             <span className="mobile-composer__typing-dot" />
           </div>
         ) : null}
-        {/* Upload failure — parity with desktop. A failed drop/paste must never
-          look like an ignored one; see usePendingAttachments' uploadError. */}
-        {uploadError && (
-          <div className="mobile-upload-error ui-row" role="alert">
-            <span className="mobile-upload-error__text">{uploadError}</span>
-            <button
-              type="button"
-              className="mobile-upload-error__dismiss"
-              onClick={dismissUploadError}
-              aria-label="Dismiss upload error"
-            >
-              ×
-            </button>
-          </div>
-        )}
-        <ComposerAttachments files={pendingFiles} onRemove={removeFile} />
+        {uploadError && <UploadErrorNotice error={uploadError} onDismiss={dismissUploadError} />}
+        <ComposerAttachments presentation="gallery" files={pendingFiles} onRemove={removeFile} />
 
         {/* Hidden file input — triggered by the attach button. Same POST /api/upload
           as desktop; accept any file, preview only for images. */}
@@ -392,11 +327,7 @@ export function ComposerMobile({
                 {/* Palette — mobile sheet trigger (desktop uses Ctrl+P only). */}
                 <button
                   type="button"
-                  onClick={() => {
-                    closeEditor();
-                    if (onOpenPalette) onOpenPalette();
-                    else setShowPalette(true);
-                  }}
+                  onClick={openPalette}
                   disabled={disabled}
                   className="mobile-composer__btn mobile-composer__btn--palette"
                   aria-label="Open prompt palette"
@@ -431,50 +362,16 @@ export function ComposerMobile({
             >
               Done
             </button>
-            {hasActiveTurn && !disabled && (
-              <button
-                type="button"
-                onClick={handleStop}
-                className="mobile-composer__btn mobile-composer__btn--stop"
-                aria-label="Stop all work"
-                title="Stop all work (also clears queued messages)"
-              >
-                <span className="mobile-composer__stop-glyph" aria-hidden="true" />
-              </button>
-            )}
-            {hasActiveTurn && !disabled && (
-              <button
-                type="button"
-                onClick={() => void handleQueue()}
-                disabled={!sendEnabled}
-                className="mobile-composer__btn mobile-composer__btn--queue"
-                aria-label="Queue message"
-                title="Queue after the current turn (does not interrupt)"
-              >
-                <span aria-hidden="true" style={{ fontSize: 15, lineHeight: 1 }}>
-                  ⏱
-                </span>
-              </button>
-            )}
-            <button
-              type="button"
-              onClick={() => void handleSend()}
-              disabled={!sendEnabled}
-              className="mobile-composer__btn mobile-composer__btn--send"
-              aria-label={sendLabel}
-              title={sendLabel}
-            >
-              <svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" focusable="false">
-                <path
-                  d="M12 19V5M12 5l-6 6M12 5l6 6"
-                  fill="none"
-                  stroke="currentColor"
-                  strokeWidth="2.2"
-                  strokeLinecap="round"
-                  strokeLinejoin="round"
-                />
-              </svg>
-            </button>
+            <SendControls
+              presentation="icons"
+              turnActive={hasActiveTurn && !disabled}
+              hasQueue={hasQueue}
+              canSend={sendEnabled}
+              onSend={() => void handleSend()}
+              onInterrupt={() => void handleInterrupt()}
+              onQueue={() => void handleQueue()}
+              onStop={handleStop}
+            />
           </div>
         </div>
 
@@ -484,19 +381,16 @@ export function ComposerMobile({
           </div>
         )}
 
-        {/* Prompt palette — mobile bottom-sheet (thin wrapper). When parent owns palette
-          (ConversationView), this self palette is the fallback for standalone usage. */}
-        {!onOpenPalette && (
-          <PromptPaletteMobile
-            isOpen={showPalette}
-            onClose={() => setShowPalette(false)}
-            onSelect={handleSelectPrompt}
-            prompts={savedPrompts}
-            fuzzySearch={fuzzySearch}
-            incrementUsage={incrementUsage}
-            deletePrompt={deletePrompt}
-          />
-        )}
+        <PromptPalette
+          presentation="sheet"
+          isOpen={showPalette}
+          onClose={() => setShowPalette(false)}
+          onSelect={handleSelectPrompt}
+          prompts={savedPrompts}
+          fuzzySearch={fuzzySearch}
+          incrementUsage={incrementUsage}
+          deletePrompt={deletePrompt}
+        />
       </div>
     </FullscreenComposer>
   );
