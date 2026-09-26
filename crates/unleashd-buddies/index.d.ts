@@ -45,7 +45,6 @@ export declare class BuddiesCore {
   getBuddy(id: string): Promise<Buddy>
   listBuddies(workspaceId: string): Promise<Array<Buddy>>
   bindConversation(actor: Actor, input: ConversationInput): Promise<Conversation>
-  getConversation(id: string): Promise<Conversation | null>
 }
 
 /**

@@ -129,10 +129,6 @@ impl Store {
             get_conversation(tx, &input.id)?.ok_or_else(|| CoreError::not_found("conversation", &input.id))
         })
     }
-
-    pub fn get_conversation(&self, id: &str) -> Result<Option<Conversation>> {
-        get_conversation(&self.conn, id)
-    }
 }
 
 // ---- authorize -------------------------------------------------------------------------------

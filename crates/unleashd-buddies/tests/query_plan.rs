@@ -221,7 +221,6 @@ fn workload(s: &mut unleashd_buddies::Store) {
     s.get_buddy("ic").unwrap();
     s.list_buddies(WS).unwrap();
     s.bind_conversation(&owner, ConversationInput { id: "c-new".into(), buddy_id: "ic".into(), task_id: None }).unwrap();
-    s.get_conversation("c-new").unwrap();
 }
 
 fn input(kind: PostKind, body: &str, key: &str) -> PostInput {

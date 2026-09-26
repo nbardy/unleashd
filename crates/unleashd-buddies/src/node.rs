@@ -245,9 +245,4 @@ impl BuddiesCore {
     pub async fn bind_conversation(&self, actor: Actor, input: ConversationInput) -> napi::Result<Conversation> {
         call(&self.store, move |s| s.bind_conversation(&actor, input)).await
     }
-
-    #[napi]
-    pub async fn get_conversation(&self, id: String) -> napi::Result<Option<Conversation>> {
-        call(&self.store, move |s| s.get_conversation(&id)).await
-    }
 }
