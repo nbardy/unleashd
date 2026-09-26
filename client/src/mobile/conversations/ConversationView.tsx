@@ -51,28 +51,9 @@ import { ConfigOverlay } from '../../views/config/ConfigOverlay';
 import { modelSummary } from '../../views/config/config-options';
 
 /**
- * ConversationView — the one mobile conversation pane.
- *
- * Extracted from ChatMobile so plain chats and buddy conversations render the
- * SAME transcript + composer instead of drifting into two implementations.
- * `ChatMobile` is now a thin route wrapper around it; any buddy surface that
- * wants an inline thread embeds this directly.
- *
- * LAYOUT CONTRACT (this is what made the composer invisible on phones):
- * this component fills its PARENT, it does not size itself to the viewport.
- * It renders inside ShellMobile's `.mobile-content`, which is already
- * `100dvh − tab-bar`. The old `height: 100dvh` here made the pane 56px taller
- * than its scrollport, pushing the composer underneath the bottom tab bar with
- * no way to scroll to it — the message list swallowed the gesture. Keep this
- * `height: 100%` and keep `.mobile-content__inner` a stretched flex column.
- *
- * CREATION STATES: a freshly created conversation exists only in
- * `commandsAtom` (a `create` command) until the server confirms it over WS. Rendering
- * "not found" for that window is wrong — it is the bug that made every new
- * plain conversation look broken while buddy threads (created synchronously by
- * `POST /api/buddies/builder`, so already in `rowsAtom` before the
- * route changes) looked fine. Mirror Chat.tsx: only claim "not found" once the
- * conversation list has finished loading AND there is no pending creation.
+ * The one mobile conversation pane (plain chats and Buddy threads). It fills its PARENT (height:
+ * 100%, never 100dvh, or the composer hides under the tab bar); "not found" only after load
+ * completes with no pending creation. See docs/client-rationale.md#conversation-view.
  */
 
 /** Message groups mounted on open, and added per "Show earlier" tap. */
@@ -153,19 +134,9 @@ export function ConversationView({
   const lastMessageRef = useRef<HTMLDivElement>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
 
-  // Render window: groups from `firstShown` on mount. The list stays a flat
-  // scroller (iOS momentum) instead of a virtualizer, but mounting all of it
-  // was the cost — opening a 1,099-message conversation blocked the main
-  // thread 1,321ms (4x CPU, 2026-09-25), nearly all markdown parse for turns
-  // nobody had scrolled to.
-  //
-  // The window stores the INDEX of the first shown group, not a count from the
-  // end: with a count, every new group unmounted the oldest mounted one, so
-  // content above the reader shifted mid-read (Safari has no scroll anchoring).
-  // It is pinned the first render the history is present (React's
-  // adjust-state-during-render pattern — no effect, no flash of every group)
-  // and moved only by "Show earlier". Switching conversations re-pins because
-  // the stored id no longer matches.
+  // Mount groups from a pinned first index (not a count from the end, which shifted content mid-
+  // read); moved only by "Show earlier", re-pinned per conversation. See docs/client-
+  // rationale.md#mobile-group-window.
   const newestPageStart = Math.max(0, messageGroups.length - MOBILE_GROUP_PAGE);
   const [groupWindow, setGroupWindow] = useState(UNPINNED_GROUP_WINDOW);
   if (detailsLoaded && groupWindow.conversationId !== conversationId) {

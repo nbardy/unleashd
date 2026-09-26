@@ -3,22 +3,9 @@ import type { PluggableList } from 'unified';
 import { type MarkdownFlavor, type MarkdownPipeline, markdownPipeline } from './markdown-pipeline';
 
 /**
- * ONE loading path for the heavy markdown rehype plugins (katex + highlight.js)
- * used by the transcript rows (`views/transcript/TranscriptGroup.tsx`), which
- * both the desktop and mobile trees render.
- *
- * Why this exists: `rehype-katex` pulls in all of KaTeX and `rehype-highlight`
- * pulls in highlight.js with every bundled language. Statically imported from
- * the desktop path they landed in the entry chunk (~1.32 MB), so first paint
- * paid for math typesetting nobody had asked for yet. A *dynamic* import on
- * both paths is what actually lets Rollup split them out — one static importer
- * anywhere is enough to pin them back into the entry chunk, so do NOT add a
- * top-level `import 'rehype-katex'` / `'katex/dist/katex.min.css'` /
- * `'highlight.js/styles/*.css'` anywhere in client/src.
- *
- * Behavior: markdown renders immediately with the remark plugins only, then
- * re-renders with syntax highlighting + math once the chunk lands. No spinner,
- * no layout gate.
+ * ONE loading path for rehype-katex/highlight so Rollup splits them from the entry chunk. Never add
+ * a static import of rehype-katex, katex CSS or highlight.js styles anywhere in client/src. See
+ * docs/client-rationale.md#lazy-markdown-plugins.
  */
 
 /** Stable module constant — an unloaded render must not churn react-markdown. */

@@ -1,29 +1,15 @@
 import type { ConversationRow, RowKind } from '@unleashd/shared';
-import { folderGroupKey, getProjectRoot, isWorktreeDirectory, normalizeFolderDirectory } from '../utils/directories';
+import {
+  folderGroupKey,
+  getProjectRoot,
+  isWorktreeDirectory,
+  normalizeFolderDirectory,
+} from '../utils/directories';
 import { sameItems, sameMap, sameSet } from './structural';
 
-// =============================================================================
-// Conversation list index
-// Pattern: one-store-one-index (docs/patterns.md#one-store-one-index)
-//
-// Every collection view (sidebar groups, gallery, inbox, buddy sidebar, running
-// counts, swarm workers, child sessions) filters, groups and sorts on a handful
-// of fields. They used to read `Conversation` objects straight out of the map,
-// so each of ~10 views re-ran a full pass on EVERY conversation event — message,
-// queue, sub-agent and every 5 s poller batch — at n ≈ 1,200 (03-app-core §6.2).
-//
-// The index keeps one `ConversationListEntry` per conversation holding only
-// those fields, and one list of entries sorted newest-first. It is updated
-// incrementally from the ids a write touched:
-//   - an entry is rebuilt only for a touched conversation, and replaced only
-//     when one of ITS list fields changed (otherwise the old entry is kept);
-//   - the list is a new array only when some entry was replaced, and a
-//     replaced entry is moved by binary search, not by re-sorting.
-// So an event that changes no list field (messages, queue, sub-agents, session
-// binding, streaming) leaves the list reference untouched and no view
-// recomputes. Views that do recompute go through `stableAtom`, so their
-// subscribers only re-render when the view's own output changed.
-// =============================================================================
+// Conversation list index (patterns.md#one-store-one-index): one entry per conversation, rebuilt
+// only when a touched conversation's list fields change, so non-list events leave the list
+// reference untouched. See docs/client-rationale.md#conversation-index.
 
 /** Facts about a working directory that views filter or group on. Computed
  *  once per distinct directory string and cached (regexes are not free at
@@ -218,19 +204,8 @@ export function updateConversationIndex(
   return { byId, list };
 }
 
-// =============================================================================
-// The list index: every collection view, built in ONE pass over the list.
-// Pattern: one-store-one-index (docs/patterns.md#one-store-one-index)
-//
-// Until T19 each view was its own derived atom (about 20: ids, id set, recent
-// directories, inbox, gallery, children, three Buddy-sidebar atoms, running
-// counts, workers, per-Buddy lists…), each re-walking the list when it moved.
-// Now one pass builds them all, and a field whose content is unchanged hands
-// back its previous value, so a subscriber of that field (through
-// `listField`) does not re-render. The pass runs only when the LIST moves (a
-// list field changed); message, queue, sub-agent and stream events never
-// reach it (guarded by client/test/conversation-event-isolation.test.tsx).
-// =============================================================================
+// Every collection view, built in ONE pass when the list moves; unchanged fields keep identity
+// (guard: conversation-event-isolation.test.tsx). See docs/client-rationale.md#list-index.
 
 export interface SidebarFolderGroup {
   /** `folderGroupKey` of the group's conversations. */
@@ -345,7 +320,12 @@ export function buildListIndex(
     if (!directory.isWorktree) dirs.add(directory.folder);
     if (!child) gallery.push(entry);
     if (entry.parentConversationId !== null) pushTo(children, entry.parentConversationId, entry);
-    if (!entry.background && !entry.isWorker && !entry.parentConversationId && !directory.isScratch) {
+    if (
+      !entry.background &&
+      !entry.isWorker &&
+      !entry.parentConversationId &&
+      !directory.isScratch
+    ) {
       inboxTotal += 1;
       if (inboxIds.length < CHAT_INBOX_LIMIT) inboxIds.push(entry.id);
     }

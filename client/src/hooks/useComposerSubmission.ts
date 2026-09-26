@@ -1,27 +1,7 @@
 /**
- * useComposerSubmission — the one send path for desktop Chat.tsx and mobile
- * ComposerMobile.tsx. Do not reintroduce per-shell send/restore handlers.
- *
- * A submission is a VALUE addressed to the conversation it came FROM. It is not
- * re-derived from whatever composer state happens to be on screen when the
- * server finally answers. Two 2026-09-20 defects came from the older shape and
- * are unrepresentable against this type:
- *
- *  - Taking a submission clears text AND attachments together, so the composer
- *    is genuinely `empty` afterwards. Previously only the text was cleared, so
- *    `pendingFiles.length > 0` kept both the empty-guard false and the Send
- *    button enabled: an attachment with no text was queued twice by clicking
- *    again before the ack. A submit latch would also hide this; making the take
- *    total removes the second submission instead of racing it.
- *
- *  - A rejection returns the submission to `submission.conversationId`.
- *    Previously it called the live draft setter, which writes through to
- *    whichever conversation the composer is bound to NOW — and `/chat/:id`
- *    renders one <Chat /> across param changes (App.tsx), so a reconnect after
- *    the user moved on pasted the old thread's text into the new thread and
- *    overwrote its draft. `rejectPendingMessageCommands` (atoms/actions.ts)
- *    settles every in-flight command at once, so this is the common path on a
- *    reconnect, not a corner case.
+ * The one send path for both composers. A submission is a value addressed to the conversation it
+ * came from: taking it clears text AND attachments; a rejection restores to that id (guard:
+ * composer-submission.test.ts). See docs/client-rationale.md#composer-submission.
  */
 import { useCallback, useState } from 'react';
 import type { UseConversationDraftReturn } from './useConversationDraft';

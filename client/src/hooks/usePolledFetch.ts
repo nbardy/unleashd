@@ -11,21 +11,8 @@ import {
 } from '../atoms/resources';
 
 /**
- * What a polled view renders from: the cache variant itself, with the value
- * it holds surfaced as `data` on every variant (null where none is held).
- *
- * A sum, not the `{data, loading, error}` this hook returned until 2026-09-25.
- * That product put a first load that failed and a background refresh that
- * failed into the same `error` field, so a view that tested `error` before
- * `data` swapped a page it was already showing for its full-screen failure:
- * on a slow server one "Failed to fetch" replaced a loaded Buddy page on the
- * phone with "Could not load buddy" (2026-09-24), and the Buddies directory,
- * team settings and swarm reviews blanked the same way. Here the two are
- * different variants, and `error` exists only on them, so reading it means
- * saying which one you mean:
- *
- *   failed — nothing to show; the error IS the view.
- *   stale  — `data` is still the view; the error is a notice beside it.
+ * The cache variant, with `data` on every variant. `failed`: the error IS the view; `stale`: `data`
+ * is the view and the error a notice beside it. See docs/client-rationale.md#polled-state.
  */
 export type PolledState<T> =
   | { kind: 'idle'; data: null }
@@ -37,14 +24,8 @@ export type PolledState<T> =
 export type UsePolledFetchResult<T> = PolledState<T> & { refetch: () => Promise<void> };
 
 /**
- * A poll source is either a plain URL (the common case — one GET per cycle) or
- * a {@link Resource} for callers that issue multiple requests per cycle (e.g.
- * one fetch per project root) and merge them into a single T.
- *
- * A bare fetcher function is deliberately NOT accepted: without a key there is
- * no identity to cache under, and the un-keyed form is what forced call sites
- * to hand-roll "is this response for what I'm showing?" guards. Wrap one with
- * {@link resource} and give it a key derived from its inputs.
+ * A URL or a keyed Resource. A bare fetcher is rejected: no key, nothing to cache under. See
+ * docs/client-rationale.md#polled-source.
  */
 export type PolledSource<T> = string | Resource<T>;
 
@@ -83,35 +64,9 @@ function viewOf<T>(entry: ResourceEntry<T>): PolledState<T> {
 }
 
 /**
- * Read a server resource into the shared keyed cache (`atoms/resources.ts`).
- *
- * This hook owns no data. It subscribes to one cache key, asks for a refresh
- * when appropriate, and hands back the cache variant as a {@link PolledState}.
- * Consequences worth knowing:
- *
- *   - Remount on a cached key renders instantly and revalidates behind the
- *     scenes. `loading` is the variant only when there is genuinely nothing
- *     to show, so navigating back to a page no longer flashes a spinner.
- *   - A failed refresh never takes data away: it is `stale`, which still
- *     carries `data`. Render the page from `data` and the failure as a notice.
- *   - Two components on the same key share one request and one entry.
- *   - Stale-response races are structurally impossible. The old hook needed
- *     abort-on-source-change so the SLOWEST response could not win; a keyed
- *     cache is stronger — a late response lands on its own key, which whoever
- *     switched away is no longer reading. In-flight requests are therefore
- *     allowed to finish and populate the cache (that is prefetch).
- *   - The effect keys on the resource KEY, not on the source object's
- *     identity, so an unstable inline fetcher no longer refetches every render.
- *
- * Retained from the pre-cache hook: pause/resume on `visibilitychange` for a
- * backgrounded PWA, and an immediate refresh on WS reconnect once the init
- * snapshot has landed.
- *
- * NOT tanstack-query — one Map in a jotai atom plus setInterval.
- *
- * @param source - fetch URL, a keyed {@link Resource}, or null to disable
- * @param intervalMs - polling interval in ms. 0 fetches on key change only.
- * @param enabled - when false, no fetch and no interval (default true)
+ * Read a server resource into the keyed cache (atoms/resources.ts); owns no data. Remount renders
+ * cached data and revalidates; a failed refresh is `stale`, never a blank page. `intervalMs` 0
+ * fetches on key change only. See docs/client-rationale.md#polled-fetch.
  */
 export function usePolledFetch<T>(
   source: PolledSource<T> | null,

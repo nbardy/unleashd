@@ -67,29 +67,9 @@ export function normalizeLatexDelimiters(markdown: string): string {
     .join('\n');
 }
 
-// =============================================================================
-// Code Content Classification
-//
-// react-markdown v10 calls the custom `code` component for BOTH fenced code
-// blocks (`<pre><code>`) and inline code (`<code>`). There is no `inline` prop
-// in v10 — the only signals are:
-//   - className: present when a language tag is specified (e.g. ```python)
-//   - text content: fenced blocks have newlines, inline typically doesn't
-//
-// We classify code content into a discriminated union (CodeContent) and dispatch
-// to one handler per variant. This avoids the old fallthrough chain where a
-// rejected parsePathBlock silently fell to getPreviewType, which treated entire
-// multi-line blocks as a single image path (the "many lines as one line" bug).
-//
-// CONSTRAINT: parsePathBlock used to be all-or-nothing — if ANY line (like "...")
-// wasn't a valid file path, the entire block was rejected. classifyPathBlock
-// replaces it with per-line classification: valid paths → FilePreview with hover,
-// non-path lines → plain text. The block qualifies as a path_block if at least
-// one line is a valid file path.
-//
-// CONSTRAINT: getPreviewType only handles single-line text (rejects newlines).
-// Multi-line text MUST go through classifyPathBlock, never getPreviewType.
-// =============================================================================
+// react-markdown v10 calls `code` for fenced and inline code alike; classify into CodeContent and
+// dispatch. Multi-line text goes through classifyPathBlock (per line), never getPreviewType. See
+// docs/client-rationale.md#code-classification.
 
 // -- Types: what a single line within a multi-line code block can be -----------
 type PathBlockEntry =
