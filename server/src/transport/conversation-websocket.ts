@@ -10,10 +10,12 @@ import type {
 } from '@unleashd/shared';
 import {
   CHAT_KIND,
+  PROTOCOL_MISMATCH_CLOSE_CODE,
   PROTOCOL_VERSION,
   buddyKind,
   encodeRows,
   kindBuddyContext,
+  requestedProtocol,
   safeParseClientMessage,
 } from '@unleashd/shared';
 import { WebSocket, type WebSocketServer } from 'ws';
@@ -107,8 +109,15 @@ export function registerConversationWebSocket(
     registerConversation: (conversation) => dependencies.registry.set(conversation),
     createConversationLink: dependencies.createConversationLink,
   });
-  webSocketServer.on('connection', (socket) => {
+  webSocketServer.on('connection', (socket, request) => {
     const logger = dependencies.logger ?? console;
+    // A client of another protocol cannot read these frames. Closing with a
+    // typed code makes the tab show it (a pre-v3 tab reads it as a lost
+    // connection) instead of keeping a list that silently stops updating.
+    if (requestedProtocol(request.url ?? '/') !== PROTOCOL_VERSION) {
+      socket.close(PROTOCOL_MISMATCH_CLOSE_CODE, `protocol ${PROTOCOL_VERSION}`);
+      return;
+    }
     void sendInitialState(socket, dependencies).catch((error) =>
       logger.error('Initial state failed', error)
     );

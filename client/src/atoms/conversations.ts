@@ -70,10 +70,13 @@ export type Socket =
  * What the server told us. `skew`: it speaks another protocol version (a dev
  * reload in progress: Vite serves this client before the backend restarts);
  * the rows stay and the socket reconnects until a v3 `hello` arrives.
+ * `outdated`: the server is NEWER and closed the socket; this tab runs stale
+ * code, so it stops reconnecting and asks for a reload (UpdateBanner).
  */
 export type ServerState =
   | { tag: 'unknown' }
   | { tag: 'skew'; serverVersion: number }
+  | { tag: 'outdated'; serverVersion: number }
   | { tag: 'v3'; defaultCwd: string; loadComplete: boolean };
 
 export interface Connection {
@@ -95,6 +98,7 @@ export function defaultCwdOf(server: ServerState): string {
       return server.defaultCwd;
     case 'unknown':
     case 'skew':
+    case 'outdated':
       return '';
   }
 }
@@ -106,6 +110,7 @@ export function loadCompleteOf(server: ServerState): boolean {
       return server.loadComplete;
     case 'unknown':
     case 'skew':
+    case 'outdated':
       return false;
   }
 }

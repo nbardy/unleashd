@@ -565,6 +565,41 @@ export const SeenMessageIndexSchema = z.record(z.string(), z.number());
 
 export const PROTOCOL_VERSION = 3;
 
+// Pattern: sum-types (docs/patterns.md#sum-types)
+// A tab left open across a protocol swap kept its list and silently stopped
+// updating: the server's frames failed the old client's schema one by one.
+// Every socket therefore names its protocol in the upgrade URL, and the
+// server closes a socket that names another one (or none: a client built
+// before v3 sends no version) with PROTOCOL_MISMATCH_CLOSE_CODE and
+// `protocol <server version>` as the reason. Guards:
+// server/test/websocket-lifecycle.test.ts, client/test/protocol-skew.test.ts.
+export const PROTOCOL_MISMATCH_CLOSE_CODE = 4426;
+export const WS_PATH = `/ws?protocol=${PROTOCOL_VERSION}`;
+
+/** The protocol a socket's upgrade URL names; null when it names none. */
+export function requestedProtocol(requestUrl: string): number | null {
+  const named = new URL(requestUrl, 'http://upgrade').searchParams.get('protocol');
+  return named === null ? null : Number(named);
+}
+
+/**
+ * Why a socket closed, as this client must act on it. `outdated`: the server
+ * is newer, so only loading its client helps. `skew`: the server is older (a
+ * dev reload in flight) and reconnecting heals it. `dropped`: anything else.
+ */
+export type SocketClose =
+  | { t: 'dropped' }
+  | { t: 'skew'; serverVersion: number }
+  | { t: 'outdated'; serverVersion: number };
+
+export function classifySocketClose(code: number, reason: string): SocketClose {
+  if (code !== PROTOCOL_MISMATCH_CLOSE_CODE) return { t: 'dropped' };
+  const serverVersion = Number(reason.replace('protocol ', ''));
+  return serverVersion > PROTOCOL_VERSION
+    ? { t: 'outdated', serverVersion }
+    : { t: 'skew', serverVersion };
+}
+
 const HelloMessageSchema = EncodedRowsSchema.extend({
   type: z.literal('hello'),
   protocol: z.object({ version: z.literal(PROTOCOL_VERSION) }),

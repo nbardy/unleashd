@@ -7,6 +7,7 @@ import {
   EncodedRowsSchema,
   MessagePageSchema,
   type ServerMessage,
+  WS_PATH,
   buddyKind,
   createDefaultConversationConfig,
   decodeRows,
@@ -105,7 +106,7 @@ function socketHarness(conversations: ConversationRuntime[]) {
     }
   }
   const socket = new Socket();
-  sockets.emit('connection', socket);
+  sockets.emit('connection', socket, { url: WS_PATH });
   return { socket, socketBroadcasts };
 }
 

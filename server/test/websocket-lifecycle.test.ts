@@ -5,6 +5,7 @@ import http from 'node:http';
 import net, { type AddressInfo } from 'node:net';
 import path from 'node:path';
 import test from 'node:test';
+import { PROTOCOL_MISMATCH_CLOSE_CODE, PROTOCOL_VERSION, WS_PATH } from '@unleashd/shared';
 import { WebSocket, WebSocketServer } from 'ws';
 import { createShutdownController } from '../src/lifecycle/shutdown';
 import { registerConversationWebSocket } from '../src/transport/conversation-websocket';
@@ -108,7 +109,7 @@ test(
       logger: { log: () => undefined, error: () => undefined },
     } as never);
     const { server, port } = await listen(wss);
-    const client = new WebSocket(`ws://127.0.0.1:${port}`);
+    const client = new WebSocket(`ws://127.0.0.1:${port}${WS_PATH}`);
     try {
       await nextMessageOfType(client, 'hello');
 
@@ -143,6 +144,26 @@ test(
     }
   }
 );
+
+// Regression (lean-scope final review, "Open"): a tab built before protocol v3
+// kept its list after the swap and silently stopped updating, because every v3
+// frame failed its schema. Its socket names no protocol (it connects to plain
+// `/ws`, see f6cc2ca App.tsx), so the server must close it with the typed code;
+// that tab then shows "disconnected" instead of a list that looks live.
+test('a socket from a pre-v3 client is closed with the protocol mismatch code', async () => {
+  const wss = new WebSocketServer({ noServer: true });
+  registerConversationWebSocket(wss, {} as never);
+  const { server, port } = await listen(wss);
+  const oldClient = new WebSocket(`ws://127.0.0.1:${port}/ws`);
+  try {
+    const [code, reason] = (await once(oldClient, 'close')) as [number, Buffer];
+    assert.equal(code, PROTOCOL_MISMATCH_CLOSE_CODE);
+    assert.equal(reason.toString(), `protocol ${PROTOCOL_VERSION}`);
+  } finally {
+    wss.close();
+    server.close();
+  }
+});
 
 test(
   'liveness terminates a half-open peer and keeps a responsive one',

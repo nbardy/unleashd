@@ -35,6 +35,7 @@ import { execFile } from 'node:child_process';
 import * as fs from 'node:fs';
 import * as path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { WS_PATH } from '@unleashd/shared';
 import { openSession, resolveAuthToken, sleep } from './lib/headless-chrome.mjs';
 import { compareRuns } from './lib/screenshot-compare.mjs';
 
@@ -213,7 +214,7 @@ const SETTLED_MS = 60 * 60 * 1000;
  * The v2 `init` shape this used to read made every run fail with "No init".
  */
 async function discoverConversation(baseUrl, token) {
-  const wsUrl = `${baseUrl.replace(/^http/, 'ws')}/ws`;
+  const wsUrl = `${baseUrl.replace(/^http/, 'ws')}${WS_PATH}`;
   const socket = new WebSocket(wsUrl, {
     headers: token ? { Authorization: `Bearer ${token}` } : {},
   });

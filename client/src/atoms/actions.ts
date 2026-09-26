@@ -301,6 +301,17 @@ export function noteProtocolMismatch(serverVersion: number): void {
   });
 }
 
+/**
+ * The server closed the socket because it speaks a newer protocol: this tab
+ * runs code from before the swap. Keep the rows; UpdateBanner asks for a reload.
+ */
+export function noteClientOutdated(serverVersion: number): void {
+  jotaiStore.set(connectionAtom, {
+    socket: { tag: 'closed' },
+    server: { tag: 'outdated', serverVersion },
+  });
+}
+
 // =============================================================================
 // Public actions — called by components
 // =============================================================================

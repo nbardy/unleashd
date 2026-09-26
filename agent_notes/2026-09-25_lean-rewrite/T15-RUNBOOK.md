@@ -181,6 +181,11 @@ pnpm errors:list --limit=30          # stall monitor: look for 'event-loop' entr
 Then in the UI: sidebar conversation list complete, #channels shows posts and threads, DMs open,
 a Buddy's Memory tab shows notes, one Buddy DM round-trip gets a reply.
 
+- [ ] **Reload every open app tab** (desktop and phone). A tab loaded before the swap runs v2 client code:
+  the v3 server closes its socket (code 4426), and v2 code cannot reload itself, so it only shows
+  "disconnected" and keeps a list that no longer updates. Tabs loaded after this build show the
+  "The app was updated — reload" banner instead.
+
 ## ROLLBACK
 
 v33 and `conversation-config` are never written after step 1, so rollback is code only.
