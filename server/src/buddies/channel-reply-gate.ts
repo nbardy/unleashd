@@ -95,8 +95,12 @@ function gateRequest(
       };
     // Cursor has no flag to drop tools or persistence. `--mode ask` makes it
     // read-only and, without `--force`, nothing needing approval executes; any
-    // tool.use still ends the gate as unparseable. Its transcript is deleted
-    // after exit (discardGateSession), and effort lives in the model id.
+    // tool.use still ends the gate as unparseable. The cwd is a fresh temp
+    // dir, so Cursor refuses to start unless `--trust` is passed — a real
+    // seat turn runs in a directory the owner already trusted, which is why
+    // the same harness answers a mention and then fails this gate. Its
+    // transcript is deleted after exit (discardGateSession), and effort
+    // lives in the model id.
     case 'cursor':
       return {
         mode: 'conversation',
@@ -106,7 +110,7 @@ function gateRequest(
         yolo: false,
         detached: true,
         harness,
-        extraArgs: ['--mode', 'ask'],
+        extraArgs: ['--mode', 'ask', '--trust'],
       };
   }
 }
