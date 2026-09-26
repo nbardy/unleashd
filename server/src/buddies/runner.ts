@@ -2,7 +2,7 @@ import type { Claim, Outcome, Post, Run, RunInput } from '@unleashd/buddies-core
 import type { BuddyContext } from '@unleashd/shared';
 import type { Briefings } from './briefing';
 import { type BuddiesCore, OWNER, buddyActor, coreError } from './core';
-import type { BuddyEvents } from './events';
+import { type BuddyEvents, announcePost } from './events';
 import type { Grants } from './grants';
 
 /**
@@ -196,8 +196,7 @@ export function createRunner(options: {
           evidence: [],
           key: `run:${run.id}:answer`,
         });
-        const channel = await core.openChannel(OWNER, { kind: 'id', id: answer.channelId });
-        events.emit({ kind: 'posted', post: answer, channel });
+        await announcePost(options, OWNER, answer);
       },
     };
   }

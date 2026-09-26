@@ -6,8 +6,22 @@ import type { McpServerSpec } from '@nbardy/agent-cli';
 import type { Actor, ChannelRef, DocRef, DocScope } from '@unleashd/buddies-core';
 import { z } from 'zod';
 import { requireCanonicalPostMedia } from './channel-media';
-import { type BuddiesCore, OWNER, buddyActor, coreError, settingOf } from './core';
-import type { BuddyEvents } from './events';
+import {
+  type BuddiesCore,
+  BuddyChangesSchema,
+  BuddyCreateFieldsSchema,
+  OWNER,
+  ScheduleFieldsSchema,
+  TaskChangesSchema,
+  buddyActor,
+  buddyChanges,
+  coreError,
+  evidence,
+  key,
+  managerRef,
+  taskDetail,
+} from './core';
+import { type BuddyEvents, announcePost } from './events';
 import type { BuddyGrant, Grants, Role, TurnGrant } from './grants';
 
 /**
@@ -46,8 +60,6 @@ const buddyTool = <S extends z.AnyZodObject>(t: ToolSpec<BuddyGrant, S>) =>
 const teamTool = <S extends z.AnyZodObject>(t: ToolSpec<TurnGrant, S>) =>
   t as unknown as Tool<TurnGrant>;
 
-const key = z.string().min(1).describe('Idempotency key: the same key replays the first result');
-const evidence = z.array(z.string()).max(32).default([]);
 const actorOf = (id: string): Actor => (id === 'owner' ? OWNER : buddyActor(id));
 
 const channelRef = z.union([
@@ -143,19 +155,7 @@ const taskWriteSchema = () =>
         kind: z.literal('update'),
         taskId: z.string().min(1),
         baseRevision: z.number().int().positive(),
-        changes: z.object({
-          title: z.string().optional(),
-          doneCriteria: z.string().optional(),
-          status: z
-            .enum(['open', 'in_progress', 'blocked', 'review', 'done', 'cancelled'])
-            .optional(),
-          nextAction: z.string().optional(),
-          blockedReason: z.string().optional(),
-          evidence: z.array(z.string()).optional(),
-          paused: z.boolean().optional(),
-          position: z.number().int().optional(),
-          ownerId: z.string().optional(),
-        }),
+        changes: TaskChangesSchema,
       }),
       z.object({
         kind: z.literal('comment'),
@@ -206,24 +206,9 @@ async function writeTask(
           key: input.key,
         }
       );
-      const channel = await deps.core.openChannel(grant.author, {
-        kind: 'id',
-        id: post.channelId,
-      });
-      deps.events.emit({ kind: 'posted', post, channel });
-      return post;
+      return (await announcePost(deps, grant.author, post)).post;
     }
   }
-}
-
-async function taskDetail(deps: ToolDeps, grant: TurnGrant, taskId: string) {
-  const task = await deps.core.getTask(taskId);
-  const channel = await deps.core.openChannel(grant.author, { kind: 'task', taskId: task.id });
-  const [children, comments] = await Promise.all([
-    deps.core.listTasks({ kind: 'children', parentId: task.id }),
-    deps.core.listPosts(grant.author, { kind: 'channel', channelId: channel.id }, null, 20),
-  ]);
-  return { task, children, comments: comments.posts };
 }
 
 // Pattern: table-driven (docs/patterns.md#table-driven)
@@ -271,10 +256,8 @@ const BUDDY_TOOLS = {
       key,
     }),
     async handler(deps, grant, input) {
-      const post = await deps.core.answer(grant.author, input);
-      const channel = await deps.core.openChannel(grant.author, { kind: 'id', id: post.channelId });
-      deps.events.emit({ kind: 'posted', post, channel });
-      return post;
+      return (await announcePost(deps, grant.author, await deps.core.answer(grant.author, input)))
+        .post;
     },
   }),
   inbox: buddyTool({
@@ -339,7 +322,7 @@ const BUDDY_TOOLS = {
         case 'workspace':
           return deps.core.listTasks({ kind: 'workspace', workspaceId: grant.workspaceId });
         case 'task':
-          return taskDetail(deps, grant, input.view.taskId);
+          return taskDetail(deps.core, grant.author, input.view.taskId, 20);
       }
     },
   }),
@@ -395,16 +378,10 @@ const BUDDY_TOOLS = {
     schema: z.object({
       action: z.discriminatedUnion('kind', [
         z.object({ kind: z.literal('list'), buddyId: z.string().optional() }),
-        z.object({
+        ScheduleFieldsSchema.extend({
           kind: z.literal('put'),
           id: z.string().optional().describe('Absent: create'),
           buddyId: z.string().optional(),
-          taskId: z.string().optional(),
-          name: z.string().min(1).max(120),
-          cron: z.string().min(1),
-          timezone: z.string().min(1),
-          prompt: z.string().min(1).max(16_000),
-          enabled: z.boolean(),
           key,
         }),
       ]),
@@ -448,51 +425,26 @@ const TEAM_TOOLS = {
     writes: true,
     schema: z.object({
       change: z.discriminatedUnion('kind', [
-        z.object({
+        BuddyCreateFieldsSchema.extend({
           kind: z.literal('create'),
-          workspaceId: z.string().min(1),
-          slug: z.string().regex(/^[a-z0-9-]+$/),
-          name: z.string().min(1),
-          role: z.string().min(1),
-          managerId: z.string().optional(),
-          provider: z.string().optional(),
-          model: z.string().optional(),
-          reasoningEffort: z.string().optional(),
-          backgroundEnabled: z
-            .boolean()
-            .describe('Whether requests and schedules may start its turns (off: they wait)'),
           soul: z
             .string()
             .max(10_000)
             .optional()
             .describe("The new buddy's soul: its identity and role"),
         }),
-        z.object({
-          kind: z.literal('update'),
-          buddyId: z.string().min(1),
-          name: z.string().optional(),
-          role: z.string().optional(),
-          managerId: z.string().nullable().optional().describe('null: reports to nobody'),
-          provider: z.string().nullable().optional().describe('null: back to the default'),
-          model: z.string().nullable().optional().describe('null: back to the default'),
-          reasoningEffort: z.string().nullable().optional().describe('null: back to the default'),
-          backgroundEnabled: z.boolean().optional(),
-          maxActiveRuns: z.number().int().positive().optional(),
-          status: z.enum(['active', 'archived']).optional(),
-        }),
+        BuddyChangesSchema.extend({ kind: z.literal('update'), buddyId: z.string().min(1) }),
       ]),
       key,
     }),
     async handler(deps, grant, input) {
       const change = input.change;
-      const manager = (id: string | null) =>
-        id === null ? ({ kind: 'nobody' } as const) : ({ kind: 'buddy', id } as const);
       switch (change.kind) {
         case 'create': {
-          const { soul, ...profile } = change;
+          const { soul, kind: _kind, managerId, ...profile } = change;
           const buddy = await deps.core.createBuddy(grant.principal, {
             ...profile,
-            manager: manager(change.managerId ?? null),
+            manager: managerRef(managerId ?? null),
             key: input.key,
           });
           if (soul)
@@ -506,24 +458,10 @@ const TEAM_TOOLS = {
           return buddy;
         }
         case 'update': {
-          const {
-            kind: _kind,
-            buddyId,
-            managerId,
-            provider,
-            model,
-            reasoningEffort,
-            ...changes
-          } = change;
+          const { kind: _kind, buddyId, ...changes } = change;
           return deps.core.updateBuddy(grant.principal, {
             buddyId,
-            changes: {
-              ...changes,
-              provider: settingOf(provider),
-              model: settingOf(model),
-              reasoningEffort: settingOf(reasoningEffort),
-              manager: managerId === undefined ? undefined : manager(managerId),
-            },
+            changes: buddyChanges(changes),
             key: input.key,
           });
         }
@@ -552,7 +490,7 @@ const BUILDER_TOOLS = {
         case 'workspace':
           return deps.core.listTasks({ kind: 'workspace', workspaceId: input.view.workspaceId });
         case 'task':
-          return taskDetail(deps, grant, input.view.taskId);
+          return taskDetail(deps.core, grant.author, input.view.taskId, 20);
       }
     },
   }),

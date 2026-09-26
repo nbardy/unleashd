@@ -29,14 +29,22 @@ import {
 import { type Channels, mentionedBuddyIds } from './channels';
 import {
   type BuddiesCore,
+  BuddyChangesSchema,
+  BuddyCreateFieldsSchema,
   CoreError,
   OWNER,
+  ScheduleFieldsSchema,
+  TaskChangesSchema,
   buddyActor,
+  buddyChanges,
   coreError,
+  evidence,
   httpStatus,
-  settingOf,
+  key,
+  managerRef,
+  taskDetail,
 } from './core';
-import type { BuddyEvents } from './events';
+import { type BuddyEvents, announcePost } from './events';
 import type { Runner } from './runner';
 
 /**
@@ -55,41 +63,9 @@ export interface BuddyRouteDeps {
   createBuilderConversation(): Promise<{ conversationId: string }>;
 }
 
-const key = z.string().trim().min(1).max(200);
-const evidence = z.array(z.string().min(1).max(4000)).max(32).default([]);
 const docKind = z.enum(['soul', 'working', 'long_term', 'shared']);
-const manager = (id: string | null) =>
-  id === null ? ({ kind: 'nobody' } as const) : ({ kind: 'buddy', id } as const);
-
-const BuddyChangesSchema = z
-  .object({
-    name: z.string().min(1).optional(),
-    role: z.string().min(1).optional(),
-    managerId: z.string().min(1).nullable().optional(),
-    // null clears the field back to the server default (Settings' "Default" choice).
-    provider: z.string().min(1).nullable().optional(),
-    model: z.string().min(1).nullable().optional(),
-    reasoningEffort: z.string().min(1).nullable().optional(),
-    backgroundEnabled: z.boolean().optional(),
-    maxActiveRuns: z.number().int().positive().optional(),
-    status: z.enum(['active', 'archived']).optional(),
-    key,
-  })
-  .strict();
-const BuddyCreateSchema = z
-  .object({
-    workspaceId: z.string().min(1),
-    slug: z.string().regex(/^[a-z0-9-]+$/),
-    name: z.string().min(1),
-    role: z.string().min(1),
-    managerId: z.string().min(1).nullable().default(null),
-    provider: z.string().min(1).optional(),
-    model: z.string().min(1).optional(),
-    reasoningEffort: z.string().min(1).optional(),
-    backgroundEnabled: z.boolean(),
-    key,
-  })
-  .strict();
+const BuddyPatchSchema = BuddyChangesSchema.extend({ key }).strict();
+const BuddyCreateSchema = BuddyCreateFieldsSchema.extend({ key }).strict();
 const TaskCreateSchema = z
   .object({
     ownerId: z.string().min(1),
@@ -100,25 +76,7 @@ const TaskCreateSchema = z
   })
   .strict();
 const TaskUpdateSchema = z
-  .object({
-    baseRevision: z.number().int().positive(),
-    changes: z
-      .object({
-        title: z.string().optional(),
-        doneCriteria: z.string().optional(),
-        status: z
-          .enum(['open', 'in_progress', 'blocked', 'review', 'done', 'cancelled'])
-          .optional(),
-        nextAction: z.string().optional(),
-        blockedReason: z.string().optional(),
-        evidence: z.array(z.string()).optional(),
-        paused: z.boolean().optional(),
-        position: z.number().int().optional(),
-        ownerId: z.string().optional(),
-      })
-      .strict(),
-    key,
-  })
+  .object({ baseRevision: z.number().int().positive(), changes: TaskChangesSchema.strict(), key })
   .strict();
 const PostBodySchema = z
   .object({
@@ -146,17 +104,7 @@ const DocWriteSchema = z
     key,
   })
   .strict();
-const ScheduleSchema = z
-  .object({
-    taskId: z.string().min(1).optional(),
-    name: z.string().min(1).max(120),
-    cron: z.string().min(1),
-    timezone: z.string().min(1),
-    prompt: z.string().min(1).max(16_000),
-    enabled: z.boolean(),
-    key,
-  })
-  .strict();
+const ScheduleSchema = ScheduleFieldsSchema.extend({ key }).strict();
 const WorkspaceSchema = z
   .object({
     name: z.string().trim().min(1).max(120).optional(),
@@ -280,9 +228,7 @@ export function registerBuddyRoutes(app: Express, deps: BuddyRouteDeps): void {
   };
   const posted = async <T extends Post>(post: Promise<T>) => {
     const written = await write(post);
-    const channel = await core.openChannel(OWNER, { kind: 'id', id: written.channelId });
-    events.emit({ kind: 'posted', post: written, channel });
-    return { written, channel };
+    return announcePost(deps, OWNER, written);
   };
   const ownerPost = async (raw: unknown, ref: ChannelRef) => {
     const { asBuddyId, ...input } = PostBodySchema.parse(raw);
@@ -293,7 +239,7 @@ export function registerBuddyRoutes(app: Express, deps: BuddyRouteDeps): void {
       uploadsRoot: deps.uploadsRoot(),
       channelId: target.id,
     });
-    const { written: post, channel } = await posted(
+    const { post, channel } = await posted(
       core.post(author, { kind: 'id', id: target.id }, { ...input, body })
     );
     // Only the owner's own @mentions start turns, and only in a public channel's thread seats.
@@ -351,7 +297,7 @@ export function registerBuddyRoutes(app: Express, deps: BuddyRouteDeps): void {
       '/api/buddies',
       async (req) => {
         const { managerId, ...input } = BuddyCreateSchema.parse(req.body);
-        return write(core.createBuddy(OWNER, { ...input, manager: manager(managerId) }));
+        return write(core.createBuddy(OWNER, { ...input, manager: managerRef(managerId ?? null) }));
       },
       201,
     ],
@@ -409,16 +355,10 @@ export function registerBuddyRoutes(app: Express, deps: BuddyRouteDeps): void {
     [
       'get',
       '/api/buddies/tasks/:taskId',
-      async (req) => {
-        const task = await core.getTask(p(req, 'taskId'));
-        const channel = await core.openChannel(OWNER, { kind: 'task', taskId: task.id });
-        const [children, comments, runs] = await Promise.all([
-          core.listTasks({ kind: 'children', parentId: task.id }),
-          core.listPosts(OWNER, { kind: 'channel', channelId: channel.id }, null, 100),
-          core.listRuns({ kind: 'task', taskId: task.id }, 20),
-        ]);
-        return { task, channel, children, comments: comments.posts, runs };
-      },
+      async (req) => ({
+        ...(await taskDetail(core, OWNER, p(req, 'taskId'), 100)),
+        runs: await core.listRuns({ kind: 'task', taskId: p(req, 'taskId') }, 20),
+      }),
     ],
     // The channel browser's Task filter: one Task's posts across every channel (T22).
     [
@@ -574,8 +514,7 @@ export function registerBuddyRoutes(app: Express, deps: BuddyRouteDeps): void {
       '/api/buddies/posts/:postId/answer',
       async (req) => {
         const input = AnswerSchema.parse(req.body);
-        return (await posted(core.answer(OWNER, { requestId: p(req, 'postId'), ...input })))
-          .written;
+        return (await posted(core.answer(OWNER, { requestId: p(req, 'postId'), ...input }))).post;
       },
       201,
     ],
@@ -615,25 +554,8 @@ export function registerBuddyRoutes(app: Express, deps: BuddyRouteDeps): void {
       'patch',
       '/api/buddies/:buddyId',
       (req) => {
-        const {
-          key: changeKey,
-          managerId,
-          provider,
-          model,
-          reasoningEffort,
-          ...changes
-        } = BuddyChangesSchema.parse(req.body);
-        const managerChange = managerId === undefined ? undefined : manager(managerId);
-        const profile = {
-          provider: settingOf(provider),
-          model: settingOf(model),
-          reasoningEffort: settingOf(reasoningEffort),
-        };
-        return archive(
-          p(req, 'buddyId'),
-          { ...changes, ...profile, manager: managerChange },
-          changeKey
-        );
+        const { key: changeKey, ...changes } = BuddyPatchSchema.parse(req.body);
+        return archive(p(req, 'buddyId'), buddyChanges(changes), changeKey);
       },
     ],
     [
