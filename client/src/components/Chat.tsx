@@ -2,12 +2,12 @@
 // highlight.js + katex stylesheets load lazily with their plugins —
 // see utils/lazyMarkdownPlugins.ts. Do not re-add a static CSS import here.
 import type { BuddyContext, ConversationRow } from '@unleashd/shared';
+import type { QueuedMessage } from '@unleashd/shared';
 import { useAtomValue } from 'jotai';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useDropzone } from 'react-dropzone';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { clearQueue, endConversation, interruptAndSend, queueMessage } from '../atoms/actions';
-import type { QueuedMessage } from '../atoms/actions';
 import { createConversation, setConversationConfig } from '../atoms/commands';
 import {
   childRowsFamily,
@@ -40,9 +40,15 @@ import { copyText } from '../utils/clipboard';
 import { buildThreadTranscript } from '../utils/conversation-transcript';
 import { buildUnifiedSubAgents } from '../utils/subAgents';
 import { formatTimeAgo } from '../utils/time';
+import {
+  shouldPresentTurnAttempt,
+  shouldShowTypingIndicator,
+  turnDiagnosticsFromAttempt,
+} from '../utils/turn-diagnostics';
 import { ComposerAttachments, UploadErrorNotice } from '../views/composer/ComposerAttachments';
 import { PromptPalette } from '../views/composer/PromptPalette';
 import { SendControls } from '../views/composer/SendControls';
+import { ConfigOverlay } from '../views/config/ConfigOverlay';
 import { QueuedMessages } from '../views/conversation/QueuedMessages';
 import { ResumeSource } from '../views/conversation/ResumeSource';
 import { SubAgentPanel } from '../views/conversation/SubAgentPanel';
@@ -53,12 +59,6 @@ import { VirtualizedMessageList } from './VirtualizedMessageList';
 import { DmChannelsNotice } from './buddies/DmChannelsNotice';
 import { HarnessPicker } from './buddies/HarnessPicker';
 import { lastOwnerText } from './buddies/channel-dm';
-import {
-  shouldPresentTurnAttempt,
-  shouldShowTypingIndicator,
-  turnDiagnosticsFromAttempt,
-} from './turn-diagnostics';
-import { ConfigOverlay } from '../views/config/ConfigOverlay';
 import './Chat.css';
 import { useTimeTick } from '../hooks/useTimeTick';
 import { rowBuddy } from '../utils/conversation-row';

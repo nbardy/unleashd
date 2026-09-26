@@ -3,17 +3,13 @@ import { createDefaultConversationConfig } from '@unleashd/shared';
 import { useAtom, useAtomValue } from 'jotai';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useLocation, useMatch, useNavigate } from 'react-router-dom';
-import {
-  createConversation,
-  readConversation,
-  readConversationDetail,
-  setConversationDone,
-} from '../atoms/actions';
+import { readConversation, readConversationDetail, setConversationDone } from '../atoms/actions';
 import {
   type BuddySidebarItemData,
   buddySidebarAtom,
   buddySidebarOverviewAtom,
 } from '../atoms/buddy-sidebar';
+import { createConversation } from '../atoms/commands';
 import { commandsAtom, connectionAtom, listField, pendingCreatesOf } from '../atoms/conversations';
 import { prefsAtom, toggleGalleryCollapsed } from '../atoms/ui';
 import { useBuddyOverview } from '../hooks/useBuddyData';

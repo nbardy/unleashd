@@ -10,7 +10,7 @@ import {
   shouldPresentTurnAttempt,
   turnDiagnosticsFromAttempt,
   turnDiagnosticsPollDelay,
-} from '../src/components/turn-diagnostics';
+} from '../src/utils/turn-diagnostics';
 
 register(
   `data:text/javascript,${encodeURIComponent(`
