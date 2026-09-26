@@ -117,8 +117,7 @@ export function Sidebar() {
   const [hasPendingDefault, setHasPendingDefault] = useState(false);
   const [isDirectoryValid, setIsDirectoryValid] = useState(true);
   const { catalog, error: catalogError, retry: retryCatalog } = useProviderCatalog();
-  // Default provider is catalog-derived; fallback 'claude' matches
-  // shared/src/provider-catalog.ts DEFAULT_PROVIDER and shared/src/conversation-config.ts
+  // Default provider is catalog-derived; the 'claude' fallback matches
   // createDefaultConversationConfig(). Catalog is authoritative once loaded.
   const defaultProvider = (catalog?.providers[0]?.id ?? 'claude') as ConversationConfig['provider'];
   const [configDraft, setConfigDraft] = useState<ConversationConfig>(() =>
@@ -152,7 +151,7 @@ export function Sidebar() {
     setDirectory(lastDir);
     setHasPendingDefault(true);
     setModalError(null);
-    // Provider default is catalog-derived; fallback 'claude' matches shared DEFAULT_PROVIDER.
+    // Provider default is catalog-derived.
     setConfigDraft(createDefaultConversationConfig(defaultProvider));
     setShowPicker(true);
   }, [latestWorkingDirectory, lastWorkingDirectory, defaultCwd, defaultProvider]);

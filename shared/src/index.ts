@@ -28,9 +28,7 @@ import {
 export * from './conversation-config.js';
 export * from './conversation.js';
 export * from './buddy.js';
-export * from './buddy-access.js';
 export * from './provider-catalog.js';
-export { stripJsonc } from './utils/jsonc.js';
 
 // =============================================================================
 // Core Data Structures
@@ -156,12 +154,6 @@ export const CODEX_MODEL_INFOS = CODEX_BASE_MODEL_INFOS;
 
 export const CODEX_MODEL_IDS = CODEX_MODEL_INFOS.map((model) => model.id) as readonly CodexModel[];
 const CODEX_MODEL_ID_SET = new Set<string>(CODEX_MODEL_IDS);
-const DEFAULT_CODEX_MODELS = CODEX_MODEL_INFOS.filter((model) => model.isDefault);
-if (DEFAULT_CODEX_MODELS.length !== 1) {
-  throw new Error(`Expected exactly one default Codex model, found ${DEFAULT_CODEX_MODELS.length}`);
-}
-
-export const DEFAULT_CODEX_MODEL_ID: CodexModel = DEFAULT_CODEX_MODELS[0].id;
 export const CodexModelSchema = z.custom<CodexModel>(
   (value): value is CodexModel => typeof value === 'string' && CODEX_MODEL_ID_SET.has(value),
   {
@@ -181,24 +173,6 @@ export function catalogEntryForProvider(provider: Provider): CatalogProviderEntr
     );
   }
   return entry;
-}
-
-/**
- * Canonical server-side default for provider reasoning flags: the model's
- * `reasoning.defaultEffort` in the catalog. An absent/unknown model uses the
- * provider's default model. Providers without reasoning return undefined.
- * Pattern: one-type-source (docs/patterns.md#one-type-source) — this replaced a
- * hard-coded 'high' for claude/muse that the catalog already declared.
- */
-export function defaultReasoningEffortForProvider(
-  provider: Provider,
-  model?: string
-): string | undefined {
-  const entry = catalogEntryForProvider(provider);
-  const chosen =
-    entry.models.find((candidate) => candidate.id === model) ??
-    entry.models.find((candidate) => candidate.id === entry.defaultModelId);
-  return chosen?.reasoning?.defaultEffort;
 }
 
 export type OpenCodeModel = `${string}/${string}`;
@@ -234,23 +208,6 @@ export function isModelIdValidForProvider(provider: Provider, modelId?: string):
       return CursorModelSchema.safeParse(canonical).success;
     case 'muse':
       return MuseModelSchema.safeParse(canonical).success;
-  }
-}
-
-export function modelValidationHint(provider: Provider): string {
-  switch (provider) {
-    case 'claude':
-      return `one of: ${ClaudeModelSchema.options.map((id) => `'${id}'`).join(', ')}`;
-    case 'codex':
-      return `one of: ${CODEX_MODEL_IDS.map((id) => `'${id}'`).join(', ')}`;
-    case 'gemini':
-      return `one of: ${GeminiModelSchema.options.map((id) => `'${id}'`).join(', ')}`;
-    case 'opencode':
-      return "'provider/model' format (e.g. 'opencode/big-pickle')";
-    case 'cursor':
-      return `one of: ${CURSOR_MODEL_IDS.map((id) => `'${id}'`).join(', ')}`;
-    case 'muse':
-      return `one of: ${MuseModelSchema.options.map((id) => `'${id}'`).join(', ')}`;
   }
 }
 
