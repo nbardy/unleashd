@@ -4,8 +4,14 @@
    summary card with stats grid, worker table, and raw prefix.
    ============================================================================= */
 
-.swarm-convo-prefix {
+.swarm-convo-prefix--panel {
   margin: 8px 24px 0;
+}
+
+/* `card` (mobile thread context): wrap instead of overflowing a phone width. */
+.swarm-convo-prefix--card .swarm-prefix-token,
+.swarm-convo-prefix--card .swarm-prefix-stat-grid {
+  flex-wrap: wrap;
 }
 
 /* ---------- Collapsed token button ---------- */

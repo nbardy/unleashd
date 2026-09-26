@@ -9,8 +9,10 @@ Mobile is a second view tree over the same shared core, not a fork. One `jotaiSt
 ### What mobile may import
 
 ```
-atoms/*, hooks/*, utils/*, shared/*, components/buddies/{api,types,ui-contract,buddies-shaping}.ts
+atoms/*, hooks/*, utils/*, shared/*, views/*, components/buddies/{api,types,ui-contract,buddies-shaping}.ts
 ```
+
+**Shared views (owner decision O1, T20).** Device-agnostic content lives in `client/src/views/<group>/` and both trees render it: `views/conversation/` holds `SubAgentPanel`, `ResumeSource`, `QueuedMessages`, `TurnStatus`. Where the output differs by device the view takes a named variant chosen by its caller (`presentation: 'tree' | 'cards'`, `'icon' | 'card'`, `'list' | 'disclosure'`, `'header' | 'composer'`), never a boolean and never `useDeviceKind`. A view never imports `mobile/*` or a desktop shell component (Sidebar, Gallery, SettingsMenu, ShellDesktop) — guard `client/test/views-boundary.test.ts`. Its CSS sits next to it with component-prefixed classes plus `ui/primitives.css` (`ui-section__*`, `ui-surface`, `ui-badge`, moved there from `mobile-ui.css`).
 
 Never import another `components/*.tsx` or its CSS. Swarm parsers were moved to `utils/swarmConvoParsers.ts` / `utils/swarmAnalyticsParsers.ts` precisely so mobile can reuse logic without pulling desktop view trees. `components/buddies/*` is the one allowed exception — its `buddies-shaping.ts` is pure shaping (no JSX/CSS side-effects) co-located with `api.ts`/`types.ts`/`ui-contract.ts`.
 
@@ -98,7 +100,7 @@ immer were removed in T19. See [client state](client-state.md).
 
 ### Stale link note
 
-`client/src/components/SubAgentPanel.tsx:158` previously linked to `/swarms/project` — dead link matching no `App.tsx` route. Retarget to `/workers/detail` or remove; do not copy the stale path into mobile.
+`client/src/views/conversation/SubAgentPanel.tsx` (then `components/SubAgentPanel.tsx:158`) previously linked to `/swarms/project` — dead link matching no `App.tsx` route. Retarget to `/workers/detail` or remove; do not copy the stale path into mobile.
 
 ---
 

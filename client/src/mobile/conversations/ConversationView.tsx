@@ -1,4 +1,3 @@
-import type { ConversationRow, SubAgent } from '@unleashd/shared';
 import { useAtomValue } from 'jotai';
 import {
   type MouseEventHandler,
@@ -32,7 +31,7 @@ import { useCopyAction } from '../../hooks/useCopyAction';
 import { useProviderCatalog } from '../../hooks/useProviderCatalog';
 import { useSavedPrompts } from '../../hooks/useSavedPrompts';
 import { useTurnDiagnostics } from '../../hooks/useTurnDiagnostics';
-import { MobileSwarmPrefix } from '../../swarm';
+import { SwarmConvoPrefix } from '../../swarm';
 import { mobileConversationRouteState } from '../../utils/conversation-route-state';
 import { rowBuddy } from '../../utils/conversation-row';
 import { type OpenConversation, buildThreadTranscript } from '../../utils/conversation-transcript';
@@ -43,12 +42,13 @@ import {
   shouldShowTypingIndicator,
   turnDiagnosticsFromAttempt,
 } from '../../utils/turn-diagnostics';
+import { QueuedMessages } from '../../views/conversation/QueuedMessages';
+import { ResumeSource } from '../../views/conversation/ResumeSource';
+import { SubAgentPanel } from '../../views/conversation/SubAgentPanel';
 import { ComposerMobile } from '../components/ComposerMobile';
 import { AssistantResponseRow, MessageRow } from '../components/MessageRow';
-import { MobileBadge, MobileSection, MobileSurface } from '../components/MobileUI';
 import { ModelSheetMobile, modelSummary } from '../components/ModelSheetMobile';
 import { PromptPaletteMobile } from '../components/PromptPaletteMobile';
-import { MobileQueueStrip } from './MobileQueueStrip';
 
 /**
  * ConversationView — the one mobile conversation pane.
@@ -116,156 +116,6 @@ function ForkButton({ conversation }: { conversation: OpenConversation }) {
     >
       Fork
     </button>
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Mobile thread-context panels — reuse Chat.tsx data derivation, render with
-// MobileSection/MobileSurface primitives (not desktop VirtualizedMessageList /
-// SubAgentPanel / SwarmConvoPrefix / ResumeThreadWidget).
-// G3: mobile never imports components/* except buddies/, so we import the
-// shared utils directly and render mobile-appropriate UI here.
-// ---------------------------------------------------------------------------
-
-function MobileSubAgentPanel({ subAgents }: { subAgents: SubAgent[] }) {
-  const active = subAgents.filter((a) => a.status === 'running' || a.status === 'pending');
-  const completed = subAgents
-    .filter((a) => a.status === 'completed' || a.status === 'error')
-    .slice(-3);
-  const display = [...active, ...completed];
-  if (display.length === 0) return null;
-  return (
-    <MobileSection title="Sub-agents" meta={`${active.length} running · ${subAgents.length} total`}>
-      <div style={{ display: 'grid', gap: 8 }}>
-        {display.map((agent) => (
-          <MobileSurface
-            key={agent.id}
-            style={{ padding: '10px 12px', display: 'flex', gap: 10, alignItems: 'flex-start' }}
-          >
-            <MobileBadge
-              tone={
-                agent.status === 'running' || agent.status === 'pending'
-                  ? 'active'
-                  : agent.status === 'error'
-                    ? 'neutral'
-                    : 'accent'
-              }
-              style={{ marginTop: 2 }}
-            >
-              {agent.status === 'running' || agent.status === 'pending'
-                ? '●'
-                : agent.status === 'error'
-                  ? '!'
-                  : '✓'}
-            </MobileBadge>
-            <div style={{ minWidth: 0, flex: 1 }}>
-              <div
-                style={{
-                  fontSize: 12,
-                  fontWeight: 600,
-                  lineHeight: 1.3,
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap',
-                }}
-              >
-                {agent.description || agent.id}
-              </div>
-              {agent.currentAction ? (
-                <div
-                  style={{
-                    fontSize: 11,
-                    color: 'var(--text-muted)',
-                    lineHeight: 1.35,
-                    marginTop: 2,
-                    overflow: 'hidden',
-                    textOverflow: 'ellipsis',
-                    whiteSpace: 'nowrap',
-                  }}
-                >
-                  {agent.currentAction}
-                </div>
-              ) : null}
-              <div
-                style={{
-                  fontSize: 10,
-                  color: 'var(--text-muted)',
-                  marginTop: 4,
-                  display: 'flex',
-                  gap: 8,
-                  flexWrap: 'wrap',
-                }}
-              >
-                {agent.toolUses ? <span>{agent.toolUses} tools</span> : null}
-                {agent.tokens ? (
-                  <span>
-                    {agent.tokens >= 1000 ? `${(agent.tokens / 1000).toFixed(1)}k` : agent.tokens}{' '}
-                    tokens
-                  </span>
-                ) : null}
-                {agent.status ? (
-                  <span style={{ textTransform: 'capitalize' }}>{agent.status}</span>
-                ) : null}
-              </div>
-            </div>
-          </MobileSurface>
-        ))}
-      </div>
-    </MobileSection>
-  );
-}
-
-function MobileResumeWidget({
-  sourceConversationId,
-  sourceConversation,
-}: {
-  sourceConversationId: string;
-  sourceConversation: ConversationRow | null;
-}) {
-  const location = useLocation();
-  const displayId = sourceConversation?.id?.substring(0, 8) ?? sourceConversationId.substring(0, 8);
-  const provider = sourceConversation?.provider ?? 'claude';
-  const folder = sourceConversation && shortenHomePath(sourceConversation.cwd);
-  return (
-    <MobileSection title="Resumed from">
-      <Link
-        to={`/chat/${sourceConversationId}`}
-        state={mobileConversationRouteState(location)}
-        style={{ textDecoration: 'none', color: 'inherit' }}
-      >
-        <MobileSurface
-          style={{ padding: '10px 12px', display: 'flex', alignItems: 'center', gap: 10 }}
-        >
-          <span style={{ fontSize: 14, lineHeight: 1 }} aria-hidden="true">
-            ↩
-          </span>
-          <div style={{ minWidth: 0, flex: 1 }}>
-            <div style={{ fontSize: 12, fontWeight: 600 }}>
-              {displayId}{' '}
-              <MobileBadge tone="neutral" style={{ marginLeft: 6, fontSize: 10 }}>
-                {provider}
-              </MobileBadge>
-            </div>
-            {folder ? (
-              <div
-                style={{
-                  fontSize: 11,
-                  color: 'var(--text-muted)',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap',
-                }}
-              >
-                {folder}
-              </div>
-            ) : null}
-          </div>
-          <span style={{ fontSize: 12, color: 'var(--text-muted)' }} aria-hidden="true">
-            Open ›
-          </span>
-        </MobileSurface>
-      </Link>
-    </MobileSection>
   );
 }
 
@@ -650,24 +500,22 @@ export function ConversationView({
         />
       )}
 
-      {/* Thread-context strip — mirrors Chat.tsx: SubAgentPanel + ResumeThreadWidget + SwarmConvoPrefix,
-          rendered with MobileSection/MobileSurface primitives and shared data derivation. */}
+      {/* Thread-context strip: the same views Chat.tsx renders, in their card presentations. */}
       {(hasThreadContext || showSwarmPrefix) && (
-        <div
-          className="mobile-chat__thread-context"
-          style={{ padding: '10px 12px 0', display: 'grid', gap: 10 }}
-        >
+        <div className="mobile-chat__thread-context">
           {unifiedSubAgents.length > 0 ? (
-            <MobileSubAgentPanel subAgents={unifiedSubAgents} />
+            <SubAgentPanel presentation="cards" subAgents={unifiedSubAgents} />
           ) : null}
           {conversation.resumedFrom ? (
-            <MobileResumeWidget
+            <ResumeSource
+              presentation="card"
               sourceConversationId={conversation.resumedFrom}
               sourceConversation={resumedFromConversation ?? null}
             />
           ) : null}
           {showSwarmPrefix ? (
-            <MobileSwarmPrefix
+            <SwarmConvoPrefix
+              presentation="card"
               prefix={visibleSwarmDebugPrefix!}
               swarmId={conversation.kind.t === 'worker' ? conversation.kind.swarmId : null}
             />
@@ -726,7 +574,7 @@ export function ConversationView({
         )}
       </div>
 
-      <MobileQueueStrip conversationId={conversation.id} queue={queue} />
+      <QueuedMessages presentation="disclosure" conversationId={conversation.id} queue={queue} />
 
       <ComposerMobile
         conversationId={conversation.id}

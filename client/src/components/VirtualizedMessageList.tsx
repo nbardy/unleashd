@@ -846,7 +846,11 @@ export function VirtualizedMessageList({
                   }}
                 >
                   <div style={{ paddingBottom: '24px' }}>
-                    <SwarmConvoPrefix prefix={visibleSwarmDebugPrefix} swarmId={swarmId ?? null} />
+                    <SwarmConvoPrefix
+                      presentation="panel"
+                      prefix={visibleSwarmDebugPrefix}
+                      swarmId={swarmId ?? null}
+                    />
                   </div>
                 </div>
               );

@@ -10,13 +10,24 @@ export {
   parseWorkerTable,
 } from './swarmConvoParsers';
 
+/**
+ * The swarm debug/setup context card at the top of a worker conversation.
+ * `panel` (desktop transcript head) opens expanded; `card` (mobile thread
+ * context strip) opens collapsed and fits a phone width. Same content in both.
+ */
 interface SwarmConvoPrefixProps {
+  presentation: 'panel' | 'card';
   prefix: string;
   swarmId: string | null;
 }
 
-export function SwarmConvoPrefix({ prefix, swarmId }: SwarmConvoPrefixProps) {
-  const [expanded, setExpanded] = useState(true);
+const OPENS_EXPANDED: Record<SwarmConvoPrefixProps['presentation'], boolean> = {
+  panel: true,
+  card: false,
+};
+
+export function SwarmConvoPrefix({ presentation, prefix, swarmId }: SwarmConvoPrefixProps) {
+  const [expanded, setExpanded] = useState(OPENS_EXPANDED[presentation]);
 
   const stats = useMemo(() => parseStatsFromPrefix(prefix), [prefix]);
   const workerTable = useMemo(() => parseWorkerTable(prefix), [prefix]);
@@ -36,7 +47,7 @@ export function SwarmConvoPrefix({ prefix, swarmId }: SwarmConvoPrefixProps) {
     statChips.push({ label: 'Err', value: stats.errors, kind: 'error' });
 
   return (
-    <div className="swarm-convo-prefix">
+    <div className={`swarm-convo-prefix swarm-convo-prefix--${presentation}`}>
       <button
         type="button"
         className={`swarm-prefix-token ui-control ui-inline-row ${expanded ? 'expanded' : 'collapsed'}`}

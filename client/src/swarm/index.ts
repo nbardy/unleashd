@@ -38,6 +38,3 @@ export const SwarmConvoPrefix = lazyPanel(() =>
 export const InlineSwarmRunWidget = lazyPanel(() =>
   import('./InlineSwarmRunWidget').then((m) => m.InlineSwarmRunWidget)
 );
-export const MobileSwarmPrefix = lazyPanel(() =>
-  import('./mobile/MobileSwarmPrefix').then((m) => m.MobileSwarmPrefix)
-);
